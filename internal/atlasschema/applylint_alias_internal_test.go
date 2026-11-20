@@ -11,16 +11,17 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 )
 
-// aliasPolicyRow is one schema-apply policy entry plus the dialect it is linted
-// for, and whether the Ptah rule it aliases must be left running.
+// aliasPolicyRow is one schema-apply policy entry, as the atlas.hcl `lint`
+// block spells it, and whether the Ptah rule it stands for must be left
+// running.
 type aliasPolicyRow struct {
 	name        string
-	policyCode  string
-	dialect     string
+	policyKey   string
 	aliasedRule string
 	wantRuns    bool
 }
@@ -28,76 +29,75 @@ type aliasPolicyRow struct {
 // aliasedRuleRuns reports whether the pass would run rule, which is the whole
 // question: a rule in the disabled set produces no findings and the plan
 // applies clean.
-func aliasedRuleRuns(policyCode, dialect, rule string) bool {
-	enabled := lintPlanEnabledCodes(map[string]lint.RuleConfig{policyCode: {}}, dialect)
-	return !slices.Contains(lintPlanDisabledCodes(must.Must(lint.Rules(builtintest.Runtime())), enabled), rule)
+func aliasedRuleRuns(policyKey, rule string) bool {
+	configs := atlascodes.RuleConfigKeys(map[string]lint.RuleConfig{policyKey: {}})
+	enabled := lintPlanEnabledSelectors(configs)
+	return !slices.Contains(lintPlanDisabledNames(must.Must(lint.Rules(builtintest.Runtime())), enabled), rule)
 }
 
-func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
+func TestLintPlanEnabledSelectorsKeepsAnAliasedRuleRunning(t *testing.T) {
 	rows := []aliasPolicyRow{{
-		// The bug: the raw selector matched no registered code, so the rule
+		// The bug: the raw selector matched no registered rule, so the rule
 		// the policy asked for was placed in the disabled list and the unsafe
 		// plan applied clean.
 		name:        "atlas spelling enables the ptah rule it stands for",
-		policyCode:  "BC102",
-		dialect:     "postgres",
-		aliasedRule: "BC101",
+		policyKey:   "BC102",
+		aliasedRule: "rollout/rename",
 		wantRuns:    true,
 	}, {
-		// Every MY code is a Ptah rule of its own name, so the MySQL side of
-		// the family has no alias to expand; the code has to select its rule.
-		name:        "mysql spelling is its own ptah rule on mysql",
-		policyCode:  "MY133",
-		dialect:     "mysql",
-		aliasedRule: "MY133",
+		name:        "an atlas code that is its own ptah rule's check",
+		policyKey:   "MY133",
+		aliasedRule: "rewrite/drop-primary-key",
 		wantRuns:    true,
 	}, {
-		// A code that is a Ptah rule of its own name does not expand to the
-		// generic rule it would otherwise stand for, on any dialect.
+		// An Atlas code does not expand to the generic rule it would
+		// otherwise be mistaken for.
 		name:        "postgres spelling does not enable the generic rule",
-		policyCode:  "PG301",
-		dialect:     "postgres",
-		aliasedRule: "DS103",
+		policyKey:   "PG301",
+		aliasedRule: "data-dependent/alter-column-type",
 		wantRuns:    false,
 	}, {
-		name:        "ptah spelling keeps working unchanged",
-		policyCode:  "DS103",
-		dialect:     "postgres",
-		aliasedRule: "DS103",
+		name:        "a ptah name keeps working unchanged",
+		policyKey:   "data-dependent/alter-column-type",
+		aliasedRule: "data-dependent/alter-column-type",
 		wantRuns:    true,
 	}, {
-		// A code selects itself alone: the missing-down rule MF101P is not
-		// enabled by a policy naming the unique-index check MF101.
-		name:        "a code does not reach its P-suffixed neighbor",
-		policyCode:  "MF101",
-		dialect:     "postgres",
-		aliasedRule: "MF101P",
+		// A name selects itself alone: the missing-down rule is not enabled
+		// by a policy naming the unique-index check.
+		name:        "a name does not reach its neighbor",
+		policyKey:   "data-dependent/add-unique-index",
+		aliasedRule: "file-form/missing-down",
 		wantRuns:    false,
 	}, {
-		name:        "a family prefix still reaches every rule in it",
-		policyCode:  "MF",
-		dialect:     "postgres",
-		aliasedRule: "MF101P",
+		name:        "a category reaches every rule in it",
+		policyKey:   "file-form",
+		aliasedRule: "file-form/missing-down",
+		wantRuns:    true,
+	}, {
+		name:        "an analyzer reaches the rules it covers",
+		policyKey:   "incompatible",
+		aliasedRule: "rollout/drop-column",
 		wantRuns:    true,
 	}}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(aliasedRuleRuns(row.policyCode, row.dialect, row.aliasedRule),
-				qt.Equals, row.wantRuns)
+			c.Assert(aliasedRuleRuns(row.policyKey, row.aliasedRule), qt.Equals, row.wantRuns)
 		})
 	}
 }
 
-func TestLintPlanEnabledCodesLeavesUnrelatedRulesDisabled(t *testing.T) {
+func TestLintPlanEnabledSelectorsLeavesUnrelatedRulesDisabled(t *testing.T) {
 	c := qt.New(t)
 
-	// The pass runs exactly the policy's rules; expanding an alias must widen
-	// the enabled set by the aliased rule only, not open the whole catalog.
-	enabled := lintPlanEnabledCodes(map[string]lint.RuleConfig{"BC102": {}}, "postgres")
-	disabled := lintPlanDisabledCodes(must.Must(lint.Rules(builtintest.Runtime())), enabled)
+	// The pass runs exactly the policy's rules; translating an Atlas
+	// spelling widens the enabled set by the rules it names only, not open
+	// the whole catalog.
+	configs := atlascodes.RuleConfigKeys(map[string]lint.RuleConfig{"BC102": {}})
+	enabled := lintPlanEnabledSelectors(configs)
+	disabled := lintPlanDisabledNames(must.Must(lint.Rules(builtintest.Runtime())), enabled)
 
-	c.Assert(enabled, qt.DeepEquals, []string{"BC102", "BC101"})
-	c.Assert(disabled, qt.Contains, "DS103")
-	c.Assert(disabled, qt.Not(qt.Contains), "BC101")
+	c.Assert(enabled, qt.DeepEquals, []string{"rollout/rename"})
+	c.Assert(disabled, qt.Not(qt.Contains), "rollout/rename")
+	c.Assert(disabled, qt.Contains, "rollout/drop-table")
 }

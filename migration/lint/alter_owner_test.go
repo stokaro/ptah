@@ -8,7 +8,7 @@ import (
 	"ptah.run/migration/lint"
 )
 
-// A PostgreSQL migration that changes an owner is read, so AC102 has nothing to
+// A PostgreSQL migration that changes an owner is read, so coverage/unparsed-statement has nothing to
 // say about it: the parser read the statement and it models no ownership. The
 // token-level rules still see the statement, which the ofRule filter leaves out.
 func TestAC102_AnOwnerChangeIsRead_HappyPath(t *testing.T) {
@@ -26,7 +26,7 @@ func TestAC102_AnOwnerChangeIsRead_HappyPath(t *testing.T) {
 
 			findings := analyzeUnparsed(c, "postgres", test.sql, "SELECT 1;", lint.UnparsedAll)
 
-			c.Assert(ofRule(findings, "AC102"), qt.HasLen, 0)
+			c.Assert(ofRule(findings, "coverage/unparsed-statement"), qt.HasLen, 0)
 		})
 	}
 }
@@ -36,7 +36,7 @@ func TestAC102_AnOwnerChangeIsRead_HappyPath(t *testing.T) {
 func TestAC102_AnOwnerChangeOnAnotherEngine_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	found := ofRule(analyzeUnparsed(c, "mysql", "ALTER TABLE t OWNER TO app;", "SELECT 1;", lint.UnparsedAll), "AC102")
+	found := ofRule(analyzeUnparsed(c, "mysql", "ALTER TABLE t OWNER TO app;", "SELECT 1;", lint.UnparsedAll), "coverage/unparsed-statement")
 
 	c.Assert(found, qt.HasLen, 1)
 	c.Assert(found[0].Message, qt.Contains, "(unsupported ALTER operation: OWNER)")
@@ -46,7 +46,7 @@ func TestAC102_AnOwnerChangeOnAnotherEngine_FailurePath(t *testing.T) {
 func TestAC102_AnotherActionOnTheSameKind_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	found := ofRule(analyzeUnparsed(c, "postgres", "ALTER SCHEMA app RENAME TO other;", "SELECT 1;", lint.UnparsedAll), "AC102")
+	found := ofRule(analyzeUnparsed(c, "postgres", "ALTER SCHEMA app RENAME TO other;", "SELECT 1;", lint.UnparsedAll), "coverage/unparsed-statement")
 
 	c.Assert(found, qt.HasLen, 1)
 	c.Assert(found[0].Message, qt.Contains, "(unsupported ALTER target: SCHEMA)")

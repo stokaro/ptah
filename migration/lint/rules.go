@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/tableref"
 )
 
@@ -45,10 +46,10 @@ func ownerRules(runtime lintext.Runtime) ([]Rule, error) {
 	for _, rule := range published {
 		input, err := ruleInputOf(rule.Input)
 		if err != nil {
-			return nil, fmt.Errorf("lint rule %s: %w", rule.Code, err)
+			return nil, fmt.Errorf("lint rule %s: %w", rule.Name, err)
 		}
 		rules = append(rules, Rule{
-			Code:          rule.Code,
+			Name:          rule.Name,
 			Title:         rule.Title,
 			Severity:      Severity(rule.Severity),
 			Dialects:      slices.Clone(rule.Targets),
@@ -108,16 +109,21 @@ func builtinRules() []Rule {
 }
 
 func validateRule(rule Rule) error {
-	if !isCanonicalRuleCode(rule.Code) {
-		return fmt.Errorf("rule code %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", rule.Code)
+	if !lintext.CanonicalName(rule.Name) {
+		return fmt.Errorf("rule name %q must be a category and a rule joined by a slash, such as %s: "+
+			"lowercase letters and digits joined by single hyphens", rule.Name, exampleRuleName)
+	}
+	if _, declared := lintnames.CategoryFor(lintnames.CategoryOf(rule.Name)); !declared {
+		return fmt.Errorf("rule %s names a category that is not declared; the categories are %s",
+			rule.Name, strings.Join(lintnames.CategoryNames(), ", "))
 	}
 	if strings.TrimSpace(rule.Title) == "" {
-		return fmt.Errorf("rule %s title is required", rule.Code)
+		return fmt.Errorf("rule %s title is required", rule.Name)
 	}
 	switch rule.Severity {
 	case SeverityInfo, SeverityWarning, SeverityError:
 	default:
-		return fmt.Errorf("rule %s has unsupported severity %q", rule.Code, rule.Severity)
+		return fmt.Errorf("rule %s has unsupported severity %q", rule.Name, rule.Severity)
 	}
 	if rule.owned {
 		// Its owner checks it and names its baseline subjects in the answer,
@@ -125,7 +131,7 @@ func validateRule(rule Rule) error {
 		return nil
 	}
 	if (rule.CheckStatement != nil) == (rule.CheckFile != nil) {
-		return fmt.Errorf("rule %s must set exactly one checker", rule.Code)
+		return fmt.Errorf("rule %s must set exactly one checker", rule.Name)
 	}
 	// A declaration nothing enforces is a comment. These two make the input a
 	// property of the rule the analysis can act on: a rule asking for the
@@ -138,7 +144,7 @@ func validateRule(rule Rule) error {
 		if rule.BaselineSubjects == nil {
 			return fmt.Errorf(
 				"rule %s declares the %s input and must set BaselineSubjects to say which statements need it",
-				rule.Code, rule.Input)
+				rule.Name, rule.Input)
 		}
 	case InputRoutineBody:
 		// No subjects predicate: which statements need a body is not a choice
@@ -147,53 +153,54 @@ func validateRule(rule Rule) error {
 		if rule.BaselineSubjects != nil {
 			return fmt.Errorf(
 				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",
-				rule.Code, rule.Input)
+				rule.Name, rule.Input)
 		}
 	case InputStatementText:
 		if rule.BaselineSubjects != nil {
 			return fmt.Errorf(
 				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",
-				rule.Code, rule.Input)
+				rule.Name, rule.Input)
 		}
 	default:
-		return fmt.Errorf("rule %s has unsupported input %d", rule.Code, rule.Input)
+		return fmt.Errorf("rule %s has unsupported input %d", rule.Name, rule.Input)
 	}
 	return nil
 }
 
-func isCanonicalRuleCode(code string) bool {
-	for index, value := range code {
-		if value >= 'A' && value <= 'Z' {
-			continue
-		}
-		if index > 0 && value >= '0' && value <= '9' {
-			continue
-		}
-		return false
-	}
-	return code != ""
-}
-
+// validateRules refuses a rule that fails [validateRule], a name two rules
+// share without sharing one hazard, and a subsumption of a rule nobody
+// registers. Rules share a name when they report one hazard on different
+// engines: their dialects must not overlap and their default severities must
+// match, so a name has one meaning and one default on every engine.
 func validateRules(rules []Rule) error {
-	seen := make(map[string]struct{}, len(rules))
-	for _, rule := range rules {
+	seen := make(map[string]Rule, len(rules))
+	for i, rule := range rules {
 		if err := validateRule(rule); err != nil {
 			return err
 		}
-		if _, ok := seen[rule.Code]; ok {
-			return fmt.Errorf("duplicate rule code %s", rule.Code)
+		for _, other := range rules[:i] {
+			if other.Name != rule.Name {
+				continue
+			}
+			if other.Severity != rule.Severity {
+				return fmt.Errorf("rule %s is registered at severities %s and %s; one name has one default severity",
+					rule.Name, other.Severity, rule.Severity)
+			}
+			if overlap := sharedDialect(other.Dialects, rule.Dialects); overlap != "" {
+				return fmt.Errorf("duplicate rule %s: two rules of one name judge %s", rule.Name, overlap)
+			}
 		}
-		seen[rule.Code] = struct{}{}
+		seen[rule.Name] = rule
 	}
 	// A subsumption naming a rule nobody registers would suppress nothing and
 	// say nothing, so it is checked against the whole set rather than trusted.
 	for _, rule := range rules {
 		for _, code := range rule.Subsumes {
-			if code == rule.Code {
-				return fmt.Errorf("rule %s subsumes itself", rule.Code)
+			if code == rule.Name {
+				return fmt.Errorf("rule %s subsumes itself", rule.Name)
 			}
 			if _, ok := seen[code]; !ok {
-				return fmt.Errorf("rule %s subsumes %s, which no rule registers", rule.Code, code)
+				return fmt.Errorf("rule %s subsumes %s, which no rule registers", rule.Name, code)
 			}
 		}
 	}
@@ -223,7 +230,7 @@ func dataSafetyRules() []Rule {
 // constraintDeletionRules covers the CD family: dropping a constraint whose type
 // is recoverable from the SQL, split by constraint type so operators get a
 // precise per-type signal. The untyped ANSI DROP CONSTRAINT <name> form stays in
-// DS105 (dataSafetyRules) because its type is not determinable from the SQL.
+// integrity/drop-untyped-constraint (dataSafetyRules) because its type is not determinable from the SQL.
 func constraintDeletionRules() []Rule {
 	return []Rule{
 		foreignKeyDroppedRule(),
@@ -232,11 +239,11 @@ func constraintDeletionRules() []Rule {
 	}
 }
 
-// tableDroppedAdvice is the remediation every DS101 finding carries, kept in one
+// tableDroppedAdvice is the remediation every destructive/drop-table finding carries, kept in one
 // place because the named and unnamed message forms must not drift apart.
 const tableDroppedAdvice = "take a verified backup first and consider a rename-and-retire window instead"
 
-// tableDroppedRule reports DS101 on a DROP TABLE and, on MariaDB, on a
+// tableDroppedRule reports destructive/drop-table on a DROP TABLE and, on MariaDB, on a
 // CREATE OR REPLACE TABLE. The replace form drops the named table and
 // recreates it empty -- measured on MariaDB 12.3.3, a table holding rows
 // holds none once its CREATE OR REPLACE TABLE runs -- so it destroys existing
@@ -245,7 +252,7 @@ const tableDroppedAdvice = "take a verified backup first and consider a rename-a
 // session-local table, so it destroys nothing that outlives the session.
 func tableDroppedRule() Rule {
 	return Rule{
-		Code:     "DS101",
+		Name:     "destructive/drop-table",
 		Title:    "table dropped",
 		Severity: SeverityError,
 		// The text recognizes a table rebuild, whose copy keeps the rows
@@ -299,7 +306,7 @@ func tableDroppedRule() Rule {
 
 // tableRenamedFindings reports the table names a file retires by renaming them,
 // on the compatibility surface only. See [renamedNames] for why a rename is
-// classified as destructive there and as BC101 natively, and why the
+// classified as destructive there and as rollout/rename natively, and why the
 // destructive form has to carry a DS code.
 //
 // One finding per retired table, ordered by logical name within the statement,
@@ -326,7 +333,7 @@ func tableRenamedFindings(file *File) []Finding {
 				subjects = []Subject{{Kind: SubjectTable, Name: name.name}}
 			}
 			findings = append(findings, Finding{
-				Rule:     "DS101",
+				Rule:     "destructive/drop-table",
 				Title:    "table dropped",
 				Severity: SeverityError,
 				File:     file.Path,
@@ -378,7 +385,7 @@ func orderedDropTargets(tables []lintkit.TableReference) []lintkit.TableReferenc
 func tableDroppedFindings(filePath string, line, statementIndex int, tables []lintkit.TableReference) []Finding {
 	finding := func(message string, subjects ...Subject) Finding {
 		return Finding{
-			Rule:     "DS101",
+			Rule:     "destructive/drop-table",
 			Title:    "table dropped",
 			Severity: SeverityError,
 			File:     filePath,
@@ -421,7 +428,7 @@ func replacedTableRef(w, sourceWords []string) (ref lintkit.TableReference, isRe
 }
 
 // tableReplacedFinding reports the table a CREATE OR REPLACE TABLE statement
-// destroys, in [tableDroppedRule]'s DS101.
+// destroys, in [tableDroppedRule]'s destructive/drop-table.
 func tableReplacedFinding(filePath string, line, statementIndex int, table lintkit.TableReference) Finding {
 	message := "CREATE OR REPLACE TABLE permanently deletes the table and every row in it; " + tableDroppedAdvice
 	var subjects []Subject
@@ -431,7 +438,7 @@ func tableReplacedFinding(filePath string, line, statementIndex int, table lintk
 		subjects = []Subject{{Kind: SubjectTable, Name: table.Name}}
 	}
 	return Finding{
-		Rule:     "DS101",
+		Rule:     "destructive/drop-table",
 		Title:    "table dropped",
 		Severity: SeverityError,
 		File:     filePath,
@@ -458,17 +465,17 @@ func logicalObjectName(ref string) string {
 const columnDroppedAdvice = "deploy readers that no longer use the column first, then drop it in a later release"
 
 // renameRetiredNameAdvice is the remediation every rename-derived DS finding
-// carries. It is BC101's advice, so the two classifications of one rename (see
+// carries. It is rollout/rename's advice, so the two classifications of one rename (see
 // [renamedNames]) cannot drift into prescribing different remediations.
 const renameRetiredNameAdvice = "application versions deployed against the old name fail instantly; prefer add-new/backfill/drop-old across releases"
 
-// columnDroppedRule reports DS102 on a DROP COLUMN. It is file-level because a
+// columnDroppedRule reports destructive/drop-column on a DROP COLUMN. It is file-level because a
 // drop of a column the same file added, or of a column of a table it created,
 // deletes no value that existed before the file ran, and the rename form
 // consults the tables the file created; see [newColumnDrops].
 func columnDroppedRule() Rule {
 	return Rule{
-		Code:     "DS102",
+		Name:     "destructive/drop-column",
 		Title:    "column dropped",
 		Severity: SeverityError,
 		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
@@ -492,7 +499,7 @@ func columnDroppedRule() Rule {
 					continue
 				}
 				findings = append(findings, Finding{
-					Rule:     "DS102",
+					Rule:     "destructive/drop-column",
 					Title:    "column dropped",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -529,7 +536,7 @@ func rebuildColumnLossFindings(file *File) []Finding {
 		for _, name := range loss.LostColumns {
 			create := &file.Statements[loss.Create]
 			findings = append(findings, Finding{
-				Rule: "DS102", Title: "column dropped", Severity: SeverityError,
+				Rule: "destructive/drop-column", Title: "column dropped", Severity: SeverityError,
 				File: file.Path, Line: create.Line,
 				Message: "DROP COLUMN permanently deletes the column's data; " + columnDroppedAdvice,
 				Context: statementFindingContext(loss.Create, Subject{Kind: SubjectColumn, Name: name, Parent: tables[0].Normalized}),
@@ -541,8 +548,8 @@ func rebuildColumnLossFindings(file *File) []Finding {
 
 // columnDroppedWithReadersRule names what breaks when a column goes.
 //
-// DS102 says a drop deletes data. It never said what else the column was
-// holding up: `DROP COLUMN email` under a view that selects it reported DS102
+// destructive/drop-column says a drop deletes data. It never said what else the column was
+// holding up: `DROP COLUMN email` under a view that selects it reported destructive/drop-column
 // alone, and the operator learned about the view when the migration ran, which
 // is the whole failure #1270's criterion 9 records.
 //
@@ -553,7 +560,7 @@ func rebuildColumnLossFindings(file *File) []Finding {
 // names its missing input.
 func columnDroppedWithReadersRule() Rule {
 	return Rule{
-		Code:     "DS110P",
+		Name:     "dependency/drop-column-in-use",
 		Title:    "column dropped while something reads it",
 		Severity: SeverityError,
 		CheckFile: func(file *File) []Finding {
@@ -599,7 +606,7 @@ func droppedColumnReaderFindings(file *File, stmt *Statement, index int) []Findi
 			continue
 		}
 		findings = append(findings, Finding{
-			Rule:     "DS110P",
+			Rule:     "dependency/drop-column-in-use",
 			Title:    "column dropped while something reads it",
 			Severity: SeverityError,
 			File:     file.Path,
@@ -640,7 +647,7 @@ func pluralize(singular, plural string, count int) string {
 // TO mail` (MySQL grammar) is one diagnostic naming both columns, under a
 // single suggested fix, in the order the clauses are written. That is the same
 // shape a multi-clause DROP COLUMN produces, which is what the compatibility
-// renderer's plural DS103 wording was measured and built for.
+// renderer's plural data-dependent/alter-column-type wording was measured and built for.
 func columnRenamedFindings(file *File) []Finding {
 	if file.compatibility != CompatibilityProfileAtlas {
 		return nil
@@ -648,7 +655,7 @@ func columnRenamedFindings(file *File) []Finding {
 	var findings []Finding
 	for _, rename := range renamesOfKind(fileRenames(file), SubjectColumn) {
 		findings = append(findings, Finding{
-			Rule:     "DS102",
+			Rule:     "destructive/drop-column",
 			Title:    "column dropped",
 			Severity: SeverityError,
 			File:     file.Path,
@@ -691,13 +698,13 @@ func renamedColumnSubjects(names []renamedName) []Subject {
 	return subjects
 }
 
-// columnTypeChangedRule (DS103) reads the statement text and lets the schema
+// columnTypeChangedRule (data-dependent/alter-column-type) reads the statement text and lets the schema
 // state the version starts from take away a finding it establishes to be
 // wrong: a clause that restates the column's current type; see
 // [typeUnchangedByState].
 func columnTypeChangedRule() Rule {
 	return Rule{
-		Code:             "DS103",
+		Name:             "data-dependent/alter-column-type",
 		Title:            "column type changed",
 		Severity:         SeverityWarning,
 		Input:            InputBaselineRefinement,
@@ -710,7 +717,7 @@ func columnTypeChangedRule() Rule {
 				}
 				stmt := &file.Statements[index]
 				findings = append(findings, Finding{
-					Rule:     "DS103",
+					Rule:     "data-dependent/alter-column-type",
 					Title:    "column type changed",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -726,7 +733,7 @@ func columnTypeChangedRule() Rule {
 
 func notNullDroppedRule() Rule {
 	return Rule{
-		Code:     "DS104",
+		Name:     "integrity/drop-not-null",
 		Title:    "not-null constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -738,13 +745,13 @@ func notNullDroppedRule() Rule {
 	}
 }
 
-// constraintDroppedRule (DS105) is the untyped fallback for the ANSI
+// constraintDroppedRule (integrity/drop-untyped-constraint) is the untyped fallback for the ANSI
 // DROP CONSTRAINT <name> form, whose constraint type is not recoverable from the
 // SQL. The typed MySQL-family forms (DROP FOREIGN KEY / CHECK / PRIMARY KEY) are
 // reported by the more specific CD family, so a statement is never double-flagged.
 func constraintDroppedRule() Rule {
 	return Rule{
-		Code:     "DS105",
+		Name:     "integrity/drop-untyped-constraint",
 		Title:    "constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -761,7 +768,7 @@ func constraintDroppedRule() Rule {
 // is the DROP-side analogue of postgresAlterRule and backs the CD family.
 func alterTableDropRule(code, title string, scan func([]string) bool, message string) Rule {
 	return Rule{
-		Code:     code,
+		Name:     code,
 		Title:    title,
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -774,23 +781,23 @@ func alterTableDropRule(code, title string, scan func([]string) bool, message st
 }
 
 func foreignKeyDroppedRule() Rule {
-	return alterTableDropRule("CD101", "foreign key dropped", scanDropForeignKey,
+	return alterTableDropRule("integrity/drop-foreign-key", "foreign key dropped", scanDropForeignKey,
 		"dropping a foreign key removes referential-integrity enforcement; verify no application invariant relies on the database rejecting orphan rows before applying")
 }
 
 func checkConstraintDroppedRule() Rule {
-	return alterTableDropRule("CD102", "check constraint dropped", scanDropCheck,
+	return alterTableDropRule("integrity/drop-check", "check constraint dropped", scanDropCheck,
 		"dropping a check constraint removes a value-validation guarantee; verify no data invariant depends on it before applying")
 }
 
 func primaryKeyDroppedRule() Rule {
-	return alterTableDropRule("CD103", "primary key dropped", lintkit.ScanDropPrimaryKey,
+	return alterTableDropRule("integrity/drop-primary-key", "primary key dropped", lintkit.ScanDropPrimaryKey,
 		"dropping a primary key removes row-uniqueness and identity enforcement and can break replication; verify a replacement key exists before applying")
 }
 
 func enumValueRemovedRule() Rule {
 	return Rule{
-		Code:     "DS106",
+		Name:     "destructive/remove-enum-value",
 		Title:    "enum value removed",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -874,7 +881,7 @@ var nonDeterministicCalls = []string{
 // depending on how the author quoted it.
 func immutableRoutineReadsTheClockRule() Rule {
 	return Rule{
-		Code:     "DD102",
+		Name:     "correctness/immutable-calls-volatile",
 		Title:    "immutable routine calls something that is not",
 		Severity: SeverityWarning,
 		Input:    InputRoutineBody,
@@ -937,7 +944,7 @@ func firstNonDeterministicCall(bodyWords []string) (string, bool) {
 
 func routineBodyNotAnalyzedRule() Rule {
 	return Rule{
-		Code:     "AC101",
+		Name:     "coverage/routine-body",
 		Title:    "routine body not analyzed",
 		Severity: SeverityInfo,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -957,7 +964,7 @@ func routineBodyNotAnalyzedRule() Rule {
 // nothing says it is SQL at all until a server runs it.
 func statementNotParsedRule() Rule {
 	return Rule{
-		Code:     "AC102",
+		Name:     "coverage/unparsed-statement",
 		Title:    "statement not parsed",
 		Severity: SeverityInfo,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -973,7 +980,7 @@ func statementNotParsedRule() Rule {
 
 func databaseObjectDroppedRule() Rule {
 	return Rule{
-		Code:     "DS107",
+		Name:     "destructive/drop-object",
 		Title:    "database object dropped",
 		Severity: SeverityError,
 		// The starting state shows an IF EXISTS drop of an object that is not
@@ -991,7 +998,7 @@ func databaseObjectDroppedRule() Rule {
 					continue
 				}
 				findings = append(findings, Finding{
-					Rule:     "DS107",
+					Rule:     "destructive/drop-object",
 					Title:    "database object dropped",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -1005,13 +1012,13 @@ func databaseObjectDroppedRule() Rule {
 	}
 }
 
-// dropsDatabaseObject reports a statement DS107 reports: a drop of an object
+// dropsDatabaseObject reports a statement destructive/drop-object reports: a drop of an object
 // whose loss removes behavior, principals or data.
 func dropsDatabaseObject(stmt *Statement) bool {
 	return scanDestructiveObjectDrop(stmt.Words) || stmt.hasEffect(lintext.FactStatefulDrop) || scanPrincipalDrop(stmt.Words, stmt.Target)
 }
 
-// objectDropBaselineSubjects are the statements DS107 reads the starting state
+// objectDropBaselineSubjects are the statements destructive/drop-object reads the starting state
 // for: the drops it reports that hold a change only that state decides
 // ([stateMayDecide]).
 func objectDropBaselineSubjects(file *File) []int {
@@ -1026,7 +1033,7 @@ func objectDropBaselineSubjects(file *File) []int {
 
 func tableTruncatedRule() Rule {
 	return Rule{
-		Code:     "DS108",
+		Name:     "destructive/truncate-table",
 		Title:    "table truncated",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -1040,7 +1047,7 @@ func tableTruncatedRule() Rule {
 
 func rlsDisabledRule() Rule {
 	return Rule{
-		Code:     "DS109",
+		Name:     "security/disable-row-level-security",
 		Title:    "row-level security disabled",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -1055,11 +1062,11 @@ func rlsDisabledRule() Rule {
 // rlsForceRemovedRule reports the other way to take row-level security away
 // from a table. NO FORCE leaves the policies in force for every role but the
 // table's owner, which then reads and writes past all of them -- and the owner
-// is often the role an application connects as. DS109 does not cover it: its
+// is often the role an application connects as. security/disable-row-level-security does not cover it: its
 // title says row-level security is disabled, and here it stays enabled.
 func rlsForceRemovedRule() Rule {
 	return Rule{
-		Code:     "DS111P",
+		Name:     "security/no-force-row-level-security",
 		Title:    "row-level security no longer forced",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -1077,13 +1084,13 @@ const notNullWithoutDefaultAdvice = "fails or blocks on populated tables; add it
 func dataDependentRules() []Rule {
 	return []Rule{
 		{
-			Code:     "DD101",
+			Name:     "data-dependent/add-not-null-column",
 			Title:    "non-nullable column added without a default",
 			Severity: SeverityWarning,
 			// File-level: adding a NOT NULL column to a table this same migration
 			// created targets an empty table, so the add cannot fail on existing
 			// rows and is exempt — the ADD-side analogue of the create-then-drop
-			// exemption in DS101 (tableDroppedRule).
+			// exemption in destructive/drop-table (tableDroppedRule).
 			CheckFile: notNullWithoutDefaultFindings,
 			// The ADD COLUMN half reads text. The rename half cannot: the
 			// retired column's type, nullability and default live in an earlier
@@ -1133,7 +1140,7 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 // the introduction of another (see [renamedNames]); the retirement is already
 // reported as destructive, and this is its other half. If the retired column
 // rejected NULL and had no default, the introduced name is a non-nullable column
-// with no default, which is exactly what DD101 is about. Measured against the
+// with no default, which is exactly what data-dependent/add-not-null-column is about. Measured against the
 // pinned community binary v1.3.0 on PostgreSQL 16: `CREATE TABLE users (id int
 // NOT NULL)` in one file and `ALTER TABLE users RENAME COLUMN id TO oid` in the
 // next reports BOTH the drop of "id" and the add of an `integer` column "oid",
@@ -1160,7 +1167,7 @@ func renamedColumnAddFindings(file *File) []Finding {
 				continue
 			}
 			findings = append(findings, Finding{
-				Rule:     "DD101",
+				Rule:     "data-dependent/add-not-null-column",
 				Title:    "non-nullable column added without a default",
 				Severity: SeverityWarning,
 				File:     file.Path,
@@ -1179,7 +1186,7 @@ func renamedColumnAddFindings(file *File) []Finding {
 
 // renamedColumnAddSubject resolves the column a rename introduces against the
 // schema state its version starts from, and reports whether that column is the
-// non-nullable, default-less shape DD101 covers.
+// non-nullable, default-less shape data-dependent/add-not-null-column covers.
 //
 // Every unresolved case returns false: an unreadable rename, a column the
 // baseline does not carry, or no baseline at all. Reporting requires having
@@ -1215,7 +1222,7 @@ func notNullWithoutDefaultFindingsFor(filePath string, line, statementIndex int,
 	findings := make([]Finding, 0, len(subjects))
 	for _, subject := range subjects {
 		findings = append(findings, Finding{
-			Rule:     "DD101",
+			Rule:     "data-dependent/add-not-null-column",
 			Title:    "non-nullable column added without a default",
 			Severity: SeverityWarning,
 			File:     filePath,
@@ -1238,7 +1245,7 @@ func migrationFormRules() []Rule {
 			// MF101P, MF102P: Ptah's own rules inside the Atlas MF family, so
 			// the suffix the identifier convention asks for; the bare codes
 			// are the Atlas checks unique.go reports (stokaro/ptah#2942).
-			Code:     "MF101P",
+			Name:     "file-form/missing-down",
 			Title:    "missing down migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1248,7 +1255,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF101P",
+					Rule:     "file-form/missing-down",
 					Title:    "missing down migration",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1257,7 +1264,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF102P",
+			Name:     "file-form/empty-migration",
 			Title:    "empty migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1265,7 +1272,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF102P",
+					Rule:     "file-form/empty-migration",
 					Title:    "empty migration",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1274,7 +1281,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF105P",
+			Name:     "file-form/refused-file",
 			Title:    "file a run refuses the directory for",
 			Severity: SeverityError,
 			CheckFile: func(file *File) []Finding {
@@ -1282,7 +1289,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF105P",
+					Rule:     "file-form/refused-file",
 					Title:    "file a run refuses the directory for",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -1291,11 +1298,11 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF103",
+			Name:     "file-form/file-name",
 			Title:    "non-conventional file name",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
-				// MF105P reports a file a run refuses the directory for.
+				// file-form/refused-file reports a file a run refuses the directory for.
 				if file.WellFormedName || file.RunRefusal != "" {
 					return nil
 				}
@@ -1309,7 +1316,7 @@ func migrationFormRules() []Rule {
 					message = fmt.Sprintf("ambiguous file name: the migrator runs this as a %s migration even though it does not end in .%s.sql; rename it to NNNNNNNNNN_description.%s.sql", file.Direction, file.Direction, file.Direction)
 				}
 				return []Finding{{
-					Rule:     "MF103",
+					Rule:     "file-form/file-name",
 					Title:    "non-conventional file name",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1324,7 +1331,7 @@ func migrationFormRules() []Rule {
 func compatibilityRules() []Rule {
 	return []Rule{
 		{
-			Code:     "BC101",
+			Name:     "rollout/rename",
 			Title:    "rename breaks deployed code",
 			Severity: SeverityWarning,
 			// The starting state shows a CREATE TABLE IF NOT EXISTS of a
@@ -1345,7 +1352,7 @@ func compatibilityRules() []Rule {
 				var findings []Finding
 				for _, rename := range fileRenames(file) {
 					findings = append(findings, Finding{
-						Rule:     "BC101",
+						Rule:     "rollout/rename",
 						Title:    "rename breaks deployed code",
 						Severity: SeverityWarning,
 						File:     file.Path,
@@ -1363,7 +1370,7 @@ func compatibilityRules() []Rule {
 func sqliteRules() []Rule {
 	return []Rule{
 		{
-			Code:     "LT101",
+			Name:     "rewrite/set-not-null",
 			Title:    "not-null constraint added without a default",
 			Severity: SeverityWarning,
 			Dialects: lintDialects(func(described descriptor.Lint) bool { return described.SetNotNullRebuilds }),
@@ -1504,7 +1511,7 @@ func scanDropCheck(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "
 
 // scanDropNamedConstraint reports whether an ALTER TABLE statement drops a
 // constraint by name via the ANSI DROP CONSTRAINT <name> form, whose constraint
-// type is not recoverable from the SQL. This is the untyped fallback (DS105);
+// type is not recoverable from the SQL. This is the untyped fallback (integrity/drop-untyped-constraint);
 // the typed forms above are reported by the CD family.
 func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "CONSTRAINT") }
 
@@ -1513,7 +1520,7 @@ func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w,
 // Both forms are anchored on the statement they belong to, which is the whole
 // point. Unanchored, the scan walked every word a statement carried -- and a
 // routine body is words. `CREATE FUNCTION f() ... BEGIN ATOMIC DELETE FROM
-// pg_enum; END` reported DS106 at error severity, against the one family the
+// pg_enum; END` reported destructive/remove-enum-value at error severity, against the one family the
 // apply gate refuses on, for a migration that creates a function and removes no
 // enum value. The `$$`-quoted spelling of the same body did not, because a
 // dollar-quoted body is one token: the rule's answer depended on how the author
@@ -1521,7 +1528,7 @@ func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w,
 //
 // The tree already pins the principle this restores: a DROP TABLE inside a
 // procedure body runs when somebody calls the procedure and never at migration
-// time (migration/lint/compound_routine_body_test.go). DS101 and DS103 were
+// time (migration/lint/compound_routine_body_test.go). destructive/drop-table and data-dependent/alter-column-type were
 // anchored and held it; this scan was the one that was not.
 func scanEnumValueRemoval(w []string) bool {
 	if lintkit.HasWordPrefix(w, "DELETE", "FROM", "PG_ENUM") {
@@ -1534,7 +1541,7 @@ func scanEnumValueRemoval(w []string) bool {
 // scanDestructiveObjectDrop reports a DROP of an object kind every dialect
 // that has it spells alike. A drop that loses state only one engine's objects
 // hold -- a YDB topic's messages, say -- is that engine's owner's to
-// recognize, and reaches DS107 as a [lintext.FactStatefulDrop] effect.
+// recognize, and reaches destructive/drop-object as a [lintext.FactStatefulDrop] effect.
 func scanDestructiveObjectDrop(w []string) bool {
 	if len(w) < 2 || w[0] != "DROP" {
 		return false
@@ -1562,7 +1569,7 @@ func scanPrincipalDrop(w []string, target Target) bool {
 }
 
 // Describe renders one finding as a single human-readable line naming the
-// file, the line when the finding has one, the severity, the rule code, the
+// file, the line when the finding has one, the severity, the rule name, the
 // message and the rule title. File-level findings — naming and pairing — carry
 // no line number and render without one.
 //
@@ -1574,4 +1581,18 @@ func Describe(f Finding) string {
 		location = fmt.Sprintf("%s:%d", f.File, f.Line)
 	}
 	return fmt.Sprintf("%s [%s] %s: %s (%s)", location, f.Severity, f.Rule, f.Message, f.Title)
+}
+
+// sharedDialect returns a dialect both lists judge, "every dialect" where
+// either list is empty, or the empty string for lists that do not overlap.
+func sharedDialect(a, b []string) string {
+	if len(a) == 0 || len(b) == 0 {
+		return "every dialect"
+	}
+	for _, dialect := range a {
+		if slices.Contains(b, dialect) {
+			return dialect
+		}
+	}
+	return ""
 }

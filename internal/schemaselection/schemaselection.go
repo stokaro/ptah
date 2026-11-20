@@ -65,7 +65,7 @@ type Selection struct {
 	//   - `postgres://…?search_path=public` reports no diagnostic, counts no
 	//     schema change and exits 0;
 	//   - the same directory through the same URL WITHOUT `search_path` reports
-	//     one DS102 per dropped table and exits 1;
+	//     one destructive/drop-column per dropped table and exits 1;
 	//   - `search_path=public,app` is not a search-path list to that binary but
 	//     one schema NAME, and it refuses the run outright with
 	//     `taking database snapshot: postgres: schema "public,app" was not

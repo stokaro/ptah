@@ -10,7 +10,7 @@ import (
 	"ptah.run/internal/lintkit/pgtype"
 )
 
-// DS103 reads the statement text: every MODIFY, CHANGE, ALTER COLUMN ... TYPE and
+// data-dependent/alter-column-type reads the statement text: every MODIFY, CHANGE, ALTER COLUMN ... TYPE and
 // SQL Server's ALTER COLUMN name type is a column type change to it, and the finding
 // says the change can truncate or reject existing values. On the MySQL family a MODIFY
 // restates the whole column, so `MODIFY total INT NOT NULL` on an INT column changes
@@ -19,10 +19,10 @@ import (
 //
 // The schema state the version starts from refines that. A statement whose
 // every type clause names the type the column already has, as the same
-// comparison MY130 and PG301 make judges it, changed no type, and DS103 says
-// nothing about it; DD103 reports the nullability on its own terms. A
+// comparison rewrite/alter-column-type and rewrite/alter-column-type make judges it, changed no type, and data-dependent/alter-column-type says
+// nothing about it; data-dependent/set-not-null reports the nullability on its own terms. A
 // collation is not a type: a clause that changes only the collation leaves
-// the type unchanged here, and PG301 or MY130 report the rebuild or the copy
+// the type unchanged here, and rewrite/alter-column-type or rewrite/alter-column-type report the rebuild or the copy
 // where one is measured. Anything the state cannot settle -- a column it
 // does not know, a spelling the parser does not, a clause the site readers
 // do not recognize, a dialect with no type comparison -- keeps the finding,
@@ -30,7 +30,7 @@ import (
 // wrong. Without the state the rule reports exactly as it did before the
 // state existed, and the run names it as unmet.
 
-// typeChangeStatements lists the statements DS103 reads, for the baseline
+// typeChangeStatements lists the statements data-dependent/alter-column-type reads, for the baseline
 // request and for the check.
 func typeChangeStatements(file *File) []int {
 	var indexes []int
@@ -68,7 +68,7 @@ func typeUnchangedByState(file *File, index int) bool {
 	}
 }
 
-// typeChangeClauses counts the clauses DS103's scanners match in one
+// typeChangeClauses counts the clauses data-dependent/alter-column-type's scanners match in one
 // statement, so a clause the site readers did not turn into a site is
 // noticed rather than silently taken as unchanged.
 func typeChangeClauses(w []string) int {
@@ -103,7 +103,7 @@ func modifyChangeClause(w []string, i int) bool {
 }
 
 // pgTypesUnchanged judges every ALTER COLUMN ... TYPE clause of one
-// statement against the column's current type, the way PG301 does.
+// statement against the column's current type, the way rewrite/alter-column-type does.
 func pgTypesUnchanged(file *File, index, clauses int) bool {
 	resolved := 0
 	for _, site := range pgtype.ChangeSites(file.contract) {
@@ -128,7 +128,7 @@ func pgTypesUnchanged(file *File, index, clauses int) bool {
 }
 
 // mysqlTypesUnchanged judges every MODIFY and CHANGE clause of one statement
-// against the column's current storage type, the way MY130 does: the same
+// against the column's current storage type, the way rewrite/alter-column-type does: the same
 // base, parameters, sign, character set and member list. The collation is
 // not compared, because it is not a type.
 func mysqlTypesUnchanged(file *File, index, clauses int) bool {

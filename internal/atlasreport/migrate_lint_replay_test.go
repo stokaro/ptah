@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationreplay"
@@ -32,10 +33,11 @@ func replayFixture() fstest.MapFS {
 func analyzeReplayFixture(c *qt.C, fsys fstest.MapFS, selection migrationlint.VersionSelection) migrationlint.Analysis {
 	c.Helper()
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
-		Selection:     selection,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
+		Selection:      selection,
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis
@@ -153,10 +155,11 @@ func TestNewMigrateLintReplayFailure_BlamesTheUpFile(t *testing.T) {
 		"0000000001_init.down.sql": {Data: []byte("DROP TABLE users;\n")},
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE users (id int);\n\nALTER TABLE users RENAME COLUMN nope TO x;\n")},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatPtah,
-		Dialect:       "sqlite",
-		Selection:     migrationlint.VersionSelection{Versions: []int64{1}, Restricted: true},
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatPtah,
+		Dialect:        "sqlite",
+		Selection:      migrationlint.VersionSelection{Versions: []int64{1}, Restricted: true},
 	})
 	c.Assert(err, qt.IsNil)
 

@@ -129,7 +129,7 @@ func TestResolveTarget_FailurePath(t *testing.T) {
 // statement is a finding on one and silence on the other.
 func versionedRule() lint.Rule {
 	return lint.Rule{
-		Code:     "ZZ101",
+		Name:     "design/zz101",
 		Title:    "named NOT NULL constraints",
 		Severity: lint.SeverityWarning,
 		CheckStatement: func(stmt *lint.Statement) (bool, string) {

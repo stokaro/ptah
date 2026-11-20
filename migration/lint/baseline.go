@@ -95,7 +95,7 @@ func unmetInputs(files []File, opts Options, rules []Rule) []UnmetInput {
 				continue
 			}
 			unmet = append(unmet, UnmetInput{
-				Rule:    rule.Code,
+				Rule:    rule.Name,
 				Input:   rule.Input,
 				File:    file.Path,
 				Version: file.Version,

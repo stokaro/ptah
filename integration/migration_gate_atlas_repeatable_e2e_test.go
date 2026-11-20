@@ -35,7 +35,7 @@ func TestMigrationGate_AnAtlasRepeatableOverTheAtlasTable_FailurePath(t *testing
 	up := readsWholePtah(c, dir, "up", "--revision-format", "atlas")
 
 	c.Assert(up.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
-	c.Assert(up.Stderr, qt.Contains, "migrations/R__r.sql:1 DS101 error: DROP TABLE permanently deletes table ta")
+	c.Assert(up.Stderr, qt.Contains, "migrations/R__r.sql:1 destructive/drop-table error: DROP TABLE permanently deletes table ta")
 	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.HasLen, 0)
 	c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.Not(qt.Contains), "ta")
 }
@@ -56,12 +56,12 @@ func TestMigrationGate_AnAtlasRepeatableOverTheAtlasTable_HappyPath(t *testing.T
 // A gate that blocks on the migration-form family judges R__r.sql for the
 // Atlas revision table the run records versions in, which keeps the version
 // R, so it reports no refusal and up applies both files. Judged for Ptah's
-// table, the gate would refuse the plan under MF105P for a file the run
+// table, the gate would refuse the plan under file-form/refused-file for a file the run
 // applies.
 func TestMigrationGate_AnAtlasRepeatableUnderAMigrationFormGate_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dir := readsWholeDirectory(c, map[string]string{
-		".ptah-lint.yaml": "gate:\n  families: [DS, MF]\n",
+		".ptah-lint.yaml": "gate:\n  rules: [destructive/drop-table, file-form]\n",
 		"1_a.sql":         "CREATE TABLE ta (id INTEGER);\n",
 		"R__r.sql":        "CREATE TABLE tr (id INTEGER);\n",
 	})

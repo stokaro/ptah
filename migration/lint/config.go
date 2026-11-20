@@ -17,7 +17,9 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqllint"
 )
 
 // ConfigFileName is the conventional per-project lint configuration file,
@@ -32,10 +34,10 @@ const ConfigFileName = ".ptah-lint.yaml"
 //	dialect: postgres
 //	server-version: "17"
 //	disabled-rules:
-//	  - MF103
+//	  - file-form/file-name
 //	  - MY
 //	rules:
-//	  DS103:
+//	  data-dependent/alter-column-type:
 //	    severity: warning
 //	    exclude:
 //	      - legacy/**
@@ -55,7 +57,7 @@ type Config struct {
 	// refused here rather than resolving to the default and quietly changing
 	// which rules can fire.
 	ServerVersion string `yaml:"server-version,omitempty"`
-	// DisabledRules lists rule codes or family prefixes to skip; merged
+	// DisabledRules lists the rule names and categories to skip; merged
 	// with --disable flags.
 	DisabledRules []string `yaml:"disabled-rules"`
 	// Rules carries per-rule severity and path-scope overrides.
@@ -84,19 +86,21 @@ func (c *Config) RequiresOnline() bool {
 	return c != nil && c.Online == OnlineRequire
 }
 
-// GateConfig is the `gate` section of .ptah-lint.yaml: the rule families
-// whose error-severity findings refuse `ptah migrations up`, beyond the DS
-// family the gate always blocks on.
+// GateConfig is the `gate` section of .ptah-lint.yaml: the rules, by name or
+// category, whose error-severity findings refuse `ptah migrations up`, beyond
+// the data-safety rules the gate always blocks on.
 //
 // Lint and apply are deliberately separate: `ptah migrations lint` reports
 // every rule and exits at a threshold, while the apply gate stops only on
 // data-safety findings, because a locking hazard or a naming convention is
 // something to review, not something the migrator should refuse to run.
-// A project that wants a finding to stop the deploy says so here, by
-// family, and gives the rule an error severity under `rules`; the gate
-// then runs that family and refuses on it. The DS family needs no entry.
+// A project that wants a finding to stop the deploy says so here, by rule
+// name or category, and gives the rule an error severity under `rules`; the
+// gate then runs those rules and refuses on them. The data-safety rules need
+// no entry.
 type GateConfig struct {
-	Families []string `yaml:"families"`
+	// Rules are the rule names and categories the gate blocks on.
+	Rules []string `yaml:"rules"`
 }
 
 // LoadConfig reads an explicit lint configuration file. Missing, unreadable,
@@ -197,6 +201,9 @@ func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) 
 	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
 		return err
 	}
+	if err := validateConfigNames(cfg, rules); err != nil {
+		return err
+	}
 	if _, err := compileNamingConfig(cfg.Naming); err != nil {
 		return err
 	}
@@ -210,6 +217,36 @@ func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) 
 		return err
 	}
 	return validateRuleConfigs(cfg.Rules)
+}
+
+// validateConfigNames refuses a `disabled-rules` entry that selects no rule
+// the runtime registers or the file declares, and a `rules` key that selects no
+// rule of either linter: `ptah sql lint` reads the same section, so a name it
+// reports is a name the file may carry.
+func validateConfigNames(cfg *Config, rules []Rule) error {
+	declared := make([]string, 0, len(cfg.Rules))
+	for name, rule := range cfg.Rules {
+		if rule.Declares() {
+			declared = append(declared, name)
+		}
+	}
+	migration := knownNames(rules)
+	disabled := lintnames.NewSet("migration lint", append(migration.Names(), declared...))
+	for _, selector := range cfg.DisabledRules {
+		if _, err := disabled.Resolve(selector); err != nil && selector != "" {
+			return fmt.Errorf("rule selector %w", err)
+		}
+	}
+	configured := lintnames.NewSet("lint", append(disabled.Names(), sqllint.CatalogIDs()...))
+	for _, key := range slices.Sorted(maps.Keys(cfg.Rules)) {
+		if cfg.Rules[key].Declares() {
+			continue
+		}
+		if _, err := configured.Resolve(key); err != nil {
+			return fmt.Errorf("lint rules key %w", err)
+		}
+	}
+	return nil
 }
 
 // validateOnlineConfig refuses a value the mode does not have and a dialect it
@@ -277,69 +314,80 @@ func validateOnlineSelectors(cfg *Config) error {
 	return nil
 }
 
-// selectorTouchesOnline reports whether a rule selector names the ON family or
-// a rule in it.
+// selectorTouchesOnline reports whether a rule selector names the online
+// category or a rule in it.
 func selectorTouchesOnline(selector string) bool {
-	return strings.HasPrefix(selector, OnlineFamily)
+	return strings.TrimSuffix(selector, "/") == OnlineCategory || lintnames.CategoryOf(selector) == OnlineCategory
 }
 
-// validateGateConfig refuses a gate that names no family and a family none of
-// rules belongs to, so a typo cannot read as a widened gate.
+// validateGateConfig refuses a gate that names no rule and a rule name or
+// category none of rules holds, so a typo cannot read as a widened gate.
 func validateGateConfig(gate *GateConfig, rules []Rule) error {
 	if gate == nil {
 		return nil
 	}
-	if len(gate.Families) == 0 {
-		return fmt.Errorf("gate: families lists nothing, so the section would widen nothing")
+	if len(gate.Rules) == 0 {
+		return fmt.Errorf("gate: rules lists nothing, so the section would widen nothing")
 	}
-	for _, family := range gate.Families {
-		if !isCanonicalRuleCode(family) || !selectorMatchesRule(family, rules) {
-			return fmt.Errorf("gate: family %q matches no registered rule", family)
+	known := knownNames(rules)
+	for _, selector := range gate.Rules {
+		if err := known.ValidateSelector(selector); err != nil {
+			return fmt.Errorf("gate: rule %w", err)
 		}
 	}
 	return nil
 }
 
-// GateFamilies returns the families a policy's gate section names, with the
-// DS family the gate always blocks on first and no family twice.
-func (c *Config) GateFamilies() []string {
-	families := []string{"DS"}
+// GateRules returns the rules and categories a policy's gate section names,
+// preceded by the data-safety rules the gate always blocks on, with the online
+// category after them when the policy requires the online mode, and nothing
+// twice.
+func (c *Config) GateRules() []string {
+	rules := slices.Clone(DefaultGateRules)
 	if c.RequiresOnline() {
 		// The mode is a promise about what the apply does, so its findings
 		// refuse the apply. A policy selecting it and then having to name the
-		// family under `gate` as well would be two ways to say one thing, and
+		// category under `gate` as well would be two ways to say one thing, and
 		// the one that was left out would be a mode that reported and ran.
-		families = append(families, OnlineFamily)
+		rules = append(rules, OnlineCategory)
 	}
 	if c == nil || c.Gate == nil {
-		return families
+		return rules
 	}
-	for _, family := range c.Gate.Families {
-		if !slices.Contains(families, family) {
-			families = append(families, family)
+	for _, selector := range c.Gate.Rules {
+		if !slices.Contains(rules, selector) {
+			rules = append(rules, selector)
 		}
 	}
-	return families
+	return rules
+}
+
+// DefaultGateRules are the rules the apply gate always blocks on: the
+// data-safety rules, which destroy or weaken what a database holds.
+//
+// They are listed by name because no category holds exactly these. The
+// destructive category also holds rules the gate leaves to a lint pass, such
+// as a dropped YDB resource pool, and a category that also held the
+// advisory rules would widen the stop.
+var DefaultGateRules = []string{
+	"destructive/drop-table",
+	"destructive/drop-column",
+	"dependency/drop-column-in-use",
+	"data-dependent/alter-column-type",
+	"integrity/drop-not-null",
+	"integrity/drop-untyped-constraint",
+	"destructive/remove-enum-value",
+	"destructive/drop-object",
+	"destructive/truncate-table",
+	"security/disable-row-level-security",
+	"security/no-force-row-level-security",
 }
 
 func validateRuleConfigs(configs map[string]RuleConfig) error {
 	for _, code := range slices.Sorted(maps.Keys(configs)) {
 		rule := configs[code]
-		if !isCanonicalRuleCode(code) {
-			if rule.Declares() {
-				// A declared rule's code is not decoration: it is what reports
-				// print, what `--disable` selects, and what a `nolint`
-				// directive names. A second naming shape would make a family
-				// prefix such as `DS` ambiguous against a rule that merely
-				// starts with those letters.
-				return fmt.Errorf(
-					"lint rule %q: a declared rule needs a code in the same form as every other "+
-						"rule -- uppercase ASCII letters and digits, such as %q -- because the code "+
-						"is what findings print and what --disable and nolint select; "+
-						"put the readable name in `title`",
-					code, suggestedRuleCode(code))
-			}
-			return invalidRuleSelectorError(code)
+		if err := validateRuleConfigKey(code, rule, configs); err != nil {
+			return err
 		}
 		switch rule.Severity {
 		case "", SeverityInfo, SeverityWarning, SeverityError:
@@ -351,6 +399,51 @@ func validateRuleConfigs(configs map[string]RuleConfig) error {
 				return fmt.Errorf("rule %s has invalid exclude pattern %q: %w", code, pattern, err)
 			}
 		}
+	}
+	return nil
+}
+
+// validateRuleConfigKey refuses a `rules:` key that is not a rule name or
+// category, a key spelled as a rule code, a declared rule whose name is not
+// well formed, and a category written in both of its spellings.
+func validateRuleConfigKey(key string, rule RuleConfig, configs map[string]RuleConfig) error {
+	if rule.Declares() {
+		// A declared rule's name is not decoration: it is what reports print,
+		// what `--disable` selects, and what a `nolint` directive names, so it
+		// has the same form as every other rule's.
+		if lintnames.IsCode(key) {
+			return lintnames.RefuseCode(key)
+		}
+		if !lintnames.WellFormed(key) {
+			return fmt.Errorf(
+				"lint rule %q: a declared rule needs a name in the same form as every other rule -- "+
+					"a category and a rule joined by a slash, such as %q -- because the name "+
+					"is what findings print and what --disable and nolint select; "+
+					"put a longer description in `title`",
+				key, exampleDeclaredRuleName)
+		}
+		return validateDeclaredCategory(key)
+	}
+	if err := lintnames.ValidateGrammar(key); err != nil {
+		return fmt.Errorf("lint rules key %w", err)
+	}
+	if category, found := strings.CutSuffix(key, "/"); found {
+		if _, twice := configs[category]; twice {
+			return fmt.Errorf("lint rules %q and %q name one category; keep one of them", category, key)
+		}
+	}
+	return nil
+}
+
+// exampleDeclaredRuleName is the name refusals show for a declared rule.
+const exampleDeclaredRuleName = "design/no-select-star"
+
+// validateDeclaredCategory refuses a declared rule under a category Ptah
+// does not declare.
+func validateDeclaredCategory(name string) error {
+	if _, declared := lintnames.CategoryFor(lintnames.CategoryOf(name)); !declared {
+		return fmt.Errorf("lint rule %q: %q is not a rule category; the categories are %s",
+			name, lintnames.CategoryOf(name), strings.Join(lintnames.CategoryNames(), ", "))
 	}
 	return nil
 }
@@ -373,43 +466,40 @@ func validateExcludePattern(pattern string) error {
 	return err
 }
 
+// validateConfiguredRuleSelectors refuses a configured selector that reaches
+// no rule the run registers: a name or category the run has no rule for, such
+// as a provider's rule linted without the provider, is refused rather than
+// read as a rule turned off.
 func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {
-	selectors := append(slices.Sorted(maps.Keys(opts.RuleConfigs)), opts.Disabled...)
-	for _, selector := range selectors {
-		if selector != "" && !selectorMatchesRule(selector, rules) {
-			return fmt.Errorf("rule selector %q does not match any registered rule", selector)
+	known := knownNames(rules)
+	for _, selector := range opts.Disabled {
+		if selector == "" {
+			continue
+		}
+		if _, err := known.Resolve(selector); err != nil {
+			return fmt.Errorf("rule selector %w", err)
+		}
+	}
+	configured := lintnames.NewSet("lint", append(known.Names(), sqllint.CatalogIDs()...))
+	for _, key := range slices.Sorted(maps.Keys(opts.RuleConfigs)) {
+		if _, err := configured.Resolve(key); err != nil {
+			return fmt.Errorf("rule selector %w", err)
 		}
 	}
 	return nil
 }
 
-// selectorMatchesRule reports whether a configured selector reaches a rule.
-//
-// The Atlas spelling counts. A user reading the Atlas documentation writes
-// PG301, and refusing it as unknown told them their code does not exist when
-// what it does not have is a rule of its own (stokaro/ptah#1631).
-func selectorMatchesRule(selector string, rules []Rule) bool {
-	for _, candidate := range expandAtlasCodeSelectors([]string{selector}) {
-		for _, rule := range rules {
-			if strings.HasPrefix(rule.Code, candidate) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
+// validateRuleSelectors refuses a selector that is not a rule name or
+// category, judged by form alone, and one spelled as a rule code. A
+// misspelled name is refused here or against the rules of the run, rather
+// than matched against nothing, which would read as a rule turned off.
 func validateRuleSelectors(selectors []string) error {
 	for _, selector := range selectors {
-		if selector != "" && !isCanonicalRuleCode(selector) {
-			return invalidRuleSelectorError(selector)
+		if err := lintnames.ValidateGrammar(selector); err != nil {
+			return fmt.Errorf("rule selector %w", err)
 		}
 	}
 	return nil
-}
-
-func invalidRuleSelectorError(selector string) error {
-	return fmt.Errorf("rule selector %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", selector)
 }
 
 // servedBy is the target resolver of a lint runtime that serves targets, such

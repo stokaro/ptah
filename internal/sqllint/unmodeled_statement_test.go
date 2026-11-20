@@ -18,13 +18,13 @@ import (
 // produced no findings and exit 0. No rule had looked at any of them, and the
 // result was indistinguishable from a file that passed.
 //
-// The finding is SQL004 and not SQL002. SQL002 says the PARSER does not model a
+// The finding is coverage/unanalyzed-statements and not coverage/unsupported-statement. coverage/unsupported-statement says the PARSER does not model a
 // statement, at error severity; every kind below is modeled exactly as intended
 // -- CREATE POLICY has its own test asserting it lints clean -- and simply has
 // no rule looking at it.
 //
 // The rows read as CockroachDB, whose server keeps long names whole. On
-// PostgreSQL, DDL003 and DDL004 judge the names a view, a sequence or an ALTER
+// PostgreSQL, naming/identifier-too-long and naming/identifier-collision judge the names a view, a sequence or an ALTER
 // TABLE declares; TestLintSource_DeclaredNamesAreAnalyzedWhereTheServerCutsThem
 // holds that.
 func TestLintSource_AFileOfUnanalyzedStatementsIsNotClean(t *testing.T) {
@@ -92,7 +92,7 @@ func TestLintSource_TheUnanalyzedFindingIsOnePerFile(t *testing.T) {
 // TestLintSource_AnAnalyzedStatementStaysSilent is the control the test above
 // needs.
 //
-// Without it, answering every statement with SQL002 would pass: a rule that
+// Without it, answering every statement with coverage/unsupported-statement would pass: a rule that
 // reports everything is as useless as one that reports nothing, and it would
 // bury the findings that mean something.
 func TestLintSource_AnAnalyzedStatementStaysSilent(t *testing.T) {

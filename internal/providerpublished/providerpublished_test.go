@@ -1,6 +1,7 @@
 package providerpublished_test
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func targeting(rules []lintext.Rule, name string) []lintext.Rule {
 }
 
 func (servingYDB) LintRules(target string) ([]lintext.Rule, error) {
-	return []lintext.Rule{{Code: "YD101", Title: "served by the runtime", Severity: lintext.Error, Targets: []string{"ydb"}}}, nil
+	return []lintext.Rule{{Name: "capability/unique-index-on-existing-table", Title: "served by the runtime", Severity: lintext.Error, Targets: []string{"ydb"}}}, nil
 }
 
 // published is what a rule list says on the documentation page.
@@ -71,7 +72,7 @@ type published struct {
 func publishedOf(rules []lintext.Rule) []published {
 	out := make([]published, 0, len(rules))
 	for _, rule := range rules {
-		out = append(out, published{Code: rule.Code, Title: rule.Title, Severity: rule.Severity, Targets: rule.Targets,
+		out = append(out, published{Code: rule.Name, Title: rule.Title, Severity: rule.Severity, Targets: rule.Targets,
 			AppliesToDown: rule.AppliesToDown, Subsumes: rule.Subsumes})
 	}
 	return out
@@ -97,7 +98,7 @@ func TestDescriptions_RecordTheOfficialProviders(t *testing.T) {
 }
 
 // The records speak for Spanner and YDB, which the bundle does not serve: every
-// rule targets one of the two, the SP family Spanner and the YD family YDB.
+// rule targets one of the two.
 // Over a runtime that serves YDB only the Spanner record speaks, and over one
 // that serves both, nothing does.
 func TestLintRules_RecordSpeaksForAnEngineTheBundleDoesNotServe(t *testing.T) {
@@ -110,11 +111,11 @@ func TestLintRules_RecordSpeaksForAnEngineTheBundleDoesNotServe(t *testing.T) {
 	servedBoth, err := providerpublished.LintRules(newServingBoth(c))
 	c.Assert(err, qt.IsNil)
 
-	families := make(map[string][]string)
+	engines := make(map[string][]string)
 	for _, rule := range recorded {
-		families[rule.Code[:2]] = rule.Targets
+		engines[rule.Targets[0]] = rule.Targets
 	}
-	c.Assert(families, qt.DeepEquals, map[string][]string{"SP": {"spanner"}, "YD": {"ydb"}})
+	c.Assert(engines, qt.DeepEquals, map[string][]string{"spanner": {"spanner"}, "ydb": {"ydb"}})
 	c.Assert(publishedOf(servedYDB), qt.DeepEquals, publishedOf(targeting(recorded, "spanner")))
 	c.Assert(targeting(recorded, "spanner"), qt.Not(qt.HasLen), 0)
 	c.Assert(servedBoth, qt.HasLen, 0)
@@ -130,7 +131,9 @@ func TestLintRuntime_RestoresTheRulesOfAnEngineTheRuntimeDoesNotServe(t *testing
 	own, err := bundled.LintRules("")
 	qt.New(t).Assert(err, qt.IsNil)
 	every := append(slices.Clone(own), recorded...)
-	slices.SortFunc(every, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
+	slices.SortFunc(every, func(a, b lintext.Rule) int {
+		return cmp.Or(strings.Compare(a.Name, b.Name), slices.Compare(a.Targets, b.Targets))
+	})
 	for _, row := range []struct {
 		name, target string
 		want         []lintext.Rule
@@ -180,7 +183,7 @@ func TestLintRuntime_FailurePath_ACodeBothPublish(t *testing.T) {
 	rules, err := runtime.LintRules("")
 
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
-	c.Assert(err, qt.ErrorMatches, `.*lint rule YD\d+ is published by the runtime and by a recorded provider`)
+	c.Assert(err, qt.ErrorMatches, `.*lint rule [a-z/-]+ is published by the runtime and by a recorded provider for one target or at another severity`)
 	c.Assert(rules, qt.IsNil)
 }
 

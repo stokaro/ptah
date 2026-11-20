@@ -12,7 +12,7 @@ import (
 func definerRoutineWithoutSearchPathRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:          "PG312P",
+			Name:          "security/definer-without-search-path",
 			Title:         "SECURITY DEFINER routine does not pin search_path",
 			Severity:      lintext.Warning,
 			Targets:       []string{"postgres"},
@@ -54,7 +54,7 @@ func postgresRules() []lintkit.Rule {
 func postgresCreateIndexRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG101",
+			Name:     "locking/create-index",
 			Title:    "index built with a table lock",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},
@@ -72,7 +72,7 @@ func postgresCreateIndexRule() lintkit.Rule {
 	}
 }
 
-// postgresLockingIndexBuilds returns the CREATE INDEX statements PG101
+// postgresLockingIndexBuilds returns the CREATE INDEX statements locking/create-index
 // reports, and it is also the rule's answer to which statements want the
 // starting state. One predicate for both, because a statement requested but
 // never reported costs a dev-database read for nothing, and one reported but
@@ -82,7 +82,7 @@ func postgresCreateIndexRule() lintkit.Rule {
 // empty table, so there is no lock hazard. A CONCURRENTLY build takes no lock
 // that blocks writes, and neither does a TimescaleDB per-chunk build on the
 // table as a whole; see [txrequire.PerChunkIndexBuild]. Both are refused inside
-// a transaction, which PG103 and PG103P report.
+// a transaction, which transaction/concurrent-index and transaction/per-chunk-index report.
 func postgresLockingIndexBuilds(file *lintkit.File) []int {
 	if !file.IsUp {
 		return nil
@@ -105,7 +105,7 @@ func postgresLockingIndexBuilds(file *lintkit.File) []int {
 		// ON ONLY on a partitioned table creates the parent's index alone,
 		// invalid until each partition's index is attached, and reads no row:
 		// measured on PostgreSQL 18.6, 11 ms beside a 5.3 s full build, with an
-		// INSERT during it taking 8 ms. It is the first step of the remedy PG108
+		// INSERT during it taking 8 ms. It is the first step of the remedy locking/partitioned-index
 		// names, so reporting it would flag the advice.
 		if only && file.Baseline.Partitioned(target.Normalized) {
 			continue
@@ -115,7 +115,7 @@ func postgresLockingIndexBuilds(file *lintkit.File) []int {
 	return indexes
 }
 
-// postgresLockingIndexAdvice is PG101's message for one statement: the
+// postgresLockingIndexAdvice is locking/create-index's message for one statement: the
 // ordinary advice, or the hypertable advice when the starting state says the
 // table is one.
 //
@@ -152,7 +152,7 @@ func postgresLockingIndexAdvice(file *lintkit.File, stmt *lintext.Statement) str
 // source spelling and the normalized one, and whether the statement names it
 // ON ONLY, which on a partitioned table builds the parent's index alone.
 //
-// PG101 and PG108 both read the target, and they must place it the same way:
+// locking/create-index and locking/partitioned-index both read the target, and they must place it the same way:
 // a statement one of them resolved and the other did not is reported twice, or
 // not at all. The word after ON is not the table in either of these spellings:
 // it is `ONLY` in `ON ONLY m` and `PUBLIC` in `ON public.m`.
@@ -173,7 +173,7 @@ func createIndexTarget(w, sourceWords []string) (lintkit.TableReference, bool) {
 }
 
 func postgresEnumAddValueRule() lintkit.Rule {
-	return postgresStatementRule("PG102", "enum value added inside a transaction", func(stmt *lintext.Statement) (bool, string) {
+	return postgresStatementRule("transaction/add-enum-value", "enum value added inside a transaction", func(stmt *lintext.Statement) (bool, string) {
 		if !lintkit.HasWordPrefix(stmt.Words, "ALTER", "TYPE") || !lintkit.HasWordSeq(stmt.Words, "ADD", "VALUE") {
 			return false, ""
 		}
@@ -184,7 +184,7 @@ func postgresEnumAddValueRule() lintkit.Rule {
 func postgresConcurrentIndexRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG103",
+			Name:     "transaction/concurrent-index",
 			Title:    "concurrent index operation in a transactional migration",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},
@@ -206,13 +206,13 @@ func postgresConcurrentIndexRule() lintkit.Rule {
 	}
 }
 
-// postgresPerChunkIndexInTransactionRule is PG103 for TimescaleDB's per-chunk
+// postgresPerChunkIndexInTransactionRule is transaction/concurrent-index for TimescaleDB's per-chunk
 // index build: WITH (timescaledb.transaction_per_chunk) commits one transaction
 // per chunk, so TimescaleDB refuses it inside a transaction block, the same way
 // PostgreSQL refuses CONCURRENTLY (SQLSTATE 25001, measured on TimescaleDB
 // 2.30.1 over PostgreSQL 18.6).
 //
-// It is a rule of its own rather than a wider PG103 because PG103 reports the
+// It is a rule of its own rather than a wider transaction/concurrent-index because transaction/concurrent-index reports the
 // Atlas check for a concurrent operation without the txmode header, and a
 // per-chunk build is not a concurrent operation. Folding it in would put a
 // TimescaleDB statement under an Atlas identifier that does not describe it,
@@ -220,12 +220,12 @@ func postgresConcurrentIndexRule() lintkit.Rule {
 //
 // The recognition is [txrequire.PerChunkIndexBuild], the predicate the
 // migrator's transaction preflight uses, so a file this reports is the file
-// `migrations up` refuses, and a statement PG101 leaves alone as the per-chunk
+// `migrations up` refuses, and a statement locking/create-index leaves alone as the per-chunk
 // remedy is the statement this reports when it sits in a transaction.
 func postgresPerChunkIndexInTransactionRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG103P",
+			Name:     "transaction/per-chunk-index",
 			Title:    "per-chunk index build in a transactional migration",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},
@@ -249,12 +249,12 @@ func postgresPerChunkIndexInTransactionRule() lintkit.Rule {
 }
 
 func postgresAddPrimaryKeyRule() lintkit.Rule {
-	return postgresAlterRule("PG104", "primary key added with an access-exclusive lock", lintkit.ScanAddPrimaryKey,
+	return postgresAlterRule("locking/add-primary-key", "primary key added with an access-exclusive lock", lintkit.ScanAddPrimaryKey,
 		"adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows; build a supporting unique index concurrently first, then attach it")
 }
 
 func postgresAddUniqueConstraintRule() lintkit.Rule {
-	return postgresAlterRule("PG105", "unique constraint added with an access-exclusive lock", scanAddUniqueConstraint,
+	return postgresAlterRule("locking/add-unique-constraint", "unique constraint added with an access-exclusive lock", scanAddUniqueConstraint,
 		"adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates existing rows; build a unique index concurrently first when the table is populated")
 }
 
@@ -267,7 +267,7 @@ func postgresAddUniqueConstraintRule() lintkit.Rule {
 // table reported as clean -- including one Ptah generates itself, whenever the
 // forward statement was not a concurrent build.
 func postgresDropIndexRule() lintkit.Rule {
-	rule := postgresStatementRule("PG106", "index dropped with a table lock", func(stmt *lintext.Statement) (bool, string) {
+	rule := postgresStatementRule("locking/drop-index", "index dropped with a table lock", func(stmt *lintext.Statement) (bool, string) {
 		if !lintkit.HasWordPrefix(stmt.Words, "DROP", "INDEX") || slices.Contains(stmt.Words, "CONCURRENTLY") {
 			return false, ""
 		}
@@ -278,7 +278,7 @@ func postgresDropIndexRule() lintkit.Rule {
 }
 
 func postgresColumnAlignmentRule() lintkit.Rule {
-	return postgresStatementRule("PG110", "non-optimal column alignment", func(stmt *lintext.Statement) (bool, string) {
+	return postgresStatementRule("design/column-alignment", "non-optimal column alignment", func(stmt *lintext.Statement) (bool, string) {
 		if !scanCreateTableMixedAlignment(stmt.Words) {
 			return false, ""
 		}
@@ -287,11 +287,11 @@ func postgresColumnAlignmentRule() lintkit.Rule {
 }
 
 func postgresVolatileDefaultRule() lintkit.Rule {
-	return postgresAlterRule("PG302", "volatile default rewrites existing rows", scanAddColumnWithVolatileDefault,
+	return postgresAlterRule("rewrite/volatile-default", "volatile default rewrites existing rows", scanAddColumnWithVolatileDefault,
 		"adding a column with a volatile DEFAULT rewrites or evaluates every existing row; add the column first, backfill in batches, then set the default")
 }
 
-// PG305 and PG306 advise adding the constraint NOT VALID and validating it
+// locking/add-check and locking/add-foreign-key advise adding the constraint NOT VALID and validating it
 // separately, so the form they recommend is not a finding: each reports only
 // a clause that validates the existing rows as it adds the constraint
 // (stokaro/ptah#3502). Measured on PostgreSQL 18.6 and 13.23 over a table with
@@ -302,22 +302,22 @@ func postgresVolatileDefaultRule() lintkit.Rule {
 // without NOT VALID refuses the violating row and blocks writes to the table,
 // and for a foreign key to the referenced table as well.
 func postgresAddCheckRule() lintkit.Rule {
-	return postgresAlterRule("PG305", "check constraint validates existing rows", scanAddValidatedCheck,
+	return postgresAlterRule("locking/add-check", "check constraint validates existing rows", scanAddValidatedCheck,
 		"adding a CHECK constraint validates existing rows and can hold locks; add it NOT VALID first, then validate separately")
 }
 
 func postgresAddForeignKeyRule() lintkit.Rule {
-	return postgresAlterRule("PG306", "foreign key validates existing rows", scanAddValidatedForeignKey,
+	return postgresAlterRule("locking/add-foreign-key", "foreign key validates existing rows", scanAddValidatedForeignKey,
 		"adding a foreign key validates existing rows and can block writes on both tables; add it NOT VALID first, then validate separately")
 }
 
 func postgresSetPersistenceRule() lintkit.Rule {
-	return postgresAlterRule("PG307", "table persistence changed", scanSetTablePersistence,
+	return postgresAlterRule("rewrite/set-persistence", "table persistence changed", scanSetTablePersistence,
 		"changing LOGGED/UNLOGGED rewrites the table and takes heavyweight locks; schedule it as a maintenance operation")
 }
 
 func postgresCreateTriggerRule() lintkit.Rule {
-	return postgresStatementRule("PG308", "trigger added with a write-blocking lock", func(stmt *lintext.Statement) (bool, string) {
+	return postgresStatementRule("locking/create-trigger", "trigger added with a write-blocking lock", func(stmt *lintext.Statement) (bool, string) {
 		if !lintkit.HasWordPrefix(stmt.Words, "CREATE", "TRIGGER") {
 			return false, ""
 		}
@@ -326,17 +326,17 @@ func postgresCreateTriggerRule() lintkit.Rule {
 }
 
 func postgresAddStoredGeneratedRule() lintkit.Rule {
-	return postgresAlterRule("PG309", "stored generated column rewrites rows", lintkit.ScanAddStoredGeneratedColumn,
+	return postgresAlterRule("rewrite/add-stored-generated-column", "stored generated column rewrites rows", lintkit.ScanAddStoredGeneratedColumn,
 		"adding a STORED generated column computes and stores a value for every existing row; plan the rewrite and lock impact")
 }
 
 func postgresAddIdentityRule() lintkit.Rule {
-	return postgresAlterRule("PG310", "identity column rewrites rows", scanAddIdentityColumn,
+	return postgresAlterRule("rewrite/add-identity-column", "identity column rewrites rows", scanAddIdentityColumn,
 		"adding an identity column can rewrite existing rows and requires sequence ownership changes; use a staged nullable column path on populated tables")
 }
 
 func postgresSetAccessMethodRule() lintkit.Rule {
-	return postgresAlterRule("PG311", "table access method changed", scanSetAccessMethod,
+	return postgresAlterRule("rewrite/set-access-method", "table access method changed", scanSetAccessMethod,
 		"changing a table's access method rewrites the table; schedule it as a maintenance operation")
 }
 
@@ -352,7 +352,7 @@ func postgresAlterRule(code, title string, scan func([]string) bool, message str
 func postgresStatementRule(code, title string, check func(*lintext.Statement) (bool, string)) lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     code,
+			Name:     code,
 			Title:    title,
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},

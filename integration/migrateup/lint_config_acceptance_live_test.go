@@ -36,7 +36,7 @@ func TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration(t *testin
 
 	dir := t.TempDir()
 	writeLintGateMigration(c, dir, lint.ConfigFileName, `rules:
-  DS103:
+  data-dependent/alter-column-type:
     severity: error
 `)
 	writeLintGateMigration(c, dir, "0000000001_init.up.sql", fmt.Sprintf("CREATE TABLE %s (id SERIAL PRIMARY KEY, email VARCHAR(255));\n", tableName))
@@ -55,10 +55,10 @@ func TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration(t *testin
 	})
 
 	err = cmd.Execute()
-	c.Assert(err, qt.ErrorMatches, "(?s).*pending migrations contain destructive statements.*DS103.*error.*")
+	c.Assert(err, qt.ErrorMatches, "(?s).*pending migrations contain destructive statements.*data-dependent/alter-column-type.*error.*")
 
 	writeLintGateMigration(c, dir, lint.ConfigFileName, `rules:
-  DS103:
+  data-dependent/alter-column-type:
     severity: warning
 `)
 	stdout.Reset()
@@ -100,7 +100,7 @@ func TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable(t *testing.T) {
 
 	dir := t.TempDir()
 	writeLintGateMigration(c, dir, lint.ConfigFileName, `rules:
-  DS103:
+  data-dependent/alter-column-type:
     severity: warning
 `)
 	writeLintGateMigration(c, dir, "0000000001_init.up.sql", fmt.Sprintf("CREATE TABLE %s (id SERIAL PRIMARY KEY, email VARCHAR(255));\n", tableName))
@@ -121,7 +121,7 @@ func TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable(t *testing.T) {
 	})
 
 	err = cmd.Execute()
-	c.Assert(err, qt.ErrorMatches, "(?s).*pending migrations contain destructive statements.*DS101.*")
+	c.Assert(err, qt.ErrorMatches, "(?s).*pending migrations contain destructive statements.*destructive/drop-table.*")
 
 	var tableExists bool
 	err = conn.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", "public."+tableName).Scan(&tableExists)

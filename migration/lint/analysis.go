@@ -15,10 +15,10 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
-	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/filetx"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/repeatableset"
@@ -65,7 +65,7 @@ func loadAnalyzableSources(
 type CompatibilityProfile string
 
 const (
-	// CompatibilityProfileNative preserves Ptah rule codes, directives, and
+	// CompatibilityProfileNative preserves Ptah rule names, directives, and
 	// safety behavior. It is the zero value and the default for every native
 	// API and command.
 	CompatibilityProfileNative CompatibilityProfile = ""
@@ -107,6 +107,9 @@ type FindingContext struct {
 
 // Finding is one rule hit in one migration file.
 type Finding struct {
+	// Rule is the name of the rule that reported the finding, its identity:
+	// `category/name`, such as `destructive/drop-table`. It is the spelling a
+	// selector uses; [SelectorSelects] says how one matches.
 	Rule     string   `json:"rule"`
 	Title    string   `json:"title"`
 	Severity Severity `json:"severity"`
@@ -154,7 +157,7 @@ type Statement struct {
 	// reads Target.Capabilities; see [Target].
 	Target          Target
 	sourceWords     []string
-	suppressedRules []atlaslint.Target
+	suppressedRules []noLintTarget
 	// effects are the facts the statement's owner reported about it; see
 	// [lintext.Effect].
 	effects []lintext.Effect
@@ -285,7 +288,7 @@ type File struct {
 	// read the starting state which qualifier names the schema it was read
 	// from ([stateRef]).
 	reviewed        schemaScope
-	suppressedRules []atlaslint.Target
+	suppressedRules []noLintTarget
 	// compatibility is the profile this run was started with. A rule reads it
 	// when the two command surfaces model the same statement differently; see
 	// [renamedNames] for the one construct where they do.
@@ -299,9 +302,9 @@ type File struct {
 	// owners are the owners whose syntax the file's statements carry, the
 	// SQL set of the run's runtime.
 	owners sqlext.Set
-	// registered is the set of rule codes this run compares selectors
-	// against, so a selector that names one of them selects it alone.
-	registered map[string]struct{}
+	// atlasSelectors reads this file's `atlas:nolint` comments under the
+	// compatibility profile; see [Options.AtlasSelectors].
+	atlasSelectors AtlasSelectors
 	// naming is the project's naming convention, compiled, or nil when the
 	// run configured none.
 	naming *namingPolicy
@@ -404,7 +407,7 @@ func (a Analysis) BaselineVersions() []int64 {
 }
 
 // UnmetInputs returns every rule that asked for an analyzer input this run did
-// not supply, ordered by file and then by rule code.
+// not supply, ordered by file and then by rule name.
 //
 // It is empty for a run that gave every rule what it asked for, which is every
 // run whose second pass had a baseline and every run with nothing to resolve.
@@ -588,7 +591,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	})
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	generatedAtStart := lintkit.NewStates(lintext.Baseline{Columns: opts.GeneratedAtStart})
-	registered := registeredCodes(rules)
+	known := knownNames(rules)
 	// Validated above, so a second compile cannot fail here.
 	naming, _ := compileNamingConfig(opts.Naming)
 	opts.RuleConfigs = withNamingSeverity(opts.RuleConfigs, opts.Naming)
@@ -610,7 +613,8 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 			opts.Compatibility,
 			baseline,
 			dependents,
-			registered,
+			known,
+			opts.AtlasSelectors,
 			naming,
 			repeatables,
 			orderKeys,
@@ -628,13 +632,15 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return Analysis{}, err
 	}
 	withOwners(files, runtime.SQL())
-	attachStatements(files, split, opts, target, registered, scope)
+	if err := attachStatements(files, split, opts, target, known, scope); err != nil {
+		return Analysis{}, err
+	}
 	markAloneOutsideATransaction(files, opts)
-	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
+	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target)
 	if err != nil {
 		return Analysis{}, err
 	}
-	rules = owners.bind(rules)
+	rules = owners.bind(rules, opts.Dialect)
 
 	var findings []Finding
 	for i := range files {
@@ -666,7 +672,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 }
 
 // LintFS lints every *.sql file under fsys and returns findings ordered by
-// file, line, and rule code. Call [AnalyzeFS] when prepared files or the source
+// file, line, and rule name. Call [AnalyzeFS] when prepared files or the source
 // snapshot are also needed; option validation and the empty-directory behavior
 // are [AnalyzeFS]'s.
 func LintFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) ([]Finding, error) {
@@ -808,7 +814,8 @@ func prepareFile(
 	compatibility CompatibilityProfile,
 	baseline map[int64]lintkit.State,
 	dependents map[int64]baselineDependents,
-	registered map[string]struct{},
+	known lintnames.Set,
+	atlasSelectors AtlasSelectors,
 	naming *namingPolicy,
 	repeatables map[string]struct{},
 	orderKeys map[string]int64,
@@ -856,13 +863,13 @@ func prepareFile(
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat || ptahRepeatable,
 		compatibility:  compatibility,
 		dialect:        dialect,
-		registered:     registered,
+		atlasSelectors: atlasSelectors,
 		naming:         naming,
 		baseline:       baseline[key],
 		dependents:     dependents[key],
 	}
 	if compatibility == CompatibilityProfileAtlas {
-		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)
+		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw, atlasSelectors)
 	}
 	switch {
 	case atlasFormat:
@@ -1003,15 +1010,16 @@ func unjudgedStatements(files []File, split splitOutcome) []UnjudgedStatement {
 
 // attachStatements gives each file that holds statements its share of a
 // split, reads the suppression directives above each statement, and models
-// an up file's schema changes.
+// an up file's schema changes. It refuses a directive naming a rule name or
+// category migration lint does not know, at the statement it sits above.
 func attachStatements(
 	files []File,
 	split splitOutcome,
 	opts Options,
 	target Target,
-	registered map[string]struct{},
+	known lintnames.Set,
 	scope schemaScope,
-) {
+) error {
 	dialect, compatibility, unparsed := opts.Dialect, opts.Compatibility, opts.Unparsed
 	opening := openingFile(files)
 	next := 0
@@ -1024,9 +1032,13 @@ func attachStatements(
 		for index, statement := range split.files[next] {
 			statement.Line += file.lineOffset
 			file.contract = append(file.contract, statement)
-			var suppressed []atlaslint.Target
+			var suppressed []noLintTarget
 			for _, comment := range statement.Comments {
-				suppressed = append(suppressed, parseNoLintDirective(comment, compatibility, registered)...)
+				rules, err := parseNoLintDirective(comment, compatibility, known, opts.AtlasSelectors)
+				if err != nil {
+					return fmt.Errorf("%s: the comment above line %d: %w", file.Path, statement.Line, err)
+				}
+				suppressed = append(suppressed, rules...)
 			}
 			var routine *RoutineDefinition
 			if statement.Routine != nil {
@@ -1055,6 +1067,7 @@ func attachStatements(
 			file.stateDecided, file.changed = changes.decided, changes.all
 		}
 	}
+	return nil
 }
 
 // unparsedReason returns why the parser could not read a statement in scope, and

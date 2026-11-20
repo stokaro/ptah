@@ -1107,9 +1107,9 @@ file, exactly as any other command reaching the same URL would.
 - **Provider requirements in `ptah sql lint`.** A provider that judges
   `lint.statement-facts` names the capability key each statement needs, and
   `sql lint` compares it with the target's capabilities: a key the target
-  answers false is CAP001. Ptah declares release lines only for its own
+  answers false is capability/missing. Ptah declares release lines only for its own
   engines, so on another engine no key is answered offline, and a requirement
-  is reported as unexamined (SQL004) rather than as unavailable.
+  is reported as unexamined (coverage/unanalyzed-statements) rather than as unavailable.
 - **Distributed-SQL PostgreSQL-family adapters (#171).**
   `platform.CockroachDB` and `platform.YugabyteDB`
   normalize as distinct dialects but reuse the PostgreSQL planner, renderer,

@@ -193,7 +193,7 @@ func concurrentIndexDropRefsForPolicy(
 // A partitioned parent is excluded rather than refused. Nothing asked for a
 // concurrent build here, PostgreSQL supports no concurrent form for relkind
 // 'p', and the plain CREATE INDEX the exclusion selects is legal SQL that says
-// what it does -- lint reports it as PG101 exactly like any other blocking
+// what it does -- lint reports it as locking/create-index exactly like any other blocking
 // build. Refusing instead would leave a project with a partitioned table unable
 // to generate an index migration at all.
 func concurrentIndexRefsForPopulatedTables(

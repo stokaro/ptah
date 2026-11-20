@@ -32,48 +32,48 @@ const declaredRuleSeverity = SeverityWarning
 
 // compileDeclaredRules turns every declaring entry in configs into a rule.
 //
-// Built-in codes are refused rather than overridden. Allowing a declaration to
-// take a built-in's code would let a project replace a data-safety check with
+// Built-in names are refused rather than overridden. Allowing a declaration to
+// take a built-in's name would let a project replace a data-safety check with
 // an expression that never fires, and the report would still name the built-in
-// code -- so the directory would read as checked by a rule that is not running.
+// rule -- so the directory would read as checked by a rule that is not running.
 func compileDeclaredRules(configs map[string]RuleConfig, builtin []Rule, dialect string) ([]Rule, error) {
 	taken := make(map[string]struct{}, len(builtin))
 	for _, rule := range builtin {
-		taken[rule.Code] = struct{}{}
+		taken[rule.Name] = struct{}{}
 	}
 
 	var declared []Rule
-	for _, code := range slices.Sorted(maps.Keys(configs)) {
-		config := configs[code]
+	for _, name := range slices.Sorted(maps.Keys(configs)) {
+		config := configs[name]
 		if !config.Declares() {
 			continue
 		}
-		if _, exists := taken[code]; exists {
+		if _, exists := taken[name]; exists {
 			return nil, fmt.Errorf(
-				"lint rule %s is already defined; a declared rule needs a code of its own, "+
-					"and configuring the existing one means an entry without `match`", code)
+				"lint rule %s is already defined; a declared rule needs a name of its own, "+
+					"and configuring the existing one means an entry without `match`", name)
 		}
-		rule, err := compileDeclaredRule(code, config, dialect)
+		rule, err := compileDeclaredRule(name, config, dialect)
 		if err != nil {
 			return nil, err
 		}
-		taken[code] = struct{}{}
+		taken[name] = struct{}{}
 		declared = append(declared, rule)
 	}
 	return declared, nil
 }
 
-func compileDeclaredRule(code string, config RuleConfig, dialect string) (Rule, error) {
+func compileDeclaredRule(name string, config RuleConfig, dialect string) (Rule, error) {
 	if strings.TrimSpace(config.Message) == "" {
 		return Rule{}, fmt.Errorf(
 			"lint rule %s declares `match` but no `message`; a finding whose text is its own "+
-				"rule code says what fired and not why it matters", code)
+				"rule name says what fired and not why it matters", name)
 	}
-	expression, err := lintexpr.Compile(code, config.Match)
+	expression, err := lintexpr.Compile(name, config.Match)
 	if err != nil {
 		return Rule{}, err
 	}
-	dialects, err := canonicalDeclaredDialects(code, config.Dialects)
+	dialects, err := canonicalDeclaredDialects(name, config.Dialects)
 	if err != nil {
 		return Rule{}, err
 	}
@@ -84,10 +84,10 @@ func compileDeclaredRule(code string, config RuleConfig, dialect string) (Rule, 
 	}
 	title := strings.TrimSpace(config.Title)
 	if title == "" {
-		title = code
+		title = name
 	}
 	rule := Rule{
-		Code:          code,
+		Name:          name,
 		Title:         title,
 		Severity:      severity,
 		Dialects:      dialects,
@@ -108,15 +108,15 @@ func compileDeclaredRule(code string, config RuleConfig, dialect string) (Rule, 
 		var findings []Finding
 		for i := range file.Statements {
 			statement := &file.Statements[i]
-			if statementSuppressesRule(statement, code) {
+			if statementSuppressesRule(statement, name) {
 				continue
 			}
-			hit, message := evaluateDeclared(expression, code, config.Message, file, statement, dialect)
+			hit, message := evaluateDeclared(expression, name, config.Message, file, statement, dialect)
 			if !hit {
 				continue
 			}
 			findings = append(findings, Finding{
-				Rule:    code,
+				Rule:    name,
 				Title:   title,
 				File:    file.Path,
 				Line:    statement.Line,
@@ -137,12 +137,12 @@ func compileDeclaredRule(code string, config RuleConfig, dialect string) (Rule, 
 // reports nothing at all.
 func evaluateDeclared(
 	expression *lintexpr.Expression,
-	code, message string,
+	name, message string,
 	file *File,
 	statement *Statement,
 	dialect string,
 ) (bool, string) {
-	hit, err := expression.Evaluate(code, lintexpr.Scope{
+	hit, err := expression.Evaluate(name, lintexpr.Scope{
 		SQL:       statement.SQL,
 		Canonical: statement.Canonical,
 		Words:     statement.Words,
@@ -164,7 +164,7 @@ func evaluateDeclared(
 // canonicalDeclaredDialects normalizes the dialect list and refuses an unknown
 // one, so a rule scoped to a misspelled dialect is reported rather than
 // silently never running.
-func canonicalDeclaredDialects(code string, dialects []string) ([]string, error) {
+func canonicalDeclaredDialects(name string, dialects []string) ([]string, error) {
 	if len(dialects) == 0 {
 		return nil, nil
 	}
@@ -174,28 +174,9 @@ func canonicalDeclaredDialects(code string, dialects []string) ([]string, error)
 		if !ok || name == "" {
 			return nil, fmt.Errorf(
 				"lint rule %s is scoped to unsupported dialect %q: expected %s",
-				code, dialect, lintdialect.Expected)
+				name, dialect, lintdialect.Expected)
 		}
 		canonical = append(canonical, name)
 	}
 	return canonical, nil
-}
-
-// suggestedRuleCode turns a name a declaration author is likely to have written
-// into one the rule-code form accepts, so the refusal can show the fix rather
-// than only the rule.
-func suggestedRuleCode(name string) string {
-	var code strings.Builder
-	for _, value := range strings.ToUpper(name) {
-		switch {
-		case value >= 'A' && value <= 'Z':
-			code.WriteRune(value)
-		case value >= '0' && value <= '9' && code.Len() > 0:
-			code.WriteRune(value)
-		}
-	}
-	if code.Len() == 0 {
-		return "RULE1"
-	}
-	return code.String()
 }

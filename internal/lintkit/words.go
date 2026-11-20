@@ -37,7 +37,7 @@ func ContainsWord(w []string, want string) bool {
 // RoutineDefinitionKind names the routine a statement defines, and reports
 // whether it defines one.
 //
-// Anchored on the statement, for the reason DS106 is: a routine body is words,
+// Anchored on the statement, for the reason destructive/remove-enum-value is: a routine body is words,
 // and a scan that walked them would answer for the body rather than about it.
 func RoutineDefinitionKind(w []string) (string, bool) {
 	var rest []string
@@ -541,8 +541,8 @@ func RestatedColumnClause(w, sourceWords []string, i int) (column TableReference
 // RedefinesPrimaryKey reports one statement that drops a primary key
 // and adds another.
 //
-// Both halves in one statement is the point: dropping alone is MY133 and
-// CD103's subject, adding alone is MY132's and PG104's, and the redefinition
+// Both halves in one statement is the point: dropping alone is rewrite/drop-primary-key and
+// integrity/drop-primary-key's subject, adding alone is rewrite/add-primary-key's and locking/add-primary-key's, and the redefinition
 // costs what neither of those reports on its own.
 func RedefinesPrimaryKey(w []string) bool {
 	if !IsAlterTable(w) {

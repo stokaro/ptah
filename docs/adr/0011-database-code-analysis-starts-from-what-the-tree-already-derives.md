@@ -82,13 +82,13 @@ type Finding struct {
 }
 ```
 
-and the rule identifiers are already stable and namespaced by family — thirteen
-of them today: `BC101`, `BC102`, `DD101`, `DS101`, `DS102`, `DS103`, `MF101`,
-`MF102`, `MF103`, `MY101`, `PG101`, `PG103`, `TX101`.
+and the rule identifiers are already stable and namespaced by category, such as
+`rollout/rename`, `data-dependent/add-not-null-column`, `destructive/drop-table`
+and `locking/create-index`.
 
 #1270's "stable rule identifiers" and "findings model" sections therefore
-describe something to extend rather than to invent. A code-analysis family takes
-its own prefix and the existing renderers keep working.
+describe something to extend rather than to invent. A code-analysis category takes
+its own name prefix and the existing renderers keep working.
 
 ## 3. Where the tree already goes further than the epic assumes
 

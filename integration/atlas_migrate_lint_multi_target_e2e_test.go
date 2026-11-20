@@ -49,6 +49,20 @@ func runLintE2EBinary(ctx context.Context, binaryPath string, args ...string) (s
 	return out.String(), errOut.String(), err
 }
 
+// runLintE2EStrictBinary is [runLintE2EBinary] under the strict compatibility
+// policy, the one that prints Atlas check codes in the community binary's
+// report shape. A test that holds ptah-compat to that report byte for byte
+// asks for it; the default surface prints rule names.
+func runLintE2EStrictBinary(ctx context.Context, binaryPath string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Env = strictEnvironment()
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}
+
 // TestAtlasMigrateLintMultiTargetDropE2E covers issue #1074 part 2 against a
 // live PostgreSQL dev database, which is the only place the behavior is
 // reachable end to end: SQLite rejects `DROP TABLE a, b` outright, so the
@@ -143,7 +157,7 @@ func TestAtlasMigrateLintMultiTargetDropE2E(t *testing.T) {
 				"CREATE TABLE mid (id int);\nCREATE TABLE zeta (id int);\nCREATE TABLE alpha (id int);\n")
 			writeLintE2EFile(c, migrationsDir, "2.sql", test.drop)
 
-			stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
+			stdout, stderr, err := runLintE2EStrictBinary(ctx, binaryPath,
 				"migrate", "lint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", replaceDatabaseName(c, dbURL, testDBName),

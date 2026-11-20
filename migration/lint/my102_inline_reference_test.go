@@ -8,7 +8,7 @@ import (
 	"ptah.run/core/platform"
 )
 
-// MY102 is about a clause that means different things on the two engines.
+// side-effect/inline-reference is about a clause that means different things on the two engines.
 // Measured 2026-09-03 against `CREATE TABLE parents (id INT PRIMARY KEY)`,
 // both spellings of a column-level REFERENCES:
 //
@@ -46,7 +46,7 @@ func TestMY102_ReportsBothColumnSpellings(t *testing.T) {
 
 				codes := lintOneDialect(c, dialect, test.sql)
 
-				c.Assert(codes, qt.Contains, "MY102")
+				c.Assert(codes, qt.Contains, "side-effect/inline-reference")
 			})
 		}
 	}
@@ -85,7 +85,7 @@ func TestMY102_LeavesAnEnforcedForeignKeyAlone(t *testing.T) {
 
 				codes := lintOneDialect(c, dialect, test.sql)
 
-				c.Assert(codes, qt.Not(qt.Contains), "MY102")
+				c.Assert(codes, qt.Not(qt.Contains), "side-effect/inline-reference")
 			})
 		}
 	}
@@ -98,5 +98,5 @@ func TestMY102_DoesNotRunOutsideTheMySQLFamily(t *testing.T) {
 	codes := lintOneDialect(c, platform.Postgres,
 		"CREATE TABLE child (a INT REFERENCES parents (id));")
 
-	c.Assert(codes, qt.Not(qt.Contains), "MY102")
+	c.Assert(codes, qt.Not(qt.Contains), "side-effect/inline-reference")
 }

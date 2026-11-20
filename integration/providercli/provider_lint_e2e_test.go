@@ -21,10 +21,10 @@ func TestProviderPublishesAndChecksLintRulesIndependently(t *testing.T) {
 	rules, err := runtime.LintRules("fixture")
 	c.Assert(err, qt.IsNil)
 	c.Assert(rules, qt.HasLen, 2)
-	c.Assert(rules[0].Code, qt.Equals, "FX101")
+	c.Assert(rules[0].Name, qt.Equals, "design/fx101")
 	c.Assert(rules[0].Severity, qt.Equals, lintext.Error)
 	c.Assert(rules[0].Targets, qt.DeepEquals, []string{"fixture"})
-	c.Assert(rules[1].Code, qt.Equals, "FX102")
+	c.Assert(rules[1].Name, qt.Equals, "design/fx102")
 
 	split, err := runtime.SplitStatements(c.Context(), lintext.SplitRequest{Target: "fixture",
 		Sources: []lintext.Source{{Name: "1.sql", SQL: lintMigration, Up: true}}})
@@ -39,12 +39,12 @@ func TestProviderPublishesAndChecksLintRulesIndependently(t *testing.T) {
 
 	result, err := runtime.CheckMigrations(c.Context(), lintext.CheckRequest{
 		Target: lintext.Target{Name: "fixture", Capabilities: capability.Of(make(map[capability.Capability]bool))},
-		Codes:  []string{"FX101"},
+		Names:  []string{"design/fx101"},
 		Files:  []lintext.File{{Name: "1.sql", Up: true, Statements: split.Files[0]}},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Complete, qt.IsTrue)
-	c.Assert(result.Findings, qt.DeepEquals, []lintext.Finding{{Code: "FX101", File: 0, Statement: 1, Message: "DROP TABLE removes every row"}})
+	c.Assert(result.Findings, qt.DeepEquals, []lintext.Finding{{Name: "design/fx101", File: 0, Statement: 1, Message: "DROP TABLE removes every row"}})
 }
 
 func TestProviderLintDiscardsCancellation(t *testing.T) {
@@ -54,7 +54,7 @@ func TestProviderLintDiscardsCancellation(t *testing.T) {
 	cancel()
 	result, err := runtime.CheckMigrations(ctx, lintext.CheckRequest{
 		Target: lintext.Target{Name: "fixture", Capabilities: capability.Of(make(map[capability.Capability]bool))},
-		Codes:  []string{"FX101"},
+		Names:  []string{"design/fx101"},
 	})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(result.Findings, qt.HasLen, 0)
@@ -75,7 +75,7 @@ func TestProviderAnnotatesStatementsASplitWithoutADialect(t *testing.T) {
 	c.Assert(result.Declined, qt.HasLen, 0)
 }
 
-// TestProviderLintReceivesTheTargetTheHostResolved reads back, through FX102,
+// TestProviderLintReceivesTheTargetTheHostResolved reads back, through design/fx102,
 // the server version and the capabilities the host sent. The host resolves
 // both before it asks; the provider judges with what it is given.
 func TestProviderLintReceivesTheTargetTheHostResolved(t *testing.T) {
@@ -85,24 +85,24 @@ func TestProviderLintReceivesTheTargetTheHostResolved(t *testing.T) {
 		Target: lintext.Target{Name: "fixture", Version: "fixture-1", Capabilities: capability.Of(map[capability.Capability]bool{
 			capability.ParameterizedDecimal: true, capability.UniqueIndexOnExistingTable: false,
 		})},
-		Codes: []string{"FX102"},
+		Names: []string{"design/fx102"},
 		Files: []lintext.File{{Name: "1.sql", Up: true}},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Complete, qt.IsTrue)
-	c.Assert(result.Findings, qt.DeepEquals, []lintext.Finding{{Code: "FX102", File: 0, Statement: -1,
+	c.Assert(result.Findings, qt.DeepEquals, []lintext.Finding{{Name: "design/fx102", File: 0, Statement: -1,
 		Message: `checked against fixture server "fixture-1" with 2 capabilities: parameterized_decimal=true unique_index_on_existing_table=false`}})
 }
 
 // TestProviderLintOfARunThatNamesNoTarget is the run the host answers for the
-// provider. Sent on, the fixture would report FX101 on the DROP TABLE and
-// FX102 on the file; refused, the run would fail.
+// provider. Sent on, the fixture would report design/fx101 on the DROP TABLE and
+// design/fx102 on the file; refused, the run would fail.
 func TestProviderLintOfARunThatNamesNoTarget(t *testing.T) {
 	c := qt.New(t)
 	_, runtime := yamlProviderCommand(c, "lint")
 	statements := []lintext.Statement{{Start: 0, End: 28, Line: 1, SQL: "CREATE TABLE a (id INTEGER);"}, {Start: 29, End: 42, Line: 2, SQL: "DROP TABLE a;"}}
 	result, err := runtime.CheckMigrations(c.Context(), lintext.CheckRequest{
-		Codes: []string{"FX101", "FX102"},
+		Names: []string{"design/fx101", "design/fx102"},
 		Files: []lintext.File{{Name: "1.sql", Up: true, Statements: statements}},
 	})
 	c.Assert(err, qt.IsNil)

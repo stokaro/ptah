@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"ptah.run/internal/atlascodes"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
 )
@@ -23,7 +25,9 @@ type PlanLintOptions struct {
 	// RuleConfigs carries the per-rule severities the project's lint policy
 	// declares. It also decides which rules run at all: see [LintPlan].
 	RuleConfigs map[string]lint.RuleConfig
-	// Disabled lists additional rule codes or prefixes to skip.
+	// Disabled lists additional rules to skip, as the compatibility surface
+	// spells them: Ptah rule names and categories, Atlas check codes or
+	// analyzer names.
 	Disabled []string
 }
 
@@ -41,7 +45,8 @@ type PlanLintOptions struct {
 // The statements are linted as a migration file in a scratch directory because
 // the engine reads a filesystem. Nothing is left behind.
 func LintPlan(ctx context.Context, runtime lint.Runtime, statements []string, opts PlanLintOptions) ([]lint.Finding, error) {
-	enabled := lintPlanEnabledCodes(opts.RuleConfigs, opts.Dialect)
+	configs := atlascodes.RuleConfigKeys(opts.RuleConfigs)
+	enabled := lintPlanEnabledSelectors(configs)
 	if len(enabled) == 0 {
 		return nil, nil
 	}
@@ -61,8 +66,8 @@ func LintPlan(ctx context.Context, runtime lint.Runtime, statements []string, op
 
 	findings, err := lint.LintFS(ctx, runtime, os.DirFS(dir), lint.Options{
 		Dialect:     opts.Dialect,
-		Disabled:    append(lintPlanDisabledCodes(rules, enabled), opts.Disabled...),
-		RuleConfigs: opts.RuleConfigs,
+		Disabled:    append(lintPlanDisabledNames(rules, enabled), atlascodes.SelectorList(opts.Disabled)...),
+		RuleConfigs: configs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("lint schema apply plan: %w", err)
@@ -76,41 +81,32 @@ func LintPlan(ctx context.Context, runtime lint.Runtime, statements []string, op
 	return blocking, nil
 }
 
-// lintPlanEnabledCodes returns the non-empty rule code selectors the policy
-// declares.
-func lintPlanEnabledCodes(configs map[string]lint.RuleConfig, dialect string) []string {
+// lintPlanEnabledSelectors returns the non-empty rule selectors the policy
+// declares, as the lint core reads them: a policy entry spelled the Atlas way
+// has already become the rule names it covers, so a rated entry is never
+// left in the disabled set below and an error-rated policy never silently
+// fails to run (stokaro/ptah#1631).
+func lintPlanEnabledSelectors(configs map[string]lint.RuleConfig) []string {
 	enabled := make([]string, 0, len(configs))
-	for code := range configs {
-		if strings.TrimSpace(code) != "" {
-			enabled = append(enabled, code)
+	for selector := range configs {
+		if strings.TrimSpace(selector) != "" {
+			enabled = append(enabled, selector)
 		}
 	}
-	// A policy entry spelled the Atlas way selects the Ptah rule that reports
-	// it. Without this the raw selector matches no registered code, the rule
-	// lands in the DISABLED set below, and an error-rated policy silently never
-	// runs (stokaro/ptah#1631).
-	return lint.ExpandAtlasRuleSelectors(enabled, dialect)
+	return enabled
 }
 
-// lintPlanDisabledCodes lists every rule that no enabled selector covers, so
+// lintPlanDisabledNames lists every rule that no enabled selector covers, so
 // the pass runs exactly the policy's rules.
-func lintPlanDisabledCodes(rules []lint.Rule, enabled []string) []string {
+func lintPlanDisabledNames(rules []lint.Rule, enabled []string) []string {
 	var disabled []string
 	for _, rule := range rules {
-		if !lintPlanRuleEnabled(rules, rule.Code, enabled) {
-			disabled = append(disabled, rule.Code)
+		covered := slices.ContainsFunc(enabled, func(selector string) bool { return lint.SelectorSelects(selector, rule.Name) })
+		if !covered && !slices.Contains(disabled, rule.Name) {
+			disabled = append(disabled, rule.Name)
 		}
 	}
 	return disabled
-}
-
-func lintPlanRuleEnabled(rules []lint.Rule, code string, enabled []string) bool {
-	for _, selector := range enabled {
-		if lint.SelectorSelects(rules, selector, code) {
-			return true
-		}
-	}
-	return false
 }
 
 // FormatPlanLintFindings renders blocking findings for a refusal message.

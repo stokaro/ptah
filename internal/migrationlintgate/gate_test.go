@@ -15,7 +15,7 @@ func TestAnalyze_HappyPath_AppliesPolicy(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
 		lint.ConfigFileName: {
-			Data: []byte("dialect: sqlite\ndisabled-rules:\n  - DS102\n"),
+			Data: []byte("dialect: sqlite\ndisabled-rules:\n  - destructive/drop-column\n"),
 		},
 		"0000000001_drop_column.up.sql": {
 			Data: []byte("ALTER TABLE users DROP COLUMN legacy;\n"),
@@ -48,7 +48,7 @@ func TestAnalyze_FailurePath_InvalidPolicy(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
 		lint.ConfigFileName: {
-			Data: []byte("rules:\n  DS101:\n    exclude:\n      - '[legacy/**'\n"),
+			Data: []byte("rules:\n  destructive/drop-table:\n    exclude:\n      - '[legacy/**'\n"),
 		},
 		"0000000001_drop.up.sql": {
 			Data: []byte("DROP TABLE users;\n"),
@@ -60,7 +60,7 @@ func TestAnalyze_FailurePath_InvalidPolicy(t *testing.T) {
 
 	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 
-	c.Assert(err, qt.ErrorMatches, `.*rule DS101 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
+	c.Assert(err, qt.ErrorMatches, `.*rule destructive/drop-table has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
 	c.Assert(findings, qt.IsNil)
 }
 
@@ -71,11 +71,11 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 	}{
 		{
 			name:   "disabled rule selector",
-			config: "disabled-rules:\n  - ZZ404\n",
+			config: "disabled-rules:\n  - design/zz404\n",
 		},
 		{
 			name:   "configured rule selector",
-			config: "rules:\n  ZZ404:\n    severity: error\n",
+			config: "rules:\n  design/zz404:\n    severity: error\n",
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 
 			_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
-			c.Assert(err, qt.ErrorMatches, `rule selector "ZZ404" does not match any registered rule`)
+			c.Assert(err, qt.ErrorMatches, `.*"design/zz404" is not the name of a .*lint rule; .*`)
 		})
 	}
 }
@@ -97,11 +97,11 @@ func TestLoadPolicy_FailurePath_NonNormalizedExclusionGlob(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
 		lint.ConfigFileName: {
-			Data: []byte("rules:\n  DS101:\n    exclude:\n      - '**/../**'\n"),
+			Data: []byte("rules:\n  destructive/drop-table:\n    exclude:\n      - '**/../**'\n"),
 		},
 	}
 
 	_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
-	c.Assert(err, qt.ErrorMatches, `.*rule DS101 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
+	c.Assert(err, qt.ErrorMatches, `.*rule destructive/drop-table has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
 }

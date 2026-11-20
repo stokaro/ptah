@@ -1003,7 +1003,7 @@ and pipelines share a directory:
   permanent, so a retry with `--allow-dirty` resumes after them. Under the
   default, Ptah refuses a file that controls the transaction it owns before
   running that file. The apply gate and `ptah migrations lint --runner`
-  judge `TX201` by the same runner, `ptah migrations down` rolls a down
+  judge `transaction/explicit-transaction` by the same runner, `ptah migrations down` rolls a down
   file back by it, and `ptah migrations repair` reads the file a dirty
   revision names by it
   ([A directory written for golang-migrate](../rollback/#a-directory-written-for-golang-migrate)).
@@ -1357,7 +1357,7 @@ with `--allow-destructive` after review:
 
 ```text illustration
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
-- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; ...
+- 0000000003_drop_users.up.sql:1 destructive/drop-table error: DROP TABLE permanently deletes table users and every row in it; ...
 ```
 
 The integrity gate is covered in depth on

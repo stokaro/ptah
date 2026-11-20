@@ -30,8 +30,8 @@ func TestLintSource_ReadsAStatementsFirstWordByTheDialect(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findingLines(findings), qt.DeepEquals, []string{
-		"2:1 SQL002 ptah sql lint does not lint INSERT statements yet",
-		"4:1 SQL002 ptah sql lint does not lint INSERT statements yet",
-		`5:14 DDL001 table "nopk" has no primary key`,
+		"2:1 coverage/unsupported-statement ptah sql lint does not lint INSERT statements yet",
+		"4:1 coverage/unsupported-statement ptah sql lint does not lint INSERT statements yet",
+		`5:14 design/no-primary-key table "nopk" has no primary key`,
 	})
 }

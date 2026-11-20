@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
@@ -331,9 +332,7 @@ func runAtlasMigrateLint(
 	// An Atlas directory is listed by file name, as Atlas lists it; a layout
 	// converted from another tool keeps its version order.
 	nameOrder := format == atlasmigrateimport.FormatAtlas
-	text := atlasreport.MigrateLintOptions{
-		Analysis: &report.Analysis, RevisionVersions: revisionVersions, Sources: sources, NameOrder: nameOrder,
-	}
+	text := atlasreport.MigrateLintOptions{AtlasCodes: policy.IsStrictCE(), Analysis: &report.Analysis, RevisionVersions: revisionVersions, Sources: sources, NameOrder: nameOrder}
 	if err != nil {
 		// Before the error goes out, whichever way it goes: a run that
 		// analyzed against a release line nobody named still analyzed against
@@ -376,6 +375,7 @@ func runAtlasMigrateLint(
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateLintFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateLintOptions{
+			AtlasCodes:       policy.IsStrictCE(),
 			Driver:           report.Dialect,
 			URL:              opts.devURL,
 			Dir:              dir,
@@ -431,6 +431,7 @@ func atlasMigrateLintReportOptions(
 		FailOn:        migrationlintreport.FailOnError,
 		Latest:        opts.latest,
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		Atlas:         atlasLintVocabulary(policy),
 		ChangeCount:   policy.LintChangeCount(),
 		// The transaction rules judge a file by the tool its layout is for.
 		TransactionOwner: format.TransactionOwner(),
@@ -697,4 +698,23 @@ func validateAtlasMigrateLintFormat(format string) error {
 		return fmt.Errorf("--format must not be empty")
 	}
 	return nil
+}
+
+// atlasLintVocabulary is how the compatibility surface reads rule selectors.
+// Both policies resolve an Atlas check code or analyzer name through the
+// table. The default policy also honors a Ptah rule name in an `atlas:nolint`
+// comment, which keeps every rule reachable; the strict policy reads it as the
+// community binary does, as a word that matches nothing, and runs only the
+// rules the table maps.
+func atlasLintVocabulary(policy atlascompatpolicy.Policy) *migrationlintreport.AtlasVocabulary {
+	vocabulary := &migrationlintreport.AtlasVocabulary{
+		NoLint:      atlascodes.SuppressedByOrName,
+		Selectors:   atlascodes.SelectorList,
+		RuleConfigs: atlascodes.RuleConfigKeys[migrationlint.RuleConfig],
+	}
+	if policy.IsStrictCE() {
+		vocabulary.NoLint = atlascodes.SuppressedBy
+		vocabulary.Only = atlascodes.Mapped
+	}
+	return vocabulary
 }

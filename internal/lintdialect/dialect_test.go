@@ -348,7 +348,7 @@ func ruleFamilyCoverage(c *qt.C) []ruleDialectCoverage {
 			named := slices.DeleteFunc(slices.Clone(want), func(member string) bool {
 				return !slices.Contains(rule.Dialects, member)
 			})
-			coverages = append(coverages, ruleDialectCoverage{rule: rule.Code, family: family, named: named, want: want})
+			coverages = append(coverages, ruleDialectCoverage{rule: rule.Name, family: family, named: named, want: want})
 		}
 	}
 	return coverages
@@ -367,7 +367,7 @@ func ruleFamilyCoverage(c *qt.C) []ruleDialectCoverage {
 //
 // This does not change what Compatible accepts. A policy's dialect never
 // decides which rules run -- the dialect the connection reports does -- so a
-// MariaDB database runs MY146 whether the policy says mariadb or mysql, and
+// MariaDB database runs destructive/drop-system-versioning whether the policy says mariadb or mysql, and
 // refusing that policy would diagnose nothing. What the split does change is
 // that "the two members select an identical rule set" is no longer true, and
 // the exceptions are written down here one at a time so a third one has to be
@@ -377,9 +377,10 @@ func TestBuiltInRules_MySQLFamilyMembersAreSplitOnlyWhereMeasured(t *testing.T) 
 
 	// The rules that name part of the family, and the member each names.
 	measured := []string{
-		"MY145=" + platform.MySQL,
-		"MY146=" + platform.MariaDB,
+		"locking/enforce-check=" + platform.MySQL,
+		"destructive/drop-system-versioning=" + platform.MariaDB,
 	}
+	slices.Sort(measured)
 
 	mysqlFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
 		return cov.family != platform.MySQL
@@ -429,14 +430,14 @@ func TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured(t *testing.
 	c := qt.New(t)
 
 	// The rules measured on the wire-compatible engines, and the engines each
-	// was measured on. PG303: SET NOT NULL fails on a NULL row on CockroachDB
-	// v25.2 and YugabyteDB 2025.1 alike (stokaro/ptah#2958). TX201 reports
+	// was measured on. locking/set-not-null: SET NOT NULL fails on a NULL row on CockroachDB
+	// v25.2 and YugabyteDB 2025.1 alike (stokaro/ptah#2958). transaction/explicit-transaction reports
 	// what Ptah's migrator refuses before a statement reaches the server, on
 	// every engine it applies, so its claim is the migrator's and not
 	// PostgreSQL's (stokaro/ptah#6004).
 	measured := []string{
-		"PG303=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
-		"TX201=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
+		"locking/set-not-null=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
+		"transaction/explicit-transaction=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
 	}
 
 	postgresFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {

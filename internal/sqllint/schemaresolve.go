@@ -19,7 +19,7 @@ const (
 	// statement in front of it. A CREATE INDEX names a table and columns
 	// declared somewhere else, so without the schema the linter could only say
 	// the statement parses (stokaro/ptah#1270, criterion 7).
-	RuleIndexNamesUnknownColumn = "DDL002"
+	RuleIndexNamesUnknownColumn = "correctness/index-on-undeclared-column"
 )
 
 // indexColumnRule reports an index naming a column its table does not have.

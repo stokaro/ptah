@@ -26,13 +26,13 @@ func TestAnalyzeFS_ADefinerRoutineWithoutSearchPathIsReported(t *testing.T) {
 		{
 			name:     "a definer function that pins nothing",
 			sql:      "CREATE FUNCTION f() RETURNS int LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;\n",
-			wantRule: []string{"AC101", "PG312P"},
+			wantRule: []string{"coverage/routine-body", "security/definer-without-search-path"},
 		},
 		{
 			// The control: the remedy the rule asks for silences it.
 			name:     "the same routine, pinned",
 			sql:      "CREATE FUNCTION f() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$ SELECT 1 $$;\n",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			// The trap: a BEGIN ATOMIC body is words, and this one carries its
@@ -40,7 +40,7 @@ func TestAnalyzeFS_ADefinerRoutineWithoutSearchPathIsReported(t *testing.T) {
 			name: "a definer routine whose BODY contains SET",
 			sql: "CREATE FUNCTION f() RETURNS void LANGUAGE SQL SECURITY DEFINER\n" +
 				"BEGIN ATOMIC UPDATE t SET n = 1; END;\n",
-			wantRule: []string{"AC101", "PG312P"},
+			wantRule: []string{"coverage/routine-body", "security/definer-without-search-path"},
 		},
 		{
 			// The other side of the same trap: a dollar-quoted body carrying
@@ -49,17 +49,17 @@ func TestAnalyzeFS_ADefinerRoutineWithoutSearchPathIsReported(t *testing.T) {
 			name: "an invoker routine whose body mentions SECURITY DEFINER",
 			sql: "CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $$\n" +
 				"BEGIN RAISE NOTICE 'SECURITY DEFINER'; RETURN 1; END;\n$$;\n",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			name:     "a procedure, which has the same hazard",
 			sql:      "CREATE PROCEDURE p() LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;\n",
-			wantRule: []string{"AC101", "PG312P"},
+			wantRule: []string{"coverage/routine-body", "security/definer-without-search-path"},
 		},
 		{
 			name:     "an invoker routine",
 			sql:      "CREATE FUNCTION f() RETURNS int LANGUAGE sql SECURITY INVOKER AS $$ SELECT 1 $$;\n",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 	}
 
@@ -89,8 +89,8 @@ func TestAnalyzeFS_TheDefinerRuleIsPostgresOnly(t *testing.T) {
 		dialect  string
 		wantRule []string
 	}{
-		{dialect: "postgres", wantRule: []string{"AC101", "PG312P"}},
-		{dialect: "mysql", wantRule: []string{"AC101"}},
+		{dialect: "postgres", wantRule: []string{"coverage/routine-body", "security/definer-without-search-path"}},
+		{dialect: "mysql", wantRule: []string{"coverage/routine-body"}},
 	}
 
 	for _, row := range rows {

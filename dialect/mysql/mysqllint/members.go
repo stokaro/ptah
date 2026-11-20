@@ -47,8 +47,8 @@ import (
 //
 // Precision over volume: a rule here fires only when the starting list is
 // known, which means the run supplied the schema state the migration starts
-// from. Without it the statement is still reported by the generic DS103 and
-// MY101, and migration lint names these rules as the ones that could have
+// from. Without it the statement is still reported by the generic data-dependent/alter-column-type and
+// locking/blocking-alter-table, and migration lint names these rules as the ones that could have
 // said more.
 
 // parseMemberSpelling reads the type as the server prints it in
@@ -235,7 +235,7 @@ type memberChangeSite struct {
 
 // memberChangeSites finds every clause in a file that assigns a member list.
 // A clause whose new type is not ENUM or SET is not a site: what such a column
-// was before the clause is DS103's question, not this file's.
+// was before the clause is data-dependent/alter-column-type's question, not this file's.
 func memberChangeSites(file *lintkit.File) []memberChangeSite {
 	var sites []memberChangeSite
 	for index := range file.Statements {
@@ -303,7 +303,7 @@ func memberChangeStatements(file *lintkit.File) []int {
 // resolvedMemberChange is a site joined to the list the column has now. Only
 // a site whose column the baseline knows, and whose old and new types are
 // the same kind of list, resolves: a column going from ENUM to SET or from
-// VARCHAR to ENUM is a type change, which DS103 already reports.
+// VARCHAR to ENUM is a type change, which data-dependent/alter-column-type already reports.
 type resolvedMemberChange struct {
 	site       memberChangeSite
 	old        mytype.MemberList
@@ -376,25 +376,28 @@ func mysqlMemberRules() []lintkit.Rule {
 	return rules
 }
 
-// memberRuleCodes are the Atlas identifiers, kept because the analysis is the
-// same one Atlas documents under them (the identifier convention in
-// internal/lintcatalog).
-func memberRuleCode(kind mytype.MemberKind, offset int) string {
-	if kind == mytype.Set {
-		return fmt.Sprintf("MY12%d", offset)
-	}
-	return fmt.Sprintf("MY11%d", offset)
+// memberRuleNames are the rule names of the family, by the fact a rule reports:
+// the member removed, the members reordered, a member inserted before the end,
+// and a list grown across a storage boundary.
+var memberRuleNames = map[mytype.MemberKind][4]string{
+	mytype.Enum: {"rewrite/remove-enum-value", "rewrite/reorder-enum-values", "rewrite/insert-enum-value", "rewrite/widen-enum"},
+	mytype.Set:  {"rewrite/remove-set-member", "rewrite/reorder-set-members", "rewrite/insert-set-member", "rewrite/widen-set"},
+}
+
+// memberRuleName is the name of the rule that reports one fact about one kind
+// of member list.
+func memberRuleName(kind mytype.MemberKind, offset int) string {
+	return memberRuleNames[kind][offset]
 }
 
 func memberRule(kind mytype.MemberKind, offset int, title string, check func(resolvedMemberChange) (bool, string)) lintkit.Rule {
-	code := memberRuleCode(kind, offset)
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     code,
+			Name:     memberRuleName(kind, offset),
 			Title:    title,
 			Severity: lintext.Warning,
 			Targets:  []string{"mysql", "mariadb"},
-			Subsumes: []string{"DS103", "MY101"},
+			Subsumes: []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: memberChangeStatements,

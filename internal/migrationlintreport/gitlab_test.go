@@ -33,6 +33,24 @@ func renderGitLab(c *qt.C, report migrationlintreport.Report) []gitlabEntry {
 	return entries
 }
 
+func TestWrite_GitLabDescriptionCarriesTheRuleName_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	entries := renderGitLab(c, migrationlintreport.Report{
+		Findings: []migrationlint.Finding{{
+			Rule:     "destructive/drop-column",
+			Severity: migrationlint.SeverityError,
+			File:     "migrations/0001_init.up.sql",
+			Line:     7,
+			Message:  "drops a column",
+		}},
+	})
+
+	c.Assert(entries, qt.HasLen, 1)
+	c.Assert(entries[0].CheckName, qt.Equals, "destructive/drop-column")
+	c.Assert(entries[0].Description, qt.Equals, "destructive/drop-column: drops a column")
+}
+
 func TestWrite_GitLabMapsEverySeverity_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -50,7 +68,7 @@ func TestWrite_GitLabMapsEverySeverity_HappyPath(t *testing.T) {
 
 			entries := renderGitLab(c, migrationlintreport.Report{
 				Findings: []migrationlint.Finding{{
-					Rule:     "DS101",
+					Rule:     "destructive/drop-table",
 					Severity: test.severity,
 					File:     "migrations/0001_init.up.sql",
 					Line:     7,
@@ -60,8 +78,8 @@ func TestWrite_GitLabMapsEverySeverity_HappyPath(t *testing.T) {
 
 			c.Assert(entries, qt.HasLen, 1)
 			c.Assert(entries[0].Severity, qt.Equals, test.want)
-			c.Assert(entries[0].CheckName, qt.Equals, "DS101")
-			c.Assert(entries[0].Description, qt.Equals, "DS101: drops a column")
+			c.Assert(entries[0].CheckName, qt.Equals, "destructive/drop-table")
+			c.Assert(entries[0].Description, qt.Equals, "destructive/drop-table: drops a column")
 			c.Assert(entries[0].Location.Path, qt.Equals, "migrations/0001_init.up.sql")
 			c.Assert(entries[0].Location.Lines.Begin, qt.Equals, 7)
 			c.Assert(entries[0].Fingerprint, qt.Not(qt.Equals), "")
@@ -92,7 +110,7 @@ func TestWrite_GitLabAnchorsFileLevelFindings_HappyPath(t *testing.T) {
 func TestWrite_GitLabSeparatesIdenticalFindings_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	finding := migrationlint.Finding{
-		Rule:     "DS101",
+		Rule:     "destructive/drop-table",
 		Severity: migrationlint.SeverityError,
 		File:     "migrations/0001_init.up.sql",
 		Line:     4,
@@ -112,11 +130,11 @@ func TestWrite_GitLabSeparatesIdenticalFindings_HappyPath(t *testing.T) {
 func TestWrite_GitLabFingerprintIgnoresReportOrder_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	first := migrationlint.Finding{
-		Rule: "DS101", Severity: migrationlint.SeverityError,
+		Rule: "destructive/drop-table", Severity: migrationlint.SeverityError,
 		File: "migrations/0001_init.up.sql", Line: 4, Message: "drops a column",
 	}
 	second := migrationlint.Finding{
-		Rule: "MF103", Severity: migrationlint.SeverityWarning,
+		Rule: "file-form/file-name", Severity: migrationlint.SeverityWarning,
 		File: "migrations/0002_add.up.sql", Line: 9, Message: "adds a NOT NULL column",
 	}
 

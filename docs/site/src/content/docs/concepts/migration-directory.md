@@ -85,7 +85,7 @@ such a file too. A run that left such a file out would never apply it and
 would report the directory applied. Every command that reads the directory
 refuses it, `migrations ls` and `migrations hash` included, so a listing or a
 sum never describes a directory a run refuses. `ptah migrations lint` reports
-the file under `MF105P` at error severity and exits 1. With `--dev-url` it
+the file under `file-form/refused-file` at error severity and exits 1. With `--dev-url` it
 reports the same finding and replays nothing, since a run would not start. A
 file one level down belongs to another directory, such as a template a
 migration includes, and is left alone.
@@ -95,7 +95,7 @@ both: `0000000002_a.up.sql` beside `0000000002_b.up.sql`, or a
 `.checkpoint.up.sql` beside an ordinary up file of its version. A run that
 kept one would never apply the other, and nothing in the directory says which
 one the author meant. `ptah migrations lint` reports each of the files under
-`MF105P`. An Atlas-format directory with two such files is refused when a
+`file-form/refused-file`. An Atlas-format directory with two such files is refused when a
 command loads its migrations, as `duplicate Atlas up migration for version
 ...`. Lint does not report that case, because an Atlas revision's identity is
 known only once the migrations load.
@@ -124,7 +124,7 @@ directory that holds such a version runs over the Atlas revision table
 revision table stores numbers, and each row is matched to the file that
 carries the number, so it refuses that directory. `R__view.sql` is such a
 version, `R`, and so is `V1__init.sql`, `V1`. `ptah migrations lint` reports
-every such file under `MF105P`. It reads the revision table a run uses from
+every such file under `file-form/refused-file`. It reads the revision table a run uses from
 `--revision-format`, `migration.revision_format` or `PTAH_REVISION_FORMAT`,
 and reports nothing for the Atlas table.
 

@@ -53,7 +53,7 @@ type policyReport struct {
 
 // A lint policy that names an engine its installed provider serves selects
 // that provider as --dialect would, with no provider flag: `migrations lint`
-// lints with the provider's rules, FX101 and FX102 among them, where the
+// lints with the provider's rules, design/fx101 and design/fx102 among them, where the
 // policy's dialect was refused as one no runtime knew.
 func TestMigrationsLintOfAPolicysDialectReachesTheInstalledProvider(t *testing.T) {
 	c := qt.New(t)
@@ -67,7 +67,7 @@ func TestMigrationsLintOfAPolicysDialectReachesTheInstalledProvider(t *testing.T
 	var report policyReport
 	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil, qt.Commentf("stdout %q, stderr %q", out, diagnostics))
 	c.Assert(report.Error, qt.Equals, "")
-	c.Assert(rulesOf(report.Findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107", "FX101", "FX102"})
+	c.Assert(rulesOf(report.Findings), qt.DeepEquals, []string{"design/fx101", "design/fx102", "destructive/drop-object", "destructive/drop-table", "rollout/drop-table"})
 }
 
 // `sql lint` reads the severities of the policy in the working directory, and
@@ -85,7 +85,7 @@ func TestSQLLintReadsAPolicyThatNamesTheSelectedProvidersDialect(t *testing.T) {
 	findings, refusal, code := f.sqlLint(c, "CREATE TABLE b (id Uint64);\n", "--dialect", "ydb", "--server-version", "26.2")
 
 	c.Assert(refusal, qt.Equals, "")
-	c.Assert(findings, qt.DeepEquals, []string{`1:1 DDL001 table "b" has no primary key`})
+	c.Assert(findings, qt.DeepEquals, []string{`1:1 design/no-primary-key table "b" has no primary key`})
 	c.Assert(code, qt.Equals, 0)
 }
 

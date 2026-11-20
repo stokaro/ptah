@@ -101,7 +101,7 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			// Filtered rather than disabled: SQL001 and SQL002 report that the
+			// Filtered rather than disabled: correctness/syntax-error and coverage/unsupported-statement report that the
 			// file could not be analyzed and are refused as --disable
 			// selectors, so a test that wants only the boundary rule selects it
 			// here (stokaro/ptah#1270).
@@ -153,7 +153,7 @@ func dynamicSQLFindings(findings []sqllint.Finding) []sqllint.Finding {
 //
 // A routine that composes SQL inside a condition is the ordinary shape, since a
 // condition is usually what the composition is for. Before the body model
-// carried nesting, an EXECUTE at the top of a body reported SQL003 and the same
+// carried nesting, an EXECUTE at the top of a body reported coverage/dynamic-sql and the same
 // EXECUTE one level in reported nothing: the boundary was there and the rule
 // that exists to name it was silent (stokaro/ptah#2393).
 func TestDynamicSQL_TheBoundaryIsFoundAtAnyDepth(t *testing.T) {

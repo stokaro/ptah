@@ -48,22 +48,22 @@ var noopDropChanges = []struct {
 	{
 		name: "control: IF NOT EXISTS create of a present table, then a drop", change: "CREATE TABLE IF NOT EXISTS users (id INTEGER);\nDROP TABLE users;\n",
 		nativeExit: 1, nativeStdout: []string{
-			"migrations/2_change.sql:2 [warning] BC103: dropping table users ",
-			"migrations/2_change.sql:2 [error] DS101: DROP TABLE permanently deletes table users ",
+			"migrations/2_change.sql:2 [warning] rollout/drop-table: dropping table users ",
+			"migrations/2_change.sql:2 [error] destructive/drop-table: DROP TABLE permanently deletes table users ",
 		},
 	},
 	{
 		name: "control: IF EXISTS drop of a present table", change: "DROP TABLE IF EXISTS users;\n",
 		nativeExit: 1, nativeStdout: []string{
-			"migrations/2_change.sql:1 [warning] BC103: dropping table users ",
-			"migrations/2_change.sql:1 [error] DS101: DROP TABLE permanently deletes table users ",
+			"migrations/2_change.sql:1 [warning] rollout/drop-table: dropping table users ",
+			"migrations/2_change.sql:1 [error] destructive/drop-table: DROP TABLE permanently deletes table users ",
 		},
 	},
 	{
 		name: "control: a column the starting state holds", change: "ALTER TABLE users DROP COLUMN name;\n",
 		nativeExit: 1, nativeStdout: []string{
-			"migrations/2_change.sql:1 [warning] BC104: dropping a column ",
-			"migrations/2_change.sql:1 [error] DS102: DROP COLUMN permanently deletes ",
+			"migrations/2_change.sql:1 [warning] rollout/drop-column: dropping a column ",
+			"migrations/2_change.sql:1 [error] destructive/drop-column: DROP COLUMN permanently deletes ",
 		},
 	},
 }
@@ -99,7 +99,7 @@ func TestCompatMigrateLintDropOfWhatNeverHeldDataE2E(t *testing.T) {
 			args := []string{"migrate", "lint", "--dir", "file://migrations", "--dev-url", "sqlite://dev?mode=memory", "--latest", "1"}
 
 			communityOut, communityStderr, err := runCLIProcess(c.Context(), dir, reference, args...)
-			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()}, args...)
+			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: strictEnvironment()}, args...)
 
 			c.Assert(compat.ExitCode, qt.Equals, exitStatusOf(c, err), qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
 			c.Assert(redactLintE2EDurations(compat.Stdout), qt.Equals, redactLintE2EDurations(communityOut))

@@ -41,7 +41,7 @@ func lintRebuildCopy(c *qt.C, createColumns, copyStatement string) clirun.Result
 // n into label and label into n, and an INSERT with no column list fills the
 // replacement's columns in CREATE TABLE order. A word after a column is an
 // alias only when it is a name: SQLite reads `label ISNULL` as
-// `label IS NULL`. Each drop loses values, so DS101 reports it.
+// `label IS NULL`. Each drop loses values, so destructive/drop-table reports it.
 func TestMigrationsLintReportsACopyThatChangesValuesE2E(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -71,7 +71,7 @@ func TestMigrationsLintReportsACopyThatChangesValuesE2E(t *testing.T) {
 			got := lintRebuildCopy(c, test.createColumns, test.copyStatement)
 
 			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stdout, qt.Contains, "migrations/2.sql:3 [error] DS101: DROP TABLE permanently deletes table items")
+			c.Assert(got.Stdout, qt.Contains, "migrations/2.sql:3 [error] destructive/drop-table: DROP TABLE permanently deletes table items")
 		})
 	}
 }

@@ -141,7 +141,7 @@ func TestCompatCommand_MigrateLintCondropSeverity(t *testing.T) {
 				[]byte(atlasCondropProjectConfig), 0o600), qt.IsNil)
 			t.Chdir(dir)
 
-			stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
+			stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, tt.code)
 			// The report body is identical in all four rows -- the diagnostic

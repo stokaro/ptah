@@ -237,7 +237,7 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
       fallback: error
     lint:
       dialect: postgres
-      disabled-rules: [MF103]
+      disabled-rules: [file-form/file-name]
 `), 0o600), qt.IsNil)
 	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
@@ -272,7 +272,7 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
 	c.Assert(cfg.OnlineDDL.Args, qt.DeepEquals, []string{"--allow-on-master"})
 	c.Assert(cfg.OnlineDDL.Fallback, qt.Equals, projectconfig.OnlineDDLFallbackError)
 	c.Assert(cfg.Lint.Dialect, qt.Equals, "postgres")
-	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{"MF103"})
+	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{"file-form/file-name"})
 }
 
 func TestLoadProjectConfigUsesImmutableContextSnapshot(t *testing.T) {

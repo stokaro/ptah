@@ -29,7 +29,7 @@ func analyzeInPlace(c *qt.C, dialect, alter string, columns []lintext.BaselineCo
 func inPlaceCodes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if code == "MY130P" || code == "PG301P" {
+		if code == "rewrite/in-place-column-change" {
 			kept = append(kept, code)
 		}
 	}
@@ -46,7 +46,7 @@ func notNullTotal() lintext.BaselineColumn {
 	return column
 }
 
-// TestInPlaceRule_NamesWhatMySQLAppliesWithoutACopy pins MY130P to the
+// TestInPlaceRule_NamesWhatMySQLAppliesWithoutACopy pins rewrite/in-place-column-change to the
 // statements the measurement classifies as in place, with the algorithm
 // each part takes.
 func TestInPlaceRule_NamesWhatMySQLAppliesWithoutACopy(t *testing.T) {
@@ -136,13 +136,13 @@ func TestInPlaceRule_NamesWhatMySQLAppliesWithoutACopy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeInPlace(c, test.dialect, test.alter, test.columns, nil)
-			c.Assert(inPlaceCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MY130P"})
-			message := messageOf(analysis.Findings(), "MY130P")
+			c.Assert(inPlaceCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/in-place-column-change"})
+			message := messageOf(analysis.Findings(), "rewrite/in-place-column-change")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
-			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DS103")
-			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "MY101")
+			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/alter-column-type")
+			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "locking/blocking-alter-table")
 		})
 	}
 }
@@ -255,7 +255,7 @@ func TestInPlaceRule_StaysQuietWhereTheStatementIsNotJudged(t *testing.T) {
 	}
 }
 
-// TestInPlaceRule_NamesWhatPostgreSQLAppliesAsACatalogEdit pins PG301P to
+// TestInPlaceRule_NamesWhatPostgreSQLAppliesAsACatalogEdit pins rewrite/in-place-column-change to
 // the statements whose every clause is a catalog edit.
 func TestInPlaceRule_NamesWhatPostgreSQLAppliesAsACatalogEdit(t *testing.T) {
 	tests := []struct {
@@ -298,12 +298,12 @@ func TestInPlaceRule_NamesWhatPostgreSQLAppliesAsACatalogEdit(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeInPlace(c, "postgres", test.alter, test.columns, test.indexes)
-			c.Assert(inPlaceCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG301P"})
-			message := messageOf(analysis.Findings(), "PG301P")
+			c.Assert(inPlaceCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/in-place-column-change"})
+			message := messageOf(analysis.Findings(), "rewrite/in-place-column-change")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
-			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DS103")
+			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/alter-column-type")
 		})
 	}
 }
@@ -370,14 +370,14 @@ func TestInPlaceRule_IsInformationalAndNamesItsInput(t *testing.T) {
 	analysis := analyzeInPlace(c, "mysql", "ALTER TABLE orders MODIFY note VARCHAR(20);",
 		[]lintext.BaselineColumn{costColumn("note", "varchar(10)", "latin1", "latin1")}, nil)
 	c.Assert(analysis.Findings(), qt.HasLen, 1)
-	c.Assert(analysis.Findings()[0].Rule, qt.Equals, "MY130P")
+	c.Assert(analysis.Findings()[0].Rule, qt.Equals, "rewrite/in-place-column-change")
 	c.Assert(analysis.Findings()[0].Severity, qt.Equals, lint.SeverityInfo)
 
 	bare := analyzeInPlace(c, "mysql", "ALTER TABLE orders MODIFY note VARCHAR(20);", nil, nil)
-	c.Assert(rulesOf(bare.Findings()), qt.DeepEquals, []string{"DS103", "MY101"})
+	c.Assert(rulesOf(bare.Findings()), qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"})
 	var unmet []string
 	for _, entry := range bare.UnmetInputs() {
 		unmet = append(unmet, entry.Rule)
 	}
-	c.Assert(unmet, qt.Contains, "MY130P")
+	c.Assert(unmet, qt.Contains, "rewrite/in-place-column-change")
 }

@@ -68,9 +68,9 @@ func TestSQLLintReadsTheProvidersStatementFacts(t *testing.T) {
 			c.Assert(refusal, qt.Equals, "")
 			c.Assert(code, qt.Equals, 1)
 			c.Assert(findings, qt.DeepEquals, []string{
-				`1:1 DDL001 table "a" has no primary key`,
-				"2:1 SQL002 ptah sql lint does not lint UPSERT statements yet",
-				"1:1 SQL004 no rule examined the parameterized_decimal requirement of COLUMN price of table a, DROP TABLE in this file",
+				`1:1 design/no-primary-key table "a" has no primary key`,
+				"2:1 coverage/unsupported-statement ptah sql lint does not lint UPSERT statements yet",
+				"1:1 coverage/unanalyzed-statements no rule examined the parameterized_decimal requirement of COLUMN price of table a, DROP TABLE in this file",
 			})
 		})
 	}
@@ -90,10 +90,10 @@ func TestSQLLintComparesTheProvidersRequirementsWithTheServerVersion(t *testing.
 		want    []string
 	}{
 		{version: "25.1", code: 1, want: []string{
-			"1:1 CAP001 COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target",
-			`2:1 DDL001 table "b" has no primary key`,
+			"1:1 capability/missing COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target",
+			`2:1 design/no-primary-key table "b" has no primary key`,
 		}},
-		{version: "26.2", code: 0, want: []string{`2:1 DDL001 table "b" has no primary key`}},
+		{version: "26.2", code: 0, want: []string{`2:1 design/no-primary-key table "b" has no primary key`}},
 	} {
 		t.Run(row.version, func(t *testing.T) {
 			c := qt.New(t)

@@ -122,7 +122,51 @@ type Runtime interface {
 
 // Options are the migration lint inputs shared by native and Atlas-compatible
 // commands.
+// AtlasVocabulary is how the compatibility surface reads rule selectors: an
+// `atlas.hcl` lint policy and an `atlas:nolint` comment name rules by Atlas
+// analyzer and check code, which the lint core does not know. The
+// compatibility surface supplies the translation from its Atlas table; a nil
+// vocabulary reads every selector as a Ptah rule name or category.
+type AtlasVocabulary struct {
+	// NoLint translates the selector of an `atlas:nolint` comment into rule
+	// names; see [lint.AtlasSelectors].
+	NoLint lint.AtlasSelectors
+	// Selectors translates a list of selectors, `--disable` entries and
+	// `disabled-rules`, into Ptah selectors.
+	Selectors func([]string) []string
+	// RuleConfigs translates the keys of a per-rule policy into rule names.
+	RuleConfigs func(map[string]lint.RuleConfig) map[string]lint.RuleConfig
+	// Only, when set, names the rules the run executes: every other rule is
+	// disabled before the analysis starts. The strict compatibility policy
+	// sets it to the rules the Atlas table maps, so a run reports only what
+	// the community binary has a check for.
+	Only func(ruleName string) bool
+}
+
+// translate returns the rule policy the lint core reads: the selectors and
+// per-rule configs of a compatibility run with their Atlas spellings replaced.
+// A nil vocabulary changes nothing.
+func (v *AtlasVocabulary) translate(
+	compatibility lint.CompatibilityProfile,
+	disabled []string,
+	rules map[string]lint.RuleConfig,
+) ([]string, map[string]lint.RuleConfig) {
+	if v == nil || compatibility != lint.CompatibilityProfileAtlas {
+		return disabled, rules
+	}
+	if v.Selectors != nil {
+		disabled = v.Selectors(disabled)
+	}
+	if v.RuleConfigs != nil {
+		rules = v.RuleConfigs(rules)
+	}
+	return disabled, rules
+}
+
 type Options struct {
+	// Atlas is the compatibility surface's reading of rule selectors; see
+	// [AtlasVocabulary].
+	Atlas *AtlasVocabulary
 	// Runtime selects the services used to convert and report replayed state.
 	Runtime   Runtime
 	Dir       string
@@ -254,6 +298,25 @@ type sarifRegion struct {
 	StartLine int `json:"startLine"`
 }
 
+// unmappedRules lists the registered rules a vocabulary with an Only filter
+// leaves out, for a compatibility run. It is empty for every other run.
+func (v *AtlasVocabulary) unmappedRules(compatibility lint.CompatibilityProfile, runtime lintext.Runtime) ([]string, error) {
+	if v == nil || v.Only == nil || compatibility != lint.CompatibilityProfileAtlas {
+		return nil, nil
+	}
+	rules, err := lint.Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, rule := range rules {
+		if !v.Only(rule.Name) && !slices.Contains(names, rule.Name) {
+			names = append(names, rule.Name)
+		}
+	}
+	return names, nil
+}
+
 // Build returns the migration lint report without rendering it.
 func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (Report, error) {
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
@@ -289,6 +352,16 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return Report{}, err
 	}
 	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
+	disabled, ruleConfigs := opts.Atlas.translate(opts.Compatibility, disabled, cfg.Rules)
+	unmapped, err := opts.Atlas.unmappedRules(opts.Compatibility, opts.Runtime)
+	if err != nil {
+		return Report{}, err
+	}
+	disabled = append(disabled, unmapped...)
+	var atlasNoLint lint.AtlasSelectors
+	if opts.Atlas != nil {
+		atlasNoLint = opts.Atlas.NoLint
+	}
 	outcome, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, declared.deferred, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
@@ -306,7 +379,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		// analyzer. Ptah's is a SQL-text analyzer, which is why it reports
 		// TRUNCATE and DROP SCHEMA, neither of which produces a diff. Applying
 		// the boundary there turned `DROP TABLE app."Users", app.audit_log;`
-		// from two error-grade DS101 findings and exit 1 into "No lint findings"
+		// from two error-grade destructive/drop-table findings and exit 1 into "No lint findings"
 		// and exit 0, on a surface with no comparison binary to justify it.
 		SchemaScope: compatSchemaScope(opts.Compatibility, opts.DevURL),
 		Selection: lint.VersionSelection{
@@ -317,7 +390,8 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		},
 		DirFormat:         prepared.dirFormat,
 		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
-		RuleConfigs:       cfg.Rules,
+		RuleConfigs:       ruleConfigs,
+		AtlasSelectors:    atlasNoLint,
 		Naming:            cfg.Naming,
 		// The same policy decides the standalone lint and the apply gate, or
 		// the two disagree about the same directory: a `migrations lint` that
@@ -603,7 +677,7 @@ func lintDirectory(
 	if learnedDialect != "" {
 		// The rules a run applies follow the product that answered, not the
 		// scheme that addressed it: `mysql://` reaching MariaDB ran MySQL's
-		// rules, so MY146 -- DROP SYSTEM VERSIONING deletes every history row
+		// rules, so destructive/drop-system-versioning -- DROP SYSTEM VERSIONING deletes every history row
 		// -- never fired on the only family that has the statement.
 		lintOptions.Dialect = learnedDialect
 		dialect = learnedDialect
@@ -1803,6 +1877,8 @@ func sarifRules(findings []lint.Finding) ([]sarifRule, map[string]int) {
 	for i, code := range codes {
 		indexes[code] = i
 		finding := byCode[code]
+		// The rule's name is its SARIF id; SARIF's own name is the readable
+		// title.
 		rules = append(rules, sarifRule{
 			ID:               code,
 			Name:             finding.Title,

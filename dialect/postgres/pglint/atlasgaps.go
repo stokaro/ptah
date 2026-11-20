@@ -23,20 +23,20 @@ import (
 // operation.
 //
 //	CREATE INDEX on a partitioned parent   ShareLock on the parent AND on every
-//	                                       partition                      PG108
-//	ADD CONSTRAINT … EXCLUDE               AccessExclusiveLock            PG109
-//	DROP CONSTRAINT pkey, ADD PRIMARY KEY  AccessExclusiveLock            PG312
-//	REPLICA IDENTITY FULL                  AccessExclusiveLock            PG314
-//	SET (autovacuum_enabled = false)       ShareUpdateExclusiveLock       PG320
+//	                                       partition                      locking/partitioned-index
+//	ADD CONSTRAINT … EXCLUDE               AccessExclusiveLock            locking/add-exclusion-constraint
+//	DROP CONSTRAINT pkey, ADD PRIMARY KEY  AccessExclusiveLock            locking/replace-primary-key
+//	REPLICA IDENTITY FULL                  AccessExclusiveLock            rollout/weaken-replica-identity
+//	SET (autovacuum_enabled = false)       ShareUpdateExclusiveLock       design/disable-autovacuum
 //
-// PG108 carries one more measurement, and it is the reason the rule exists
-// beside PG101 rather than being folded into it: `CREATE INDEX CONCURRENTLY`
+// locking/partitioned-index carries one more measurement, and it is the reason the rule exists
+// beside locking/create-index rather than being folded into it: `CREATE INDEX CONCURRENTLY`
 // on a partitioned table is refused outright -- `ERROR: cannot create index on
-// partitioned table "p" concurrently`. PG101's remedy is to add CONCURRENTLY,
+// partitioned table "p" concurrently`. locking/create-index's remedy is to add CONCURRENTLY,
 // which cannot be done here, so a reader who follows it writes a statement the
 // server rejects.
 //
-// PG320 is the one rule here whose hazard is not a lock or a rewrite. The
+// design/disable-autovacuum is the one rule here whose hazard is not a lock or a rewrite. The
 // statement is cheap; what it costs is paid later, by the rows nothing
 // reclaims.
 
@@ -86,11 +86,11 @@ func atlasGapPostgresRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "PG108",
+				Name:     "locking/partitioned-index",
 				Title:    "index on a partitioned table locks every partition",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
-				Subsumes: []string{"PG101"},
+				Subsumes: []string{"locking/create-index"},
 				Input:    lintext.InputBaselineRefinement,
 			},
 			BaselineSubjects: partitionedIndexStateRequests,
@@ -108,7 +108,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG109",
+				Name:     "locking/add-exclusion-constraint",
 				Title:    "exclusion constraint added under an exclusive lock",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
@@ -125,11 +125,11 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG312",
+				Name:     "locking/replace-primary-key",
 				Title:    "primary key redefined under an exclusive lock",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
-				Subsumes: []string{"PG104"},
+				Subsumes: []string{"locking/add-primary-key"},
 			},
 			Statement: func(_ *lintkit.File, stmt *lintext.Statement) (bool, string) {
 				if !lintkit.RedefinesPrimaryKey(stmt.Words) {
@@ -148,7 +148,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG314",
+				Name:     "rollout/weaken-replica-identity",
 				Title:    "replica identity weakened for logical replication",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
@@ -169,7 +169,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG320",
+				Name:     "design/disable-autovacuum",
 				Title:    "autovacuum disabled for a table",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
@@ -187,7 +187,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 	}
 }
 
-// partitionedIndexSite is one CREATE INDEX that PG108 judges.
+// partitionedIndexSite is one CREATE INDEX that locking/partitioned-index judges.
 type partitionedIndexSite struct {
 	index  int
 	target lintkit.TableReference
@@ -198,7 +198,7 @@ type partitionedIndexSite struct {
 	earlier bool
 }
 
-// partitionedIndexSites lists the index builds of an up file that PG108 can
+// partitionedIndexSites lists the index builds of an up file that locking/partitioned-index can
 // judge: every CREATE INDEX except the ON ONLY form, which builds the parent's
 // index alone and is the first step of the remedy this rule names, and a
 // TimescaleDB per-chunk build, which a partitioned table refuses outright
@@ -239,7 +239,7 @@ func partitionedIndexSites(file *lintkit.File) []partitionedIndexSite {
 	return sites
 }
 
-// partitionedIndexStateRequests is PG108's answer to which statements want the
+// partitionedIndexStateRequests is locking/partitioned-index's answer to which statements want the
 // starting state: the index builds on a table an earlier migration created.
 func partitionedIndexStateRequests(file *lintkit.File) []int {
 	var indexes []int
@@ -251,7 +251,7 @@ func partitionedIndexStateRequests(file *lintkit.File) []int {
 	return indexes
 }
 
-// partitionedIndexMessage is PG108's message, spelling the table the way the
+// partitionedIndexMessage is locking/partitioned-index's message, spelling the table the way the
 // migration does.
 //
 // Measured on PostgreSQL 18.6, on a parent with a partition that is itself

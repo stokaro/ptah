@@ -49,7 +49,7 @@ func analyzePGState(c *qt.C, alter string, columns []lintext.BaselineColumn, ind
 	return analysis
 }
 
-// TestTypeRewriteRule_NamesTheIndexesACollationChangeRebuilds pins PG301 to
+// TestTypeRewriteRule_NamesTheIndexesACollationChangeRebuilds pins rewrite/alter-column-type to
 // the collation change measured to rebuild every index on the column while
 // the heap stays, and to the index names it carries into the message.
 func TestTypeRewriteRule_NamesTheIndexesACollationChangeRebuilds(t *testing.T) {
@@ -133,8 +133,8 @@ func TestTypeRewriteRule_NamesTheIndexesACollationChangeRebuilds(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzePGState(c, test.alter, []lintext.BaselineColumn{test.column}, test.indexes)
-			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG301"})
-			message := messageOf(analysis.Findings(), "PG301")
+			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/alter-column-type"})
+			message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -149,7 +149,7 @@ func TestTypeRewriteRule_ARewriteDecidesBeforeTheCollation(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzePGState(c, `ALTER TABLE orders ALTER COLUMN body TYPE varchar(20) COLLATE "C";`,
 		[]lintext.BaselineColumn{pgCollated("body", "text", "")}, []lintext.BaselineIndex{pgIndex("orders_body", "body")})
-	message := messageOf(analysis.Findings(), "PG301")
+	message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 	c.Assert(message, qt.Contains, "rewrites the whole table")
 	c.Assert(message, qt.Not(qt.Contains), "rebuilds every index on the column (")
 }
@@ -229,7 +229,7 @@ func TestTypeRewriteRule_StaysQuietWhereTheCollationDoesNotMove(t *testing.T) {
 	}
 }
 
-// TestPrimaryKeyScanRule_ResolvesTheIndexAUsingIndexFormNames pins PG304 to
+// TestPrimaryKeyScanRule_ResolvesTheIndexAUsingIndexFormNames pins locking/add-primary-key-on-nullable to
 // the USING INDEX form, whose columns are the index's: found in the state
 // the version starts from, or among the unique indexes the file builds
 // earlier.
@@ -271,8 +271,8 @@ func TestPrimaryKeyScanRule_ResolvesTheIndexAUsingIndexFormNames(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzePGState(c, test.alter, test.columns, test.indexes)
-			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG304"})
-			message := messageOf(analysis.Findings(), "PG304")
+			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"locking/add-primary-key-on-nullable"})
+			message := messageOf(analysis.Findings(), "locking/add-primary-key-on-nullable")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}

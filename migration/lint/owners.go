@@ -9,7 +9,7 @@ import (
 )
 
 // ownerAnswer is what the engine owners reported for one run: each owned
-// rule's findings and baseline subjects, by file name and rule code.
+// rule's findings and baseline subjects, by file name and rule name.
 type ownerAnswer struct {
 	findings map[string]map[string][]Finding
 	subjects map[string]map[string][]int
@@ -34,23 +34,26 @@ func checkOwnedRules(
 	rules []Rule,
 	opts Options,
 	target Target,
-	registered map[string]struct{},
 ) (ownerAnswer, error) {
-	var codes []string
+	// A name several owners publish is asked for once, and its findings are
+	// titled by the first of its rules that applies to the run's dialect.
+	var names []string
 	titles := make(map[string]string)
 	for _, rule := range rules {
-		if rule.owned && onlineRuleSelected(rule.Code, opts) &&
-			!ruleDisabled(rule.Code, opts.Disabled, opts.Dialect, registered) && ruleAppliesToDialect(rule, opts.Dialect) {
-			codes = append(codes, rule.Code)
-			titles[rule.Code] = rule.Title
+		if rule.owned && onlineRuleSelected(rule.Name, opts) &&
+			!ruleDisabled(rule.Name, opts.Disabled) && ruleAppliesToDialect(rule, opts.Dialect) {
+			if _, seen := titles[rule.Name]; !seen {
+				names = append(names, rule.Name)
+				titles[rule.Name] = rule.Title
+			}
 		}
 	}
-	if len(codes) == 0 || !slices.ContainsFunc(files, func(file File) bool { return file.Selected }) {
+	if len(names) == 0 || !slices.ContainsFunc(files, func(file File) bool { return file.Selected }) {
 		return ownerAnswer{}, nil
 	}
 	request := lintext.CheckRequest{
 		Target:           lintext.Target{Name: opts.Dialect, Version: target.Version, Capabilities: target.Capabilities},
-		Codes:            codes,
+		Names:            names,
 		Files:            checkFiles(files),
 		Compatibility:    string(opts.Compatibility),
 		TransactionOwner: opts.TransactionOwner,
@@ -63,7 +66,7 @@ func checkOwnedRules(
 	answer := ownerAnswer{findings: make(map[string]map[string][]Finding), subjects: make(map[string]map[string][]int)}
 	for _, found := range result.Findings {
 		file := &files[found.File]
-		finding := Finding{Rule: found.Code, Title: titles[found.Code], File: file.Path, Message: found.Message}
+		finding := Finding{Rule: found.Name, Title: titles[found.Name], File: file.Path, Message: found.Message}
 		if found.Statement >= 0 {
 			finding.Line = file.Statements[found.Statement].Line
 			finding.Context = statementFindingContext(found.Statement, reportSubjects(found.Subjects)...)
@@ -71,14 +74,14 @@ func checkOwnedRules(
 		if answer.findings[file.Name] == nil {
 			answer.findings[file.Name] = make(map[string][]Finding)
 		}
-		answer.findings[file.Name][found.Code] = append(answer.findings[file.Name][found.Code], finding)
+		answer.findings[file.Name][found.Name] = append(answer.findings[file.Name][found.Name], finding)
 	}
 	for _, subject := range result.BaselineSubjects {
 		name := files[subject.File].Name
 		if answer.subjects[name] == nil {
 			answer.subjects[name] = make(map[string][]int)
 		}
-		answer.subjects[name][subject.Code] = append(answer.subjects[name][subject.Code], subject.Statements...)
+		answer.subjects[name][subject.Name] = append(answer.subjects[name][subject.Name], subject.Statements...)
 	}
 	return answer, nil
 }
@@ -87,19 +90,34 @@ func checkOwnedRules(
 // the rest of the analysis applies one policy to every rule: suppression,
 // severity, excluded paths, subsumption, the reviewed-schema filter, and the
 // baseline versions and unmet inputs a rule's subjects decide.
-func (a ownerAnswer) bind(rules []Rule) []Rule {
+//
+// Owners may publish one name for different engines, so a name can head
+// several rules. The answer is by name, so exactly one of them reads it: the
+// first that applies to the run's dialect. A run that names a dialect has one
+// such rule per name; a run that names none reads every owner's answer through
+// the first.
+func (a ownerAnswer) bind(rules []Rule, dialect string) []Rule {
 	bound := slices.Clone(rules)
+	claimed := make(map[string]bool)
 	for i := range bound {
 		if !bound[i].owned {
 			continue
 		}
-		code := bound[i].Code
+		name := bound[i].Name
+		reads := !claimed[name] && ruleAppliesToDialect(bound[i], dialect)
+		claimed[name] = claimed[name] || reads
 		bound[i].CheckFile = func(file *File) []Finding {
-			return slices.Clone(a.findings[file.Name][code])
+			if !reads {
+				return nil
+			}
+			return slices.Clone(a.findings[file.Name][name])
 		}
 		if bound[i].Input.readsBaseline() {
 			bound[i].BaselineSubjects = func(file *File) []int {
-				return slices.Clone(a.subjects[file.Name][code])
+				if !reads {
+					return nil
+				}
+				return slices.Clone(a.subjects[file.Name][name])
 			}
 		}
 	}

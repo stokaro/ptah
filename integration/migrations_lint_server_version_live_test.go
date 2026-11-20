@@ -284,7 +284,7 @@ func writeFailingReplayLintDir(c *qt.C, t *testing.T) string {
 // The dialect decides which rules run, so a run that took it from the URL
 // scheme applied MySQL's rules to a MariaDB server.
 //
-// MY146 is the measurable half: `DROP SYSTEM VERSIONING` deletes every history
+// destructive/drop-system-versioning is the measurable half: `DROP SYSTEM VERSIONING` deletes every history
 // row the table accumulated, permanently, and MariaDB is the only family that
 // has the statement. Linted as MySQL the rule never runs, so the directory
 // reports no findings and the gate exits 0 -- a data-loss migration passing a
@@ -305,12 +305,12 @@ func TestMigrationsLintRunsTheConnectedProductsRulesLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "mariadb")
 	c.Assert(report.Failed, qt.IsTrue)
-	c.Assert(lintFindingCodes(report), qt.Contains, "MY146")
+	c.Assert(lintFindingCodes(report), qt.Contains, "destructive/drop-system-versioning")
 }
 
 // The control for the test above: a dialect the operator named is the one the
 // run uses, so naming `mysql` against the same MariaDB server still runs
-// MySQL's rules and still misses MY146. Without it the assertion above would
+// MySQL's rules and still misses destructive/drop-system-versioning. Without it the assertion above would
 // also pass on a build that ignored every declared dialect.
 func TestMigrationsLintKeepsTheDialectTheOperatorNamedLive(t *testing.T) {
 	c := qt.New(t)
@@ -328,7 +328,7 @@ func TestMigrationsLintKeepsTheDialectTheOperatorNamedLive(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "mysql")
-	c.Assert(lintFindingCodes(report), qt.Not(qt.Contains), "MY146")
+	c.Assert(lintFindingCodes(report), qt.Not(qt.Contains), "destructive/drop-system-versioning")
 }
 
 func lintFindingCodes(report migrationlintreport.Report) []string {

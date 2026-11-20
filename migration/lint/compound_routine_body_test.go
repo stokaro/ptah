@@ -84,17 +84,17 @@ func TestAnalyzeFS_ARoutineBodyIsNotAMigrationStatement(t *testing.T) {
 		wantRule []string
 	}{
 		{
-			// AC101 says the body was not read; no DS rule says it was
+			// coverage/routine-body says the body was not read; no DS rule says it was
 			// destructive, which is the claim this test holds
 			// (stokaro/ptah#1270).
 			name:     "a drop inside a routine body",
 			sql:      "CREATE PROCEDURE purge()\nBEGIN\n  DELETE FROM audit;\n  DROP TABLE users;\nEND;\n",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			name:     "a drop the migration really performs, after the routine",
 			sql:      "CREATE PROCEDURE purge()\nBEGIN\n  DELETE FROM audit;\n  DROP TABLE sessions;\nEND;\n\nDROP TABLE users;\n",
-			wantRule: []string{"AC101", "BC103", "DS101"},
+			wantRule: []string{"coverage/routine-body", "destructive/drop-table", "rollout/drop-table"},
 		},
 	}
 
@@ -140,7 +140,7 @@ func findingRules(findings []lint.Finding) []string {
 
 // TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody pins the anchor.
 //
-// DS106 was the one built-in scan with no statement anchor: it walked every
+// destructive/remove-enum-value was the one built-in scan with no statement anchor: it walked every
 // word a statement carried, and a routine body is words. Creating a function
 // whose body deletes from pg_enum was reported as an enum-value removal, at
 // error severity, in the one family the apply gate refuses on -- while the
@@ -157,9 +157,9 @@ func TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody(t *testing.T) {
 			// The row the issue is about: tokenized body, unanchored scan.
 			name: "a pg_enum delete inside a BEGIN ATOMIC body",
 			sql:  "CREATE FUNCTION f() RETURNS void LANGUAGE SQL\nBEGIN ATOMIC DELETE FROM pg_enum; END;\n",
-			// AC101 says the body was not read; DS106 must not say it removed
+			// coverage/routine-body says the body was not read; destructive/remove-enum-value must not say it removed
 			// an enum value.
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			// The same body the parser hands over as one token. It reported
@@ -168,19 +168,19 @@ func TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody(t *testing.T) {
 			// disagreement.
 			name:     "the same body dollar-quoted",
 			sql:      "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN DELETE FROM pg_enum; END; $$;\n",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			// The control that keeps the anchor from being a blanket silence.
 			name:     "a pg_enum delete the migration really performs",
 			sql:      "DELETE FROM pg_enum WHERE enumlabel = 'legacy';\n",
-			wantRule: []string{"DS106"},
+			wantRule: []string{"destructive/remove-enum-value"},
 		},
 		{
 			// The second form, which belongs to ALTER TYPE and is read there.
 			name:     "an enum value dropped by ALTER TYPE",
 			sql:      "ALTER TYPE mood DROP VALUE 'legacy';\n",
-			wantRule: []string{"DS106"},
+			wantRule: []string{"destructive/remove-enum-value"},
 		},
 	}
 
@@ -202,7 +202,7 @@ func TestAnalyzeFS_DS106ReadsTheStatementAndNotTheBody(t *testing.T) {
 // the summary the reference page publishes.
 //
 // Dropping a procedure or a trigger removes behavior a caller depends on
-// exactly as dropping a function does, and DS107 is the family that decides
+// exactly as dropping a function does, and destructive/drop-object is the family that decides
 // whether an apply proceeds. Both went unreported (stokaro/ptah#2358).
 //
 // Every keyword the rule claims has a row, so widening the list cannot silently
@@ -213,14 +213,14 @@ func TestAnalyzeFS_DS107CoversEveryObjectItClaims(t *testing.T) {
 		sql      string
 		wantRule []string
 	}{
-		{name: "procedure", sql: "DROP PROCEDURE p();\n", wantRule: []string{"DS107"}},
-		{name: "trigger", sql: "DROP TRIGGER t ON users;\n", wantRule: []string{"DS107"}},
-		{name: "function", sql: "DROP FUNCTION f();\n", wantRule: []string{"DS107"}},
-		{name: "type", sql: "DROP TYPE mood;\n", wantRule: []string{"DS107"}},
-		{name: "extension", sql: "DROP EXTENSION hstore;\n", wantRule: []string{"DS107"}},
-		{name: "role", sql: "DROP ROLE reporting;\n", wantRule: []string{"DS107"}},
-		{name: "policy", sql: "DROP POLICY p ON users;\n", wantRule: []string{"DS107"}},
-		{name: "schema", sql: "DROP SCHEMA staging;\n", wantRule: []string{"DS107"}},
+		{name: "procedure", sql: "DROP PROCEDURE p();\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "trigger", sql: "DROP TRIGGER t ON users;\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "function", sql: "DROP FUNCTION f();\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "type", sql: "DROP TYPE mood;\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "extension", sql: "DROP EXTENSION hstore;\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "role", sql: "DROP ROLE reporting;\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "policy", sql: "DROP POLICY p ON users;\n", wantRule: []string{"destructive/drop-object"}},
+		{name: "schema", sql: "DROP SCHEMA staging;\n", wantRule: []string{"destructive/drop-object"}},
 		{
 			// Not asked for by the issue, and measured as silent rather than
 			// assumed: whether a view joins the list is a decision.
@@ -248,7 +248,7 @@ func TestAnalyzeFS_DS107CoversEveryObjectItClaims(t *testing.T) {
 // The rules correctly say nothing about what a routine body does -- it runs
 // when somebody calls the routine, never at migration time. But silence about
 // the body and silence about the whole file are different facts, and until
-// AC101 the operator could not tell them apart: a migration whose only
+// coverage/routine-body the operator could not tell them apart: a migration whose only
 // statement was a function dropping a table inside its body reported no
 // findings and exit 0, which reads as "checked and safe" rather than "not
 // checked" (stokaro/ptah#1270).
@@ -264,24 +264,24 @@ func TestAnalyzeFS_ARoutineWhoseBodyIsNotReadIsNotCleanEither(t *testing.T) {
 			name: "a function whose body drops a table",
 			sql: "CREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n" +
 				"  DROP TABLE legacy_audit;\nEND;\n$$ LANGUAGE plpgsql;\n",
-			dialect: "postgres", wantRule: []string{"AC101"},
+			dialect: "postgres", wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			name:    "a compound procedure body",
 			sql:     "CREATE PROCEDURE p()\nBEGIN\n  DROP TABLE legacy_audit;\nEND;\n",
-			dialect: "mysql", wantRule: []string{"AC101"},
+			dialect: "mysql", wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			name:    "a replaced routine is still a routine",
 			sql:     "CREATE OR REPLACE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n",
-			dialect: "postgres", wantRule: []string{"AC101"},
+			dialect: "postgres", wantRule: []string{"coverage/routine-body"},
 		},
 		{
-			// The control that keeps AC101 from swallowing the real finding:
+			// The control that keeps coverage/routine-body from swallowing the real finding:
 			// a DROP the migration performs is still reported, at error.
 			name:    "the same drop the migration really performs",
 			sql:     "DROP TABLE legacy_audit;\n",
-			dialect: "postgres", wantRule: []string{"BC103", "DS101"},
+			dialect: "postgres", wantRule: []string{"destructive/drop-table", "rollout/drop-table"},
 		},
 		{
 			// The control that keeps it from firing on everything.

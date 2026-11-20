@@ -40,19 +40,19 @@ func analyzePG(c *qt.C, alter string, baseline ...lintext.BaselineColumn) lint.A
 }
 
 // pgCostCodes keeps the codes of this family, so a quiet case asserts that
-// the cost rules said nothing rather than that DS103 and PG104 fell silent
+// the cost rules said nothing rather than that data-dependent/alter-column-type and locking/add-primary-key fell silent
 // on a statement they still describe.
 func pgCostCodes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if code == "PG301" || code == "PG304" {
+		if code == "rewrite/alter-column-type" || code == "locking/add-primary-key-on-nullable" {
 			kept = append(kept, code)
 		}
 	}
 	return kept
 }
 
-// TestTypeRewriteRule_ReportsTheChangesPostgreSQLRewritesFor pins PG301 to
+// TestTypeRewriteRule_ReportsTheChangesPostgreSQLRewritesFor pins rewrite/alter-column-type to
 // the changes measured to rewrite the table, each with the reason.
 func TestTypeRewriteRule_ReportsTheChangesPostgreSQLRewritesFor(t *testing.T) {
 	tests := []struct {
@@ -181,8 +181,8 @@ func TestTypeRewriteRule_ReportsTheChangesPostgreSQLRewritesFor(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzePG(c, test.alter, test.column)
-			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG301"})
-			message := messageOf(analysis.Findings(), "PG301")
+			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/alter-column-type"})
+			message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 			c.Assert(message, qt.Contains, test.why)
 			c.Assert(message, qt.Contains, "ACCESS EXCLUSIVE lock")
 		})
@@ -194,8 +194,8 @@ func TestTypeRewriteRule_NamesTheTimeZoneCondition(t *testing.T) {
 
 	analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN placed TYPE timestamptz;", pgColumn("placed", "timestamp(6) without time zone", false))
 
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"PG301"})
-	message := messageOf(analysis.Findings(), "PG301")
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/alter-column-type"})
+	message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 	c.Assert(message, qt.Contains, "changes the type from timestamp without time zone to timestamp with time zone")
 	c.Assert(message, qt.Contains, "rewrites the whole table unless TimeZone is UTC when the statement runs, and rebuilds every index on the column either way")
 }
@@ -310,7 +310,7 @@ func TestTypeRewriteRule_StaysQuietWhereTheCatalogEditSuffices(t *testing.T) {
 	}
 }
 
-// TestPrimaryKeyScanRule_NamesTheNullableColumns pins PG304 to the columns
+// TestPrimaryKeyScanRule_NamesTheNullableColumns pins locking/add-primary-key-on-nullable to the columns
 // the key sets NOT NULL, which is what adds the second scan.
 func TestPrimaryKeyScanRule_NamesTheNullableColumns(t *testing.T) {
 	tests := []struct {
@@ -353,9 +353,9 @@ func TestPrimaryKeyScanRule_NamesTheNullableColumns(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzePG(c, test.alter, test.baseline...)
-			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG304"})
-			c.Assert(rulesOf(analysis.Findings()), qt.Contains, "PG104")
-			message := messageOf(analysis.Findings(), "PG304")
+			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"locking/add-primary-key-on-nullable"})
+			c.Assert(rulesOf(analysis.Findings()), qt.Contains, "locking/add-primary-key")
+			message := messageOf(analysis.Findings(), "locking/add-primary-key-on-nullable")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -408,42 +408,42 @@ func TestPostgresCostRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 
 	analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN total TYPE bigint;\nALTER TABLE orders ADD PRIMARY KEY (id);")
 
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103", "PG104"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/add-primary-key"})
 	var unmet []string
 	for _, input := range analysis.UnmetInputs() {
 		unmet = append(unmet, input.Rule)
 	}
-	c.Assert(unmet, qt.Contains, "PG301")
-	c.Assert(unmet, qt.Contains, "PG304")
+	c.Assert(unmet, qt.Contains, "rewrite/alter-column-type")
+	c.Assert(unmet, qt.Contains, "locking/add-primary-key-on-nullable")
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }
 
 func TestPostgresCostRules_SubsumeAndKeepWhatTheyShould(t *testing.T) {
-	t.Run("PG301 replaces DS103", func(t *testing.T) {
+	t.Run("rewrite/alter-column-type replaces data-dependent/alter-column-type", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN total TYPE bigint;", pgColumn("total", "integer", false))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"PG301"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/alter-column-type"})
 		c.Assert(analysis.Findings()[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{
 			Kind: lint.SubjectColumn, Name: "total", Parent: "orders", DataType: "bigint",
 		}})
 	})
 
-	t.Run("PG304 stays beside PG104, which names the lock", func(t *testing.T) {
+	t.Run("locking/add-primary-key-on-nullable stays beside locking/add-primary-key, which names the lock", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzePG(c, "ALTER TABLE orders ADD PRIMARY KEY (id);", pgColumn("id", "integer", false))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"PG104", "PG304"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"locking/add-primary-key", "locking/add-primary-key-on-nullable"})
 	})
 
-	t.Run("a change PostgreSQL applies in place is PG301P's, and DS103 goes with it", func(t *testing.T) {
+	t.Run("a change PostgreSQL applies in place is rewrite/in-place-column-change's, and data-dependent/alter-column-type goes with it", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN note TYPE varchar(20);", pgColumn("note", "character varying(10)", false))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"PG301P"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/in-place-column-change"})
 	})
 
-	t.Run("a change the rules cannot judge leaves DS103 to describe the statement", func(t *testing.T) {
+	t.Run("a change the rules cannot judge leaves data-dependent/alter-column-type to describe the statement", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN total TYPE posint;", pgColumn("total", "integer", false))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/alter-column-type"})
 	})
 }
 

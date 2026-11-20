@@ -13,7 +13,7 @@ func transactionRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "TX101",
+				Name:     "transaction/mixed-statements",
 				Title:    "transactional and non-transactional statements mixed",
 				Severity: lintext.Warning,
 				Targets:  []string{platform.Postgres},
@@ -34,7 +34,7 @@ func transactionRules() []lintkit.Rule {
 // apply-time preflight also use. A classification of this rule's own -- a scan
 // for concurrent indexes and nothing else -- disagrees with theirs in exactly
 // the place that matters: a file adding a value to an existing enum type and
-// then using it gets no TX101, and that is the file PostgreSQL refuses at apply
+// then using it gets no transaction/mixed-statements, and that is the file PostgreSQL refuses at apply
 // with `unsafe use of new value` (stokaro/ptah#996).
 //
 // Either direction is checked, because a down file runs the way an up file

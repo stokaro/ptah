@@ -39,7 +39,7 @@ func analyzeUniqueState(c *qt.C, dialect, migration string, columns []lintext.Ba
 	return analysis
 }
 
-// TestIndexMadeUniqueRule_RecognizesAReplacementUnderANewName pins MF102 to
+// TestIndexMadeUniqueRule_RecognizesAReplacementUnderANewName pins data-dependent/rebuild-index-as-unique to
 // an index the file drops and rebuilds as unique under another name, which
 // only the dropped index's columns, as the state records them, can show.
 func TestIndexMadeUniqueRule_RecognizesAReplacementUnderANewName(t *testing.T) {
@@ -87,8 +87,8 @@ func TestIndexMadeUniqueRule_RecognizesAReplacementUnderANewName(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeUniqueState(c, test.dialect, test.migration, nil, test.indexes)
-			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF102"})
-			message := messageOf(analysis.Findings(), "MF102")
+			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/rebuild-index-as-unique"})
+			message := messageOf(analysis.Findings(), "data-dependent/rebuild-index-as-unique")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -131,7 +131,7 @@ func TestIndexMadeUniqueRule_LeavesADifferentIndexToMF101(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeUniqueState(c, "postgres", test.migration, nil, test.indexes)
-			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
+			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
 		})
 	}
 }
@@ -249,29 +249,29 @@ func TestUniqueRules_KeepReportingWhereTheStateProvesNothing(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeUniqueState(c, "postgres", test.migration, test.columns, test.indexes)
-			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
+			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
 		})
 	}
 }
 
 // TestUniqueRules_NameTheirInputWhenTheRunSuppliesNone: the two rules read
 // the state as a refinement, so a run without it still reports from the text
-// and names the refinement it went without. PG101 names the same input for
+// and names the refinement it went without. locking/create-index names the same input for
 // the same statement, which is its own request, so only this family's
 // entries are compared.
 func TestUniqueRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeUnique(c, "postgres", "CREATE UNIQUE INDEX orders_email_uq ON orders (email);")
-	c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
+	c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 	c.Assert(uniqueUnmetInputs(analysis), qt.DeepEquals, []string{
-		"MF101:baseline schema that refines the statement text",
-		"MF102:baseline schema that refines the statement text",
+		"data-dependent/add-unique-index:baseline schema that refines the statement text",
+		"data-dependent/rebuild-index-as-unique:baseline schema that refines the statement text",
 	})
 }
 
 // TestUniqueRules_AskForNothingWhereNothingIsBuilt: a file with no unique
-// index costs this family no catalog read. PG101 and PG108 are disabled because
+// index costs this family no catalog read. locking/create-index and locking/partitioned-index are disabled because
 // each asks for the state of an index build on an earlier table, a request of
 // its own that pg101_hypertable_test.go and pg108_baseline_test.go pin.
 func TestUniqueRules_AskForNothingWhereNothingIsBuilt(t *testing.T) {
@@ -280,7 +280,7 @@ func TestUniqueRules_AskForNothingWhereNothingIsBuilt(t *testing.T) {
 		Dialect:   "postgres",
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-		Disabled:  []string{"PG101", "PG108"},
+		Disabled:  []string{"locking/create-index", "locking/partitioned-index"},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.BaselineVersions(), qt.HasLen, 0)

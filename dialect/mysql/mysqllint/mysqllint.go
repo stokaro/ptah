@@ -1,6 +1,6 @@
 // Package mysqllint holds the migration lint rules the MySQL owner checks for
 // MySQL and MariaDB: the MY family of MySQL-family hazards and the online-mode
-// rule ON102.
+// rule online/unproven.
 //
 // Rules publishes them as data and Service checks them, once per lint run.
 // The bundled runtime ptah.run/engine/builtin registers both on the mysql
@@ -44,6 +44,6 @@ func rules() lintkit.Rules {
 	all = append(all, mysqlCostRules()...)
 	all = append(all, mysqlMemberRules()...)
 	all = append(all, atlasGapMySQLRules()...)
-	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Code, b.Code) })
+	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Name, b.Name) })
 	return all
 }

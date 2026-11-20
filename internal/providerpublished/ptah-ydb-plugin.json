@@ -130,155 +130,155 @@
       "lintRules": [
         {
           "appliesToDown": true,
-          "code": "YD101",
+          "code": "capability/unique-index-on-existing-table",
           "severity": "ERROR",
           "subsumes": [
-            "MF101",
-            "MF102"
+            "data-dependent/add-unique-index",
+            "data-dependent/rebuild-index-as-unique"
           ],
           "title": "unique index added to an existing table"
         },
         {
-          "code": "YD102",
+          "code": "transaction/scheme-and-data-in-one-query",
           "severity": "ERROR",
           "title": "scheme and data statements in one query"
         },
         {
           "appliesToDown": true,
-          "code": "YD103",
+          "code": "ydb/add-column-form",
           "severity": "ERROR",
           "subsumes": [
-            "DD101"
+            "data-dependent/add-not-null-column"
           ],
           "title": "column added in a form YDB refuses"
         },
         {
-          "code": "YD104",
+          "code": "dependency/drop-indexed-column",
           "severity": "ERROR",
           "title": "column dropped while an index or the TTL uses it"
         },
         {
-          "code": "YD105",
+          "code": "side-effect/reset-min-partition-count",
           "severity": "WARNING",
           "title": "partitioning change resets the minimum partition count"
         },
         {
-          "code": "YD106",
+          "code": "dependency/drop-table-read-by-view",
           "severity": "ERROR",
           "title": "table dropped or renamed while a view reads it"
         },
         {
           "appliesToDown": true,
-          "code": "YD107",
+          "code": "side-effect/widen-serial-sequence",
           "severity": "ERROR",
           "title": "ALTER SEQUENCE widens a 16-bit or 32-bit Serial"
         },
         {
           "appliesToDown": true,
-          "code": "YD108",
+          "code": "side-effect/replay-sequence-restart",
           "severity": "ERROR",
           "title": "ALTER SEQUENCE replays an earlier RESTART"
         },
         {
-          "code": "YD109",
+          "code": "dependency/rename-table-with-changefeed",
           "severity": "ERROR",
           "title": "table renamed while it carries a changefeed"
         },
         {
           "appliesToDown": true,
-          "code": "YD110",
+          "code": "side-effect/revoke-grant-option",
           "severity": "ERROR",
           "title": "REVOKE GRANT OPTION FOR revokes the permission too"
         },
         {
           "appliesToDown": true,
-          "code": "YD111",
+          "code": "side-effect/dropped-principal-keeps-permissions",
           "severity": "WARNING",
           "title": "dropped user or group keeps its permissions"
         },
         {
           "appliesToDown": true,
-          "code": "YD113",
+          "code": "side-effect/reset-topic-setting",
           "severity": "ERROR",
           "title": "topic setting reset"
         },
         {
           "appliesToDown": true,
-          "code": "YD114",
+          "code": "side-effect/ignored-topic-setting",
           "severity": "ERROR",
           "title": "topic setting YDB keeps as nothing"
         },
         {
           "appliesToDown": true,
-          "code": "YD115",
+          "code": "side-effect/drop-replication-without-failover",
           "severity": "WARNING",
           "title": "async replication dropped without failover"
         },
         {
           "appliesToDown": true,
-          "code": "YD116",
+          "code": "security/secret-in-clear",
           "severity": "ERROR",
           "title": "secret written in clear"
         },
         {
-          "code": "YD118",
+          "code": "side-effect/reset-partition-size",
           "severity": "WARNING",
           "title": "partitioning change resets the partition size"
         },
         {
-          "code": "YD119",
+          "code": "side-effect/implicit-column-family",
           "severity": "WARNING",
           "title": "column family the table does not have"
         },
         {
           "appliesToDown": true,
-          "code": "YD120",
+          "code": "destructive/drop-default-resource-pool",
           "severity": "ERROR",
           "title": "the resource pool default dropped"
         },
         {
           "appliesToDown": true,
-          "code": "YD121",
+          "code": "destructive/drop-backup-collection",
           "severity": "ERROR",
           "title": "backup collection dropped"
         },
         {
           "appliesToDown": true,
-          "code": "YD122",
+          "code": "capability/analyze",
           "severity": "WARNING",
           "title": "ANALYZE in a migration"
         },
         {
           "appliesToDown": true,
-          "code": "YD130",
+          "code": "capability/vector-index",
           "severity": "ERROR",
           "title": "vector index the target does not build"
         },
         {
-          "code": "YD131",
+          "code": "side-effect/vector-index-misses-writes",
           "severity": "WARNING",
           "title": "rows written past a vector index that does not take them"
         },
         {
           "appliesToDown": true,
-          "code": "YD140",
+          "code": "security/secret-value-in-migration",
           "severity": "ERROR",
           "title": "secret value written in the migration"
         },
         {
           "appliesToDown": true,
-          "code": "YD141",
+          "code": "security/deprecated-secret-object",
           "severity": "WARNING",
           "title": "external data source credential in a deprecated secret object"
         },
         {
-          "code": "YD150",
+          "code": "side-effect/orphaned-comment",
           "severity": "WARNING",
           "title": "comment left behind by a drop or a rename"
         },
         {
           "appliesToDown": true,
-          "code": "YD160",
+          "code": "destructive/discard-streaming-query-state",
           "severity": "WARNING",
           "title": "streaming query checkpoint state discarded"
         }

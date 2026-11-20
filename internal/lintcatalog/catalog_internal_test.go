@@ -23,7 +23,7 @@ func TestJoinRefusesARuleTheCatalogDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 
 	registry := append(must.Must(lint.Rules(builtintest.Runtime())), lint.Rule{
-		Code:           "PG112P",
+		Name:           "design/invented-for-this-test",
 		Title:          "invented for this test",
 		Severity:       lint.SeverityWarning,
 		CheckStatement: func(*lint.Statement) (bool, string) { return false, "" },
@@ -32,7 +32,7 @@ func TestJoinRefusesARuleTheCatalogDoesNotDescribe(t *testing.T) {
 	entries, err := migrationEntriesFrom(registry)
 	c.Assert(entries, qt.IsNil)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "PG112P")
+	c.Assert(err.Error(), qt.Contains, "design/invented-for-this-test")
 	c.Assert(err.Error(), qt.Contains, "no catalog entry")
 }
 
@@ -42,7 +42,7 @@ func TestJoinRefusesACatalogRowForARuleThatIsGone(t *testing.T) {
 	c := qt.New(t)
 
 	registry := must.Must(lint.Rules(builtintest.Runtime()))[1:]
-	gone := must.Must(lint.Rules(builtintest.Runtime()))[0].Code
+	gone := must.Must(lint.Rules(builtintest.Runtime()))[0].Name
 
 	entries, err := migrationEntriesFrom(registry)
 	c.Assert(entries, qt.IsNil)
@@ -66,12 +66,12 @@ func TestSQLJoinRefusesBothDirections(t *testing.T) {
 			// failing -- which is the right way round: a fixture that names
 			// the next free code goes stale the moment that code is taken.
 			name:    "identifier the catalog does not describe",
-			ids:     []string{"SQL001", "SQL002", "DDL001", "CAP001", "SQL003", "SQL999"},
+			ids:     []string{"correctness/syntax-error", "coverage/unsupported-statement", "design/no-primary-key", "capability/missing", "coverage/dynamic-sql", "design/invented-rule"},
 			message: "no catalog entry",
 		},
 		{
 			name:    "catalog row for an identifier that is gone",
-			ids:     []string{"SQL001", "SQL002", "DDL001"},
+			ids:     []string{"correctness/syntax-error", "coverage/unsupported-statement", "design/no-primary-key"},
 			message: "no longer exist",
 		},
 	}

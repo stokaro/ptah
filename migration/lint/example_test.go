@@ -39,9 +39,9 @@ func ExampleLintFS() {
 	}
 
 	// Output:
-	// 0000000001_drop_email.up.sql:1 [warning] BC104: dropping a column retires a name application versions already deployed against the old schema still select and insert, so each of them starts failing the moment this migration commits, whether or not the column held any rows; deploy readers that no longer use the column first, then drop it in a later release (dropped column breaks deployed code)
-	// 0000000001_drop_email.up.sql:1 [error] DS102: DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release (column dropped)
-	// 0000000001_drop_email.up.sql:2 [warning] PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
+	// 0000000001_drop_email.up.sql:1 [error] destructive/drop-column: DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release (column dropped)
+	// 0000000001_drop_email.up.sql:1 [warning] rollout/drop-column: dropping a column retires a name application versions already deployed against the old schema still select and insert, so each of them starts failing the moment this migration commits, whether or not the column held any rows; deploy readers that no longer use the column first, then drop it in a later release (dropped column breaks deployed code)
+	// 0000000001_drop_email.up.sql:2 [warning] locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
 }
 
 // ExampleAnalyzeFS reaches for the richer result: prepared files carrying the
@@ -80,8 +80,8 @@ func ExampleAnalyzeFS() {
 	// 0000000001_reshape.up.sql: 1 statement(s), 2 change(s)
 	//   drop legacy (statement 0)
 	//   add preferences (statement 0)
-	// finding BC104 at line 1
-	// finding DS102 at line 1
+	// finding destructive/drop-column at line 1
+	// finding rollout/drop-column at line 1
 }
 
 // ExampleLoadConfigFS loads .ptah-lint.yaml ([lint.ConfigFileName]) from the
@@ -89,16 +89,16 @@ func ExampleAnalyzeFS() {
 // Config.Rules into [lint.Options] — the wiring an embedder does itself,
 // because capture does not apply the lint policy automatically. Loading also
 // canonicalizes the dialect ("postgresql" becomes "postgres"), which
-// [lint.Options.Dialect] requires. Here the configuration disables PG101 and
-// downgrades DS102 to a warning.
+// [lint.Options.Dialect] requires. Here the configuration disables locking/create-index and
+// downgrades destructive/drop-column to a warning.
 func ExampleLoadConfigFS() {
 	fsys := fstest.MapFS{
 		".ptah-lint.yaml": &fstest.MapFile{Data: []byte(
 			"dialect: postgresql\n" +
 				"disabled-rules:\n" +
-				"  - PG101\n" +
+				"  - locking/create-index\n" +
 				"rules:\n" +
-				"  DS102:\n" +
+				"  destructive/drop-column:\n" +
 				"    severity: warning\n")},
 		"0000000001_drop_email.up.sql": &fstest.MapFile{Data: []byte(
 			"ALTER TABLE users DROP COLUMN email;\n" +
@@ -121,8 +121,8 @@ func ExampleLoadConfigFS() {
 
 	// Output:
 	// dialect: postgres
-	// warning BC104
-	// warning DS102
+	// warning destructive/drop-column
+	// warning rollout/drop-column
 }
 
 // ExampleLintFS_extraRules runs a caller-provided rule through
@@ -132,7 +132,7 @@ func ExampleLoadConfigFS() {
 // TIMESTAMP column fires the rule and the literal mentioning TIMESTAMP cannot.
 func ExampleLintFS_extraRules() {
 	plainTimestamp := lint.Rule{
-		Code:     "ORG101",
+		Name:     "design/org101",
 		Title:    "plain TIMESTAMP column",
 		Severity: lint.SeverityWarning,
 		CheckStatement: func(stmt *lint.Statement) (bool, string) {
@@ -160,7 +160,7 @@ func ExampleLintFS_extraRules() {
 	}
 
 	// Output:
-	// 0000000001_events.up.sql:1 [warning] ORG101: use TIMESTAMPTZ so stored instants keep their time zone (plain TIMESTAMP column)
+	// 0000000001_events.up.sql:1 [warning] design/org101: use TIMESTAMPTZ so stored instants keep their time zone (plain TIMESTAMP column)
 }
 
 // ExampleValidateOptions checks a lint policy without reading any migration
@@ -171,12 +171,12 @@ func ExampleLintFS_extraRules() {
 func ExampleValidateOptions() {
 	err := lint.ValidateOptions(builtintest.Runtime(), lint.Options{
 		Dialect:  "postgres",
-		Disabled: []string{"ZZ999"},
+		Disabled: []string{"design/zz999"},
 	})
 	fmt.Println(err)
 
 	// Output:
-	// rule selector "ZZ999" does not match any registered rule
+	// rule selector "design/zz999" is not the name of a migration lint rule; a name is a category and a rule joined by a slash, such as locking/add-foreign-key
 }
 
 // ExampleAnalyzeFS_baseline supplies the schema state a version starts from,
@@ -226,10 +226,10 @@ func ExampleAnalyzeFS_baseline() {
 
 	// Output:
 	// versions worth reading: [2]
-	// without the state: MF101
-	// unmet: MF101 needs the baseline schema that refines the statement text
-	// unmet: MF102 needs the baseline schema that refines the statement text
-	// with the state: MF102
+	// without the state: data-dependent/add-unique-index
+	// unmet: data-dependent/add-unique-index needs the baseline schema that refines the statement text
+	// unmet: data-dependent/rebuild-index-as-unique needs the baseline schema that refines the statement text
+	// with the state: data-dependent/rebuild-index-as-unique
 	// unmet with the state: 0
 }
 

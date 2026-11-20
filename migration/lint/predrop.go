@@ -492,7 +492,7 @@ func lastComponent(ref string) string {
 	return ref
 }
 
-// tableDropBaselineSubjects are the statements DS101 reads the starting state
+// tableDropBaselineSubjects are the statements destructive/drop-table reads the starting state
 // for: the drops that end a table rebuild, whose copy the old columns check,
 // the DROP TABLE IF EXISTS statements, whose table the state may show to be
 // absent, and the CREATE TABLE IF NOT EXISTS statements, whose table it may
@@ -777,7 +777,7 @@ func guardedColumnDrops(file *File) []int {
 	return slices.Compact(subjects)
 }
 
-// columnDropBaselineSubjects are the statements DS102 and BC104 read the
+// columnDropBaselineSubjects are the statements destructive/drop-column and rollout/drop-column read the
 // starting state for: the CREATE TABLE IF NOT EXISTS statements, whose table it
 // may show to be new, the DROP COLUMN IF EXISTS statements, whose column it
 // may show to be absent, and the drops of a column the file adds back as

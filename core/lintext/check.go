@@ -50,9 +50,9 @@ type File struct {
 type CheckRequest struct {
 	// Target is the server the run plans against.
 	Target Target `json:"target"`
-	// Codes are the owner's rules the run enables. The owner reports no
+	// Names are the owner's rules the run enables, by name. The owner reports no
 	// other.
-	Codes []string `json:"codes"`
+	Names []string `json:"names"`
 	// Files are every file of the run, in the order the migrator applies
 	// them, selected or not: a rule may read the files before the one it
 	// judges.
@@ -116,8 +116,8 @@ type Subject struct {
 
 // Finding is one violation an owner reports.
 type Finding struct {
-	// Code is the rule that found it, one of the request's codes.
-	Code string `json:"code"`
+	// Name is the rule that found it, one of the request's names.
+	Name string `json:"name"`
 	// File is the position of the file in the request.
 	File int `json:"file"`
 	// Statement is the position of the statement in its file, or -1 for a
@@ -169,12 +169,12 @@ func ValidateCheck(request CheckRequest, result CheckResult) error {
 		}
 	}
 	for _, subject := range result.BaselineSubjects {
-		if !slices.Contains(request.Codes, subject.Code) || subject.File < 0 || subject.File >= len(request.Files) ||
+		if !slices.Contains(request.Names, subject.Name) || subject.File < 0 || subject.File >= len(request.Files) ||
 			len(subject.Statements) == 0 || slices.ContainsFunc(subject.Statements, func(statement int) bool {
 			return statement < 0 || statement >= len(request.Files[subject.File].Statements)
 		}) {
 			return fmt.Errorf("%w: baseline subject of %s names a rule, file or statement the request did not hold, or no statement",
-				ErrInvalid, subject.Code)
+				ErrInvalid, subject.Name)
 		}
 	}
 	return nil
@@ -182,17 +182,17 @@ func ValidateCheck(request CheckRequest, result CheckResult) error {
 
 // validateFinding is [ValidateCheck] for one finding.
 func validateFinding(request CheckRequest, finding Finding) error {
-	if !slices.Contains(request.Codes, finding.Code) || finding.File < 0 || finding.File >= len(request.Files) ||
+	if !slices.Contains(request.Names, finding.Name) || finding.File < 0 || finding.File >= len(request.Files) ||
 		finding.Statement < -1 || finding.Statement >= len(request.Files[finding.File].Statements) || finding.Message == "" {
 		return fmt.Errorf("%w: finding %s names a rule, file or statement the request did not hold, or says nothing",
-			ErrInvalid, finding.Code)
+			ErrInvalid, finding.Name)
 	}
 	if len(finding.Subjects) > 0 && finding.Statement < 0 {
-		return fmt.Errorf("%w: finding %s is about a whole file and names subjects", ErrInvalid, finding.Code)
+		return fmt.Errorf("%w: finding %s is about a whole file and names subjects", ErrInvalid, finding.Name)
 	}
 	for _, subject := range finding.Subjects {
 		if (subject.Kind != SubjectTable && subject.Kind != SubjectColumn) || subject.Name == "" {
-			return fmt.Errorf("%w: finding %s names a subject without a known kind or a name", ErrInvalid, finding.Code)
+			return fmt.Errorf("%w: finding %s names a subject without a known kind or a name", ErrInvalid, finding.Name)
 		}
 	}
 	return nil

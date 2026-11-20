@@ -32,19 +32,19 @@ func analyzeUnique(c *qt.C, dialect, migration string) lint.Analysis {
 }
 
 // uniqueCodes keeps the codes of this family, so a quiet case asserts that
-// the unique-index rules said nothing rather than that PG101 or PG105 fell
+// the unique-index rules said nothing rather than that locking/create-index or locking/add-unique-constraint fell
 // silent on a statement they still describe.
 func uniqueCodes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if code == "MF101" || code == "MF102" {
+		if code == "data-dependent/add-unique-index" || code == "data-dependent/rebuild-index-as-unique" {
 			kept = append(kept, code)
 		}
 	}
 	return kept
 }
 
-// TestUniqueIndexAddedRule_ReportsTheBuildOverExistingRows pins MF101 to
+// TestUniqueIndexAddedRule_ReportsTheBuildOverExistingRows pins data-dependent/add-unique-index to
 // every spelling that builds a unique index over rows the table already
 // holds, with the query that settles the risk.
 func TestUniqueIndexAddedRule_ReportsTheBuildOverExistingRows(t *testing.T) {
@@ -124,8 +124,8 @@ func TestUniqueIndexAddedRule_ReportsTheBuildOverExistingRows(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeUnique(c, test.dialect, test.migration)
-			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
-			message := messageOf(analysis.Findings(), "MF101")
+			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
+			message := messageOf(analysis.Findings(), "data-dependent/add-unique-index")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -142,8 +142,8 @@ func TestUniqueIndexAddedRule_NullsNotDistinctWithdrawsTheNullExemption(t *testi
 	analysis := analyzeUnique(c, "postgres",
 		"ALTER TABLE orders ADD COLUMN slug varchar(20);\nCREATE UNIQUE INDEX orders_slug ON orders (slug) NULLS NOT DISTINCT;")
 
-	c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
-	c.Assert(messageOf(analysis.Findings(), "MF101"), qt.Not(qt.Contains), "do not collide")
+	c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
+	c.Assert(messageOf(analysis.Findings(), "data-dependent/add-unique-index"), qt.Not(qt.Contains), "do not collide")
 }
 
 // TestUniqueIndexAddedRule_StaysQuietWhereNoRowCanCollide holds the two
@@ -201,7 +201,7 @@ func TestUniqueIndexAddedRule_StaysQuietWhereNoRowCanCollide(t *testing.T) {
 	}
 }
 
-// TestIndexMadeUniqueRule_ReportsTheReplacement pins MF102 to an index the
+// TestIndexMadeUniqueRule_ReportsTheReplacement pins data-dependent/rebuild-index-as-unique to an index the
 // file drops and rebuilds as unique under the same name.
 func TestIndexMadeUniqueRule_ReportsTheReplacement(t *testing.T) {
 	tests := []struct {
@@ -250,8 +250,8 @@ func TestIndexMadeUniqueRule_ReportsTheReplacement(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeUnique(c, test.dialect, test.migration)
-			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF102"})
-			message := messageOf(analysis.Findings(), "MF102")
+			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/rebuild-index-as-unique"})
+			message := messageOf(analysis.Findings(), "data-dependent/rebuild-index-as-unique")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -286,25 +286,25 @@ func TestIndexMadeUniqueRule_LeavesOtherBuildsToMF101(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeUnique(c, test.dialect, test.migration)
-			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MF101"})
+			c.Assert(uniqueCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
 		})
 	}
 }
 
-// TestUniqueRules_SitBesideTheLockRules: the failure MF101 names and the
-// lock PG105 names are two hazards of one statement, and both are reported.
+// TestUniqueRules_SitBesideTheLockRules: the failure data-dependent/add-unique-index names and the
+// lock locking/add-unique-constraint names are two hazards of one statement, and both are reported.
 func TestUniqueRules_SitBesideTheLockRules(t *testing.T) {
 	c := qt.New(t)
 
 	analysis := analyzeUnique(c, "postgres", "ALTER TABLE orders ADD CONSTRAINT orders_email UNIQUE (email);")
 
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MF101", "PG105"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/add-unique-index", "locking/add-unique-constraint"})
 	c.Assert(analysis.Findings()[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectColumn, Name: "email", Parent: "orders"}})
 }
 
 // TestFileFormRules_CarryTheConventionSuffix pins the identifiers the
 // missing-down and empty-file rules report under, which the Atlas checks
-// MF101 and MF102 took over.
+// data-dependent/add-unique-index and data-dependent/rebuild-index-as-unique took over.
 func TestFileFormRules_CarryTheConventionSuffix(t *testing.T) {
 	c := qt.New(t)
 
@@ -315,5 +315,5 @@ func TestFileFormRules_CarryTheConventionSuffix(t *testing.T) {
 	}), lint.Options{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"file-form/missing-down", "file-form/empty-migration"})
 }

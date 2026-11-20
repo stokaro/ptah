@@ -73,7 +73,7 @@ func TestLintFS_AnnotatesOnlyARunThatNamesNoDialect(t *testing.T) {
 		wantCalls int
 		wantSites []string
 	}{
-		{name: "no dialect", wantCalls: 1, wantSites: []string{"0001_t.up.sql:1:DS107", "0002_u.up.sql:1:DS107"}},
+		{name: "no dialect", wantCalls: 1, wantSites: []string{"0001_t.up.sql:1:destructive/drop-object", "0002_u.up.sql:1:destructive/drop-object"}},
 		{name: "postgres", dialect: "postgres", wantCalls: 0, wantSites: make([]string, 0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -105,9 +105,9 @@ func TestAnalyzeFS_NoDialect_NamesWhatAnOwnerDeclined(t *testing.T) {
 		wantSites []string
 	}{
 		{name: "every file", want: []lint.UnjudgedStatement{{Target: "fixture", File: "0001_t.up.sql", Line: 2}},
-			wantSites: []string{"0002_u.up.sql:1:DS107"}},
+			wantSites: []string{"0002_u.up.sql:1:destructive/drop-object"}},
 		{name: "the second file selected", selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-			want: nil, wantSites: []string{"0002_u.up.sql:1:DS107"}},
+			want: nil, wantSites: []string{"0002_u.up.sql:1:destructive/drop-object"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -150,7 +150,7 @@ func TestLintFS_JudgedRebuildsAreTheOwnersAnswer(t *testing.T) {
 		runtime *engine.Runtime
 		want    []string
 	}{
-		{name: "judged by the owner", runtime: judging, want: []string{"0002_rebuild.up.sql:3:DS101"}},
+		{name: "judged by the owner", runtime: judging, want: []string{"0002_rebuild.up.sql:3:destructive/drop-table"}},
 		{name: "matched by the host", runtime: builtintest.Runtime(), want: make([]string, 0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {

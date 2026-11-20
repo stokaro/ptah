@@ -11,7 +11,7 @@ import (
 )
 
 // analyzePlaced runs the real analyzer over the gap fixture against the server
-// a run names with --server-version, and returns the codes and the MY142
+// a run names with --server-version, and returns the codes and the rewrite/add-column-before-existing
 // message it reported for version 2.
 func analyzePlaced(c *qt.C, dialect, version, statement string) (codes []string, message string) {
 	c.Helper()
@@ -28,10 +28,10 @@ func analyzePlaced(c *qt.C, dialect, version, statement string) (codes []string,
 	for _, finding := range analysis.Findings() {
 		codes = append(codes, finding.Rule)
 	}
-	return codes, messageOf(analysis.Findings(), "MY142")
+	return codes, messageOf(analysis.Findings(), "rewrite/add-column-before-existing")
 }
 
-// TestInstantColumnPositionRule_HappyPath drives MY142 on the servers that
+// TestInstantColumnPositionRule_HappyPath drives rewrite/add-column-before-existing on the servers that
 // rebuild the table for a column placed before existing ones. Measured with
 // ALGORITHM=INSTANT, MySQL 8.0.28 and MariaDB 10.3.39 refuse FIRST and AFTER
 // with 1845, so each row names the column and the server it planned against.
@@ -68,7 +68,7 @@ func TestInstantColumnPositionRule_HappyPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			codes, message := analyzePlaced(c, tt.dialect, tt.version, tt.statement)
-			c.Assert(codes, qt.Contains, "MY142")
+			c.Assert(codes, qt.Contains, "rewrite/add-column-before-existing")
 			c.Assert(message, qt.Contains, tt.wantText)
 		})
 	}
@@ -103,7 +103,7 @@ func TestInstantColumnPositionRule_StaysQuiet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			codes, message := analyzePlaced(c, tt.dialect, tt.version, tt.statement)
-			c.Assert(codes, qt.Not(qt.Contains), "MY142")
+			c.Assert(codes, qt.Not(qt.Contains), "rewrite/add-column-before-existing")
 			c.Assert(message, qt.Equals, "")
 		})
 	}

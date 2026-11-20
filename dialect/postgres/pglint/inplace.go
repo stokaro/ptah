@@ -9,13 +9,13 @@ import (
 	"ptah.run/internal/lintkit/pgtype"
 )
 
-// postgresInPlaceRule (PG301P) is the other half of the PostgreSQL cost
+// postgresInPlaceRule (rewrite/in-place-column-change) is the other half of the PostgreSQL cost
 // rules: they fire where a rewrite is established and stay quiet where the
 // server applies the change in place, and quiet reads the same as "the rule
-// did not look". PG301P says the clause was judged and applied as a catalog
+// did not look". rewrite/in-place-column-change says the clause was judged and applied as a catalog
 // edit, and how, for a statement whose every clause the comparison could
 // judge (stokaro/ptah#2956). Migration lint reports the same for the MySQL
-// family as MY130P.
+// family as rewrite/in-place-column-change.
 //
 // The type half is the measurement in pgcost.go. The attribute half was
 // measured on PostgreSQL 18.6 by relfilenode and the heap-scan counter, beside
@@ -31,11 +31,11 @@ import (
 func postgresInPlaceRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG301P",
+			Name:     "rewrite/in-place-column-change",
 			Title:    "column type change applied as a catalog edit",
 			Severity: lintext.Info,
 			Targets:  []string{"postgres"},
-			Subsumes: []string{"DS103"},
+			Subsumes: []string{"data-dependent/alter-column-type"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: pgTypeChangeStatements,

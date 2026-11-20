@@ -66,7 +66,7 @@ func destructiveSites(c *qt.C, test rebuildCase) []string {
 	}), opts)
 	c.Assert(err, qt.IsNil)
 	return slices.DeleteFunc(findingSites(findings), func(site string) bool {
-		return !strings.HasSuffix(site, ":DS101") && !strings.HasSuffix(site, ":BC101") && !strings.HasSuffix(site, ":BC103")
+		return !strings.HasSuffix(site, ":destructive/drop-table") && !strings.HasSuffix(site, ":rollout/rename") && !strings.HasSuffix(site, ":rollout/drop-table")
 	})
 }
 
@@ -108,68 +108,68 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 		{
 			rebuildCase: rebuildCase{name: "a plain drop", dialect: "sqlite", first: sqliteItems,
 				second: "DROP TABLE items;\n"},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that leaves out a column the dev database shows", dialect: "sqlite",
 				first: sqliteItems, second: strings.Replace(sqliteRebuild,
 					`("id", "n", "label") SELECT "id", "n", "label"`, `("id", "n") SELECT "id", "n"`, 1),
 				baseline: []string{"id", "n", "label"}},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that writes NULL into a column the dev database shows",
 				dialect: "sqlite", first: sqliteItems, second: sqliteCopy(`"id", "n", NULL`),
 				baseline: []string{"id", "n", "label"}},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that writes NULL into a column, without a dev database",
 				dialect: "sqlite", first: sqliteItems, second: sqliteCopy(`"id", "n", NULL`)},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that swaps two columns", dialect: "sqlite", first: sqliteItems,
 				second: sqliteCopy(`"id", "label", "n"`), baseline: []string{"id", "n", "label"}},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that writes a constant into a column", dialect: "sqlite", first: sqliteItems,
 				second: sqliteCopy(`"id", "n", 'x'`), baseline: []string{"id", "n", "label"}},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that fills a column with a constant, without a dev database to show it is new",
 				dialect: "sqlite", first: sqliteItems, second: sqliteRebuildAddingFlag},
-			want: []string{"0000000002_change.up.sql:3:BC103", "0000000002_change.up.sql:3:DS101"},
+			want: []string{"0000000002_change.up.sql:3:destructive/drop-table", "0000000002_change.up.sql:3:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that keeps some rows", dialect: "sqlite", first: sqliteItems,
 				second: strings.Replace(sqliteRebuild, `FROM "items";`, `FROM "items" WHERE "id" > 10;`, 1)},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that folds equal rows", dialect: "sqlite", first: sqliteItems,
 				second: strings.Replace(sqliteRebuild, `SELECT "id"`, `SELECT DISTINCT "id"`, 1)},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a write to the old table between the copy and the drop", dialect: "sqlite",
 				first: sqliteItems, second: strings.Replace(sqliteRebuild, "DROP TABLE \"items\";\n",
 					"INSERT INTO items (id, n) VALUES (99, 1);\nDROP TABLE \"items\";\n", 1)},
-			want: []string{"0000000002_change.up.sql:10:BC103", "0000000002_change.up.sql:10:DS101"},
+			want: []string{"0000000002_change.up.sql:10:destructive/drop-table", "0000000002_change.up.sql:10:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy of another table", dialect: "sqlite",
 				first:  sqliteItems + "CREATE TABLE archive (id INTEGER PRIMARY KEY, n INTEGER, label TEXT);\n",
 				second: strings.Replace(sqliteRebuild, `FROM "items";`, `FROM "archive";`, 1)},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy into another table than the one just created", dialect: "sqlite",
 				first:  sqliteItems + "CREATE TABLE archive (id INTEGER PRIMARY KEY, n TEXT, label TEXT);\n",
 				second: strings.Replace(sqliteRebuild, `INSERT INTO "new_items"`, `INSERT INTO "archive"`, 1)},
-			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+			want: []string{"0000000002_change.up.sql:9:destructive/drop-table", "0000000002_change.up.sql:9:rollout/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy into a table the file did not just create", dialect: "sqlite",
@@ -177,7 +177,7 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 				second: "INSERT INTO \"new_items\" (\"id\", \"n\", \"label\") SELECT \"id\", \"n\", \"label\" FROM \"items\";\n" +
 					"DROP TABLE \"items\";\nALTER TABLE \"new_items\" RENAME TO \"items\";\n"},
 			want: []string{
-				"0000000002_change.up.sql:2:BC103", "0000000002_change.up.sql:2:DS101", "0000000002_change.up.sql:3:BC101",
+				"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table", "0000000002_change.up.sql:3:rollout/rename",
 			},
 		},
 	}
@@ -198,7 +198,7 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 	}{
 		{
 			rebuildCase: rebuildCase{name: "SQLite without a dev database", dialect: "sqlite", first: sqliteItems, second: sqliteRebuild},
-			want:        []string{"DS101"},
+			want:        []string{"destructive/drop-table"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "SQLite with the dev database's columns", dialect: "sqlite", first: sqliteItems,
@@ -209,7 +209,7 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 			// the text reports still asks for them.
 			rebuildCase: rebuildCase{name: "a copy that fills a column with a constant, without a dev database",
 				dialect: "sqlite", first: sqliteItems, second: sqliteRebuildAddingFlag},
-			want: []string{"DS101"},
+			want: []string{"destructive/drop-table"},
 		},
 	}
 	for _, test := range tests {
@@ -244,7 +244,7 @@ func TestTableRebuild_IsADropOnTheCompatibilitySurface(t *testing.T) {
 	}), lint.Options{Dialect: "sqlite", Compatibility: lint.CompatibilityProfileAtlas})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findingSites(findings), qt.Contains, "0000000002_change.up.sql:9:DS101")
+	c.Assert(findingSites(findings), qt.Contains, "0000000002_change.up.sql:9:destructive/drop-table")
 }
 
 func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
@@ -257,11 +257,11 @@ func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
 		{name: "lost label", second: strings.Replace(sqliteRebuild,
 			`("id", "n", "label") SELECT "id", "n", "label"`,
 			`("id", "n") SELECT "id", "n"`, 1),
-			want: []string{"0000000002_change.up.sql:3:DS102"}},
+			want: []string{"0000000002_change.up.sql:3:destructive/drop-column"}},
 		{name: "NULL written into label", second: sqliteCopy(`"id", "n", NULL`),
-			want: []string{"0000000002_change.up.sql:3:DS102"}},
+			want: []string{"0000000002_change.up.sql:3:destructive/drop-column"}},
 		{name: "n and label swapped", second: sqliteCopy(`"id", "label", "n"`),
-			want: []string{"0000000002_change.up.sql:3:DS102", "0000000002_change.up.sql:3:DS102"}},
+			want: []string{"0000000002_change.up.sql:3:destructive/drop-column", "0000000002_change.up.sql:3:destructive/drop-column"}},
 		{name: "a new column filled with a constant", second: sqliteRebuildAddingFlag},
 	}
 	for _, test := range tests {
@@ -281,8 +281,8 @@ func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			got := slices.DeleteFunc(findingSites(analysis.Findings()), func(site string) bool {
 				return !strings.HasPrefix(site, "0000000002_change.up.sql:") ||
-					(!strings.HasSuffix(site, ":DS101") && !strings.HasSuffix(site, ":DS102") &&
-						!strings.HasSuffix(site, ":BC101") && !strings.HasSuffix(site, ":BC103"))
+					(!strings.HasSuffix(site, ":destructive/drop-table") && !strings.HasSuffix(site, ":destructive/drop-column") &&
+						!strings.HasSuffix(site, ":rollout/rename") && !strings.HasSuffix(site, ":rollout/drop-table"))
 			})
 			// DeleteFunc leaves an empty slice where nothing is kept, and a row
 			// that wants no finding says so with nil.

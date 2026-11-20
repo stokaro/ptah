@@ -25,28 +25,28 @@ import (
 // form at all (1064), which means no online-DDL negotiation exists for it.
 //
 //	                                         INSTANT   INPLACE   COPY   LOCK=NONE
-//	DROP PRIMARY KEY, ADD PRIMARY KEY (…)     refused   ok        ok     ok      MY137
-//	ENGINE=…                                  refused   refused   ok     refused MY138
-//	PARTITION BY … / REMOVE PARTITIONING      syntax    syntax    syntax syntax  MY139
-//	ADD COLUMN … GENERATED … STORED           refused   refused   ok     refused MY140
-//	ADD COLUMN … AUTO_INCREMENT               refused   ok        ok     refused MY141
-//	MODIFY … GENERATED … STORED               refused   refused   ok     refused MY143
-//	ADD CONSTRAINT … CHECK (…)                refused   refused   ok     refused MY144
-//	ALTER CONSTRAINT … ENFORCED               refused   refused   ok     refused MY145 (MySQL only)
-//	DROP SYSTEM VERSIONING                    refused   ok        ok     refused MY146 (MariaDB only)
-//	MODIFY … NULL -> NOT NULL                 refused   ok        ok     ok      MY147
+//	DROP PRIMARY KEY, ADD PRIMARY KEY (…)     refused   ok        ok     ok      rewrite/replace-primary-key
+//	ENGINE=…                                  refused   refused   ok     refused rewrite/change-engine
+//	PARTITION BY … / REMOVE PARTITIONING      syntax    syntax    syntax syntax  rewrite/change-partitioning
+//	ADD COLUMN … GENERATED … STORED           refused   refused   ok     refused rewrite/add-stored-generated-column
+//	ADD COLUMN … AUTO_INCREMENT               refused   ok        ok     refused locking/add-auto-increment-column
+//	MODIFY … GENERATED … STORED               refused   refused   ok     refused rewrite/modify-generated-column
+//	ADD CONSTRAINT … CHECK (…)                refused   refused   ok     refused locking/add-check
+//	ALTER CONSTRAINT … ENFORCED               refused   refused   ok     refused locking/enforce-check (MySQL only)
+//	DROP SYSTEM VERSIONING                    refused   ok        ok     refused destructive/drop-system-versioning (MariaDB only)
+//	MODIFY … NULL -> NOT NULL                 refused   ok        ok     ok      rewrite/set-not-null
 //
 // Both servers agreed on every row above except where the row says otherwise.
 // Two divergences are not cost differences but missing syntax, and each is why
 // its rule is restricted to one dialect rather than assumed to generalize:
 //
 //   - MariaDB has no ENFORCED / NOT ENFORCED at all. `CHECK (…) NOT ENFORCED`
-//     and `ALTER CONSTRAINT … ENFORCED` are both ERROR 1064 there, so MY145 is
+//     and `ALTER CONSTRAINT … ENFORCED` are both ERROR 1064 there, so locking/enforce-check is
 //     a MySQL rule.
 //   - MySQL 8.4 has no system versioning at all. `WITH SYSTEM VERSIONING` is
-//     ERROR 1064 there, so MY146 is a MariaDB rule.
+//     ERROR 1064 there, so destructive/drop-system-versioning is a MariaDB rule.
 //
-// MY142 READS THE SERVER VERSION
+// rewrite/add-column-before-existing READS THE SERVER VERSION
 //
 // Adding a column before existing ones costs nothing on a current server and
 // rebuilds the table on an old one. Measured with ALGORITHM=INSTANT on a
@@ -55,7 +55,7 @@ import (
 // MySQL 8.0.29, 8.4 and 26.7 and on MariaDB 10.4.34 and 12.3.3, with a column
 // added last accepted everywhere as the control. A rule firing on every
 // `FIRST` or `AFTER` would be a false positive on every line Ptah tests, so
-// MY142 asks [capability.InstantAddColumnAnyPosition] of the server the run
+// rewrite/add-column-before-existing asks [capability.InstantAddColumnAnyPosition] of the server the run
 // plans against, and a run that names no server plans against the newest
 // line, where the key holds and the rule stays quiet.
 
@@ -64,7 +64,7 @@ import (
 //
 // It is separate from scanAddStoredGeneratedColumn, which answers for the ADD
 // side: modifying an existing generated column and adding one are different
-// statements with the same cost, and MY143 must not fire on the ADD that MY140
+// statements with the same cost, and rewrite/modify-generated-column must not fire on the ADD that rewrite/add-stored-generated-column
 // already reports.
 func atlasGapGeneratedStored(w []string) bool {
 	if !lintkit.IsAlterTable(w) {
@@ -174,7 +174,7 @@ func atlasGapCheckEnforcement(w []string) bool {
 	for _, start := range lintkit.ClauseStarts(w) {
 		// ALTER only. An ADD that spells ENFORCED is stating the default for
 		// a constraint being created, and the validation it costs is the one
-		// MY144 already reports; the transition this rule is about is turning
+		// locking/add-check already reports; the transition this rule is about is turning
 		// enforcement on for a constraint that already exists.
 		if start >= len(w) || w[start] != "ALTER" {
 			continue
@@ -222,7 +222,7 @@ func atlasGapDropSystemVersioning(w []string) bool {
 // The baseline is what makes this a transition rather than a shape. `MODIFY
 // total BIGINT NOT NULL` on a column that was already NOT NULL restates the
 // nullability and changes only the type, and reporting a rebuild there would
-// be a cost claim about a change that did not happen -- caught by the MY130
+// be a cost claim about a change that did not happen -- caught by the rewrite/alter-column-type
 // row of TestAtlasRowsNameTheRulesThatFire, whose fixture is exactly that.
 //
 // Without a baseline the rule finds nothing and says so through
@@ -264,7 +264,7 @@ func clauseDeclaresNotNull(w []string, typeStart int) bool {
 	return false
 }
 
-// atlasGapInstantPosition is MY142: a column placed before existing ones on a
+// atlasGapInstantPosition is rewrite/add-column-before-existing: a column placed before existing ones on a
 // server that cannot place it instantly.
 func atlasGapInstantPosition(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
 	caps := file.Target.Capabilities
@@ -320,11 +320,11 @@ func atlasGapMySQLRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "MY137",
+				Name:     "rewrite/replace-primary-key",
 				Title:    "primary key redefined with a table rebuild",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
-				Subsumes: []string{"MY132"},
+				Subsumes: []string{"rewrite/add-primary-key"},
 			},
 			Statement: func(_ *lintkit.File, stmt *lintext.Statement) (bool, string) {
 				if !lintkit.RedefinesPrimaryKey(stmt.Words) {
@@ -339,7 +339,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY138",
+				Name:     "rewrite/change-engine",
 				Title:    "storage engine change copies the table",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -356,7 +356,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY139",
+				Name:     "rewrite/change-partitioning",
 				Title:    "partitioning change rebuilds the table",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -373,7 +373,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY140",
+				Name:     "rewrite/add-stored-generated-column",
 				Title:    "stored generated column added with a table copy",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -390,8 +390,8 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY141",
-				Subsumes: []string{"MY101"},
+				Name:     "locking/add-auto-increment-column",
+				Subsumes: []string{"locking/blocking-alter-table"},
 				Title:    "auto-increment column added with blocked writes",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -408,7 +408,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY142",
+				Name:     "rewrite/add-column-before-existing",
 				Title:    "column placed before existing ones rebuilds the table on this server",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -417,8 +417,8 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY143",
-				Subsumes: []string{"MY101"},
+				Name:     "rewrite/modify-generated-column",
+				Subsumes: []string{"locking/blocking-alter-table"},
 				Title:    "generated column modified with a table copy",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -434,7 +434,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY144",
+				Name:     "locking/add-check",
 				Title:    "check constraint added with a full scan",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -458,7 +458,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY145",
+				Name:     "locking/enforce-check",
 				Title:    "check constraint enforcement revalidates every row",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql"},
@@ -479,7 +479,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY146",
+				Name:     "destructive/drop-system-versioning",
 				Title:    "system versioning dropped with its history",
 				Severity: lintext.Error,
 				Targets:  []string{"mariadb"},
@@ -496,8 +496,8 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY147",
-				Subsumes: []string{"MY101"},
+				Name:     "rewrite/set-not-null",
+				Subsumes: []string{"locking/blocking-alter-table"},
 				Title:    "nullability change rebuilds the table",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -513,7 +513,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 					findings = append(findings, lintext.Violation{Statement: site.Statement, Message: "making " + site.OldName + " NOT NULL rebuilds the table: measured on " +
 						"MySQL 8.4.11 and MariaDB 11.8.9, ALGORITHM=INSTANT is refused while INPLACE and " +
 						"LOCK=NONE are accepted, so writes continue but every row is read and rewritten; " +
-						"whether an existing NULL fails the statement is a separate question, and DD103 " +
+						"whether an existing NULL fails the statement is a separate question, and data-dependent/set-not-null " +
 						"answers it from the baseline", Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: site.OldName}}})
 				}
 				return findings

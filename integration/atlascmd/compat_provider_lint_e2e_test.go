@@ -121,7 +121,7 @@ func TestCompatMigrateLintSelectsTheProviderOfTheDevURL(t *testing.T) {
 // fixture provider serves, under an atlas.hcl policy that rates destructive
 // changes as errors. --config names the file, because a project file no flag
 // names is not read. The lint pass runs in the runtime the verb planned with,
-// so the provider splits the planned statements: DS107 reports the drop
+// so the provider splits the planned statements: destructive/drop-object reports the drop
 // because the fixture marked it as one that loses state, and the bundled
 // runtime has no splitter for the fixture engine at all.
 func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
@@ -141,8 +141,8 @@ func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Equals, "-- Planned Changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n", qt.Commentf("%s", stderr))
 	c.Assert(stderr, qt.Contains, "Error: the planned changes are refused by the atlas.hcl lint policy:\n")
-	c.Assert(stderr, qt.Contains, "\n  - DS101 error: ")
-	c.Assert(stderr, qt.Contains, "\n  - DS107 error: ")
+	c.Assert(stderr, qt.Contains, "\n  - destructive/drop-table error: ")
+	c.Assert(stderr, qt.Contains, "\n  - destructive/drop-object error: ")
 	f.assertStopped(c)
 }
 
@@ -180,8 +180,8 @@ func TestCompatMigrateLintReplaysOnTheProvidersDevDatabase(t *testing.T) {
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
 	c.Assert(stderr, qt.Equals, "")
 	c.Assert(out, qt.Contains, "  -- analyzing version 20240102000000\n")
-	c.Assert(out, qt.Contains, " [DS102]: DROP TABLE permanently deletes the table")
-	c.Assert(out, qt.Contains, " [FX101]: DROP TABLE removes every row\n")
+	c.Assert(out, qt.Contains, " [destructive/drop-table]: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, " [design/fx101]: DROP TABLE removes every row\n")
 	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
 	f.assertStopped(c)
 }
@@ -249,8 +249,8 @@ func TestCompatSchemaPlanLintsAPlanOfTheProvidersDatabase(t *testing.T) {
 	out, stderr, code = f.run(f.withManifest(), append([]string{"schema", "plan", "lint", "--file", "file://" + filepath.ToSlash(plan)}, transition...)...)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Contains, "Analyzing planned statements (1 in total):\n")
-	c.Assert(out, qt.Contains, " [DS102]: DROP TABLE permanently deletes the table")
-	c.Assert(out, qt.Contains, " [FX101]: DROP TABLE removes every row\n")
+	c.Assert(out, qt.Contains, " [destructive/drop-table]: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, " [design/fx101]: DROP TABLE removes every row\n")
 	f.assertStopped(c)
 
 	_, stderr, code = f.run(f.withManifest(), append([]string{"schema", "plan", "validate", "--file", "file://" + filepath.ToSlash(plan)}, transition...)...)

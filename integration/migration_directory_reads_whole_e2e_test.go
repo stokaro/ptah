@@ -18,7 +18,7 @@ import (
 // These tests drive the shipped binary over SQLite and a migration directory
 // that a run either reads whole or refuses, naming the file. A refusal comes
 // before anything runs, so the database holds no table afterwards, the
-// revision table included. Lint reports each such file under MF105P at error
+// revision table included. Lint reports each such file under file-form/refused-file at error
 // severity, with a dev database or without one.
 
 // readsWholeDirectory writes files into the migrations directory under a new
@@ -43,7 +43,7 @@ func readsWholePtah(c *qt.C, dir, verb string, args ...string) clirun.Result {
 }
 
 // refusedByLint names the files `migrations lint --format json` reports under
-// MF105P, with the further args given, and returns the exit code.
+// file-form/refused-file, with the further args given, and returns the exit code.
 func refusedByLint(c *qt.C, dir string, args ...string) ([]string, int) {
 	c.Helper()
 	result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
@@ -57,7 +57,7 @@ func refusedByLint(c *qt.C, dir string, args ...string) ([]string, int) {
 	c.Assert(json.Unmarshal([]byte(result.Stdout), &report), qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
 	files := make([]string, 0)
 	for _, finding := range report.Findings {
-		if finding.Rule == "MF105P" {
+		if finding.Rule == "file-form/refused-file" {
 			files = append(files, finding.File)
 		}
 	}
@@ -146,10 +146,10 @@ func TestMigrationDirectoryReadsWhole_AnAtlasRepeatableOverTheAtlasTable_HappyPa
 
 // A file the reading leaves out at the top of the directory refuses every
 // command that reads the directory to run it, and lint reports the file
-// under MF105P at error severity, so it exits 1, with a dev database or
+// under file-form/refused-file at error severity, so it exits 1, with a dev database or
 // without one. Without the refusal, up applies the files the reading
 // selected, exits 0 and never runs the file, status counts no pending
-// migration, and lint warns under MF103 and exits 0. A Ptah name is
+// migration, and lint warns under file-form/file-name and exits 0. A Ptah name is
 // case-sensitive and needs a name after its version.
 func TestMigrationDirectoryReadsWhole_AFileTheReadingLeavesOut_FailurePath(t *testing.T) {
 	tests := []struct {
@@ -222,7 +222,7 @@ func TestMigrationDirectoryReadsWhole_AFileTheReadingLeavesOut_FailurePath(t *te
 // Two files for one direction of one version, added to a directory whose
 // first migration is applied, refuse every command that reads the directory,
 // before anything runs, so the database keeps exactly what the first up made.
-// Lint reports both files under MF105P at error severity and exits 1, with a
+// Lint reports both files under file-form/refused-file at error severity and exits 1, with a
 // dev database or without one. Without the refusal, up applies the file that
 // sorts last as version 2, exits 0 and never runs the other, status counts no
 // pending migration, down rolls version 1 back, and lint exits 0. Nothing here

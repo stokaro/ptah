@@ -20,6 +20,7 @@
 package providerpublished
 
 import (
+	"cmp"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -66,7 +67,7 @@ func Descriptions() ([]*protocol.Description, error) {
 }
 
 // LintRules returns the lint rules every recorded engine publishes that served
-// does not resolve, each targeting its engine, sorted by code.
+// does not resolve, each targeting its engine, sorted by name.
 func LintRules(served schemaext.TargetResolver) ([]lintext.Rule, error) {
 	engines, err := unservedEngines(served)
 	if err != nil {
@@ -76,15 +77,20 @@ func LintRules(served schemaext.TargetResolver) ([]lintext.Rule, error) {
 	for _, engine := range engines {
 		rules = append(rules, providerhost.PublishedLintRules(engine)...)
 	}
-	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
+	slices.SortFunc(rules, compareRules)
 	return rules, nil
+}
+
+// compareRules orders rules by name, then by the targets they judge.
+func compareRules(a, b lintext.Rule) int {
+	return cmp.Or(strings.Compare(a.Name, b.Name), slices.Compare(a.Targets, b.Targets))
 }
 
 // LintRuntime returns runtime with the rules [LintRules] returns for served
 // beside its own: listing every rule names both, and a recorded engine served
 // does not resolve, named by its ID or an alias, lists that engine's rules.
 // Every other method is runtime's, so the result enumerates rules and runs no
-// recorded engine's analysis. A code both publish is refused.
+// recorded engine's analysis. A name both publish for one target, or at two severities, is refused.
 func LintRuntime(runtime lintext.Runtime, served schemaext.TargetResolver) (lintext.Runtime, error) {
 	engines, err := unservedEngines(served)
 	if err != nil {
@@ -93,6 +99,7 @@ func LintRuntime(runtime lintext.Runtime, served schemaext.TargetResolver) (lint
 	published := publishedLint{Runtime: runtime, engines: make(map[string][]lintext.Rule)}
 	for _, engine := range engines {
 		rules := providerhost.PublishedLintRules(engine)
+		slices.SortFunc(rules, compareRules)
 		for _, name := range append([]string{engine.GetId()}, engine.GetAliases()...) {
 			published.engines[name] = rules
 		}
@@ -117,12 +124,19 @@ func (p publishedLint) LintRules(target string) ([]lintext.Rule, error) {
 		return rules, err
 	}
 	for _, rule := range p.rules {
-		if slices.ContainsFunc(rules, func(own lintext.Rule) bool { return own.Code == rule.Code }) {
-			return nil, fmt.Errorf("%w: lint rule %s is published by the runtime and by a recorded provider", schemaext.ErrDuplicate, rule.Code)
+		// A name is one hazard checked once per engine, so it may be published
+		// by both for different targets at one severity.
+		if slices.ContainsFunc(rules, func(own lintext.Rule) bool {
+			return own.Name == rule.Name && (own.Severity != rule.Severity || slices.ContainsFunc(own.Targets, func(target string) bool {
+				return slices.Contains(rule.Targets, target)
+			}))
+		}) {
+			return nil, fmt.Errorf("%w: lint rule %s is published by the runtime and by a recorded provider for one target or at another severity",
+				schemaext.ErrDuplicate, rule.Name)
 		}
 	}
 	rules = append(rules, p.rules...)
-	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
+	slices.SortFunc(rules, compareRules)
 	return rules, nil
 }
 

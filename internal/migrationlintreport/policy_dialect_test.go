@@ -33,7 +33,7 @@ func TestPolicyDialect_HappyPath(t *testing.T) {
 	}{
 		{name: "the policy in the directory", opts: migrationlintreport.Options{FS: policyFS("dialect: ydb\n")}, project: "postgres", want: "ydb"},
 		{name: "an explicit config file", opts: migrationlintreport.Options{FS: policyFS("dialect: ydb\n"), ConfigPath: explicit}, want: "sqlite"},
-		{name: "a policy that names no dialect", opts: migrationlintreport.Options{FS: policyFS("gate:\n  families: [DS]\n")}, project: "mysql", want: "mysql"},
+		{name: "a policy that names no dialect", opts: migrationlintreport.Options{FS: policyFS("gate:\n  rules: [destructive/drop-table]\n")}, project: "mysql", want: "mysql"},
 		{name: "no policy", opts: migrationlintreport.Options{FS: fstest.MapFS{}}, project: "mysql", want: "mysql"},
 		{name: "a policy invalid elsewhere", opts: migrationlintreport.Options{FS: policyFS("dialect: ydb\nno_such_key: 1\n")}, want: "ydb"},
 	} {

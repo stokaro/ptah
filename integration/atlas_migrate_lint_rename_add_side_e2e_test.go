@@ -303,7 +303,7 @@ func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
 			writeLintE2EFile(c, migrationsDir, "1.sql", test.base)
 			writeLintE2EFile(c, migrationsDir, "2.sql", test.rename)
 
-			stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
+			stdout, stderr, err := runLintE2EStrictBinary(ctx, binaryPath,
 				"migrate", "lint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", replaceDatabaseName(c, dbURL, testDBName),
@@ -324,7 +324,7 @@ func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
 // empty" because it models the rename as a drop plus an add. Native `ptah
 // migrations lint` models it as a rename, and a rename does not fail on a
 // populated table -- so the same claim there would be false of the statement the
-// native analyzer describes. BC101 stays the single finding.
+// native analyzer describes. rollout/rename stays the single finding.
 //
 // Dropping the profile gate on the rename's add side leaves every other test in
 // the repository green, so without this row the split is unpinned.
@@ -367,7 +367,7 @@ func TestNativeMigrationsLintRenameHasNoAddSideE2E(t *testing.T) {
 	report := stdout + stderr
 
 	c.Assert(exitStatusOf(c, err), qt.Equals, 0)
-	c.Assert(report, qt.Contains, "BC101: renames are not backwards compatible")
+	c.Assert(report, qt.Contains, "rollout/rename: renames are not backwards compatible")
 	c.Assert(report, qt.Contains, "1 finding(s).")
 	c.Assert(report, qt.Not(qt.Contains), "without a DEFAULT")
 }

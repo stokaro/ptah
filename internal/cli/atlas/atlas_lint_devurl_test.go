@@ -121,7 +121,7 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, `"rule":"DS103"`)
+	c.Assert(out.String(), qt.Contains, `"rule":"destructive/drop-column"`)
 	c.Assert(out.String(), qt.Contains, `"severity":"warning"`)
 }
 

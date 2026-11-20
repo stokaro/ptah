@@ -17,19 +17,25 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/sqllint"
 )
 
-// ruleCodePattern is the shape of a rule identifier: a family prefix, a
-// three-digit number, and the optional trailing `P` the repository convention
-// puts on a rule of ours inside a family Atlas also uses.
-//
-// The suffix is not decoration in this pattern. `internal/lintcatalog` refuses
-// a Ptah rule in an Atlas-owned family that is spelled without it, so `PG112P`
-// is the only spelling such a rule may have -- and a scan blind to that
-// spelling would walk past exactly the identifiers the convention mandates,
-// leaving an emitted finding documented nowhere.
-var ruleCodePattern = regexp.MustCompile(`^[A-Z]+[0-9]{3}P?$`)
+// ruleNamePattern is the shape of a rule name: two lowercase hyphenated
+// segments joined by a slash. A scan also asks whether the first segment is a
+// declared category, so a path such as "text/plain" in the package is not
+// mistaken for a rule.
+var ruleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+// isRuleName reports whether text is the name of a rule under a declared
+// category.
+func isRuleName(text string) bool {
+	if !ruleNamePattern.MatchString(text) {
+		return false
+	}
+	_, declared := lintnames.CategoryFor(lintnames.CategoryOf(text))
+	return declared
+}
 
 // declaredRuleCodes reads the Go source in dir for every string literal whose
 // value looks like a rule identifier, wherever it appears.
@@ -75,7 +81,7 @@ func declaredRuleCodes(tb testing.TB, dir string) []string {
 				return true
 			}
 			text, unquoteErr := strconv.Unquote(literal.Value)
-			if unquoteErr == nil && ruleCodePattern.MatchString(text) {
+			if unquoteErr == nil && isRuleName(text) {
 				codes = append(codes, text)
 			}
 			return true
@@ -119,11 +125,11 @@ func TestDeclaredRuleCodesReadsEveryConventionalSpelling(t *testing.T) {
 		code  string
 		found []string
 	}{
-		{name: "Ptah rule inside an Atlas family", code: "PG112P", found: []string{"PG112P"}},
-		{name: "rule inside a family of ours", code: "SQL003", found: []string{"SQL003"}},
-		{name: "Atlas check under the Atlas identifier", code: "PG101", found: []string{"PG101"}},
-		{name: "lowercase is not an identifier", code: "pg112p", found: nil},
-		{name: "two digits is not an identifier", code: "PG12", found: nil},
+		{name: "a rule name", code: "naming/identifier-collision", found: []string{"naming/identifier-collision"}},
+		{name: "a rule of another category", code: "coverage/dynamic-sql", found: []string{"coverage/dynamic-sql"}},
+		{name: "a path is not a rule", code: "text/plain", found: nil},
+		{name: "a code is not a name", code: "PG112P", found: nil},
+		{name: "a name without a slash is not a rule", code: "coverage", found: nil},
 	}
 
 	for _, row := range rows {
@@ -154,18 +160,18 @@ func TestDeclaredRuleCodesReadsIdentifiersOutsideConstDeclarations(t *testing.T)
 	}{
 		{
 			name:   "a code written into the finding the rule returns",
-			source: "package fixture\n\ntype finding struct{ Rule string }\n\nfunc report() finding { return finding{Rule: \"SQL003\"} }\n",
-			found:  []string{"SQL003"},
+			source: "package fixture\n\ntype finding struct{ Rule string }\n\nfunc report() finding { return finding{Rule: \"coverage/dynamic-sql\"} }\n",
+			found:  []string{"coverage/dynamic-sql"},
 		},
 		{
 			name:   "a code used as a map key",
-			source: "package fixture\n\nvar titles = map[string]string{\"DDL002\": \"a title\"}\n",
-			found:  []string{"DDL002"},
+			source: "package fixture\n\nvar titles = map[string]string{\"correctness/index-on-undeclared-column\": \"a title\"}\n",
+			found:  []string{"correctness/index-on-undeclared-column"},
 		},
 		{
 			name:   "a code compared against inline",
-			source: "package fixture\n\nfunc isParse(code string) bool { return code == \"SQL004\" }\n",
-			found:  []string{"SQL004"},
+			source: "package fixture\n\nfunc isParse(code string) bool { return code == \"coverage/unanalyzed-statements\" }\n",
+			found:  []string{"coverage/unanalyzed-statements"},
 		},
 	}
 
@@ -203,19 +209,19 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			name:    "parse error",
 			source:  sqllint.Source{Name: "broken.sql", SQL: "CREATE TABLE ;"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "SQL001",
+			code:    "correctness/syntax-error",
 		},
 		{
 			name:    "statement the linter does not model",
 			source:  sqllint.Source{Name: "query.sql", SQL: "SELECT 1;"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "SQL002",
+			code:    "coverage/unsupported-statement",
 		},
 		{
 			name:    "a statement kind no rule analyzes",
 			source:  sqllint.Source{Name: "policy.sql", SQL: "CREATE POLICY p ON users USING (true);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "SQL004",
+			code:    "coverage/unanalyzed-statements",
 		},
 		{
 			// The index and the table it names are in one file, which is where
@@ -225,14 +231,14 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
 				"CREATE INDEX idx_users_email ON users (email);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL002",
+			code:    "correctness/index-on-undeclared-column",
 		},
 		{
 			name: "a name PostgreSQL cuts",
 			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
 				"CREATE INDEX " + strings.Repeat("i", 64) + " ON users (id);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL003",
+			code:    "naming/identifier-too-long",
 		},
 		{
 			name: "two names PostgreSQL stores as one",
@@ -240,13 +246,13 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 				"CREATE INDEX " + strings.Repeat("i", 63) + "_a ON users (id);\n" +
 				"CREATE INDEX " + strings.Repeat("i", 63) + "_b ON users (email);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL004",
+			code:    "naming/identifier-collision",
 		},
 		{
 			name:    "table without a primary key",
 			source:  sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL001",
+			code:    "design/no-primary-key",
 		},
 		{
 			name:   "capability the target lacks",
@@ -255,10 +261,10 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 				Dialect:      platform.CockroachDB,
 				Capabilities: capability.CockroachDB23(),
 			},
-			code: "CAP001",
+			code: "capability/missing",
 		},
 		{
-			// A routine also draws SQL002, because the linter models no
+			// A routine also draws coverage/unsupported-statement, because the linter models no
 			// CREATE PROCEDURE statement. Disabling it is what leaves one
 			// finding for the assertion below, and it is a PROCEDURE rather
 			// than a FUNCTION because only the procedure path parses a body:
@@ -270,7 +276,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 				Dialect: platform.Postgres,
 			},
-			code: "SQL003",
+			code: "coverage/dynamic-sql",
 		},
 	}
 

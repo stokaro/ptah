@@ -43,6 +43,6 @@ func TestMigrationsLintRebuiltViewDoesNotReportOldColumnReaderE2E(t *testing.T) 
 		"--dev-url", replaceDatabaseName(c, dbURL, name), "--latest", "1", "--fail-on", "none")
 	c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stderr, qt.Not(qt.Contains), "ran without the")
-	c.Assert(stdout, qt.Contains, "DS102")
-	c.Assert(stdout, qt.Not(qt.Contains), "DS110P")
+	c.Assert(stdout, qt.Contains, "destructive/drop-column")
+	c.Assert(stdout, qt.Not(qt.Contains), "dependency/drop-column-in-use")
 }

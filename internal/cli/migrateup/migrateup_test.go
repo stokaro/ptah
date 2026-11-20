@@ -100,7 +100,7 @@ ALTER TABLE ledger NO FORCE ROW LEVEL SECURITY;
 	c.Assert(
 		[]string{findings[0].Rule, findings[1].Rule, findings[2].Rule, findings[3].Rule, findings[4].Rule, findings[5].Rule},
 		qt.DeepEquals,
-		[]string{"DS102", "DS107", "DS107", "DS108", "DS109", "DS111P"},
+		[]string{"destructive/drop-column", "destructive/drop-object", "destructive/drop-object", "destructive/truncate-table", "security/disable-row-level-security", "security/no-force-row-level-security"},
 	)
 	c.Assert(findings[0].File, qt.Equals, "0000000002_next.up.sql")
 }
@@ -110,9 +110,9 @@ func TestLintPendingDestructiveHonorsLintConfigSeverityAndDisable(t *testing.T) 
 
 	fsys := fstest.MapFS{
 		lint.ConfigFileName: &fstest.MapFile{Data: []byte(`disabled-rules:
-  - DS102
+  - destructive/drop-column
 rules:
-  DS103:
+  data-dependent/alter-column-type:
     severity: warning
 `)},
 		"0000000001_change_type.up.sql": &fstest.MapFile{
@@ -132,12 +132,12 @@ rules:
 	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1, 2}}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
-		qt.Commentf("DS103 is warning-grade and DS102 is disabled by config"))
+		qt.Commentf("data-dependent/alter-column-type is warning-grade and destructive/drop-column is disabled by config"))
 
 	findings, err = lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1, 2, 3}}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "DS101")
+	c.Assert(findings[0].Rule, qt.Equals, "destructive/drop-table")
 }
 
 func TestMigrateUpCommandPreflightHookAbortPreventsMigration(t *testing.T) {

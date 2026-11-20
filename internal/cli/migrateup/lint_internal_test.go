@@ -39,35 +39,23 @@ func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "DS101")
+	c.Assert(findings[0].Rule, qt.Equals, "destructive/drop-table")
 }
 
 // TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate records which
-// directives reopen the apply-time destructive gate, because resolving Atlas
-// analyzer names on the native surface changed one of these rows.
-//
-// The gate has always honored a statement-local directive an author wrote above
-// the statement: on a binary built from master, `-- ptah:nolint DS101` and
-// `-- atlas:nolint DS101` above `DROP TABLE users;` both take
-// `ptah migrations up` from exit 2 to exit 0. `-- atlas:nolint destructive`
-// did not, because the analyzer name resolved to nothing natively; it now does,
-// which is the row this change moves. The whole-file header keeps blocking, and
-// keeps blocking for the same reason as before: the header form is
-// compatibility-scoped, and a blank line detaches it from the statement below.
-//
-// Reverting the change prints []string{"DS101"} for the "Atlas analyzer name"
-// row instead of an empty slice.
+// directives reopen the apply-time destructive gate. The gate honors a
+// statement-local `ptah:nolint` written above the statement, by rule name. An
+// `atlas:nolint` comment, with a code or an analyzer name, is Atlas's
+// directive: the native gate refuses it rather than read a code as a rule.
 func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T) {
 	tests := []struct {
 		name string
 		up   string
 		want []string
 	}{
-		{name: "no directive", up: "DROP TABLE users;\n", want: []string{"DS101"}},
-		{name: "native code", up: "-- ptah:nolint DS101\nDROP TABLE users;\n", want: make([]string, 0)},
-		{name: "Atlas code spelling", up: "-- atlas:nolint DS101\nDROP TABLE users;\n", want: make([]string, 0)},
-		{name: "Atlas analyzer name", up: "-- atlas:nolint destructive\nDROP TABLE users;\n", want: make([]string, 0)},
-		{name: "Atlas file header", up: "-- atlas:nolint destructive\n\nDROP TABLE users;\n", want: []string{"DS101"}},
+		{name: "no directive", up: "DROP TABLE users;\n", want: []string{"destructive/drop-table"}},
+		{name: "native name", up: "-- ptah:nolint destructive/drop-table\nDROP TABLE users;\n", want: nil},
+		{name: "native category", up: "-- ptah:nolint destructive\nDROP TABLE users;\n", want: nil},
 	}
 
 	for _, test := range tests {
@@ -81,7 +69,7 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 
 			c.Assert(err, qt.IsNil)
-			codes := make([]string, 0, len(findings))
+			var codes []string
 			for _, finding := range findings {
 				codes = append(codes, finding.Rule)
 			}
@@ -90,11 +78,28 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 	}
 }
 
+func TestLintPendingDestructive_AtlasDirectivesAreRefusedAtTheApplyGate(t *testing.T) {
+	for _, up := range []string{"-- atlas:nolint DS102\nDROP TABLE users;\n", "-- atlas:nolint destructive\nDROP TABLE users;\n"} {
+		t.Run(up, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fstest.MapFS{
+				"0000000001_drop.up.sql":   {Data: []byte(up)},
+				"0000000001_drop.down.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+			}
+
+			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
+
+			c.Assert(err, qt.ErrorMatches, `.*atlas:nolint is an Atlas directive that ptah-compat reads.*`)
+			c.Assert(findings, qt.IsNil)
+		})
+	}
+}
+
 func TestLintPendingDestructive_HonorsDirectoryPrefixedExclusion(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
 		lint.ConfigFileName: {
-			Data: []byte("rules:\n  DS101:\n    exclude:\n      - migrations/legacy/**\n"),
+			Data: []byte("rules:\n  destructive/drop-table:\n    exclude:\n      - migrations/legacy/**\n"),
 		},
 		"legacy/0000000001_drop.up.sql": {
 			Data: []byte("DROP TABLE users;\n"),
@@ -179,7 +184,7 @@ func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testin
 	c.Assert(migrations, qt.HasLen, 1)
 	c.Assert(migrations[0].UpSQL, qt.Equals, "DROP TABLE users;\n")
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "DS101")
+	c.Assert(findings[0].Rule, qt.Equals, "destructive/drop-table")
 	c.Assert(source.reads, qt.DeepEquals, map[string]int{
 		"0000000001_drop.down.sql": 1,
 		"0000000001_drop.up.sql":   1,
@@ -210,7 +215,7 @@ func TestLockedDestructiveLintHookUsesLockedPlanVersions(t *testing.T) {
 		Versions: []int64{2},
 	})
 
-	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_drop.up.sql.*DS101.*")
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_drop.up.sql.*destructive/drop-table.*")
 }
 
 func TestLockedDestructiveLintHookAllowsSafeLockedPlan(t *testing.T) {
@@ -310,7 +315,7 @@ func TestLockedDestructiveLintHookReadsTheTargetsGeneratedColumns_FailurePath(t 
 
 	err := regeneratedTotalHook(c, target)(context.Background(), migrator.MigrationPlan{Versions: []int64{2}})
 
-	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 destructive/drop-column.*")
 	c.Assert(target.asked, qt.DeepEquals, []int64{2})
 }
 
@@ -338,7 +343,7 @@ func TestLockedDestructiveLintHookReadsTheTargetsGeneratedColumnsForTheFirstVers
 
 	err = hook(context.Background(), migrator.MigrationPlan{Versions: []int64{1, 2}})
 
-	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 destructive/drop-column.*")
 	c.Assert(target.asked, qt.DeepEquals, []int64{1})
 }
 
@@ -370,5 +375,5 @@ func TestLockedDestructiveLintHookWithoutATargetRead_FailurePath(t *testing.T) {
 
 	err = hook(context.Background(), migrator.MigrationPlan{Versions: []int64{2}})
 
-	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 destructive/drop-column.*")
 }

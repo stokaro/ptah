@@ -29,12 +29,12 @@ func TestSeverities_APolicyReplacesARuleSeverity(t *testing.T) {
 		},
 		{
 			name:       "raised to error",
-			severities: map[string]sqllint.Severity{"DDL001": sqllint.SeverityError},
+			severities: map[string]sqllint.Severity{"design/no-primary-key": sqllint.SeverityError},
 			want:       sqllint.SeverityError,
 		},
 		{
 			name:       "lowered to info",
-			severities: map[string]sqllint.Severity{"DDL001": sqllint.SeverityInfo},
+			severities: map[string]sqllint.Severity{"design/no-primary-key": sqllint.SeverityInfo},
 			want:       sqllint.SeverityInfo,
 		},
 	}
@@ -69,19 +69,19 @@ func TestSeverities_APolicyThisLinterCannotHonorIsRefused(t *testing.T) {
 		{
 			// An operator who wrote this believes a rule is configured.
 			name:       "a code this linter does not report",
-			severities: map[string]sqllint.Severity{"DS101": sqllint.SeverityWarning},
+			severities: map[string]sqllint.Severity{"destructive/drop-table": sqllint.SeverityWarning},
 			wants:      "does not report",
 		},
 		{
 			// Only error decides the exit code, so this would let a file the
 			// parser could not read pass.
 			name:       "a parse-path code lowered below error",
-			severities: map[string]sqllint.Severity{"SQL001": sqllint.SeverityWarning},
+			severities: map[string]sqllint.Severity{"correctness/syntax-error": sqllint.SeverityWarning},
 			wants:      "could not be analyzed",
 		},
 		{
 			name:       "the other parse-path code, lowered to info",
-			severities: map[string]sqllint.Severity{"SQL002": sqllint.SeverityInfo},
+			severities: map[string]sqllint.Severity{"coverage/unsupported-statement": sqllint.SeverityInfo},
 			wants:      "could not be analyzed",
 		},
 	}
@@ -111,7 +111,7 @@ func TestSeverities_AParsePathCodeMayBeSetToWhatItAlreadyIs(t *testing.T) {
 		sqllint.Source{Name: "t.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
 		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 			Dialect:    platform.Postgres,
-			Severities: map[string]sqllint.Severity{"SQL001": sqllint.SeverityError},
+			Severities: map[string]sqllint.Severity{"correctness/syntax-error": sqllint.SeverityError},
 		},
 	)
 

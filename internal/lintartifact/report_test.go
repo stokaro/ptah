@@ -109,7 +109,7 @@ func failedReport() migrationlintreport.Report {
 		Dialect:          "postgres",
 		Dir:              "oci://registry.example/acme/migrations:latest",
 		Findings: []migrationlint.Finding{{
-			Rule:     "DS101",
+			Rule:     "destructive/drop-table",
 			Title:    "Table dropped",
 			Severity: migrationlint.SeverityError,
 			File:     "oci://registry.example/acme/migrations:latest/0000000001_drop.up.sql",

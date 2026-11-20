@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sourcepos"
@@ -27,23 +28,23 @@ import (
 )
 
 const (
-	RuleParseError             = "SQL001"
-	RuleUnsupportedStatement   = "SQL002"
-	RuleTableWithoutPrimaryKey = "DDL001"
-	RuleUnsupportedCapability  = "CAP001"
+	RuleParseError             = "correctness/syntax-error"
+	RuleUnsupportedStatement   = "coverage/unsupported-statement"
+	RuleTableWithoutPrimaryKey = "design/no-primary-key"
+	RuleUnsupportedCapability  = "capability/missing"
 	// RuleDynamicSQL marks a routine body that builds SQL at run time, which is
 	// where static analysis of that routine stops.
-	RuleDynamicSQL = "SQL003"
+	RuleDynamicSQL = "coverage/dynamic-sql"
 	// RuleStatementsNotAnalyzed names the statement kinds a file carried that
 	// no rule examined.
 	//
 	// It is not [RuleUnsupportedStatement], and the difference is the whole
-	// reason it exists. SQL002 says the PARSER does not model a statement, at
+	// reason it exists. coverage/unsupported-statement says the PARSER does not model a statement, at
 	// error severity; the kinds this reports are modeled exactly as intended --
 	// `CREATE POLICY` has a test asserting it lints clean -- and simply have no
-	// rule looking at them. Reporting them as unsupported would make SQL002's
+	// rule looking at them. Reporting them as unsupported would make coverage/unsupported-statement's
 	// own message untrue.
-	RuleStatementsNotAnalyzed = "SQL004"
+	RuleStatementsNotAnalyzed = "coverage/unanalyzed-statements"
 )
 
 // Severity is the level a finding carries, on the one scale every Ptah
@@ -73,11 +74,11 @@ type Options struct {
 	Capabilities  capability.Capabilities
 	Rules         []Rule
 	DisabledRules []string
-	// Severities overrides a rule's default severity, keyed by identifier.
+	// Severities overrides a rule's default severity, keyed by rule name.
 	//
 	// It is a plain map rather than the policy type so that this package stays
 	// out of migration/lint: the command reads the file and passes the answer.
-	// An entry for a code the linter does not report is an error, because a
+	// An entry for a rule the linter does not report is an error, because a
 	// severity nobody applies is a policy the operator believes is in force.
 	Severities map[string]Severity
 
@@ -123,6 +124,9 @@ type Bodies interface {
 }
 
 type Finding struct {
+	// Rule is the rule's name, `category/name`, such as
+	// `design/no-primary-key`: its identity and the spelling a --disable
+	// selector uses.
 	Rule         string   `json:"rule"`
 	Title        string   `json:"title"`
 	Severity     Severity `json:"severity"`
@@ -155,7 +159,7 @@ type Context struct {
 	// bodies are the owner's readings of the routine bodies the file
 	// defines, by the node that defines each.
 	bodies map[ast.Node]routineext.Reading
-	// namesJudged are the nodes whose declared names DDL003 and DDL004
+	// namesJudged are the nodes whose declared names naming/identifier-too-long and naming/identifier-collision
 	// judged, which is every node that declares a name on a dialect whose
 	// server cuts long names, and none elsewhere.
 	namesJudged map[ast.Node]bool
@@ -178,6 +182,9 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	if opts.Owner == nil && !opts.SQL.Selected() {
 		return nil, sqlext.ErrUnselected
 	}
+	if err := refuseUnknownSelectors(opts.DisabledRules); err != nil {
+		return nil, err
+	}
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
 		return nil, err
 	}
@@ -193,7 +200,7 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 		if err != nil {
 			return nil, err
 		}
-		return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
+		return finish(findings, opts), nil
 	}
 	var items []sourceItem
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
@@ -233,7 +240,13 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	if len(unanalyzedKinds) > 0 {
 		findings = append(findings, statementsNotAnalyzedFinding(source, opts, unanalyzedKinds))
 	}
-	return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
+	return finish(findings, opts), nil
+}
+
+// finish drops the findings of disabled rules and applies the policy's
+// severities.
+func finish(findings []Finding, opts Options) []Finding {
+	return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities)
 }
 
 // applySeverities replaces the severity of every finding a policy names.
@@ -254,25 +267,28 @@ func applySeverities(findings []Finding, severities map[string]Severity) []Findi
 // Two refusals, and both are about a policy that would read as being in force
 // while doing nothing or the wrong thing.
 //
-// A code the linter does not report cannot be configured: an operator who wrote
+// A rule the linter does not report cannot be configured: an operator who wrote
 // it believes a rule is set to warning, and silence would leave them believing
 // it. That is the same failure `--disable` had before it refused.
 //
-// The parse-path codes cannot be lowered below error, for the reason they
+// The parse-path rules cannot be lowered below error, for the reason they
 // cannot be disabled: only error decides the exit code, so a file the parser
 // could not read would pass (stokaro/ptah#1270).
 func validateSeverities(severities map[string]Severity) error {
-	for code, severity := range severities {
-		if !slices.Contains(CatalogIDs(), code) {
+	for name, severity := range severities {
+		if lintnames.IsCode(name) {
+			return lintnames.RefuseCode(name)
+		}
+		if !slices.Contains(CatalogIDs(), name) {
 			return fmt.Errorf(
 				"severity set for %s, which `ptah sql lint` does not report; "+
-					"it reports %s", code, strings.Join(CatalogIDs(), ", "))
+					"it reports %s", name, strings.Join(CatalogIDs(), ", "))
 		}
-		if slices.Contains(unsilenceableRules, code) && severity != SeverityError {
+		if slices.Contains(unsilenceableRules, name) && severity != SeverityError {
 			return fmt.Errorf(
 				"severity for %s set to %s: it reports that the file could not be analyzed, "+
 					"and only error decides the exit code, so lowering it lets an unread file pass",
-				code, severity)
+				name, severity)
 		}
 	}
 	return nil
@@ -321,9 +337,9 @@ func statementsNotAnalyzedFinding(source Source, opts Options, kinds []string) F
 // keepEnabled drops the findings a --disable selector covers.
 //
 // The per-rule check inside [lintParsedStatement] cannot answer for the whole
-// command: SQL001 and SQL002 are produced by the parse path, which runs before
+// command: correctness/syntax-error and coverage/unsupported-statement are produced by the parse path, which runs before
 // any rule object exists, so a selector naming either was accepted and silently
-// ignored -- `ptah sql lint --disable SQL001` still reported SQL001 and still
+// ignored -- `ptah sql lint --disable correctness/syntax-error` still reported correctness/syntax-error and still
 // exited 1. Filtering once, where every finding this function returns passes
 // through, is what makes the flag mean the same thing for every identifier the
 // linter can report.
@@ -523,7 +539,7 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 	if _, analyzed := analyzedStatementKinds[reflect.TypeOf(stmt)]; analyzed || ctx.namesJudged[stmt] {
 		return "", false
 	}
-	// A kind the unsupported rule already names is reported by SQL002, whose
+	// A kind the unsupported rule already names is reported by coverage/unsupported-statement, whose
 	// message is about the parser rather than about analysis.
 	if len((unsupportedRoutineRule{}).CheckStatement(ctx, stmt)) > 0 {
 		return "", false
@@ -578,18 +594,19 @@ var unsilenceableRules = []string{RuleParseError, RuleUnsupportedStatement}
 // that nothing was analyzed.
 //
 // The history is why this refuses rather than ignores. A selector naming
-// SQL001 or SQL002 was once accepted and silently dropped -- the finding was
+// correctness/syntax-error or coverage/unsupported-statement was once accepted and silently dropped -- the finding was
 // still reported and the run still exited 1 -- and that was fixed on the
 // principle that "a flag that is accepted and does nothing is worse than a flag
 // that refuses" (internal/sqllint/disable_test.go). Making it work opened the
-// other hole: `ptah sql lint --disable SQL001` over a file the parser cannot
+// other hole: `ptah sql lint --disable correctness/syntax-error` over a file the parser cannot
 // read reports nothing and exits 0, which is the file passing.
 //
 // #1270 asks for the opposite in those words: "Parse/analysis incompleteness is
 // visible to the user." So the third option is the right one -- neither ignored
 // nor obeyed, but refused, with the reason.
 //
-// Prefix selectors are checked too: `--disable SQL` covers SQL001.
+// Categories are checked too: `--disable correctness` covers it by its
+// category.
 func refuseUnsilenceable(disabled []string) error {
 	for _, item := range disabled {
 		for _, rule := range unsilenceableRules {
@@ -605,17 +622,27 @@ func refuseUnsilenceable(disabled []string) error {
 	return nil
 }
 
-func ruleDisabled(ruleID string, disabled []string) bool {
+// refuseUnknownSelectors rejects a --disable selector that names no rule this
+// linter reports, by the validation `migrations lint` applies: a rule name or
+// category the linter holds. A word spelled as a rule code is refused as every
+// native selector is. Matched against nothing, a selector would read as a rule
+// turned off.
+func refuseUnknownSelectors(disabled []string) error {
+	known := lintnames.NewSet("SQL lint", CatalogIDs())
 	for _, item := range disabled {
-		item = strings.ToUpper(strings.TrimSpace(item))
-		if item == "" {
-			continue
-		}
-		if strings.EqualFold(item, ruleID) || strings.HasPrefix(ruleID, item) {
-			return true
+		if err := known.ValidateSelector(strings.TrimSpace(item)); err != nil {
+			return fmt.Errorf("--disable %w", err)
 		}
 	}
-	return false
+	return nil
+}
+
+// ruleDisabled reports whether a selector in disabled selects the rule: its
+// name or its category, by [lintnames.Selects].
+func ruleDisabled(ruleID string, disabled []string) bool {
+	return slices.ContainsFunc(disabled, func(item string) bool {
+		return lintnames.Selects(strings.TrimSpace(item), ruleID)
+	})
 }
 
 // firstKeyword returns the word a statement opens with and where it stands. A
@@ -768,7 +795,7 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 }
 
 // analyzedStatementKinds are the statement kinds a rule in this package
-// examines on every dialect. Beside the nodes whose names DDL003 and DDL004
+// examines on every dialect. Beside the nodes whose names naming/identifier-too-long and naming/identifier-collision
 // judged, which depend on the dialect (Context.namesJudged), it is the only way
 // a statement reaches the end of a lint run without being reported, and the
 // direction is the whole point: a node kind added to core/ast joins the
@@ -851,7 +878,7 @@ func statementLabelForName(name string) string {
 // statement sits: a routine that composes SQL inside a condition is the
 // ordinary shape, since a condition is usually what the composition is for.
 // Before the body model carried nesting, an EXECUTE at the top of a body
-// reported SQL003 and the same EXECUTE inside IF or LOOP reported nothing
+// reported coverage/dynamic-sql and the same EXECUTE inside IF or LOOP reported nothing
 // (stokaro/ptah#2393).
 func flattenRoutineStatements(statements []routineext.Statement) []routineext.Statement {
 	flat := make([]routineext.Statement, 0, len(statements))

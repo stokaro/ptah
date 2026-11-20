@@ -19,7 +19,7 @@ import (
 // directory it passes.
 const atlasCompatibility = "atlas"
 
-// identifierRules are PG401P and PG402P, which report the names PostgreSQL
+// identifierRules are naming/identifier-too-long and naming/identifier-collision, which report the names PostgreSQL
 // cuts to its identifier limit and the cut names it refuses as already in use.
 //
 // They read the SQL reader's analysis (sqlschema.NameFollower), the one the
@@ -32,7 +32,7 @@ func identifierRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:          "PG401P",
+				Name:          "naming/identifier-too-long",
 				Title:         "identifier longer than the server keeps",
 				Severity:      lintext.Warning,
 				Targets:       []string{"postgres"},
@@ -44,7 +44,7 @@ func identifierRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:          "PG402P",
+				Name:          "naming/identifier-collision",
 				Title:         "identifiers the server stores as one",
 				Severity:      lintext.Error,
 				Targets:       []string{"postgres"},
@@ -144,7 +144,7 @@ func terminated(sql string) string {
 	return sql + ";"
 }
 
-// truncationViolations is PG401P for one statement: each name it declares
+// truncationViolations is naming/identifier-too-long for one statement: each name it declares
 // that the server cuts, and each it writes past the limit under IF NOT EXISTS
 // or OR REPLACE that is then stored as a name in use, where the server keeps
 // one of the two objects without an error. A name written as the server
@@ -173,7 +173,7 @@ func truncationMessage(name sqlschema.StoredName, note string) string {
 		name.Kind, name.Written, name.Scope, len(name.Written), name.Limit, name.Stored, note, name.Limit, name.Stored)
 }
 
-// collisionViolations is PG402P for one statement: each name it writes that
+// collisionViolations is naming/identifier-collision for one statement: each name it writes that
 // the server stores as a name already in use, where the server refuses the
 // statement.
 func collisionViolations(statement int, names sqlschema.StatementNames) []lintext.Violation {

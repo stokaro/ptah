@@ -38,28 +38,28 @@ type Checks []Check
 
 // Validate reports a check whose rule does not validate, one whose rule reads
 // a baseline, one that sets neither or both functions, and two checks of one
-// code. Each failure wraps [ErrInvalid].
+// name. Each failure wraps [ErrInvalid].
 //
 // A rule that reads a baseline has to name the statements it wants the state
 // for, which Checks has no function to say; such a rule implements [Service]
 // itself. Accepting it here would let a host never ask for the state and the
 // rule never resolve anything, while the run reads as complete.
 func (c Checks) Validate() error {
-	codes := make([]string, 0, len(c))
+	names := make([]string, 0, len(c))
 	for _, check := range c {
 		if err := check.Rule.Validate(); err != nil {
 			return err
 		}
 		if check.Rule.Input.ReadsBaseline() {
-			return fmt.Errorf("%w: check %s reads a baseline, which Checks cannot ask for; implement Service", ErrInvalid, check.Rule.Code)
+			return fmt.Errorf("%w: check %s reads a baseline, which Checks cannot ask for; implement Service", ErrInvalid, check.Rule.Name)
 		}
 		if (check.Statement == nil) == (check.File == nil) {
-			return fmt.Errorf("%w: check %s must set exactly one of Statement and File", ErrInvalid, check.Rule.Code)
+			return fmt.Errorf("%w: check %s must set exactly one of Statement and File", ErrInvalid, check.Rule.Name)
 		}
-		if slices.Contains(codes, check.Rule.Code) {
-			return fmt.Errorf("%w: two checks of rule %s", ErrInvalid, check.Rule.Code)
+		if slices.Contains(names, check.Rule.Name) {
+			return fmt.Errorf("%w: two checks of rule %s", ErrInvalid, check.Rule.Name)
 		}
-		codes = append(codes, check.Rule.Code)
+		names = append(names, check.Rule.Name)
 	}
 	return nil
 }
@@ -75,17 +75,17 @@ func (c Checks) Rules() []Rule {
 
 // CheckMigrations runs the checks the request enables over its files and
 // returns their findings, statement findings in file and statement order.
-// A code no check carries wraps [ErrInvalid], and cancellation returns the
+// A name no check carries wraps [ErrInvalid], and cancellation returns the
 // context's error; either returns no result.
 func (c Checks) CheckMigrations(ctx context.Context, request CheckRequest) (CheckResult, error) {
 	if err := c.Validate(); err != nil {
 		return CheckResult{}, err
 	}
-	enabled := make([]Check, 0, len(request.Codes))
-	for _, code := range request.Codes {
-		position := slices.IndexFunc(c, func(check Check) bool { return check.Rule.Code == code })
+	enabled := make([]Check, 0, len(request.Names))
+	for _, name := range request.Names {
+		position := slices.IndexFunc(c, func(check Check) bool { return check.Rule.Name == name })
 		if position < 0 {
-			return CheckResult{}, fmt.Errorf("%w: no check of rule %s", ErrInvalid, code)
+			return CheckResult{}, fmt.Errorf("%w: no check of rule %s", ErrInvalid, name)
 		}
 		enabled = append(enabled, c[position])
 	}
@@ -107,7 +107,7 @@ func (c Check) run(request CheckRequest, index int) []Finding {
 	var findings []Finding
 	if c.File != nil {
 		for _, violation := range c.File(request.Target, request.Files, index) {
-			findings = append(findings, Finding{Code: c.Rule.Code, File: index, Statement: violation.Statement, Message: violation.Message,
+			findings = append(findings, Finding{Name: c.Rule.Name, File: index, Statement: violation.Statement, Message: violation.Message,
 				Subjects: slices.Clone(violation.Subjects)})
 		}
 		return findings
@@ -117,7 +117,7 @@ func (c Check) run(request CheckRequest, index int) []Finding {
 	}
 	for position := range file.Statements {
 		if found, message := c.Statement(request.Target, file, &file.Statements[position]); found {
-			findings = append(findings, Finding{Code: c.Rule.Code, File: index, Statement: position, Message: message})
+			findings = append(findings, Finding{Name: c.Rule.Name, File: index, Statement: position, Message: message})
 		}
 	}
 	return findings

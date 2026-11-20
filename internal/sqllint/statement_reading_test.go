@@ -26,9 +26,9 @@ func lintOne(c *qt.C, dialect, sql string) []string {
 }
 
 const (
-	notAnalyzed  = "SQL004 info no rule examined "
-	nothingRead  = "SQL002 error the SQL parser does not read this statement, which a server may still accept: "
-	notALanguage = "SQL001 error no engine Ptah reads has this statement: "
+	notAnalyzed  = "coverage/unanalyzed-statements info no rule examined "
+	nothingRead  = "coverage/unsupported-statement error the SQL parser does not read this statement, which a server may still accept: "
+	notALanguage = "correctness/syntax-error error no engine Ptah reads has this statement: "
 )
 
 // TestLintSource_ValidSQLIsNotAnError holds what the parser reads to an answer no
@@ -64,7 +64,7 @@ func TestLintSource_ValidSQLIsNotAnError(t *testing.T) {
 	}
 }
 
-// TestLintSource_WhatNothingReadStaysAnError holds the decision on SQL002: a statement
+// TestLintSource_WhatNothingReadStaysAnError holds the decision on coverage/unsupported-statement: a statement
 // nothing read keeps the exit code, because its tail could hold anything, and it says so
 // in words that do not call the SQL wrong.
 func TestLintSource_WhatNothingReadStaysAnError(t *testing.T) {
@@ -74,11 +74,11 @@ func TestLintSource_WhatNothingReadStaysAnError(t *testing.T) {
 		sql     string
 		want    []string
 	}{
-		{name: "a statement that writes rows", dialect: platform.Postgres, sql: "SELECT @@@;", want: []string{"SQL002 error ptah sql lint does not lint SELECT statements yet"}},
-		{name: "a parenthesized query", dialect: platform.Postgres, sql: "(SELECT 1);", want: []string{"SQL002 error ptah sql lint does not lint SELECT statements yet"}},
-		{name: "an INSERT", dialect: platform.SQLite, sql: "INSERT INTO t VALUES (1);", want: []string{"SQL002 error ptah sql lint does not lint INSERT statements yet"}},
-		{name: "REPLACE, as INSERT", dialect: platform.MySQL, sql: "REPLACE INTO t VALUES (1);", want: []string{"SQL002 error ptah sql lint does not lint REPLACE statements yet"}},
-		{name: "UPSERT, as INSERT", dialect: platform.CockroachDB, sql: "UPSERT INTO t VALUES (1);", want: []string{"SQL002 error ptah sql lint does not lint UPSERT statements yet"}},
+		{name: "a statement that writes rows", dialect: platform.Postgres, sql: "SELECT @@@;", want: []string{"coverage/unsupported-statement error ptah sql lint does not lint SELECT statements yet"}},
+		{name: "a parenthesized query", dialect: platform.Postgres, sql: "(SELECT 1);", want: []string{"coverage/unsupported-statement error ptah sql lint does not lint SELECT statements yet"}},
+		{name: "an INSERT", dialect: platform.SQLite, sql: "INSERT INTO t VALUES (1);", want: []string{"coverage/unsupported-statement error ptah sql lint does not lint INSERT statements yet"}},
+		{name: "REPLACE, as INSERT", dialect: platform.MySQL, sql: "REPLACE INTO t VALUES (1);", want: []string{"coverage/unsupported-statement error ptah sql lint does not lint REPLACE statements yet"}},
+		{name: "UPSERT, as INSERT", dialect: platform.CockroachDB, sql: "UPSERT INTO t VALUES (1);", want: []string{"coverage/unsupported-statement error ptah sql lint does not lint UPSERT statements yet"}},
 		{name: "a target the parser does not model", dialect: platform.Postgres, sql: "DROP AGGREGATE a(int);", want: []string{nothingRead + "unsupported DROP target: AGGREGATE"}},
 		{name: "a CREATE the parser does not model", dialect: platform.Postgres, sql: "CREATE COLLATION c (locale = 'C');", want: []string{nothingRead + "unsupported CREATE target: COLLATION"}},
 		{name: "a word it cannot tell from a mistake", dialect: platform.Postgres, sql: "CREATE TABLE b BOGUS;", want: []string{nothingRead + "unsupported table option: BOGUS"}},
@@ -108,10 +108,10 @@ func TestLintSource_WhatIsNoSQLIsSaidToBe(t *testing.T) {
 		{name: "a misspelled keyword", sql: "SELEC 1;", want: []string{notALanguage + "SELEC"}},
 		{name: "a misspelled DROP", sql: "DROP TABEL t;", want: []string{notALanguage + "DROP TABEL"}},
 		{name: "a misspelled CREATE", sql: "CREATE TABEL t (id int);", want: []string{notALanguage + "CREATE TABEL"}},
-		{name: "punctuation for a keyword", sql: "@@@ x;", want: []string{"SQL001 error expected SQL keyword, got Operator"}},
-		{name: "a name that is none", sql: "DROP VIEW @@@;", want: []string{"SQL001 error expected view name: expected identifier, got Operator"}},
-		{name: "a list where one name is taken", sql: "DROP TRIGGER t, u;", want: []string{"SQL001 error expected the end of DROP TRIGGER, got Operator"}},
-		{name: "SQLite refuses a list of tables", sql: "DROP TABLE t, t2;", want: []string{"SQL001 error expected the end of DROP TABLE, got Operator"}},
+		{name: "punctuation for a keyword", sql: "@@@ x;", want: []string{"correctness/syntax-error error expected SQL keyword, got Operator"}},
+		{name: "a name that is none", sql: "DROP VIEW @@@;", want: []string{"correctness/syntax-error error expected view name: expected identifier, got Operator"}},
+		{name: "a list where one name is taken", sql: "DROP TRIGGER t, u;", want: []string{"correctness/syntax-error error expected the end of DROP TRIGGER, got Operator"}},
+		{name: "SQLite refuses a list of tables", sql: "DROP TABLE t, t2;", want: []string{"correctness/syntax-error error expected the end of DROP TABLE, got Operator"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

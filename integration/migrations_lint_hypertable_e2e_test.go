@@ -16,10 +16,10 @@ import (
 	"ptah.run/internal/dbtarget"
 )
 
-// TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E drives PG101 through
+// TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E drives locking/create-index through
 // the shipped binary against TimescaleDB (stokaro/ptah#3551).
 //
-// PG101's ordinary remedy is CREATE INDEX CONCURRENTLY, which TimescaleDB
+// locking/create-index's ordinary remedy is CREATE INDEX CONCURRENTLY, which TimescaleDB
 // refuses on a hypertable. Nothing in the migration text says the table is
 // one: the first version's create_hypertable call is replayed on the dev
 // database, and only the extension's catalog, read before the second version,
@@ -57,7 +57,7 @@ func TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E(t *testing.T) {
 			base:   events + "SELECT create_hypertable('events', 'happened_at');\n",
 			change: "CREATE INDEX events_kind_idx ON events (kind, happened_at DESC);\n",
 			want: []string{
-				"] PG101: ",
+				"] locking/create-index: ",
 				"CREATE INDEX on the hypertable events blocks writes to it and to every chunk",
 				"WITH (timescaledb.transaction_per_chunk) in a no_transaction migration",
 			},
@@ -67,7 +67,7 @@ func TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E(t *testing.T) {
 			name:    "control: the same index on the table left ordinary",
 			base:    events,
 			change:  "CREATE INDEX events_kind_idx ON events (kind, happened_at DESC);\n",
-			want:    []string{"] PG101: ", "use CREATE INDEX CONCURRENTLY outside a transaction"},
+			want:    []string{"] locking/create-index: ", "use CREATE INDEX CONCURRENTLY outside a transaction"},
 			wantNot: []string{"on the hypertable"},
 		},
 		{
@@ -75,7 +75,7 @@ func TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E(t *testing.T) {
 			base: events + "SELECT create_hypertable('events', 'happened_at');\n",
 			change: "-- atlas:txmode none\n\n" +
 				"CREATE INDEX events_kind_idx ON events (kind, happened_at DESC) WITH (timescaledb.transaction_per_chunk);\n",
-			wantNot: []string{"] PG101: "},
+			wantNot: []string{"] locking/create-index: "},
 		},
 	}
 

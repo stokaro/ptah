@@ -82,7 +82,7 @@ func TestLintE2E_AGeneratedTypeChangeIsReported(t *testing.T) {
 
 					lint := ptah("migrations", "lint", "--dir", dir, "--dialect", engine.dialect, "--format", "json")
 
-					c.Assert(lint.Stdout, qt.Contains, `"rule": "DS103"`, qt.Commentf("%s\n%s", lint.Stdout, lint.Stderr))
+					c.Assert(lint.Stdout, qt.Contains, `"rule": "data-dependent/alter-column-type"`, qt.Commentf("%s\n%s", lint.Stdout, lint.Stderr))
 				})
 			}
 		})
@@ -124,7 +124,7 @@ func TestLintE2E_SQLServerStateSettlesARestatedType(t *testing.T) {
 }
 
 // typeRuleRe finds the rule in a lint document.
-var typeRuleRe = regexp.MustCompile(`"rule": "DS103"`)
+var typeRuleRe = regexp.MustCompile(`"rule": "data-dependent/alter-column-type"`)
 
 func containsTypeRule(document string) bool {
 	return typeRuleRe.MatchString(document)

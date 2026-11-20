@@ -22,19 +22,19 @@ import (
 // provider panics, so a test that passes made none.
 func lintTarget() *target {
 	return &target{host: &Host{}, engine: &protocol.Engine{Id: "fixture", Features: []string{provider.LintFeature},
-		LintRules: []*protocol.LintRule{{Code: "FX101", Title: "DROP TABLE loses rows", Severity: protocol.LintRule_ERROR}}}}
+		LintRules: []*protocol.LintRule{{Code: "design/fx101", Title: "DROP TABLE loses rows", Severity: protocol.LintRule_ERROR}}}}
 }
 
 // untargetedRun is a run that names no target over a file whose statement the
-// fixture's FX101 would report.
+// fixture's design/fx101 would report.
 func untargetedRun(codes ...string) lintext.CheckRequest {
-	return lintext.CheckRequest{Codes: codes, Files: []lintext.File{{Name: "1.sql", Up: true,
+	return lintext.CheckRequest{Names: codes, Files: []lintext.File{{Name: "1.sql", Up: true,
 		Statements: []lintext.Statement{{Start: 0, End: 13, Line: 1, SQL: "DROP TABLE a;"}}}}}
 }
 
 func TestUntargetedLintRunIsAnsweredWithoutTheProvider_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	result, err := lintService{target: lintTarget()}.CheckMigrations(c.Context(), untargetedRun("FX101"))
+	result, err := lintService{target: lintTarget()}.CheckMigrations(c.Context(), untargetedRun("design/fx101"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true})
 }
@@ -42,22 +42,22 @@ func TestUntargetedLintRunIsAnsweredWithoutTheProvider_HappyPath(t *testing.T) {
 func TestUntargetedLintRunIsAnsweredWithoutTheProvider_FailurePath(t *testing.T) {
 	t.Run("a code the engine does not publish", func(t *testing.T) {
 		c := qt.New(t)
-		result, err := lintService{target: lintTarget()}.CheckMigrations(c.Context(), untargetedRun("FX101", "ZZ999"))
+		result, err := lintService{target: lintTarget()}.CheckMigrations(c.Context(), untargetedRun("design/fx101", "design/zz999"))
 		c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
-		c.Assert(err, qt.ErrorMatches, `.*engine "fixture" publishes no lint rule ZZ999`)
+		c.Assert(err, qt.ErrorMatches, `.*engine "fixture" publishes no lint rule design/zz999`)
 		c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
 	})
 	t.Run("a canceled run", func(t *testing.T) {
 		c := qt.New(t)
 		ctx, cancel := context.WithCancel(c.Context())
 		cancel()
-		result, err := lintService{target: lintTarget()}.CheckMigrations(ctx, untargetedRun("FX101"))
+		result, err := lintService{target: lintTarget()}.CheckMigrations(ctx, untargetedRun("design/fx101"))
 		c.Assert(err, qt.ErrorIs, context.Canceled)
 		c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
 	})
 	t.Run("another engine's target", func(t *testing.T) {
 		c := qt.New(t)
-		request := untargetedRun("FX101")
+		request := untargetedRun("design/fx101")
 		request.Target.Name = "other"
 		result, err := lintService{target: lintTarget()}.CheckMigrations(c.Context(), request)
 		c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)

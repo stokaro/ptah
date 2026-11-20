@@ -31,10 +31,10 @@ func lintPair(c *qt.C, upSQL, downSQL string) []string {
 // Statement rules were confined to up files, so the blocking DROP INDEX that a
 // rollback is normally made of -- including the one Ptah generates itself
 // whenever the forward statement was not a concurrent build -- was reported as
-// clean (stokaro/ptah#997). PG106 now opts in, and the opt-in is what is under
+// clean (stokaro/ptah#997). locking/drop-index now opts in, and the opt-in is what is under
 // test: the second row is the discriminating control. An implementation that
-// simply ran every statement rule on every file would report PG101 for the
-// down file's CREATE INDEX, and the row would fail. TX201 reads the rollback
+// simply ran every statement rule on every file would report locking/create-index for the
+// down file's CREATE INDEX, and the row would fail. transaction/explicit-transaction reads the rollback
 // half in the third row because the migrator refuses transaction control in a
 // down body as it does in an up body.
 func TestLintFS_DownDirectionHazards(t *testing.T) {
@@ -49,8 +49,8 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 			up:   "CREATE INDEX CONCURRENTLY idx ON t (id);\n",
 			down: "DROP INDEX idx;\n",
 			want: []string{
-				"PG106 0000000001_x.down.sql",
-				"PG103 0000000001_x.up.sql",
+				"locking/drop-index 0000000001_x.down.sql",
+				"transaction/concurrent-index 0000000001_x.up.sql",
 			},
 		},
 		{
@@ -63,13 +63,13 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 			name: "transaction control in the rollback is reported because the migrator refuses it",
 			up:   "ALTER TABLE t ADD COLUMN c INT;\n",
 			down: "BEGIN;\nALTER TABLE t DROP COLUMN c;\nCOMMIT;\n",
-			want: []string{"TX201 0000000001_x.down.sql"},
+			want: []string{"transaction/explicit-transaction 0000000001_x.down.sql"},
 		},
 		{
 			name: "a concurrent rollback without the marker cannot execute",
 			up:   "-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx ON t (id);\n",
 			down: "DROP INDEX CONCURRENTLY idx;\n",
-			want: []string{"PG103 0000000001_x.down.sql"},
+			want: []string{"transaction/concurrent-index 0000000001_x.down.sql"},
 		},
 		{
 			name: "the marker exempts the rollback Ptah generates",
@@ -82,8 +82,8 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 			up:   "ALTER TABLE t ADD COLUMN c INT;\n",
 			down: "DROP INDEX CONCURRENTLY idx;\nALTER TABLE t DROP COLUMN c;\n",
 			want: []string{
-				"PG103 0000000001_x.down.sql",
-				"TX101 0000000001_x.down.sql",
+				"transaction/concurrent-index 0000000001_x.down.sql",
+				"transaction/mixed-statements 0000000001_x.down.sql",
 			},
 		},
 	}

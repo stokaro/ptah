@@ -19,8 +19,8 @@ import (
 	"ptah.run/provider-sdk/runtime"
 )
 
-// fx301 is the rule the program publishes, under the identifier of the SDK revision this module links.
-var fx301 = backend.RuleID("FX301", "design/fx301")
+// fx301 is the rule the program publishes.
+const fx301 = "design/fx301"
 
 func main() {
 	if path := os.Getenv("PTAH_FIXTURE_PID_FILE"); path != "" {

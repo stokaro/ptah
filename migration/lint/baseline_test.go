@@ -24,17 +24,18 @@ func renameBaselineFS() map[string]string {
 
 func renameBaselineOptions(baseline []lintext.BaselineColumn) lint.Options {
 	return lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		Dialect:       "postgres",
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Selection:     lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-		Baseline:      baseline,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		Dialect:        "postgres",
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Selection:      lint.VersionSelection{Versions: []int64{2}, Restricted: true},
+		Baseline:       baseline,
 	}
 }
 
 // notNullBaseline is the state version 2 starts from when `users.id` is the
 // non-nullable, default-less column the pinned community binary reports an
-// MF103 for.
+// file-form/file-name for.
 func notNullBaseline() []lintext.BaselineColumn {
 	return []lintext.BaselineColumn{{
 		Version:  2,
@@ -64,12 +65,12 @@ func TestAnalyzeFS_RenameAddSideNeedsTheBaseline(t *testing.T) {
 			// No dev database was read, so the retired column's shape was never
 			// established and the add side stays unreported.
 			name: "no baseline reports the retirement alone",
-			want: []string{"DS102"},
+			want: []string{"destructive/drop-column"},
 		},
 		{
 			name:     "baseline reports both halves of the rename",
 			baseline: notNullBaseline(),
-			want:     []string{"DD101", "DS102"},
+			want:     []string{"data-dependent/add-not-null-column", "destructive/drop-column"},
 		},
 	}
 
@@ -96,7 +97,7 @@ func TestAnalyzeFS_RenameAddSideSubjectCarriesTheIntroducedColumn(t *testing.T) 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
 	c.Assert(findings, qt.HasLen, 2)
-	c.Assert(findings[0].Rule, qt.Equals, "DD101")
+	c.Assert(findings[0].Rule, qt.Equals, "data-dependent/add-not-null-column")
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 	c.Assert(findings[0].Line, qt.Equals, 1)
 	c.Assert(findings[0].Context, qt.IsNotNil)
@@ -106,7 +107,7 @@ func TestAnalyzeFS_RenameAddSideSubjectCarriesTheIntroducedColumn(t *testing.T) 
 		Parent:   "users",
 		DataType: "integer",
 	}})
-	c.Assert(findings[1].Rule, qt.Equals, "DS102")
+	c.Assert(findings[1].Rule, qt.Equals, "destructive/drop-column")
 	c.Assert(findings[1].Context.Subjects, qt.DeepEquals, []lint.Subject{{
 		Kind:   lint.SubjectColumn,
 		Name:   "id",
@@ -116,7 +117,7 @@ func TestAnalyzeFS_RenameAddSideSubjectCarriesTheIntroducedColumn(t *testing.T) 
 
 // TestAnalyzeFS_RenameAddSideSilentCases keeps the rule to the shape it was
 // measured on. Each row is a fixture the pinned community binary reports NO
-// MF103 for, and each differs from the reporting fixture on exactly one axis, so
+// file-form/file-name for, and each differs from the reporting fixture on exactly one axis, so
 // a rule that ignored that axis would fail here while the reporting case passed.
 func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 	tests := []struct {
@@ -133,7 +134,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "users", Name: "id", DataType: "integer",
 			}},
-			want: []string{"DS102"},
+			want: []string{"destructive/drop-column"},
 		},
 		{
 			// Measured: `CREATE TABLE users (id int NOT NULL DEFAULT 7)` then the
@@ -145,7 +146,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 				Version: 2, Table: "users", Name: "id", DataType: "integer",
 				NotNull: true, HasDefault: true,
 			}},
-			want: []string{"DS102"},
+			want: []string{"destructive/drop-column"},
 		},
 		{
 			// The table is created in the file doing the rename, so the table is
@@ -161,14 +162,14 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 		},
 		{
 			// A table rename introduces no column, so it has no add side.
-			// Measured: DS102 for the retired table and nothing else.
+			// Measured: destructive/drop-column for the retired table and nothing else.
 			name: "table rename",
 			files: map[string]string{
 				"1_base.sql":   "CREATE TABLE users (id int NOT NULL);",
 				"2_rename.sql": "ALTER TABLE users RENAME TO accounts;",
 			},
 			baseline: notNullBaseline(),
-			want:     []string{"DS101"},
+			want:     []string{"destructive/drop-table"},
 		},
 		{
 			// The baseline describes a different table, so this run never
@@ -178,7 +179,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			baseline: []lintext.BaselineColumn{{
 				Version: 2, Table: "accounts", Name: "id", DataType: "integer", NotNull: true,
 			}},
-			want: []string{"DS102"},
+			want: []string{"destructive/drop-column"},
 		},
 		{
 			// The baseline describes the state of a different version, which is
@@ -188,7 +189,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 			baseline: []lintext.BaselineColumn{{
 				Version: 1, Table: "users", Name: "id", DataType: "integer", NotNull: true,
 			}},
-			want: []string{"DS102"},
+			want: []string{"destructive/drop-column"},
 		},
 		{
 			// A bare table name carried by two schemas resolves to neither:
@@ -199,7 +200,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 				{Version: 2, Schema: "app", Table: "users", Name: "id", DataType: "integer", NotNull: true},
 				{Version: 2, Schema: "audit", Table: "users", Name: "id", DataType: "bigint", NotNull: true},
 			},
-			want: []string{"DS102"},
+			want: []string{"destructive/drop-column"},
 		},
 	}
 
@@ -216,7 +217,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 
 // TestAnalyzeFS_RenameAddSideIsCompatibilitySurfaceOnly keeps the native surface
 // out of it. Native `ptah migrations lint` models a rename as a rename and
-// reports BC101; a rename does not fail on a populated table, so claiming it
+// reports rollout/rename; a rename does not fail on a populated table, so claiming it
 // might would be a statement about the statement that is false in the model that
 // surface uses.
 func TestAnalyzeFS_RenameAddSideIsCompatibilitySurfaceOnly(t *testing.T) {
@@ -228,7 +229,7 @@ func TestAnalyzeFS_RenameAddSideIsCompatibilitySurfaceOnly(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), options)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"BC101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rollout/rename"})
 }
 
 // TestAnalyzeFS_RenameAddSideResolvesQualifiedReference covers the spelling a
@@ -248,7 +249,7 @@ func TestAnalyzeFS_RenameAddSideResolvesQualifiedReference(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(files), renameBaselineOptions(notNullBaseline()))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DD101", "DS102"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/add-not-null-column", "destructive/drop-column"})
 }
 
 // TestAnalyzeFS_BaselineVersionsAsksOnlyForWhatItCanUse pins the request side.

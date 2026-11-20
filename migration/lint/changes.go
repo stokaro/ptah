@@ -155,7 +155,7 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 		// A statement Ptah's parser cannot model contributes no structural
 		// change here, unless its words alone say which change it makes
 		// ([wordSchemaChange]). A dev-database replay runs it, and a run with
-		// no replay reports it under AC102, so it is only excluded from the
+		// no replay reports it under coverage/unparsed-statement, so it is only excluded from the
 		// semantic change count.
 		if counted, ok := wordSchemaChange(file, stmt); ok {
 			return scope.keepChange(counted, counted.Object)
@@ -298,7 +298,7 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 // scope has to see all of them before it removes the statement. `ALTER TABLE
 // app.child ADD CONSTRAINT c FOREIGN KEY (pid) REFERENCES public.parent (id)`
 // validates every existing row and holds a SHARE ROW EXCLUSIVE lock on
-// `public.parent` for the duration, which is what `PG306` reports. Under a run
+// `public.parent` for the duration, which is what `locking/add-foreign-key` reports. Under a run
 // reviewing `public` that hazard lands on a table the run is responsible for, so
 // excluding the statement on the strength of `app.child` alone silenced a
 // diagnostic about an in-scope object (stokaro/ptah#1300).

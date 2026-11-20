@@ -35,7 +35,7 @@ func analyzePGDomainState(c *qt.C, alter string, column lintext.BaselineColumn) 
 	return analysis
 }
 
-// TestTypeRewriteRule_ReadsADomainThroughTheBaseline pins PG301 to the type
+// TestTypeRewriteRule_ReadsADomainThroughTheBaseline pins rewrite/alter-column-type to the type
 // changes into and out of a domain measured on PostgreSQL 17.11, an index on
 // the column each time: the domain's collation decides whether the index is
 // rebuilt, and a NOT NULL or a CHECK on the new domain rewrites the table.
@@ -94,8 +94,8 @@ func TestTypeRewriteRule_ReadsADomainThroughTheBaseline(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzePGDomainState(c, test.alter, test.column)
-			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG301"})
-			message := messageOf(analysis.Findings(), "PG301")
+			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/alter-column-type"})
+			message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -106,7 +106,7 @@ func TestTypeRewriteRule_ReadsADomainThroughTheBaseline(t *testing.T) {
 // TestTypeRewriteRule_StaysQuietOverADomainOfTheSameCollation pins the
 // measured catalog edits: a change between a domain and its base type, or to
 // a domain restated, that keeps the collation keeps the table and the index,
-// and PG301P names it as one.
+// and rewrite/in-place-column-change names it as one.
 func TestTypeRewriteRule_StaysQuietOverADomainOfTheSameCollation(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -145,7 +145,7 @@ func TestTypeRewriteRule_StaysQuietOverADomainOfTheSameCollation(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzePGDomainState(c, test.alter, test.column)
 			c.Assert(pgCostCodes(rulesOf(analysis.Findings())), qt.HasLen, 0)
-			c.Assert(messageOf(analysis.Findings(), "PG301P"), qt.Contains, test.want)
+			c.Assert(messageOf(analysis.Findings(), "rewrite/in-place-column-change"), qt.Contains, test.want)
 		})
 	}
 }

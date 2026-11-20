@@ -26,7 +26,7 @@ func TestLoadPolicy_ServerVersion_HappyPath(t *testing.T) {
 		policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "postgres")
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(policy.BlockingFamilies(), qt.Contains, "DS")
+		c.Assert(policy.BlockingRules(), qt.Contains, "destructive/drop-table")
 	})
 
 	t.Run("no version at all", func(t *testing.T) {
@@ -72,13 +72,13 @@ func TestLoadPolicy_ServerVersion_FailurePath(t *testing.T) {
 func TestLoadPolicy_UnsupportedLintDialect_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
-		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - MF103\n")},
+		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - file-form/file-name\n")},
 	}
 
 	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "oracle")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(policy.BlockingFamilies(), qt.Contains, "DS")
+	c.Assert(policy.BlockingRules(), qt.Contains, "destructive/drop-table")
 }
 
 // A version declared for such a connection cannot be honored, so it is refused
@@ -102,7 +102,7 @@ func TestLoadPolicy_UnsupportedLintDialect_FailurePath(t *testing.T) {
 func TestAnalyze_UnsupportedLintDialect_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
-		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - MF103\n")},
+		lint.ConfigFileName: {Data: []byte("disabled-rules:\n  - file-form/file-name\n")},
 		"0000000001_drop_column.up.sql": {
 			Data: []byte("ALTER TABLE users DROP COLUMN legacy;\n"),
 		},

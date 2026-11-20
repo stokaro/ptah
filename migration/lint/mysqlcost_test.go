@@ -53,19 +53,19 @@ func analyzeCost(c *qt.C, dialect, alter string, baseline ...lintext.BaselineCol
 }
 
 // costCodes keeps the codes of this family, so a quiet case asserts that
-// the cost rules said nothing rather than that DS103 and MY101 fell silent
+// the cost rules said nothing rather than that data-dependent/alter-column-type and locking/blocking-alter-table fell silent
 // on a statement they still describe.
 func costCodes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if code == "MY130" || code == "MY133" || code == "MY136" {
+		if code == "rewrite/alter-column-type" || code == "rewrite/drop-primary-key" || code == "rewrite/convert-charset" {
 			kept = append(kept, code)
 		}
 	}
 	return kept
 }
 
-// TestColumnTypeCopyRule_ReportsTheChangesInnoDBCopiesFor pins MY130 to the
+// TestColumnTypeCopyRule_ReportsTheChangesInnoDBCopiesFor pins rewrite/alter-column-type to the
 // changes both servers refuse ALGORITHM=INSTANT and INPLACE for, each named
 // in the message with the reason the copy happens.
 func TestColumnTypeCopyRule_ReportsTheChangesInnoDBCopiesFor(t *testing.T) {
@@ -238,8 +238,8 @@ func TestColumnTypeCopyRule_ReportsTheChangesInnoDBCopiesFor(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeCost(c, test.dialect, test.alter, test.column)
-			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MY130"})
-			message := messageOf(analysis.Findings(), "MY130")
+			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/alter-column-type"})
+			message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 			c.Assert(message, qt.Contains, test.why)
 			c.Assert(message, qt.Contains, "both MySQL and MariaDB refuse ALGORITHM=INSTANT and INPLACE")
 			c.Assert(message, qt.Contains, "Out of range value or Data truncated")
@@ -406,15 +406,15 @@ func TestColumnTypeCopyRule_StaysQuietWhereTheServerDoesNotCopy(t *testing.T) {
 	}
 }
 
-// TestPrimaryKeyDropCopyRule_NeedsNoBaseline pins MY133 to the shape that
+// TestPrimaryKeyDropCopyRule_NeedsNoBaseline pins rewrite/drop-primary-key to the shape that
 // decides the copy: whether the same statement adds the replacement key.
 func TestPrimaryKeyDropCopyRule_NeedsNoBaseline(t *testing.T) {
 	t.Run("a drop with no replacement", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders DROP PRIMARY KEY;")
-		c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MY133"})
-		c.Assert(rulesOf(analysis.Findings()), qt.Contains, "CD103")
-		message := messageOf(analysis.Findings(), "MY133")
+		c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/drop-primary-key"})
+		c.Assert(rulesOf(analysis.Findings()), qt.Contains, "integrity/drop-primary-key")
+		message := messageOf(analysis.Findings(), "rewrite/drop-primary-key")
 		c.Assert(message, qt.Contains, "Dropping a primary key is not allowed without also adding a new primary key")
 		c.Assert(message, qt.Contains, "MariaDB does the same unless another NOT NULL UNIQUE key exists")
 		c.Assert(message, qt.Contains, "ALGORITHM=INPLACE, LOCK=NONE")
@@ -438,7 +438,7 @@ func TestPrimaryKeyDropCopyRule_NeedsNoBaseline(t *testing.T) {
 	}
 }
 
-// TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy pins MY136
+// TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy pins rewrite/convert-charset
 // to what CONVERT TO CHARACTER SET does to each column of the table.
 func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T) {
 	tests := []struct {
@@ -510,8 +510,8 @@ func TestCharsetConversionCopyRule_NamesTheColumnsThatForceTheCopy(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeCost(c, test.dialect, test.alter, test.baseline...)
-			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MY136"})
-			message := messageOf(analysis.Findings(), "MY136")
+			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/convert-charset"})
+			message := messageOf(analysis.Findings(), "rewrite/convert-charset")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -596,14 +596,14 @@ func TestCostRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 	analysis := analyzeCost(c, "mysql", "ALTER TABLE orders MODIFY total BIGINT;\nALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;")
 
 	c.Assert(costCodes(rulesOf(analysis.Findings())), qt.HasLen, 0)
-	c.Assert(rulesOf(analysis.Findings()), qt.Contains, "DS103")
-	c.Assert(rulesOf(analysis.Findings()), qt.Contains, "MY101")
+	c.Assert(rulesOf(analysis.Findings()), qt.Contains, "data-dependent/alter-column-type")
+	c.Assert(rulesOf(analysis.Findings()), qt.Contains, "locking/blocking-alter-table")
 	var unmet []string
 	for _, input := range analysis.UnmetInputs() {
 		unmet = append(unmet, input.Rule)
 	}
-	c.Assert(unmet, qt.Contains, "MY130")
-	c.Assert(unmet, qt.Contains, "MY136")
+	c.Assert(unmet, qt.Contains, "rewrite/alter-column-type")
+	c.Assert(unmet, qt.Contains, "rewrite/convert-charset")
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }
 
@@ -611,32 +611,32 @@ func TestCostRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 // the server performs leaves nothing for "a column type changed" and "this
 // ALTER usually rebuilds the table" to add on the same statement.
 func TestCostRules_SubsumeTheGenericFindings(t *testing.T) {
-	t.Run("MY130 replaces DS103 and MY101", func(t *testing.T) {
+	t.Run("rewrite/alter-column-type replaces data-dependent/alter-column-type and locking/blocking-alter-table", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders MODIFY total BIGINT;", costColumn("total", "int", "", "latin1"))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MY130"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/alter-column-type"})
 		c.Assert(analysis.Findings()[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{
 			Kind: lint.SubjectColumn, Name: "total", Parent: "orders", DataType: "bigint",
 		}})
 	})
 
-	t.Run("MY136 replaces MY101", func(t *testing.T) {
+	t.Run("rewrite/convert-charset replaces locking/blocking-alter-table", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;", costColumn("note", "varchar(10)", "latin1", "latin1"))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MY136"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/convert-charset"})
 		c.Assert(analysis.Findings()[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectTable, Name: "orders"}})
 	})
 
-	t.Run("a change applied in place is MY130P's, and the generic findings go with it", func(t *testing.T) {
+	t.Run("a change applied in place is rewrite/in-place-column-change's, and the generic findings go with it", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders MODIFY note VARCHAR(20);", costColumn("note", "varchar(10)", "utf8mb4", "utf8mb4"))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MY130P"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/in-place-column-change"})
 	})
 
 	t.Run("a change the rules cannot judge leaves the generic findings in place", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders MODIFY note VARCHAR(70);", costColumn("note", "varchar(60)", "", ""))
-		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103", "MY101"})
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"})
 	})
 }
 
@@ -650,7 +650,7 @@ func TestCostRules_RunOnlyForTheMySQLFamily(t *testing.T) {
 	}
 }
 
-// TestPrimaryKeyAddedRule_SaysWhatWasMeasured pins the MY132 wording to the
+// TestPrimaryKeyAddedRule_SaysWhatWasMeasured pins the rewrite/add-primary-key wording to the
 // measurement in the MySQL owner's mysqlcost.go rather than to the older claim that the
 // rebuild blocks DML.
 func TestPrimaryKeyAddedRule_SaysWhatWasMeasured(t *testing.T) {
@@ -658,7 +658,7 @@ func TestPrimaryKeyAddedRule_SaysWhatWasMeasured(t *testing.T) {
 
 	analysis := analyzeCost(c, "mysql", "ALTER TABLE orders ADD PRIMARY KEY (total);")
 
-	message := messageOf(analysis.Findings(), "MY132")
+	message := messageOf(analysis.Findings(), "rewrite/add-primary-key")
 	c.Assert(message, qt.Contains, "in place with writes allowed (ALGORITHM=INPLACE, LOCK=NONE)")
 	c.Assert(message, qt.Not(qt.Contains), "blocks DML")
 }

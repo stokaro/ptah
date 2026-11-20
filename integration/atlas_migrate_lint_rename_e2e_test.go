@@ -36,7 +36,7 @@ func exitStatusOf(c *qt.C, err error) int {
 // PostgreSQL dev database, which is where the divergence was measured: a rename
 // retires a logical name, and `ptah-compat migrate lint` has to report that as
 // a destructive change to the retired name and exit 1, rather than printing a
-// BC101 warning and exiting 0.
+// rollout/rename warning and exiting 0.
 //
 // Each want below is the pinned community binary's output on the same fixture,
 // byte for byte apart from the elapsed durations.
@@ -47,8 +47,8 @@ func exitStatusOf(c *qt.C, err error) int {
 // classification result.
 //
 // The two rename forms are separate cases because they differ in more than
-// wording: the column form is DS103 with a NULL precheck and one schema change,
-// the table form is DS102 with an emptiness precheck and two. The third case is
+// wording: the column form is data-dependent/alter-column-type with a NULL precheck and one schema change,
+// the table form is destructive/drop-column with an emptiness precheck and two. The third case is
 // the control: renaming an object the same file created reports nothing on
 // either tool, so a change that classified renames destructively regardless of
 // provenance would fail there while the first two still passed.
@@ -143,7 +143,7 @@ func TestAtlasMigrateLintRenameE2E(t *testing.T) {
 			writeLintE2EFile(c, migrationsDir, "1.sql", test.base)
 			writeLintE2EFile(c, migrationsDir, "2.sql", test.rename)
 
-			stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
+			stdout, stderr, err := runLintE2EStrictBinary(ctx, binaryPath,
 				"migrate", "lint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", replaceDatabaseName(c, dbURL, testDBName),

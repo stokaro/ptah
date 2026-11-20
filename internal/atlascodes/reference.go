@@ -1,7 +1,7 @@
-package lintcatalog
+package atlascodes
 
 import (
-	// embed populates atlasReferenceText from atlasreference.txt below; no
+	// embed populates referenceText from reference.txt below; no
 	// symbol names it, so removing this import compiles and leaves the
 	// reviewed snapshot empty.
 	_ "embed"
@@ -10,26 +10,26 @@ import (
 	"strings"
 )
 
-// AtlasReferenceReviewedOn is the date the committed reference snapshot was
+// ReferenceReviewedOn is the date the committed reference snapshot was
 // reviewed against the published Atlas analyzer page.
 //
 // It is rendered into the generated lint-rules page beside the counts, so a
 // reader can see how old the comparison is rather than reading "every check"
 // and assuming it is current.
-const AtlasReferenceReviewedOn = "2026-09-06"
+const ReferenceReviewedOn = "2026-09-06"
 
-// atlasReferenceText is the reviewed snapshot of the Atlas analyzer check
+// referenceText is the reviewed snapshot of the Atlas analyzer check
 // table: one line per check, with the marking and meaning that page carried.
 //
 // It is a file rather than a Go literal because the refresh command rewrites
 // it, and a diff of one line per check is what a reviewer reads to decide
 // whether an upstream change is an addition, a removal, or a reworded meaning.
 //
-//go:embed atlasreference.txt
-var atlasReferenceText string
+//go:embed reference.txt
+var referenceText string
 
-// AtlasReferenceEntry is one line of the reviewed snapshot.
-type AtlasReferenceEntry struct {
+// ReferenceEntry is one line of the reviewed snapshot.
+type ReferenceEntry struct {
 	// Code is the Atlas check code.
 	Code string
 	// Pro records that the reviewed page marked the check as an Atlas Pro
@@ -45,26 +45,26 @@ type AtlasReferenceEntry struct {
 // The order is this package's, not the page's: a diff between two refreshes
 // should show what changed, and the page's family order moves a whole block
 // when one family is reordered upstream.
-func AtlasReference() []AtlasReferenceEntry {
-	entries, err := parseAtlasReference(atlasReferenceText)
+func Reference() []ReferenceEntry {
+	entries, err := parseReference(referenceText)
 	if err != nil {
 		// The file is embedded from this package's own directory and is
 		// checked by TestAtlasReference_Parses, so a parse failure here is a
 		// build-time mistake rather than a runtime condition a caller can
 		// handle.
-		panic(fmt.Sprintf("lintcatalog: the embedded Atlas reference does not parse: %v", err))
+		panic(fmt.Sprintf("atlascodes: the embedded Atlas reference does not parse: %v", err))
 	}
 	return entries
 }
 
-// parseAtlasReference reads the snapshot format: comments and blank lines are
+// parseReference reads the snapshot format: comments and blank lines are
 // skipped, and every other line is CODE, PRO or FREE, then the meaning.
 //
 // A malformed line is an error rather than a skipped line. A parser that
 // skipped what it did not understand would answer "no additions" for a file it
 // had failed to read, which is the shape this whole mechanism exists to refuse.
-func parseAtlasReference(text string) ([]AtlasReferenceEntry, error) {
-	var entries []AtlasReferenceEntry
+func parseReference(text string) ([]ReferenceEntry, error) {
+	var entries []ReferenceEntry
 	seen := make(map[string]bool)
 	for number, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -86,7 +86,7 @@ func parseAtlasReference(text string) ([]AtlasReferenceEntry, error) {
 		if marking != "PRO" && marking != "FREE" {
 			return nil, fmt.Errorf("line %d: %s marking is %q, want PRO or FREE", number+1, code, marking)
 		}
-		entries = append(entries, AtlasReferenceEntry{
+		entries = append(entries, ReferenceEntry{
 			Code:    code,
 			Pro:     marking == "PRO",
 			Meaning: strings.Join(fields[2:], " "),
@@ -99,9 +99,9 @@ func parseAtlasReference(text string) ([]AtlasReferenceEntry, error) {
 	return entries, nil
 }
 
-// AtlasReferenceDrift is what the catalog and the reviewed snapshot disagree
+// ReferenceDrift is what the catalog and the reviewed snapshot disagree
 // about.
-type AtlasReferenceDrift struct {
+type ReferenceDrift struct {
 	// MissingFromCatalog are codes the snapshot has and the catalog does not:
 	// the state this whole mechanism exists to detect, and the state the
 	// catalog was in for nineteen checks.
@@ -115,14 +115,14 @@ type AtlasReferenceDrift struct {
 }
 
 // Empty reports whether the catalog agrees with the reviewed snapshot.
-func (d AtlasReferenceDrift) Empty() bool {
+func (d ReferenceDrift) Empty() bool {
 	return len(d.MissingFromCatalog) == 0 &&
 		len(d.MissingFromReference) == 0 &&
 		len(d.ProDisagreements) == 0
 }
 
 // Error renders the drift as one message naming every disagreement.
-func (d AtlasReferenceDrift) Error() string {
+func (d ReferenceDrift) Error() string {
 	var parts []string
 	if len(d.MissingFromCatalog) > 0 {
 		parts = append(parts, fmt.Sprintf("in the reviewed reference and not in the catalog: %s",
@@ -139,27 +139,27 @@ func (d AtlasReferenceDrift) Error() string {
 	return strings.Join(parts, "; ")
 }
 
-// CompareAtlasReference reports how the catalog differs from the reviewed
+// CompareReference reports how the catalog differs from the reviewed
 // snapshot.
 //
 // It compares the code SETS, not their sizes. A count agrees with itself while
 // one check is added and another dropped, and a floor on the number of covered
 // rows cannot see a check that is missing from the catalog and from the page
 // the catalog was built from -- which is the state stokaro/ptah#2972 found.
-func CompareAtlasReference() AtlasReferenceDrift {
-	reference := AtlasReference()
-	inReference := make(map[string]AtlasReferenceEntry, len(reference))
+func CompareReference() ReferenceDrift {
+	reference := Reference()
+	inReference := make(map[string]ReferenceEntry, len(reference))
 	for _, entry := range reference {
 		inReference[entry.Code] = entry
 	}
 
-	checks := AtlasChecks()
-	inCatalog := make(map[string]AtlasCheck, len(checks))
+	checks := Checks()
+	inCatalog := make(map[string]Check, len(checks))
 	for _, check := range checks {
 		inCatalog[check.Code] = check
 	}
 
-	var drift AtlasReferenceDrift
+	var drift ReferenceDrift
 	for _, entry := range reference {
 		check, found := inCatalog[entry.Code]
 		if !found {

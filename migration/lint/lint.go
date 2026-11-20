@@ -1,16 +1,18 @@
 // Package lint inspects migration files for production-unsafe patterns and
-// emits rule-coded findings, in the spirit of sqlcheck and `atlas migrate
+// emits findings named for their rule, in the spirit of sqlcheck and `atlas migrate
 // lint` (issue #151).
 //
-// # Rule codes
+// # Rule names
 //
-//   - DS — data safety (dropping tables/columns, lossy type changes)
-//   - MF — migration form (missing down file, empty migration, naming)
-//   - BC — breaking-change safety (renames breaking deployed readers)
-//   - PG — PostgreSQL-specific hazards, which the PostgreSQL owner checks
-//   - MY — MySQL/MariaDB-specific hazards, which the MySQL owner checks
-//   - YD — YDB statements the server refuses, or runs with an effect the
-//     statement does not state, which the YDB provider checks
+// A rule is identified by its name, `category/name`, the spelling a finding
+// reports, a selector selects and a baseline records. The category says what
+// the statement risks (`destructive`, `rollout`, `locking`, `rewrite`, and so
+// on, declared in [ptah.run/internal/lintnames]); the engine is the rule's
+// Dialects. A selector is a name or a category and matches exactly, never as a
+// prefix. A hazard checked on several engines is one rule name: each engine's
+// owner supplies its check, the dialects of the checks do not overlap, and
+// their default severities match. Ptah rules have no numeric code, and a word
+// spelled as one is refused wherever a selector is read.
 //
 // # How statements are matched
 //
@@ -39,9 +41,10 @@
 // # Rules the engine owners check
 //
 // An engine owner may publish rules of its own through the runtime a run is
-// given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes the
-// PG and TX families and the online rules ON101 and ON103 that way, the MySQL
-// owner the MY family and ON102, and the YDB provider the YD family. [Rules]
+// given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes its
+// locking, rewrite and transaction rules and the online rules online/unproven and
+// online/lock-held-across-scan that way, the MySQL owner its rules and its
+// share of online/unproven, and the YDB provider its ydb rules. [Rules]
 // lists them after this package's own. A run asks the owners for their
 // findings once, over every file, and applies the same policy to them as to
 // every other finding: suppression directives, severity overrides, excluded
@@ -52,9 +55,9 @@
 // # Facts only an owner recognizes
 //
 // Some rules of this package need to know what a statement does where only
-// its dialect's owner can tell: DS107 reports a drop that loses state a new
-// object does not get back, such as a YDB topic's messages; MF101 and MF102
-// read YQL's unique index; DS101, BC103 and the rename rules pass over the
+// its dialect's owner can tell: destructive/drop-object reports a drop that loses state a new
+// object does not get back, such as a YDB topic's messages; data-dependent/add-unique-index and data-dependent/rebuild-index-as-unique
+// read YQL's unique index; destructive/drop-table, rollout/drop-table and the rename rules pass over the
 // steps of a table rebuild, which YDB's owner matches against the directory's
 // own history. The owner's split reports these as statement effects, and the
 // rules read the effects instead of naming a dialect. A run that names no
@@ -64,6 +67,7 @@
 package lint
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -72,7 +76,7 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
-	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/lintnames"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/risk"
 )
@@ -97,9 +101,12 @@ const (
 // except on a rule an engine owner publishes: [Rules] returns that one with
 // neither, because its owner checks it.
 type Rule struct {
-	// Code is the stable identifier (DS101, PG101, ...). It starts with an
-	// uppercase ASCII letter and contains only uppercase ASCII letters and digits.
-	Code string
+	// Name is the stable identifier, `category/name`, such as
+	// `destructive/drop-table`: two lowercase segments joined by a slash, the
+	// first a declared category (see [ptah.run/internal/lintnames]). Rules for
+	// different dialects may share a name when they report one hazard, their
+	// Dialects do not overlap and their default severities match.
+	Name string
 	// Title is the short human-readable name of the hazard.
 	Title string
 	// Severity is the default severity of findings from this rule.
@@ -246,16 +253,16 @@ type RuleConfig struct {
 	//
 	// Its presence is what separates the two uses of this type: an entry with
 	// Match defines a new rule, an entry without it configures a rule that
-	// already exists. A code that already belongs to a built-in rule cannot be
+	// already exists. A name that already belongs to a built-in rule cannot be
 	// declared, so a typo can never quietly replace a built-in check with a
 	// weaker one of the same name.
 	Match string `yaml:"match,omitempty"`
 	// Message is the finding text a declared rule reports. It is required when
-	// Match is set: a finding whose message is the rule code tells a reader
+	// Match is set: a finding whose message is the rule name tells a reader
 	// what fired and nothing about why it matters.
 	Message string `yaml:"message,omitempty"`
 	// Title is the declared rule's short name in reports. It defaults to the
-	// rule code.
+	// rule name.
 	Title string `yaml:"title,omitempty"`
 	// Dialects restricts a declared rule to specific target dialects. Empty
 	// runs it under every dialect.
@@ -293,8 +300,10 @@ type Options struct {
 	// the dialect a configuration names and reject unsupported ones; resolve a
 	// user-typed spelling through them and store what they return.
 	Dialect string
-	// Disabled lists rule codes or code prefixes to skip: "DS101" disables
-	// one rule, "DS" the whole data-safety family.
+	// Disabled lists the rules to skip, each a rule name or a category:
+	// "destructive/drop-table" disables one rule and "destructive" every rule
+	// named under that category. A selector matches exactly, never as a
+	// prefix.
 	Disabled []string
 	// PathPrefix is prepended (with /) to file names in findings so they
 	// point at real repository paths in CI annotations.
@@ -331,6 +340,13 @@ type Options struct {
 	// AtlasTemplateData supplies data for Atlas SQL template migrations.
 	// When nil, templates render with migrationfile.AtlasTemplateData{}.
 	AtlasTemplateData any
+	// AtlasSelectors reads the selectors of `atlas:nolint` comments under
+	// [CompatibilityProfileAtlas]: it maps an Atlas check code or analyzer name
+	// to the Ptah rule names it silences. Only the compatibility surface sets
+	// it; Ptah holds no table from Atlas codes to rules. Left nil, an
+	// `atlas:nolint` comment that names a selector silences no rule.
+	// Native analysis refuses `atlas:nolint` and never calls it.
+	AtlasSelectors AtlasSelectors
 	// ExtraRules appends caller-provided rules to the rules of the runtime
 	// for this run: an in-process analyzer's way in. An analyzer that runs in
 	// an engine owner publishes its rules through the runtime instead.
@@ -351,7 +367,7 @@ type Options struct {
 	// here, because a run that proved nothing and found nothing is the one
 	// answer this family must never give.
 	RequireOnline bool
-	// Unparsed selects the statements rule AC102 reports when the SQL parser
+	// Unparsed selects the statements rule coverage/unparsed-statement reports when the SQL parser
 	// could not read them. The zero value reports none, for a caller whose
 	// statements a server reads next or that wrote them itself.
 	Unparsed UnparsedScope
@@ -462,7 +478,7 @@ func dropSubsumedFindings(findings []Finding, rules []Rule) []Finding {
 	subsumedBy := make(map[string][]string, len(rules))
 	for _, rule := range rules {
 		for _, code := range rule.Subsumes {
-			subsumedBy[code] = append(subsumedBy[code], rule.Code)
+			subsumedBy[code] = append(subsumedBy[code], rule.Name)
 		}
 	}
 	if len(subsumedBy) == 0 {
@@ -503,7 +519,7 @@ func collectFindings(file *File, opts Options, rules []Rule) []Finding {
 		if !ruleRunsOnFile(rule, file, opts) {
 			continue
 		}
-		severity := ruleSeverity(rule, opts.RuleConfigs, file.registered)
+		severity := ruleSeverity(rule, opts.RuleConfigs)
 		if rule.CheckFile != nil {
 			for _, finding := range rule.CheckFile(file) {
 				if fileFindingSuppressed(file, finding) {
@@ -519,12 +535,12 @@ func collectFindings(file *File, opts Options, rules []Rule) []Finding {
 			continue
 		}
 		for i := range file.Statements {
-			if statementSuppressesRule(&file.Statements[i], rule.Code) {
+			if statementSuppressesRule(&file.Statements[i], rule.Name) {
 				continue
 			}
 			if hit, message := rule.CheckStatement(&file.Statements[i]); hit {
 				findings = append(findings, Finding{
-					Rule:     rule.Code,
+					Rule:     rule.Name,
 					Title:    rule.Title,
 					Severity: severity,
 					File:     file.Path,
@@ -554,16 +570,16 @@ func rulesForOptions(runtime lintext.Runtime, opts Options) ([]Rule, error) {
 	return append(rules, declared...), nil
 }
 
-func ruleSeverity(rule Rule, configs map[string]RuleConfig, registered map[string]struct{}) Severity {
-	config, ok := ruleConfigForCode(rule.Code, configs, registered)
+func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
+	config, ok := ruleConfigForName(rule.Name, configs)
 	if !ok || config.Severity == "" {
 		return rule.Severity
 	}
 	return config.Severity
 }
 
-func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig) bool {
-	config, ok := ruleConfigForCode(code, configs, file.registered)
+func ruleExcludedForFile(name string, file *File, configs map[string]RuleConfig) bool {
+	config, ok := ruleConfigForName(name, configs)
 	if !ok {
 		return false
 	}
@@ -575,45 +591,38 @@ func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig)
 	return false
 }
 
-func ruleConfigForCode(code string, configs map[string]RuleConfig, registered map[string]struct{}) (RuleConfig, bool) {
+// ruleConfigForName returns the `rules:` entry that governs the rule: the one
+// keyed by its name, else the one keyed by its category, written `locking` or
+// `locking/`. The two selectors the entry could be keyed by are the two
+// [lintnames.Selects] accepts, so the section and every other selector agree.
+func ruleConfigForName(name string, configs map[string]RuleConfig) (RuleConfig, bool) {
 	if len(configs) == 0 {
 		return RuleConfig{}, false
 	}
-	if config, ok := configs[code]; ok {
-		return config, true
-	}
-	// An entry written under the Atlas spelling governs the Ptah rule that
-	// reports it, so `rules: {PG301: {severity: warning}}` reaches DS103
-	// (stokaro/ptah#1631).
-	for _, atlasCode := range AtlasCodeFor(code) {
-		if config, ok := configs[atlasCode]; ok {
+	for _, key := range lintnames.ConfigKeys(name) {
+		if config, ok := configs[key]; ok {
 			return config, true
 		}
 	}
-	// A prefix key governs the codes it selects; a key that is itself a
-	// registered code governed that code alone above and reaches no other.
-	bestPrefix := ""
-	var best RuleConfig
-	for prefix, config := range configs {
-		if selectorSelects(prefix, code, registered) && len(prefix) > len(bestPrefix) {
-			bestPrefix = prefix
-			best = config
+	for _, key := range lintnames.GroupKeys(name) {
+		if config, ok := configs[key]; ok {
+			return config, true
 		}
 	}
-	return best, bestPrefix != ""
+	return RuleConfig{}, false
 }
 
-func statementSuppressesRule(stmt *Statement, code string) bool {
-	return suppressesRule(stmt.suppressedRules, code)
+func statementSuppressesRule(stmt *Statement, name string) bool {
+	return suppressesRule(stmt.suppressedRules, name)
 }
 
-func fileSuppressesRule(file *File, code string) bool {
-	return suppressesRule(file.suppressedRules, code)
+func fileSuppressesRule(file *File, name string) bool {
+	return suppressesRule(file.suppressedRules, name)
 }
 
-func suppressesRule(entries []atlaslint.Target, code string) bool {
-	return slices.ContainsFunc(entries, func(entry atlaslint.Target) bool {
-		return entry.Matches(code)
+func suppressesRule(entries []noLintTarget, name string) bool {
+	return slices.ContainsFunc(entries, func(entry noLintTarget) bool {
+		return entry.Matches(name)
 	})
 }
 
@@ -701,61 +710,31 @@ func matchGlobSegments(pattern, value []string) bool {
 
 // SelectorSelects reports whether a rule selector, as written in
 // `disabled-rules`, `--disable`, a `rules:` key or a `ptah:nolint`
-// directive, selects the rule with the given code.
+// directive, selects the rule called name.
 //
-// A selector that is itself the code of a registered rule selects that rule
-// alone. Any other selector is a prefix and selects every rule whose code
-// starts with it, which is how a family (`DS`) or a range (`PG3`) is named.
-// The first clause is what keeps a code from reaching its neighbors: MF101 is
-// the Atlas unique-index check and MF101P the missing-down rule, and a prefix
-// match would let `MF101` silence both with no spelling left that reaches
-// the check alone (stokaro/ptah#2942).
-//
-// The codes a selector is told apart from are those of rules, normally what
-// [Rules] returns for the run's runtime; a run's own [Options.ExtraRules] and
-// declared rules are counted by the analysis itself, which compares against
-// the rules it runs.
-func SelectorSelects(rules []Rule, selector, code string) bool {
-	return selectorSelects(selector, code, registeredCodes(rules))
+// A selector is a rule name, `locking/add-foreign-key`, or a category,
+// `locking` or `locking/`, which selects every rule named under it. Both match
+// exactly and never by prefix: `locking/add` selects nothing, so a selector
+// cannot reach a rule its author did not spell. One predicate decides every
+// selector of every linter; see [lintnames.Selects].
+func SelectorSelects(selector, name string) bool {
+	return lintnames.Selects(strings.TrimSpace(selector), name)
 }
 
-func selectorSelects(selector, code string, registered map[string]struct{}) bool {
-	selector = strings.TrimSpace(selector)
-	if selector == "" {
-		return false
-	}
-	if selector == code {
-		return true
-	}
-	if _, exact := registered[selector]; exact {
-		return false
-	}
-	return strings.HasPrefix(code, selector)
-}
-
-// registeredCodes is the set a selector is compared against to tell a code
-// from a prefix.
-func registeredCodes(rules []Rule) map[string]struct{} {
-	codes := make(map[string]struct{}, len(rules))
+// knownNames is the set of rule names a selector is judged against: the
+// rules this run registers.
+func knownNames(rules []Rule) lintnames.Set {
+	names := make([]string, 0, len(rules))
 	for _, rule := range rules {
-		codes[rule.Code] = struct{}{}
+		names = append(names, rule.Name)
 	}
-	return codes
+	return lintnames.NewSet("migration lint", names)
 }
 
-// ruleDisabled reports whether code matches any disabled entry, by the
-// [SelectorSelects] rule: an exact code, or a prefix that is not itself a
-// code ("DS" disables every DS rule).
-//
-// dialect scopes the Atlas alias expansion: a PostgreSQL Atlas code must not
-// silence a generic Ptah rule while linting MySQL (stokaro/ptah#1631).
-func ruleDisabled(code string, disabled []string, dialect string, registered map[string]struct{}) bool {
-	for _, entry := range expandAtlasCodeSelectorsForDialect(disabled, dialect) {
-		if selectorSelects(entry, code, registered) {
-			return true
-		}
-	}
-	return false
+// ruleDisabled reports whether name matches any disabled entry by
+// [SelectorSelects].
+func ruleDisabled(name string, disabled []string) bool {
+	return slices.ContainsFunc(disabled, func(entry string) bool { return SelectorSelects(entry, name) })
 }
 
 // ruleAppliesToDialect reports whether a rule runs for the configured target
@@ -772,61 +751,128 @@ func ruleAppliesToDialect(rule Rule, dialect string) bool {
 // form while Direction follows the migrator, so if the two ever diverge —
 // an unescaped dot in the migrator's pattern makes 0000000001_cleanup.sql run
 // as an up migration (stokaro/ptah#245) — lint keeps scanning whatever the
-// migrator would execute and MF103 explains the ambiguity.
+// migrator would execute and file-form/file-name explains the ambiguity.
 var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
 
+// noLintTarget is one resolved nolint selector: a rule name, a category, or,
+// for a directive written without a selector, every rule.
+type noLintTarget struct{ selector string }
+
+// everyRuleTarget silences every rule, which is what a bare directive means.
+func everyRuleTarget() noLintTarget { return noLintTarget{} }
+
+// selectorTarget silences the rule or category selector names, by
+// [lintnames.Selects].
+func selectorTarget(selector string) noLintTarget { return noLintTarget{selector: selector} }
+
+// Matches reports whether the target silences the rule called name.
+func (t noLintTarget) Matches(name string) bool {
+	return t.MatchesEveryRule() || lintnames.Selects(t.selector, name)
+}
+
+// MatchesEveryRule reports whether the target silences every rule.
+func (t noLintTarget) MatchesEveryRule() bool { return t.selector == "" }
+
+// AtlasSelectors translates the selector of an `atlas:nolint` comment, an
+// Atlas check code or analyzer name, into the Ptah rule names it silences.
+// Only the compatibility surface supplies one; native analysis holds no table
+// from Atlas codes to rules.
+type AtlasSelectors func(selector string) []string
+
+// parseNoLintDirective reads the rules one comment above a statement
+// suppresses. A `ptah:nolint` naming a rule name or category migration lint
+// does not know, or spelled as a rule code, is refused: matched against
+// nothing, the misspelling would leave the finding reported with the author
+// believing it silenced.
+//
+// An `atlas:nolint` comment is Atlas's directive. The compatibility profile
+// reads it through atlas, which maps the Atlas selector it names to rules;
+// native analysis refuses it.
 func parseNoLintDirective(
 	comment string,
 	compatibility CompatibilityProfile,
-	registered map[string]struct{},
-) []atlaslint.Target {
+	known lintnames.Set,
+	atlas AtlasSelectors,
+) ([]noLintTarget, error) {
 	trimmed := strings.TrimSpace(comment)
 	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
-		return nil
+		return nil, nil
 	}
-	if rules, ok := parseNoLintMarker(comment, "ptah:nolint", nativeNoLintTargets(registered)); ok {
-		return rules
+	if rules, ok, err := parseNoLintMarker(comment, "ptah:nolint", func(rest string) ([]noLintTarget, error) {
+		return parsePtahNoLint(rest, known)
+	}); ok {
+		return rules, err
 	}
-	rules, _ := parseNoLintMarker(comment, "atlas:nolint", atlasNoLintTargets(compatibility))
+	rules, _, err := parseNoLintMarker(comment, "atlas:nolint", func(rest string) ([]noLintTarget, error) {
+		if compatibility != CompatibilityProfileAtlas {
+			return nil, errAtlasNoLintNative
+		}
+		return parseAtlasNoLintRules(rest, atlas), nil
+	})
+	return rules, err
+}
+
+// errAtlasNoLintNative is the refusal of an `atlas:nolint` comment by native
+// analysis. It names the directive Ptah reads and no Atlas code.
+var errAtlasNoLintNative = errors.New("atlas:nolint is an Atlas directive that ptah-compat reads; " +
+	"native Ptah reads ptah:nolint with a rule name, such as ptah:nolint " + exampleRuleName)
+
+// exampleRuleName is the rule name refusals show.
+const exampleRuleName = "locking/add-foreign-key"
+
+// parseAtlasNoLintRules resolves the selectors of an `atlas:nolint` comment
+// through atlas. Words are split at the separators an Atlas selector list may
+// use, and each is upper-cased the way the community binary reads it. A nil
+// atlas resolves every selector to no rule; a directive without one still
+// means every rule. A word that is a Ptah rule name reaches atlas unchanged.
+func parseAtlasNoLintRules(rest string, atlas AtlasSelectors) []noLintTarget {
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return []noLintTarget{everyRuleTarget()}
+	}
+	var rules []noLintTarget
+	for field := range strings.FieldsSeq(rest) {
+		if atlas == nil {
+			continue
+		}
+		// A word written as a Ptah rule name is handed to atlas whole and as
+		// written: it holds a slash, which otherwise separates two selectors,
+		// and a name is lower case. Whether a compatibility surface honors
+		// it is atlas's decision.
+		if lintnames.WellFormed(field) {
+			for _, name := range atlas(field) {
+				rules = append(rules, selectorTarget(name))
+			}
+			continue
+		}
+		for part := range strings.FieldsFuncSeq(field, isNoLintSeparator) {
+			part = strings.ToUpper(strings.TrimSpace(part))
+			if part == "" {
+				continue
+			}
+			for _, name := range atlas(part) {
+				rules = append(rules, selectorTarget(name))
+			}
+		}
+	}
 	return rules
 }
 
-// atlasNoLintTargets resolves one `atlas:nolint` selector for the surface that
-// is running. The selector vocabulary is Atlas's on both surfaces: analyzer
-// names name rule families, and a code selector matches one code exactly rather
-// than widening into a family the way `ptah:nolint DS` does. Only the code
-// namespace is surface-specific — a selector names the code the running surface
-// prints, which is the native code natively and the Atlas identity under the
-// compatibility profile.
-func atlasNoLintTargets(compatibility CompatibilityProfile) func(string) []atlaslint.Target {
-	if compatibility == CompatibilityProfileAtlas {
-		return atlaslint.NativeSuppressionTargets
-	}
-	return nativeAtlasNoLintTargets
-}
-
-func nativeAtlasNoLintTargets(entry string) []atlaslint.Target {
-	if targets, ok := atlaslint.AnalyzerSuppressionTargets(entry); ok {
-		return targets
-	}
-	return []atlaslint.Target{atlaslint.CodeTarget(entry)}
-}
-
-func parseAtlasFileNoLint(sql string) ([]atlaslint.Target, bool) {
+func parseAtlasFileNoLint(sql string, atlas AtlasSelectors) ([]noLintTarget, bool) {
 	lines := strings.Split(sql, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\uFEFF"))
 		if trimmed == "" {
 			continue
 		}
-		rules, ok := parseAtlasNoLintLine(trimmed)
+		rules, ok := parseAtlasNoLintLine(trimmed, atlas)
 		if !ok {
 			return nil, false
 		}
 		for _, following := range lines[i+1:] {
 			trimmedFollowing := strings.TrimSpace(following)
 			if trimmedFollowing == "" {
-				return rules, slices.ContainsFunc(rules, atlaslint.Target.MatchesEveryRule)
+				return rules, slices.ContainsFunc(rules, noLintTarget.MatchesEveryRule)
 			}
 			if strings.HasPrefix(trimmedFollowing, "--") {
 				continue
@@ -838,7 +884,7 @@ func parseAtlasFileNoLint(sql string) ([]atlaslint.Target, bool) {
 	return nil, false
 }
 
-func parseAtlasNoLintLine(line string) ([]atlaslint.Target, bool) {
+func parseAtlasNoLintLine(line string, atlas AtlasSelectors) ([]noLintTarget, bool) {
 	comment, ok := strings.CutPrefix(strings.TrimSpace(line), "--")
 	if !ok {
 		return nil, false
@@ -852,55 +898,108 @@ func parseAtlasNoLintLine(line string) ([]atlaslint.Target, bool) {
 	if rest != "" && !isNoLintSeparator(rune(rest[0])) {
 		return nil, false
 	}
-	return parseNoLintRules(rest, atlaslint.NativeSuppressionTargets), true
+	return parseAtlasNoLintRules(rest, atlas), true
 }
 
 func parseNoLintMarker(
 	comment,
 	marker string,
-	targets func(string) []atlaslint.Target,
-) ([]atlaslint.Target, bool) {
+	parse func(rest string) ([]noLintTarget, error),
+) ([]noLintTarget, bool, error) {
 	idx := strings.Index(strings.ToLower(comment), marker)
 	if idx < 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	rest := comment[idx+len(marker):]
 	if rest != "" && !isNoLintSeparator(rune(rest[0])) {
-		return nil, false
+		return nil, false, nil
 	}
-	return parseNoLintRules(rest, targets), true
+	rules, err := parse(rest)
+	return rules, true, err
 }
 
-func parseNoLintRules(rest string, targets func(string) []atlaslint.Target) []atlaslint.Target {
+// parsePtahNoLint reads the selectors of a `ptah:nolint` directive.
+//
+// The directive is a run of selectors followed by free text. The selectors
+// come first and the text starts at the first word that is not one, or at a
+// word beginning with `--`; nothing after that point selects a rule, so a
+// word in the reason can never widen the suppression. A selector is:
+//
+//   - a rule name or a category written with a slash (`locking/`);
+//   - a bare category (`locking`), as the first word only, because a lower-case
+//     word later in a line is as likely prose as a selector.
+//
+// A word is refused when it is clearly meant as a name and is wrong: its first
+// segment is a declared category (`locking/typo`), or it is one lower-case word
+// ending in a slash (`lockin/`). A word spelled as a rule code, such as
+// `destructive/drop-column` or `destructive/drop-table/DS102`, is refused too: Ptah rules are named, and a code
+// is not a rule name. Any other word holding a slash, such as a URL or
+// `and/or`, is free text. A directive with no selector and no text suppresses
+// every rule; one with text and no selector suppresses none.
+func parsePtahNoLint(rest string, known lintnames.Set) ([]noLintTarget, error) {
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
-		return []atlaslint.Target{atlaslint.FamilyTarget("")}
+		return []noLintTarget{everyRuleTarget()}, nil
 	}
-	parts := strings.FieldsFunc(rest, isNoLintSeparator)
-	rules := make([]atlaslint.Target, 0, len(parts))
-	for _, part := range parts {
-		part = strings.ToUpper(strings.TrimSpace(part))
+	words := strings.FieldsFunc(rest, func(r rune) bool { return r != '/' && isNoLintSeparator(r) })
+	rules := make([]noLintTarget, 0, len(words))
+	for position, word := range words {
+		if code := codeShapedWord(word); code != "" {
+			return nil, fmt.Errorf("ptah:nolint: %w", lintnames.RefuseCode(code))
+		}
+		var (
+			resolved   []noLintTarget
+			isSelector bool
+			err        error
+		)
+		if _, bare := lintnames.CategoryFor(word); bare && position == 0 {
+			resolved, isSelector, err = resolveNoLintName(word, known)
+		} else if lintnames.MeantAsSelector(word) {
+			resolved, isSelector, err = resolveNoLintName(word, known)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("ptah:nolint: %w", err)
+		}
+		if !isSelector {
+			break
+		}
+		rules = append(rules, resolved...)
+	}
+	return rules, nil
+}
+
+// codeShapedWord returns the part of a nolint word that is spelled as a rule
+// code, or the empty string. A code is upper-case letters and at least one
+// digit; a word of codes joined by slashes counts, and a word with any other
+// part, a URL for one, does not.
+func codeShapedWord(word string) string {
+	first := ""
+	for part := range strings.SplitSeq(word, "/") {
 		if part == "" {
 			continue
 		}
-		rules = append(rules, targets(part)...)
+		if !lintnames.IsCode(part) || !strings.ContainsAny(part, "0123456789") {
+			return ""
+		}
+		if first == "" {
+			first = part
+		}
 	}
-	return rules
+	return first
 }
 
-// nativeNoLintTargets resolves a selector against the native code namespace
-// by the [SelectorSelects] rule, judged against the codes this run registers
-// (declared rules included): `ptah:nolint DS102` silences that rule and no
-// other, `ptah:nolint MF101` leaves MF101P reported, and a selector that is
-// not a code names its family, so `ptah:nolint DS` silences every
-// data-safety rule.
-func nativeNoLintTargets(registered map[string]struct{}) func(string) []atlaslint.Target {
-	return func(entry string) []atlaslint.Target {
-		if _, exact := registered[entry]; exact {
-			return []atlaslint.Target{atlaslint.CodeTarget(entry)}
-		}
-		return []atlaslint.Target{atlaslint.FamilyTarget(entry)}
+// resolveNoLintName resolves a rule name or category, and refuses one that
+// selects no rule migration lint has.
+func resolveNoLintName(word string, known lintnames.Set) ([]noLintTarget, bool, error) {
+	selected, err := known.Resolve(word)
+	if err != nil {
+		return nil, true, err
 	}
+	rules := make([]noLintTarget, 0, len(selected))
+	for _, name := range selected {
+		rules = append(rules, selectorTarget(name))
+	}
+	return rules, true, nil
 }
 
 func isNoLintSeparator(r rune) bool {
@@ -944,8 +1043,8 @@ func (s UnparsedScope) covers(file *File) bool {
 // for the guarantee, and the selection lives here rather than in the rules
 // because [ruleRunsOnFile] is the one place that decides what runs at all --
 // a second gate would be a second answer to the same question.
-func onlineRuleSelected(code string, opts Options) bool {
-	return opts.RequireOnline || !strings.HasPrefix(code, OnlineFamily)
+func onlineRuleSelected(name string, opts Options) bool {
+	return opts.RequireOnline || lintnames.CategoryOf(name) != OnlineCategory
 }
 
 // ruleRunsOnFile reports whether rule is enabled for this file under opts.
@@ -955,9 +1054,9 @@ func onlineRuleSelected(code string, opts Options) bool {
 // be the same set, or a run reads a dev database for a rule it then skips, or
 // skips a read for a rule it then runs (stokaro/ptah#1632).
 func ruleRunsOnFile(rule Rule, file *File, opts Options) bool {
-	return onlineRuleSelected(rule.Code, opts) &&
-		!ruleDisabled(rule.Code, opts.Disabled, opts.Dialect, file.registered) &&
-		!fileSuppressesRule(file, rule.Code) &&
+	return onlineRuleSelected(rule.Name, opts) &&
+		!ruleDisabled(rule.Name, opts.Disabled) &&
+		!fileSuppressesRule(file, rule.Name) &&
 		ruleAppliesToDialect(rule, opts.Dialect) &&
-		!ruleExcludedForFile(rule.Code, file, opts.RuleConfigs)
+		!ruleExcludedForFile(rule.Name, file, opts.RuleConfigs)
 }

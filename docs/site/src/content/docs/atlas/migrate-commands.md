@@ -2064,6 +2064,21 @@ ptah-compat migrate lint \
   --latest 1
 ```
 
+### Rule names and Atlas codes
+
+The default `ptah-compat` surface names each finding by its Ptah rule name. The
+text report prints `L1 [destructive/drop-table]: Dropping table "users"`, and a
+`--format` template reads the name in `Code` and `Findings[].rule`. Every rule
+runs, so a rule Atlas has no check for is reported too.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` selects the community binary's vocabulary. The
+report prints the Atlas check code of each rule in the binary's own line shape,
+`L1: Dropping table "users" https://atlasgo.io/lint/analyzers#DS102`, and the
+run executes only the rules the Atlas table maps. The generated
+[Lint rules](../../reference/lint-rules/#atlas-check-codes) page lists the
+mapping. The codes quoted in the rest of this page are the ones strict mode
+prints; the default surface prints the name of the same rule.
+
 Both flags in that example are required, and they are **two separate
 requirements** with two separate refusals, each matching the pinned Atlas
 community binary byte for byte:
@@ -2092,7 +2107,7 @@ Two environment variables relax these requirements. They relax **different**
 ones, and neither implies the other:
 
 - `PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` drops the dev-database requirement.
-  Ptah's analyzers reach a verdict from the migration files alone, and `AC102`
+  Ptah's analyzers reach a verdict from the migration files alone, and `coverage/unparsed-statement`
   names each statement the SQL parser could not read; the run still needs a scope.
 - `PTAH_ATLAS_LINT_ALL_VERSIONS=1` drops the scope requirement and lints the
   whole directory. The run still needs a dev database unless the variable above
@@ -2282,7 +2297,7 @@ objects the run analyzes. A PostgreSQL-family `--dev-url` carrying
   itself, which is the only one the statement has: `DROP INDEX app.idx;` under
   `search_path=public` counts no schema change and raises no diagnostic, while
   `DROP INDEX public.idx;` and the unqualified `DROP INDEX idx;` each count one
-  and raise `PG106`.
+  and raise `PG102`.
 
 A `--dev-url` that names no schema puts the whole connected database under
 review and filters nothing, which is also what every non-PostgreSQL dev URL
@@ -2324,8 +2339,8 @@ not be read must not be able to drop a diagnostic. That grammar boundary is why
 `DROP FUNCTION` and the other drops the parser reads: it models the statement, so
 `DROP INDEX public.idx;` counts one schema change,
 matching the pinned community binary and `DROP INDEX app.idx;` is
-scoped out whole — no schema change and no `PG106`, which is also what the
-community binary reports. Raising `PG106` for the `app` form
+scoped out whole — no schema change and no `PG102`, which is also what the
+community binary reports. Raising `PG102` for the `app` form
 ([`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296)) says
 nothing extra about the reviewed schema: the `public` form raises it either
 way.
@@ -2449,7 +2464,7 @@ describe that single event at different altitudes:
   without the `COLUMN` keyword. The diagnostic names the old name rather than the
   new one, carries the matching pre-migration-check suggested fix, is
   error-severity, and exits 1.
-- Native `ptah migrations lint` reports `BC101`, which explains the operational
+- Native `ptah migrations lint` reports `rollout/rename`, which explains the operational
   hazard and prescribes add-new/backfill/drop-old across releases. It stays a
   warning there.
 
@@ -2501,7 +2516,7 @@ silences the retirement and leaves the addition, and `-- atlas:nolint
 data_depend` does the reverse.
 
 Native `ptah migrations lint` reports no addition. It models a rename as a
-rename, and a rename does not fail on a populated table, so `BC101` stays its
+rename, and a rename does not fail on a populated table, so `rollout/rename` stays its
 single finding.
 
 The report is written to stdout even when findings fail, and error-severity
@@ -2542,23 +2557,19 @@ lint` compatibility profile. A bare file header ignores the file completely, so
 it is absent from `.Files` and per-file analysis steps.
 
 Supported analyzer selectors are `destructive`, `data_depend`,
-`concurrent_index`, `incompatible`, and `nestedtx`. They name rule families, so
-they mean the same thing on both surfaces.
+`concurrent_index`, `incompatible`, and `nestedtx`. They name groups of rules,
+and `ptah-compat` is the only command that reads `atlas:nolint`: native
+`ptah migrations lint` refuses the directive and reads `ptah:nolint` with a
+rule name or category, such as `-- ptah:nolint destructive/drop-column`.
 
-A code selector names the code the running surface prints: every code
-`ptah-compat migrate lint` emits is suppressed by that code, and every code
-`ptah migrations lint` emits is suppressed by that code. The three codes the
-compatibility surface renames are the only place the two differ — a column drop
-prints `DS102` natively and `DS103` on the compatibility surface, so `--
-atlas:nolint DS103` silences it there and `-- atlas:nolint DS102` silences it
-natively. Where two native rules share one printed code, the selector reaches
-both: `-- atlas:nolint DS103` silences a `DROP COLUMN` and a column type change
-alike.
+A code selector names an Atlas check code. `DS102` silences
+`destructive/drop-table`, `DS103` silences `destructive/drop-column`, and
+`DS101` silences `destructive/drop-object`, the dropped schema Atlas reports
+under that code. A rule Atlas has no check for is not reached by a code.
 
-A code selector matches one code exactly and never widens into a family, on
-both surfaces: `-- atlas:nolint DS` and `-- atlas:nolint D` suppress nothing,
-while the native `-- ptah:nolint DS` still silences the whole family. An
-unrecognized
+A code selector matches one code exactly and never widens into a family:
+`-- atlas:nolint DS` and `-- atlas:nolint D` suppress nothing, while the native
+`-- ptah:nolint destructive` silences the whole category. An unrecognized
 selector is accepted and suppresses nothing, without a warning — the pinned
 community binary behaves the same way, and matching it was chosen over
 diagnosing the typo. Ptah's own `.ptah-lint.yaml` `disabled-rules` remains

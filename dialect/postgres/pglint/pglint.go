@@ -1,5 +1,5 @@
 // Package pglint holds the migration lint rules the PostgreSQL owner checks:
-// the PG family of PostgreSQL hazards, the online-mode rules ON101 and ON103,
+// the PG family of PostgreSQL hazards, the online-mode rules online/unproven and online/lock-held-across-scan,
 // and the TX family, which judges the transaction shape of a migration file.
 //
 // Rules publishes them as data and Service checks them, once per lint run.
@@ -52,6 +52,6 @@ func rules() lintkit.Rules {
 	all = append(all, postgresCostRules()...)
 	all = append(all, atlasGapPostgresRules()...)
 	all = append(all, transactionRules()...)
-	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Code, b.Code) })
+	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Name, b.Name) })
 	return all
 }

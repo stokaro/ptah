@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/migrationreplay"
@@ -52,6 +53,7 @@ func templateDataDestructive() fstest.MapFS {
 func analyzeTemplateData(c *qt.C, fsys fstest.MapFS, opts migrationlint.Options, versions ...int64) migrationlint.Analysis {
 	c.Helper()
 	opts.Compatibility = migrationlint.CompatibilityProfileAtlas
+	opts.AtlasSelectors = atlascodes.SuppressedBy
 	opts.DirFormat = migrationfile.DirFormatAtlas
 	opts.Selection = migrationlint.VersionSelection{Versions: versions, Restricted: true}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, opts)
@@ -260,7 +262,7 @@ func TestMigrateLintFileError_HappyPath(t *testing.T) {
 				"2.sql": {Data: []byte("ALTER TABLE users ADD COLUMN x int NOT NULL;\nALTER TABLE users DROP COLUMN nick;\n")},
 			},
 			versions: []int64{2}, dialect: "postgres",
-			rules: map[string]migrationlint.RuleConfig{"DD101": {Severity: migrationlint.SeverityError}},
+			rules: map[string]migrationlint.RuleConfig{"data-dependent/add-not-null-column": {Severity: migrationlint.SeverityError}},
 			want:  "[destructive changes detected; data dependent changes detected]|[destructive changes detected; data dependent changes detected]",
 		},
 	}

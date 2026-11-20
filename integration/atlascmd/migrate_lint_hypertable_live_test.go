@@ -12,7 +12,7 @@ import (
 )
 
 // TestMigrateLintNamesTheHypertableRemedyLive is the directory
-// stokaro/ptah#3551 reported through `migrate lint --dev-url`: PG101 advised
+// stokaro/ptah#3551 reported through `migrate lint --dev-url`: locking/create-index advised
 // CREATE INDEX CONCURRENTLY for an index on a hypertable, and TimescaleDB
 // refuses that statement there. The control leaves the same table ordinary,
 // where CONCURRENTLY is the right advice and stays.
@@ -58,7 +58,7 @@ func TestMigrateLintNamesTheHypertableRemedyLive(t *testing.T) {
 			words := strings.Join(strings.Fields(out), " ")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
-			c.Assert(words, qt.Contains, "[PG101]: ")
+			c.Assert(words, qt.Contains, "[locking/create-index]: ")
 			c.Assert(words, qt.Contains, test.want)
 			c.Assert(words, qt.Not(qt.Contains), test.wantNot)
 		})

@@ -1448,10 +1448,10 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 	return nil
 }
 
-// lintAnalyzerCodes maps each Atlas analyzer block that carries only an
-// `error` switch to the Ptah rules or families the switch sets.
+// lintAnalyzerRules maps each Atlas analyzer block that carries only an
+// `error` switch to the Ptah rules the switch sets, by name.
 //
-// condrop: Atlas's condrop analyzer owns the constraint-deletion family, and
+// condrop: Atlas's condrop analyzer owns the constraint-deletion rules, and
 // it is a distinct analyzer from data_depend despite CE's decode error naming
 // datadepend's option struct. Measured on the pinned community binary against
 // a migration that drops a foreign key:
@@ -1460,28 +1460,39 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 //	condrop     error=true -> exit 1, "1 version with errors"
 //	destructive error=true -> exit 0, "1 version with warnings"
 //
-// so condrop, not destructive, escalates the diagnostic CE reports as CD101.
-// Ptah's CD family (CD101 foreign key, CD102 check, CD103 primary key) is the
-// same family. DS105 rides with it because it is Ptah's untyped fallback for
-// the ANSI `DROP CONSTRAINT <name>` form whose type the SQL does not reveal --
-// and that is precisely the statement CE attributed to CD101 in the
+// so condrop, not destructive, escalates the diagnostic CE reports for a
+// dropped foreign key. Ptah's integrity/drop-foreign-key, drop-check and
+// drop-primary-key are the same family. integrity/drop-untyped-constraint
+// rides with them because it is Ptah's untyped fallback for the ANSI
+// `DROP CONSTRAINT <name>` form whose type the SQL does not reveal -- and that
+// is precisely the statement CE attributed to the dropped foreign key in the
 // measurement above, so leaving it out would let `condrop { error = false }`
 // be accepted and change nothing for the most common spelling.
-var lintAnalyzerCodes = map[string][]string{
-	"concurrent_index": {"PG101", "PG103"},
-	"condrop":          {"CD", "DS105"},
-	"data_depend":      {"DD"},
-	"destructive":      {"DS"},
-	"nestedtx":         {"TX201"},
-	"incompatible":     {"BC"},
+var lintAnalyzerRules = map[string][]string{
+	"concurrent_index": {"locking/create-index", "transaction/concurrent-index"},
+	"condrop": {
+		"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key",
+		"integrity/drop-untyped-constraint",
+	},
+	"data_depend": {
+		"data-dependent/add-not-null-column", "correctness/immutable-calls-volatile", "data-dependent/set-not-null",
+	},
+	"destructive": {
+		"destructive/drop-table", "destructive/drop-column", "dependency/drop-column-in-use",
+		"data-dependent/alter-column-type", "integrity/drop-not-null", "integrity/drop-untyped-constraint",
+		"destructive/remove-enum-value", "destructive/drop-object", "destructive/truncate-table",
+		"security/disable-row-level-security", "security/no-force-row-level-security",
+	},
+	"nestedtx":     {"transaction/explicit-transaction"},
+	"incompatible": {"rollout/rename", "rollout/drop-table", "rollout/drop-column"},
 }
 
 func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) error {
 	seen := make(map[string]struct{})
 	for _, nested := range block.Body.Blocks {
-		if codes, ok := lintAnalyzerCodes[nested.Type]; ok {
+		if rules, ok := lintAnalyzerRules[nested.Type]; ok {
 			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, codes...)
+				return p.parseLintAnalyzer(nested, cfg, rules...)
 			}); err != nil {
 				return err
 			}
@@ -1627,7 +1638,7 @@ func (p atlasParser) parseSingleLintBlock(
 	return parse()
 }
 
-func (p atlasParser) parseLintAnalyzer(block *hclsyntax.Block, cfg *Config, codes ...string) error {
+func (p atlasParser) parseLintAnalyzer(block *hclsyntax.Block, cfg *Config, rules ...string) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
@@ -1643,8 +1654,8 @@ func (p atlasParser) parseLintAnalyzer(block *hclsyntax.Block, cfg *Config, code
 			if value {
 				severity = "error"
 			}
-			for _, code := range codes {
-				setLintRuleSeverity(cfg, code, severity)
+			for _, rule := range rules {
+				setLintRuleSeverity(cfg, rule, severity)
 			}
 		case "force":
 			if err := p.tolerateUnknownAttr("lint.analyzer", attrName, attr); err != nil {

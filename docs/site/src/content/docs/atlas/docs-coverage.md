@@ -390,7 +390,7 @@ Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah
 - selects the linted changeset from `--latest`, `--git-base`, `--git-dir` and matching `atlas.hcl` defaults, including Atlas repeatable keys `R` and `<number>R`;
 - infers the lint dialect from `--dev-url` and treats a directly connectable dev database as a scratch database, cleaning it and replaying the migrations; a `docker://` dev URL replays them in a container the run starts and removes;
 - renders Atlas-style Go templates over `.Env`, `.Steps` and `.Files` from `--format`, `format.migrate.lint` and Atlas `lint { log = "…" }`. With no template, it reproduces measured Atlas wording, analyzer links, wrapping and suggested-fix layout for mapped diagnostics, and labels Ptah-only findings without fabricated Atlas links;
-- maps supported `atlas.hcl` analyzer policy onto the severity of matching Ptah lint rule families;
+- maps supported `atlas.hcl` analyzer policy onto the severity of the matching Ptah lint rules;
 - runs a one-label `rule` block with a `match` expression as a rule of the project's own.
 
 Native `ptah migrations lint` keeps Ptah's fuller diagnostic prose.

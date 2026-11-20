@@ -7,8 +7,8 @@ import (
 // The rules of this comparison close the gaps a refresh of the Atlas analyzer
 // comparison found (stokaro/ptah#2972). Each one reports a consequence no
 // existing rule named: a broad warning that fires on the same statement is not
-// coverage, so where an existing rule already fired -- MY101 on an ALTER TABLE
-// form, DS101 on a DROP TABLE, PG101 on a CREATE INDEX -- these say the thing
+// coverage, so where an existing rule already fired -- locking/blocking-alter-table on an ALTER TABLE
+// form, destructive/drop-table on a DROP TABLE, locking/create-index on a CREATE INDEX -- these say the thing
 // that rule does not.
 //
 // Two consequences are kept apart throughout, because collapsing them is how a
@@ -17,8 +17,8 @@ import (
 //   - what the statement costs: metadata edit, in-place rebuild, or table copy;
 //   - whether writes continue while it runs.
 //
-// They are independent. MY141 rebuilds in place AND blocks writes; MY147
-// rebuilds in place and lets them through; the PostgreSQL owner's PG320 takes
+// They are independent. locking/add-auto-increment-column rebuilds in place AND blocks writes; rewrite/set-not-null
+// rebuilds in place and lets them through; the PostgreSQL owner's design/disable-autovacuum takes
 // a light lock and is still a hazard, for a reason that is not cost at all.
 //
 // The comparison these rules close was made against Ptah at
@@ -28,8 +28,8 @@ import (
 // reason the server versions below are named rather than left as "current".
 //
 // The engine-specific rules of the same comparison are their owners': the
-// PostgreSQL owner's PG108, PG109, PG312, PG314 and PG320, and the MySQL
-// owner's MY137 to MY147, each with its measurements. This file keeps the
+// PostgreSQL owner's locking/partitioned-index, locking/add-exclusion-constraint, locking/replace-primary-key, rollout/weaken-replica-identity and design/disable-autovacuum, and the MySQL
+// owner's rewrite/replace-primary-key to rewrite/set-not-null, each with its measurements. This file keeps the
 // two that read for every engine.
 
 // atlasGapRules returns the rules that close the comparison gaps.
@@ -39,7 +39,7 @@ func atlasGapRules() []Rule {
 
 // atlasGapCompatibilityRules holds BC103 and BC104.
 //
-// Both are file-level so they inherit the exemption DS101 and BC101 already
+// Both are file-level so they inherit the exemption destructive/drop-table and rollout/rename already
 // apply: an object this migration itself created was never visible to a
 // deployed application version, so retiring it breaks no client. The
 // destructive rules report the same statements for the other consequence, and
@@ -73,7 +73,7 @@ func atlasGapReportsOnThisSurface(file *File) bool {
 // deployed clients still query.
 func atlasGapDroppedTableRule() Rule {
 	return Rule{
-		Code:     "BC103",
+		Name:     "rollout/drop-table",
 		Title:    "dropped table breaks deployed code",
 		Severity: SeverityWarning,
 		// The starting state shows a DROP TABLE IF EXISTS of a table that is
@@ -114,7 +114,7 @@ func atlasGapDroppedTableRule() Rule {
 // atlasGapDroppedTableFindings reports one finding per table a DROP TABLE
 // retires.
 //
-// Every decision here is DS101's, taken from DS101's own implementation rather
+// Every decision here is destructive/drop-table's, taken from destructive/drop-table's own implementation rather
 // than reproduced: the target extraction, the create-then-drop exemption, the
 // exemption of an absent table an IF EXISTS skips, the logical-name ordering,
 // and the subject-less fail-closed finding for a target list that could not be
@@ -132,7 +132,7 @@ func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, create
 	}
 	finding := func(message string, subjects ...Subject) Finding {
 		return Finding{
-			Rule:     "BC103",
+			Rule:     "rollout/drop-table",
 			Title:    "dropped table breaks deployed code",
 			Severity: SeverityWarning,
 			File:     file.Path,
@@ -158,10 +158,10 @@ func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, create
 // atlasGapDroppedTableAdvice is the rest of every BC103 message: what the
 // retired name costs and what to do instead.
 //
-// It names the rollout break rather than the rows, because the rows are DS101's
+// It names the rollout break rather than the rows, because the rows are destructive/drop-table's
 // subject and a reader who has already accepted that loss still has to be told
 // this. "Even on an empty table" is the part that separates the two: a backup
-// answers DS101 and answers nothing here.
+// answers destructive/drop-table and answers nothing here.
 const atlasGapDroppedTableAdvice = "application versions already deployed against the old schema still " +
 	"query, so each of them starts failing the moment this migration commits -- a rollout break that " +
 	"lands even on an empty table, which no backup mitigates; deploy code that no longer reads it " +
@@ -170,13 +170,13 @@ const atlasGapDroppedTableAdvice = "application versions already deployed agains
 // atlasGapDroppedColumnRule reports BC104: a dropped column retires a name
 // deployed clients still select and insert.
 //
-// It exempts what DS102 exempts, through the same [newColumnDrops]: a column
+// It exempts what destructive/drop-column exempts, through the same [newColumnDrops]: a column
 // of a table this migration created, a column it added earlier, and a column
 // an IF EXISTS drop finds absent. No deployed application version ever saw
 // any of them, so nothing can break on the name.
 func atlasGapDroppedColumnRule() Rule {
 	return Rule{
-		Code:     "BC104",
+		Name:     "rollout/drop-column",
 		Title:    "dropped column breaks deployed code",
 		Severity: SeverityWarning,
 		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
@@ -201,7 +201,7 @@ func atlasGapDroppedColumnRule() Rule {
 				if !lintkit.IsAlterTable(stmt.Words) {
 					continue
 				}
-				// The recognizer is DS102's, so every spelling that rule
+				// The recognizer is destructive/drop-column's, so every spelling that rule
 				// reports is reported here: MySQL's `DROP col` without the
 				// keyword, the IF EXISTS and ONLY forms, and a comma list,
 				// which stays one finding carrying every retired name.
@@ -210,7 +210,7 @@ func atlasGapDroppedColumnRule() Rule {
 					continue
 				}
 				findings = append(findings, Finding{
-					Rule:     "BC104",
+					Rule:     "rollout/drop-column",
 					Title:    "dropped column breaks deployed code",
 					Severity: SeverityWarning,
 					File:     file.Path,

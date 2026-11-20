@@ -41,7 +41,7 @@ func TestLintSource_ReadsTheOwnersSyntax(t *testing.T) {
 				sqllint.Options{SQL: test.owners, Bodies: builtintest.Runtime(), Dialect: platform.SQLite})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(slices.Contains(findingRules(findings), "SQL002"), qt.Equals, test.wantSQL)
+			c.Assert(slices.Contains(findingRules(findings), "coverage/unsupported-statement"), qt.Equals, test.wantSQL)
 		})
 	}
 }

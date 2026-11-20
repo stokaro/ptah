@@ -88,7 +88,7 @@ import (
 // collation, so on a column declared with one it is a change too, and on a
 // column that takes its type's default, a domain's included, it is none. A USING
 // expression on a change that would otherwise be in place is still left to
-// DS103, since only the expression decides.
+// data-dependent/alter-column-type, since only the expression decides.
 //
 // A change into or out of a domain reads the domain from the baseline, and
 // was measured the same way on PostgreSQL 17.11, dd a domain over text with
@@ -113,8 +113,8 @@ import (
 // starts from ([lintext.BaselineColumn.ColumnType] as the report composes it
 // from the catalog, [lintext.BaselineColumn.Collation],
 // [lintext.BaselineColumn.NotNull], [lintext.BaselineIndex] and
-// [lintext.BaselineObject]); without that state PG301 leaves DS103 to
-// report the statement, PG304 leaves PG104, and migration lint names them as
+// [lintext.BaselineObject]); without that state rewrite/alter-column-type leaves data-dependent/alter-column-type to
+// report the statement, locking/add-primary-key-on-nullable leaves locking/add-primary-key, and migration lint names them as
 // inputs the run did not supply.
 
 // pgClauseCollation reads the COLLATE clause of one ALTER COLUMN ... TYPE
@@ -341,11 +341,11 @@ const pgRewriteConsequence = "PostgreSQL rewrites the whole table and rebuilds e
 func postgresTypeRewriteRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG301",
+			Name:     "rewrite/alter-column-type",
 			Title:    "column type change rewrites the table",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},
-			Subsumes: []string{"DS103"},
+			Subsumes: []string{"data-dependent/alter-column-type"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: pgTypeChangeStatements,
@@ -501,7 +501,7 @@ func pgPrimaryKeyStatements(file *lintkit.File) []int {
 func postgresPrimaryKeyScanRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG304",
+			Name:     "locking/add-primary-key-on-nullable",
 			Title:    "primary key over nullable columns scans the table",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},

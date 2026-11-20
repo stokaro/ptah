@@ -54,7 +54,7 @@ env:
       webhook: https://ops.example/hooks/ptah-migration
     lint:
       dialect: postgres
-      disabled-rules: [MF103]
+      disabled-rules: [file-form/file-name]
     online_ddl:
       tool: ghost
       threshold_rows: 1000000
@@ -123,7 +123,7 @@ env:
 | `migration.mysqldump_to` | Directory for a MySQL/MariaDB pre-migration SQL dump |
 | `migration.webhook` | URL that receives migration metadata before `migrations up` or `migrations down`; it must return HTTP 200 |
 | `lint.dialect` | Default lint dialect |
-| `lint.disabled-rules` | Default lint disabled rule codes or families |
+| `lint.disabled-rules` | Default lint disabled Ptah rule names or categories |
 | `lint.latest` | Default latest revision-key changeset for `migrations lint` |
 | `online_ddl.tool` | Automatic online-DDL tool for MySQL/MariaDB: `ghost` or `pt-osc` |
 | `online_ddl.threshold_rows` | Estimated row threshold that activates automatic routing |

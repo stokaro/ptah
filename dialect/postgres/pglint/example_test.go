@@ -3,7 +3,6 @@ package pglint_test
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"ptah.run/core/lintext"
 	"ptah.run/dialect/postgres/pglint"
@@ -14,14 +13,14 @@ import (
 // the codes the run enables over every file in one call.
 func ExampleService() {
 	for _, rule := range pglint.Rules() {
-		if strings.HasPrefix(rule.Code, "TX") {
-			fmt.Println(rule.Code, rule.Severity, rule.Title)
+		if rule.Name == "transaction/mixed-statements" {
+			fmt.Println(rule.Name, rule.Severity, rule.Title)
 		}
 	}
 
 	request := lintext.CheckRequest{
 		Target: lintext.Target{Name: "postgres"},
-		Codes:  []string{"TX101"},
+		Names:  []string{"transaction/mixed-statements"},
 		Files: []lintext.File{{Name: "0000000001_add.up.sql", Version: 1, Up: true, Statements: []lintext.Statement{
 			{Start: 0, End: 24, Line: 1, SQL: "CREATE TABLE t (id int);", Words: []string{"CREATE", "TABLE", "t", "(", "id", "int", ")"}},
 			{Start: 25, End: 65, Line: 2, SQL: "CREATE INDEX CONCURRENTLY i ON t (id);",
@@ -34,9 +33,9 @@ func ExampleService() {
 		return
 	}
 	for _, finding := range result.Findings {
-		fmt.Println(finding.Code, request.Files[finding.File].Name, "statement", finding.Statement)
+		fmt.Println(finding.Name, request.Files[finding.File].Name, "statement", finding.Statement)
 	}
 	// Output:
-	// TX101 warning transactional and non-transactional statements mixed
-	// TX101 0000000001_add.up.sql statement 1
+	// transaction/mixed-statements warning transactional and non-transactional statements mixed
+	// transaction/mixed-statements 0000000001_add.up.sql statement 1
 }

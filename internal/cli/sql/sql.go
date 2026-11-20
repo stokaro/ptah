@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -23,6 +22,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
@@ -103,7 +103,7 @@ migration directory specific.`,
 	serverversion.Register(flags, &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
-	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
+	flags.StringArrayVar(&disabled, "disable", nil, "Disable rules by Ptah rule name or category, for example design/no-primary-key or naming (repeatable)")
 	cmdutil.ConfigureCommandArgs(cmd, cobra.ArbitraryArgs)
 	return providercommand.Configure(cmd, func(cmd *cobra.Command, err error) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), format, err.Error())
@@ -393,7 +393,7 @@ func sourceNames(sources []sqllint.Source) []string {
 // stays here in the command rather than between the two libraries.
 func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error) {
 	// The policy is validated against the bundled rules, as the migration
-	// linter validates it: a gate family no rule belongs to is refused here too.
+	// linter validates it: a gate rule or category no rule has is refused here too.
 	// A policy naming an engine an executable provider serves is validated
 	// against the runtime that provider joins, as the migration linter reads
 	// it, since only that runtime knows the dialect.
@@ -410,13 +410,23 @@ func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error)
 	if err != nil {
 		return nil, err
 	}
-	reported := sqllint.CatalogIDs()
+	return sqlLintSeveritiesFrom(cfg.Rules), nil
+}
+
+// sqlLintSeveritiesFrom resolves the `rules:` entries that set a severity to
+// the rules this linter reports. A key is a rule name or a category; the more
+// specific key wins, so a rule's name overrides its category. An entry for a rule only migration lint reports is left to
+// migration lint.
+func sqlLintSeveritiesFrom(rules map[string]migrationlint.RuleConfig) map[string]sqllint.Severity {
 	severities := make(map[string]sqllint.Severity)
-	for code, rule := range cfg.Rules {
-		if rule.Severity == "" || !slices.Contains(reported, code) {
-			continue
+	for _, name := range sqllint.CatalogIDs() {
+		keys := append(lintnames.ConfigKeys(name), lintnames.GroupKeys(name)...)
+		for _, key := range keys {
+			if rule, ok := rules[key]; ok && rule.Severity != "" {
+				severities[name] = sqllint.Severity(rule.Severity)
+				break
+			}
 		}
-		severities[code] = sqllint.Severity(rule.Severity)
 	}
-	return severities, nil
+	return severities
 }

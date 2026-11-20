@@ -109,8 +109,8 @@ type BaselineObject struct {
 // lists it in [CheckResult.BaselineSubjects] for a rule whose input reads a
 // baseline.
 type BaselineSubject struct {
-	// Code is the rule that asks, one of the request's codes.
-	Code string `json:"code"`
+	// Name is the rule that asks, one of the request's names.
+	Name string `json:"name"`
 	// File is the position of the file in the request.
 	File int `json:"file"`
 	// Statements are the positions of the statements in that file, at least

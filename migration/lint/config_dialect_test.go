@@ -50,7 +50,7 @@ func lintSupportedSpellings(c *qt.C) []string {
 }
 
 // dialectFixture is a directory whose up migration adds an index to a table it
-// did not create. That is PG101, a PostgreSQL-only rule, so the findings this
+// did not create. That is locking/create-index, a PostgreSQL-only rule, so the findings this
 // directory produces depend on the dialect the analysis runs under -- which is
 // what makes the parity comparison below meaningful.
 func dialectFixture(policyDialect string) fstest.MapFS {
@@ -107,12 +107,12 @@ func TestLoadConfigFS_HappyPath_CanonicalizesEveryAcceptedSpelling(t *testing.T)
 //
 // If the fixture produced the same findings under every dialect, comparing an
 // alias against its canonical name would hold no matter what the reader did
-// with the spelling. Measured: postgres raises PG101 here and mysql does not.
+// with the spelling. Measured: postgres raises locking/create-index here and mysql does not.
 func TestLintFS_HappyPath_FixtureDiscriminatesDialects(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(findingCodes(c, platform.Postgres), qt.Contains, "PG101")
-	c.Assert(findingCodes(c, platform.MySQL), qt.Not(qt.Contains), "PG101")
+	c.Assert(findingCodes(c, platform.Postgres), qt.Contains, "locking/create-index")
+	c.Assert(findingCodes(c, platform.MySQL), qt.Not(qt.Contains), "locking/create-index")
 }
 
 // TestLintFS_HappyPath_EverySpellingLintsLikeItsCanonicalName is the parity
@@ -120,7 +120,7 @@ func TestLintFS_HappyPath_FixtureDiscriminatesDialects(t *testing.T) {
 // exactly the findings the canonical name produces.
 //
 // Under a reader that validates the spelling without resolving it, every alias
-// of postgres loses PG101 and this test names them.
+// of postgres loses locking/create-index and this test names them.
 func TestLintFS_HappyPath_EverySpellingLintsLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 

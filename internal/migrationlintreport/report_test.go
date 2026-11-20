@@ -67,7 +67,7 @@ func runGit(c *qt.C, dir string, args ...string) {
 }
 
 // findingRules lists the reported rule codes in report order. The pair above
-// produces one warning per direction: PG101 for the blocking build and PG106
+// produces one warning per direction: locking/create-index for the blocking build and locking/drop-index
 // for the blocking drop the rollback performs (stokaro/ptah#997).
 func findingRules(findings []migrationlint.Finding) []string {
 	rules := make([]string, 0, len(findings))
@@ -94,7 +94,7 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	}, projectconfig.Config{
 		Lint: projectconfig.LintConfig{
 			Dialect:       "postgres",
-			DisabledRules: []string{"MF"},
+			DisabledRules: []string{"file-form"},
 			Latest:        &latest,
 		},
 	})
@@ -102,9 +102,9 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsFalse)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
-	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"MF"})
+	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"file-form"})
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
@@ -222,7 +222,7 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(report.Findings[0].File, qt.Contains, "2_new.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "2_new.sql")
 	c.Assert(source.reads, qt.DeepEquals, map[string]int{
@@ -254,7 +254,7 @@ func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{0})
 	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"R"})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(report.Findings[0].File, qt.Contains, "R__drop_users.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "R__drop_users.sql")
 }
@@ -297,7 +297,7 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
 	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"2R"})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(report.Findings[0].File, qt.Contains, "2R_drop_users.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "2R_drop_users.sql")
 }
@@ -319,14 +319,14 @@ func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 }
 
 func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 	c := qt.New(t)
 	source := &countingSnapshotSource{
 		FS: fstest.MapFS{
-			".ptah-lint.yaml": {Data: []byte("disabled-rules: [DS101]\n")},
+			".ptah-lint.yaml": {Data: []byte("disabled-rules: [destructive/drop-table]\n")},
 			"1_drop.sql":      {Data: []byte("DROP TABLE users;\n")},
 		},
 		reads: make(map[string]int),
@@ -341,11 +341,11 @@ func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"DS101"})
+	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"destructive/drop-table"})
 	// The config disables the data-loss rule and the drop is still reported,
 	// for the rollout break it also is. A config written before that rule
 	// existed silences one of the two consequences, not the statement.
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"rollout/drop-table"})
 	c.Assert(source.reads, qt.DeepEquals, map[string]int{
 		".ptah-lint.yaml": 1,
 		"1_drop.sql":      1,
@@ -368,7 +368,7 @@ func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsFalse)
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"PG106", "PG101"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"locking/drop-index", "locking/create-index"})
 }
 
 func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
@@ -387,7 +387,7 @@ func TestBuild_FailOnAnyFailsWarnings(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"PG106", "PG101"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"locking/drop-index", "locking/create-index"})
 }
 
 func TestWrite_GitHubActionsEscapesWorkflowCommandCharacters(t *testing.T) {
@@ -396,7 +396,7 @@ func TestWrite_GitHubActionsEscapesWorkflowCommandCharacters(t *testing.T) {
 	var buf bytes.Buffer
 	err := migrationlintreport.Write(&buf, migrationlintreport.FormatGitHubActions, migrationlintreport.Report{
 		Findings: []migrationlint.Finding{{
-			Rule:     "DS101",
+			Rule:     "destructive/drop-table",
 			Severity: migrationlint.SeverityError,
 			File:     "dir/evil,file::name.sql",
 			Line:     3,
@@ -406,7 +406,7 @@ func TestWrite_GitHubActionsEscapesWorkflowCommandCharacters(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Contains, "::error file=dir/evil%2Cfile%3A%3Aname.sql,line=3::")
-	c.Assert(buf.String(), qt.Contains, "DS101: 50%25 data loss%0D%0Asecond line")
+	c.Assert(buf.String(), qt.Contains, "destructive/drop-table: 50%25 data loss%0D%0Asecond line")
 	c.Assert(buf.String(), qt.Not(qt.Contains), "evil,file::name")
 }
 

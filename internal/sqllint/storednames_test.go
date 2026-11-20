@@ -32,7 +32,7 @@ func ofRule(findings []sqllint.Finding, rule string) []sqllint.Finding {
 	return kept
 }
 
-// identifierFindings is the DDL003 and DDL004 findings, in order.
+// identifierFindings is the naming/identifier-too-long and naming/identifier-collision findings, in order.
 func identifierFindings(findings []sqllint.Finding) []sqllint.Finding {
 	var kept []sqllint.Finding
 	for _, finding := range findings {
@@ -43,7 +43,7 @@ func identifierFindings(findings []sqllint.Finding) []sqllint.Finding {
 	return kept
 }
 
-// storedAs is the name each DDL003 finding says the server stores.
+// storedAs is the name each naming/identifier-too-long finding says the server stores.
 func storedAs(findings []sqllint.Finding) []string {
 	var stored []string
 	for _, finding := range ofRule(findings, sqllint.RuleIdentifierTruncated) {
@@ -63,7 +63,7 @@ func positions(findings []sqllint.Finding, rule string) [][2]int {
 	return at
 }
 
-// TestLintSource_IdentifierTruncatedBoundaries holds DDL003 to the limits
+// TestLintSource_IdentifierTruncatedBoundaries holds naming/identifier-too-long to the limits
 // measured on PostgreSQL 15.19: 62 and 63 bytes are kept whole, 64 and more
 // are cut to 63, a two-byte character that straddles the limit is dropped
 // whole, and an unquoted name is folded before it is measured.
@@ -93,7 +93,7 @@ func TestLintSource_IdentifierTruncatedBoundaries(t *testing.T) {
 	}
 }
 
-// TestLintSource_IdentifierTruncatedFinding holds what one DDL003 finding
+// TestLintSource_IdentifierTruncatedFinding holds what one naming/identifier-too-long finding
 // says: the kind, the written and the stored name, the length and the limit,
 // and a fix that names what the server stores.
 func TestLintSource_IdentifierTruncatedFinding(t *testing.T) {
@@ -158,7 +158,7 @@ func TestLintSource_IdentifierPositions(t *testing.T) {
 	}
 }
 
-// TestLintSource_IdentifierCollisions holds DDL004 to the verdicts of
+// TestLintSource_IdentifierCollisions holds naming/identifier-collision to the verdicts of
 // PostgreSQL 15.19: a cut name the server refuses is reported where the second
 // declaration writes it, and the same cut name in another namespace, which
 // the server accepts, is not.
@@ -238,7 +238,7 @@ func TestLintSource_IdentifierCollisions(t *testing.T) {
 	}
 }
 
-// TestLintSource_IdentifierCollisionFinding holds what one DDL004 finding
+// TestLintSource_IdentifierCollisionFinding holds what one naming/identifier-collision finding
 // says: both names as written, the namespace, the stored name and the
 // server's verdict, at error severity.
 func TestLintSource_IdentifierCollisionFinding(t *testing.T) {
@@ -266,9 +266,9 @@ func TestLintSource_IdentifierCollisionFinding(t *testing.T) {
 }
 
 // TestLintSource_GuardedCollisionsAreCutNames holds what a guarded statement
-// gets. The server accepts it, so it is no DDL004: IF NOT EXISTS skips the
+// gets. The server accepts it, so it is no naming/identifier-collision: IF NOT EXISTS skips the
 // second object and OR REPLACE replaces the first. A name it writes past the
-// limit is a DDL003 that says one of the two objects is kept; a name written
+// limit is a naming/identifier-too-long that says one of the two objects is kept; a name written
 // as the server stores it names the object holding the name, and is clean.
 func TestLintSource_GuardedCollisionsAreCutNames(t *testing.T) {
 	long := strings.Repeat("k", 63)
@@ -351,14 +351,14 @@ func TestLintSource_IdentifierRulesTakeThePolicy(t *testing.T) {
 		opts sqllint.Options
 		want []string
 	}{
-		{name: "the defaults", want: []string{"DDL003 warning", "DDL004 error"}},
+		{name: "the defaults", want: []string{"naming/identifier-too-long warning", "naming/identifier-collision error"}},
 		{
 			name: "a cut name promoted to an error",
 			opts: sqllint.Options{Severities: map[string]sqllint.Severity{sqllint.RuleIdentifierTruncated: sqllint.SeverityError}},
-			want: []string{"DDL003 error", "DDL004 error"},
+			want: []string{"naming/identifier-too-long error", "naming/identifier-collision error"},
 		},
-		{name: "DDL003 disabled", opts: sqllint.Options{DisabledRules: []string{"DDL003"}}, want: []string{"DDL004 error"}},
-		{name: "the family disabled", opts: sqllint.Options{DisabledRules: []string{"DDL"}}},
+		{name: "naming/identifier-too-long disabled", opts: sqllint.Options{DisabledRules: []string{"naming/identifier-too-long"}}, want: []string{"naming/identifier-collision error"}},
+		{name: "the category disabled", opts: sqllint.Options{DisabledRules: []string{"naming"}}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -373,8 +373,8 @@ func TestLintSource_IdentifierRulesTakeThePolicy(t *testing.T) {
 	}
 }
 
-// TestLintSource_DeclaredNamesAreAnalyzedWhereTheServerCutsThem holds SQL004
-// to what DDL003 and DDL004 read on PostgreSQL: a statement that declares a
+// TestLintSource_DeclaredNamesAreAnalyzedWhereTheServerCutsThem holds coverage/unanalyzed-statements
+// to what naming/identifier-too-long and naming/identifier-collision read on PostgreSQL: a statement that declares a
 // name is analyzed, and a drop, which declares none, is still reported.
 func TestLintSource_DeclaredNamesAreAnalyzedWhereTheServerCutsThem(t *testing.T) {
 	rows := []struct {
@@ -386,7 +386,7 @@ func TestLintSource_DeclaredNamesAreAnalyzedWhereTheServerCutsThem(t *testing.T)
 		{name: "materialized view", sql: "CREATE MATERIALIZED VIEW mv AS SELECT 1;"},
 		{name: "sequence", sql: "CREATE SEQUENCE s;"},
 		{name: "alter table", sql: "ALTER TABLE users ADD COLUMN x int;"},
-		{name: "drop table", sql: "DROP TABLE users;", want: []string{"SQL004 no rule examined DROP TABLE in this file"}},
+		{name: "drop table", sql: "DROP TABLE users;", want: []string{"coverage/unanalyzed-statements no rule examined DROP TABLE in this file"}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

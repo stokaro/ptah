@@ -13,12 +13,12 @@ import (
 // build fails on the first duplicate it meets. Nothing in the migration says
 // whether the column is unique today, so the two rules in this file report
 // the structural risk for the two shapes Atlas names -- a unique index added
-// to an existing table (MF101) and an index that is dropped and rebuilt as
-// unique (MF102) -- and hand the operator the query that settles it before
+// to an existing table (data-dependent/add-unique-index) and an index that is dropped and rebuilt as
+// unique (data-dependent/rebuild-index-as-unique) -- and hand the operator the query that settles it before
 // the version runs. The missing-down and empty-file rules that carried these
-// two identifiers before the convention are MF101P and MF102P now, and a
+// two identifiers before the convention are file-form/missing-down and file-form/empty-migration now, and a
 // selector that names a code selects that code alone, so a config naming
-// MF101 reaches the check and not the file-form rule ([SelectorSelects]).
+// data-dependent/add-unique-index reaches the check and not the file-form rule ([SelectorSelects]).
 //
 // Measured on PostgreSQL 18.6 and on MySQL 8.4.11 and MariaDB 11.8.9
 // (stokaro/ptah#2942):
@@ -46,7 +46,7 @@ import (
 // subset of them, proves the rows unique, so the build cannot fail and
 // neither rule fires; and an index the file drops by name is known by its
 // columns, so a unique one rebuilt over the same columns under a new name
-// is the replacement MF102 describes. Both read the state through
+// is the replacement data-dependent/rebuild-index-as-unique describes. Both read the state through
 // [InputBaselineRefinement]: the rules report from the text alone and the
 // state refines the report, and a run without it is named as unmet.
 
@@ -284,7 +284,7 @@ func riskIsSettled(risk uniqueRisk) bool {
 
 func uniqueIndexAddedRule() Rule {
 	return Rule{
-		Code:     "MF101",
+		Name:     "data-dependent/add-unique-index",
 		Title:    "unique index over existing rows may fail",
 		Severity: SeverityWarning,
 		Input:    InputBaselineRefinement,
@@ -303,7 +303,7 @@ func uniqueIndexAddedRule() Rule {
 				}
 				message := fmt.Sprintf("%s builds over the rows %s already holds and %s. %s",
 					site.Label(), site.Table.Name, uniqueFailure(site), uniqueAdvice(site, risk))
-				findings = append(findings, uniqueFinding(file, site, "MF101", "unique index over existing rows may fail", message))
+				findings = append(findings, uniqueFinding(file, site, "data-dependent/add-unique-index", "unique index over existing rows may fail", message))
 			}
 			return findings
 		},
@@ -312,10 +312,10 @@ func uniqueIndexAddedRule() Rule {
 
 func indexMadeUniqueRule() Rule {
 	return Rule{
-		Code:     "MF102",
+		Name:     "data-dependent/rebuild-index-as-unique",
 		Title:    "index rebuilt as unique may fail",
 		Severity: SeverityWarning,
-		Subsumes: []string{"MF101"},
+		Subsumes: []string{"data-dependent/add-unique-index"},
 		Input:    InputBaselineRefinement,
 		BaselineSubjects: func(file *File) []int {
 			return unionSubjects(file, uniqueIndexStatements, ifNotExistsCreates)
@@ -342,7 +342,7 @@ func indexMadeUniqueRule() Rule {
 					"which also leaves the table without the index it had. %s. On PostgreSQL build the unique index CONCURRENTLY under a new name first "+
 					"and drop the old one only once it exists, so a failure leaves the old index in place",
 					site.Label(), replaced, replacement, site.Table.Name, uniqueFailure(site), uniqueAdvice(site, risk))
-				findings = append(findings, uniqueFinding(file, site, "MF102", "index rebuilt as unique may fail", message))
+				findings = append(findings, uniqueFinding(file, site, "data-dependent/rebuild-index-as-unique", "index rebuilt as unique may fail", message))
 			}
 			return findings
 		},

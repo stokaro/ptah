@@ -49,9 +49,9 @@ func TestBuild_ProjectNamingBlockReachesTheRules(t *testing.T) {
 		})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(messagesOf(report, "NM102"), qt.DeepEquals, []string{"table name Invoices does not match the naming convention ^[a-z_]+$: lower snake case"})
-	c.Assert(messagesOf(report, "NM104"), qt.DeepEquals, []string{"index name invoices_id does not match the naming convention ^idx_: prefix with idx_"})
-	c.Assert(severitiesOf(report, "NM102"), qt.DeepEquals, []migrationlint.Severity{migrationlint.SeverityError})
+	c.Assert(messagesOf(report, "naming/table-name"), qt.DeepEquals, []string{"table name Invoices does not match the naming convention ^[a-z_]+$: lower snake case"})
+	c.Assert(messagesOf(report, "naming/index-name"), qt.DeepEquals, []string{"index name invoices_id does not match the naming convention ^idx_: prefix with idx_"})
+	c.Assert(severitiesOf(report, "naming/table-name"), qt.DeepEquals, []migrationlint.Severity{migrationlint.SeverityError})
 }
 
 // TestBuild_PolicyFileNamingWinsOverTheProjectBlock: the merge keeps the
@@ -64,8 +64,8 @@ func TestBuild_PolicyFileNamingWinsOverTheProjectBlock(t *testing.T) {
 		&projectconfig.LintNamingConfig{Match: "^[a-z_]+$", Error: true})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(messagesOf(report, "NM102"), qt.HasLen, 0)
-	c.Assert(messagesOf(report, "NM103"), qt.DeepEquals, []string{"column name id does not match the naming convention ^[A-Z][a-z]+$"})
+	c.Assert(messagesOf(report, "naming/table-name"), qt.HasLen, 0)
+	c.Assert(messagesOf(report, "naming/column-name"), qt.DeepEquals, []string{"column name id does not match the naming convention ^[A-Z][a-z]+$"})
 }
 
 func TestBuild_WithoutANamingBlockTheRulesStaySilent(t *testing.T) {
@@ -74,6 +74,6 @@ func TestBuild_WithoutANamingBlockTheRulesStaySilent(t *testing.T) {
 	report, err := buildWithProjectNaming(c, "CREATE TABLE Invoices (Id int);\n", "", nil)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(messagesOf(report, "NM102"), qt.HasLen, 0)
-	c.Assert(messagesOf(report, "NM103"), qt.HasLen, 0)
+	c.Assert(messagesOf(report, "naming/table-name"), qt.HasLen, 0)
+	c.Assert(messagesOf(report, "naming/column-name"), qt.HasLen, 0)
 }

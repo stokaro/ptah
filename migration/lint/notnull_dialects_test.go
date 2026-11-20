@@ -11,14 +11,14 @@ import (
 func pg303Codes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if code == "PG303" {
+		if code == "locking/set-not-null" {
 			kept = append(kept, code)
 		}
 	}
 	return kept
 }
 
-// TestSetNotNullRule_NamesEachEngineItWasMeasuredOn pins PG303 to the three
+// TestSetNotNullRule_NamesEachEngineItWasMeasuredOn pins locking/set-not-null to the three
 // engines that take the SET NOT NULL spelling, with the consequence each was
 // measured to have. Every other PG rule still names postgres alone.
 func TestSetNotNullRule_NamesEachEngineItWasMeasuredOn(t *testing.T) {
@@ -36,13 +36,13 @@ func TestSetNotNullRule_NamesEachEngineItWasMeasuredOn(t *testing.T) {
 		t.Run("dialect "+test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeNotNull(c, test.dialect, "ALTER TABLE orders ALTER COLUMN total SET NOT NULL;")
-			c.Assert(pg303Codes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"PG303"})
-			c.Assert(messageOf(analysis.Findings(), "PG303"), qt.Contains, test.want)
+			c.Assert(pg303Codes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"locking/set-not-null"})
+			c.Assert(messageOf(analysis.Findings(), "locking/set-not-null"), qt.Contains, test.want)
 		})
 	}
 }
 
-// TestSetNotNullRule_StaysOffTheOtherEngines: the spelling belongs to LT101
+// TestSetNotNullRule_StaysOffTheOtherEngines: the spelling belongs to rewrite/set-not-null
 // on SQLite and means nothing on the MySQL family and SQL Server.
 func TestSetNotNullRule_StaysOffTheOtherEngines(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "mariadb", "sqlserver", "clickhouse"} {
@@ -58,18 +58,18 @@ func TestSetNotNullRule_StaysOffTheOtherEngines(t *testing.T) {
 // its statement context, so a directive above the statement silences it.
 func TestSetNotNullRule_StillAnswersTheStatementDirective(t *testing.T) {
 	c := qt.New(t)
-	analysis := analyzeNotNull(c, "cockroachdb", "-- ptah:nolint PG303\nALTER TABLE orders ALTER COLUMN total SET NOT NULL;")
+	analysis := analyzeNotNull(c, "cockroachdb", "-- ptah:nolint locking/set-not-null\nALTER TABLE orders ALTER COLUMN total SET NOT NULL;")
 	c.Assert(pg303Codes(rulesOf(analysis.Findings())), qt.HasLen, 0)
 }
 
 // TestNullableMadeNotNullRule_ReadsClickHouseNullabilityFromTheType pins
-// DD103 on ClickHouse, where a MODIFY COLUMN to a type that is not Nullable
+// data-dependent/set-not-null on ClickHouse, where a MODIFY COLUMN to a type that is not Nullable
 // is the NOT NULL, and the failure is the measured broken mutation.
 func TestNullableMadeNotNullRule_ReadsClickHouseNullabilityFromTheType(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeNotNull(c, "clickhouse", "ALTER TABLE orders MODIFY COLUMN total Int32;", notNullColumn("total", "Nullable(Int32)", false))
-	c.Assert(rulesOf(analysis.Findings()), qt.Contains, "DD103")
-	message := messageOf(analysis.Findings(), "DD103")
+	c.Assert(rulesOf(analysis.Findings()), qt.Contains, "data-dependent/set-not-null")
+	message := messageOf(analysis.Findings(), "data-dependent/set-not-null")
 	c.Assert(message, qt.Contains, "MODIFY COLUMN orders.total makes a nullable column NOT NULL")
 	c.Assert(message, qt.Contains, "mutation that fails on the first NULL (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)")
 	c.Assert(message, qt.Contains, "every read of the table fails with the same error until the mutation is killed")
@@ -117,7 +117,7 @@ func TestNullableMadeNotNullRule_StaysQuietOnClickHouseWhereNothingBecomesNotNul
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeNotNull(c, test.dialect, test.migration, test.column)
-			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DD103")
+			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/set-not-null")
 		})
 	}
 }
@@ -127,11 +127,11 @@ func TestNullableMadeNotNullRule_StaysQuietOnClickHouseWhereNothingBecomesNotNul
 func TestNullableMadeNotNullRule_NamesItsInputOnClickHouse(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeNotNull(c, "clickhouse", "ALTER TABLE orders MODIFY COLUMN total Int32;")
-	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DD103")
+	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/set-not-null")
 	var unmet []string
 	for _, entry := range analysis.UnmetInputs() {
 		unmet = append(unmet, entry.Rule)
 	}
-	c.Assert(unmet, qt.Contains, "DD103")
+	c.Assert(unmet, qt.Contains, "data-dependent/set-not-null")
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }

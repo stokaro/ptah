@@ -38,7 +38,7 @@ func decodeReportFindings(c *qt.C, stdout string) []migrationlint.Finding {
 	return report.Findings
 }
 
-// TX201 judges a file by the tool that applies the directory: Ptah's
+// transaction/explicit-transaction judges a file by the tool that applies the directory: Ptah's
 // migrator wraps the file, so its own BEGIN nests, and golang-migrate opens
 // no transaction, so the file's block is its only one. The runner comes from
 // --runner, or from migration.runner in ptah.yaml when the flag is not set.
@@ -49,10 +49,10 @@ func TestRunLint_RunnerDecidesTX201(t *testing.T) {
 		flags  []string
 		want   []string
 	}{
-		{name: "the default runner", want: []string{"TX201"}},
+		{name: "the default runner", want: []string{"transaction/explicit-transaction"}},
 		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}, want: make([]string, 0)},
 		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n", want: make([]string, 0)},
-		{name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n", flags: []string{"--runner", "ptah"}, want: []string{"TX201"}},
+		{name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n", flags: []string{"--runner", "ptah"}, want: []string{"transaction/explicit-transaction"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

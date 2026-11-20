@@ -74,7 +74,7 @@ the dirty version. With the package gone, a generic grammar splits YQL, a
 provider's session.
 
 The plugin's splitter (its `internal/yqlquery`) matches the host's corpus and
-serves seeds, streaming queries, comment statements and rule YD102. It has no
+serves seeds, streaming queries, comment statements and rule `transaction/scheme-and-data-in-one-query`. It has no
 `Source`. Its `Execute` answers every dispatched failure `UNKNOWN`, as does a
 failed commit (`internal/backend/execution.go`, `transactions.go`), so the
 host can tell neither a rejected unit nor an abort it may retry.

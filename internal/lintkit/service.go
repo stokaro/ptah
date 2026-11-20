@@ -65,24 +65,24 @@ type Rules []Rule
 
 // Validate reports a rule whose published form does not validate, one that
 // sets other than one of Statement, File and Directory, one whose BaselineSubjects
-// disagrees with its input, and two rules of one code. Each failure wraps
+// disagrees with its input, and two rules of one name. Each failure wraps
 // lintext.ErrInvalid.
 func (r Rules) Validate() error {
-	codes := make([]string, 0, len(r))
+	names := make([]string, 0, len(r))
 	for _, rule := range r {
 		if err := rule.Rule.Validate(); err != nil {
 			return err
 		}
 		if rule.checkers() != 1 {
-			return fmt.Errorf("%w: rule %s must set exactly one of Statement, File and Directory", lintext.ErrInvalid, rule.Code)
+			return fmt.Errorf("%w: rule %s must set exactly one of Statement, File and Directory", lintext.ErrInvalid, rule.Name)
 		}
 		if (rule.BaselineSubjects != nil) != rule.Input.ReadsBaseline() {
-			return fmt.Errorf("%w: rule %s sets BaselineSubjects exactly when its input reads a baseline", lintext.ErrInvalid, rule.Code)
+			return fmt.Errorf("%w: rule %s sets BaselineSubjects exactly when its input reads a baseline", lintext.ErrInvalid, rule.Name)
 		}
-		if slices.Contains(codes, rule.Code) {
-			return fmt.Errorf("%w: two rules of code %s", lintext.ErrInvalid, rule.Code)
+		if slices.Contains(names, rule.Name) {
+			return fmt.Errorf("%w: two rules of name %s", lintext.ErrInvalid, rule.Name)
 		}
-		codes = append(codes, rule.Code)
+		names = append(names, rule.Name)
 	}
 	return nil
 }
@@ -98,18 +98,18 @@ func (r Rules) Published() []lintext.Rule {
 
 // CheckMigrations runs the rules the request enables over its files. It
 // reports findings, statement findings in file and statement order, and the
-// baseline subjects of every up file with a version. A code no rule carries
+// baseline subjects of every up file with a version. A name no rule carries
 // wraps lintext.ErrInvalid, and cancellation returns the context's error;
 // either returns no result.
 func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
 	if err := r.Validate(); err != nil {
 		return lintext.CheckResult{}, err
 	}
-	enabled := make([]Rule, 0, len(request.Codes))
-	for _, code := range request.Codes {
-		position := slices.IndexFunc(r, func(rule Rule) bool { return rule.Code == code })
+	enabled := make([]Rule, 0, len(request.Names))
+	for _, name := range request.Names {
+		position := slices.IndexFunc(r, func(rule Rule) bool { return rule.Name == name })
 		if position < 0 {
-			return lintext.CheckResult{}, fmt.Errorf("%w: no rule of code %s", lintext.ErrInvalid, code)
+			return lintext.CheckResult{}, fmt.Errorf("%w: no rule named %s", lintext.ErrInvalid, name)
 		}
 		enabled = append(enabled, r[position])
 	}
@@ -137,7 +137,7 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 	directories := make(map[string][][]lintext.Violation)
 	for _, rule := range enabled {
 		if rule.Directory != nil {
-			directories[rule.Code] = rule.Directory(files)
+			directories[rule.Name] = rule.Directory(files)
 		}
 	}
 	result := lintext.CheckResult{Complete: true}
@@ -147,15 +147,15 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 		}
 		file := files[index]
 		for _, rule := range enabled {
-			if violations, ok := directories[rule.Code]; ok {
-				result.Findings = append(result.Findings, findingsOf(rule.Code, index, violationsAt(violations, index))...)
+			if violations, ok := directories[rule.Name]; ok {
+				result.Findings = append(result.Findings, findingsOf(rule.Name, index, violationsAt(violations, index))...)
 			} else {
 				result.Findings = append(result.Findings, rule.findings(&file, index)...)
 			}
 			if rule.BaselineSubjects != nil && file.IsUp && file.Version != 0 {
 				if statements := rule.BaselineSubjects(&file); len(statements) > 0 {
 					result.BaselineSubjects = append(result.BaselineSubjects,
-						lintext.BaselineSubject{Code: rule.Code, File: index, Statements: slices.Clone(statements)})
+						lintext.BaselineSubject{Name: rule.Name, File: index, Statements: slices.Clone(statements)})
 				}
 			}
 		}
@@ -184,11 +184,11 @@ func violationsAt(violations [][]lintext.Violation, index int) []lintext.Violati
 	return nil
 }
 
-// findingsOf is violations of the file at index, as findings of code.
-func findingsOf(code string, index int, violations []lintext.Violation) []lintext.Finding {
+// findingsOf is violations of the file at index, as findings of the rule name.
+func findingsOf(name string, index int, violations []lintext.Violation) []lintext.Finding {
 	var findings []lintext.Finding
 	for _, violation := range violations {
-		findings = append(findings, lintext.Finding{Code: code, File: index, Statement: violation.Statement,
+		findings = append(findings, lintext.Finding{Name: name, File: index, Statement: violation.Statement,
 			Message: violation.Message, Subjects: slices.Clone(violation.Subjects)})
 	}
 	return findings
@@ -197,7 +197,7 @@ func findingsOf(code string, index int, violations []lintext.Violation) []lintex
 // findings is one rule over one file, the file at index of its request.
 func (r Rule) findings(file *File, index int) []lintext.Finding {
 	if r.File != nil {
-		return findingsOf(r.Code, index, r.File(file))
+		return findingsOf(r.Name, index, r.File(file))
 	}
 	var findings []lintext.Finding
 	if !file.IsUp && (!file.IsDown || !r.AppliesToDown) {
@@ -205,7 +205,7 @@ func (r Rule) findings(file *File, index int) []lintext.Finding {
 	}
 	for position := range file.Statements {
 		if found, message := r.Statement(file, &file.Statements[position]); found {
-			findings = append(findings, lintext.Finding{Code: r.Code, File: index, Statement: position, Message: message})
+			findings = append(findings, lintext.Finding{Name: r.Name, File: index, Statement: position, Message: message})
 		}
 	}
 	return findings

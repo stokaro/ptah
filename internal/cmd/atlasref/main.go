@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/internal/lintcatalog"
+	"ptah.run/internal/atlascodes"
 )
 
 const (
@@ -70,7 +70,7 @@ func usage() {
 
   diff     report what the published page has that the committed reference does
            not, and the reverse, without writing anything
-  refresh  rewrite internal/lintcatalog/atlasreference.txt from the page, so the
+  refresh  rewrite internal/atlascodes/reference.txt from the page, so the
            change arrives as a reviewable diff
 
 A fetch or parse failure exits 1. It never reports an unchanged catalog.
@@ -100,9 +100,10 @@ func refreshReference() error {
 		return err
 	}
 	fmt.Print(`
-rewrote internal/lintcatalog/atlasreference.txt. Every added row carries a
+rewrote internal/atlascodes/reference.txt. Every added row carries a
 REVIEW-ME meaning: read the page, replace it, and update the reviewed-on date
-in atlasreference.go. Then assess each added check and give it a catalog row --
+in internal/atlascodes/reference.go. Then assess each added check and give it a row in
+internal/atlascodes/checks.go --
 ` + "`lintrules check`" + ` fails until each one has an entry.
 `)
 	return nil
@@ -115,8 +116,8 @@ in atlasreference.go. Then assess each added check and give it a catalog row --
 // has that the reference does not.
 // codeSets is what one comparison established.
 type codeSets struct {
-	reference []lintcatalog.AtlasReferenceEntry
-	upstream  []lintcatalog.AtlasReferenceEntry
+	reference []atlascodes.ReferenceEntry
+	upstream  []atlascodes.ReferenceEntry
 	added     []string
 }
 
@@ -125,7 +126,7 @@ func compareCodeSets() (codeSets, error) {
 	if err != nil {
 		return codeSets{}, err
 	}
-	reference := lintcatalog.AtlasReference()
+	reference := atlascodes.Reference()
 	var added []string
 
 	inReference := make(map[string]struct{}, len(reference))
@@ -175,7 +176,7 @@ the rows for the codes named above.
 // Rewriting the reviewed meanings from a scrape would replace text a person
 // read with text nobody did, and the reviewed-on date would then be a claim
 // about a review that never happened.
-func mergeReference(reference, upstream []lintcatalog.AtlasReferenceEntry, added []string) []lintcatalog.AtlasReferenceEntry {
+func mergeReference(reference, upstream []atlascodes.ReferenceEntry, added []string) []atlascodes.ReferenceEntry {
 	isAdded := make(map[string]bool, len(added))
 	for _, code := range added {
 		isAdded[code] = true
@@ -184,14 +185,14 @@ func mergeReference(reference, upstream []lintcatalog.AtlasReferenceEntry, added
 	for _, entry := range upstream {
 		onPage[entry.Code] = true
 	}
-	var merged []lintcatalog.AtlasReferenceEntry
+	var merged []atlascodes.ReferenceEntry
 	for _, entry := range reference {
 		if onPage[entry.Code] {
 			merged = append(merged, entry)
 		}
 	}
 	for _, code := range added {
-		merged = append(merged, lintcatalog.AtlasReferenceEntry{
+		merged = append(merged, atlascodes.ReferenceEntry{
 			Code:    code,
 			Pro:     false,
 			Meaning: "REVIEW-ME read the page and replace this line",
@@ -220,7 +221,7 @@ var checkRowPattern = regexp.MustCompile(`(?i)\b([A-Z]{2})(\d{3})\b`)
 // It fails loudly on every path that could otherwise be mistaken for "nothing
 // changed": a transport error, a non-200 status, an empty body, and a parse
 // that finds implausibly few checks.
-func fetchChecks() ([]lintcatalog.AtlasReferenceEntry, error) {
+func fetchChecks() ([]atlascodes.ReferenceEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -263,7 +264,7 @@ func fetchChecks() ([]lintcatalog.AtlasReferenceEntry, error) {
 // each one rather than modelling the table markup: the markup has changed
 // before and the codes have not. The count floor above is what makes that
 // tolerable -- a reading that stops working returns too few and is refused.
-func parsePage(page string) ([]lintcatalog.AtlasReferenceEntry, error) {
+func parsePage(page string) ([]atlascodes.ReferenceEntry, error) {
 	text := stripTags(page)
 	matches := checkRowPattern.FindAllStringIndex(text, -1)
 	if len(matches) == 0 {
@@ -271,7 +272,7 @@ func parsePage(page string) ([]lintcatalog.AtlasReferenceEntry, error) {
 	}
 
 	seen := make(map[string]bool)
-	var entries []lintcatalog.AtlasReferenceEntry
+	var entries []atlascodes.ReferenceEntry
 	for i, match := range matches {
 		code := text[match[0]:match[1]]
 		if seen[code] {
@@ -289,7 +290,7 @@ func parsePage(page string) ([]lintcatalog.AtlasReferenceEntry, error) {
 		}
 		// The meaning and the Pro marking are deliberately not derived here;
 		// see run(). Only Code is trusted from this parse.
-		entries = append(entries, lintcatalog.AtlasReferenceEntry{Code: code, Meaning: meaning})
+		entries = append(entries, atlascodes.ReferenceEntry{Code: code, Meaning: meaning})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Code < entries[j].Code })
 	return entries, nil
@@ -316,8 +317,8 @@ func stripTags(page string) string {
 }
 
 // writeReference rewrites the committed snapshot, keeping its header.
-func writeReference(entries []lintcatalog.AtlasReferenceEntry) error {
-	const path = "internal/lintcatalog/atlasreference.txt"
+func writeReference(entries []atlascodes.ReferenceEntry) error {
+	const path = "internal/atlascodes/reference.txt"
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)

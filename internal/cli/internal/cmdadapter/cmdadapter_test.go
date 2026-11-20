@@ -441,7 +441,7 @@ func TestForwardCommandResetsStringArrayEmptyDefault(t *testing.T) {
 	var adapterOut bytes.Buffer
 	cmd.SetOut(&adapterOut)
 	cmd.SetErr(&adapterOut)
-	cmd.SetArgs([]string{"--value", "DS101", "--value", "MY"})
+	cmd.SetArgs([]string{"--value", "destructive/drop-table", "--value", "MY"})
 
 	err := cmd.Execute()
 

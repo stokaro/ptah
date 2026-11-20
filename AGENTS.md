@@ -250,11 +250,33 @@ make integration-test            # Docker Compose suite; binds fixed host ports
 
 ### Lint rules
 
-A new lint rule needs its meaning and its Ptah name, `category/name` under a
-category declared there, in `internal/lintcatalog`, which holds the identifier
-convention and feeds the generated rule page; `scripts/check-docsync.sh` fails
-when they disagree. `preConventionCodes` may shrink, never grow: rename a new
-rule that fails the convention.
+A lint rule is identified by its name, `category/name`, everywhere the lint
+core reads one: findings, selectors, baselines, the apply gate and every native
+report. Ptah rules have no numeric code. The categories are declared once in
+`internal/lintnames`; the engine runtime accepts one name from several owners
+when their dialects are disjoint and their severities match, so one hazard is
+one rule with a check per engine.
+
+Every rule name is enumerated on one generated page. Adding a rule is two
+edits -- the rule, which declares its name, and its meaning in
+`internal/lintcatalog` -- and `scripts/check-docsync.sh` fails when they
+disagree. A selector is an exact name or an exact category, never a prefix, and
+native code refuses any word spelled as a code, with a message that names no
+rule: native code holds no table from codes to rules.
+
+The Atlas check codes live in `internal/atlascodes`, which only the
+compatibility surface (`ptah-compat`, `internal/atlasreport`) and the
+documentation generator import. A native or shared package must not. The
+table from names to Atlas codes and the reviewed reference snapshot are gated
+there, in both directions. `ptah-compat` prints rule names by default.
+`PTAH_ATLAS_STRICT_COMPAT=1` prints the Atlas code in the community binary's
+report shape and runs only the rules that table maps; `atlas:nolint` reads a
+code or an analyzer name in both modes and a rule name in the default mode only.
+
+The rule-name grammar is published once by the provider SDK as
+`provider.ValidLintRuleName`, because a provider is a separate module. The
+host's `lintext.CanonicalName` is the host's copy, since `core/lintext` must
+not link the SDK, and `internal/providerhost` holds the two to one answer.
 
 ### The Go toolchain
 

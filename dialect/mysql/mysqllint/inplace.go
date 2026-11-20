@@ -12,13 +12,13 @@ import (
 
 // The MySQL cost rules fire where a copy is established, and stay quiet where
 // the server applies the change in place. Quiet is correct, but from the
-// report it reads the same as "the rule did not look", and DS103 and MY101
+// report it reads the same as "the rule did not look", and data-dependent/alter-column-type and locking/blocking-alter-table
 // still describe the statement as one that may truncate values or rebuild the
-// table. MY130P in this file is the other half of the measurement for the
+// table. rewrite/in-place-column-change in this file is the other half of the measurement for the
 // MySQL family: an info-severity finding that says the clause was judged and
 // applied in place, and how, for a statement whose every clause the
 // comparison could judge (stokaro/ptah#2956). The PostgreSQL owner reports
-// the same for PostgreSQL as PG301P.
+// the same for PostgreSQL as rewrite/in-place-column-change.
 //
 // The type half is the measurement in mysqlcost.go. The attribute half was
 // measured on MySQL 8.4.11 and MariaDB 11.8.9 by asking for ALGORITHM=INSTANT
@@ -36,7 +36,7 @@ import (
 //
 // An INPLACE change of nullability rebuilds the table in place, online, and
 // the finding says so rather than folding it into "in place"; a NOT NULL
-// added on a nullable column still fails on a NULL row, which DD103 reports
+// added on a nullable column still fails on a NULL row, which data-dependent/set-not-null reports
 // beside this. A clause that carries anything outside the measured set --
 // AUTO_INCREMENT, a generated expression, ON UPDATE, a key -- or a statement
 // with a clause of another kind is not judged and gets no finding, so the
@@ -44,7 +44,7 @@ import (
 // cover. The rule reads the schema state the version starts from and stays
 // silent without it, named as unmet.
 
-// mysqlInPlaceStatements lists the statements MY130P judges: every MODIFY
+// mysqlInPlaceStatements lists the statements rewrite/in-place-column-change judges: every MODIFY
 // or CHANGE with a type, and every CONVERT TO CHARACTER SET.
 func mysqlInPlaceStatements(file *lintkit.File) []int {
 	indexes := append(columnChangeStatements(file), charsetConversionStatements(file)...)
@@ -55,11 +55,11 @@ func mysqlInPlaceStatements(file *lintkit.File) []int {
 func mysqlInPlaceRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "MY130P",
+			Name:     "rewrite/in-place-column-change",
 			Title:    "column change applied in place",
 			Severity: lintext.Info,
 			Targets:  family(),
-			Subsumes: []string{"DS103", "MY101"},
+			Subsumes: []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: mysqlInPlaceStatements,

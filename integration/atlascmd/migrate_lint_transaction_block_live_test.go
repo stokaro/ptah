@@ -19,10 +19,10 @@ import (
 // over a golang-migrate directory whose hand-written migrations wrap their
 // statements in BEGIN/COMMIT (stokaro/ptah#4953). golang-migrate opens no
 // transaction around a file, so the block is the file's only transaction and
-// TX201 does not apply there. These tests run that shape against a live
+// transaction/explicit-transaction does not apply there. These tests run that shape against a live
 // server: the dev database replays the block, and the verdict follows the
 // layout. The same block in Atlas's layout, which Atlas wraps per file, keeps
-// TX201.
+// transaction/explicit-transaction.
 
 // transactionBlockLive is a migration that opens and commits its own
 // transaction.
@@ -74,7 +74,7 @@ func TestMigrateLintGolangMigrateTransactionBlockLive(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 	c.Assert(out, qt.Contains, "-- analyzing version 20240827000000 -- no diagnostics found")
 	c.Assert(out, qt.Contains, "-- 1 version ok")
-	c.Assert(out, qt.Not(qt.Contains), "TX201")
+	c.Assert(out, qt.Not(qt.Contains), "transaction/explicit-transaction")
 }
 
 func TestMigrateLintAtlasTransactionBlockLive(t *testing.T) {
@@ -88,6 +88,6 @@ func TestMigrateLintAtlasTransactionBlockLive(t *testing.T) {
 	out, err := runLayoutLint(c, "file://"+dir, devURL)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
-	c.Assert(out, qt.Contains, "[TX201]")
+	c.Assert(out, qt.Contains, "[transaction/explicit-transaction]")
 	c.Assert(out, qt.Contains, "-- 1 version with warnings")
 }

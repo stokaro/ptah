@@ -45,7 +45,7 @@ func TestRepeatableMigrationsGateE2E_FailurePath(t *testing.T) {
 		result = r.ptah(c, "migrations", "up", "--db-url", r.url, "--migrations-dir", r.dir)
 		c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
 		c.Assert(result.Stderr, qt.Matches,
-			`(?s).*pending migrations contain destructive statements.*\n- .*R__account_names\.sql:1 DS101 error: .*`)
+			`(?s).*pending migrations contain destructive statements.*\n- .*R__account_names\.sql:1 destructive/drop-table error: .*`)
 		c.Assert(userTables(c, r.conn), qt.Contains, "repeatable_audit")
 		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
 		c.Assert(r.status(c).Repeatables[0].AppliedChecksum, qt.Equals, e2eH1(repeatableE2EView("v1", "name")))

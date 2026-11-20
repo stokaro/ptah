@@ -40,12 +40,12 @@ exactly because a mode that implies more is worse than no mode:
 
 Two rules carry it, each proving a different thing.
 
-- **`ON101`, PostgreSQL**: the statement is in the set measured to take no
+- **`online/unproven`, PostgreSQL**: the statement is in the set measured to take no
   conflicting lock. A concurrent index build or drop, a plain column addition,
   a column or constraint drop, `SET DEFAULT`, `DROP NOT NULL`, a constraint
   added `NOT VALID`, the `VALIDATE CONSTRAINT` that completes it, and a
   statement that locks nothing that already exists.
-- **`ON102`, MySQL and MariaDB**: the statement asked the server to refuse what
+- **`online/unproven`, MySQL and MariaDB**: the statement asked the server to refuse what
   it cannot do online, by carrying `ALGORITHM=INPLACE, LOCK=NONE` or
   `ALGORITHM=INSTANT`. That is a stronger answer than a list, because the
   server decides rather than a model of it.
@@ -66,7 +66,7 @@ first of the things below that nothing here can see.
 - **Replication.** An online change on the primary can still stall a replica.
 - **Application rollout.** `DROP COLUMN` is cheap and breaks deployed code,
   which is expand and contract across two deploys rather than a property of the
-  DDL. `BC103` and `BC104` name the retired identifier; they do not sequence a
+  DDL. `rollout/drop-table` and `rollout/drop-column` name the retired identifier; they do not sequence a
   rollout.
 
 ## The lock timeout the mode requires

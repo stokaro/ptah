@@ -464,10 +464,10 @@ An integer-to-`bit` change is rated destructive because values outside
 `0` and `1` collapse. The `datetime2(3)` change gains precision and is rated
 as a warning.
 
-`ptah migrations lint` reports `ALTER COLUMN c datetime2(0) NULL` as `DS103`, with or
+`ptah migrations lint` reports `ALTER COLUMN c datetime2(0) NULL` as `data-dependent/alter-column-type`, with or
 without brackets around the names, since SQL Server names the new type with no word
 before it. That clause has to name a type to change a nullability too, so under
-`--dev-url` a clause that names the type the column holds is not reported, and `DD103`
+`--dev-url` a clause that names the type the column holds is not reported, and `data-dependent/set-not-null`
 speaks for the `NOT NULL`. Without a dev database every such clause is reported.
 
 ## Routines

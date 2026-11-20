@@ -39,12 +39,12 @@ func tableDropSites(c *qt.C, test ifExistsCase) []string {
 	}), lint.Options{Dialect: test.dialect, Baseline: test.baseline})
 	c.Assert(err, qt.IsNil)
 	return slices.DeleteFunc(findingSites(findings), func(site string) bool {
-		return !strings.HasSuffix(site, ":DS101") && !strings.HasSuffix(site, ":BC103")
+		return !strings.HasSuffix(site, ":destructive/drop-table") && !strings.HasSuffix(site, ":rollout/drop-table")
 	})
 }
 
 // A DROP TABLE IF EXISTS of a table the starting state shows is absent drops
-// nothing and retires no name, so neither DS101 nor BC103 reports it. The
+// nothing and retires no name, so neither destructive/drop-table nor rollout/drop-table reports it. The
 // community binary compares the schema a file starts from with the one it ends
 // with and reports nothing there either.
 func TestIfExistsDropOfAnAbsentTable_IsNotADrop(t *testing.T) {
@@ -84,53 +84,53 @@ func TestIfExistsDropThatMayDropATable_IsReported(t *testing.T) {
 		{
 			ifExistsCase: ifExistsCase{name: "the table is in the starting state", dialect: "sqlite",
 				second: "DROP TABLE IF EXISTS users;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "no starting state", dialect: "sqlite",
 				second: "DROP TABLE IF EXISTS missing;\n"},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "an earlier statement renames a table to the name", dialect: "sqlite",
 				second: "ALTER TABLE users RENAME TO missing;\nDROP TABLE IF EXISTS missing;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:2:BC103", "0000000002_change.up.sql:2:DS101"},
+			want: []string{"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "one absent table and one present", dialect: "sqlite",
 				second: "DROP TABLE IF EXISTS missing, users;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "qualified by a schema the state does not hold", dialect: "postgres",
 				second: "DROP TABLE IF EXISTS other.missing;\n", baseline: usersAt("public")},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "qualified, against a state that names no schema", dialect: "postgres",
 				second: "DROP TABLE IF EXISTS other.missing;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "no IF EXISTS", dialect: "sqlite",
 				second: "DROP TABLE missing;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:BC103", "0000000002_change.up.sql:1:DS101"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "a DO block may have renamed a table to the name", dialect: "postgres",
 				second: "DO $$ BEGIN ALTER TABLE users RENAME TO x; END $$;\nDROP TABLE IF EXISTS x;\n", baseline: usersAt("public")},
-			want: []string{"0000000002_change.up.sql:2:BC103", "0000000002_change.up.sql:2:DS101"},
+			want: []string{"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "a prepared statement may have renamed a table to the name", dialect: "mysql",
 				second:   "SET @s = 'RENAME TABLE users TO x';\nPREPARE p FROM @s;\nEXECUTE p;\nDROP TABLE IF EXISTS x;\n",
 				baseline: usersAt("app")},
-			want: []string{"0000000002_change.up.sql:4:BC103", "0000000002_change.up.sql:4:DS101"},
+			want: []string{"0000000002_change.up.sql:4:destructive/drop-table", "0000000002_change.up.sql:4:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "the search path moves to a schema the state does not hold", dialect: "postgres",
 				second: "SET search_path TO other;\nDROP TABLE IF EXISTS missing;\n", baseline: usersAt("public")},
-			want: []string{"0000000002_change.up.sql:2:BC103", "0000000002_change.up.sql:2:DS101"},
+			want: []string{"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table"},
 		},
 	}
 	for _, test := range tests {
@@ -222,13 +222,13 @@ func TestIfExistsDrop_NamesItsInputOnlyWhereTheStateDecides(t *testing.T) {
 	}{
 		{
 			name: "an absent table", second: "DROP TABLE IF EXISTS missing;\n",
-			want: []string{"BC103", "DS101"},
+			want: []string{"destructive/drop-table", "rollout/drop-table"},
 		},
 		{name: "a table the file created", second: "CREATE TABLE t (a int);\nDROP TABLE IF EXISTS t;\n", want: nil},
 		{name: "after a DO block", second: "DO $$ BEGIN NULL; END $$;\nDROP TABLE IF EXISTS missing;\n", want: nil},
 		{
 			name: "a CREATE TABLE IF NOT EXISTS of a table the file drops", second: "CREATE TABLE IF NOT EXISTS t (a int);\nDROP TABLE t;\n",
-			want: []string{"BC103", "DS101"},
+			want: []string{"destructive/drop-table", "rollout/drop-table"},
 		},
 		{name: "a CREATE TABLE IF NOT EXISTS nothing after names", second: "CREATE TABLE IF NOT EXISTS t (a int);\n", want: nil},
 	}
@@ -254,7 +254,7 @@ func TestIfExistsDrop_NamesItsInputOnlyWhereTheStateDecides(t *testing.T) {
 func dropRulesIn(rules []string) []string {
 	var kept []string
 	for _, rule := range rules {
-		kept = append(kept, slices.DeleteFunc([]string{rule}, func(r string) bool { return r != "BC103" && r != "DS101" })...)
+		kept = append(kept, slices.DeleteFunc([]string{rule}, func(r string) bool { return r != "rollout/drop-table" && r != "destructive/drop-table" })...)
 	}
 	slices.Sort(kept)
 	return kept
@@ -284,7 +284,7 @@ func TestCreateTableIfNotExists_ExemptsNothingTheStateDoesNotShowIsNew(t *testin
 			t.Run(test.name+", "+state.name, func(t *testing.T) {
 				c := qt.New(t)
 				got := ruleSites(c, "postgres", state.before+"CREATE TABLE IF NOT EXISTS users (id int, email text);\n"+test.then, test.rule, state.baseline...)
-				// The rename row also reports its own rename under BC101, so
+				// The rename row also reports its own rename under rollout/rename, so
 				// the site under test is asserted present rather than alone.
 				c.Assert(got, qt.Contains, "0000000002_change.up.sql:"+state.line+":"+test.rule)
 			})
@@ -358,13 +358,13 @@ var createdTableRows = []struct {
 	then string
 	rule string
 }{
-	{name: "table dropped, data", then: "DROP TABLE users;\n", rule: "DS101"},
-	{name: "table dropped, deployed code", then: "DROP TABLE users;\n", rule: "BC103"},
-	{name: "column dropped, data", then: "ALTER TABLE users DROP COLUMN email;\n", rule: "DS102"},
-	{name: "column dropped, deployed code", then: "ALTER TABLE users DROP COLUMN email;\n", rule: "BC104"},
-	{name: "table renamed", then: "ALTER TABLE users RENAME TO people;\n", rule: "BC101"},
-	{name: "NOT NULL column added", then: "ALTER TABLE users ADD COLUMN n int NOT NULL;\n", rule: "DD101"},
-	{name: "unique index built", then: "CREATE UNIQUE INDEX users_email ON users (email);\n", rule: "MF101"},
+	{name: "table dropped, data", then: "DROP TABLE users;\n", rule: "destructive/drop-table"},
+	{name: "table dropped, deployed code", then: "DROP TABLE users;\n", rule: "rollout/drop-table"},
+	{name: "column dropped, data", then: "ALTER TABLE users DROP COLUMN email;\n", rule: "destructive/drop-column"},
+	{name: "column dropped, deployed code", then: "ALTER TABLE users DROP COLUMN email;\n", rule: "rollout/drop-column"},
+	{name: "table renamed", then: "ALTER TABLE users RENAME TO people;\n", rule: "rollout/rename"},
+	{name: "NOT NULL column added", then: "ALTER TABLE users ADD COLUMN n int NOT NULL;\n", rule: "data-dependent/add-not-null-column"},
+	{name: "unique index built", then: "CREATE UNIQUE INDEX users_email ON users (email);\n", rule: "data-dependent/add-unique-index"},
 }
 
 // ruleSites lints a directory whose second version is second, against the
@@ -388,8 +388,8 @@ func TestDropColumnAfterAChangeIntoTheAddedName_IsReported(t *testing.T) {
 	c := qt.New(t)
 	got := ruleSites(c, "mysql",
 		"ALTER TABLE accounts ADD COLUMN nick text;\nALTER TABLE accounts CHANGE id nick int;\nALTER TABLE accounts DROP COLUMN nick;\n",
-		"DS102")
-	c.Assert(got, qt.DeepEquals, []string{"0000000002_change.up.sql:3:DS102"})
+		"destructive/drop-column")
+	c.Assert(got, qt.DeepEquals, []string{"0000000002_change.up.sql:3:destructive/drop-column"})
 }
 
 // A drop of one absent table and one present one names only the present one,
@@ -401,10 +401,13 @@ func TestIfExistsDropOfAnAbsentAndAPresentTable_NamesThePresentOne(t *testing.T)
 		"0000000002_change.up.sql": "DROP TABLE IF EXISTS missing, users;\n",
 	}), lint.Options{Dialect: "sqlite", Baseline: usersAt("")})
 	c.Assert(err, qt.IsNil)
-	var messages []string
+	var messages, bodies []string
 	for _, finding := range findings {
 		messages = append(messages, finding.Rule+": "+finding.Message)
+		// The rule name file-form/missing-down holds the word the absent
+		// table is called, so the absent name is looked for in the text alone.
+		bodies = append(bodies, finding.Message)
 	}
-	c.Assert(strings.Join(messages, "\n"), qt.Contains, "DS101: DROP TABLE permanently deletes table users ")
-	c.Assert(strings.Join(messages, "\n"), qt.Not(qt.Contains), "missing")
+	c.Assert(strings.Join(messages, "\n"), qt.Contains, "destructive/drop-table: DROP TABLE permanently deletes table users ")
+	c.Assert(strings.Join(bodies, "\n"), qt.Not(qt.Contains), "missing")
 }

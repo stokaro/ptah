@@ -427,7 +427,7 @@ func headSites(c *qt.C, statement string, opts lint.Options, rules ...string) []
 }
 
 // An IF EXISTS drop of an object the starting state shows is absent removes
-// nothing, so DS107 does not report it.
+// nothing, so destructive/drop-object does not report it.
 func TestIfExistsDropOfAnAbsentObject_IsNotDS107(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -455,12 +455,12 @@ func TestIfExistsDropOfAnAbsentObject_IsNotDS107(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(headSites(c, test.statement, test.state.options(test.dialect, "", lint.ChangeCountStatements), "DS107"), qt.HasLen, 0)
+			c.Assert(headSites(c, test.statement, test.state.options(test.dialect, "", lint.ChangeCountStatements), "destructive/drop-object"), qt.HasLen, 0)
 		})
 	}
 }
 
-// Each row is a drop that may remove an object, so DS107 reports it: the
+// Each row is a drop that may remove an object, so destructive/drop-object reports it: the
 // object is there, the drop has no IF EXISTS, the run read no state, the read
 // does not list the kind, or an earlier statement may have made the object.
 func TestDropOfAnObjectThatMayExist_IsDS107(t *testing.T) {
@@ -473,56 +473,56 @@ func TestDropOfAnObjectThatMayExist_IsDS107(t *testing.T) {
 	}{
 		{
 			name: "a present type", dialect: "postgres", statement: "DROP TYPE IF EXISTS mood;",
-			state: listing([]lintext.BaselineObject{mood("a")}, every...), want: []string{headFile + ":1:DS107"},
+			state: listing([]lintext.BaselineObject{mood("a")}, every...), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "an absent type and a present one", dialect: "postgres", statement: "DROP TYPE IF EXISTS gone, mood;",
-			state: listing([]lintext.BaselineObject{mood("a")}, every...), want: []string{headFile + ":1:DS107"},
+			state: listing([]lintext.BaselineObject{mood("a")}, every...), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "no IF EXISTS", dialect: "postgres", statement: "DROP TYPE gone;",
-			state: listing(nil, every...), want: []string{headFile + ":1:DS107"},
+			state: listing(nil, every...), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "no starting state", dialect: "postgres", statement: "DROP TYPE IF EXISTS gone;",
-			want: []string{headFile + ":1:DS107"},
+			want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "a read that does not list types", dialect: "postgres", statement: "DROP TYPE IF EXISTS gone;",
-			state: listing(nil, lintext.BaselineView), want: []string{headFile + ":1:DS107"},
+			state: listing(nil, lintext.BaselineView), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "a type the file created", dialect: "postgres", statement: "CREATE TYPE gone AS ENUM ('a');\nDROP TYPE IF EXISTS gone;",
-			state: listing(nil, every...), want: []string{headFile + ":2:DS107"},
+			state: listing(nil, every...), want: []string{headFile + ":2:destructive/drop-object"},
 		},
 		{
 			name: "a trigger its table has", dialect: "postgres", statement: "DROP TRIGGER IF EXISTS audit ON users;",
 			state: listing([]lintext.BaselineObject{object(lintext.BaselineTrigger, "users", "audit")}, every...),
-			want:  []string{headFile + ":1:DS107"},
+			want:  []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "a trigger in SQLite's temp schema", dialect: "sqlite", statement: "DROP TRIGGER IF EXISTS temp.gone;",
-			state: listing(nil, every...), want: []string{headFile + ":1:DS107"},
+			state: listing(nil, every...), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "an absent routine, a kind no read lists", dialect: "postgres", statement: "DROP FUNCTION IF EXISTS gone();",
-			state: listing(nil, every...), want: []string{headFile + ":1:DS107"},
+			state: listing(nil, every...), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 		{
 			name: "an absent extension, a kind no read lists", dialect: "postgres", statement: "DROP EXTENSION IF EXISTS gone;",
-			state: listing(nil, every...), want: []string{headFile + ":1:DS107"},
+			state: listing(nil, every...), want: []string{headFile + ":1:destructive/drop-object"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := headSites(c, test.statement, test.state.options(test.dialect, "", lint.ChangeCountStatements), "DS107")
+			got := headSites(c, test.statement, test.state.options(test.dialect, "", lint.ChangeCountStatements), "destructive/drop-object")
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
 }
 
-// DS107 asks for the starting state of a version holding an IF EXISTS drop of
+// destructive/drop-object asks for the starting state of a version holding an IF EXISTS drop of
 // a kind the dialect's read lists, under every count, and names itself as
 // missing that input on a run without one. A drop of a kind no read lists
 // asks for nothing.
@@ -534,8 +534,8 @@ func TestDS107_BaselineInput(t *testing.T) {
 		versions  []int64
 		unmet     []string
 	}{
-		{name: "an IF EXISTS type drop", dialect: "postgres", statement: "DROP TYPE IF EXISTS gone;", versions: []int64{2}, unmet: []string{"DS107"}},
-		{name: "an IF EXISTS trigger drop", dialect: "sqlite", statement: "DROP TRIGGER IF EXISTS gone;", versions: []int64{2}, unmet: []string{"DS107"}},
+		{name: "an IF EXISTS type drop", dialect: "postgres", statement: "DROP TYPE IF EXISTS gone;", versions: []int64{2}, unmet: []string{"destructive/drop-object"}},
+		{name: "an IF EXISTS trigger drop", dialect: "sqlite", statement: "DROP TRIGGER IF EXISTS gone;", versions: []int64{2}, unmet: []string{"destructive/drop-object"}},
 		{name: "a type drop without IF EXISTS", dialect: "postgres", statement: "DROP TYPE gone;"},
 		{name: "an IF EXISTS routine drop", dialect: "postgres", statement: "DROP FUNCTION IF EXISTS gone();"},
 		{name: "an IF EXISTS type drop on a dialect that lists no types", dialect: "cockroachdb", statement: "DROP TYPE IF EXISTS gone;"},
@@ -558,10 +558,10 @@ func TestDS107_BaselineInput(t *testing.T) {
 	}
 }
 
-// DS102 and BC104 ask for the starting state of a version holding a DROP
+// destructive/drop-column and rollout/drop-column ask for the starting state of a version holding a DROP
 // COLUMN IF EXISTS, under the statement count too, which reads no state of its
 // own, and name themselves as missing that input on a run without one. A drop
-// without IF EXISTS asks for nothing. DS110P asks for the state of every
+// without IF EXISTS asks for nothing. dependency/drop-column-in-use asks for the state of every
 // column drop, for what reads the column, so it is disabled to leave the two
 // rules the only ones asking.
 func TestColumnDrop_BaselineInput(t *testing.T) {
@@ -571,7 +571,7 @@ func TestColumnDrop_BaselineInput(t *testing.T) {
 		versions  []int64
 		unmet     []string
 	}{
-		{name: "an IF EXISTS column drop", statement: "ALTER TABLE users DROP COLUMN IF EXISTS gone;", versions: []int64{2}, unmet: []string{"BC104", "DS102"}},
+		{name: "an IF EXISTS column drop", statement: "ALTER TABLE users DROP COLUMN IF EXISTS gone;", versions: []int64{2}, unmet: []string{"destructive/drop-column", "rollout/drop-column"}},
 		{name: "a column drop without IF EXISTS", statement: "ALTER TABLE users DROP COLUMN id;"},
 	}
 	for _, test := range tests {
@@ -580,7 +580,7 @@ func TestColumnDrop_BaselineInput(t *testing.T) {
 			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 				"0000000001_users.up.sql": "CREATE TABLE users (id int);\n",
 				headFile:                  test.statement + "\n",
-			}), lint.Options{Dialect: "postgres", Disabled: []string{"DS110P"}})
+			}), lint.Options{Dialect: "postgres", Disabled: []string{"dependency/drop-column-in-use"}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(analysis.BaselineVersions(), qt.DeepEquals, test.versions)
 			var unmet []string
@@ -615,9 +615,9 @@ func TestSequenceCreation_IsScopedByItsSchema(t *testing.T) {
 }
 
 // A DROP COLUMN IF EXISTS of a column the starting state shows its table does
-// not have deletes nothing and retires no name, so neither DS102 nor BC104
+// not have deletes nothing and retires no name, so neither destructive/drop-column nor rollout/drop-column
 // reports it. The community binary reports nothing for it either, where it
-// reports DS103 for a column that is there.
+// reports data-dependent/alter-column-type for a column that is there.
 func TestDropColumnIfExistsOfAnAbsentColumn_IsNotADrop(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -635,31 +635,31 @@ func TestDropColumnIfExistsOfAnAbsentColumn_IsNotADrop(t *testing.T) {
 		},
 		{
 			name: "a present column", statement: "ALTER TABLE users DROP COLUMN IF EXISTS id;",
-			state: listing(nil), want: []string{headFile + ":1:BC104", headFile + ":1:DS102"},
+			state: listing(nil), want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name: "an absent column without a starting state", statement: "ALTER TABLE users DROP COLUMN IF EXISTS gone;",
-			want: []string{headFile + ":1:BC104", headFile + ":1:DS102"},
+			want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name: "an absent column without IF EXISTS", statement: "ALTER TABLE users DROP COLUMN gone;",
-			state: listing(nil), want: []string{headFile + ":1:BC104", headFile + ":1:DS102"},
+			state: listing(nil), want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name: "a column of a table the state does not hold", statement: "ALTER TABLE other DROP COLUMN IF EXISTS gone;",
-			state: listing(nil), want: []string{headFile + ":1:BC104", headFile + ":1:DS102"},
+			state: listing(nil), want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name:      "an absent column after a statement that may have added it",
 			statement: "DO $$ BEGIN ALTER TABLE users ADD COLUMN gone int; END $$;\nALTER TABLE users DROP COLUMN IF EXISTS gone;",
-			state:     listing(nil), want: []string{headFile + ":2:BC104", headFile + ":2:DS102"},
+			state:     listing(nil), want: []string{headFile + ":2:destructive/drop-column", headFile + ":2:rollout/drop-column"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			opts := test.state.options("postgres", "public", lint.ChangeCountStatements)
-			c.Assert(headSites(c, test.statement, opts, "DS102", "BC104"), qt.DeepEquals, test.want)
+			c.Assert(headSites(c, test.statement, opts, "destructive/drop-column", "rollout/drop-column"), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -674,7 +674,7 @@ func TestDropColumnIfExistsOfAnAbsentAndAPresentColumn_NamesThePresentOne(t *tes
 	}), listing(nil).options("postgres", "", lint.ChangeCountStatements))
 	c.Assert(err, qt.IsNil)
 	drops := slices.DeleteFunc(findings, func(finding lint.Finding) bool {
-		return finding.Rule != "DS102" && finding.Rule != "BC104"
+		return finding.Rule != "destructive/drop-column" && finding.Rule != "rollout/drop-column"
 	})
 	var dropped []string
 	for _, finding := range drops {
@@ -683,7 +683,7 @@ func TestDropColumnIfExistsOfAnAbsentAndAPresentColumn_NamesThePresentOne(t *tes
 		}
 	}
 	slices.Sort(dropped)
-	c.Assert(dropped, qt.DeepEquals, []string{"BC104:id", "DS102:id"})
+	c.Assert(dropped, qt.DeepEquals, []string{"destructive/drop-column:id", "rollout/drop-column:id"})
 }
 
 // A large first file counts each object it leaves behind once, and a qualifier

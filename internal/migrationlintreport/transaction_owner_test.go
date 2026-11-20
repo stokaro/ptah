@@ -16,15 +16,15 @@ import (
 
 // TestBuild_TransactionOwnerReachesTheRules is the report both lint commands
 // build, over the Atlas-layout copy ptah-compat makes of a golang-migrate
-// directory. Options.TransactionOwner reaches the owner's TX201; a Build that
-// leaves it out of the analysis options reports TX201 on the second row.
+// directory. Options.TransactionOwner reaches the owner's transaction/explicit-transaction; a Build that
+// leaves it out of the analysis options reports transaction/explicit-transaction on the second row.
 func TestBuild_TransactionOwnerReachesTheRules(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		owner lintext.TransactionOwner
 		want  []string
 	}{
-		{"the migrator wraps each file", lintext.TransactionOwnerMigrator, []string{"TX201"}},
+		{"the migrator wraps each file", lintext.TransactionOwnerMigrator, []string{"transaction/explicit-transaction"}},
 		{"each file opens its own", lintext.TransactionOwnerFile, make([]string, 0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {

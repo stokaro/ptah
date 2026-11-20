@@ -25,7 +25,7 @@ import (
 //     opt-in: --check-destructive turns it on, and --allow-destructive only
 //     means anything once it is on. With neither flag the command exits
 //     successfully and the file, its checksum and its commit exist.
-//   - The refusal that quotes DS101 belongs to `migrations up`, which reads
+//   - The refusal that quotes destructive/drop-table belongs to `migrations up`, which reads
 //     the written directory and declines to apply it. That gate is pinned by
 //     TestMigrateUp_LintConfigWarningStillBlocksPostgresDropTable in
 //     internal/cli/migrateup, which also asserts the table survives the refusal.

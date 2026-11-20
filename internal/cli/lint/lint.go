@@ -1,5 +1,5 @@
 // Package lint implements the migration lint command: a sqlcheck-style linter
-// for migration directories with rule-coded findings (issue #151).
+// for migration directories with named findings (issue #151).
 package lint
 
 import (
@@ -72,16 +72,16 @@ func NewLintCommand() *cobra.Command {
 		Use:   "lint",
 		Short: "Lint migration files for production-unsafe patterns",
 		Long: `Lint inspects every *.sql file in a migrations directory and reports
-rule-coded findings, sqlcheck-style:
+findings named category/name, sqlcheck-style:
 
-  DS  data safety (dropped tables/columns, lossy type changes)
-  MF  migration form (missing down file, empty migration, naming)
-  BC  breaking-change safety (renames breaking deployed code)
-  PG  PostgreSQL-specific hazards (CREATE INDEX without CONCURRENTLY, ...)
-  MY  MySQL/MariaDB-specific hazards (lock-heavy ALTER TABLE forms)
+  destructive  deletes rows, values, objects or history for good
+  file-form    the migration file or directory has the wrong form
+  rollout      breaks code already deployed against the old schema
+  locking      holds a lock that blocks reads or writes
+  rewrite      rewrites or copies every row of the table
 
 Statement rules run against up migrations; file-form rules cover every file.
-Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
+Rules can be disabled by name or category via --disable or .ptah-lint.yaml.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -124,7 +124,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations and infer the lint dialect")
 	cmd.Flags().StringVar(&gitBase, gitBaseFlag, "", "Run analysis against the base Git branch")
 	cmd.Flags().StringVar(&gitDir, gitDirFlag, ".", "Repository working directory for --git-base")
-	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
+	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable rules by Ptah rule name or category, for example destructive/drop-table or locking (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
 	cmd.Flags().BoolVar(&attach, attachFlag, false, "Attach the canonical JSON lint report to an OCI migration artifact")

@@ -130,7 +130,8 @@ type Provider struct {
 	CoverageLimits []schemaext.LimitMapping
 	// Lint publishes the migration lint rules the provider checks and the
 	// services that check them. A rule judges targets the runtime registers,
-	// whichever provider owns them, and a code belongs to one rule.
+	// whichever provider owns them. Providers may publish one rule name for
+	// disjoint targets at one severity.
 	Lint []Lint
 	// OffTarget states, per named-object model the provider owns, what a
 	// target that serves the model nowhere does with one of its objects:
@@ -261,7 +262,7 @@ type Runtime struct {
 	selections          selectext.Set
 	vocabulary          coverage.Vocabulary
 	limits              []schemaext.LimitMapping
-	lintRules           map[string]ownedLintRule
+	lintRules           map[string][]ownedLintRule
 	lintServices        []lintext.Service
 	offTarget           map[schemaext.Kind]OffTargetPolicy
 }
@@ -304,7 +305,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		relations:      make(map[relationKey]int),
 		properties:     make(map[propertyKey]int),
 		probes:         make(map[conversionKey]int),
-		lintRules:      make(map[string]ownedLintRule),
+		lintRules:      make(map[string][]ownedLintRule),
 		offTarget:      make(map[schemaext.Kind]OffTargetPolicy),
 	}
 	owners := make(map[string]struct{}, len(providers))

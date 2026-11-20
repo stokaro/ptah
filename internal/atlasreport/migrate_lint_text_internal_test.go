@@ -17,6 +17,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/lintext"
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/builtintest"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -161,7 +162,7 @@ func analyzeMigrationsWithBaseline(
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
-	discovery, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas})
+	discovery, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas, Compatibility: migrationlint.CompatibilityProfileAtlas, AtlasSelectors: atlascodes.SuppressedBy})
 	c.Assert(err, qt.IsNil)
 	seen := make(map[int64]struct{})
 	for _, file := range discovery.Files() {
@@ -184,11 +185,12 @@ func analyzeMigrationsWithBaseline(
 		dialect = dialects[0]
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       dialect,
-		Selection:     migrationlint.VersionSelection{Versions: versions, Restricted: true},
-		Baseline:      baseline,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        dialect,
+		Selection:      migrationlint.VersionSelection{Versions: versions, Restricted: true},
+		Baseline:       baseline,
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis
@@ -701,7 +703,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			analysis := analyzeMigrationsWithBaseline(t, tc.files, tc.latest, tc.baseline, tc.dialect)
 			var out bytes.Buffer
 
-			err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+			err := writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Equals, tc.want)
@@ -725,9 +727,10 @@ func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},
 			Restricted: true,
@@ -736,7 +739,7 @@ func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	err = writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals,
@@ -761,14 +764,15 @@ func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T)
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"R__drop_users.sql": {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	err = writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals,
@@ -794,9 +798,10 @@ func TestWriteMigrateLintText_RendersMappedEmptyFlywayRepeatableVersion(t *testi
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},
 			Restricted: true,
@@ -827,7 +832,7 @@ func TestMigrateLintProseIsAtlasCompatible(t *testing.T) {
 	}, 1)
 	var out bytes.Buffer
 
-	err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	err := writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 	c.Assert(err, qt.IsNil)
 	rendered := out.String()
 
@@ -868,7 +873,7 @@ func TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	rendered := out.String()
 
-	c.Assert(rendered, qt.Contains, "L1 [DS108]: TRUNCATE deletes all rows from the table")
+	c.Assert(rendered, qt.Contains, "L1 [destructive/truncate-table]: TRUNCATE deletes all rows from the table")
 	c.Assert(rendered, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers#DS108")
 	c.Assert(rendered, qt.Not(qt.Contains), "-- suggested fix")
 }

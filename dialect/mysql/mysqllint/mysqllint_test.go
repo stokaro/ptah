@@ -17,7 +17,7 @@ func file(name string, up bool, sql string) lintext.File {
 	return lintext.File{Name: name, Up: up, Down: !up, Statements: lintscan.Split(sql, lintscan.ForDialect("mysql"))}
 }
 
-// Rules publishes the owner's families in code order, each rule valid as
+// Rules publishes the owner's families in name order, each rule valid as
 // data and naming the engines it judges, and a call's rules share nothing
 // with the next call's.
 func TestRules(t *testing.T) {
@@ -30,20 +30,25 @@ func TestRules(t *testing.T) {
 	targets := make(map[string][]string, len(again))
 	for _, rule := range again {
 		c.Assert(rule.Validate(), qt.IsNil)
-		codes = append(codes, rule.Code)
-		targets[rule.Code] = rule.Targets
+		codes = append(codes, rule.Name)
+		targets[rule.Name] = rule.Targets
 	}
 	c.Assert(codes, qt.DeepEquals, []string{
-		"MY101", "MY102", "MY110", "MY111", "MY112", "MY113", "MY120", "MY121", "MY122", "MY123",
-		"MY130", "MY130P", "MY131", "MY132", "MY133", "MY134", "MY135", "MY136", "MY137", "MY138", "MY139",
-		"MY140", "MY141", "MY142", "MY143", "MY144", "MY145", "MY146", "MY147",
-		"ON102",
+		"destructive/drop-system-versioning", "locking/add-auto-increment-column", "locking/add-check",
+		"locking/add-foreign-key", "locking/add-fulltext-index", "locking/add-spatial-index",
+		"locking/blocking-alter-table", "locking/enforce-check", "online/unproven", "rewrite/add-column-before-existing", "rewrite/add-primary-key",
+		"rewrite/add-stored-generated-column", "rewrite/alter-column-type", "rewrite/change-engine",
+		"rewrite/change-partitioning", "rewrite/convert-charset", "rewrite/drop-primary-key",
+		"rewrite/in-place-column-change", "rewrite/insert-enum-value", "rewrite/insert-set-member",
+		"rewrite/modify-generated-column", "rewrite/remove-enum-value", "rewrite/remove-set-member",
+		"rewrite/reorder-enum-values", "rewrite/reorder-set-members", "rewrite/replace-primary-key",
+		"rewrite/set-not-null", "rewrite/widen-enum", "rewrite/widen-set", "side-effect/inline-reference",
 	})
-	c.Assert([]any{targets["MY101"], targets["MY145"], targets["MY146"], targets["ON102"]}, qt.DeepEquals,
+	c.Assert([]any{targets["locking/blocking-alter-table"], targets["locking/enforce-check"], targets["destructive/drop-system-versioning"], targets["online/unproven"]}, qt.DeepEquals,
 		[]any{[]string{"mysql", "mariadb"}, []string{"mysql"}, []string{"mariadb"}, []string{"mysql", "mariadb"}})
 }
 
-// ON102 reports a statement that does not ask the server to apply it online,
+// online/unproven reports a statement that does not ask the server to apply it online,
 // in either direction, and leaves one that does.
 func TestService_CheckMigrations_Online(t *testing.T) {
 	const message = "this statement does not ask the server to apply it without blocking writes; " +
@@ -55,14 +60,14 @@ func TestService_CheckMigrations_Online(t *testing.T) {
 		want []lintext.Finding
 	}{
 		{"an up file", file("1.up.sql", true, "ALTER TABLE t ADD COLUMN c int;\nALTER TABLE t ADD COLUMN d int, ALGORITHM=INSTANT;\n"),
-			[]lintext.Finding{{Code: "ON102", File: 0, Statement: 0, Message: message}}},
+			[]lintext.Finding{{Name: "online/unproven", File: 0, Statement: 0, Message: message}}},
 		{"a down file", file("1.down.sql", false, "ALTER TABLE t DROP COLUMN c, ALGORITHM=INPLACE, LOCK=SHARED;\n"),
-			[]lintext.Finding{{Code: "ON102", File: 0, Statement: 0, Message: message}}},
+			[]lintext.Finding{{Name: "online/unproven", File: 0, Statement: 0, Message: message}}},
 		{"online", file("1.up.sql", true, "ALTER TABLE t ADD INDEX i (c), ALGORITHM=INPLACE, LOCK=NONE;\n"), nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			request := lintext.CheckRequest{Target: lintext.Target{Name: "mysql"}, Codes: []string{"ON102"}, Files: []lintext.File{test.file}}
+			request := lintext.CheckRequest{Target: lintext.Target{Name: "mysql"}, Names: []string{"online/unproven"}, Files: []lintext.File{test.file}}
 
 			result, err := mysqllint.Service{}.CheckMigrations(c.Context(), request)
 
@@ -74,14 +79,14 @@ func TestService_CheckMigrations_Online(t *testing.T) {
 }
 
 // A type change the starting state shows copying the table is reported by
-// MY130 on the second of the two calls, and named as a baseline subject on
+// rewrite/alter-column-type on the second of the two calls, and named as a baseline subject on
 // both.
 func TestService_CheckMigrations_BaselineRule(t *testing.T) {
 	c := qt.New(t)
-	request := lintext.CheckRequest{Target: lintext.Target{Name: "mysql"}, Codes: []string{"MY130"},
+	request := lintext.CheckRequest{Target: lintext.Target{Name: "mysql"}, Names: []string{"rewrite/alter-column-type"},
 		Files: []lintext.File{{Name: "2.up.sql", Version: 2, Up: true,
 			Statements: lintscan.Split("ALTER TABLE t MODIFY a BIGINT;\n", lintscan.ForDialect("mysql"))}}}
-	subjects := []lintext.BaselineSubject{{Code: "MY130", File: 0, Statements: []int{0}}}
+	subjects := []lintext.BaselineSubject{{Name: "rewrite/alter-column-type", File: 0, Statements: []int{0}}}
 
 	first, err := mysqllint.Service{}.CheckMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNil)
@@ -92,8 +97,8 @@ func TestService_CheckMigrations_BaselineRule(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(second.BaselineSubjects, qt.DeepEquals, subjects)
 	c.Assert(second.Findings, qt.HasLen, 1)
-	c.Assert([]any{second.Findings[0].Code, second.Findings[0].Statement, second.Findings[0].Subjects}, qt.DeepEquals,
-		[]any{"MY130", 0, []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "a", Parent: "t", DataType: "bigint"}}})
+	c.Assert([]any{second.Findings[0].Name, second.Findings[0].Statement, second.Findings[0].Subjects}, qt.DeepEquals,
+		[]any{"rewrite/alter-column-type", 0, []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "a", Parent: "t", DataType: "bigint"}}})
 	c.Assert(lintext.ValidateCheck(request, second), qt.IsNil)
 }
 
@@ -106,13 +111,13 @@ func TestService_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code the owner does not publish", context.Background(), []string{"PG101"}, `.*no rule of code PG101`},
-		{"cancellation", canceled, []string{"ON102"}, `context canceled`},
+		{"a code the owner does not publish", context.Background(), []string{"locking/create-index"}, `.*no rule named locking/create-index`},
+		{"cancellation", canceled, []string{"online/unproven"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := mysqllint.Service{}.CheckMigrations(test.ctx, lintext.CheckRequest{Codes: test.codes,
+			result, err := mysqllint.Service{}.CheckMigrations(test.ctx, lintext.CheckRequest{Names: test.codes,
 				Files: []lintext.File{file("1.up.sql", true, "ALTER TABLE t ADD COLUMN c int;\n")}})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

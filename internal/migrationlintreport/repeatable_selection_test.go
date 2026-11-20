@@ -84,7 +84,7 @@ func TestBuild_RepeatableSelection_HappyPath(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(reportSelectedNames(report), qt.DeepEquals, []string{"views/R__names.sql"})
-		c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
+		c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 		c.Assert(report.Findings[0].File, qt.Contains, "views/R__names.sql")
 	})
 }

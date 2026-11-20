@@ -9,26 +9,13 @@ import (
 	"strings"
 
 	protocol "ptah.run/provider-sdk/protocol/experimental"
-	"ptah.run/provider-sdk/provider"
 )
 
-// The fixture's rule identifiers. A rule is identified by its name from
-// contract revision 26 and by its code before it, and the host's own tests
-// build this module against the SDK release they pin, which may be of either
-// revision, so the identifier follows the revision the module links.
-var (
-	fx101 = RuleID("FX101", "design/fx101")
-	fx102 = RuleID("FX102", "design/fx102")
+// The fixture's rule names.
+const (
+	fx101 = "design/fx101"
+	fx102 = "design/fx102"
 )
-
-// RuleID is the identifier a fixture rule is published under: name when the SDK
-// this module links speaks contract revision 26 or later, and code before.
-func RuleID(code, name string) string {
-	if provider.Revision >= 26 {
-		return name
-	}
-	return code
-}
 
 // LintRules are the rules the fixture's migration lint publishes. FX101 judges
 // statements; FX102 judges the target a check names, so a test reads back what

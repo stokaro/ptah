@@ -68,7 +68,7 @@ var generatedDropLintRows = []struct {
 
 // TestMigrationsLintReadsWhetherARegeneratedColumnWasGeneratedE2E lints the
 // migration with `ptah migrations lint` against a dev database, which replays
-// the directory and reads the state the migration starts from. DS102 reports
+// the directory and reads the state the migration starts from. destructive/drop-column reports
 // the drop of a stored column the file adds back as generated, and not that of
 // a generated one.
 func TestMigrationsLintReadsWhetherARegeneratedColumnWasGeneratedE2E(t *testing.T) {
@@ -83,7 +83,7 @@ func TestMigrationsLintReadsWhetherARegeneratedColumnWasGeneratedE2E(t *testing.
 			linted := runPtahIn(c, "migrations", "lint", "--dir", dir, "--dev-url", postgresScratchDevURL(c, "ptah_regenerated_lint"))
 
 			c.Assert(linted.ExitCode, qt.Equals, row.exit, historyComment(linted))
-			c.Assert(strings.Count(linted.Stdout+linted.Stderr, "] DS102:"), qt.Equals, row.drops, historyComment(linted))
+			c.Assert(strings.Count(linted.Stdout+linted.Stderr, "] destructive/drop-column:"), qt.Equals, row.drops, historyComment(linted))
 		})
 	}
 }
@@ -154,7 +154,7 @@ var generatedDropUpRows = []struct {
 		total:  ordersStored,
 		write:  "INSERT INTO orders (id, price, qty, total) VALUES (1, 2, 3, 7);\n",
 		exit:   2,
-		refuse: "0002_total.up.sql:1 DS102 error",
+		refuse: "0002_total.up.sql:1 destructive/drop-column error",
 		want:   "7 generated=false",
 	},
 }
@@ -205,6 +205,6 @@ func TestMigrationsUpJudgesALaterPendingVersionWithoutTheTargetsColumnsE2E(t *te
 	applied := runPtahIn(c, "migrations", "up", "--db-url", target.database, "--migrations-dir", dir)
 
 	c.Assert(applied.ExitCode, qt.Equals, 2, historyComment(applied))
-	c.Assert(applied.Stderr, qt.Contains, "0003_total.up.sql:1 DS102 error")
+	c.Assert(applied.Stderr, qt.Contains, "0003_total.up.sql:1 destructive/drop-column error")
 	c.Assert(target.read(c, ordersReadBack), qt.Equals, "6 generated=true")
 }

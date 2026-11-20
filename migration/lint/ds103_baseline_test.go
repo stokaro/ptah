@@ -13,8 +13,8 @@ import (
 
 // analyzeTypeChange lints one migration against the two-table fixture the
 // cost cases use, with whatever state the row supplies. The two in-place
-// info rules are disabled so that each row measures DS103's own judgment:
-// where a change is applied in place they subsume DS103, which
+// info rules are disabled so that each row measures data-dependent/alter-column-type's own judgment:
+// where a change is applied in place they subsume data-dependent/alter-column-type, which
 // inplace_test.go pins on its own.
 func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lintext.BaselineColumn) lint.Analysis {
 	c.Helper()
@@ -23,7 +23,7 @@ func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lintext.Baseli
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Baseline:  columns,
-		Disabled:  []string{"MY130P", "PG301P"},
+		Disabled:  []string{"rewrite/in-place-column-change", "rewrite/in-place-column-change"},
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis
@@ -32,7 +32,7 @@ func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lintext.Baseli
 func ds103Codes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if code == "DS103" {
+		if code == "data-dependent/alter-column-type" {
 			kept = append(kept, code)
 		}
 	}
@@ -198,7 +198,7 @@ func TestColumnTypeChangedRule_KeepsReportingWhereTheStateSettlesNothing(t *test
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeTypeChange(c, test.dialect, test.alter, test.columns...)
-			c.Assert(ds103Codes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"DS103"})
+			c.Assert(ds103Codes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/alter-column-type"})
 		})
 	}
 }
@@ -208,12 +208,12 @@ func TestColumnTypeChangedRule_KeepsReportingWhereTheStateSettlesNothing(t *test
 func TestColumnTypeChangedRule_NamesItsInputWhenTheRunSuppliesNone(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeTypeChange(c, "mysql", "ALTER TABLE orders MODIFY total INT NOT NULL;")
-	c.Assert(ds103Codes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"DS103"})
+	c.Assert(ds103Codes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"data-dependent/alter-column-type"})
 	var unmet []string
 	for _, entry := range analysis.UnmetInputs() {
 		unmet = append(unmet, entry.Rule+":"+entry.Input.String())
 	}
-	c.Assert(unmet, qt.Contains, "DS103:baseline schema that refines the statement text")
+	c.Assert(unmet, qt.Contains, "data-dependent/alter-column-type:baseline schema that refines the statement text")
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }
 
@@ -222,6 +222,6 @@ func TestColumnTypeChangedRule_NamesItsInputWhenTheRunSuppliesNone(t *testing.T)
 // silences it as before.
 func TestColumnTypeChangedRule_StillAnswersTheStatementDirective(t *testing.T) {
 	c := qt.New(t)
-	analysis := analyzeTypeChange(c, "mysql", "-- ptah:nolint DS103\nALTER TABLE orders MODIFY total BIGINT;")
+	analysis := analyzeTypeChange(c, "mysql", "-- ptah:nolint data-dependent/alter-column-type\nALTER TABLE orders MODIFY total BIGINT;")
 	c.Assert(ds103Codes(rulesOf(analysis.Findings())), qt.HasLen, 0)
 }

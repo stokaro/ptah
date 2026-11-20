@@ -70,97 +70,97 @@ func TestAtlasGapRules_ReportTheHazard(t *testing.T) {
 			name:      "a dropped table retires a name clients query",
 			dialect:   "postgres",
 			statement: "DROP TABLE orders;",
-			want:      "BC103",
+			want:      "rollout/drop-table",
 		},
 		{
 			name:      "a dropped column retires a name clients select",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders DROP COLUMN note;",
-			want:      "BC104",
+			want:      "rollout/drop-column",
 		},
 		{
 			name:      "an exclusion constraint takes an exclusive lock",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders ADD CONSTRAINT no_overlap EXCLUDE USING gist (total WITH =);",
-			want:      "PG109",
+			want:      "locking/add-exclusion-constraint",
 		},
 		{
 			name:      "a redefined primary key builds its index under the lock",
 			dialect:   "postgres",
 			statement: `ALTER TABLE orders DROP CONSTRAINT orders_pkey, ADD PRIMARY KEY (total);`,
-			want:      "PG312",
+			want:      "locking/replace-primary-key",
 		},
 		{
 			name:      "replica identity full changes what replication carries",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders REPLICA IDENTITY FULL;",
-			want:      "PG314",
+			want:      "rollout/weaken-replica-identity",
 		},
 		{
 			name:      "autovacuum disabled leaves dead rows",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders SET (autovacuum_enabled = false);",
-			want:      "PG320",
+			want:      "design/disable-autovacuum",
 		},
 		{
 			name:      "a redefined primary key rebuilds the secondary indexes",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders DROP PRIMARY KEY, ADD PRIMARY KEY (total);",
-			want:      "MY137",
+			want:      "rewrite/replace-primary-key",
 		},
 		{
 			name:      "a storage engine change copies the table",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ENGINE=InnoDB;",
-			want:      "MY138",
+			want:      "rewrite/change-engine",
 		},
 		{
 			name:      "partitioning rewrites every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders PARTITION BY HASH(id) PARTITIONS 4;",
-			want:      "MY139",
+			want:      "rewrite/change-partitioning",
 		},
 		{
 			name:      "removing partitioning rewrites every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders REMOVE PARTITIONING;",
-			want:      "MY139",
+			want:      "rewrite/change-partitioning",
 		},
 		{
 			name:      "a stored generated column is computed for every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN doubled int GENERATED ALWAYS AS (total * 2) STORED;",
-			want:      "MY140",
+			want:      "rewrite/add-stored-generated-column",
 		},
 		{
 			name:      "an auto-increment column numbers every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN seq int NOT NULL AUTO_INCREMENT, ADD KEY (seq);",
-			want:      "MY141",
+			want:      "locking/add-auto-increment-column",
 		},
 		{
 			name:      "a modified generated column is recomputed for every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders MODIFY COLUMN doubled bigint GENERATED ALWAYS AS (total * 3) STORED;",
-			want:      "MY143",
+			want:      "rewrite/modify-generated-column",
 		},
 		{
 			name:      "a check constraint validates every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD CONSTRAINT positive CHECK (total > 0);",
-			want:      "MY144",
+			want:      "locking/add-check",
 		},
 		{
 			name:      "enforcing a check revalidates every row",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ALTER CONSTRAINT positive ENFORCED;",
-			want:      "MY145",
+			want:      "locking/enforce-check",
 		},
 		{
 			name:      "dropping system versioning deletes the history",
 			dialect:   "mariadb",
 			statement: "ALTER TABLE orders DROP SYSTEM VERSIONING;",
-			want:      "MY146",
+			want:      "destructive/drop-system-versioning",
 		},
 	}
 
@@ -192,91 +192,91 @@ func TestAtlasGapRules_StayQuietOnTheControl(t *testing.T) {
 			name:      "a table this migration created is not a rollout break",
 			dialect:   "postgres",
 			statement: "CREATE TABLE staging (id int); DROP TABLE staging;",
-			quietRule: "BC103",
+			quietRule: "rollout/drop-table",
 		},
 		{
 			name:      "adding a column retires no name",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders ADD COLUMN shipped boolean;",
-			quietRule: "BC104",
+			quietRule: "rollout/drop-column",
 		},
 		{
 			name:      "a plain unique constraint is not an exclusion constraint",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders ADD CONSTRAINT total_unique UNIQUE (total);",
-			quietRule: "PG109",
+			quietRule: "locking/add-exclusion-constraint",
 		},
 		{
 			name:      "a primary key attached to an existing index builds nothing",
 			dialect:   "postgres",
 			statement: `ALTER TABLE orders DROP CONSTRAINT orders_pkey, ADD CONSTRAINT orders_pkey PRIMARY KEY USING INDEX orders_new;`,
-			quietRule: "PG312",
+			quietRule: "locking/replace-primary-key",
 		},
 		{
 			name:      "replica identity default keeps a usable row identity",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders REPLICA IDENTITY DEFAULT;",
-			quietRule: "PG314",
+			quietRule: "rollout/weaken-replica-identity",
 		},
 		{
 			name:      "turning autovacuum back on is not the hazard",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders SET (autovacuum_enabled = true);",
-			quietRule: "PG320",
+			quietRule: "design/disable-autovacuum",
 		},
 		{
-			name:      "adding a primary key is MY132's subject, not MY137's",
+			name:      "adding a primary key is rewrite/add-primary-key's subject, not rewrite/replace-primary-key's",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD PRIMARY KEY (id);",
-			quietRule: "MY137",
+			quietRule: "rewrite/replace-primary-key",
 		},
 		{
 			name:      "a comment change touches no engine",
 			dialect:   "mysql",
 			statement: `ALTER TABLE orders COMMENT = 'orders';`,
-			quietRule: "MY138",
+			quietRule: "rewrite/change-engine",
 		},
 		{
 			name:      "adding a column is not a partitioning change",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN shipped tinyint;",
-			quietRule: "MY139",
+			quietRule: "rewrite/change-partitioning",
 		},
 		{
 			name:      "a virtual generated column stores nothing",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN doubled int GENERATED ALWAYS AS (total * 2) VIRTUAL;",
-			quietRule: "MY140",
+			quietRule: "rewrite/add-stored-generated-column",
 		},
 		{
 			name:      "an ordinary column carries no auto-increment",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN seq int NOT NULL;",
-			quietRule: "MY141",
+			quietRule: "locking/add-auto-increment-column",
 		},
 		{
-			name:      "adding a stored column is MY140's subject, not MY143's",
+			name:      "adding a stored column is rewrite/add-stored-generated-column's subject, not rewrite/modify-generated-column's",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN doubled int GENERATED ALWAYS AS (total * 2) STORED;",
-			quietRule: "MY143",
+			quietRule: "rewrite/modify-generated-column",
 		},
 		{
 			name:      "dropping a check validates nothing",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders DROP CHECK positive;",
-			quietRule: "MY144",
+			quietRule: "locking/add-check",
 		},
 		{
 			name:      "a check with no enforcement clause revalidates nothing",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD CONSTRAINT positive CHECK (total > 0);",
-			quietRule: "MY145",
+			quietRule: "locking/enforce-check",
 		},
 		{
 			name:      "adding system versioning keeps the history",
 			dialect:   "mariadb",
 			statement: "ALTER TABLE orders ADD SYSTEM VERSIONING;",
-			quietRule: "MY146",
+			quietRule: "destructive/drop-system-versioning",
 		},
 	}
 
@@ -308,13 +308,13 @@ func TestAtlasGapRules_DialectsAreMeasuredNotAssumed(t *testing.T) {
 			name:      "check enforcement is not reported on mariadb",
 			dialect:   "mariadb",
 			statement: "ALTER TABLE orders ALTER CONSTRAINT positive ENFORCED;",
-			quietRule: "MY145",
+			quietRule: "locking/enforce-check",
 		},
 		{
 			name:      "system versioning is not reported on mysql",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders DROP SYSTEM VERSIONING;",
-			quietRule: "MY146",
+			quietRule: "destructive/drop-system-versioning",
 		},
 	}
 
@@ -336,34 +336,34 @@ func TestAtlasGapRules_DialectsAreMeasuredNotAssumed(t *testing.T) {
 // This is the half a subsumption change breaks silently: removing too much
 // makes the report shorter and the run still green.
 func TestAtlasGapRules_SubsumeTheGenericFindingOnly(t *testing.T) {
-	t.Run("MY137 replaces MY132 and keeps CD103", func(t *testing.T) {
+	t.Run("rewrite/replace-primary-key replaces rewrite/add-primary-key and keeps integrity/drop-primary-key", func(t *testing.T) {
 		c := qt.New(t)
 
 		codes := analyzeGap(c, "mysql", "ALTER TABLE orders DROP PRIMARY KEY, ADD PRIMARY KEY (total);")
 
-		c.Assert(codes, qt.Contains, "MY137")
-		c.Assert(codes, qt.Contains, "CD103")
-		c.Assert(codes, qt.Not(qt.Contains), "MY132")
+		c.Assert(codes, qt.Contains, "rewrite/replace-primary-key")
+		c.Assert(codes, qt.Contains, "integrity/drop-primary-key")
+		c.Assert(codes, qt.Not(qt.Contains), "rewrite/add-primary-key")
 	})
 
-	t.Run("PG312 replaces PG104 and keeps DS105", func(t *testing.T) {
+	t.Run("locking/replace-primary-key replaces locking/add-primary-key and keeps integrity/drop-untyped-constraint", func(t *testing.T) {
 		c := qt.New(t)
 
 		codes := analyzeGap(c, "postgres", "ALTER TABLE orders DROP CONSTRAINT orders_pkey, ADD PRIMARY KEY (total);")
 
-		c.Assert(codes, qt.Contains, "PG312")
-		c.Assert(codes, qt.Contains, "DS105")
-		c.Assert(codes, qt.Not(qt.Contains), "PG104")
+		c.Assert(codes, qt.Contains, "locking/replace-primary-key")
+		c.Assert(codes, qt.Contains, "integrity/drop-untyped-constraint")
+		c.Assert(codes, qt.Not(qt.Contains), "locking/add-primary-key")
 	})
 
-	t.Run("MY141 replaces MY101 and keeps DD101", func(t *testing.T) {
+	t.Run("locking/add-auto-increment-column replaces locking/blocking-alter-table and keeps data-dependent/add-not-null-column", func(t *testing.T) {
 		c := qt.New(t)
 
 		codes := analyzeGap(c, "mysql", "ALTER TABLE orders ADD COLUMN seq int NOT NULL AUTO_INCREMENT, ADD KEY (seq);")
 
-		c.Assert(codes, qt.Contains, "MY141")
-		c.Assert(codes, qt.Contains, "DD101")
-		c.Assert(codes, qt.Not(qt.Contains), "MY101")
+		c.Assert(codes, qt.Contains, "locking/add-auto-increment-column")
+		c.Assert(codes, qt.Contains, "data-dependent/add-not-null-column")
+		c.Assert(codes, qt.Not(qt.Contains), "locking/blocking-alter-table")
 	})
 }
 
@@ -371,7 +371,7 @@ func TestAtlasGapRules_SubsumeTheGenericFindingOnly(t *testing.T) {
 // atlasgaps.go rather than to a generic rebuild claim.
 //
 // Cost and locking are separate sentences because they are separate facts:
-// MY141 rebuilds in place and still blocks writes, MY147 rebuilds in place and
+// locking/add-auto-increment-column rebuilds in place and still blocks writes, rewrite/set-not-null rebuilds in place and
 // lets them through, and a message that said "rebuilds the table" for both
 // would be true and useless.
 func TestAtlasGapRules_SayWhatWasMeasured(t *testing.T) {
@@ -383,39 +383,39 @@ func TestAtlasGapRules_SayWhatWasMeasured(t *testing.T) {
 		contains  []string
 	}{
 		{
-			name:      "MY141 says in place and still blocked",
+			name:      "locking/add-auto-increment-column says in place and still blocked",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders ADD COLUMN seq int NOT NULL AUTO_INCREMENT, ADD KEY (seq);",
-			rule:      "MY141",
+			rule:      "locking/add-auto-increment-column",
 			contains:  []string{"in place", "LOCK=NONE is refused"},
 		},
 
 		{
-			name:      "MY139 says there is no algorithm to ask for",
+			name:      "rewrite/change-partitioning says there is no algorithm to ask for",
 			dialect:   "mysql",
 			statement: "ALTER TABLE orders PARTITION BY HASH(id) PARTITIONS 4;",
-			rule:      "MY139",
+			rule:      "rewrite/change-partitioning",
 			contains:  []string{"does not accept an ALGORITHM or LOCK clause"},
 		},
 		{
-			name:      "MY146 says the history is deleted, not made expensive",
+			name:      "destructive/drop-system-versioning says the history is deleted, not made expensive",
 			dialect:   "mariadb",
 			statement: "ALTER TABLE orders DROP SYSTEM VERSIONING;",
-			rule:      "MY146",
+			rule:      "destructive/drop-system-versioning",
 			contains:  []string{"permanently", "no rollback"},
 		},
 		{
-			name:      "PG320 says the statement is cheap and the cost is later",
+			name:      "design/disable-autovacuum says the statement is cheap and the cost is later",
 			dialect:   "postgres",
 			statement: "ALTER TABLE orders SET (autovacuum_enabled = false);",
-			rule:      "PG320",
+			rule:      "design/disable-autovacuum",
 			contains:  []string{"SHARE UPDATE EXCLUSIVE", "paid later"},
 		},
 		{
-			name:      "BC103 says the rollout break, not the row loss",
+			name:      "rollout/drop-table says the rollout break, not the row loss",
 			dialect:   "postgres",
 			statement: "DROP TABLE orders;",
-			rule:      "BC103",
+			rule:      "rollout/drop-table",
 			contains:  []string{"deployed", "empty table", "no backup mitigates"},
 		},
 	}
@@ -434,12 +434,12 @@ func TestAtlasGapRules_SayWhatWasMeasured(t *testing.T) {
 	}
 }
 
-// TestPartitionedIndexRule_NeedsTheDeclarationItReadsFrom pins PG108 to the
+// TestPartitionedIndexRule_NeedsTheDeclarationItReadsFrom pins locking/partitioned-index to the
 // evidence it has rather than to a guess.
 //
 // The statement alone cannot say a table is partitioned. Where the migration
 // declares the parent, the rule reports; where it does not, it is silent and
-// PG101 still reports the ordinary index build. Reporting on every CREATE
+// locking/create-index still reports the ordinary index build. Reporting on every CREATE
 // INDEX would be a claim the available information cannot establish.
 func TestPartitionedIndexRule_NeedsTheDeclarationItReadsFrom(t *testing.T) {
 	t.Run("the parent is declared partitioned in the same file", func(t *testing.T) {
@@ -452,20 +452,20 @@ func TestPartitionedIndexRule_NeedsTheDeclarationItReadsFrom(t *testing.T) {
 		}), gapOptions("postgres"))
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(messageOf(analysis.Findings(), "PG108"), qt.Contains, "every one of its partitions")
+		c.Assert(messageOf(analysis.Findings(), "locking/partitioned-index"), qt.Contains, "every one of its partitions")
 	})
 
-	t.Run("an ordinary table is left to PG101", func(t *testing.T) {
+	t.Run("an ordinary table is left to locking/create-index", func(t *testing.T) {
 		c := qt.New(t)
 
 		codes := analyzeGap(c, "postgres", "CREATE INDEX orders_total ON orders (total);")
 
-		c.Assert(codes, qt.Not(qt.Contains), "PG108")
-		c.Assert(codes, qt.Contains, "PG101")
+		c.Assert(codes, qt.Not(qt.Contains), "locking/partitioned-index")
+		c.Assert(codes, qt.Contains, "locking/create-index")
 	})
 }
 
-// TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword pins MY147 to the
+// TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword pins rewrite/set-not-null to the
 // schema state rather than to the words NOT NULL.
 //
 // A MODIFY that restates a nullability the column already had changes only the
@@ -481,7 +481,7 @@ func TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword(t *testing.T) {
 		analysis := analyzeCost(c, "mysql", alter,
 			lintext.BaselineColumn{Version: 2, Table: "orders", Name: "total", ColumnType: "int", NotNull: false})
 
-		c.Assert(messageOf(analysis.Findings(), "MY147"), qt.Contains, "making total NOT NULL rebuilds the table")
+		c.Assert(messageOf(analysis.Findings(), "rewrite/set-not-null"), qt.Contains, "making total NOT NULL rebuilds the table")
 	})
 
 	t.Run("the baseline says it was already NOT NULL", func(t *testing.T) {
@@ -490,7 +490,7 @@ func TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword(t *testing.T) {
 		analysis := analyzeCost(c, "mysql", alter,
 			lintext.BaselineColumn{Version: 2, Table: "orders", Name: "total", ColumnType: "int", NotNull: true})
 
-		c.Assert(messageOf(analysis.Findings(), "MY147"), qt.Equals, "")
+		c.Assert(messageOf(analysis.Findings(), "rewrite/set-not-null"), qt.Equals, "")
 	})
 
 	t.Run("no baseline reports nothing rather than guessing", func(t *testing.T) {
@@ -498,11 +498,11 @@ func TestNullabilityRebuildRule_NeedsTheTransitionNotTheKeyword(t *testing.T) {
 
 		analysis := analyzeCost(c, "mysql", alter)
 
-		c.Assert(messageOf(analysis.Findings(), "MY147"), qt.Equals, "")
+		c.Assert(messageOf(analysis.Findings(), "rewrite/set-not-null"), qt.Equals, "")
 	})
 }
 
-// TestRolloutBreakRules_ReportOnTheNativeSurfaceOnly pins where BC103 and BC104
+// TestRolloutBreakRules_ReportOnTheNativeSurfaceOnly pins where rollout/drop-table and rollout/drop-column
 // are reported, in both directions, because a mistake either way is silent.
 //
 // Reporting them on the compatibility surface would add a diagnostic to a
@@ -525,14 +525,14 @@ func TestRolloutBreakRules_ReportOnTheNativeSurfaceOnly(t *testing.T) {
 		{
 			name:       "dropped table",
 			sql:        "DROP TABLE orders;",
-			wantNative: []string{"BC103", "DS101"},
-			wantAtlas:  []string{"DS101"},
+			wantNative: []string{"destructive/drop-table", "rollout/drop-table"},
+			wantAtlas:  []string{"destructive/drop-table"},
 		},
 		{
 			name:       "dropped column",
 			sql:        "ALTER TABLE orders DROP COLUMN note;",
-			wantNative: []string{"BC104", "DS102"},
-			wantAtlas:  []string{"DS102"},
+			wantNative: []string{"destructive/drop-column", "rollout/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column"},
 		},
 	}
 
@@ -571,24 +571,24 @@ func TestRolloutBreakRules_SurviveADestructiveExemption(t *testing.T) {
 		{
 			name: "no exemption reports both",
 			sql:  "DROP TABLE orders;",
-			want: []string{"BC103", "DS101"},
+			want: []string{"destructive/drop-table", "rollout/drop-table"},
 		},
 		{
 			name: "a directive naming the destructive rule",
-			sql:  "-- ptah:nolint DS101\nDROP TABLE orders;",
-			want: []string{"BC103"},
+			sql:  "-- ptah:nolint destructive/drop-table\nDROP TABLE orders;",
+			want: []string{"rollout/drop-table"},
 		},
 		{
 			name:     "a configuration disabling the destructive family",
 			sql:      "DROP TABLE orders;",
-			disabled: []string{"DS"},
-			want:     []string{"BC103"},
+			disabled: []string{"destructive"},
+			want:     []string{"rollout/drop-table"},
 		},
 		{
 			name:     "disabling the rollout-break family leaves the data loss",
 			sql:      "DROP TABLE orders;",
-			disabled: []string{"BC"},
-			want:     []string{"DS101"},
+			disabled: []string{"rollout"},
+			want:     []string{"destructive/drop-table"},
 		},
 	}
 
@@ -630,7 +630,7 @@ func TestAtlasGapRules_AColumnNamedAfterAKeywordIsNotAHazard(t *testing.T) {
 		{
 			name: "a keyword-named column beside another clause",
 			sql:  "ALTER TABLE orders ADD COLUMN engine VARCHAR(10), DROP COLUMN note;",
-			want: []string{"BC104", "DS102"},
+			want: []string{"destructive/drop-column", "rollout/drop-column"},
 		},
 	}
 
@@ -651,16 +651,16 @@ func TestAtlasGapRules_TheKeywordFormsStillReport(t *testing.T) {
 		sql  string
 		want []string
 	}{
-		{name: "engine", sql: "ALTER TABLE orders ENGINE=InnoDB;", want: []string{"MY138"}},
+		{name: "engine", sql: "ALTER TABLE orders ENGINE=InnoDB;", want: []string{"rewrite/change-engine"}},
 		{
 			name: "auto_increment",
 			sql:  "ALTER TABLE orders ADD COLUMN seq INT AUTO_INCREMENT, ADD KEY (seq);",
-			want: []string{"MY141"},
+			want: []string{"locking/add-auto-increment-column"},
 		},
 		{
 			name: "enforced",
 			sql:  "ALTER TABLE orders ALTER CONSTRAINT chk_total ENFORCED;",
-			want: []string{"MY145"},
+			want: []string{"locking/enforce-check"},
 		},
 	}
 
@@ -694,7 +694,7 @@ func TestCheckConstraintRules_SeparateAddingFromEnforcing(t *testing.T) {
 		{
 			name: "adding a check validates every row",
 			sql:  "ALTER TABLE orders ADD CONSTRAINT positive CHECK (total > 0);",
-			want: []string{"MY144"},
+			want: []string{"locking/add-check"},
 		},
 		{
 			name: "adding it unenforced validates nothing",
@@ -703,12 +703,12 @@ func TestCheckConstraintRules_SeparateAddingFromEnforcing(t *testing.T) {
 		{
 			name: "spelling the default out is still the add, not a transition",
 			sql:  "ALTER TABLE orders ADD CONSTRAINT positive CHECK (total > 0) ENFORCED;",
-			want: []string{"MY144"},
+			want: []string{"locking/add-check"},
 		},
 		{
 			name: "enforcing an existing check revalidates every row",
 			sql:  "ALTER TABLE orders ALTER CONSTRAINT positive ENFORCED;",
-			want: []string{"MY145"},
+			want: []string{"locking/enforce-check"},
 		},
 		{
 			name: "unenforcing an existing check is a metadata edit",
@@ -717,12 +717,12 @@ func TestCheckConstraintRules_SeparateAddingFromEnforcing(t *testing.T) {
 		{
 			name: "a constraint named after the keyword enforces nothing",
 			sql:  "ALTER TABLE orders ADD CONSTRAINT enforced CHECK (total > 0);",
-			want: []string{"MY144"},
+			want: []string{"locking/add-check"},
 		},
 		{
 			name: "an unenforced sibling does not silence the enforced clause",
 			sql:  "ALTER TABLE orders ADD CONSTRAINT a CHECK (total > 0), ADD CONSTRAINT b CHECK (id > 0) NOT ENFORCED;",
-			want: []string{"MY144"},
+			want: []string{"locking/add-check"},
 		},
 	}
 

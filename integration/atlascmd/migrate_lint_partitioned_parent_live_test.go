@@ -13,8 +13,8 @@ import (
 
 // TestMigrateLintNamesAnEarlierPartitionedParentLive is stokaro/ptah#3588
 // through `migrate lint --dev-url`: an index on a partitioned parent an earlier
-// migration created got PG101, whose CONCURRENTLY remedy PostgreSQL refuses on
-// a partitioned table. The control leaves the same table ordinary, where PG101
+// migration created got locking/create-index, whose CONCURRENTLY remedy PostgreSQL refuses on
+// a partitioned table. The control leaves the same table ordinary, where locking/create-index
 // is the right answer and stays.
 func TestMigrateLintNamesAnEarlierPartitionedParentLive(t *testing.T) {
 	tests := []struct {
@@ -27,14 +27,14 @@ func TestMigrateLintNamesAnEarlierPartitionedParentLive(t *testing.T) {
 			name: "the parent is partitioned",
 			first: "CREATE TABLE measurements (id bigint NOT NULL, taken_on date NOT NULL, value int) PARTITION BY RANGE (taken_on);\n" +
 				"CREATE TABLE measurements_2025 PARTITION OF measurements FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');\n",
-			want:    "[PG108]: building this index takes a SHARE lock on measurements and on every one of its partitions",
-			wantNot: "[PG101]",
+			want:    "[locking/partitioned-index]: building this index takes a SHARE lock on measurements and on every one of its partitions",
+			wantNot: "[locking/create-index]",
 		},
 		{
 			name:    "control: the same table left ordinary",
 			first:   "CREATE TABLE measurements (id bigint NOT NULL, taken_on date NOT NULL, value int);\n",
-			want:    "[PG101]: CREATE INDEX without CONCURRENTLY blocks writes",
-			wantNot: "[PG108]",
+			want:    "[locking/create-index]: CREATE INDEX without CONCURRENTLY blocks writes",
+			wantNot: "[locking/partitioned-index]",
 		},
 	}
 	for _, test := range tests {
