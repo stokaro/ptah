@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/mysqldefiner"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
@@ -908,6 +909,9 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if err := atlasschema.VerifyPlanTarget(ctx, conn, plan, opts.runtime); err != nil {
 		return "", err
 	}
+	// The plan step warned about these; a run that applies the saved file warns
+	// again, from what the file recorded, so the apply reads them too.
+	omissionnote.Report(ctx, cmd.ErrOrStderr(), plan.Omissions)
 
 	printPlan(run.human, plan)
 	run.evidence.Units = plan.UnitReports()

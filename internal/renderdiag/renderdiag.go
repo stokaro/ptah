@@ -75,6 +75,12 @@ type Omission struct {
 	// unless a remedy exists here: a suggestion that does not work on the
 	// target it is printed for costs the reader more than silence.
 	Remedy string
+	// Commented reports that the renderer also wrote a comment beside the
+	// statements that says the same thing, so a file made of those statements
+	// does not need the loss stated a second time
+	// ([ptah.run/internal/omissionnote.Comments]). Warnings are raised for every
+	// omission whatever this holds.
+	Commented bool
 }
 
 // Sink collects omissions during one render.

@@ -206,6 +206,8 @@ func TestGetOrderedCreateStatementsReportingOmissions_CarriesTheDeclaredValue(t 
 		Property: "table option AUTO_INCREMENT",
 		Detail:   "100",
 		Remedy:   "declare the start on the key column with identity_start",
+		// The renderer also wrote the skip comment beside the statement.
+		Commented: true,
 	})
 	c.Assert(omissions[0].Message(), qt.Equals, "table option AUTO_INCREMENT=100 would be skipped")
 	c.Assert(omissions[2].Remedy, qt.Equals, "",

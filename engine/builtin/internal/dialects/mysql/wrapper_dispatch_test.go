@@ -125,7 +125,7 @@ func mysqlPolicyHalves() []policyHalfRow {
 			node:       ast.NewDropPolicy("p1", "users"),
 			wantOutput: "-- MYSQL: DROP POLICY p1 is not generated for this target; skipped.\n",
 			wantOmissions: []renderdiag.Omission{
-				{Reason: renderdiag.ReasonUnsupported, Kind: "DROP POLICY", Name: "p1"},
+				{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: "DROP POLICY", Name: "p1"},
 			},
 		},
 		{
@@ -141,7 +141,7 @@ func mysqlPolicyHalves() []policyHalfRow {
 			wantOmissions: []renderdiag.Omission{
 				// The kind carries the trailing "on": the shared renderer
 				// builds it from the sentence rather than from an object kind.
-				{Reason: renderdiag.ReasonUnsupported, Kind: "DISABLE ROW LEVEL SECURITY on", Name: "users"},
+				{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: "DISABLE ROW LEVEL SECURITY on", Name: "users"},
 			},
 		},
 	}

@@ -8,7 +8,8 @@
 // provider writes no comment at all. So `schema render` and every command that
 // renders a plan raise one run warning per omission
 // ([ptah.run/internal/rundiag.RenderOmissions]), and a generated migration file
-// carries the same text as comments. A render raises an omission only for what
+// carries the same text as comments, except for an omission whose statements
+// already hold the renderer's own comment. A render raises an omission only for what
 // it writes, so a plan with no statement raises none, however much the declared
 // schema holds that the target cannot carry.
 package omissionnote
@@ -68,11 +69,16 @@ func Report(ctx context.Context, out io.Writer, omissions []renderer.Omission) {
 }
 
 // Comments is omissions as SQL line comments, the text of each warning once,
-// in the order given, for a migration file whose statements leave them out.
+// in the order given, for a migration file whose statements leave them out. An
+// omission the renderer already wrote a comment for ([renderer.Omission.Commented])
+// is left out, so the file does not say the same thing twice.
 func Comments(omissions []renderer.Omission) []string {
 	seen := make(map[string]bool, len(omissions))
 	comments := make([]string, 0, len(omissions))
 	for _, omission := range omissions {
+		if omission.Commented {
+			continue
+		}
 		line := Line(omission)
 		if seen[line] {
 			continue

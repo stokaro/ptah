@@ -167,7 +167,7 @@ func TestRenderSchema_WritesASkippedObject(t *testing.T) {
 	c.Assert(result.Statements, qt.DeepEquals, []string{`-- ELSEWHERE: first model public.orders.first is not supported by this target; skipped.`,
 		"CREATE TABLE t ();"})
 	c.Assert(result.Omissions, qt.DeepEquals, []renderer.Omission{{Dialect: "elsewhere", Reason: "unsupported", Kind: "first model",
-		Name: "public.orders.first"}})
+		Name: "public.orders.first", Commented: true}})
 }
 
 // TestRenderSchema_RefusesARefusedObject pins the render's refusal: a

@@ -660,11 +660,11 @@ func (r *Renderer) writeTableOptions(table string, options map[string]string) {
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- SQLITE: %s is not supported", feature)
-		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature})
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature})
 		return
 	}
 	r.w.WriteLinef("-- SQLITE: %s %q is not supported", feature, name)
-	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature, Name: name})
 }
 
 // sqliteTableOptionKeys are the table options writeTableOptions renders.

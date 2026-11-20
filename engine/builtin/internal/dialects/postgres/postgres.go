@@ -2144,7 +2144,9 @@ func (r *Renderer) writeTableOptionsSkipped(table string, options map[string]str
 			remedy = "declare the start on the key column with identity_start"
 			r.w.WriteLinef("-- %s: %s to keep it.", r.dialectUpper, remedy)
 		}
-		r.sink.Record(renderdiag.TableOptionOmission(table, key, options[key], remedy))
+		omission := renderdiag.TableOptionOmission(table, key, options[key], remedy)
+		omission.Commented = true
+		r.sink.Record(omission)
 	}
 }
 
@@ -2819,9 +2821,10 @@ func sequenceOptions(asType string, start, increment, minValue, maxValue, cache 
 func (r *Renderer) writeObjectSkipped(kind, name string) {
 	r.writeObjectSkippedLine(kind, name)
 	r.sink.Record(renderdiag.Omission{
-		Reason: renderdiag.ReasonUnsupported,
-		Kind:   kind,
-		Name:   name,
+		Reason:    renderdiag.ReasonUnsupported,
+		Commented: true,
+		Kind:      kind,
+		Name:      name,
 	})
 }
 

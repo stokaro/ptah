@@ -153,6 +153,11 @@ type PlanFile struct {
 	// Annotations are ordered display notes. They are not statements and do
 	// not contribute to schema fingerprints or execution requirements.
 	Annotations []renderer.Annotation `json:"annotations,omitempty"`
+	// Omissions are the declarations the statements leave out, as the render
+	// that produced them recorded them. They sit in the document, which an
+	// approval signs, so an approver reads what the target will not carry and
+	// `schema apply --plan` warns about the same declarations the plan step did.
+	Omissions []renderer.Omission `json:"omissions,omitempty"`
 }
 
 // PlanRowSet is one declared row set a plan read: the table, the key columns a
@@ -448,6 +453,7 @@ func PreparePlanFileReportingUndecided(
 		Destructive:      destructive,
 		Statements:       statements,
 		Annotations:      computation.executionAnnotations(),
+		Omissions:        slices.Clone(computation.omissions),
 	}, computation.undecided, nil
 }
 

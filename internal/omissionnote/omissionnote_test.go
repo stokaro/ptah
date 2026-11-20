@@ -141,3 +141,19 @@ func TestReport_KeepsDeclaredTextOnOneLine(t *testing.T) {
 
 	c.Assert(out.String(), qt.Equals, "warning: sqlite: table t: comment=a\\nDROP TABLE victim; was skipped (unsupported)\n")
 }
+
+// TestComments_LeaveOutWhatTheRendererCommented keeps the file from saying an
+// omission twice: one the renderer wrote its own comment for is not repeated,
+// while the warning still names it.
+func TestComments_LeaveOutWhatTheRendererCommented(t *testing.T) {
+	c := qt.New(t)
+	commented := engineOption
+	commented.Commented = true
+
+	comments := omissionnote.Comments([]renderer.Omission{commented, autoIncrement})
+
+	c.Assert(comments, qt.DeepEquals, []string{"-- " + omissionnote.Line(autoIncrement)})
+	var out bytes.Buffer
+	omissionnote.Report(context.Background(), &out, []renderer.Omission{commented})
+	c.Assert(out.String(), qt.Equals, "warning: "+omissionnote.Line(engineOption)+"\n")
+}

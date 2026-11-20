@@ -913,7 +913,7 @@ func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 
 func (r *Renderer) notSupported(feature, name string) {
 	r.w.WriteLinef("-- ORACLE: %s %q is not supported", feature, name)
-	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature, Name: name})
 }
 
 // refuses reports whether the target declines the capability a statement needs,
