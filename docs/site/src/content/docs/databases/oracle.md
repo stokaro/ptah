@@ -28,17 +28,17 @@ ptah schema diff --from oracle://user:pass@host:1521/FREEPDB1 --to live.hcl
 Schemas are synced, no changes to be made.
 ```
 
-A **declared file** converges too. Names fold across the case difference
-between a declaration and the catalog, so a `CHECK` declared on a column is
-named `orders_total_check`, stored as `ORDERS_TOTAL_CHECK` and matched on the
-next run. An unnamed `CHECK` declared on
-the table is named by Oracle, `SYS_C<n>`, with a number no file can predict.
-Oracle keeps its condition as written, so the comparison matches it to the
-unnamed declaration by that condition, ignoring case and spacing. A changed condition is a drop and an add.
+A **declared file** converges too. Names fold across case, so a `CHECK`
+declared on a column is named `orders_total_check`, stored as
+`ORDERS_TOTAL_CHECK` and matched on the next run. Oracle names an unnamed table
+`CHECK` or `UNIQUE` itself, `SYS_C<n>`, so the comparison matches it to the
+unnamed declaration by its condition, ignoring case and spacing, or by its
+columns in order. A changed condition is a drop and an add. `schema inspect`
+writes such a constraint with no name.
 
 Oracle holds a constraint name once per schema, so two `CHECK` constraints of
-one name are refused before anything runs, with `ORA-02264`. `ck` and `"CK"`
-are one name; `"ck"` is another.
+one name are refused before anything runs (`ORA-02264`). `ck` and `"CK"` are
+one name.
 
 ## Identifiers and type mappings
 
@@ -305,6 +305,151 @@ cleanup runs, in the order it runs them. A materialized view keeps its rows
 in a table of its own name, and that table goes with the view rather than as
 a drop of its own.
 
+## Column collations
+
+A column declares its collation after its type, in every source: `COLLATE
+BINARY_CI` in SQL, `collate: BINARY_CI` in YAML, `collate = "BINARY_CI"` in HCL,
+and `platform.oracle.collate="BINARY_CI"` in a Go annotation.
+
+```sql
+CREATE TABLE customers (
+  id NUMBER PRIMARY KEY,
+  email VARCHAR2(200) COLLATE BINARY_CI
+);
+```
+
+Oracle takes a column collation on `VARCHAR2`, `NVARCHAR2`, `CHAR` and `NCHAR`
+columns only. A collation on `CLOB` answers `ORA-43912`, and one on a number,
+`RAW`, date or `JSON` column answers `ORA-43911`; Ptah refuses both from the
+declaration, before it writes a statement.
+
+### The database has to run EXTENDED
+
+Oracle accepts a column `COLLATE` only where the parameter `MAX_STRING_SIZE` is
+`EXTENDED`. A database that runs `STANDARD` answers every `COLLATE` with
+`ORA-43929`. Oracle Autonomous Database starts with `EXTENDED`; the
+`gvenzl/oracle-free` image and a self-managed database start with `STANDARD`.
+
+Ptah reads the setting from `DATABASE_PROPERTIES` when it connects. The
+Oracle images grant that view to `PUBLIC`, and a database can revoke the grant.
+When the account cannot read the view, Ptah still connects and every command
+that declares no collation runs as before; the setting is then unknown, and a
+declared collation reaches the server, which answers `ORA-43929` on a `STANDARD`
+database after the statements before it have applied. On a `STANDARD` database
+the account can read, a declared collation is refused by name before the first
+statement runs:
+
+```text
+error: generate schema apply operations: render column c: unsupported feature: oracle: column "c" declares collation BINARY_CI, and this database runs with MAX_STRING_SIZE=STANDARD, which refuses a column collation (ORA-43929); convert the database to MAX_STRING_SIZE=EXTENDED, or remove the collation
+```
+
+Oracle commits each statement of a plan, so the refusal has to come first: the
+server's own error would arrive after the statements before it had applied.
+`ptah schema render` has no database to ask and writes the collation as
+declared. For the same reason an offline render cannot check that a collation
+name exists.
+
+To convert a pluggable database that holds no data of value, run this as
+`SYSDBA`. The change is one way, and Oracle documents no conversion back:
+
+```sql
+ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE FREEPDB1 OPEN UPGRADE;
+ALTER SESSION SET CONTAINER=FREEPDB1;
+ALTER SYSTEM SET MAX_STRING_SIZE=EXTENDED;
+@?/rdbms/admin/utl32k.sql
+ALTER SESSION SET CONTAINER=CDB$ROOT;
+ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
+```
+
+### What a read reports
+
+The read takes each column's `COLLATION` from `ALL_TAB_COLS` and the table's
+`DEFAULT_COLLATION` from `ALL_TABLES`. A character column that names no
+collation reads `USING_NLS_COMP`, and Ptah reports it as holding none. Names are
+upper case, as the catalog stores them. A column in a table with a
+`DEFAULT COLLATION` reads that collation as the one it compares with, and is not
+reported as declaring it, because the catalog cannot say whether the column
+named it. Ptah does not write `DEFAULT COLLATION`; it reads the table's value
+only to tell the two cases apart. A declaration that restates the table's
+default holds, and the plan is empty. Declaring `USING_NLS_COMP` on such a
+column is a change: the column then names the collation itself.
+
+An index over a column with a collation is a function-based index in the
+catalog, and its key is listed under a hidden column, `SYS_NC00004$`, with the
+expression `NLSSORT("C",'nls_sort=''BINARY_CI''')`. Ptah reads the key as the
+column it names, so a declared index over the column matches and plans nothing.
+
+### A collation name has to exist
+
+A collation is a sort that `V$NLS_VALID_VALUES` lists for `PARAMETER='SORT'`
+(`BINARY`, `FRENCH`, `GERMAN` and the rest), with `_CI` or `_AI` after it, or
+`USING_NLS_COMP`. `BINARY_CI` and `BINARY_AI` follow from `BINARY`. Oracle
+answers any other name with `ORA-12746`, including `USING_NLS_COMP_CI` and the
+`_CS` forms. A YAML or HCL schema shared with MySQL that names `utf8mb4_bin`
+therefore fails on Oracle, and without a check it fails after the tables
+created before the column have committed.
+
+A connected plan reads the list when it connects and refuses an unknown name
+before the first statement, naming the column and the table. If the account
+cannot read `V$NLS_VALID_VALUES`, the check is left to the server and Ptah
+writes a warning that says so. `ptah schema render` has no database to ask and
+cannot check the name.
+
+### What a plan does
+
+A declared collation is compared with the one the column holds, ignoring case.
+A column that declares none is not compared, since it holds `USING_NLS_COMP` or
+its table's default and a change would restate the column on every run. To
+return a column to `USING_NLS_COMP`, declare `USING_NLS_COMP`.
+
+A change is one statement, and the collation is the only thing it restates:
+
+```sql
+ALTER TABLE customers MODIFY (email VARCHAR2(200) COLLATE BINARY_AI);
+```
+
+The change is refused, naming the object, while the column belongs to an index,
+a primary or unique key, a foreign key, a `CHECK`, or the expression of a
+generated column. Oracle answers these with `ORA-43923` or `ORA-43922`, and a
+plan that stopped there would leave the statements before it applied. A key
+written on the column itself (`pk VARCHAR2(10) PRIMARY KEY`, `u VARCHAR2(10)
+UNIQUE`) counts, although Oracle names it and Ptah reads it as a flag of the
+column. Drop the object, apply the collation change, and declare the object
+again in a later migration. A function-based index holds the column when an
+expression of its key names it, such as `UPPER(email)`, quoted or not. The read
+lists the key under a hidden column, `SYS_NC00006$`, and Ptah takes the
+expression from `ALL_IND_EXPRESSIONS`.
+
+A plan adds columns before it changes them, so a generated column or an inline
+`CHECK` that the same plan adds over the column holds it as well, and the plan
+is refused. Apply the collation change first and add the column in a later
+migration. An index or a table-level `CHECK` the plan adds comes after the
+change and holds nothing yet.
+
+A key part with `DESC` over a collated column answers `ORA-54034` when an index
+or key created before it holds the column in an ascending part: `(c)`, `(c, d)`,
+`(d, c)`, a `UNIQUE` or a `PRIMARY KEY` on the column. It is accepted as the
+first index over the column, and after indexes that hold the column only as
+`DESC`, in any shape (`(c DESC)`, `(d, c DESC)`, `(c DESC, d)`). A function-based
+index such as `UPPER(c)` holds nothing, and a `UNIQUE` constraint added after the
+`DESC` index is accepted.
+
+A plan creates the new indexes of a table in name order, byte order of the name
+as declared, after the keys of a `CREATE TABLE` or an `ADD COLUMN` and before a
+constraint it adds with `ALTER TABLE`. Ptah follows that order and refuses a new
+index with a `DESC` part over a collated column when an ascending key holds the
+column by then, naming the index that does. Indexes the database already holds
+come first, and an index the database already holds is not created again. To get
+the shape, name the `DESC` index so it sorts before the ascending one, drop
+`DESC` from the part, or apply the ascending index in a later migration.
+
+An index key the catalog lists as `NLSSORT("C",'nls_sort=''BINARY_CI''')` is the
+column's own key only where `C` holds `BINARY_CI`. The same expression over a
+column that holds another collation is an index you wrote, and Ptah reads it as
+a function-based index.
+
 ## Object types
 
 **A composite type is Oracle's object type**, and the spelling is the whole
@@ -361,15 +506,22 @@ is `APP`. A synonym through a database link is left as it is: a declaration has
 no place for the link, so it is neither dropped nor declared again. Public
 synonyms belong to `PUBLIC` and are not read.
 
-Go export preserves synonym names, schemas, targets, and declaration comments.
-The exported annotation binds the alias to Oracle and SQL Server. Export refuses
-incomplete coverage and an explicit target scope the annotation cannot preserve.
+Go export preserves synonym names, schemas, targets, and declaration comments,
+binds the alias to Oracle and SQL Server, and refuses incomplete coverage and a
+target scope the annotation cannot preserve.
 
 ## Views that read other views
 
 Oracle checks a view's query when it creates the view, so Ptah creates each
 view after the views it reads and refuses views that read one another. The
 [MySQL page](../mysql/#views-that-read-other-views) says what counts as a read.
+
+## Unique keys
+
+A column gains its `UNIQUE` with `MODIFY (a ... UNIQUE)` and loses it with
+`DROP UNIQUE (a)`, since Oracle names the key. A foreign key the plan drops
+over that key goes first. A column of a key over several columns is not unique
+by itself.
 
 ## Constraints that defer their check
 
@@ -380,9 +532,8 @@ key Oracle named itself is compared through the table's column flags, which
 cannot defer, so a deferrable one is compared as the table's key instead.
 Name a deferrable `UNIQUE`: Oracle names an unnamed one `SYS_C<n>`, which
 differs in every database. A change of deferral is a drop and an add. A key
-that is not deferrable reads back with no deferral clause, so `schema inspect`
-writes it as the server stores it and the file compares clean with the account
-it came from.
+that does not defer reads back with no deferral clause, so an inspected file
+compares clean with its account.
 
 A `CHECK` written on a column takes a deferral clause as a table's does, and
 one that defers is compared as a table's `CHECK`. Oracle fixes a `CHECK`'s
@@ -391,9 +542,8 @@ declaration is replaced. The plan adds the new `CHECK` before it drops the old
 one: a named one under a temporary name, renamed to the declared name after the
 drop. Oracle commits each statement, so a row that refuses the new `CHECK`
 stops the plan with the old one still in place. The temporary name is the same
-on every run for one table and constraint, so a run that stops after the add
-leaves the new `CHECK` under it. The next plan drops that `CHECK` first, before
-it adds the new one again.
+on every run for one table and constraint, so the next plan drops a `CHECK` a
+stopped run left under it before it adds the new one again.
 
 No declaration disables a `CHECK` or a foreign key, or leaves its rows
 unchecked, so the parser refuses `DISABLE` and `NOVALIDATE`. One the account

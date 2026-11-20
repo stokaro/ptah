@@ -132,15 +132,49 @@ type Options struct {
 	// input, square brackets can instead delimit array syntax.
 	BracketIdentifiers bool
 
+	// LineCommentsDeclared says LineComments is the whole list of markers,
+	// beside "--", that open a comment running to the end of the line, so the
+	// lexer reads each marker listed as a comment wherever it stands and no
+	// other text as one. A # that is not listed is an operator character, or
+	// the start of a temporary name where DisableHashComments is set.
+	// internal/dialectlexer sets it from the descriptor of a dialect it knows.
+	// Unset, the markers are not known and a # is read by a heuristic: a
+	// comment unless an operator character follows it, as MySQL-style scripts
+	// and dialect-neutral input need.
+	LineCommentsDeclared bool
+
+	// LineComments are the markers, beside "--", that open a comment running to
+	// the end of the line, such as "#" for MySQL and "#" and "//" for
+	// ClickHouse. It is read only where LineCommentsDeclared is set. A marker
+	// is the whole rule: the text that follows it does not change the reading,
+	// so on MySQL `#= banner` and `SELECT 1 #> 2` are comments.
+	LineComments []string
+
 	// DisableHashComments preserves leading # characters as part of SQL Server
-	// local and global temporary-table identifiers. Hash comments remain enabled
-	// by default for MySQL-compatible and dialect-neutral input.
+	// local and global temporary-table identifiers. Where LineCommentsDeclared
+	// is unset, hash comments stay enabled for dialect-neutral input.
 	DisableHashComments bool
 
 	// NestedBlockComments reads a block comment that holds block comments,
 	// each closed by its own */, as one comment, as the PostgreSQL family
 	// does. Unset, a comment ends at the first */.
 	NestedBlockComments bool
+
+	// AlternativeQuoting reads Oracle's alternative-quoted literals, q'[...]'
+	// and nq'[...]', as one TokenString each. The character after the opening
+	// quote is the delimiter and the literal ends at its closing form followed
+	// by a quote, so an apostrophe inside, as in q'[it's]', stays in the
+	// literal. [ { < ( close with their mate and any other character with
+	// itself. A space, tab or line break cannot be the delimiter, and text that
+	// is not such a literal reads as it always did.
+	//
+	// It is off in every set of options a descriptor produces
+	// (internal/dialectlexer.FromDescriptor): a scan that has to judge what a
+	// statement runs, internal/sqlreach among them, recognizes the unread
+	// spelling and refuses it, and reading it here would hide the literal from
+	// that refusal. A reader that needs the literal's extent sets it on the
+	// options it takes.
+	AlternativeQuoting bool
 
 	// Scanner is a lexer of an engine's own. When it is set, it reads the
 	// text in place of every rule the fields above select, which it does not
@@ -346,10 +380,14 @@ func (l *Lexer) scanSpecialToken(ch rune) (Token, bool) {
 		return l.scanBacktickedIdentifier(), true
 	case ch == '[' && l.opts.BracketIdentifiers:
 		return l.scanBracketedIdentifier(), true
+	case l.opts.LineCommentsDeclared && l.declaredCommentMarkerLen() > 0:
+		return l.scanMarkedLineComment(l.declaredCommentMarkerLen()), true
 	case ch == '#' && l.opts.DisableHashComments && isTemporaryIdentifierStart(l.peekNext()):
 		return l.scanTemporaryIdentifier(), true
-	case ch == '#' && !l.opts.DisableHashComments && !isHashOperatorContinuation(l.peekNext()):
-		return l.scanHashLineComment(), true
+	case ch == '#' && !l.opts.LineCommentsDeclared && !l.opts.DisableHashComments && !isHashOperatorContinuation(l.peekNext()):
+		return l.scanMarkedLineComment(1), true
+	case l.opts.AlternativeQuoting && l.alternativeQuoteIntroducerLength() > 0:
+		return l.scanAlternativeQuote(), true
 	default:
 		return Token{}, false
 	}
@@ -638,9 +676,22 @@ func (l *Lexer) scanLineComment() Token {
 	return l.emit(TokenComment)
 }
 
-// scanHashLineComment scans a MySQL-style line comment (# comment).
-func (l *Lexer) scanHashLineComment() Token {
-	l.advance() // consume #
+// declaredCommentMarkerLen returns the length of the declared line comment
+// marker that opens at the current position, or 0 when none does.
+func (l *Lexer) declaredCommentMarkerLen() int {
+	rest := l.input[l.pos:]
+	for _, marker := range l.opts.LineComments {
+		if marker != "" && strings.HasPrefix(rest, marker) {
+			return len(marker)
+		}
+	}
+	return 0
+}
+
+// scanMarkedLineComment scans a line comment whose marker, size bytes long,
+// opens at the current position.
+func (l *Lexer) scanMarkedLineComment(size int) Token {
+	l.pos += size
 
 	for {
 		ch := l.peek()
@@ -878,4 +929,54 @@ func (l *Lexer) consumeDollarQuoted() bool {
 	}
 
 	return true
+}
+
+// alternativeQuoteIntroducerLength is the length of the q or nq at the current
+// position when a delimiter and an opening quote follow it as Oracle's
+// alternative quoting needs, and 0 otherwise.
+func (l *Lexer) alternativeQuoteIntroducerLength() int {
+	rest := l.input[l.pos:]
+	length := 0
+	switch {
+	case len(rest) >= 1 && (rest[0] == 'q' || rest[0] == 'Q'):
+		length = 1
+	case len(rest) >= 2 && (rest[0] == 'n' || rest[0] == 'N') && (rest[1] == 'q' || rest[1] == 'Q'):
+		length = 2
+	default:
+		return 0
+	}
+	if len(rest) <= length || rest[length] != '\'' {
+		return 0
+	}
+	delimiter, _ := utf8.DecodeRuneInString(rest[length+1:])
+	if length+1 >= len(rest) || delimiter == '\'' || unicode.IsSpace(delimiter) {
+		return 0
+	}
+	return length
+}
+
+// scanAlternativeQuote scans q'[...]' or nq'[...]' as one string token, ending
+// at the delimiter's closing form and a quote, or at the end of the input.
+func (l *Lexer) scanAlternativeQuote() Token {
+	l.pos += l.alternativeQuoteIntroducerLength() + 1
+	delimiter := l.advance()
+	closing := delimiter
+	switch delimiter {
+	case '[':
+		closing = ']'
+	case '{':
+		closing = '}'
+	case '<':
+		closing = '>'
+	case '(':
+		closing = ')'
+	}
+	for l.pos < len(l.input) {
+		ch := l.advance()
+		if ch == closing && l.peek() == '\'' {
+			l.advance()
+			break
+		}
+	}
+	return l.emit(TokenString)
 }

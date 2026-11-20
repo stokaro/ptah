@@ -1408,6 +1408,20 @@ const (
 	// @@SESSION.sql_mode when it connects and again on a pinned session.
 	NoBackslashEscapes Capability = "no_backslash_escapes"
 
+	// StandardStringSize marks an Oracle database whose MAX_STRING_SIZE is
+	// STANDARD. Such a database refuses a COLLATE clause on a column with
+	// ORA-43929, so the Oracle renderer refuses a declared column collation
+	// by name instead of sending a statement the server rejects. Oracle
+	// Autonomous Database and a database converted to EXTENDED do not hold
+	// it.
+	//
+	// No preset holds it: an offline render writes the declared collation.
+	// The Oracle connector sets it when it connects, from
+	// DATABASE_PROPERTIES. When the account cannot read that view, which a
+	// database may revoke from PUBLIC, the key stays off and the server
+	// answers a COLLATE itself.
+	StandardStringSize Capability = "standard_string_size"
+
 	// CheckConstraints marks a target whose grammar has CHECK at all.
 	//
 	// It is a different question from [CheckConstraintsEnforced], which asks
@@ -2321,6 +2335,9 @@ var registry = map[Capability]spec{
 	NoBackslashEscapes: {
 		doc: "the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a string literal Ptah renders for that session keeps each backslash single (set from the session, never by a preset)",
 	},
+	StandardStringSize: {
+		doc: "the Oracle database runs with MAX_STRING_SIZE=STANDARD, which refuses a column COLLATE with ORA-43929 (set from the connection, never by a preset)",
+	},
 	CheckConstraints: {
 		doc: "the grammar has CHECK constraints at all, enforced or not (not YDB)",
 	},
@@ -2792,6 +2809,7 @@ func buildMySQL84() Capabilities {
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
 		NoBackslashEscapes:              false,
+		StandardStringSize:              false,
 		CheckConstraints:                true,
 		CreateIndexStatement:            true,
 		IndexCoveringColumns:            false,
@@ -3118,6 +3136,7 @@ func buildMariaDB1011() Capabilities {
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
 		NoBackslashEscapes:              false,
+		StandardStringSize:              false,
 		CheckConstraints:                true,
 		CreateIndexStatement:            true,
 		IndexCoveringColumns:            false,
@@ -3359,6 +3378,7 @@ func buildPostgres16() Capabilities {
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
 		NoBackslashEscapes:              false,
+		StandardStringSize:              false,
 		CheckConstraints:                true,
 		CreateIndexStatement:            true,
 		IndexCoveringColumns:            true,
@@ -3741,6 +3761,7 @@ func buildClickHouse24() Capabilities {
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
 		NoBackslashEscapes:         false,
+		StandardStringSize:         false,
 		CheckConstraints:           true,
 		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
@@ -3987,6 +4008,7 @@ func buildSQLite3() Capabilities {
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
 		NoBackslashEscapes:         false,
+		StandardStringSize:         false,
 		CheckConstraints:           true,
 		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
@@ -4320,6 +4342,7 @@ func buildSQLServer2022() Capabilities {
 		AddColumnWithDefault:        true,
 		ExpressionDefaults:          true,
 		NoBackslashEscapes:          false,
+		StandardStringSize:          false,
 		CheckConstraints:            true,
 		CreateIndexStatement:        true,
 		// INCLUDE on an index, rendered, read back from sys.index_columns and
@@ -4952,6 +4975,7 @@ func buildOracle23() Capabilities {
 		AddColumnWithDefault:        true,
 		ExpressionDefaults:          true,
 		NoBackslashEscapes:          false,
+		StandardStringSize:          false,
 		CheckConstraints:            true,
 		CreateIndexStatement:        true,
 		IndexCoveringColumns:        false,

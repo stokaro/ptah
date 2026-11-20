@@ -19,10 +19,12 @@ type Lexical struct {
 	// them.
 	Lexer string `json:"lexer,omitempty"`
 	// LineComments are the markers, beside "--", that open a comment running
-	// to the end of the line, such as "#" and "//". The body scanner honors
-	// them. The shared lexer reads a # that no operator character follows as
-	// a comment on every engine whose names cannot begin with one (see
-	// HashNames), and reads // as two operators everywhere.
+	// to the end of the line, such as "#" and "//". The shared lexer, the
+	// client delimiter rewrite and the body scanner read each marker listed as
+	// a comment wherever it stands, whatever follows it, and no marker that is
+	// not listed. An engine that lists no "#" reads it as an operator
+	// character, as PostgreSQL does for XOR and the #> and #- operators, or as
+	// the start of a name (see HashNames).
 	LineComments []string `json:"line_comments,omitempty"`
 	// BackslashEscapes reports that a backslash escapes the next character
 	// inside a string literal, quoted with ' or ". An engine that reads the

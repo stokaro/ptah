@@ -9,6 +9,7 @@ package clickhousereplay
 import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -27,7 +28,8 @@ func (guard) Validate(stmt string, scope replay.Scope) error {
 	return validateClickHouseReplayStatement(replay.Tokens(stmt, lexerOptions()), scope)
 }
 
-// lexerOptions reads backslash escapes in string literals.
+// lexerOptions reads backslash escapes in string literals, and the comment
+// markers the ClickHouse descriptor lists.
 func lexerOptions() lexer.Options {
-	return lexer.Options{StandardStrings: true, BackslashEscapes: true}
+	return dialectlexer.Options(platform.ClickHouse)
 }

@@ -654,7 +654,9 @@ func columnsWithDesiredDomains(
 // a collation is compared with the one it holds, and so is one the target's
 // preparation resolved an inherited collation for, inherited, where the
 // current side holds a collation. A column with neither is not compared
-// ([declaredCollationHolds]). aliases, where the read
+// ([declaredCollationHolds]). A column the read reports no collation for holds
+// the descriptor's InheritedCollation, when it names one, so a declaration of
+// it holds, as `USING_NLS_COMP` does on Oracle. aliases, where the read
 // reports them, take the place of the descriptor's character set aliases.
 func columnCollationChange(desired schemamodel.Field, current catalog.Column, dialect, inherited string, aliases map[string]string) string {
 	facts := columnFactsOf(dialect)
@@ -671,6 +673,12 @@ func columnCollationChange(desired schemamodel.Field, current catalog.Column, di
 		// states nothing to compare it with.
 		if declared == "" && held != "" {
 			declared = inherited
+		}
+		// A column that reports no collation holds the one the descriptor
+		// names as inherited: Oracle reads none for a character column on
+		// USING_NLS_COMP.
+		if held == "" && facts.InheritedCollation != "" && strings.EqualFold(declared, facts.InheritedCollation) {
+			return ""
 		}
 		if declaredCollationHolds(declared, desired.Type, held, collationNamesOn(facts.CollationNames, aliases)) {
 			return ""

@@ -461,7 +461,11 @@ are told the engine's switches, as a PostgreSQL-family engine's is. The
 engine's `query_dialect` states them in `lexical`, with the names of a dialect
 descriptor's lexical section: escape strings, continued and Unicode strings,
 nested block comments, backslash escapes, a `--` that needs a space,
-executable comments, bracketed names and names that begin with `#`. While the
+executable comments, bracketed names and names that begin with `#`. The
+message has no line comment markers, so the text of such an engine has no `#`
+comments: a `#` is an operator character.
+
+While the
 provider is selected, every reader above reads the engine's text by them, and
 so does the shared grammar that reads its SQL schema documents in the
 `FRAGMENTS` mode. Without them the text is read by the SQL standard alone, so

@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/collatedkey"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -69,7 +70,7 @@ func decomposeIndexKeyList(columns []string, sourcePlatform string) []schemamode
 // its suffixes. It reports whether the element carried a suffix at all, and
 // whether it was understood well enough to replace the raw text.
 func decomposeIndexKeyElement(column, sourcePlatform string) (part schemamodel.IndexPart, suffixed, ok bool) {
-	tokens := indexKeyTokens(column)
+	tokens := indexKeyTokens(column, sourcePlatform)
 	if len(tokens) == 0 {
 		return schemamodel.IndexPart{}, false, false
 	}
@@ -119,8 +120,8 @@ func decomposeIndexKeyElement(column, sourcePlatform string) (part schemamodel.I
 // indexKeyTokens lexes one key list element, dropping whitespace. Offsets are
 // relative to the element text, which is what the expression span below cuts
 // from.
-func indexKeyTokens(column string) []lexer.Token {
-	scanner := lexer.NewLexer(column)
+func indexKeyTokens(column, sourcePlatform string) []lexer.Token {
+	scanner := lexer.NewLexerWithOptions(column, dialectlexer.Options(sourcePlatform))
 	var tokens []lexer.Token
 	for {
 		token := scanner.NextToken()

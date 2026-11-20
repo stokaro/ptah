@@ -67,7 +67,7 @@ func main() {
 	inputMode := os.Getenv("FIXTURE_INPUT_MODE")
 	transactional := mode == "native-transactional" || inputMode == "transactional"
 	if inputMode != "" {
-		d.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: 5}
+		d.MinContract = provider.Contract()
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}

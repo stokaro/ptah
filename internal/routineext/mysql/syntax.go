@@ -532,7 +532,7 @@ func Collect(p routineext.Cursor, statementStart int) (string, error) {
 
 func trackCurrent(p routineext.Cursor, blockDepth, caseDepth *int, pendingEndTrailer *bool) {
 	keyword := strings.ToUpper(p.Current().Value)
-	if keyword == "IF" && compound.ScalarIF(p.Input()[p.Current().End:]) {
+	if keyword == "IF" && compound.ScalarIF(p.Input()[p.Current().End:], p.FamilyOptions()) {
 		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
 		return
 	}

@@ -3,6 +3,7 @@ package sqlutil
 import (
 	"strings"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -45,7 +46,7 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 		return nil
 	}
 
-	normalized, origins := clientDelimitersFor(sql, dialect)
+	normalized, origins := clientDelimitersFor(sql, dialect, capability.Capabilities{})
 	lexr := lexer.NewLexerWithOptions(normalized, dialectlexer.Options(dialect))
 	state := sqlcompound.New(dialect)
 

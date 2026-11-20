@@ -18,7 +18,7 @@ const (
 	checkContractMajor     = "handshake.contract-major"
 	checkHostFeatures      = "handshake.host-features"
 	checkRequiredFeatures  = "handshake.required-features"
-	checkFirstMinorHost    = "handshake.contract-25.0-host"
+	checkFirstMinorHost    = "handshake.contract-26.0-host"
 	checkMinimumContract   = "handshake.minimum-contract"
 	checkDescriptionValid  = "description.valid"
 	checkIdentity          = "description.identity"
@@ -53,7 +53,7 @@ func Checks() []CheckInfo {
 		{ID: checkContractMajor, Summary: "A host whose contract major differs from its revision is refused."},
 		{ID: checkHostFeatures, Summary: "A repeated or malformed host feature is refused, and a feature the provider does not know is ignored."},
 		{ID: checkRequiredFeatures, Summary: "A host that requires a feature the provider does not offer is refused."},
-		{ID: checkFirstMinorHost, Summary: "A host that announces no contract version receives the description of contract 25.0, or a refusal when the provider's minimum is higher or a feature it lists needs a two-way feature."},
+		{ID: checkFirstMinorHost, Summary: "A host that announces no contract version receives the description of contract 26.0, or a refusal when the provider's minimum is higher or a feature it lists needs a two-way feature."},
 		{ID: checkMinimumContract, Summary: "The provider's minimum contract is one this SDK speaks."},
 		{ID: checkDescriptionValid, Summary: "The description passes the SDK's validation under every host profile the provider describes itself to, with the required features."},
 		{ID: checkIdentity, Summary: "The description names the provider identity the manifest names."},

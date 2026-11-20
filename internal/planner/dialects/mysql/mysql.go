@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/guards"
@@ -567,6 +568,8 @@ func (p *Planner) modifyExistingColumns(
 			RemovesCheckProtection: removesMariaDBColumnCheck(p.targetDialect(), colDiff),
 			PreviousNullable:       previousColumnNullable(colDiff.Changes["nullable"]),
 			HasPreviousNullable:    colDiff.Changes["nullable"] != "",
+			PreviousUnique:         previousColumnNullable(colDiff.Changes["unique"]),
+			HasPreviousUnique:      colDiff.Changes["unique"] != "",
 			PreviousDefault:        previousDefault,
 			HasPreviousDefault:     defaultChanged,
 			PreviousCharset:        previousCharset(colDiff.CharsetChange),
@@ -768,11 +771,20 @@ func (p *Planner) withoutChangesConstraintsMake(
 		without("primary_key")
 		suppressPrimary = true
 	}
-	if _, changes := colDiff.Changes["unique"]; changes && p.targetDialect() == platform.SQLServer &&
+	if _, changes := colDiff.Changes["unique"]; changes && marksUniqueFromAnyKey(p.targetDialect()) &&
 		uniqueColumnChangeOwnedByConstraint(diff, table, colDiff.ColumnName, semantics) {
 		without("unique")
 	}
 	return colDiff, suppressPrimary, nothingLeft
+}
+
+// marksUniqueFromAnyKey reports whether dialect's reader marks a column unique
+// from a UNIQUE over it alone however the key was declared, so the column reads
+// as changing when the plan adds or drops a named key. SQL Server's and
+// Oracle's readers do; MySQL's reads a unique index the plan changes as an
+// index.
+func marksUniqueFromAnyKey(dialect string) bool {
+	return dialect == platform.SQLServer || dialect == platform.Oracle
 }
 
 // uniqueColumnChangeOwnedByConstraint reports whether a column reads as gaining or losing
@@ -1305,6 +1317,53 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 		}))
 		plan.dropped[info.Identity] = struct{}{}
 	}
+}
+
+// releaseForeignKeysOverColumnKeyDrops adds to plan the foreign keys the diff
+// removes or changes that reference a column alone whose own key the column
+// change drops. They leave ahead of the column changes, where Oracle's
+// `DROP UNIQUE (code)` goes: the server answers ORA-02273 while a foreign key
+// still references the key. Where the diff keeps such a foreign key, the plan
+// is refused before this runs, since the referenced column is no longer
+// declared unique.
+func (p *Planner) releaseForeignKeysOverColumnKeyDrops(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
+	if diff == nil || !dropsColumnKeyWithColumnChange(p.targetDialect()) {
+		return
+	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	losesKey := make(map[string]map[string]bool)
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			change, changed := column.Changes["unique"]
+			if !changed || !previousColumnNullable(change) {
+				continue
+			}
+			key := semantics.QualifiedTableIdentityKey(table.TableName)
+			if losesKey[key] == nil {
+				losesKey[key] = make(map[string]bool)
+			}
+			losesKey[key][semantics.ColumnIdentityKey(column.ColumnName)] = true
+		}
+	}
+	for _, info := range diff.ForeignKeysRemovedWithTables {
+		if _, done := plan.dropped[info.Identity]; done || len(info.ForeignColumns) != 1 ||
+			!losesKey[semantics.QualifiedTableIdentityKey(info.ForeignTable)][semantics.ColumnIdentityKey(info.ForeignColumns[0])] {
+			continue
+		}
+		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
+			Name: info.Name, TableName: info.TableName, Type: "FOREIGN KEY",
+		}))
+		plan.dropped[info.Identity] = struct{}{}
+	}
+}
+
+// dropsColumnKeyWithColumnChange reports whether dialect's renderer drops the
+// key a column loses in the statement that changes the column, rather than
+// with the constraint removals. Oracle's does, with `DROP UNIQUE (column)`,
+// because the key the server named for a column is not in the read under a
+// name the plan could drop.
+func dropsColumnKeyWithColumnChange(dialect string) bool {
+	return dialect == platform.Oracle
 }
 
 // collectColumnTypeForeignKeyActions returns, deduped per (table, name) and
@@ -1908,14 +1967,20 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 
 // refuseUnplannableChanges refuses, before the diff is read further, the
 // changes this planner cannot write for its target: an index changed in place,
-// a feature the target does not host, a role membership, and a change of a
-// serial column's sequence.
+// a feature the target does not host, a role membership, a change of a
+// serial column's sequence, and, on Oracle, a collation change on a column an
+// index, key or CHECK uses.
 func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return err
 	}
 	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
 		return err
+	}
+	if p.targetDialect() == platform.Oracle {
+		if err := oraclecollation.RefuseKeyedColumnChange(diff); err != nil {
+			return err
+		}
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return err
@@ -2097,6 +2162,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// redundant drop of the same (table, name).
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff)
 	p.releaseForeignKeysOverMovedKeys(diff, &fkPlan)
+	p.releaseForeignKeysOverColumnKeyDrops(diff, &fkPlan)
 	result = append(result, fkPlan.drops...)
 
 	// 4a. Drop a removed key that holds the name a column's own UNIQUE takes,
@@ -3185,6 +3251,8 @@ func (p *Planner) dropConstraintNode(info difftypes.ConstraintRemovalInfo) ast.N
 	}
 }
 
+// previousColumnNullable reads the value before the change out of a boolean
+// change the comparison spells `before -> after`, such as nullable or unique.
 func previousColumnNullable(change string) bool {
 	before, _, ok := strings.Cut(change, " -> ")
 	return ok && strings.TrimSpace(before) == "true"

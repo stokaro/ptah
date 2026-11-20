@@ -173,7 +173,7 @@ func resolveExpressions(
 	if resolved.arguments, err = resolveRoutineArguments(ctx, conn, desired, database, semantics, runtime); err != nil {
 		return resolvedExpressions{}, err
 	}
-	if resolved.views, err = resolveViewBodies(ctx, conn, desired, database); err != nil {
+	if resolved.views, err = resolveViewBodies(ctx, conn, desired, database, info.Dialect); err != nil {
 		return resolvedExpressions{}, err
 	}
 	return resolved, nil
@@ -400,6 +400,7 @@ func resolveViewBodies(
 	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
+	dialect string,
 ) (map[string]config.ViewBody, error) {
 	if desired == nil || database == nil {
 		return nil, nil
@@ -425,7 +426,7 @@ func resolveViewBodies(
 		ask(view.Name, view.Body)
 	}
 	for _, view := range desired.MaterializedViews {
-		ask(view.Name, compare.MaterializedViewQuery(view.Body))
+		ask(view.Name, compare.MaterializedViewQuery(view.Body, dialect))
 	}
 	if len(probes) == 0 {
 		return nil, nil

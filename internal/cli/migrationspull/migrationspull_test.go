@@ -52,18 +52,27 @@ func TestNewMigrationsPullCommand_RequiresOutputDirectory(t *testing.T) {
 // A Git or an HTTPS pull reaches its server over its own transport, so
 // --plain-http would claim something the command does not do. Each refusal comes
 // before any network access: the address does not resolve.
-func TestNewMigrationsPullCommand_RefusesPlainHTTPOnAGitOrHTTPSReference(t *testing.T) {
-	for _, reference := range []string{"git+https://git.invalid/acme/app.git", "https://artifacts.invalid/acme/migrations.tar.gz"} {
-		t.Run(reference, func(t *testing.T) {
+func TestNewMigrationsPullCommand_RefusesAnOCIFlagOnAGitOrHTTPSReference(t *testing.T) {
+	tests := []struct {
+		reference string
+		flag      string
+	}{
+		{reference: "git+https://git.invalid/acme/app.git", flag: "--plain-http"},
+		{reference: "https://artifacts.invalid/acme/migrations.tar.gz", flag: "--plain-http"},
+		{reference: "git+https://git.invalid/acme/app.git", flag: "--skip-validation"},
+		{reference: "https://artifacts.invalid/acme/migrations.tar.gz", flag: "--skip-validation"},
+	}
+	for _, test := range tests {
+		t.Run(test.flag+" "+test.reference, func(t *testing.T) {
 			c := qt.New(t)
 			cmd := migrationspull.NewMigrationsPullCommand()
 			cmd.SetOut(&bytes.Buffer{})
 			cmd.SetErr(&bytes.Buffer{})
-			cmd.SetArgs([]string{reference, "--path", "db/migrations", "--out", filepath.Join(c.TempDir(), "out"), "--plain-http"})
+			cmd.SetArgs([]string{test.reference, "--path", "db/migrations", "--out", filepath.Join(c.TempDir(), "out"), test.flag})
 
 			err := cmd.Execute()
 
-			c.Assert(err, qt.ErrorMatches, `--plain-http is for an oci:// reference`)
+			c.Assert(err, qt.ErrorMatches, test.flag+` is for an oci:// reference`)
 		})
 	}
 }

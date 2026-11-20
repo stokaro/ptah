@@ -2,6 +2,7 @@ package sqlutil
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -44,12 +45,44 @@ func CommentText(text string) string {
 
 // LineComment returns text as a `-- ` line comment without a trailing newline.
 // Empty text gives the bare `--`. Line breaks in text are escaped by
-// [CommentText], so the result is always one line.
+// [CommentText], and a word a directive reader acts on is broken by
+// [NeutralizeDirectives], so the result is one line that no reader takes for
+// anything but a comment.
 func LineComment(text string) string {
 	if text == "" {
 		return "--"
 	}
-	return "-- " + CommentText(text)
+	return "-- " + NeutralizeDirectives(CommentText(text))
+}
+
+// directiveWord matches the words that make a comment line an instruction to a
+// reader of the file: the `+ptah` and `+goose` markers, and the `atlas:`,
+// `migrate:` and `ptah:` families (`atlas:txmode`, `atlas:delimiter`,
+// `atlas:checkpoint`, `atlas:nolint`, `atlas:txtar`, `atlas:import`,
+// `migrate:up`, `ptah:schema:...`). The readers disagree on where in a comment
+// they look, from the start of the line to anywhere in it, so the match is
+// anywhere and ignores case.
+var directiveWord = regexp.MustCompile(`(?i)\+ptah|\+goose|(?:atlas|migrate|ptah):`)
+
+// NeutralizeDirectives returns text with every word a directive reader acts on
+// broken by one space: `+ptah` becomes `+ ptah`, and `atlas:` becomes `atlas :`.
+// A comment Ptah writes from declared text is documentation, so a declared
+// comment of `+ptah no_transaction` or `atlas:txmode none` must not be read back
+// as the directive it spells. Text without such a word is returned unchanged.
+//
+// This is the one place that lists those words. The readers are in
+// migration/migrationfile, internal/clientdelimiter, migration/lint, the
+// checkpoint and txtar readers, and the SQL schema annotation parser.
+// migration/migrationfile has a test that drives its readers, the migrator's
+// check reader and the delimiter reader with each directive and reads a comment
+// made by [LineComment] back as a comment.
+func NeutralizeDirectives(text string) string {
+	return directiveWord.ReplaceAllStringFunc(text, func(word string) string {
+		if word[0] == '+' {
+			return "+ " + word[1:]
+		}
+		return word[:len(word)-1] + " :"
+	})
 }
 
 // unsafeInComment reports whether r is a control character other than the tab

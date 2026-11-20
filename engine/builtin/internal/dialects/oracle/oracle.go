@@ -176,15 +176,11 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// new is that the loss is now reported rather than silent.
 	r.sink.RecordDroppedTableOptions(node.Name, node.Options)
 	for _, column := range node.Columns {
-		// UNIQUE and the identity clause are written; the rest is not. Oracle
-		// 12.2 and later do have a column COLLATE clause, so the collation is a
-		// declaration this target could carry and does not.
+		// UNIQUE, the identity clause and the collation are written; the
+		// rest is not.
 		r.sink.RecordLostColumnProperties(
 			renderdiag.ColumnName(node.Name, column.Name),
-			renderdiag.ColumnProperties{
-				Collate:               column.Collate,
-				NotNullConstraintName: column.NotNullConstraintName,
-			},
+			renderdiag.ColumnProperties{NotNullConstraintName: column.NotNullConstraintName},
 		)
 	}
 	guard := ""
@@ -383,12 +379,17 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s%s;", table, escapeIdentifier(op.ColumnName), cascade)
 		case *ast.ModifyColumnOperation:
-			lines, err := renderModifiedColumn(op)
+			lines, err := renderModifiedColumn(op, r.capabilities())
 			if err != nil {
 				return fmt.Errorf("render modified column %s.%s: %w", node.Name, op.Column.Name, err)
 			}
 			for _, line := range lines {
 				r.w.WriteLinef("ALTER TABLE %s MODIFY (%s);", table, strings.TrimSpace(line))
+			}
+			if losesUnique(op) {
+				// The key a column loses has the name Oracle gave it, which
+				// no declaration knows; DROP UNIQUE finds it by its column.
+				r.w.WriteLinef("ALTER TABLE %s DROP UNIQUE (%s);", table, escapeIdentifier(op.Column.Name))
 			}
 		case *ast.RenameColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",

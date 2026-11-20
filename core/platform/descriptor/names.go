@@ -218,6 +218,9 @@ type Columns struct {
 	// compares with, whatever its type: BINARY on SQLite. A declaration
 	// naming it holds against a column that declares none. Empty means the
 	// type decides, and the catalog reports the collation the column takes.
+	// Where InheritedCollationVaries holds too, as on Oracle, it is the
+	// collation of a column the read reports none for, and a declaration
+	// naming it holds against that column.
 	InheritedCollation string `json:"inherited_collation,omitempty"`
 	// InheritedCollationVaries reports that a column declaring no collation
 	// takes one the server picks: its table's default, or the default

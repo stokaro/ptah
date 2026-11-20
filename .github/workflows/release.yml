@@ -78,7 +78,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.20.2
+          version: v2.20.3
           args: check
 
       - uses: anchore/sbom-action/download-syft@v0.24.3
@@ -91,7 +91,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.20.2
+          version: v2.20.3
           args: release --snapshot --clean --skip=sign
 
       - name: Run every shipped binary in both container architectures
@@ -302,7 +302,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.20.2
+          version: v2.20.3
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -30,7 +30,7 @@ func transactionOwnerClient(c *qt.C, features []string) *transport.Client {
 // transactionOwnerCheck checks one file that opens its own transaction, under
 // owner.
 func transactionOwnerCheck(owner protocol.LintTransactionOwner) *protocol.CheckLintRequest {
-	return &protocol.CheckLintRequest{Engine: "fixture", Codes: []string{"FX301"}, TransactionOwner: owner,
+	return &protocol.CheckLintRequest{Engine: "fixture", Codes: []string{"design/fx301"}, TransactionOwner: owner,
 		Files: []*protocol.LintFile{{Name: "1.sql", Up: true, Statements: []*protocol.LintStatement{
 			{Start: 0, End: 6, Line: 1, Sql: "BEGIN;"},
 			{Start: 7, End: 21, Line: 2, Sql: "DROP TABLE a;"},

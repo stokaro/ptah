@@ -10,6 +10,7 @@ package postgresreplay
 import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -43,7 +44,9 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 	return validatePostgresReplayStatement(g.dialect, tokens, scope)
 }
 
-// lexerOptions reads the family's standard-conforming string literals.
+// lexerOptions is how PostgreSQL reads its text: standard-conforming string
+// literals, and # as an operator character. A # read as a comment would hide
+// the rest of its line from the guard while the server runs it.
 func lexerOptions() lexer.Options {
-	return lexer.Options{StandardStrings: true}
+	return dialectlexer.Options(platform.Postgres)
 }

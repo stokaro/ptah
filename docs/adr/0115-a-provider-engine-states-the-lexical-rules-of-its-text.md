@@ -88,7 +88,9 @@ changes for this.
   are, with no provider call.
 - The fields mirror the descriptor, so a new rule the shared lexer learns
   becomes a new field here, in a later minor.
-- Rules the shared lexer does not read stay out: `line_comments` and
-  `identifier_backslash_escapes` serve only the body scanner of
-  `internal/deporder`, and `alternative_quoting` is a refusal on Oracle.
+- Rules the shared lexer does not read stay out: `identifier_backslash_escapes`
+  serves only the body scanner of `internal/deporder`, and
+  `alternative_quoting` is a refusal on Oracle. The shared lexer reads
+  `line_comments`, but the `query.lexical` message has no field for it, so a
+  provider engine has no `#` comments.
 - An engine with a language of its own keeps `sql.scan`.

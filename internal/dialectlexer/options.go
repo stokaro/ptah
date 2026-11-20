@@ -5,9 +5,13 @@
 package dialectlexer
 
 import (
+	"slices"
+
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext"
@@ -24,9 +28,17 @@ func Options(dialect string) lexer.Options {
 		return lexer.Options{Scanner: scanner}
 	}
 	if options, found := declaredOptions(dialect); found {
+		options.LineComments = slices.Clone(options.LineComments)
 		return options
 	}
-	return optionsByDialect.Get(dialect)
+	options := optionsByDialect.Get(dialect)
+	options.LineComments = slices.Clone(options.LineComments)
+	if platform.NormalizeDialect(dialect) == "" {
+		// A blank or unknown name states no markers, and an empty list is a
+		// statement too, so such text keeps the lexer's heuristic for #.
+		options.LineCommentsDeclared, options.LineComments = false, nil
+	}
+	return options
 }
 
 // ForSession is [Options] for text a session with caps reads: a session whose
@@ -55,6 +67,11 @@ var optionsByDialect = descriptortable.New(FromDescriptor)
 // field that looked as if it applied would say something false about how the
 // text is read.
 //
+// The line comment markers the descriptor lists are the whole rule: the lexer
+// reads each as a comment wherever it stands, whatever follows it, and reads a
+// # that is not listed as an operator character. A dialect that lists
+// none, such as PostgreSQL, has no # comments.
+//
 // The shared lexer reads PostgreSQL's continued and U&'...' strings as one
 // rule, so a descriptor that states one of the two has neither read as one
 // constant, and such text is refused rather than read by a rule the server
@@ -72,6 +89,8 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 		RequireWhitespaceAfterDashDash: lexical.DashCommentNeedsSpace,
 		ExecutableComments:             executableComments(lexical.ExecutableComments),
 		BracketIdentifiers:             lexical.BracketIdentifiers,
+		LineCommentsDeclared:           true,
+		LineComments:                   slices.Clone(lexical.LineComments),
 		DisableHashComments:            lexical.HashNames,
 		NestedBlockComments:            lexical.NestedComments,
 	}
@@ -90,4 +109,31 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 	default:
 		return lexer.ExecutableCommentsNone
 	}
+}
+
+// ClientDelimiterRules is how a script written for dialect spells its
+// literals, for the client delimiter rewrite: where a literal or comment ends
+// decides whether a line that reads like a directive stands inside one. The
+// backslash rule is the session's ([ForSession]) and the line comment markers
+// are the descriptor's. A `$tag$` body quotes in every dialect except MySQL and
+// MariaDB, where a dollar sign is a name character: the shared lexer reads
+// one for the rest, PostgreSQL's dollar quotes and ClickHouse's heredocs
+// among them. A blank dialect has no rules to read; ok is false and the caller
+// uses the permissive set [clientdelimiter.Normalize] reads with.
+func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules clientdelimiter.Rules, ok bool) {
+	if dialect == "" {
+		return clientdelimiter.Rules{}, false
+	}
+	options := ForSession(dialect, caps)
+	return clientdelimiter.Rules{
+		BackslashEscapes: options.BackslashEscapes,
+		EscapeStrings:    options.PostgreSQLEscapeStrings,
+		// No descriptor field states the dollar rule itself. Executable
+		// comments are what the descriptors set on MySQL and MariaDB alone,
+		// so they stand in for it.
+		DollarQuotes:         options.ExecutableComments == lexer.ExecutableCommentsNone,
+		LineComments:         options.LineComments,
+		LineCommentsDeclared: true,
+		BracketIdentifiers:   options.BracketIdentifiers,
+	}, true
 }

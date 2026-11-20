@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -25,11 +26,11 @@ type Linter interface {
 	// AnnotateLintStatements reports facts for statements a dialect-blind scanner
 	// split. The owner declines a statement its own lexing would split differently.
 	AnnotateLintStatements(context.Context, *protocol.AnnotateLintRequest) (*protocol.AnnotatedLint, error)
-	// CheckLintMigrations judges every file of a run under the enabled rule codes.
+	// CheckLintMigrations judges every file of a run under the enabled rule names.
 	CheckLintMigrations(context.Context, *protocol.CheckLintRequest) (*protocol.CheckedLint, error)
 }
 
-// validateLintRules checks the rule catalog an engine declares. A code belongs
+// validateLintRules checks the rule catalog an engine declares. A name belongs
 // to one rule in the whole description.
 func validateLintRules(description *protocol.Description, engine *protocol.Engine) error {
 	rules := engine.GetLintRules()
@@ -43,8 +44,8 @@ func validateLintRules(description *protocol.Description, engine *protocol.Engin
 		return fmt.Errorf("%w: lint rules require the lint service", ErrProtocol)
 	}
 	for _, rule := range rules {
-		if !canonicalLintCode(rule.GetCode()) || strings.TrimSpace(rule.GetTitle()) == "" || !utf8.ValidString(rule.GetTitle()) {
-			return fmt.Errorf("%w: invalid lint rule", ErrProtocol)
+		if !ValidLintRuleName(rule.GetCode()) || strings.TrimSpace(rule.GetTitle()) == "" || !utf8.ValidString(rule.GetTitle()) {
+			return fmt.Errorf("%w: lint rule %q is not named category/name, as this contract requires: an SDK of an earlier revision identifies rules by code", ErrProtocol, rule.GetCode())
 		}
 		switch rule.GetSeverity() {
 		case protocol.LintRule_INFO, protocol.LintRule_WARNING, protocol.LintRule_ERROR:
@@ -54,18 +55,27 @@ func validateLintRules(description *protocol.Description, engine *protocol.Engin
 		if slices.Contains(rule.GetSubsumes(), rule.GetCode()) {
 			return fmt.Errorf("%w: lint rule %s subsumes itself", ErrProtocol, rule.GetCode())
 		}
-		if lintCodeCount(description, rule.GetCode()) != 1 {
-			return fmt.Errorf("%w: lint rule code %s is declared twice", ErrProtocol, rule.GetCode())
+		// A subsumed rule may belong to the host or to another provider, so the
+		// description cannot say whether it exists; the host refuses a name no
+		// rule has when it joins every owner's rules. The entry is a rule name
+		// all the same.
+		for _, subsumed := range rule.GetSubsumes() {
+			if !ValidLintRuleName(subsumed) {
+				return fmt.Errorf("%w: lint rule %s subsumes %q, which is not named category/name", ErrProtocol, rule.GetCode(), subsumed)
+			}
+		}
+		if lintNameCount(description, rule.GetCode()) != 1 {
+			return fmt.Errorf("%w: lint rule %s is declared twice", ErrProtocol, rule.GetCode())
 		}
 	}
 	return nil
 }
 
-func lintCodeCount(description *protocol.Description, code string) int {
+func lintNameCount(description *protocol.Description, name string) int {
 	count := 0
 	for _, engine := range description.GetEngines() {
 		for _, rule := range engine.GetLintRules() {
-			if rule.GetCode() == code {
+			if rule.GetCode() == name {
 				count++
 			}
 		}
@@ -73,16 +83,15 @@ func lintCodeCount(description *protocol.Description, code string) int {
 	return count
 }
 
-// canonicalLintCode reports an uppercase ASCII letter followed by uppercase
-// ASCII letters and digits.
-func canonicalLintCode(code string) bool {
-	for i, char := range code {
-		if (char < 'A' || char > 'Z') && (i == 0 || char < '0' || char > '9') {
-			return false
-		}
-	}
-	return code != ""
-}
+// lintRuleName is the grammar of a rule name: two lowercase segments joined
+// by a slash, each a run of letters and digits joined by single hyphens, such
+// as locking/add-foreign-key. The host reads the same grammar through
+// [ValidLintRuleName], so a name the SDK accepts is a name the host accepts.
+var lintRuleName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+// ValidLintRuleName reports whether name is spelled as a lint rule name,
+// `category/name`. It says nothing of whether the host declares the category.
+func ValidLintRuleName(name string) bool { return lintRuleName.MatchString(name) }
 
 func lintEngine(description *protocol.Description, name string) (*protocol.Engine, error) {
 	if !slices.Contains(description.GetFeatures(), LintFeature) {
@@ -326,7 +335,7 @@ func ValidateAnnotatedLintReply(description *protocol.Description, request *prot
 	return nil
 }
 
-// ValidateCheckLintRequest checks that every enabled code is a rule the engine
+// ValidateCheckLintRequest checks that every enabled name is a rule the engine
 // declares, and that a transaction owner is one the contract names and the
 // engine negotiated.
 func ValidateCheckLintRequest(description *protocol.Description, request *protocol.CheckLintRequest) error {
@@ -337,9 +346,9 @@ func ValidateCheckLintRequest(description *protocol.Description, request *protoc
 	if err != nil {
 		return err
 	}
-	for i, code := range request.Codes {
-		if slices.Contains(request.Codes[:i], code) || !slices.ContainsFunc(engine.GetLintRules(), func(rule *protocol.LintRule) bool { return rule.GetCode() == code }) {
-			return fmt.Errorf("%w: lint check enables a repeated code or a rule the engine does not declare", ErrProtocol)
+	for i, name := range request.Codes {
+		if slices.Contains(request.Codes[:i], name) || !slices.ContainsFunc(engine.GetLintRules(), func(rule *protocol.LintRule) bool { return rule.GetCode() == name }) {
+			return fmt.Errorf("%w: lint check enables a repeated name or a rule the engine does not declare", ErrProtocol)
 		}
 	}
 	if err := validateLintTransactionOwner(engine, request.GetTransactionOwner()); err != nil {

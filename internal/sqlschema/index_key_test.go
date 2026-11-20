@@ -18,12 +18,19 @@ import (
 // it the way every SQL schema source does.
 func parseOneIndex(c *qt.C, sql string) schemamodel.Index {
 	c.Helper()
+	return parseOneIndexFor(c, sql, "")
+}
+
+// parseOneIndexFor is parseOneIndex for a document whose source platform is
+// sourcePlatform.
+func parseOneIndexFor(c *qt.C, sql, sourcePlatform string) schemamodel.Index {
+	c.Helper()
 	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	node, ok := statements.Statements[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
-	return sqlschema.ToIndex(node, "")
+	return sqlschema.ToIndex(node, sourcePlatform)
 }
 
 // TestToIndex_KeySuffixes pins the index key suffixes the SQL surface has to
@@ -282,4 +289,15 @@ func TestPostgresIndexDDLSurvivesItsOwnSQLSurface(t *testing.T) {
 			c.Assert(rendered, qt.Equals, tt.ddl+"\n")
 		})
 	}
+}
+
+// A # is the XOR operator on PostgreSQL: the key's expression ends at its
+// closing parenthesis and the DESC behind it is the direction, where a # read
+// as a comment would leave both in the expression text.
+func TestToIndex_HashOperatorKey(t *testing.T) {
+	c := qt.New(t)
+
+	index := parseOneIndexFor(c, `CREATE INDEX "i" ON "t" (("a" # "b") DESC);`, platform.Postgres)
+
+	c.Assert(index.Parts, qt.DeepEquals, []schemamodel.IndexPart{{Expr: `"a" # "b"`, Desc: true}})
 }

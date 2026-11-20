@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/renderdiag"
@@ -375,5 +376,5 @@ func (r *Renderer) writeRBACComment(comment string) {
 	if folded == "" {
 		return
 	}
-	r.w.WriteLine("-- " + folded)
+	r.w.WriteLine(sqlutil.LineComment(folded))
 }

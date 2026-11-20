@@ -962,7 +962,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 	return schemamodel.Constraint{
 		Facets:          dbConstraint.Facets,
 		StructName:      structNameForTable(tableStructNames, dbConstraint.QualifiedTableName(), dbConstraint.TableName),
-		Name:            dbConstraint.Name,
+		Name:            declaredConstraintName(dbConstraint),
 		Type:            constraintType,
 		Table:           dbConstraint.QualifiedTableName(),
 		UsingMethod:     derefString(dbConstraint.UsingMethod),
@@ -985,6 +985,19 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		// renders once; what that index needed does not go with it.
 		Requires: slices.Clone(dbConstraint.Requires),
 	}, true
+}
+
+// declaredConstraintName is the name a description gives a constraint: none
+// for a UNIQUE or CHECK whose name the server chose, which the comparison pairs
+// with an unnamed declaration by its columns or its condition. Written out, a
+// name such as Oracle's SYS_C008800 creates a constraint of that name in
+// another account, where the server may later choose the same name for one of
+// its own and refuse it with ORA-02264.
+func declaredConstraintName(dbConstraint catalog.Constraint) string {
+	if dbConstraint.GeneratedName && (strings.EqualFold(dbConstraint.Type, "UNIQUE") || strings.EqualFold(dbConstraint.Type, "CHECK")) {
+		return ""
+	}
+	return dbConstraint.Name
 }
 
 func constraintBackedIndexesByTable(

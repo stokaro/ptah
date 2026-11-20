@@ -6,9 +6,12 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// ScalarIF distinguishes IF(...) expressions from IF ... THEN blocks.
-func ScalarIF(fragment string) bool {
-	l := lexer.NewLexer(fragment)
+// ScalarIF distinguishes IF(...) expressions from IF ... THEN blocks. The
+// fragment is read with options, the lexer options of the dialect the routine
+// is written in, so a comment that holds a parenthesis or a quote ends where the
+// dialect ends it.
+func ScalarIF(fragment string, options lexer.Options) bool {
+	l := lexer.NewLexerWithOptions(fragment, options)
 	tok := nextNonTriviaToken(l)
 	if !tok.MatchOperatorValue("(") {
 		return false

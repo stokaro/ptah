@@ -18,5 +18,5 @@ import (
 func TestPostgresQuoting_IsPostgreSQLsLexerMode(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(postgresQuoting, qt.Equals, dialectlexer.Options(platform.Postgres))
+	c.Assert(postgresQuoting, qt.DeepEquals, dialectlexer.Options(platform.Postgres))
 }
