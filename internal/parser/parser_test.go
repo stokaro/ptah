@@ -5576,3 +5576,16 @@ func TestParser_DirectiveLookingLiteral_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// PostgreSQL reads a backslash as an ordinary character, so `'a\'` is a whole
+// literal and the directive after it is honored; read with the permissive rule
+// the literal stays open and swallows the directive.
+func TestParser_DirectiveAfterAPostgresBackslashLiteral_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	sql := "CREATE TABLE t (n text DEFAULT 'a\\');\nDELIMITER $$\nCREATE TABLE u (id int)$$\nCREATE TABLE v (id int)$$\n"
+
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 3)
+}

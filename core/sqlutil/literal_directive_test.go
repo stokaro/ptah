@@ -71,7 +71,7 @@ func TestSplitStatements_DirectiveLookingLiteral_HappyPath(t *testing.T) {
 
 // The control: the same two directives written outside a literal still select
 // the delimiter.
-func TestSplitStatementsForDialect_DirectiveOutsideALiteral_StillHonored(t *testing.T) {
+func TestSplitStatementsForDialect_DirectiveOutsideALiteral_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		script string
@@ -86,6 +86,29 @@ func TestSplitStatementsForDialect_DirectiveOutsideALiteral_StillHonored(t *test
 			got := sqlutil.SplitStatementsForDialect("mysql", test.script)
 
 			c.Assert(got, qt.DeepEquals, []string{"SELECT 'x'", "SELECT 1", "SELECT 2"})
+		})
+	}
+}
+
+// A dollar sign is an ordinary character in a MySQL-family name, so `a$b$` opens
+// directive between two such names is still honored.
+func TestSplitStatementsForDialect_DollarInANameBesideADirective_HappyPath(t *testing.T) {
+	script := "SELECT a$b$ FROM t;\nDELIMITER $$\nSELECT 1; SELECT 2$$\nDELIMITER ;\nSELECT c$b$ FROM t;\n"
+	tests := []struct {
+		name    string
+		dialect string
+		want    []string
+	}{
+		{name: "mysql", dialect: "mysql", want: []string{"SELECT a$b$ FROM t", "SELECT 1", "SELECT 2", "SELECT c$b$ FROM t"}},
+		{name: "mariadb", dialect: "mariadb", want: []string{"SELECT a$b$ FROM t", "SELECT 1", "SELECT 2", "SELECT c$b$ FROM t"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := sqlutil.SplitStatementsForDialect(test.dialect, script)
+
+			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
 }

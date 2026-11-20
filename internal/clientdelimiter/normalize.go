@@ -39,11 +39,21 @@ type Rules struct {
 	// EscapeStrings reads an E'...' literal, whose backslashes escape even
 	// where BackslashEscapes is false (the PostgreSQL family).
 	EscapeStrings bool
+	// DollarQuotes reads $tag$...$tag$ as a literal (the PostgreSQL family).
+	// Elsewhere a dollar sign is an ordinary character, as in the MySQL name
+	// `a$b$`.
+	DollarQuotes bool
+	// HashComments reads # as the start of a line comment (MySQL, MariaDB,
+	// ClickHouse). Elsewhere it is an operator or a temporary-name prefix.
+	HashComments bool
+	// BracketIdentifiers reads [name] as one quoted name (SQL Server), so a
+	// quote inside the brackets opens no literal.
+	BracketIdentifiers bool
 }
 
 // legacyRules is what a script with no dialect is read with: a backslash
-// escapes in every kind of literal.
-var legacyRules = Rules{BackslashEscapes: true, EscapeStrings: true}
+// escapes in every kind of literal, $tag$ quotes and # starts a comment.
+var legacyRules = Rules{BackslashEscapes: true, EscapeStrings: true, DollarQuotes: true, HashComments: true}
 
 // Normalize rewrites a script's client delimiter directives into regular
 // semicolon-terminated SQL, and returns where each part of the result came from.
@@ -100,6 +110,7 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 	}
 
 	var output strings.Builder
+	var tags *dollarTags
 	for pos := 0; pos < len(input); {
 		if directiveLineAt(input, pos) {
 			return output.String(), pos
@@ -113,16 +124,19 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 			pos = writeUntilLineEnd(&output, input, pos)
 		case strings.HasPrefix(input[pos:], "/*"):
 			pos = writeUntilBlockCommentEnd(&output, input, pos)
-		case input[pos] == '#' && !isClientHashOperatorContinuation(input, pos):
+		case rules.HashComments && input[pos] == '#' && !isClientHashOperatorContinuation(input, pos):
 			pos = writeUntilLineEnd(&output, input, pos)
-		case input[pos] == '\'' || input[pos] == '"' || input[pos] == '`':
-			pos = writeQuotedSQL(&output, input, pos, input[pos], rules)
+		case isQuotedAt(input, pos, rules):
+			pos = writeQuoted(&output, input, pos, rules)
 		case rewrite && strings.HasPrefix(input[pos:], delimiter):
 			writeDelimiterReplacement(&output, replacement)
 			pos += len(delimiter)
 			written.add(outputStart+output.Len(), inputStart+pos)
-		case input[pos] == '$':
-			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos); ok {
+		case rules.DollarQuotes && input[pos] == '$':
+			if tags == nil {
+				tags = lastDollarTags(input)
+			}
+			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, tags); ok {
 				pos = nextPos
 				continue
 			}
@@ -134,6 +148,26 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 		}
 	}
 	return output.String(), len(input)
+}
+
+// isQuotedAt reports whether a quoted literal or name opens at pos.
+func isQuotedAt(input string, pos int, rules Rules) bool {
+	switch input[pos] {
+	case '\'', '"', '`':
+		return true
+	case '[':
+		return rules.BracketIdentifiers
+	default:
+		return false
+	}
+}
+
+// writeQuoted copies the quoted literal or name that opens at pos.
+func writeQuoted(output *strings.Builder, input string, pos int, rules Rules) int {
+	if input[pos] == '[' {
+		return writeBracketedName(output, input, pos)
+	}
+	return writeQuotedSQL(output, input, pos, input[pos], rules)
 }
 
 // directiveLineAt reports whether the line that starts at pos is a directive.
@@ -273,7 +307,62 @@ func writeQuotedSQL(output *strings.Builder, input string, pos int, quote byte, 
 	return pos
 }
 
-func writeDollarQuotedSQL(output *strings.Builder, input string, pos int) (int, bool) {
+// writeBracketedName copies a [name], where ]] stands for a closing bracket in
+// the name.
+func writeBracketedName(output *strings.Builder, input string, pos int) int {
+	output.WriteByte(input[pos])
+	pos++
+	for pos < len(input) {
+		output.WriteByte(input[pos])
+		pos++
+		if input[pos-1] == ']' {
+			if pos < len(input) && input[pos] == ']' {
+				output.WriteByte(input[pos])
+				pos++
+				continue
+			}
+			return pos
+		}
+	}
+	return pos
+}
+
+// dollarTags holds where each $tag$ token last starts in a script, so a tag
+// with no closer further on is told apart from one with a closer in constant
+// time. Searching the rest of the text for every unclosed opener would read a
+// script with thousands of `a$t1$`, `a$t2$` forms in quadratic time.
+type dollarTags map[string]int
+
+// lastDollarTags indexes input in one pass.
+func lastDollarTags(input string) *dollarTags {
+	last := make(dollarTags)
+	for pos := 0; pos < len(input); pos++ {
+		if input[pos] != '$' {
+			continue
+		}
+		end := pos + 1
+		for end < len(input) && isTagByte(input[end]) {
+			end++
+		}
+		if end < len(input) && input[end] == '$' {
+			last[input[pos:end+1]] = pos
+		}
+	}
+	return &last
+}
+
+func isTagByte(ch byte) bool {
+	return ch == '_' || ch >= '0' && ch <= '9' || ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z'
+}
+
+// writeDollarQuotedSQL copies a dollar-quoted body that opens at pos, when
+// tags says the tag closes later in the text.
+func writeDollarQuotedSQL(output *strings.Builder, input string, pos int, tags *dollarTags) (int, bool) {
+	// A dollar sign that follows a name character is part of that name, as in
+	// `a$b$`: PostgreSQL opens a quote only at the start of a token.
+	if pos > 0 && (isWordByte(input[pos-1]) || input[pos-1] == '$') {
+		return pos, false
+	}
 	tagEnd := pos + 1
 	for tagEnd < len(input) && input[tagEnd] != '$' {
 		ch := input[tagEnd]
@@ -287,6 +376,9 @@ func writeDollarQuotedSQL(output *strings.Builder, input string, pos int) (int, 
 	}
 
 	tag := input[pos : tagEnd+1]
+	if (*tags)[tag] <= tagEnd {
+		return pos, false
+	}
 	closeStart := strings.Index(input[tagEnd+1:], tag)
 	if closeStart < 0 {
 		return pos, false

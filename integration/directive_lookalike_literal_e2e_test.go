@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // The declared text of each literal holds a line that reads like a client
@@ -125,4 +128,35 @@ func TestSchemaApplyKeepsALiteralHoldingADirectiveLineE2E(t *testing.T) {
 			c.Assert(readDirectiveLiterals(c, database, test.read), qt.DeepEquals, test.declared)
 		})
 	}
+}
+
+// TestMigrationsUpRunsAMySQLRoutineBesideDollarNamesE2E applies a MySQL
+// migration whose names hold dollar signs and whose procedure is written
+// between DELIMITER lines. A dollar sign is a name character on MySQL, so
+// `a$b$` opens no quote, the procedure body keeps its semicolons, and the
+// statements after it run: the procedure exists and has inserted its rows.
+func TestMigrationsUpRunsAMySQLRoutineBesideDollarNamesE2E(t *testing.T) {
+	c := qt.New(t)
+	database := mysqlFamilyScratchURL(c, dbtarget.MySQLAdmin, "routine")
+	migrations := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.MkdirAll(migrations, 0o755), qt.IsNil)
+	script := "-- atlas:txmode none\n" +
+		"CREATE TABLE a$b$ (id INT PRIMARY KEY, n VARCHAR(40));\n" +
+		"DELIMITER $$\n" +
+		"CREATE PROCEDURE p$q$() BEGIN INSERT INTO a$b$ VALUES (1, 'x'); INSERT INTO a$b$ VALUES (2, 'it''s'); END$$\n" +
+		"DELIMITER ;\n" +
+		"CALL p$q$();\n"
+	c.Assert(os.WriteFile(filepath.Join(migrations, "20240101000000_routine.up.sql"), []byte(script), 0o600), qt.IsNil)
+
+	applied, err := runPtahNativeWithError("migrations", "up", "--db-url", database, "--migrations-dir", migrations)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
+	conn, err := dbschema.ConnectToDatabase(c.Context(), database)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var got string
+	query := "SELECT CONCAT_WS(',', (SELECT GROUP_CONCAT(n ORDER BY id) FROM `a$b$`), " +
+		"(SELECT routine_name FROM information_schema.routines WHERE routine_schema = DATABASE()))"
+	c.Assert(conn.QueryRowContext(c.Context(), query).Scan(&got), qt.IsNil)
+	c.Assert(got, qt.Equals, "x,it's,p$q$")
 }

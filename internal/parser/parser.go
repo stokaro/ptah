@@ -168,7 +168,7 @@ func NewParser(input string, opts ...Option) *Parser {
 		opt(p)
 	}
 	options := lexerOptions(p.dialect)
-	p.input, p.origins = normalizeClientDelimiters(input, p.dialect, options)
+	p.input, p.origins = normalizeClientDelimiters(input, p.dialect)
 	normalized := p.input
 	p.target = grammarOf(p.dialect)
 	p.lexer = lexer.NewLexerWithOptions(normalized, options)
@@ -192,25 +192,23 @@ func NewParser(input string, opts ...Option) *Parser {
 // escaping rules contradict each other, so any single dialect's answer refuses
 // one of them. Permissive is the only setting that reads a document nobody has
 // classified yet.
-// normalizeClientDelimiters honors the script's client delimiter directives,
-// reading its literals by the rules of options so a line inside one is not
-// taken for a directive. A script with no dialect keeps a backslash as an
-// escape in every literal, as [clientdelimiter.Normalize] does.
-func normalizeClientDelimiters(input, dialect string, options lexer.Options) (string, clientdelimiter.Origins) {
-	if dialect == "" {
-		return clientdelimiter.Normalize(input)
-	}
-	return clientdelimiter.NormalizeFor(input, clientdelimiter.Rules{
-		BackslashEscapes: options.BackslashEscapes,
-		EscapeStrings:    options.PostgreSQLEscapeStrings,
-	})
-}
-
 func lexerOptions(dialect string) lexer.Options {
 	if dialect == "" {
 		return lexer.Options{}
 	}
 	return dialectlexer.Options(dialect)
+}
+
+// normalizeClientDelimiters honors the script's client delimiter directives,
+// reading its literals by the rules of options so a line inside one is not
+// taken for a directive. A script with no dialect keeps a backslash as an
+// escape in every literal, as [clientdelimiter.Normalize] does.
+func normalizeClientDelimiters(input, dialect string) (string, clientdelimiter.Origins) {
+	rules, ok := dialectlexer.ClientDelimiterRules(dialect, capability.Capabilities{})
+	if !ok {
+		return clientdelimiter.Normalize(input)
+	}
+	return clientdelimiter.NormalizeFor(input, rules)
 }
 
 // Parse parses the input SQL and returns a list of AST statements.

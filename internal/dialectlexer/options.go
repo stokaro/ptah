@@ -5,9 +5,12 @@
 package dialectlexer
 
 import (
+	"slices"
+
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext"
@@ -90,4 +93,31 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 	default:
 		return lexer.ExecutableCommentsNone
 	}
+}
+
+// hashComments holds, per dialect, whether its descriptor lists # as a line
+// comment marker.
+var hashComments = descriptortable.New(func(described descriptor.Dialect) bool {
+	return slices.Contains(described.Lexical.LineComments, "#")
+})
+
+// ClientDelimiterRules is how a script written for dialect spells its
+// literals, for the client delimiter rewrite: where a literal or comment ends
+// decides whether a line that reads like a directive stands inside one. The
+// backslash rule is the session's ([ForSession]); dollar quoting is the
+// PostgreSQL family's, which is the family that reads E'...' strings. A blank
+// dialect has no rules to read and gets the permissive set
+// [clientdelimiter.Normalize] uses.
+func ClientDelimiterRules(dialect string, caps capability.Capabilities) (clientdelimiter.Rules, bool) {
+	if dialect == "" {
+		return clientdelimiter.Rules{}, false
+	}
+	options := ForSession(dialect, caps)
+	return clientdelimiter.Rules{
+		BackslashEscapes:   options.BackslashEscapes,
+		EscapeStrings:      options.PostgreSQLEscapeStrings,
+		DollarQuotes:       options.PostgreSQLEscapeStrings,
+		HashComments:       hashComments.Get(dialect),
+		BracketIdentifiers: options.BracketIdentifiers,
+	}, true
 }

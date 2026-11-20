@@ -255,16 +255,13 @@ func clientDelimitersFor(sql, dialect string, caps capability.Capabilities) (str
 	if facts.described && !facts.scripts.ClientDelimiters || !facts.described && lexerext.Provided(dialect) != nil {
 		return sql, nil
 	}
-	if dialect == "" {
-		return clientdelimiter.Normalize(sql)
-	}
 	// A directive stands only outside a literal, and where a literal ends is the
 	// dialect's rule, the one the lexer reads the rewritten text with.
-	options := dialectlexer.ForSession(dialect, caps)
-	return clientdelimiter.NormalizeFor(sql, clientdelimiter.Rules{
-		BackslashEscapes: options.BackslashEscapes,
-		EscapeStrings:    options.PostgreSQLEscapeStrings,
-	})
+	rules, ok := dialectlexer.ClientDelimiterRules(dialect, caps)
+	if !ok {
+		return clientdelimiter.Normalize(sql)
+	}
+	return clientdelimiter.NormalizeFor(sql, rules)
 }
 
 // batchSeparator is the word that ends a batch in the dialect's scripts
