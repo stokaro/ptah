@@ -165,7 +165,7 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 // jsonFilesOfADroppedTable renders a dropped table, whose finding carries the
 // Ptah name destructive/drop-table, through the template a
 // `--format '{{ json .Files }}'` run takes.
-func jsonFilesOfADroppedTable(c *qt.C, atlasCodes bool) (rule string, rendered string) {
+func jsonFilesOfADroppedTable(c *qt.C, atlasCodes bool) (rule, rendered string) {
 	c.Helper()
 	fsys := fstest.MapFS{
 		"1_drop.sql": {Data: []byte("DROP TABLE users;\n")},

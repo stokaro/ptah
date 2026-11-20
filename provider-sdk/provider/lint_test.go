@@ -214,7 +214,9 @@ func TestLintCheck_FailurePath(t *testing.T) {
 		{"incomplete", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Complete = false }},
 		{"rule not enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = nil }},
 		{"undeclared rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"design/zz999"} }},
-		{"repeated rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"design/xy101", "design/xy101"} }},
+		{"repeated rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) {
+			q.Codes = []string{"design/xy101", "design/xy101"}
+		}},
 		{"file beyond request", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].File = 1 }},
 		{"negative file", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].File = -1 }},
 		{"statement beyond file", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].Statement = 2 }},

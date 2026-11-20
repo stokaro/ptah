@@ -332,10 +332,7 @@ func runAtlasMigrateLint(
 	// An Atlas directory is listed by file name, as Atlas lists it; a layout
 	// converted from another tool keeps its version order.
 	nameOrder := format == atlasmigrateimport.FormatAtlas
-	text := atlasreport.MigrateLintOptions{
-		AtlasCodes: policy.IsStrictCE(),
-		Analysis:   &report.Analysis, RevisionVersions: revisionVersions, Sources: sources, NameOrder: nameOrder,
-	}
+	text := atlasreport.MigrateLintOptions{AtlasCodes: policy.IsStrictCE(), Analysis: &report.Analysis, RevisionVersions: revisionVersions, Sources: sources, NameOrder: nameOrder}
 	if err != nil {
 		// Before the error goes out, whichever way it goes: a run that
 		// analyzed against a release line nobody named still analyzed against

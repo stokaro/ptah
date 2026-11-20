@@ -39,10 +39,10 @@ type absentObjectRow struct {
 	// Atlas table does not map. The table maps no identity for
 	// destructive/drop-object, so a strict run reports no drop of a trigger or a
 	// type, as the community binary does.
-	codes          []string
-	strictCodes    []string
-	nativeExit     int
-	nativeCodes    []string
+	codes       []string
+	strictCodes []string
+	nativeExit  int
+	nativeCodes []string
 }
 
 // absentObjectFiles is a directory of two versions, base and head.

@@ -1,7 +1,6 @@
 package migrationlintreport_test
 
 import (
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -59,6 +58,6 @@ func TestBuild_StrictCompatibilityRunsOnlyTheMappedRules(t *testing.T) {
 		Only: func(name string) bool { return name == "destructive/drop-table" },
 	})
 
-	c.Assert(slices.Contains(rules, "destructive/truncate-table"), qt.IsFalse)
+	c.Assert(rules, qt.Not(qt.Contains), "destructive/truncate-table")
 	c.Assert(rules, qt.Contains, "destructive/drop-table")
 }
