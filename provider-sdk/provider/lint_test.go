@@ -19,7 +19,7 @@ func lintDescription() *protocol.Description {
 	description.Features = append(description.Features, provider.LintFeature)
 	engine := description.Engines[0]
 	engine.Features = append(engine.Features, provider.LintFeature)
-	engine.LintRules = []*protocol.LintRule{{Code: "XY101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
+	engine.LintRules = []*protocol.LintRule{{Code: "design/xy101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
 	return description
 }
 
@@ -51,13 +51,15 @@ func TestLintDescriptionDeclaresRules_FailurePath(t *testing.T) {
 			d.Engines[0].Features = d.Engines[0].Features[:len(d.Engines[0].Features)-1]
 		}},
 		{"service without rules", func(d *protocol.Description) { d.Engines[0].LintRules = nil }},
-		{"lowercase code", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "xy101" }},
-		{"empty code", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "" }},
-		{"digit first", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "1XY" }},
+		{"a code of an earlier revision", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "XY101" }},
+		{"a name with no slash", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "xy101" }},
+		{"an upper-case name", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "design/XY101" }},
+		{"empty name", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "" }},
+		{"a digit first", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "design/1xy" }},
 		{"blank title", func(d *protocol.Description) { d.Engines[0].LintRules[0].Title = " " }},
 		{"no severity", func(d *protocol.Description) { d.Engines[0].LintRules[0].Severity = 0 }},
-		{"subsumes itself", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"XY101"} }},
-		{"duplicate code", func(d *protocol.Description) {
+		{"subsumes itself", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"design/xy101"} }},
+		{"duplicate name", func(d *protocol.Description) {
 			d.Engines[0].LintRules = append(d.Engines[0].LintRules, proto.CloneOf(d.Engines[0].LintRules[0]))
 		}},
 	}
@@ -67,6 +69,32 @@ func TestLintDescriptionDeclaresRules_FailurePath(t *testing.T) {
 			description := lintDescription()
 			test.mutate(description)
 			c.Assert(provider.ValidateDescription(description, nil), qt.ErrorIs, provider.ErrProtocol)
+		})
+	}
+}
+
+// A code written for an earlier revision is refused where the description is
+// validated, with a message that says what the contract now requires.
+func TestLintDescriptionRefusesACodeByName(t *testing.T) {
+	c := qt.New(t)
+	description := lintDescription()
+	description.Engines[0].LintRules[0].Code = "XY101"
+
+	err := provider.ValidateDescription(description, nil)
+
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(err, qt.ErrorMatches, `.*lint rule "XY101" is not named category/name, as this contract requires.*`)
+}
+
+func TestValidLintRuleName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"locking/add-foreign-key": true, "design/xy101": true, "a/b": true, "online/on-1": true,
+		"XY101": false, "": false, "locking": false, "locking/": false, "/add": false, "a/b/c": false,
+		"Locking/add": false, "locking/Add": false, "locking/add-": false, "locking/-add": false, "locking/add--key": false,
+		"locking/1add": false, "1lock/add": false, "locking/add_key": false, " locking/add": false,
+	} {
+		t.Run(name, func(t *testing.T) {
+			qt.New(t).Assert(provider.ValidLintRuleName(name), qt.Equals, want)
 		})
 	}
 }
@@ -187,10 +215,10 @@ func TestLintAnnotation_FailurePath(t *testing.T) {
 }
 
 func lintCheck() (*protocol.CheckLintRequest, *protocol.CheckedLint) {
-	request := &protocol.CheckLintRequest{Engine: lintEngineID(), Codes: []string{"XY101"},
+	request := &protocol.CheckLintRequest{Engine: lintEngineID(), Codes: []string{"design/xy101"},
 		Files: []*protocol.LintFile{{Name: "1.sql", Up: true, Statements: lintStatements()}}}
 	result := &protocol.CheckedLint{Complete: true, Findings: []*protocol.LintFinding{{
-		Code: "XY101", File: 0, Statement: 1, Message: "drop loses data",
+		Code: "design/xy101", File: 0, Statement: 1, Message: "drop loses data",
 		Subjects: []*protocol.LintSubject{{Kind: protocol.LintSubject_TABLE, Name: "b"}},
 	}}}
 	return request, result
@@ -200,7 +228,7 @@ func TestLintCheck_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	request, result := lintCheck()
 	c.Assert(provider.ValidateCheckedLint(lintDescription(), request, result), qt.IsNil)
-	result.Findings = []*protocol.LintFinding{{Code: "XY101", File: 0, Statement: -1, Message: "file level"}}
+	result.Findings = []*protocol.LintFinding{{Code: "design/xy101", File: 0, Statement: -1, Message: "file level"}}
 	c.Assert(provider.ValidateCheckedLint(lintDescription(), request, result), qt.IsNil)
 	result.Findings = nil
 	c.Assert(provider.ValidateCheckedLint(lintDescription(), request, result), qt.IsNil)
@@ -213,8 +241,10 @@ func TestLintCheck_FailurePath(t *testing.T) {
 	}{
 		{"incomplete", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Complete = false }},
 		{"rule not enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = nil }},
-		{"undeclared rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"ZZ999"} }},
-		{"repeated rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"XY101", "XY101"} }},
+		{"undeclared rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"design/zz999"} }},
+		{"repeated rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) {
+			q.Codes = []string{"design/xy101", "design/xy101"}
+		}},
 		{"file beyond request", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].File = 1 }},
 		{"negative file", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].File = -1 }},
 		{"statement beyond file", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].Statement = 2 }},

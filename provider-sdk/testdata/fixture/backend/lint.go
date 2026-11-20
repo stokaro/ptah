@@ -9,15 +9,34 @@ import (
 	"strings"
 
 	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
+
+// The fixture's rule identifiers. A rule is identified by its name from
+// contract revision 26 and by its code before it, and the host's own tests
+// build this module against the SDK release they pin, which may be of either
+// revision, so the identifier follows the revision the module links.
+var (
+	fx101 = RuleID("FX101", "design/fx101")
+	fx102 = RuleID("FX102", "design/fx102")
+)
+
+// RuleID is the identifier a fixture rule is published under: name when the SDK
+// this module links speaks contract revision 26 or later, and code before.
+func RuleID(code, name string) string {
+	if provider.Revision >= 26 {
+		return name
+	}
+	return code
+}
 
 // LintRules are the rules the fixture's migration lint publishes. FX101 judges
 // statements; FX102 judges the target a check names, so a test reads back what
 // the host sent.
 func LintRules() []*protocol.LintRule {
 	return []*protocol.LintRule{
-		{Code: "FX101", Title: "DROP TABLE loses rows", Severity: protocol.LintRule_ERROR},
-		{Code: "FX102", Title: "target the check names", Severity: protocol.LintRule_INFO},
+		{Code: fx101, Title: "DROP TABLE loses rows", Severity: protocol.LintRule_ERROR},
+		{Code: fx102, Title: "target the check names", Severity: protocol.LintRule_INFO},
 	}
 }
 
@@ -137,10 +156,10 @@ func (Linter) AnnotateLintStatements(ctx context.Context, request *protocol.Anno
 // where the published rule permits the file and the request enables the rule.
 func (l Linter) CheckLintMigrations(ctx context.Context, request *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
 	result := &protocol.CheckedLint{Complete: true}
-	if slices.Contains(request.Codes, "FX102") {
+	if slices.Contains(request.Codes, fx102) {
 		for i, file := range request.Files {
-			if l.ruleAppliesToFile("FX102", file) {
-				result.Findings = append(result.Findings, &protocol.LintFinding{Code: "FX102", File: lintPosition(i), Statement: -1, Message: checkedTarget(request)})
+			if l.ruleAppliesToFile(fx102, file) {
+				result.Findings = append(result.Findings, &protocol.LintFinding{Code: fx102, File: lintPosition(i), Statement: -1, Message: checkedTarget(request)})
 				break
 			}
 		}
@@ -149,12 +168,12 @@ func (l Linter) CheckLintMigrations(ctx context.Context, request *protocol.Check
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if !l.ruleAppliesToFile("FX101", file) {
+		if !l.ruleAppliesToFile(fx101, file) {
 			continue
 		}
 		for j, statement := range file.Statements {
-			if slices.Contains(request.Codes, "FX101") && dropsTable(statement) {
-				result.Findings = append(result.Findings, &protocol.LintFinding{Code: "FX101", File: lintPosition(i), Statement: lintPosition(j), Message: "DROP TABLE removes every row"})
+			if slices.Contains(request.Codes, fx101) && dropsTable(statement) {
+				result.Findings = append(result.Findings, &protocol.LintFinding{Code: fx101, File: lintPosition(i), Statement: lintPosition(j), Message: "DROP TABLE removes every row"})
 			}
 		}
 	}

@@ -27,10 +27,12 @@ The SDK's own process tests build it against the in-tree SDK through a workspace
 file in a temporary directory, because the client under test is the in-tree one
 and the tests exercise what the in-tree SDK adds.
 
-The mixed-version tests build the fixture's contract-25.0 programs
-(`provider`, `lint` and `contract-host`) against `provider-sdk/v0.2.0` instead,
-so that a host and a provider of different contract minors meet. Those programs
-and the `backend` package use nothing a later minor added. That release declares
+The mixed-version tests build the fixture's `provider` and `contract-host`
+programs against `provider-sdk/v0.2.0`, an SDK of contract 25, instead, so that
+a host and a provider of different contract revisions meet. Each side refuses
+the other at the handshake, and the tests hold the refusal: the host names the
+contract it speaks and the revision it needs. Those programs and the `backend`
+package use nothing a later minor added. That release declares
 the module's old path (see [Versions](#versions)), so the tests rewrite the
 imports of a copy of the fixture to it before the build. A `replace` directive
 cannot stand in, because the release imports its own packages by the path it
@@ -39,7 +41,10 @@ declares.
 The conformance tests across releases install the suite's command from
 `provider-sdk/v0.26.0`, the oldest release that ships it, and run it against
 the fixture provider built with the in-tree SDK. The in-tree suite checks the
-fixture provider built against that release in turn.
+fixture provider built against that release in turn. Both runs end at
+`bootstrap.start`, because the two sides speak different contract revisions;
+a release of contract 26 takes the place of v0.26.0 once the next minor needs
+a measurement across minors.
 
 SDK-only proof programs under `integration/testdata` build in
 an isolated temporary module using the same workspace. They can exercise an
@@ -78,10 +83,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.45. Each released SDK speaks one contract:
+speaks contract 26.0. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.45.0` | 26.0 |
 | `provider-sdk/v0.44.0` | 25.45 |
 | `provider-sdk/v0.43.0` | 25.44 |
 | `provider-sdk/v0.42.0` | 25.43 |
@@ -334,7 +340,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ValidateSchema` | A completed offline schema check with typed invalid, unsupported, or omitted-declaration diagnostics. |
 | `SplitLintStatements` | Complete statement boundaries for migration sources under the engine's own lexing, with the facts the split judges. |
 | `AnnotateLintStatements` | One annotation per statement a dialect-blind scanner split. The owner declines a statement its lexing would split differently. |
-| `CheckLintMigrations` | A complete set of findings for the enabled rule codes over every file of a run, or an error and no finding. |
+| `CheckLintMigrations` | A complete set of findings for the enabled rules, by name, over every file of a run, or an error and no finding. |
 | `ProvisionDevDatabase` | A lease and an address for a throwaway database or for a realm in a database the operator names, or a typed refusal (unsupported spec, unavailable runtime). The owner removes what it created. |
 | `ReleaseDevDatabase` | Removal of what a lease names. A lease that is already gone succeeds. |
 | `ListDevObjects` | Every object a dev database cleanup would remove or stop at, or an error and no list. |
@@ -2078,32 +2084,33 @@ that lists the feature declares at least one rule.
 
 | Field | What it holds |
 | --- | --- |
-| `code` | The identifier a finding carries: an uppercase ASCII letter, then uppercase ASCII letters and digits. |
+| `code` | The rule's name, the identifier a finding carries: `category/name`, two lowercase segments joined by a slash, each of letters and digits joined by single hyphens, such as `locking/add-foreign-key`. The field keeps the name `code` and carries the name. `provider.ValidLintRuleName` is the one definition of the grammar, and the host reads it from there. |
 | `title` | The rule's short name in reports. It is not blank. |
 | `severity` | The default severity: `INFO`, `WARNING` or `ERROR`. |
 | `applies_to_down` | Whether the rule also judges the rollback half of a migration. The request holds down files either way, and the host does not filter findings by this field, so the owner applies it. |
 | `subsumes` | The rules whose finding on the same statement this rule's finding replaces. |
 
-The fixture's `FX101` rule checks a down file only when its published rule sets
+The fixture's `design/fx101` rule checks a down file only when its published rule sets
 `applies_to_down`.
 
 `ValidateDescription` refuses a rule that breaks these shapes, a rule that
-subsumes itself and a code declared twice in the description
-(`TestLintDescriptionDeclaresRules_FailurePath`). The host holds every
-provider's rules beside its own. It refuses to register a code another provider
-publishes. A lint run refuses a code one of the host's rules uses and a
+subsumes itself and a name declared twice in the description
+(`TestLintDescriptionDeclaresRules_FailurePath`). A rule written as a code of an
+earlier revision, such as `XY101`, is refused with a message that says the
+contract requires `category/name`. The host holds every provider's rules beside
+its own, and a lint run refuses a name one of the host's rules uses and a
 `subsumes` entry that names no rule.
 
 ### How a run enables rules
 
 The host decides which rules a run checks, and `CheckLintRequest.codes` lists
-them. It leaves out a rule that `--disable` or `disabled-rules` in
-`.ptah-lint.yaml` turns off, and a rule whose code starts with `ON` unless the
+their names. It leaves out a rule that `--disable` or `disabled-rules` in
+`.ptah-lint.yaml` turns off, and a rule of the `online` category unless the
 run is under `online: require`. A run that enables no rule of the engine, or
 selects no file, does not call the service.
 
-`ValidateCheckLintRequest` refuses a repeated code and a code the engine does
-not declare. The owner judges the enabled codes and no others.
+`ValidateCheckLintRequest` refuses a repeated name and a name the engine does
+not declare. The owner judges the enabled rules and no others.
 
 The request holds every file of the run, in the order the migrator applies them,
 with the statements of the run's split. That includes a file whose path the

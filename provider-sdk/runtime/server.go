@@ -252,7 +252,8 @@ func (s *serverAdapter) Describe(ctx context.Context, request *protocol.Describe
 		return nil, status.FromContextError(err).Err()
 	}
 	if request.GetRevision() != provider.Revision {
-		return nil, status.Error(codes.FailedPrecondition, "incompatible provider protocol revision")
+		return nil, status.Error(codes.FailedPrecondition, fmt.Sprintf("%s: this provider speaks contract %s and the host asked for revision %d",
+			incompatibleRevision, provider.ContractString(provider.Contract()), request.GetRevision()))
 	}
 	host := provider.HostContract(request)
 	if host.GetMajor() != request.GetRevision() {

@@ -134,11 +134,12 @@ func exercisedChecks() []string {
 	return []string{"bootstrap.start", "negotiation.description", "calls.render-create", "calls.render-nullable-key", "live.open", "live.inspect", "live.changes.items"}
 }
 
-// The suite of an earlier release acts as a strict host of that release. The
-// fixture provider built with the in-tree SDK passes it, offline and against a
-// database file: nothing the in-tree SDK adds breaks a host of an earlier
-// minor.
-func TestReleasedSuiteChecksAProviderOfThisSDK(t *testing.T) {
+// The suite of a release of contract 25 acts as a strict host of that
+// contract. The fixture provider built with the in-tree SDK speaks contract 26
+// and refuses its handshake, so the run fails at the negotiation and no check
+// that needs a session runs. This is the refusal a host of the earlier
+// contract gets, whatever it reads from it.
+func TestReleasedSuiteIsRefusedByAProviderOfThisSDK(t *testing.T) {
 	c := qt.New(t)
 	suite := buildReleasedSuite(c, suiteSDK)
 	binary := buildFixture(c, "provider")
@@ -148,33 +149,24 @@ func TestReleasedSuiteChecksAProviderOfThisSDK(t *testing.T) {
 
 	stdout, err := run.Output()
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
+	c.Assert(err, qt.ErrorMatches, "exit status 1")
 	var report conformance.Report
 	c.Assert(json.Unmarshal(stdout, &report), qt.IsNil)
-	c.Assert(report.Failures(), qt.HasLen, 0)
 	c.Assert(report.Contract, qt.Equals, suiteContract)
-	outcomes := statuses(&report)
-	for _, id := range exercisedChecks() {
-		c.Assert(outcomes[id], qt.Equals, conformance.Passed, qt.Commentf("check %s", id))
-	}
+	c.Assert(statuses(&report)["bootstrap.start"], qt.Equals, conformance.Failed)
 }
 
-// The in-tree suite acts as a strict host of the in-tree contract against the
-// fixture provider built with an earlier release: a host of a later minor
-// serves a provider of an earlier one.
-func TestThisSuiteChecksAProviderOfTheReleasedSDK(t *testing.T) {
+// The in-tree suite acts as a strict host of the in-tree contract. The
+// fixture provider built with a release of contract 25 refuses the handshake,
+// and the report names the contract this suite speaks.
+func TestThisSuiteIsRefusedByAProviderOfTheReleasedSDK(t *testing.T) {
 	c := qt.New(t)
 	binary := buildReleasedFixture(c, suiteSDK, "provider")
 
 	report, err := conformance.Check(c.Context(), fixtureConformance(c, binary))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(report.Err(), qt.IsNil)
+	c.Assert(report.Err(), qt.IsNotNil)
 	c.Assert(report.Contract, qt.Equals, provider.ContractString(provider.Contract()))
-	c.Assert(report.Provider, qt.IsNotNil)
-	c.Assert(report.Provider.MinContract, qt.Equals, "25.0")
-	outcomes := statuses(report)
-	for _, id := range exercisedChecks() {
-		c.Assert(outcomes[id], qt.Equals, conformance.Passed, qt.Commentf("check %s", id))
-	}
+	c.Assert(statuses(report)["bootstrap.start"], qt.Equals, conformance.Failed)
 }

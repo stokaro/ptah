@@ -16,7 +16,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -137,89 +136,31 @@ func offered(description *protocol.Description) []string {
 	return features
 }
 
-// A host of this SDK starts a provider built from the SDK of contract 25.0.
-// The provider declares no minimum, so it needs contract 25.0, and offers none
-// of the additions. What contract 25.0 had works; an addition is
-// refused before anything is sent.
-func TestNewHostWithAContract25Provider(t *testing.T) {
+// A host of this SDK refuses a provider built from an SDK of contract 25. The
+// provider refuses the handshake before it describes itself, so the host names
+// what it speaks and what it needs instead of failing on the first message it
+// cannot read: the lint rules of that contract are identified by code, and the
+// rules of this one by name.
+func TestNewHostRefusesAProviderOfContract25(t *testing.T) {
 	c := qt.New(t)
-	client := start(c, newHostOptions(c, buildContract25Fixture(c, "provider")))
-	description := client.Description()
-	c.Assert(provider.ContractString(provider.MinimumContract(description)), qt.Equals, "25.0")
-	added := append(provider.TwoWayFeatures(), provider.TypeRowsFeature, provider.ReadRowsFeature, provider.RenderRowWritesFeature,
-		provider.SeedsFeature, provider.DevCleanupFeature, provider.ReplayGuardFeature)
-	for _, feature := range added {
-		c.Assert(offered(description), qt.Not(qt.Contains), feature)
-	}
-	c.Assert(description.GetEngines()[0].GetQueryDialect(), qt.IsNil)
-	session := open(c, client, "")
-	result, err := client.Execute(c.Context(), execution(session.Id))
-	c.Assert(err, qt.IsNil)
-	c.Assert(result.GetOutcome(), qt.Equals, protocol.Execution_APPLIED)
-	timed := execution(session.Id)
-	timed.RequestId, timed.StatementTimeoutNanoseconds = "timed", int64(time.Minute)
-	_, err = client.Execute(c.Context(), timed)
-	c.Assert(err, qt.ErrorMatches, `.*statement timeouts were not negotiated`)
-	_, err = client.ReadRows(c.Context(), &protocol.ReadRowsRequest{SessionId: session.Id, Table: &protocol.Reference{Kind: "table", Name: "first"},
-		Columns: []string{"id"}, KeyColumns: []string{"id"}, MaxRows: 1})
-	c.Assert(err, qt.ErrorMatches, `.*data\.read-rows was not negotiated`)
-	_, err = client.ListDevObjects(c.Context(), &protocol.ListDevObjectsRequest{SessionId: session.Id})
-	c.Assert(err, qt.ErrorMatches, `.*database\.dev-cleanup was not negotiated`)
-	after, err := client.Inspect(c.Context(), &protocol.InspectRequest{SessionId: session.Id})
-	c.Assert(err, qt.IsNil)
-	c.Assert(after.GetTables(), qt.HasLen, 2)
+
+	_, err := transport.Start(c.Context(), newHostOptions(c, buildContract25Fixture(c, "provider")))
+
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(err, qt.ErrorMatches, `.*another contract revision than this host, which speaks contract 26\.0; rebuild the provider with an SDK of revision 26.*`)
 }
 
-// A lint provider built from the SDK of contract 25.0 splits and annotates
-// with the facts of that contract. A host of this SDK does not ask it for a statement fact it does not
-// offer.
-func TestNewHostWithAContract25Linter(t *testing.T) {
-	c := qt.New(t)
-	client := start(c, newHostOptions(c, buildContract25Fixture(c, "lint")))
-	sources := []*protocol.LintSource{{Name: "1.sql", Sql: "CREATE TABLE a (id INTEGER);\nDROP TABLE a;", Up: true}}
-	split, err := client.SplitLintStatements(c.Context(), &protocol.SplitLintRequest{Engine: "fixture", Sources: sources})
-	c.Assert(err, qt.IsNil)
-	c.Assert(split.Files[0].Statements, qt.HasLen, 2)
-	files := []*protocol.LintFile{{Name: "1.sql", Up: true, Statements: split.Files[0].Statements}}
-	_, err = client.AnnotateLintStatements(c.Context(), &protocol.AnnotateLintRequest{Engine: "fixture",
-		Facts: []protocol.LintFact{protocol.LintFact_LINT_FACT_STATEMENT_KIND}, Sources: sources, Files: files})
-	c.Assert(err, qt.ErrorMatches, `.*unnegotiated.*`)
-	annotated, err := client.AnnotateLintStatements(c.Context(), &protocol.AnnotateLintRequest{Engine: "fixture",
-		Facts: []protocol.LintFact{protocol.LintFact_LINT_FACT_STATEFUL_DROP}, Sources: sources, Files: files})
-	c.Assert(err, qt.IsNil)
-	c.Assert(annotated.Files[0].Statements[1].Effects[0].Fact, qt.Equals, protocol.LintFact_LINT_FACT_STATEFUL_DROP)
-}
-
-// runContractHost runs the contract-25.0 host against a provider and returns the
-// lines it printed.
-func runContractHost(c *qt.C, host, executable, mode, address string) []string {
-	c.Helper()
-	command := exec.CommandContext(c.Context(), host, executable, mode, address) // #nosec G204 -- the test built both executables
-	output, err := command.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("contract host: %s", output))
-	return strings.Split(strings.TrimSpace(strings.ReplaceAll(string(output), "\r\n", "\n")), "\n")
-}
-
-// A host built from the SDK of contract 25.0 announces no version and lists
-// no feature. A provider built from this SDK
-// serves it everything contract 25.0 had, and its replies pass that host's
-// own checks.
-func TestContract25HostWithAProviderOfThisSDK(t *testing.T) {
+// A host built from the SDK of contract 25 announces revision 25, and a
+// provider of this SDK refuses it at the handshake. The older host does not
+// read the reason, so it reports only that the negotiation failed.
+func TestContract25HostIsRefusedByAProviderOfThisSDK(t *testing.T) {
 	c := qt.New(t)
 	host := buildContract25Fixture(c, "contract-host")
 	database := "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(c.TempDir(), "database.db")), "/")
 	address := (&url.URL{Scheme: "fixture", Path: database}).String()
-	lines := runContractHost(c, host, buildFixture(c, "provider"), "session", address)
-	c.Assert(lines[0], qt.Matches, `features=.*units\.execute.*`)
-	c.Assert(lines[1:], qt.DeepEquals, []string{"outcome=APPLIED", "table=items"})
-	// A provider that offers the services of contract 25.1 lists them, and
-	// the older host, which calls none of them, works with it all the same.
-	database = "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(c.TempDir(), "data.db")), "/")
-	lines = runContractHost(c, host, buildFixture(c, "data"), "session", (&url.URL{Scheme: "fixture", Path: database}).String())
-	c.Assert(lines[0], qt.Matches, `features=.*data\.read-rows.*`)
-	c.Assert(lines[1:], qt.DeepEquals, []string{"outcome=APPLIED", "table=items"})
-	lines = runContractHost(c, host, buildFixture(c, "lint"), "lint", "")
-	c.Assert(lines[0], qt.Matches, `features=.*lint\.migrations.*`)
-	c.Assert(lines[0], qt.Not(qt.Matches), `.*lint\.statement-facts.*`)
-	c.Assert(lines[1:], qt.DeepEquals, []string{"judged=LINT_FACT_STATEFUL_DROP", "statements=2"})
+
+	output, err := exec.CommandContext(c.Context(), host, buildFixture(c, "provider"), "session", address).CombinedOutput() // #nosec G204 -- the test built both executables
+
+	c.Assert(err, qt.ErrorMatches, "exit status 1")
+	c.Assert(string(output), qt.Contains, "provider negotiate failed (FailedPrecondition)")
 }

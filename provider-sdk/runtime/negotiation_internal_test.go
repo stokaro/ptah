@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -39,7 +40,7 @@ func contractDescription() *protocol.Description {
 			Id: "test", Features: []string{provider.LintFeature, provider.LintStatementFactsFeature},
 			Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT,
 				IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE},
-			LintRules:    []*protocol.LintRule{{Code: "XY101", Title: "Table without key", Severity: protocol.LintRule_WARNING}},
+			LintRules:    []*protocol.LintRule{{Code: "design/xy101", Title: "Table without key", Severity: protocol.LintRule_WARNING}},
 			QueryDialect: &protocol.QueryDialect{Placeholder: "question"},
 		}},
 	}
@@ -133,43 +134,35 @@ func TestNewHostGetsWhatItLists(t *testing.T) {
 	c.Assert(split.Files[0].Statements[0].Effects[1].Table, qt.Equals, "a")
 }
 
-// A provider that needs contract 25.1 refuses a host that announces no
-// version, since such a host cannot compare versions, and names both. A host
-// that announces a version gets the description and decides itself; the SDK
-// client refuses one below the minimum, naming both.
+// A host that announces a version gets the description and decides itself;
+// the SDK client refuses a provider whose minimum is above the host's minor,
+// naming both versions. A provider cannot declare such a minimum through this
+// SDK while it speaks minor 0, so the test sets one on the description it was
+// given.
 func TestMinimumContractDecidesWhoStarts(t *testing.T) {
 	c := qt.New(t)
-	description := contractDescription()
-	description.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: 1}
-	server := newServerAdapter(Server{Description: description})
-	_, err := server.Describe(c.Context(), &protocol.DescribeRequest{Revision: provider.Revision})
-	c.Assert(status.Code(err), qt.Equals, codes.FailedPrecondition)
-	c.Assert(status.Convert(err).Message(), qt.Equals, "provider requires contract 25.1 or a later minor of it; this host speaks 25.0")
+	server := newServerAdapter(Server{Description: contractDescription()})
 	described, err := server.Describe(c.Context(), &protocol.DescribeRequest{Revision: provider.Revision, HostContract: provider.Contract()})
 	c.Assert(err, qt.IsNil)
 	got, err := negotiate(described, Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(provider.ContractString(provider.MinimumContract(got)), qt.Equals, "25.1")
-	older := &protocol.ContractVersion{Major: provider.Revision}
-	described, err = server.Describe(c.Context(), &protocol.DescribeRequest{Revision: provider.Revision, HostContract: older})
-	c.Assert(err, qt.IsNil)
-	c.Assert(described, qt.IsNotNil)
-	described.MinContract.Minor = provider.ContractMinor + 1
+	c.Assert(provider.ContractString(provider.MinimumContract(got)), qt.Equals, provider.ContractString(&protocol.ContractVersion{Major: provider.Revision}))
+	described.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: provider.ContractMinor + 1}
 	got, err = negotiate(described, Options{})
-	c.Assert(err, qt.ErrorMatches, `provider requires contract 25\.46 or a later minor of it; this host speaks 25\.45`)
+	c.Assert(err, qt.ErrorMatches, `provider requires contract 26\.1 or a later minor of it; this host speaks 26\.0`)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
 	c.Assert(got, qt.IsNil)
 }
 
 // A description from a provider of minor 0 declares no minimum: it needs
-// 25.0, which every host of this major speaks. The client keeps from it only
+// 26.0, which every host of this major speaks. The client keeps from it only
 // what the host listed.
-func TestProviderWithoutMinimumIsContract25(t *testing.T) {
+func TestProviderWithoutMinimumNeedsMinorZero(t *testing.T) {
 	c := qt.New(t)
 	description := contractDescription()
 	got, err := negotiate(description, Options{HostFeatures: []string{provider.StatementTimeoutFeature}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(provider.ContractString(provider.MinimumContract(got)), qt.Equals, "25.0")
+	c.Assert(provider.ContractString(provider.MinimumContract(got)), qt.Equals, "26.0")
 	c.Assert(got.Features, qt.DeepEquals, []string{provider.LintFeature, provider.ExecuteFeature, provider.StatementTimeoutFeature})
 	c.Assert(got.Engines[0].Features, qt.DeepEquals, []string{provider.LintFeature})
 	c.Assert(got.Engines[0].QueryDialect, qt.IsNil)
@@ -210,7 +203,44 @@ func TestServerRefusesAMinimumAboveItsSDK(t *testing.T) {
 	description.Features = []string{provider.LintFeature}
 	description.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: provider.ContractMinor + 1}
 	server := Server{Description: description, Sessions: &sessionOwner{}, Linter: &factsLinter{}}
-	c.Assert(server.Validate(), qt.ErrorMatches, `.*minimum contract 25\.46 is outside contract 25\.45`)
+	c.Assert(server.Validate(), qt.ErrorMatches, `.*minimum contract 26\.1 is outside contract 26\.0`)
 	description.MinContract.Minor = provider.ContractMinor
 	c.Assert(server.Validate(), qt.IsNil)
+}
+
+// A provider of another revision refuses the handshake and says which contract
+// it speaks. An executable built with an SDK of an earlier revision sends only
+// the opening words, so the host names the contract it needs and the one it
+// speaks, which a bare "provider negotiate failed" does not.
+func TestRevisionRefusalNamesBothContracts(t *testing.T) {
+	c := qt.New(t)
+	server := newServerAdapter(Server{Description: contractDescription()})
+	_, err := server.Describe(c.Context(), &protocol.DescribeRequest{Revision: provider.Revision - 1})
+	c.Assert(status.Code(err), qt.Equals, codes.FailedPrecondition)
+	c.Assert(status.Convert(err).Message(), qt.Equals,
+		"incompatible provider protocol revision: this provider speaks contract 26.0 and the host asked for revision 25")
+
+	for name, refusal := range map[string]error{
+		"an SDK of an earlier revision": status.Error(codes.FailedPrecondition, "incompatible provider protocol revision"),
+		"an SDK of this revision":       err,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			got := revisionRefusal(refusal, errors.New("fallback"))
+			c.Assert(got, qt.ErrorIs, provider.ErrProtocol)
+			c.Assert(got, qt.ErrorMatches, `.*another contract revision than this host, which speaks contract 26\.0; rebuild the provider with an SDK of revision 26.*`)
+		})
+	}
+}
+
+func TestRevisionRefusalLeavesOtherFailuresAlone(t *testing.T) {
+	c := qt.New(t)
+	fallback := errors.New("fallback")
+	for _, cause := range []error{
+		status.Error(codes.FailedPrecondition, "a required feature is missing"),
+		status.Error(codes.InvalidArgument, "incompatible provider protocol revision"),
+		errors.New("incompatible provider protocol revision"),
+	} {
+		c.Assert(revisionRefusal(cause, fallback), qt.Equals, fallback)
+	}
 }

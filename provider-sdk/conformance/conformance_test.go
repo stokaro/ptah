@@ -80,7 +80,7 @@ func conforming() map[string]conformance.Status {
 		"handshake.contract-major":     conformance.Passed,
 		"handshake.host-features":      conformance.Passed,
 		"handshake.required-features":  conformance.Passed,
-		"handshake.contract-25.0-host": conformance.Passed,
+		"handshake.contract-26.0-host": conformance.Passed,
 		"handshake.minimum-contract":   conformance.Passed,
 		"description.valid":            conformance.Passed,
 		"description.identity":         conformance.Passed,
@@ -231,7 +231,7 @@ func TestCheck_WireFailurePath(t *testing.T) {
 		{
 			name:    "a description that ignores the host's features",
 			defects: wireDefects{describeAll: true},
-			want:    []string{"handshake.contract-25.0-host", "handshake.host-features", "live.inspect", "negotiation.description", "reasons.negotiated"},
+			want:    []string{"handshake.contract-26.0-host", "handshake.host-features", "live.inspect", "negotiation.description", "reasons.negotiated"},
 		},
 		{
 			name:    "a reason the host did not negotiate",
@@ -241,12 +241,12 @@ func TestCheck_WireFailurePath(t *testing.T) {
 		{
 			name:    "a certified release line that names an image and a linked engine",
 			defects: wireDefects{imageAndLinked: true},
-			want:    []string{"description.valid", "handshake.contract-25.0-host", "negotiation.description"},
+			want:    []string{"description.valid", "handshake.contract-26.0-host", "negotiation.description"},
 		},
 		{
 			name:    "enum columns a host that did not list them receives",
 			defects: wireDefects{enumColumnsRegardless: true},
-			want:    []string{"handshake.contract-25.0-host", "negotiation.description"},
+			want:    []string{"handshake.contract-26.0-host", "negotiation.description"},
 		},
 		{
 			name:    "an offered service that answers Unimplemented",
