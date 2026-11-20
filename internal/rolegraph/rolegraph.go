@@ -31,9 +31,9 @@ import (
 //     refers to it.
 //
 // Every membership comes back as the read reported it in two cases, because
-// neither can be narrowed without guessing. A target with
-// [capability.RoleMembership] compares memberships, so any edge can change the
-// plan. A read that does not say which role it ran as leaves the role running
+// neither can be narrowed without guessing. A target that compares memberships
+// and writes no statement naming both roles of an edge (see [comparesEveryEdge])
+// can have any edge change the plan. A read that does not say which role it ran as leaves the role running
 // the plan unknown.
 // An edge known to allow neither inheritance nor SET ROLE joins the plan only
 // when a statement names one of its roles.
@@ -42,7 +42,7 @@ import (
 // server-wide read does not, and an ADMIN-only creator edge can add a role to
 // a referenced read without giving the creator access to it.
 func ForPlan(database *catalog.Database, statements []string, scope descriptor.RoleScope, capabilities capability.Capabilities) []catalog.RoleMembership {
-	if database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
+	if database.ConnectedRole == "" || comparesEveryEdge(capabilities) {
 		return database.RoleMemberships
 	}
 	// PostgreSQL can give a role ADMIN without allowing inheritance or SET
@@ -58,6 +58,16 @@ func ForPlan(database *catalog.Database, statements []string, scope descriptor.R
 	// for example when dropping that role.
 	related = append(related, Related(database.RoleMemberships, Named(database.RoleMemberships, statements))...)
 	return sortMemberships(related)
+}
+
+// comparesEveryEdge reports a target whose plan can change with an edge that no
+// statement of the plan names. YDB's `ALTER GROUP g ADD USER m` is planned from
+// a comparison of the whole graph and carries no option. PostgreSQL, MySQL and
+// ClickHouse plan `GRANT g TO m` and `REVOKE g FROM m`, which name both roles,
+// so [Named] finds every edge such a plan touches, and they hold the admin
+// option, which is how this tells the two apart.
+func comparesEveryEdge(capabilities capability.Capabilities) bool {
+	return capabilities.Has(capability.RoleMembership) && !capabilities.Has(capability.RoleMembershipAdmin)
 }
 
 // An unreported option stays eligible. Only a known false/false pair proves
