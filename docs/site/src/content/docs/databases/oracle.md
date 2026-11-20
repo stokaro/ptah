@@ -33,7 +33,8 @@ declared on a column is named `orders_total_check`, stored as
 `ORDERS_TOTAL_CHECK` and matched on the next run. Oracle names an unnamed table
 `CHECK` or `UNIQUE` itself, `SYS_C<n>`, so the comparison matches it to the
 unnamed declaration by its condition, ignoring case and spacing, or by its
-columns in order. A changed condition is a drop and an add.
+columns in order. A changed condition is a drop and an add. `schema inspect`
+writes such a constraint with no name.
 
 Oracle holds a constraint name once per schema, so two `CHECK` constraints of
 one name are refused before anything runs (`ORA-02264`). `ck` and `"CK"` are
@@ -518,8 +519,9 @@ view after the views it reads and refuses views that read one another. The
 ## Unique keys
 
 A column gains its `UNIQUE` with `MODIFY (a ... UNIQUE)` and loses it with
-`DROP UNIQUE (a)`, since Oracle names the key. A column of a key over several
-columns is not unique by itself.
+`DROP UNIQUE (a)`, since Oracle names the key. A foreign key the plan drops
+over that key goes first. A column of a key over several columns is not unique
+by itself.
 
 ## Constraints that defer their check
 
@@ -530,9 +532,8 @@ key Oracle named itself is compared through the table's column flags, which
 cannot defer, so a deferrable one is compared as the table's key instead.
 Name a deferrable `UNIQUE`: Oracle names an unnamed one `SYS_C<n>`, which
 differs in every database. A change of deferral is a drop and an add. A key
-that is not deferrable reads back with no deferral clause, so `schema inspect`
-writes it as the server stores it and the file compares clean with the account
-it came from.
+that does not defer reads back with no deferral clause, so an inspected file
+compares clean with its account.
 
 A `CHECK` written on a column takes a deferral clause as a table's does, and
 one that defers is compared as a table's `CHECK`. Oracle fixes a `CHECK`'s
@@ -541,9 +542,8 @@ declaration is replaced. The plan adds the new `CHECK` before it drops the old
 one: a named one under a temporary name, renamed to the declared name after the
 drop. Oracle commits each statement, so a row that refuses the new `CHECK`
 stops the plan with the old one still in place. The temporary name is the same
-on every run for one table and constraint, so a run that stops after the add
-leaves the new `CHECK` under it. The next plan drops that `CHECK` first, before
-it adds the new one again.
+on every run for one table and constraint, so the next plan drops a `CHECK` a
+stopped run left under it before it adds the new one again.
 
 No declaration disables a `CHECK` or a foreign key, or leaves its rows
 unchecked, so the parser refuses `DISABLE` and `NOVALIDATE`. One the account

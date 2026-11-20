@@ -1319,6 +1319,53 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 	}
 }
 
+// releaseForeignKeysOverColumnKeyDrops adds to plan the foreign keys the diff
+// removes or changes that reference a column alone whose own key the column
+// change drops. They leave ahead of the column changes, where Oracle's
+// `DROP UNIQUE (code)` goes: the server answers ORA-02273 while a foreign key
+// still references the key. Where the diff keeps such a foreign key, the plan
+// is refused before this runs, since the referenced column is no longer
+// declared unique.
+func (p *Planner) releaseForeignKeysOverColumnKeyDrops(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
+	if diff == nil || !dropsColumnKeyWithColumnChange(p.targetDialect()) {
+		return
+	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	losesKey := make(map[string]map[string]bool)
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			change, changed := column.Changes["unique"]
+			if !changed || !previousColumnNullable(change) {
+				continue
+			}
+			key := semantics.QualifiedTableIdentityKey(table.TableName)
+			if losesKey[key] == nil {
+				losesKey[key] = make(map[string]bool)
+			}
+			losesKey[key][semantics.ColumnIdentityKey(column.ColumnName)] = true
+		}
+	}
+	for _, info := range diff.ForeignKeysRemovedWithTables {
+		if _, done := plan.dropped[info.Identity]; done || len(info.ForeignColumns) != 1 ||
+			!losesKey[semantics.QualifiedTableIdentityKey(info.ForeignTable)][semantics.ColumnIdentityKey(info.ForeignColumns[0])] {
+			continue
+		}
+		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
+			Name: info.Name, TableName: info.TableName, Type: "FOREIGN KEY",
+		}))
+		plan.dropped[info.Identity] = struct{}{}
+	}
+}
+
+// dropsColumnKeyWithColumnChange reports whether dialect's renderer drops the
+// key a column loses in the statement that changes the column, rather than
+// with the constraint removals. Oracle's does, with `DROP UNIQUE (column)`,
+// because the key the server named for a column is not in the read under a
+// name the plan could drop.
+func dropsColumnKeyWithColumnChange(dialect string) bool {
+	return dialect == platform.Oracle
+}
+
 // collectColumnTypeForeignKeyActions returns, deduped per (table, name) and
 // sorted deterministically, the foreign keys to pre-drop and the subset this
 // planner also re-adds. See planColumnTypeForeignKeyChanges for the ownership
@@ -2115,6 +2162,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// redundant drop of the same (table, name).
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff)
 	p.releaseForeignKeysOverMovedKeys(diff, &fkPlan)
+	p.releaseForeignKeysOverColumnKeyDrops(diff, &fkPlan)
 	result = append(result, fkPlan.drops...)
 
 	// 4a. Drop a removed key that holds the name a column's own UNIQUE takes,
