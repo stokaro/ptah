@@ -38,6 +38,7 @@ import (
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/mysqldefiner"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
@@ -949,6 +950,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 				return "", err
 			}
 		}
+		omissionnote.Report(cmd.Context(), cmd.ErrOrStderr(), plan.Omissions)
 
 		if !plan.HasChanges() {
 			atlasschema.WriteUnitReports(cmd.OutOrStdout(), nil, plan.Annotations)

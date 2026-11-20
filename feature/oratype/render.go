@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/defaultlit"
 )
 
@@ -56,7 +57,7 @@ func validator[P interface {
 func renderCreateDomain(ctx renderer.ExtensionContext, value *CreateDomain) ([]string, error) {
 	var lines []string
 	if value.Comment != "" {
-		lines = append(lines, "-- "+value.Comment)
+		lines = append(lines, sqlutil.LineComment(value.Comment))
 	}
 	statement := "CREATE DOMAIN" + createGuard(ctx) + " " + statementName(value.Target.Schema, value.Target.Name) + " AS " + value.BaseType
 	if value.NotNull {
@@ -81,7 +82,7 @@ func renderCreateDomain(ctx renderer.ExtensionContext, value *CreateDomain) ([]s
 func renderReplaceObjectType(_ renderer.ExtensionContext, value *ReplaceObjectType) ([]string, error) {
 	var lines []string
 	if value.Comment != "" {
-		lines = append(lines, "-- "+value.Comment)
+		lines = append(lines, sqlutil.LineComment(value.Comment))
 	}
 	attributes := make([]string, len(value.Attributes))
 	for i, attribute := range value.Attributes {

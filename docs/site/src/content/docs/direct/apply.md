@@ -234,6 +234,12 @@ The rest of the plan runs. A warning names a declaration that a planned
 statement leaves out, so a run that plans no statement prints none, even when
 the schema still declares what the database cannot hold.
 
+A saved plan records its omissions in the plan file. `schema approve` prints
+them as it signs, and `schema apply --plan` prints them again, so the person
+who approves the file and the run that applies it read what the database will
+not carry, not only the run that planned it. The signature covers them with the
+rest of the file.
+
 ## Apply with approval
 
 Without `--dry-run`, the command shows the same plan and asks for confirmation

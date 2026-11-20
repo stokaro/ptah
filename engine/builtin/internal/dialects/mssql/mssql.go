@@ -1090,11 +1090,11 @@ func (r *Renderer) renderRawSQL(node *ast.RawSQLNode) error {
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- SQLSERVER: %s is not generated for this target; skipped.", feature)
-		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature})
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature})
 		return
 	}
 	r.w.WriteLinef("-- SQLSERVER: %s %q is not generated for this target; skipped.", feature, name)
-	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature, Name: name})
 }
 
 func renderColumn(column *ast.ColumnNode) (string, error) {

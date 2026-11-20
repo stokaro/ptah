@@ -8,7 +8,8 @@
 // provider writes no comment at all. So `schema render` and every command that
 // renders a plan raise one run warning per omission
 // ([ptah.run/internal/rundiag.RenderOmissions]), and a generated migration file
-// carries the same text as comments. A render raises an omission only for what
+// carries the same text as comments, except for an omission whose statements
+// already hold the renderer's own comment. A render raises an omission only for what
 // it writes, so a plan with no statement raises none, however much the declared
 // schema holds that the target cannot carry.
 package omissionnote
@@ -19,13 +20,18 @@ import (
 	"log/slog"
 
 	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/rundiag"
 )
 
 // Line is the warning for omission, without the "warning: " prefix: the
 // target, the owning object, then the lost property and its declared value
 // where there is one, as `schema validate --no-skipped` names them, then the
-// omission's reason token and the remedy where the target has one.
+// omission's reason token and the remedy where the target has one. The line
+// is one line whatever the declared text holds: a line break or another control
+// character in a name or a value is written as an escape
+// ([ptah.run/core/sqlutil.CommentText]), so the same text is safe as a stderr
+// warning and as a `--` comment in a migration file.
 func Line(omission renderer.Omission) string {
 	subject := omission.Kind + " " + omission.Name
 	if omission.Property != "" {
@@ -38,7 +44,7 @@ func Line(omission renderer.Omission) string {
 	if omission.Remedy != "" {
 		line += "; " + omission.Remedy
 	}
-	return line
+	return sqlutil.CommentText(line)
 }
 
 // Report raises a warning on out for each of omissions, for the run ctx
@@ -63,11 +69,16 @@ func Report(ctx context.Context, out io.Writer, omissions []renderer.Omission) {
 }
 
 // Comments is omissions as SQL line comments, the text of each warning once,
-// in the order given, for a migration file whose statements leave them out.
+// in the order given, for a migration file whose statements leave them out. An
+// omission the renderer already wrote a comment for ([renderer.Omission.Commented])
+// is left out, so the file does not say the same thing twice.
 func Comments(omissions []renderer.Omission) []string {
 	seen := make(map[string]bool, len(omissions))
 	comments := make([]string, 0, len(omissions))
 	for _, omission := range omissions {
+		if omission.Commented {
+			continue
+		}
 		line := Line(omission)
 		if seen[line] {
 			continue

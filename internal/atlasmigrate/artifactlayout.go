@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/sqlscript"
 )
@@ -334,7 +335,7 @@ func composeLiquibaseArtifact(
 		liquibaseChangesetAuthor, version, liquibaseChangesetAttributes(content))
 	for _, statement := range content.Statements {
 		if statement.Change != "" {
-			fmt.Fprintf(&body, "-- %s\n", statement.Change)
+			fmt.Fprintf(&body, "%s\n", sqlutil.LineComment(statement.Change))
 		}
 		sql := strings.TrimRight(statement.SQL, "\n")
 		body.WriteString(sql)

@@ -122,11 +122,11 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: %s is not supported", feature)
-		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature})
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature})
 		return
 	}
 	r.w.WriteLinef("-- CLICKHOUSE: %s %q is not supported", feature, name)
-	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: feature, Name: name})
 }
 
 // renderCreateSchema renders schema creation as ClickHouse database creation.

@@ -99,13 +99,14 @@ func publicOmissions(dialect string, sink *renderdiag.Sink) []renderer.Omission 
 	out := make([]renderer.Omission, 0, len(recorded))
 	for _, omission := range recorded {
 		out = append(out, renderer.Omission{
-			Dialect:  dialect,
-			Reason:   string(omission.Reason),
-			Kind:     omission.Kind,
-			Name:     omission.Name,
-			Property: omission.Property,
-			Detail:   omission.Detail,
-			Remedy:   omission.Remedy,
+			Dialect:   dialect,
+			Reason:    string(omission.Reason),
+			Kind:      omission.Kind,
+			Name:      omission.Name,
+			Property:  omission.Property,
+			Detail:    omission.Detail,
+			Remedy:    omission.Remedy,
+			Commented: omission.Commented,
 		})
 	}
 	return out

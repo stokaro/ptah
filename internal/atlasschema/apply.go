@@ -454,6 +454,10 @@ type applyComputation struct {
 	// naming is where the comparison placed a desired name written without a
 	// schema. A saved plan records its schema.
 	naming desiredNaming
+	// omissions are the declarations the plan's statements leave out. A saved
+	// plan records them, so the approver and the apply read what the planner
+	// warned about.
+	omissions []renderer.Omission
 }
 
 // PreflightApplyTarget validates the target state before an apply lock is
@@ -687,6 +691,7 @@ func computeApplyPlan(
 			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
 		}
 		omissionnote.Report(ctx, rundiag.Stream(ctx), plan.Result.Omissions)
+		computation.omissions = plan.Result.Omissions
 		effects := planeffect.Target{
 			Current:       current,
 			DefaultSchema: defaultSchemaOf(info),

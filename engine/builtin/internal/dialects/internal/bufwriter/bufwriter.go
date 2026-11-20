@@ -5,6 +5,7 @@ package bufwriter
 import (
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -17,13 +18,48 @@ type Writer struct {
 	output strings.Builder
 }
 
+// WriteLinef writes the formatted line and a newline. When format starts with
+// `--` the line is a comment, and the text arguments it formats in are declared
+// text that must not end it: each string, error and [fmt.Stringer] argument goes
+// through [sqlutil.CommentText] first, so a line break in it is written as an
+// escape. The format string itself is the renderer's own and is written as it is.
 func (w *Writer) WriteLinef(format string, args ...any) {
-	_, err := fmt.Fprintf(&w.output, format+"\n", args...)
-	if err != nil {
-		slog.Error("error writing line", "err", err)
+	if strings.HasPrefix(format, "--") {
+		args = commentSafeArgs(args)
 	}
+	w.WriteLine(fmt.Sprintf(format, args...))
 }
 
+// commentSafeArgs returns args with each text argument made safe to sit in a
+// `--` comment. The slice passed in is not changed.
+func commentSafeArgs(args []any) []any {
+	safe := make([]any, len(args))
+	for i, arg := range args {
+		switch typed := arg.(type) {
+		case string:
+			safe[i] = sqlutil.CommentText(typed)
+		case error:
+			safe[i] = commentSafeText(typed, typed.Error)
+		case fmt.Stringer:
+			safe[i] = commentSafeText(typed, typed.String)
+		default:
+			safe[i] = arg
+		}
+	}
+	return safe
+}
+
+// commentSafeText returns the text of value made comment-safe. A nil pointer
+// inside the interface is left for fmt to print as `<nil>`, as it does for any
+// argument, rather than called, which would panic.
+func commentSafeText(value any, text func() string) any {
+	if reflected := reflect.ValueOf(value); reflected.Kind() == reflect.Pointer && reflected.IsNil() {
+		return value
+	}
+	return sqlutil.CommentText(text())
+}
+
+// WriteLine writes s and a newline.
 func (w *Writer) WriteLine(s string) {
 	_, err := fmt.Fprint(&w.output, s+"\n")
 	if err != nil {

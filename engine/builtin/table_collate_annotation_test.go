@@ -50,16 +50,23 @@ func TestTableCollateAnnotation_TheMySQLFamilyWritesIt(t *testing.T) {
 // names it on a comment above the statement.
 func TestTableCollateAnnotation_AnotherTargetReportsItSkipped(t *testing.T) {
 	database := must.Must(goschema.ParseSource(builtintest.Annotations(), "docs.go", tableCollateSource))
-	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite,
-		platform.SQLServer, platform.Oracle, platform.ClickHouse} {
-		t.Run(dialect, func(t *testing.T) {
+	// commented is true where the renderer also writes a comment of its own beside
+	// the statement, so a migration file does not repeat the omission.
+	for _, target := range []struct {
+		dialect   string
+		commented bool
+	}{
+		{platform.Postgres, true}, {platform.CockroachDB, true}, {platform.YugabyteDB, true}, {platform.SQLite, false},
+		{platform.SQLServer, false}, {platform.Oracle, false}, {platform.ClickHouse, false},
+	} {
+		t.Run(target.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(&database, dialect, capability.ForDialect(dialect))
+			statements, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(&database, target.dialect, capability.ForDialect(target.dialect))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(omissions, qt.DeepEquals, []renderer.Omission{{Dialect: dialect, Reason: "unsupported", Kind: "table",
-				Name: "docs", Property: "table option COLLATE", Detail: "utf8mb4_bin"}})
+			c.Assert(omissions, qt.DeepEquals, []renderer.Omission{{Dialect: target.dialect, Reason: "unsupported", Kind: "table",
+				Name: "docs", Property: "table option COLLATE", Detail: "utf8mb4_bin", Commented: target.commented}})
 			c.Assert(statements[0], qt.Not(qt.Contains), ") COLLATE")
 		})
 	}
