@@ -952,10 +952,13 @@ and pipelines share a directory:
   lexer options Ptah splits the file's statements with — never from a separate
   list of dialects, which is how the two would drift apart. A leading `#`
   comment therefore stays part of the header wherever that reader treats it as
-  a comment, which is every supported target except SQL Server, and does not
-  hide the `no_transaction`, `lock_timeout` or `statement_timeout` directives
-  that follow it. On SQL Server `#` is not a comment, so a directive below one
-  really does sit below the first non-comment line and Ptah reports it.
+  a comment, which is MySQL, MariaDB and ClickHouse, and does not hide the
+  `no_transaction`, `lock_timeout` or `statement_timeout` directives that
+  follow it. Those three read every `#` as the start of a comment, whatever
+  character follows it. On the other targets `#` is not a comment (it is the
+  XOR operator on PostgreSQL, and the first character of a temporary table
+  name on SQL Server), so a directive below one really does sit below the
+  first non-comment line and Ptah reports it.
 
   The same grammar decides where a `--` comment begins. MySQL and MariaDB start
   one only when a whitespace or control character follows the second dash, so a

@@ -3,6 +3,8 @@ package clickhouse
 import (
 	"strings"
 
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -159,10 +161,7 @@ func matchEngineFullClause(tokens []lexer.Token, from int) (spec, consumed int) 
 // literal and also honors a backslash escape, so a settings value holding a
 // quote does not run the lexer into the rest of the statement.
 func engineFullTokens(engineFull string) []lexer.Token {
-	lex := lexer.NewLexerWithOptions(engineFull, lexer.Options{
-		StandardStrings:  true,
-		BackslashEscapes: true,
-	})
+	lex := lexer.NewLexerWithOptions(engineFull, dialectlexer.Options(platform.ClickHouse))
 
 	var tokens []lexer.Token
 	for {

@@ -21,8 +21,13 @@ func TestOptions_AnswersAProvidersScanner(t *testing.T) {
 	scanner := providerscan.New(scantest.Scan)
 	release, err := lexerext.Provide(scanner, "scanned-engine", "scanned-alias")
 	c.Assert(err, qt.IsNil)
-	c.Assert(dialectlexer.Options("scanned-engine"), qt.Equals, lexer.Options{Scanner: scanner})
-	c.Assert(dialectlexer.Options("Scanned-Alias"), qt.Equals, lexer.Options{Scanner: scanner})
+	// A scanner is the whole rule set, so the options carry it and nothing else.
+	for _, name := range []string{"scanned-engine", "Scanned-Alias"} {
+		got := dialectlexer.Options(name)
+		c.Assert(got.Scanner, qt.Equals, lexer.Scanner(scanner))
+		got.Scanner = nil
+		c.Assert(got, qt.DeepEquals, lexer.Options{})
+	}
 	c.Assert(dialectlexer.Options("sqlite"), qt.DeepEquals, switchAnswers["sqlite"])
 	release()
 	c.Assert(dialectlexer.Options("scanned-engine"), qt.DeepEquals, lexer.Options{StandardStrings: true})

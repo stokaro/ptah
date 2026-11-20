@@ -320,9 +320,7 @@ func (p *roleBootstrap) tokenize() error {
 	if strings.ContainsRune(p.sql, 0) {
 		return p.unsupported("NUL is not allowed in a procedural body")
 	}
-	options := dialectlexer.Options(p.dialect)
-	options.DisableHashComments = true // PostgreSQL does not treat # as a comment.
-	l := lexer.NewLexerWithOptions(p.sql, options)
+	l := lexer.NewLexerWithOptions(p.sql, dialectlexer.Options(p.dialect))
 	for token := l.NextToken(); token.Type != lexer.TokenEOF; token = l.NextToken() {
 		if token.Type == lexer.TokenComment && strings.HasPrefix(token.Value, "/*") {
 			// The shared lexer ends a block comment at its first closing marker.

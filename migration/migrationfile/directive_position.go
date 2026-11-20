@@ -98,10 +98,10 @@ func directiveHeaderLength(sql, dialect string) int {
 // file opening with `#` ended its header on line 1 and dropped the directive
 // underneath it.
 //
-// With no dialect resolved the answer has to be the PERMISSIVE one, and the
-// no-dialect options are exactly that: they accept `#`, and they accept `--`
-// with no space after it, so the unresolved header is never shorter than any
-// resolved dialect's. That direction is the safe one because load time runs
+// With no dialect resolved the answer has to be the PERMISSIVE one: every line
+// that starts with `#` is a header comment, and the no-dialect options accept
+// `--` with no space after it, so the unresolved header is never shorter than
+// any resolved dialect's. That direction is the safe one because load time runs
 // before a connection exists. A header cut short there reports a directive
 // sitting on line 2 of its own header as "below the first SQL statement",
 // refuses the file, and hands the operator a remedy -- move it up -- that the
@@ -130,6 +130,11 @@ func directiveHeaderLine(line, dialect string) bool {
 	trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
 	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
 		return false
+	}
+	if dialect == "" && strings.HasPrefix(trimmed, "#") {
+		// Every `#` is a comment on a target that lists it, whatever follows
+		// it, and the unresolved header is never shorter than a target's.
+		return true
 	}
 	token := lexer.NewLexerWithOptions(trimmed, dialectlexer.Options(dialect)).NextToken()
 	return token.Type == lexer.TokenComment

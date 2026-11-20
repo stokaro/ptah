@@ -28,21 +28,22 @@ import (
 var switchAnswers = map[string]lexer.Options{
 	platform.Postgres: {
 		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true, NestedBlockComments: true,
+		LineCommentsDeclared: true,
 	},
-	platform.CockroachDB: {StandardStrings: true, PostgreSQLEscapeStrings: true, NestedBlockComments: true},
-	platform.YugabyteDB:  {StandardStrings: true, PostgreSQLEscapeStrings: true, NestedBlockComments: true},
+	platform.CockroachDB: {StandardStrings: true, PostgreSQLEscapeStrings: true, NestedBlockComments: true, LineCommentsDeclared: true},
+	platform.YugabyteDB:  {StandardStrings: true, PostgreSQLEscapeStrings: true, NestedBlockComments: true, LineCommentsDeclared: true},
 	platform.MySQL: {
-		StandardStrings: true, BackslashEscapes: true,
+		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#"},
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMySQL,
 	},
 	platform.MariaDB: {
-		StandardStrings: true, BackslashEscapes: true,
+		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#"},
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMariaDB,
 	},
-	platform.ClickHouse: {StandardStrings: true, BackslashEscapes: true},
-	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true},
-	platform.SQLServer:  {StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true},
-	platform.Oracle:     {StandardStrings: true},
+	platform.ClickHouse: {StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#", "//"}},
+	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true, LineCommentsDeclared: true},
+	platform.SQLServer:  {StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true, LineCommentsDeclared: true},
+	platform.Oracle:     {StandardStrings: true, LineCommentsDeclared: true},
 }
 
 // TestOptions_AgreesWithTheSwitchItReplaces pins Options for every spelling
@@ -83,7 +84,7 @@ func TestFromDescriptor_HappyPath(t *testing.T) {
 		{
 			name:    "no lexical facts",
 			lexical: descriptor.Lexical{},
-			want:    lexer.Options{StandardStrings: true},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true},
 		},
 		{
 			name: "every shared-lexer fact",
@@ -96,7 +97,7 @@ func TestFromDescriptor_HappyPath(t *testing.T) {
 				StandardStrings: true, BackslashEscapes: true,
 				PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true,
 				RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMariaDB,
-				BracketIdentifiers: true, DisableHashComments: true,
+				BracketIdentifiers: true, DisableHashComments: true, LineCommentsDeclared: true,
 			},
 		},
 		{
@@ -104,31 +105,36 @@ func TestFromDescriptor_HappyPath(t *testing.T) {
 			// turns on neither.
 			name:    "continued strings without Unicode strings",
 			lexical: descriptor.Lexical{ContinuedStrings: true},
-			want:    lexer.Options{StandardStrings: true},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true},
 		},
 		{
 			name:    "Unicode strings without continued strings",
 			lexical: descriptor.Lexical{UnicodeStrings: true},
-			want:    lexer.Options{StandardStrings: true},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true},
 		},
 		{
 			name:    "the bang executable comments",
 			lexical: descriptor.Lexical{ExecutableComments: descriptor.ExecutableCommentsBang},
-			want:    lexer.Options{StandardStrings: true, ExecutableComments: lexer.ExecutableCommentsMySQL},
+			want:    lexer.Options{StandardStrings: true, ExecutableComments: lexer.ExecutableCommentsMySQL, LineCommentsDeclared: true},
 		},
 		{
-			// The shared lexer does not read these two; the body scanner of
+			// The shared lexer does not read this one; the body scanner of
 			// internal/deporder does.
-			name:    "facts only the body scanner reads",
-			lexical: descriptor.Lexical{LineComments: []string{"#"}, IdentifierBackslashEscapes: true},
-			want:    lexer.Options{StandardStrings: true},
+			name:    "a fact only the body scanner reads",
+			lexical: descriptor.Lexical{IdentifierBackslashEscapes: true},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true},
+		},
+		{
+			name:    "the line comment markers, as the whole list",
+			lexical: descriptor.Lexical{LineComments: []string{"#", "//"}},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true, LineComments: []string{"#", "//"}},
 		},
 		{
 			// YQL is read by its engine's provider, so no built-in service
 			// serves the lexer and its text falls to the shared rules.
 			name:    "the YQL lexer, which no built-in service serves",
 			lexical: descriptor.Lexical{Lexer: descriptor.LexerYQL},
-			want:    lexer.Options{StandardStrings: true},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true},
 		},
 		{
 			// A registry refuses a lexer the descriptor package does not
@@ -136,7 +142,7 @@ func TestFromDescriptor_HappyPath(t *testing.T) {
 			// service serves, and its text is read by the shared rules.
 			name:    "a lexer no service serves",
 			lexical: descriptor.Lexical{Lexer: "antlr"},
-			want:    lexer.Options{StandardStrings: true},
+			want:    lexer.Options{StandardStrings: true, LineCommentsDeclared: true},
 		},
 	}
 	for _, test := range tests {
@@ -157,5 +163,5 @@ func TestFromDescriptor_UnvalidatedExecutableComments(t *testing.T) {
 		Name:    "acme",
 		Lexical: descriptor.Lexical{ExecutableComments: "nonesuch"},
 	})
-	c.Assert(got, qt.DeepEquals, lexer.Options{StandardStrings: true})
+	c.Assert(got, qt.DeepEquals, lexer.Options{StandardStrings: true, LineCommentsDeclared: true})
 }

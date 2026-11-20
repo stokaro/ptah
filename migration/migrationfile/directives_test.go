@@ -84,10 +84,10 @@ func TestParseDirectives(t *testing.T) {
 //
 // Which dialects those are is not restated here, and that is the point: the
 // answer comes from the lexer options the file will be read with, so this table
-// is a reading of that one authority rather than a second list beside it. SQL
-// Server is the live negative control -- it is the one target whose options
-// disable hash comments, and its row is what keeps every other row from being
-// vacuously true.
+// is a reading of that one authority rather than a second list beside it. The
+// targets that list no `#` marker (PostgreSQL, SQLite, SQL Server) are the live
+// negative controls, and their rows keep every other row from being vacuously
+// true.
 func TestParseFileDirectivesTreatsHashCommentsAsHeaderComments(t *testing.T) {
 	sql := "# ordinary hash comment\n-- +ptah no_transaction\nSELECT 1;\n"
 
@@ -106,8 +106,8 @@ func TestParseFileDirectivesTreatsHashCommentsAsHeaderComments(t *testing.T) {
 		{name: "mysql", dialect: platform.MySQL, want: map[string]string{"no_transaction": "true"}},
 		{name: "mariadb", dialect: platform.MariaDB, want: map[string]string{"no_transaction": "true"}},
 		{name: "clickhouse", dialect: platform.ClickHouse, want: map[string]string{"no_transaction": "true"}},
-		{name: "postgres", dialect: platform.Postgres, want: map[string]string{"no_transaction": "true"}},
-		{name: "sqlite", dialect: platform.SQLite, want: map[string]string{"no_transaction": "true"}},
+		{name: "postgres", dialect: platform.Postgres, want: make(map[string]string)},
+		{name: "sqlite", dialect: platform.SQLite, want: make(map[string]string)},
 		{name: "sqlserver", dialect: platform.SQLServer, want: make(map[string]string)},
 	}
 

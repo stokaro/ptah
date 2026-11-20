@@ -340,14 +340,16 @@ var headerScanDialects = []string{
 // TestHashCommentHeaderFollowsTheLexerRatherThanAList is the header half of the
 // dialect rule.
 //
-// A `#` line is a comment for every target except SQL Server, and the migrator
-// learns that from [ptah.run/internal/dialectlexer.Options] -- the same
-// options the file will be tokenized with. Naming the dialects here instead
-// produced exactly one wrong row per dialect the list forgot: ClickHouse leaves
-// hash comments enabled and was left out, so a ClickHouse file opening with `#`
+// A `#` line is a comment for the targets whose descriptor lists `#` as a line
+// comment marker (MySQL, MariaDB and ClickHouse), and the migrator learns that
+// from [ptah.run/internal/dialectlexer.Options] -- the same options the file
+// will be tokenized with. Naming the dialects here instead produced exactly one
+// wrong row per dialect the list forgot: a ClickHouse file opening with `#`
 // ended its header on line 1 and ran without the `no_transaction` its author
-// wrote. SQL Server is the negative control and the reason no row here is
-// vacuous.
+// wrote. On the other targets `#` is an operator character, so a file that
+// opens with it is not a comment-led file there, and the directive below it
+// sits below the first non-comment line. Those rows are the negative controls
+// and the reason no row here is vacuous.
 func TestHashCommentHeaderFollowsTheLexerRatherThanAList(t *testing.T) {
 	sql := "# generated migration\n-- +ptah no_transaction\n\n" + directiveStatement
 
@@ -366,22 +368,22 @@ func TestHashCommentHeaderFollowsTheLexerRatherThanAList(t *testing.T) {
 			dialect:  "",
 			wantMode: FileTxModeNone,
 		},
-		{name: "postgres", dialect: platform.Postgres, wantMode: FileTxModeNone},
 		{name: "mysql", dialect: platform.MySQL, wantMode: FileTxModeNone},
 		{name: "mariadb", dialect: platform.MariaDB, wantMode: FileTxModeNone},
-		{name: "sqlite", dialect: platform.SQLite, wantMode: FileTxModeNone},
 		{name: "clickhouse", dialect: platform.ClickHouse, wantMode: FileTxModeNone},
-		{name: "cockroachdb", dialect: platform.CockroachDB, wantMode: FileTxModeNone},
-		{name: "yugabytedb", dialect: platform.YugabyteDB, wantMode: FileTxModeNone},
 		{
-			// The one target whose options disable hash comments. `# ...` is
-			// not a comment there, so the directive really does sit below the
-			// first non-comment line and the report is the correct answer.
-			name:          "sqlserver",
-			dialect:       platform.SQLServer,
+			// `# ...` is not a comment on a target that lists no `#` marker,
+			// so the directive really does sit below the first non-comment
+			// line and the report is the correct answer.
+			name:          "postgres",
+			dialect:       platform.Postgres,
 			wantMode:      FileTxModeUnspecified,
 			wantMisplaced: []int{2},
 		},
+		{name: "sqlite", dialect: platform.SQLite, wantMode: FileTxModeUnspecified, wantMisplaced: []int{2}},
+		{name: "cockroachdb", dialect: platform.CockroachDB, wantMode: FileTxModeUnspecified, wantMisplaced: []int{2}},
+		{name: "yugabytedb", dialect: platform.YugabyteDB, wantMode: FileTxModeUnspecified, wantMisplaced: []int{2}},
+		{name: "sqlserver", dialect: platform.SQLServer, wantMode: FileTxModeUnspecified, wantMisplaced: []int{2}},
 	}
 
 	c := qt.New(t)
@@ -417,6 +419,7 @@ func TestUnresolvedDirectiveHeaderIsTheLongestAnyTargetWouldRead(t *testing.T) {
 	}{
 		{name: "hash comment above the directive", sql: "# c\n-- +ptah no_transaction\n\n" + directiveStatement},
 		{name: "hash comment is the whole header", sql: "# c\n" + directiveStatement},
+		{name: "hash comment with an operator character", sql: "#= c\n-- +ptah no_transaction\n\n" + directiveStatement},
 		{name: "dash dash with no space after it", sql: "--+ptah no_transaction\n\n" + directiveStatement},
 		{name: "an ordinary header", sql: "-- c\n-- +ptah no_transaction\n\n" + directiveStatement},
 		{name: "a statement first", sql: directiveStatement + "-- +ptah no_transaction\n"},

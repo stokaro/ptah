@@ -45,4 +45,5 @@ var postgresQuoting = lexer.Options{
 	PostgreSQLEscapeStrings:   true,
 	PostgreSQLStringConstants: true,
 	NestedBlockComments:       true,
+	LineCommentsDeclared:      true,
 }

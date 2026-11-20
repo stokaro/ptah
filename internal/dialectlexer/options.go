@@ -7,6 +7,7 @@ package dialectlexer
 import (
 	"slices"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/backslashmode"
@@ -29,7 +30,13 @@ func Options(dialect string) lexer.Options {
 	if options, found := declaredOptions(dialect); found {
 		return options
 	}
-	return optionsByDialect.Get(dialect)
+	options := optionsByDialect.Get(dialect)
+	if platform.NormalizeDialect(dialect) == "" {
+		// A blank or unknown name states no markers, and an empty list is a
+		// statement too, so such text keeps the lexer's heuristic for #.
+		options.LineCommentsDeclared, options.LineComments = false, nil
+	}
+	return options
 }
 
 // ForSession is [Options] for text a session with caps reads: a session whose
@@ -58,6 +65,11 @@ var optionsByDialect = descriptortable.New(FromDescriptor)
 // field that looked as if it applied would say something false about how the
 // text is read.
 //
+// The line comment markers the descriptor lists are the whole rule: the lexer
+// reads each as a comment wherever it stands, whatever follows it, and reads a
+// # that is not listed as an operator character. A dialect that lists
+// none, such as PostgreSQL, has no # comments.
+//
 // The shared lexer reads PostgreSQL's continued and U&'...' strings as one
 // rule, so a descriptor that states one of the two has neither read as one
 // constant, and such text is refused rather than read by a rule the server
@@ -75,6 +87,8 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 		RequireWhitespaceAfterDashDash: lexical.DashCommentNeedsSpace,
 		ExecutableComments:             executableComments(lexical.ExecutableComments),
 		BracketIdentifiers:             lexical.BracketIdentifiers,
+		LineCommentsDeclared:           true,
+		LineComments:                   slices.Clone(lexical.LineComments),
 		DisableHashComments:            lexical.HashNames,
 		NestedBlockComments:            lexical.NestedComments,
 	}
@@ -93,23 +107,6 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 	default:
 		return lexer.ExecutableCommentsNone
 	}
-}
-
-// lineComments holds, per dialect, the line comment markers its descriptor
-// lists beside "--".
-var lineComments = descriptortable.New(func(described descriptor.Dialect) []string {
-	return slices.Clone(described.Lexical.LineComments)
-})
-
-// lineCommentsFor returns the line comment markers dialect states: a built-in
-// descriptor's, or the ones a provider declared for an engine the registry
-// does not describe ([DeclareLexical]). The two never name one engine, since
-// a declaration for a described name is refused.
-func lineCommentsFor(dialect string) []string {
-	if entry, found := declared.Load(declaredKey(dialect)); found {
-		return slices.Clone(entry.(*declaration).lexical.LineComments)
-	}
-	return lineComments.Get(dialect)
 }
 
 // ClientDelimiterRules is how a script written for dialect spells its
@@ -132,8 +129,9 @@ func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules c
 		// No descriptor field states the dollar rule itself. Executable
 		// comments are what the descriptors set on MySQL and MariaDB alone,
 		// so they stand in for it.
-		DollarQuotes:       options.ExecutableComments == lexer.ExecutableCommentsNone,
-		LineComments:       lineCommentsFor(dialect),
-		BracketIdentifiers: options.BracketIdentifiers,
+		DollarQuotes:         options.ExecutableComments == lexer.ExecutableCommentsNone,
+		LineComments:         options.LineComments,
+		LineCommentsDeclared: true,
+		BracketIdentifiers:   options.BracketIdentifiers,
 	}, true
 }

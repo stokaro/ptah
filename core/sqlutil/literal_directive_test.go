@@ -116,8 +116,8 @@ func TestSplitStatementsForDialect_DollarInANameBesideADirective_HappyPath(t *te
 // Each family reads a script by the rules its descriptor states, and a mistake
 // in one family's rule hides or invents a directive: a line the family reads as
 // text must stay in its statement, and a line it reads as a directive must act.
-// The ClickHouse `//` row ends in an open literal because the statement lexer
-// reads `//` as two operators; what it pins is that the directive was honored.
+// The ClickHouse `//` row pins that the directive after the comment was
+// honored, and that the apostrophe inside the comment opened no literal.
 // Every row holds a directive that only the row's dialects read as text, or,
 // for the MySQL rows, as a directive.
 func TestSplitStatementsForDialect_FamilyRules_HappyPath(t *testing.T) {
@@ -145,7 +145,7 @@ func TestSplitStatementsForDialect_FamilyRules_HappyPath(t *testing.T) {
 		{name: "postgres square brackets are not a name", dialect: "postgres", script: arrayIndex, want: []string{"SELECT x[']']", "SELECT 1", "SELECT 2"}},
 		{name: "mysql reads no dollar quote", dialect: "mysql", script: mysqlDollar, want: []string{"SELECT $x$ 1;\nSELECT 2; SELECT 3;\nSELECT $x$ 4"}},
 		{name: "mariadb reads no dollar quote", dialect: "mariadb", script: mysqlDollar, want: []string{"SELECT $x$ 1;\nSELECT 2; SELECT 3;\nSELECT $x$ 4"}},
-		{name: "clickhouse slash comment", dialect: "clickhouse", script: clickhouseSlash, want: []string{"SELECT 1", "// it's\nSELECT 2; SELECT 3;"}},
+		{name: "clickhouse slash comment", dialect: "clickhouse", script: clickhouseSlash, want: []string{"SELECT 1", "SELECT 2", "SELECT 3"}},
 		{name: "clickhouse heredoc", dialect: "clickhouse", script: heredoc, want: []string{"SELECT $$it's$$", "SELECT 1", "SELECT 2", "SELECT 3"}},
 	}
 	for _, test := range tests {
