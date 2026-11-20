@@ -59,22 +59,37 @@ type entry struct {
 // page is a quick start, and saying so is not an error. Every other refusal is
 // an *ExtractError naming the line.
 func Extract(path string, source []byte) (*Page, error) {
-	lines := strings.Split(strings.ReplaceAll(string(source), "\r\n", "\n"), "\n")
-
+	lines := splitLines(source)
 	front, body := splitFrontmatter(lines)
 	if !isOptedIn(front) {
 		return nil, nil
 	}
+	return extractPage(path, lines, body, front["title"], front[continuesKey])
+}
 
+// ExtractSkill reads one agent skill's SKILL.md and returns what it publishes.
+//
+// A skill needs no opt-in key, since every skill runs: the runner is how a
+// skill stays true to the CLI it tells an agent to drive. Nor could it carry
+// one, since the agents that load the file read its frontmatter, and a key
+// they do not define is not Ptah's to add. The page is titled with the
+// skill's name. A skill never continues into another page.
+func ExtractSkill(path string, source []byte) (*Page, error) {
+	lines := splitLines(source)
+	front, body := splitFrontmatter(lines)
+	return extractPage(path, lines, body, front["name"], "")
+}
+
+func splitLines(source []byte) []string {
+	return strings.Split(strings.ReplaceAll(string(source), "\r\n", "\n"), "\n")
+}
+
+func extractPage(path string, lines []string, body int, title, continues string) (*Page, error) {
 	entries, err := scanBlocks(path, lines, body)
 	if err != nil {
 		return nil, err
 	}
-
-	page := &Page{
-		Path: path, Title: front["title"], Continues: front[continuesKey],
-		Programs: make(map[Shell]*Program),
-	}
+	page := &Page{Path: path, Title: title, Continues: continues, Programs: make(map[Shell]*Program)}
 	buildPrograms(page, entries)
 	return page, nil
 }

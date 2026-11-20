@@ -2075,6 +2075,19 @@ Read the columns as follows.
 
 </div>
 
+**`ptah skill install`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--agent` | `stringArray` | `[]` | — | — |
+| `--overwrite` | `bool` | `false` | — | — |
+| `--skills-dir` | `string` | — | — | — |
+| `--user` | `bool` | `false` | — | — |
+
+</div>
+
 **`ptah sql lint`**
 
 <div class="ptah-wide-table">

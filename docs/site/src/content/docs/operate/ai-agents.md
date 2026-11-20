@@ -28,6 +28,7 @@ general shell or unrestricted filesystem access. Choose who drives the session:
 | --- | --- | --- |
 | Ask Ptah a question or hold a Ptah-focused conversation | [`ptah assist`](../ai-assist/) | Ptah calls the provider profile you configure. |
 | Add Ptah tools to Claude, Cursor, VS Code, Zed, or another MCP client | [`ptah mcp`](../ai-agent-connect/) | The client starts Ptah and chooses the model. |
+| Teach Claude Code, Codex, Cursor or GitHub Copilot the Ptah schema workflow | [`ptah skill install`](../ai-agent-skill/) | The agent loads the skill; Ptah serves nothing. |
 
 Both surfaces use the same Ptah tool and capability model. Neither grants a
 model permission to apply migrations to a database. A client may provide its own
@@ -98,6 +99,7 @@ are the controls.
 
 ## Common next tasks
 
+- [Install the agent skill](../ai-agent-skill/)
 - [Connect an MCP client](../ai-agent-connect/)
 - [Configure agent permissions](../ai-agent-permissions/)
 - [Review and apply an agent patch](../ai-agent-changes/)

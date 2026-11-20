@@ -74,7 +74,10 @@ load_nested_go_modules
 # contours even though the documentation workflow gates them. Go sources and
 # module manifests below docs/ are not ordinary documentation, however, and a
 # nested module is active in its entirety because its fixtures and generated
-# inputs may be consumed by that module's tests.
+# inputs may be consumed by that module's tests. The agent skills under
+# docs/skills/ are active too: `ptah skill install` copies them out of the
+# binary, and the tests that hold their frontmatter to what an agent parses
+# read them there.
 is_inert_path() {
 	if is_in_nested_go_module "$1"; then
 		return 1
@@ -84,6 +87,7 @@ is_inert_path() {
 	go.mod | */go.mod | go.sum | */go.sum) return 1 ;;
 	testdata/* | */testdata/*) return 1 ;;
 	docs/architecture_boundaries.json) return 1 ;;
+	docs/skills/*) return 1 ;;
 	docs/*) return 0 ;;
 	*.md) return 0 ;;
 	.github/ISSUE_TEMPLATE/*) return 0 ;;
@@ -298,6 +302,7 @@ selftest() {
 	assert 'a testdata SQL fixture runs the contour' true 'internal/x/testdata/a.sql'
 	assert 'ordinary docs site package changes do not' false $'docs/site/package.json\ndocs/site/package-lock.json'
 	assert 'Go code below docs still runs' true 'docs/docs.go'
+	assert 'an agent skill the binary ships runs' true 'docs/skills/ptah-schema/SKILL.md'
 	assert 'root-module Go fixtures below docs still run' true 'docs/site/fixtures/schema-ui/internal/models/schema.go'
 	assert 'the docs nested module runs' true 'docs/site/fixtures/source-equivalence/models/schema.go'
 	assert 'non-Go inputs in the docs nested module run' true 'docs/site/fixtures/source-equivalence/schema.sql'

@@ -1,4 +1,5 @@
-// Package docs carries Ptah's own documentation inside the binary.
+// Package docs carries Ptah's own documentation, and the agent skills written
+// from it, inside the binary.
 //
 // It exists so that the agent surface can answer a question about Ptah from
 // Ptah rather than from a model's training data, with no network and no
@@ -32,3 +33,13 @@ import "embed"
 //go:embed adr/*.md
 //go:embed site/src/content/docs
 var FS embed.FS
+
+// Skills holds the agent skills Ptah ships: under `skills/`, one directory per
+// skill, each holding a SKILL.md that a coding agent loads and the files that
+// file names. `ptah skill install` copies a skill to where an agent reads it.
+//
+// The directory names are the skill names, and they are stable. The files
+// inside change with each release.
+//
+//go:embed skills
+var Skills embed.FS

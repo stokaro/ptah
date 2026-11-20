@@ -14,11 +14,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,6 +33,10 @@ import (
 // pages, not a fixture, unless a caller points it somewhere else.
 const defaultDocsDir = "docs/site/src/content/docs"
 
+// defaultSkillsDir is where the agent skills Ptah ships live. Every skill there
+// runs; a skill opts in by where it lives.
+const defaultSkillsDir = "docs/skills"
+
 func main() {
 	if err := newCommand().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "quickstart: %v\n", err)
@@ -39,10 +45,11 @@ func main() {
 }
 
 type options struct {
-	docsDir string
-	shell   string
-	ptah    string
-	keep    bool
+	docsDir   string
+	skillsDir string
+	shell     string
+	ptah      string
+	keep      bool
 }
 
 func newCommand() *cobra.Command {
@@ -58,6 +65,7 @@ func newCommand() *cobra.Command {
 
 func (o *options) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.docsDir, "docs-dir", defaultDocsDir, "Documentation tree to read the pages from")
+	cmd.Flags().StringVar(&o.skillsDir, "skills-dir", defaultSkillsDir, "Tree of agent skills to read, each a directory holding SKILL.md")
 	cmd.Flags().StringVar(&o.shell, "shell", "auto",
 		"Shell whose steps to read: bash, powershell, or auto for the one this operating system runs")
 }
@@ -78,6 +86,35 @@ func (o *options) resolveShell() (quickstart.Shell, error) {
 	}
 }
 
+// discovery is what one run covers: the quick-start journeys and the agent
+// skills, kept apart because each has its own count floor.
+type discovery struct {
+	pages  []*quickstart.Page
+	skills []*quickstart.Page
+}
+
+func (o *options) discover() (discovery, error) {
+	pages, err := quickstart.DiscoverJourneys(o.docsDir)
+	if err != nil {
+		return discovery{}, err
+	}
+	skills, err := quickstart.DiscoverSkills(o.skillsDir)
+	if err != nil {
+		return discovery{}, err
+	}
+	return discovery{pages: pages, skills: skills}, nil
+}
+
+// all is every page to run, the quick starts first.
+func (d discovery) all() []*quickstart.Page {
+	return append(slices.Clone(d.pages), d.skills...)
+}
+
+func (d discovery) checkFloors(shell quickstart.Shell) error {
+	floors := quickstart.DefaultFloors()
+	return errors.Join(quickstart.CheckFloors(d.pages, shell, floors), quickstart.CheckSkillFloors(d.skills, shell, floors))
+}
+
 func newListCommand() *cobra.Command {
 	options := &options{}
 	cmd := &cobra.Command{
@@ -89,11 +126,11 @@ func newListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pages, err := quickstart.DiscoverJourneys(options.docsDir)
+			found, err := options.discover()
 			if err != nil {
 				return err
 			}
-			for _, page := range pages {
+			for _, page := range found.all() {
 				program, ok := page.Program(shell)
 				if !ok {
 					fmt.Fprintf(cmd.OutOrStdout(), "%s: no %s steps\n", page.Path, shell)
@@ -102,7 +139,7 @@ func newListCommand() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s: %d %s step(s), %d assertion(s)\n",
 					page.Path, program.Steps(), shell, program.Expectations())
 			}
-			return quickstart.CheckFloors(pages, shell, quickstart.DefaultFloors())
+			return found.checkFloors(shell)
 		},
 	}
 	options.bind(cmd)
@@ -124,11 +161,11 @@ func newScriptCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pages, err := quickstart.DiscoverJourneys(options.docsDir)
+			found, err := options.discover()
 			if err != nil {
 				return err
 			}
-			for _, page := range pages {
+			for _, page := range found.all() {
 				program, ok := page.Program(shell)
 				if !ok {
 					continue
@@ -139,7 +176,7 @@ func newScriptCommand() *cobra.Command {
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "# %s (%s)\n%s\n", page.Path, shell, script)
 			}
-			return quickstart.CheckFloors(pages, shell, quickstart.DefaultFloors())
+			return found.checkFloors(shell)
 		},
 	}
 	options.bind(cmd)
@@ -169,13 +206,14 @@ func run(ctx context.Context, cmd *cobra.Command, options *options) error {
 		return err
 	}
 
-	pages, err := quickstart.DiscoverJourneys(options.docsDir)
+	found, err := options.discover()
 	if err != nil {
 		return err
 	}
-	if err := quickstart.CheckFloors(pages, shell, quickstart.DefaultFloors()); err != nil {
+	if err := found.checkFloors(shell); err != nil {
 		return err
 	}
+	pages := found.all()
 
 	ptahDir, cleanup, err := resolvePtah(ctx, options.ptah)
 	if err != nil {
