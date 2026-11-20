@@ -135,7 +135,10 @@ func parseAtlasFileTxMode(filename, sql string) (FileTxMode, bool, error) {
 	// community binary reads no directive from such a header, and the heading
 	// it writes above a statement, such as `-- Create "atlas:txmode none"
 	// table`, holds the key inside a quoted name. Reading the key anywhere in
-	// that shape refuses a file the community binary wrote and applies.
+	// that shape refuses a file the community binary wrote and applies. The
+	// cost is that `-- note, atlas:txmode none` directly above a statement is
+	// not honored either; the community binary drops it too, and a directive
+	// meant for that shape is written on a line of its own.
 	type txModeValue struct {
 		value string
 		leads bool
