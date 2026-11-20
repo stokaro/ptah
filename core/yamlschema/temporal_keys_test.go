@@ -56,6 +56,35 @@ func TestParse_TemporalKeys_HappyPath(t *testing.T) {
 	c.Assert(foreignColumns["bookings_room_fk"], qt.DeepEquals, []string{"id", "valid_at"})
 }
 
+// TestParse_TemporalKeys_ReadsAYAMLBoolean reads a temporal flag as every
+// boolean key of a schema is read, YAML 1.1 spellings included, and an absent
+// flag as false.
+func TestParse_TemporalKeys_ReadsAYAMLBoolean(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "yes", value: "    without_overlaps: yes\n", want: true},
+		{name: "on", value: "    without_overlaps: on\n", want: true},
+		{name: "True", value: "    without_overlaps: True\n", want: true},
+		{name: "no", value: "    without_overlaps: no\n", want: false},
+		{name: "absent", value: "", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := yamlschema.Parse(t.Context(), yamlext.None(),
+				[]byte("constraints:\n  u:\n    table: t\n    type: UNIQUE\n    columns: [a, b]\n"+test.value))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Constraints, qt.HasLen, 1)
+			c.Assert(db.Constraints[0].WithoutOverlaps, qt.Equals, test.want)
+		})
+	}
+}
+
 // TestParse_TemporalKeys_FailurePath refuses the clauses on the wrong kind of
 // constraint, on a key too short to carry them, and with a value that is not a
 // boolean.

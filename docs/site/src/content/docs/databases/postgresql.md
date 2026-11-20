@@ -618,8 +618,9 @@ A temporal key is always backed by a GiST index, so an HCL `primary_key` or
 reads the same with or without it. `type = GIST` on a key without
 `without_overlaps`, or another `type` on a temporal key, is refused. A Go
 annotation value must be exactly `true` or `false`; an empty value or another
-case is refused. A YAML key needs a boolean value, and one written with no
-value or as `null` is refused. Read as false, either would declare a plain key.
+case is refused. A YAML key is read as every boolean key of a schema is, so
+`yes`, `on`, `no` and `off` are accepted too, and one written with no value or
+as `null` is refused. Read as false, either would declare a plain key.
 
 A temporal key of one column is refused from every source, SQL included,
 because PostgreSQL needs at least two. So is a `PERIOD` foreign key with an
