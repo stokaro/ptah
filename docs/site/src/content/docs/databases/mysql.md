@@ -1448,14 +1448,11 @@ option is brought back to it. The server commits each statement as it runs,
 so the member holds no role between the `REVOKE` and the `GRANT`, and keeps none
 if the `GRANT` fails. The plan carries a warning comment before the pair.
 
-A role that states `member_of`, even empty, loses a membership it holds in
-another declared role and the list leaves out, and the plan rates the revocation
-as a warning. A role that does not state it keeps every membership the server
-holds, and so does a membership in a role the declaration does not name, so
-deleting `member_of` revokes nothing: an empty list takes away the last
-membership. `schema apply` and `schema compare` write an `UNMANAGED` line for
-each membership in a declared role they keep for a role without `member_of`.
-MariaDB refuses a declared membership.
+Which memberships a plan revokes follows the rule on the PostgreSQL page: only
+a role that states `member_of` loses one, and deleting the key revokes nothing.
+See [Role memberships](../postgresql/#role-memberships), which also shows the
+`UNMANAGED` line for a membership the plan keeps. MariaDB refuses a declared
+membership.
 
 ### Events
 
