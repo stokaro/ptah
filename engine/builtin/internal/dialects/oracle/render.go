@@ -269,6 +269,11 @@ func renderModifiedColumn(op *ast.ModifyColumnOperation) ([]string, error) {
 		return renderIdentityChange(op)
 	}
 	column := op.Column
+	if losesUnique(op) && !op.Changed.Any() {
+		// Nothing about the column itself changes, and the key goes with a
+		// statement of its own.
+		return nil, nil
+	}
 	parts := []string{escapeIdentifier(column.Name), mapColumnType(column)}
 	if clause := defaultClause(op); clause != "" {
 		parts = append(parts, clause)
@@ -276,7 +281,24 @@ func renderModifiedColumn(op *ast.ModifyColumnOperation) ([]string, error) {
 	if clause := nullabilityClause(op); clause != "" {
 		parts = append(parts, clause)
 	}
+	if gainsUnique(op) {
+		// Oracle names the key, as it does the UNIQUE a CREATE TABLE
+		// declares on the column, and the reader carries it on the column.
+		parts = append(parts, "UNIQUE")
+	}
 	return []string{strings.Join(parts, " ")}, nil
+}
+
+// gainsUnique reports whether the modification gives the column a key that
+// holds it alone.
+func gainsUnique(op *ast.ModifyColumnOperation) bool {
+	return op.HasPreviousUnique && !op.PreviousUnique && op.Column.Unique
+}
+
+// losesUnique reports whether the modification takes away the key that held
+// the column alone.
+func losesUnique(op *ast.ModifyColumnOperation) bool {
+	return op.HasPreviousUnique && op.PreviousUnique && !op.Column.Unique
 }
 
 // renderIdentityChange renders the MODIFY clauses of a change to a column's

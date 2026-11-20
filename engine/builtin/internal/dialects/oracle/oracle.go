@@ -390,6 +390,11 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			for _, line := range lines {
 				r.w.WriteLinef("ALTER TABLE %s MODIFY (%s);", table, strings.TrimSpace(line))
 			}
+			if losesUnique(op) {
+				// The key a column loses has the name Oracle gave it, which
+				// no declaration knows; DROP UNIQUE finds it by its column.
+				r.w.WriteLinef("ALTER TABLE %s DROP UNIQUE (%s);", table, escapeIdentifier(op.Column.Name))
+			}
 		case *ast.RenameColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
 				table, escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))

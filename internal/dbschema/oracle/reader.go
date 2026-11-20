@@ -174,7 +174,8 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 
 // carriedOnColumns reports whether a key is left to the flags of its columns
 // rather than read as a constraint: a PRIMARY KEY or UNIQUE Oracle named
-// itself. A primary key that defers its check is kept whatever its name,
+// itself. A UNIQUE over several columns is kept as a constraint after all,
+// once its columns are read (see readConstraints). A primary key that defers its check is kept whatever its name,
 // because a column flag has no deferral, and the comparison pairs a primary
 // key by its table rather than its name (stokaro/ptah#3824).
 func carriedOnColumns(generated, kind, deferrable string) bool {
@@ -499,7 +500,19 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			}
 		}
 	}
-	return constraints, generatedKeys, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	// A UNIQUE over several columns has no column flag to carry it, so it is
+	// kept as a constraint whatever its name. Dropped here, nothing would say
+	// the table has it: the plan would add it again, and Oracle answers
+	// ORA-02261, such unique or primary key already exists.
+	for _, constraint := range constraints {
+		if constraint.Type == "UNIQUE" && len(constraint.ColumnNames) > 1 {
+			delete(generatedKeys, constraint.Name)
+		}
+	}
+	return constraints, generatedKeys, nil
 }
 
 // constraintRow is one ALL_CONSTRAINTS row, before its columns are joined on.
@@ -877,6 +890,12 @@ func markKeyColumns(schema *catalog.Database) {
 		case "PRIMARY KEY":
 			target = primary
 		case "UNIQUE":
+			// A column is unique when a key holds it alone, as the declared
+			// side says it and the PostgreSQL and MySQL readers read it. A
+			// column of a composite key is not unique by itself.
+			if len(constraint.ColumnNames) != 1 {
+				continue
+			}
 		default:
 			continue
 		}

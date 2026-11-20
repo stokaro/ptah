@@ -28,17 +28,16 @@ ptah schema diff --from oracle://user:pass@host:1521/FREEPDB1 --to live.hcl
 Schemas are synced, no changes to be made.
 ```
 
-A **declared file** converges too. Names fold across the case difference
-between a declaration and the catalog, so a `CHECK` declared on a column is
-named `orders_total_check`, stored as `ORDERS_TOTAL_CHECK` and matched on the
-next run. An unnamed `CHECK` declared on
-the table is named by Oracle, `SYS_C<n>`, with a number no file can predict.
-Oracle keeps its condition as written, so the comparison matches it to the
-unnamed declaration by that condition, ignoring case and spacing. A changed condition is a drop and an add.
+A **declared file** converges too. Names fold across case, so a `CHECK`
+declared on a column is named `orders_total_check`, stored as
+`ORDERS_TOTAL_CHECK` and matched on the next run. Oracle names an unnamed table
+`CHECK` or `UNIQUE` itself, `SYS_C<n>`, so the comparison matches it to the
+unnamed declaration by its condition, ignoring case and spacing, or by its
+columns in order. A changed condition is a drop and an add.
 
 Oracle holds a constraint name once per schema, so two `CHECK` constraints of
-one name are refused before anything runs, with `ORA-02264`. `ck` and `"CK"`
-are one name; `"ck"` is another.
+one name are refused before anything runs (`ORA-02264`). `ck` and `"CK"` are
+one name.
 
 ## Identifiers and type mappings
 
@@ -361,15 +360,21 @@ is `APP`. A synonym through a database link is left as it is: a declaration has
 no place for the link, so it is neither dropped nor declared again. Public
 synonyms belong to `PUBLIC` and are not read.
 
-Go export preserves synonym names, schemas, targets, and declaration comments.
-The exported annotation binds the alias to Oracle and SQL Server. Export refuses
-incomplete coverage and an explicit target scope the annotation cannot preserve.
+Go export preserves synonym names, schemas, targets, and declaration comments,
+binds the alias to Oracle and SQL Server, and refuses incomplete coverage and a
+target scope the annotation cannot preserve.
 
 ## Views that read other views
 
 Oracle checks a view's query when it creates the view, so Ptah creates each
 view after the views it reads and refuses views that read one another. The
 [MySQL page](../mysql/#views-that-read-other-views) says what counts as a read.
+
+## Unique keys
+
+A column gains its `UNIQUE` with `MODIFY (a ... UNIQUE)` and loses it with
+`DROP UNIQUE (a)`, since Oracle names the key. A column of a key over several
+columns is not unique by itself.
 
 ## Constraints that defer their check
 
