@@ -80,6 +80,7 @@ import (
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/referencedkey"
+	"ptah.run/internal/referentialaction"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
@@ -2073,10 +2074,11 @@ func refuseNodeDeferral(dialect string, caps capability.Capabilities, node *ast.
 //
 // The shape is checked here, with the one predicate the Go annotation, YAML and
 // HCL readers call, because every reader and every provider reaches this
-// point: the SQL reader copies the clause from the statement it parsed, and a
-// key of one column it let through rendered as `col PRIMARY KEY` without the
-// clause, so the first apply built a plain key and every later plan failed on
-// the server (stokaro/ptah#6330).
+// point, the SQL reader included, which copies the clause from the statement it
+// parsed. Without the check a key of one column and a PERIOD foreign key that
+// cascades reach the server, which refuses them only after the apply has run the
+// statements before them; the apply rolls back and records a failed run
+// (stokaro/ptah#6330).
 func validateDeclaredTemporalKeys(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	for _, table := range database.Tables {
 		if err := temporalkeys.CheckPrimaryKey(table); err != nil {
@@ -3024,8 +3026,7 @@ func normalizeReferentialActions(
 }
 
 func normalizeReferentialAction(dialect, clause, action string) (string, error) {
-	action = strings.ReplaceAll(action, "_", " ")
-	action = strings.ToUpper(strings.Join(strings.Fields(action), " "))
+	action = referentialaction.Spelling(action)
 	if action == "" {
 		return "", nil
 	}

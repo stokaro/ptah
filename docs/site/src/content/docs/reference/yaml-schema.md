@@ -361,7 +361,7 @@ A constraint sits under `tables.<table>.constraints`, or under the top-level
 | `check` | The condition of a `CHECK`. |
 | `using` | Access method of a MySQL-family `PRIMARY KEY`. |
 | `foreign_table` | Referenced table of a foreign key. |
-| `foreign_column` | One referenced column. |
+| `foreign_column` | One referenced column, for a foreign key of one column; with more `columns` it is refused. |
 | `foreign_columns` | Referenced columns of a composite foreign key, one for each of `columns`. Use it instead of `foreign_column`; the two together are refused. |
 | `on_delete` / `on_update` | Foreign key actions. |
 | `without_overlaps` | Applies `WITHOUT OVERLAPS` to the last column of a `PRIMARY KEY` or `UNIQUE` constraint, a range or multirange (PostgreSQL 18). Needs two or more columns and a boolean value; one written with no value is refused. |

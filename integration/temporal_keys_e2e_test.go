@@ -400,13 +400,14 @@ func TestSchemaApplyRefusesTemporalKeysWithoutTheCapabilityE2E(t *testing.T) {
 }
 
 // TestSchemaApplyRefusesAMalformedTemporalKeyE2E applies a schema file whose
-// temporal key PostgreSQL 18 refuses to an empty database: a key of one
-// column, which the server answers with "constraint using WITHOUT OVERLAPS
-// needs at least two columns", and a PERIOD foreign key that cascades, which it
-// answers with "unsupported ON DELETE action for foreign key constraint using
-// PERIOD". A primary key of one column written as `col PRIMARY KEY` without the
-// clause built a plain key that every later plan failed on. The refusal comes
-// before any statement, so the database stays empty.
+// temporal key no server builds to an empty database: a primary or unique key
+// of one column, which PostgreSQL 18.7 answers with "constraint using WITHOUT
+// OVERLAPS needs at least two columns", a PERIOD foreign key of one column, and
+// a PERIOD foreign key that cascades, which the server answers with
+// "unsupported ON DELETE action for foreign key constraint using PERIOD". The
+// refusal comes before any statement, so the database stays empty. Without it,
+// a key the server refuses is refused only after the apply has run the
+// statements before it, and the rollback leaves the apply log of a failed run.
 func TestSchemaApplyRefusesAMalformedTemporalKeyE2E(t *testing.T) {
 	tests := []struct {
 		name string

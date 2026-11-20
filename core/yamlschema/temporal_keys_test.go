@@ -132,6 +132,12 @@ func TestParse_TemporalKeys_FailurePath(t *testing.T) {
 			want: `(?s).*table "t" has primary_key_without_overlaps with no value; write true or false`,
 		},
 		{
+			name: "period aliased to a null anchor",
+			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
+				"    comment: &n null\n    foreign_columns: [a, b]\n    period: *n\n",
+			want: `(?s).*constraint "f" has period with no value; write true or false`,
+		},
+		{
 			name: "period with an action other than NO ACTION",
 			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
 				"    foreign_columns: [a, b]\n    on_update: SET DEFAULT\n    period: true\n",
@@ -148,6 +154,12 @@ func TestParse_TemporalKeys_FailurePath(t *testing.T) {
 			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
 				"    foreign_columns: [x]\n",
 			want: `(?s).*constraint "f" has 2 columns and 1 foreign_columns; each column needs one referenced column`,
+		},
+		{
+			name: "foreign_column for two columns",
+			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
+				"    foreign_column: x\n",
+			want: `(?s).*constraint "f" has 2 columns and one foreign_column; each column needs one referenced column`,
 		},
 		{
 			name: "a foreign key naming neither foreign_column nor foreign_columns",

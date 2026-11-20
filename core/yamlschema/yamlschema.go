@@ -1077,6 +1077,11 @@ func temporalFlag(node yaml.Node, owner, name string) (bool, error) {
 	if node.Kind == 0 {
 		return false, nil
 	}
+	// An alias reads as the node its anchor names, so `period: *n` over
+	// `&n null` has no value either.
+	for node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = *node.Alias
+	}
 	if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!null" {
 		return false, fmt.Errorf("%s has %s with no value; write true or false", owner, name)
 	}
@@ -1128,6 +1133,9 @@ func validateForeignKeyColumns(key string, columns []string, spec constraintSpec
 	case len(foreignColumns) > 0 && len(foreignColumns) != len(columns):
 		return fmt.Errorf("constraint %q has %d columns and %d foreign_columns; each column needs one referenced column",
 			key, len(columns), len(foreignColumns))
+	case spec.ForeignColumn != "" && len(columns) != 1:
+		return fmt.Errorf("constraint %q has %d columns and one foreign_column; each column needs one referenced column",
+			key, len(columns))
 	default:
 		return nil
 	}

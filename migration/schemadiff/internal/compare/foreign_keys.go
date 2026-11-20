@@ -6,6 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/referentialaction"
 )
 
 // foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.
@@ -176,8 +177,7 @@ func sameColumnNames(semantics identifier.Semantics, left, right []string) bool 
 // DDL level, so the fold is NOT applied there — doing so would mask a genuine
 // RESTRICT <-> NO ACTION change the user intended.
 func normalizeReferentialAction(action, dialect string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(action))
-	normalized = strings.ReplaceAll(normalized, "_", " ")
+	normalized := referentialaction.Spelling(action)
 	if normalized == "" {
 		return "NO ACTION"
 	}

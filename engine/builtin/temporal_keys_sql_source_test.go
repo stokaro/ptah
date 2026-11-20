@@ -15,11 +15,11 @@ import (
 // TestRenderTemporalKeysFromSQL_FailurePath reads a temporal key of one column
 // from a SQL schema file and renders it for PostgreSQL 18. The SQL reader keeps
 // what the statement says, so the refusal comes from the renderer, which every
-// schema source reaches. Without it the primary key below rendered as
-// `"valid_at" daterange PRIMARY KEY NOT NULL`, PostgreSQL 18.6 built a plain
-// key from it, and the next plan failed on the server; the unique key and the
-// foreign key rendered as written and failed at apply, as did a PERIOD foreign
-// key with an action other than NO ACTION (stokaro/ptah#6330).
+// schema source reaches. Without it each key renders as written. Applied,
+// PostgreSQL 18.7 answers "constraint using WITHOUT OVERLAPS needs at least two
+// columns" to a primary or unique key of one column, and "unsupported ON DELETE
+// action for foreign key constraint using PERIOD" to a PERIOD foreign key that
+// cascades, after the statements before it have run (stokaro/ptah#6330).
 func TestRenderTemporalKeysFromSQL_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string

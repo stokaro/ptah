@@ -208,8 +208,9 @@ func synthesizeTablePrimaryKeyConstraints(
 // column, and the flag can neither defer nor exclude overlaps; against such a
 // live key it is compared as the table's key instead, so the difference is
 // planned (stokaro/ptah#3824, stokaro/ptah#6330). [fieldLevelConstraints.has]
-// answers from the deferral on the other side; a WITHOUT OVERLAPS key reaches
-// it already synthesized here.
+// answers from the deferral on the other side. A WITHOUT OVERLAPS key is kept
+// by [collectDatabaseConstraints] instead, because the key synthesized here
+// takes the live key's name.
 func liveKeyOutgrowsTheColumnFlag(database *catalog.Database, identity tableIdentity, semantics identifier.Semantics) bool {
 	for _, constraint := range database.Constraints {
 		if constraint.Type == "PRIMARY KEY" && (constraint.Deferrable || constraint.WithoutOverlaps) &&
