@@ -204,11 +204,28 @@ func TestIndexSettingsParentRefusesAnUnplannedDifference(t *testing.T) {
 	c.Assert(result.Parents, qt.HasLen, 0)
 }
 
-func TestIndexSettingsParentRefusesARebuild(t *testing.T) {
+// A table created again has its declared skipping indexes written with it, so
+// the settings of the captured ones need no step of their own.
+func TestIndexSettingsParentAccountsForARebuild(t *testing.T) {
 	c := qt.New(t)
 	request := indexRequest(c)
 	request.Changes = nil
 	request.Tables[0].Action = featureplan.RebuildTable
+	request.ParentKinds = []schemaext.Kind{chschema.IndexKind}
+	result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	c.Assert(result.Parents, qt.HasLen, 1)
+	c.Assert(result.Parents[0].Action, qt.Equals, featureplan.RebuildTable)
+	c.Assert(result.Parents[0].Strategy, qt.Contains, "after the table is created again")
+	c.Assert(result.Parents[0].Steps, qt.HasLen, 0)
+}
+
+func TestIndexSettingsParentRefusesAnUnknownAction(t *testing.T) {
+	c := qt.New(t)
+	request := indexRequest(c)
+	request.Changes = nil
+	request.Tables[0].Action = featureplan.CreateTable
 	request.ParentKinds = []schemaext.Kind{chschema.IndexKind}
 	result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)

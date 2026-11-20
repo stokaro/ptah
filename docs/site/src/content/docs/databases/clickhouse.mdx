@@ -207,7 +207,8 @@ A declaration whose key moves a column into or out of the table's primary key
 is refused when the plan is made. ClickHouse fixes a MergeTree table's primary
 key when the table is created: `MODIFY PRIMARY KEY` is not a statement, and
 `MODIFY ORDER BY` has to keep the primary key as a prefix of the sorting key.
-Create the table again with the new key and copy its rows.
+The refusal names `--allow-table-rebuild`, which makes Ptah create the table
+again and copy its rows; see [Creating a table again](#creating-a-table-again).
 
 Every other clause of the engine is carried with it, so a table read and
 replayed is the table that was read rather than a MergeTree that happens to hold
@@ -252,9 +253,9 @@ answer rather than from the declaration's text:
 
 Ptah changes the storage clauses of an existing MergeTree table in place where
 ClickHouse has an `ALTER TABLE` for the change, and refuses the others by name.
-It does not create the table again and copy its rows, because that moves data
-and rows written during the copy can be lost. To change a refused clause, create
-a new table with it and copy the rows yourself. Omitting a clause from the
+A refused change can be made by creating the table again, which Ptah plans only
+when asked with `--allow-table-rebuild`; see
+[Creating a table again](#creating-a-table-again). Omitting a clause from the
 declaration keeps the inspected one, and the plan needs a complete storage
 observation of the table.
 
@@ -264,7 +265,7 @@ observation of the table.
 | `SAMPLE BY` | `MODIFY SAMPLE BY`, `REMOVE SAMPLE BY` | The sampling key is one of the primary key's expressions. |
 | `TTL` | `MODIFY TTL`, `REMOVE TTL` | An explicitly empty TTL removes the rules. |
 | `SETTINGS` | `MODIFY SETTING`, `RESET SETTING` | Settings ClickHouse fixes at creation are refused. |
-| `ENGINE`, `PARTITION BY`, `PRIMARY KEY` | Refused | ClickHouse has no `ALTER TABLE` for them. |
+| `ENGINE`, `PARTITION BY`, `PRIMARY KEY` | Refused, or created again | ClickHouse has no `ALTER TABLE` for them. |
 
 ClickHouse keeps the parts already on disk sorted by the old sorting key. A new
 key may therefore drop expressions from its end, and may add an expression only
@@ -281,7 +282,8 @@ The primary key stays a prefix of the sorting key. A table created without
 `PRIMARY KEY` keeps its old sorting key as its primary key after the change,
 which is what ClickHouse records and what a declaration that omits the primary
 key asks for. A new key that reorders the old one, drops an expression that is
-not last, or adds a column the table already has is refused by name. On an
+not last, or adds a column the table already has is refused by name, and can be
+made by creating the table again. On an
 engine that merges rows by its sorting key, such as `ReplacingMergeTree`,
 dropping an expression lets rows that differed only in it merge into one, so the
 plan marks that change destructive.
@@ -297,7 +299,7 @@ not count. A setting the declaration adds or changes is set with
 ClickHouse fixes some settings when the table is created, among them
 `index_granularity`, `index_granularity_bytes`,
 `enable_mixed_granularity_parts`, `table_disk` and the
-`add_minmax_index_for_*` family. A change to one of them is refused by name. A
+`add_minmax_index_for_*` family. A change to one of them is refused by name, and can be made by creating the table again. A
 setting named twice in one `SETTINGS` clause is refused too, because the plan
 cannot know which value the table runs with.
 
@@ -317,6 +319,121 @@ run in place is refused when the migration is generated. Dropping the last
 sorting-key expression while its column stays has no reverse, because the
 reverse would add a column the table already has to the key; `ptah schema
 apply`, which plans no reverse, plans that change.
+
+## Creating a table again
+
+A change of the engine, of `PARTITION BY` or `PRIMARY KEY`, of a setting
+ClickHouse fixes at creation, or of an `ORDER BY` that `MODIFY ORDER BY` cannot
+make (a reordered key, or an expression over a column the table already has),
+can only be made by creating the table again. A plain `DROP TABLE` followed by
+`CREATE TABLE` would lose every row, so Ptah plans that change only when asked
+on the one invocation, with `--allow-table-rebuild` on `ptah schema apply`,
+`schema plan`, `schema diff` and `migrations generate`. Without it the plan is
+refused, and the refusal names the flag. The flag reads no environment variable
+and `ptah.yaml` has no key for it, so a shell profile or a CI job cannot leave it
+on for every later plan.
+
+With the flag, the plan keeps the rows by copying them through a holding table,
+named `ptah_rebuild_<table>` in the table's database and marked with a table
+comment that names the table it holds the rows of:
+
+```sql
+SELECT toUInt8(concat('cannot create events again: it is read by ', ...)) FROM system.tables WHERE ... HAVING count() > 0;
+CREATE TABLE ptah_rebuild_events (id UInt64, name String) ENGINE = MergeTree ORDER BY tuple() COMMENT 'ptah rebuild holding table for events';
+INSERT INTO `ptah_rebuild_events` (`id`, `name`) SELECT `id`, `name` FROM `events`;
+DROP TABLE `events` SYNC;
+CREATE TABLE events (id UInt64, name String) ENGINE = ReplacingMergeTree ORDER BY id;
+INSERT INTO `events` (`id`, `name`) SELECT `id`, `name` FROM `ptah_rebuild_events` SETTINGS max_partitions_per_insert_block = 0;
+DROP TABLE `ptah_rebuild_events` SYNC;
+```
+
+`SYNC` makes the server finish removing the table before the next statement. The
+copy back lifts `max_partitions_per_insert_block`, whose default of 100 would fail
+that statement, after the table is gone, for a table partitioned finer than that.
+
+The columns follow the declaration:
+
+- A column the declaration adds takes its default. A column it drops is not copied,
+  and its data is gone from the rebuilt table. A rename without a rename hint is a
+  drop and an add, so the column that takes the new name starts with its default; the
+  plan names the dropped columns in a comment.
+- A column whose type or nullability changes is copied through `accurateCast`, which
+  fails on a value the new type cannot hold (`300` into `UInt8`, a `NULL` into a
+  column that no longer allows it). A plain `INSERT ... SELECT` would wrap the number
+  around and turn the `NULL` into zero. The cast runs in the first copy, while the
+  table is whole, so a failure there drops nothing.
+- Computed columns (`MATERIALIZED`, `ALIAS`, `EPHEMERAL`) are not copied.
+- The declared skipping indexes are created before the rows are written back, so the
+  rows are indexed. A row policy belongs to the table by name, and ClickHouse keeps it
+  while the table is dropped, so none is written.
+- A `PRIMARY KEY` the declaration omits follows the new `ORDER BY` when the table's
+  primary key was its sorting key. A declared `PRIMARY KEY` that is not a prefix of
+  the new `ORDER BY` is refused.
+
+The steps are not atomic, and rows written to the table between the first copy and the
+last statement are lost. The plan says so in a comment and marks the plan destructive.
+`migrations lint` reports the `DROP TABLE`, which is meant to stand. Stop writers
+before applying it.
+
+A rebuild can stop part way, for a reason the plan cannot know. Ptah refuses every plan
+that would drop a table carrying the holding table's comment, whatever the declaration
+says. The comment cannot tell which statement failed, so the refusal says what to do by
+the state it sees.
+
+- The table is missing. The rebuild stopped after `DROP TABLE`, and the holding table
+  holds the only copy of the rows. Create the table by hand from your declaration, copy
+  the rows back with the `INSERT` the refusal prints, check them, and drop the holding
+  table.
+- The table exists. The rebuild stopped before `DROP TABLE`, at its last statement, or
+  while the table was being filled. The holding table holds a copy of every row, and
+  copying it back doubles them. Compare `count()` of both. Drop the holding table when
+  the table holds every row. Copy back only the rows it lacks.
+
+The plan's warning comment says the same. A table of the holding table's name that the
+database holds without the comment is never overwritten. The plan refuses when it sees
+one, and the server refuses the `CREATE TABLE` when the plan does not see it.
+
+The first statement of a rebuild fails, naming them, when a view, a materialized view,
+a dictionary, or a `Merge`, `Buffer` or `Distributed` table reads the table. The copy
+back would feed every row through a materialized view a second time, which a
+`SummingMergeTree` target counts twice (measured: five rows read ten), and the others
+break while the table is gone. The guard reads the definitions in `system.tables`,
+because its `dependencies_table` column lists only a materialized view. It matches
+the name after `FROM`, `JOIN`, `TO`, `IN`, `INTO` or a comma, which covers a comma join, a
+view's `TO` target and a table function argument, and the name as a quoted string. A
+definition in another database counts only when it also names the table's database. The
+match errs wide: a false stop is accepted, a missed reader is not. Drop or recreate
+the reader by hand around the rebuild.
+
+Ptah does not rebuild a table whose engine, as it is or as declared, is a
+`Replicated*MergeTree` or `Shared*MergeTree`, whatever the request says. The holding
+table is local, the copy reads one replica that may lag, `DROP TABLE ... SYNC` removes
+one replica, and the new table meets the metadata the other replicas keep at the same
+Keeper path. `ON CLUSTER` is not planned. Create such a table again by hand, on every
+replica. A single replica with an embedded Keeper was measured on 24.10 and 26.10: with
+`SYNC` the new table is created at the same path with another engine, and without it
+the server answers `METADATA_MISMATCH`. That is evidence for a later change, not a
+promise. A table whose name contains a dot is refused earlier, by the feature planning
+(`feature table name disagrees with its captured identity`), whatever the request.
+
+`ptah migrations generate --allow-table-rebuild` writes the down direction the same
+way: the reverse of a rebuild is a rebuild back to the previous definition.
+
+On `ptah-compat`, the same change is asked for with a `diff "clickhouse"` block in the
+top level of `atlas.hcl`, or with `PTAH_ALLOW_TABLE_REBUILD=1`:
+
+```hcl
+diff "clickhouse" {
+  allow_recreate = true
+}
+```
+
+The block is the Atlas spelling and Ptah reads it per dialect: a label of a dialect
+that has no table rebuild is refused. Atlas Community Edition has no ClickHouse
+driver, and accepts the block and applies nothing from it. The strict policy
+(`PTAH_ATLAS_STRICT_COMPAT=1`) therefore refuses the block as an ignored construct.
+The dev-database rehearsal of `ptah-compat` lets the guard read `system.tables`, since
+a `SELECT` changes no database.
 
 ## Data-skipping indexes
 

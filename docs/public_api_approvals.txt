@@ -1029,3 +1029,8 @@ v0.34.0 ptah.run/migration/lint
 # comparable with ==; nothing in Ptah compares removals by value. Pre-v1, so no
 # compatibility is owed.
 v0.34.0 ptah.run/core/difftypes
+
+# DiffConfig holds the `diff "<dialect>" { allow_recreate }` requests of an
+# Atlas project file by dialect name, in a map, so a DiffConfig is not a
+# comparable value. Nothing compares one. Pre-v1, so no compatibility is owed.
+v0.34.0 ptah.run/config/projectconfig

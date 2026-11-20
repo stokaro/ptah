@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chreverse"
@@ -64,12 +63,32 @@ func TestStorageReversalNamesRowsAMergingEngineCombined(t *testing.T) {
 	}
 }
 
-func TestStorageReversalRefusesAClauseClickHouseCannotChange(t *testing.T) {
+// A clause ClickHouse has no ALTER TABLE for reverses to a change of the same
+// clause back, which creates the table again, so the reversal says so instead
+// of refusing: the planner of the reverse direction decides whether it may.
+func TestStorageReversalOfAClauseClickHouseCannotChangeCreatesTheTableAgain(t *testing.T) {
 	c := qt.New(t)
 	before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "a", PrimaryKey: "a"}
 	after := before.Desired()
 	after.PartitionBy.Value = "a"
+
 	got, err := (chreverse.Service{}).ReverseChanges(t.Context(), storageRequest(before, after))
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 1)
+	c.Assert(got[0].Strategy, qt.Equals, "restore the captured storage clauses by creating the table again and copying its rows")
+	c.Assert(got[0].Limitations, qt.DeepEquals, []string{
+		"Restoring the definition creates the table again, which is not atomic: rows written to the table while it runs are lost.",
+	})
+}
+
+// A change the table cannot take for another reason is still refused.
+func TestStorageReversalRefusesAnInvalidChange(t *testing.T) {
+	c := qt.New(t)
+	before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "a", PrimaryKey: "a"}
+
+	got, err := (chreverse.Service{}).ReverseChanges(t.Context(), storageRequest(before, before.Desired()))
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(got, qt.IsNil)
 }

@@ -21,6 +21,11 @@ func clickHouse() descriptor.Dialect {
 		},
 		Placeholder: descriptor.PlaceholderQuestion,
 
+		// ClickHouse has no ALTER TABLE for a change of engine, PARTITION BY,
+		// PRIMARY KEY or an ORDER BY that MODIFY ORDER BY cannot make, so the
+		// planner creates the table again and copies its rows when asked.
+		TableRebuild: true,
+
 		// SELECT version() answers a bare "26.7.3.19"; system.build_options
 		// reports VERSION_FULL "ClickHouse 26.7.3.19", which is the server
 		// naming itself. CHECK GRANT arrived in 24.11. A string with no

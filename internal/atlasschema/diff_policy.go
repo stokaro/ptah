@@ -50,6 +50,12 @@ type DiffPolicy struct {
 	// --allow-table-rebuild, and the compatibility surface, which takes no new
 	// flag, from PTAH_ALLOW_TABLE_REBUILD.
 	AllowTableRebuild bool
+	// TableRebuildDialects names the dialects whose plans create a table again
+	// where the engine has no ALTER TABLE for the change: the
+	// `diff "<dialect>" { allow_recreate = true }` blocks of an Atlas project
+	// file, which the compatibility surface reads. Use [DiffPolicy.AllowsTableRebuild]
+	// to ask about one plan.
+	TableRebuildDialects []string
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and the
 	// refusal of a change only a rebuild can make names it. Empty names the
 	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
@@ -61,6 +67,13 @@ type DiffPolicy struct {
 	// only way one is planned. The native commands set it from
 	// --rotate-secret.
 	RotateSecrets []string
+}
+
+// AllowsTableRebuild reports whether a plan for the dialect creates a table
+// again where the engine has no ALTER TABLE for the change: the policy asks for
+// it on every dialect, or its project file asks for it on this one.
+func (p DiffPolicy) AllowsTableRebuild(dialect string) bool {
+	return p.AllowTableRebuild || slices.Contains(p.TableRebuildDialects, dialect)
 }
 
 // withSecretRotation adds to opts a rotation request for each secret policy

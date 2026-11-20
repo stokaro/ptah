@@ -26,6 +26,10 @@ func assessParent(request featureplan.Request, table featureplan.Table) (string,
 	if table.Action == featureplan.DropTable {
 		return "remove storage settings with the table; all table data is lost", nil
 	}
+	if table.Action == featureplan.RebuildTable {
+		return "create the table again from its declaration, with the storage clauses it declares, and copy its rows back from a holding table; " +
+			"the steps are not atomic, and rows written to the table while they run are lost", nil
+	}
 	if table.Action != featureplan.AlterTable {
 		return "", fmt.Errorf("ClickHouse storage has no plan for parent action %q", table.Action)
 	}
@@ -137,8 +141,7 @@ func keyColumnAdditions(request featureplan.Request, table featureplan.Table, be
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	for _, name := range slices.Sorted(maps.Keys(keyed)) {
 		if !added[builder.ColumnParts(table.Subject.Schema.Source, table.Subject.Name.Source, name).Key()] {
-			return additions{}, fmt.Errorf("%w: column %q is already in the table, and ClickHouse adds to the sorting key only expressions over columns the same ALTER TABLE adds; create the table again and copy its rows",
-				ptaherr.ErrUnsupportedFeature, name)
+			return additions{}, existingKeyColumn(name)
 		}
 	}
 	return result, nil
@@ -258,4 +261,10 @@ func usesColumn(request featureplan.Request, table featureplan.Table, references
 		}
 	}
 	return false
+}
+
+// existingKeyColumn is the refusal of a new sorting-key expression over a column
+// the table already has.
+func existingKeyColumn(name string) error {
+	return &chsql.RecreateRequired{Limit: fmt.Sprintf("column %q is already in the table, and ClickHouse adds to the sorting key only expressions over columns the same ALTER TABLE adds", name)}
 }

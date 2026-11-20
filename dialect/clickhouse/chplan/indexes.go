@@ -330,6 +330,8 @@ func assessIndexParent(request featureplan.Request, table featureplan.Table) (st
 	switch table.Action {
 	case featureplan.DropTable:
 		return "remove skipping-index settings with the table; the table's rows and index data are lost", nil
+	case featureplan.RebuildTable:
+		return "create the declared skipping indexes with the table's settings after the table is created again", nil
 	case featureplan.AlterTable:
 	default:
 		return "", fmt.Errorf("ClickHouse skipping-index settings have no plan for parent action %q", table.Action)

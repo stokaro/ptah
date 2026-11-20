@@ -122,6 +122,11 @@ type Dialect struct {
 	// ALTER TABLE without blocking the writes running against the table:
 	// [OnlineAlterAlgorithmLock] or [OnlineAlterNotValid]. Empty has none.
 	OnlineAlter OnlineAlter `json:"online_alter,omitempty"`
+	// TableRebuild reports that Ptah plans a change the engine has no ALTER
+	// TABLE for as the table created again with its rows kept, when the
+	// operator asks for it, and refuses the change otherwise. The request is
+	// [ptah.run/migration/planext.Options.AllowTableRebuild].
+	TableRebuild bool `json:"table_rebuild,omitempty"`
 
 	// Migrations: what the migrator reads.
 

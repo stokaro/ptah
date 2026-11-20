@@ -230,3 +230,24 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 		{Role: "app", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "old_users"},
 	})
 }
+
+func TestDiffPolicy_AllowsTableRebuild(t *testing.T) {
+	tests := []struct {
+		name    string
+		policy  atlasschema.DiffPolicy
+		dialect string
+		want    bool
+	}{
+		{name: "asked for every dialect", policy: atlasschema.DiffPolicy{AllowTableRebuild: true}, dialect: platform.ClickHouse, want: true},
+		{name: "asked for the dialect by name", policy: atlasschema.DiffPolicy{TableRebuildDialects: []string{platform.ClickHouse}}, dialect: platform.ClickHouse, want: true},
+		{name: "asked for another dialect only", policy: atlasschema.DiffPolicy{TableRebuildDialects: []string{platform.ClickHouse}}, dialect: platform.Postgres},
+		{name: "asked for nothing", policy: atlasschema.DiffPolicy{}, dialect: platform.ClickHouse},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.policy.AllowsTableRebuild(test.dialect), qt.Equals, test.want)
+		})
+	}
+}

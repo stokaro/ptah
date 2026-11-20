@@ -677,7 +677,7 @@ func computeApplyPlan(
 				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
 			),
 			OmitNullBackfill:    opts.OmitNullBackfill,
-			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+			AllowTableRebuild:   opts.Policy.AllowsTableRebuild(info.Dialect),
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
 			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,

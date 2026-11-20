@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
 )
@@ -24,8 +25,14 @@ import (
 // drops holds the drops of the materialized views the plan replaces: they run
 // after before and ahead of the column and feature steps, and the views are
 // recreated in after.
+//
+// rebuilds are the tables the plan creates again. Each is one step, after the
+// materialized-view drops and ahead of every feature step, because a table
+// that is dropped and created again is not there for an operation that names
+// it in between.
 type storagePhases struct {
 	before, drops, columns, after, indexes, last []ast.Node
+	rebuilds                                     tableRebuilds
 }
 
 func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, phases storagePhases) ([]ast.Node, error) {
@@ -41,8 +48,16 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 			continue
 		}
 		subject := builder.Table(table.TableName)
-		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: featureplan.AlterTable, Desired: table.Desired, Current: table.Current})
-		request.Changes = append(request.Changes, table.FeatureChanges...)
+		action, changes := featureplan.AlterTable, table.FeatureChanges
+		if phases.rebuilds.has(builder, table.TableName) {
+			// The new table is made from the declaration, so the changes of
+			// the table's own storage and skipping indexes have nothing left
+			// to change. A row policy change is still planned: ClickHouse
+			// keeps the policy while the table is created again.
+			action, changes = featureplan.RebuildTable, withoutRebuiltChanges(changes)
+		}
+		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: action, Desired: table.Desired, Current: table.Current})
+		request.Changes = append(request.Changes, changes...)
 		names[subject.Key()] = table.TableName
 	}
 	for _, removal := range diff.TablesRemoved {
@@ -67,6 +82,8 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	for _, step := range common.Steps {
 		middle = append(middle, step.ID)
 	}
+	rebuildSteps := rebuildStepIDs(&common, &steps, builder, phases.rebuilds)
+	middle = append(middle, rebuildSteps...)
 	indexSteps, err := commonIndexes(builder, request.Tables, phases.indexes, &common)
 	if err != nil {
 		return nil, err
@@ -96,6 +113,15 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: first, After: drops}, plangraph.Dependency{Before: drops, After: last})
 	for _, id := range middle {
 		common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: drops, After: id}, plangraph.Dependency{Before: id, After: last})
+	}
+	// A rebuilt table is gone between its DROP TABLE and its CREATE TABLE, so
+	// no feature step runs before the rebuild has finished.
+	for _, rebuild := range rebuildSteps {
+		for _, contribution := range features.Contributions {
+			for _, step := range contribution.Steps {
+				common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: rebuild, After: step.ID})
+			}
+		}
 	}
 	// Index operations keep their sequence after the other objects: a
 	// replacement drops before it adds, and removals follow additions.
@@ -221,4 +247,30 @@ func replacementEffects(builder objectidentity.Builder, drops []ast.Node) (dropE
 		createEffects = append(createEffects, plangraph.Effect{Subject: subject, Action: plangraph.Create})
 	}
 	return dropEffects, createEffects
+}
+
+// withoutRebuiltChanges drops the changes of a table's own storage and of its
+// skipping indexes, which a table created again from its declaration already
+// carries.
+func withoutRebuiltChanges(changes []schemaext.ChangeRecord) []schemaext.ChangeRecord {
+	return slices.DeleteFunc(slices.Clone(changes), func(change schemaext.ChangeRecord) bool {
+		kind := change.Value.Kind()
+		return kind == chdiff.TableKind || kind == chdiff.IndexKind
+	})
+}
+
+// rebuildStepIDs adds one step to the common plan for each rebuilt table, and
+// the common step its owners read, and returns the steps' identities.
+func rebuildStepIDs(common *plangraph.Contribution[[]ast.Node], steps *[]featureplan.CommonStep, builder objectidentity.Builder, rebuilds tableRebuilds) []plangraph.StepID {
+	var ids []plangraph.StepID
+	for i, rebuild := range rebuilds {
+		id := plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("rebuild/%d", i)}
+		effects := []plangraph.Effect{{Subject: builder.Table(rebuild.name), Action: plangraph.Alter}}
+		*steps = append(*steps, featureplan.CommonStep{ID: id, Parent: rebuild.subject, Effects: slices.Clone(effects), Transaction: plangraph.TransactionForbidden})
+		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{
+			ID: id, Payload: rebuild.nodes, Effects: effects, Transaction: plangraph.TransactionForbidden, Impact: rebuild.effect,
+		})
+		ids = append(ids, id)
+	}
+	return ids
 }

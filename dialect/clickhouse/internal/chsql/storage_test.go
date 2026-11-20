@@ -215,3 +215,41 @@ func TestPredicted(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateStorageChange_RecreateRequired(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		edit func(*chschema.DesiredTable)
+		want string
+	}{
+		{"engine", func(v *chschema.DesiredTable) { v.Engine.Value = "ReplacingMergeTree" }, "ClickHouse has no ALTER TABLE that changes a table's ENGINE"},
+		{"sorting key", func(v *chschema.DesiredTable) { v.OrderBy.Value = "u, a" }, "MODIFY ORDER BY can only drop the last expressions"},
+		{"fixed setting", func(v *chschema.DesiredTable) { v.Settings.Value = "index_granularity = 4096" }, "ClickHouse fixes table setting index_granularity"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "a, u", PrimaryKey: "a", Settings: "index_granularity = 8192"}
+			after := before.Desired()
+			test.edit(after)
+
+			err := chsql.ValidateStorageChange(&chdiff.Table{Before: before, After: after})
+
+			var required *chsql.RecreateRequired
+			c.Assert(err, qt.ErrorAs, &required)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(required.Limit, qt.Contains, test.want)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: .*; create the table again and copy its rows`)
+		})
+	}
+}
+
+func TestValidateStorageChange_InPlaceChangeIsNotRecreateRequired(t *testing.T) {
+	c := qt.New(t)
+	before := &chschema.ObservedTable{Engine: "MergeTree", OrderBy: "a", PrimaryKey: "a"}
+	after := before.Desired()
+	after.TTL.Value = "toDateTime(a) + INTERVAL 1 DAY"
+
+	err := chsql.ValidateStorageChange(&chdiff.Table{Before: before, After: after})
+
+	c.Assert(err, qt.IsNil)
+}
