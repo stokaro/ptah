@@ -267,7 +267,7 @@ func (s catalogSource) LintRules(target string) ([]lintext.Rule, error) {
 		return nil, err
 	}
 	rules := slices.Concat(bundled, published, s.recorded)
-	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
+	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Name, b.Name) })
 	return rules, nil
 }
 
@@ -297,7 +297,7 @@ func publishedYDBFamily(c *qt.C) string {
 	}
 	var rules []publishedRule
 	for _, rule := range recordedYDBRules(c) {
-		rules = append(rules, publishedRule{Code: rule.Code, Title: rule.Title, Severity: string(rule.Severity),
+		rules = append(rules, publishedRule{Code: rule.Name, Title: rule.Title, Severity: string(rule.Severity),
 			AppliesToDown: rule.AppliesToDown, Subsumes: rule.Subsumes})
 	}
 	data, err := json.Marshal(rules)

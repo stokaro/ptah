@@ -77,10 +77,10 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{
-		"rollout/drop-table",
 		"destructive/drop-table", // DROP TABLE audit_log
+		"rollout/drop-table",
+		"destructive/drop-column", // DROP COLUMN legacy
 		"rollout/drop-column",
-		"destructive/drop-column",          // DROP COLUMN legacy
 		"rollout/rename",                   // RENAME COLUMN
 		"data-dependent/alter-column-type", // MODIFY COLUMN (lossy)
 		"locking/blocking-alter-table",     // MODIFY COLUMN (lock-heavy)

@@ -183,11 +183,11 @@ func TestAnalyzeFS_SameLineStatementsHaveStableContexts(t *testing.T) {
 	c.Assert(files[0].SQL[first.Span.Start:first.Span.End], qt.Equals, first.SQL)
 	c.Assert(files[0].SQL[second.Span.Start:second.Span.End], qt.Equals, second.SQL)
 	findings := analysis.Findings()
-	// Both statements sit on one line, so the order within it is by rule code
+	// Both statements sit on one line, so the order within it is by rule name
 	// rather than by statement, and the statement each finding belongs to is
 	// what the context still has to carry.
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-column", "destructive/drop-table", "rollout/drop-column", "rollout/drop-table"})
-	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{0, 1, 0, 1})
+	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{1, 0, 1, 0})
 }
 
 // subjectsOf collects each finding's subjects, keeping finding order. Comparing
@@ -375,12 +375,12 @@ func TestAnalyzeFS_MultiTargetDropNamesEachTableInItsMessage(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(messagesOf(analysis.Findings()), qt.DeepEquals, []string{
-		`dropping table public."Alpha" retires a name ` + atlasGapDroppedTableMessageTail,
-		"dropping table zeta retires a name " + atlasGapDroppedTableMessageTail,
 		`DROP TABLE permanently deletes table public."Alpha" and every row in it; ` +
 			"take a verified backup first and consider a rename-and-retire window instead",
 		"DROP TABLE permanently deletes table zeta and every row in it; " +
 			"take a verified backup first and consider a rename-and-retire window instead",
+		`dropping table public."Alpha" retires a name ` + atlasGapDroppedTableMessageTail,
+		"dropping table zeta retires a name " + atlasGapDroppedTableMessageTail,
 	})
 }
 
@@ -447,9 +447,9 @@ func TestAnalyzeFS_UnparsableDropTargetsStillReport(t *testing.T) {
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{nil, nil})
 	c.Assert(messagesOf(findings), qt.DeepEquals, []string{
-		"dropping the table retires a name " + atlasGapDroppedTableMessageTail,
 		"DROP TABLE permanently deletes the table and every row in it; " +
 			"take a verified backup first and consider a rename-and-retire window instead",
+		"dropping the table retires a name " + atlasGapDroppedTableMessageTail,
 	})
 }
 
@@ -524,8 +524,8 @@ func TestAnalyzeFS_ColumnFindingsExposeStructuredSubjects(t *testing.T) {
 	// a finding's primary subject must be able to name the column whichever of
 	// the two consequences it is showing.
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
-		{{Kind: lint.SubjectColumn, Name: `"Legacy"`, Parent: `public."Users"`}},
 		{{Kind: lint.SubjectColumn, Name: `"TenantID"`, Parent: `public."Users"`, DataType: "UUID"}},
+		{{Kind: lint.SubjectColumn, Name: `"Legacy"`, Parent: `public."Users"`}},
 		{{Kind: lint.SubjectColumn, Name: `"Legacy"`, Parent: `public."Users"`}},
 	})
 }

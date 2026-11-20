@@ -181,7 +181,7 @@ func NamesFor(code string) []string {
 
 // analyzerRules are the Ptah rules each Atlas analyzer covers.
 var analyzerRules = map[string][]string{
-	AnalyzerDestructive: []string{"data-dependent/alter-column-type",
+	AnalyzerDestructive: {"data-dependent/alter-column-type",
 		"dependency/drop-column-in-use",
 		"destructive/drop-column",
 		"destructive/drop-object",
@@ -195,15 +195,15 @@ var analyzerRules = map[string][]string{
 		"integrity/drop-untyped-constraint",
 		"security/disable-row-level-security",
 		"security/no-force-row-level-security"},
-	AnalyzerDataDependent: []string{"correctness/immutable-calls-volatile",
+	AnalyzerDataDependent: {"correctness/immutable-calls-volatile",
 		"data-dependent/add-not-null-column",
 		"data-dependent/set-not-null"},
-	AnalyzerConcurrentIndex: []string{"locking/create-index",
+	AnalyzerConcurrentIndex: {"locking/create-index",
 		"transaction/concurrent-index"},
-	AnalyzerIncompatible: []string{"rollout/drop-column",
+	AnalyzerIncompatible: {"rollout/drop-column",
 		"rollout/drop-table",
 		"rollout/rename"},
-	AnalyzerNestedTX: []string{"transaction/explicit-transaction"},
+	AnalyzerNestedTX: {"transaction/explicit-transaction"},
 }
 
 // AnalyzerRules translates one Atlas analyzer name into the Ptah rules that

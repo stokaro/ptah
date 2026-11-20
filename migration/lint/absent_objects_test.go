@@ -571,7 +571,7 @@ func TestColumnDrop_BaselineInput(t *testing.T) {
 		versions  []int64
 		unmet     []string
 	}{
-		{name: "an IF EXISTS column drop", statement: "ALTER TABLE users DROP COLUMN IF EXISTS gone;", versions: []int64{2}, unmet: []string{"rollout/drop-column", "destructive/drop-column"}},
+		{name: "an IF EXISTS column drop", statement: "ALTER TABLE users DROP COLUMN IF EXISTS gone;", versions: []int64{2}, unmet: []string{"destructive/drop-column", "rollout/drop-column"}},
 		{name: "a column drop without IF EXISTS", statement: "ALTER TABLE users DROP COLUMN id;"},
 	}
 	for _, test := range tests {

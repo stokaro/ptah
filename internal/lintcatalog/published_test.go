@@ -1,6 +1,7 @@
 package lintcatalog_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,16 +14,16 @@ import (
 // serves: the catalog reads them from the official providers' records. The
 // control shows the records are what restore them: the bundled runtime alone
 // documents none of them, and the catalog refuses it for losing rules it
-// describes, Spanner's first by code.
+// describes, Spanner's first by name.
 func TestEntries_TheRecordsKeepTheProviderRules(t *testing.T) {
 	c := qt.New(t)
 	entries, err := lintcatalog.Entries()
 	c.Assert(err, qt.IsNil)
 	engines := make(map[string][]string)
-	for _, entry := range entries {
-		if entry.Owner == lintcatalog.OwnerProvider {
-			engines[entry.Dialects[0]] = append(engines[entry.Dialects[0]], entry.Name)
-		}
+	for _, entry := range slices.DeleteFunc(slices.Clone(entries), func(entry lintcatalog.Entry) bool {
+		return entry.Owner != lintcatalog.OwnerProvider
+	}) {
+		engines[entry.Dialects[0]] = append(engines[entry.Dialects[0]], entry.Name)
 	}
 
 	_, withoutRecord := lintcatalog.EntriesFrom(builtintest.Runtime())

@@ -193,7 +193,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "DROP SYSTEM VERSIONING deletes every historical row version permanently, and no rollback restores it",
 	},
 	"data-dependent/set-not-null": {
-		Summary: "a nullable column made NOT NULL meets the rows the table already holds: MySQL, MariaDB, SQL Server and ClickHouse fail on a row holding NULL or rewrite it to the type's default, and Spanner validates every existing row in a schema change, which a NULL fails and leaves the column nullable",
+		Summary: "a nullable column made NOT NULL meets the rows the table already holds: MySQL, MariaDB, SQL Server and ClickHouse fail on a row holding NULL or " +
+			"rewrite it to the type's default, and Spanner validates every existing row in a schema change, which a NULL fails and leaves the column nullable",
 	},
 	"correctness/immutable-calls-volatile": {
 		Summary: "a routine declared immutable calls something whose result changes between two calls with the same arguments",
@@ -263,7 +264,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote: "the rule is about Ptah's SQL parser, and YQL is read by its provider",
 	},
 	"online/unproven": {
-		Summary: "the statement is outside the set measured to take no lock that conflicts with reads and writes: on PostgreSQL it is unmeasured, and on MySQL and MariaDB it does not ask the server to apply it without blocking writes, so the server was never given the chance to refuse",
+		Summary: "the statement is outside the set measured to take no lock that conflicts with reads and writes: on PostgreSQL it is unmeasured, and on MySQL and " +
+			"MariaDB it does not ask the server to apply it without blocking writes, so the server was never given the chance to refuse",
 	},
 	"online/lock-held-across-scan": {
 		Summary: "a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting",
@@ -465,7 +467,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "a column type change the engine cannot apply in place rewrites the table: PostgreSQL rewrites it and its indexes when it cannot prove the change safe, and InnoDB copies it and blocks writes",
 	},
 	"rewrite/in-place-column-change": {
-		Summary: "a column change the dev database shows the engine applies without rewriting the table, info only: on PostgreSQL an ALTER COLUMN TYPE applied as a catalog edit with no rebuild or scan, and on MySQL and MariaDB a MODIFY, CHANGE or CONVERT InnoDB applies in place, with the algorithm",
+		Summary: "a column change the dev database shows the engine applies without rewriting the table, info only: on PostgreSQL an ALTER COLUMN TYPE applied as a " +
+			"catalog edit with no rebuild or scan, and on MySQL and MariaDB a MODIFY, CHANGE or CONVERT InnoDB applies in place, with the algorithm",
 	},
 	"locking/add-foreign-key": {
 		Summary: "adding a foreign key validates existing rows and can copy or lock the table and block writes, on both tables on PostgreSQL",
@@ -486,7 +489,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "adding a SPATIAL index can rebuild the table and block writes",
 	},
 	"rewrite/set-not-null": {
-		Summary: "declaring a column NOT NULL rebuilds the table: SQLite cannot enforce it on existing nullable data without a rebuild, and MySQL and MariaDB rebuild in place; whether an existing NULL fails the statement is the question data-dependent/set-not-null answers",
+		Summary: "declaring a column NOT NULL rebuilds the table: SQLite cannot enforce it on existing nullable data without a rebuild, and MySQL and MariaDB rebuild " +
+			"in place; whether an existing NULL fails the statement is the question data-dependent/set-not-null answers",
 	},
 	"transaction/mixed-statements": {
 		Summary: "the migration mixes statements that cannot share one transaction",

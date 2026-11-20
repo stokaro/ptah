@@ -356,18 +356,15 @@ func TestValidate_FailurePath(t *testing.T) {
 // forward and backward: the Atlas code a rule reports on a dialect names the
 // rule again.
 func TestIdentities_EveryRuleOfEveryDialectIsFoundByItsCode(t *testing.T) {
-	c := qt.New(t)
-
-	var wrong []string
 	for _, identity := range atlascodes.Identities() {
-		dialect := ""
-		if len(identity.Dialects) > 0 {
-			dialect = identity.Dialects[0]
-		}
-		got := atlascodes.RuleFor(identity.Name, dialect)
-		if got.Code != identity.Code || !slices.Contains(atlascodes.NamesFor(identity.Code), identity.Name) {
-			wrong = append(wrong, identity.Name)
+		// A rule with no dialect list is resolved on a run that names none.
+		probes := map[bool][]string{true: {""}, false: identity.Dialects}[len(identity.Dialects) == 0]
+		for _, dialect := range probes {
+			t.Run(identity.Name+" on "+dialect, func(t *testing.T) {
+				c := qt.New(t)
+				c.Assert(atlascodes.RuleFor(identity.Name, dialect).Code, qt.Equals, identity.Code)
+				c.Assert(atlascodes.NamesFor(identity.Code), qt.Contains, identity.Name)
+			})
 		}
 	}
-	c.Assert(wrong, qt.HasLen, 0)
 }

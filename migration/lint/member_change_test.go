@@ -162,7 +162,7 @@ func TestMemberRules_ReportWhatTheMigrationDid(t *testing.T) {
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM('held','shipped','new');",
 			columnType: "enum('new','paid','shipped')",
 			want:       []string{"rewrite/insert-enum-value", "rewrite/remove-enum-value", "rewrite/reorder-enum-values"},
-			message:    "removes ENUM member 'paid'",
+			message:    "inserts ENUM member 'held' into orders.status ahead of existing members",
 		},
 		{
 			name:       "CHANGE looks the column up by its old name",
@@ -199,6 +199,19 @@ func TestMemberRules_ReportWhatTheMigrationDid(t *testing.T) {
 			c.Assert(analysis.UnmetInputs(), qt.HasLen, 0)
 		})
 	}
+}
+
+// TestMemberRules_SeveralFactsInOneClauseEachSayWhatTheyReport holds the
+// removal finding of the clause above to its own message. The table row reads
+// the message of the first finding, which sorts by rule name, so it is the
+// insertion's; the removal is asserted here.
+func TestMemberRules_SeveralFactsInOneClauseEachSayWhatTheyReport(t *testing.T) {
+	c := qt.New(t)
+	analysis := analyzeMemberChange(c, "ALTER TABLE orders MODIFY COLUMN status ENUM('held','shipped','new');", "enum('new','paid','shipped')")
+
+	findings := analysis.Findings()
+	c.Assert(messageOf(findings, "rewrite/remove-enum-value"), qt.Contains, "removes ENUM member 'paid'")
+	c.Assert(messageOf(findings, "rewrite/remove-enum-value"), qt.Contains, "copies the whole table")
 }
 
 // TestMemberRules_StayQuietForChangesTheServerAppliesInPlace is the other

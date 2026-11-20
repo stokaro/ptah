@@ -37,8 +37,8 @@ func TestAnalyzeFS_BaselineVersionsComeFromTheRules(t *testing.T) {
 			want:     nil,
 		},
 		{
-			name:     "disabling the whole family asks for nothing",
-			disabled: []string{"DD"},
+			name:     "disabling the whole category asks for nothing",
+			disabled: []string{"data-dependent"},
 			want:     nil,
 		},
 		{

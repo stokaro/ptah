@@ -22,14 +22,21 @@ func analyzeRename(c *qt.C, files map[string]string) (native, atlas []lint.Findi
 		Dialect:   "postgres",
 	})
 	c.Assert(err, qt.IsNil)
-	atlasAnalysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
+	return nativeAnalysis.Findings(), analyzeRenameAtlas(c, files)
+}
+
+// analyzeRenameAtlas runs one fixture under the compatibility surface alone,
+// for a fixture whose `atlas:nolint` comment native analysis refuses.
+func analyzeRenameAtlas(c *qt.C, files map[string]string) []lint.Finding {
+	c.Helper()
+	atlasAnalysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(files), lint.Options{
 		Compatibility:  lint.CompatibilityProfileAtlas,
 		AtlasSelectors: atlasStub,
 		DirFormat:      migrationfile.DirFormatAtlas,
 		Dialect:        "postgres",
 	})
 	c.Assert(err, qt.IsNil)
-	return nativeAnalysis.Findings(), atlasAnalysis.Findings()
+	return atlasAnalysis.Findings()
 }
 
 // severitiesOf collects finding severities, keeping finding order.
@@ -415,7 +422,7 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, atlas := analyzeRename(c, map[string]string{
+			atlas := analyzeRenameAtlas(c, map[string]string{
 				"1_init.sql": "CREATE TABLE users (id int);\n",
 				"2_rename.sql": "-- atlas:nolint " + test.selector + "\n" +
 					"ALTER TABLE users RENAME COLUMN id TO oid;\n",

@@ -401,10 +401,13 @@ func TestIfExistsDropOfAnAbsentAndAPresentTable_NamesThePresentOne(t *testing.T)
 		"0000000002_change.up.sql": "DROP TABLE IF EXISTS missing, users;\n",
 	}), lint.Options{Dialect: "sqlite", Baseline: usersAt("")})
 	c.Assert(err, qt.IsNil)
-	var messages []string
+	var messages, bodies []string
 	for _, finding := range findings {
 		messages = append(messages, finding.Rule+": "+finding.Message)
+		// The rule name file-form/missing-down holds the word the absent
+		// table is called, so the absent name is looked for in the text alone.
+		bodies = append(bodies, finding.Message)
 	}
 	c.Assert(strings.Join(messages, "\n"), qt.Contains, "destructive/drop-table: DROP TABLE permanently deletes table users ")
-	c.Assert(strings.Join(messages, "\n"), qt.Not(qt.Contains), "missing")
+	c.Assert(strings.Join(bodies, "\n"), qt.Not(qt.Contains), "missing")
 }

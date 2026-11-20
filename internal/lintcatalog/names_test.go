@@ -23,18 +23,20 @@ func entry(name string, kind lintcatalog.Kind, owner lintcatalog.Owner, severity
 func TestValidateAcceptsTheShippedNames(t *testing.T) {
 	c := qt.New(t)
 	entries := must.Must(lintcatalog.Entries())
+	type nameKind struct {
+		name string
+		kind lintcatalog.Kind
+	}
 	counts := make(map[string]int)
-	byKind := make(map[string]map[lintcatalog.Kind]bool)
+	seen := make(map[nameKind]bool)
 	for _, e := range entries {
 		counts[e.Name]++
-		if byKind[e.Name] == nil {
-			byKind[e.Name] = make(map[lintcatalog.Kind]bool)
-		}
-		byKind[e.Name][e.Kind] = true
+		seen[nameKind{e.Name, e.Kind}] = true
 	}
 
 	c.Assert(counts["locking/add-foreign-key"], qt.Equals, 1)
-	c.Assert(byKind["naming/identifier-too-long"], qt.DeepEquals, map[lintcatalog.Kind]bool{lintcatalog.KindMigration: true, lintcatalog.KindSQL: true})
+	c.Assert(seen[nameKind{"naming/identifier-too-long", lintcatalog.KindMigration}], qt.IsTrue)
+	c.Assert(seen[nameKind{"naming/identifier-too-long", lintcatalog.KindSQL}], qt.IsTrue)
 	c.Assert(counts["ydb/add-column-form"], qt.Equals, 1)
 	c.Assert(lintcatalog.Validate(entries), qt.IsNil)
 }

@@ -39,8 +39,8 @@ func ExampleLintFS() {
 	}
 
 	// Output:
-	// 0000000001_drop_email.up.sql:1 [warning] rollout/drop-column: dropping a column retires a name application versions already deployed against the old schema still select and insert, so each of them starts failing the moment this migration commits, whether or not the column held any rows; deploy readers that no longer use the column first, then drop it in a later release (dropped column breaks deployed code)
 	// 0000000001_drop_email.up.sql:1 [error] destructive/drop-column: DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release (column dropped)
+	// 0000000001_drop_email.up.sql:1 [warning] rollout/drop-column: dropping a column retires a name application versions already deployed against the old schema still select and insert, so each of them starts failing the moment this migration commits, whether or not the column held any rows; deploy readers that no longer use the column first, then drop it in a later release (dropped column breaks deployed code)
 	// 0000000001_drop_email.up.sql:2 [warning] locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
 }
 
@@ -80,8 +80,8 @@ func ExampleAnalyzeFS() {
 	// 0000000001_reshape.up.sql: 1 statement(s), 2 change(s)
 	//   drop legacy (statement 0)
 	//   add preferences (statement 0)
-	// finding rollout/drop-column at line 1
 	// finding destructive/drop-column at line 1
+	// finding rollout/drop-column at line 1
 }
 
 // ExampleLoadConfigFS loads .ptah-lint.yaml ([lint.ConfigFileName]) from the
@@ -121,8 +121,8 @@ func ExampleLoadConfigFS() {
 
 	// Output:
 	// dialect: postgres
-	// warning rollout/drop-column
 	// warning destructive/drop-column
+	// warning rollout/drop-column
 }
 
 // ExampleLintFS_extraRules runs a caller-provided rule through
@@ -176,7 +176,7 @@ func ExampleValidateOptions() {
 	fmt.Println(err)
 
 	// Output:
-	// rule selector "design/zz999" does not match any registered rule
+	// rule selector "design/zz999" is not the name of a migration lint rule; a name is a category and a rule joined by a slash, such as locking/add-foreign-key
 }
 
 // ExampleAnalyzeFS_baseline supplies the schema state a version starts from,

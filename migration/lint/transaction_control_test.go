@@ -51,22 +51,22 @@ func TestLintFS_TransactionControl_ReportsWhatApplyRefuses(t *testing.T) {
 		sql     string
 		want    []string
 	}{
-		{"SQLite block the migrator wraps", "sqlite", block, []string{atlasFile + ":1:TX201"}},
-		{"SQLite block that runs without a transaction", "sqlite", none + block, []string{atlasFile + ":3:TX201"}},
-		{"SQLite stray COMMIT", "sqlite", "INSERT INTO users VALUES (1);\nCOMMIT;\n", []string{atlasFile + ":2:TX201"}},
-		{"SQLite two blocks", "sqlite", block + block, []string{atlasFile + ":1:TX201", atlasFile + ":4:TX201"}},
-		{"SQLite SAVEPOINT", "sqlite", "SAVEPOINT s;\nINSERT INTO users VALUES (1);\n", []string{atlasFile + ":1:TX201"}},
-		{"MySQL START TRANSACTION", "mysql", "START TRANSACTION;\nINSERT INTO users VALUES (1);\nCOMMIT;\n", []string{atlasFile + ":1:TX201"}},
-		{"MySQL SET autocommit", "mysql", "SET autocommit = 0;\nINSERT INTO users VALUES (1);\n", []string{atlasFile + ":1:TX201"}},
-		{"MariaDB block without a transaction", "mariadb", none + block, []string{atlasFile + ":3:TX201"}},
-		{"SQL Server BEGIN TRAN", "sqlserver", "BEGIN TRAN;\nINSERT INTO users VALUES (1);\nCOMMIT TRAN;\n", []string{atlasFile + ":1:TX201"}},
+		{"SQLite block the migrator wraps", "sqlite", block, []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"SQLite block that runs without a transaction", "sqlite", none + block, []string{atlasFile + ":3:transaction/explicit-transaction"}},
+		{"SQLite stray COMMIT", "sqlite", "INSERT INTO users VALUES (1);\nCOMMIT;\n", []string{atlasFile + ":2:transaction/explicit-transaction"}},
+		{"SQLite two blocks", "sqlite", block + block, []string{atlasFile + ":1:transaction/explicit-transaction", atlasFile + ":4:transaction/explicit-transaction"}},
+		{"SQLite SAVEPOINT", "sqlite", "SAVEPOINT s;\nINSERT INTO users VALUES (1);\n", []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"MySQL START TRANSACTION", "mysql", "START TRANSACTION;\nINSERT INTO users VALUES (1);\nCOMMIT;\n", []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"MySQL SET autocommit", "mysql", "SET autocommit = 0;\nINSERT INTO users VALUES (1);\n", []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"MariaDB block without a transaction", "mariadb", none + block, []string{atlasFile + ":3:transaction/explicit-transaction"}},
+		{"SQL Server BEGIN TRAN", "sqlserver", "BEGIN TRAN;\nINSERT INTO users VALUES (1);\nCOMMIT TRAN;\n", []string{atlasFile + ":1:transaction/explicit-transaction"}},
 		{"SQL Server SET IMPLICIT_TRANSACTIONS", "sqlserver", "SET IMPLICIT_TRANSACTIONS ON;\nINSERT INTO users VALUES (1);\n",
-			[]string{atlasFile + ":1:TX201"}},
-		{"CockroachDB block", "cockroachdb", block, []string{atlasFile + ":1:TX201"}},
-		{"PostgreSQL block the migrator wraps", "postgres", block, []string{atlasFile + ":1:TX201"}},
-		{"PostgreSQL START TRANSACTION", "postgres", "START TRANSACTION;\nCREATE TABLE t (id int);\nCOMMIT;\n", []string{atlasFile + ":1:TX201"}},
-		{"PostgreSQL block that runs without a transaction", "postgres", none + block, []string{atlasFile + ":3:TX201"}},
-		{"no dialect", "", block, []string{atlasFile + ":1:TX201"}},
+			[]string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"CockroachDB block", "cockroachdb", block, []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"PostgreSQL block the migrator wraps", "postgres", block, []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"PostgreSQL START TRANSACTION", "postgres", "START TRANSACTION;\nCREATE TABLE t (id int);\nCOMMIT;\n", []string{atlasFile + ":1:transaction/explicit-transaction"}},
+		{"PostgreSQL block that runs without a transaction", "postgres", none + block, []string{atlasFile + ":3:transaction/explicit-transaction"}},
+		{"no dialect", "", block, []string{atlasFile + ":1:transaction/explicit-transaction"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestLintFS_TransactionControl_ReportsAWrappedFileUnderARunnerThatOpensItsOw
 			findings := transactionControlFindings(c, test.dialect, migrationfile.DirFormatAtlas,
 				lintext.TransactionOwnerFile, map[string]string{atlasFile: test.sql})
 
-			c.Assert(findingSites(findings), qt.DeepEquals, []string{atlasFile + ":1:TX201"})
+			c.Assert(findingSites(findings), qt.DeepEquals, []string{atlasFile + ":1:transaction/explicit-transaction"})
 			c.Assert(findings[0].Message, qt.Contains, "the migrator runs this file in one transaction")
 		})
 	}
@@ -261,13 +261,13 @@ func TestLintFS_TransactionControl_NestedBlockUnderARunnerThatOpensItsOwn(t *tes
 		message string
 	}{
 		{"a BEGIN inside an open block", "BEGIN;\nBEGIN;\nCREATE TABLE t (id int);\nCOMMIT;\n",
-			atlasFile + ":2:TX201", fmt.Sprintf(nested, 1)},
+			atlasFile + ":2:transaction/explicit-transaction", fmt.Sprintf(nested, 1)},
 		{"START TRANSACTION inside an open block", "BEGIN;\nSTART TRANSACTION;\nCOMMIT;\n",
-			atlasFile + ":2:TX201", fmt.Sprintf(nested, 1)},
+			atlasFile + ":2:transaction/explicit-transaction", fmt.Sprintf(nested, 1)},
 		{"a block that rolls back to a savepoint stays open",
-			"BEGIN;\nSAVEPOINT s;\nROLLBACK TO SAVEPOINT s;\nBEGIN;\nCOMMIT;\n", atlasFile + ":4:TX201", fmt.Sprintf(nested, 1)},
+			"BEGIN;\nSAVEPOINT s;\nROLLBACK TO SAVEPOINT s;\nBEGIN;\nCOMMIT;\n", atlasFile + ":4:transaction/explicit-transaction", fmt.Sprintf(nested, 1)},
 		{"a file whose directive runs it without a transaction", "-- atlas:txmode none\n\nBEGIN;\nBEGIN;\nCOMMIT;\n",
-			atlasFile + ":4:TX201", fmt.Sprintf(nested, 3)},
+			atlasFile + ":4:transaction/explicit-transaction", fmt.Sprintf(nested, 3)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -295,15 +295,15 @@ func TestLintFS_TransactionControl_ReportsWhatTheOwnTransactionReadingRefuses(t 
 		site   string
 		reason string
 	}{
-		{"a block ended by ROLLBACK", "BEGIN;\nINSERT INTO users VALUES (1);\nROLLBACK;\n", atlasFile + ":3:TX201", "ROLLBACK"},
-		{"a block ended by ABORT", "START TRANSACTION;\nABORT;\n", atlasFile + ":2:TX201", "ABORT"},
-		{"a chained commit", "BEGIN;\nCOMMIT AND CHAIN;\nCOMMIT;\n", atlasFile + ":2:TX201", "CHAIN"},
-		{"a savepoint outside a block", "SAVEPOINT s;\nINSERT INTO users VALUES (1);\n", atlasFile + ":1:TX201",
+		{"a block ended by ROLLBACK", "BEGIN;\nINSERT INTO users VALUES (1);\nROLLBACK;\n", atlasFile + ":3:transaction/explicit-transaction", "ROLLBACK"},
+		{"a block ended by ABORT", "START TRANSACTION;\nABORT;\n", atlasFile + ":2:transaction/explicit-transaction", "ABORT"},
+		{"a chained commit", "BEGIN;\nCOMMIT AND CHAIN;\nCOMMIT;\n", atlasFile + ":2:transaction/explicit-transaction", "CHAIN"},
+		{"a savepoint outside a block", "SAVEPOINT s;\nINSERT INTO users VALUES (1);\n", atlasFile + ":1:transaction/explicit-transaction",
 			"SAVEPOINT outside a transaction the file opened"},
 		{"a block the file leaves open", "INSERT INTO users VALUES (1);\nBEGIN;\nINSERT INTO users VALUES (2);\n",
-			atlasFile + ":2:TX201", "the transaction is never closed by the file"},
+			atlasFile + ":2:transaction/explicit-transaction", "the transaction is never closed by the file"},
 		{"PREPARE TRANSACTION", "BEGIN;\nINSERT INTO users VALUES (1);\nPREPARE TRANSACTION 'x';\n",
-			atlasFile + ":3:TX201", "PREPARE TRANSACTION"},
+			atlasFile + ":3:transaction/explicit-transaction", "PREPARE TRANSACTION"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -399,7 +399,7 @@ func TestLintFS_TransactionControl_MessageNamesTheModeUnderARunnerThatOpensItsOw
 			findings := transactionControlFindings(c, test.dialect, migrationfile.DirFormatAtlas,
 				lintext.TransactionOwnerFile, map[string]string{atlasFile: test.sql})
 
-			c.Assert(findingSites(findings), qt.DeepEquals, []string{atlasFile + ":1:TX201"})
+			c.Assert(findingSites(findings), qt.DeepEquals, []string{atlasFile + ":1:transaction/explicit-transaction"})
 			c.Assert(findings[0].Message, qt.Contains, test.want)
 		})
 	}

@@ -80,7 +80,7 @@ func TestLintFS_DownFileFollowsTheTransactionOwner(t *testing.T) {
 			[]string{down + ":1:transaction/concurrent-index"}},
 		{"a lone concurrent drop in a file that opens its own", lintext.TransactionOwnerFile, drop, make([]string, 0)},
 		{"a lone concurrent drop in a file that asks for a transaction", lintext.TransactionOwnerFile,
-			"-- atlas:txmode file\n\n" + drop, []string{down + ":3:PG103"}},
+			"-- atlas:txmode file\n\n" + drop, []string{down + ":3:transaction/concurrent-index"}},
 		{"a block the migrator wraps", lintext.TransactionOwnerMigrator, block, []string{down + ":1:transaction/explicit-transaction"}},
 		{"a block in a file that opens its own", lintext.TransactionOwnerFile, block, make([]string, 0)},
 	} {

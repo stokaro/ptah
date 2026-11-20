@@ -37,8 +37,7 @@ func nameProblems(entries []Entry) []string {
 
 // entryNameProblems checks the name of one entry on its own.
 func entryNameProblems(entry Entry) []string {
-	switch {
-	case !lintnames.WellFormed(entry.Name):
+	if !lintnames.WellFormed(entry.Name) {
 		return []string{fmt.Sprintf("rule %q is not two lowercase hyphenated segments joined by a slash", entry.Name)}
 	}
 	category, declared := lintnames.CategoryFor(entry.Category())

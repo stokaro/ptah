@@ -129,7 +129,7 @@ func TestAC102_StaysSilentWhereTheProviderReadsTheDialect(t *testing.T) {
 
 			findings, err := lint.LintFS(c.Context(), runtime, fixture(map[string]string{
 				"0000000001_x.up.sql": statement + "\n",
-			}), lint.Options{Dialect: test.target, Unparsed: lint.UnparsedAll, Disabled: []string{"MF"}})
+			}), lint.Options{Dialect: test.target, Unparsed: lint.UnparsedAll, Disabled: []string{"file-form"}})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(ofRule(findings, "coverage/unparsed-statement"), qt.HasLen, test.want)
@@ -198,7 +198,7 @@ func TestAC102_FollowsThePolicy(t *testing.T) {
 		c.Assert(found, qt.HasLen, 1)
 		c.Assert(found[0].Severity, qt.Equals, lint.SeverityError)
 	})
-	for _, selector := range []string{"coverage/unparsed-statement", "AC"} {
+	for _, selector := range []string{"coverage/unparsed-statement", "coverage"} {
 		t.Run("disabled by "+selector, func(t *testing.T) {
 			c := qt.New(t)
 			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{

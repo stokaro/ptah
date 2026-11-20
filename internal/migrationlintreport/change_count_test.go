@@ -90,7 +90,7 @@ func TestBuild_WithoutADevURLTheFirstVersionDropIsReported(t *testing.T) {
 	c := qt.New(t)
 	report := buildCount(c, writeMigrations(c, firstFileDrop), lint.ChangeCountAtlas, "")
 	c.Assert(changesIn(c, report, "1_init.sql"), qt.Equals, 2)
-	c.Assert(lintRules(report), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 }
 
 // The Atlas counts read the state of a version whose CREATE TABLE IF NOT

@@ -58,8 +58,8 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 		})
 		c.Assert(err, qt.IsNil)
 		c.Assert(findingSites(analysis.Findings()), qt.DeepEquals, []string{
-			"R__cleanup.sql:1:rollout/drop-table",
 			"R__cleanup.sql:1:destructive/drop-table",
+			"R__cleanup.sql:1:rollout/drop-table",
 		})
 		c.Assert(repeatableShapes(analysis.Files()), qt.DeepEquals, []repeatableShape{
 			{Name: "0000000001_widgets.down.sql", Version: 1, RevisionVersion: "1", Direction: "down", WellFormedName: true, Selected: true},

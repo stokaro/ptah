@@ -177,7 +177,7 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 				second: "INSERT INTO \"new_items\" (\"id\", \"n\", \"label\") SELECT \"id\", \"n\", \"label\" FROM \"items\";\n" +
 					"DROP TABLE \"items\";\nALTER TABLE \"new_items\" RENAME TO \"items\";\n"},
 			want: []string{
-				"0000000002_change.up.sql:2:rollout/drop-table", "0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:3:rollout/rename",
+				"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table", "0000000002_change.up.sql:3:rollout/rename",
 			},
 		},
 	}

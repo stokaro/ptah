@@ -210,7 +210,7 @@ func TestAnalyzeFS_SendsAnOnlineRuleOnlyInTheOnlineMode(t *testing.T) {
 		want [][]string
 	}{
 		{"an ordinary run", lint.Options{Dialect: "postgres"}, [][]string{{"design/xy101"}}},
-		{"the online mode", lint.Options{Dialect: "postgres", RequireOnline: true}, [][]string{{"online/on901", "design/xy101"}}},
+		{"the online mode", lint.Options{Dialect: "postgres", RequireOnline: true}, [][]string{{"design/xy101", "online/on901"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
