@@ -316,6 +316,7 @@ export const sidebar = [
           { slug: 'operate/ai-agent-connect' },
           { slug: 'operate/ai-agent-permissions' },
           { slug: 'operate/ai-agent-changes' },
+          { slug: 'operate/ai-agent-skill' },
           { slug: 'operate/ai-agent-troubleshooting' },
         ],
       },

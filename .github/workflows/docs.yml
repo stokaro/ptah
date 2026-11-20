@@ -182,6 +182,9 @@ jobs:
               # internal/quickstart, which holds its own floors; this only
               # decides whether the run is asked for.
               - 'docs/site/src/content/docs/**'
+              # The agent skills run as quick starts do, found by where they
+              # live rather than by a frontmatter key.
+              - 'docs/skills/**'
               - 'scripts/check-quickstart.sh'
               - 'go.mod'
               - 'go.sum'

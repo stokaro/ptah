@@ -170,6 +170,9 @@ rather than a person.
 | `ptah schema validate` | Reports structural problems in a desired schema without a database | — |
 | `ptah schema verify-approval` | Checks a saved plan's signature against an allowed-signers file | — |
 | `ptah seed` | Applies environment-scoped SQL seed files to the database it is given | — |
+| `ptah skill` | List and install the agent skills Ptah ships | group |
+| `ptah skill install` | Writes the agent skills compiled into the binary to where a coding agent reads them, leaving a file with the same content alone and stopping before any write at one with other content unless told to overwrite; it opens no database | — |
+| `ptah skill list` | Lists the agent skills compiled into the binary, each with the description an agent reads; nothing is opened | — |
 | `ptah sql` | Work with standalone SQL files | group |
 | `ptah sql lint` | Lints standalone SQL files on disk and reports findings; no database is opened | — |
 | `ptah version` | Prints the version, commit and build date compiled into the binary | — |

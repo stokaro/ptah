@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 101,
+  "claimed": 103,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -632,6 +632,18 @@
       "kind": "native-verb",
       "surface": "ptah seed",
       "claimed_by": "docs/site/src/content/docs/operate/seed-data.md"
+    },
+    {
+      "id": "cli-ptah-skill-install",
+      "kind": "native-verb",
+      "surface": "ptah skill install",
+      "claimed_by": "docs/site/src/content/docs/operate/ai-agent-skill.md"
+    },
+    {
+      "id": "cli-ptah-skill-list",
+      "kind": "native-verb",
+      "surface": "ptah skill list",
+      "claimed_by": "docs/site/src/content/docs/operate/ai-agent-skill.md"
     },
     {
       "id": "cli-ptah-sql-lint",

@@ -185,6 +185,8 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `schema validate` | none | none | — | reports structural problems in a desired schema without a database |
 | `schema verify-approval` | none | none | — | checks a saved plan's signature against an allowed-signers file |
 | `seed` | **writes** | none | `--db-url` | applies environment-scoped SQL seed files to the database it is given |
+| `skill install` | none | none | — | writes the agent skills compiled into the binary to where a coding agent reads them, leaving a file with the same content alone and stopping before any write at one with other content unless told to overwrite; it opens no database |
+| `skill list` | none | none | — | lists the agent skills compiled into the binary, each with the description an agent reads; nothing is opened |
 | `sql lint` | none | none | — | lints standalone SQL files on disk and reports findings; no database is opened |
 | `version` | none | none | — | prints the version, commit and build date compiled into the binary |
 | `viz` | none | none | — | renders diagrams from a desired schema; no database is opened |
@@ -272,6 +274,8 @@ permission.
 | `schema stats` | counts the objects in the target and emits them as OpenMetrics |
 | `schema validate` | reports structural problems in a desired schema without a database |
 | `schema verify-approval` | checks a saved plan's signature against an allowed-signers file |
+| `skill install` | writes the agent skills compiled into the binary to where a coding agent reads them, leaving a file with the same content alone and stopping before any write at one with other content unless told to overwrite; it opens no database |
+| `skill list` | lists the agent skills compiled into the binary, each with the description an agent reads; nothing is opened |
 | `sql lint` | lints standalone SQL files on disk and reports findings; no database is opened |
 | `version` | prints the version, commit and build date compiled into the binary |
 | `viz` | renders diagrams from a desired schema; no database is opened |

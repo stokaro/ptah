@@ -5636,16 +5636,18 @@ no position in its sentence.
 
 ### `ptah.run/docs`
 
-This package holds Ptah's own documentation as an `embed.FS` and nothing else.
+This package holds Ptah's own documentation and the agent skills Ptah ships,
+each as an `embed.FS`, and nothing else.
 It is public because `go:embed` patterns cannot leave their package's
 directory, so the only package that can carry `docs/` is one that lives in it —
 the alternative is committing a generated copy of the documentation under
 `internal/`, which every documentation edit would have to regenerate and which
 merges as an opaque blob.
 
-Its surface is one variable and it is listed here so the snapshot gate covers
-it. Embedders may read from it; the paths inside it are the repository's own
-layout and move when the documentation is reorganized.
+Its surface is two variables. Embedders may read from `FS`; the paths inside it are the repository's own
+layout and move when the documentation is reorganized. In `Skills` the top
+directory names are the skill names and stay put; the files inside a skill
+change with each release.
 
 ## Documentation-Only Packages
 

@@ -35,6 +35,13 @@ var verbs = map[string]Verb{
 	"providers check": {TargetNone, ScratchNone,
 		"starts one explicitly trusted provider to verify its identity and protocol, then closes it without opening a database"},
 
+	// skill.
+	"skill list": {TargetNone, ScratchNone,
+		"lists the agent skills compiled into the binary, each with the description an agent reads; nothing is opened"},
+	"skill install": {TargetNone, ScratchNone,
+		"writes the agent skills compiled into the binary to where a coding agent reads them, leaving a file with the same " +
+			"content alone and stopping before any write at one with other content unless told to overwrite; it opens no database"},
+
 	// assist.
 	"assist context": {TargetNone, ScratchNone,
 		"prints what a question would send to a model provider and sends nothing; it opens " +

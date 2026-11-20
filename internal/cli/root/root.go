@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/cli/providers"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/cli/seed"
+	"ptah.run/internal/cli/skill"
 	sqlcmd "ptah.run/internal/cli/sql"
 	"ptah.run/internal/cli/version"
 	"ptah.run/internal/cli/viz"
@@ -113,6 +114,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())
 	cmd.AddCommand(mcpcmd.NewCommand())
+	cmd.AddCommand(skill.NewCommand())
 	cmd.AddCommand(assistcmd.NewCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 	cmd.AddCommand(license.NewLicenseCommand())

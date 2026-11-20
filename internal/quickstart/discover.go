@@ -26,10 +26,55 @@ type Floors struct {
 	// Expectations is the smallest number of output blocks one page must
 	// assert for that shell.
 	Expectations int
+	// Skills is the smallest number of agent skills the skills tree may hold.
+	Skills int
 }
 
 // DefaultFloors are the counts the documented quick starts clear with margin.
-func DefaultFloors() Floors { return Floors{Pages: 2, Steps: 6, Expectations: 4} }
+func DefaultFloors() Floors { return Floors{Pages: 2, Steps: 6, Expectations: 4, Skills: 1} }
+
+// skillFile is the file that makes a directory an agent skill.
+const skillFile = "SKILL.md"
+
+// DiscoverSkills reads every agent skill under root, a directory holding
+// SKILL.md at any depth, and returns them sorted by path. Every skill found is
+// returned; see [ExtractSkill].
+func DiscoverSkills(root string) ([]*Page, error) {
+	paths, err := documentationFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	var skills []*Page
+	for _, path := range paths {
+		if filepath.Base(path) != skillFile {
+			continue
+		}
+		source, readErr := os.ReadFile(path) // #nosec G304 -- the path comes from walking the caller's own skills root.
+		if readErr != nil {
+			return nil, readErr
+		}
+		skill, extractErr := ExtractSkill(path, source)
+		if extractErr != nil {
+			return nil, extractErr
+		}
+		skills = append(skills, skill)
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Path < skills[j].Path })
+	return skills, nil
+}
+
+// CheckSkillFloors is [CheckFloors] for the skills [DiscoverSkills] found:
+// at least Floors.Skills of them, each clearing the same per-page floors as a
+// quick start.
+func CheckSkillFloors(skills []*Page, shell Shell, floors Floors) error {
+	var problems []string
+	if len(skills) < floors.Skills {
+		problems = append(problems, fmt.Sprintf(
+			"found %d agent skill(s) with a %s, expected at least %d", len(skills), skillFile, floors.Skills))
+	}
+	problems = append(problems, pageFloorProblems(skills, shell, floors)...)
+	return floorError(problems)
+}
 
 // Discover reads every documentation page under root and returns the ones that
 // opt in, sorted by path.
@@ -111,6 +156,14 @@ func CheckFloors(pages []*Page, shell Shell, floors Floors) error {
 			"found %d page(s) with %s: true in their frontmatter, expected at least %d",
 			len(pages), optInKey, floors.Pages))
 	}
+	problems = append(problems, pageFloorProblems(pages, shell, floors)...)
+	return floorError(problems)
+}
+
+// pageFloorProblems says which pages publish fewer steps or assertions for
+// shell than floors asks of one page.
+func pageFloorProblems(pages []*Page, shell Shell, floors Floors) []string {
+	var problems []string
 	for _, page := range pages {
 		program, ok := page.Program(shell)
 		if !ok {
@@ -130,6 +183,10 @@ func CheckFloors(pages []*Page, shell Shell, floors Floors) error {
 				page.Path, asserted, shell, floors.Expectations))
 		}
 	}
+	return problems
+}
+
+func floorError(problems []string) error {
 	if len(problems) == 0 {
 		return nil
 	}
