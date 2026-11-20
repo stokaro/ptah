@@ -94,3 +94,13 @@ func declaredKeys(database *schemamodel.Database, table schemamodel.Table) []dec
 	}
 	return keys
 }
+
+// PrimaryKeyName is the name Ptah gives a primary key it adds to an existing
+// table where neither the declaration nor the server names one: table_pkey,
+// cut and given a hash suffix where it is longer than dialect's identifier
+// limit, as a generated foreign key name is. A server that refuses a longer
+// name, as Oracle does at 128 bytes with ORA-00972, takes it, and a rollback
+// drops the key by the same name.
+func PrimaryKeyName(table, dialect string) string {
+	return generatedForeignKeyName(table+"_pkey", "primary key\x00"+table, dialect)
+}

@@ -23,6 +23,7 @@ func TestIdentifiers_HappyPath(t *testing.T) {
 		{name: "mysql", dialect: platform.MySQL, wantMax: 64, wantUnit: capability.IdentifierCharacters},
 		{name: "mariadb", dialect: platform.MariaDB, wantMax: 64, wantUnit: capability.IdentifierCharacters},
 		{name: "sqlserver", dialect: platform.SQLServer, wantMax: 128, wantUnit: capability.IdentifierCharacters},
+		{name: "oracle", dialect: platform.Oracle, wantMax: 128, wantUnit: capability.IdentifierBytes},
 		{name: "unnormalized spelling", dialect: "PostgreSQL", wantMax: 63, wantUnit: capability.IdentifierBytes},
 	}
 
@@ -48,7 +49,7 @@ func TestIdentifiers_UnlimitedDialects(t *testing.T) {
 	}{
 		{name: "clickhouse", dialect: platform.ClickHouse},
 		{name: "sqlite", dialect: platform.SQLite},
-		{name: "unknown dialect", dialect: "oracle"},
+		{name: "unknown dialect", dialect: "informix"},
 		{name: "empty dialect", dialect: ""},
 	}
 

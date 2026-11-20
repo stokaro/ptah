@@ -137,7 +137,8 @@ Ptah emits `ENGINE=InnoDB` for participating tables when the schema leaves the
 engine blank, so a session default cannot silently disable foreign keys.
 `SET NULL` requires nullable local columns. Explicit foreign-key names must fit
 the target identifier limit: 63 bytes for the PostgreSQL family, 64 characters
-for the MySQL family, and 128 characters for SQL Server. Generated
+for the MySQL family, 128 characters for SQL Server, and 128 bytes for Oracle.
+Generated
 names are shortened deterministically before collision checks.
 
 The Go API exposes `capability.DefaultDialects()` for guards and UIs that must

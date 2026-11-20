@@ -63,6 +63,12 @@ hold digits, the underscore, `$` and `#`, as Oracle allows, so `a$b` is
 written bare and stored as `A$B`. A name that starts with any other character,
 such as `_a`, is written quoted, since Oracle refuses it bare with ORA-00911.
 
+A name holds at most 128 bytes, and Oracle refuses a longer one with
+ORA-00972 rather than cutting it. A foreign key name the file declares must
+fit. A name Ptah makes up, such as a foreign key name or the `<table>_pkey` of
+a primary key added to an existing table, is cut to fit and given a hash
+suffix.
+
 The case of a name declared bare carries no meaning. A declared `orders` means
 the table Oracle stores as `ORDERS`, whether it comes from a Go annotation or
 a SQL file. A reserved word is quoted, as above, and compared the same way. In

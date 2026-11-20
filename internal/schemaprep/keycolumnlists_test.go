@@ -1,6 +1,7 @@
 package schemaprep_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -122,6 +123,33 @@ func TestValidateKeyColumnLists_HappyPath(t *testing.T) {
 			err := schemaprep.ValidateKeyColumnLists(test.database, test.dialect)
 
 			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestPrimaryKeyName_HappyPath names the primary key Ptah adds: table_pkey
+// where it fits the dialect's identifier limit, and cut to the limit with a
+// hash suffix where it does not, since Oracle refuses a name over 128 bytes.
+func TestPrimaryKeyName_HappyPath(t *testing.T) {
+	long := strings.Repeat("t", 126)
+	tests := []struct {
+		name    string
+		table   string
+		dialect string
+		want    string
+	}{
+		{name: "a name that fits", table: "orders", dialect: "oracle", want: "orders_pkey"},
+		{name: "the longest name that fits", table: strings.Repeat("t", 123), dialect: "oracle", want: strings.Repeat("t", 123) + "_pkey"},
+		{name: "a name over the limit", table: long, dialect: "oracle", want: strings.Repeat("t", 119) + "_a3d134e3"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := schemaprep.PrimaryKeyName(test.table, test.dialect)
+
+			c.Assert(got, qt.Equals, test.want)
+			c.Assert(len(got) <= 128, qt.IsTrue)
 		})
 	}
 }

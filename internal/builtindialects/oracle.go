@@ -44,13 +44,17 @@ func oracle() descriptor.Dialect {
 			LetterFirst:    true,
 		},
 		Placeholder: descriptor.PlaceholderColon,
+		// Measured on 23.26 with the AL32UTF8 character set: a table named
+		// with 128 bytes is created, and 129 ASCII characters or 65 two-byte
+		// characters (130 bytes) answer ORA-00972, so the limit counts bytes
+		// and the server refuses a longer name rather than cutting it.
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "bytes"},
 
 		// An Oracle banner carries two numbers, and the first is not the
 		// version: "Oracle AI Database 26ai Free Release 23.26.2.0.0". The
 		// version is read after "Release". The IF [NOT] EXISTS guards arrived
 		// with the 23 line, and the step is the whole major: 23.0 through
-		// 23.25 were never measured. Ptah models no identifier limit for
-		// Oracle.
+		// 23.25 were never measured.
 		Capabilities: descriptor.Capabilities{
 			DefaultPreset: "Oracle23",
 			BannerTokens:  []string{"oracle"},

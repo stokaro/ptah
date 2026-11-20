@@ -143,18 +143,42 @@ func (h keyHolders) removedOver(add difftypes.ConstraintAdditionInfo, observatio
 }
 
 // dropsHiddenKey reports whether add, a key over one column, needs the key
-// Oracle named for that column dropped first, and records it as dropped.
+// Oracle named for that column dropped first, and records it as dropped. A
+// column the plan modifies to give up its UNIQUE already loses that key in the
+// column step, which runs earlier, and a second `DROP UNIQUE` answers ORA-02442.
 func (h keyHolders) dropsHiddenKey(add difftypes.ConstraintAdditionInfo, observation *schemacapture.TableObservation) bool {
 	if len(add.Columns) != 1 || observation == nil {
 		return false
 	}
 	column := h.semantics.ColumnIdentityKey(add.Columns[0])
 	key := h.semantics.QualifiedTableIdentityKey(add.TableName) + "\x00" + column
-	if h.hidden[key] || !holdsHiddenColumnKey(observation, column, h.semantics) {
+	if h.hidden[key] || !holdsHiddenColumnKey(observation, column, h.semantics) ||
+		h.columnStepDropsKey(add.TableName, column) {
 		return false
 	}
 	h.hidden[key] = true
 	return true
+}
+
+// columnStepDropsKey reports whether the column step drops the key of column,
+// an identity key, on table: the column gives up its UNIQUE, and no UNIQUE the
+// plan adds or drops over the column alone makes that change instead
+// ([uniqueColumnChangeOwnedByConstraint]), which is when the step keeps it.
+func (h keyHolders) columnStepDropsKey(table, column string) bool {
+	for i := range h.diff.TablesModified {
+		tableDiff := &h.diff.TablesModified[i]
+		if !objectlookup.Same(tableDiff.TableName, table, h.semantics) {
+			continue
+		}
+		for _, colDiff := range tableDiff.ColumnsModified {
+			if h.semantics.ColumnIdentityKey(colDiff.ColumnName) == column &&
+				previousColumnNullable(colDiff.Changes["unique"]) &&
+				!uniqueColumnChangeOwnedByConstraint(h.diff, tableDiff, colDiff.ColumnName, h.semantics) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // columnKeysRestoredAfterDrops answers the statements that give a column its
