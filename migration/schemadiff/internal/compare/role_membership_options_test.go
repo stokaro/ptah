@@ -137,3 +137,20 @@ func TestRoleMemberships_AMembershipOfARoleTheReadRefusedIsUndecided(t *testing.
 	c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
 	c.Assert(diff.RoleMembershipsModified, qt.HasLen, 0)
 }
+
+// TestRoleMemberships_EachEndOfAnUndecidedRoleDecidesAlone holds the guard to
+// both roles: the member not described, and the group not described.
+func TestRoleMemberships_EachEndOfAnUndecidedRoleDecidesAlone(t *testing.T) {
+	for _, name := range []string{"app", "readers"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			database := &catalog.Database{NotDescribed: coverage.Set{}.WithObject(coverage.Role, name)}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.RoleMemberships(&schemamodel.Database{Roles: membershipRoles(true, schemamodel.RoleMembershipOptions{})},
+				database, diff, capability.Postgres16())
+
+			c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
+		})
+	}
+}
