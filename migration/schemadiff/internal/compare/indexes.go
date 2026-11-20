@@ -1072,7 +1072,7 @@ func indexKeyTarget(
 ) (column, expression string) {
 	trimmedExpr := strings.TrimSpace(expr)
 	if trimmedExpr != "" {
-		return "", normalizeCheckExpression(trimmedExpr, quoting)
+		return "", normalize.CheckExpression(trimmedExpr, quoting)
 	}
 	return semantics.ColumnIdentityKey(name), ""
 }
@@ -1182,7 +1182,7 @@ func normalizePredicate(value string, quoting normalize.Quoting, predicates sche
 	if predicates != nil {
 		value = predicates.Spelling(value)
 	}
-	return normalizeCheckExpression(value, quoting)
+	return normalize.CheckExpression(value, quoting)
 }
 
 // IndexRenames returns the renames [IndexesWithSemantics] plans for desired

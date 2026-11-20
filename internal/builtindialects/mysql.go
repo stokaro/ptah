@@ -140,10 +140,12 @@ func mysql() descriptor.Dialect {
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
 		// Measured on 26.10.0: a CHECK named ck on one table and ck or CK on
-		// another of the database is refused, and so is ÉK after ék; ek and ék
-		// are two names.
+		// another of the database is refused, and so is ÉK after ék and İ after
+		// i; ek and ék are two names, and ẞ (U+1E9E) beside ß and ϴ (U+03F4)
+		// beside θ are accepted. Ptah folds ASCII letters only, so it never
+		// refuses a pair the server accepts and leaves the rest to the server.
 		CheckNames: descriptor.CheckNames{
-			Scope: descriptor.CheckNameScopeSchema, Comparison: "unicode_case_insensitive",
+			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
 			Refusal: "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
 		},
 		Columns: descriptor.Columns{
