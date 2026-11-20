@@ -67,6 +67,9 @@ data "aws_rds_token" "unused_aws" {
   username = "nobody"
 }
 data "gcp_cloudsql_token" "unused_gcp" {}
+data "azure_db_token" "unused_azure" {
+  tenant_id = "00000000-0000-0000-0000-000000000000"
+}
 
 env "local" {
   url = "sqlite://selected.db"

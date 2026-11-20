@@ -107,16 +107,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 208 capabilities below:
+Across the 209 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 193 |
+| Ptah supports it fully | 194 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 55 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 56 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 11 |
@@ -153,7 +153,7 @@ seven of them as open capabilities regardless.
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-config-exec`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
 | HCL foreign_key deferrable | ✅ | ❌ | ❌ | `deferrable` and `initially` are carried through HCL, the IR, the renderer and the PostgreSQL catalog read. The community binary plans no DEFERRABLE for the same file. |
-| HCL function calls in schema files | ✅ | 🟡 | 🟡 | sql() reduces to its SQL everywhere, and all 67 names the schema evaluator registers evaluate. uuid is a type, not a function. sql() inside check.expr and index.where is a retained divergence. |
+| HCL function calls in schema files | ✅ | 🟡 | 🟡 | sql() reduces to its SQL everywhere, and all 71 names the schema evaluator registers evaluate. uuid is a type, not a function. sql() inside check.expr and index.where is a retained divergence. |
 | HCL locals, lock, atlas, dynamic/for_each | ✅ | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. `dynamic` blocks expand: for_each, labels, iterator and content. `lock` and `atlas` are accepted and reported as ignored. |
 | HCL names outside the parsed subset | ✅ | ✅ | ❌ | `ptah-compat` accepts an unmodeled top-level name whose body names a declared schema and reports it as ignored; `schema.nope` exits 1 on both. Native `ptah` refuses by name. |
 | HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The binary drops row_security; ptah-compat plans it. |
@@ -321,6 +321,7 @@ seven of them as open capabilities regardless.
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | ✅ | ➖ | ➖ | ptah `--env` reads ./atlas.hcl, `--config` names one anywhere else when the path ends in .hcl, and `--var name=value` supplies a variable with no default on every env-aware verb. |
 | AWS RDS token project data source (data "aws_rds_token") | ✅ | ✅ | ✅ | Resolves to a SigV4 `rds-db` connect token, matching the pinned community binary parameter for parameter. `endpoint` and `username` required; `region` and `profile` optional. |
+| Azure database token project data source (data "azure_db_token") | ✅ | ❌ | ✅ | Mints a Microsoft Entra token from the Azure default credential chain; tenant_id and scope are optional. PTAH_ATLAS_STRICT_COMPAT=1 refuses it, as the community binary does. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
 | Docker dev databases (`docker://` `--dev-url`) | ✅ | ✅ | ✅ | Every verb taking a dev or shadow URL provisions and removes a container. `schema plan` starts none on purpose: a saved plan reads local files and has nothing to replay. |
 | Docker dev databases from a named image (`docker+<driver>://` `--dev-url`) | ✅ | ✅ | ✅ | Starts the image the URL names on PostgreSQL, MySQL and MariaDB, and creates the database when the image did not. ClickHouse and SQL Server images are refused by name. |

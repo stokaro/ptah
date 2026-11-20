@@ -12,6 +12,7 @@ import (
 
 var atlasLazyDataSourceTypes = map[string]struct{}{
 	"aws_rds_token":      {},
+	"azure_db_token":     {},
 	"composite_schema":   {},
 	"external":           {},
 	"external_schema":    {},
@@ -158,6 +159,9 @@ func (e *atlasEvaluator) collectDataSources(blocks []*hclsyntax.Block) error {
 		}
 		if block.Labels[0] == "composite_schema" && e.parser.rejectCompositeSchema {
 			return compositeSchemaRefusal()
+		}
+		if block.Labels[0] == "azure_db_token" && e.parser.rejectAzureDBToken {
+			return azureDBTokenRefusal()
 		}
 		if _, ok := atlasLazyDataSourceTypes[block.Labels[0]]; !ok {
 			return unsupported(block.Type+"."+block.Labels[0], block.TypeRange)

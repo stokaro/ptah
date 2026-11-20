@@ -60,6 +60,12 @@ type AtlasLoadOptions struct {
 	// compatibility adapter selects this option for its strict policy. The
 	// zero value evaluates the block.
 	RejectExternalSchema bool
+	// RejectAzureDBToken refuses a `data "azure_db_token"` block, declared or
+	// referenced, in the pinned community binary's own words. That binary has
+	// no handler for the data source; a compatibility adapter selects this
+	// option for its strict policy. The zero value mints the token when a
+	// selected value reaches the block.
+	RejectAzureDBToken bool
 	// IgnoreDockerBlocks leaves every top-level docker block unread, as Atlas
 	// Community Edition leaves it: the block is reported as ignored, and a
 	// reference to its url fails with `Unsupported attribute`. The default
@@ -244,6 +250,7 @@ func ParseAtlasFSCollectionWithOptions(
 	p.source = data
 	p.rejectCompositeSchema = opts.RejectCompositeSchema
 	p.rejectExternalSchema = opts.RejectExternalSchema
+	p.rejectAzureDBToken = opts.RejectAzureDBToken
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
 	configs, err := p.parseCollection(body, opts.EnvName)
 	if err != nil {
@@ -365,6 +372,8 @@ type atlasParser struct {
 	rejectCompositeSchema bool
 	// rejectExternalSchema is [AtlasLoadOptions.RejectExternalSchema].
 	rejectExternalSchema bool
+	// rejectAzureDBToken is [AtlasLoadOptions.RejectAzureDBToken].
+	rejectAzureDBToken bool
 }
 
 // hclSchemaVarScope is one data "hcl_schema" block's contribution to the

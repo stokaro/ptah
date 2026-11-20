@@ -9,10 +9,10 @@ import (
 	"ptah.run/config/projectconfig"
 )
 
-// A referenced `data "aws_rds_token"` or `data "gcp_cloudsql_token"` failed
-// explicitly because neither provider was implemented. They are ordinary cloud
-// IAM authentication with no registry and no Atlas dependency, which is why
-// this half of stokaro/ptah#1617 had no scope argument against it.
+// A referenced `data "aws_rds_token"` or `data "gcp_cloudsql_token"` mints a
+// password. Both are ordinary cloud IAM authentication with no registry and no
+// Atlas dependency (stokaro/ptah#1617); `data "azure_db_token"` is the third,
+// tested in atlas_azure_token_test.go.
 
 // staticAWSCredentials pins the credential chain to the environment, so a
 // shared config file or instance metadata on the host cannot reach the result.
