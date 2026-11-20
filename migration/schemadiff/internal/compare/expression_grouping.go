@@ -8,7 +8,7 @@ import (
 
 // checkExpressionsAlike reports whether a declared CHECK condition and the one
 // a catalog reports for it are one condition on dialect: equal once
-// [normalize.CheckExpression] folds both, or grouped alike by the dialect's
+// [normalizeCheckExpression] folds both, or grouped alike by the dialect's
 // operator precedence ([expressionsGroupAlike]).
 //
 // Every comparison that decides whether two CHECKs are the same asks this one
@@ -18,7 +18,7 @@ import (
 // again on every run.
 func checkExpressionsAlike(declared, reported, dialect string) bool {
 	quoting := normalize.QuotingOf(dialect)
-	return normalize.CheckExpression(declared, quoting) == normalize.CheckExpression(reported, quoting) ||
+	return normalizeCheckExpression(declared, quoting) == normalizeCheckExpression(reported, quoting) ||
 		expressionsGroupAlike(declared, reported, dialect)
 }
 

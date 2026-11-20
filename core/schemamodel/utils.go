@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
-	"ptah.run/internal/normalize"
 	"ptah.run/internal/tableref"
 )
 
@@ -1834,15 +1833,12 @@ func constraintDedupKey(c Constraint) string {
 	// Two CHECKs of one name and table with different conditions are two
 	// declarations, and keeping both lets the validation of CHECK names refuse
 	// them as the server does. Folded by name alone, the second condition is
-	// dropped without a word. The conditions are compared as the comparison of
-	// a schema with a database compares them, so `a>0` and `a > 0`, or a
-	// keyword in another case, are one CHECK. No dialect is known here, so
-	// strings are read in the standard way, which can only keep two CHECKs
-	// apart that a dialect would fold, never fold two that differ. The
+	// dropped without a word. Two spellings that every dialect reads alike
+	// (see checkExpressionKey) are one CHECK, and nothing else is folded. The
 	// identity itself stays the name, so two Go sources that give one CHECK
 	// two conditions still conflict.
 	if strings.TrimSpace(c.Name) != "" && strings.EqualFold(strings.TrimSpace(c.Type), "CHECK") {
-		key += "\x00" + normalize.CheckExpression(c.CheckExpression, normalize.Quoting{})
+		key += "\x00" + checkExpressionKey(c.CheckExpression)
 	}
 	return key
 }

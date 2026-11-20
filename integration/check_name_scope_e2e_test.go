@@ -137,6 +137,20 @@ func TestSchemaApplyRefusesASecondCheckOfANameE2E(t *testing.T) {
 			server: `Error 3822 (HY000): Duplicate check constraint name 'CK'.`,
 		},
 		{
+			// MySQL DDL does not roll back, so a pair left to the server would
+			// leave the first table created. The Latin letters are refused first.
+			name: "MySQL, a Latin letter beside its capital in two tables", engine: checkNameMySQL,
+			schema: "CREATE TABLE t1 (a int, CONSTRAINT `\u00e9` CHECK (a > 0));\nCREATE TABLE t2 (a int, CONSTRAINT `\u00c9` CHECK (a > 0));\n",
+			where:  "table \"t1\" declares CHECK \"\u00e9\" and table \"t2\" CHECK \"\u00c9\", and the server keeps one CHECK of a name per schema",
+			server: "Error 3822 (HY000): Duplicate check constraint name '\u00c9'.",
+		},
+		{
+			name: "MySQL, the Kelvin sign beside k in one table", engine: checkNameMySQL,
+			schema: "CREATE TABLE t (a int, CONSTRAINT `k` CHECK (a > 0), CONSTRAINT `\u212a` CHECK (a < 9));\n",
+			where:  "table \"t\" declares CHECK \"k\" and CHECK \"\u212a\", and the server keeps one CHECK of a name per schema",
+			server: "Error 3822 (HY000): Duplicate check constraint name '\u212a'.",
+		},
+		{
 			name: "MariaDB, one table", engine: checkNameMariaDB,
 			schema: "CREATE TABLE t (a int, CONSTRAINT dd CHECK (a > 0), CONSTRAINT DD CHECK (a < 9));\n",
 			where:  `table "t" declares CHECK "dd" and CHECK "DD", and the server keeps one CHECK of a name per table`,
@@ -145,6 +159,14 @@ func TestSchemaApplyRefusesASecondCheckOfANameE2E(t *testing.T) {
 		{
 			name: "PostgreSQL, a column's CHECK and a table's", engine: checkNamePostgres,
 			schema: "CREATE TABLE t (a int CONSTRAINT dd CHECK (a > 0), CONSTRAINT dd CHECK (a < 9));\n",
+			where:  `table "t" declares CHECK "dd" and CHECK "dd", and the server keeps one CHECK of a name per table`,
+			server: `ERROR: check constraint "dd" already exists (SQLSTATE 42710)`,
+		},
+		{
+			// Two conditions that differ only in the case of a quoted column
+			// are two CHECKs, not one written twice.
+			name: "PostgreSQL, conditions that differ in a quoted column's case", engine: checkNamePostgres,
+			schema: "CREATE TABLE t (\"A\" int, \"a\" int, CONSTRAINT dd CHECK (\"A\" > 0), CONSTRAINT dd CHECK (\"a\" > 0));\n",
 			where:  `table "t" declares CHECK "dd" and CHECK "dd", and the server keeps one CHECK of a name per table`,
 			server: `ERROR: check constraint "dd" already exists (SQLSTATE 42710)`,
 		},

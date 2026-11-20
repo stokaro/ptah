@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
 )
@@ -62,8 +63,10 @@ func TestValidateCheckNames_HappyPath(t *testing.T) {
 			database: databaseOf(checkTable{schema: "dbo", name: "t", checks: []string{"ck"}}, checkTable{schema: "other", name: "t", checks: []string{"ck"}})},
 		{name: "MySQL accepts the capital sharp s beside the sharp s", dialect: "mysql",
 			database: databaseOf(checkTable{name: "t", checks: []string{"\u1e9e", "\u00df"}})},
-		{name: "MySQL leaves a letter beyond ASCII to the server", dialect: "mysql",
-			database: databaseOf(checkTable{name: "t1", checks: []string{"\u00e9k"}}, checkTable{name: "t2", checks: []string{"\u00c9K"}})},
+		{name: "MySQL accepts the archaic theta beside theta", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t1", checks: []string{"\u03f4"}}, checkTable{name: "t2", checks: []string{"\u03b8"}})},
+		{name: "MySQL leaves a letter outside the folded ranges to the server", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t1", checks: []string{"\u1e00"}}, checkTable{name: "t2", checks: []string{"\u1e01"}})},
 		{name: "SQL Server compares names exactly, since a case-sensitive collation accepts ck and CK", dialect: "sqlserver",
 			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"CK"}})},
 		{name: "MariaDB accepts i beside the dotted capital I", dialect: "mariadb",
@@ -101,6 +104,24 @@ func TestValidateCheckNames_FailurePath(t *testing.T) {
 			database: databaseOf(checkTable{schema: "app", name: "t1", checks: []string{"column:ck"}}, checkTable{schema: "app", name: "t2", checks: []string{"ck"}}),
 			wantErr: `table "app.t1" declares CHECK "ck" and table "app.t2" CHECK "ck", and the server keeps one CHECK of a name per schema: ` +
 				`Error 3822 (HY000): Duplicate check constraint name 'ck'.`,
+		},
+		{
+			name: "MySQL folds a Latin letter across tables", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t1", checks: []string{"é"}}, checkTable{name: "t2", checks: []string{"É"}}),
+			wantErr: `table "t1" declares CHECK "é" and table "t2" CHECK "É", and the server keeps one CHECK of a name per schema: ` +
+				`Error 3822 (HY000): Duplicate check constraint name 'É'.`,
+		},
+		{
+			name: "MySQL folds the Kelvin sign in one table", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t", checks: []string{"k", "K"}}),
+			wantErr: `table "t" declares CHECK "k" and CHECK "K", and the server keeps one CHECK of a name per schema: ` +
+				`Error 3822 (HY000): Duplicate check constraint name 'K'.`,
+		},
+		{
+			name: "MySQL folds the dotted capital I", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t", checks: []string{"i", "İ"}}),
+			wantErr: `table "t" declares CHECK "i" and CHECK "İ", and the server keeps one CHECK of a name per schema: ` +
+				`Error 3822 (HY000): Duplicate check constraint name 'İ'.`,
 		},
 		{
 			name: "MariaDB in one table", dialect: "mariadb",
@@ -202,4 +223,30 @@ func TestValidateCheckNamesWithinTables_FailurePath(t *testing.T) {
 			c.Assert(err.Error(), qt.Equals, "two CHECK constraints claim the same name: "+test.wantErr)
 		})
 	}
+}
+
+// Names a server resolved to one identity are one CHECK of a table, so the
+// comparison would reject them as one owner declared twice. They are refused
+// here with the server's error, whatever the descriptor's static fold says.
+func TestValidateCheckNamesAs_ResolvedNames(t *testing.T) {
+	database := databaseOf(checkTable{name: "t", checks: []string{"\u1e9e", "\u00df"}})
+	resolved := identifier.ForMySQLFamilyResolvedIndexNames("mysql", []identifier.ResolvedName{
+		{Name: "\u00df", Key: "\u00df"}, {Name: "\u1e9e", Key: "\u00df"},
+	})
+
+	t.Run("the static semantics accept the pair", func(t *testing.T) {
+		c := qt.New(t)
+
+		err := schemaprep.ValidateCheckNames(database, "mysql")
+
+		c.Assert(err, qt.IsNil)
+	})
+	t.Run("the semantics the server resolved refuse it", func(t *testing.T) {
+		c := qt.New(t)
+
+		err := schemaprep.ValidateCheckNamesAs(database, "mysql", resolved)
+
+		c.Assert(err, qt.ErrorIs, schemaprep.ErrDuplicateCheckName)
+		c.Assert(err, qt.ErrorMatches, `.*Error 3822 \(HY000\): Duplicate check constraint name '\x{00df}'\.`)
+	})
 }

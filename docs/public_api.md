@@ -5422,7 +5422,8 @@ in place of a dialect's name:
   or `CheckNamingTableNumbered` whose `IdentifierLimit` states no length in
   characters, which is what the server holds a derived name to.
 - `CheckNames`: where the server keeps a CHECK name unique, how it compares the
-  names, and the error it answers.
+  names, the code points beyond ASCII it folds (`CodePointRange`), and the error
+  it answers.
 - `Statements` and `TableOptions`: how the server reads the role and table
   statements a schema file writes. `Statements.DoBlocks` names the procedural
   language of a DO block that declares roles, one of `DoBlockLanguages`, such
