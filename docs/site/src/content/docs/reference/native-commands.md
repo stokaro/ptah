@@ -790,7 +790,7 @@ The rules:
 | `ROL04` | a role that cannot log in and that nobody holds | info |
 | `OWN01` | objects owned by a role that can log in | info |
 | `OWN02` | an object whose owner revoked from itself privileges PostgreSQL gives an owner by default | warning |
-| `roles/read-reach` | a role that can read more than `--reach-warn` percent of the relations (default 50), or more than `--reach-error` percent (default 75) | warning, error |
+| `roles/read-reach` | a role that can read more than `--reach-warn` percent of the relations (default 50), or more than `--reach-error` percent (default 100, which never reports) | warning, error |
 | `roles/write-reach` | a role that can change the rows of more than `--reach-warn` percent of the relations, or more than `--reach-error` percent | warning, error |
 
 `ROL01` needs something no catalog keeps. A privilege is not use: a role holding
@@ -883,8 +883,9 @@ Severities are the ones the rest of Ptah speaks: `info` reports and never
 blocks, `warning` asks for review, `error` blocks. `--fail-on error` (the
 default), `any`, or `none` decides the exit code, spelled the way
 `ptah migrations lint` spells it. Only `roles/read-reach` and `roles/write-reach`
-report at `error`, so the default fails on a role's reach and on nothing else;
-`--fail-on any` gates on every finding.
+can report at `error`, and only once `--reach-error` is below 100, so the
+default passes on every finding unless that threshold is set; `--fail-on any`
+gates on every finding.
 
 `--format json` emits the same findings as a document, each with its structured
 detail — the privileges, the roles, the routine's language — so a pipeline can

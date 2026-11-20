@@ -41,13 +41,16 @@ type reachReportFinding struct {
 }
 
 // reachFindingLines runs `ptah schema security` against dbURL and states, one
-// line each, the reach findings about the roles whose names end in suffix.
+// line each, the reach findings about the roles whose names end in suffix. The
+// run lowers the error threshold to 75, since a reach is never an error by
+// default and the lines would show one severity only.
 // Roles are server-wide, so the run also measures every other test's roles;
 // the suffix keeps this test's own, and is taken off so the lines read the
 // same on every run.
 func reachFindingLines(c *qt.C, dbURL, suffix string) []string {
 	c.Helper()
-	stdout, err := runPtahNativeStdout("schema", "security", "--db-url", dbURL, "--format", "json", "--fail-on", "none")
+	stdout, err := runPtahNativeStdout("schema", "security", "--db-url", dbURL, "--format", "json", "--fail-on", "none",
+		"--reach-error", "75")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
 	var report reachReport
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil, qt.Commentf("%s", stdout))
@@ -66,22 +69,24 @@ func reachFindingLines(c *qt.C, dbURL, suffix string) []string {
 
 // TestSchemaSecurityReachE2E_PostgreSQL builds a role graph over a database of
 // four tables and reads back how much of it each role reaches: through its own
-// grants, through a role it is a member of, and through pg_read_all_data,
-// which no grant on any table states.
+// grants, through a role it is a member of, through pg_read_all_data, which no
+// grant on any table states, and through owning three of the tables.
 func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 	c := qt.New(t)
 	target, admin := scratchReplayDatabase(c)
 	suffix := fmt.Sprintf("_%d", time.Now().UnixNano())
 	reader, member, auditor, writer := "reach_reader"+suffix, "reach_member"+suffix, "reach_auditor"+suffix, "reach_writer"+suffix
+	owner := "reach_owner" + suffix
 	c.Cleanup(func() {
 		// This runs before scratchReplayDatabase drops the database, so the
 		// privileges that keep the roles from being dropped go first.
 		conn, err := dbschema.ConnectToDatabase(context.Background(), target)
 		c.Check(err, qt.IsNil)
-		_, err = conn.ExecContext(context.Background(), fmt.Sprintf(`DROP OWNED BY %s, %s`, reader, writer))
+		_, err = conn.ExecContext(context.Background(), fmt.Sprintf(`DROP OWNED BY %s, %s, %s`, reader, writer, owner))
 		c.Check(err, qt.IsNil)
 		dbschema.CloseAndWarn(conn)
-		_, err = admin.ExecContext(context.Background(), fmt.Sprintf(`DROP ROLE IF EXISTS %s, %s, %s, %s`, member, reader, auditor, writer))
+		_, err = admin.ExecContext(context.Background(),
+			fmt.Sprintf(`DROP ROLE IF EXISTS %s, %s, %s, %s, %s`, member, reader, auditor, writer, owner))
 		c.Check(err, qt.IsNil)
 	})
 	_, err := admin.ExecContext(c.Context(), fmt.Sprintf(`
@@ -89,8 +94,9 @@ func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 		CREATE ROLE %[2]s NOLOGIN;
 		CREATE ROLE %[3]s NOLOGIN;
 		CREATE ROLE %[4]s NOLOGIN;
+		CREATE ROLE %[5]s NOLOGIN;
 		GRANT %[1]s TO %[2]s;
-		GRANT pg_read_all_data TO %[3]s;`, reader, member, auditor, writer))
+		GRANT pg_read_all_data TO %[3]s;`, reader, member, auditor, writer, owner))
 	c.Assert(err, qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 	c.Assert(err, qt.IsNil)
@@ -101,13 +107,18 @@ func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 		CREATE TABLE t3 (id int PRIMARY KEY);
 		CREATE TABLE t4 (id int PRIMARY KEY);
 		GRANT SELECT ON t1, t2, t3 TO %[1]s;
-		GRANT INSERT, UPDATE ON t1, t2, t3, t4 TO %[2]s;`, reader, writer))
+		GRANT INSERT, UPDATE ON t1, t2, t3, t4 TO %[2]s;
+		ALTER TABLE t1 OWNER TO %[3]s;
+		ALTER TABLE t2 OWNER TO %[3]s;
+		ALTER TABLE t3 OWNER TO %[3]s;`, reader, writer, owner))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(reachFindingLines(c, target, suffix), qt.DeepEquals, []string{
 		"roles/read-reach error reach_auditor 4/4 through=[] sources=[pg_read_all_data held by reach_auditor]",
 		"roles/read-reach warning reach_member 3/4 through=[reach_reader] sources=[]",
+		"roles/read-reach warning reach_owner 3/4 through=[] sources=[ownership of 3 relations held by reach_owner]",
 		"roles/read-reach warning reach_reader 3/4 through=[] sources=[]",
+		"roles/write-reach warning reach_owner 3/4 through=[] sources=[ownership of 3 relations held by reach_owner]",
 		"roles/write-reach error reach_writer 4/4 through=[] sources=[]",
 	})
 }

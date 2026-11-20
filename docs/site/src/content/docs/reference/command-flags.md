@@ -1957,7 +1957,7 @@ Read the columns as follows.
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |
-| `--reach-error` | `int` | `75` | `PTAH_REACH_ERROR` | — |
+| `--reach-error` | `int` | `100` | `PTAH_REACH_ERROR` | — |
 | `--reach-warn` | `int` | `50` | `PTAH_REACH_WARN` | — |
 | `--role-usage` | `string` | — | `PTAH_ROLE_USAGE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |

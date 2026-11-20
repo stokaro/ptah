@@ -114,10 +114,13 @@ as a share of all of them. A role reaches a relation through its own grants,
 grants to PUBLIC, the roles it can use through membership (inherited or
 switched to), ownership, a grant on the whole schema, superuser, membership in
 pg_read_all_data or pg_write_all_data, and privileges granted on every
-database. More than --reach-warn percent is a warning and more than
---reach-error percent an error. The rules run on PostgreSQL, MySQL and
-MariaDB, and report themselves skipped where the read does not establish the
-access no object grant states.
+database. More than --reach-warn percent (50 unless set) is a warning, and
+more than --reach-error percent an error. --reach-error is 100 unless set, so
+a reach is never an error by default: the owner of every table reaches all of
+them, which is how most applications that run their own migrations are
+deployed. Set it, for example to 75, to fail on broad reach. The rules run
+on PostgreSQL, MySQL and MariaDB, and report themselves skipped where the
+read does not establish the access no object grant states.
 
 The analysis is local: it reads the database named by --db-url and contacts
 nothing else. It also reads only what Ptah models, so a clean report means
@@ -142,7 +145,7 @@ nothing else. It also reads only what Ptah models, so a clean report means
 		"Percent of the relations a role may read or write before roles/read-reach and roles/write-reach warn")
 	flags.IntVar(&opts.reachErr, securityReachErrorFlag, schemasecurity.DefaultReachErrorPercent,
 		"Percent of the relations a role may read or write before roles/read-reach and roles/write-reach "+
-			"report an error")
+			"report an error. 100 never reports one.")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd

@@ -24,11 +24,14 @@ const (
 
 // DefaultReachWarnPercent and DefaultReachErrorPercent are the thresholds a
 // caller that states none uses: a role that reaches more than half of the
-// relations asks for review, and one that reaches more than three quarters
-// blocks.
+// relations asks for review, and no reach is an error until the caller lowers
+// the error threshold, since no reach exceeds all of the relations. The owner
+// of every table reaches all of them, and that is how most applications that
+// run their own migrations are deployed, so a default that blocked would fail
+// nearly every database it met rather than the one that needs attention.
 const (
 	DefaultReachWarnPercent  = 50
-	DefaultReachErrorPercent = 75
+	DefaultReachErrorPercent = 100
 )
 
 // Reach is what the reach rules measure over: the relations of a database,
@@ -80,6 +83,9 @@ type ReachGrant struct {
 	Relation ReachRelation
 	// OnSchema reports a grant on every relation of Relation.Schema.
 	OnSchema bool
+	// Owned reports a privilege the role holds because it owns the relation,
+	// which no revoke narrows for good: the owner can grant it back.
+	Owned bool
 	// Read and Write classify the privilege.
 	Read, Write bool
 }
@@ -117,8 +123,9 @@ type ReachDetail struct {
 	// Through are the roles whose privileges the role reaches through
 	// membership, sorted.
 	Through []string `json:"through,omitempty"`
-	// Sources name the access to every relation that the role holds or
-	// reaches, such as superuser or pg_read_all_data, sorted.
+	// Sources name the access that a revoke on a relation does not narrow,
+	// such as superuser, pg_read_all_data or the ownership of relations,
+	// sorted.
 	Sources []string `json:"sources,omitempty"`
 }
 
@@ -168,7 +175,7 @@ func reachGrants(grants []catalog.Grant, defaultSchema string) []ReachGrant {
 		if grant.IsPartialRevoke || !read && !write {
 			continue
 		}
-		entry := ReachGrant{Role: grant.Role, Read: read, Write: write}
+		entry := ReachGrant{Role: grant.Role, Owned: grant.OwnerDefault(), Read: read, Write: write}
 		switch strings.ToUpper(strings.TrimSpace(grant.ObjectType)) {
 		case "TABLE", "VIEW", "MATERIALIZED VIEW":
 			entry.Relation = ReachRelation{Schema: schemaKey(grant.Schema, defaultSchema), Name: grant.ObjectName}
@@ -299,9 +306,10 @@ func findBroadReach(reach *Reach) []Finding {
 			finding.Detail.Reach.Through = through
 			finding.Detail.Reach.Sources = sources
 			if len(sources) > 0 {
-				finding.Suggestion = "first take away what detail.reach.sources names -- superuser, a role that " +
-					"reads or writes all data, a privilege on every database -- since no revoke on a relation " +
-					"narrows it; then grant the role only the relations it needs"
+				finding.Suggestion = "first take away what detail.reach.sources names, since a revoke on a relation " +
+					"does not narrow it: remove superuser, a role that reads or writes all data and a privilege on " +
+					"every database, and give the relations to an owner the application does not connect as; " +
+					"then grant the role only the relations it needs"
 			}
 			findings = append(findings, finding)
 		}
@@ -336,12 +344,24 @@ func reachableRoles(subject string, memberships []ReachMembership, follow func(R
 }
 
 // reachedRelations is the set of counted relations the holders read and the
-// set they write, and the sources of access to every relation among them.
-// superusers marks the holders whose superuser bit counts.
+// set they write, and the sources of access a revoke on a relation does not
+// narrow. superusers marks the holders whose superuser bit counts.
 func reachedRelations(
 	reach *Reach, index relationIndex, holders, superusers map[string]bool,
 ) (read, write map[ReachRelation]bool, sources []string) {
 	read, write = make(map[ReachRelation]bool), make(map[ReachRelation]bool)
+	sourceSet := wideReach(reach, holders, superusers, read, write)
+	owned := grantedReach(reach, index, holders, read, write)
+	for owner, relations := range owned {
+		sourceSet[ownershipSource(len(relations), owner)] = true
+	}
+	return read, write, sortedKeys(sourceSet)
+}
+
+// wideReach adds every relation to read and write for each holder whose
+// superuser bit counts or who holds access to every relation, and names each
+// such source.
+func wideReach(reach *Reach, holders, superusers map[string]bool, read, write map[ReachRelation]bool) map[string]bool {
 	everything := func(set map[ReachRelation]bool) {
 		for _, relation := range reach.Relations {
 			set[relation] = true
@@ -367,28 +387,46 @@ func reachedRelations(
 		}
 		sourceSet[access.Source+" held by "+access.Role] = true
 	}
+	return sourceSet
+}
+
+// grantedReach adds the counted relations the holders' grants reach to read
+// and write, and returns, by owner, the relations a holder reaches because it
+// owns them.
+func grantedReach(
+	reach *Reach, index relationIndex, holders map[string]bool, read, write map[ReachRelation]bool,
+) map[string]map[ReachRelation]bool {
+	owned := make(map[string]map[ReachRelation]bool)
 	for _, grant := range reach.Grants {
 		held := holders[grant.Role] || strings.EqualFold(grant.Role, publicRole) && holders[publicRole]
 		if !held {
 			continue
 		}
-		granted := index.bySchema[grant.Relation.Schema]
-		if !grant.OnSchema {
-			granted = nil
-			if index.counted[grant.Relation] {
-				granted = []ReachRelation{grant.Relation}
-			}
-		}
-		for _, relation := range granted {
+		for _, relation := range index.reachedBy(grant) {
 			if grant.Read {
 				read[relation] = true
 			}
 			if grant.Write {
 				write[relation] = true
 			}
+			if grant.Owned {
+				if owned[grant.Role] == nil {
+					owned[grant.Role] = make(map[ReachRelation]bool)
+				}
+				owned[grant.Role][relation] = true
+			}
 		}
 	}
-	return read, write, sortedKeys(sourceSet)
+	return owned
+}
+
+// ownershipSource names the relations owner owns among those counted.
+func ownershipSource(count int, owner string) string {
+	noun := "relations"
+	if count == 1 {
+		noun = "relation"
+	}
+	return "ownership of " + strconv.Itoa(count) + " " + noun + " held by " + owner
 }
 
 // relationIndex finds the counted relations a grant reaches without a pass
@@ -396,6 +434,18 @@ func reachedRelations(
 type relationIndex struct {
 	counted  map[ReachRelation]bool
 	bySchema map[string][]ReachRelation
+}
+
+// reachedBy is the counted relations grant is on: every one of its schema for
+// a grant on the schema, and its relation if that is counted otherwise.
+func (ix relationIndex) reachedBy(grant ReachGrant) []ReachRelation {
+	if grant.OnSchema {
+		return ix.bySchema[grant.Relation.Schema]
+	}
+	if ix.counted[grant.Relation] {
+		return []ReachRelation{grant.Relation}
+	}
+	return nil
 }
 
 func indexRelations(relations []ReachRelation) relationIndex {

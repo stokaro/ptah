@@ -119,9 +119,9 @@ PRV01              info      table customers  table customers is granted to a ro
 PRV01              info      table orders     table orders is granted to a role and has no row-level security enabled, so a granted role reads every row
 PRV02              info      routine bump     routine bump runs as its owner, so every caller that may execute it acts with the owner's privileges
 PRV03              warning   table customers  privileges on table customers are granted to PUBLIC, which every role holds
-roles/read-reach   error     role ptah        role ptah can read 2 of 2 relations (100%), above the error threshold of 75%
-roles/read-reach   error     role reporting   role reporting can read 2 of 2 relations (100%), above the error threshold of 75%
-roles/write-reach  error     role ptah        role ptah can change the rows of 2 of 2 relations (100%), above the error threshold of 75%
+roles/read-reach   warning   role ptah        role ptah can read 2 of 2 relations (100%), above the warning threshold of 50%
+roles/read-reach   warning   role reporting   role reporting can read 2 of 2 relations (100%), above the warning threshold of 50%
+roles/write-reach  warning   role ptah        role ptah can change the rows of 2 of 2 relations (100%), above the warning threshold of 50%
 
 Suggested:
   OWN01 ptah: own them with a role that cannot log in and grant membership in it instead
@@ -129,11 +129,11 @@ Suggested:
   PRV01 orders: enable row-level security and declare a policy, or record that the whole table is meant to be readable by these roles
   PRV02 bump: qualify the object names in its body or pin search_path, and grant EXECUTE only to roles that should act as the owner
   PRV03 customers: grant to a named role and let members inherit it, so the grant names who holds it
-  roles/read-reach ptah: first take away what detail.reach.sources names -- superuser, a role that reads or writes all data, a privilege on every database -- since no revoke on a relation narrows it; then grant the role only the relations it needs
+  roles/read-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
   roles/read-reach reporting: grant the role only the relations it needs, or split it into narrower roles; detail.reach.through names the roles it reaches them through
-  roles/write-reach ptah: first take away what detail.reach.sources names -- superuser, a role that reads or writes all data, a privilege on every database -- since no revoke on a relation narrows it; then grant the role only the relations it needs
+  roles/write-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
 
-3 error, 1 warning, 4 info
+0 error, 4 warning, 4 info
 
 Not checked here:
   ROL01: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects
@@ -242,22 +242,30 @@ of all of them. A role reaches a relation through:
 
 `SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
 access. A role that reaches more than `--reach-warn` percent of the relations
-(default `50`) is a warning, and more than `--reach-error` percent (default
-`75`) an error. Reaching exactly the threshold is below it. The seed above holds
-two tables, so the superuser `ptah` reaches both, and `reporting` reaches both
-through its grant on `orders` and the grant to `PUBLIC` on `customers`.
+(default `50`) is a warning, and more than `--reach-error` percent an error.
+Reaching exactly the threshold is below it. The seed above holds two tables, so
+the superuser `ptah`, which also owns both, reaches both, and `reporting`
+reaches both through its grant on `orders` and the grant to `PUBLIC` on
+`customers`.
 
-Set the thresholds to your own policy:
+`--reach-error` defaults to `100`, which no reach exceeds, so by default a broad
+reach is a warning and does not fail the run. The role an application runs its
+own migrations as owns every table and reaches all of them, and a default that
+failed on it would fail nearly every database. To block a role that reaches
+more than three quarters of the database, set the error threshold:
 
 ```bash
-ptah schema security --db-url "$DATABASE_URL" --reach-warn 60 --reach-error 90
+ptah schema security --db-url "$DATABASE_URL" --reach-error 75
 ```
 
 A role that reaches no more than `PUBLIC` does is not reported, because the
 `PUBLIC` finding already names that reach. In `--format json`,
 `detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
-the reach passes through under `through`, and the access no grant states under
-`sources`, such as `superuser held by ptah`.
+the reach passes through under `through`, and under `sources` the access a
+revoke on a relation does not narrow, such as `superuser held by ptah` or
+`ownership of 2 relations held by ptah`. An owner can grant itself back what a
+revoke takes, so the suggestion for such a role is to give the relations to an
+owner the application does not connect as.
 
 The rules run on PostgreSQL, MySQL and MariaDB, where the read covers that
 access. Elsewhere they report themselves skipped, because a reach measured
@@ -280,10 +288,11 @@ exit: 1
 ```
 
 :::caution
-Only `roles/read-reach` and `roles/write-reach` report at `error` severity, so
-the default `--fail-on error` fails on a role's reach and on nothing else. A gate
-on the other rules has to pass `--fail-on any`. Neither prints a line that
-explains the status, so a script reports the reason itself.
+Only `roles/read-reach` and `roles/write-reach` can report at `error` severity,
+and only once `--reach-error` is below `100`. So the default `--fail-on error`
+passes on every finding unless the error threshold is set, and a gate on the
+other rules has to pass `--fail-on any`. Neither prints a line that explains the
+status, so a script reports the reason itself.
 :::
 
 See [Exit codes](../../reference/exit-codes/) for what `0`, `1` and `2` mean

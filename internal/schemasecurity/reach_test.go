@@ -60,10 +60,13 @@ func reachLines(reach *schemasecurity.Reach) []string {
 	return lines
 }
 
-// defaultThresholds sets the thresholds a caller that states none uses.
+// defaultThresholds sets a warning threshold of half the relations and an
+// error threshold of three quarters, so a test sees both severities. The error
+// threshold a caller that states none uses is never exceeded; see
+// TestAnalyzeReach_DefaultThresholdsNeverReportAnError.
 func defaultThresholds(reach schemasecurity.Reach) *schemasecurity.Reach {
 	reach.WarnPercent = schemasecurity.DefaultReachWarnPercent
-	reach.ErrorPercent = schemasecurity.DefaultReachErrorPercent
+	reach.ErrorPercent = 75
 	return &reach
 }
 
@@ -298,9 +301,14 @@ func TestReachFromCatalog_CountsOnlyPrivilegesOverRows(t *testing.T) {
 	}
 
 	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "", 40, 75)), qt.DeepEquals, []string{
-		"roles/read-reach warning owner 1/2 over 40% through=[] sources=[]",
+		"roles/read-reach warning owner 1/2 over 40% through=[] sources=[ownership of 1 relation held by owner]",
 	})
 }
+
+// sourceSuggestion is the suggestion of a finding that names a source.
+const sourceSuggestion = "first take away what detail.reach.sources names, since a revoke on a relation does not " +
+	"narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give " +
+	"the relations to an owner the application does not connect as; then grant the role only the relations it needs"
 
 // TestAnalyzeReach_SuggestsTheSourceBeforeTheGrants reads a superuser and a
 // role reaching as much through grants: a revoke narrows the second, and
@@ -320,14 +328,10 @@ func TestAnalyzeReach_SuggestsTheSourceBeforeTheGrants(t *testing.T) {
 	}
 
 	c.Assert(suggestions, qt.DeepEquals, []string{
-		"roles/read-reach admin: first take away what detail.reach.sources names -- superuser, a role that reads or " +
-			"writes all data, a privilege on every database -- since no revoke on a relation narrows it; then grant " +
-			"the role only the relations it needs",
+		"roles/read-reach admin: " + sourceSuggestion,
 		"roles/read-reach reader: grant the role only the relations it needs, or split it into narrower roles; " +
 			"detail.reach.through names the roles it reaches them through",
-		"roles/write-reach admin: first take away what detail.reach.sources names -- superuser, a role that reads or " +
-			"writes all data, a privilege on every database -- since no revoke on a relation narrows it; then grant " +
-			"the role only the relations it needs",
+		"roles/write-reach admin: " + sourceSuggestion,
 	})
 }
 
@@ -353,5 +357,48 @@ func TestReachFromCatalog_SuperuserNeedsASwitch(t *testing.T) {
 		"roles/read-reach error switcher 3/3 over 75% through=[admin] sources=[superuser held by admin]",
 		"roles/write-reach error admin 3/3 over 75% through=[] sources=[superuser held by admin]",
 		"roles/write-reach error switcher 3/3 over 75% through=[admin] sources=[superuser held by admin]",
+	})
+}
+
+// TestReachFromCatalog_NamesOwnershipAsASource reads the role an application
+// runs its migrations as, which owns every table, and a role that inherits
+// from it. Both reach every table through ownership, which a revoke on a
+// table does not narrow, so the finding names it.
+func TestReachFromCatalog_NamesOwnershipAsASource(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("a", "b", "c")
+	live.Roles = []catalog.Role{{Name: "app"}, {Name: "heir"}}
+	for _, name := range []string{"a", "b", "c"} {
+		for _, privilege := range []string{"SELECT", "INSERT", "REFERENCES"} {
+			live.Grants = append(live.Grants, catalog.Grant{
+				Role: "app", Privilege: privilege, ObjectType: "TABLE", ObjectName: name, Implicit: true,
+			})
+		}
+	}
+	live.Grants = append(live.Grants, catalog.Grant{Role: "heir", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "a"})
+	live.RoleMemberships = []catalog.RoleMembership{{Role: "app", Member: "heir"}}
+
+	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "", 50, 75)), qt.DeepEquals, []string{
+		"roles/read-reach error app 3/3 over 75% through=[] sources=[ownership of 3 relations held by app]",
+		"roles/read-reach error heir 3/3 over 75% through=[app] sources=[ownership of 3 relations held by app]",
+		"roles/write-reach error app 3/3 over 75% through=[] sources=[ownership of 3 relations held by app]",
+		"roles/write-reach error heir 3/3 over 75% through=[app] sources=[ownership of 3 relations held by app]",
+	})
+}
+
+// TestAnalyzeReach_DefaultThresholdsNeverReportAnError measures a superuser,
+// which reaches every relation, under the thresholds a caller that states none
+// uses: no reach exceeds all of the relations, so the finding is a warning.
+func TestAnalyzeReach_DefaultThresholdsNeverReportAnError(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("a", "b")
+	live.Roles = []catalog.Role{{Name: "admin", Superuser: true}}
+
+	reach := schemasecurity.ReachFromCatalog(live, "",
+		schemasecurity.DefaultReachWarnPercent, schemasecurity.DefaultReachErrorPercent)
+
+	c.Assert(reachLines(reach), qt.DeepEquals, []string{
+		"roles/read-reach warning admin 2/2 over 50% through=[] sources=[superuser held by admin]",
+		"roles/write-reach warning admin 2/2 over 50% through=[] sources=[superuser held by admin]",
 	})
 }
