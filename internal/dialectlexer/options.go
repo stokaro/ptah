@@ -95,20 +95,22 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 	}
 }
 
-// hashComments holds, per dialect, whether its descriptor lists # as a line
-// comment marker.
-var hashComments = descriptortable.New(func(described descriptor.Dialect) bool {
-	return slices.Contains(described.Lexical.LineComments, "#")
+// lineComments holds, per dialect, the line comment markers its descriptor
+// lists beside "--".
+var lineComments = descriptortable.New(func(described descriptor.Dialect) []string {
+	return slices.Clone(described.Lexical.LineComments)
 })
 
 // ClientDelimiterRules is how a script written for dialect spells its
 // literals, for the client delimiter rewrite: where a literal or comment ends
 // decides whether a line that reads like a directive stands inside one. The
-// backslash rule is the session's ([ForSession]); dollar quoting is the
-// PostgreSQL family's, which is the family that reads E'...' strings. A blank
-// dialect has no rules to read and gets the permissive set
-// [clientdelimiter.Normalize] uses.
-func ClientDelimiterRules(dialect string, caps capability.Capabilities) (clientdelimiter.Rules, bool) {
+// backslash rule is the session's ([ForSession]) and the line comment markers
+// are the descriptor's. A `$tag$` body quotes in every dialect except MySQL and
+// MariaDB, where a dollar sign is a name character: the shared lexer reads
+// one for the rest, PostgreSQL's dollar quotes and ClickHouse's heredocs
+// among them. A blank dialect has no rules to read; ok is false and the caller
+// uses the permissive set [clientdelimiter.Normalize] reads with.
+func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules clientdelimiter.Rules, ok bool) {
 	if dialect == "" {
 		return clientdelimiter.Rules{}, false
 	}
@@ -116,8 +118,8 @@ func ClientDelimiterRules(dialect string, caps capability.Capabilities) (clientd
 	return clientdelimiter.Rules{
 		BackslashEscapes:   options.BackslashEscapes,
 		EscapeStrings:      options.PostgreSQLEscapeStrings,
-		DollarQuotes:       options.PostgreSQLEscapeStrings,
-		HashComments:       hashComments.Get(dialect),
+		DollarQuotes:       options.ExecutableComments == lexer.ExecutableCommentsNone,
+		LineComments:       lineComments.Get(dialect),
 		BracketIdentifiers: options.BracketIdentifiers,
 	}, true
 }

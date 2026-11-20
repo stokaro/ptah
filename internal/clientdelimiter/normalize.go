@@ -43,9 +43,11 @@ type Rules struct {
 	// Elsewhere a dollar sign is an ordinary character, as in the MySQL name
 	// `a$b$`.
 	DollarQuotes bool
-	// HashComments reads # as the start of a line comment (MySQL, MariaDB,
-	// ClickHouse). Elsewhere it is an operator or a temporary-name prefix.
-	HashComments bool
+	// LineComments are the markers, beside "--", that open a comment running
+	// to the end of the line: "#" for MySQL and MariaDB, "#" and "//" for
+	// ClickHouse. Elsewhere "#" is an operator or a temporary-name prefix, and
+	// a "#" followed by an operator character is never a comment.
+	LineComments []string
 	// BracketIdentifiers reads [name] as one quoted name (SQL Server), so a
 	// quote inside the brackets opens no literal.
 	BracketIdentifiers bool
@@ -53,7 +55,7 @@ type Rules struct {
 
 // legacyRules is what a script with no dialect is read with: a backslash
 // escapes in every kind of literal, $tag$ quotes and # starts a comment.
-var legacyRules = Rules{BackslashEscapes: true, EscapeStrings: true, DollarQuotes: true, HashComments: true}
+var legacyRules = Rules{BackslashEscapes: true, EscapeStrings: true, DollarQuotes: true, LineComments: []string{"#"}}
 
 // Normalize rewrites a script's client delimiter directives into regular
 // semicolon-terminated SQL, and returns where each part of the result came from.
@@ -70,13 +72,14 @@ func Normalize(input string) (string, Origins) {
 // inside a quoted literal, a dollar-quoted body or a block comment is text
 // that happens to look like one, and stays where it was written.
 func NormalizeFor(input string, rules Rules) (string, Origins) {
+	tags := &dollarTags{input: input}
 	delimiter := ";"
 	allowCommentDelimiter := false
 	var output strings.Builder
 	var origins Origins
 
 	for read := 0; read < len(input); {
-		text, stop := rewriteStatements(input[read:], delimiter, allowCommentDelimiter, rules, &origins, read, output.Len())
+		text, stop := rewriteStatements(input[read:], delimiter, allowCommentDelimiter, rules, tags, &origins, read, output.Len())
 		output.WriteString(text)
 		read += stop
 		if read >= len(input) {
@@ -102,7 +105,7 @@ func NormalizeFor(input string, rules Rules) (string, Origins) {
 //
 // The scan runs under the default delimiter too, which rewrites nothing: it
 // is how a directive line is told from the text of a literal.
-func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rules Rules, written *Origins, inputStart, outputStart int) (string, int) {
+func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rules Rules, tags *dollarTags, written *Origins, inputStart, outputStart int) (string, int) {
 	rewrite := delimiter != "" && delimiter != ";"
 	replacement := ";"
 	if strings.ContainsAny(delimiter, "\r\n") {
@@ -110,7 +113,6 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 	}
 
 	var output strings.Builder
-	var tags *dollarTags
 	for pos := 0; pos < len(input); {
 		if directiveLineAt(input, pos) {
 			return output.String(), pos
@@ -124,7 +126,7 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 			pos = writeUntilLineEnd(&output, input, pos)
 		case strings.HasPrefix(input[pos:], "/*"):
 			pos = writeUntilBlockCommentEnd(&output, input, pos)
-		case rules.HashComments && input[pos] == '#' && !isClientHashOperatorContinuation(input, pos):
+		case rules.opensLineComment(input, pos) && (!rewrite || !strings.HasPrefix(input[pos:], delimiter)):
 			pos = writeUntilLineEnd(&output, input, pos)
 		case isQuotedAt(input, pos, rules):
 			pos = writeQuoted(&output, input, pos, rules)
@@ -133,10 +135,7 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 			pos += len(delimiter)
 			written.add(outputStart+output.Len(), inputStart+pos)
 		case rules.DollarQuotes && input[pos] == '$':
-			if tags == nil {
-				tags = lastDollarTags(input)
-			}
-			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, tags); ok {
+			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, inputStart, tags); ok {
 				pos = nextPos
 				continue
 			}
@@ -182,6 +181,19 @@ func directiveLineAt(input string, pos int) bool {
 	}
 	_, _, ok := Parse(input[pos:lineEnd])
 	return ok
+}
+
+// opensLineComment reports whether a line comment other than "--" opens at pos.
+func (r Rules) opensLineComment(input string, pos int) bool {
+	for _, marker := range r.LineComments {
+		if !strings.HasPrefix(input[pos:], marker) {
+			continue
+		}
+		if marker != "#" || !isClientHashOperatorContinuation(input, pos) {
+			return true
+		}
+	}
+	return false
 }
 
 // escapesAt reports whether a backslash escapes inside the quoted literal
@@ -327,28 +339,35 @@ func writeBracketedName(output *strings.Builder, input string, pos int) int {
 	return pos
 }
 
-// dollarTags holds where each $tag$ token last starts in a script, so a tag
-// with no closer further on is told apart from one with a closer in constant
-// time. Searching the rest of the text for every unclosed opener would read a
-// script with thousands of `a$t1$`, `a$t2$` forms in quadratic time.
-type dollarTags map[string]int
+// dollarTags tells whether a $tag$ token starts anywhere after a given offset
+// of the whole script, so a tag with no closer is told apart from one with a
+// closer in constant time. Searching the rest of the text for every unclosed
+// opener would read a script with thousands of `$t1$`, `$t2$` forms in
+// quadratic time. The index is built once, on the first dollar sign, over the
+// whole script, so a script with many directives is not indexed again.
+type dollarTags struct {
+	input string
+	last  map[string]int
+}
 
-// lastDollarTags indexes input in one pass.
-func lastDollarTags(input string) *dollarTags {
-	last := make(dollarTags)
-	for pos := 0; pos < len(input); pos++ {
-		if input[pos] != '$' {
-			continue
-		}
-		end := pos + 1
-		for end < len(input) && isTagByte(input[end]) {
-			end++
-		}
-		if end < len(input) && input[end] == '$' {
-			last[input[pos:end+1]] = pos
+// closesAfter reports whether tag starts at an offset past after.
+func (d *dollarTags) closesAfter(tag string, after int) bool {
+	if d.last == nil {
+		d.last = make(map[string]int)
+		for pos := 0; pos < len(d.input); pos++ {
+			if d.input[pos] != '$' {
+				continue
+			}
+			end := pos + 1
+			for end < len(d.input) && isTagByte(d.input[end]) {
+				end++
+			}
+			if end < len(d.input) && d.input[end] == '$' {
+				d.last[d.input[pos:end+1]] = pos
+			}
 		}
 	}
-	return &last
+	return d.last[tag] > after
 }
 
 func isTagByte(ch byte) bool {
@@ -357,7 +376,7 @@ func isTagByte(ch byte) bool {
 
 // writeDollarQuotedSQL copies a dollar-quoted body that opens at pos, when
 // tags says the tag closes later in the text.
-func writeDollarQuotedSQL(output *strings.Builder, input string, pos int, tags *dollarTags) (int, bool) {
+func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, tags *dollarTags) (int, bool) {
 	// A dollar sign that follows a name character is part of that name, as in
 	// `a$b$`: PostgreSQL opens a quote only at the start of a token.
 	if pos > 0 && (isWordByte(input[pos-1]) || input[pos-1] == '$') {
@@ -376,7 +395,7 @@ func writeDollarQuotedSQL(output *strings.Builder, input string, pos int, tags *
 	}
 
 	tag := input[pos : tagEnd+1]
-	if (*tags)[tag] <= tagEnd {
+	if !tags.closesAfter(tag, base+tagEnd) {
 		return pos, false
 	}
 	closeStart := strings.Index(input[tagEnd+1:], tag)

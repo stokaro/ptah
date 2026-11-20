@@ -112,3 +112,49 @@ func TestSplitStatementsForDialect_DollarInANameBesideADirective_HappyPath(t *te
 		})
 	}
 }
+
+// Each family reads a script by the rules its descriptor states, and a mistake
+// in one family's rule hides or invents a directive: a line the family reads as
+// text must stay in its statement, and a line it reads as a directive must act.
+// The ClickHouse `//` row ends in an open literal because the statement lexer
+// reads `//` as two operators; what it pins is that the directive was honored.
+// Every row holds a directive that only the row's dialects read as text, or,
+// for the MySQL rows, as a directive.
+func TestSplitStatementsForDialect_FamilyRules_HappyPath(t *testing.T) {
+	dollar := "SELECT $q$\nDELIMITER $$\n$q$;\nSELECT 2;\n"
+	hash := "# it's\nDELIMITER $$\nSELECT 1; SELECT 2$$\n"
+	bracket := "SELECT [a'b] FROM t;\nDELIMITER $$\nSELECT 1; SELECT 2$$\n"
+	arrayIndex := "SELECT x[']'];\nDELIMITER $$\nSELECT 1; SELECT 2$$\n"
+	mysqlDollar := "SELECT $x$ 1;\nDELIMITER //\nSELECT 2; SELECT 3//\nSELECT $x$ 4;\n"
+	clickhouseSlash := "SELECT 1; // it's\nDELIMITER $$\nSELECT 2; SELECT 3$$\n"
+	heredoc := "SELECT $$it's$$;\nDELIMITER //\nSELECT 1; SELECT 2//\nDELIMITER ;\nSELECT 3;\n"
+	tests := []struct {
+		name    string
+		dialect string
+		script  string
+		want    []string
+	}{
+		{name: "postgres dollar quote", dialect: "postgres", script: dollar, want: []string{"SELECT $q$\nDELIMITER $$\n$q$", "SELECT 2"}},
+		{name: "cockroachdb dollar quote", dialect: "cockroachdb", script: dollar, want: []string{"SELECT $q$\nDELIMITER $$\n$q$", "SELECT 2"}},
+		{name: "yugabytedb dollar quote", dialect: "yugabytedb", script: dollar, want: []string{"SELECT $q$\nDELIMITER $$\n$q$", "SELECT 2"}},
+		{name: "mysql hash comment", dialect: "mysql", script: hash, want: []string{"SELECT 1", "SELECT 2"}},
+		{name: "mariadb hash comment", dialect: "mariadb", script: hash, want: []string{"SELECT 1", "SELECT 2"}},
+		{name: "clickhouse hash comment", dialect: "clickhouse", script: hash, want: []string{"SELECT 1", "SELECT 2"}},
+		{name: "sqlserver bracketed name", dialect: "sqlserver", script: bracket, want: []string{"SELECT [a'b] FROM t", "SELECT 1", "SELECT 2"}},
+		{name: "sqlite bracketed name", dialect: "sqlite", script: bracket, want: []string{"SELECT [a'b] FROM t", "SELECT 1", "SELECT 2"}},
+		{name: "postgres square brackets are not a name", dialect: "postgres", script: arrayIndex, want: []string{"SELECT x[']']", "SELECT 1", "SELECT 2"}},
+		{name: "mysql reads no dollar quote", dialect: "mysql", script: mysqlDollar, want: []string{"SELECT $x$ 1;\nSELECT 2; SELECT 3;\nSELECT $x$ 4"}},
+		{name: "mariadb reads no dollar quote", dialect: "mariadb", script: mysqlDollar, want: []string{"SELECT $x$ 1;\nSELECT 2; SELECT 3;\nSELECT $x$ 4"}},
+		{name: "clickhouse slash comment", dialect: "clickhouse", script: clickhouseSlash, want: []string{"SELECT 1", "// it's\nSELECT 2; SELECT 3;"}},
+		{name: "clickhouse heredoc", dialect: "clickhouse", script: heredoc, want: []string{"SELECT $$it's$$", "SELECT 1", "SELECT 2", "SELECT 3"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := sqlutil.SplitStatementsForDialect(test.dialect, test.script)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
