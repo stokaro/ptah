@@ -523,6 +523,8 @@ func columnsWithDesiredDomains(
 		Desired:       genCol.Clone(),
 		Changes:       make(map[string]string),
 		CommentChange: storedCommentChange(dialect, genCol.Comment, dbCol.Comment),
+		// Carried for a plan that drops the key the column's NOT NULL rests on.
+		CurrentNotNullFromKey: dbCol.NotNullFromKey,
 		NotNullConstraintNameChange: notNullConstraintNameChange(
 			genCol.NotNullConstraintName, dbCol.NotNullConstraintName,
 			generatedNotNullName(dialect, ctx.table, genCol.Name)),

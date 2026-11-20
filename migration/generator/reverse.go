@@ -308,6 +308,8 @@ func reverseSchemaDiffWithPrior(
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
+	reversed.ConstraintsAdded = append(reversed.ConstraintsAdded,
+		reverseUnnamedPrimaryKeyLosses(diff, dbSchema, dialect, semantics)...)
 	renameKeysBack(reversed.ConstraintsAdded, diff.ConstraintsAdded, semantics)
 	// Last of the constraint additions, so these read every key they restore.
 	reversed.ConstraintsRemoved = append(reversed.ConstraintsRemoved,

@@ -620,6 +620,13 @@ type Column struct {
 	IsAutoIncrement   bool `json:"is_auto_increment"` // Derived field
 	IsPrimaryKey      bool `json:"is_primary_key"`    // Derived field
 	IsUnique          bool `json:"is_unique"`         // Derived field
+	// NotNullFromKey reports that the column is NOT NULL only because its
+	// primary key makes it so: the column states no NOT NULL of its own, and
+	// dropping the key makes it nullable. Oracle keeps a stated NOT NULL as a
+	// separate constraint and the key's as none, so only its reader can say.
+	// It is false where the target keeps no such difference, and for a
+	// nullable column.
+	NotNullFromKey bool `json:"not_null_from_key,omitempty"`
 
 	// TypeIsDeclaredText records that DataType must be written back as it
 	// stands, because canonicalizing it would describe a different column.

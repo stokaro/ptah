@@ -42,6 +42,11 @@ type Comparison struct {
 	// the planner has a statement for a change of the key, in both directions, and
 	// none that a column's primary_key flag can say on its own.
 	ColumnPrimaryKeyIsTheTablesKey bool `json:"column_primary_key_is_the_tables_key,omitempty"`
+	// GeneratedKeyIsColumnFlag reports that the read carries a primary key the
+	// server named itself only as the primary_key flag of its columns, never as
+	// a constraint. A diff that takes such a key away names no constraint, and
+	// the plan drops the table's key with a statement that names none.
+	GeneratedKeyIsColumnFlag bool `json:"generated_key_is_column_flag,omitempty"`
 	// InternalIndexPrefix begins the name of an index the engine builds for
 	// itself and no statement can name, such as SQLite's autoindexes.
 	InternalIndexPrefix string `json:"internal_index_prefix,omitempty"`

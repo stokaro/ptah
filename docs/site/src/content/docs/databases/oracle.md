@@ -523,6 +523,26 @@ A column gains its `UNIQUE` with `MODIFY (a ... UNIQUE)` and loses it with
 over that key goes first. A column of a key over several columns is not unique
 by itself.
 
+## Primary keys on columns
+
+A primary key written on a column is the table's key, and a `MODIFY` leaves it
+as it is. A column that gains the key is planned as `ADD CONSTRAINT t_pkey
+PRIMARY KEY (id)`. A column that loses a key Oracle named is planned as `DROP
+PRIMARY KEY`, which finds the key without a name. A key a declaration names is
+dropped by that name.
+
+A column declared `id NUMBER(10) PRIMARY KEY` is NOT NULL only because of the
+key, and the key's removal makes it nullable. One declared `NOT NULL PRIMARY
+KEY` keeps a `NOT NULL` constraint of its own. The read marks the first kind,
+and a plan that drops the key of such a column and declares it `NOT NULL`
+states `MODIFY (id NUMBER(10) NOT NULL)` before the drop. Stated after it, the
+same clause answers `ORA-01442` on a column that holds its own.
+
+A table holds one key, so a plan that replaces a key with one over other
+columns drops the old key before it adds the new one. Oracle answers the other
+order with `ORA-02260`. The rollback adds a dropped key back over the columns
+it held, named `<table>_pkey` when Oracle named it.
+
 ## Constraints that defer their check
 
 A primary key, a `UNIQUE` and a table's `CHECK` can be `DEFERRABLE`, with

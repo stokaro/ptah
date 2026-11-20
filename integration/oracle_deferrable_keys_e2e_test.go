@@ -99,9 +99,10 @@ func TestOracleDeferrableKeysConvergeE2E(t *testing.T) {
 	applyOraclePlan(ctx, c, conn, plain)
 	changed, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	// Oracle names the primary key itself, and a key it named that does not
-	// defer is carried on the column, so the table lists the UNIQUE alone.
-	c.Assert(oracleKeyDeferrals(changed), qt.DeepEquals, []string{"UNIQUE not deferrable"})
+	// The plan adds the primary key back under the name of the key it
+	// replaces, so the server holds a key of the declaration's naming and the
+	// table lists it beside the UNIQUE; the column carries the flag as well.
+	c.Assert(oracleKeyDeferrals(changed), qt.DeepEquals, []string{"PRIMARY KEY not deferrable", "UNIQUE not deferrable"})
 	primary := slices.IndexFunc(changed.Tables, func(table catalog.Table) bool { return table.Name == "ORA_SLOTS" })
 	c.Assert(primary, qt.Not(qt.Equals), -1)
 	c.Assert(changed.Tables[primary].Columns[0].IsPrimaryKey, qt.IsTrue)

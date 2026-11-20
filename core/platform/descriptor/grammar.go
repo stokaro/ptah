@@ -274,6 +274,12 @@ type ConstraintGrammar struct {
 	// leaves the table with neither CHECK. Without it the old CHECK is
 	// dropped before the new one is added.
 	CheckAddedFirst bool `json:"check_added_first,omitempty"`
+	// PrimaryKeyDroppedFirst reports that a plan which adds a primary key to a
+	// table whose key it also removes drops the old key first, because the
+	// engine holds one key per table and refuses the ADD while the old key
+	// stands (ORA-02260 on Oracle). Without it the removal follows the
+	// additions, as every other constraint removal does.
+	PrimaryKeyDroppedFirst bool `json:"primary_key_dropped_first,omitempty"`
 }
 
 // Enforcement is where ENFORCED and NOT ENFORCED may follow a constraint.
