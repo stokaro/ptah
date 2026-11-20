@@ -55,6 +55,15 @@ func validateLintRules(description *protocol.Description, engine *protocol.Engin
 		if slices.Contains(rule.GetSubsumes(), rule.GetCode()) {
 			return fmt.Errorf("%w: lint rule %s subsumes itself", ErrProtocol, rule.GetCode())
 		}
+		// A subsumed rule may belong to the host or to another provider, so the
+		// description cannot say whether it exists; the host refuses a name no
+		// rule has when it joins every owner's rules. The entry is a rule name
+		// all the same.
+		for _, subsumed := range rule.GetSubsumes() {
+			if !ValidLintRuleName(subsumed) {
+				return fmt.Errorf("%w: lint rule %s subsumes %q, which is not named category/name", ErrProtocol, rule.GetCode(), subsumed)
+			}
+		}
 		if lintNameCount(description, rule.GetCode()) != 1 {
 			return fmt.Errorf("%w: lint rule %s is declared twice", ErrProtocol, rule.GetCode())
 		}

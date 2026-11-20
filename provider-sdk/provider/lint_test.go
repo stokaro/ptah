@@ -56,6 +56,11 @@ func TestLintDescriptionDeclaresRules_FailurePath(t *testing.T) {
 		{"an upper-case name", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "design/XY101" }},
 		{"empty name", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "" }},
 		{"a digit first", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "design/1xy" }},
+		{"a subsumed code of an earlier revision", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"XY102"} }},
+		{"a subsumed name with no slash", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"locking"} }},
+		{"a blank subsumed entry", func(d *protocol.Description) {
+			d.Engines[0].LintRules[0].Subsumes = []string{"destructive/drop-table", ""}
+		}},
 		{"blank title", func(d *protocol.Description) { d.Engines[0].LintRules[0].Title = " " }},
 		{"no severity", func(d *protocol.Description) { d.Engines[0].LintRules[0].Severity = 0 }},
 		{"subsumes itself", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"design/xy101"} }},
@@ -268,4 +273,23 @@ func TestLintCheck_FailurePath(t *testing.T) {
 		request, _ := lintCheck()
 		c.Assert(provider.ValidateCheckedLint(lintDescription(), request, nil), qt.ErrorIs, provider.ErrProtocol)
 	})
+}
+
+// A rule may subsume a rule of the host or of another provider, so the
+// description accepts a well-formed name it does not declare.
+func TestLintDescriptionAcceptsASubsumedRuleItDoesNotDeclare(t *testing.T) {
+	c := qt.New(t)
+	description := lintDescription()
+	description.Engines[0].LintRules[0].Subsumes = []string{"destructive/drop-table", "rollout/drop-table"}
+
+	c.Assert(provider.ValidateDescription(description, nil), qt.IsNil)
+}
+
+func TestValidateDescriptionRefusesAMissingDescription(t *testing.T) {
+	c := qt.New(t)
+
+	err := provider.ValidateDescription(nil, nil)
+
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(err, qt.ErrorMatches, `.*the provider sent no description`)
 }

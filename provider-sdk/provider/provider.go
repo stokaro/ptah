@@ -80,7 +80,10 @@ type Executor interface {
 // ValidateDescription checks the revision, identity, unique engines, and
 // required features. It does not authorize the executable or trust its claims.
 func ValidateDescription(value *protocol.Description, required []string) error {
-	if value == nil || value.GetRevision() != Revision {
+	if value == nil {
+		return fmt.Errorf("%w: the provider sent no description", ErrProtocol)
+	}
+	if value.GetRevision() != Revision {
 		return fmt.Errorf("%w: expected experimental revision %d, the contract this SDK speaks (%s); the provider declares revision %d",
 			ErrProtocol, Revision, ContractString(Contract()), value.GetRevision())
 	}
