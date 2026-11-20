@@ -269,7 +269,7 @@ func sqlServerPlan() plan {
 		sqlServerDDLInsideTransaction(),
 	}
 
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+	return plan{experiments: experiments, undecided: withoutColumnPosition(map[capability.Capability]string{
 		capability.AlterTableAlgorithmLock: "the key names the MySQL-family ALGORITHM and LOCK clauses; " +
 			"this server spells online index rebuilds as WITH (ONLINE = ON), so a refusal would answer " +
 			"a different question",
@@ -296,7 +296,7 @@ func sqlServerPlan() plan {
 		capability.MigrationStatementTimeout: runtimePolicyReason,
 		capability.ShowRoutinePrivilege: "the key names a MySQL global privilege. The probe connects as one account and " +
 			"cannot ask whether a privilege exists without granting it, and SQL Server has no SHOW_ROUTINE at all",
-	}}
+	})}
 }
 
 // sqlServerRowLevelSecurity decides RowLevelSecurity by asking the question in

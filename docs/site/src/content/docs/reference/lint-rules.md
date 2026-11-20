@@ -329,7 +329,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-125 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, `MF105P`, `PG401P` and `PG402P`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+126 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, `MF105P`, `PG401P` and `PG402P`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -409,6 +409,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY139` | a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it | both | Atlas |
 | `MY140` | adding a STORED generated column computes a value for every row, copying the table and blocking writes | both | Atlas |
 | `MY141` | adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes | both | Atlas |
+| `MY142` | adding a column FIRST or AFTER another cannot be instant on MySQL before 8.0.29 and MariaDB before 10.4, so the server rebuilds the table | both | Atlas |
 | `MY143` | changing a STORED generated column recomputes it for every row, copying the table and blocking writes | both | Atlas |
 | `MY144` | adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration | both | Atlas |
 | `MY147` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |
@@ -570,7 +571,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## Default severities
 
-40 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DDL004`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MF105P`, `MY146`, `ON101`, `ON102`, `ON103`, `PG402P`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 94 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `DDL003`, `DDL004`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+40 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DDL004`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MF105P`, `MY146`, `ON101`, `ON102`, `ON103`, `PG402P`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 95 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `DDL003`, `DDL004`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -584,7 +585,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code in the reviewed snapshot of the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) (`internal/lintcatalog/atlasreference.txt`, reviewed 2026-09-06), and what Ptah does about it: 72 covered, 2 partial, 1 not implemented, 2 waived, of 77. That page presents its table as highlights rather than an inventory -- it says Atlas "runs and reports dozens of additional checks" beyond them -- so a complete row here is completeness against the snapshot, not full behavioral parity with the analyzer. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code in the reviewed snapshot of the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) (`internal/lintcatalog/atlasreference.txt`, reviewed 2026-09-06), and what Ptah does about it: 73 covered, 2 partial, 0 not implemented, 2 waived, of 77. That page presents its table as highlights rather than an inventory -- it says Atlas "runs and reports dozens of additional checks" beyond them -- so a complete row here is completeness against the snapshot, not full behavioral parity with the analyzer. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -623,7 +624,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `MY139` | partitioning or removing partitioning requires a table copy and blocks DML | yes | `MY139` | covered — measured, this statement form accepts no ALGORITHM or LOCK clause at all, so the finding says there is no online-DDL negotiation rather than naming a copy |
 | `MY140` | adding a STORED generated column requires a table copy and blocks DML | yes | `MY140` | covered |
 | `MY141` | adding an AUTO_INCREMENT column rebuilds the table and blocks DML | yes | `MY141` | covered — the rebuild is in place and writes still stop: LOCK=NONE is refused, which is why the finding reports cost and locking separately |
-| `MY142` | adding a column before existing columns prevents an instant operation on older versions | yes | — | not implemented — measured absent on every MySQL release line this repository declares: ADD COLUMN ... FIRST accepts ALGORITHM=INSTANT on 8.4.11 and on 8.0.46, andthe lowest declared line is 8.4, so a rule would be a false positive wherever Ptah is tested |
+| `MY142` | adding a column before existing columns prevents an instant operation on older versions | yes | `MY142` | covered — reports only where the server the run plans against lacks the instant placement, read from `--server-version` or the dev database: MySQL before 8.0.29 and MariaDB before 10.4 |
 | `MY143` | modifying a generated column requires a table copy and blocks DML | yes | `MY143` | covered — the MODIFY and CHANGE side; adding one is MY140, and DS103 still reports the type change where the declared type moves |
 | `MY144` | adding a CHECK constraint scans all existing rows | yes | `MY144` | covered |
 | `MY145` | modifying or enforcing a CHECK constraint re-validates all existing rows | yes | `MY145` | covered — MySQL only: MariaDB has no ENFORCED or NOT ENFORCED syntax, so a mariadb finding would describe a statement that server refuses to parse |

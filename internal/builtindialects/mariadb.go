@@ -26,7 +26,8 @@ func mariaDB() descriptor.Dialect {
 		// MariaDB names itself in its version string even over the MySQL
 		// protocol, behind a "5.5.5-" replication prefix that is not the
 		// version. 10.2 brought generic DROP CONSTRAINT, enforced CHECK and
-		// the IF EXISTS guards. A banner with no number still reports the
+		// the IF EXISTS guards, and 10.4 an instant column placed before
+		// existing ones. A banner with no number still reports the
 		// newest measured line.
 		Capabilities: descriptor.Capabilities{
 			DefaultPreset: "MariaDB1011",
@@ -35,7 +36,8 @@ func mariaDB() descriptor.Dialect {
 				Scheme: "replication-prefix",
 				Floor:  "MariaDBLegacy",
 				Steps: []descriptor.VersionStep{
-					{Min: "10.2", Preset: "MariaDB1011"},
+					{Min: "10.2", Preset: "MariaDB102"},
+					{Min: "10.4", Preset: "MariaDB1011"},
 				},
 				Attribution: "measured-lines",
 				Measured:    capabilityline.MariaDBMeasured(),

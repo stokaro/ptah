@@ -36,7 +36,7 @@ func TestRules(t *testing.T) {
 	c.Assert(codes, qt.DeepEquals, []string{
 		"MY101", "MY102", "MY110", "MY111", "MY112", "MY113", "MY120", "MY121", "MY122", "MY123",
 		"MY130", "MY130P", "MY131", "MY132", "MY133", "MY134", "MY135", "MY136", "MY137", "MY138", "MY139",
-		"MY140", "MY141", "MY143", "MY144", "MY145", "MY146", "MY147",
+		"MY140", "MY141", "MY142", "MY143", "MY144", "MY145", "MY146", "MY147",
 		"ON102",
 	})
 	c.Assert([]any{targets["MY101"], targets["MY145"], targets["MY146"], targets["ON102"]}, qt.DeepEquals,

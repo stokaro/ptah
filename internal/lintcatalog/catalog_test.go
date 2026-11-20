@@ -680,10 +680,9 @@ func TestAtlasCatalogNamesEveryRowThatIsNotCovered(t *testing.T) {
 			qt.Commentf("%s is %s and gives no reason", check.Code, check.Status))
 	}
 
-	// MY142 is measured absent rather than unimplemented: ADD COLUMN ... FIRST
-	// accepts ALGORITHM=INSTANT on every MySQL line this repository declares,
-	// so a rule would be a false positive wherever Ptah is tested.
-	c.Assert(byStatus[lintcatalog.StatusAbsent], qt.DeepEquals, []string{"MY142"})
+	// No check is measured absent: MY142, the one that was, reads the server
+	// version instead, so it reports only where the hazard exists.
+	c.Assert(byStatus[lintcatalog.StatusAbsent], qt.IsNil)
 	// PG108 needs the migration or the dev database to show the parent
 	// partitioned; MY148 needs the dev database to prove the copy. Each note says
 	// which input is missing.

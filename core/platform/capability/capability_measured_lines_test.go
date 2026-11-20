@@ -195,6 +195,10 @@ func measuredLines() map[string]measuredLine {
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.NoBackslashEscapes:              sessionModeCarried,
+				capability.InstantAddColumnAnyPosition: "the experiment that asks it postdates this run. " +
+					"Measured separately on PostgreSQL 18: ALTER TABLE iap ADD COLUMN m int FIRST, " +
+					"ALGORITHM=INSTANT is refused with a syntax error at FIRST, and the key is false for " +
+					"every PostgreSQL-family target because the column position is MySQL's spelling",
 				capability.AlterTableAlgorithmLock: "the probe sends no ALTER TABLE ... ALGORITHM= " +
 					"clause, and the key is false for every PostgreSQL-family target because the grammar " +
 					"is MySQL's alone",
@@ -391,6 +395,10 @@ func measuredLines() map[string]measuredLine {
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.NoBackslashEscapes:              sessionModeCarried,
+				capability.InstantAddColumnAnyPosition: "the experiment that asks it postdates this run. " +
+					"Measured separately on MySQL 26.7.0 and MariaDB 12.3.3: ALTER TABLE ... ADD COLUMN " +
+					"FIRST and ADD COLUMN ... AFTER id are both accepted with ALGORITHM=INSTANT, as they " +
+					"are on MySQL 8.0.29 and MariaDB 10.4.34, while 8.0.28 and 10.3.39 refuse both with 1845",
 				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
 					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
 					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
@@ -587,6 +595,10 @@ func measuredLines() map[string]measuredLine {
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.NoBackslashEscapes:              sessionModeCarried,
+				capability.InstantAddColumnAnyPosition: "the experiment that asks it postdates this run. " +
+					"Measured separately on MySQL 26.7.0 and MariaDB 12.3.3: ALTER TABLE ... ADD COLUMN " +
+					"FIRST and ADD COLUMN ... AFTER id are both accepted with ALGORITHM=INSTANT, as they " +
+					"are on MySQL 8.0.29 and MariaDB 10.4.34, while 8.0.28 and 10.3.39 refuse both with 1845",
 				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
 					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
 					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +

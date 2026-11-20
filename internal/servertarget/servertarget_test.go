@@ -99,9 +99,9 @@ func TestResolve_SaysWhatItPlannedInstead(t *testing.T) {
 			name:    "a version between measured lines",
 			dialect: platform.MySQL,
 			version: "8.0.42-log",
-			// 8.0.42 is above the 8.0.20 step, so it takes MySQL8020 -- the
-			// arm the global SHOW_ROUTINE privilege is on (stokaro/ptah#916).
-			want: capability.MySQL8020(),
+			// 8.0.42 is above the 8.0.29 step, so it takes MySQL8029 -- the
+			// arm a column placed before existing ones is instant on.
+			want: capability.MySQL8029(),
 			wantNote: "mysql 8.0.42-log is not a measured release line; " +
 				"capabilities fall back to the preset its ladder assigns (newest measured line: 26.10)",
 		},
