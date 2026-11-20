@@ -12,6 +12,10 @@ import (
 // that carries it cannot end early and let the rest of the text run as SQL.
 // Text without such characters is returned unchanged.
 //
+// A backslash is not escaped, so a literal `\n` in the text and an escaped line
+// break read the same. The result is for a reader of the file and is not meant
+// to be decoded.
+//
 // Declared text reaches comments from many places: a table or column COMMENT, an
 // object name, the value of a property a target cannot keep. Each of them is
 // user input, and each goes through this function or [LineComment] before it is
@@ -46,17 +50,6 @@ func LineComment(text string) string {
 		return "--"
 	}
 	return "-- " + CommentText(text)
-}
-
-// BlockCommentText returns text made safe to sit inside a `/* */` comment: it is
-// escaped by [CommentText], and neither the closing `*/` nor the opening `/*` is
-// left in it (PostgreSQL nests block comments, so an opener the text carries
-// would swallow the real closer). Each of the two is written with a space
-// inside, `* /` and `/ *`.
-func BlockCommentText(text string) string {
-	text = CommentText(text)
-	text = strings.ReplaceAll(text, "*/", "* /")
-	return strings.ReplaceAll(text, "/*", "/ *")
 }
 
 // unsafeInComment reports whether r is a control character other than the tab

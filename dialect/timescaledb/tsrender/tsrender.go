@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/sqlident"
@@ -171,7 +172,7 @@ func withComment(comment, statement string) []string {
 	if comment == "" {
 		return []string{statement}
 	}
-	return []string{"-- " + strings.Join(strings.Fields(comment), " "), statement}
+	return []string{sqlutil.LineComment(strings.Join(strings.Fields(comment), " ")), statement}
 }
 
 // qualifiedIdentifier quotes each part separately, so a dot inside a name

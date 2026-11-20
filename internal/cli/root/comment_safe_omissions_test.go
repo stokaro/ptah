@@ -32,3 +32,23 @@ func TestMigrationsGenerate_KeepsDeclaredTextInsideItsComments(t *testing.T) {
 	c.Assert(string(upSQL), qt.Not(qt.Contains), "\nDROP TABLE victim;")
 	c.Assert(string(upSQL), qt.Contains, `-- sqlite: table ro_c: comment=first\nDROP TABLE victim;\n-- end was skipped (unsupported)`)
 }
+
+// TestMigrationsCreate_KeepsTheNameInsideItsComment names a migration with a
+// line break and a statement. The name reaches the file's first comment, and
+// the statement stays inside it.
+func TestMigrationsCreate_KeepsTheNameInsideItsComment(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+
+	code, stdout, stderr := runStreams(c, "migrations", "create", "--migrations-dir", dir,
+		"--name", "abc\nDROP TABLE victim;--x")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	up, globErr := filepath.Glob(filepath.Join(dir, "*.up.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(up, qt.HasLen, 1)
+	upSQL, readErr := os.ReadFile(up[0])
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(upSQL), qt.Not(qt.Contains), "\nDROP TABLE victim;")
+	c.Assert(string(upSQL), qt.Contains, `-- Migration: abc\nDROP TABLE victim;--x`+"\n")
+}

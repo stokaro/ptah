@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/migrationversion"
 	"ptah.run/internal/pathguard"
 	"ptah.run/migration/migrationfile"
@@ -325,6 +326,7 @@ func validateEmptyMigrationName(name string) error {
 }
 
 func emptyMigrationSQL(name, generatedAt, direction string) string {
+	name = sqlutil.CommentText(name)
 	return fmt.Sprintf(`-- Migration: %s
 -- Generated on: %s
 -- Direction: %s

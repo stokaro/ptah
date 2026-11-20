@@ -5,6 +5,7 @@ package bufwriter
 import (
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -38,14 +39,24 @@ func commentSafeArgs(args []any) []any {
 		case string:
 			safe[i] = sqlutil.CommentText(typed)
 		case error:
-			safe[i] = sqlutil.CommentText(typed.Error())
+			safe[i] = commentSafeText(typed, typed.Error)
 		case fmt.Stringer:
-			safe[i] = sqlutil.CommentText(typed.String())
+			safe[i] = commentSafeText(typed, typed.String)
 		default:
 			safe[i] = arg
 		}
 	}
 	return safe
+}
+
+// commentSafeText returns the text of value made comment-safe. A nil pointer
+// inside the interface is left for fmt to print as `<nil>`, as it does for any
+// argument, rather than called, which would panic.
+func commentSafeText(value any, text func() string) any {
+	if reflected := reflect.ValueOf(value); reflected.Kind() == reflect.Pointer && reflected.IsNil() {
+		return value
+	}
+	return sqlutil.CommentText(text())
 }
 
 // WriteLine writes s and a newline.

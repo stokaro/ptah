@@ -48,21 +48,3 @@ func TestLineComment(t *testing.T) {
 		})
 	}
 }
-
-func TestBlockCommentText(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{name: "plain text is unchanged", in: "a * b / c", want: "a * b / c"},
-		{name: "closer", in: "a */ DROP TABLE victim; /* b", want: "a * / DROP TABLE victim; / * b"},
-		{name: "line break", in: "a\nb", want: `a\nb`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(sqlutil.BlockCommentText(test.in), qt.Equals, test.want)
-		})
-	}
-}

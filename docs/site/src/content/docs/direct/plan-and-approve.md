@@ -163,6 +163,15 @@ fingerprints, but changing them changes the saved document's digest and its
 approval. The Atlas `.plan.hcl` format refuses positioned notes because it
 cannot preserve this distinction.
 
+A JSON plan also records `omissions`: each declaration its statements leave out
+because the database has no clause for it, with the `dialect`, `kind`, `name`,
+`property` and `detail` of the omission. `ptah schema approve` prints them on
+standard error as it signs, and `ptah schema apply --plan` prints them again,
+so the approver and the run that applies the file read what the database will
+not carry. A plan that leaves nothing out has no such field. An older `ptah`
+binary refuses a plan that carries `omissions`, because it rejects fields it
+does not know.
+
 An `--edit` that leaves the statements as they were, comments and whitespace
 aside, keeps every recorded verdict and effect. After any other edit, a
 statement whose text the plan recorded keeps the strongest verdict recorded for

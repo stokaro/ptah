@@ -30,6 +30,33 @@ func TestWriter_CommentLinesStayOneLine(t *testing.T) {
 	})
 }
 
+// nilStringer reads a field, so calling String on a nil pointer panics, which
+// fmt prints as <nil>.
+type nilStringer struct{ text string }
+
+func (s *nilStringer) String() string { return s.text }
+
+type nilError struct{ text string }
+
+func (e *nilError) Error() string { return e.text }
+
+func TestWriter_NilArgumentsPrintAsFmtPrintsThem(t *testing.T) {
+	t.Run("a nil Stringer", func(t *testing.T) {
+		c := qt.New(t)
+		var w bufwriter.Writer
+		var value *nilStringer
+		w.WriteLinef("-- %s", value)
+		c.Assert(w.Output(), qt.Equals, "-- <nil>\n")
+	})
+	t.Run("a nil error", func(t *testing.T) {
+		c := qt.New(t)
+		var w bufwriter.Writer
+		var value *nilError
+		w.WriteLinef("-- %v", value)
+		c.Assert(w.Output(), qt.Equals, "-- <nil>\n")
+	})
+}
+
 func TestWriter_StatementsKeepTheirLines(t *testing.T) {
 	t.Run("a leading comment and a statement written together", func(t *testing.T) {
 		c := qt.New(t)
