@@ -325,7 +325,7 @@ The rest of a column's properties are reported wherever the target drops them:
 
 | Property | Kept by | Dropped by |
 | --- | --- | --- |
-| Collation | the MySQL family | every other target |
+| Collation | the MySQL family, PostgreSQL, SQLite, Oracle on `MAX_STRING_SIZE=EXTENDED` | CockroachDB, YugabyteDB, SQL Server, ClickHouse |
 | NOT NULL constraint name | PostgreSQL 18 and later | the MySQL family, SQLite, SQL Server, Oracle, ClickHouse |
 | Column `UNIQUE` | every target but ClickHouse | ClickHouse |
 

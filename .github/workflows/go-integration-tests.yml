@@ -654,6 +654,36 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes graphviz
 
+      # The image starts with MAX_STRING_SIZE=STANDARD, where every column
+      # COLLATE is refused with ORA-43929, and Oracle Autonomous Database starts
+      # with EXTENDED. A column collation is a declaration the tests below
+      # apply and read back, so the pluggable database is converted to
+      # EXTENDED, the one setting that carries it. The steps are Oracle's own
+      # for a database that holds no data yet: reopen in UPGRADE mode, change
+      # the parameter, run utl32k.sql, reopen. It takes a few seconds, and the
+      # last line fails the job unless the account the tests use reads EXTENDED.
+      - name: Convert Oracle to MAX_STRING_SIZE=EXTENDED
+        if: matrix.kind == 'contour'
+        timeout-minutes: 10
+        run: |
+          docker exec -i "${{ job.services.oracle.id }}" sqlplus -s / as sysdba <<'SQL'
+          whenever sqlerror exit failure
+          set termout off
+          ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
+          ALTER PLUGGABLE DATABASE FREEPDB1 OPEN UPGRADE;
+          ALTER SESSION SET CONTAINER=FREEPDB1;
+          ALTER SYSTEM SET MAX_STRING_SIZE=EXTENDED;
+          @?/rdbms/admin/utl32k.sql
+          ALTER SESSION SET CONTAINER=CDB$ROOT;
+          ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
+          ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
+          SQL
+          docker exec -i "${{ job.services.oracle.id }}" sqlplus -s ptah/ptah_password@localhost/FREEPDB1 <<'SQL' | tee "$RUNNER_TEMP/oracle-string-size.txt"
+          set heading off feedback off pagesize 0
+          SELECT property_value FROM database_properties WHERE property_name = 'MAX_STRING_SIZE';
+          SQL
+          grep -qx EXTENDED "$RUNNER_TEMP/oracle-string-size.txt"
+
       - name: Create Atlas oracle development databases
         if: matrix.kind == 'contour'
         run: |

@@ -245,3 +245,48 @@ func TestColumnsWithDialect_ResolvesAMariaDBCollationName(t *testing.T) {
 		})
 	}
 }
+
+// TestColumnsWithDialect_ComparesAnOracleColumnCollation pins Oracle's names: a
+// collation a column declares is compared, ignoring case, with the one it
+// holds, and a character column that names none reads no collation, which is
+// USING_NLS_COMP. A column that declares none is not compared, since it holds
+// its table's DEFAULT COLLATION or USING_NLS_COMP and a MODIFY to either
+// would restate the column on every run.
+func TestColumnsWithDialect_ComparesAnOracleColumnCollation(t *testing.T) {
+	tests := []struct {
+		name      string
+		declared  string
+		read      string
+		effective string
+		want      string
+	}{
+		{name: "the collation the column declares", declared: "BINARY_CI", read: "BINARY_CI", effective: "BINARY_CI", want: ""},
+		{name: "a name in another case", declared: "binary_ci", read: "BINARY_CI", effective: "BINARY_CI", want: ""},
+		{name: "a collation the column does not hold", declared: "BINARY_CI", want: " -> BINARY_CI"},
+		{name: "another collation", declared: "BINARY_AI", read: "BINARY_CI", effective: "BINARY_CI", want: "BINARY_CI -> BINARY_AI"},
+		{name: "the table's default restated", declared: "BINARY_CI", effective: "BINARY_CI", want: ""},
+		{name: "a collation other than the table's default", declared: "BINARY_AI", effective: "BINARY_CI", want: "BINARY_CI -> BINARY_AI"},
+		{name: "a collation the declaration leaves out", declared: "", read: "BINARY_CI", effective: "BINARY_CI", want: ""},
+		{name: "USING_NLS_COMP restated", declared: "USING_NLS_COMP", want: ""},
+		{name: "USING_NLS_COMP in lower case restated", declared: "using_nls_comp", want: ""},
+		{name: "USING_NLS_COMP against a held collation", declared: "USING_NLS_COMP", read: "BINARY_CI", effective: "BINARY_CI", want: "BINARY_CI -> USING_NLS_COMP"},
+		{name: "USING_NLS_COMP against the table's default", declared: "USING_NLS_COMP", effective: "BINARY_CI", want: "BINARY_CI -> USING_NLS_COMP"},
+		{name: "neither names one", declared: "", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: "VARCHAR2(20)", Nullable: true, Collate: test.declared},
+				catalog.Column{
+					Name: "c", DataType: "VARCHAR2(20)", IsNullable: "YES",
+					Collate: test.read, EffectiveCollate: test.effective,
+				},
+				"oracle",
+			)
+
+			c.Assert(diff.Changes["collation"], qt.Equals, test.want)
+		})
+	}
+}

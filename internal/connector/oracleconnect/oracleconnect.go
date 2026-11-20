@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/oracle"
@@ -133,7 +134,83 @@ func (Service) Describe(
 	info.Schema = currentSchema
 	info.IdentifierSemantics = identifier.ForDialect(platform.Oracle)
 	info.IdentifierSemantics.DefaultSchema = info.Schema
+	info.CollationNames = readCollationSorts(func() ([]string, error) { return queryCollationSorts(ctx, db) })
 	return info, nil
+}
+
+// queryCollationSorts reads the sorts V$NLS_VALID_VALUES lists, which a column
+// collation is named from.
+func queryCollationSorts(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT value FROM v$nls_valid_values WHERE parameter = 'SORT'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sorts []string
+	for rows.Next() {
+		var sort string
+		if err := rows.Scan(&sort); err != nil {
+			return nil, err
+		}
+		sorts = append(sorts, strings.ToUpper(strings.TrimSpace(sort)))
+	}
+	return sorts, rows.Err()
+}
+
+// readCollationSorts is the list of collation sorts the server names, or nil
+// when it cannot be read. The view is dynamic, so an account without access to
+// it, or a server without it, is a case and not a failure: nothing in
+// connecting needs the list, and a plan that declares a collation falls back to
+// the server's own answer and says so ([oraclecollation.RefuseDeclared]).
+func readCollationSorts(read func() ([]string, error)) []string {
+	sorts, err := read()
+	if err != nil {
+		return nil
+	}
+	return sorts
+}
+
+// Refine reads the database's MAX_STRING_SIZE, which decides whether a column
+// may carry a collation.
+//
+// DATABASE_PROPERTIES is readable by PUBLIC on the images measured, but that is
+// a grant and not a guarantee: a locked-down database may revoke it (`REVOKE
+// READ ON sys.database_properties FROM PUBLIC` answers ORA-00942 to an account
+// with CREATE SESSION only). V$PARAMETER answers on Oracle Free 23.26 to the
+// plain schema owner too, but it is a dynamic view a locked-down account may not
+// read either, and the property carries the same value (measured on 23.26 and
+// 21.3 XE, both STANDARD, and on 23.26 EXTENDED). A read that fails leaves the
+// capability off ([refineStringSize]).
+func (Service) Refine(
+	ctx context.Context,
+	opened *connector.Pool,
+	_ connector.Request,
+	_ catalog.ServerInfo,
+	caps capability.Capabilities,
+) (capability.Capabilities, error) {
+	return refineStringSize(caps, func(destination ...any) error {
+		return opened.DB.QueryRowContext(ctx,
+			`SELECT property_value FROM database_properties WHERE property_name = 'MAX_STRING_SIZE'`,
+		).Scan(destination...)
+	}), nil
+}
+
+// refineStringSize sets [capability.StandardStringSize] to whether the property
+// scan reads is STANDARD. When the property cannot be read, the capability stays
+// off and the server answers a column COLLATE itself: a database that holds no
+// such property, which the older lines do not, and an account that cannot read
+// DATABASE_PROPERTIES (ORA-00942, ORA-01031) are the same case. Failing the
+// connection on it would take every Oracle command away from such an account, a
+// command that declares no collation among them, to protect a declaration it may
+// never make. What a read failure leaves unknown costs one thing: a declared
+// collation on a STANDARD database reaches the server, which answers ORA-43929
+// after the statements before it have run.
+func refineStringSize(caps capability.Capabilities, scan func(...any) error) capability.Capabilities {
+	var value string
+	if err := scan(&value); err != nil {
+		return caps
+	}
+	return caps.With(capability.StandardStringSize, strings.EqualFold(strings.TrimSpace(value), "STANDARD"))
 }
 
 // NewReader returns the Oracle reader.

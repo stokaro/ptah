@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/autoincrement"
 	"ptah.run/internal/defaultlit"
+	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlident"
 )
@@ -18,6 +20,18 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 		return "", fmt.Errorf("nil column")
 	}
 	parts := []string{"  " + escapeIdentifier(column.Name), mapColumnType(column)}
+
+	// The collation goes right after the type. Written after DEFAULT it is
+	// read as the COLLATE operator of the default expression, and the column
+	// keeps USING_NLS_COMP with no error (measured on Oracle Free 23.26:
+	// `DEFAULT 'x' COLLATE BINARY_CI` reads USING_NLS_COMP back).
+	if column.Collate != "" {
+		clause, err := collateClause(column, column.Collate, caps)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, clause)
+	}
 
 	if generatesIdentity(column) {
 		// Oracle's auto-increment is an identity column rather than a type,
@@ -259,9 +273,18 @@ func generatesIdentity(column *ast.ColumnNode) bool {
 // default has to be spelled DEFAULT NULL; omitting it leaves the old default in
 // place while the plan's own comment says it was cleared.
 //
+// The collation is written only when the change is one. MODIFY keeps the
+// collation of a column it restates without a COLLATE clause (measured on
+// Oracle Free 23.26: a MODIFY that widens a VARCHAR2 or adds NOT NULL leaves
+// BINARY_CI in place), so a type or nullability change restates nothing about
+// it. `MODIFY (c VARCHAR2(20) COLLATE BINARY_CI)` changes the collation in
+// place and answers ORA-43923 or ORA-43922 where an index, key, CHECK or
+// generated column uses the column; the planner refuses that before it runs
+// ([oraclecollation.RefuseKeyedColumnChange]).
+//
 // A change of the column's identity is written as [renderIdentityChange] says,
 // and is the only case that takes more than one MODIFY.
-func renderModifiedColumn(op *ast.ModifyColumnOperation) ([]string, error) {
+func renderModifiedColumn(op *ast.ModifyColumnOperation, caps capability.Capabilities) ([]string, error) {
 	if op == nil || op.Column == nil {
 		return nil, fmt.Errorf("nil column")
 	}
@@ -275,6 +298,15 @@ func renderModifiedColumn(op *ast.ModifyColumnOperation) ([]string, error) {
 		return nil, nil
 	}
 	parts := []string{escapeIdentifier(column.Name), mapColumnType(column)}
+	if op.HasChanged && op.Changed.Collation {
+		// A column that no longer declares one goes back to the collation of
+		// a character column that names none.
+		clause, err := collateClause(column, cmp.Or(column.Collate, oraclecollation.Inherited), caps)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, clause)
+	}
 	if clause := defaultClause(op); clause != "" {
 		parts = append(parts, clause)
 	}
@@ -696,4 +728,34 @@ func splitQualifiedIdentifier(identifier string) []string {
 		}
 	}
 	return append(parts, identifier[start:])
+}
+
+// collateClause renders the COLLATE clause of column, naming collation.
+//
+// Oracle takes the clause on a character column only (a collation on CLOB
+// answers ORA-43912, on NUMBER, RAW, DATE or JSON ORA-43911), and only where
+// MAX_STRING_SIZE is EXTENDED: a STANDARD database answers ORA-43929 to every
+// COLLATE. The connector tells a connected render which one it is
+// ([capability.StandardStringSize]), so the refusal names the setting and comes
+// before the first statement, where the server's would come after the earlier
+// statements of the plan had committed. An offline render has no database to
+// ask and writes the declaration.
+func collateClause(column *ast.ColumnNode, collation string, caps capability.Capabilities) (string, error) {
+	switch {
+	case !oraclecollation.Valid(collation):
+		return "", unsupportedFeaturef(
+			"column %q declares collation %q, which is not an Oracle collation name (letters, digits, _, $ and #, starting with a letter)",
+			column.Name, collation)
+	case !oraclecollation.Collatable(mapColumnType(column)):
+		return "", unsupportedFeaturef(
+			"column %q is %s, and Oracle takes a collation on VARCHAR2, NVARCHAR2, CHAR and NCHAR columns only (ORA-43911, ORA-43912); remove collation %s",
+			column.Name, mapColumnType(column), collation)
+	case caps.Has(capability.StandardStringSize):
+		return "", unsupportedFeaturef(
+			"column %q declares collation %s, and this database runs with MAX_STRING_SIZE=STANDARD, which refuses a column collation (ORA-43929); "+
+				"convert the database to MAX_STRING_SIZE=EXTENDED, or remove the collation",
+			column.Name, collation)
+	default:
+		return "COLLATE " + collation, nil
+	}
 }

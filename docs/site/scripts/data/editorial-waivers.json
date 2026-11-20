@@ -54,6 +54,12 @@
     "reason": "The engine reference keeps MySQL and MariaDB object, migration and release behavior together for target-specific lookup."
   },
   {
+    "route": "/databases/oracle/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The engine reference keeps Oracle object, type, collation and migration behavior together for target-specific lookup."
+  },
+  {
     "route": "/databases/postgresql/",
     "check": "page-length",
     "target": "page",

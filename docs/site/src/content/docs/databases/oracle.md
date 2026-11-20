@@ -304,6 +304,151 @@ cleanup runs, in the order it runs them. A materialized view keeps its rows
 in a table of its own name, and that table goes with the view rather than as
 a drop of its own.
 
+## Column collations
+
+A column declares its collation after its type, in every source: `COLLATE
+BINARY_CI` in SQL, `collate: BINARY_CI` in YAML, `collate = "BINARY_CI"` in HCL,
+and `platform.oracle.collate="BINARY_CI"` in a Go annotation.
+
+```sql
+CREATE TABLE customers (
+  id NUMBER PRIMARY KEY,
+  email VARCHAR2(200) COLLATE BINARY_CI
+);
+```
+
+Oracle takes a column collation on `VARCHAR2`, `NVARCHAR2`, `CHAR` and `NCHAR`
+columns only. A collation on `CLOB` answers `ORA-43912`, and one on a number,
+`RAW`, date or `JSON` column answers `ORA-43911`; Ptah refuses both from the
+declaration, before it writes a statement.
+
+### The database has to run EXTENDED
+
+Oracle accepts a column `COLLATE` only where the parameter `MAX_STRING_SIZE` is
+`EXTENDED`. A database that runs `STANDARD` answers every `COLLATE` with
+`ORA-43929`. Oracle Autonomous Database starts with `EXTENDED`; the
+`gvenzl/oracle-free` image and a self-managed database start with `STANDARD`.
+
+Ptah reads the setting from `DATABASE_PROPERTIES` when it connects. The
+Oracle images grant that view to `PUBLIC`, and a database can revoke the grant.
+When the account cannot read the view, Ptah still connects and every command
+that declares no collation runs as before; the setting is then unknown, and a
+declared collation reaches the server, which answers `ORA-43929` on a `STANDARD`
+database after the statements before it have applied. On a `STANDARD` database
+the account can read, a declared collation is refused by name before the first
+statement runs:
+
+```text
+error: generate schema apply operations: render column c: unsupported feature: oracle: column "c" declares collation BINARY_CI, and this database runs with MAX_STRING_SIZE=STANDARD, which refuses a column collation (ORA-43929); convert the database to MAX_STRING_SIZE=EXTENDED, or remove the collation
+```
+
+Oracle commits each statement of a plan, so the refusal has to come first: the
+server's own error would arrive after the statements before it had applied.
+`ptah schema render` has no database to ask and writes the collation as
+declared. For the same reason an offline render cannot check that a collation
+name exists.
+
+To convert a pluggable database that holds no data of value, run this as
+`SYSDBA`. The change is one way, and Oracle documents no conversion back:
+
+```sql
+ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE FREEPDB1 OPEN UPGRADE;
+ALTER SESSION SET CONTAINER=FREEPDB1;
+ALTER SYSTEM SET MAX_STRING_SIZE=EXTENDED;
+@?/rdbms/admin/utl32k.sql
+ALTER SESSION SET CONTAINER=CDB$ROOT;
+ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
+ALTER PLUGGABLE DATABASE FREEPDB1 OPEN;
+```
+
+### What a read reports
+
+The read takes each column's `COLLATION` from `ALL_TAB_COLS` and the table's
+`DEFAULT_COLLATION` from `ALL_TABLES`. A character column that names no
+collation reads `USING_NLS_COMP`, and Ptah reports it as holding none. Names are
+upper case, as the catalog stores them. A column in a table with a
+`DEFAULT COLLATION` reads that collation as the one it compares with, and is not
+reported as declaring it, because the catalog cannot say whether the column
+named it. Ptah does not write `DEFAULT COLLATION`; it reads the table's value
+only to tell the two cases apart. A declaration that restates the table's
+default holds, and the plan is empty. Declaring `USING_NLS_COMP` on such a
+column is a change: the column then names the collation itself.
+
+An index over a column with a collation is a function-based index in the
+catalog, and its key is listed under a hidden column, `SYS_NC00004$`, with the
+expression `NLSSORT("C",'nls_sort=''BINARY_CI''')`. Ptah reads the key as the
+column it names, so a declared index over the column matches and plans nothing.
+
+### A collation name has to exist
+
+A collation is a sort that `V$NLS_VALID_VALUES` lists for `PARAMETER='SORT'`
+(`BINARY`, `FRENCH`, `GERMAN` and the rest), with `_CI` or `_AI` after it, or
+`USING_NLS_COMP`. `BINARY_CI` and `BINARY_AI` follow from `BINARY`. Oracle
+answers any other name with `ORA-12746`, including `USING_NLS_COMP_CI` and the
+`_CS` forms. A YAML or HCL schema shared with MySQL that names `utf8mb4_bin`
+therefore fails on Oracle, and without a check it fails after the tables
+created before the column have committed.
+
+A connected plan reads the list when it connects and refuses an unknown name
+before the first statement, naming the column and the table. If the account
+cannot read `V$NLS_VALID_VALUES`, the check is left to the server and Ptah
+writes a warning that says so. `ptah schema render` has no database to ask and
+cannot check the name.
+
+### What a plan does
+
+A declared collation is compared with the one the column holds, ignoring case.
+A column that declares none is not compared, since it holds `USING_NLS_COMP` or
+its table's default and a change would restate the column on every run. To
+return a column to `USING_NLS_COMP`, declare `USING_NLS_COMP`.
+
+A change is one statement, and the collation is the only thing it restates:
+
+```sql
+ALTER TABLE customers MODIFY (email VARCHAR2(200) COLLATE BINARY_AI);
+```
+
+The change is refused, naming the object, while the column belongs to an index,
+a primary or unique key, a foreign key, a `CHECK`, or the expression of a
+generated column. Oracle answers these with `ORA-43923` or `ORA-43922`, and a
+plan that stopped there would leave the statements before it applied. A key
+written on the column itself (`pk VARCHAR2(10) PRIMARY KEY`, `u VARCHAR2(10)
+UNIQUE`) counts, although Oracle names it and Ptah reads it as a flag of the
+column. Drop the object, apply the collation change, and declare the object
+again in a later migration. A function-based index holds the column when an
+expression of its key names it, such as `UPPER(email)`, quoted or not. The read
+lists the key under a hidden column, `SYS_NC00006$`, and Ptah takes the
+expression from `ALL_IND_EXPRESSIONS`.
+
+A plan adds columns before it changes them, so a generated column or an inline
+`CHECK` that the same plan adds over the column holds it as well, and the plan
+is refused. Apply the collation change first and add the column in a later
+migration. An index or a table-level `CHECK` the plan adds comes after the
+change and holds nothing yet.
+
+A key part with `DESC` over a collated column answers `ORA-54034` when an index
+or key created before it holds the column in an ascending part: `(c)`, `(c, d)`,
+`(d, c)`, a `UNIQUE` or a `PRIMARY KEY` on the column. It is accepted as the
+first index over the column, and after indexes that hold the column only as
+`DESC`, in any shape (`(c DESC)`, `(d, c DESC)`, `(c DESC, d)`). A function-based
+index such as `UPPER(c)` holds nothing, and a `UNIQUE` constraint added after the
+`DESC` index is accepted.
+
+A plan creates the new indexes of a table in name order, byte order of the name
+as declared, after the keys of a `CREATE TABLE` or an `ADD COLUMN` and before a
+constraint it adds with `ALTER TABLE`. Ptah follows that order and refuses a new
+index with a `DESC` part over a collated column when an ascending key holds the
+column by then, naming the index that does. Indexes the database already holds
+come first, and an index the database already holds is not created again. To get
+the shape, name the `DESC` index so it sorts before the ascending one, drop
+`DESC` from the part, or apply the ascending index in a later migration.
+
+An index key the catalog lists as `NLSSORT("C",'nls_sort=''BINARY_CI''')` is the
+column's own key only where `C` holds `BINARY_CI`. The same expression over a
+column that holds another collation is an index you wrote, and Ptah reads it as
+a function-based index.
+
 ## Object types
 
 **A composite type is Oracle's object type**, and the spelling is the whole
