@@ -1162,7 +1162,8 @@ A plan revokes a membership on ClickHouse by the same rule as on PostgreSQL: a
 role that states `member_of`, even empty, owns its memberships, and a role
 without the key keeps all of them. See
 [Role memberships](../postgresql/#role-memberships) for the rule and for the
-`UNMANAGED` line a plan writes for a membership it keeps.
+`UNMANAGED` line `schema apply` and `schema compare` write for a membership
+they keep.
 
 ## Row policies
 
