@@ -188,14 +188,16 @@ func checkStatementScopedToDev(statement string, index int, dialect, devSchema s
 }
 
 // readsCatalog reports whether a statement may name a server's own catalog
-// without leaving the dev database: the dialect is ClickHouse, and every
+// without leaving the dev database: the dialect's descriptor declares table
+// rebuilds, whose plan reads the catalog before it drops a table, and every
 // statement in the text is a SELECT.
 //
 // A SELECT changes no database. The plan hands one statement to each entry, but
 // the check looks at every statement of the text, so a SELECT followed by a
 // DROP TABLE after a semicolon does not pass on its first token.
 func readsCatalog(dialect string, tokens []lexer.Token) bool {
-	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
+	described, ok := platform.Lookup(dialect)
+	if !ok || !described.TableRebuild {
 		return false
 	}
 	start := 0
@@ -212,9 +214,9 @@ func readsCatalog(dialect string, tokens []lexer.Token) bool {
 }
 
 // isCatalogSchema reports whether a schema name is a server's own catalog, which
-// a SELECT reads on the dev connection as it would on the target's. A ClickHouse
-// table rebuild asks system.tables whether a view reads the table before it
-// drops it.
+// a SELECT reads on the dev connection as it would on the target's. A table
+// rebuild asks the catalog, system.tables on ClickHouse, whether a view reads
+// the table before it drops it.
 func isCatalogSchema(name string) bool {
 	return strings.EqualFold(name, "system") || strings.EqualFold(name, "information_schema")
 }
