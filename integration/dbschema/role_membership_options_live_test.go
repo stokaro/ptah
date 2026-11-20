@@ -4,6 +4,7 @@ package dbschema_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -123,6 +124,9 @@ func (r *membershipRun) held() (catalog.RoleMembership, bool) {
 func onlyMembership(statements []string) string {
 	var kept []string
 	for _, statement := range statements {
+		statement = strings.Join(slices.DeleteFunc(strings.Split(statement, "\n"), func(line string) bool {
+			return strings.HasPrefix(line, "--")
+		}), "\n")
 		if strings.Contains(statement, "GRANT") || strings.Contains(statement, "REVOKE") {
 			kept = append(kept, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
 		}

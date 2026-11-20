@@ -247,3 +247,25 @@ func TestPlan_AMembershipIsRefusedWhereTheTargetPlansNone(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(got, qt.IsNil)
 }
+
+// TestPlan_MySQL84_TheWindowWarningSurvivesTheExactStyle keeps the warning in
+// a plan that leaves out descriptive comments: it states a risk, not a label.
+func TestPlan_MySQL84_TheWindowWarningSurvivesTheExactStyle(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	caps := capability.MySQL84()
+	diff, err := schemadiff.CompareWithDatabaseInfo(
+		t.Context(), &schemamodel.Database{Roles: plainRoles()},
+		&catalog.Database{Roles: []catalog.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true}}, RoleMemberships: edge(true, nil, nil)},
+		catalog.ServerInfo{Dialect: platform.MySQL, Schema: "public", Capabilities: caps}, nil, runtime,
+	)
+	c.Assert(err, qt.IsNil)
+
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(t.Context(), runtime, diff, platform.MySQL,
+		planext.Options{Capabilities: caps, Statements: planext.StatementStyleExact})
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.MySQL, caps, nodes...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "-- WARNING: app holds no readers")
+}
