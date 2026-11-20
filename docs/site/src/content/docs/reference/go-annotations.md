@@ -231,7 +231,7 @@ Maps a Go struct to a database table.
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. Needs `primary_key`; a field's `primary` key has no place for it. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |
-| `primary_key_without_overlaps` | No | Applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange. Exactly `true` or `false`; anything else, an empty value included, is refused. Needs a `primary_key` of two or more columns. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
+| `primary_key_without_overlaps` | No | `true` applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange. Only `true` and `false` are accepted. Needs two or more key columns and a target with `temporal_keys`; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `schema` | No | Database schema name. |
 
 The table engine, character set, collation and `AUTO_INCREMENT` start are
@@ -454,7 +454,7 @@ Declares a table constraint.
 | `table` | No | Explicit target table. |
 | `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY. |
 | `using` | No | PRIMARY KEY access method on MySQL and MariaDB (`BTREE` or `HASH`). Refused on UNIQUE, CHECK and FOREIGN KEY. |
-| `without_overlaps` | No | Applies `WITHOUT OVERLAPS` to the last column of a UNIQUE or PRIMARY KEY constraint, a range or multirange. Exactly `true` or `false`; anything else, an empty value included, is refused. Needs two or more columns. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
+| `without_overlaps` | No | `true` applies `WITHOUT OVERLAPS` to the last column of a UNIQUE or PRIMARY KEY constraint, a range or multirange. Only `true` and `false` are accepted. Needs two or more columns and a target with `temporal_keys`; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 
 `include` belongs to a UNIQUE or a PRIMARY KEY constraint, and the two accept it
 on different targets:
