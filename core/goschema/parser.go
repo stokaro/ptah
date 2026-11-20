@@ -464,10 +464,10 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	constraint.Facets = facets
 	// WITHOUT OVERLAPS qualifies the last column of a PRIMARY KEY or UNIQUE,
 	// and PERIOD the last columns of a FOREIGN KEY.
-	if constraint.WithoutOverlaps, err = temporalkeys.Flag("without_overlaps", kv["without_overlaps"]); err != nil {
+	if constraint.WithoutOverlaps, err = temporalkeys.Flag(kv, "without_overlaps"); err != nil {
 		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
 	}
-	if constraint.Period, err = temporalkeys.Flag("period", kv["period"]); err != nil {
+	if constraint.Period, err = temporalkeys.Flag(kv, "period"); err != nil {
 		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
 	}
 	if err := temporalkeys.CheckConstraint(constraint); err != nil {
@@ -751,9 +751,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Facets:            facets,
 		Overrides:         parseutils.ParsePlatformSpecific(s.hostAttributes("ptah:schema:table", kv)),
 	}
-	if declared.PrimaryKeyWithoutOverlaps, err = temporalkeys.Flag(
-		"primary_key_without_overlaps", kv["primary_key_without_overlaps"],
-	); err != nil {
+	if declared.PrimaryKeyWithoutOverlaps, err = temporalkeys.Flag(kv, "primary_key_without_overlaps"); err != nil {
 		return ownerAttributeError(ctx, err)
 	}
 	if err := temporalkeys.CheckPrimaryKey(declared); err != nil {

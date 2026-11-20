@@ -105,8 +105,10 @@ func (f fieldLevelConstraints) has(dbConstraint catalog.Constraint) bool {
 		//
 		// A deferrable key is never the column's own: the column spelling has
 		// no deferral, so the key is compared as the table's
-		// (liveKeyOutgrowsTheColumnFlag). A WITHOUT OVERLAPS key is the
-		// table's for the same reason.
+		// (liveKeyOutgrowsTheColumnFlag). A WITHOUT OVERLAPS key needs no test
+		// here: liveKeyOutgrowsTheColumnFlag synthesizes the table's key from
+		// the columns' flags against one, so its columns are in tablePKColumns
+		// and the key is never excused as the column's.
 		//
 		// A key the declaration also states as a PRIMARY KEY constraint is the
 		// constraint's, which the comparison pairs with this one. Excused as
@@ -117,7 +119,7 @@ func (f fieldLevelConstraints) has(dbConstraint catalog.Constraint) bool {
 		// run.
 		column := getConstraintColumn(dbConstraint)
 		key := newTableMemberKey(dbConstraint.QualifiedTableName(), column, semantics)
-		if field, exists := fieldMap[key]; exists && field.Primary && !dbConstraint.Deferrable && !dbConstraint.WithoutOverlaps {
+		if field, exists := fieldMap[key]; exists && field.Primary && !dbConstraint.Deferrable {
 			pkKey := newQualifiedTableIdentity(dbConstraint.QualifiedTableName(), semantics)
 			if _, synthesized := tablePKColumns[pkKey][column]; !synthesized &&
 				!declaresPrimaryKeyConstraint(desired, pkKey, semantics) {

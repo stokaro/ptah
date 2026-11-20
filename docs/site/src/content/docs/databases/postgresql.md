@@ -607,17 +607,25 @@ Each source spells the clauses its own way:
   constraint, and `period="true"` on a foreign key constraint with
   `foreign_columns`.
 - YAML sets `primary_key_without_overlaps: true` on the table,
-  `without_overlaps: true` on a unique constraint, and `period: true` on a
-  foreign key constraint with `foreign_columns`.
+  `without_overlaps: true` on a `PRIMARY KEY` or `UNIQUE` constraint, and
+  `period: true` on a foreign key constraint with `foreign_columns`.
 - HCL sets `without_overlaps = true` in a `primary_key` or `unique` block, and
-  `period = true` in a `foreign_key` block.
+  `period = true` in a `foreign_key` block. The Ptah `constraint` block takes
+  `without_overlaps` and `period` too.
 
 A temporal key is always backed by a GiST index, so an HCL `primary_key` or
 `unique` block with `without_overlaps = true` may also write `type = GIST`, and
 reads the same with or without it. `type = GIST` on a key without
-`without_overlaps`, or another `type` on a temporal key, is refused. So is a
-Go annotation value other than `true` or `false`, and a YAML value that is not
-a boolean: read as false, it would declare a plain key.
+`without_overlaps`, or another `type` on a temporal key, is refused. A Go
+annotation value must be exactly `true` or `false`; an empty value or another
+case is refused. A YAML key needs a boolean value, and one written with no
+value or as `null` is refused. Read as false, either would declare a plain key.
+
+A temporal key of one column is refused from every source, SQL included,
+because PostgreSQL needs at least two. So is a `PERIOD` foreign key with an
+`ON DELETE` or `ON UPDATE` action other than `NO ACTION`: PostgreSQL 18.6 and
+19.0 answer `unsupported ON DELETE action for foreign key constraint using
+PERIOD` to the others. Both refusals come before any statement runs.
 
 Ptah reads the clauses from `pg_get_constraintdef`, which prints `WITHOUT
 OVERLAPS` after the last key column and `PERIOD` before the last column of each
@@ -636,6 +644,10 @@ clauses](#constraint-enforcement-and-the-match-type).
 
 The DBML export has no spelling for either clause and lists them among the
 losses it reports. The Go annotation and HCL exports write them.
+
+Under `PTAH_ATLAS_STRICT_COMPAT=1`, `ptah-compat` refuses a temporal key in a
+desired or an inspected schema; see
+[Strict CE mode](../../atlas/strict-ce-mode/#content-strict-mode-refuses).
 
 ## Unnamed constraints in a SQL file
 

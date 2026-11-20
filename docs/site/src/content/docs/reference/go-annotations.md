@@ -231,7 +231,7 @@ Maps a Go struct to a database table.
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. Needs `primary_key`; a field's `primary` key has no place for it. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |
-| `primary_key_without_overlaps` | No | Applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange. `true`/`false`; any other value is refused. Needs a `primary_key` of two or more columns. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
+| `primary_key_without_overlaps` | No | Applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange. Exactly `true` or `false`; any other value, an empty one or another case included, is refused. Needs a `primary_key` of two or more columns. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `schema` | No | Database schema name. |
 
 The table engine, character set, collation and `AUTO_INCREMENT` start are
@@ -450,11 +450,11 @@ Declares a table constraint.
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_delete_columns` | No | CSV list of local columns changed by PostgreSQL `ON DELETE SET NULL` or `SET DEFAULT`. |
 | `on_update` | No | Foreign key ON UPDATE action. |
-| `period` | No | Applies `PERIOD` to the last referencing and the last referenced column of a FOREIGN KEY. `true`/`false`; any other value is refused. Needs two or more columns on each side. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
+| `period` | No | Applies `PERIOD` to the last referencing and the last referenced column of a FOREIGN KEY. Exactly `true` or `false`; any other value, an empty one or another case included, is refused. Needs two or more columns on each side, and no `on_delete` or `on_update` but `NO ACTION`. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `table` | No | Explicit target table. |
 | `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY. |
 | `using` | No | PRIMARY KEY access method on MySQL and MariaDB (`BTREE` or `HASH`). Refused on UNIQUE, CHECK and FOREIGN KEY. |
-| `without_overlaps` | No | Applies `WITHOUT OVERLAPS` to the last column of a UNIQUE or PRIMARY KEY constraint, a range or multirange. `true`/`false`; any other value is refused. Needs two or more columns. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
+| `without_overlaps` | No | Applies `WITHOUT OVERLAPS` to the last column of a UNIQUE or PRIMARY KEY constraint, a range or multirange. Exactly `true` or `false`; any other value, an empty one or another case included, is refused. Needs two or more columns. A target whose capability set does not carry `temporal_keys` refuses it at render time; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 
 `include` belongs to a UNIQUE or a PRIMARY KEY constraint, and the two accept it
 on different targets:

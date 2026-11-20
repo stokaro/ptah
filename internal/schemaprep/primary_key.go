@@ -74,9 +74,11 @@ func primaryKeyPartsHaveAttributes(parts []schemamodel.PrimaryKeyPart) bool {
 
 // keyHasNoColumnSpelling reports what a column's key flag cannot say: an access
 // method, as in `PRIMARY KEY USING HASH`, a comment, the settings an owner keeps on
-// the key, and a key of a table a facet defines, such as a PostgreSQL partition,
-// which has no column list to write it in.
+// the key, WITHOUT OVERLAPS, which qualifies a column inside the key's list, and
+// a key of a table a facet defines, such as a PostgreSQL partition, which has no
+// column list to write it in.
 func keyHasNoColumnSpelling(table schemamodel.Table) bool {
 	_, defined := schemaext.DefiningKind(table.Facets)
-	return defined || table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" || !table.PrimaryKeyFacets.IsZero()
+	return defined || table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" ||
+		!table.PrimaryKeyFacets.IsZero() || table.PrimaryKeyWithoutOverlaps
 }

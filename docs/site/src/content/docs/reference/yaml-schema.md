@@ -272,7 +272,7 @@ Each entry under `tables` declares one table.
 | `engine` | Table engine value for the MySQL family; a PostgreSQL-family target names it on a `skipped` comment instead. |
 | `comment` | Table comment. |
 | `primary_key` | Table-level primary key column list. |
-| `primary_key_without_overlaps` | Applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange (PostgreSQL 18). See [Temporal keys](../../databases/postgresql/#temporal-keys). |
+| `primary_key_without_overlaps` | Applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange (PostgreSQL 18). A boolean; written with no value it is refused. See [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `checks` | Table-level check expressions. |
 | `custom_sql` | Custom SQL attached to the table. |
 | `columns` / `fields` | Ordered column map. Use one or the other. |
@@ -362,10 +362,10 @@ A constraint sits under `tables.<table>.constraints`, or under the top-level
 | `using` | Access method of a MySQL-family `PRIMARY KEY`. |
 | `foreign_table` | Referenced table of a foreign key. |
 | `foreign_column` | One referenced column. |
-| `foreign_columns` | Referenced columns of a composite foreign key. Use it instead of `foreign_column`. |
+| `foreign_columns` | Referenced columns of a composite foreign key, one for each of `columns`. Use it instead of `foreign_column`; the two together are refused. |
 | `on_delete` / `on_update` | Foreign key actions. |
-| `without_overlaps` | Applies `WITHOUT OVERLAPS` to the last column of a `PRIMARY KEY` or `UNIQUE` constraint, a range or multirange (PostgreSQL 18). Needs two or more columns. |
-| `period` | Applies `PERIOD` to the last referencing and the last referenced column of a `FOREIGN KEY` (PostgreSQL 18). Needs two or more columns on each side. |
+| `without_overlaps` | Applies `WITHOUT OVERLAPS` to the last column of a `PRIMARY KEY` or `UNIQUE` constraint, a range or multirange (PostgreSQL 18). Needs two or more columns and a boolean value; one written with no value is refused. |
+| `period` | Applies `PERIOD` to the last referencing and the last referenced column of a `FOREIGN KEY` (PostgreSQL 18). Needs two or more columns on each side, no `on_delete` or `on_update` but `NO ACTION`, and a boolean value; one written with no value is refused. |
 | `comment` | Constraint comment. |
 
 A target whose capability set does not carry `temporal_keys` refuses

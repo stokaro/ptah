@@ -68,6 +68,22 @@ func TestParseSource_TemporalKeys_FailurePath(t *testing.T) {
 			want:    `(?s).*without_overlaps="yes" is not a boolean; write true or false.*`,
 		},
 		{
+			name:    "an empty without_overlaps",
+			comment: `//ptah:schema:constraint name="u" type="UNIQUE" columns="id,valid_at" without_overlaps=""`,
+			want:    `(?s).*without_overlaps="" is not a boolean; write true or false.*`,
+		},
+		{
+			name:    "without_overlaps in another case",
+			comment: `//ptah:schema:constraint name="u" type="UNIQUE" columns="id,valid_at" without_overlaps="TRUE"`,
+			want:    `(?s).*without_overlaps="TRUE" is not a boolean; write true or false.*`,
+		},
+		{
+			name: "period with an action other than NO ACTION",
+			comment: `//ptah:schema:constraint name="f" type="FOREIGN KEY" columns="a,b" foreign_table="p" ` +
+				`foreign_columns="a,b" on_delete="CASCADE" period="true"`,
+			want: `(?s).*constraint "f" has period and ON DELETE CASCADE; a PERIOD foreign key takes only NO ACTION.*`,
+		},
+		{
 			name:    "period that is not a boolean",
 			comment: `//ptah:schema:constraint name="f" type="FOREIGN KEY" columns="a,b" foreign_table="p" foreign_columns="a,b" period="1"`,
 			want:    `(?s).*period="1" is not a boolean; write true or false.*`,

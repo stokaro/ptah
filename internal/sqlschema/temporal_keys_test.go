@@ -57,6 +57,17 @@ func TestRead_TemporalKeys_HappyPath(t *testing.T) {
 
 		database, _, err := sqlschema.Read([]byte(
 			"CREATE TABLE p (id int, valid_at daterange, CONSTRAINT p_pk PRIMARY KEY (id, valid_at WITHOUT OVERLAPS));\n"+
+				"ALTER TABLE p DROP CONSTRAINT p_pk;"), "postgres")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(database.Tables[0].PrimaryKey, qt.HasLen, 0)
+		c.Assert(database.Tables[0].PrimaryKeyWithoutOverlaps, qt.IsFalse)
+	})
+	t.Run("a key added after the drop is plain", func(t *testing.T) {
+		c := qt.New(t)
+
+		database, _, err := sqlschema.Read([]byte(
+			"CREATE TABLE p (id int, valid_at daterange, CONSTRAINT p_pk PRIMARY KEY (id, valid_at WITHOUT OVERLAPS));\n"+
 				"ALTER TABLE p DROP CONSTRAINT p_pk;\n"+
 				"ALTER TABLE p ADD PRIMARY KEY (id, valid_at);"), "postgres")
 

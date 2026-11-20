@@ -79,7 +79,8 @@ current schema IR:
   `granularity` in a nested `platform "clickhouse"` block, and the Ptah `ops`
   parity extension preserves the Go annotation operator class
 - Ptah `constraint` blocks when complete annotation metadata cannot fit the
-  Atlas-native `check`, `unique`, `primary_key`, or `foreign_key` shape
+  Atlas-native `check`, `unique`, `primary_key`, or `foreign_key` shape; on
+  PostgreSQL one also reads and writes `without_overlaps` and `period`
 - Ptah `exclude` blocks within a table for PostgreSQL exclusion constraints,
   with `name`, `using`, `elements` and optional `condition`, `deferrable`,
   `initially`, `comment` and `requires`
@@ -95,7 +96,8 @@ current schema IR:
   HCL reference gives. A target whose capability set lacks
   `deferrable_constraints` refuses a deferrable constraint by name rather than
   rendering it without the clause, and one that lacks `temporal_keys` refuses
-  `without_overlaps` and `period` the same way
+  `without_overlaps` and `period` the same way. A `period` key takes no
+  `on_delete` or `on_update` but `NO_ACTION`, which is all PostgreSQL accepts
 - `check` blocks with `expr`
 - `default = sql("...")` as a default expression
 - `row_security` blocks inside `table` with `enabled = true`, an optional

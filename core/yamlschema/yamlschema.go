@@ -213,8 +213,9 @@ type tableSpec struct {
 	Comment     stringScalar `yaml:"comment"`
 	PrimaryKey  stringList   `yaml:"primary_key"`
 	// PrimaryKeyWithoutOverlaps applies WITHOUT OVERLAPS to the last column of
-	// primary_key, a range or multirange (PostgreSQL 18).
-	PrimaryKeyWithoutOverlaps bool                       `yaml:"primary_key_without_overlaps"`
+	// primary_key, a range or multirange (PostgreSQL 18). It is read by
+	// temporalFlag, which refuses a key written with no value.
+	PrimaryKeyWithoutOverlaps yaml.Node                  `yaml:"primary_key_without_overlaps"`
 	Checks                    stringList                 `yaml:"checks"`
 	CustomSQL                 stringScalar               `yaml:"custom_sql"`
 	Columns                   orderedMap[fieldSpec]      `yaml:"columns"`
@@ -309,9 +310,9 @@ type constraintSpec struct {
 	ForeignColumns  stringList   `yaml:"foreign_columns"`
 	// WithoutOverlaps applies WITHOUT OVERLAPS to the last column of a PRIMARY
 	// KEY or UNIQUE, and Period applies PERIOD to the last columns of a
-	// FOREIGN KEY (PostgreSQL 18).
-	WithoutOverlaps bool         `yaml:"without_overlaps"`
-	Period          bool         `yaml:"period"`
+	// FOREIGN KEY (PostgreSQL 18). Both are read by temporalFlag.
+	WithoutOverlaps yaml.Node    `yaml:"without_overlaps"`
+	Period          yaml.Node    `yaml:"period"`
 	OnDelete        stringScalar `yaml:"on_delete"`
 	OnUpdate        stringScalar `yaml:"on_update"`
 	Comment         stringScalar `yaml:"comment"`
@@ -656,15 +657,13 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 			Comment:    string(table.Comment),
 			PrimaryKey: cleanStrings(table.PrimaryKey),
 
-			PrimaryKeyWithoutOverlaps: table.PrimaryKeyWithoutOverlaps,
-
 			Checks:    cleanStrings(table.Checks),
 			CustomSQL: string(table.CustomSQL),
 			Overrides: mergePlatform(withoutGroups(table.Platform, owners.PlatformGroups()), table.Overrides),
 
 			Facets: facets,
 		}
-		if err := temporalkeys.CheckPrimaryKey(declared); err != nil {
+		if err := temporalPrimaryKey(&declared, table.PrimaryKeyWithoutOverlaps); err != nil {
 			return err
 		}
 		db.Tables = append(db.Tables, declared)
@@ -1038,16 +1037,54 @@ func buildConstraint(key, structName, tableName string, spec constraintSpec) (sc
 		ForeignTable:    string(spec.ForeignTable),
 		ForeignColumn:   string(spec.ForeignColumn),
 		ForeignColumns:  cleanStrings(spec.ForeignColumns),
-		WithoutOverlaps: spec.WithoutOverlaps,
-		Period:          spec.Period,
 		OnDelete:        string(spec.OnDelete),
 		OnUpdate:        string(spec.OnUpdate),
 		Comment:         string(spec.Comment),
+	}
+	owner := fmt.Sprintf("constraint %q", key)
+	var err error
+	if constraint.WithoutOverlaps, err = temporalFlag(spec.WithoutOverlaps, owner, "without_overlaps"); err != nil {
+		return schemamodel.Constraint{}, err
+	}
+	if constraint.Period, err = temporalFlag(spec.Period, owner, "period"); err != nil {
+		return schemamodel.Constraint{}, err
 	}
 	if err := temporalkeys.CheckConstraint(constraint); err != nil {
 		return schemamodel.Constraint{}, err
 	}
 	return constraint, nil
+}
+
+// temporalPrimaryKey reads a table's primary_key_without_overlaps onto
+// declared and checks the key it qualifies.
+func temporalPrimaryKey(declared *schemamodel.Table, node yaml.Node) error {
+	var err error
+	if declared.PrimaryKeyWithoutOverlaps, err = temporalFlag(
+		node, fmt.Sprintf("table %q", declared.Name), "primary_key_without_overlaps",
+	); err != nil {
+		return err
+	}
+	return temporalkeys.CheckPrimaryKey(*declared)
+}
+
+// temporalFlag reads a temporal key attribute. An absent key is false, and a
+// value is read as every YAML boolean of a schema is. A key written with no
+// value is refused: YAML reads it as null, which a boolean takes as false, and
+// read as false it would declare a plain key, which accepts the overlapping
+// rows its author meant to forbid. The node is kept for that reason, since a
+// null never reaches a boolean's decoder.
+func temporalFlag(node yaml.Node, owner, name string) (bool, error) {
+	if node.Kind == 0 {
+		return false, nil
+	}
+	if node.Kind == yaml.ScalarNode && node.ShortTag() == "!!null" {
+		return false, fmt.Errorf("%s has %s with no value; write true or false", owner, name)
+	}
+	var value bool
+	if err := node.Decode(&value); err != nil {
+		return false, fmt.Errorf("%s: %s: %w", owner, name, err)
+	}
+	return value, nil
 }
 
 func validateConstraint(key, structName, tableName, constraintType string, columns []string, spec constraintSpec) error {
@@ -1064,9 +1101,7 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 		if len(columns) == 0 {
 			return fmt.Errorf("constraint %q requires columns", key)
 		}
-		if spec.ForeignTable == "" || (spec.ForeignColumn == "" && len(cleanStrings(spec.ForeignColumns)) == 0) {
-			return fmt.Errorf("constraint %q requires foreign_table and foreign_column or foreign_columns", key)
-		}
+		return validateForeignKeyColumns(key, columns, spec)
 	case "CHECK":
 		if spec.CheckExpression == "" {
 			return fmt.Errorf("constraint %q requires check", key)
@@ -1077,6 +1112,25 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 		return fmt.Errorf("constraint %q has unsupported type %q", key, constraintType)
 	}
 	return nil
+}
+
+// validateForeignKeyColumns refuses a foreign key whose referenced columns are
+// missing, written twice, or not paired one to one with columns. Given both
+// foreign_column and foreign_columns, one would be dropped without a word, and
+// a list of another length names a key the server refuses.
+func validateForeignKeyColumns(key string, columns []string, spec constraintSpec) error {
+	foreignColumns := cleanStrings(spec.ForeignColumns)
+	switch {
+	case spec.ForeignTable == "" || (spec.ForeignColumn == "" && len(foreignColumns) == 0):
+		return fmt.Errorf("constraint %q requires foreign_table and foreign_column or foreign_columns", key)
+	case spec.ForeignColumn != "" && len(foreignColumns) > 0:
+		return fmt.Errorf("constraint %q sets both foreign_column and foreign_columns; write one", key)
+	case len(foreignColumns) > 0 && len(foreignColumns) != len(columns):
+		return fmt.Errorf("constraint %q has %d columns and %d foreign_columns; each column needs one referenced column",
+			key, len(columns), len(foreignColumns))
+	default:
+		return nil
+	}
 }
 
 func (d document) addFunctions(db *schemamodel.Database, owners yamlext.Set) error {

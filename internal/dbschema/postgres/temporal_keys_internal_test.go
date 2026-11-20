@@ -48,8 +48,10 @@ func TestPostgresTemporalFromDefinition(t *testing.T) {
 			wantPeriod: true,
 		},
 		{
-			name: "a foreign key with actions", constraintType: "FOREIGN KEY",
-			definition: "FOREIGN KEY (pid, PERIOD valid_at) REFERENCES p(id, PERIOD valid_at) ON DELETE RESTRICT",
+			// PostgreSQL 18.6 takes no action but NO ACTION on a PERIOD key,
+			// and prints none; a deferral is what can follow the reference.
+			name: "a deferred foreign key", constraintType: "FOREIGN KEY",
+			definition: "FOREIGN KEY (pid, PERIOD valid_at) REFERENCES p(id, PERIOD valid_at) DEFERRABLE INITIALLY DEFERRED",
 			wantPeriod: true,
 		},
 		{

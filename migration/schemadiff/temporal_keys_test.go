@@ -41,6 +41,16 @@ func temporalDesired(primary, unique, period bool) *schemamodel.Database {
 	}
 }
 
+// columnKeyedDesired is temporalDesired with no temporal clause and the rooms
+// key declared as primary on each of its two columns rather than on the table.
+func columnKeyedDesired() *schemamodel.Database {
+	desired := temporalDesired(false, false, false)
+	desired.Tables[0].PrimaryKey = nil
+	desired.Fields[0].Primary = true
+	desired.Fields[1].Primary = true
+	return desired
+}
+
 // temporalLive is the same pair as PostgreSQL 18.6 reports it.
 func temporalLive(primary, unique, period bool) *catalog.Database {
 	parent, column, action := "rooms", "id", "NO ACTION"
@@ -131,6 +141,16 @@ func TestCompare_TemporalKeys_Changed(t *testing.T) {
 			// replacement and puts it back.
 			wantChanged: []string{"+bookings_room_fk", "+rooms_pkey", "-bookings_room_fk", "-rooms_pkey"},
 			wantAdded:   "rooms_pkey", wantOverlaps: true,
+		},
+		{
+			// A primary key declared on the two columns' flags is a plain key,
+			// and the flag cannot say WITHOUT OVERLAPS; against a temporal live
+			// key it is compared as the table's key, so the clause is dropped
+			// rather than matched by column names alone.
+			name: "a temporal primary key becomes a plain key on the columns' flags", desired: columnKeyedDesired(),
+			live:        temporalLive(true, false, false),
+			wantChanged: []string{"+bookings_room_fk", "+rooms_pkey", "-bookings_room_fk", "-rooms_pkey"},
+			wantAdded:   "rooms_pkey",
 		},
 		{
 			name: "a foreign key takes PERIOD", desired: temporalDesired(false, false, true),

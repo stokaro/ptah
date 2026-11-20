@@ -106,6 +106,11 @@ discarding it:
 - the pre-apply drift check an `atlas.hcl` env declares in
   `check "migrate_apply"`, which Atlas CE ignores; see
   [Pre-apply drift check](../project-config/#pre-apply-drift-check).
+- a PostgreSQL temporal key, `without_overlaps` or `period`, in a desired or an
+  inspected schema. Atlas CE accepts both attributes and plans a plain key,
+  refuses `type = GIST` on a key, and fails to inspect a database whose foreign
+  key uses `PERIOD`; see
+  [Temporal keys](../../databases/postgresql/#temporal-keys).
 
 Checksum-only migration reads preserve those bytes because they do not execute
 or reinterpret the body.

@@ -63,6 +63,57 @@ func TestRenderTemporalKeys_HappyPath(t *testing.T) {
 		`CONSTRAINT "bookings_room_fk" FOREIGN KEY ("room_id", PERIOD "valid_at") REFERENCES "rooms"("id", PERIOD "valid_at")`)
 }
 
+// TestRenderTemporalKeys_NamedPrimaryKeyConstraint renders a WITHOUT OVERLAPS
+// primary key declared as a named constraint, as a Go annotation's
+// `//ptah:schema:constraint type="PRIMARY KEY"` declares it, rather than as a
+// table attribute. The plain named key is the control.
+func TestRenderTemporalKeys_NamedPrimaryKeyConstraint(t *testing.T) {
+	tests := []struct {
+		name            string
+		withoutOverlaps bool
+		want            string
+	}{
+		{name: "temporal", withoutOverlaps: true, want: `CONSTRAINT "spaces_pk" PRIMARY KEY ("id", "valid_at" WITHOUT OVERLAPS)`},
+		{name: "plain", withoutOverlaps: false, want: `CONSTRAINT "spaces_pk" PRIMARY KEY ("id", "valid_at")`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Space", Name: "spaces"}},
+				Fields: []schemamodel.Field{
+					{StructName: "Space", Name: "id", Type: "INTEGER"},
+					{StructName: "Space", Name: "valid_at", Type: "DATERANGE"},
+				},
+				Constraints: []schemamodel.Constraint{{
+					StructName: "Space", Table: "spaces", Name: "spaces_pk", Type: "PRIMARY KEY",
+					Columns: []string{"id", "valid_at"}, WithoutOverlaps: test.withoutOverlaps,
+				}},
+			}
+
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, "postgres", capability.Postgres18())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, test.want)
+		})
+	}
+}
+
+// TestRenderTemporalKeys_PrimaryKeyParts renders a WITHOUT OVERLAPS primary
+// key the model carries as key parts, which a reader produces when it keeps a
+// column's options inside the key, rather than as a plain column list.
+func TestRenderTemporalKeys_PrimaryKeyParts(t *testing.T) {
+	c := qt.New(t)
+	schema := temporalSchema()
+	schema.Tables[0].PrimaryKey = nil
+	schema.Tables[0].PrimaryKeyParts = []schemamodel.PrimaryKeyPart{{Name: "id"}, {Name: "valid_at"}}
+
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(schema, "postgres", capability.Postgres18())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, `PRIMARY KEY ("id", "valid_at" WITHOUT OVERLAPS)`)
+}
+
 // TestRenderTemporalKeys_PlainKeysStayPlain is the control: the same tables
 // without the flags render no clause, so the clauses above come from the
 // flags.

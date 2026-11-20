@@ -273,7 +273,8 @@ func TestCompatSchemaApplyReadsAtlasTemporalKeysE2E(t *testing.T) {
 }
 
 // temporalKeysModels declares the rooms and bookings of temporalKeysSchema as
-// Go annotations.
+// Go annotations, and a spaces table whose WITHOUT OVERLAPS primary key is a
+// named constraint rather than a table attribute.
 const temporalKeysModels = `package models
 
 //ptah:schema:extension name="btree_gist" if_not_exists="true"
@@ -298,12 +299,28 @@ type Booking struct {
 	//ptah:schema:field name="valid_at" type="DATERANGE" not_null="true"
 	ValidAt string
 }
+
+//ptah:schema:table name="spaces"
+//ptah:schema:constraint name="spaces_pk" type="PRIMARY KEY" columns="id,valid_at" without_overlaps="true"
+type Space struct {
+	//ptah:schema:field name="id" type="INTEGER" not_null="true"
+	ID int
+	//ptah:schema:field name="valid_at" type="DATERANGE" not_null="true"
+	ValidAt string
+}
 `
+
+// spacesKeyReadBack is temporalKeysReadBack for the primary key of the spaces
+// table temporalKeysModels declares.
+const spacesKeyReadBack = `SELECT conname || ' ' || contype::text || ' conperiod=' || conperiod::text || ' ' || pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'spaces'::regclass AND contype = 'p'`
 
 // TestMigrationsGenerateTemporalKeysFromGoAnnotationsE2E plans the annotated
 // models into a versioned migration, runs it on an empty PostgreSQL 18
-// database, and plans again. The catalog holds the keys the SQL schema builds,
-// and the second plan writes no migration.
+// database, and plans again. The catalog holds the keys the SQL schema builds
+// and the named spaces key with its clause, and the second plan writes no
+// migration.
 func TestMigrationsGenerateTemporalKeysFromGoAnnotationsE2E(t *testing.T) {
 	c := qt.New(t)
 	database := temporalKeysDatabase(c, "")
@@ -322,7 +339,10 @@ func TestMigrationsGenerateTemporalKeysFromGoAnnotationsE2E(t *testing.T) {
 	c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
 	c.Assert(again.ExitCode, qt.Equals, 0, historyComment(again))
 	c.Assert(again.Stdout, qt.Contains, "no migration files generated")
-	c.Assert(catalogReadBack(c, database, []string{temporalKeysReadBack}), qt.DeepEquals, [][]string{temporalKeysHeld})
+	c.Assert(catalogReadBack(c, database, []string{temporalKeysReadBack, spacesKeyReadBack}), qt.DeepEquals, [][]string{
+		temporalKeysHeld,
+		{"spaces_pk p conperiod=true PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)"},
+	})
 }
 
 // temporalKeysOnlySchema is temporalKeysSchema without the extension, which
@@ -369,6 +389,59 @@ func TestSchemaApplyRefusesTemporalKeysWithoutTheCapabilityE2E(t *testing.T) {
 			c := qt.New(t)
 			database := createdDevDialectDatabase(c, dbtarget.URL(c, test.engine), test.drop, renameInPath)
 			schema := writeTemporalSchema(c, temporalKeysOnlySchema)
+
+			got := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", schema, "--auto-approve")
+
+			c.Assert(got.ExitCode, qt.Equals, 2, historyComment(got))
+			c.Assert(got.Stderr, qt.Contains, test.want)
+			c.Assert(postgresFamilyObjectCount(c, c.Context(), database), qt.Equals, 0)
+		})
+	}
+}
+
+// TestSchemaApplyRefusesAMalformedTemporalKeyE2E applies a schema file whose
+// temporal key PostgreSQL 18 refuses to an empty database: a key of one
+// column, which the server answers with "constraint using WITHOUT OVERLAPS
+// needs at least two columns", and a PERIOD foreign key that cascades, which it
+// answers with "unsupported ON DELETE action for foreign key constraint using
+// PERIOD". A primary key of one column written as `col PRIMARY KEY` without the
+// clause built a plain key that every later plan failed on. The refusal comes
+// before any statement, so the database stays empty.
+func TestSchemaApplyRefusesAMalformedTemporalKeyE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{
+			name: "a primary key",
+			sql:  "CREATE TABLE p (valid_at daterange, PRIMARY KEY (valid_at WITHOUT OVERLAPS));\n",
+			want: `table "p" has primary_key_without_overlaps and a primary_key of fewer than two columns`,
+		},
+		{
+			name: "a unique key",
+			sql:  "CREATE TABLE p (valid_at daterange, CONSTRAINT p_uq UNIQUE (valid_at WITHOUT OVERLAPS));\n",
+			want: `constraint "p_uq" has without_overlaps and fewer than two columns`,
+		},
+		{
+			name: "a foreign key",
+			sql: "CREATE TABLE p (id int4range, valid_at daterange, PRIMARY KEY (id, valid_at WITHOUT OVERLAPS));\n" +
+				"CREATE TABLE c (valid_at daterange, CONSTRAINT c_fk FOREIGN KEY (PERIOD valid_at) REFERENCES p (PERIOD valid_at));\n",
+			want: `constraint "c_fk" has period and needs the same number of columns, at least two, on each side`,
+		},
+		{
+			name: "a foreign key that cascades",
+			sql: "CREATE TABLE p (id int4range, valid_at daterange, PRIMARY KEY (id, valid_at WITHOUT OVERLAPS));\n" +
+				"CREATE TABLE c (id int4range, valid_at daterange, CONSTRAINT c_fk FOREIGN KEY (id, PERIOD valid_at) " +
+				"REFERENCES p (id, PERIOD valid_at) ON DELETE CASCADE);\n",
+			want: `constraint "c_fk" has period and ON DELETE CASCADE; a PERIOD foreign key takes only NO ACTION`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := temporalKeysDatabase(c, "")
+			schema := writeTemporalSchema(c, test.sql)
 
 			got := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", schema, "--auto-approve")
 

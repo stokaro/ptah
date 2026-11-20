@@ -87,6 +87,7 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/temporalkeys"
 )
 
 // SupportedDialects returns a list of all supported database dialects.
@@ -2065,10 +2066,28 @@ func refuseNodeDeferral(dialect string, caps capability.Capabilities, node *ast.
 }
 
 // validateDeclaredTemporalKeys refuses a WITHOUT OVERLAPS key and a PERIOD
-// foreign key the target cannot write, before any statement is built, for the
-// reason validateDeclaredNullsDistinct gives. A foreign key's PERIOD is asked
-// with its other clauses, in validateDeclaredEnforcementAndMatch.
+// foreign key that no server builds, and then the ones the target cannot
+// write, before any statement is built, for the reason
+// validateDeclaredNullsDistinct gives. A foreign key's PERIOD capability is
+// asked with its other clauses, in validateDeclaredEnforcementAndMatch.
+//
+// The shape is checked here, with the one predicate the Go annotation, YAML and
+// HCL readers call, because every reader and every provider reaches this
+// point: the SQL reader copies the clause from the statement it parsed, and a
+// key of one column it let through rendered as `col PRIMARY KEY` without the
+// clause, so the first apply built a plain key and every later plan failed on
+// the server (stokaro/ptah#6330).
 func validateDeclaredTemporalKeys(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := temporalkeys.CheckPrimaryKey(table); err != nil {
+			return &ptaherr.RenderError{Dialect: dialect, Err: err}
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if err := temporalkeys.CheckConstraint(constraint); err != nil {
+			return &ptaherr.RenderError{Dialect: dialect, Err: err}
+		}
+	}
 	for _, table := range database.Tables {
 		if !table.PrimaryKeyWithoutOverlaps {
 			continue

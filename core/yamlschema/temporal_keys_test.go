@@ -86,6 +86,41 @@ func TestParse_TemporalKeys_FailurePath(t *testing.T) {
 			want: `(?s).*cannot unmarshal !!str .maybe. into bool.*`,
 		},
 		{
+			name: "without_overlaps with no value",
+			yaml: "constraints:\n  u:\n    table: t\n    type: UNIQUE\n    columns: [a, b]\n    without_overlaps:\n",
+			want: `(?s).*constraint "u" has without_overlaps with no value; write true or false`,
+		},
+		{
+			name: "period written as null",
+			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
+				"    foreign_columns: [a, b]\n    period: ~\n",
+			want: `(?s).*constraint "f" has period with no value; write true or false`,
+		},
+		{
+			name: "primary_key_without_overlaps written as null",
+			yaml: "tables:\n  t:\n    primary_key: [id, valid_at]\n    primary_key_without_overlaps: null\n" +
+				"    columns:\n      id: {type: INTEGER}\n      valid_at: {type: DATERANGE}\n",
+			want: `(?s).*table "t" has primary_key_without_overlaps with no value; write true or false`,
+		},
+		{
+			name: "period with an action other than NO ACTION",
+			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
+				"    foreign_columns: [a, b]\n    on_update: SET DEFAULT\n    period: true\n",
+			want: `(?s).*constraint "f" has period and ON UPDATE SET DEFAULT; a PERIOD foreign key takes only NO ACTION`,
+		},
+		{
+			name: "both foreign_column and foreign_columns",
+			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a]\n    foreign_table: p\n" +
+				"    foreign_column: x\n    foreign_columns: [y]\n",
+			want: `(?s).*constraint "f" sets both foreign_column and foreign_columns; write one`,
+		},
+		{
+			name: "foreign_columns of another length than columns",
+			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n" +
+				"    foreign_columns: [x]\n",
+			want: `(?s).*constraint "f" has 2 columns and 1 foreign_columns; each column needs one referenced column`,
+		},
+		{
 			name: "a foreign key naming neither foreign_column nor foreign_columns",
 			yaml: "constraints:\n  f:\n    table: t\n    type: FOREIGN KEY\n    columns: [a, b]\n    foreign_table: p\n",
 			want: `(?s).*constraint "f" requires foreign_table and foreign_column or foreign_columns`,

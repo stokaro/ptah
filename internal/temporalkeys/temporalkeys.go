@@ -36,31 +36,60 @@ func CheckConstraint(constraint schemamodel.Constraint) error {
 		len(constraint.ForeignColumnsOrDefault()) != len(constraint.Columns)):
 		return fmt.Errorf("constraint %q has period and needs the same number of columns, at least two, on each side",
 			constraint.Name)
+	case constraint.Period && !noAction(constraint.OnDelete):
+		return periodActionError(constraint.Name, "ON DELETE", constraint.OnDelete)
+	case constraint.Period && !noAction(constraint.OnUpdate):
+		return periodActionError(constraint.Name, "ON UPDATE", constraint.OnUpdate)
 	default:
 		return nil
 	}
 }
 
-// Flag reads the value of a temporal attribute of a Go annotation, such as
-// without_overlaps="true". It takes true and false in any case, and an empty
-// value as false; anything else is refused. Read as false, a misspelled value
-// would declare a plain key, which accepts the overlapping rows its author
-// meant to forbid.
-func Flag(attribute, value string) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "false":
+// noAction reports a referential action that leaves the check to the end of
+// the statement: none written, or NO ACTION in any case, with a space or the
+// underscore of an HCL document. It is the only action a PERIOD foreign key
+// takes; PostgreSQL 18.6 and 19.0 answer "unsupported ON DELETE action for
+// foreign key constraint using PERIOD" to RESTRICT, CASCADE, SET NULL and SET
+// DEFAULT, and the same for ON UPDATE.
+func noAction(action string) bool {
+	action = spelledAction(action)
+	return action == "" || action == "NO ACTION"
+}
+
+// spelledAction is action in the SQL spelling: upper case, one space between
+// words.
+func spelledAction(action string) string {
+	return strings.ToUpper(strings.Join(strings.Fields(strings.ReplaceAll(action, "_", " ")), " "))
+}
+
+func periodActionError(name, clause, action string) error {
+	return fmt.Errorf("constraint %q has period and %s %s; a PERIOD foreign key takes only NO ACTION",
+		name, clause, spelledAction(action))
+}
+
+// Flag reads the temporal attribute name of a Go annotation's attributes, such
+// as without_overlaps="true". An absent attribute is false. A present one must
+// be exactly true or false, the spelling every boolean annotation attribute
+// reads as true; anything else, an empty value or another case included, is
+// refused. Read as false, it would declare a plain key, which accepts the
+// overlapping rows its author meant to forbid.
+func Flag(attributes map[string]string, name string) (bool, error) {
+	value, present := attributes[name]
+	switch {
+	case !present || value == "false":
 		return false, nil
-	case "true":
+	case value == "true":
 		return true, nil
 	default:
-		return false, fmt.Errorf("%s=%q is not a boolean; write true or false", attribute, value)
+		return false, fmt.Errorf("%s=%q is not a boolean; write true or false", name, value)
 	}
 }
 
 // CheckPrimaryKey refuses WITHOUT OVERLAPS on a table's primary key of fewer
-// than two columns. It answers nil for a table that does not ask for it.
+// than two columns, counted in the column list or in the key parts, whichever
+// the model carries. It answers nil for a table that does not ask for it.
 func CheckPrimaryKey(table schemamodel.Table) error {
-	if table.PrimaryKeyWithoutOverlaps && len(table.PrimaryKey) < minimumKeyColumns {
+	if table.PrimaryKeyWithoutOverlaps && max(len(table.PrimaryKey), len(table.PrimaryKeyParts)) < minimumKeyColumns {
 		return fmt.Errorf("table %q has primary_key_without_overlaps and a primary_key of fewer than two columns, "+
 			"the last one a range or multirange", table.Name)
 	}

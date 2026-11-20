@@ -38,6 +38,8 @@ table "bookings" {
   foreign_key "bookings_room_fk" {
     columns = [column.room_id, column.valid_at]
     ref_columns = [table.rooms.column.id, table.rooms.column.valid_at]
+    on_update = NO_ACTION
+    on_delete = NO_ACTION
     period = true
   }
 }
@@ -175,6 +177,16 @@ func TestParse_TemporalKeys_FailurePath(t *testing.T) {
     period = true
   }`),
 			want: `(?s).*foreign_key "f" has period and fewer than two columns.*`,
+		},
+		{
+			name: "period with an action other than NO ACTION",
+			hcl: twoColumnTable(`  foreign_key "f" {
+    columns = [column.a, column.b]
+    ref_columns = [table.t.column.a, table.t.column.b]
+    on_delete = CASCADE
+    period = true
+  }`),
+			want: `(?s).*constraint "f" has period and ON DELETE CASCADE; a PERIOD foreign key takes only NO ACTION.*`,
 		},
 	}
 	for _, test := range tests {

@@ -1755,7 +1755,7 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 		localColumns = append(localColumns, column.column)
 	}
 
-	return foreignKeySpec{
+	spec := foreignKeySpec{
 		name:           block.Labels[0],
 		columns:        localColumns,
 		foreignTable:   foreignTable,
@@ -1765,7 +1765,16 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 		deferrable:     deferrable,
 		initially:      initially,
 		period:         period,
-	}, nil
+	}
+	// The shared check refuses the actions a PERIOD key cannot take, as it
+	// does for the constraint block and the other sources.
+	if err := temporalkeys.CheckConstraint(schemamodel.Constraint{
+		Name: spec.name, Type: "FOREIGN KEY", Columns: spec.columns, ForeignTable: spec.foreignTable,
+		ForeignColumns: spec.foreignColumns, OnDelete: spec.onDelete, OnUpdate: spec.onUpdate, Period: spec.period,
+	}); err != nil {
+		return foreignKeySpec{}, p.blockError(block, "%v", err)
+	}
+	return spec, nil
 }
 
 // parseForeignKeyDeferral reads the two attributes that decide when a foreign
