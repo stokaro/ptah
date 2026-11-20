@@ -2046,6 +2046,12 @@ membership in another declared role of a role that states no `member_of`:
 UNMANAGED: role "app" is a member of the declared role "readers", and its declaration states no member_of, so the plan keeps the membership; state member_of on "app" to manage its memberships, or an empty list to revoke them all
 ```
 
+The line is written on every run until the role states `member_of`. To keep a
+membership granted outside the schema and stop the line, write the list the
+server already holds, such as `member_of: [readers]` for the role above. The plan
+then has nothing to change, and the role owns its memberships from that point
+on.
+
 ```go
 //ptah:schema:role name="readers"
 //ptah:schema:role name="vault" login="true" member_of="readers(admin;inherit=false)"
