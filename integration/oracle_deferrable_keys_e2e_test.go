@@ -106,6 +106,10 @@ func TestOracleDeferrableKeysConvergeE2E(t *testing.T) {
 	primary := slices.IndexFunc(changed.Tables, func(table catalog.Table) bool { return table.Name == "ORA_SLOTS" })
 	c.Assert(primary, qt.Not(qt.Equals), -1)
 	c.Assert(changed.Tables[primary].Columns[0].IsPrimaryKey, qt.IsTrue)
+	resettled, err := schemadiff.CompareWithDatabase(ctx, conn, plain, changed, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	c.Assert(resettled.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(resettled.ConstraintsRemoved, qt.HasLen, 0)
 }
 
 // applyOraclePlan plans declared against the database and runs every
