@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -87,6 +88,11 @@ type AppliedResult struct {
 	// not describe, so the comparison could not say whether the target holds
 	// it.
 	Undecided []Mismatch `json:"undecided,omitempty"`
+	// Diff is the change that brings the target to the schema its applied
+	// history produces, which Drift itemizes. It is nil when Drift is empty.
+	// It is not serialized: its owner changes encode only through the
+	// runtime's feature codecs.
+	Diff *difftypes.SchemaDiff `json:"-"`
 }
 
 // Clean reports whether the target matched its history over everything the
@@ -214,7 +220,7 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 		)
 	}
 	if diff.HasChanges() {
-		result.Drift = collectMismatches(diff)
+		result.Drift, result.Diff = collectMismatches(diff), diff
 	}
 	result.Undecided = undecidedMismatches(undecided)
 	return result, nil

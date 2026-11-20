@@ -23,6 +23,7 @@ import (
 // that must also answer --var.
 var projectEnvCommandPaths = []string{
 	"ptah migrations down",
+	"ptah migrations drift",
 	"ptah migrations generate",
 	"ptah migrations lint",
 	"ptah migrations log",

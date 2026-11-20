@@ -67,9 +67,10 @@ func TestVerifyAppliedRepeatables_FailurePath(t *testing.T) {
 		result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase, withRepeatables(history)))
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(result, qt.DeepEquals, shadow.AppliedResult{Drift: []shadow.Mismatch{
+		c.Assert(result.Drift, qt.DeepEquals, []shadow.Mismatch{
 			{Kind: "missing_view", Object: "user_emails", Message: "missing view user_emails"},
-		}})
+		})
+		c.Assert(result.Diff.HasChanges(), qt.IsTrue)
 		c.Assert(sqliteTables(c, shadowDatabase), qt.HasLen, 0)
 	})
 
@@ -83,9 +84,10 @@ func TestVerifyAppliedRepeatables_FailurePath(t *testing.T) {
 		result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase, nil))
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(result, qt.DeepEquals, shadow.AppliedResult{Drift: []shadow.Mismatch{
+		c.Assert(result.Drift, qt.DeepEquals, []shadow.Mismatch{
 			{Kind: "extra_view", Object: "user_emails", Message: "extra view user_emails"},
-		}})
+		})
+		c.Assert(result.Diff.HasChanges(), qt.IsTrue)
 		c.Assert(sqliteTables(c, shadowDatabase), qt.HasLen, 0)
 	})
 }

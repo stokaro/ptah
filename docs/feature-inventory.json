@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 103,
+  "claimed": 104,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -266,6 +266,12 @@
       "kind": "native-verb",
       "surface": "ptah migrations down",
       "claimed_by": "docs/site/src/content/docs/versioned/rollback.mdx"
+    },
+    {
+      "id": "cli-ptah-migrations-drift",
+      "kind": "native-verb",
+      "surface": "ptah migrations drift",
+      "claimed_by": "docs/site/src/content/docs/versioned/drift.md"
     },
     {
       "id": "cli-ptah-migrations-edit",

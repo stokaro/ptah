@@ -61,6 +61,7 @@ says it:
 - `ptah schema plan --json`
 - `ptah schema apply --json`
 - `ptah migrations status --json`
+- `ptah migrations drift --json`
 - `ptah migrations up --json`
 
 The document carries an `error` object with a `message`, the sentence the
@@ -314,6 +315,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations down` | Requested rollback applied, or dry-run output printed, including when the migration log lost an entry, which a closing notice reports. | Not used. | Usage error, connection failure, migration directory error, a dirty revision an earlier run left, whatever the target, pre-flight hook failure, lock failure, or rollback failure. |
 | `ptah migrations repair` | Migration revision repaired, or dry-run output printed. | Not used. | Usage error, connection failure, revision lookup failure, a dirty revision that records nothing applied and no statement in flight, and so has nothing to finish, or repair failure. |
 | `ptah migrations status` | Status printed, including pending migrations by default. | The database is not up to date with the directory when `--exit-code` is set: pending migrations exist, an applied migration's file no longer accounts for the checksum the database recorded, or the directory holds no file for an applied migration at all. | Usage error, connection failure, migration directory error, or status-read failure. |
+| `ptah migrations drift` | The database matches the schema its applied migrations produce. | The database differs from that schema; the report names each difference and the statements that would bring the database back. | Usage error, connection failure, migration directory error, integrity verification failure, lock failure, or a comparison that could not decide: the history cannot be replayed, the shadow database cannot be used, or the read could not describe an object the applied migrations create. |
 | `ptah migrations ls` | Migration files listed, or nothing printed when the directory holds none. | Not used. | Usage error, invalid directory, invalid migration format, or integrity verification failure under `--verify-sum`. |
 | `ptah migrations show` | Migration SQL printed. | Not used. | Usage error, invalid directory or version, a version the directory does not hold, a version with no migration in the requested direction, or integrity verification failure under `--verify-sum`. |
 | `ptah migrations hash` | Integrity file written. | Not used. | Usage error, invalid directory, invalid migration format, or write error. |

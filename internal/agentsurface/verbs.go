@@ -158,6 +158,11 @@ var verbs = map[string]Verb{
 		"writes an empty up and down migration file pair for someone to fill in by hand"},
 	"migrations data": {TargetReads, ScratchNone,
 		"reads reference and seed data from the target and writes a migration file for the drift"},
+	"migrations drift": {TargetReads, ScratchRewrites,
+		"reports whether the target still holds the schema its applied migrations produce: it " +
+			"replays the applied history into an ephemeral shadow database and compares the target " +
+			"with it, under the migration lock; the target is only read, and the statements it " +
+			"prints are not run"},
 	"migrations down": {TargetWrites, ScratchRewrites,
 		"rolls back migrations against the target, after replaying and verifying the rollback " +
 			"plan in an ephemeral shadow database"},

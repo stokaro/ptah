@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/cli/migratestatus"
 	"ptah.run/internal/cli/migrateup"
+	"ptah.run/internal/cli/migrationsdrift"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/migration/migrator"
@@ -61,6 +62,11 @@ func reportProviderFailure(cmd *cobra.Command, err error) error {
 				errorkind.Failure
 				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 			}{migratestatus.NewFailureDocument(err), diagnostic}
+		case "drift":
+			report = struct {
+				errorkind.Failure
+				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+			}{migrationsdrift.NewFailureDocument(err), diagnostic}
 		default:
 			report = struct {
 				Error              string                         `json:"error"`

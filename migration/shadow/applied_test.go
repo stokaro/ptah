@@ -193,7 +193,9 @@ func TestVerifyAppliedFailurePathReportsDrift(t *testing.T) {
 			result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase, nil))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(result, qt.DeepEquals, shadow.AppliedResult{Drift: test.want})
+			c.Assert(result.Drift, qt.DeepEquals, test.want)
+			c.Assert(result.Undecided, qt.HasLen, 0)
+			c.Assert(result.Diff.HasChanges(), qt.IsTrue)
 			c.Assert(result.Clean(), qt.IsFalse)
 			c.Assert(sqliteTables(c, shadowDatabase), qt.HasLen, 0)
 		})

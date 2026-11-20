@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/cli/migratetag"
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/cli/migratevalidate"
+	"ptah.run/internal/cli/migrationsdrift"
 	"ptah.run/internal/cli/migrationsimport"
 	"ptah.run/internal/cli/migrationspull"
 	"ptah.run/internal/cli/migrationspush"
@@ -64,6 +65,8 @@ separate ptah-compat binary.`,
 	cmd.AddCommand(providerMigrationCommand(migratedown.NewMigrateDownCommand(), "Roll back migrations", "Roll back migrations against a live database."))
 	cmd.AddCommand(migraterollout.NewRolloutCommand())
 	cmd.AddCommand(providerMigrationCommand(migratestatus.NewMigrateStatusCommand(), "Show migration status", "Show migration status for a live database and migrations directory."))
+	// Registered with its own help, which states the exit status a gate reads.
+	cmd.AddCommand(providercommand.Configure(migrationsdrift.NewMigrationsDriftCommand(), reportProviderFailure))
 	cmd.AddCommand(migrationCommand(migratels.NewMigrateLsCommand(), "List the migration files in a directory", "List the migration files a migration directory holds, without contacting a database."))
 	cmd.AddCommand(migrationCommand(migrateshow.NewMigrateShowCommand(), "Print the SQL of one or more migrations", "Print the SQL a migration directory stores, without contacting a database."))
 	cmd.AddCommand(providerMigrationCommand(migratebaseline.NewMigrateBaselineCommand(), "Record existing migrations as applied", "Record existing migrations as already applied in the revision table."))

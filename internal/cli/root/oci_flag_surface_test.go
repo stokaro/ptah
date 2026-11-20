@@ -417,6 +417,15 @@ func ociMigrationDirVerbs() []ociSourceVerb {
 			},
 		},
 		{
+			verb: "migrations drift",
+			args: func(reference string) []string {
+				return []string{
+					"migrations", "drift", "--migrations-dir", reference,
+					"--db-url", "sqlite://:memory:", "--shadow-db", "sqlite://:memory:", "--plain-http",
+				}
+			},
+		},
+		{
 			verb: "migrations ls",
 			args: func(reference string) []string {
 				return []string{"migrations", "ls", "--migrations-dir", reference, "--plain-http"}
