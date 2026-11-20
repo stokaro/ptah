@@ -30,6 +30,43 @@ func TestWriter_CommentLinesStayOneLine(t *testing.T) {
 	})
 }
 
+// TestWriter_CommentLinesCarryNoDirective holds a comment line to text no
+// migration file reader takes for a directive. The whole line is neutralized,
+// so a directive word in the format is broken as well as one in an argument.
+func TestWriter_CommentLinesCarryNoDirective(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		args   []any
+		want   string
+	}{
+		{name: "a Ptah directive in an argument", format: "-- %s", args: []any{"+ptah no_transaction"}, want: "-- + ptah no_transaction\n"},
+		{name: "an Atlas directive in an argument", format: "-- table %s is skipped", args: []any{"atlas:txmode none"}, want: "-- table atlas :txmode none is skipped\n"},
+		{name: "a directive in the format", format: "-- +ptah %s", args: []any{"no_transaction"}, want: "-- + ptah no_transaction\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var w bufwriter.Writer
+
+			w.WriteLinef(test.format, test.args...)
+
+			c.Assert(w.Output(), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestWriter_StatementLinesKeepDirectiveWords is the control: a line that is
+// not a comment is SQL and keeps its bytes.
+func TestWriter_StatementLinesKeepDirectiveWords(t *testing.T) {
+	c := qt.New(t)
+	var w bufwriter.Writer
+
+	w.WriteLinef("COMMENT ON TABLE t IS '%s';", "+ptah atlas:txmode none")
+
+	c.Assert(w.Output(), qt.Equals, "COMMENT ON TABLE t IS '+ptah atlas:txmode none';\n")
+}
+
 // nilStringer reads a field, so calling String on a nil pointer panics, which
 // fmt prints as <nil>.
 type nilStringer struct{ text string }

@@ -93,3 +93,34 @@ func TestLiveObjectNameIsNotAFileDirectiveE2E(t *testing.T) {
 		})
 	}
 }
+
+// TestAtlasChangeHeadingIsNotAFileDirectiveE2E diffs a table whose name spells
+// `atlas:txmode none` with ptah-compat. The file opens with the heading
+// `-- Create "atlas:txmode none" table` directly above its statement, the shape
+// the community binary writes and reads no directive from. Read as one, the
+// heading makes the file unreadable (`unknown txmode`); the file applies and
+// the table reads back.
+func TestAtlasChangeHeadingIsNotAFileDirectiveE2E(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	binary := filepath.Join(t.TempDir(), "atlas")
+	buildPtahCompat(qt.New(t), ctx, e2eRepoRoot(t), binary)
+	c := qt.New(t)
+	dbURL := renderOmissionDatabases["sqlite"](c)
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(`CREATE TABLE "atlas:txmode none" (id int PRIMARY KEY);`+"\n"), 0o600), qt.IsNil)
+
+	stdout, stderr, err := runCLIProcess(ctx, dir, binary, "migrate", "diff", "first", "--dir", "file://migrations",
+		"--to", "file://schema.sql", "--dev-url", "sqlite://dev?mode=memory")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	files, globErr := filepath.Glob(filepath.Join(dir, "migrations", "*_first.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	written, readErr := os.ReadFile(files[0])
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(written), qt.Contains, "-- Create \"atlas:txmode none\" table\nCREATE TABLE")
+	stdout, stderr, err = runCLIProcess(ctx, dir, binary, "migrate", "apply", "--dir", "file://migrations", "--url", dbURL)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(readOmissionBack(c, ctx, dbURL, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'atlas:txmode none'"), qt.Equals, "1")
+}
