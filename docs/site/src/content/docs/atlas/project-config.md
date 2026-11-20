@@ -436,6 +436,20 @@ env "local" {
 }
 ```
 
+Four functions build a database URL from parts that cannot be written
+literally, and evaluate the same way in a schema file:
+
+| Function | Result |
+|---|---|
+| `urlescape(s)` | `s` escaped for a query value or a user name: `a b@c` becomes `a+b%40c`. |
+| `urluserinfo(url, user, pass)` | `url` with its user and password replaced and escaped. Without `pass`, or with `null`, the URL keeps the user alone. |
+| `urlqueryset(url, key, value)` | `url` with one query parameter set, replacing every value it had; the query is written back sorted by key. |
+| `urlsetpath(url, path)` | `url` with its path, the database name in most URLs, replaced. |
+
+`urlqueryset` refuses a URL whose query does not decode, such as `?%zz=1`.
+The community binary drops the pair it cannot decode and keeps going, which
+removes part of the URL the author wrote.
+
 Three functions mean something different here than in a schema file, because
 their answer depends on where the file being evaluated lives: `file` and
 `fileset` read the directory holding `atlas.hcl`, and `getenv` reads the
@@ -589,14 +603,53 @@ or a local value references it. Dependencies between locals and data sources
 run first. Declaring an unreferenced source does not open a database, start a
 program, read a runtime variable, or render a directory.
 
-The lazy set also recognizes `remote_schema`, `aws_rds_token`, and
-`gcp_cloudsql_token`, matching the community binary's treatment of valid
-unreferenced blocks. Referencing `aws_rds_token` or `gcp_cloudsql_token` still
-fails explicitly because Ptah does not implement it; `remote_schema` resolves
-through Ptah's OCI backend (see [Remote schema data
-source](#remote-schema-data-source)), and `composite_schema` merges its parts
-(see [Composite schema data source](#composite-schema-data-source)). An unknown
-type fails during structural validation even when unreferenced.
+The lazy set also recognizes `remote_schema`, `composite_schema` and the
+three cloud token sources. `remote_schema` resolves through Ptah's OCI backend
+(see [Remote schema data source](#remote-schema-data-source)),
+`composite_schema` merges its parts (see [Composite schema data
+source](#composite-schema-data-source)), and a token source mints a password
+(see [Cloud database tokens](#cloud-database-tokens)). An unknown type fails
+during structural validation even when unreferenced.
+
+## Cloud database tokens
+
+Three data sources mint a short-lived password from the cloud identity the
+command runs as, so the URL in `atlas.hcl` holds no static password. Each one
+is minted only when a selected value references it, and the token joins the
+values every diagnostic is scrubbed of, in its URL-escaped spellings too.
+
+| Data source | Token | Attributes |
+|---|---|---|
+| `aws_rds_token` | An RDS IAM authentication token, signed locally from the AWS credential chain. | `endpoint` and `username` required; `region` and `profile` optional. |
+| `gcp_cloudsql_token` | An OAuth2 access token from Google application default credentials. | None. |
+| `azure_db_token` | A Microsoft Entra access token from the Azure default credential chain. | `tenant_id` and `scope`, both optional. |
+
+`azure_db_token` reads the `AZURE_*` environment variables, a workload
+identity, a managed identity, and an Azure CLI, Azure Developer CLI or Azure
+PowerShell login, in that order. Its default `scope` is
+`https://ossrdbms-aad.database.windows.net/.default`, the resource Azure
+Database for PostgreSQL and Azure Database for MySQL share. Another service
+names its own, such as `https://token.postgres.cosmos.azure.com/.default` for
+Azure Cosmos DB for PostgreSQL. An Entra user name holds `@`, so write the URL
+with `urluserinfo`, which escapes both parts:
+
+```hcl
+data "azure_db_token" "db" {}
+
+env "azure" {
+  url = urluserinfo(
+    "postgres://myserver.postgres.database.azure.com:5432/app?sslmode=require",
+    "app@contoso.onmicrosoft.com",
+    data.azure_db_token.db,
+  )
+}
+```
+
+An attribute other than `tenant_id` and `scope` is refused, so a misspelled
+`tenant` cannot sign in to the default tenant without a word. The community
+binary has no handler for `azure_db_token` and refuses a project that declares
+one, with `missing data source handler for "azure_db_token"`. Under
+`PTAH_ATLAS_STRICT_COMPAT=1`, `ptah-compat` refuses it the same way.
 
 ## Composite schema data source
 

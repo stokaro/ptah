@@ -506,10 +506,10 @@ a global `lint` or `diff` block, a top-level attribute, or a `locals` value
 references them. Dependencies between locals and data sources are evaluated
 first. A declared but unreferenced recognized source is not opened or executed.
 This lazy behavior also applies to `hcl_schema`, `external_schema`,
-`remote_dir`, `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`;
-`aws_rds_token` and `gcp_cloudsql_token` still fail explicitly when a selected
-expression references them. An unknown source type fails during structural
-validation even when unreferenced.
+`remote_dir`, `remote_schema`, `aws_rds_token`, `gcp_cloudsql_token` and
+`azure_db_token`; a referenced token source mints a short-lived password from
+the cloud identity the command runs as. An unknown source type fails during
+structural validation even when unreferenced.
 
 A referenced `composite_schema` merges its parts as repeated `--schema-file`
 sources merge, with each labeled part checked against the schema its label
@@ -724,8 +724,8 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   print that URL or path.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
-Referenced `aws_rds_token` and `gcp_cloudsql_token` sources, and
-Cloud-specific sources outside the recognized lazy set, still fail explicitly.
+A cloud-specific source outside the recognized lazy set fails during
+structural validation.
 
 ## Env selection
 

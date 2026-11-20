@@ -57,6 +57,8 @@ func (p atlasParser) resolveAtlasDataSource(block *hclsyntax.Block) (cty.Value, 
 		return p.templateDirectoryDataSource(block)
 	case "aws_rds_token":
 		return p.awsRDSTokenDataSource(block)
+	case "azure_db_token":
+		return p.azureDBTokenDataSource(block)
 	case "composite_schema":
 		return p.compositeSchemaDataSource(block)
 	case "gcp_cloudsql_token":
@@ -664,6 +666,8 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"path"}, "path", "vars")
 	case "aws_rds_token":
 		return validateAWSRDSTokenShape(block)
+	case "azure_db_token":
+		return validateAzureDBTokenShape(block)
 	case "composite_schema":
 		return validateCompositeSchemaShape(block)
 	case "gcp_cloudsql_token":
@@ -814,11 +818,21 @@ func (p atlasParser) optionalAtlasDataSourceString(
 
 // recordSensitiveValue adds a minted credential to the set every diagnostic is
 // sanitized against.
+//
+// The escaped spellings join it too. A token reaches a URL through
+// `urlescape` or `urluserinfo`, which rewrite every character a URL reserves,
+// and a diagnostic quoting that URL would otherwise carry the token in a form
+// the literal replacement does not recognize.
 func (p atlasParser) recordSensitiveValue(value string) {
 	if p.sensitiveValues == nil || value == "" {
 		return
 	}
-	*p.sensitiveValues = append(*p.sensitiveValues, value)
+	*p.sensitiveValues = append(*p.sensitiveValues,
+		value,
+		url.QueryEscape(value),
+		url.PathEscape(value),
+		strings.TrimPrefix(url.UserPassword("", value).String(), ":"),
+	)
 }
 
 // validateAWSRDSTokenShape is the single statement of the block's schema.
@@ -832,6 +846,49 @@ func validateAWSRDSTokenShape(block *hclsyntax.Block) error {
 		[]string{"endpoint", "username"},
 		"endpoint", "username", "region", "profile",
 	)
+}
+
+// azureDBTokenDataSource mints a Microsoft Entra access token for an Azure
+// database, which the env writes as the password of its URL.
+//
+// The value joins the sensitive set before it can reach a diagnostic, as the
+// RDS token does: it is a live credential for as long as it lasts.
+func (p atlasParser) azureDBTokenDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	if err := validateAzureDBTokenShape(block); err != nil {
+		return cty.NilVal, err
+	}
+	tenantID, err := p.optionalAtlasDataSourceString(block, "tenant_id")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	scope, err := p.optionalAtlasDataSourceString(block, "scope")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	token, err := cloudtoken.AzureDBToken(p.runContext, cloudtoken.AzureDBOptions{
+		TenantID: tenantID,
+		Scope:    scope,
+	})
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "minting token", err)
+	}
+	p.recordSensitiveValue(token)
+	return cty.StringVal(token), nil
+}
+
+// validateAzureDBTokenShape checks the block's syntax without minting: both
+// attributes are optional, and any other name is refused rather than ignored,
+// so a misspelled `tenant` cannot sign in to the wrong tenant unnoticed.
+func validateAzureDBTokenShape(block *hclsyntax.Block) error {
+	return validateRequiredAtlasDataSourceAttrs(block, nil, "tenant_id", "scope")
+}
+
+// azureDBTokenRefusal is the pinned community binary's refusal of the data
+// source, reproduced where the strict policy asks for it. Measured on v1.4.0:
+// `schema inspect` answers it for a project that declares the block, whether
+// or not a selected env references it.
+func azureDBTokenRefusal() error {
+	return fmt.Errorf("missing data source handler for %q", "azure_db_token")
 }
 
 // remoteDirectoryDataSource fetches a migration directory from the OCI

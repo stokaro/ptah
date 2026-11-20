@@ -2,8 +2,9 @@
 // project can name as a database password.
 //
 // It sits below the CLI because nothing here is Atlas-shaped: an RDS auth
-// token is an AWS SigV4 presigned request and a Cloud SQL token is an OAuth2
-// access token, both defined by the cloud provider and usable by any client.
+// token is an AWS SigV4 presigned request, and a Cloud SQL token and an Azure
+// database token are OAuth2 access tokens, each defined by the cloud provider
+// and usable by any client.
 // The project-config layer only decides where the value is spelled
 // (stokaro/ptah#1617).
 package cloudtoken
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	sigv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -159,4 +162,61 @@ func GCPCloudSQLToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("gcp cloudsql token: the credential source returned an empty access token")
 	}
 	return token.AccessToken, nil
+}
+
+// AzureDBDefaultScope is the Microsoft Entra scope Azure Database for
+// PostgreSQL and Azure Database for MySQL accept a token for. The two services
+// share the resource, so one token signs in to either.
+const AzureDBDefaultScope = "https://ossrdbms-aad.database.windows.net/.default"
+
+// AzureDBOptions names one Azure database token.
+type AzureDBOptions struct {
+	// TenantID is the Microsoft Entra tenant to sign in to. Empty takes the
+	// tenant of the identity the credential chain finds.
+	TenantID string
+	// Scope is the resource the token is for, written as a `.default` scope.
+	// Empty takes [AzureDBDefaultScope]. Another Azure database service names
+	// its own resource, such as Azure SQL's
+	// `https://database.windows.net/.default`.
+	Scope string
+}
+
+// AzureDBToken mints a Microsoft Entra access token for an Azure database
+// from the Azure SDK's default credential chain: the AZURE_* environment
+// variables, a workload identity, a managed identity, and an Azure CLI, Azure
+// Developer CLI or Azure PowerShell login, tried in that order. A tenant is
+// asked of every credential in the chain, and a managed identity, which
+// belongs to one tenant, ignores it.
+//
+// Like the Cloud SQL token this is an exchange with the identity provider, so
+// a host with no identity configured fails here rather than producing a value
+// the database refuses later. The token is a password: the caller keeps it out
+// of output.
+func AzureDBToken(ctx context.Context, opts AzureDBOptions) (string, error) {
+	scope := strings.TrimSpace(opts.Scope)
+	if scope == "" {
+		scope = AzureDBDefaultScope
+	}
+	tenant := strings.TrimSpace(opts.TenantID)
+	options := azidentity.DefaultAzureCredentialOptions{TenantID: tenant}
+	if tenant != "" {
+		// A credential configured for another tenant, such as an application
+		// registered in several, may then sign in to the one named here.
+		options.AdditionallyAllowedTenants = []string{tenant}
+	}
+	credential, err := azidentity.NewDefaultAzureCredential(&options)
+	if err != nil {
+		return "", fmt.Errorf("azure db token: building the default credential chain: %w", err)
+	}
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes:   []string{scope},
+		TenantID: tenant,
+	})
+	if err != nil {
+		return "", fmt.Errorf("azure db token: getting token for %s: %w", scope, err)
+	}
+	if token.Token == "" {
+		return "", fmt.Errorf("azure db token: the credential chain returned an empty access token")
+	}
+	return token.Token, nil
 }
