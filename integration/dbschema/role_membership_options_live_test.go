@@ -64,15 +64,19 @@ func openMembershipRun(c *qt.C, engine dbtarget.Engine, quote func(string) strin
 
 // declare states the two roles and the membership with the given options. A
 // zero options value states none.
-func (r *membershipRun) declare(options schemamodel.RoleMembershipOptions, member bool) *schemamodel.Database {
-	app := schemamodel.Role{StructName: "R", Name: r.member, Inherit: true}
-	if member {
-		app.MemberOf = []string{r.group}
-		if !options.IsZero() {
-			app.MemberOptions = map[string]schemamodel.RoleMembershipOptions{r.group: options}
-		}
+func (r *membershipRun) declare(options schemamodel.RoleMembershipOptions) *schemamodel.Database {
+	app := schemamodel.Role{StructName: "R", Name: r.member, Inherit: true, MemberOf: []string{r.group}}
+	if !options.IsZero() {
+		app.MemberOptions = map[string]schemamodel.RoleMembershipOptions{r.group: options}
 	}
 	return &schemamodel.Database{Roles: []schemamodel.Role{{StructName: "R", Name: r.group, Inherit: true}, app}}
+}
+
+// declareNoMembership states the two roles and no membership.
+func (r *membershipRun) declareNoMembership() *schemamodel.Database {
+	return &schemamodel.Database{Roles: []schemamodel.Role{
+		{StructName: "R", Name: r.group, Inherit: true}, {StructName: "R", Name: r.member, Inherit: true},
+	}}
 }
 
 // plan compares the declaration with the server and returns the statements the
@@ -144,7 +148,7 @@ func TestRoleMembershipOptionsLive_PostgreSQL16AndLater(t *testing.T) {
 			// A membership declared with every option is granted with all
 			// three, and the server holds what was declared.
 			stated := schemamodel.RoleMembershipOptions{Admin: new(true), Inherit: new(false), Set: new(false)}
-			created := run.apply(run.declare(stated, true))
+			created := run.apply(run.declare(stated))
 			c.Assert(onlyMembership(created), qt.Equals,
 				fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`, run.group, run.member))
 			edge, found := run.held()
@@ -152,11 +156,11 @@ func TestRoleMembershipOptionsLive_PostgreSQL16AndLater(t *testing.T) {
 			c.Assert(edge.AdminOption, qt.IsTrue)
 			c.Assert(*edge.InheritOption, qt.IsFalse)
 			c.Assert(*edge.SetOption, qt.IsFalse)
-			c.Assert(run.plan(run.declare(stated, true)), qt.HasLen, 0)
+			c.Assert(run.plan(run.declare(stated)), qt.HasLen, 0)
 
 			// Dropping the stated options changes the membership back to the
 			// defaults in place, with one GRANT, and keeps the membership.
-			reset := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, true))
+			reset := run.apply(run.declare(schemamodel.RoleMembershipOptions{}))
 			c.Assert(onlyMembership(reset), qt.Equals,
 				fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN FALSE, INHERIT TRUE, SET TRUE`, run.group, run.member))
 			edge, found = run.held()
@@ -167,12 +171,12 @@ func TestRoleMembershipOptionsLive_PostgreSQL16AndLater(t *testing.T) {
 
 			// A declaration that states nothing leaves a membership that holds
 			// the defaults alone, and so does one that states the defaults.
-			c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{}, true)), qt.HasLen, 0)
+			c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{})), qt.HasLen, 0)
 			defaults := schemamodel.RoleMembershipOptions{Admin: new(false), Inherit: new(true), Set: new(true)}
-			c.Assert(run.plan(run.declare(defaults, true)), qt.HasLen, 0)
+			c.Assert(run.plan(run.declare(defaults)), qt.HasLen, 0)
 
 			// Only the option that differs is written.
-			setOnly := run.apply(run.declare(schemamodel.RoleMembershipOptions{Set: new(false)}, true))
+			setOnly := run.apply(run.declare(schemamodel.RoleMembershipOptions{Set: new(false)}))
 			c.Assert(onlyMembership(setOnly), qt.Equals,
 				fmt.Sprintf(`GRANT "%s" TO "%s" WITH SET FALSE`, run.group, run.member))
 			edge, _ = run.held()
@@ -180,23 +184,23 @@ func TestRoleMembershipOptionsLive_PostgreSQL16AndLater(t *testing.T) {
 			c.Assert(*edge.InheritOption, qt.IsTrue)
 
 			// A membership the declaration drops is revoked.
-			dropped := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, false))
+			dropped := run.apply(run.declareNoMembership())
 			c.Assert(onlyMembership(dropped), qt.Equals, fmt.Sprintf(`REVOKE "%s" FROM "%s"`, run.group, run.member))
 			_, found = run.held()
 			c.Assert(found, qt.IsFalse)
-			c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{}, false)), qt.HasLen, 0)
+			c.Assert(run.plan(run.declareNoMembership()), qt.HasLen, 0)
 		})
 	}
 }
 
-func TestRoleMembershipOptionsLive_PostgreSQL14(t *testing.T) {
+func TestRoleMembershipOptionsLive_PostgreSQL13(t *testing.T) {
 	c := qt.New(t)
-	run := openMembershipRun(c, dbtarget.PostgreSQL14, postgresQuote)
+	run := openMembershipRun(c, dbtarget.PostgreSQL13, postgresQuote)
 
 	// The admin option is the only one this line holds, written as WITH ADMIN
 	// OPTION, and the server reports no INHERIT or SET option for it.
 	admin := schemamodel.RoleMembershipOptions{Admin: new(true)}
-	created := run.apply(run.declare(admin, true))
+	created := run.apply(run.declare(admin))
 	c.Assert(onlyMembership(created), qt.Equals,
 		fmt.Sprintf(`GRANT "%s" TO "%s" WITH ADMIN OPTION`, run.group, run.member))
 	edge, found := run.held()
@@ -204,22 +208,22 @@ func TestRoleMembershipOptionsLive_PostgreSQL14(t *testing.T) {
 	c.Assert(edge.AdminOption, qt.IsTrue)
 	c.Assert(edge.InheritOption, qt.IsNil)
 	c.Assert(edge.SetOption, qt.IsNil)
-	c.Assert(run.plan(run.declare(admin, true)), qt.HasLen, 0)
+	c.Assert(run.plan(run.declare(admin)), qt.HasLen, 0)
 
 	// The option is withdrawn in place: the membership stays.
-	withdrawn := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, true))
+	withdrawn := run.apply(run.declare(schemamodel.RoleMembershipOptions{}))
 	c.Assert(onlyMembership(withdrawn), qt.Equals,
 		fmt.Sprintf(`REVOKE ADMIN OPTION FOR "%s" FROM "%s"`, run.group, run.member))
 	edge, found = run.held()
 	c.Assert(found, qt.IsTrue)
 	c.Assert(edge.AdminOption, qt.IsFalse)
-	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{}, true)), qt.HasLen, 0)
+	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{})), qt.HasLen, 0)
 
 	// An option this line does not have is refused before the server is asked.
 	live, err := run.conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	_, err = schemadiff.CompareWithDatabaseInfo(c.Context(),
-		run.declare(schemamodel.RoleMembershipOptions{Inherit: new(false)}, true), live, run.conn.Info(), nil, must.Must(builtin.New()))
+		run.declare(schemamodel.RoleMembershipOptions{Inherit: new(false)}), live, run.conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorMatches, `.*role_membership_inherit_set.*`)
 }
 
@@ -228,25 +232,25 @@ func TestRoleMembershipOptionsLive_MySQL(t *testing.T) {
 	run := openMembershipRun(c, dbtarget.MySQL, backtickQuote)
 
 	admin := schemamodel.RoleMembershipOptions{Admin: new(true)}
-	created := run.apply(run.declare(admin, true))
+	created := run.apply(run.declare(admin))
 	c.Assert(onlyMembership(created), qt.Equals,
 		fmt.Sprintf("GRANT `%s` TO `%s` WITH ADMIN OPTION", run.group, run.member))
 	edge, found := run.held()
 	c.Assert(found, qt.IsTrue)
 	c.Assert(edge.AdminOption, qt.IsTrue)
-	c.Assert(run.plan(run.declare(admin, true)), qt.HasLen, 0)
+	c.Assert(run.plan(run.declare(admin)), qt.HasLen, 0)
 
 	// MySQL has no statement that revokes the option alone, so the membership
 	// is revoked and granted again, and the server holds it without the option.
-	withdrawn := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, true))
+	withdrawn := run.apply(run.declare(schemamodel.RoleMembershipOptions{}))
 	c.Assert(onlyMembership(withdrawn), qt.Equals,
 		fmt.Sprintf("REVOKE `%s` FROM `%s`\nGRANT `%s` TO `%s`", run.group, run.member, run.group, run.member))
 	edge, found = run.held()
 	c.Assert(found, qt.IsTrue)
 	c.Assert(edge.AdminOption, qt.IsFalse)
-	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{}, true)), qt.HasLen, 0)
+	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{})), qt.HasLen, 0)
 
-	dropped := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, false))
+	dropped := run.apply(run.declareNoMembership())
 	c.Assert(onlyMembership(dropped), qt.Equals, fmt.Sprintf("REVOKE `%s` FROM `%s`", run.group, run.member))
 	_, found = run.held()
 	c.Assert(found, qt.IsFalse)
@@ -255,7 +259,7 @@ func TestRoleMembershipOptionsLive_MySQL(t *testing.T) {
 	live, err := run.conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	_, err = schemadiff.CompareWithDatabaseInfo(c.Context(),
-		run.declare(schemamodel.RoleMembershipOptions{Set: new(false)}, true), live, run.conn.Info(), nil, must.Must(builtin.New()))
+		run.declare(schemamodel.RoleMembershipOptions{Set: new(false)}), live, run.conn.Info(), nil, must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorMatches, `.*role_membership_inherit_set.*`)
 }
 
@@ -264,24 +268,24 @@ func TestRoleMembershipOptionsLive_ClickHouse(t *testing.T) {
 	run := openMembershipRun(c, dbtarget.ClickHouse, backtickQuote)
 
 	admin := schemamodel.RoleMembershipOptions{Admin: new(true)}
-	created := run.apply(run.declare(admin, true))
+	created := run.apply(run.declare(admin))
 	c.Assert(onlyMembership(created), qt.Equals,
 		fmt.Sprintf("GRANT `%s` TO `%s` WITH ADMIN OPTION", run.group, run.member))
 	edge, found := run.held()
 	c.Assert(found, qt.IsTrue)
 	c.Assert(edge.AdminOption, qt.IsTrue)
-	c.Assert(run.plan(run.declare(admin, true)), qt.HasLen, 0)
+	c.Assert(run.plan(run.declare(admin)), qt.HasLen, 0)
 
 	// The option is withdrawn in place: the membership stays.
-	withdrawn := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, true))
+	withdrawn := run.apply(run.declare(schemamodel.RoleMembershipOptions{}))
 	c.Assert(onlyMembership(withdrawn), qt.Equals,
 		fmt.Sprintf("REVOKE ADMIN OPTION FOR `%s` FROM `%s`", run.group, run.member))
 	edge, found = run.held()
 	c.Assert(found, qt.IsTrue)
 	c.Assert(edge.AdminOption, qt.IsFalse)
-	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{}, true)), qt.HasLen, 0)
+	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{})), qt.HasLen, 0)
 
-	dropped := run.apply(run.declare(schemamodel.RoleMembershipOptions{}, false))
+	dropped := run.apply(run.declareNoMembership())
 	c.Assert(onlyMembership(dropped), qt.Equals, fmt.Sprintf("REVOKE `%s` FROM `%s`", run.group, run.member))
 	_, found = run.held()
 	c.Assert(found, qt.IsFalse)

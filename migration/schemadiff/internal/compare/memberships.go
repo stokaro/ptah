@@ -42,27 +42,14 @@ func RoleMemberships(
 	if !caps.Has(capability.RoleMembership) || desired == nil || database == nil {
 		return
 	}
-	managed := make(map[string]bool, len(desired.Roles))
-	declared := make(map[difftypes.RoleMembershipRef]declaredMembership)
-	for _, role := range desired.Roles {
-		managed[role.Name] = true
-		for _, group := range role.MemberOf {
-			spelled := group
-			if group = strings.TrimSpace(group); group != "" {
-				options, stated := role.MemberOptions[spelled]
-				if !stated {
-					options = role.MemberOptions[group]
-				}
-				declared[difftypes.RoleMembershipRef{Role: group, Member: role.Name}] = declaredMembership{
-					options: options, memberInherits: role.Inherit,
-				}
-			}
-		}
-	}
+	managed, declared := declaredMemberships(desired)
 	held := make(map[difftypes.RoleMembershipRef]catalog.RoleMembership, len(database.RoleMemberships))
 	for _, membership := range database.RoleMemberships {
 		key := difftypes.RoleMembershipRef{Role: membership.Role, Member: membership.Member}
-		held[key] = mergeHeldMemberships(held[key], membership, held[key].Role != "")
+		if previous, seen := held[key]; seen {
+			membership = mergeHeldMemberships(previous, membership)
+		}
+		held[key] = membership
 	}
 	for key, want := range declared {
 		if !desired.NotDescribed.Describes(coverage.RoleMembership, key.Member) {
@@ -116,11 +103,8 @@ type declaredMembership struct {
 // mergeHeldMemberships folds a second row for one membership into the first.
 // PostgreSQL 16 keeps one row per grantor, and what the member holds is the
 // union of them, so an option is on when any row has it on. An option one row
-// does not report stays as the other reports it.
-func mergeHeldMemberships(first, next catalog.RoleMembership, seen bool) catalog.RoleMembership {
-	if !seen {
-		return next
-	}
+// does not report stays as the other reports it. first is the row read earlier.
+func mergeHeldMemberships(first, next catalog.RoleMembership) catalog.RoleMembership {
 	first.AdminOption = first.AdminOption || next.AdminOption
 	first.InheritOption = orOption(first.InheritOption, next.InheritOption)
 	first.SetOption = orOption(first.SetOption, next.SetOption)
@@ -194,4 +178,27 @@ func optionOr(value *bool, fallback bool) bool {
 
 func compareMemberships(a, b difftypes.RoleMembershipRef) int {
 	return cmp.Or(cmp.Compare(a.Role, b.Role), cmp.Compare(a.Member, b.Member))
+}
+
+// declaredMemberships collects the roles the schema declares and each
+// membership they state, keyed by group and member.
+func declaredMemberships(desired *schemamodel.Database) (map[string]bool, map[difftypes.RoleMembershipRef]declaredMembership) {
+	managed := make(map[string]bool, len(desired.Roles))
+	declared := make(map[difftypes.RoleMembershipRef]declaredMembership)
+	for _, role := range desired.Roles {
+		managed[role.Name] = true
+		for _, group := range role.MemberOf {
+			spelled := group
+			if group = strings.TrimSpace(group); group != "" {
+				options, stated := role.MemberOptions[spelled]
+				if !stated {
+					options = role.MemberOptions[group]
+				}
+				declared[difftypes.RoleMembershipRef{Role: group, Member: role.Name}] = declaredMembership{
+					options: options, memberInherits: role.Inherit,
+				}
+			}
+		}
+	}
+	return managed, declared
 }

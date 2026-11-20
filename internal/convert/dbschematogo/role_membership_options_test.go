@@ -38,7 +38,7 @@ func TestConvertDBSchemaToGoSchema_RoleMembershipOptions(t *testing.T) {
 	database, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), source, "postgres", must.Must(builtin.New()))
 
 	c.Assert(err, qt.IsNil)
-	byName := map[string]schemamodel.Role{}
+	byName := make(map[string]schemamodel.Role)
 	for _, role := range database.Roles {
 		byName[role.Name] = role
 	}

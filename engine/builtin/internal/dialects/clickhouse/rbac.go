@@ -264,13 +264,11 @@ func (r *Renderer) renderRevokeRoleMembership(node *ast.RevokeRoleMembershipNode
 	return nil
 }
 
-func membershipTargets(operation, role, member string) (string, string, error) {
-	quotedRole, err := roleTarget(operation, role)
-	if err != nil {
+func membershipTargets(operation, role, member string) (quotedRole, quotedMember string, err error) {
+	if quotedRole, err = roleTarget(operation, role); err != nil {
 		return "", "", err
 	}
-	quotedMember, err := roleTarget(operation, member)
-	if err != nil {
+	if quotedMember, err = roleTarget(operation, member); err != nil {
 		return "", "", err
 	}
 	return quotedRole, quotedMember, nil

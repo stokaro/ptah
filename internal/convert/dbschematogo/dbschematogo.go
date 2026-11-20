@@ -647,7 +647,7 @@ func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role, member
 	memberOptions := make(map[string]map[string]schemamodel.RoleMembershipOptions)
 	for _, membership := range memberships {
 		memberOf[membership.Member] = append(memberOf[membership.Member], membership.Role)
-		if stated := statedMembershipOptions(membership, inherits[membership.Member]); !stated.IsZero() {
+		if stated := statedMembershipOptions(membership, inherits); !stated.IsZero() {
 			if memberOptions[membership.Member] == nil {
 				memberOptions[membership.Member] = make(map[string]schemamodel.RoleMembershipOptions)
 			}
@@ -680,8 +680,9 @@ func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role, member
 // declaration would state them: only an option that differs from the default,
 // so a membership holding the defaults reads back as a plain member_of entry.
 // The defaults are admin false, set true, and inherit as the member role's own
-// attribute (memberInherits).
-func statedMembershipOptions(membership catalog.RoleMembership, memberInherits bool) schemamodel.RoleMembershipOptions {
+// attribute, looked up in inherits.
+func statedMembershipOptions(membership catalog.RoleMembership, inherits map[string]bool) schemamodel.RoleMembershipOptions {
+	memberInherits := inherits[membership.Member]
 	var stated schemamodel.RoleMembershipOptions
 	if membership.AdminOption {
 		stated.Admin = new(true)

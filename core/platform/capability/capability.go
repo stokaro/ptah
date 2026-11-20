@@ -464,7 +464,7 @@ const (
 	// RoleMembershipAdmin marks a target on which a declared membership may
 	// carry WITH ADMIN OPTION, so the member may grant the role onward. A
 	// target without it refuses a declared admin option rather than leaving it
-	// out of the plan. Measured on PostgreSQL 14 and 16, MySQL 8.4 and
+	// out of the plan. Measured on PostgreSQL 13, 14 and 16, MySQL 8.4 and
 	// ClickHouse 26.10: the clause is accepted on a new membership and on an
 	// existing one, which it upgrades in place.
 	RoleMembershipAdmin Capability = "role_membership_admin"

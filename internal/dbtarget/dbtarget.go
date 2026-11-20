@@ -142,7 +142,7 @@ const (
 	// server PostgreSQL names. A plan that reports a change nobody made shows
 	// as a statement on 18 and as a manual-migration warning on 16.
 	PostgreSQL16
-	// PostgreSQL14 is a PostgreSQL 14 server, reached with an account that
+	// PostgreSQL13 is a PostgreSQL 13 server, reached with an account that
 	// may create roles and databases.
 	//
 	// It is an engine of its own because the release line is what it is for.
@@ -150,7 +150,7 @@ const (
 	// before it a membership holds the admin option only, withdrawn with
 	// REVOKE ADMIN OPTION FOR. A plan that is right on 16 and 18 is wrong here
 	// if it names an option the older server calls a syntax error.
-	PostgreSQL14
+	PostgreSQL13
 )
 
 // source is where one engine's address comes from.
@@ -280,8 +280,8 @@ var sources = map[Engine]source{
 		canonical: "POSTGRES_16_TEST_URL",
 		scheme:    []string{"postgres", "postgresql"},
 	},
-	PostgreSQL14: {
-		canonical: "POSTGRES_14_TEST_URL",
+	PostgreSQL13: {
+		canonical: "POSTGRES_13_TEST_URL",
 		scheme:    []string{"postgres", "postgresql"},
 	},
 }
@@ -404,7 +404,7 @@ var engineNames = map[Engine]string{
 	MariaDBDevServer:  "second MariaDB server",
 	MariaDB118:        "MariaDB 11.8 server with an administrative account",
 	PostgreSQL16:      "PostgreSQL 16 server with an administrative account",
-	PostgreSQL14:      "PostgreSQL 14 server with an administrative account",
+	PostgreSQL13:      "PostgreSQL 13 server with an administrative account",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -551,7 +551,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer, MariaDB118, PostgreSQL16, PostgreSQL14,
+		MySQLDevServer, MariaDBDevServer, MariaDB118, PostgreSQL16, PostgreSQL13,
 	}
 }
 

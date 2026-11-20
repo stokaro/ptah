@@ -130,7 +130,7 @@ func parseMemberOfEntry(entry string) (string, RoleMembershipOptions, error) {
 		return "", RoleMembershipOptions{}, fmt.Errorf("member_of entry %q: the option list is empty", entry)
 	}
 	var options RoleMembershipOptions
-	for _, option := range strings.Split(body, ";") {
+	for option := range strings.SplitSeq(body, ";") {
 		name, value, hasValue := strings.Cut(strings.TrimSpace(option), "=")
 		name = strings.ToLower(strings.TrimSpace(name))
 		enabled := true
