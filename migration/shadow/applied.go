@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
@@ -164,6 +165,10 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	if err != nil {
 		return AppliedResult{}, appliedError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}
+	// Where a schema is a database, the replay's views, routines and sequences
+	// carry the shadow database's name. They are the target's own objects, so
+	// they are compared under the target's database.
+	shadowSchema = atlasschema.RebindDatabase(shadowSchema, shadowConn.Info(), opts.TargetConn.Info())
 	replayed, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, shadowSchema, opts.TargetConn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return AppliedResult{}, appliedError("schema-match", "conversion_error", "convert shadow schema", err)

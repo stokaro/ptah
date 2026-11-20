@@ -1,8 +1,9 @@
 package atlasschema
 
-// White-box testing required: inDevDatabase decides which objects of the
-// target's read the rehearsal baseline moves to the dev database, and only a
-// live server reaches it through the public path. The cases that separate a
+// White-box testing required: RebindDatabase decides which objects of a
+// one-database read move to another database, for the rehearsal baseline and
+// for the drift check's shadow replay, and only a live server reaches it
+// through the public path. The cases that separate a
 // qualifier from an alias of the same name, and a view of the target's
 // database from one of another, need states no fixture server holds at once.
 
@@ -31,7 +32,7 @@ func targetRead() *catalog.Database {
 	}
 }
 
-func TestInDevDatabase_HappyPath(t *testing.T) {
+func TestRebindDatabase_HappyPath(t *testing.T) {
 	moved := &catalog.Database{
 		Tables: []catalog.Table{{Name: "t1"}},
 		Views: []catalog.View{
@@ -83,7 +84,7 @@ func TestInDevDatabase_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			state := targetRead()
 
-			got := inDevDatabase(state, test.target, test.dev)
+			got := RebindDatabase(state, test.target, test.dev)
 
 			c.Assert(got, qt.DeepEquals, test.want)
 			c.Assert(state, qt.DeepEquals, targetRead())
@@ -92,11 +93,11 @@ func TestInDevDatabase_HappyPath(t *testing.T) {
 }
 
 // A ClickHouse read records the database on a materialized view as on a view.
-func TestInDevDatabase_MovesAClickHouseMaterializedView(t *testing.T) {
+func TestRebindDatabase_MovesAClickHouseMaterializedView(t *testing.T) {
 	c := qt.New(t)
 	state := &catalog.Database{MatViews: []catalog.MaterializedView{{Name: "mv1", Schema: "app", Body: "SELECT id FROM app.t1"}}}
 
-	got := inDevDatabase(state,
+	got := RebindDatabase(state,
 		catalog.ServerInfo{Dialect: platform.ClickHouse, Schema: "app"},
 		catalog.ServerInfo{Dialect: platform.ClickHouse, Schema: "appdev"},
 	)
@@ -104,13 +105,44 @@ func TestInDevDatabase_MovesAClickHouseMaterializedView(t *testing.T) {
 	c.Assert(got.MatViews, qt.DeepEquals, []catalog.MaterializedView{{Name: "mv1", Body: "SELECT id FROM `appdev`.t1"}})
 }
 
-func TestInDevDatabase_NilState(t *testing.T) {
+func TestRebindDatabase_NilState(t *testing.T) {
 	c := qt.New(t)
 
-	got := inDevDatabase(nil,
+	got := RebindDatabase(nil,
 		catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app"},
 		catalog.ServerInfo{Dialect: platform.MySQL, Schema: "appdev"},
 	)
 
 	c.Assert(got, qt.IsNil)
+}
+
+// A shadow database replays the target's history under a name of its own, and a
+// one-database read of it names a view, a routine and a sequence by that name.
+// The drift check compares the replay with the target's read, which names the
+// same objects by the target's database, so the replay has to read as the
+// target's own objects: this is the missing view and extra view pair a check of
+// a clean target reported.
+func TestRebindDatabase_ShadowReplayReadsAsTheTargetsOwnObjects(t *testing.T) {
+	c := qt.New(t)
+	shadow := catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app_shadow"}
+	target := catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app"}
+	replay := &catalog.Database{
+		Tables: []catalog.Table{{Name: "t1"}},
+		Views: []catalog.View{
+			{Name: "v1", Schema: "app_shadow", Body: "select `app_shadow`.`t1`.`id` AS `id` from `app_shadow`.`t1`"},
+			{Name: "v_other", Schema: "other", Body: "select `other`.`x`.`id` AS `id` from `other`.`x`"},
+		},
+		Functions: []catalog.Function{{Name: "f1", Schema: "app_shadow"}},
+		Sequences: []catalog.Sequence{{Name: "s1", Schema: "app_shadow"}},
+	}
+
+	got := RebindDatabase(replay, shadow, target)
+
+	c.Assert(got.Views, qt.DeepEquals, []catalog.View{
+		{Name: "v1", Body: "select `app`.`t1`.`id` AS `id` from `app`.`t1`"},
+		{Name: "v_other", Schema: "other", Body: "select `other`.`x`.`id` AS `id` from `other`.`x`"},
+	})
+	c.Assert(got.Functions, qt.DeepEquals, []catalog.Function{{Name: "f1"}})
+	c.Assert(got.Sequences, qt.DeepEquals, []catalog.Sequence{{Name: "s1"}})
+	c.Assert(replay.Views[0].Schema, qt.Equals, "app_shadow", qt.Commentf("the read the caller holds is not modified"))
 }

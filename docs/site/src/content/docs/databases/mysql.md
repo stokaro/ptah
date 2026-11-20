@@ -1254,6 +1254,12 @@ that came back without a body is still refused, because it has another definer.
 database even when the dev and target databases have different names. A view
 whose body is the same reports no change; a changed body still produces a plan.
 
+`migrations up --check-drift` replays the applied history in a shadow database and
+compares it with the target. A view, a routine, or on MariaDB a sequence that the
+migrations create there is the target's own object, whatever the two databases are
+named, and a changed view body is still reported. An object a migration creates in
+another database is compared under that database's name.
+
 ### View security
 
 A MySQL or MariaDB view runs with its definer's privileges under `SQL SECURITY

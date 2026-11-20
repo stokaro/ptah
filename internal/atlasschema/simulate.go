@@ -733,7 +733,7 @@ func readWholeDev(ctx context.Context, devConn *dbschema.DatabaseConnection) (*c
 // that holds values bound to two databases. What the realm does not read is
 // left out of what it recreates (see [devclean.WithoutUnreadObjects]). The
 // objects a one-database read names by the target's database are moved to the
-// dev database's; see [inDevDatabase].
+// dev database's; see [RebindDatabase].
 //
 // reads are how devConn is read; see [resolveNamesAsTarget].
 func recreateCurrentSchema(
@@ -951,7 +951,7 @@ func baselineStatements(
 ) ([]string, error) {
 	info := devConn.Info()
 	targetURL := targetInfo.URL
-	state = inDevDatabase(state, targetInfo, info)
+	state = RebindDatabase(state, targetInfo, info)
 	target, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, state, info.Dialect, runtime)
 	if err != nil {
 		return nil, err
