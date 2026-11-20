@@ -362,6 +362,28 @@ func quotedColumnsAreQuotedInExpressions(node *ast.CreateTableNode) error {
 	return nil
 }
 
+// renderDropConstraint writes the removal of a constraint.
+//
+// No guard goes on any line, including the one that takes guards everywhere
+// else. Measured on 23.26: `ALTER TABLE t DROP CONSTRAINT IF EXISTS c` answers
+// ORA-01735, invalid ALTER TABLE option, on the same server that accepts the
+// guard on CREATE TABLE and DROP INDEX. DropConstraintIfExists is false on both
+// presets for that reason, and this is where it is spent.
+//
+// The key Oracle named for a column has a name no declaration knows, so a
+// primary key dropped with no name is DROP PRIMARY KEY, which finds it.
+func (r *Renderer) renderDropConstraint(table string, op *ast.DropConstraintOperation) {
+	if op.PrimaryKey && op.ConstraintName == "" {
+		r.w.WriteLinef("ALTER TABLE %s DROP PRIMARY KEY;", table)
+		return
+	}
+	guard := ""
+	if op.IfExists && r.capabilities().Has(capability.DropConstraintIfExists) {
+		guard = "IF EXISTS "
+	}
+	r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s%s;", table, guard, escapeIdentifier(op.ConstraintName))
+}
+
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	table := escapeQualifiedIdentifier(node.Name)
 	for _, operation := range node.Operations {
@@ -403,17 +425,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", table, strings.TrimSpace(line))
 		case *ast.DropConstraintOperation:
-			// No guard here on any line, including the one that takes guards
-			// everywhere else. Measured on 23.26: `ALTER TABLE t DROP
-			// CONSTRAINT IF EXISTS c` answers ORA-01735, invalid ALTER TABLE
-			// option, on the same server that accepts the guard on CREATE
-			// TABLE and DROP INDEX. DropConstraintIfExists is false on both
-			// presets for that reason, and this is where it is spent.
-			guard := ""
-			if op.IfExists && r.capabilities().Has(capability.DropConstraintIfExists) {
-				guard = "IF EXISTS "
-			}
-			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s%s;", table, guard, escapeIdentifier(op.ConstraintName))
+			r.renderDropConstraint(table, op)
 		case *ast.ValidateConstraintOperation:
 			// ENABLE VALIDATE checks every row and enforces the constraint
 			// from then on. A row the constraint refuses answers ORA-02293

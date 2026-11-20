@@ -2016,6 +2016,12 @@ type ColumnDiff struct {
 	// column became nullable.
 	ReleasedNotNullConstraintName string `json:"-"`
 
+	// CurrentNotNullFromKey reports that the NOT NULL of the column the database
+	// holds comes from its primary key alone ([catalog.Column.NotNullFromKey]),
+	// so a plan that takes the key away leaves the column nullable. It is an
+	// operand of the plan like Desired and rides off the wire.
+	CurrentNotNullFromKey bool `json:"-"`
+
 	// CurrentSequenceRestart is the value the database's last RESTART of this
 	// Serial column's sequence moved it to, carried with a change to the
 	// sequence's start or increment and empty otherwise. YDB replays that
