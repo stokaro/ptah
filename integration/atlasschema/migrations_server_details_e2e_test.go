@@ -140,9 +140,12 @@ func TestMigrationsUpServerDetailsOfAForeignKeyE2E(t *testing.T) {
 }
 
 // TestMigrationsUpServerDetailsOfAHintAndPositionE2E calls a function with an
-// argument it does not take. The server answers with a HINT and a position, and
-// sends no DETAIL and names no object, so those stay out of the details. The
-// position is placed in the statement and in the file, where the call is.
+// argument it does not take. The server answers with a HINT and a position and
+// names no object, so no object field enters the details. The position is
+// placed in the statement and in the file, where the call is. Whether a DETAIL
+// comes too depends on the release: PostgreSQL 19 adds "No function of that
+// name accepts the given argument types." and 18 sends none, so the test does
+// not pin the whole key set.
 func TestMigrationsUpServerDetailsOfAHintAndPositionE2E(t *testing.T) {
 	c := qt.New(t)
 	f := newFailureTarget(c, dbtarget.PostgreSQL)
@@ -157,7 +160,9 @@ func TestMigrationsUpServerDetailsOfAHintAndPositionE2E(t *testing.T) {
 
 	c.Assert(result.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("%s", result.Stderr))
 	details, server := decodeDetails(c, document.ServerDetails)
-	c.Assert(sortedKeys(server), qt.DeepEquals, []string{"hint", "message", "position", "severity", "sqlstate"})
+	for _, object := range []string{"schema", "table", "column", "data_type", "constraint"} {
+		c.Assert(server[object], qt.IsNil, qt.Commentf("server detail %q", object))
+	}
 	c.Assert(server["sqlstate"], qt.Equals, "42883")
 	c.Assert(server["hint"], qt.Not(qt.Equals), "")
 	c.Assert(server["position"], qt.Equals, float64(strings.Index(statement, "lower(42)")+1))

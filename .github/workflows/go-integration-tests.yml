@@ -214,7 +214,7 @@ jobs:
 
       # PostgreSQL 16 has no ALTER COLUMN SET EXPRESSION, which arrived in 17,
       # so a changed generated column is a manual-migration warning there and a
-      # statement on the 18 service above. Only the tests that ask for
+      # statement on the postgres service above. Only the tests that ask for
       # dbtarget.PostgreSQL16 use it. renovate.json disables updates for this
       # pin: a 17.x tag removes the coverage without failing anything.
       postgres-16:

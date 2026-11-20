@@ -23,14 +23,15 @@ import (
 // is stored as `(COALESCE(title, ''::character varying))::text`, a text which
 // no declaration spells. So the server spells the declaration, and the two
 // stored forms are compared exactly. Each test here holds a table in a live
-// database and a schema file, and runs three paths on PostgreSQL 18 and 16:
+// database and a schema file, and runs three paths on the suite's PostgreSQL
+// server, which follows the newest line, and on 16:
 // `ptah schema apply --dry-run`, `ptah-compat schema apply --dry-run`, and
 // `ptah-compat migrate diff` over a directory whose one migration creates the
 // live table.
 //
 // PostgreSQL 17 added ALTER COLUMN SET EXPRESSION. So a changed expression is
-// that statement on 18 and a manual-migration warning on 16, and the same
-// comparison decides both.
+// that statement on the newest line and a manual-migration warning on 16, and
+// the same comparison decides both.
 
 // storedFormServers are the release lines each test runs on. changed is the
 // text a plan carries for a changed generated expression on that line.
@@ -39,7 +40,7 @@ var storedFormServers = []struct {
 	engine  dbtarget.Engine
 	changed string
 }{
-	{name: "postgres-18", engine: dbtarget.PostgreSQL, changed: `" SET EXPRESSION AS (`},
+	{name: "postgres-newest", engine: dbtarget.PostgreSQL, changed: `" SET EXPRESSION AS (`},
 	{
 		name:    "postgres-16",
 		engine:  dbtarget.PostgreSQL16,
