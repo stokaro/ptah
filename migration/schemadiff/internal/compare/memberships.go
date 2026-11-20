@@ -187,10 +187,13 @@ func compareMemberships(a, b difftypes.RoleMembershipRef) int {
 // declaredMemberships collects the roles the schema declares, the ones among
 // them that own their memberships, and each membership they state, keyed by
 // group and member.
-func declaredMemberships(desired *schemamodel.Database) (map[string]bool, map[string]bool, map[difftypes.RoleMembershipRef]declaredMembership) {
-	managed := make(map[string]bool, len(desired.Roles))
-	owners := make(map[string]bool, len(desired.Roles))
-	declared := make(map[difftypes.RoleMembershipRef]declaredMembership)
+func declaredMemberships(desired *schemamodel.Database) (
+	managed, owners map[string]bool,
+	declared map[difftypes.RoleMembershipRef]declaredMembership,
+) {
+	managed = make(map[string]bool, len(desired.Roles))
+	owners = make(map[string]bool, len(desired.Roles))
+	declared = make(map[difftypes.RoleMembershipRef]declaredMembership)
 	for _, role := range desired.Roles {
 		managed[role.Name] = true
 		owners[role.Name] = role.OwnsMemberships()
