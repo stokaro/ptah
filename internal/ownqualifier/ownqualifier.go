@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -48,10 +49,14 @@ func StoredName(name string) Matcher {
 }
 
 // Tokens reads expression into its tokens without whitespace and comments,
-// each with its byte offsets in expression.
+// each with its byte offsets in expression. Its only caller canonicalizes
+// PostgreSQL row-level security clauses, so the text is read with PostgreSQL's
+// lexer options, which add nested block comments, E'...' strings and a # that
+// is an operator, not a comment. The options are asked for by name because the
+// package is shared and holds no dialect of its own to pass.
 func Tokens(expression string) []lexer.Token {
 	var tokens []lexer.Token
-	scanner := lexer.NewLexerWithOptions(expression, lexer.Options{StandardStrings: true})
+	scanner := lexer.NewLexerWithOptions(expression, dialectlexer.Options("postgres"))
 	for token := scanner.NextToken(); token.Type != lexer.TokenEOF; token = scanner.NextToken() {
 		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
 			tokens = append(tokens, token)

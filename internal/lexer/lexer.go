@@ -132,9 +132,27 @@ type Options struct {
 	// input, square brackets can instead delimit array syntax.
 	BracketIdentifiers bool
 
+	// LineCommentsDeclared says LineComments is the whole list of markers,
+	// beside "--", that open a comment running to the end of the line, so the
+	// lexer reads each marker listed as a comment wherever it stands and no
+	// other text as one. A # that is not listed is an operator character, or
+	// the start of a temporary name where DisableHashComments is set.
+	// internal/dialectlexer sets it from the descriptor of a dialect it knows.
+	// Unset, the markers are not known and a # is read by a heuristic: a
+	// comment unless an operator character follows it, as MySQL-style scripts
+	// and dialect-neutral input need.
+	LineCommentsDeclared bool
+
+	// LineComments are the markers, beside "--", that open a comment running to
+	// the end of the line, such as "#" for MySQL and "#" and "//" for
+	// ClickHouse. It is read only where LineCommentsDeclared is set. A marker
+	// is the whole rule: the text that follows it does not change the reading,
+	// so on MySQL `#= banner` and `SELECT 1 #> 2` are comments.
+	LineComments []string
+
 	// DisableHashComments preserves leading # characters as part of SQL Server
-	// local and global temporary-table identifiers. Hash comments remain enabled
-	// by default for MySQL-compatible and dialect-neutral input.
+	// local and global temporary-table identifiers. Where LineCommentsDeclared
+	// is unset, hash comments stay enabled for dialect-neutral input.
 	DisableHashComments bool
 
 	// NestedBlockComments reads a block comment that holds block comments,
@@ -346,10 +364,12 @@ func (l *Lexer) scanSpecialToken(ch rune) (Token, bool) {
 		return l.scanBacktickedIdentifier(), true
 	case ch == '[' && l.opts.BracketIdentifiers:
 		return l.scanBracketedIdentifier(), true
+	case l.opts.LineCommentsDeclared && l.declaredCommentMarkerLen() > 0:
+		return l.scanMarkedLineComment(l.declaredCommentMarkerLen()), true
 	case ch == '#' && l.opts.DisableHashComments && isTemporaryIdentifierStart(l.peekNext()):
 		return l.scanTemporaryIdentifier(), true
-	case ch == '#' && !l.opts.DisableHashComments && !isHashOperatorContinuation(l.peekNext()):
-		return l.scanHashLineComment(), true
+	case ch == '#' && !l.opts.LineCommentsDeclared && !l.opts.DisableHashComments && !isHashOperatorContinuation(l.peekNext()):
+		return l.scanMarkedLineComment(1), true
 	default:
 		return Token{}, false
 	}
@@ -638,9 +658,22 @@ func (l *Lexer) scanLineComment() Token {
 	return l.emit(TokenComment)
 }
 
-// scanHashLineComment scans a MySQL-style line comment (# comment).
-func (l *Lexer) scanHashLineComment() Token {
-	l.advance() // consume #
+// declaredCommentMarkerLen returns the length of the declared line comment
+// marker that opens at the current position, or 0 when none does.
+func (l *Lexer) declaredCommentMarkerLen() int {
+	rest := l.input[l.pos:]
+	for _, marker := range l.opts.LineComments {
+		if marker != "" && strings.HasPrefix(rest, marker) {
+			return len(marker)
+		}
+	}
+	return 0
+}
+
+// scanMarkedLineComment scans a line comment whose marker, size bytes long,
+// opens at the current position.
+func (l *Lexer) scanMarkedLineComment(size int) Token {
+	l.pos += size
 
 	for {
 		ch := l.peek()

@@ -49,6 +49,8 @@ func TestSelectsStar_IgnoresWhatIsNotAStarItem(t *testing.T) {
 		{name: "a star in a dollar quote", body: "SELECT $$*$$ AS mark FROM items"},
 		{name: "a star in a quoted name", body: `SELECT "a*b" FROM items`},
 		{name: "a star in a comment", body: "SELECT id /* * */ FROM items"},
+		{name: "a star in a nested comment", body: "SELECT /* a /* b */ * */ id FROM items"},
+		{name: "a hash operator", body: "SELECT id # 2 AS flipped FROM items"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

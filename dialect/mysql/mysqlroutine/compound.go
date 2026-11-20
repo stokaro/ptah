@@ -3,6 +3,8 @@ package mysqlroutine
 import (
 	"strings"
 
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -265,10 +267,10 @@ func (p bodyParser) rawFragment(start, end int) string {
 	return fragment(p.input, start, end)
 }
 
-// tokenize reads a body with the lexer the MySQL routine parser reads a
-// routine with.
+// tokenize reads a body with the lexer options MySQL's descriptor states, so
+// a # comment ends at its line however it is spelled.
 func tokenize(sql string) []lexer.Token {
-	l := lexer.NewLexer(sql)
+	l := lexer.NewLexerWithOptions(sql, dialectlexer.Options(platform.MySQL))
 	tokens := make([]lexer.Token, 0)
 	for {
 		tok := l.NextToken()

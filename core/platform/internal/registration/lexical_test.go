@@ -37,7 +37,7 @@ func TestRegister_DescribesTheTextOfAnEngineNobodyShips(t *testing.T) {
 	c.Assert(platform.Register(engine), qt.IsNil)
 
 	c.Assert(dialectlexer.Options("lexdb"), qt.DeepEquals, lexer.Options{
-		StandardStrings: true, BackslashEscapes: true, BracketIdentifiers: true,
+		StandardStrings: true, BackslashEscapes: true, BracketIdentifiers: true, LineCommentsDeclared: true,
 	})
 	c.Assert(sqlreach.DialectUsesBackslashEscapes("lexdb"), qt.IsTrue)
 	finding, found, err := sqlreach.Scan(fetch, "lexdb")

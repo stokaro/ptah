@@ -9,6 +9,7 @@ package mysqlreplay
 import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -45,7 +46,9 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 }
 
 // lexerOptions reads backslash escapes in string literals, as both servers
-// do by default.
+// do by default, and # as a comment.
 func lexerOptions() lexer.Options {
-	return lexer.Options{StandardStrings: true, BackslashEscapes: true}
+	options := dialectlexer.Options(platform.MySQL)
+	options.ExecutableComments = lexer.ExecutableCommentsNone
+	return options
 }

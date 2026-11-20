@@ -67,7 +67,7 @@ func decideViewQueries(
 	}
 	pairs := compare.ViewQueryPairs(desired, database, dialect, semantics)
 	if len(pairs) == 0 {
-		return compare.AnsweredViewQueries(nil, nil), nil
+		return compare.AnsweredViewQueries(nil, nil, dialect), nil
 	}
 	answers, err := rules.ViewQueries.EquivalentViewQueries(ctx, schemacomparison.ViewQueriesRequest{
 		Target: dialect, Identifiers: semantics, Capabilities: caps, Pairs: pairs, Columns: declaredColumns(desired, semantics),
@@ -78,5 +78,5 @@ func decideViewQueries(
 	if len(answers) != len(pairs) {
 		return nil, fmt.Errorf("compare schemas: the target answered %d of %d view query comparisons", len(answers), len(pairs))
 	}
-	return compare.AnsweredViewQueries(pairs, answers), nil
+	return compare.AnsweredViewQueries(pairs, answers, dialect), nil
 }

@@ -9,6 +9,7 @@ package sqlserverreplay
 import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -30,5 +31,5 @@ func (guard) Validate(stmt string, scope replay.Scope) error {
 // lexerOptions reads bracketed identifiers, and a # as the start of a
 // temporary name rather than of a comment.
 func lexerOptions() lexer.Options {
-	return lexer.Options{StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true}
+	return dialectlexer.Options(platform.SQLServer)
 }

@@ -45,9 +45,13 @@ type Rules struct {
 	DollarQuotes bool
 	// LineComments are the markers, beside "--", that open a comment running
 	// to the end of the line: "#" for MySQL and MariaDB, "#" and "//" for
-	// ClickHouse. Elsewhere "#" is an operator or a temporary-name prefix, and
-	// a "#" followed by an operator character is never a comment.
+	// ClickHouse. Elsewhere "#" is an operator or a temporary-name prefix.
 	LineComments []string
+	// LineCommentsDeclared says LineComments comes from a dialect and is the
+	// whole list: each marker opens a comment whatever follows it. Unset, the
+	// rules are those of a script with no dialect, where a "#" followed by an
+	// operator character is not a comment.
+	LineCommentsDeclared bool
 	// BracketIdentifiers reads [name] as one quoted name (SQL Server), so a
 	// quote inside the brackets opens no literal.
 	BracketIdentifiers bool
@@ -189,7 +193,7 @@ func (r Rules) opensLineComment(input string, pos int) bool {
 		if !strings.HasPrefix(input[pos:], marker) {
 			continue
 		}
-		if marker != "#" || !isClientHashOperatorContinuation(input, pos) {
+		if r.LineCommentsDeclared || marker != "#" || !isClientHashOperatorContinuation(input, pos) {
 			return true
 		}
 	}

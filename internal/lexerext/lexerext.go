@@ -24,6 +24,7 @@ type Services struct {
 	// Lexers are the descriptor.Lexical.Lexer names these services serve.
 	Lexers []string
 	// Scanner reads the lexer's text. internal/dialectlexer sets it as
-	// lexer.Options.Scanner, so it must be comparable, as lexer.Options is.
+	// lexer.Options.Scanner, so it must be comparable: the options of
+	// two dialects are compared through it.
 	Scanner lexer.Scanner
 }
