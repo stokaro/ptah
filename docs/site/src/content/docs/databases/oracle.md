@@ -523,6 +523,16 @@ A column gains its `UNIQUE` with `MODIFY (a ... UNIQUE)` and loses it with
 over that key goes first. A column of a key over several columns is not unique
 by itself.
 
+Oracle holds one primary or unique key per ordered column list of a table and
+answers a second key over the same list with `ORA-02261`. `(a, b)` and `(b, a)`
+are two lists. A file that declares two keys over one list is refused before
+any statement runs, for example a column written `PRIMARY KEY UNIQUE` or a
+`UNIQUE` over the primary key's columns. A plan that replaces a key with
+another over the same list drops the old key first, including the key Oracle
+named for a column alone. A primary key added to an existing table is written
+with its declared name, or `<table>_pkey`, so a later file and a rollback drop
+it by that name.
+
 ## Primary keys on columns
 
 A primary key written on a column is the table's key, and a `MODIFY` leaves it
