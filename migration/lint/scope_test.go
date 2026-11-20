@@ -22,11 +22,12 @@ func analyzeScoped(c *qt.C, base, sql, scope string) lint.Analysis {
 		"1.sql": base,
 		"2.sql": sql,
 	}), lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "postgres",
-		SchemaScope:   scope,
-		Selection:     lint.VersionSelection{Versions: []int64{2}, Restricted: true},
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "postgres",
+		SchemaScope:    scope,
+		Selection:      lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis

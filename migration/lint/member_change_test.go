@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"regexp"
 	"fmt"
 	"strings"
 	"testing"
@@ -72,7 +73,7 @@ func members(n int) string {
 func memberCodes(codes []string) []string {
 	var kept []string
 	for _, code := range codes {
-		if strings.HasPrefix(code, "MY11") || strings.HasPrefix(code, "MY12") {
+		if regexp.MustCompile(`^rewrite/(remove|reorder|insert|widen)-(enum|set)`).MatchString(code) {
 			kept = append(kept, code)
 		}
 	}

@@ -29,8 +29,9 @@ func TestAnalyzeFS_EmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 	c := qt.New(t)
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{}, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -59,8 +60,9 @@ func TestAnalyzeFS_NonEmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 	})
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 
 	c.Assert(err, qt.IsNil)

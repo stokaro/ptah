@@ -55,7 +55,7 @@ func TestPG103P_PerChunkBuildInATransaction(t *testing.T) {
 			name: "mixed with transactional DDL",
 			up:   "ALTER TABLE events ADD COLUMN note text;\n" + perChunk,
 			down: "-- +ptah no_transaction\nDROP INDEX CONCURRENTLY events_kind_idx;\n",
-			want: []string{"transaction/per-chunk-index 0000000001_x.up.sql", "transaction/mixed-statements 0000000001_x.up.sql"},
+			want: []string{"transaction/mixed-statements 0000000001_x.up.sql", "transaction/per-chunk-index 0000000001_x.up.sql"},
 		},
 	}
 	for _, test := range tests {

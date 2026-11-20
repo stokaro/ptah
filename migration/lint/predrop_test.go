@@ -84,53 +84,53 @@ func TestIfExistsDropThatMayDropATable_IsReported(t *testing.T) {
 		{
 			ifExistsCase: ifExistsCase{name: "the table is in the starting state", dialect: "sqlite",
 				second: "DROP TABLE IF EXISTS users;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:rollout/drop-table", "0000000002_change.up.sql:1:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "no starting state", dialect: "sqlite",
 				second: "DROP TABLE IF EXISTS missing;\n"},
-			want: []string{"0000000002_change.up.sql:1:rollout/drop-table", "0000000002_change.up.sql:1:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "an earlier statement renames a table to the name", dialect: "sqlite",
 				second: "ALTER TABLE users RENAME TO missing;\nDROP TABLE IF EXISTS missing;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:2:rollout/drop-table", "0000000002_change.up.sql:2:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "one absent table and one present", dialect: "sqlite",
 				second: "DROP TABLE IF EXISTS missing, users;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:rollout/drop-table", "0000000002_change.up.sql:1:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "qualified by a schema the state does not hold", dialect: "postgres",
 				second: "DROP TABLE IF EXISTS other.missing;\n", baseline: usersAt("public")},
-			want: []string{"0000000002_change.up.sql:1:rollout/drop-table", "0000000002_change.up.sql:1:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "qualified, against a state that names no schema", dialect: "postgres",
 				second: "DROP TABLE IF EXISTS other.missing;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:rollout/drop-table", "0000000002_change.up.sql:1:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "no IF EXISTS", dialect: "sqlite",
 				second: "DROP TABLE missing;\n", baseline: usersAt("")},
-			want: []string{"0000000002_change.up.sql:1:rollout/drop-table", "0000000002_change.up.sql:1:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:1:destructive/drop-table", "0000000002_change.up.sql:1:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "a DO block may have renamed a table to the name", dialect: "postgres",
 				second: "DO $$ BEGIN ALTER TABLE users RENAME TO x; END $$;\nDROP TABLE IF EXISTS x;\n", baseline: usersAt("public")},
-			want: []string{"0000000002_change.up.sql:2:rollout/drop-table", "0000000002_change.up.sql:2:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "a prepared statement may have renamed a table to the name", dialect: "mysql",
 				second:   "SET @s = 'RENAME TABLE users TO x';\nPREPARE p FROM @s;\nEXECUTE p;\nDROP TABLE IF EXISTS x;\n",
 				baseline: usersAt("app")},
-			want: []string{"0000000002_change.up.sql:4:rollout/drop-table", "0000000002_change.up.sql:4:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:4:destructive/drop-table", "0000000002_change.up.sql:4:rollout/drop-table"},
 		},
 		{
 			ifExistsCase: ifExistsCase{name: "the search path moves to a schema the state does not hold", dialect: "postgres",
 				second: "SET search_path TO other;\nDROP TABLE IF EXISTS missing;\n", baseline: usersAt("public")},
-			want: []string{"0000000002_change.up.sql:2:rollout/drop-table", "0000000002_change.up.sql:2:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:2:destructive/drop-table", "0000000002_change.up.sql:2:rollout/drop-table"},
 		},
 	}
 	for _, test := range tests {
@@ -222,13 +222,13 @@ func TestIfExistsDrop_NamesItsInputOnlyWhereTheStateDecides(t *testing.T) {
 	}{
 		{
 			name: "an absent table", second: "DROP TABLE IF EXISTS missing;\n",
-			want: []string{"rollout/drop-table", "destructive/drop-table"},
+			want: []string{"destructive/drop-table", "rollout/drop-table"},
 		},
 		{name: "a table the file created", second: "CREATE TABLE t (a int);\nDROP TABLE IF EXISTS t;\n", want: nil},
 		{name: "after a DO block", second: "DO $$ BEGIN NULL; END $$;\nDROP TABLE IF EXISTS missing;\n", want: nil},
 		{
 			name: "a CREATE TABLE IF NOT EXISTS of a table the file drops", second: "CREATE TABLE IF NOT EXISTS t (a int);\nDROP TABLE t;\n",
-			want: []string{"rollout/drop-table", "destructive/drop-table"},
+			want: []string{"destructive/drop-table", "rollout/drop-table"},
 		},
 		{name: "a CREATE TABLE IF NOT EXISTS nothing after names", second: "CREATE TABLE IF NOT EXISTS t (a int);\n", want: nil},
 	}

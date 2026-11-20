@@ -74,7 +74,7 @@ func TestRules_HoldsTheOwnersRules(t *testing.T) {
 	owned := again[len(own):]
 	c.Assert(owned, qt.HasLen, 1)
 	c.Assert([]any{owned[0].Name, owned[0].Title, owned[0].Severity, owned[0].Dialects, owned[0].Input},
-		qt.DeepEquals, []any{"design/xy101", "XY101 title", lint.SeverityWarning, []string{"postgres", "mysql"}, lint.InputStatementText})
+		qt.DeepEquals, []any{"design/xy101", "design/xy101 title", lint.SeverityWarning, []string{"postgres", "mysql"}, lint.InputStatementText})
 	c.Assert(owned[0].CheckStatement == nil && owned[0].CheckFile == nil, qt.IsTrue)
 }
 
@@ -126,7 +126,7 @@ func TestAnalyzeFS_ReportsTheOwnersFindings(t *testing.T) {
 		lint.Options{Dialect: "postgres", Disabled: []string{"design/xy102"}, Compatibility: lint.CompatibilityProfileAtlas})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.DeepEquals, []lint.Finding{{Rule: "design/xy101", Title: "XY101 title", Severity: lint.SeverityWarning,
+	c.Assert(findings, qt.DeepEquals, []lint.Finding{{Rule: "design/xy101", Title: "design/xy101 title", Severity: lint.SeverityWarning,
 		File: "0000000001_x.up.sql", Line: 3, Message: "reads b", Context: &lint.FindingContext{StatementIndex: 1,
 			Subjects: []lint.Subject{{Kind: lint.SubjectColumn, Name: "id", Parent: "b", DataType: "int"}}}}})
 	c.Assert(requests, qt.HasLen, 1)
@@ -148,11 +148,11 @@ func TestAnalyzeFS_AppliesThePolicyToTheOwnersFindings(t *testing.T) {
 		opts lint.Options
 		want []string
 	}{
-		{"reported", "SELECT 1;\n", lint.Options{Dialect: "postgres"}, []string{"XY101 warning"}},
+		{"reported", "SELECT 1;\n", lint.Options{Dialect: "postgres"}, []string{"design/xy101 warning"}},
 		{"silenced by a directive", "-- ptah:nolint design/xy101\nSELECT 1;\n", lint.Options{Dialect: "postgres"}, make([]string, 0)},
 		{"a configured severity", "SELECT 1;\n",
 			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"design/xy101": {Severity: lint.SeverityError}}},
-			[]string{"XY101 error"}},
+			[]string{"design/xy101 error"}},
 		{"an excluded path", "SELECT 1;\n",
 			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"design/xy101": {Exclude: []string{"*.up.sql"}}}},
 			make([]string, 0)},
@@ -184,7 +184,7 @@ func TestAnalyzeFS_AsksNoOwnerWithNothingToJudge(t *testing.T) {
 		name string
 		opts lint.Options
 	}{
-		{"every owned rule disabled", lint.Options{Dialect: "postgres", Disabled: []string{"design/xy"}}},
+		{"every owned rule disabled", lint.Options{Dialect: "postgres", Disabled: []string{"design"}}},
 		{"a target no owned rule judges", lint.Options{Dialect: "mysql"}},
 		{"no file selected", lint.Options{Dialect: "postgres", Selection: lint.VersionSelection{Versions: []int64{9}, Restricted: true}}},
 	} {
@@ -210,14 +210,14 @@ func TestAnalyzeFS_SendsAnOnlineRuleOnlyInTheOnlineMode(t *testing.T) {
 		want [][]string
 	}{
 		{"an ordinary run", lint.Options{Dialect: "postgres"}, [][]string{{"design/xy101"}}},
-		{"the online mode", lint.Options{Dialect: "postgres", RequireOnline: true}, [][]string{{"ON901", "design/xy101"}}},
+		{"the online mode", lint.Options{Dialect: "postgres", RequireOnline: true}, [][]string{{"online/on901", "design/xy101"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var requests []lintext.CheckRequest
 			owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{false: {Complete: true}}}
 
-			_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("ON901", "postgres"), ownedRule("design/xy101", "postgres")),
+			_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("online/on901", "postgres"), ownedRule("design/xy101", "postgres")),
 				fixture(selectMigration()), test.opts)
 
 			c.Assert(err, qt.IsNil)

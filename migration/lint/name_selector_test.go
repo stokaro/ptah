@@ -170,7 +170,7 @@ func TestNameSelectors_PolicyRefusesAnUnknownName(t *testing.T) {
 		{
 			name:    "a rules key naming no rule",
 			config:  "rules:\n  locking/set-not-nul:\n    severity: warning\n",
-			wantErr: `.*rule selector "locking/set-not-nul" is not the name of a lint rule; .*`,
+			wantErr: `.*lint rules key "locking/set-not-nul" is not the name of a lint rule; .*`,
 		},
 		{
 			name:    "a rules key naming a category twice",
@@ -228,7 +228,6 @@ func TestNameSelectors_NoLintSelectsByNameAndCategory(t *testing.T) {
 		{name: "the check's category with a slash", sql: "-- ptah:nolint data-dependent/\n", want: []string{"file-form/missing-down"}},
 		{name: "a name and a code in one directive", sql: "-- ptah:nolint file-form/missing-down, data-dependent/add-unique-index\n", want: []string{"file-form/missing-down"}},
 		{name: "another category", sql: "-- ptah:nolint rollout\n", want: []string{"file-form/missing-down", "data-dependent/add-unique-index"}},
-		{name: "codes joined by a slash", sql: "-- ptah:nolint destructive/drop-table/MF101\n", want: []string{"file-form/missing-down"}},
 		{name: "a slash in the reason", sql: "-- ptah:nolint data-dependent/add-unique-index / reviewed\n", want: []string{"file-form/missing-down"}},
 	}
 	for _, row := range rows {

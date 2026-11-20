@@ -15,10 +15,20 @@ import (
 // table from Atlas codes to rules, and the compatibility surface hands it one.
 func atlasStub(selector string) []string {
 	switch selector {
+	case "DS102":
+		return []string{"destructive/drop-table"}
 	case "DS103":
 		return []string{"destructive/drop-column"}
+	case "MF103":
+		return []string{"data-dependent/add-not-null-column"}
 	case "DESTRUCTIVE":
 		return []string{"destructive/drop-column", "destructive/drop-table"}
+	case "DATA_DEPEND":
+		return []string{"data-dependent/add-not-null-column"}
+	case "CONCURRENT_INDEX":
+		return []string{"locking/create-index", "transaction/concurrent-index"}
+	case "NESTEDTX":
+		return []string{"transaction/explicit-transaction"}
 	default:
 		return nil
 	}

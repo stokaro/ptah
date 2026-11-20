@@ -189,9 +189,9 @@ func TestNullableMadeNotNullRule_NamesItsInputWhenTheRunSuppliesNone(t *testing.
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }
 
-// TestNullableMadeNotNullRule_AnswersTheAtlasCode: MF104 in a config reaches
-// every rule that reports the hazard, this one included.
-func TestNullableMadeNotNullRule_AnswersTheAtlasCode(t *testing.T) {
+// TestNullableMadeNotNullRule_IsDisabledByItsName: the name data-dependent/set-not-null
+// reaches every engine's rule that reports the hazard, this one included.
+func TestNullableMadeNotNullRule_IsDisabledByItsName(t *testing.T) {
 	c := qt.New(t)
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(notNullFS("ALTER TABLE orders MODIFY total INT NOT NULL;")), lint.Options{
@@ -199,7 +199,7 @@ func TestNullableMadeNotNullRule_AnswersTheAtlasCode(t *testing.T) {
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Baseline:  []lintext.BaselineColumn{notNullColumn("total", "int", false)},
-		Disabled:  []string{"MF104"},
+		Disabled:  []string{"data-dependent/set-not-null"},
 	})
 
 	c.Assert(err, qt.IsNil)

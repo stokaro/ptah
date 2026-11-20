@@ -139,7 +139,7 @@ func TestPlannedSQLiteRebuild_ReportsTheDroppedColumn(t *testing.T) {
 	}{
 		{
 			run:  nativeWithDevDatabase,
-			want: []string{"0000000002_change.up.sql:rollout/drop-table", "0000000002_change.up.sql:destructive/drop-table"},
+			want: []string{"0000000002_change.up.sql:destructive/drop-table", "0000000002_change.up.sql:rollout/drop-table"},
 		},
 		{
 			run:  atlasWithDevDatabase,

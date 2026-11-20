@@ -311,12 +311,12 @@ func TestDeclaredRule_ConfiguringAnExistingRuleStillWorks(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
 	// A DROP TABLE reports the client-compatibility check beside the data-loss
-	// one, so the configured rule is the second finding rather than the only
+	// one, so the configured rule is the first finding rather than the only
 	// one. rollout/drop-table keeps its own severity, which is what makes this an override
 	// of one rule rather than of the statement.
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
-	c.Assert(findings[1].Severity, qt.Equals, lint.SeverityError)
-	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityError)
+	c.Assert(findings[1].Severity, qt.Equals, lint.SeverityWarning)
 }
 
 // TestRuleConfig_DeclaresSeparatesTheTwoUses states the discriminator directly.

@@ -23,9 +23,10 @@ func analyzeRename(c *qt.C, files map[string]string) (native, atlas []lint.Findi
 	})
 	c.Assert(err, qt.IsNil)
 	atlasAnalysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "postgres",
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "postgres",
 	})
 	c.Assert(err, qt.IsNil)
 	return nativeAnalysis.Findings(), atlasAnalysis.Findings()
@@ -460,43 +461,43 @@ func TestAnalyzeFS_DropColumnOfAColumnTheFileBroughtIn(t *testing.T) {
 		{
 			name:       "one column added, another dropped",
 			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN name;",
-			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "the column added to another table",
 			sql:        "ALTER TABLE accounts ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "the column added with IF NOT EXISTS",
 			sql:        "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick text;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "a column renamed into the added column's name",
 			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;\nALTER TABLE users RENAME COLUMN name TO nick;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"rollout/rename", "rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"rollout/rename", "destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-column", "destructive/drop-column"},
 		},
 		{
 			name:       "the column dropped twice, the second time after it was dropped",
 			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "another table renamed into a created table's name",
 			sql:        "CREATE TABLE t (id int, nick text);\nDROP TABLE t;\nALTER TABLE users RENAME TO t;\nALTER TABLE t DROP COLUMN nick;",
-			wantNative: []string{"rollout/rename", "rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"rollout/rename", "destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-table", "destructive/drop-column"},
 		},
 		{
 			name:       "table not created in this file",
 			sql:        "ALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantNative: []string{"destructive/drop-column", "rollout/drop-column"},
 			wantAtlas:  []string{"destructive/drop-column"},
 		},
 	}
@@ -527,7 +528,7 @@ func TestAnalyzeFS_DropColumnKeepsEveryDroppedColumnInOneFinding(t *testing.T) {
 		"1_drop.sql": "ALTER TABLE users DROP COLUMN nick, DROP COLUMN email;\n",
 	})
 
-	c.Assert(rulesOf(native), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(rulesOf(native), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	// Both findings keep every dropped column in one finding: the shape that
 	// makes the compatibility renderer say "columns" rather than naming one.
 	columns := []lint.Subject{

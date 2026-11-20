@@ -235,9 +235,10 @@ func TestAnalyzeFS_AtlasSQLiteReplacementKeepsTheCreateLine(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(),
 		fixture(map[string]string{"1_replace.sql": "PRAGMA foreign_keys = off;\n" + replaceUsers}),
 		lint.Options{
-			Compatibility: lint.CompatibilityProfileAtlas,
-			DirFormat:     migrationfile.DirFormatAtlas,
-			Dialect:       "sqlite",
+			Compatibility:  lint.CompatibilityProfileAtlas,
+			AtlasSelectors: atlasStub,
+			DirFormat:      migrationfile.DirFormatAtlas,
+			Dialect:        "sqlite",
 		},
 	)
 	c.Assert(err, qt.IsNil)

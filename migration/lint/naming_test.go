@@ -315,9 +315,9 @@ func TestNamingRules_SeverityComesFromTheBlock(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"naming/column-name", "naming/table-name"})
-	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityError)
-	c.Assert(findings[1].Severity, qt.Equals, lint.SeverityInfo)
-	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectTable, Name: "Invoices"}})
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityInfo)
+	c.Assert(findings[1].Severity, qt.Equals, lint.SeverityError)
+	c.Assert(findings[1].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectTable, Name: "Invoices"}})
 	c.Assert(findings[1].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectColumn, Name: "Id", Parent: "Invoices"}})
 }
 

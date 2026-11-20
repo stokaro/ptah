@@ -24,11 +24,12 @@ func renameBaselineFS() map[string]string {
 
 func renameBaselineOptions(baseline []lintext.BaselineColumn) lint.Options {
 	return lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		Dialect:       "postgres",
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Selection:     lint.VersionSelection{Versions: []int64{2}, Restricted: true},
-		Baseline:      baseline,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		Dialect:        "postgres",
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Selection:      lint.VersionSelection{Versions: []int64{2}, Restricted: true},
+		Baseline:       baseline,
 	}
 }
 

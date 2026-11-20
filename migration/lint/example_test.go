@@ -132,7 +132,7 @@ func ExampleLoadConfigFS() {
 // TIMESTAMP column fires the rule and the literal mentioning TIMESTAMP cannot.
 func ExampleLintFS_extraRules() {
 	plainTimestamp := lint.Rule{
-		Name:     "ORG101",
+		Name:     "design/org101",
 		Title:    "plain TIMESTAMP column",
 		Severity: lint.SeverityWarning,
 		CheckStatement: func(stmt *lint.Statement) (bool, string) {
@@ -160,7 +160,7 @@ func ExampleLintFS_extraRules() {
 	}
 
 	// Output:
-	// 0000000001_events.up.sql:1 [warning] ORG101: use TIMESTAMPTZ so stored instants keep their time zone (plain TIMESTAMP column)
+	// 0000000001_events.up.sql:1 [warning] design/org101: use TIMESTAMPTZ so stored instants keep their time zone (plain TIMESTAMP column)
 }
 
 // ExampleValidateOptions checks a lint policy without reading any migration

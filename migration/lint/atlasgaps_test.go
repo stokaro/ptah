@@ -581,13 +581,13 @@ func TestRolloutBreakRules_SurviveADestructiveExemption(t *testing.T) {
 		{
 			name:     "a configuration disabling the destructive family",
 			sql:      "DROP TABLE orders;",
-			disabled: []string{"DS"},
+			disabled: []string{"destructive"},
 			want:     []string{"rollout/drop-table"},
 		},
 		{
 			name:     "disabling the rollout-break family leaves the data loss",
 			sql:      "DROP TABLE orders;",
-			disabled: []string{"BC"},
+			disabled: []string{"rollout"},
 			want:     []string{"destructive/drop-table"},
 		},
 	}

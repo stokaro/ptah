@@ -542,17 +542,17 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 `,
 	})
 
-	native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
+	_, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "sqlite",
 	})
-	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "rollout/drop-column", "destructive/drop-column", "data-dependent/add-not-null-column"})
+	c.Assert(err, qt.ErrorMatches, `1_suppressed.sql: the comment above line 2: atlas:nolint is an Atlas directive that ptah-compat reads; .*`)
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlas.Findings(), qt.HasLen, 0)
@@ -575,8 +575,9 @@ ALTER TABLE accounts DROP COLUMN legacy;
 	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table", "destructive/drop-column", "rollout/drop-column"})
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlas.Findings(), qt.HasLen, 0)
@@ -611,7 +612,7 @@ ALTER TABLE accounts DROP COLUMN legacy;
 // Reverting the change prints the native column as
 // []string{"locking/create-index", "rollout/rename", "rollout/drop-table", "destructive/drop-table", "transaction/explicit-transaction"} instead of
 // []string{"rollout/rename", "rollout/drop-table"}.
-func TestAnalyzeFS_AtlasAnalyzerSuppressionsApplyOnBothSurfaces(t *testing.T) {
+func TestAnalyzeFS_AtlasAnalyzerSuppressionsApplyOnTheCompatibilitySurfaceOnly(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
 		"1_index.sql": `-- atlas:nolint concurrent_index
@@ -628,21 +629,17 @@ BEGIN;
 `,
 	})
 
-	native, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
+	_, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
 		Dialect:   "postgres",
 	})
-	c.Assert(err, qt.IsNil)
-	// BC103 survives `-- atlas:nolint destructive` on the native surface, and
-	// that is the point of the directive rather than a leak in it: the operator
-	// accepted losing the rows in legacy_users and said nothing about the
-	// deployed versions that still query the name.
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"rollout/rename", "rollout/drop-table"})
+	c.Assert(err, qt.ErrorMatches, `1_index.sql: the comment above line 2: atlas:nolint is an Atlas directive that ptah-compat reads; .*`)
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "postgres",
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "postgres",
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlas.Findings(), qt.HasLen, 0)
@@ -660,9 +657,10 @@ BEGIN;
 	})
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "postgres",
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "postgres",
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -700,8 +698,9 @@ DROP TABLE users;
 	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlasStub,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	atlasFiles := atlas.Files()

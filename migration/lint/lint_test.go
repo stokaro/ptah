@@ -39,7 +39,7 @@ func findingSites(findings []lint.Finding) []string {
 // dsSites keeps the sites of the DS family.
 func dsSites(sites []string) []string {
 	return slices.DeleteFunc(slices.Clone(sites), func(site string) bool {
-		return !strings.Contains(site, ":DS")
+		return !slices.ContainsFunc(lint.DefaultGateRules, func(rule string) bool { return strings.HasSuffix(site, ":"+rule) })
 	})
 }
 
@@ -157,7 +157,7 @@ func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" is not the name of a migration lint rule.*`)
+	c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" is not the name of a .*lint rule.*`)
 }
 
 func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
@@ -1299,7 +1299,7 @@ func TestLintFS_InlineNoLintSuppressesStatementAndFileFindings(t *testing.T) {
 	fsys := fixture(map[string]string{
 		"0000000001_suppress.up.sql": `-- ptah:nolint destructive/drop-column
 ALTER TABLE users DROP COLUMN legacy;
--- atlas:nolint DS102
+-- ptah:nolint destructive/drop-column
 ALTER TABLE users DROP COLUMN legacy_two;
 -- ptah:nolint destructive/drop-table
 DROP TABLE audit_log;
@@ -1671,8 +1671,10 @@ func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
 	for _, rule := range must.Must(lint.Rules(builtintest.Runtime())) {
 		c.Assert(rule.Name, qt.Not(qt.Equals), "")
 		c.Assert(rule.Title, qt.Not(qt.Equals), "")
-		c.Assert(seen[rule.Name], qt.IsFalse, qt.Commentf("duplicate rule code %s", rule.Name))
-		seen[rule.Name] = true
+		// A name two engines share heads one rule per engine, with its own dialects.
+		key := rule.Name + " " + strings.Join(rule.Dialects, ",")
+		c.Assert(seen[key], qt.IsFalse, qt.Commentf("duplicate rule %s", key))
+		seen[key] = true
 		// All three, not two. SeverityInfo is a designed severity -- reported
 		// and never gated on, so a rule can be introduced to a repository that
 		// still violates it (stokaro/ptah#1633) -- and the two-way assertion

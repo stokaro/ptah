@@ -77,7 +77,7 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 			DirFormat: migrationfile.DirFormatPtah,
 		})
 		c.Assert(err, qt.IsNil)
-		c.Assert(findingSites(findings), qt.DeepEquals, []string{"R__cleanup.sql:1:rollout/drop-table", "R__cleanup.sql:1:destructive/drop-table"})
+		c.Assert(findingSites(findings), qt.DeepEquals, []string{"R__cleanup.sql:1:destructive/drop-table", "R__cleanup.sql:1:rollout/drop-table"})
 	})
 
 	t.Run("a restricted selection selects a repeatable migration by its path", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 		})
 		c.Assert(err, qt.IsNil)
 		c.Assert(selectedNames(analysis), qt.DeepEquals, []string{"R__cleanup.sql"})
-		c.Assert(findingSites(analysis.Findings()), qt.DeepEquals, []string{"R__cleanup.sql:1:rollout/drop-table", "R__cleanup.sql:1:destructive/drop-table"})
+		c.Assert(findingSites(analysis.Findings()), qt.DeepEquals, []string{"R__cleanup.sql:1:destructive/drop-table", "R__cleanup.sql:1:rollout/drop-table"})
 	})
 
 	t.Run("a selection by version selects no repeatable migration", func(t *testing.T) {
@@ -105,7 +105,8 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 	t.Run("the Atlas profile reads R__ as the Atlas version R", func(t *testing.T) {
 		c := qt.New(t)
 		analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(repeatableDirectory()), lint.Options{
-			Compatibility: lint.CompatibilityProfileAtlas,
+			Compatibility:  lint.CompatibilityProfileAtlas,
+			AtlasSelectors: atlasStub,
 		})
 		c.Assert(err, qt.IsNil)
 		c.Assert(revisionVersionOf(analysis, "R__cleanup.sql"), qt.Equals, "R")
