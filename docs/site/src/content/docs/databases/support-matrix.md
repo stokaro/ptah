@@ -79,6 +79,7 @@ the declared set cannot say one thing here and another in a workflow file.
 <!-- BEGIN GENERATED VERSION MATRIX -->
 | Dialect | Release line | Support | Capability preset | Probed |
 | --- | --- | --- | --- | --- |
+| `postgres` | 19 | certified | `Postgres18` | yes |
 | `postgres` | 18 | certified | `Postgres18` | yes |
 | `postgres` | 17 | certified | `Postgres17` | yes |
 | `postgres` | 16 | certified | `Postgres16` | yes |
@@ -114,9 +115,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 
-Declared release lines: 34. Probed on every pull request: 30.
+Declared release lines: 35. Probed on every pull request: 31.
 
-Support levels across the 34 declared lines: 28 certified, 2 legacy-tested, 4 best-effort.
+Support levels across the 35 declared lines: 29 certified, 2 legacy-tested, 4 best-effort.
 
 Lines that are declared and not probed, and why:
 

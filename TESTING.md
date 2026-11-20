@@ -105,7 +105,7 @@ Detailed integration test runner with Docker Compose:
 
 The integration tests use Docker Compose to start:
 
-- **PostgreSQL 18** on port 5432
+- **PostgreSQL 19** on port 5432
 - **MySQL 26.10** on port 3310
 - **MariaDB 12.3** on port 3307
 

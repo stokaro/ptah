@@ -30,18 +30,17 @@ const capabilityReportDefaultLogLevel = slog.LevelWarn
 // a supported server writes nothing to the error stream.
 //
 // It has to run against a live server because the defect is a function of the
-// banner the server reports. `postgres:18` is what
-// .github/workflows/go-integration-tests.yml and docker-compose.yaml pin, and
-// PostgreSQL 18 is past the newest measured capability line (17), so the
-// resolution is saturated on exactly the image CI runs. A diagnostic emitted
-// for that condition fires on every single connection, and every test that
-// asserts a clean error stream goes red — which is what happened: 25 subtests
-// across four migrate-lint E2E files.
+// banner the server reports. The server is the image
+// .github/workflows/go-integration-tests.yml and docker-compose.yaml pin. A
+// server newer than the newest measured line logs a warning on every
+// connection, and every test that asserts a clean error stream goes red with
+// it: a new PostgreSQL major in the suite without a measured line for it
+// fails about a hundred tests across the contour, all on that one warning.
 //
-// The test is written to hold on any supported PostgreSQL, not only 18: the
-// contract is "a clean run against a server Ptah supports emits nothing at the
-// default level", saturated or not. The resolution is asserted to have seen
-// the real banner so the assertion cannot pass by never connecting.
+// The test is written to hold on any supported PostgreSQL: the contract is "a
+// clean run against a server Ptah supports emits nothing at the default
+// level". The resolution is asserted to have seen the real banner, so the
+// assertion cannot pass by never connecting.
 func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 

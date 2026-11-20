@@ -119,7 +119,7 @@ $env:MARIADB_TEST_DSN = "ptah_user:ptah_password@tcp(localhost:3307)/ptah_test"
 - ✅ **Error Handling Tests** - Edge cases and error conditions
 
 ### **Database Versions Tested:**
-- ✅ PostgreSQL 18
+- ✅ PostgreSQL 19
 - ✅ MySQL 26.10
 - ✅ MariaDB 12.3
 

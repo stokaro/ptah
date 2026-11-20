@@ -586,16 +586,17 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 			"mysql", "5.5.5-12.3.0-MariaDB", capability.MariaDB1011(), true, false, "12.3",
 		},
 
-		// PostgreSQL: Postgres18 is the top preset, and 18 is the newest
-		// measured line. 17 and 18 are separate arms because a live PostgreSQL
-		// 18 disagreed with Postgres17 on exactly one key --
-		// named_not_null_constraints -- and agreed on the other 45 decided
-		// rows (stokaro/ptah#2161).
-		{"postgres below", "postgres", "PostgreSQL 13.14 (Debian)", capability.Postgres13(), true, false, "18.x"},
-		{"postgres inside", "postgres", "PostgreSQL 16.3 (Debian)", capability.Postgres16(), true, false, "18.x"},
-		{"postgres former current line", "postgres", "PostgreSQL 17.5", capability.Postgres17(), true, false, "18.x"},
-		{"postgres at the newest measured line", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres18(), true, false, "18.x"},
-		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres18(), false, true, "18.x"},
+		// PostgreSQL: Postgres18 is the top preset, and 19 is the newest
+		// measured line, planned as Postgres18. 17 and 18 are separate arms
+		// because a live PostgreSQL 18 disagreed with Postgres17 on exactly one
+		// key -- named_not_null_constraints -- and agreed on the other 45
+		// decided rows (stokaro/ptah#2161).
+		{"postgres below", "postgres", "PostgreSQL 13.14 (Debian)", capability.Postgres13(), true, false, "19.x"},
+		{"postgres inside", "postgres", "PostgreSQL 16.3 (Debian)", capability.Postgres16(), true, false, "19.x"},
+		{"postgres former current line", "postgres", "PostgreSQL 17.5", capability.Postgres17(), true, false, "19.x"},
+		{"postgres 18", "postgres", "PostgreSQL 18.4 (Debian)", capability.Postgres18(), true, false, "19.x"},
+		{"postgres at the newest measured line", "postgres", "PostgreSQL 19.0 (Debian 19.0-1.pgdg13+1) on x86_64-pc-linux-gnu", capability.Postgres18(), true, false, "19.x"},
+		{"postgres far above", "postgres", "PostgreSQL 99.0", capability.Postgres18(), false, true, "19.x"},
 
 		// Controls. An unparseable version never reports saturation, and a
 		// dialect with no version ladder reports neither a ceiling nor
@@ -770,7 +771,7 @@ func TestForServerVersionResultDoesNotSaturateSilently(t *testing.T) {
 		// and agreed on every other decided row, so 18 has its own preset and
 		// the question of saturating silently cannot arise here
 		// (stokaro/ptah#2161).
-		{"postgres 18.4 against 17.5 (CI runs postgres:18)", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", false, true},
+		{"postgres 18.4 against 17.5", "postgres", "PostgreSQL 18.4", "PostgreSQL 17.5", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -682,7 +682,7 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		// was released, and the integration suite starts 26.10 in its place.
 		"mysql-26-7",
 		// PostgreSQL 14 as well: upstream support ended on 2026-11-12, and the
-		// integration suite starts PostgreSQL 18, so the probe was the only job
+		// integration suite starts PostgreSQL 19, so the probe was the only job
 		// measuring it.
 		"postgres-14",
 		// Neither Oracle line is here any more. The 23 line left when the
