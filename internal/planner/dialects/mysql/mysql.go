@@ -2234,6 +2234,13 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, uniquesRebuilt.ConstraintSet())
 	leftovers := p.replacementLeftovers(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	leftovers = append(leftovers, p.primaryKeyRemovalsBeforeAdditions(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))...)
+	// 5.4. A key the plan adds over the column list another key holds goes
+	// after that key, on a server that holds one key per list. A primary key
+	// both answer is dropped here once: addNewConstraints skips a leftover
+	// already dropped.
+	holderDrops, holdersDropped := p.keyHolderDrops(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+	result = append(result, holderDrops...)
+	maps.Copy(alreadyDropped, holdersDropped)
 	result, err = p.addNewConstraints(result, diff, alreadyDropped, leftovers, released.IndexSet(), taken)
 	if err != nil {
 		return nil, err
@@ -2258,6 +2265,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, released.ConstraintSet())
 	maps.Copy(alreadyDropped, keyrelease.PrimaryKeysBehindAutoIncrement(diff, p.targetDialect()).ConstraintSet())
 	result = p.removeConstraints(result, diff, alreadyDropped)
+	result = append(result, p.columnKeysRestoredAfterDrops(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))...)
 
 	// 6.6. Remove view-like objects before dependent tables. Triggers were
 	// removed at step 4.6.
