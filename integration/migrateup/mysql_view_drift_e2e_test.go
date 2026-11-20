@@ -211,3 +211,34 @@ func TestMariaDBSequenceDriftCheckE2E_HappyPath(t *testing.T) {
 	c.Assert(document.DriftCheck, qt.IsNotNil)
 	c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", document.DriftCheck.Findings))
 }
+
+// A view in the target's database whose body reads a table of a second database
+// names that database in its stored body. The second database exists on both
+// servers, as the replay needs it, and the body is compared under its name.
+func TestMySQLViewDriftCheckE2E_ReadsAnotherDatabase(t *testing.T) {
+	for _, engine := range mysqlViewDriftEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			other := fmt.Sprintf("ptah_view_other_%d", time.Now().UnixNano())
+			for _, server := range []dbtarget.Engine{engine.admin, engine.shadowServer} {
+				address := mysqlViewDriftDatabase(c, server, other)
+				conn, err := dbschema.ConnectToDatabase(c.Context(), address)
+				c.Assert(err, qt.IsNil)
+				c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+				_, err = conn.ExecContext(c.Context(), "CREATE TABLE t (id INT PRIMARY KEY)")
+				c.Assert(err, qt.IsNil)
+			}
+			files := map[string]string{
+				"0000000001_items.up.sql": "-- atlas:txmode none\n" +
+					"CREATE VIEW item_ids AS SELECT id FROM " + other + ".t;\n",
+				"0000000001_items.down.sql": "DROP VIEW item_ids;\n",
+			}
+
+			result, document := mysqlViewDriftRun(c, engine, files)
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
+			c.Assert(document.DriftCheck, qt.IsNotNil)
+			c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", document.DriftCheck.Findings))
+		})
+	}
+}
