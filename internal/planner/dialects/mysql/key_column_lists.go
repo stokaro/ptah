@@ -7,22 +7,27 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintscope"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/objectlookup"
 )
 
 // holdsOneKeyPerColumnList reports whether dialect's server holds one primary
-// or unique key per ordered column list of a table. Oracle does, and answers a
-// second with ORA-02261, measured on Oracle Free 23; a key over the same
-// columns in another order is another list. MySQL, MariaDB and SQL Server take
-// a second key over the same columns.
+// or unique key per ordered column list of a table, which its descriptor says
+// by naming the error a second key answers ([descriptor.Dialect.SecondKeyRefusal]).
+// A key over the same columns in another order is another list.
 func holdsOneKeyPerColumnList(dialect string) bool {
-	return dialect == platform.Oracle
+	return secondKeyRefusals.Get(dialect) != ""
 }
+
+// secondKeyRefusals holds each descriptor's SecondKeyRefusal.
+var secondKeyRefusals = descriptortable.New(func(described descriptor.Dialect) string {
+	return described.SecondKeyRefusal
+})
 
 // keyHolderDrops answers the statements that drop, ahead of the constraint
 // additions, each key holding the ordered column list of a primary or unique
