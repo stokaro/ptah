@@ -19,13 +19,18 @@ import (
 	"log/slog"
 
 	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/rundiag"
 )
 
 // Line is the warning for omission, without the "warning: " prefix: the
 // target, the owning object, then the lost property and its declared value
 // where there is one, as `schema validate --no-skipped` names them, then the
-// omission's reason token and the remedy where the target has one.
+// omission's reason token and the remedy where the target has one. The line
+// is one line whatever the declared text holds: a line break or another control
+// character in a name or a value is written as an escape
+// ([ptah.run/core/sqlutil.CommentText]), so the same text is safe as a stderr
+// warning and as a `--` comment in a migration file.
 func Line(omission renderer.Omission) string {
 	subject := omission.Kind + " " + omission.Name
 	if omission.Property != "" {
@@ -38,7 +43,7 @@ func Line(omission renderer.Omission) string {
 	if omission.Remedy != "" {
 		line += "; " + omission.Remedy
 	}
-	return line
+	return sqlutil.CommentText(line)
 }
 
 // Report raises a warning on out for each of omissions, for the run ctx
