@@ -198,6 +198,7 @@
   "/testing/overview/",
   "/versioned/apply/",
   "/versioned/checkpoints/",
+  "/versioned/drift/",
   "/versioned/generate/",
   "/versioned/import/",
   "/versioned/integrity-and-safety/",

@@ -95,6 +95,7 @@ export const sidebar = [
       { slug: 'versioned/overview', label: 'Overview' },
       { slug: 'versioned/generate' },
       { slug: 'versioned/apply' },
+      { slug: 'versioned/drift' },
       { slug: 'versioned/repeatable' },
       { slug: 'versioned/rollback' },
       { slug: 'versioned/integrity-and-safety' },

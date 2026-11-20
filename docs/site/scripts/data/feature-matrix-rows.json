@@ -999,6 +999,15 @@
     "evidence": "Measured 2026-11-19 on the pinned community binary v1.4.0 (scripts/atlas-ce-reference.lock): it accepts `check \"migrate_apply\" { drift {} }`, ignores it and applies migration 2 on a drifted target; `on_error = FAIL`, `CONTINUE` and any other identifier fail with Unknown variable, exit 1. Ptah parses the block in config/projectconfig/atlas_drift_check.go, runs the shared check in internal/driftgate, which `ptah migrations up --check-drift` also runs, and adapts it in internal/cli/atlas/migrate_apply_drift.go. integration/atlas_compat_migrate_apply_drift_check_e2e_test.go pins refusal, a clean apply, CONTINUE, the absent block and the community divergence on SQLite and PostgreSQL; PTAH_ATLAS_STRICT_COMPAT=1 refuses the block before connecting (internal/atlascompatpolicy)."
   },
   {
+    "area": "Safety gates",
+    "feature": "Drift report against the applied migration history (`migrate drift`)",
+    "ptah": "partial",
+    "atlas_oss": "no",
+    "atlas_pro": "yes",
+    "note": "Native `ptah migrations drift` reports drift from the applied history with the diff and the statements that undo it; exit 0, 1 or 2. Not yet: multi-target envs and the compat `migrate drift`.",
+    "evidence": "Measured 2026-11-20 on PostgreSQL 19 and MySQL 26.10: integration/migrationsdrift/migrations_drift_e2e_test.go pins a clean report, an out-of-band column whose planned statements bring the database back to a clean report, and the migration lock and its name. internal/cli/migrationsdrift/migrationsdrift_test.go pins the same on SQLite, the exclusions, the undecided comparisons and that a report creates no revision table. The comparison is internal/driftgate, which `ptah migrations up --check-drift` runs too. `migrate drift` in ptah-compat, with no flags, prints the migrate group help and exits 0, and with `--url`, exits 1 with unknown flag; routing it to the native verb is stokaro/ptah#6326."
+  },
+  {
     "area": "Versioned migrations — runtime policy",
     "feature": "Transaction modes (`--tx-mode` file/all/none)",
     "ptah": "yes",

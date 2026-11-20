@@ -518,6 +518,11 @@ from `PTAH_CHECK_DRIFT`, wins over the block. `ptah-compat migrate apply` reads
 the same block; see
 [Pre-apply drift check](../../atlas/project-config/#pre-apply-drift-check).
 
+`ptah migrations drift` makes the same comparison on its own and applies
+nothing: it reports the differences, the diff and the statements that would
+bring the database back to its history. See
+[Report drift from the applied history](../drift/).
+
 `ptah schema drift` answers a different question: whether a database matches a
 declared desired schema. `--check-drift` asks whether it matches the history it
 claims to have run.

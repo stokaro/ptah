@@ -843,6 +843,36 @@ Read the columns as follows.
 
 </div>
 
+**`ptah migrations drift`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--migration-lock-name` | `string` | — | `PTAH_MIGRATION_LOCK_NAME` | — |
+| `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+</div>
+
 **`ptah migrations edit`**
 
 <div class="ptah-wide-table">
