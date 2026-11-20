@@ -88,6 +88,65 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 	return roleAttributeError(r.dialect, node.Name, "an altered attribute")
 }
 
+// renderGrantRoleMembership writes `GRANT role TO member`, with WITH ADMIN
+// OPTION when the node states the admin option. Measured on MySQL 8.4, the
+// statement upgrades a membership that exists, a plain GRANT on a membership
+// holding the option leaves it on, and the engine has no INHERIT or SET option
+// per membership, so those are refused.
+func (r *Renderer) renderGrantRoleMembership(node *ast.GrantRoleMembershipNode) error {
+	if !r.caps.Has(capability.RoleMembership) {
+		return grantrefusal.Membership(r.dialect, r.caps, "ADD "+node.Member+" TO "+node.Role)
+	}
+	if node.Admin != nil {
+		if err := grantrefusal.MembershipOption(r.dialect, r.caps, capability.RoleMembershipAdmin, node.Role, node.Member, "WITH ADMIN OPTION"); err != nil {
+			return err
+		}
+	}
+	for _, option := range []struct {
+		name  string
+		value *bool
+	}{{"WITH INHERIT", node.Inherit}, {"WITH SET", node.Set}} {
+		if option.value == nil {
+			continue
+		}
+		if err := grantrefusal.MembershipOption(r.dialect, r.caps, capability.RoleMembershipInheritSet, node.Role, node.Member, option.name); err != nil {
+			return err
+		}
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	clause := ""
+	if node.Admin != nil && *node.Admin {
+		clause = " WITH ADMIN OPTION"
+	}
+	r.w.WriteLinef("GRANT %s TO %s%s;", escapeIdentifier(node.Role), escapeIdentifier(node.Member), clause)
+	return nil
+}
+
+// renderRevokeRoleMembership writes `REVOKE role FROM member`. The engine has
+// no statement that revokes the admin option alone, so a node asking for one is
+// refused and the planner revokes the membership and grants it again.
+func (r *Renderer) renderRevokeRoleMembership(node *ast.RevokeRoleMembershipNode) error {
+	if !r.caps.Has(capability.RoleMembership) {
+		return grantrefusal.Membership(r.dialect, r.caps, "DROP "+node.Member+" FROM "+node.Role)
+	}
+	if node.AdminOptionFor {
+		return &ptaherr.CapabilityError{
+			Dialect: r.dialect,
+			Feature: string(capability.RoleMembershipAdmin),
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("REVOKE ADMIN OPTION FOR on the membership of %s in %s: the %s server has no statement "+
+				"that revokes the admin option alone", node.Member, node.Role, r.dialect),
+		}
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("REVOKE %s FROM %s;", escapeIdentifier(node.Role), escapeIdentifier(node.Member))
+	return nil
+}
+
 // renderGrantPrivilege renders GRANT.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if err := grantrefusal.Path(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {

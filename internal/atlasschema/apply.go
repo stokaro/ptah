@@ -747,9 +747,10 @@ func reviewApplyDiff(
 		ReportOmitted(opts.Diagnostics, omitted)
 		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
 	}
-	// An owner privilege the desired state does not manage is never a change,
-	// with or without one, so its line is written either way.
+	// An owner privilege or a membership the desired state does not manage is
+	// never a change, with or without one, so its line is written either way.
 	ReportUnmanagedOwnerPrivileges(opts.Diagnostics, diff.UnmanagedOwnerPrivileges)
+	ReportUnmanagedRoleMemberships(opts.Diagnostics, diff.UnmanagedRoleMemberships)
 	return nil
 }
 
@@ -1668,6 +1669,23 @@ func ReportUnmanagedOwnerPrivileges(diagnostics io.Writer, deviations []difftype
 	}
 	for _, deviation := range deviations {
 		_, _ = fmt.Fprintln(diagnostics, "UNMANAGED: "+deviation.Note())
+	}
+}
+
+// ReportUnmanagedRoleMemberships writes one line for each membership between
+// two declared roles whose member states no member_of. Ptah plans nothing for
+// them, so a role whose member_of was deleted keeps every membership it held,
+// and the line says so beside a result that would otherwise read as synced.
+func ReportUnmanagedRoleMemberships(diagnostics io.Writer, memberships []difftypes.RoleMembershipRef) {
+	if diagnostics == nil {
+		return
+	}
+	for _, membership := range memberships {
+		_, _ = fmt.Fprintf(diagnostics,
+			"UNMANAGED: role %q is a member of the declared role %q, and its declaration states no member_of, "+
+				"so the plan keeps the membership; state member_of on %q to manage its memberships, "+
+				"or an empty list to revoke them all\n",
+			membership.Member, membership.Role, membership.Member)
 	}
 }
 

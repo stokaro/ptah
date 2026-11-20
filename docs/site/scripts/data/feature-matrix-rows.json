@@ -1432,6 +1432,15 @@
   },
   {
     "area": "Schema object kinds",
+    "feature": "Role membership and its ADMIN, INHERIT and SET options",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "`member_of` and a `membership` block with `admin`, `inherit` and `set`, planned in place on PostgreSQL 16+, with ADMIN only on older lines, MySQL 8 and ClickHouse. Others refuse the option.",
+    "evidence": "core/schemamodel/role_membership.go (grammar), migration/schemadiff/internal/compare/memberships.go (default semantics), internal/planner/rolemembership (plan per target), internal/atlashcl (membership block). integration/dbschema/role_membership_options_live_test.go reads the options back from PostgreSQL 13, 16 and 18, MySQL 8.4 and ClickHouse 26.10 after each change and requires an empty second plan; integration/atlascmd/schema_apply_role_membership_live_test.go applies the HCL block through ptah-compat. Atlas: the community binary v1.4.0 accepts a role block with a membership block and plans no role, and a strict-mode run refuses the roles. The public HCL reference documents the block; the paid edition was not run."
+  },
+  {
+    "area": "Schema object kinds",
     "feature": "PostgreSQL view and materialized view owners",
     "ptah": "yes",
     "atlas_oss": "no",

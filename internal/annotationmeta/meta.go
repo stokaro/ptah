@@ -758,7 +758,10 @@ var directives = []Directive{
 			attr("comment", "Role comment.", valueString, false, false),
 			attr("group", "Declares a group, which never logs in and has members. YDB only.",
 				valueBoolean, false, false),
-			attr("member_of", "Comma-separated groups the role is a member of. YDB only.", valueList, false, false),
+			attr("member_of", "Comma-separated groups the role is a member of. A group may carry membership options "+
+				"in parentheses, such as readers(admin;inherit=false;set=true). A role that states the attribute, even "+
+				"empty, loses a membership the server holds in another declared role and the list leaves out; a role "+
+				"without it keeps every membership the server holds.", valueList, false, false),
 			dialectsAttr(),
 		},
 	},

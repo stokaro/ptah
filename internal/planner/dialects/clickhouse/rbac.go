@@ -5,6 +5,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/planner/rolemembership"
 )
 
 // planRoles emits the role half of ClickHouse access control.
@@ -17,10 +19,23 @@ import (
 // which is also why this phase keeps the slot the old role diagnostics had --
 // after the tables and before everything that reads a role, the same place the
 // offline render path emits roles from.
-func planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func planRoles(result []ast.Node, diff *difftypes.SchemaDiff, caps capability.Capabilities) []ast.Node {
 	result = createRoles(result, diff)
 	result = reportRoleModifications(result, diff)
-	return reportRoleRemovals(result, diff)
+	result = reportRoleRemovals(result, diff)
+	return planRoleMemberships(result, diff, caps)
+}
+
+// planRoleMemberships removes the memberships the declaration dropped, then
+// adds the declared ones and changes the options of the ones both sides hold.
+// Roles exist by now, which the server requires of both ends of a GRANT.
+// ClickHouse withdraws the admin option in place with REVOKE ADMIN OPTION FOR.
+func planRoleMemberships(result []ast.Node, diff *difftypes.SchemaDiff, caps capability.Capabilities) []ast.Node {
+	if !caps.Has(capability.RoleMembership) {
+		return result
+	}
+	result = append(result, rolemembership.Removals(diff)...)
+	return append(result, rolemembership.Additions(diff, caps, rolemembership.RevokeOptionFor)...)
 }
 
 // createRoles plans one CREATE ROLE per added role, carrying the name and

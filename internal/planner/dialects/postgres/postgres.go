@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
+	"ptah.run/internal/planner/rolemembership"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
@@ -1984,7 +1985,7 @@ func (p *Planner) refuseUnplannedChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
 		return err
 	}
-	return schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff)
+	return schemaprecondition.RefuseRoleMemberships(p.targetDialect(), p.capabilities(), diff)
 }
 
 func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
@@ -2190,6 +2191,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
 
+	// 7.1. Plan the memberships of roles in roles, after every role they name
+	// exists and after an ALTER ROLE has changed the INHERIT attribute that is
+	// the default of a membership's inherit option.
+	result = p.planRoleMemberships(result, diff)
+
 	// 7.5. Revoke removed grants before adding replacement grants.
 	result = p.removeGrants(result, diff, rebuild)
 	result = p.revokeGrantOptions(result, diff, rebuild)
@@ -2340,6 +2346,18 @@ func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff) []a
 		result = append(result, modelast.FromRole(role))
 	}
 	return result
+}
+
+// planRoleMemberships removes the memberships the declaration dropped, then
+// adds the declared ones and changes the options of the ones both sides hold.
+// PostgreSQL 16 and later change an option in place with GRANT, and earlier
+// lines withdraw the admin option with REVOKE ADMIN OPTION FOR.
+func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if !p.capabilities().Has(capability.RoleMembership) {
+		return result
+	}
+	result = append(result, rolemembership.Removals(diff)...)
+	return append(result, rolemembership.Additions(diff, p.capabilities(), rolemembership.RevokeOptionFor)...)
 }
 
 func (p *Planner) modifyExistingRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {

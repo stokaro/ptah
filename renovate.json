@@ -132,6 +132,17 @@
       "enabled": false
     },
     {
+      "description": "The postgres-13 integration service is pinned to 13 deliberately: PostgreSQL 13 holds the admin option of a role membership and no INHERIT or SET option, which arrived in 16, so the membership tests plan a different statement there. A 14.x tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 13 patch release.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres"
+      ],
+      "matchCurrentValue": "13",
+      "enabled": false
+    },
+    {
       "description": "Update indirect Go dependencies",
       "matchManagers": [
         "gomod"

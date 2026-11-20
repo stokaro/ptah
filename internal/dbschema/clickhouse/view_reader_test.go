@@ -77,6 +77,8 @@ func clickHouseViewReaderQuery(
 	// would report a view failure for an RBAC statement (stokaro/ptah#1025).
 	case strings.Contains(query, "FROM system.roles"):
 		return dbtest.QueryResult{Columns: []string{"name", "storage"}}, nil
+	case strings.Contains(query, "FROM system.role_grants"):
+		return dbtest.QueryResult{Columns: []string{"granted_role_name", "role_name", "with_admin_option"}}, nil
 	case strings.Contains(query, "FROM system.grants"):
 		return dbtest.QueryResult{Columns: []string{
 			"grantee", "privilege", "database_name", "table_name", "is_partial_revoke", "grant_option",
@@ -128,7 +130,7 @@ func TestReaderReadSchema_LoadsPlainViews(t *testing.T) {
 	// asserted rather than ignored because it is what would catch the reader
 	// issuing one statement per role, per policy — or per view
 	// (stokaro/ptah#1025).
-	c.Assert(db.QueryCount(), qt.Equals, 9)
+	c.Assert(db.QueryCount(), qt.Equals, 10)
 	c.Assert(schema.Views, qt.DeepEquals, []catalog.View{{
 		Name:        "active_users",
 		Schema:      "analytics",

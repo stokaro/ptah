@@ -1263,15 +1263,33 @@ type SchemaDiff struct {
 
 	// RoleMembershipsAdded is every membership of a role in another the
 	// target schema declares and the current database does not hold. Only a
-	// target with capability.RoleMembership fills it, which is YDB alone
-	// today.
+	// target with capability.RoleMembership fills it. Each carries the options
+	// the declaration states.
 	RoleMembershipsAdded []RoleMembershipRef `json:"role_memberships_added,omitempty"`
 
+	// RoleMembershipsModified is every membership both sides hold whose
+	// options differ from the declaration's. See [RoleMembershipChange] for
+	// how the comparison reads a declaration that states no option.
+	RoleMembershipsModified []RoleMembershipChange `json:"role_memberships_modified,omitempty"`
+
 	// RoleMembershipsRemoved is every membership the current database holds
-	// between two roles the target schema declares, and the schema does not.
-	// A membership in a role the schema does not declare is left alone; see
-	// [RoleMembershipRef].
+	// between two roles the target schema declares, and the schema does not,
+	// where the member states its memberships
+	// ([schemamodel.Role.OwnsMemberships]). A membership in a role the schema
+	// does not declare is left alone; see [RoleMembershipRef]. Each carries the
+	// options the database holds, so the reverse of the change grants them
+	// again.
 	RoleMembershipsRemoved []RoleMembershipRef `json:"role_memberships_removed,omitempty"`
+
+	// UnmanagedRoleMemberships is every membership the current database holds
+	// between two roles the target schema declares, where the member does not
+	// state member_of. They are diagnostics, not changes: Ptah plans no REVOKE
+	// for a membership the declaration leaves to the server, a report writes
+	// one line for each beside its result, and [SchemaDiff.HasChanges] does not
+	// count them. The line is what tells a reader who deleted member_of from a
+	// role that the plan kept its memberships. Options are left empty. Like
+	// UnmanagedOwnerPrivileges it is not on the wire.
+	UnmanagedRoleMemberships []RoleMembershipRef `json:"-"`
 
 	// GrantsAdded contains PostgreSQL privilege grants that exist in the target
 	// schema but not in the current database schema.
@@ -1773,6 +1791,7 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.RolesRemoved) > 0 ||
 		len(d.RolesModified) > 0 ||
 		len(d.RoleMembershipsAdded) > 0 ||
+		len(d.RoleMembershipsModified) > 0 ||
 		len(d.RoleMembershipsRemoved) > 0 ||
 		len(d.GrantsAdded) > 0 ||
 		len(d.GrantsRemoved) > 0 ||
@@ -3650,6 +3669,34 @@ type RoleMembershipRef struct {
 	Role string `json:"role"`
 	// Member is the role that holds Role's privileges.
 	Member string `json:"member"`
+	// Options are the membership options: the ones the declaration states in
+	// RoleMembershipsAdded, and the ones the database reports in
+	// RoleMembershipsRemoved. An option the server does not report, such as
+	// INHERIT before PostgreSQL 16, is nil.
+	Options schemamodel.RoleMembershipOptions `json:"options,omitzero"`
+}
+
+// RoleMembershipChange is one membership both sides hold, whose options differ.
+//
+// A declaration that states no option means the target's default for it, which
+// is admin false, set true, and inherit as the member role's own attribute. So
+// a membership holding the defaults matches a declaration stating none, and so
+// matches one stating exactly those values, and a membership holding another
+// value is changed back to the default. An option the server does not report
+// is not compared.
+//
+// From holds every option the database reports, and To the value each of those
+// options takes once the plan has run, defaults resolved. An option differs
+// where both are set and unequal.
+type RoleMembershipChange struct {
+	// Role is the role that has the member.
+	Role string `json:"role"`
+	// Member is the role that holds Role's privileges.
+	Member string `json:"member"`
+	// From are the options the database holds.
+	From schemamodel.RoleMembershipOptions `json:"from"`
+	// To are the options the membership holds after the plan.
+	To schemamodel.RoleMembershipOptions `json:"to"`
 }
 
 // GrantRef identifies one PostgreSQL privilege grant.

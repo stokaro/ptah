@@ -103,6 +103,11 @@ var countedCategories = slices.Concat(kindCategories(), []countedCategory{
 		return unforced
 	}},
 	{name: "roles_modified", severity: Warning, count: func(d *difftypes.SchemaDiff) int { return len(d.RolesModified) }},
+	// A membership whose admin, inherit or set option changes reaches more or
+	// fewer privileges than before, as a changed role does.
+	{name: "role_memberships_modified", severity: Warning, count: func(d *difftypes.SchemaDiff) int {
+		return len(d.RoleMembershipsModified)
+	}},
 	// An index renamed in place keeps its rows and its definition, but a
 	// reader that names it, as a YDB query does with VIEW, stops finding it,
 	// which is how a renamed column or table reads.

@@ -160,6 +160,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"END",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
+		// A role granted to a role, which creates no object.
+		"GRANT \"READERS\" TO",
 		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
 		"GRANT UPDATE (\"LABEL\")",

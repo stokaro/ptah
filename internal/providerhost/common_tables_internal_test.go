@@ -164,6 +164,37 @@ func TestCommonTablePlannerIgnoresTheConnectedAccount(t *testing.T) {
 	}
 }
 
+// TestCommonTablePlannerIgnoresTheComparisonDiagnostics plans a table creation
+// from a diff that also carries a diagnostic of the comparison: a membership a
+// declared role without member_of holds in another declared role, or an owner
+// privilege the declaration does not manage. The comparison fills them for a
+// provider's target as for a built-in one, and Ptah plans nothing for either,
+// so a planner that read them as changes would refuse a plan they have no part
+// in.
+func TestCommonTablePlannerIgnoresTheComparisonDiagnostics(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		memberships     []difftypes.RoleMembershipRef
+		ownerPrivileges []difftypes.OwnerPrivilegeDeviation
+	}{
+		{name: "an unmanaged membership", memberships: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
+		{name: "an unmanaged owner privilege", ownerPrivileges: []difftypes.OwnerPrivilegeDeviation{{ObjectType: "TABLE", Object: "items"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selected, runtime, diff := commonTableCoverageFixture(c)
+			diff.UnmanagedRoleMemberships = test.memberships
+			diff.UnmanagedOwnerPrivileges = test.ownerPrivileges
+
+			nodes, err := selected.registration().Planner(planext.Options{}).GenerateMigrationAST(c.Context(), runtime, diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
+			c.Assert(nodes[0].(*ast.CreateTableNode).Name, qt.Equals, "items")
+		})
+	}
+}
+
 // TestCommonTablePlannerCurrentOwners_FailurePath plans a diff that carries
 // the owners a read reported. The wire has no form for an owner a plan gives
 // back, so the planner refuses it rather than plan a rebuild that hands a view

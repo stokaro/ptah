@@ -441,3 +441,24 @@ func TestForPlan_KeepsEveryMembershipItCannotNarrow(t *testing.T) {
 		})
 	}
 }
+
+// TestForPlan_WholeGraphOnlyWhereNoStatementNamesAnEdge holds the fingerprint
+// to the edges a plan touches on the engines whose statements name both roles,
+// and to every edge on a target that compares memberships without options,
+// whose statements name the group alone.
+func TestForPlan_WholeGraphOnlyWhereNoStatementNamesAnEdge(t *testing.T) {
+	database := &catalog.Database{
+		ConnectedRole:   "runner",
+		RoleMemberships: []catalog.RoleMembership{edge("unrelated_group", "unrelated_member")},
+	}
+	t.Run("a target that holds the admin option keeps unrelated edges out", func(t *testing.T) {
+		c := qt.New(t)
+		caps := capability.Of(map[capability.Capability]bool{capability.RoleMembership: true, capability.RoleMembershipAdmin: true})
+		c.Assert(rolegraph.ForPlan(database, nil, descriptor.RoleScopeNone, caps), qt.HasLen, 0)
+	})
+	t.Run("a target that compares memberships without options covers every edge", func(t *testing.T) {
+		c := qt.New(t)
+		caps := capability.Of(map[capability.Capability]bool{capability.RoleMembership: true})
+		c.Assert(rolegraph.ForPlan(database, nil, descriptor.RoleScopeNone, caps), qt.HasLen, 1)
+	})
+}

@@ -29,7 +29,7 @@ func TestRenderSQL_AccessNodes_FailurePath(t *testing.T) {
 			node: ast.NewCreateRole("readers").SetGroup(true), wantKey: capability.GroupPrincipals},
 		{name: "a dropped group on ClickHouse", dialect: platform.ClickHouse, caps: capability.ClickHouse24(),
 			node: ast.NewDropRole("readers").SetGroup(true), wantKey: capability.GroupPrincipals},
-		{name: "a member added on MySQL", dialect: platform.MySQL, caps: capability.MySQL84(),
+		{name: "a member added on MariaDB", dialect: platform.MariaDB, caps: capability.MariaDB1011(),
 			node: ast.NewGrantRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
 		{name: "a member dropped on SQL Server", dialect: platform.SQLServer, caps: capability.SQLServer2022(),
 			node: ast.NewRevokeRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
@@ -37,10 +37,19 @@ func TestRenderSQL_AccessNodes_FailurePath(t *testing.T) {
 			node: ast.NewGrantRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
 		{name: "a member added on SQLite", dialect: platform.SQLite, caps: capability.SQLite3(),
 			node: ast.NewGrantRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
-		{name: "a member added on PostgreSQL", dialect: platform.Postgres, caps: capability.Postgres18(),
+		{name: "a member added on CockroachDB", dialect: platform.CockroachDB, caps: capability.CockroachDB26(),
 			node: ast.NewGrantRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
-		{name: "a member added on ClickHouse", dialect: platform.ClickHouse, caps: capability.ClickHouse24(),
-			node: ast.NewGrantRoleMembership("readers", "app"), wantKey: capability.RoleMembership},
+		{name: "an admin option on a target without it", dialect: platform.Postgres,
+			caps: capability.Postgres18().With(capability.RoleMembershipAdmin, false),
+			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(new(true), nil, nil), wantKey: capability.RoleMembershipAdmin},
+		{name: "a set option on MySQL", dialect: platform.MySQL, caps: capability.MySQL84(),
+			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(nil, nil, new(false)), wantKey: capability.RoleMembershipInheritSet},
+		{name: "an inherit option on ClickHouse", dialect: platform.ClickHouse, caps: capability.ClickHouse24(),
+			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(nil, new(true), nil), wantKey: capability.RoleMembershipInheritSet},
+		{name: "an inherit option before PostgreSQL 16", dialect: platform.Postgres, caps: capability.Postgres14(),
+			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(nil, new(false), nil), wantKey: capability.RoleMembershipInheritSet},
+		{name: "a set option before PostgreSQL 16", dialect: platform.Postgres, caps: capability.Postgres14(),
+			node: ast.NewGrantRoleMembership("readers", "app").SetOptions(nil, nil, new(true)), wantKey: capability.RoleMembershipInheritSet},
 		{name: "a grant on the database on MySQL", dialect: platform.MySQL, caps: capability.MySQL84(),
 			node: ast.NewGrantPrivilege("app", "DATABASE", "", []string{"SELECT"}), wantKey: capability.DatabaseGrants},
 		{name: "a revoke on the database on PostgreSQL", dialect: platform.Postgres, caps: capability.Postgres18(),
@@ -77,4 +86,17 @@ func TestRenderSQL_AccessNodes_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Contains, `CREATE ROLE "readers"`)
 	c.Assert(got, qt.Contains, `GRANT USAGE ON SCHEMA "app" TO "readers"`)
+}
+
+// TestRenderSQL_MembershipAdminFalseBeforePostgreSQL16 renders an admin option
+// stated false as no clause: the line has only WITH ADMIN OPTION, and writing
+// it for false would grant the option the declaration withheld.
+func TestRenderSQL_MembershipAdminFalseBeforePostgreSQL16(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres14(),
+		ast.NewGrantRoleMembership("readers", "app").SetOptions(new(false), nil, nil))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "GRANT \"readers\" TO \"app\";\n")
 }

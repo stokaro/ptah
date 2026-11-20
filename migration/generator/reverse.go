@@ -247,8 +247,9 @@ func reverseSchemaDiffWithPrior(
 		RolesModified: reverseRoleDiffs(diff.RolesModified, prior),
 		// A membership carries both of its roles, so the swap needs nothing
 		// from the schema beside it.
-		RoleMembershipsAdded:   diff.RoleMembershipsRemoved,
-		RoleMembershipsRemoved: diff.RoleMembershipsAdded,
+		RoleMembershipsAdded:    diff.RoleMembershipsRemoved,
+		RoleMembershipsRemoved:  diff.RoleMembershipsAdded,
+		RoleMembershipsModified: reverseRoleMembershipChanges(diff.RoleMembershipsModified),
 		// Grants to remove become grants to add, and grants to add become grants
 		// to revoke. A routine or a table the rollback creates again also gets
 		// back the privileges the pre-change database held on it.
@@ -597,4 +598,16 @@ func schemasHeldAfter(diff *difftypes.SchemaDiff) []string {
 		return slices.Contains(diff.SchemasRemoved, schema)
 	})
 	return append(held, schemaNames(diff.SchemasAdded)...)
+}
+
+// reverseRoleMembershipChanges swaps the two states of each membership whose
+// options changed, so the rollback sets the options the database held.
+func reverseRoleMembershipChanges(changes []difftypes.RoleMembershipChange) []difftypes.RoleMembershipChange {
+	reversed := make([]difftypes.RoleMembershipChange, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, difftypes.RoleMembershipChange{
+			Role: change.Role, Member: change.Member, From: change.To, To: change.From,
+		})
+	}
+	return reversed
 }

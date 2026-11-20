@@ -137,7 +137,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `triggers` | Trigger definitions. |
 | `rls_policies` | Row-level security policies, with the attributes of `//ptah:schema:rls:policy`, `as` included. An entry and an `rls_enabled_tables` entry take `dialects`: without it, or scoped to the PostgreSQL family, it is PostgreSQL row-level security and other targets refuse it. An entry scoped to ClickHouse is refused. |
 | `row_policies` | ClickHouse row policies, keyed by name, with the attributes of `//ptah:schema:rowpolicy`; `struct_name` may name the table instead. See [row policies](../../databases/clickhouse/#row-policies). |
-| `roles` | Role declarations. On YDB `group: true` declares a group, and `member_of` lists the groups a role joins. |
+| `roles` | Role declarations. `member_of` lists the groups a role joins, each optionally with membership options, such as `readers(admin;set=false)`; `member_of: []` states that the role belongs to no role, and a role without the key keeps the memberships the server holds. On YDB `group: true` declares a group. |
 | `grants` | Permission grants on a table, schema, sequence, function or procedure. On YDB, `on_database: true` names the database, and `on_topic`, `on_secret` and the other keys of the Go annotation name a scheme object. A routine is `on_function` or `on_procedure` with its argument types, such as `purge(uuid)`. |
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |

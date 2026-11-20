@@ -357,6 +357,14 @@
       "qualified": false
     },
     {
+      "category": "role_memberships_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
       "category": "role_memberships_removed",
       "severities": [
         "warning"

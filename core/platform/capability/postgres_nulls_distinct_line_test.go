@@ -72,7 +72,8 @@ func TestPostgres14IsPostgres16WithoutThePostgres15Grammar(t *testing.T) {
 		capability.Postgres16().
 			With(capability.UniqueNullsDistinctClause, false).
 			With(capability.ForeignKeyDeleteColumnList, false).
-			With(capability.PublicationSchemas, false),
+			With(capability.PublicationSchemas, false).
+			With(capability.RoleMembershipInheritSet, false),
 	)
 	c.Assert(fourteen.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(fourteen.Has(capability.IndexIncludeSPGiST), qt.IsTrue)

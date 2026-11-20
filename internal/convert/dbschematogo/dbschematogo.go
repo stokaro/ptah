@@ -640,8 +640,19 @@ func membershipsFor(memberships []catalog.RoleMembership, dialect string) []cata
 // member of.
 func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role, memberships []catalog.RoleMembership) {
 	memberOf := make(map[string][]string)
+	inherits := make(map[string]bool, len(dbRoles))
+	for _, dbRole := range dbRoles {
+		inherits[dbRole.Name] = dbRole.Inherit
+	}
+	memberOptions := make(map[string]map[string]schemamodel.RoleMembershipOptions)
 	for _, membership := range memberships {
 		memberOf[membership.Member] = append(memberOf[membership.Member], membership.Role)
+		if stated := statedMembershipOptions(membership, inherits); !stated.IsZero() {
+			if memberOptions[membership.Member] == nil {
+				memberOptions[membership.Member] = make(map[string]schemamodel.RoleMembershipOptions)
+			}
+			memberOptions[membership.Member][membership.Role] = stated
+		}
 	}
 	for _, dbRole := range dbRoles {
 		role := schemamodel.Role{
@@ -658,9 +669,31 @@ func convertRoles(database *schemamodel.Database, dbRoles []catalog.Role, member
 			Comment:     dbRole.Comment,
 			Group:       dbRole.Group,
 			MemberOf:    memberOf[dbRole.Name],
+
+			MemberOptions: memberOptions[dbRole.Name],
 		}
 		database.Roles = append(database.Roles, role)
 	}
+}
+
+// statedMembershipOptions describes the options a live membership holds as a
+// declaration would state them: only an option that differs from the default,
+// so a membership holding the defaults reads back as a plain member_of entry.
+// The defaults are admin false, set true, and inherit as the member role's own
+// attribute, looked up in inherits.
+func statedMembershipOptions(membership catalog.RoleMembership, inherits map[string]bool) schemamodel.RoleMembershipOptions {
+	memberInherits := inherits[membership.Member]
+	var stated schemamodel.RoleMembershipOptions
+	if membership.AdminOption {
+		stated.Admin = new(true)
+	}
+	if membership.InheritOption != nil && *membership.InheritOption != memberInherits {
+		stated.Inherit = new(*membership.InheritOption)
+	}
+	if membership.SetOption != nil && !*membership.SetOption {
+		stated.Set = new(false)
+	}
+	return stated
 }
 
 func convertRLSEnabledTables(

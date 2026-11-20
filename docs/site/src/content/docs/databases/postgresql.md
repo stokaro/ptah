@@ -2022,6 +2022,75 @@ For another grantor, the refusal names the grantor and the connected role.
 Connect as the grantor and generate a new plan to remove the privilege or its
 grant option.
 
+### Role memberships
+
+`member_of` on a role names the roles it joins. A plan runs `GRANT "group" TO
+"member"` for each one the server does not hold.
+
+A role that states `member_of` owns its memberships. A membership it holds in
+another declared role and the list leaves out is revoked, and the plan rates the
+revocation as a warning. To state that a role belongs to no role, write
+`member_of=""` in an annotation, `member_of: []` in YAML or `member_of = []` in
+HCL. A role that does not state `member_of` keeps every membership the server
+holds: the role an application connects as often holds its permissions through
+a membership granted outside the schema, and an absent list does not say it
+should lose them. A membership in a role the declaration does not name stays as
+the server holds it.
+
+Deleting `member_of` from a role therefore revokes nothing. To take away the
+last membership of a role, keep the key and leave the list empty. `schema apply`
+and `schema compare` write one line for each membership they keep this way, a
+membership in another declared role of a role that states no `member_of`:
+
+```text
+UNMANAGED: role "app" is a member of the declared role "readers", and its declaration states no member_of, so the plan keeps the membership; state member_of on "app" to manage its memberships, or an empty list to revoke them all
+```
+
+The line is written on every run until the role states `member_of`. To keep a
+membership granted outside the schema and stop the line, write the list the
+server already holds, such as `member_of: [readers]` for the role above. The plan
+then has nothing to change, and the role owns its memberships from that point
+on.
+
+```go
+//ptah:schema:role name="readers"
+//ptah:schema:role name="vault" login="true" member_of="readers(admin;inherit=false)"
+```
+
+A group may carry the options of its membership in parentheses, separated by
+semicolons. YAML takes the same spelling, and an Atlas HCL document states
+them in a `membership` block:
+
+| Option | Clause | Held by |
+| --- | --- | --- |
+| `admin` | `WITH ADMIN OPTION`, written `ADMIN TRUE` or `ADMIN FALSE` on 16 and later | every line |
+| `inherit` | `INHERIT` | 16 and later |
+| `set` | `SET` | 16 and later |
+
+An option the declaration leaves out is the default: `admin` false, `set` true,
+and `inherit` as the member role's own `inherit` attribute. A membership that
+holds the defaults matches a declaration that states none, and matches one that
+states the same values. A membership that holds another value is changed back
+to the default, so a declaration that states no option is a statement that the
+defaults are wanted.
+
+On 16 and later one `GRANT` changes the options that differ, in place and
+without losing the membership: `GRANT "readers" TO "vault" WITH ADMIN FALSE`.
+Before 16 the admin option is the only one a membership has. It is granted with
+`WITH ADMIN OPTION` and withdrawn with `REVOKE ADMIN OPTION FOR`, which keeps
+the membership. A declaration that states `inherit` or `set` against a server
+before 16 is refused, naming the capability `role_membership_inherit_set`; it
+is not left out of the plan.
+
+PostgreSQL 16 keeps one row per grantor and Ptah does not read the grantor. A
+member holds the union of its rows. A `GRANT` changes only the connected role's
+own row, so an option another grantor's row grants stays on, and a `REVOKE`
+removes only that row, so a membership another grantor made survives. The next
+comparison plans the same change again. Connect as the grantor, or remove the
+other row, to converge.
+
+CockroachDB and YugabyteDB refuse a declared membership.
+
 ### Grants between two databases
 
 `schema diff` with a database as `--to` reads every grant that database holds, so

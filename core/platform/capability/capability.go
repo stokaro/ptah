@@ -449,15 +449,31 @@ const (
 
 	// RoleMembership marks a target on which Ptah declares, reads, compares
 	// and plans the membership of one role in another: a role's member_of
-	// list, and on YDB `ALTER GROUP g ADD USER m` and `DROP USER m`.
+	// list. On YDB that is `ALTER GROUP g ADD USER m` and `DROP USER m`; on
+	// PostgreSQL, MySQL 8 and ClickHouse it is `GRANT g TO m` and
+	// `REVOKE g FROM m`.
 	//
-	// It describes Ptah rather than the engine. PostgreSQL, MySQL and
-	// ClickHouse grant a role to a role too, and the key is false there
-	// because their planners plan no membership; their readers report one for
+	// It describes Ptah rather than the engine. CockroachDB, YugabyteDB and
+	// MariaDB grant a role to a role too, and the key is false there because
+	// their planners plan no membership; their readers report one for
 	// analysis only. Measured on YDB 25.1.4.7 to 26.2.1.14: a member can be a
 	// user or a group, a group can be a member of itself, and adding a member
 	// twice or dropping one that is not a member succeeds with a notice.
 	RoleMembership Capability = "role_membership"
+
+	// RoleMembershipAdmin marks a target on which a declared membership may
+	// carry WITH ADMIN OPTION, so the member may grant the role onward. A
+	// target without it refuses a declared admin option rather than leaving it
+	// out of the plan. Measured on PostgreSQL 13, 14 and 16, MySQL 8.4 and
+	// ClickHouse 26.10: the clause is accepted on a new membership and on an
+	// existing one, which it upgrades in place.
+	RoleMembershipAdmin Capability = "role_membership_admin"
+
+	// RoleMembershipInheritSet marks a target whose memberships carry INHERIT
+	// and SET options of their own, which is PostgreSQL 16 and later. Earlier
+	// lines refuse the clause as a syntax error (measured on 14.25), and a
+	// declared option is refused there rather than dropped.
+	RoleMembershipInheritSet Capability = "role_membership_inherit_set"
 
 	// GroupPrincipals marks a target on which a group is a principal of its
 	// own kind, made by CREATE GROUP, never able to log in and the only kind
@@ -2098,8 +2114,16 @@ var registry = map[Capability]spec{
 		doc: "named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse, YDB users and groups)",
 	},
 	RoleMembership: {
-		doc:      "Ptah plans a declared membership of a role in another (YDB's ALTER GROUP ... ADD USER)",
+		doc:      "Ptah plans a declared membership of a role in another (GRANT role TO role, YDB's ALTER GROUP ... ADD USER)",
 		requires: []Capability{RoleManagement},
+	},
+	RoleMembershipAdmin: {
+		doc:      "a membership may carry WITH ADMIN OPTION (PostgreSQL, MySQL 8, ClickHouse)",
+		requires: []Capability{RoleMembership},
+	},
+	RoleMembershipInheritSet: {
+		doc:      "a membership carries INHERIT and SET options of its own (PostgreSQL 16 and later)",
+		requires: []Capability{RoleMembership},
 	},
 	GroupPrincipals: {
 		doc:      "a group is a principal of its own kind, made by CREATE GROUP and never able to log in (YDB)",
@@ -2737,9 +2761,11 @@ func buildMySQL84() Capabilities {
 		// because what they ask for is a USER, and a declaration carrying one is
 		// refused rather than created without it.
 		RoleManagement: true,
-		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
-		RoleMembership:                     false,
+		// MySQL 8 holds WITH ADMIN OPTION on a membership and no INHERIT or SET option.
+		// Groups, database grants and relative grant paths are YDB's.
+		RoleMembership:                     true,
+		RoleMembershipAdmin:                true,
+		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
 		DatabaseGrants:                     false,
 		RelativeGrantPaths:                 false,
@@ -3056,8 +3082,10 @@ func buildMariaDB1011() Capabilities {
 		// refused rather than created without it.
 		RoleManagement: true,
 		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
+		// YDB's, or a plan this target's planner does not make.
 		RoleMembership:                     false,
+		RoleMembershipAdmin:                false,
+		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
 		DatabaseGrants:                     false,
 		RelativeGrantPaths:                 false,
@@ -3302,9 +3330,11 @@ func buildPostgres16() Capabilities {
 		CatalogDefaultPrivileges:        true,
 		CatalogTriggerDefinitions:       true,
 		RoleManagement:                  true,
-		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
-		RoleMembership:                     false,
+		// PostgreSQL holds ADMIN on every line and INHERIT and SET from 16.
+		// Groups, database grants and relative grant paths are YDB's.
+		RoleMembership:                     true,
+		RoleMembershipAdmin:                true,
+		RoleMembershipInheritSet:           true,
 		GroupPrincipals:                    false,
 		DatabaseGrants:                     false,
 		RelativeGrantPaths:                 false,
@@ -3522,6 +3552,9 @@ var presetPostgres14 = sync.OnceValue(buildPostgres14)
 // buildPostgres14 builds the [Postgres14] set; the preset builds it once and shares it.
 func buildPostgres14() Capabilities {
 	return Postgres16().
+		// PostgreSQL grew the INHERIT and SET options of a membership in 16.
+		// Measured on 14.25: syntax error at or near "inherit".
+		With(RoleMembershipInheritSet, false).
 		With(UniqueNullsDistinctClause, false).
 		// PostgreSQL grew the ON DELETE SET NULL (columns) list in 15 as well.
 		// Measured on 14.24: syntax error at or near "(" (stokaro/ptah#3562).
@@ -3540,6 +3573,8 @@ var presetPostgres13 = sync.OnceValue(buildPostgres13)
 // buildPostgres13 builds the [Postgres13] set; the preset builds it once and shares it.
 func buildPostgres13() Capabilities {
 	return Postgres16().
+		// PostgreSQL grew the INHERIT and SET options of a membership in 16.
+		With(RoleMembershipInheritSet, false).
 		// PostgreSQL grew NULLS [NOT] DISTINCT and the ON DELETE column list
 		// in 15.
 		With(UniqueNullsDistinctClause, false).
@@ -3683,9 +3718,11 @@ func buildClickHouse24() Capabilities {
 		// role membership, quotas, row policies and settings profiles.
 		// internal/clickhouserbac refuses what cannot be represented.
 		RoleManagement: true,
-		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
-		RoleMembership:                     false,
+		// ClickHouse holds WITH ADMIN OPTION on a membership and no INHERIT or SET option.
+		// Groups, database grants and relative grant paths are YDB's.
+		RoleMembership:                     true,
+		RoleMembershipAdmin:                true,
+		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
 		DatabaseGrants:                     false,
 		RelativeGrantPaths:                 false,
@@ -3919,8 +3956,10 @@ func buildSQLite3() Capabilities {
 		CatalogTriggerDefinitions:       false,
 		RoleManagement:                  false,
 		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
+		// YDB's, or a plan this target's planner does not make.
 		RoleMembership:                     false,
+		RoleMembershipAdmin:                false,
+		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
 		DatabaseGrants:                     false,
 		RelativeGrantPaths:                 false,
@@ -4226,8 +4265,10 @@ func buildSQLServer2022() Capabilities {
 		// (stokaro/ptah#1698).
 		RoleManagement: true,
 		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
+		// YDB's, or a plan this target's planner does not make.
 		RoleMembership:                     false,
+		RoleMembershipAdmin:                false,
+		RoleMembershipInheritSet:           false,
 		GroupPrincipals:                    false,
 		DatabaseGrants:                     false,
 		RelativeGrantPaths:                 false,
@@ -4464,6 +4505,11 @@ var presetCockroachDB23 = sync.OnceValue(buildCockroachDB23)
 // buildCockroachDB23 builds the [CockroachDB23] set; the preset builds it once and shares it.
 func buildCockroachDB23() Capabilities {
 	return Postgres16().
+		// No planner here plans a membership of a role in another, so a
+		// declared one is refused rather than planned unmeasured.
+		With(RoleMembership, false).
+		With(RoleMembershipAdmin, false).
+		With(RoleMembershipInheritSet, false).
 		// Measured on v26.3.1: `42601 syntax error at or near "nulls"`. The
 		// PostgreSQL renderer serves this dialect, so without this the clause
 		// was emitted into SQL CockroachDB cannot parse (stokaro/ptah#2820).
@@ -4686,6 +4732,11 @@ var presetYugabyteDB25 = sync.OnceValue(buildYugabyteDB25)
 // buildYugabyteDB25 builds the [YugabyteDB25] set; the preset builds it once and shares it.
 func buildYugabyteDB25() Capabilities {
 	return Postgres16().
+		// No planner here plans a membership of a role in another, so a
+		// declared one is refused rather than planned unmeasured.
+		With(RoleMembership, false).
+		With(RoleMembershipAdmin, false).
+		With(RoleMembershipInheritSet, false).
 		// The default server runs DDL in separate transactions. A transaction
 		// around a migration body cannot roll its schema changes back as a
 		// unit, so tx-mode all must not promise that rollback.
@@ -4878,12 +4929,14 @@ func buildOracle23() Capabilities {
 		// planning a statement it cannot execute.
 		RoleManagement: true,
 		// Membership, groups, database grants and relative grant paths are
-		// YDB's: this planner plans none of them.
-		RoleMembership:     false,
-		GroupPrincipals:    false,
-		DatabaseGrants:     false,
-		RelativeGrantPaths: false,
-		ForeignKeys:        true,
+		// YDB's, or a plan this target's planner does not make.
+		RoleMembership:           false,
+		RoleMembershipAdmin:      false,
+		RoleMembershipInheritSet: false,
+		GroupPrincipals:          false,
+		DatabaseGrants:           false,
+		RelativeGrantPaths:       false,
+		ForeignKeys:              true,
 		// A foreign key onto a column with no unique or primary key ->
 		// ORA-02270: no matching unique or primary key for this column-list.
 		ForeignKeysRequireUniqueReference: true,

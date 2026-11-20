@@ -830,7 +830,7 @@ func roleAnnotation(role schemamodel.Role, owned []attr) string {
 		{name: "inherit", value: strconv.FormatBool(role.Inherit), set: !role.Inherit},
 		{name: "replication", value: strconv.FormatBool(role.Replication), set: role.Replication},
 		{name: "group", value: strconv.FormatBool(role.Group), set: role.Group},
-		{name: "member_of", value: strings.Join(role.MemberOf, ","), set: len(role.MemberOf) > 0},
+		{name: "member_of", value: strings.Join(schemamodel.FormatMemberOf(role), ","), set: role.OwnsMemberships()},
 		{name: "comment", value: role.Comment, set: role.Comment != ""},
 	}, append(owned, dialectsAttr(role.Dialects))...)...)
 }

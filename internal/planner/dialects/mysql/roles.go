@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/planner/rolemembership"
 )
 
 // planRoles emits real role DDL for a target in this family that manages roles,
@@ -35,7 +36,19 @@ func (p *Planner) planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 		// rather than dropping it.
 		result = append(result, ast.NewAlterRole(roleDiff.RoleName))
 	}
-	return result
+	return p.planRoleMemberships(result, diff)
+}
+
+// planRoleMemberships removes the memberships the declaration dropped, then
+// adds the declared ones and changes the options of the ones both sides hold.
+// MySQL has no statement that revokes the admin option alone, so a membership
+// that loses it is revoked and granted again.
+func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if !p.capabilities().Has(capability.RoleMembership) {
+		return result
+	}
+	result = append(result, rolemembership.Removals(diff)...)
+	return append(result, rolemembership.Additions(diff, p.capabilities(), rolemembership.RevokeAndGrant)...)
 }
 
 // planGrants emits the GRANT statements, including the ones that only add the

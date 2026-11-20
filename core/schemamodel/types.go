@@ -1562,17 +1562,41 @@ type Role struct {
 	// not keep the distinction.
 	Group bool `json:",omitempty"`
 
-	// MemberOf is YDB's today, the one target with
-	// [ptah.run/core/platform/capability.RoleMembership]: it names the groups
-	// this role is a member of, holding every permission they hold. A named
-	// group need not be declared here: YDB's own groups, such as DATA-READERS,
-	// are groups a declaration can join. A target without the key refuses the
-	// list.
+	// MemberOf names the roles this role is a member of, holding every
+	// permission they hold, on a target with
+	// [ptah.run/core/platform/capability.RoleMembership]. A named role need not
+	// be declared here: YDB's own groups, such as DATA-READERS, are groups a
+	// declaration can join. A target without the key refuses the list.
 	MemberOf []string `json:",omitempty"`
+
+	// MemberOfStated says the declaration states an empty member_of list, as
+	// `member_of=""` in an annotation, `member_of: []` in YAML or `member_of =
+	// []` in HCL: the role belongs to no role. It is false where MemberOf names
+	// a role, which states the memberships already, and a reader of a live
+	// server leaves it false. See [Role.OwnsMemberships].
+	MemberOfStated bool `json:",omitempty"`
+
+	// MemberOptions holds the options a membership states, keyed by the group
+	// name as MemberOf spells it. A group with no entry states none. A target
+	// without [ptah.run/core/platform/capability.RoleMembershipAdmin] refuses
+	// a stated admin option, and one without
+	// [ptah.run/core/platform/capability.RoleMembershipInheritSet] a stated
+	// inherit or set option, rather than leaving it out of the plan.
+	MemberOptions map[string]RoleMembershipOptions `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
+}
+
+// OwnsMemberships reports whether the declaration states every membership of
+// the role: MemberOf names a role, or MemberOfStated says an empty list is
+// meant. A role that owns its memberships loses one the server holds in
+// another declared role and MemberOf leaves out. A role that does not keeps
+// every membership the server holds, because a declaration that never wrote
+// member_of says nothing about them.
+func (r Role) OwnsMemberships() bool {
+	return r.MemberOfStated || len(r.MemberOf) > 0
 }
 
 // String names the role. It leaves every other attribute out, the password

@@ -141,10 +141,54 @@ func (r *Reader) readRBACInto(ctx context.Context, dbName string, schema *catalo
 	if err != nil {
 		return err
 	}
+	memberships, err := r.readRoleMemberships(ctx)
+	if err != nil {
+		return err
+	}
 	schema.Grants = grants
 	schema.Roles = described
 	schema.RolesOutOfScope = outOfScope
+	schema.RoleMemberships = memberships
 	return nil
+}
+
+// roleMembershipsQuery reads the roles granted to a role, with the admin
+// option. system.role_grants holds one row per grantee, and a row whose
+// role_name is NULL is a grant to a user, which Ptah does not manage. Measured
+// on clickhouse-server 26.10: a role granted to a role fills role_name and
+// leaves user_name NULL.
+const roleMembershipsQuery = `
+	SELECT granted_role_name, role_name, with_admin_option
+	FROM system.role_grants
+	WHERE role_name IS NOT NULL
+	ORDER BY granted_role_name, role_name
+`
+
+// readRoleMemberships reads the role-in-role edges the server holds. The read
+// is not scoped to the described roles: a membership is a property of the
+// server's role graph, and the comparison decides which edges it manages.
+func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
+	rows, err := r.db.QueryContext(ctx, roleMembershipsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: read role memberships%s: %w", r.onServer(), err)
+	}
+	defer rows.Close()
+
+	memberships := make([]catalog.RoleMembership, 0)
+	for rows.Next() {
+		var (
+			role, member string
+			admin        uint8
+		)
+		if err := rows.Scan(&role, &member, &admin); err != nil {
+			return nil, fmt.Errorf("clickhouse: scan role membership%s: %w", r.onServer(), err)
+		}
+		memberships = append(memberships, catalog.RoleMembership{Role: role, Member: member, AdminOption: admin != 0})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("clickhouse: read role memberships%s: %w", r.onServer(), err)
+	}
+	return memberships, nil
 }
 
 // readGrants reads the grants of one database.

@@ -692,20 +692,113 @@ func (p *parser) parseRole(block *hclsyntax.Block) error {
 	for i, group := range memberOf {
 		memberOf[i] = roleTargetName(group)
 	}
+	memberOf, memberOptions, err := p.parseRoleMemberships(block, memberOf)
+	if err != nil {
+		return err
+	}
+	// member_of = [] states that the role belongs to no role, which an absent
+	// attribute does not; see [schemamodel.Role.OwnsMemberships].
+	_, written := block.Body.Attributes["member_of"]
+	memberOfStated := written && len(memberOf) == 0
+	if len(memberOf) == 0 {
+		memberOf = nil
+	}
 	p.db.Roles = append(p.db.Roles, schemamodel.Role{
-		Name:        name,
-		Login:       attrs.login,
-		Password:    password,
-		Superuser:   attrs.superuser,
-		CreateDB:    attrs.createDB,
-		CreateRole:  attrs.createRole,
-		Inherit:     attrs.inherit,
-		Replication: attrs.replication,
-		Comment:     p.optionalString(block.Body.Attributes["comment"]),
-		Group:       attrs.group,
-		MemberOf:    memberOf,
+		Name:           name,
+		Login:          attrs.login,
+		Password:       password,
+		Superuser:      attrs.superuser,
+		CreateDB:       attrs.createDB,
+		CreateRole:     attrs.createRole,
+		Inherit:        attrs.inherit,
+		Replication:    attrs.replication,
+		Comment:        p.optionalString(block.Body.Attributes["comment"]),
+		Group:          attrs.group,
+		MemberOf:       memberOf,
+		MemberOfStated: memberOfStated,
+		MemberOptions:  memberOptions,
 	})
 	return nil
+}
+
+// roleMembershipBlock is the block that states the options a role's membership
+// in another role carries, beside the plain `member_of` list.
+const roleMembershipBlock = "membership"
+
+// parseRoleMemberships adds the roles the `membership` blocks of a role name to
+// its `member_of` list, and returns the options each block states.
+//
+// A block names its role with `role = role.<name>` and may state `admin`,
+// `inherit` and `set`; each must be a bool, and an option left out stays
+// unstated. A role named by both the list and a block is one membership, and a
+// role named by two blocks is refused: the second would silently replace the
+// first's options.
+func (p *parser) parseRoleMemberships(
+	block *hclsyntax.Block,
+	memberOf []string,
+) ([]string, map[string]schemamodel.RoleMembershipOptions, error) {
+	var options map[string]schemamodel.RoleMembershipOptions
+	seen := make(map[string]bool)
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != roleMembershipBlock {
+			continue
+		}
+		group, stated, err := p.parseRoleMembership(nested)
+		if err != nil {
+			return nil, nil, err
+		}
+		if seen[group] {
+			return nil, nil, p.blockError(nested, "role has two membership blocks for role %q", group)
+		}
+		seen[group] = true
+		if !slices.Contains(memberOf, group) {
+			memberOf = append(memberOf, group)
+		}
+		if !stated.IsZero() {
+			if options == nil {
+				options = make(map[string]schemamodel.RoleMembershipOptions)
+			}
+			options[group] = stated
+		}
+	}
+	return memberOf, options, nil
+}
+
+func (p *parser) parseRoleMembership(block *hclsyntax.Block) (string, schemamodel.RoleMembershipOptions, error) {
+	if len(block.Labels) > 0 {
+		return "", schemamodel.RoleMembershipOptions{}, p.blockError(block, "membership block takes no label")
+	}
+	if err := p.rejectNestedBlocks(block, roleMembershipBlock); err != nil {
+		return "", schemamodel.RoleMembershipOptions{}, err
+	}
+	if err := p.rejectUnsupportedAttrs(block, map[string]bool{
+		"role": true, "admin": true, "inherit": true, "set": true,
+	}, roleMembershipBlock); err != nil {
+		return "", schemamodel.RoleMembershipOptions{}, err
+	}
+	target := block.Body.Attributes["role"]
+	if target == nil {
+		return "", schemamodel.RoleMembershipOptions{}, p.blockError(block, "membership block requires a role attribute")
+	}
+	group := roleTargetName(p.rawExprNode(target.Expr))
+	if group == "" {
+		return "", schemamodel.RoleMembershipOptions{}, p.blockError(block, "membership block role must name a role")
+	}
+	var options schemamodel.RoleMembershipOptions
+	for _, option := range []struct {
+		name  string
+		field **bool
+	}{{"admin", &options.Admin}, {"inherit", &options.Inherit}, {"set", &options.Set}} {
+		if block.Body.Attributes[option.name] == nil {
+			continue
+		}
+		value, err := p.boolAttr(block, option.name, roleMembershipBlock, false)
+		if err != nil {
+			return "", schemamodel.RoleMembershipOptions{}, err
+		}
+		*option.field = &value
+	}
+	return group, options, nil
 }
 
 type roleBoolAttrs struct {
@@ -1147,7 +1240,7 @@ func (p *parser) rejectUnsupportedTriggerEventAttrs(block *hclsyntax.Block) erro
 }
 
 func (p *parser) rejectUnsupportedRoleAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocks(block, "role"); err != nil {
+	if err := p.rejectNestedBlocksExcept(block, "role", roleMembershipBlock); err != nil {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{

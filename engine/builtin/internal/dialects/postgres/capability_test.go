@@ -249,7 +249,7 @@ func withoutRowLevelSecurity() capability.Capabilities {
 // withoutRoleManagement is a PostgreSQL preset for a target that manages no
 // roles or object privileges, and so stores no role comment either.
 func withoutRoleManagement() capability.Capabilities {
-	return capability.Postgres17().With(capability.RoleManagement, false).With(capability.RoleComments, false)
+	return capability.Postgres17().With(capability.RoleManagement, false).With(capability.RoleComments, false).With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false)
 }
 
 // noForeignKeys is a PostgreSQL preset with foreign keys switched off.

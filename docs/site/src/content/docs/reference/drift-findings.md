@@ -55,7 +55,7 @@ one it does not report, or when the two give a category different severities.
 | `materialized_views` | safe | destructive | destructive |
 | `rls_enabled_tables` | safe | destructive | |
 | `rls_policies` | safe | destructive | warning |
-| `role_memberships` | safe | warning | |
+| `role_memberships` | safe | warning | warning |
 | `roles` | safe | destructive | warning |
 | `schemas` | safe | destructive | warning |
 | `sequences` | safe | destructive | warning |

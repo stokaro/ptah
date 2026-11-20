@@ -5,7 +5,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
-	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
 )
 
@@ -124,9 +123,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.RevokePrivilegeNode:
 		return r.renderRevokePrivilege(n)
 	case *ast.GrantRoleMembershipNode:
-		return grantrefusal.Membership(r.dialect, r.caps, "ADD "+n.Member+" TO "+n.Role)
+		return r.renderGrantRoleMembership(n)
 	case *ast.RevokeRoleMembershipNode:
-		return grantrefusal.Membership(r.dialect, r.caps, "DROP "+n.Member+" FROM "+n.Role)
+		return r.renderRevokeRoleMembership(n)
 
 	// Row-level security.
 	case *ast.CreatePolicyNode:

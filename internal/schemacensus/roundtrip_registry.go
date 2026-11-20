@@ -157,7 +157,9 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 		{Field: "schemamodel.Grant.OnDatabase", Reason: providerOnly},
 		{Field: "schemamodel.Grant.OnObject", Reason: providerOnly},
 		{Field: "schemamodel.Role.Group", Reason: providerOnly},
-		{Field: "schemamodel.Role.MemberOf", Reason: providerOnly},
+		{Field: "schemamodel.Role.MemberOfStated", Reason: "it decides only whether a membership the server " +
+			"holds and the declaration leaves out is revoked, and a round trip reads back no membership its " +
+			"fixture does not declare; the membership comparison tests measure it"},
 	}
 }
 

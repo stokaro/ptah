@@ -773,6 +773,7 @@ func restoreAuthored(diff *difftypes.SchemaDiff, authored *schemamodel.Database)
 		if declared, found := roles[role.Name]; found {
 			role.Login, role.Superuser, role.CreateDB, role.CreateRole = declared.Login, declared.Superuser, declared.CreateDB, declared.CreateRole
 			role.Inherit, role.Replication, role.MemberOf = declared.Inherit, declared.Replication, slices.Clone(declared.MemberOf)
+			role.MemberOfStated = declared.MemberOfStated
 		}
 	}
 	for i := range diff.ViewsAdded {

@@ -5,7 +5,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
-	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/nodedispatch"
 )
 
@@ -123,9 +122,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.RevokePrivilegeNode:
 		return r.renderRevokePrivilege(n)
 	case *ast.GrantRoleMembershipNode:
-		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
+		return r.renderGrantRoleMembership(n)
 	case *ast.RevokeRoleMembershipNode:
-		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
+		return r.renderRevokeRoleMembership(n)
 
 	// Shared row-level security. A ClickHouse row policy is the ClickHouse
 	// owner's object, rendered by its own operation, and ClickHouse has no

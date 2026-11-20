@@ -737,7 +737,7 @@ func TestRBACVisitors_WithoutRoleManagementNameTheRefusal(t *testing.T) {
 			c := qt.New(t)
 
 			renderer := clickhouse.NewWithCapabilities(
-				capability.ClickHouse24().With(capability.RoleManagement, false),
+				capability.ClickHouse24().With(capability.RoleManagement, false).With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false),
 			)
 			err := test.node.Accept(renderer)
 

@@ -136,11 +136,11 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
-	if field.Name == "UnmanagedOwnerPrivileges" {
+	if field.Name == "UnmanagedOwnerPrivileges" || field.Name == "UnmanagedRoleMemberships" {
 		// A diagnostic of the forward comparison, never a change: Ptah plans
-		// nothing for an owner privilege the desired state does not manage,
-		// in either direction, so there is nothing for a rollback to undo
-		// (stokaro/ptah#5765).
+		// nothing for an owner privilege or a membership the desired state
+		// does not manage, in either direction, so there is nothing for a
+		// rollback to undo (stokaro/ptah#5765).
 		return
 	}
 	if field.Name == "DeclaredFunctions" {

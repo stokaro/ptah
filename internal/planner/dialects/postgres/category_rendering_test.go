@@ -47,6 +47,7 @@ var supplementalDiffCategories = map[string]string{
 	"ObservedConstraintHosts":         "PostgreSQL changes constraints in place; observed rebuild operands do not add PostgreSQL operations",
 	"SkippedFeatures":                 "the objects the comparison left out because the target does not serve their model; PostgreSQL serves every model a skip names, and the plan's comment for one is written by the planner host for every dialect, which TestOffFamilyTargetsSkipADeclaredExtension drives",
 	"UnmanagedOwnerPrivileges":        "a diagnostic of the comparison: owner privileges the desired state does not manage, for which Ptah plans nothing by design, so no statement renders from it (stokaro/ptah#5765)",
+	"UnmanagedRoleMemberships":        "a diagnostic of the comparison: memberships whose member states no member_of, for which Ptah plans nothing by design, so no statement renders from it",
 	"CurrentOwners":                   "the owner the read reported for every view and materialized view, which a view rebuild reads to give a view it drops and creates again back to its owner. It renders only beside the rebuild that reads it; TestViewRebuild_KeepsTheOwnerItFound_HappyPath drives it",
 	"DeclaredIndexes":                 "every declared index with its relation resolved, which a view rebuild reads to put back the indexes of a materialized view it drops and creates again. It renders only beside the rebuild that reads it; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4976)",
 	"DeclaredTriggers":                "every declared trigger, which a view rebuild reads to put back the triggers of a view it drops and creates again. It renders only beside the rebuild that reads it; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4976)",
@@ -78,14 +79,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 	"SchemasModified": {
 		why:  "a database's character set and collation are a whole-server MySQL-family change for the same reason",
 		diff: &difftypes.SchemaDiff{SchemasModified: []difftypes.SchemaChange{{Name: "app", Collate: "C"}}},
-	},
-	"RoleMembershipsAdded": {
-		why:  "the comparison records a membership only on a target with role_membership, which is YDB's, so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would leave the member without what it was declared to hold",
-		diff: &difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
-	},
-	"RoleMembershipsRemoved": {
-		why:  "the comparison records a membership only on a target with role_membership, which is YDB's; planning nothing would leave the member holding what it was declared not to hold",
-		diff: &difftypes.SchemaDiff{RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
 	},
 	"IndexesRenamed": {
 		why:  "the comparison pairs a removed index with an added one only on a target with index_rename, which is YDB's, so a PostgreSQL plan reaches a rename only through a diff built by hand, and planning nothing would leave the index under its old name",
@@ -465,6 +458,25 @@ func diffCategoryFixtures() []categoryFixture {
 		{
 			"GrantOptionsAdded",
 			&difftypes.SchemaDiff{GrantOptionsAdded: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", WithOption: true}}},
+			&schemamodel.Database{},
+		},
+		{
+			"RoleMembershipsAdded",
+			&difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
+			&schemamodel.Database{},
+		},
+		{
+			"RoleMembershipsModified",
+			&difftypes.SchemaDiff{RoleMembershipsModified: []difftypes.RoleMembershipChange{{
+				Role: "readers", Member: "app",
+				From: schemamodel.RoleMembershipOptions{Admin: new(false), Inherit: new(true), Set: new(true)},
+				To:   schemamodel.RoleMembershipOptions{Admin: new(true), Inherit: new(true), Set: new(true)},
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			"RoleMembershipsRemoved",
+			&difftypes.SchemaDiff{RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
 			&schemamodel.Database{},
 		},
 		{

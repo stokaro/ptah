@@ -117,7 +117,7 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 			limits: []pgdefaultprivilege.Class{{ObjectType: "TYPES"}, {Schema: "public", ObjectType: "TABLES"}},
 		},
 		{name: "role management without the catalog relation", caps: capability.Postgres16().With(capability.CatalogDefaultPrivileges, false)},
-		{name: "the catalog relation without role management", caps: capability.Postgres16().With(capability.RoleManagement, false)},
+		{name: "the catalog relation without role management", caps: capability.Postgres16().With(capability.RoleManagement, false).With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

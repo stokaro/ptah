@@ -26,7 +26,7 @@ func TestMembershipRemovalRequiresIndependentCoverage(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app"}, {Name: "team", Group: true}}, NotDescribed: test.desired}
+			desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app", MemberOfStated: true}, {Name: "team", Group: true}}, NotDescribed: test.desired}
 			current := &catalog.Database{RoleMemberships: []catalog.RoleMembership{{Role: "team", Member: "app"}}, NotDescribed: test.observed}
 			var diff difftypes.SchemaDiff
 			compare.RoleMemberships(desired, current, &diff, capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
