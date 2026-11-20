@@ -68,3 +68,40 @@ CREATE TABLE unnamed_pair (id NUMBER(10) PRIMARY KEY, a VARCHAR2(20), b VARCHAR2
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, stderr))
 	c.Assert(again, qt.Contains, "Schema is synced")
 }
+
+// TestOracleReferencedColumnUniqueDropE2E applies a file that drops the keys
+// Oracle named for two columns of parent, together with the foreign keys that
+// reference them: one on a table the file keeps, one on a table it no longer
+// declares. Everything applies, and the second plan is empty. Without the
+// order the foreign keys are dropped with the other constraint removals, after
+// `DROP UNIQUE (code)`, which Oracle refuses with ORA-02273 while they stand;
+// the plan stops there, after the statements ahead of it.
+func TestOracleReferencedColumnUniqueDropE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, e2eRepoRoot(t), binary)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	runAsAccount(c, ctx, conn, []string{
+		`CREATE TABLE parent (id NUMBER(10) PRIMARY KEY, code VARCHAR2(20) UNIQUE, other VARCHAR2(20) UNIQUE)`,
+		`CREATE TABLE child (id NUMBER(10) PRIMARY KEY, pc VARCHAR2(20) REFERENCES parent (code))`,
+		`CREATE TABLE gone (id NUMBER(10) PRIMARY KEY, po VARCHAR2(20) REFERENCES parent (other))`,
+	})
+	schemaPath := writeDeclaredSchema(c, `CREATE TABLE parent (id NUMBER(10) PRIMARY KEY, code VARCHAR2(20), other VARCHAR2(20));
+CREATE TABLE child (id NUMBER(10) PRIMARY KEY, pc VARCHAR2(20));
+CREATE TABLE added (id NUMBER(10) PRIMARY KEY);
+`)
+	keys := `SELECT table_name || ' ' || constraint_type FROM user_constraints ` +
+		`WHERE constraint_type IN ('P', 'U', 'R') AND table_name IN ('PARENT', 'CHILD', 'GONE', 'ADDED') ORDER BY 1`
+
+	applied, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied, stderr))
+	c.Assert(accountNames(c, ctx, conn, keys), qt.DeepEquals, []string{"ADDED P", "CHILD P", "PARENT P"})
+
+	again, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, stderr))
+	c.Assert(again, qt.Contains, "Schema is synced")
+}
