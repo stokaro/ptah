@@ -34,6 +34,28 @@ type Room struct{}
 	c.Assert(db.Constraints[3].Period, qt.IsFalse)
 }
 
+// TestParseSource_TemporalKeys_BareFlag reads a temporal attribute written as
+// a bare word as true, the way primary and not_null read. Read as false, a bare
+// flag declares a plain key, which accepts the overlapping rows its author
+// meant to forbid.
+func TestParseSource_TemporalKeys_BareFlag(t *testing.T) {
+	c := qt.New(t)
+
+	db := mustParseSource(c, "rooms.go", `package test
+
+//ptah:schema:table name="rooms" primary_key="id,valid_at" primary_key_without_overlaps
+//ptah:schema:constraint name="rooms_uq" type="UNIQUE" columns="id,valid_at" without_overlaps
+//ptah:schema:constraint name="rooms_fk" type="FOREIGN KEY" columns="room_id,valid_at" foreign_table="rooms" foreign_columns="id,valid_at" period
+type Room struct{}
+`)
+
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].PrimaryKeyWithoutOverlaps, qt.IsTrue)
+	c.Assert(db.Constraints, qt.HasLen, 2)
+	c.Assert(db.Constraints[0].WithoutOverlaps, qt.IsTrue)
+	c.Assert(db.Constraints[1].Period, qt.IsTrue)
+}
+
 // TestParseSource_TemporalKeys_FailurePath refuses a clause on the wrong kind of
 // constraint, a key too short to carry it, and a value that is not a boolean.
 func TestParseSource_TemporalKeys_FailurePath(t *testing.T) {

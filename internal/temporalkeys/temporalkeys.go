@@ -8,9 +8,9 @@ package temporalkeys
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/referentialaction"
 )
 
 // minimumKeyColumns is the fewest columns a temporal key takes. The columns
@@ -52,37 +52,13 @@ func CheckConstraint(constraint schemamodel.Constraint) error {
 // foreign key constraint using PERIOD" to RESTRICT, CASCADE, SET NULL and SET
 // DEFAULT, and the same for ON UPDATE.
 func noAction(action string) bool {
-	action = spelledAction(action)
+	action = referentialaction.Spelling(action)
 	return action == "" || action == "NO ACTION"
-}
-
-// spelledAction is action in the SQL spelling: upper case, one space between
-// words.
-func spelledAction(action string) string {
-	return strings.ToUpper(strings.Join(strings.Fields(strings.ReplaceAll(action, "_", " ")), " "))
 }
 
 func periodActionError(name, clause, action string) error {
 	return fmt.Errorf("constraint %q has period and %s %s; a PERIOD foreign key takes only NO ACTION",
-		name, clause, spelledAction(action))
-}
-
-// Flag reads the temporal attribute name of a Go annotation's attributes, such
-// as without_overlaps="true". An absent attribute is false. A present one must
-// be exactly true or false, the spelling every boolean annotation attribute
-// reads as true; anything else, an empty value or another case included, is
-// refused. Read as false, it would declare a plain key, which accepts the
-// overlapping rows its author meant to forbid.
-func Flag(attributes map[string]string, name string) (bool, error) {
-	value, present := attributes[name]
-	switch {
-	case !present || value == "false":
-		return false, nil
-	case value == "true":
-		return true, nil
-	default:
-		return false, fmt.Errorf("%s=%q is not a boolean; write true or false", name, value)
-	}
+		name, clause, referentialaction.Spelling(action))
 }
 
 // CheckPrimaryKey refuses WITHOUT OVERLAPS on a table's primary key of fewer

@@ -96,3 +96,56 @@ func TestParsePlatformSpecific_CopiesNoDialectDescriptor(t *testing.T) {
 	// allocations; copying every descriptor took over 400.
 	c.Assert(allocs < 10, qt.IsTrue, qt.Commentf("allocations per call: %v", allocs))
 }
+
+func TestBoolAttribute_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		attributes  map[string]string
+		wantValue   bool
+		wantPresent bool
+	}{
+		{name: "absent", attributes: make(map[string]string), wantValue: false, wantPresent: false},
+		{name: "true", attributes: map[string]string{"period": "true"}, wantValue: true, wantPresent: true},
+		{name: "false", attributes: map[string]string{"period": "false"}, wantValue: false, wantPresent: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			value, present, err := parseutils.BoolAttribute(test.attributes, "period")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(value, qt.Equals, test.wantValue)
+			c.Assert(present, qt.Equals, test.wantPresent)
+		})
+	}
+}
+
+// A written value that is not exactly true or false is refused rather than
+// read as false. Another case is refused, and so is an empty value, which is
+// written and says neither.
+func TestBoolAttribute_FailurePath(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "empty", value: "", want: `without_overlaps="" is not a boolean; write true or false`},
+		{name: "another case", value: "TRUE", want: `without_overlaps="TRUE" is not a boolean; write true or false`},
+		{name: "surrounding space", value: " true ", want: `without_overlaps=" true " is not a boolean; write true or false`},
+		{name: "yes", value: "yes", want: `without_overlaps="yes" is not a boolean; write true or false`},
+		{name: "one", value: "1", want: `without_overlaps="1" is not a boolean; write true or false`},
+		{name: "a column name", value: "valid_at", want: `without_overlaps="valid_at" is not a boolean; write true or false`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			value, present, err := parseutils.BoolAttribute(map[string]string{"without_overlaps": test.value}, "without_overlaps")
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(value, qt.IsFalse)
+			c.Assert(present, qt.IsTrue)
+		})
+	}
+}
