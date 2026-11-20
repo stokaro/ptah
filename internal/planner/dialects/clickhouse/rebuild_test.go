@@ -2,6 +2,7 @@ package clickhouse_test
 
 import (
 	"cmp"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -96,6 +97,85 @@ func allowRebuild() planext.Options {
 	return planext.Options{AllowTableRebuild: true, Statements: planext.StatementStyleExact}
 }
 
+// The guard asks the server which objects depend on the table: the
+// materialized views that read it and the dictionaries that load from it.
+func TestRebuild_DependentsGuardReadsTheServersDependencies(t *testing.T) {
+	c := qt.New(t)
+	f := newRebuildFixture()
+	f.after.Engine.Value = "ReplacingMergeTree(ver)"
+
+	statements, err := f.plan(c, allowRebuild())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements[0], qt.Contains, "ARRAY JOIN arrayConcat(arrayZip(dependencies_database, dependencies_table), "+
+		"arrayZip(loading_dependent_database, loading_dependent_table)) AS dependency WHERE database = currentDatabase() AND name = 'events'")
+	c.Assert(statements[0], qt.Contains, "WHERE engine = 'MaterializedView' AND replaceAll(extractGroups(create_table_query, ")
+}
+
+// The pattern runs in the server's extractGroups(), which is RE2, the engine
+// Go's regexp implements, so the pattern the plan carries is compiled here as
+// the server compiles it, over create_table_query as 24.10 and 26.10 write it.
+func TestRebuild_DependentsGuardFindsAMaterializedViewsTarget(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantGroup []string
+	}{
+		{
+			name:      "a plain target",
+			query:     "CREATE MATERIALIZED VIEW m.mv_to TO m.t (`id` UInt64, `k` UInt64) AS SELECT id, k FROM m.src",
+			wantGroup: []string{"m", "t"},
+		},
+		{
+			name:      "names in backticks",
+			query:     "CREATE MATERIALIZED VIEW `my-db`.`mv x` TO `my-db`.`t-1` (`id` UInt64) AS SELECT id FROM `my-db`.s",
+			wantGroup: []string{"`my-db`", "`t-1`"},
+		},
+		{
+			name:      "a view that reads the table writes elsewhere",
+			query:     "CREATE MATERIALIZED VIEW m.mv_from TO m.agg (`k` UInt64, `n` UInt64) AS SELECT k, count() AS n FROM m.t GROUP BY k",
+			wantGroup: []string{"m", "agg"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			pattern := guardPattern(c)
+
+			found := pattern.FindStringSubmatch(test.query)
+
+			c.Assert(found, qt.HasLen, 3)
+			c.Assert(found[1:], qt.DeepEquals, test.wantGroup)
+		})
+	}
+}
+
+// A materialized view with its own engine writes to no other table.
+func TestRebuild_DependentsGuardSkipsAViewWithItsOwnEngine(t *testing.T) {
+	c := qt.New(t)
+	pattern := guardPattern(c)
+
+	found := pattern.FindStringSubmatch("CREATE MATERIALIZED VIEW `my-db`.mv_inner (`id` UInt64) ENGINE = MergeTree ORDER BY id " +
+		"SETTINGS index_granularity = 8192 AS SELECT id FROM `my-db`.t")
+
+	c.Assert(found, qt.IsNil)
+}
+
+// guardPattern plans a rebuild and reads the pattern its guard hands to
+// extractGroups() out of the first statement, undoing the ClickHouse string
+// escapes.
+func guardPattern(c *qt.C) *regexp.Regexp {
+	c.Helper()
+	f := newRebuildFixture()
+	f.after.Engine.Value = "ReplacingMergeTree(ver)"
+	statements, err := f.plan(c, allowRebuild())
+	c.Assert(err, qt.IsNil)
+	found := regexp.MustCompile(`extractGroups\(create_table_query, '((?:[^'\\]|''|\\.)*)'\)`).FindStringSubmatch(statements[0])
+	c.Assert(found, qt.HasLen, 2, qt.Commentf("no extractGroups() in %s", statements[0]))
+	literal := strings.NewReplacer("''", "'", `\\`, `\`).Replace(found[1])
+	return must.Must(regexp.Compile(literal))
+}
+
 func TestRebuild_HappyPath(t *testing.T) {
 	t.Run("an engine change keeps the rows through a holding table", func(t *testing.T) {
 		c := qt.New(t)
@@ -107,8 +187,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(statements, qt.HasLen, 7)
 		c.Assert(statements[0], qt.Matches, "(?s)^-- ClickHouse table rebuild of events.*")
-		c.Assert(statements[0], qt.Contains, "SELECT toUInt8(concat('cannot create events again: it is read by '")
-		c.Assert(statements[0], qt.Contains, "FROM system.tables WHERE engine IN ('View', 'MaterializedView', 'LiveView', 'WindowView', 'Dictionary', 'Merge', 'Buffer', 'Distributed')")
+		c.Assert(statements[0], qt.Contains, "SELECT toUInt8(concat('cannot create events again: these depend on it: '")
 		c.Assert(statements[0], qt.Contains, "HAVING count() > 0")
 		c.Assert(statements[1], qt.Contains, "CREATE TABLE ptah_rebuild_events (")
 		c.Assert(statements[1], qt.Contains, "ENGINE = MergeTree ORDER BY (tuple())")
@@ -467,7 +546,9 @@ func TestRebuild_UnfinishedHoldingTable(t *testing.T) {
 			`Copying it back would double them\. `+
 			"Compare SELECT count\\(\\) FROM `events` with SELECT count\\(\\) FROM `ptah_rebuild_events`\\. "+
 			"If events holds every row, drop the holding table: DROP TABLE `ptah_rebuild_events`\\. "+
-			"If it lacks rows, copy them back: INSERT INTO `events` \\(`id`\\) SELECT `id` FROM `ptah_rebuild_events`\\. Then drop the holding table")
+			"If it lacks rows, copy them back: INSERT INTO `events` \\(`id`\\) SELECT `id` FROM `ptah_rebuild_events`\\. Then drop the holding table\\. "+
+			"If the count of events fails because the table does not exist, the rebuild stopped after it dropped the table: "+
+			"create events from your declaration and copy the rows back, and do not drop the holding table first")
 		c.Assert(statements, qt.IsNil)
 	})
 

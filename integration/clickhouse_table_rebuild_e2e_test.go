@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -348,28 +349,25 @@ func TestClickHouseTableRebuild_AStoppedRebuildIsNeverDropped(t *testing.T) {
 	c.Assert(held, qt.Equals, uint64(3))
 }
 
-// A materialized view reads every row written to its source, so the copy back
-// would feed the rows through it a second time, and a SummingMergeTree target
-// would count them twice. A view, a dictionary and a Merge, Buffer or
-// Distributed table break while the table is gone. The first statement of the
-// rebuild fails when any of them names the table, before a table is created.
-func TestClickHouseTableRebuild_RefusesATableSomethingReads(t *testing.T) {
+// A materialized view that reads the table keeps firing after the table is
+// created again, so the copy back would feed the rows through it a second time,
+// and a SummingMergeTree target would count them twice. One that writes to the
+// table makes its source refuse inserts while the table is gone. The server
+// refuses to drop a table a dictionary loads from. The first statement of the
+// rebuild fails when any of them depends on the table, before a table is
+// created.
+func TestClickHouseTableRebuild_RefusesATableSomethingDependsOn(t *testing.T) {
 	tests := []struct {
 		name       string
 		dependents []string
 		// extraArgs keep the dependent out of the plan, so that the plan does
-		// not drop it before the rebuild is asked. A Merge table is not read.
+		// not drop it before the rebuild is asked. Ptah reads no dictionary.
 		extraArgs []string
 	}{
 		{
-			name:       "a materialized view",
+			name:       "a materialized view that reads the table",
 			dependents: []string{"CREATE MATERIALIZED VIEW mv ENGINE = SummingMergeTree ORDER BY k AS SELECT 1 AS k, 1 AS n FROM t"},
 			extraArgs:  []string{"--exclude", "mv"},
-		},
-		{
-			name:       "a plain view",
-			dependents: []string{"CREATE VIEW v AS SELECT id FROM t"},
-			extraArgs:  []string{"--exclude", "v"},
 		},
 		{
 			name:       "a materialized view that writes to the table",
@@ -377,23 +375,8 @@ func TestClickHouseTableRebuild_RefusesATableSomethingReads(t *testing.T) {
 			extraArgs:  []string{"--exclude", "mv", "--exclude", "src"},
 		},
 		{
-			name:       "a view that joins the table by a comma",
-			dependents: []string{"CREATE VIEW v AS SELECT a.dummy FROM system.one AS a, t"},
-			extraArgs:  []string{"--exclude", "v"},
-		},
-		{
-			name:       "a view that tests membership in the table",
-			dependents: []string{"CREATE VIEW v AS SELECT 1 AS x WHERE (toUInt64(1), 'a', toUInt32(1), toDate('2024-01-05')) IN t"},
-			extraArgs:  []string{"--exclude", "v"},
-		},
-		{
-			name:       "a view that reads the table through a table function",
-			dependents: []string{"CREATE VIEW v AS SELECT * FROM remote('127.0.0.1', currentDatabase(), t)"},
-			extraArgs:  []string{"--exclude", "v"},
-		},
-		{
-			name:       "a Merge table",
-			dependents: []string{"CREATE TABLE m (id UInt64) ENGINE = Merge(currentDatabase(), '^t$')"},
+			name:       "a dictionary that loads from the table",
+			dependents: []string{"CREATE DICTIONARY dict (id UInt64, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 't' DB '{db}')) LAYOUT(FLAT()) LIFETIME(0)"},
 		},
 	}
 	for _, test := range tests {
@@ -402,18 +385,105 @@ func TestClickHouseTableRebuild_RefusesATableSomethingReads(t *testing.T) {
 			url, conn := rebuildScratch(c)
 			rebuildExec(c, conn,
 				"CREATE TABLE t (id UInt64, name String, ver UInt32, d Date) ENGINE = MergeTree ORDER BY id", rebuildFixtureRows)
-			rebuildExec(c, conn, test.dependents...)
+			rebuildExec(c, conn, rebuildInDatabase(c, conn, test.dependents)...)
 			declaration := rebuildDeclaration("        engine: ReplacingMergeTree(ver)\n        order_by: id\n")
 
 			applied := rebuildApply(c, url, declaration, append([]string{"--allow-table-rebuild"}, test.extraArgs...)...)
 
 			c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-			c.Assert(applied.Stderr, qt.Contains, "cannot create t again: it is read by ")
+			c.Assert(applied.Stderr, qt.Contains, "cannot create t again: these depend on it: ")
 			c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "MergeTree")
 			c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, [][2]string{{"1", "a"}, {"2", "b"}, {"3", "c"}})
 			c.Assert(rebuildTables(c, conn), qt.Not(qt.Contains), "ptah_rebuild_t")
 		})
 	}
+}
+
+// A view, a Merge or Buffer table and a remote() query only read the table.
+// They find no table while it is gone, and read the new one after, so they do
+// not stop the rebuild.
+func TestClickHouseTableRebuild_ReadersReadTheNewTable(t *testing.T) {
+	tests := []struct {
+		name   string
+		reader string
+		// extraArgs keep a view out of the plan. Ptah reads no Merge or
+		// Buffer table, so the plan leaves those alone.
+		extraArgs []string
+		probe     string
+		wantCount string
+	}{
+		{
+			name:      "a plain view",
+			reader:    "CREATE VIEW v AS SELECT id FROM t",
+			extraArgs: []string{"--exclude", "v"},
+			probe:     "SELECT toString(count()) FROM v",
+			wantCount: "3",
+		},
+		{
+			name:      "a view that joins the table by a comma",
+			reader:    "CREATE VIEW v AS SELECT a.dummy FROM system.one AS a, t",
+			extraArgs: []string{"--exclude", "v"},
+			probe:     "SELECT toString(count()) FROM v",
+			wantCount: "3",
+		},
+		{
+			name:      "a view that tests membership in the table",
+			reader:    "CREATE VIEW v AS SELECT 1 AS x WHERE (toUInt64(1), 'a', toUInt32(1), toDate('2024-01-05')) IN t",
+			extraArgs: []string{"--exclude", "v"},
+			probe:     "SELECT toString(count()) FROM v",
+			wantCount: "1",
+		},
+		{
+			name:      "a view that reads the table through a table function",
+			reader:    "CREATE VIEW v AS SELECT * FROM remote('127.0.0.1', currentDatabase(), t, 'ptah_user', 'ptah_password')",
+			extraArgs: []string{"--exclude", "v"},
+			probe:     "SELECT toString(count()) FROM v",
+			wantCount: "3",
+		},
+		{
+			name:      "a Merge table",
+			reader:    "CREATE TABLE m (id UInt64) ENGINE = Merge(currentDatabase(), '^t$')",
+			probe:     "SELECT toString(count()) FROM m",
+			wantCount: "3",
+		},
+		{
+			name:      "a Buffer table",
+			reader:    "CREATE TABLE b (id UInt64, name String, ver UInt32, d Date) ENGINE = Buffer(currentDatabase(), t, 1, 10, 100, 10000, 1000000, 10000000, 100000000)",
+			probe:     "SELECT toString(count()) FROM b",
+			wantCount: "3",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, conn := rebuildScratch(c)
+			rebuildExec(c, conn,
+				"CREATE TABLE t (id UInt64, name String, ver UInt32, d Date) ENGINE = MergeTree ORDER BY id", rebuildFixtureRows, test.reader)
+			declaration := rebuildDeclaration("        engine: ReplacingMergeTree(ver)\n        order_by: id\n")
+
+			applied := rebuildApply(c, url, declaration, append([]string{"--allow-table-rebuild"}, test.extraArgs...)...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "ReplacingMergeTree")
+			c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, [][2]string{{"1", "a"}, {"2", "b"}, {"3", "c"}})
+			var count string
+			c.Assert(conn.QueryRowContext(c.Context(), test.probe).Scan(&count), qt.IsNil)
+			c.Assert(count, qt.Equals, test.wantCount)
+		})
+	}
+}
+
+// rebuildInDatabase writes the scratch database's name where a statement says
+// {db}, for a definition that takes the name as a string.
+func rebuildInDatabase(c *qt.C, conn *dbschema.DatabaseConnection, statements []string) []string {
+	c.Helper()
+	var database string
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT currentDatabase()").Scan(&database), qt.IsNil)
+	written := make([]string, len(statements))
+	for i, statement := range statements {
+		written[i] = strings.ReplaceAll(statement, "{db}", database)
+	}
+	return written
 }
 
 // ClickHouse refuses a block of more than max_partitions_per_insert_block

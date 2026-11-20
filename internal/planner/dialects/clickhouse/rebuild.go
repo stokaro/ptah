@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -270,7 +269,10 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 		nodes = append(nodes, ast.NewComment("Computed columns are not copied, the server evaluates them: "+strings.Join(computed, ", ")))
 	}
 	nodes = append(nodes,
-		ast.NewComment("Nothing may read the table. The copy back would feed every row through a materialized view again. This statement fails, naming what reads it."),
+		ast.NewComment("This statement fails, naming them, when a materialized view reads or writes the table, or a dictionary loads from it. "+
+			"The copy back would feed every row through a materialized view again, writes through one would fail while the table is gone, "+
+			"and the server refuses to drop a table a dictionary loads from."),
+		ast.NewComment("A view, a Merge, Buffer or Distributed table, or a remote() query that reads the table finds no table while these steps run, and reads the new one after."),
 		ast.NewRawSQL(dependentsGuard(table.TableName)),
 		holder,
 		ast.NewRawSQL(fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s;", holdingTable, columnList, strings.Join(read, ", "), current)),
@@ -443,48 +445,58 @@ func replicatedEngine(table *difftypes.TableDiff) (string, bool) {
 	return "", false
 }
 
-// dependentEngines are the engines whose definition can name another table.
-var dependentEngines = []string{"View", "MaterializedView", "LiveView", "WindowView", "Dictionary", "Merge", "Buffer", "Distributed"}
-
-// dependentsGuard is a statement that fails, naming them, when a view, a
-// materialized view, a dictionary or a Merge, Buffer or Distributed table
-// reads the table. system.tables lists only a materialized view among the
-// dependencies of a table, measured on 24.10 and 26.10, so the guard reads the
-// definitions. A name after FROM, JOIN, TO, IN, INTO or a comma counts, and so
-// does the name as a quoted string. A definition in another database counts only
-// when it also names the table's database, which keeps a view of an unrelated
-// database that reads a table of the same name from stopping the rebuild. The
-// message is the error the server gives for a string that is not a number,
-// because throwIf takes only a constant message.
+// dependentsGuard is a statement that fails, naming them, when an object the
+// rebuild would harm depends on the table:
+//
+//   - a materialized view that reads it, which the server lists in the table's
+//     dependencies_table. It keeps firing after DROP TABLE and CREATE TABLE, so
+//     the copy back would feed every row through it a second time;
+//   - a dictionary, or a table whose default calls dictGet over it, which the
+//     server lists in loading_dependent_table. The server refuses DROP TABLE
+//     while one exists, and a refusal there would stop the rebuild halfway;
+//   - a materialized view that writes to it (TO the table). Its source refuses
+//     inserts while the table is gone. The server lists it only among the
+//     dependencies of its source, so the guard reads its definition, whose TO
+//     target the server writes in a fixed place; see [materializedViewTarget].
+//
+// A view, a Merge, Buffer or Distributed table and a remote() query only read
+// the table. They find no table while it is gone and read the new one after,
+// which the plan's comment says; they do not stop the rebuild. All three were
+// measured on 24.10 and 26.10. The message is the error the server gives for a
+// string that is not a number, because throwIf takes only a constant message.
 func dependentsGuard(table string) string {
-	database, name := "currentDatabase()", table
+	database, name := "currentDatabase()", chcolumn.StringLiteral(table)
 	if ref, ok := tableref.Parse(table); ok {
-		name = ref.Name
+		name = chcolumn.StringLiteral(ref.Name)
 		if ref.Qualified {
 			database = chcolumn.StringLiteral(ref.Schema)
 		}
 	}
-	engines := make([]string, len(dependentEngines))
-	for i, engine := range dependentEngines {
-		engines[i] = chcolumn.StringLiteral(engine)
-	}
-	quoted := regexp.QuoteMeta(name)
-	// A name counts after FROM, JOIN, TO (a materialized view's target), IN or
-	// INTO, after a comma (a comma join, or an argument of a table function),
-	// with or without its database and backticks. The name as a quoted string
-	// counts too: a dictionary, a Buffer, a Distributed and a Merge table (as
-	// ^name$) write it so. False positives are accepted. A false negative lets
-	// the copy back feed rows through a reader, so the match errs wide.
-	qualifier := "([`\"]?[0-9A-Za-z_]+[`\"]?\\.)?"
-	keyword := "\\b(from|join|to|in|into)\\b\\s*\\(?\\s*"
-	reference := chcolumn.StringLiteral("(?i)((" + keyword + "|,\\s*)" + qualifier + "[`\"]?" + quoted + "[`\"]?($|[^0-9A-Za-z_.])|'\\^?" + quoted + "\\$?')")
-	return fmt.Sprintf("SELECT toUInt8(concat(%s, arrayStringConcat(groupArray(concat(database, '.', name)), ', '), %s)) "+
-		"FROM system.tables WHERE engine IN (%s) AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') "+
-		"AND NOT (database = %s AND name = %s) AND match(create_table_query, %s) AND (database = %s OR position(create_table_query, %s) > 0) HAVING count() > 0;",
-		chcolumn.StringLiteral("cannot create "+table+" again: it is read by "),
-		chcolumn.StringLiteral("; they would receive every row again, or break while the table is gone"),
-		strings.Join(engines, ", "), database, chcolumn.StringLiteral(name), reference, database, database)
+	target := chcolumn.StringLiteral(materializedViewTarget)
+	return fmt.Sprintf("SELECT toUInt8(concat(%s, arrayStringConcat(arraySort(groupUniqArray(dependent)), ', '), %s)) FROM ("+
+		"SELECT concat(tupleElement(dependency, 1), '.', tupleElement(dependency, 2)) AS dependent FROM system.tables "+
+		"ARRAY JOIN arrayConcat(arrayZip(dependencies_database, dependencies_table), arrayZip(loading_dependent_database, loading_dependent_table)) AS dependency "+
+		"WHERE database = %s AND name = %s "+
+		"UNION ALL SELECT concat(database, '.', name) AS dependent FROM system.tables "+
+		"WHERE engine = 'MaterializedView' AND replaceAll(extractGroups(create_table_query, %s)[1], '`', '') = %s "+
+		"AND replaceAll(extractGroups(create_table_query, %s)[2], '`', '') = %s"+
+		") HAVING count() > 0;",
+		chcolumn.StringLiteral("cannot create "+table+" again: these depend on it: "),
+		chcolumn.StringLiteral(". A materialized view that reads the table would receive every row again, "+
+			"one that writes to it would fail while the table is gone, and the server refuses to drop a table a dictionary loads from. "+
+			"Drop each one and create it again around the rebuild"),
+		database, name, target, database, target, name)
 }
+
+// materializedViewTarget is the RE2 pattern, as the server's extractGroups()
+// reads it, that takes the database and the table a materialized view writes to
+// out of its create_table_query. The server writes that text in one shape,
+// CREATE MATERIALIZED VIEW db.name TO db.table (columns) AS SELECT ..., with a
+// name in backticks only where it needs them, so the target sits right after
+// the view's own qualified name. A view with its own engine has no TO and does
+// not match.
+const materializedViewTarget = "^CREATE MATERIALIZED VIEW (?:`(?:[^`\\\\]|\\\\.)*`|[^ `.]+)\\.(?:`(?:[^`\\\\]|\\\\.)*`|[^ `]+) TO " +
+	"(`(?:[^`\\\\]|\\\\.)*`|[^ `.]+)\\.(`(?:[^`\\\\]|\\\\.)*`|[^ `(]+)"
 
 // refuseUnfinishedRebuilds refuses a plan that drops a holding table an earlier
 // rebuild left. The table carries the marker comment.
@@ -520,8 +532,10 @@ func refuseUnfinishedRebuilds(diff *difftypes.SchemaDiff) error {
 			steps = fmt.Sprintf("Table %s exists. The rebuild may have stopped before it dropped the table, or at its last statement, and then %s holds a copy of every row. "+
 				"Copying it back would double them. Compare SELECT count() FROM %s with SELECT count() FROM %s. "+
 				"If %s holds every row, drop the holding table: DROP TABLE %s. "+
-				"If it lacks rows, copy them back: %s. Then drop the holding table",
-				owner, removal.Name, ownerTable, holding, owner, holding, copyBack)
+				"If it lacks rows, copy them back: %s. Then drop the holding table. "+
+				"If the count of %s fails because the table does not exist, the rebuild stopped after it dropped the table: "+
+				"create %s from your declaration and copy the rows back, and do not drop the holding table first",
+				owner, removal.Name, ownerTable, holding, owner, holding, copyBack, owner, owner)
 		}
 		return &ptaherr.CapabilityError{
 			Dialect: platform.ClickHouse,

@@ -338,7 +338,7 @@ named `ptah_rebuild_<table>` in the table's database and marked with a table
 comment that names the table it holds the rows of:
 
 ```sql
-SELECT toUInt8(concat('cannot create events again: it is read by ', ...)) FROM system.tables WHERE ... HAVING count() > 0;
+SELECT toUInt8(concat('cannot create events again: these depend on it: ', ...)) FROM (SELECT ... FROM system.tables ...) HAVING count() > 0;
 CREATE TABLE ptah_rebuild_events (id UInt64, name String) ENGINE = MergeTree ORDER BY tuple() COMMENT 'ptah rebuild holding table for events';
 INSERT INTO `ptah_rebuild_events` (`id`, `name`) SELECT `id`, `name` FROM `events`;
 DROP TABLE `events` SYNC;
@@ -393,17 +393,21 @@ The plan's warning comment says the same. A table of the holding table's name th
 database holds without the comment is never overwritten. The plan refuses when it sees
 one, and the server refuses the `CREATE TABLE` when the plan does not see it.
 
-The first statement of a rebuild fails, naming them, when a view, a materialized view,
-a dictionary, or a `Merge`, `Buffer` or `Distributed` table reads the table. The copy
-back would feed every row through a materialized view a second time, which a
-`SummingMergeTree` target counts twice (measured: five rows read ten), and the others
-break while the table is gone. The guard reads the definitions in `system.tables`,
-because its `dependencies_table` column lists only a materialized view. It matches
-the name after `FROM`, `JOIN`, `TO`, `IN`, `INTO` or a comma, which covers a comma join, a
-view's `TO` target and a table function argument, and the name as a quoted string. A
-definition in another database counts only when it also names the table's database. The
-match errs wide: a false stop is accepted, a missed reader is not. Drop or recreate
-the reader by hand around the rebuild.
+The first statement of a rebuild fails, naming them, when an object depends on
+the table in a way the rebuild would harm. The server reports each one exactly, so
+the guard does not read the text of definitions:
+
+| Dependent | What the rebuild would do | How the guard finds it |
+| --- | --- | --- |
+| A materialized view that reads the table | It keeps firing after the table is created again, so the copy back feeds every row through it a second time. A `SummingMergeTree` target counts them twice (measured: five rows read ten). | The table's `dependencies_table` in `system.tables` |
+| A dictionary, or a table whose default calls `dictGet` over it | The server refuses `DROP TABLE` while it exists, which would stop the rebuild after the first copy. | The table's `loading_dependent_table` |
+| A materialized view that writes to the table (`TO`) | Its source refuses inserts while the table is gone. | The `TO` target in the view's definition, which the server writes in a fixed place |
+
+Drop each dependent it names and create it again by hand around the rebuild. A
+view, a `Merge`, `Buffer` or `Distributed` table and a `remote()` query only read
+the table. They find no table while the rebuild runs and read the new table after
+it, so they do not stop it; the plan's comments say so. Measured on 24.10 and
+26.10. The guard sees only the objects `system.tables` shows the connecting user.
 
 Ptah does not rebuild a table whose engine, as it is or as declared, is a
 `Replicated*MergeTree` or `Shared*MergeTree`, whatever the request says. The holding
