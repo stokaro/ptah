@@ -168,7 +168,7 @@ func TestCompatMigrateLintFormatSchemaFramingE2E(t *testing.T) {
 	}
 
 	communityOut, _, err := runCLIProcess(c.Context(), root, reference, args...)
-	compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}, args...)
+	compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: strictEnvironment()}, args...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", compat.Stderr))
