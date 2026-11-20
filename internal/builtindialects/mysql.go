@@ -31,8 +31,9 @@ func mysql() descriptor.Dialect {
 		// bare "9.7.2", so the ladder is reached only through the declared
 		// dialect. The 8.0 steps are patch releases, each the threshold of the
 		// gate it replaced: VIEW_TABLE_USAGE at 8.0.13, enforced CHECK at
-		// 8.0.16, DROP CONSTRAINT at 8.0.19 and SHOW_ROUTINE at 8.0.20
-		// (stokaro/ptah#916).
+		// 8.0.16, DROP CONSTRAINT at 8.0.19, SHOW_ROUTINE at 8.0.20
+		// (stokaro/ptah#916) and an instant column placed before existing
+		// ones at 8.0.29.
 		Capabilities: descriptor.Capabilities{
 			DefaultPreset: "MySQL84",
 			Versions: descriptor.Versions{
@@ -43,6 +44,7 @@ func mysql() descriptor.Dialect {
 					{Min: "8.0.16", Preset: "MySQL8016"},
 					{Min: "8.0.19", Preset: "MySQL8019"},
 					{Min: "8.0.20", Preset: "MySQL8020"},
+					{Min: "8.0.29", Preset: "MySQL8029"},
 					{Min: "8.4", Preset: "MySQL84"},
 				},
 				Attribution: "measured-lines",
@@ -140,10 +142,12 @@ func mysql() descriptor.Dialect {
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
 		// Measured on 26.10.0: a CHECK named ck on one table and ck or CK on
-		// another of the database is refused, and so is ÉK after ék; ek and ék
-		// are two names.
+		// another of the database is refused, and so is ÉK after ék and İ after
+		// i; ek and ék are two names, and ẞ (U+1E9E) beside ß and ϴ (U+03F4)
+		// beside θ are accepted. Ptah folds ASCII letters only, so it never
+		// refuses a pair the server accepts and leaves the rest to the server.
 		CheckNames: descriptor.CheckNames{
-			Scope: descriptor.CheckNameScopeSchema, Comparison: "unicode_case_insensitive",
+			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
 			Refusal: "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
 		},
 		Columns: descriptor.Columns{

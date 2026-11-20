@@ -314,7 +314,7 @@ Every rule has a Ptah name, `category/name`, and no numeric code. A selector in 
 | `locking` | 17 | the statement holds a lock that blocks reads or writes while it runs |
 | `naming` | 10 | a name breaks the configured convention, or is longer than the server keeps |
 | `online` | 2 | online mode, which the user selects, could not prove the statement runs without a lock that blocks reads or writes; its rules fire only in that mode, so `--disable locking` leaves them on |
-| `rewrite` | 23 | the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent |
+| `rewrite` | 24 | the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent |
 | `rollout` | 4 | the change breaks a client or a consumer deployed against the current schema |
 | `security` | 7 | the statement weakens access control, or writes a secret or an unquoted value into SQL |
 | `side-effect` | 14 | the statement resets, ignores or leaves behind something its text does not show; silenced, a migration can succeed and leave the database different from what it says |
@@ -323,7 +323,7 @@ Every rule has a Ptah name, `category/name`, and no numeric code. A selector in 
 
 ## Migration lint rules
 
-117 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `file-form/refused-file`, `naming/identifier-collision`, `naming/identifier-too-long` and `rollout/rename`, which only native `ptah` emits.
+118 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `file-form/refused-file`, `naming/identifier-collision`, `naming/identifier-too-long` and `rollout/rename`, which only native `ptah` emits.
 
 Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database. `ptah migrations up` disables 60 advisory rules (migration-file form, backward compatibility, and the locking and rewrite rules of PostgreSQL, MySQL and MariaDB) and refuses only on blocking findings of `destructive/drop-table`, `destructive/drop-column`, `dependency/drop-column-in-use`, `data-dependent/alter-column-type`, `integrity/drop-not-null`, `integrity/drop-untyped-constraint`, `destructive/remove-enum-value`, `destructive/drop-object`, `destructive/truncate-table`, `security/disable-row-level-security` and `security/no-force-row-level-security`, unless the policy's `gate` section names more rules or categories.
 
@@ -402,6 +402,7 @@ Neither apply gate reports even that much, so a rule listed below is not by itse
 | `locking/add-fulltext-index` | adding a FULLTEXT index can rebuild the table and block writes | both | `MY134` |
 | `locking/add-spatial-index` | adding a SPATIAL index can rebuild the table and block writes | both | `MY135` |
 | `locking/blocking-alter-table` | this ALTER TABLE form usually rebuilds the table and blocks writes for the duration | both | — |
+| `rewrite/add-column-before-existing` | adding a column FIRST or AFTER another cannot be instant on MySQL before 8.0.29 and MariaDB before 10.4, so the server rebuilds the table | both | `MY142` |
 | `rewrite/add-primary-key` | adding a primary key rebuilds the table in place around the new clustered index | both | `MY132` |
 | `rewrite/change-engine` | changing the storage engine copies the table and blocks writes for the duration | both | `MY138` |
 | `rewrite/change-partitioning` | a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it | both | `MY139` |
@@ -659,7 +660,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 - `transaction/scheme-and-data-in-one-query`
 - `ydb/add-column-form`
 
-The other 87 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per category. `ptah sql lint` reads the `rules:` severities the same file sets for `capability/missing`, `correctness/index-on-undeclared-column`, `correctness/syntax-error`, `coverage/dynamic-sql`, `coverage/unanalyzed-statements`, `coverage/unsupported-statement`, `design/no-primary-key`, `naming/identifier-collision` and `naming/identifier-too-long`, so the severities above are the defaults. `--disable` refuses a selector covering `correctness/syntax-error` or `coverage/unsupported-statement`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+The other 88 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per category. `ptah sql lint` reads the `rules:` severities the same file sets for `capability/missing`, `correctness/index-on-undeclared-column`, `correctness/syntax-error`, `coverage/dynamic-sql`, `coverage/unanalyzed-statements`, `coverage/unsupported-statement`, `design/no-primary-key`, `naming/identifier-collision` and `naming/identifier-too-long`, so the severities above are the defaults. `--disable` refuses a selector covering `correctness/syntax-error` or `coverage/unsupported-statement`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## Atlas check codes
 
@@ -708,6 +709,7 @@ Ptah rules have no numeric code. The compatibility layer maps each rule that rep
 | `rewrite/change-partitioning` | `MY139` | mysql, mariadb |
 | `rewrite/add-stored-generated-column` | `MY140` | mysql, mariadb |
 | `locking/add-auto-increment-column` | `MY141` | mysql, mariadb |
+| `rewrite/add-column-before-existing` | `MY142` | mysql, mariadb |
 | `rewrite/modify-generated-column` | `MY143` | mysql, mariadb |
 | `locking/add-check` | `MY144` | mysql, mariadb |
 | `locking/enforce-check` | `MY145` | mysql |
@@ -739,7 +741,7 @@ Ptah rules have no numeric code. The compatibility layer maps each rule that rep
 
 ## Atlas analyzer checks
 
-Every check code in the reviewed snapshot of the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) (`internal/atlascodes/reference.txt`, reviewed 2026-09-06), and what Ptah does about it: 72 covered, 2 partial, 1 not implemented, 2 waived, of 77. That page presents its table as highlights rather than an inventory -- it says Atlas "runs and reports dozens of additional checks" beyond them -- so a complete row here is completeness against the snapshot, not full behavioral parity with the analyzer. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code in the reviewed snapshot of the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) (`internal/atlascodes/reference.txt`, reviewed 2026-09-06), and what Ptah does about it: 73 covered, 2 partial, 0 not implemented, 2 waived, of 77. That page presents its table as highlights rather than an inventory -- it says Atlas "runs and reports dozens of additional checks" beyond them -- so a complete row here is completeness against the snapshot, not full behavioral parity with the analyzer. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -778,7 +780,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `MY139` | partitioning or removing partitioning requires a table copy and blocks DML | yes | `rewrite/change-partitioning` | covered — measured, this statement form accepts no ALGORITHM or LOCK clause at all, so the finding says there is no online-DDL negotiation rather than naming a copy |
 | `MY140` | adding a STORED generated column requires a table copy and blocks DML | yes | `rewrite/add-stored-generated-column` | covered |
 | `MY141` | adding an AUTO_INCREMENT column rebuilds the table and blocks DML | yes | `locking/add-auto-increment-column` | covered — the rebuild is in place and writes still stop: LOCK=NONE is refused, which is why the finding reports cost and locking separately |
-| `MY142` | adding a column before existing columns prevents an instant operation on older versions | yes | — | not implemented — measured absent on every MySQL release line this repository declares: ADD COLUMN ... FIRST accepts ALGORITHM=INSTANT on 8.4.11 and on 8.0.46, andthe lowest declared line is 8.4, so a rule would be a false positive wherever Ptah is tested |
+| `MY142` | adding a column before existing columns prevents an instant operation on older versions | yes | `rewrite/add-column-before-existing` | covered — reports only where the server the run plans against lacks the instant placement, read from `--server-version` or the dev database: MySQL before 8.0.29 and MariaDB before 10.4 |
 | `MY143` | modifying a generated column requires a table copy and blocks DML | yes | `rewrite/modify-generated-column` | covered — the MODIFY and CHANGE side; adding one is MY140, and DS103 still reports the type change where the declared type moves |
 | `MY144` | adding a CHECK constraint scans all existing rows | yes | `locking/add-check` | covered |
 | `MY145` | modifying or enforcing a CHECK constraint re-validates all existing rows | yes | `locking/enforce-check` | covered — MySQL only: MariaDB has no ENFORCED or NOT ENFORCED syntax, so a mariadb finding would describe a statement that server refuses to parse |

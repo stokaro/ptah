@@ -310,6 +310,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.Hypertables,
 			capability.IndexComments,
 			capability.IndexRename,
+			capability.InstantAddColumnAnyPosition,
 			capability.MaterializedViewComments,
 			capability.MigrationLockTimeout,
 			capability.MigrationStatementTimeout,

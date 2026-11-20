@@ -1292,6 +1292,18 @@ const (
 	// `ALGORITHM=COPY`, and both refuse the clause with 1845/1846 where the
 	// operation cannot be done that way. No other engine has the grammar.
 	AlterTableAlgorithmLock Capability = "alter_table_algorithm_lock"
+	// InstantAddColumnAnyPosition is whether the target adds a column placed
+	// before existing ones -- `ADD COLUMN ... FIRST` or `AFTER col` -- as an
+	// instant catalog change. Without it a column placed anywhere but last
+	// rebuilds the table.
+	//
+	// The key exists for the lint rule that warns about that rebuild,
+	// rewrite/add-column-before-existing, which has to stay quiet on the
+	// servers where the placement costs nothing. Measured with `ALGORITHM=INSTANT` on a three-column InnoDB
+	// table: MySQL 8.0.28 and MariaDB 10.3.39 accept a column added last and
+	// refuse `FIRST` and `AFTER id` with ERROR 1845; MySQL 8.0.29 and MariaDB
+	// 10.4.34 accept all three. No other engine has a column position.
+	InstantAddColumnAnyPosition Capability = "instant_add_column_any_position"
 	// AddConstraintNotValid is whether the target takes `NOT VALID` on an
 	// added constraint and `VALIDATE CONSTRAINT` to complete it.
 	//
@@ -2273,6 +2285,9 @@ var registry = map[Capability]spec{
 	AlterTableAlgorithmLock: {
 		doc: "ALGORITHM= and LOCK= clauses on ALTER TABLE, which the server refuses when it cannot honor them (MySQL, MariaDB)",
 	},
+	InstantAddColumnAnyPosition: {
+		doc: "a column added before existing ones (FIRST, AFTER) as an instant change rather than a table rebuild (MySQL 8.0.29+, MariaDB 10.4+)",
+	},
 	AddConstraintNotValid: {
 		doc: "NOT VALID on an added constraint and VALIDATE CONSTRAINT to complete it (PostgreSQL family)",
 	},
@@ -2765,6 +2780,7 @@ func buildMySQL84() Capabilities {
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
+		InstantAddColumnAnyPosition:     true,
 		AddConstraintNotValid:           false,
 		InvisibleIndexes:                true,
 		PrimaryKeyRequired:              false,
@@ -2864,10 +2880,13 @@ func buildMySQL8019() Capabilities {
 		With(ForeignKeysRequireUniqueReference, false).
 		With(ForeignKeysRequireIndexedReference, true).
 		// SHOW_ROUTINE arrived in 8.0.20, one patch above this arm.
-		With(ShowRoutinePrivilege, false)
+		With(ShowRoutinePrivilege, false).
+		// A column placed before existing ones became instant in 8.0.29;
+		// [MySQL8029] restores the key for the arm that has it.
+		With(InstantAddColumnAnyPosition, false)
 }
 
-// MySQL8020 is the preset for MySQL 8.0.20 through 8.0.x: the same set as
+// MySQL8020 is the preset for MySQL 8.0.20 through 8.0.28: the same set as
 // [MySQL8019] plus the global SHOW_ROUTINE privilege, which MySQL introduced in
 // 8.0.20 and which the metadata-visibility check demands exactly where a server
 // can grant it (stokaro/ptah#916 item 3).
@@ -2878,6 +2897,19 @@ var presetMySQL8020 = sync.OnceValue(buildMySQL8020)
 // buildMySQL8020 builds the [MySQL8020] set; the preset builds it once and shares it.
 func buildMySQL8020() Capabilities {
 	return MySQL8019().With(ShowRoutinePrivilege, true)
+}
+
+// MySQL8029 is the preset for MySQL 8.0.29 through 8.3: [MySQL8020] plus a
+// column added before existing ones as an instant change, which MySQL 8.0.28
+// refuses with ALGORITHM=INSTANT and 8.0.29 accepts
+// ([InstantAddColumnAnyPosition]).
+func MySQL8029() Capabilities { return presetMySQL8029() }
+
+var presetMySQL8029 = sync.OnceValue(buildMySQL8029)
+
+// buildMySQL8029 builds the [MySQL8029] set; the preset builds it once and shares it.
+func buildMySQL8029() Capabilities {
+	return MySQL8020().With(InstantAddColumnAnyPosition, true)
 }
 
 // MySQL8016 is the preset for MySQL 8.0.16–8.0.18: CHECK constraints are
@@ -3074,6 +3106,7 @@ func buildMariaDB1011() Capabilities {
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
+		InstantAddColumnAnyPosition:     true,
 		AddConstraintNotValid:           false,
 		InvisibleIndexes:                true,
 		PrimaryKeyRequired:              false,
@@ -3181,7 +3214,22 @@ func buildMariaDBLegacy() Capabilities {
 		// A DEFAULT that is an expression arrived in MariaDB 10.2.1, the
 		// first release above this arm, and so did the WITH clause.
 		With(ExpressionDefaults, false).
-		With(CommonTableExpressions, false)
+		With(CommonTableExpressions, false).
+		// A column placed before existing ones became instant in 10.4.
+		With(InstantAddColumnAnyPosition, false)
+}
+
+// MariaDB102 is the preset for MariaDB 10.2 and 10.3: [MariaDB1011] without
+// a column added before existing ones as an instant change, which MariaDB
+// 10.3 refuses with ALGORITHM=INSTANT and 10.4 accepts
+// ([InstantAddColumnAnyPosition]).
+func MariaDB102() Capabilities { return presetMariaDB102() }
+
+var presetMariaDB102 = sync.OnceValue(buildMariaDB102)
+
+// buildMariaDB102 builds the [MariaDB102] set; the preset builds it once and shares it.
+func buildMariaDB102() Capabilities {
+	return MariaDB1011().With(InstantAddColumnAnyPosition, false)
 }
 
 // Postgres16 is the preset for PostgreSQL 14–16.
@@ -3299,6 +3347,7 @@ func buildPostgres16() Capabilities {
 		UniqueNullsDistinctClause:       true,
 		ForeignKeyDeleteColumnList:      true,
 		AlterTableAlgorithmLock:         false,
+		InstantAddColumnAnyPosition:     false,
 		AddConstraintNotValid:           true,
 		InvisibleIndexes:                false,
 		PrimaryKeyRequired:              false,
@@ -3677,6 +3726,7 @@ func buildClickHouse24() Capabilities {
 		UniqueNullsDistinctClause:       false,
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         false,
+		InstantAddColumnAnyPosition:     false,
 		AddConstraintNotValid:           false,
 		InvisibleIndexes:                false,
 		PrimaryKeyRequired:              false,
@@ -3918,14 +3968,15 @@ func buildSQLite3() Capabilities {
 		// SQLite has no NULLS [NOT] DISTINCT clause and no capability probe
 		// plan, so this value is a hand measurement rather than a probed one
 		// (stokaro/ptah#2820).
-		UniqueNullsDistinctClause:  false,
-		ForeignKeyDeleteColumnList: false,
-		AlterTableAlgorithmLock:    false,
-		AddConstraintNotValid:      false,
-		InvisibleIndexes:           false,
-		PrimaryKeyRequired:         false,
-		PrimaryKeyAlterable:        false,
-		AlterColumnType:            false,
+		UniqueNullsDistinctClause:   false,
+		ForeignKeyDeleteColumnList:  false,
+		AlterTableAlgorithmLock:     false,
+		InstantAddColumnAnyPosition: false,
+		AddConstraintNotValid:       false,
+		InvisibleIndexes:            false,
+		PrimaryKeyRequired:          false,
+		PrimaryKeyAlterable:         false,
+		AlterColumnType:             false,
 		// Measured on the linked 3.53.4: SET NOT NULL and DROP NOT NULL are
 		// accepted, and a NULL insert is refused after the first and accepted
 		// after the second. They arrived in 3.53.0; SQLite352 turns them off
@@ -4254,22 +4305,23 @@ func buildSQLServer2022() Capabilities {
 		// already treats nulls as equal, which is why the renderer refuses
 		// both spellings rather than dropping whichever one is the default
 		// (stokaro/ptah#2820).
-		UniqueNullsDistinctClause:  false,
-		ForeignKeyDeleteColumnList: false,
-		AlterTableAlgorithmLock:    false,
-		AddConstraintNotValid:      false,
-		InvisibleIndexes:           false,
-		PrimaryKeyRequired:         false,
-		PrimaryKeyAlterable:        true,
-		AlterColumnType:            true,
-		AlterColumnSetNotNull:      true,
-		AlterColumnDropNotNull:     true,
-		AlterColumnDefault:         true,
-		AddColumnWithDefault:       true,
-		ExpressionDefaults:         true,
-		NoBackslashEscapes:         false,
-		CheckConstraints:           true,
-		CreateIndexStatement:       true,
+		UniqueNullsDistinctClause:   false,
+		ForeignKeyDeleteColumnList:  false,
+		AlterTableAlgorithmLock:     false,
+		InstantAddColumnAnyPosition: false,
+		AddConstraintNotValid:       false,
+		InvisibleIndexes:            false,
+		PrimaryKeyRequired:          false,
+		PrimaryKeyAlterable:         true,
+		AlterColumnType:             true,
+		AlterColumnSetNotNull:       true,
+		AlterColumnDropNotNull:      true,
+		AlterColumnDefault:          true,
+		AddColumnWithDefault:        true,
+		ExpressionDefaults:          true,
+		NoBackslashEscapes:          false,
+		CheckConstraints:            true,
+		CreateIndexStatement:        true,
 		// INCLUDE on an index, rendered, read back from sys.index_columns and
 		// compared. Measured on 16.0.4295.3 and 17.0.5005.3: the payload keeps
 		// the order written, a unique and a filtered index take it, and a
@@ -4888,6 +4940,7 @@ func buildOracle23() Capabilities {
 		UniqueNullsDistinctClause:   false,
 		ForeignKeyDeleteColumnList:  false,
 		AlterTableAlgorithmLock:     false,
+		InstantAddColumnAnyPosition: false,
 		AddConstraintNotValid:       false,
 		InvisibleIndexes:            false,
 		PrimaryKeyRequired:          false,
@@ -5039,8 +5092,10 @@ func NamedPresets() []NamedPreset {
 		{"MySQL8016", MySQL8016()},
 		{"MySQL8019", MySQL8019()},
 		{"MySQL8020", MySQL8020()},
+		{"MySQL8029", MySQL8029()},
 		{"MySQL84", MySQL84()},
 		{"MariaDBLegacy", MariaDBLegacy()},
+		{"MariaDB102", MariaDB102()},
 		{"MariaDB1011", MariaDB1011()},
 		{"Postgres13", Postgres13()},
 		{"Postgres14", Postgres14()},

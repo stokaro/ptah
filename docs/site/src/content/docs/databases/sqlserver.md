@@ -617,6 +617,18 @@ event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
   procedures, of one name with different parameters is refused before any
   statement is planned. Ptah writes `CREATE OR ALTER`, and measured on SQL
   Server 2022 the second replaces the first without an error.
+- Linked servers are not managed, and this is a decision rather than a gap.
+  A linked server belongs to the whole instance and every database on it
+  shares it, so a schema for one database cannot own it or drop it without
+  changing the others. It also opens a path to another server, which is why
+  a replay against a dev database refuses `sp_addlinkedserver`. Its remote
+  login holds a password the server never returns, so a plan could not tell a
+  changed password from an unchanged one. A SQL schema file that runs `EXEC
+  sp_addlinkedserver` is refused (`unsupported SQL statement: EXEC`), a
+  `linked_server` block in an HCL schema is refused, and `ptah-compat` reports
+  the block as ignored. Define the linked server where the instance is
+  provisioned. A synonym may still name an object behind one (see
+  [Synonyms](#synonyms)).
 - A synonym's target is recorded and resolved by the server, not validated by
   Ptah: a synonym naming an object that does not exist is created successfully
   and fails when something uses it, which is SQL Server's own behavior.

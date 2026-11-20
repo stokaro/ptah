@@ -554,7 +554,9 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"mysql 8.0 at the check step", "mysql", "8.0.16", capability.MySQL8016(), false, false, "26.10"},
 		{"mysql 8.0 at the drop-constraint step", "mysql", "8.0.19", capability.MySQL8019(), false, false, "26.10"},
 		{"mysql 8.0 at the privilege step", "mysql", "8.0.20", capability.MySQL8020(), false, false, "26.10"},
-		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8020(), false, false, "26.10"},
+		{"mysql 8.0 below the instant-position step", "mysql", "8.0.28", capability.MySQL8020(), false, false, "26.10"},
+		{"mysql 8.0 at the instant-position step", "mysql", "8.0.29", capability.MySQL8029(), false, false, "26.10"},
+		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8029(), false, false, "26.10"},
 		{"mysql measured 8 LTS line", "mysql", "8.4.11", capability.MySQL84(), true, false, "26.10"},
 		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.10"},
 		{"mysql gap after measured 9 line", "mysql", "9.8.0", capability.MySQL84(), false, false, "26.10"},
@@ -568,6 +570,8 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 
 		// MariaDB: MariaDB1011 is measured through the 12.x line.
 		{"mariadb undeclared legacy line", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), false, false, "12.3"},
+		{"mariadb below the instant-position step", "mariadb", "10.3.39-MariaDB", capability.MariaDB102(), false, false, "12.3"},
+		{"mariadb at the instant-position step", "mariadb", "10.4.0-MariaDB", capability.MariaDB1011(), false, false, "12.3"},
 		{"mariadb inside", "mariadb", "10.11.6-MariaDB", capability.MariaDB1011(), true, false, "12.3"},
 		{"mariadb measured 11.4 LTS line", "mariadb", "11.4.5-MariaDB", capability.MariaDB1011(), true, false, "12.3"},
 		{"mariadb gap inside major 11", "mariadb", "11.5.2-MariaDB", capability.MariaDB1011(), false, false, "12.3"},

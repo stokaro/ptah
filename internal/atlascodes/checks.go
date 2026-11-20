@@ -191,9 +191,8 @@ var checks = []Check{
 	},
 	{
 		Code: "MY142", Meaning: "adding a column before existing columns prevents an instant operation on older versions", Pro: true,
-		Status: StatusAbsent,
-		Note: "measured absent on every MySQL release line this repository declares: ADD COLUMN ... FIRST accepts ALGORITHM=INSTANT on 8.4.11 and on 8.0.46, and" +
-			"the lowest declared line is 8.4, so a rule would be a false positive wherever Ptah is tested",
+		PtahRules: []string{"rewrite/add-column-before-existing"}, Status: StatusCovered,
+		Note: "reports only where the server the run plans against lacks the instant placement, read from `--server-version` or the dev database: MySQL before 8.0.29 and MariaDB before 10.4",
 	},
 	{
 		Code: "MY143", Meaning: "modifying a generated column requires a table copy and blocks DML", Pro: true,

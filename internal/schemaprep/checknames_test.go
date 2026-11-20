@@ -60,6 +60,10 @@ func TestValidateCheckNames_HappyPath(t *testing.T) {
 				checkTable{name: "t3", checks: []string{`"Ck"`}})},
 		{name: "SQL Server keeps a name per schema", dialect: "sqlserver",
 			database: databaseOf(checkTable{schema: "dbo", name: "t", checks: []string{"ck"}}, checkTable{schema: "other", name: "t", checks: []string{"ck"}})},
+		{name: "MySQL accepts the capital sharp s beside the sharp s", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t", checks: []string{"\u1e9e", "\u00df"}})},
+		{name: "MySQL leaves a letter beyond ASCII to the server", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t1", checks: []string{"\u00e9k"}}, checkTable{name: "t2", checks: []string{"\u00c9K"}})},
 		{name: "SQL Server compares names exactly, since a case-sensitive collation accepts ck and CK", dialect: "sqlserver",
 			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"CK"}})},
 		{name: "MariaDB accepts i beside the dotted capital I", dialect: "mariadb",
@@ -97,12 +101,6 @@ func TestValidateCheckNames_FailurePath(t *testing.T) {
 			database: databaseOf(checkTable{schema: "app", name: "t1", checks: []string{"column:ck"}}, checkTable{schema: "app", name: "t2", checks: []string{"ck"}}),
 			wantErr: `table "app.t1" declares CHECK "ck" and table "app.t2" CHECK "ck", and the server keeps one CHECK of a name per schema: ` +
 				`Error 3822 (HY000): Duplicate check constraint name 'ck'.`,
-		},
-		{
-			name: "MySQL folds a letter beyond ASCII", dialect: "mysql",
-			database: databaseOf(checkTable{name: "t1", checks: []string{"ék"}}, checkTable{name: "t2", checks: []string{"ÉK"}}),
-			wantErr: `table "t1" declares CHECK "ék" and table "t2" CHECK "ÉK", and the server keeps one CHECK of a name per schema: ` +
-				`Error 3822 (HY000): Duplicate check constraint name 'ÉK'.`,
 		},
 		{
 			name: "MariaDB in one table", dialect: "mariadb",
@@ -183,10 +181,10 @@ func TestValidateCheckNamesWithinTables_FailurePath(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			name: "MySQL in one table, compared as the server compares", dialect: "mysql",
-			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"ék", "ÉK"}}),
-			wantErr: `table "t2" declares CHECK "ék" and CHECK "ÉK", and the server keeps one CHECK of a name per schema: ` +
-				`Error 3822 (HY000): Duplicate check constraint name 'ÉK'.`,
+			name: "MySQL in one table, folding ASCII case", dialect: "mysql",
+			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"ek", "EK"}}),
+			wantErr: `table "t2" declares CHECK "ek" and CHECK "EK", and the server keeps one CHECK of a name per schema: ` +
+				`Error 3822 (HY000): Duplicate check constraint name 'EK'.`,
 		},
 		{
 			name: "SQLite in one table", dialect: "sqlite",

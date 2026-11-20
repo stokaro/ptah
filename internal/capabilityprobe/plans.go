@@ -422,6 +422,7 @@ func postgresFamilyPlan(dialect string) plan {
 			[]string{t.table("aal", "n int", "n")},
 			"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
 		),
+		instantColumnPosition(t.table("iap", "n int, v int", "n")),
 		deleteColumnListExperiment(t),
 		acceptance(capability.DeferrableConstraints,
 			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
@@ -743,6 +744,7 @@ func mysqlFamilyPlan(dialect string) plan {
 		[]string{"CREATE TABLE aal (n int PRIMARY KEY)"},
 		"ALTER TABLE aal ADD COLUMN m int, ALGORITHM=INPLACE, LOCK=NONE",
 	))
+	experiments = append(experiments, instantColumnPosition("CREATE TABLE iap (n int PRIMARY KEY, v int)"))
 	// Asked rather than declared for the same reason its twin above is: the
 	// clause is PostgreSQL's, and a server that took it would mean Ptah could
 	// write it here too.
@@ -1010,4 +1012,28 @@ const renameTableStatement = "ALTER TABLE rnt RENAME TO rnt2"
 // because the registry answers for every one.
 func renameTable(setup string) experiment {
 	return acceptance(capability.RenameTable, []string{setup}, renameTableStatement)
+}
+
+// instantColumnPosition asks for a column placed first with
+// ALGORITHM=INSTANT on the table setup creates. A MySQL-family server refuses
+// the statement where it would have to rebuild the table, so acceptance is the
+// whole answer, as it is for the ALGORITHM and LOCK pair. The PostgreSQL
+// family is asked too, because the column position is MySQL's spelling and a
+// server that took it would mean Ptah could rely on it there.
+func instantColumnPosition(setup string) experiment {
+	return acceptance(capability.InstantAddColumnAnyPosition, []string{setup},
+		"ALTER TABLE iap ADD COLUMN m int FIRST, ALGORITHM=INSTANT",
+	)
+}
+
+// noColumnPositionReason is why an engine with no column position declares
+// [capability.InstantAddColumnAnyPosition] undecidable rather than asking it.
+const noColumnPositionReason = "the key names an instant MySQL-family column placed before existing ones; " +
+	"this server has no column position, so a refusal would answer a different question"
+
+// withoutColumnPosition adds the [noColumnPositionReason] declaration to an
+// engine's undecided keys and returns them.
+func withoutColumnPosition(undecided map[capability.Capability]string) map[capability.Capability]string {
+	undecided[capability.InstantAddColumnAnyPosition] = noColumnPositionReason
+	return undecided
 }

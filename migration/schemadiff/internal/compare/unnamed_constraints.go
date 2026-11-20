@@ -84,7 +84,7 @@ func (d unnamedDefinition) member(quoting normalize.Quoting, semantics identifie
 	parts := []string{
 		"\x00unnamed",
 		foldNames(d.columns, semantics),
-		normalizeCheckExpression(d.check, quoting),
+		normalize.CheckExpression(d.check, quoting),
 		strings.ToLower(strings.TrimSpace(d.usingMethod)),
 		semantics.IndexIdentityKey(foreignTable),
 		foldNames(d.foreignColumns, semantics),

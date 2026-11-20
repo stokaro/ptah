@@ -107,6 +107,7 @@ var identities = []Identity{
 	{Name: "rewrite/change-partitioning", Dialects: []string{"mysql", "mariadb"}, Analyzer: AnalyzerPtah, Code: "MY139"},
 	{Name: "rewrite/add-stored-generated-column", Dialects: []string{"mysql", "mariadb"}, Analyzer: AnalyzerPtah, Code: "MY140"},
 	{Name: "locking/add-auto-increment-column", Dialects: []string{"mysql", "mariadb"}, Analyzer: AnalyzerPtah, Code: "MY141"},
+	{Name: "rewrite/add-column-before-existing", Dialects: []string{"mysql", "mariadb"}, Analyzer: AnalyzerPtah, Code: "MY142"},
 	{Name: "rewrite/modify-generated-column", Dialects: []string{"mysql", "mariadb"}, Analyzer: AnalyzerPtah, Code: "MY143"},
 	{Name: "locking/add-check", Dialects: []string{"mysql", "mariadb"}, Analyzer: AnalyzerPtah, Code: "MY144"},
 	{Name: "locking/enforce-check", Dialects: []string{"mysql"}, Analyzer: AnalyzerPtah, Code: "MY145"},

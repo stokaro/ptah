@@ -36,7 +36,7 @@ func TestRules(t *testing.T) {
 	c.Assert(codes, qt.DeepEquals, []string{
 		"destructive/drop-system-versioning", "locking/add-auto-increment-column", "locking/add-check",
 		"locking/add-foreign-key", "locking/add-fulltext-index", "locking/add-spatial-index",
-		"locking/blocking-alter-table", "locking/enforce-check", "online/unproven", "rewrite/add-primary-key",
+		"locking/blocking-alter-table", "locking/enforce-check", "online/unproven", "rewrite/add-column-before-existing", "rewrite/add-primary-key",
 		"rewrite/add-stored-generated-column", "rewrite/alter-column-type", "rewrite/change-engine",
 		"rewrite/change-partitioning", "rewrite/convert-charset", "rewrite/drop-primary-key",
 		"rewrite/in-place-column-change", "rewrite/insert-enum-value", "rewrite/insert-set-member",

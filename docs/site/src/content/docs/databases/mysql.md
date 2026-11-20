@@ -428,8 +428,9 @@ SQL:
 - A `CHECK` name the declaration writes is held where the server holds it.
   MySQL holds it once per schema, across its tables, and compares it without
   case but with accents: `ck` and `CK` are one name, `ek` and `ék` two.
-  MariaDB holds it once per table and Ptah folds ASCII letters only, so a
-  pair such as `é` and `É`, which MariaDB refuses, is left to the server. Two `CHECK` constraints of one name are
+  MariaDB holds it once per table. Ptah folds ASCII letters only on both, so
+  a pair such as `é` and `É`, which the server refuses, is left to the server,
+  and a pair the server accepts is never refused. Two `CHECK` constraints of one name are
   refused before any statement runs, and the refusal ends with the server's
   own error, such as `Error 3822 (HY000): Duplicate check constraint name
   'CK'.` on MySQL and `Error 1826 (HY000): Duplicate CHECK constraint name

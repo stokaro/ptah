@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintkit/mytype"
 )
@@ -45,17 +46,18 @@ import (
 //   - MySQL 8.4 has no system versioning at all. `WITH SYSTEM VERSIONING` is
 //     ERROR 1064 there, so destructive/drop-system-versioning is a MariaDB rule.
 //
-// MY142 IS NOT IMPLEMENTED, AND THAT IS A MEASUREMENT
+// rewrite/add-column-before-existing READS THE SERVER VERSION
 //
-// Atlas reports that adding a column before existing ones prevents an instant
-// operation on older versions. Measured, `ADD COLUMN … FIRST` accepts
-// ALGORITHM=INSTANT on MySQL 8.4.11 and on MySQL 8.0.46, with a plain
-// `ADD COLUMN` at the end as the control accepting it on both. The hazard is a
-// pre-8.0.29 behavior, and the lowest MySQL release line this repository
-// declares in internal/capabilityprobe/cells.go is 8.4. A rule firing on every
-// `FIRST` or `AFTER` would therefore be a false positive on every line Ptah
-// tests, so the catalog records the check as not implemented with that
-// measurement rather than carrying a warning nobody should act on.
+// Adding a column before existing ones costs nothing on a current server and
+// rebuilds the table on an old one. Measured with ALGORITHM=INSTANT on a
+// three-column InnoDB table, `ADD COLUMN … FIRST` and `ADD COLUMN … AFTER id`
+// are refused with 1845 on MySQL 8.0.28 and MariaDB 10.3.39 and accepted on
+// MySQL 8.0.29, 8.4 and 26.7 and on MariaDB 10.4.34 and 12.3.3, with a column
+// added last accepted everywhere as the control. A rule firing on every
+// `FIRST` or `AFTER` would be a false positive on every line Ptah tests, so
+// rewrite/add-column-before-existing asks [capability.InstantAddColumnAnyPosition] of the server the run
+// plans against, and a run that names no server plans against the newest
+// line, where the key holds and the rule stays quiet.
 
 // atlasGapGeneratedStored reports a STORED generated column in a MySQL MODIFY
 // or CHANGE clause.
@@ -262,14 +264,58 @@ func clauseDeclaresNotNull(w []string, typeStart int) bool {
 	return false
 }
 
+// atlasGapInstantPosition is rewrite/add-column-before-existing: a column placed before existing ones on a
+// server that cannot place it instantly.
+func atlasGapInstantPosition(file *lintkit.File, stmt *lintext.Statement) (bool, string) {
+	caps := file.Target.Capabilities
+	if !caps.Established(capability.InstantAddColumnAnyPosition) || caps.Has(capability.InstantAddColumnAnyPosition) {
+		return false, ""
+	}
+	column, ok := atlasGapPlacedColumn(stmt.Words, stmt.SourceWords)
+	if !ok {
+		return false, ""
+	}
+	return true, "column " + column + " is added with FIRST or AFTER, which " + plannedServer(file.Target) +
+		" cannot do as an instant change: measured, MySQL before 8.0.29 and MariaDB before 10.4 " +
+		"refuse ALGORITHM=INSTANT for it with 1845 and rebuild the table instead; add the column " +
+		"last, plan for a rebuild that grows with the table, or name the server's exact version " +
+		"if it is newer than the one this run planned against"
+}
+
+// plannedServer names the server a finding planned against, as the run named
+// it.
+func plannedServer(target lintext.Target) string {
+	if target.Version == "" {
+		return "the server this run plans against"
+	}
+	return target.Name + " " + target.Version
+}
+
 // atlasGapNullabilityStatements is the BaselineSubjects answer for MY147: the
 // statements whose analysis would say more with the starting schema state.
 func atlasGapNullabilityStatements(file *lintkit.File) []int {
 	return columnChangeStatements(file)
 }
 
-// atlasGapMySQLRules holds MY137 through MY148 except MY142, which the header
-// records as measured absent on every release line this repository declares.
+// atlasGapPlacedColumn returns the name of a column an ALTER TABLE adds with
+// FIRST or AFTER, the position MySQL writes after the column definition.
+func atlasGapPlacedColumn(w, sourceWords []string) (string, bool) {
+	if !lintkit.IsAlterTable(w) {
+		return "", false
+	}
+	for _, start := range lintkit.ClauseStarts(w) {
+		definition, end, ok := lintkit.AddColumnClause(w, start)
+		if !ok || end <= definition {
+			continue
+		}
+		if w[end-1] == "FIRST" || end-2 >= definition && w[end-2] == "AFTER" {
+			return sourceWords[definition-1], true
+		}
+	}
+	return "", false
+}
+
+// atlasGapMySQLRules holds MY137 through MY148.
 func atlasGapMySQLRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
@@ -359,6 +405,15 @@ func atlasGapMySQLRules() []lintkit.Rule {
 					"in place (ALGORITHM=INPLACE is accepted) but LOCK=NONE is refused, so this is the case where " +
 					"in-place does not mean online"
 			},
+		},
+		{
+			Rule: lintext.Rule{
+				Name:     "rewrite/add-column-before-existing",
+				Title:    "column placed before existing ones rebuilds the table on this server",
+				Severity: lintext.Warning,
+				Targets:  []string{"mysql", "mariadb"},
+			},
+			Statement: atlasGapInstantPosition,
 		},
 		{
 			Rule: lintext.Rule{
