@@ -96,7 +96,7 @@ func (r *run) hostFeatures(ctx context.Context) {
 }
 
 // firstMinorHost describes the provider to a host that announces no
-// contract version, as a host of contract 25.0 does.
+// contract version, as a host of contract 26.0 does.
 func (r *run) firstMinorHost(ctx context.Context) {
 	request := &protocol.DescribeRequest{Revision: provider.Revision, RequiredFeatures: slices.Clone(r.config.RequiredFeatures)}
 	reply, err := r.describeOnce(ctx, request)
@@ -106,17 +106,17 @@ func (r *run) firstMinorHost(ctx context.Context) {
 	case errors.Is(err, errNotStarted):
 		r.add(checkFirstMinorHost, Failed, err.Error())
 	case refuses && err == nil:
-		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 25.0 host although the provider's minimum is "+provider.ContractString(provider.MinimumContract(r.full)))
+		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 26.0 host although the provider's minimum is "+provider.ContractString(provider.MinimumContract(r.full)))
 	case refuses:
 		r.pass(checkFirstMinorHost)
 	case err != nil && !consistent:
 		r.pass(checkFirstMinorHost)
 	case err != nil:
-		r.add(checkFirstMinorHost, Failed, "Describe refused a contract 25.0 host: "+errorText(err))
+		r.add(checkFirstMinorHost, Failed, "Describe refused a contract 26.0 host: "+errorText(err))
 	case !consistent:
-		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 25.0 host, which lists no two-way feature that a feature of the provider needs")
+		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 26.0 host, which lists no two-way feature that a feature of the provider needs")
 	case !proto.Equal(reply, provider.NegotiatedDescription(r.full, nil)):
-		r.add(checkFirstMinorHost, Failed, "a contract 25.0 host received more than the full description without its two-way features")
+		r.add(checkFirstMinorHost, Failed, "a contract 26.0 host received more than the full description without its two-way features")
 	default:
 		r.pass(checkFirstMinorHost)
 	}

@@ -3370,8 +3370,13 @@ message SchemaCoverageLimit {
 message SchemaDependencies { repeated string tables = 1; }
 
 // LintRule describes one rule an engine checks, as data the host reads without
-// running it. The rule judges the engine that declares it. Codes are unique
-// across every provider the host holds.
+// running it. The rule judges the engine that declares it. A rule is identified
+// by its name, `category/name`: two lowercase segments joined by a slash, each of
+// letters and digits joined by single hyphens, such as locking/add-foreign-key.
+// The field is called code and carries the name; revision 26 replaced the
+// code-shaped identifiers of earlier revisions, and the field keeps its name so
+// that a provider source built for the earlier revision still compiles. Names
+// are unique across every provider the host holds.
 message LintRule {
   enum Severity {
     SEVERITY_UNSPECIFIED = 0;
@@ -3545,6 +3550,7 @@ message CheckLintRequest {
   string engine = 1;
   string server_version = 2;
   map<string, bool> capabilities = 3;
+  // codes are the names of the rules the run enables.
   repeated string codes = 4;
   repeated LintFile files = 5;
   // compatibility is empty for Ptah's own surface and "atlas" for the
@@ -3567,6 +3573,7 @@ message LintSubject {
   string data_type = 4;
 }
 message LintFinding {
+  // code is the name of the rule that reports the finding.
   string code = 1;
   // file indexes the request's files. statement indexes the file's
   // statements, or is -1 for a finding about the whole file.

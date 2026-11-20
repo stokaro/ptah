@@ -243,7 +243,7 @@ func (*schemaValidator) ValidateSchema(context.Context, *protocol.ValidateSchema
 
 func TestServerRequiresAdvertisedLinter(t *testing.T) {
 	c := qt.New(t)
-	rules := []*protocol.LintRule{{Code: "XY101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
+	rules := []*protocol.LintRule{{Code: "design/xy101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
 	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "lint-1", Engines: []*protocol.Engine{{Id: "test", Features: []string{provider.LintFeature}, LintRules: rules, Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.LintFeature}}
 	server := transport.Server{Description: description, Sessions: &sessions{}}
 	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)

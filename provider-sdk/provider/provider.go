@@ -17,7 +17,7 @@ import (
 // with an incompatible change, and a host and a provider of different majors
 // are refused before a session opens. Compatible additions raise
 // ContractMinor instead.
-const Revision uint32 = 25
+const Revision uint32 = 26
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -80,8 +80,12 @@ type Executor interface {
 // ValidateDescription checks the revision, identity, unique engines, and
 // required features. It does not authorize the executable or trust its claims.
 func ValidateDescription(value *protocol.Description, required []string) error {
-	if value == nil || value.GetRevision() != Revision {
-		return fmt.Errorf("%w: expected experimental revision %d", ErrProtocol, Revision)
+	if value == nil {
+		return fmt.Errorf("%w: the provider sent no description", ErrProtocol)
+	}
+	if value.GetRevision() != Revision {
+		return fmt.Errorf("%w: expected experimental revision %d, the contract this SDK speaks (%s); the provider declares revision %d",
+			ErrProtocol, Revision, ContractString(Contract()), value.GetRevision())
 	}
 	if strings.TrimSpace(value.GetProviderId()) == "" || value.GetVersion() == "" || value.GetSemanticIdentity() == "" {
 		return fmt.Errorf("%w: provider identity, version, and semantic identity are required", ErrProtocol)

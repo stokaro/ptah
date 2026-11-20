@@ -14,7 +14,7 @@ import (
 const contextObjectKind = "example.org/fixture/dependent-object"
 
 func configureObjectContext(description *protocol.Description) {
-	description.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: 7}
+	description.MinContract = provider.Contract()
 	description.Features = append(description.Features, provider.PlanningObjectContextFeature, provider.PlanningLifecycleFeature, provider.TextUnitsFeature)
 	engine := description.Engines[0]
 	engine.Features = append(engine.Features, provider.PlanningObjectContextFeature, provider.PlanningLifecycleFeature, provider.TextUnitsFeature)

@@ -21,10 +21,10 @@ func runtimeLintExchange() (*protocol.Description, *protocol.CheckLintRequest, *
 	description, _, _ := normalizationExchange()
 	description.Features = append(description.Features, provider.LintFeature)
 	description.Engines[0].Features = []string{provider.LintFeature}
-	description.Engines[0].LintRules = []*protocol.LintRule{{Code: "XY101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
-	request := &protocol.CheckLintRequest{Engine: "test", Codes: []string{"XY101"}, Files: []*protocol.LintFile{{Name: "1.sql", Up: true,
+	description.Engines[0].LintRules = []*protocol.LintRule{{Code: "design/xy101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
+	request := &protocol.CheckLintRequest{Engine: "test", Codes: []string{"design/xy101"}, Files: []*protocol.LintFile{{Name: "1.sql", Up: true,
 		Statements: []*protocol.LintStatement{{Start: 0, End: 13, Line: 1, Sql: "DROP TABLE a;"}}}}}
-	result := &protocol.CheckedLint{Complete: true, Findings: []*protocol.LintFinding{{Code: "XY101", Message: "drop loses data"}}}
+	result := &protocol.CheckedLint{Complete: true, Findings: []*protocol.LintFinding{{Code: "design/xy101", Message: "drop loses data"}}}
 	return description, request, result
 }
 
@@ -41,7 +41,7 @@ func TestLintClientDiscardsUntrustedReply(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
 	c.Assert(result, qt.IsNil)
 	peer.result = proto.CloneOf(valid)
-	peer.result.Findings[0].Code = "ZZ999"
+	peer.result.Findings[0].Code = "design/zz999"
 	result, err = client.CheckLintMigrations(c.Context(), request)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
 	c.Assert(result, qt.IsNil)
@@ -49,7 +49,7 @@ func TestLintClientDiscardsUntrustedReply(t *testing.T) {
 	result, err = client.CheckLintMigrations(c.Context(), request)
 	c.Assert(err, qt.ErrorMatches, `provider check lint migrations failed \(Unavailable\)`)
 	c.Assert(result, qt.IsNil)
-	request.Codes = []string{"ZZ999"}
+	request.Codes = []string{"design/zz999"}
 	result, err = client.CheckLintMigrations(c.Context(), request)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
 	c.Assert(result, qt.IsNil)
@@ -133,6 +133,6 @@ type mutatingLinter struct {
 
 func (l *mutatingLinter) CheckLintMigrations(_ context.Context, request *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
 	l.calls++
-	request.Codes[0] = "ZZ999"
-	return &protocol.CheckedLint{Complete: true, Findings: []*protocol.LintFinding{{Code: "ZZ999", Message: "forged"}}}, nil
+	request.Codes[0] = "design/zz999"
+	return &protocol.CheckedLint{Complete: true, Findings: []*protocol.LintFinding{{Code: "design/zz999", Message: "forged"}}}, nil
 }

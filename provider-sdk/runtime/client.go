@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/provider-sdk/internal/bootstrap"
@@ -86,7 +89,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		HostContract: provider.Contract(), HostFeatures: options.HostFeatures})
 	if err != nil {
 		client.Close()
-		return nil, remoteError(startup, nil, "negotiate", err)
+		return nil, revisionRefusal(err, remoteError(startup, nil, "negotiate", err))
 	}
 	description, err = negotiate(description, options)
 	if err != nil {
@@ -312,4 +315,24 @@ func (c *Client) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLReq
 		return nil, err
 	}
 	return result, nil
+}
+
+// incompatibleRevision opens the refusal a provider sends a host of another
+// contract revision. Every SDK of a revision sends it, an earlier one without
+// the text after it.
+const incompatibleRevision = "incompatible provider protocol revision"
+
+// revisionRefusal names the contract a host needs when its provider refused
+// the handshake for another revision. An executable built with an SDK of an
+// earlier revision refuses before it describes itself, so all it tells the
+// host is that the revisions differ; the host adds the one it speaks and what
+// it needs, instead of leaving a bare "provider negotiate failed". Any other
+// error is returned as it was.
+func revisionRefusal(cause, fallback error) error {
+	if status.Code(cause) != codes.FailedPrecondition || !strings.Contains(status.Convert(cause).Message(), incompatibleRevision) {
+		return fallback
+	}
+	return fmt.Errorf("%w: the provider speaks another contract revision than this host, which speaks contract %s; "+
+		"rebuild the provider with an SDK of revision %d (revision %d identifies lint rules by name, category/name)",
+		provider.ErrProtocol, provider.ContractString(provider.Contract()), provider.Revision, provider.Revision)
 }
