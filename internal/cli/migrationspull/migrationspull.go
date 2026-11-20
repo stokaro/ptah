@@ -14,11 +14,20 @@ import (
 	"ptah.run/internal/migrationartifact"
 )
 
+// skipValidationFlag writes an OCI artifact without reading it as migrations.
+const skipValidationFlag = "skip-validation"
+
+// ociOnlyFlags mean nothing for a Git or an HTTPS reference: its files are
+// fetched over their own transport and written without being read as
+// migrations, so there is no validation to skip.
+var ociOnlyFlags = []string{dbcli.PlainHTTPFlagName, skipValidationFlag}
+
 type options struct {
-	output    string
-	plainHTTP bool
-	json      bool
-	source    sourcepull.Flags
+	output         string
+	plainHTTP      bool
+	json           bool
+	skipValidation bool
+	source         sourcepull.Flags
 }
 
 // NewMigrationsPullCommand returns the migrations pull command.
@@ -34,6 +43,13 @@ reconstructed byte-for-byte. Authentication comes from "ptah oci login", the
 PTAH_OCI_USERNAME and PTAH_OCI_PASSWORD environment variables, or Docker's
 credential configuration, whichever holds a credential for the registry;
 --plain-http is intended only for explicitly trusted local registries.
+
+--skip-validation writes an oci:// artifact without reading it as migrations,
+for a step that holds registry credentials and must not report what an
+artifact says. The manifest, artifact type, migration format, layer media
+types, sizes, digests, file names and paths are still checked, and every file
+has to be a regular file. A file the format does not read, or a directory with
+no migration in it, is reported by the next command that reads the directory.
 
 A git+https:// or git+ssh:// reference names a repository. --branch, --tag or
 --commit says which commit, and --path the migration directory in its tree
@@ -62,6 +78,8 @@ and PTAH_HTTPS_PASSWORD, a Bearer token from PTAH_HTTPS_TOKEN.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.output, "out", "", "Output directory to create (required)")
 	flags.BoolVar(&opts.json, "json", false, "Print what was pulled as one JSON document")
+	flags.BoolVar(&opts.skipValidation, skipValidationFlag, false,
+		"OCI: write the artifact without reading it as migrations; the next command that reads the directory reports what it cannot read")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	sourcepull.Register(flags, &opts.source, sourcepull.Directory)
 	return cmd
@@ -72,8 +90,12 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err := sourcepull.RefuseFlags(cmd.Flags(), source); err != nil {
 		return err
 	}
-	if source != sourcepull.OCI && cmd.Flags().Changed(dbcli.PlainHTTPFlagName) {
-		return fmt.Errorf("--%s is for an oci:// reference", dbcli.PlainHTTPFlagName)
+	if source != sourcepull.OCI {
+		for _, name := range ociOnlyFlags {
+			if cmd.Flags().Changed(name) {
+				return fmt.Errorf("--%s is for an oci:// reference", name)
+			}
+		}
 	}
 	switch source {
 	case sourcepull.Git:
@@ -82,9 +104,10 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		return pullHTTPS(cmd, reference, opts)
 	}
 	result, err := migrationartifact.PullDirectory(cmd.Context(), migrationartifact.DirectoryPullOptions{
-		Reference: reference,
-		Output:    opts.output,
-		PlainHTTP: opts.plainHTTP,
+		Reference:      reference,
+		Output:         opts.output,
+		PlainHTTP:      opts.plainHTTP,
+		SkipValidation: opts.skipValidation,
 	})
 	if err != nil {
 		return err
@@ -94,7 +117,7 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(ociReport{
 			Source: "oci", Reference: result.Artifact.Reference.String(), Digest: result.Artifact.Descriptor.Digest.String(),
-			Format: string(result.Artifact.DirFormat), Written: []string{result.Output},
+			Format: string(result.Artifact.DirFormat), Written: []string{result.Output}, Unvalidated: opts.skipValidation,
 		})
 	}
 	fmt.Fprintf(
@@ -105,6 +128,9 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		result.Artifact.Descriptor.Digest,
 		result.Artifact.DirFormat,
 	)
+	if opts.skipValidation {
+		fmt.Fprintln(cmd.OutOrStdout(), "Not validated: the next command that reads the directory reports what it cannot read.")
+	}
 	return nil
 }
 
@@ -138,11 +164,13 @@ func pullHTTPS(cmd *cobra.Command, reference string, opts *options) error {
 	return sourcepull.PrintHTTPSText(cmd.OutOrStdout(), reference, result, written)
 }
 
-// ociReport is the --json document of an OCI pull.
+// ociReport is the --json document of an OCI pull. Unvalidated is present only
+// on a pull that did not read the directory as migrations.
 type ociReport struct {
-	Source    string   `json:"source"`
-	Reference string   `json:"reference"`
-	Digest    string   `json:"digest"`
-	Format    string   `json:"format"`
-	Written   []string `json:"written"`
+	Source      string   `json:"source"`
+	Reference   string   `json:"reference"`
+	Digest      string   `json:"digest"`
+	Format      string   `json:"format"`
+	Written     []string `json:"written"`
+	Unvalidated bool     `json:"unvalidated,omitempty"`
 }

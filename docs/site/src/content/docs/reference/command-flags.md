@@ -1067,6 +1067,7 @@ Read the columns as follows.
 | `--out` | `string` | — | `PTAH_OUT` | — |
 | `--path` | `string` | — | `PTAH_PATH` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--skip-validation` | `bool` | `false` | `PTAH_SKIP_VALIDATION` | — |
 | `--tag` | `string` | — | `PTAH_TAG` | — |
 
 </div>
