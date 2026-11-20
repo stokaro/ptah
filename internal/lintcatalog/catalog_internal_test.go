@@ -66,12 +66,12 @@ func TestSQLJoinRefusesBothDirections(t *testing.T) {
 			// failing -- which is the right way round: a fixture that names
 			// the next free code goes stale the moment that code is taken.
 			name:    "identifier the catalog does not describe",
-			ids:     []string{"SQL001", "SQL002", "DDL001", "CAP001", "SQL003", "SQL999"},
+			ids:     []string{"correctness/syntax-error", "coverage/unsupported-statement", "design/no-primary-key", "capability/missing", "coverage/dynamic-sql", "design/invented-rule"},
 			message: "no catalog entry",
 		},
 		{
 			name:    "catalog row for an identifier that is gone",
-			ids:     []string{"SQL001", "SQL002", "DDL001"},
+			ids:     []string{"correctness/syntax-error", "coverage/unsupported-statement", "design/no-primary-key"},
 			message: "no longer exist",
 		},
 	}

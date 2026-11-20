@@ -131,7 +131,7 @@ func TestLintFS_InvalidProgrammaticRuleSelectorFailsFast(t *testing.T) {
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `rule selector "ds101" must start with an uppercase ASCII letter.*`)
+	c.Assert(err, qt.ErrorMatches, `lint rules key "ds101" is not a rule name or category.*`)
 }
 
 func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) {
@@ -142,7 +142,7 @@ func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) 
 		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
 	}), lint.Options{Disabled: []string{" destructive/drop-table "}})
 
-	c.Assert(err, qt.ErrorMatches, `rule selector " destructive/drop-table " must start with an uppercase ASCII letter.*`)
+	c.Assert(err, qt.ErrorMatches, `rule selector " destructive/drop-table " is not a rule name.*`)
 }
 
 func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
@@ -157,7 +157,7 @@ func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" does not match any registered rule`)
+	c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" is not the name of a migration lint rule.*`)
 }
 
 func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
@@ -1255,7 +1255,7 @@ func TestLintFS_LowercaseCustomRuleCodeFailsFast(t *testing.T) {
 		},
 	}}})
 
-	c.Assert(err, qt.ErrorMatches, `rule code "ext001" must start with an uppercase ASCII letter.*`)
+	c.Assert(err, qt.ErrorMatches, `rule name "ext001" must be a category.*`)
 }
 
 func TestLintFS_RuleConfigsOverrideSeverityAndExcludePaths(t *testing.T) {
@@ -1545,14 +1545,14 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 	t.Run("lowercase rule selector", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/lowercase-selector.yaml")
-		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector "ds103" must start with an uppercase ASCII letter.*`)
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*lint rules key "ds103" is not a rule name or category.*`)
 	})
 
 	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' data-dependent/alter-column-type '\n"), qt.IsNil)
 	t.Run("whitespace-padded rule selector", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/whitespace-selector.yaml")
-		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " data-dependent/alter-column-type " must start with an uppercase ASCII letter.*`)
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " data-dependent/alter-column-type " is not a rule name.*`)
 	})
 
 	c.Assert(writeFile(dir+"/multiple-documents.yaml", "dialect: postgres\n---\ndialect: sqlite\n"), qt.IsNil)

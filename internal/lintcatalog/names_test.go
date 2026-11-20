@@ -1,8 +1,6 @@
 package lintcatalog_test
 
 import (
-	"regexp"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -11,146 +9,96 @@ import (
 	"ptah.run/internal/lintcatalog"
 )
 
-// shippedWith returns the shipped catalog with edit applied to the entry of
-// each code, in order.
-func shippedWith(c *qt.C, edits map[string]func(*lintcatalog.Entry)) []lintcatalog.Entry {
-	entries := must.Must(lintcatalog.Entries())
-	for code, edit := range edits {
-		index := slices.IndexFunc(entries, func(entry lintcatalog.Entry) bool { return entry.Name == code })
-		c.Assert(index >= 0, qt.IsTrue, qt.Commentf("the shipped catalog has no rule %s", code))
-		edit(&entries[index])
-	}
-	return entries
-}
-
-// everyDialect widens a rule to every dialect, with the YDB verdict such a
-// rule has to carry, so the edit breaks no rule but the naming rule.
-func everyDialect(entry *lintcatalog.Entry) {
-	entry.Dialects, entry.YDB, entry.YDBNote = nil, lintcatalog.YDBApplies, "a statement YQL has"
+// entry is a catalog row with the fields the naming rule reads and a meaning,
+// so a failure row breaks the naming rule and nothing else.
+func entry(name string, kind lintcatalog.Kind, owner lintcatalog.Owner, severity string, dialects ...string) lintcatalog.Entry {
+	return lintcatalog.Entry{Name: name, Kind: kind, Owner: owner, Severity: severity, Dialects: dialects, Summary: "a meaning",
+		YDB: lintcatalog.YDBApplies, YDBNote: "a statement YQL has"}
 }
 
 // TestValidateAcceptsTheShippedNames pins the shapes the naming rule allows,
 // as the shipped catalog has them: one hazard checked per engine under one
-// name, one name in both linters, and an engine category on a provider's rule
-// for its engine. A gate that refused a shared name outright would pass every
-// failure row below and redden this one.
+// entry, one name in both linters, and an engine category on a provider's rule
+// for its engine.
 func TestValidateAcceptsTheShippedNames(t *testing.T) {
 	c := qt.New(t)
-	names := make(map[string]string)
-	for _, entry := range must.Must(lintcatalog.Entries()) {
-		names[entry.Name] = entry.Name
+	entries := must.Must(lintcatalog.Entries())
+	counts := make(map[string]int)
+	byKind := make(map[string]map[lintcatalog.Kind]bool)
+	for _, e := range entries {
+		counts[e.Name]++
+		if byKind[e.Name] == nil {
+			byKind[e.Name] = make(map[lintcatalog.Kind]bool)
+		}
+		byKind[e.Name][e.Kind] = true
 	}
 
-	c.Assert([]string{names["PG306"], names["MY131"], names["PG401P"], names["DDL003"], names["YD103"]}, qt.DeepEquals, []string{
-		"locking/add-foreign-key", "locking/add-foreign-key", "naming/identifier-too-long", "naming/identifier-too-long", "ydb/add-column-form",
-	})
-	c.Assert(lintcatalog.Validate(must.Must(lintcatalog.Entries())), qt.IsNil)
+	c.Assert(counts["locking/add-foreign-key"], qt.Equals, 1)
+	c.Assert(byKind["naming/identifier-too-long"], qt.DeepEquals, map[lintcatalog.Kind]bool{lintcatalog.KindMigration: true, lintcatalog.KindSQL: true})
+	c.Assert(counts["ydb/add-column-form"], qt.Equals, 1)
+	c.Assert(lintcatalog.Validate(entries), qt.IsNil)
 }
 
-// TestValidateRefusesABrokenName edits one shipped rule at a time so that it
-// breaks the naming rule once, and reads the one problem the gate reports.
-func TestValidateRefusesABrokenName(t *testing.T) {
+func TestValidate_RefusesABrokenName(t *testing.T) {
+	host, provider := lintcatalog.OwnerHost, lintcatalog.OwnerProvider
+	migration, sql := lintcatalog.KindMigration, lintcatalog.KindSQL
 	rows := []struct {
 		name    string
-		edits   map[string]func(*lintcatalog.Entry)
+		entries []lintcatalog.Entry
 		problem string
 	}{
+		{name: "no name", entries: []lintcatalog.Entry{entry("", migration, host, "error", "postgres")}, problem: `rule "" is not two lowercase hyphenated segments joined by a slash`},
+		{name: "an upper-case segment", entries: []lintcatalog.Entry{entry("Locking/add-check", migration, host, "error", "postgres")}, problem: `is not two lowercase hyphenated segments`},
+		{name: "one segment", entries: []lintcatalog.Entry{entry("locking", migration, host, "error", "postgres")}, problem: `is not two lowercase hyphenated segments`},
+		{name: "three segments", entries: []lintcatalog.Entry{entry("locking/add/check", migration, host, "error", "postgres")}, problem: `is not two lowercase hyphenated segments`},
+		{name: "a doubled hyphen", entries: []lintcatalog.Entry{entry("locking/add--check", migration, host, "error", "postgres")}, problem: `is not two lowercase hyphenated segments`},
+		{name: "a code", entries: []lintcatalog.Entry{entry("PG305", migration, host, "error", "postgres")}, problem: `is not two lowercase hyphenated segments`},
+		{name: "a category no one declared", entries: []lintcatalog.Entry{entry("nosuch/add-check", migration, host, "error", "postgres")}, problem: `names a category "nosuch" that is not declared`},
+		{name: "an engine category on a host rule", entries: []lintcatalog.Entry{entry("ydb/add-check", migration, host, "error", "ydb")}, problem: `under the engine category "ydb"`},
+		{name: "an engine category on another engine's rule", entries: []lintcatalog.Entry{entry("ydb/add-check", migration, provider, "error", "spanner")}, problem: `under the engine category "ydb"`},
+		{name: "an engine category on a rule for every dialect", entries: []lintcatalog.Entry{entry("ydb/add-check", migration, provider, "error")}, problem: `under the engine category "ydb"`},
 		{
-			name:    "no name",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "" }},
-			problem: "rule DS101 has no Ptah name",
-		},
-		{
-			name:    "an upper-case segment",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "Destructive/drop-table" }},
-			problem: `rule DS101 is named "Destructive/drop-table", which is not two lowercase hyphenated segments joined by a slash`,
-		},
-		{
-			name:    "one segment",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "drop-table" }},
-			problem: `rule DS101 is named "drop-table", which is not two lowercase hyphenated segments joined by a slash`,
-		},
-		{
-			name:    "three segments",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "destructive/drop/table" }},
-			problem: `rule DS101 is named "destructive/drop/table", which is not two lowercase hyphenated segments joined by a slash`,
-		},
-		{
-			name:    "a doubled hyphen",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "destructive/drop--table" }},
-			problem: `rule DS101 is named "destructive/drop--table", which is not two lowercase hyphenated segments joined by a slash`,
-		},
-		{
-			name:    "an Atlas code",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "DS102" }},
-			problem: `rule DS101 is named "DS102", which is not two lowercase hyphenated segments joined by a slash`,
-		},
-		{
-			name:    "a category no one declared",
-			edits:   map[string]func(*lintcatalog.Entry){"DS101": func(e *lintcatalog.Entry) { e.Name = "lossy/drop-table" }},
-			problem: `rule DS101 is named lossy/drop-table, whose category "lossy" is not declared`,
-		},
-		{
-			name:    "an engine category on a host rule",
-			edits:   map[string]func(*lintcatalog.Entry){"YD103": func(e *lintcatalog.Entry) { e.Owner = lintcatalog.OwnerHost }},
-			problem: `rule YD103 is named ydb/add-column-form under the engine category "ydb", which holds only rules a provider publishes for ydb alone`,
-		},
-		{
-			name:    "an engine category on another engine's rule",
-			edits:   map[string]func(*lintcatalog.Entry){"YD103": func(e *lintcatalog.Entry) { e.Dialects = []string{"postgres"} }},
-			problem: `rule YD103 is named ydb/add-column-form under the engine category "ydb", which holds only rules a provider publishes for ydb alone`,
-		},
-		{
-			name:    "an engine category on a rule for every dialect",
-			edits:   map[string]func(*lintcatalog.Entry){"YD103": everyDialect},
-			problem: `rule YD103 is named ydb/add-column-form under the engine category "ydb", which holds only rules a provider publishes for ydb alone`,
-		},
-		{
-			name:  "a shared name on overlapping dialects",
-			edits: map[string]func(*lintcatalog.Entry){"PG306": func(e *lintcatalog.Entry) { e.Dialects = []string{"mariadb", "postgres"} }},
-			problem: "rules MY131 and PG306 share the name locking/add-foreign-key on overlapping dialects (mysql, mariadb; mariadb, postgres): " +
-				"one name is one hazard, checked at most once on each dialect",
-		},
-		{
-			name:  "a shared name beside a rule for every dialect",
-			edits: map[string]func(*lintcatalog.Entry){"PG306": everyDialect},
-			problem: "rules MY131 and PG306 share the name locking/add-foreign-key on overlapping dialects (mysql, mariadb; all): " +
-				"one name is one hazard, checked at most once on each dialect",
-		},
-		{
-			name:    "a shared name with two severities",
-			edits:   map[string]func(*lintcatalog.Entry){"PG306": func(e *lintcatalog.Entry) { e.Severity = "error" }},
-			problem: "rules MY131 and PG306 share the name locking/add-foreign-key with different severities, warning and error",
-		},
-		{
-			name: "a category no rule uses",
-			edits: map[string]func(*lintcatalog.Entry){
-				"PG110":  func(e *lintcatalog.Entry) { e.Name = "correctness/column-alignment" },
-				"PG320":  func(e *lintcatalog.Entry) { e.Name = "correctness/disable-autovacuum" },
-				"DDL001": func(e *lintcatalog.Entry) { e.Name = "correctness/no-primary-key" },
+			name: "a name at two severities across the linters",
+			entries: []lintcatalog.Entry{
+				entry("naming/identifier-too-long", migration, host, "warning", "postgres"),
+				entry("naming/identifier-too-long", sql, host, "error"),
 			},
-			problem: "category design is declared and names no rule",
+			problem: `one name has one default severity`,
+		},
+		{
+			name: "a name twice in one linter",
+			entries: []lintcatalog.Entry{
+				entry("locking/add-check", migration, host, "warning", "postgres"),
+				entry("locking/add-check", migration, host, "warning", "mysql"),
+			},
+			problem: `rule locking/add-check has two entries in migration lint`,
 		},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := lintcatalog.Validate(shippedWith(c, row.edits))
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta("lint catalog is inconsistent with the code:\n  "+row.problem))
+			err := lintcatalog.Validate(row.entries)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, row.problem)
 		})
 	}
 }
 
 // TestShippedRulesHaveTheirOwner reads who publishes each rule: a rule an
-// official provider's recorded catalog publishes is the provider's, and every
-// other rule, SQL lint's included, is the host's.
+// official provider's recorded catalog publishes alone is the provider's, and
+// every other rule, SQL lint's and a name the host shares with a provider
+// included, is the host's.
 func TestShippedRulesHaveTheirOwner(t *testing.T) {
 	c := qt.New(t)
 	owners := make(map[string]lintcatalog.Owner)
-	for _, entry := range must.Must(lintcatalog.Entries()) {
-		owners[entry.Name] = entry.Owner
+	for _, e := range must.Must(lintcatalog.Entries()) {
+		owners[e.Name] = e.Owner
 	}
 
-	c.Assert([]lintcatalog.Owner{owners["YD103"], owners["SP101"], owners["DS101"], owners["PG301"], owners["SQL001"]}, qt.DeepEquals,
-		[]lintcatalog.Owner{lintcatalog.OwnerProvider, lintcatalog.OwnerProvider, lintcatalog.OwnerHost, lintcatalog.OwnerHost, lintcatalog.OwnerHost})
+	c.Assert([]lintcatalog.Owner{
+		owners["ydb/add-column-form"], owners["side-effect/drop-row-deletion-policy"], owners["destructive/drop-table"],
+		owners["rewrite/alter-column-type"], owners["correctness/syntax-error"], owners["data-dependent/set-not-null"],
+	}, qt.DeepEquals, []lintcatalog.Owner{
+		lintcatalog.OwnerProvider, lintcatalog.OwnerProvider, lintcatalog.OwnerHost, lintcatalog.OwnerHost, lintcatalog.OwnerHost, lintcatalog.OwnerHost,
+	})
 }

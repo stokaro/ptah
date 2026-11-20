@@ -95,12 +95,13 @@ func writeMigrationRules(w io.Writer, entries []Entry) error {
 	out.WriteString("## Migration lint rules\n\n")
 	fmt.Fprintf(&out,
 		"%d rules, registered in `migration/lint`. `ptah migrations lint` reports the whole "+
-			"registry%s. Neither apply gate reports even that much, so a rule listed below is "+
-			"not by itself a check that stands between an apply and a database: "+
+			"registry%s.\n\n"+
+			"Neither apply gate reports even that much, so a rule listed below is "+
+			"not by itself a check that stands between an apply and a database. "+
 			"`ptah migrations up` disables %d advisory rules (migration-file form, backward "+
 			"compatibility, and the locking and rewrite rules of PostgreSQL, MySQL and MariaDB) and refuses "+
-			"only on blocking findings of %s, unless the policy's `gate` section names more rules or categories, "+
-			"and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` "+
+			"only on blocking findings of %s, unless the policy's `gate` section names more rules or categories.\n\n"+
+			"`ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` "+
 			"block names, which means a project without such a block gets no lint pass there at "+
 			"all. The tables are grouped by the dialects each rule applies to, which is why they "+
 			"carry no dialect column.\n\n",
@@ -244,14 +245,17 @@ func writeSeverities(w io.Writer, entries []Entry) error {
 
 	var out strings.Builder
 	out.WriteString("## Default severities\n\n")
+	fmt.Fprintf(&out, "%d rules report at error severity by default:\n\n", len(errors))
+	for _, name := range errors {
+		fmt.Fprintf(&out, "- %s\n", name)
+	}
 	fmt.Fprintf(&out,
-		"%d rules report at error severity by default: %s. The other %d default to warning or info. "+
+		"\nThe other %d default to warning or info. "+
 			"A committed `.ptah-lint.yaml` replaces either, per rule or per category. `ptah sql lint` "+
 			"reads the `rules:` severities the same file sets for %s, so the severities above are the defaults. "+
 			"`--disable` refuses a selector covering `correctness/syntax-error` or `coverage/unsupported-statement`: those report that the "+
 			"file could not be analyzed, and a run that analyzed nothing must not report clean.\n\n",
-		len(errors), strings.Join(errors, ", "), warnings,
-		codeList(namesOfKind(entries, KindSQL)))
+		warnings, codeList(namesOfKind(entries, KindSQL)))
 	_, err := io.WriteString(w, out.String())
 	return err
 }

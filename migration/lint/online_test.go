@@ -317,7 +317,7 @@ func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
 		{
 			name:    "the family disabled",
 			config:  "dialect: postgres\nonline: require\ndisabled-rules: [ON]\n",
-			wantErr: `.*disabled-rules names "ON".*`,
+			wantErr: `.*lint rules are named category/name; ON is not a rule name`,
 		},
 		{
 			name:    "the category disabled",

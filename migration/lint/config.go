@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/lintnames"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqllint"
 )
 
 // ConfigFileName is the conventional per-project lint configuration file,
@@ -200,6 +201,9 @@ func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) 
 	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
 		return err
 	}
+	if err := validateConfigNames(cfg, rules); err != nil {
+		return err
+	}
 	if _, err := compileNamingConfig(cfg.Naming); err != nil {
 		return err
 	}
@@ -213,6 +217,36 @@ func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) 
 		return err
 	}
 	return validateRuleConfigs(cfg.Rules)
+}
+
+// validateConfigNames refuses a `disabled-rules` entry that selects no rule
+// the runtime registers or the file declares, and a `rules` key that selects no
+// rule of either linter: `ptah sql lint` reads the same section, so a name it
+// reports is a name the file may carry.
+func validateConfigNames(cfg *Config, rules []Rule) error {
+	declared := make([]string, 0, len(cfg.Rules))
+	for name, rule := range cfg.Rules {
+		if rule.Declares() {
+			declared = append(declared, name)
+		}
+	}
+	migration := knownNames(rules)
+	disabled := lintnames.NewSet("migration lint", append(migration.Names(), declared...))
+	for _, selector := range cfg.DisabledRules {
+		if _, err := disabled.Resolve(selector); err != nil && selector != "" {
+			return fmt.Errorf("rule selector %w", err)
+		}
+	}
+	configured := lintnames.NewSet("lint", append(disabled.Names(), sqllint.CatalogIDs()...))
+	for _, key := range slices.Sorted(maps.Keys(cfg.Rules)) {
+		if cfg.Rules[key].Declares() {
+			continue
+		}
+		if _, err := configured.Resolve(key); err != nil {
+			return fmt.Errorf("lint rules key %w", err)
+		}
+	}
+	return nil
 }
 
 // validateOnlineConfig refuses a value the mode does not have and a dialect it
@@ -438,12 +472,17 @@ func validateExcludePattern(pattern string) error {
 // read as a rule turned off.
 func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {
 	known := knownNames(rules)
-	selectors := append(slices.Sorted(maps.Keys(opts.RuleConfigs)), opts.Disabled...)
-	for _, selector := range selectors {
+	for _, selector := range opts.Disabled {
 		if selector == "" {
 			continue
 		}
 		if _, err := known.Resolve(selector); err != nil {
+			return fmt.Errorf("rule selector %w", err)
+		}
+	}
+	configured := lintnames.NewSet("lint", append(known.Names(), sqllint.CatalogIDs()...))
+	for _, key := range slices.Sorted(maps.Keys(opts.RuleConfigs)) {
+		if _, err := configured.Resolve(key); err != nil {
 			return fmt.Errorf("rule selector %w", err)
 		}
 	}

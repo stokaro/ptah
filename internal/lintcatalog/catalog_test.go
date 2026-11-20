@@ -176,11 +176,11 @@ func TestPG102SummaryKeepsTheVersionDistinction(t *testing.T) {
 	messages := messagesFor(t, map[string]string{
 		"0000000001_add_value.up.sql":   "ALTER TYPE order_status ADD VALUE 'refunded';",
 		"0000000001_add_value.down.sql": "-- an enum value cannot be removed",
-	}, lint.CompatibilityProfileNative, "PG102")
+	}, lint.CompatibilityProfileNative, "transaction/add-enum-value")
 
 	c.Assert(messages, qt.HasLen, 1)
 	c.Assert(messages[0], qt.Contains, "before PostgreSQL 12")
-	c.Assert(summaryOf(t, "PG102"), qt.Contains, "PostgreSQL 12")
+	c.Assert(summaryOf(t, "transaction/add-enum-value"), qt.Contains, "PostgreSQL 12")
 }
 
 func TestEntriesEnumerateEveryRegisteredRule(t *testing.T) {
@@ -369,4 +369,3 @@ func postgresFindingCodes(c *qt.C, files map[string]string, profile lint.Compati
 	}
 	return codes
 }
-

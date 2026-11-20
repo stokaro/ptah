@@ -18,14 +18,16 @@ func TestEntries_TheRecordsKeepTheProviderRules(t *testing.T) {
 	c := qt.New(t)
 	entries, err := lintcatalog.Entries()
 	c.Assert(err, qt.IsNil)
-	families := make(map[string][]string)
+	engines := make(map[string][]string)
 	for _, entry := range entries {
-		families[entry.Name[:2]] = append(families[entry.Name[:2]], entry.Name)
+		if entry.Owner == lintcatalog.OwnerProvider {
+			engines[entry.Dialects[0]] = append(engines[entry.Dialects[0]], entry.Name)
+		}
 	}
 
 	_, withoutRecord := lintcatalog.EntriesFrom(builtintest.Runtime())
 
-	c.Assert(families["SP"], qt.DeepEquals, []string{"SP101", "SP102"})
-	c.Assert(families["YD"], qt.Not(qt.HasLen), 0)
-	c.Assert(withoutRecord, qt.ErrorMatches, `the catalog documents migration lint rule\(s\) SP101, SP102, YD.* that no longer exist: .*`)
+	c.Assert(engines["spanner"], qt.DeepEquals, []string{"side-effect/drop-row-deletion-policy"})
+	c.Assert(engines["ydb"], qt.Not(qt.HasLen), 0)
+	c.Assert(withoutRecord, qt.ErrorMatches, `the catalog documents migration lint rule\(s\) .*side-effect/drop-row-deletion-policy.* that no longer exist: .*`)
 }

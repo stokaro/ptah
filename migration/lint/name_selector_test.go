@@ -70,7 +70,7 @@ func TestNameSelectors_DisableRefusesAnUnknownName(t *testing.T) {
 			name:     "the beginning of a name",
 			disabled: []string{"file-form/missing"},
 			wantErr: `rule selector "file-form/missing" is not the name of a migration lint rule; ` +
-				`a name is a category and a rule joined by a slash, such as locking/set-not-null`,
+				`a name is a category and a rule joined by a slash, such as locking/add-foreign-key`,
 		},
 		{
 			name:     "the beginning of a category",
@@ -85,7 +85,7 @@ func TestNameSelectors_DisableRefusesAnUnknownName(t *testing.T) {
 		{
 			name:     "a lower-case word that is not a category",
 			disabled: []string{"lockin"},
-			wantErr:  `rule selector "lockin" must start with an uppercase ASCII letter .*, or be a rule name or category, such as locking/set-not-null or locking`,
+			wantErr:  `rule selector "lockin" is not a rule name or category.*`,
 		},
 	}
 	for _, row := range rows {
@@ -178,10 +178,10 @@ func TestNameSelectors_PolicyRefusesAnUnknownName(t *testing.T) {
 			wantErr: `.*lint rules "locking" and "locking/" name one category; keep one of them`,
 		},
 		{
-			name: "a declared rule under a name",
-			config: "rules:\n  locking/no-renames:\n    match: 'strcontains(upper(statement.sql), \"RENAME\")'\n" +
+			name: "a declared rule under a category nobody declared",
+			config: "rules:\n  nosuch/no-renames:\n    match: 'strcontains(upper(statement.sql), \"RENAME\")'\n" +
 				"    message: renames break readers\n",
-			wantErr: `.*lint rule "locking/no-renames": a declared rule needs a code in the same form as every other rule .*`,
+			wantErr: `.*lint rule "nosuch/no-renames": "nosuch" is not a rule category; the categories are .*`,
 		},
 	}
 	for _, row := range rows {
@@ -306,7 +306,7 @@ func TestNameSelectors_NoLintRefusesAnUnknownName(t *testing.T) {
 			name: "the beginning of a name",
 			sql:  "-- ptah:nolint data-dependent/add-unique\n",
 			wantErr: `0000000001_index.up.sql: the comment above line 2: ptah:nolint: "data-dependent/add-unique" ` +
-				`is not the name of a migration lint rule; a name is a category and a rule joined by a slash, such as locking/set-not-null`,
+				`is not the name of a migration lint rule; a name is a category and a rule joined by a slash, such as locking/add-foreign-key`,
 		},
 		{
 			name:    "a category that is not declared",

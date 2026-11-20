@@ -635,24 +635,24 @@ func TestDropColumnIfExistsOfAnAbsentColumn_IsNotADrop(t *testing.T) {
 		},
 		{
 			name: "a present column", statement: "ALTER TABLE users DROP COLUMN IF EXISTS id;",
-			state: listing(nil), want: []string{headFile + ":1:rollout/drop-column", headFile + ":1:destructive/drop-column"},
+			state: listing(nil), want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name: "an absent column without a starting state", statement: "ALTER TABLE users DROP COLUMN IF EXISTS gone;",
-			want: []string{headFile + ":1:rollout/drop-column", headFile + ":1:destructive/drop-column"},
+			want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name: "an absent column without IF EXISTS", statement: "ALTER TABLE users DROP COLUMN gone;",
-			state: listing(nil), want: []string{headFile + ":1:rollout/drop-column", headFile + ":1:destructive/drop-column"},
+			state: listing(nil), want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name: "a column of a table the state does not hold", statement: "ALTER TABLE other DROP COLUMN IF EXISTS gone;",
-			state: listing(nil), want: []string{headFile + ":1:rollout/drop-column", headFile + ":1:destructive/drop-column"},
+			state: listing(nil), want: []string{headFile + ":1:destructive/drop-column", headFile + ":1:rollout/drop-column"},
 		},
 		{
 			name:      "an absent column after a statement that may have added it",
 			statement: "DO $$ BEGIN ALTER TABLE users ADD COLUMN gone int; END $$;\nALTER TABLE users DROP COLUMN IF EXISTS gone;",
-			state:     listing(nil), want: []string{headFile + ":2:rollout/drop-column", headFile + ":2:destructive/drop-column"},
+			state:     listing(nil), want: []string{headFile + ":2:destructive/drop-column", headFile + ":2:rollout/drop-column"},
 		},
 	}
 	for _, test := range tests {

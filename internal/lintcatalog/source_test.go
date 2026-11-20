@@ -41,7 +41,7 @@ func TestCatalogFromARuntime_FailurePath(t *testing.T) {
 	empty := must.Must(engine.New())
 
 	entries, err := lintcatalog.MigrationEntriesFrom(empty)
-	c.Assert(err, qt.ErrorMatches, `the catalog documents migration lint rule\(s\) .*\bPG101\b.*\bYD101\b.* that no longer exist: .*`)
+	c.Assert(err, qt.ErrorMatches, `the catalog documents migration lint rule\(s\) .*capability/unique-index-on-existing-table.*locking/create-index.* that no longer exist: .*`)
 	c.Assert(entries, qt.IsNil)
 	all, err := lintcatalog.EntriesFrom(empty)
 	c.Assert(err, qt.ErrorMatches, `the catalog documents migration lint rule\(s\) .* that no longer exist: .*`)

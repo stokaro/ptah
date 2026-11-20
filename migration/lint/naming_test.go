@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -30,12 +31,12 @@ func analyzeNaming(c *qt.C, dialect, migration string, naming *lint.NamingConfig
 	return analysis
 }
 
-// namingCodes keeps the codes of this family.
-func namingCodes(codes []string) []string {
+// namingCodes keeps the names of the naming category.
+func namingCodes(names []string) []string {
 	var kept []string
-	for _, code := range codes {
-		if len(code) == 5 && code[:2] == "NM" {
-			kept = append(kept, code)
+	for _, name := range names {
+		if strings.HasPrefix(name, "naming/") {
+			kept = append(kept, name)
 		}
 	}
 	return kept
@@ -182,7 +183,7 @@ func TestNamingRules_ReportEveryNameAMigrationIntroduces(t *testing.T) {
 			name:      "every kind at once, one finding each",
 			dialect:   "postgres",
 			migration: "CREATE TABLE Invoices (Id int, CONSTRAINT PK_invoices PRIMARY KEY (Id), CONSTRAINT FK_order FOREIGN KEY (Id) REFERENCES orders (id), CONSTRAINT CK_id CHECK (Id > 0));",
-			want:      []string{"naming/table-name", "naming/column-name", "naming/index-name", "naming/foreign-key-name", "naming/check-name"},
+			want:      []string{"naming/check-name", "naming/column-name", "naming/foreign-key-name", "naming/index-name", "naming/table-name"},
 		},
 	}
 
