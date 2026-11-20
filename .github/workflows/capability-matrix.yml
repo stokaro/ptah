@@ -68,7 +68,7 @@ on:
   workflow_dispatch:
     inputs:
       cells:
-        description: 'Cells to probe: all, none, or a comma-separated list of cell ids or dialect prefixes (postgres, mysql-8-4).'
+        description: 'Cells to probe: all, none, or a list of cell ids or dialect prefixes separated by commas or spaces (postgres, mysql-8-4).'
         required: false
         default: all
 

@@ -68,7 +68,9 @@ if [ "$request" = "all" ]; then
 elif [ "$request" = "none" ] || [ -z "$request" ]; then
 	selected="[]"
 else
-	# A request names cell ids or dialect prefixes. Matching by prefix is what
+	# A request names cell ids or dialect prefixes, separated by commas, spaces
+	# or both: `/capability-matrix mysql mariadb` is the natural way to type two
+	# of them, and no cell id holds a space. Matching by prefix is what
 	# makes `postgres` mean every PostgreSQL line without the requester having to
 	# know the line numbers, and the `+ "-"` is what keeps `mysql` from also
 	# selecting every MariaDB cell.
@@ -79,7 +81,7 @@ else
 	# typo. The selftest pins both halves.
 	selected="$(REQUEST="$request" jq -c '
 	  [ .[] as $id
-	    | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $want
+	    | ([$ENV.REQUEST | splits("[,\\s]+")] | map(select(length > 0))) as $want
 	    | select(any($want[]; . as $w | $id == $w or ($id | startswith($w + "-"))))
 	    | $id ]' <<<"$all")"
 fi
@@ -102,7 +104,7 @@ printf 'reason=%s\n' "$reason"
 if [ -n "$request" ] && [ "$request" != "none" ] && [ "$request" != "all" ]; then
 	unmatched="$(REQUEST="$request" jq -r '
 	  . as $ids
-	  | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)))
+	  | ([$ENV.REQUEST | splits("[,\\s]+")] | map(select(length > 0)))
 	  | map(select(. as $w | ($ids | any(. == $w or startswith($w + "-"))) | not))
 	  | join(", ")' <<<"$all")"
 	if [ -n "$unmatched" ]; then
