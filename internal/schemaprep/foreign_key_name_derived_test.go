@@ -61,6 +61,22 @@ func TestAssignDefaultForeignKeyNames_MarksTheNamesItDerives_HappyPath(t *testin
 
 		c.Assert(twice.Constraints[0].NameDerived, qt.IsTrue)
 	})
+	t.Run("a second pass over a field an embedded struct generated keeps the mark", func(t *testing.T) {
+		c := qt.New(t)
+		database := &schemamodel.Database{
+			Tables: orderTable(),
+			Fields: []schemamodel.Field{{
+				StructName: "Order", Name: "r", Foreign: "pp(id)", GeneratedFromEmbedded: true,
+			}},
+		}
+
+		once := schemaprep.AssignDefaultForeignKeyNames(database, platform.Oracle)
+		twice := schemaprep.AssignDefaultForeignKeyNames(once, platform.Oracle)
+
+		c.Assert(once.Fields[0].ForeignKeyName, qt.Equals, "fk_orders_r")
+		c.Assert(twice.Fields[0].ForeignKeyName, qt.Equals, "fk_orders_r")
+		c.Assert(twice.Fields[0].ForeignKeyNameDerived, qt.IsTrue)
+	})
 }
 
 // A name the author wrote is part of the declaration and is never marked.
