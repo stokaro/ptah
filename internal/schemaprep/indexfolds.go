@@ -126,6 +126,10 @@ type indexKey struct {
 	notDistinct   bool
 	deferrable    bool
 	deferredFirst bool
+	// withoutOverlaps keeps a temporal key from folding with a plain one over
+	// the same columns: it builds a GiST index with other semantics
+	// (stokaro/ptah#6330).
+	withoutOverlaps bool
 }
 
 // indexKeySeparator joins the entries of a key's list. PostgreSQL allows it in
@@ -140,6 +144,8 @@ func indexKeyOf(constraint schemamodel.Constraint) (indexKey, bool) {
 			include:       strings.Join(constraint.IncludeColumns, indexKeySeparator),
 			deferrable:    constraint.Deferrable,
 			deferredFirst: initiallyDeferred(constraint.Initially),
+
+			withoutOverlaps: constraint.WithoutOverlaps,
 		}, true
 	case "UNIQUE":
 		return indexKey{
@@ -148,6 +154,8 @@ func indexKeyOf(constraint schemamodel.Constraint) (indexKey, bool) {
 			notDistinct:   constraint.NullsDistinct != nil && !*constraint.NullsDistinct,
 			deferrable:    constraint.Deferrable,
 			deferredFirst: initiallyDeferred(constraint.Initially),
+
+			withoutOverlaps: constraint.WithoutOverlaps,
 		}, true
 	default:
 		return indexKey{}, false
@@ -186,6 +194,8 @@ func primaryKeyIndex(
 		include:       strings.Join(table.PrimaryKeyInclude, indexKeySeparator),
 		deferrable:    table.PrimaryKeyDeferrable,
 		deferredFirst: initiallyDeferred(table.PrimaryKeyInitially),
+
+		withoutOverlaps: table.PrimaryKeyWithoutOverlaps,
 	}, PrimaryKeyOutsideList, true
 }
 

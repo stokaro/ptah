@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-511 fields are reachable from the desired schema, and each one carries
+514 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 406 | reaches rendered SQL on at least one target |
+| `ddl` | 409 | reaches rendered SQL on at least one target |
 | `comparison` | 39 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 15 | computed from other fields rather than authored |
@@ -482,11 +482,13 @@ migration nobody asked for.
 | `schemamodel.Constraint.NullsDistinct` | `ddl` | — |
 | `schemamodel.Constraint.OnDelete` | `ddl` | — |
 | `schemamodel.Constraint.OnUpdate` | `ddl` | — |
+| `schemamodel.Constraint.Period` | `ddl` | — |
 | `schemamodel.Constraint.Requires` | `planning` | the objects, such as extensions, that must exist before this constraint can be created; it orders the statements and appears in none of them |
 | `schemamodel.Constraint.StructName` | `ddl` | — |
 | `schemamodel.Constraint.Table` | `ddl` | — |
 | `schemamodel.Constraint.Type` | `ddl` | — |
 | `schemamodel.Constraint.UsingMethod` | `ddl` | — |
+| `schemamodel.Constraint.WithoutOverlaps` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
 | `schemamodel.Database.EmbeddedFields` | `ddl` | — |
@@ -731,6 +733,7 @@ migration nobody asked for.
 | `schemamodel.Table.PrimaryKeyMethod` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyName` | `ddl` | — |
 | `schemamodel.Table.PrimaryKeyParts` | `ddl` | — |
+| `schemamodel.Table.PrimaryKeyWithoutOverlaps` | `ddl` | — |
 | `schemamodel.Table.Schema` | `ddl` | — |
 | `schemamodel.Table.StructName` | `ddl` | — |
 | `schemamodel.TargetNames.GraphQL` | `export` | the name one export format carries, overriding the general one |

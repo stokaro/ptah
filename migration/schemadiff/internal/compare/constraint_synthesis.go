@@ -146,7 +146,7 @@ func synthesizeTablePrimaryKeyConstraints(
 	for _, table := range desired.Tables {
 		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 		columns := tablePrimaryKeyColumns(table)
-		if len(columns) == 0 && (liveKeyDefers(database, identity, semantics) ||
+		if len(columns) == 0 && (liveKeyOutgrowsTheColumnFlag(database, identity, semantics) ||
 			columnKeyDiffersFromLive(table, desired.Fields, database, identity, dialect, semantics)) {
 			columns = columnPrimaryKey(table, desired.Fields)
 		}
@@ -191,6 +191,9 @@ func synthesizeTablePrimaryKeyConstraints(
 			Initially:   table.PrimaryKeyInitially,
 			UsingMethod: table.PrimaryKeyMethod,
 			Comment:     table.PrimaryKeyComment,
+			// WITHOUT OVERLAPS is compared, for the same reason
+			// (stokaro/ptah#6330).
+			WithoutOverlaps: table.PrimaryKeyWithoutOverlaps,
 			// So do the settings owners keep on the key, which a common
 			// replacement writes with it.
 			Facets: table.PrimaryKeyFacets,
@@ -199,14 +202,16 @@ func synthesizeTablePrimaryKeyConstraints(
 	return synthesized
 }
 
-// liveKeyDefers reports whether the live table's primary key defers its
-// check. A column's own primary key is compared as a flag on the column, and
-// the flag cannot defer; against a deferrable live key it is compared as the
-// table's key instead, so the difference is planned (stokaro/ptah#3824).
-// [fieldLevelConstraints.has] answers from the same fact on the other side.
-func liveKeyDefers(database *catalog.Database, identity tableIdentity, semantics identifier.Semantics) bool {
+// liveKeyOutgrowsTheColumnFlag reports whether the live table's primary key
+// defers its check or is a WITHOUT OVERLAPS key, neither of which the column's
+// flag can spell. A column's own primary key is compared as a flag on the
+// column, and the flag can neither defer nor exclude overlaps; against such a
+// live key it is compared as the table's key instead, so the difference is
+// planned (stokaro/ptah#3824, stokaro/ptah#6330). [fieldLevelConstraints.has]
+// answers from the same fact on the other side.
+func liveKeyOutgrowsTheColumnFlag(database *catalog.Database, identity tableIdentity, semantics identifier.Semantics) bool {
 	for _, constraint := range database.Constraints {
-		if constraint.Type == "PRIMARY KEY" && constraint.Deferrable &&
+		if constraint.Type == "PRIMARY KEY" && (constraint.Deferrable || constraint.WithoutOverlaps) &&
 			newQualifiedTableIdentity(constraint.QualifiedTableName(), semantics) == identity {
 			return true
 		}

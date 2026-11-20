@@ -1023,6 +1023,15 @@ type Constraint struct {
 	// not check: pg_constraint.conenforced false on PostgreSQL 18, and
 	// TABLE_CONSTRAINTS.ENFORCED `NO` on MySQL.
 	NotEnforced bool `json:"not_enforced,omitempty"`
+	// WithoutOverlaps reports a PRIMARY KEY or UNIQUE constraint whose last
+	// column is kept from overlapping between rows that agree on the others:
+	// pg_constraint.conperiod true on PostgreSQL 18, which pg_get_constraintdef
+	// prints as `WITHOUT OVERLAPS` after that column.
+	WithoutOverlaps bool `json:"without_overlaps,omitempty"`
+	// Period reports a temporal foreign key: pg_constraint.conperiod true on a
+	// foreign key, printed as `PERIOD` before the last referencing and the last
+	// referenced column.
+	Period bool `json:"period,omitempty"`
 	// NotValid reports a CHECK or foreign key the server has not validated
 	// against the rows the table held when it was added, as
 	// pg_get_constraintdef marks it with NOT VALID and Oracle's

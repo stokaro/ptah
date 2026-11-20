@@ -360,6 +360,8 @@ func appendConstraintAddition(
 		Initially:       genConstraint.Initially,
 		Match:           genConstraint.Match,
 		NotEnforced:     genConstraint.NotEnforced,
+		WithoutOverlaps: genConstraint.WithoutOverlaps,
+		Period:          genConstraint.Period,
 		NotValid:        genConstraint.NotValid,
 		Identity:        constraintIdentity(genConstraint.Table, genConstraint.Name, semantics),
 	})
@@ -432,6 +434,7 @@ func primaryKeyConstraintChanged(
 	return !sameColumnNames(semantics, genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		deferralChanged(genConstraint, dbConstraint) ||
+		temporalKeyChanged(genConstraint, dbConstraint, semantics) ||
 		!mysqlindex.MethodSatisfiedBy(dialect, genConstraint.UsingMethod, getStringValue(dbConstraint.UsingMethod))
 }
 
@@ -633,5 +636,34 @@ func uniqueConstraintChanged(
 	return !columnSetsMatch(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault(), semantics) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		!nullsDistinctEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct) ||
-		deferralChanged(genConstraint, dbConstraint)
+		deferralChanged(genConstraint, dbConstraint) ||
+		temporalKeyChanged(genConstraint, dbConstraint, semantics)
+}
+
+// temporalKeyChanged reports whether a declared and a database key differ in
+// WITHOUT OVERLAPS, or in which column carries it. The server cannot change
+// either in place, so a difference is a drop and an add, as it is for a
+// deferral (stokaro/ptah#6330). The columns of a key compare as a set, which
+// is right for a plain key and not for a temporal one: its last column is the
+// period, so the same columns with another one last are another key.
+func temporalKeyChanged(
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
+	semantics identifier.Semantics,
+) bool {
+	if genConstraint.WithoutOverlaps != dbConstraint.WithoutOverlaps {
+		return true
+	}
+	if !genConstraint.WithoutOverlaps {
+		return false
+	}
+	return !sameColumnNames(semantics, lastOf(genConstraint.Columns), lastOf(dbConstraint.ColumnNamesOrDefault()))
+}
+
+// lastOf answers the last element of columns as a list of its own, or none.
+func lastOf(columns []string) []string {
+	if len(columns) == 0 {
+		return nil
+	}
+	return columns[len(columns)-1:]
 }

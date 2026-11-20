@@ -338,6 +338,14 @@
               "description": "Foreign key ON UPDATE action.",
               "type": "string"
             },
+            "period": {
+              "description": "Applies PERIOD to the last referencing and the last referenced column of a FOREIGN KEY constraint (PostgreSQL 18+).",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
             "table": {
               "description": "Explicit target table.",
               "type": "string"
@@ -348,6 +356,14 @@
             },
             "using": {
               "description": "Primary-key index method.",
+              "type": "string"
+            },
+            "without_overlaps": {
+              "description": "Applies WITHOUT OVERLAPS to the last column of a PRIMARY KEY or UNIQUE constraint, a range or multirange (PostgreSQL 18+).",
+              "enum": [
+                "true",
+                "false"
+              ],
               "type": "string"
             }
           },
@@ -2284,6 +2300,14 @@
             },
             "primary_key_comment": {
               "description": "MySQL-family primary index comment.",
+              "type": "string"
+            },
+            "primary_key_without_overlaps": {
+              "description": "Applies WITHOUT OVERLAPS to the last primary key column, a range or multirange (PostgreSQL 18+).",
+              "enum": [
+                "true",
+                "false"
+              ],
               "type": "string"
             },
             "proto_name": {

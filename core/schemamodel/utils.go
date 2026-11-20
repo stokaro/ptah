@@ -1886,6 +1886,10 @@ func constraintIdentity(scope string, constraint Constraint) string {
 		// (stokaro/ptah#3853).
 		strings.ToUpper(constraint.Match),
 		strconv.FormatBool(constraint.NotEnforced),
+		// Temporal keys differ from plain ones in what they refuse
+		// (stokaro/ptah#6330).
+		strconv.FormatBool(constraint.WithoutOverlaps),
+		strconv.FormatBool(constraint.Period),
 	}, "\x00")
 }
 

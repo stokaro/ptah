@@ -751,6 +751,7 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		constraint.Deferrable = table.PrimaryKeyDeferrable
 		constraint.Initially = table.PrimaryKeyInitially
 		constraint.UsingMethod = table.PrimaryKeyMethod
+		constraint.WithoutOverlaps = table.PrimaryKeyWithoutOverlaps
 		constraint.Comment = table.PrimaryKeyComment
 		constraint.Facets = table.PrimaryKeyFacets
 		return constraint
@@ -776,6 +777,8 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 		UsingMethod:    table.PrimaryKeyMethod,
 		Comment:        table.PrimaryKeyComment,
 		Facets:         table.PrimaryKeyFacets,
+
+		WithoutOverlaps: table.PrimaryKeyWithoutOverlaps,
 	}
 }
 
@@ -820,12 +823,14 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 		// The access method, for the same reason: a MariaDB key rebuilt for its
 		// method went back as BTREE without it (stokaro/ptah#3853).
 		node.UsingMethod = constraint.UsingMethod
+		node.WithoutOverlaps = constraint.WithoutOverlaps
 		return node
 	case "UNIQUE":
 		node := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
 		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
 		node.NullsDistinct = cloneBoolPtr(constraint.NullsDistinct)
 		node.Deferrable, node.Initially = constraint.Deferrable, constraint.Initially
+		node.WithoutOverlaps = constraint.WithoutOverlaps
 		return node
 	case "FOREIGN KEY":
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
@@ -839,6 +844,7 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 			Initially:   constraint.Initially,
 			Match:       constraint.Match,
 			NotEnforced: constraint.NotEnforced,
+			Period:      constraint.Period,
 		})
 	case "CHECK":
 		return &ast.ConstraintNode{

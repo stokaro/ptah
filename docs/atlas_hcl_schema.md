@@ -65,7 +65,10 @@ current schema IR:
   `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and
   `api_expose` preserve API export metadata
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
-  `include`, and MySQL and MariaDB primary keys support `type = HASH`
+  `include` and `without_overlaps` (a temporal key, PostgreSQL 18), and MySQL
+  and MariaDB primary keys support `type = HASH`. A temporal key may write
+  `type = GIST`, the index it is always built on; `type = GIST` without
+  `without_overlaps` is refused
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, `where`, and `comment`;
   an `on` block also accepts `nulls_first` or `nulls_last` (not both) for a key
@@ -81,14 +84,18 @@ current schema IR:
   with `name`, `using`, `elements` and optional `condition`, `deferrable`,
   `initially`, `comment` and `requires`
 - `unique` blocks with `columns`; PostgreSQL unique constraints also support
-  `include` and `nulls_distinct`
-- `foreign_key` blocks with one local `columns` entry and one table-qualified
-  `ref_columns` entry, plus optional `on_delete`, `on_update`, `deferrable` and
-  `initially`. The last two are Ptah's own: the community binary plans no
-  `DEFERRABLE` for a file that writes them, so nothing about drop-in fidelity
-  changes for a document that does not. A target whose capability set lacks
-  `deferrable_constraints` refuses the constraint by name rather than rendering
-  it without the clause
+  `include`, `nulls_distinct` and `without_overlaps` (a temporal key,
+  PostgreSQL 18), which may write `type = GIST` as `primary_key` does
+- `foreign_key` blocks with `columns` and table-qualified `ref_columns`, plus
+  optional `on_delete`, `on_update`, `deferrable`, `initially` and `period`
+  (a temporal foreign key, PostgreSQL 18). `deferrable` and `initially` are
+  Ptah's own: the community binary plans no `DEFERRABLE` for a file that
+  writes them, so nothing about drop-in fidelity changes for a document that
+  does not. `without_overlaps` and `period` are the spellings the public Atlas
+  HCL reference gives. A target whose capability set lacks
+  `deferrable_constraints` refuses a deferrable constraint by name rather than
+  rendering it without the clause, and one that lacks `temporal_keys` refuses
+  `without_overlaps` and `period` the same way
 - `check` blocks with `expr`
 - `default = sql("...")` as a default expression
 - `row_security` blocks inside `table` with `enabled = true`, an optional

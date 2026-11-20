@@ -109,6 +109,16 @@ type ForeignKeyRef struct {
 	// renderer for a target without the clause refuses the key rather than
 	// write one that checks every row.
 	NotEnforced bool
+	// Period marks a temporal foreign key, written `FOREIGN KEY (id, PERIOD
+	// valid_at) REFERENCES parent (id, PERIOD valid_at)`: PERIOD applies to the
+	// last referencing and the last referenced column, and the key requires the
+	// referencing range to be covered by the ranges of the referenced rows that
+	// share the other columns. PostgreSQL 18 records it in
+	// pg_constraint.conperiod. A renderer for a target without
+	// [ptah.run/core/platform/capability.TemporalKeys] refuses the key rather
+	// than write one that compares the range columns by equality
+	// (stokaro/ptah#6330).
+	Period bool
 	// Facets holds owner settings of a column-level reference. A table-level
 	// foreign key stores its settings on ConstraintNode.Facets.
 	Facets schemaext.Facets

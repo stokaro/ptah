@@ -882,6 +882,7 @@ func (t alterTarget) clearPrimaryKey() {
 	t.table.PrimaryKey, t.table.PrimaryKeyName = nil, ""
 	t.table.PrimaryKeyParts, t.table.PrimaryKeyInclude = nil, nil
 	t.table.PrimaryKeyDeferrable, t.table.PrimaryKeyInitially = false, ""
+	t.table.PrimaryKeyWithoutOverlaps = false
 	t.table.PrimaryKeyMethod = ""
 	t.table.PrimaryKeyComment = ""
 	t.table.PrimaryKeyFacets = schemaext.Facets{}

@@ -297,6 +297,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
 			tableSchema.PrimaryKeyDeferrable = constraint.Deferrable
 			tableSchema.PrimaryKeyInitially = constraint.Initially
+			tableSchema.PrimaryKeyWithoutOverlaps = constraint.WithoutOverlaps
 			tableSchema.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
 			tableSchema.PrimaryKeyComment = constraint.Comment
 			tableSchema.PrimaryKeyFacets = constraint.Facets
@@ -1427,6 +1428,7 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
 	target.table.PrimaryKeyDeferrable = constraint.Deferrable
 	target.table.PrimaryKeyInitially = constraint.Initially
+	target.table.PrimaryKeyWithoutOverlaps = constraint.WithoutOverlaps
 	target.table.PrimaryKeyMethod = mysqlindex.Method(constraint.UsingMethod)
 	target.table.PrimaryKeyComment = constraint.Comment
 	target.table.PrimaryKeyFacets = constraint.Facets
@@ -1488,6 +1490,8 @@ func constraintDefinition(constraint *ast.ConstraintNode, structName, tableName,
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
 			Deferrable:    constraint.Deferrable,
 			Initially:     constraint.Initially,
+
+			WithoutOverlaps: constraint.WithoutOverlaps,
 		}, true
 	case ast.ForeignKeyConstraint:
 		fk := schemamodel.Constraint{
@@ -1508,6 +1512,7 @@ func constraintDefinition(constraint *ast.ConstraintNode, structName, tableName,
 			fk.Initially = ref.Initially
 			fk.Match = ref.Match
 			fk.NotEnforced = ref.NotEnforced
+			fk.Period = ref.Period
 		}
 		return fk, true
 	case ast.CheckConstraint:

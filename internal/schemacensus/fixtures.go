@@ -209,6 +209,9 @@ func corpus() []Fixture {
 		{Name: "constraint-check-not-enforced", Schema: constraintCheckNotEnforcedFixture()},
 		{Name: "constraint-fk-match", Schema: constraintForeignKeyMatchFixture()},
 		{Name: "constraint-check-not-valid", Schema: constraintCheckNotValidFixture()},
+		{Name: "table-pk-without-overlaps", Schema: tablePrimaryKeyWithoutOverlapsFixture()},
+		{Name: "constraint-unique-without-overlaps", Schema: constraintUniqueWithoutOverlapsFixture()},
+		{Name: "constraint-fk-period", Schema: constraintForeignKeyPeriodFixture()},
 		{Name: "constraint-delete-column-list", Schema: constraintDeleteColumnListFixture()},
 		{Name: "constraint-host-table-only", Schema: constraintHostTableOnlyFixture()},
 		{Name: "index-host-table-only", Schema: indexHostTableOnlyFixture()},
@@ -451,6 +454,55 @@ func constraintForeignKeyMatchFixture() schemamodel.Database {
 		StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
 		Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumn: "id",
 		Match: "FULL",
+	}}
+	return db
+}
+
+// temporalTables is a parent and a child keyed on an id and a validity range,
+// the two columns a temporal key needs (stokaro/ptah#6330).
+func temporalTables() schemamodel.Database {
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", FieldName: "ID", Name: "id", Type: "BIGINT"},
+			{StructName: "Parent", FieldName: "ValidAt", Name: "valid_at", Type: "DATERANGE"},
+			{StructName: "Child", FieldName: "ParentID", Name: "parent_id", Type: "BIGINT"},
+			{StructName: "Child", FieldName: "ValidAt", Name: "valid_at", Type: "DATERANGE"},
+		},
+	}
+}
+
+// tablePrimaryKeyWithoutOverlapsFixture is a primary key whose last column is
+// a range the key keeps from overlapping.
+func tablePrimaryKeyWithoutOverlapsFixture() schemamodel.Database {
+	db := temporalTables()
+	db.Tables[0].PrimaryKey = []string{"id", "valid_at"}
+	db.Tables[0].PrimaryKeyWithoutOverlaps = true
+	return db
+}
+
+// constraintUniqueWithoutOverlapsFixture is a UNIQUE over the same two
+// columns.
+func constraintUniqueWithoutOverlapsFixture() schemamodel.Database {
+	db := temporalTables()
+	db.Constraints = []schemamodel.Constraint{{
+		StructName: "Parent", Table: "parents", Name: "parents_id_valid_at_key", Type: "UNIQUE",
+		Columns: []string{"id", "valid_at"}, WithoutOverlaps: true,
+	}}
+	return db
+}
+
+// constraintForeignKeyPeriodFixture is a foreign key whose last columns are
+// compared as periods, onto a parent key that has the temporal key it needs.
+func constraintForeignKeyPeriodFixture() schemamodel.Database {
+	db := tablePrimaryKeyWithoutOverlapsFixture()
+	db.Constraints = []schemamodel.Constraint{{
+		StructName: "Child", Table: "children", Name: "fk_children_parent", Type: "FOREIGN KEY",
+		Columns: []string{"parent_id", "valid_at"}, ForeignTable: "parents",
+		ForeignColumns: []string{"id", "valid_at"}, Period: true,
 	}}
 	return db
 }

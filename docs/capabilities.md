@@ -225,6 +225,7 @@ so typos fail fast. Current registry:
 | `small_integer_defaults` | a 16-bit integer column takes a literal default (not YDB 25.1) |
 | `standard_string_size` | the Oracle database runs with MAX_STRING_SIZE=STANDARD, which refuses a column COLLATE with ORA-43929 (set from the connection, never by a preset) |
 | `streaming_queries` | Ptah declares, reads and plans a streaming query (YDB's CREATE STREAMING QUERY) |
+| `temporal_keys` | temporal keys: WITHOUT OVERLAPS on a primary key or unique constraint and PERIOD on a foreign key (PostgreSQL 18+ only) |
 | `tiered_ttl` | Ptah declares, reads and plans YDB column-table TTL tiers that move data to external storage |
 | `topic_consumer_availability_period` | a topic consumer keeps unread records past the retention, availability_period (YDB 25.4 and later) |
 | `topics` | Ptah declares, reads and plans a standalone topic and its consumers (YDB's CREATE TOPIC) |
@@ -459,6 +460,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `small_integer_defaults` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `standard_string_size` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `streaming_queries` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `temporal_keys` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `tiered_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `topic_consumer_availability_period` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `topics` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |

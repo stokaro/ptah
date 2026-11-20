@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/temporalkeys"
 	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
 )
@@ -461,6 +462,17 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 			fmt.Errorf("%w: constraint %q has unsupported common kind %q", ptaherr.ErrUnsupportedFeature, constraint.Name, constraint.Type))
 	}
 	constraint.Facets = facets
+	// WITHOUT OVERLAPS qualifies the last column of a PRIMARY KEY or UNIQUE,
+	// and PERIOD the last columns of a FOREIGN KEY.
+	if constraint.WithoutOverlaps, err = temporalkeys.Flag("without_overlaps", kv["without_overlaps"]); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
+	if constraint.Period, err = temporalkeys.Flag("period", kv["period"]); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
+	if err := temporalkeys.CheckConstraint(constraint); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
 	s.schemaConstraints = append(s.schemaConstraints, constraint)
 	return nil
 }
@@ -721,7 +733,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		// no place for one.
 		return ownerAttributeError(ctx, errors.New("a setting of the primary key needs the key declared with primary_key"))
 	}
-	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
+	declared := schemamodel.Table{
 		StructName:        structName,
 		Name:              tableName,
 		APIName:           kv["api_name"],
@@ -738,7 +750,16 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		CustomSQL:         kv["custom"],
 		Facets:            facets,
 		Overrides:         parseutils.ParsePlatformSpecific(s.hostAttributes("ptah:schema:table", kv)),
-	})
+	}
+	if declared.PrimaryKeyWithoutOverlaps, err = temporalkeys.Flag(
+		"primary_key_without_overlaps", kv["primary_key_without_overlaps"],
+	); err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	if err := temporalkeys.CheckPrimaryKey(declared); err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	s.tableDirectives = append(s.tableDirectives, declared)
 	return nil
 }
 

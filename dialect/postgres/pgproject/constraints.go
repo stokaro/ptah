@@ -116,9 +116,15 @@ func addBacking(state *schemaprojection.TableState, constraint catalog.Constrain
 			return "constraint backing index conflicts with an accepted index"
 		}
 	}
+	// A WITHOUT OVERLAPS key is backed by a GiST index, which PostgreSQL 18
+	// builds for it and reports as `USING gist` (stokaro/ptah#6330).
+	method := "btree"
+	if constraint.WithoutOverlaps {
+		method = "gist"
+	}
 	index := catalog.Index{
 		Name: constraint.Name, TableName: state.Table.Name, Schema: state.Table.Schema,
-		Columns: slices.Clone(constraint.ColumnNamesOrDefault()), Method: "btree", IsUnique: true,
+		Columns: slices.Clone(constraint.ColumnNamesOrDefault()), Method: method, IsUnique: true,
 		IsPrimary: constraint.Type == "PRIMARY KEY", IncludeColumns: slices.Clone(constraint.IncludeColumns),
 		Requires: slices.Clone(constraint.Requires),
 	}

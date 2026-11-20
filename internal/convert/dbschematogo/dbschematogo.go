@@ -299,6 +299,8 @@ func convertTablesAndFields(
 			PrimaryKeyMethod:     primaryKey.method,
 			PrimaryKeyComment:    primaryKey.comment,
 			PrimaryKeyFacets:     primaryKey.facets,
+
+			PrimaryKeyWithoutOverlaps: primaryKey.withoutOverlaps,
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).
@@ -738,6 +740,9 @@ type tablePrimaryKey struct {
 	method     string
 	comment    string
 	facets     schemaext.Facets
+	// withoutOverlaps rides with the key as the other clauses do: the column
+	// flag has no slot for it (stokaro/ptah#6330).
+	withoutOverlaps bool
 }
 
 // primaryKeyMethod is the access method a PRIMARY KEY the catalog reports asks
@@ -793,7 +798,7 @@ func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]t
 		if described, _ := platform.Lookup(dialect); described.Conversion.ConstraintComments {
 			comment = constraint.Comment
 		}
-		if len(columns) == 1 && !partitions[constraint.QualifiedTableName()] && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.Facets.IsZero() {
+		if len(columns) == 1 && !partitions[constraint.QualifiedTableName()] && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.Facets.IsZero() && !constraint.WithoutOverlaps {
 			continue
 		}
 		result[constraint.QualifiedTableName()] = tablePrimaryKey{
@@ -804,6 +809,8 @@ func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]t
 			method:     method,
 			comment:    comment,
 			facets:     constraint.Facets,
+
+			withoutOverlaps: constraint.WithoutOverlaps,
 		}
 	}
 	return result
@@ -1012,6 +1019,8 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		Initially:       dbConstraint.Initially,
 		Match:           dbConstraint.Match,
 		NotEnforced:     dbConstraint.NotEnforced,
+		WithoutOverlaps: dbConstraint.WithoutOverlaps,
+		Period:          dbConstraint.Period,
 		NotValid:        dbConstraint.NotValid,
 		Comment:         dbConstraint.Comment,
 		// The index backing this constraint is dropped above so the constraint

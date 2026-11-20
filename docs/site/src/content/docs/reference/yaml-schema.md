@@ -272,6 +272,7 @@ Each entry under `tables` declares one table.
 | `engine` | Table engine value for the MySQL family; a PostgreSQL-family target names it on a `skipped` comment instead. |
 | `comment` | Table comment. |
 | `primary_key` | Table-level primary key column list. |
+| `primary_key_without_overlaps` | Applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange (PostgreSQL 18). See [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `checks` | Table-level check expressions. |
 | `custom_sql` | Custom SQL attached to the table. |
 | `columns` / `fields` | Ordered column map. Use one or the other. |
@@ -345,6 +346,31 @@ A column needs a name. An empty column key, or an explicit `name: ""`, fails
 rendering on every dialect with `table "<name>" declares a column that has no
 name`; PostgreSQL answers `zero-length delimited identifier` and the MySQL
 family answers `Incorrect column name ''` for the DDL that used to be produced.
+
+## Constraints
+
+A constraint sits under `tables.<table>.constraints`, or under the top-level
+`constraints` map with a `table` key.
+
+| Key | Meaning |
+| --- | --- |
+| `name` | Constraint name. Defaults to the map key. |
+| `table` | Target table. Required for a top-level constraint. |
+| `type` | `PRIMARY KEY`, `UNIQUE`, `FOREIGN KEY` or `CHECK`. Required. |
+| `columns` | Local columns. Required for a key. |
+| `check` | The condition of a `CHECK`. |
+| `using` | Access method of a MySQL-family `PRIMARY KEY`. |
+| `foreign_table` | Referenced table of a foreign key. |
+| `foreign_column` | One referenced column. |
+| `foreign_columns` | Referenced columns of a composite foreign key. Use it instead of `foreign_column`. |
+| `on_delete` / `on_update` | Foreign key actions. |
+| `without_overlaps` | Applies `WITHOUT OVERLAPS` to the last column of a `PRIMARY KEY` or `UNIQUE` constraint, a range or multirange (PostgreSQL 18). Needs two or more columns. |
+| `period` | Applies `PERIOD` to the last referencing and the last referenced column of a `FOREIGN KEY` (PostgreSQL 18). Needs two or more columns on each side. |
+| `comment` | Constraint comment. |
+
+A target whose capability set does not carry `temporal_keys` refuses
+`without_overlaps` and `period`; see
+[Temporal keys](../../databases/postgresql/#temporal-keys).
 
 ## Indexes
 

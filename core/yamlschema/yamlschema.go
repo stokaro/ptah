@@ -90,6 +90,7 @@ import (
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/temporalkeys"
 	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
 	"ptah.run/internal/yamlvalue"
@@ -201,23 +202,26 @@ type document struct {
 }
 
 type tableSpec struct {
-	Schema      stringScalar               `yaml:"schema"`
-	StructName  stringScalar               `yaml:"struct_name"`
-	Name        stringScalar               `yaml:"name"`
-	APIName     stringScalar               `yaml:"api_name"`
-	OpenAPIName stringScalar               `yaml:"openapi_name"`
-	GraphQLName stringScalar               `yaml:"graphql_name"`
-	ProtoName   stringScalar               `yaml:"proto_name"`
-	Engine      stringScalar               `yaml:"engine"`
-	Comment     stringScalar               `yaml:"comment"`
-	PrimaryKey  stringList                 `yaml:"primary_key"`
-	Checks      stringList                 `yaml:"checks"`
-	CustomSQL   stringScalar               `yaml:"custom_sql"`
-	Columns     orderedMap[fieldSpec]      `yaml:"columns"`
-	Fields      orderedMap[fieldSpec]      `yaml:"fields"`
-	Indexes     orderedMap[indexSpec]      `yaml:"indexes"`
-	Constraints orderedMap[constraintSpec] `yaml:"constraints"`
-	RLSEnabled  bool                       `yaml:"rls_enabled"`
+	Schema      stringScalar `yaml:"schema"`
+	StructName  stringScalar `yaml:"struct_name"`
+	Name        stringScalar `yaml:"name"`
+	APIName     stringScalar `yaml:"api_name"`
+	OpenAPIName stringScalar `yaml:"openapi_name"`
+	GraphQLName stringScalar `yaml:"graphql_name"`
+	ProtoName   stringScalar `yaml:"proto_name"`
+	Engine      stringScalar `yaml:"engine"`
+	Comment     stringScalar `yaml:"comment"`
+	PrimaryKey  stringList   `yaml:"primary_key"`
+	// PrimaryKeyWithoutOverlaps applies WITHOUT OVERLAPS to the last column of
+	// primary_key, a range or multirange (PostgreSQL 18).
+	PrimaryKeyWithoutOverlaps bool                       `yaml:"primary_key_without_overlaps"`
+	Checks                    stringList                 `yaml:"checks"`
+	CustomSQL                 stringScalar               `yaml:"custom_sql"`
+	Columns                   orderedMap[fieldSpec]      `yaml:"columns"`
+	Fields                    orderedMap[fieldSpec]      `yaml:"fields"`
+	Indexes                   orderedMap[indexSpec]      `yaml:"indexes"`
+	Constraints               orderedMap[constraintSpec] `yaml:"constraints"`
+	RLSEnabled                bool                       `yaml:"rls_enabled"`
 
 	Platform  platformSpec `yaml:"platform"`
 	Overrides platformSpec `yaml:"overrides"`
@@ -302,6 +306,12 @@ type constraintSpec struct {
 	Columns         stringList   `yaml:"columns"`
 	ForeignTable    stringScalar `yaml:"foreign_table"`
 	ForeignColumn   stringScalar `yaml:"foreign_column"`
+	ForeignColumns  stringList   `yaml:"foreign_columns"`
+	// WithoutOverlaps applies WITHOUT OVERLAPS to the last column of a PRIMARY
+	// KEY or UNIQUE, and Period applies PERIOD to the last columns of a
+	// FOREIGN KEY (PostgreSQL 18).
+	WithoutOverlaps bool         `yaml:"without_overlaps"`
+	Period          bool         `yaml:"period"`
 	OnDelete        stringScalar `yaml:"on_delete"`
 	OnUpdate        stringScalar `yaml:"on_update"`
 	Comment         stringScalar `yaml:"comment"`
@@ -632,7 +642,7 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 		if err != nil {
 			return fmt.Errorf("table %q: %w", tableKey, err)
 		}
-		db.Tables = append(db.Tables, schemamodel.Table{
+		declared := schemamodel.Table{
 			StructName: structName,
 			Name:       tableName,
 			Schema:     string(table.Schema),
@@ -645,12 +655,19 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 			Engine:     string(table.Engine),
 			Comment:    string(table.Comment),
 			PrimaryKey: cleanStrings(table.PrimaryKey),
-			Checks:     cleanStrings(table.Checks),
-			CustomSQL:  string(table.CustomSQL),
-			Overrides:  mergePlatform(withoutGroups(table.Platform, owners.PlatformGroups()), table.Overrides),
+
+			PrimaryKeyWithoutOverlaps: table.PrimaryKeyWithoutOverlaps,
+
+			Checks:    cleanStrings(table.Checks),
+			CustomSQL: string(table.CustomSQL),
+			Overrides: mergePlatform(withoutGroups(table.Platform, owners.PlatformGroups()), table.Overrides),
 
 			Facets: facets,
-		})
+		}
+		if err := temporalkeys.CheckPrimaryKey(declared); err != nil {
+			return err
+		}
+		db.Tables = append(db.Tables, declared)
 		owned := yamlext.Table{Key: tableKey, Schema: string(table.Schema), Name: tableName, Struct: structName}
 		if err := addTableSections(db, owners, data, owned, sections); err != nil {
 			return err
@@ -1010,7 +1027,7 @@ func buildConstraint(key, structName, tableName string, spec constraintSpec) (sc
 		return schemamodel.Constraint{}, err
 	}
 
-	return schemamodel.Constraint{
+	constraint := schemamodel.Constraint{
 		StructName:      structName,
 		Name:            valueOrDefault(spec.Name, key),
 		Type:            constraintType,
@@ -1020,10 +1037,17 @@ func buildConstraint(key, structName, tableName string, spec constraintSpec) (sc
 		Columns:         columns,
 		ForeignTable:    string(spec.ForeignTable),
 		ForeignColumn:   string(spec.ForeignColumn),
+		ForeignColumns:  cleanStrings(spec.ForeignColumns),
+		WithoutOverlaps: spec.WithoutOverlaps,
+		Period:          spec.Period,
 		OnDelete:        string(spec.OnDelete),
 		OnUpdate:        string(spec.OnUpdate),
 		Comment:         string(spec.Comment),
-	}, nil
+	}
+	if err := temporalkeys.CheckConstraint(constraint); err != nil {
+		return schemamodel.Constraint{}, err
+	}
+	return constraint, nil
 }
 
 func validateConstraint(key, structName, tableName, constraintType string, columns []string, spec constraintSpec) error {
@@ -1040,8 +1064,8 @@ func validateConstraint(key, structName, tableName, constraintType string, colum
 		if len(columns) == 0 {
 			return fmt.Errorf("constraint %q requires columns", key)
 		}
-		if spec.ForeignTable == "" || spec.ForeignColumn == "" {
-			return fmt.Errorf("constraint %q requires foreign_table and foreign_column", key)
+		if spec.ForeignTable == "" || (spec.ForeignColumn == "" && len(cleanStrings(spec.ForeignColumns)) == 0) {
+			return fmt.Errorf("constraint %q requires foreign_table and foreign_column or foreign_columns", key)
 		}
 	case "CHECK":
 		if spec.CheckExpression == "" {

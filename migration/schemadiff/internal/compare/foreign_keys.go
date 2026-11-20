@@ -46,6 +46,13 @@ func foreignKeyConstraintChanged(
 		return true
 	}
 
+	// Compare PERIOD. A temporal key and a plain one over the same columns are
+	// different constraints, and the server cannot turn one into the other in
+	// place (stokaro/ptah#6330).
+	if genConstraint.Period != dbConstraint.Period {
+		return true
+	}
+
 	// Compare deferral. Without this a schema that declares DEFERRABLE against a
 	// constraint created without it reports no difference, so the plan is empty
 	// and the property never arrives (stokaro/ptah#1624).

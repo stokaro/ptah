@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/temporalkeys"
 )
 
 // Options configures HCL schema parsing.
@@ -785,6 +786,7 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 		table.PrimaryKeyParts = primaryKey.parts
 		table.PrimaryKeyInclude = primaryKey.include
 		table.PrimaryKeyMethod = primaryKey.method
+		table.PrimaryKeyWithoutOverlaps = primaryKey.withoutOverlaps
 	case "index":
 		index, err := p.parseIndex(table.StructName, table.Name, block)
 		if err != nil {
@@ -1192,7 +1194,15 @@ func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Bloc
 	if err != nil {
 		return schemamodel.Constraint{}, err
 	}
-	return schemamodel.Constraint{
+	withoutOverlaps, err := p.boolAttr(block, "without_overlaps", "constraint", false)
+	if err != nil {
+		return schemamodel.Constraint{}, err
+	}
+	period, err := p.boolAttr(block, "period", "constraint", false)
+	if err != nil {
+		return schemamodel.Constraint{}, err
+	}
+	constraint := schemamodel.Constraint{
 		StructName:      table.StructName,
 		Name:            block.Labels[0],
 		Type:            constraintType,
@@ -1207,7 +1217,13 @@ func (p *parser) parseConstraint(table *schemamodel.Table, block *hclsyntax.Bloc
 		OnDelete:        onDelete,
 		OnUpdate:        onUpdate,
 		Comment:         comment,
-	}, nil
+		WithoutOverlaps: withoutOverlaps,
+		Period:          period,
+	}
+	if err := temporalkeys.CheckConstraint(constraint); err != nil {
+		return schemamodel.Constraint{}, p.blockError(block, "%v", err)
+	}
+	return constraint, nil
 }
 
 func (p *parser) parsePlatformOverrides(block *hclsyntax.Block, owner string) (map[string]map[string]string, error) {
@@ -1319,14 +1335,25 @@ func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Bloc
 	if err != nil {
 		return schemamodel.Constraint{}, err
 	}
+	// A unique block names no index of its own; GIST is the one a temporal
+	// key is built on.
+	withoutOverlaps, err := p.temporalKey(block, "unique", fmt.Sprintf("unique %q", block.Labels[0]))
+	if err != nil {
+		return schemamodel.Constraint{}, err
+	}
+	if withoutOverlaps && len(columns) < 2 {
+		return schemamodel.Constraint{}, p.blockError(block,
+			"unique %q has without_overlaps and fewer than two columns", block.Labels[0])
+	}
 	return schemamodel.Constraint{
-		StructName:     structName,
-		Name:           block.Labels[0],
-		Type:           "UNIQUE",
-		Table:          tableName,
-		Columns:        columns,
-		IncludeColumns: include,
-		NullsDistinct:  nullsDistinct,
+		StructName:      structName,
+		Name:            block.Labels[0],
+		Type:            "UNIQUE",
+		Table:           tableName,
+		Columns:         columns,
+		IncludeColumns:  include,
+		NullsDistinct:   nullsDistinct,
+		WithoutOverlaps: withoutOverlaps,
 	}, nil
 }
 
@@ -1534,13 +1561,17 @@ type primaryKeySpec struct {
 	// The pinned community binary writes `type = HASH` for a MariaDB
 	// primary key built USING HASH (stokaro/ptah#3853).
 	method string
+	// withoutOverlaps is the `without_overlaps` attribute: WITHOUT OVERLAPS on
+	// the last column, which a range or multirange carries (PostgreSQL 18).
+	withoutOverlaps bool
 }
 
 func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error) {
 	if err := p.rejectUnsupportedPrimaryKeyAttrs(block); err != nil {
 		return primaryKeySpec{}, err
 	}
-	if err := p.validatePrimaryKeyType(block); err != nil {
+	withoutOverlaps, err := p.temporalKey(block, "primary_key", "primary_key", "BTREE", "HASH")
+	if err != nil {
 		return primaryKeySpec{}, err
 	}
 	include, err := p.parseColumnsAttr(block, "include")
@@ -1555,8 +1586,11 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 		if err != nil {
 			return primaryKeySpec{}, err
 		}
+		if withoutOverlaps && len(columns) < 2 {
+			return primaryKeySpec{}, p.blockError(block, "primary_key has without_overlaps and fewer than two columns")
+		}
 		return primaryKeySpec{columns: columns, parts: primaryKeyParts(columns), include: include,
-			method: p.primaryKeyMethod(block)}, nil
+			method: p.primaryKeyMethod(block), withoutOverlaps: withoutOverlaps}, nil
 	}
 
 	parts, err := p.parsePrimaryKeyParts(block)
@@ -1567,22 +1601,46 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 	for _, part := range parts {
 		columns = append(columns, part.Name)
 	}
-	return primaryKeySpec{columns: columns, parts: parts, include: include, method: p.primaryKeyMethod(block)}, nil
+	if withoutOverlaps && len(columns) < 2 {
+		return primaryKeySpec{}, p.blockError(block, "primary_key has without_overlaps and fewer than two columns")
+	}
+	return primaryKeySpec{columns: columns, parts: parts, include: include,
+		method: p.primaryKeyMethod(block), withoutOverlaps: withoutOverlaps}, nil
 }
 
 // primaryKeyMethod is the access method a primary_key block's `type` asks for,
-// which [parser.validatePrimaryKeyType] has admitted.
+// which [parser.temporalKey] has admitted. A temporal key records none: the
+// GIST it may name is the index the clause builds, not a method to render.
 func (p *parser) primaryKeyMethod(block *hclsyntax.Block) string {
 	return mysqlindex.Method(p.optionalString(block.Body.Attributes["type"]))
 }
 
-func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {
-	primaryKeyType := strings.ToUpper(p.optionalString(block.Body.Attributes["type"]))
-	switch primaryKeyType {
-	case "", "BTREE", "HASH":
-		return nil
+// temporalKey reads the `without_overlaps` of a block of kind primary_key or
+// unique, and admits the block's `type` against it. A temporal key is always
+// backed by a GiST index, so it may name GIST or leave the type out, as the
+// public Atlas HCL reference says; any other type on it is refused. A plain key
+// takes one of the plain types or none, and GIST there describes a key
+// PostgreSQL does not build, so the file is refused rather than read as one key
+// or the other (stokaro/ptah#6330). owner names the block in a refusal.
+func (p *parser) temporalKey(block *hclsyntax.Block, kind, owner string, plain ...string) (bool, error) {
+	withoutOverlaps, err := p.boolAttr(block, "without_overlaps", kind, false)
+	if err != nil {
+		return false, err
+	}
+	keyType := strings.ToUpper(p.optionalString(block.Body.Attributes["type"]))
+	switch {
+	case keyType == "", keyType == "GIST" && withoutOverlaps:
+		return withoutOverlaps, nil
+	case keyType == "GIST":
+		return false, p.blockError(block, "%s has type GIST and no without_overlaps; "+
+			"PostgreSQL backs only a temporal key with a GiST index", owner)
+	case !slices.Contains(plain, keyType):
+		return false, p.blockError(block, "unsupported %s type %q", kind, keyType)
+	case withoutOverlaps:
+		return false, p.blockError(block, "%s has without_overlaps and type %s; "+
+			"a temporal key is backed by a GiST index", owner, keyType)
 	default:
-		return p.blockError(block, "unsupported primary_key type %q", primaryKeyType)
+		return false, nil
 	}
 }
 
@@ -1640,6 +1698,9 @@ type foreignKeySpec struct {
 	onUpdate       string
 	deferrable     bool
 	initially      string
+	// period is the `period` attribute: PERIOD on the last column of each
+	// side (PostgreSQL 18).
+	period bool
 }
 
 func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error) {
@@ -1650,6 +1711,10 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 		return foreignKeySpec{}, err
 	}
 	deferrable, initially, err := p.parseForeignKeyDeferral(block)
+	if err != nil {
+		return foreignKeySpec{}, err
+	}
+	period, err := p.boolAttr(block, "period", "foreign_key", false)
 	if err != nil {
 		return foreignKeySpec{}, err
 	}
@@ -1666,6 +1731,9 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 	}
 	if len(columns) != len(refColumns) {
 		return foreignKeySpec{}, p.blockError(block, "foreign_key %q requires matching columns and ref_columns counts", block.Labels[0])
+	}
+	if period && len(columns) < 2 {
+		return foreignKeySpec{}, p.blockError(block, "foreign_key %q has period and fewer than two columns", block.Labels[0])
 	}
 
 	localColumns := make([]string, 0, len(columns))
@@ -1696,6 +1764,7 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 		onUpdate:       p.optionalString(block.Body.Attributes["on_update"]),
 		deferrable:     deferrable,
 		initially:      initially,
+		period:         period,
 	}, nil
 }
 
@@ -1743,6 +1812,7 @@ func (p *parser) applyForeignKey(table schemamodel.Table, fieldsStart int, block
 			OnUpdate:       spec.onUpdate,
 			Deferrable:     spec.deferrable,
 			Initially:      spec.initially,
+			Period:         spec.period,
 		})
 		return nil
 	}
@@ -1901,9 +1971,10 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 
 func (p *parser) rejectUnsupportedPrimaryKeyAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"columns": true,
-		"include": true,
-		"type":    true,
+		"columns":          true,
+		"include":          true,
+		"type":             true,
+		"without_overlaps": true,
 	}, "primary_key")
 }
 
@@ -1990,25 +2061,30 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 
 func (p *parser) rejectUnsupportedConstraintAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"type":            true,
-		"using":           true,
-		"check":           true,
-		"columns":         true,
-		"include":         true,
-		"nulls_distinct":  true,
-		"foreign_table":   true,
-		"foreign_columns": true,
-		"on_delete":       true,
-		"on_update":       true,
-		"comment":         true,
+		"type":             true,
+		"using":            true,
+		"check":            true,
+		"columns":          true,
+		"include":          true,
+		"nulls_distinct":   true,
+		"without_overlaps": true,
+		"period":           true,
+		"foreign_table":    true,
+		"foreign_columns":  true,
+		"on_delete":        true,
+		"on_update":        true,
+		"comment":          true,
 	}, "constraint")
 }
 
 func (p *parser) rejectUnsupportedUniqueAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"columns":        true,
-		"include":        true,
-		"nulls_distinct": true,
+		"columns":          true,
+		"include":          true,
+		"nulls_distinct":   true,
+		"without_overlaps": true,
+		// The GiST index a temporal key is built on (temporalKey).
+		"type": true,
 	}, "unique")
 }
 
@@ -2038,6 +2114,10 @@ func (p *parser) rejectUnsupportedForeignKeyAttrs(block *hclsyntax.Block) error 
 		// identically (stokaro/ptah#1624).
 		"deferrable": true,
 		"initially":  true,
+		// Applies PERIOD to the last referencing and the last referenced column
+		// (PostgreSQL 18). It is in the public HCL reference as `period`, and
+		// the same file reads on both binaries.
+		"period": true,
 	}, "foreign_key")
 }
 

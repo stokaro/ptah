@@ -3806,6 +3806,7 @@ func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.Con
 		constraint.IncludeColumns = append([]string(nil), add.IncludeColumns...)
 		constraint.NullsDistinct = cloneBoolPtr(add.NullsDistinct)
 		constraint.Deferrable, constraint.Initially = add.Deferrable, add.Initially
+		constraint.WithoutOverlaps = add.WithoutOverlaps
 		return constraint
 	default:
 		return nil
@@ -3860,6 +3861,8 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		primaryKey.IncludeColumns = append([]string(nil), add.IncludeColumns...)
 		// So does the deferral (stokaro/ptah#3824).
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
+		// And WITHOUT OVERLAPS (stokaro/ptah#6330).
+		primaryKey.WithoutOverlaps = add.WithoutOverlaps
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: append(dropsKey, &ast.AddConstraintOperation{Constraint: primaryKey}),
@@ -3991,6 +3994,7 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 		Initially:   add.Initially,
 		Match:       add.Match,
 		NotEnforced: add.NotEnforced,
+		Period:      add.Period,
 	}
 	fkRef.Name = add.Name
 	constraint := ast.NewForeignKeyConstraint(add.Name, add.Columns, fkRef)
