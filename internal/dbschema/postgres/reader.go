@@ -4622,6 +4622,71 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 	return memberships, nil
 }
 
+// readWideAccessInto records the access to every relation that no grant
+// states. Only PostgreSQL has the predefined roles [Reader.readWideAccess]
+// reads. CockroachDB's admin role and YugabyteDB's yb_superuser give access
+// the same way, and nothing here reads them, so on those dialects the access
+// stays unestablished and the security analysis reports the reach rules
+// skipped.
+func (r *Reader) readWideAccessInto(ctx context.Context, schema *catalog.Database) error {
+	if r.dialect != platform.Postgres {
+		return nil
+	}
+	wide, err := r.readWideAccess(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read membership in the roles that read or write all data: %w", err)
+	}
+	schema.WideAccess = wide
+	return nil
+}
+
+// readWideAccess reads the members of pg_read_all_data and pg_write_all_data,
+// the PostgreSQL 14 roles that read or change every relation with no grant on
+// any of them. The role read leaves both out, because Ptah manages no reserved
+// role, so without this a member of either reaches the whole database while
+// the grants say it reaches nothing.
+//
+// A membership with neither the inherit nor the set option, which PostgreSQL
+// 16 can state, gives the member no access and is not reported, and one with
+// only the set option is marked as access the member has after SET ROLE. A
+// server without the roles returns no rows.
+func (r *Reader) readWideAccess(ctx context.Context) ([]catalog.WideAccess, error) {
+	query := `
+		SELECT role.rolname, member.rolname,
+		(to_jsonb(m)->>'inherit_option')::boolean, (to_jsonb(m)->>'set_option')::boolean
+		FROM pg_auth_members m
+		JOIN pg_roles role ON role.oid = m.roleid
+		JOIN pg_roles member ON member.oid = m.member
+		WHERE role.rolname IN ('pg_read_all_data', 'pg_write_all_data')
+		AND ` + pgreservedrole.ExcludeSQL("member.rolname") + `
+		ORDER BY member.rolname, role.rolname`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	access := make([]catalog.WideAccess, 0)
+	for rows.Next() {
+		var role, member string
+		var inheritOption, setOption sql.NullBool
+		if err := rows.Scan(&role, &member, &inheritOption, &setOption); err != nil {
+			return nil, err
+		}
+		if inheritOption.Valid && !inheritOption.Bool && setOption.Valid && !setOption.Bool {
+			continue
+		}
+		access = append(access, catalog.WideAccess{
+			Role: member, Read: role == "pg_read_all_data", Write: role == "pg_write_all_data", Source: role,
+			SwitchOnly: inheritOption.Valid && !inheritOption.Bool,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return access, nil
+}
+
 func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	if r.dialect == platform.CockroachDB {
 		return r.readCockroachGrants(ctx)
@@ -5238,6 +5303,10 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 		return fmt.Errorf("failed to read role memberships: %w", err)
 	}
 	schema.RoleMemberships = memberships
+
+	if err := r.readWideAccessInto(ctx, schema); err != nil {
+		return err
+	}
 
 	// The superuser bit decides whether a REVOKE runs as the object's owner.
 	if err := r.db.QueryRowContext(ctx, `SELECT rolname, rolsuper FROM pg_roles WHERE rolname = current_user`).Scan(

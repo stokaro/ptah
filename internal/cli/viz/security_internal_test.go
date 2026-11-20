@@ -54,6 +54,8 @@ func TestSecurityAnnotations(t *testing.T) {
 				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
+				"roles/read-reach not checked here: " + reachSkipReason,
+				"roles/write-reach not checked here: " + reachSkipReason,
 			},
 		},
 		{
@@ -70,6 +72,8 @@ func TestSecurityAnnotations(t *testing.T) {
 				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
+				"roles/read-reach not checked here: " + reachSkipReason,
+				"roles/write-reach not checked here: " + reachSkipReason,
 			},
 		},
 		{
@@ -87,6 +91,8 @@ func TestSecurityAnnotations(t *testing.T) {
 				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
+				"roles/read-reach not checked here: " + reachSkipReason,
+				"roles/write-reach not checked here: " + reachSkipReason,
 			},
 		},
 		{
@@ -103,6 +109,8 @@ func TestSecurityAnnotations(t *testing.T) {
 				"ROL01 not checked here: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
+				"roles/read-reach not checked here: " + reachSkipReason,
+				"roles/write-reach not checked here: " + reachSkipReason,
 			},
 		},
 	}
@@ -187,3 +195,8 @@ func orEmptySlice(values []string) []string {
 	}
 	return values
 }
+
+// reachSkipReason is why a diagram from a desired schema measures no role's
+// reach: nothing was read about superusers or server-wide privileges.
+const reachSkipReason = "the access no object grant states -- superuser, predefined roles, server-wide privileges -- " +
+	"was not read for this source, so a role's reach would be measured short"

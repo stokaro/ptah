@@ -790,6 +790,8 @@ The rules:
 | `ROL04` | a role that cannot log in and that nobody holds | info |
 | `OWN01` | objects owned by a role that can log in | info |
 | `OWN02` | an object whose owner revoked from itself privileges PostgreSQL gives an owner by default | warning |
+| `roles/read-reach` | a role that can read more than `--reach-warn` percent of the relations (default 50), or more than `--reach-error` percent (default 100, which never reports) | warning, error |
+| `roles/write-reach` | a role that can change the rows of more than `--reach-warn` percent of the relations, or more than `--reach-error` percent | warning, error |
 
 `ROL01` needs something no catalog keeps. A privilege is not use: a role holding
 `SELECT` on a table it has never read looks identical, in every catalog Ptah
@@ -828,6 +830,18 @@ on the resource pool `default`, has a login state the read cannot establish.
 others. MySQL has no object owner to read — a routine has a `DEFINER` and a table has nothing — so the
 rule reports itself skipped there rather than answering from a concept the engine
 does not have.
+
+`roles/read-reach` and `roles/write-reach` count a role's tables, views and
+materialized views (the write rule leaves materialized views out) through its
+grants on whole relations, grants to `PUBLIC`, the roles it can use
+through membership, ownership and grants on a whole database, and through access
+no grant on a relation states. PostgreSQL reads that access as superuser and
+membership in `pg_read_all_data` or `pg_write_all_data`; MySQL and MariaDB read
+it from the privilege columns of `mysql.user`, the privileges a role holds on
+every database. Every other engine reports both rules skipped, CockroachDB and
+YugabyteDB included, whose `admin` and `yb_superuser` roles give the same access
+and are not read, because a reach measured without that access reports such a
+role as reaching nothing.
 
 `OWN02` reports one finding per object whose owner revoked from itself privileges
 PostgreSQL gives an owner by default, naming the owner and what it lacks. It reads
@@ -869,8 +883,10 @@ principal, and reporting every application account would bury the rule.
 Severities are the ones the rest of Ptah speaks: `info` reports and never
 blocks, `warning` asks for review, `error` blocks. `--fail-on error` (the
 default), `any`, or `none` decides the exit code, spelled the way
-`ptah migrations lint` spells it. No rule here is error-severity, so the default reports without
-failing; `--fail-on any` gates on every finding.
+`ptah migrations lint` spells it. Only `roles/read-reach` and `roles/write-reach`
+can report at `error`, and only once `--reach-error` is below 100, so the
+default passes on every finding unless that threshold is set; `--fail-on any`
+gates on every finding.
 
 `--format json` emits the same findings as a document, each with its structured
 detail — the privileges, the roles, the routine's language — so a pipeline can

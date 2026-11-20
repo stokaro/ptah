@@ -33,6 +33,11 @@ const (
 	// it -- pg_stat_statements, an audit stream, a proxy log
 	// (stokaro/ptah#1961).
 	securityRoleUsageFlag = "role-usage"
+	// securityReachWarnFlag and securityReachErrorFlag are the thresholds of
+	// roles/read-reach and roles/write-reach, as a percentage of the relations
+	// a role may reach before the finding is a warning or an error.
+	securityReachWarnFlag  = "reach-warn"
+	securityReachErrorFlag = "reach-error"
 )
 
 // The three thresholds `ptah lint` already spells, so one operator's CI script
@@ -49,6 +54,8 @@ type schemaSecurityOptions struct {
 	format    string
 	failOn    string
 	roleUsage string
+	reachWarn int
+	reachErr  int
 }
 
 // NewSchemaSecurityCommand returns the native `schema security` command.
@@ -101,6 +108,20 @@ Without the flag ROL01 is reported as skipped rather than passing quietly. An
 empty list is a different answer from no file at all: it says the window was
 observed and nothing used anything, so every grant in it is unused.
 
+roles/read-reach and roles/write-reach measure how many of the database's
+tables, views and materialized views a role can read, or change the rows of,
+as a share of all of them. A role reaches a relation through its own grants,
+grants to PUBLIC, the roles it can use through membership (inherited or
+switched to), ownership, a grant on the whole schema, superuser, membership in
+pg_read_all_data or pg_write_all_data, and privileges granted on every
+database. More than --reach-warn percent (50 unless set) is a warning, and
+more than --reach-error percent an error. --reach-error is 100 unless set, so
+a reach is never an error by default: the owner of every table reaches all of
+them, which is how most applications that run their own migrations are
+deployed. Set it, for example to 75, to fail on broad reach. The rules run
+on PostgreSQL, MySQL and MariaDB, and report themselves skipped where the
+read does not establish the access no object grant states.
+
 The analysis is local: it reads the database named by --db-url and contacts
 nothing else. It also reads only what Ptah models, so a clean report means
 "nothing here matched a rule", never "this database is secure".`,
@@ -120,6 +141,11 @@ nothing else. It also reads only what Ptah models, so a clean report means
 		"Failure threshold controlling the exit code: error, any or none")
 	flags.StringVar(&opts.roleUsage, securityRoleUsageFlag, "",
 		"JSON file of observed role-object usage, which ROL01 needs. Omitted, ROL01 reports itself skipped.")
+	flags.IntVar(&opts.reachWarn, securityReachWarnFlag, schemasecurity.DefaultReachWarnPercent,
+		"Percent of the relations a role may read or write before roles/read-reach and roles/write-reach warn")
+	flags.IntVar(&opts.reachErr, securityReachErrorFlag, schemasecurity.DefaultReachErrorPercent,
+		"Percent of the relations a role may read or write before roles/read-reach and roles/write-reach "+
+			"report an error. 100 never reports one.")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
@@ -134,6 +160,9 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			securityFormatFlag, opts.format))
 	}
 	if err := validateSecurityFailOn(opts.failOn); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := validateReachThresholds(opts.reachWarn, opts.reachErr); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -178,6 +207,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			ObjectOwners:    objectOwners(live),
 			OwnerRevokes:    ownerRevokes(live),
 			RoleObjectUsage: usage,
+			Reach:           schemasecurity.ReachFromCatalog(live, conn.Info().Schema, opts.reachWarn, opts.reachErr),
 			DatabasePath:    live.DatabasePath,
 		},
 	)
@@ -259,6 +289,24 @@ func objectOwners(live *catalog.Database) []schemasecurity.ObjectOwner {
 		})
 	}
 	return owners
+}
+
+// validateReachThresholds refuses a threshold outside 0 to 100, and a warning
+// threshold above the error one, which would make every warning an error and
+// is more likely a swapped pair than a policy.
+func validateReachThresholds(warn, failAt int) error {
+	for _, threshold := range []struct {
+		flag  string
+		value int
+	}{{securityReachWarnFlag, warn}, {securityReachErrorFlag, failAt}} {
+		if threshold.value < 0 || threshold.value > 100 {
+			return fmt.Errorf("--%s must be a percentage from 0 to 100, got %d", threshold.flag, threshold.value)
+		}
+	}
+	if warn > failAt {
+		return fmt.Errorf("--%s (%d) is above --%s (%d)", securityReachWarnFlag, warn, securityReachErrorFlag, failAt)
+	}
+	return nil
 }
 
 // validateSecurityFailOn rejects a threshold nothing understands, rather than

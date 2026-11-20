@@ -26,8 +26,8 @@ export const securitySamples = `${import.meta.env.BASE_URL}samples/visualize/`;
 schema declares about access: privileges granted to `PUBLIC`, tables reachable
 by a role with no row-level security (RLS) enabled, routines that run with their
 owner's privileges, objects owned by a role that can log in, overlapping and
-empty role memberships, and privileges held on objects nothing was observed
-using.
+empty role memberships, privileges held on objects nothing was observed using,
+and roles that can read or change most of the database's relations.
 
 To match the database engine and installed extension versions against
 published advisories, run
@@ -67,7 +67,8 @@ for the Mermaid limitation and the complete diagram-output contract.
 
 Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and the URL of the database to read. The command registers `--db-url`,
-`--fail-on`, `--format`, `--role-usage` and `--schemas`, and nothing else: there
+`--fail-on`, `--format`, `--reach-error`, `--reach-warn`, `--role-usage` and
+`--schemas`, and nothing else: there
 is no `--dialect` and no schema-source flag, so it reads a live database and
 takes its dialect from the connection. See
 [Database URLs and dev databases](../../concepts/database-urls-and-dev-databases/)
@@ -112,12 +113,15 @@ ptah schema security --db-url "$DATABASE_URL"
 Expected output includes:
 
 ```text
-CODE   SEVERITY  OBJECT           FINDING
-OWN01  info      role ptah        role ptah can log in and owns 2 object(s), so whoever holds its password can drop or alter them
-PRV01  info      table customers  table customers is granted to a role and has no row-level security enabled, so a granted role reads every row
-PRV01  info      table orders     table orders is granted to a role and has no row-level security enabled, so a granted role reads every row
-PRV02  info      routine bump     routine bump runs as its owner, so every caller that may execute it acts with the owner's privileges
-PRV03  warning   table customers  privileges on table customers are granted to PUBLIC, which every role holds
+CODE               SEVERITY  OBJECT           FINDING
+OWN01              info      role ptah        role ptah can log in and owns 2 object(s), so whoever holds its password can drop or alter them
+PRV01              info      table customers  table customers is granted to a role and has no row-level security enabled, so a granted role reads every row
+PRV01              info      table orders     table orders is granted to a role and has no row-level security enabled, so a granted role reads every row
+PRV02              info      routine bump     routine bump runs as its owner, so every caller that may execute it acts with the owner's privileges
+PRV03              warning   table customers  privileges on table customers are granted to PUBLIC, which every role holds
+roles/read-reach   warning   role ptah        role ptah can read 2 of 2 relations (100%), above the warning threshold of 50%
+roles/read-reach   warning   role reporting   role reporting can read 2 of 2 relations (100%), above the warning threshold of 50%
+roles/write-reach  warning   role ptah        role ptah can change the rows of 2 of 2 relations (100%), above the warning threshold of 50%
 
 Suggested:
   OWN01 ptah: own them with a role that cannot log in and grant membership in it instead
@@ -125,15 +129,18 @@ Suggested:
   PRV01 orders: enable row-level security and declare a policy, or record that the whole table is meant to be readable by these roles
   PRV02 bump: qualify the object names in its body or pin search_path, and grant EXECUTE only to roles that should act as the owner
   PRV03 customers: grant to a named role and let members inherit it, so the grant names who holds it
+  roles/read-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
+  roles/read-reach reporting: grant the role only the relations it needs, or split it into narrower roles; detail.reach.through names the roles it reaches them through
+  roles/write-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
 
-0 error, 1 warning, 4 info
+0 error, 4 warning, 4 info
 
 Not checked here:
   ROL01: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects
 ```
 
-Findings carry the codes `PRV01`, `PRV02`, `PRV03`, `ROL01`, `ROL03`, `ROL04`
-and `OWN01`.
+Findings carry the codes `PRV01`, `PRV02`, `PRV03`, `ROL01`, `ROL03`, `ROL04`,
+`OWN01`, `OWN02`, `roles/read-reach` and `roles/write-reach`.
 [Schema security findings](../../reference/native-commands/#schema-security-findings)
 carries what each code reports, the severity it uses, and which engines supply
 the catalog it reads. Ptah's migration and SQL linters report under a separate
@@ -179,6 +186,8 @@ No security findings.
 Not checked here:
   PRV01: the target does not model row-level security
   ROL01: no role usage data was supplied; a privilege is not use, and no catalog records which roles read which objects
+  roles/read-reach: the access no object grant states -- superuser, predefined roles, server-wide privileges -- was not read for this source, so a role's reach would be measured short
+  roles/write-reach: the access no object grant states -- superuser, predefined roles, server-wide privileges -- was not read for this source, so a role's reach would be measured short
 ```
 
 ## Supply role usage so ROL01 can run
@@ -214,6 +223,59 @@ An empty list is a different answer from no file at all. It says the window was
 observed and nothing used anything, so every grant inside it is unused. Without
 the flag, `ROL01` reports itself skipped rather than passing quietly.
 
+## Measure how much of the database a role reaches
+
+`roles/read-reach` counts the tables, views and materialized views a role can
+read, and `roles/write-reach` the ones whose rows it can change, each as a share
+of all of them. A role reaches a relation through:
+
+- its own grants on the whole relation, and grants to `PUBLIC`;
+- the roles it is a member of, at any depth: the roles it inherits from through
+  memberships that each pass privileges on, and the roles it can switch to with
+  `SET ROLE` through memberships that each allow it, with what those inherit.
+  On PostgreSQL 16 a chain that inherits one link and switches the next reaches
+  no further than the first link;
+- ownership, which on PostgreSQL carries every privilege on the relation, even
+  one the owner revoked from itself, since it can grant that back;
+- a grant on the whole database, on MySQL and MariaDB;
+- access no grant on a relation states: superuser, membership in
+  `pg_read_all_data` or `pg_write_all_data`, or a privilege on every database
+  such as `GRANT SELECT ON *.*`. A member reaches what a superuser role reaches
+  only if it can switch to that role, because PostgreSQL does not pass the
+  superuser bit on through inheritance.
+
+`SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
+access. The write rule leaves materialized views out of its count, since no
+role changes their rows. A role that reaches more than `--reach-warn` percent of the relations
+(default `50`) is a warning, and more than `--reach-error` percent an error.
+Reaching exactly the threshold is below it. The seed above holds two tables, so
+the superuser `ptah`, which also owns both, reaches both, and `reporting`
+reaches both through its grant on `orders` and the grant to `PUBLIC` on
+`customers`.
+
+`--reach-error` defaults to `100`, which no reach exceeds, so by default a broad
+reach is a warning and does not fail the run. The role an application runs its
+own migrations as owns every table and reaches all of them, and a default that
+failed on it would fail nearly every database. To block a role that reaches
+more than three quarters of the database, set the error threshold:
+
+```bash
+ptah schema security --db-url "$DATABASE_URL" --reach-error 75
+```
+
+A role that reaches no more than `PUBLIC` does is not reported, because the
+`PUBLIC` finding already names that reach. In `--format json`,
+`detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
+the reach passes through under `through`, and under `sources` the access a
+revoke on a relation does not narrow, such as `superuser held by ptah` or
+`ownership of 2 relations held by ptah`. An owner can grant itself back what a
+revoke takes, so the suggestion for such a role is to give the relations to an
+owner the application does not connect as.
+
+The rules run on PostgreSQL, MySQL and MariaDB, where the read covers that
+access. Elsewhere they report themselves skipped, because a reach measured
+without it reports a superuser as reaching nothing.
+
 ## Gate a pull request on findings
 
 `--fail-on` sets the threshold that controls the exit code, and takes `error`
@@ -231,10 +293,11 @@ exit: 1
 ```
 
 :::caution
-No rule reports at `error` severity, so the default `--fail-on error` leaves the
-exit code at `0` however many findings a run produced. A gate has to pass
-`--fail-on any`. `--fail-on any` also exits `1` without printing a line that
-explains the status, so a script reports the reason itself.
+Only `roles/read-reach` and `roles/write-reach` can report at `error` severity,
+and only once `--reach-error` is below `100`. So the default `--fail-on error`
+passes on every finding unless the error threshold is set, and a gate on the
+other rules has to pass `--fail-on any`. Neither prints a line that explains the
+status, so a script reports the reason itself.
 :::
 
 See [Exit codes](../../reference/exit-codes/) for what `0`, `1` and `2` mean
@@ -242,8 +305,21 @@ across native commands.
 
 ## Limitations
 
-- No rule reports at `error` severity, so `--fail-on error` never changes the
-  exit code.
+- The reach rules count relations, not rows or importance, so on a small
+  database one grant reaches most of it: in the seed above, a single grant gives
+  `reporting` both tables.
+- The reach rules do not check `USAGE` on the schema. A role holding `SELECT` on
+  a table in a schema it cannot use is counted as reaching that table.
+- A privilege on some columns of a table does not count as reaching the table,
+  so a role granted every column one at a time reads as reaching nothing.
+- A view counts as written by a role holding a write privilege on it, whether or
+  not the view is updatable.
+- On MySQL and MariaDB the rules measure roles, the principals the role read
+  covers. A user account that holds broad grants directly is not measured.
+- PostgreSQL's bootstrap superuser is read only when it is not named
+  `postgres`: a role read leaves the name `postgres` out, so that role is not
+  measured, while a superuser under any other name is. A role that can switch
+  to `postgres` does not reach what `postgres` reaches either.
 - `ROL01` reports one finding per privilege rather than one per object. A single
   unused grant on a table carrying seven privileges produces seven identical
   lines; the run above produces 14 for two tables. Group the JSON output before

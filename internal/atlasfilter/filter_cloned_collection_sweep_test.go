@@ -154,6 +154,14 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// Access to every relation belongs to a role, so the `role`
+			// selector answers it, with a name no other row uses.
+			field: "WideAccess", present: "auditor_wide_role", absent: "nosuch_wide_role",
+			seed: func(s *catalog.Database) {
+				s.WideAccess = append(s.WideAccess, catalog.WideAccess{Role: "auditor_wide_role", Read: true, Source: "pg_read_all_data"})
+			},
+		},
+		{
 			// The role-qualified target names the grant and nothing else; the
 			// bare object name would be answered by the table instead.
 			field: "Grants", present: "app_role.users", absent: "app_role.nosuch_table",
@@ -500,4 +508,23 @@ func TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Unmatched, qt.DeepEquals, []string{"*[type=role]"})
+}
+
+// TestExcludeDatabaseReport_WideAccessNotReadStaysNotRead filters a read that
+// did not establish the access to every relation, and one that found none.
+// The first must stay nil and the second empty, since the security analysis
+// measures a role's reach only over a read that established it.
+func TestExcludeDatabaseReport_WideAccessNotReadStaysNotRead(t *testing.T) {
+	c := qt.New(t)
+	notRead := &catalog.Database{Tables: []catalog.Table{{Name: "users"}}}
+	foundNone := &catalog.Database{Tables: []catalog.Table{{Name: "users"}}, WideAccess: make([]catalog.WideAccess, 0)}
+
+	filteredNotRead, _, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), notRead, []string{"users"}, "public")
+	c.Assert(err, qt.IsNil)
+	filteredNone, _, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), foundNone, []string{"users"}, "public")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(filteredNotRead.WideAccess, qt.IsNil)
+	c.Assert(filteredNone.WideAccess, qt.IsNotNil)
+	c.Assert(filteredNone.WideAccess, qt.HasLen, 0)
 }
