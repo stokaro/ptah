@@ -107,19 +107,19 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 211 capabilities below:
+Across the 213 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 195 |
-| Ptah supports it with a stated limitation | 4 |
+| Ptah supports it fully | 196 |
+| Ptah supports it with a stated limitation | 5 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 57 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 58 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 12 |
+| An Atlas column is ❔ — not established by this page's evidence | 13 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
