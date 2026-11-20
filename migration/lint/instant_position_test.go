@@ -76,8 +76,9 @@ func TestInstantColumnPositionRule_HappyPath(t *testing.T) {
 
 // TestInstantColumnPositionRule_StaysQuiet is the control: the same placement
 // on a server that does it instantly, a run that names no server and so plans
-// against the newest line, a column added last, and statements that place no
-// new column.
+// against the newest line, a run that names no dialect and so knows nothing
+// about the server, a column added last, and statements that place no new
+// column.
 func TestInstantColumnPositionRule_StaysQuiet(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -89,6 +90,9 @@ func TestInstantColumnPositionRule_StaysQuiet(t *testing.T) {
 		{name: "MySQL 8.4", dialect: "mysql", version: "8.4", statement: "ALTER TABLE orders ADD COLUMN tag int AFTER id;"},
 		{name: "MariaDB 10.4", dialect: "mariadb", version: "10.4.34", statement: "ALTER TABLE orders ADD COLUMN tag int FIRST;"},
 		{name: "no server named", dialect: "mysql", version: "", statement: "ALTER TABLE orders ADD COLUMN tag int FIRST;"},
+		// A run with no dialect runs every rule and answers no capability key,
+		// so the rule cannot tell a server that rebuilds from one that does not.
+		{name: "no dialect named", dialect: "", version: "", statement: "ALTER TABLE orders ADD COLUMN tag int FIRST;"},
 		{name: "a column added last", dialect: "mysql", version: "8.0.28", statement: "ALTER TABLE orders ADD COLUMN tag int;"},
 		{name: "a column named first", dialect: "mysql", version: "8.0.28", statement: "ALTER TABLE orders ADD COLUMN `first` int;"},
 		{name: "a comment that says FIRST", dialect: "mysql", version: "8.0.28", statement: "ALTER TABLE orders ADD COLUMN tag int COMMENT 'FIRST';"},

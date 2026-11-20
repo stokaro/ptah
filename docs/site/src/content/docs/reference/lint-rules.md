@@ -409,7 +409,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY139` | a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it | both | Atlas |
 | `MY140` | adding a STORED generated column computes a value for every row, copying the table and blocking writes | both | Atlas |
 | `MY141` | adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes | both | Atlas |
-| `MY142` | adding a column FIRST or AFTER another rebuilds the table on MySQL before 8.0.29 and MariaDB before 10.4, where only a column added last is instant | both | Atlas |
+| `MY142` | adding a column FIRST or AFTER another cannot be instant on MySQL before 8.0.29 and MariaDB before 10.4, so the server rebuilds the table | both | Atlas |
 | `MY143` | changing a STORED generated column recomputes it for every row, copying the table and blocking writes | both | Atlas |
 | `MY144` | adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration | both | Atlas |
 | `MY147` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |

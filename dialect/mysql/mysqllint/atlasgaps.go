@@ -277,8 +277,9 @@ func atlasGapInstantPosition(file *lintkit.File, stmt *lintext.Statement) (bool,
 	}
 	return true, "column " + column + " is added with FIRST or AFTER, which " + plannedServer(file.Target) +
 		" cannot do as an instant change: measured, MySQL before 8.0.29 and MariaDB before 10.4 " +
-		"refuse ALGORITHM=INSTANT for it with 1845 and rebuild the table instead, while a column " +
-		"added last stays instant; add the column last, or plan for a rebuild that grows with the table"
+		"refuse ALGORITHM=INSTANT for it with 1845 and rebuild the table instead; add the column " +
+		"last, plan for a rebuild that grows with the table, or name the server's exact version " +
+		"if it is newer than the one this run planned against"
 }
 
 // plannedServer names the server a finding planned against, as the run named

@@ -271,7 +271,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"MY142": {
 		Name:      "rewrite/add-column-before-existing",
-		Summary:   "adding a column FIRST or AFTER another rebuilds the table on MySQL before 8.0.29 and MariaDB before 10.4, where only a column added last is instant",
+		Summary:   "adding a column FIRST or AFTER another cannot be instant on MySQL before 8.0.29 and MariaDB before 10.4, so the server rebuilds the table",
 		AtlasCode: "MY142",
 	},
 	"MY143": {

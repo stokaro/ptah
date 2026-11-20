@@ -1294,8 +1294,8 @@ const (
 	AlterTableAlgorithmLock Capability = "alter_table_algorithm_lock"
 	// InstantAddColumnAnyPosition is whether the target adds a column placed
 	// before existing ones -- `ADD COLUMN ... FIRST` or `AFTER col` -- as an
-	// instant catalog change. Without it only a column added last is instant,
-	// and one placed anywhere else rebuilds the table.
+	// instant catalog change. Without it a column placed anywhere but last
+	// rebuilds the table.
 	//
 	// The key exists for the lint rule that warns about that rebuild,
 	// rewrite/add-column-before-existing, which has to stay quiet on the
