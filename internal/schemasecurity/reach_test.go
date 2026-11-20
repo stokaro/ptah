@@ -286,8 +286,9 @@ func TestReachFromCatalog_FollowsAMembershipThatCanBeUsed(t *testing.T) {
 }
 
 // TestReachFromCatalog_CountsOnlyPrivilegesOverRows reads an owner that kept
-// its implicit privileges on one table and revoked them on the other, and
-// privileges that read or change no rows.
+// its implicit privilege on one table and revoked it on the other, which it
+// can grant back, privileges that read or change no rows, and privileges on
+// one column of each table, which reach no table.
 func TestReachFromCatalog_CountsOnlyPrivilegesOverRows(t *testing.T) {
 	c := qt.New(t)
 	live := readCatalog("a", "b")
@@ -298,10 +299,12 @@ func TestReachFromCatalog_CountsOnlyPrivilegesOverRows(t *testing.T) {
 		{Role: "user", Privilege: "REFERENCES", ObjectType: "TABLE", ObjectName: "a"},
 		{Role: "user", Privilege: "TRIGGER", ObjectType: "TABLE", ObjectName: "b"},
 		{Role: "user", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "public"},
+		{Role: "user", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "a", Column: "id"},
+		{Role: "user", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "b", Column: "id"},
 	}
 
 	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "", 40, 75)), qt.DeepEquals, []string{
-		"roles/read-reach warning owner 1/2 over 40% through=[] sources=[ownership of 1 relation held by owner]",
+		"roles/read-reach error owner 2/2 over 75% through=[] sources=[ownership of 2 relations held by owner]",
 	})
 }
 
@@ -400,5 +403,117 @@ func TestAnalyzeReach_DefaultThresholdsNeverReportAnError(t *testing.T) {
 	c.Assert(reachLines(reach), qt.DeepEquals, []string{
 		"roles/read-reach warning admin 2/2 over 50% through=[] sources=[superuser held by admin]",
 		"roles/write-reach warning admin 2/2 over 50% through=[] sources=[superuser held by admin]",
+	})
+}
+
+// TestReachFromCatalog_MixedMembershipChainsReachNoFurther reads PostgreSQL 16
+// chains. A role uses what it inherits through memberships that each pass
+// privileges on, and what it can switch to through memberships that each
+// allow SET ROLE, together with what those roles inherit; a chain that
+// inherits one link and switches the next reaches no further than the first.
+func TestReachFromCatalog_MixedMembershipChainsReachNoFurther(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("a", "b")
+	live.Roles = []catalog.Role{{Name: "holder"}, {Name: "middle"}, {Name: "mixed"}, {Name: "switcher"}}
+	live.Grants = []catalog.Grant{
+		{Role: "holder", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "a"},
+		{Role: "holder", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "b"},
+	}
+	live.RoleMemberships = []catalog.RoleMembership{
+		{Role: "holder", Member: "middle", InheritOption: new(false), SetOption: new(true)},
+		{Role: "middle", Member: "mixed", InheritOption: new(true), SetOption: new(false)},
+		{Role: "middle", Member: "switcher", InheritOption: new(false), SetOption: new(true)},
+	}
+
+	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "", 50, 75)), qt.DeepEquals, []string{
+		"roles/read-reach error holder 2/2 over 75% through=[] sources=[]",
+		"roles/read-reach error middle 2/2 over 75% through=[holder] sources=[]",
+		"roles/read-reach error switcher 2/2 over 75% through=[holder middle] sources=[]",
+	})
+}
+
+// TestReachFromCatalog_SwitchOnlyAccessNeedsASwitch reads a role that holds
+// pg_read_all_data only by switching to it: a member that can switch to the
+// role reaches every relation, and one that only inherits from it does not.
+func TestReachFromCatalog_SwitchOnlyAccessNeedsASwitch(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("a", "b")
+	live.Roles = []catalog.Role{{Name: "auditor"}, {Name: "heir"}, {Name: "switcher"}}
+	live.WideAccess = []catalog.WideAccess{{Role: "auditor", Read: true, Source: "pg_read_all_data", SwitchOnly: true}}
+	live.RoleMemberships = []catalog.RoleMembership{
+		{Role: "auditor", Member: "heir", InheritOption: new(true), SetOption: new(false)},
+		{Role: "auditor", Member: "switcher", InheritOption: new(false), SetOption: new(true)},
+	}
+
+	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "", 50, 75)), qt.DeepEquals, []string{
+		"roles/read-reach error auditor 2/2 over 75% through=[] sources=[pg_read_all_data held by auditor]",
+		"roles/read-reach error switcher 2/2 over 75% through=[auditor] sources=[pg_read_all_data held by auditor]",
+	})
+}
+
+// TestReachFromCatalog_MaterializedViewsAreNotWritten reads a superuser and
+// an owner over a table and a materialized view, whose rows no role changes
+// whatever privilege it holds: the write rule counts the table alone.
+func TestReachFromCatalog_MaterializedViewsAreNotWritten(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("a", "b")
+	live.MatViews = []catalog.MaterializedView{{Name: "m"}}
+	live.Roles = []catalog.Role{{Name: "admin", Superuser: true}, {Name: "owner"}}
+	for _, name := range []string{"a", "m"} {
+		live.Grants = append(live.Grants,
+			catalog.Grant{Role: "owner", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: name, Implicit: true})
+	}
+
+	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "", 50, 75)), qt.DeepEquals, []string{
+		"roles/read-reach error admin 3/3 over 75% through=[] sources=[superuser held by admin]",
+		"roles/write-reach error admin 2/2 over 75% through=[] sources=[superuser held by admin]",
+	})
+}
+
+// TestAnalyzeReach_StatesAShareJustAboveTheThreshold reads a role that reaches
+// two of three relations, a share that is not whole.
+func TestAnalyzeReach_StatesAShareJustAboveTheThreshold(t *testing.T) {
+	c := qt.New(t)
+	reach := defaultThresholds(schemasecurity.Reach{
+		Relations:  relations("a", "b", "c"),
+		Grants:     granted("reporting", true, false, "a", "b"),
+		Principals: principals("reporting"),
+	})
+	reach.WarnPercent = 66
+
+	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
+
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Message, qt.Equals,
+		"role reporting can read 2 of 3 relations (66.6%), above the warning threshold of 66%")
+}
+
+// TestReachFromCatalog_SuggestsWhatExplainsMostOfTheReach reads one owner of
+// most of what it reaches and one that owns a single table and reaches the
+// rest through grants: only the first is told to move its ownership.
+func TestReachFromCatalog_SuggestsWhatExplainsMostOfTheReach(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("a", "b", "c", "d")
+	live.Roles = []catalog.Role{{Name: "granted"}, {Name: "owner"}}
+	for _, name := range []string{"a", "b", "c"} {
+		live.Grants = append(live.Grants,
+			catalog.Grant{Role: "owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: name, Implicit: true},
+			catalog.Grant{Role: "granted", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: name})
+	}
+	live.Grants = append(live.Grants,
+		catalog.Grant{Role: "owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "d"},
+		catalog.Grant{Role: "granted", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "d", Implicit: true})
+
+	report := schemasecurity.Analyze(&schemamodel.Database{},
+		schemasecurity.Options{Reach: schemasecurity.ReachFromCatalog(live, "", 50, 75)})
+	suggestions := make([]string, 0)
+	for _, finding := range report.Findings {
+		suggestions = append(suggestions, finding.Subject.Name+": "+finding.Suggestion)
+	}
+
+	c.Assert(suggestions, qt.DeepEquals, []string{
+		"granted: grant the role only the relations it needs, or split it into narrower roles; " +
+			"detail.reach.through names the roles it reaches them through",
+		"owner: " + sourceSuggestion,
 	})
 }

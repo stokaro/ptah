@@ -1667,7 +1667,11 @@ type WideAccess struct {
 	Write bool `json:"write,omitempty"`
 	// Source names where the access comes from, such as pg_read_all_data or
 	// "global privileges".
-	Source string `json:"source"`
+	Source string `json:"source"` // SwitchOnly reports access Role holds only after it switches to the
+	// predefined role, which a PostgreSQL 16 membership with INHERIT FALSE
+	// states. A member of Role that can only inherit from it does not reach
+	// it.
+	SwitchOnly bool `json:"switch_only,omitempty"`
 }
 
 // Grant represents a privilege grant read from the database.

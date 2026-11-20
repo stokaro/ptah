@@ -70,13 +70,16 @@ func reachFindingLines(c *qt.C, dbURL, suffix string) []string {
 // TestSchemaSecurityReachE2E_PostgreSQL builds a role graph over a database of
 // four tables and reads back how much of it each role reaches: through its own
 // grants, through a role it is a member of, through pg_read_all_data, which no
-// grant on any table states, and through owning three of the tables.
+// grant on any table states, and through owning three of the tables. One role
+// holds pg_read_all_data only by switching to it, and a member that can only
+// inherit from that role reaches nothing; a privilege on one column reaches
+// no table.
 func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 	c := qt.New(t)
 	target, admin := scratchReplayDatabase(c)
 	suffix := fmt.Sprintf("_%d", time.Now().UnixNano())
 	reader, member, auditor, writer := "reach_reader"+suffix, "reach_member"+suffix, "reach_auditor"+suffix, "reach_writer"+suffix
-	owner := "reach_owner" + suffix
+	owner, switcher, heir := "reach_owner"+suffix, "reach_switcher"+suffix, "reach_heir"+suffix
 	c.Cleanup(func() {
 		// This runs before scratchReplayDatabase drops the database, so the
 		// privileges that keep the roles from being dropped go first.
@@ -86,7 +89,7 @@ func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 		c.Check(err, qt.IsNil)
 		dbschema.CloseAndWarn(conn)
 		_, err = admin.ExecContext(context.Background(),
-			fmt.Sprintf(`DROP ROLE IF EXISTS %s, %s, %s, %s, %s`, member, reader, auditor, writer, owner))
+			fmt.Sprintf(`DROP ROLE IF EXISTS %s, %s, %s, %s, %s, %s, %s`, member, reader, auditor, writer, owner, heir, switcher))
 		c.Check(err, qt.IsNil)
 	})
 	_, err := admin.ExecContext(c.Context(), fmt.Sprintf(`
@@ -95,8 +98,12 @@ func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 		CREATE ROLE %[3]s NOLOGIN;
 		CREATE ROLE %[4]s NOLOGIN;
 		CREATE ROLE %[5]s NOLOGIN;
+		CREATE ROLE %[6]s NOLOGIN;
+		CREATE ROLE %[7]s NOLOGIN;
 		GRANT %[1]s TO %[2]s;
-		GRANT pg_read_all_data TO %[3]s;`, reader, member, auditor, writer, owner))
+		GRANT pg_read_all_data TO %[3]s;
+		GRANT pg_read_all_data TO %[6]s WITH INHERIT FALSE;
+		GRANT %[6]s TO %[7]s WITH SET FALSE;`, reader, member, auditor, writer, owner, switcher, heir))
 	c.Assert(err, qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 	c.Assert(err, qt.IsNil)
@@ -107,6 +114,7 @@ func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 		CREATE TABLE t3 (id int PRIMARY KEY);
 		CREATE TABLE t4 (id int PRIMARY KEY);
 		GRANT SELECT ON t1, t2, t3 TO %[1]s;
+		GRANT SELECT (id) ON t4 TO %[1]s;
 		GRANT INSERT, UPDATE ON t1, t2, t3, t4 TO %[2]s;
 		ALTER TABLE t1 OWNER TO %[3]s;
 		ALTER TABLE t2 OWNER TO %[3]s;
@@ -118,6 +126,7 @@ func TestSchemaSecurityReachE2E_PostgreSQL(t *testing.T) {
 		"roles/read-reach warning reach_member 3/4 through=[reach_reader] sources=[]",
 		"roles/read-reach warning reach_owner 3/4 through=[] sources=[ownership of 3 relations held by reach_owner]",
 		"roles/read-reach warning reach_reader 3/4 through=[] sources=[]",
+		"roles/read-reach error reach_switcher 4/4 through=[] sources=[pg_read_all_data held by reach_switcher]",
 		"roles/write-reach warning reach_owner 3/4 through=[] sources=[ownership of 3 relations held by reach_owner]",
 		"roles/write-reach error reach_writer 4/4 through=[] sources=[]",
 	})

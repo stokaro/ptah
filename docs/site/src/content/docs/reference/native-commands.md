@@ -832,7 +832,8 @@ rule reports itself skipped there rather than answering from a concept the engin
 does not have.
 
 `roles/read-reach` and `roles/write-reach` count a role's tables, views and
-materialized views through its grants, grants to `PUBLIC`, the roles it can use
+materialized views (the write rule leaves materialized views out) through its
+grants on whole relations, grants to `PUBLIC`, the roles it can use
 through membership, ownership and grants on a whole database, and through access
 no grant on a relation states. PostgreSQL reads that access as superuser and
 membership in `pg_read_all_data` or `pg_write_all_data`; MySQL and MariaDB read

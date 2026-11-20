@@ -2,6 +2,7 @@ package schemasecurity
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,6 +58,9 @@ type Reach struct {
 	Memberships []ReachMembership
 	// WideAccess is the access to every relation that no grant states.
 	WideAccess []catalog.WideAccess
+	// ReadOnly are the counted relations whose rows no role can change, the
+	// materialized views: the write rule leaves them out of its count.
+	ReadOnly []ReachRelation
 	// WarnPercent and ErrorPercent are the thresholds: a role that reaches
 	// more than WarnPercent of the relations is a warning, and more than
 	// ErrorPercent an error.
@@ -101,6 +105,10 @@ type ReachMembership struct {
 	// role's privileges, but not its superuser bit, which only a switch
 	// confers.
 	CannotSwitch bool
+	// CannotInherit reports an edge that does not pass the role's privileges
+	// on, which PostgreSQL 16 states with INHERIT FALSE. The member has them
+	// only after it switches to the role.
+	CannotInherit bool
 }
 
 // ReachPrincipal is one role whose reach is measured.
@@ -153,7 +161,9 @@ func ReachFromCatalog(live *catalog.Database, defaultSchema string, warnPercent,
 		reach.Relations = append(reach.Relations, ReachRelation{Schema: schemaKey(view.Schema, defaultSchema), Name: view.Name})
 	}
 	for _, view := range live.MatViews {
-		reach.Relations = append(reach.Relations, ReachRelation{Schema: schemaKey(view.Schema, defaultSchema), Name: view.Name})
+		relation := ReachRelation{Schema: schemaKey(view.Schema, defaultSchema), Name: view.Name}
+		reach.Relations = append(reach.Relations, relation)
+		reach.ReadOnly = append(reach.ReadOnly, relation)
 	}
 	slices.SortFunc(reach.Relations, compareRelations)
 	reach.Relations = slices.Compact(reach.Relations)
@@ -165,17 +175,21 @@ func ReachFromCatalog(live *catalog.Database, defaultSchema string, warnPercent,
 	return reach
 }
 
-// reachGrants keeps the grants that read or change rows of a relation, or of
-// every relation in a schema. A privilege an owner revoked from itself is a
-// privilege it does not hold.
+// reachGrants keeps the grants that read or change rows of a whole relation,
+// or of every relation in a schema. A privilege on some columns of a table
+// does not reach the table. A privilege an owner revoked from itself still
+// reaches the relation, since the owner can grant it back; any other
+// subtraction from a broader grant is not modeled, so it is left out rather
+// than counted as access.
 func reachGrants(grants []catalog.Grant, defaultSchema string) []ReachGrant {
 	out := make([]ReachGrant, 0, len(grants))
 	for _, grant := range grants {
 		read, write := classifyPrivilege(grant.Privilege)
-		if grant.IsPartialRevoke || !read && !write {
+		owned := grant.OwnerDefault() || grant.OwnerRevoked()
+		if grant.IsPartialRevoke && !owned || grant.Column != "" || !read && !write {
 			continue
 		}
-		entry := ReachGrant{Role: grant.Role, Owned: grant.OwnerDefault(), Read: read, Write: write}
+		entry := ReachGrant{Role: grant.Role, Owned: owned, Read: read, Write: write}
 		switch strings.ToUpper(strings.TrimSpace(grant.ObjectType)) {
 		case "TABLE", "VIEW", "MATERIALIZED VIEW":
 			entry.Relation = ReachRelation{Schema: schemaKey(grant.Schema, defaultSchema), Name: grant.ObjectName}
@@ -201,7 +215,9 @@ func reachMemberships(memberships []catalog.RoleMembership) []ReachMembership {
 		if noInherit && noSwitch {
 			continue
 		}
-		out = append(out, ReachMembership{Role: membership.Role, Member: membership.Member, CannotSwitch: noSwitch})
+		out = append(out, ReachMembership{
+			Role: membership.Role, Member: membership.Member, CannotSwitch: noSwitch, CannotInherit: noInherit,
+		})
 	}
 	return out
 }
@@ -236,21 +252,30 @@ func classifyPrivilege(privilege string) (read, write bool) {
 
 // findBroadReach implements roles/read-reach and roles/write-reach.
 //
-// A role reaches a relation when it, PUBLIC, or a role it can use through
-// membership holds a read or write privilege on the relation or on its schema,
-// owns it, or holds access to every relation: superuser, a predefined role
-// that reads or writes all data, a server-wide privilege. A membership counts
-// whether the member inherits the role's privileges or must switch to the role
-// first, because a role that can switch can read.
+// A role reaches a relation when a role it can use holds a read or write
+// privilege on the whole relation or on its schema, owns it, or holds access
+// to every relation: superuser, a predefined role that reads or writes all
+// data, a server-wide privilege. PUBLIC's privileges are every role's. A role
+// can use itself, the roles it can switch to with SET ROLE through a chain of
+// memberships that each allow it, and the roles any of those inherits from
+// through a chain of memberships that each pass privileges on; a chain that
+// mixes the two reaches no further than its first link of the other kind,
+// which is how PostgreSQL 16 reads the options. A superuser bit counts only on
+// a role the subject can switch to, since PostgreSQL does not pass it on.
 //
 // Every role holds what PUBLIC holds, so a role that reaches no more than
 // PUBLIC is not reported: the PUBLIC finding already names that reach, and one
 // finding per role would bury it.
 func findBroadReach(reach *Reach) []Finding {
 	index := indexRelations(reach.Relations)
-	total := len(index.counted)
-	if total == 0 {
+	if len(index.counted) == 0 {
 		return nil
+	}
+	readOnly := make(map[ReachRelation]bool)
+	for _, relation := range reach.ReadOnly {
+		if index.counted[relation] {
+			readOnly[relation] = true
+		}
 	}
 	superusers := make(map[string]bool)
 	subjects := make([]string, 0, len(reach.Principals)+1)
@@ -266,46 +291,46 @@ func findBroadReach(reach *Reach) []Finding {
 	slices.Sort(subjects)
 	subjects = slices.Compact(subjects)
 
-	publicRead, publicWrite, _ := reachedRelations(reach, index, map[string]bool{publicRole: true}, nil)
+	publicOnly := roleAccess{usable: map[string]bool{publicRole: true}, switchable: map[string]bool{publicRole: true}}
+	public := reachedRelations(reach, index, publicOnly, superusers, readOnly)
 	findings := make([]Finding, 0)
 	for _, subject := range subjects {
 		isPublic := strings.EqualFold(subject, publicRole)
-		through := reachableRoles(subject, reach.Memberships, anyEdge)
-		// A superuser bit counts on the subject itself and on a role it can
-		// switch to; inheriting it is not something PostgreSQL does.
-		super := make(map[string]bool)
-		for _, role := range append(reachableRoles(subject, reach.Memberships, switchEdge), subject) {
-			super[role] = superusers[role]
+		access := usableRoles(subject, reach.Memberships)
+		through := make([]string, 0, len(access.usable))
+		for role := range access.usable {
+			if role != subject {
+				through = append(through, role)
+			}
 		}
-		holders := map[string]bool{subject: true}
-		for _, role := range through {
-			holders[role] = true
-		}
+		slices.Sort(through)
 		if !isPublic {
-			holders[publicRole] = true
+			access.usable[publicRole] = true
 		}
-		read, write, sources := reachedRelations(reach, index, holders, super)
+		reached := reachedRelations(reach, index, access, superusers, readOnly)
 		for _, measured := range []struct {
-			rule     string
-			verb     string
-			relation map[ReachRelation]bool
-			public   map[ReachRelation]bool
+			rule      string
+			verb      string
+			relations map[ReachRelation]bool
+			public    map[ReachRelation]bool
+			total     int
 		}{
-			{rule: ReadReachRule, verb: "read", relation: read, public: publicRead},
-			{rule: WriteReachRule, verb: "change the rows of", relation: write, public: publicWrite},
+			{rule: ReadReachRule, verb: "read", relations: reached.read, public: public.read, total: len(index.counted)},
+			{rule: WriteReachRule, verb: "change the rows of", relations: reached.write, public: public.write,
+				total: len(index.counted) - len(readOnly)},
 		} {
-			// The holders include PUBLIC, so the set only grows from PUBLIC's,
-			// and an equal size is an equal set.
-			if !isPublic && len(measured.relation) == len(measured.public) {
+			// The usable roles include PUBLIC, so the set only grows from
+			// PUBLIC's, and an equal size is an equal set.
+			if !isPublic && len(measured.relations) == len(measured.public) {
 				continue
 			}
-			finding, found := reachFinding(subject, measured.rule, measured.verb, len(measured.relation), total, reach)
+			finding, found := reachFinding(subject, measured.rule, measured.verb, len(measured.relations), measured.total, reach)
 			if !found {
 				continue
 			}
 			finding.Detail.Reach.Through = through
-			finding.Detail.Reach.Sources = sources
-			if len(sources) > 0 {
+			finding.Detail.Reach.Sources = reached.sources
+			if reached.sourceDominates(measured.relations) {
 				finding.Suggestion = "first take away what detail.reach.sources names, since a revoke on a relation " +
 					"does not narrow it: remove superuser, a role that reads or writes all data and a privilege on " +
 					"every database, and give the relations to an owner the application does not connect as; " +
@@ -317,17 +342,28 @@ func findBroadReach(reach *Reach) []Finding {
 	return findings
 }
 
-// anyEdge and switchEdge choose the memberships reachableRoles follows: every
-// usable edge, or only the ones a member can SET ROLE through.
-func anyEdge(ReachMembership) bool { return true }
+// roleAccess is the roles a subject can use: usable holds every role whose
+// privileges the subject has, by inheriting them or by switching first, and
+// switchable the roles it can become with SET ROLE, itself included.
+type roleAccess struct {
+	usable, switchable map[string]bool
+}
 
-func switchEdge(membership ReachMembership) bool { return !membership.CannotSwitch }
+// usableRoles is the access subject has through memberships.
+func usableRoles(subject string, memberships []ReachMembership) roleAccess {
+	switchable := roleClosure(subject, memberships, func(membership ReachMembership) bool { return !membership.CannotSwitch })
+	usable := make(map[string]bool)
+	for role := range switchable {
+		maps.Copy(usable, roleClosure(role, memberships, func(membership ReachMembership) bool { return !membership.CannotInherit }))
+	}
+	return roleAccess{usable: usable, switchable: switchable}
+}
 
-// reachableRoles is every role subject can use through the memberships follow
-// accepts, directly or through another role, sorted and without subject itself.
-func reachableRoles(subject string, memberships []ReachMembership, follow func(ReachMembership) bool) []string {
-	seen := map[string]bool{subject: true}
-	queue := []string{subject}
+// roleClosure is start and every role it reaches through the memberships
+// follow accepts, directly or through a chain of them.
+func roleClosure(start string, memberships []ReachMembership, follow func(ReachMembership) bool) map[string]bool {
+	seen := map[string]bool{start: true}
+	queue := []string{start}
 	for len(queue) > 0 {
 		member := queue[0]
 		queue = queue[1:]
@@ -339,85 +375,125 @@ func reachableRoles(subject string, memberships []ReachMembership, follow func(R
 			queue = append(queue, membership.Role)
 		}
 	}
-	delete(seen, subject)
-	return sortedKeys(seen)
+	return seen
 }
 
-// reachedRelations is the set of counted relations the holders read and the
-// set they write, and the sources of access a revoke on a relation does not
-// narrow. superusers marks the holders whose superuser bit counts.
+// relationReach is what a subject reaches: the relations it reads and
+// writes, the sources of access a revoke on a relation does not narrow, and
+// which of those sources it holds.
+type relationReach struct {
+	read, write map[ReachRelation]bool
+	sources     []string
+	// wide reports access to every relation, which no grant states.
+	wide bool
+	// owned are the relations a usable role owns.
+	owned map[ReachRelation]bool
+}
+
+// sourceDominates reports whether the sources explain most of measured: access
+// to every relation always does, and ownership does when the role owns more
+// than half of what it reaches. Otherwise the grants are the cause, and the
+// suggestion names them.
+func (r relationReach) sourceDominates(measured map[ReachRelation]bool) bool {
+	if r.wide {
+		return true
+	}
+	owned := 0
+	for relation := range measured {
+		if r.owned[relation] {
+			owned++
+		}
+	}
+	return owned*2 > len(measured)
+}
+
+// reachedRelations is what the roles access can use reach among the counted
+// relations. superusers marks the roles with the superuser bit, which counts
+// only on a role access can switch to. No role changes the rows of a relation
+// in readOnly.
 func reachedRelations(
-	reach *Reach, index relationIndex, holders, superusers map[string]bool,
-) (read, write map[ReachRelation]bool, sources []string) {
-	read, write = make(map[ReachRelation]bool), make(map[ReachRelation]bool)
-	sourceSet := wideReach(reach, holders, superusers, read, write)
-	owned := grantedReach(reach, index, holders, read, write)
-	for owner, relations := range owned {
+	reach *Reach, index relationIndex, access roleAccess, superusers map[string]bool, readOnly map[ReachRelation]bool,
+) relationReach {
+	result := relationReach{
+		read: make(map[ReachRelation]bool), write: make(map[ReachRelation]bool), owned: make(map[ReachRelation]bool),
+	}
+	sourceSet := result.addWideAccess(reach, access, superusers, readOnly)
+	for owner, relations := range result.addGrants(reach, index, access, readOnly) {
 		sourceSet[ownershipSource(len(relations), owner)] = true
 	}
-	return read, write, sortedKeys(sourceSet)
+	result.sources = sortedKeys(sourceSet)
+	return result
 }
 
-// wideReach adds every relation to read and write for each holder whose
-// superuser bit counts or who holds access to every relation, and names each
-// such source.
-func wideReach(reach *Reach, holders, superusers map[string]bool, read, write map[ReachRelation]bool) map[string]bool {
-	everything := func(set map[ReachRelation]bool) {
-		for _, relation := range reach.Relations {
-			set[relation] = true
-		}
-	}
+// addWideAccess adds every relation for the superuser bits and the access to
+// every relation that access can use, and names each such source.
+func (r *relationReach) addWideAccess(
+	reach *Reach, access roleAccess, superusers map[string]bool, readOnly map[ReachRelation]bool,
+) map[string]bool {
 	sourceSet := make(map[string]bool)
-	for holder := range holders {
-		if superusers[holder] {
-			everything(read)
-			everything(write)
-			sourceSet["superuser held by "+holder] = true
+	for role := range access.switchable {
+		if superusers[role] {
+			r.wide = true
+			addEvery(r.read, reach.Relations, nil)
+			addEvery(r.write, reach.Relations, readOnly)
+			sourceSet["superuser held by "+role] = true
 		}
 	}
-	for _, access := range reach.WideAccess {
-		if !holders[access.Role] {
+	for _, held := range reach.WideAccess {
+		// A role that holds the access only by switching to the predefined
+		// role passes it to a subject that can switch to it, and to no other.
+		if !access.usable[held.Role] || held.SwitchOnly && !access.switchable[held.Role] {
 			continue
 		}
-		if access.Read {
-			everything(read)
+		r.wide = true
+		if held.Read {
+			addEvery(r.read, reach.Relations, nil)
 		}
-		if access.Write {
-			everything(write)
+		if held.Write {
+			addEvery(r.write, reach.Relations, readOnly)
 		}
-		sourceSet[access.Source+" held by "+access.Role] = true
+		sourceSet[held.Source+" held by "+held.Role] = true
 	}
 	return sourceSet
 }
 
-// grantedReach adds the counted relations the holders' grants reach to read
-// and write, and returns, by owner, the relations a holder reaches because it
-// owns them.
-func grantedReach(
-	reach *Reach, index relationIndex, holders map[string]bool, read, write map[ReachRelation]bool,
+// addGrants adds the counted relations the grants of the roles access can use
+// reach, and returns, by owner, the relations a usable role owns.
+func (r *relationReach) addGrants(
+	reach *Reach, index relationIndex, access roleAccess, readOnly map[ReachRelation]bool,
 ) map[string]map[ReachRelation]bool {
-	owned := make(map[string]map[ReachRelation]bool)
+	ownedBy := make(map[string]map[ReachRelation]bool)
 	for _, grant := range reach.Grants {
-		held := holders[grant.Role] || strings.EqualFold(grant.Role, publicRole) && holders[publicRole]
+		held := access.usable[grant.Role] || strings.EqualFold(grant.Role, publicRole) && access.usable[publicRole]
 		if !held {
 			continue
 		}
 		for _, relation := range index.reachedBy(grant) {
 			if grant.Read {
-				read[relation] = true
+				r.read[relation] = true
 			}
-			if grant.Write {
-				write[relation] = true
+			if grant.Write && !readOnly[relation] {
+				r.write[relation] = true
 			}
 			if grant.Owned {
-				if owned[grant.Role] == nil {
-					owned[grant.Role] = make(map[ReachRelation]bool)
+				if ownedBy[grant.Role] == nil {
+					ownedBy[grant.Role] = make(map[ReachRelation]bool)
 				}
-				owned[grant.Role][relation] = true
+				ownedBy[grant.Role][relation] = true
+				r.owned[relation] = true
 			}
 		}
 	}
-	return owned
+	return ownedBy
+}
+
+// addEvery adds each of relations to set, except those in skip.
+func addEvery(set map[ReachRelation]bool, relations []ReachRelation, skip map[ReachRelation]bool) {
+	for _, relation := range relations {
+		if !skip[relation] {
+			set[relation] = true
+		}
+	}
 }
 
 // ownershipSource names the relations owner owns among those counted.
@@ -457,6 +533,17 @@ func indexRelations(relations []ReachRelation) relationIndex {
 	return index
 }
 
+// reachPercent is reached as a share of total, to a tenth of a percent where
+// the share is not whole, so a share just above a threshold does not read as
+// equal to it.
+func reachPercent(reached, total int) string {
+	tenths := reached * 1000 / total
+	if tenths%10 == 0 {
+		return strconv.Itoa(tenths/10) + "%"
+	}
+	return strconv.Itoa(tenths/10) + "." + strconv.Itoa(tenths%10) + "%"
+}
+
 // reachFinding is the finding for a role that reaches reached of total
 // relations, if that exceeds a threshold.
 func reachFinding(subject, rule, verb string, reached, total int, reach *Reach) (Finding, bool) {
@@ -478,7 +565,7 @@ func reachFinding(subject, rule, verb string, reached, total int, reach *Reach) 
 		Severity: severity,
 		Subject:  Subject{Kind: "role", Name: subject},
 		Message: "role " + subject + " can " + verb + " " + strconv.Itoa(reached) + " of " + strconv.Itoa(total) +
-			" relations (" + strconv.Itoa(reached*100/total) + "%), above the " + level + " threshold of " +
+			" relations (" + reachPercent(reached, total) + "), above the " + level + " threshold of " +
 			strconv.Itoa(threshold) + "%",
 		Detail: Detail{Reach: &ReachDetail{Reached: reached, Relations: total, ThresholdPercent: threshold}},
 		Suggestion: "grant the role only the relations it needs, or split it into narrower roles; " +

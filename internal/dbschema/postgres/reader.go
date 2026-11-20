@@ -4647,8 +4647,9 @@ func (r *Reader) readWideAccessInto(ctx context.Context, schema *catalog.Databas
 // the grants say it reaches nothing.
 //
 // A membership with neither the inherit nor the set option, which PostgreSQL
-// 16 can state, gives the member no access and is not reported. A server
-// without the roles returns no rows.
+// 16 can state, gives the member no access and is not reported, and one with
+// only the set option is marked as access the member has after SET ROLE. A
+// server without the roles returns no rows.
 func (r *Reader) readWideAccess(ctx context.Context) ([]catalog.WideAccess, error) {
 	query := `
 		SELECT role.rolname, member.rolname,
@@ -4677,6 +4678,7 @@ func (r *Reader) readWideAccess(ctx context.Context) ([]catalog.WideAccess, erro
 		}
 		access = append(access, catalog.WideAccess{
 			Role: member, Read: role == "pg_read_all_data", Write: role == "pg_write_all_data", Source: role,
+			SwitchOnly: inheritOption.Valid && !inheritOption.Bool,
 		})
 	}
 	if err := rows.Err(); err != nil {

@@ -229,10 +229,14 @@ the flag, `ROL01` reports itself skipped rather than passing quietly.
 read, and `roles/write-reach` the ones whose rows it can change, each as a share
 of all of them. A role reaches a relation through:
 
-- its own grants, and grants to `PUBLIC`;
-- the roles it is a member of, at any depth, whether it inherits their
-  privileges or has to switch to them with `SET ROLE`;
-- ownership, which on PostgreSQL carries every privilege on the relation;
+- its own grants on the whole relation, and grants to `PUBLIC`;
+- the roles it is a member of, at any depth: the roles it inherits from through
+  memberships that each pass privileges on, and the roles it can switch to with
+  `SET ROLE` through memberships that each allow it, with what those inherit.
+  On PostgreSQL 16 a chain that inherits one link and switches the next reaches
+  no further than the first link;
+- ownership, which on PostgreSQL carries every privilege on the relation, even
+  one the owner revoked from itself, since it can grant that back;
 - a grant on the whole database, on MySQL and MariaDB;
 - access no grant on a relation states: superuser, membership in
   `pg_read_all_data` or `pg_write_all_data`, or a privilege on every database
@@ -241,7 +245,8 @@ of all of them. A role reaches a relation through:
   superuser bit on through inheritance.
 
 `SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
-access. A role that reaches more than `--reach-warn` percent of the relations
+access. The write rule leaves materialized views out of its count, since no
+role changes their rows. A role that reaches more than `--reach-warn` percent of the relations
 (default `50`) is a warning, and more than `--reach-error` percent an error.
 Reaching exactly the threshold is below it. The seed above holds two tables, so
 the superuser `ptah`, which also owns both, reaches both, and `reporting`
@@ -305,9 +310,16 @@ across native commands.
   `reporting` both tables.
 - The reach rules do not check `USAGE` on the schema. A role holding `SELECT` on
   a table in a schema it cannot use is counted as reaching that table.
+- A privilege on some columns of a table does not count as reaching the table,
+  so a role granted every column one at a time reads as reaching nothing.
+- A view counts as written by a role holding a write privilege on it, whether or
+  not the view is updatable.
+- On MySQL and MariaDB the rules measure roles, the principals the role read
+  covers. A user account that holds broad grants directly is not measured.
 - PostgreSQL's bootstrap superuser is read only when it is not named
   `postgres`: a role read leaves the name `postgres` out, so that role is not
-  measured, while a superuser under any other name is.
+  measured, while a superuser under any other name is. A role that can switch
+  to `postgres` does not reach what `postgres` reaches either.
 - `ROL01` reports one finding per privilege rather than one per object. A single
   unused grant on a table carrying seven privileges produces seven identical
   lines; the run above produces 14 for two tables. Group the JSON output before
