@@ -429,8 +429,8 @@ SQL:
   MySQL holds it once per schema, across its tables, and compares it without
   case but with accents: `ck` and `CK` are one name, `ek` and `ék` two.
   MariaDB holds it once per table. Ptah folds ASCII letters on both, and on
-  MySQL also the letters the server was measured to fold: Latin-1 and Latin
-  Extended, basic Greek, Cyrillic and Armenian capitals, the polytonic Greek
+  MySQL also the letters the server was measured to fold: Latin-1, Latin
+  Extended-A and part of Latin Extended-B, basic Greek, Cyrillic and Armenian capitals, the polytonic Greek
   block, the Kelvin and Ångström signs, Roman numerals, and the circled and
   fullwidth capitals. It never refuses a pair the server accepts, such as `ẞ`
   and `ß`. A pair the server refuses that Ptah does not recognize, such as

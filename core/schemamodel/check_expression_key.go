@@ -15,17 +15,27 @@ import (
 // Whitespace between two word characters stays, as one space, because `NOT a`
 // and `nota` are different conditions.
 //
-// An expression that holds a quote, a backslash, a dollar sign, a type cast or a
-// comment opener is kept as written, trimmed: its strings, quoted identifiers
-// and introducers read differently by dialect, and a key that merged two of
-// them would drop the second condition without a word.
+// An expression that holds a quote, a square bracket, a backslash, a dollar
+// sign, a type cast, a comment opener or whitespace outside ASCII is kept as
+// written, trimmed. Its strings, quoted and bracketed identifiers and
+// introducers read differently by dialect: SQL Server and SQLite read `[a b]`
+// and `[a  b]` as two columns, and MySQL takes a no-break space inside an
+// unquoted identifier. A key that merged two of them would drop the second
+// condition without a word.
 func checkExpressionKey(expr string) string {
 	expr = strings.TrimSpace(expr)
-	if strings.ContainsAny(expr, "'\"`\\$") || strings.Contains(expr, "::") ||
-		strings.Contains(expr, "--") || strings.Contains(expr, "/*") || strings.Contains(expr, "#") {
+	if strings.ContainsAny(expr, "'\"`\\$[]") || strings.Contains(expr, "::") ||
+		strings.Contains(expr, "--") || strings.Contains(expr, "/*") || strings.Contains(expr, "#") ||
+		strings.ContainsFunc(expr, isNonASCIISpace) {
 		return expr
 	}
 	return foldPunctuationSpacing(trimWrappingParens(expr))
+}
+
+// isNonASCIISpace reports whitespace outside ASCII, such as a no-break space,
+// which some servers read as part of an identifier.
+func isNonASCIISpace(r rune) bool {
+	return r > unicode.MaxASCII && unicode.IsSpace(r)
 }
 
 // trimWrappingParens removes parentheses that enclose the whole of expr.

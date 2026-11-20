@@ -102,6 +102,11 @@ func TestDeduplicateConstraints_KeepsChecksThatAnyDialectReadsDifferently(t *tes
 		{name: "word split by whitespace", first: `NOT a > 0`, second: `nota > 0`},
 		{name: "identifier case", first: `A > 0`, second: `a > 0`},
 		{name: "comment opener", first: `a - -1 > 0`, second: `a--1 > 0`},
+		{name: "bracketed identifier space", first: `[a b] > 0`, second: `[a  b] > 0`},
+		{name: "bracketed identifier trailing space", first: `[a ] > 0`, second: `[a] > 0`},
+		{name: "bracketed identifier with an operator", first: `[a - b] > 0`, second: `[a-b] > 0`},
+		{name: "no-break space inside an identifier", first: "x\u00a0y > 0", second: "x y > 0"},
+		{name: "next-line character inside an identifier", first: "a\u0085AND b", second: "a AND b"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
