@@ -33,3 +33,23 @@ func TestRenderRoleGroupsRoundTrip(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Contains, "role \"readers\" {\n  inherit = true\n  group = true\n}\n")
 	c.Assert(parsed.Roles, qt.DeepEquals, db.Roles)
 }
+
+// TestRenderStatedEmptyMemberOfRoundTrip writes a role that states it belongs
+// to no role as `member_of = []`, so the document read back still owns the
+// role's memberships, and writes nothing for a role that states none.
+func TestRenderStatedEmptyMemberOfRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{Roles: []schemamodel.Role{
+		{Name: "quiet", Inherit: true},
+		{Name: "vault", Inherit: true, MemberOfStated: true},
+	}}
+
+	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered.Data), qt.Contains, "role \"vault\" {\n  inherit = true\n  member_of = []\n}\n")
+	c.Assert(string(rendered.Data), qt.Contains, "role \"quiet\" {\n  inherit = true\n}\n")
+	c.Assert(parsed.Roles, qt.DeepEquals, db.Roles)
+}

@@ -1155,10 +1155,11 @@ is what gives its `ptah_user` that authority.
 `WITH ADMIN OPTION`; ClickHouse has no per-membership `inherit` or `set` option,
 so a declaration that states one is refused. A plan withdraws the admin option in
 place with `REVOKE ADMIN OPTION FOR`, which keeps the membership. A declaration
-that states no option means no admin option. A declared role whose `member_of`
-omits a membership it holds in another declared role has that membership
-revoked, and the plan rates it as a warning. A membership in a role the
-declaration does not name is left alone. A read reports only the grants of a
+that states no option means no admin option. A role that states `member_of`,
+even empty, loses a membership it holds in another declared role and the list
+leaves out, and the plan rates the revocation as a warning. A role that does not
+state it keeps every membership the server holds, and so does a membership in a
+role the declaration does not name. A read reports only the grants of a
 role to a role, and a grant of a role to a user is not read.
 
 ## Row policies

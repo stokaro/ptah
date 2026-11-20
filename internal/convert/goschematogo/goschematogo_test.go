@@ -600,3 +600,30 @@ func TestRenderRoleMembershipOptionsRoundTripThroughParser(t *testing.T) {
 
 	c.Assert(after.Roles, qt.DeepEquals, before.Roles)
 }
+
+// TestRenderStatedEmptyMemberOfRoundTripThroughParser writes member_of="" for a
+// role that states it belongs to no role, so the export read back still owns
+// the role's memberships, and writes no member_of for a role that states none.
+func TestRenderStatedEmptyMemberOfRoundTripThroughParser(t *testing.T) {
+	c := qt.New(t)
+	sourceDir := t.TempDir()
+	writeSource(c, filepath.Join(sourceDir, "schema.go"), "package models\n\n"+
+		`//ptah:schema:role name="quiet"`+"\n"+
+		`//ptah:schema:role name="vault" member_of=""`+"\n"+
+		"type PtahSchemaObjects struct{}\n")
+	before, err := goschema.ParseDir(builtintest.Annotations(), sourceDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.Roles[1].MemberOfStated, qt.IsTrue)
+
+	files, err := goschematogo.Render(c.Context(),
+		&schemamodel.Database{Roles: before.Roles},
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
+	)
+	c.Assert(err, qt.IsNil)
+	dir := t.TempDir()
+	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
+	after, err := goschema.ParseDir(builtintest.Annotations(), dir)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(after.Roles, qt.DeepEquals, before.Roles)
+}

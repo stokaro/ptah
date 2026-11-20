@@ -903,7 +903,7 @@ Declares a database role.
 | `group` | No | Declares a group, which never logs in and has members. YDB only. `true`/`false`. |
 | `inherit` | No | Controls role inheritance; defaults to true. `true`/`false`. |
 | `login` | No | Creates the role with LOGIN. `true`/`false`. |
-| `member_of` | No | Comma-separated groups the role is a member of. A group may carry membership options in parentheses, such as readers(admin;inherit=false;set=true). |
+| `member_of` | No | Comma-separated groups the role is a member of. A group may carry membership options in parentheses, such as readers(admin;inherit=false;set=true). A role that states the attribute, even empty, loses a membership the server holds in another declared role and the list leaves out; a role without it keeps every membership the server holds. |
 | `name` | No | Role name. |
 | `password` | No | Role password, a password hash, or `$PTAH_SECRET_<NAME>` to read it from that variable. Ptah never prints it; statements name the variable it is read from. See [Role passwords](../../databases/postgresql/#role-passwords). |
 | `replication` | No | Allows replication. `true`/`false`. |
@@ -936,7 +936,10 @@ separated by semicolons: `member_of="readers(admin), writers(inherit=false;set=f
 An option written without a value is true. `admin` is `WITH ADMIN OPTION` and
 is held on PostgreSQL, MySQL 8 and ClickHouse. `inherit` and `set` are held on
 PostgreSQL 16 and later. A target that cannot hold a stated option refuses the
-declaration, rather than leaving the option out. See
+declaration, rather than leaving the option out. A role that states
+`member_of`, even as `member_of=""`, loses a membership the server holds in
+another declared role and the list leaves out; a role without the attribute
+keeps every membership the server holds. See
 [Role memberships](../../databases/postgresql/#role-memberships).
 
 On YDB a role is a user, and `group="true"` declares a group instead. A user

@@ -23,11 +23,15 @@ import (
 // not describe the memberships.
 //
 // A membership the database holds and the declaration does not is removed
-// only when both roles are declared. A cluster adds every new YDB user to its
-// all-users group, USERS on a default cluster, and the group holds the right
-// to connect; a removal planned because a declaration did not list that group
-// would take it away. So a membership in a group the schema does not declare
-// is the server's, and is left as it is.
+// only when both roles are declared and the member owns its memberships
+// ([schemamodel.Role.OwnsMemberships]). A cluster adds every new YDB user to
+// its all-users group, USERS on a default cluster, and the group holds the
+// right to connect; a removal planned because a declaration did not list that
+// group would take it away. So a membership in a group the schema does not
+// declare is the server's, and is left as it is. A member that never wrote
+// member_of leaves its memberships to the server too: a role an application
+// connects as often holds its permissions through a membership granted outside
+// the schema, and a plan that read the omission as "none" would revoke them.
 //
 // A membership both sides hold is compared option by option, where the target
 // reports options. A declaration that states no option means the default:
@@ -42,7 +46,7 @@ func RoleMemberships(
 	if !caps.Has(capability.RoleMembership) || desired == nil || database == nil {
 		return
 	}
-	managed, declared := declaredMemberships(desired)
+	managed, owners, declared := declaredMemberships(desired)
 	held := make(map[difftypes.RoleMembershipRef]catalog.RoleMembership, len(database.RoleMemberships))
 	for _, membership := range database.RoleMemberships {
 		key := difftypes.RoleMembershipRef{Role: membership.Role, Member: membership.Member}
@@ -79,7 +83,7 @@ func RoleMemberships(
 			!database.NotDescribed.Describes(coverage.RoleMembership, key.Member) {
 			continue
 		}
-		if _, isDeclared := declared[key]; !isDeclared && managed[key.Role] && managed[key.Member] {
+		if _, isDeclared := declared[key]; !isDeclared && managed[key.Role] && owners[key.Member] {
 			removed := key
 			removed.Options = heldMembershipOptions(live, caps)
 			diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, removed)
@@ -180,13 +184,16 @@ func compareMemberships(a, b difftypes.RoleMembershipRef) int {
 	return cmp.Or(cmp.Compare(a.Role, b.Role), cmp.Compare(a.Member, b.Member))
 }
 
-// declaredMemberships collects the roles the schema declares and each
-// membership they state, keyed by group and member.
-func declaredMemberships(desired *schemamodel.Database) (map[string]bool, map[difftypes.RoleMembershipRef]declaredMembership) {
+// declaredMemberships collects the roles the schema declares, the ones among
+// them that own their memberships, and each membership they state, keyed by
+// group and member.
+func declaredMemberships(desired *schemamodel.Database) (map[string]bool, map[string]bool, map[difftypes.RoleMembershipRef]declaredMembership) {
 	managed := make(map[string]bool, len(desired.Roles))
+	owners := make(map[string]bool, len(desired.Roles))
 	declared := make(map[difftypes.RoleMembershipRef]declaredMembership)
 	for _, role := range desired.Roles {
 		managed[role.Name] = true
+		owners[role.Name] = role.OwnsMemberships()
 		for _, group := range role.MemberOf {
 			spelled := group
 			if group = strings.TrimSpace(group); group != "" {
@@ -200,5 +207,5 @@ func declaredMemberships(desired *schemamodel.Database) (map[string]bool, map[di
 			}
 		}
 	}
-	return managed, declared
+	return managed, owners, declared
 }

@@ -73,8 +73,17 @@ func (r *membershipRun) declare(options schemamodel.RoleMembershipOptions) *sche
 	return &schemamodel.Database{Roles: []schemamodel.Role{{StructName: "R", Name: r.group, Inherit: true}, app}}
 }
 
-// declareNoMembership states the two roles and no membership.
+// declareNoMembership states the two roles, and that the member belongs to no
+// role: an empty member_of the member states.
 func (r *membershipRun) declareNoMembership() *schemamodel.Database {
+	return &schemamodel.Database{Roles: []schemamodel.Role{
+		{StructName: "R", Name: r.group, Inherit: true}, {StructName: "R", Name: r.member, Inherit: true, MemberOfStated: true},
+	}}
+}
+
+// declareSilent states the two roles, and nothing about the member's
+// memberships: the member never wrote member_of.
+func (r *membershipRun) declareSilent() *schemamodel.Database {
 	return &schemamodel.Database{Roles: []schemamodel.Role{
 		{StructName: "R", Name: r.group, Inherit: true}, {StructName: "R", Name: r.member, Inherit: true},
 	}}
@@ -188,6 +197,11 @@ func TestRoleMembershipOptionsLive_PostgreSQL16AndLater(t *testing.T) {
 			c.Assert(*edge.InheritOption, qt.IsTrue)
 
 			// A membership the declaration drops is revoked.
+			// A member that never wrote member_of keeps the membership the server
+			// holds.
+			c.Assert(onlyMembership(run.plan(run.declareSilent())), qt.Equals, "")
+			_, found = run.held()
+			c.Assert(found, qt.IsTrue)
 			dropped := run.apply(run.declareNoMembership())
 			c.Assert(onlyMembership(dropped), qt.Equals, fmt.Sprintf(`REVOKE "%s" FROM "%s"`, run.group, run.member))
 			_, found = run.held()
@@ -254,6 +268,11 @@ func TestRoleMembershipOptionsLive_MySQL(t *testing.T) {
 	c.Assert(edge.AdminOption, qt.IsFalse)
 	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{})), qt.HasLen, 0)
 
+	// A member that never wrote member_of keeps the membership the server
+	// holds.
+	c.Assert(onlyMembership(run.plan(run.declareSilent())), qt.Equals, "")
+	_, found = run.held()
+	c.Assert(found, qt.IsTrue)
 	dropped := run.apply(run.declareNoMembership())
 	c.Assert(onlyMembership(dropped), qt.Equals, fmt.Sprintf("REVOKE `%s` FROM `%s`", run.group, run.member))
 	_, found = run.held()
@@ -289,6 +308,11 @@ func TestRoleMembershipOptionsLive_ClickHouse(t *testing.T) {
 	c.Assert(edge.AdminOption, qt.IsFalse)
 	c.Assert(run.plan(run.declare(schemamodel.RoleMembershipOptions{})), qt.HasLen, 0)
 
+	// A member that never wrote member_of keeps the membership the server
+	// holds.
+	c.Assert(onlyMembership(run.plan(run.declareSilent())), qt.Equals, "")
+	_, found = run.held()
+	c.Assert(found, qt.IsTrue)
 	dropped := run.apply(run.declareNoMembership())
 	c.Assert(onlyMembership(dropped), qt.Equals, fmt.Sprintf("REVOKE `%s` FROM `%s`", run.group, run.member))
 	_, found = run.held()

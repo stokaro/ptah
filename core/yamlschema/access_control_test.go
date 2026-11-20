@@ -117,6 +117,35 @@ func TestParse_MemberOptions_HappyPath(t *testing.T) {
 	})
 }
 
+// TestParse_MemberOfStated_HappyPath tells an empty member_of, which states
+// that the role belongs to no role, from an absent or null key, which says
+// nothing about its memberships.
+func TestParse_MemberOfStated_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+		want  bool
+	}{
+		{name: "an empty sequence", entry: "member_of: []", want: true},
+		{name: "an empty string", entry: `member_of: ""`, want: true},
+		{name: "a null value", entry: "member_of:", want: false},
+		{name: "no key", entry: "login: true", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			document := "roles:\n  app:\n    " + test.entry + "\n"
+
+			db, err := yamlschema.Parse(t.Context(), noOwners, []byte(document))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Roles, qt.HasLen, 1)
+			c.Assert(db.Roles[0].MemberOf, qt.HasLen, 0)
+			c.Assert(db.Roles[0].MemberOfStated, qt.Equals, test.want)
+		})
+	}
+}
+
 // TestParse_MemberOptions_FailurePath refuses an option the grammar does not
 // have, naming the role.
 func TestParse_MemberOptions_FailurePath(t *testing.T) {

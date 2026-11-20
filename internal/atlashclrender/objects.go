@@ -156,7 +156,9 @@ func (r *renderer) roleMemberships(role schemamodel.Role) {
 		}
 		stated = append(stated, group)
 	}
-	if len(plain) > 0 {
+	// An empty list is written when the role states it, so that the document
+	// read back still owns the role's memberships.
+	if len(plain) > 0 || role.MemberOfStated {
 		r.rawAttr(1, "member_of", "["+strings.Join(plain, ", ")+"]")
 	}
 	for _, group := range stated {

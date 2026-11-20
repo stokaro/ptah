@@ -79,13 +79,13 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-510 fields are reachable from the desired schema, and each one carries
+511 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
 | `ddl` | 406 | reaches rendered SQL on at least one target |
-| `comparison` | 38 | read when two schemas are compared, and written into no statement |
+| `comparison` | 39 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 15 | computed from other fields rather than authored |
 | `source` | 21 | identifies the source text the declaration was read from |
@@ -239,7 +239,7 @@ migration nobody asked for.
 
 ### Compared fields the round trip cannot ask about
 
-27, besides the ones only a recorded loss hides.
+28, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
@@ -270,6 +270,7 @@ migration nobody asked for.
 | `schemamodel.Grant.OnDatabase` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
 | `schemamodel.Grant.OnObject` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
 | `schemamodel.Role.Group` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
+| `schemamodel.Role.MemberOfStated` | it decides only whether a membership the server holds and the declaration leaves out is revoked, and a round trip reads back no membership its fixture does not declare; the membership comparison tests measure it |
 
 ### Every field
 
@@ -675,6 +676,7 @@ migration nobody asked for.
 | `schemamodel.Role.Inherit` | `ddl` | — |
 | `schemamodel.Role.Login` | `ddl` | — |
 | `schemamodel.Role.MemberOf` | `ddl` | — |
+| `schemamodel.Role.MemberOfStated` | `comparison` | decides whether a membership the server holds and the declaration leaves out is revoked; a statement names only the memberships |
 | `schemamodel.Role.MemberOptions` | `ddl` | — |
 | `schemamodel.Role.Name` | `ddl` | — |
 | `schemamodel.Role.Password` | `ddl` | — |

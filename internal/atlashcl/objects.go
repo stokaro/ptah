@@ -696,19 +696,27 @@ func (p *parser) parseRole(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	// member_of = [] states that the role belongs to no role, which an absent
+	// attribute does not; see [schemamodel.Role.OwnsMemberships].
+	_, written := block.Body.Attributes["member_of"]
+	memberOfStated := written && len(memberOf) == 0
+	if len(memberOf) == 0 {
+		memberOf = nil
+	}
 	p.db.Roles = append(p.db.Roles, schemamodel.Role{
-		Name:          name,
-		Login:         attrs.login,
-		Password:      password,
-		Superuser:     attrs.superuser,
-		CreateDB:      attrs.createDB,
-		CreateRole:    attrs.createRole,
-		Inherit:       attrs.inherit,
-		Replication:   attrs.replication,
-		Comment:       p.optionalString(block.Body.Attributes["comment"]),
-		Group:         attrs.group,
-		MemberOf:      memberOf,
-		MemberOptions: memberOptions,
+		Name:           name,
+		Login:          attrs.login,
+		Password:       password,
+		Superuser:      attrs.superuser,
+		CreateDB:       attrs.createDB,
+		CreateRole:     attrs.createRole,
+		Inherit:        attrs.inherit,
+		Replication:    attrs.replication,
+		Comment:        p.optionalString(block.Body.Attributes["comment"]),
+		Group:          attrs.group,
+		MemberOf:       memberOf,
+		MemberOfStated: memberOfStated,
+		MemberOptions:  memberOptions,
 	})
 	return nil
 }

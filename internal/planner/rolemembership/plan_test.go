@@ -138,16 +138,23 @@ func TestPlan_PostgreSQL16_HappyPath(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, []string{`GRANT "readers" TO "app" WITH INHERIT TRUE;`})
 	})
-	t.Run("a membership between declared roles that the declaration dropped is revoked", func(t *testing.T) {
+	t.Run("a membership between declared roles that the member's stated list leaves out is revoked", func(t *testing.T) {
 		c := qt.New(t)
-		roles := []schemamodel.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true}}
+		roles := []schemamodel.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true, MemberOfStated: true}}
 		got, err := planMemberships(t, platform.Postgres, capability.Postgres16(), roles, edge(false, new(true), new(true)))
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, []string{`REVOKE "readers" FROM "app";`})
 	})
+	t.Run("a membership of a member that never wrote member_of is left alone", func(t *testing.T) {
+		c := qt.New(t)
+		roles := []schemamodel.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true}}
+		got, err := planMemberships(t, platform.Postgres, capability.Postgres16(), roles, edge(false, new(true), new(true)))
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.HasLen, 0)
+	})
 	t.Run("a membership in a role the declaration does not name is left alone", func(t *testing.T) {
 		c := qt.New(t)
-		roles := []schemamodel.Role{{Name: "app", Inherit: true}}
+		roles := []schemamodel.Role{{Name: "app", Inherit: true, MemberOfStated: true}}
 		got, err := planMemberships(t, platform.Postgres, capability.Postgres16(), roles, edge(false, new(true), new(true)))
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.HasLen, 0)

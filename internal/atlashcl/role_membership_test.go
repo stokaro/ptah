@@ -18,6 +18,20 @@ func parseRoles(c *qt.C, document string) (*schemamodel.Database, error) {
 // TestParse_RoleMembershipBlock_HappyPath reads the `membership` block the
 // Atlas role syntax states a membership's options in, beside `member_of`.
 func TestParse_RoleMembershipBlock_HappyPath(t *testing.T) {
+	t.Run("an empty member_of states that the role belongs to no role", func(t *testing.T) {
+		c := qt.New(t)
+		db, err := parseRoles(c, `
+role "vault" {
+  member_of = []
+}
+role "quiet" {}
+`)
+		c.Assert(err, qt.IsNil)
+		c.Assert(db.Roles[0].MemberOfStated, qt.IsTrue)
+		c.Assert(db.Roles[0].OwnsMemberships(), qt.IsTrue)
+		c.Assert(db.Roles[1].MemberOfStated, qt.IsFalse)
+		c.Assert(db.Roles[1].OwnsMemberships(), qt.IsFalse)
+	})
 	t.Run("a block states the options of its role", func(t *testing.T) {
 		c := qt.New(t)
 		db, err := parseRoles(c, `

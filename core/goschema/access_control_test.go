@@ -102,6 +102,30 @@ type Access struct{}
 	c.Assert(database.Roles[0].MemberOptions, qt.IsNil)
 }
 
+// TestParseSource_MemberOfStated_HappyPath tells member_of="", which states
+// that the role belongs to no role and so owns its memberships, from an absent
+// attribute, which says nothing about them.
+func TestParseSource_MemberOfStated_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	database := parseStringAsGoFile(c, `
+package test
+
+//ptah:schema:role name="stated" member_of=""
+//ptah:schema:role name="silent"
+//ptah:schema:role name="listed" member_of="readers"
+type Access struct{}
+`)
+
+	c.Assert(database.Roles, qt.HasLen, 3)
+	c.Assert(database.Roles[0].MemberOf, qt.HasLen, 0)
+	c.Assert(database.Roles[0].MemberOfStated, qt.IsTrue)
+	c.Assert(database.Roles[0].OwnsMemberships(), qt.IsTrue)
+	c.Assert(database.Roles[1].MemberOfStated, qt.IsFalse)
+	c.Assert(database.Roles[1].OwnsMemberships(), qt.IsFalse)
+	c.Assert(database.Roles[2].MemberOfStated, qt.IsFalse)
+	c.Assert(database.Roles[2].OwnsMemberships(), qt.IsTrue)
+}
+
 // TestParseSource_MemberOptions_FailurePath refuses an option the grammar does
 // not have, naming the entry, rather than reading the group without it.
 func TestParseSource_MemberOptions_FailurePath(t *testing.T) {

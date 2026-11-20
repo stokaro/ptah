@@ -2025,10 +2025,17 @@ grant option.
 ### Role memberships
 
 `member_of` on a role names the roles it joins. A plan runs `GRANT "group" TO
-"member"`, and `REVOKE` for a membership between two declared roles that the
-declaration no longer lists, and the plan rates that revocation as a warning. A
-membership in a role the declaration does not name stays as the server holds
-it.
+"member"` for each one the server does not hold.
+
+A role that states `member_of` owns its memberships. A membership it holds in
+another declared role and the list leaves out is revoked, and the plan rates the
+revocation as a warning. To state that a role belongs to no role, write
+`member_of=""` in an annotation, `member_of: []` in YAML or `member_of = []` in
+HCL. A role that does not state `member_of` keeps every membership the server
+holds: the role an application connects as often holds its permissions through
+a membership granted outside the schema, and an absent list does not say it
+should lose them. A membership in a role the declaration does not name stays as
+the server holds it.
 
 ```go
 //ptah:schema:role name="readers"

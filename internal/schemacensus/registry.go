@@ -455,6 +455,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Role.Inherit", Disposition: DDL},
 	{Field: "schemamodel.Role.Login", Disposition: DDL},
 	{Field: "schemamodel.Role.MemberOf", Disposition: DDL},
+	{Field: "schemamodel.Role.MemberOfStated", Disposition: Comparison, Reason: "decides whether a membership the server holds and the declaration leaves out is revoked; a statement names only the memberships"},
 	{Field: "schemamodel.Role.MemberOptions", Disposition: DDL},
 	{Field: "schemamodel.Role.Name", Disposition: DDL},
 	{Field: "schemamodel.Role.Password", Disposition: DDL},
