@@ -570,8 +570,13 @@ func TestEveryVerbThatReadsAnswersTheSameE2E(t *testing.T) {
 			c := qt.New(t)
 			f := newFixture(c, s, leftProcedure...)
 			file := filepath.Join(c.TempDir(), "desired.hcl")
+			// A role belongs to the server, not to f.left, so the inspection
+			// would also carry roles another package creates and drops while
+			// this test runs. The sighted account cannot read mysql.user, so it
+			// would leave those roles undecided and exit 1 where the
+			// administrator exits 0.
 			inspected := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
-				"schema", "inspect", "--db-url", f.url("", f.left), "--format", "hcl")
+				"schema", "inspect", "--db-url", f.url("", f.left), "--format", "hcl", "--exclude", "*[type=role]")
 			c.Assert(inspected.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", inspected.Stderr))
 			c.Assert(os.WriteFile(file, []byte(inspected.Stdout), 0o600), qt.IsNil)
 			blind := f.newAccount(c, "blind", "GRANT SELECT ON {db}.* TO {account}")
