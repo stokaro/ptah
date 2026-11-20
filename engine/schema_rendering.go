@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/sqlutil"
 )
 
 // RenderSchema invokes the selected target's whole-schema rendering service.
@@ -66,7 +67,7 @@ func withSkipped(result renderer.SchemaResult, skipped []schemaext.SkippedObject
 // SkippedComment is the SQL comment a render or a plan writes for an object
 // the target skipped: the target, then [schemaext.SkippedObject.Note].
 func SkippedComment(object schemaext.SkippedObject) string {
-	return "-- " + strings.ToUpper(object.Target) + ": " + object.Note()
+	return sqlutil.LineComment(strings.ToUpper(object.Target) + ": " + object.Note())
 }
 
 // validateDeclaredModels is shared by whole-schema services so adding a model

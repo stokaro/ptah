@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
 )
 
 // Handlers returns the render descriptor of an [Operation].
@@ -59,7 +60,7 @@ func render(_ renderer.ExtensionContext, value *Operation) ([]string, error) {
 	}
 	statement := fmt.Sprintf("EXEC %s %s;", procedures[value.Action], strings.Join(arguments, ", "))
 	if property.Comment != "" {
-		return []string{"-- " + property.Comment, statement}, nil
+		return []string{sqlutil.LineComment(property.Comment), statement}, nil
 	}
 	return []string{statement}, nil
 }

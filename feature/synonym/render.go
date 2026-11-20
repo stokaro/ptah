@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/sqlident"
 )
 
@@ -54,7 +55,7 @@ func render(ctx renderer.ExtensionContext, value *Operation) ([]string, error) {
 		statements = append(statements, drop)
 	}
 	if synonym.Comment != "" {
-		statements = append(statements, "-- "+synonym.Comment)
+		statements = append(statements, sqlutil.LineComment(synonym.Comment))
 	}
 	return append(statements, create), nil
 }

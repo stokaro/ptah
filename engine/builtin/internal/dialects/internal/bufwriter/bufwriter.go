@@ -17,13 +17,38 @@ type Writer struct {
 	output strings.Builder
 }
 
+// WriteLinef writes the formatted line and a newline. When format starts with
+// `--` the line is a comment, and the text arguments it formats in are declared
+// text that must not end it: each string, error and [fmt.Stringer] argument goes
+// through [sqlutil.CommentText] first, so a line break in it is written as an
+// escape. The format string itself is the renderer's own and is written as it is.
 func (w *Writer) WriteLinef(format string, args ...any) {
-	_, err := fmt.Fprintf(&w.output, format+"\n", args...)
-	if err != nil {
-		slog.Error("error writing line", "err", err)
+	if strings.HasPrefix(format, "--") {
+		args = commentSafeArgs(args)
 	}
+	w.WriteLine(fmt.Sprintf(format, args...))
 }
 
+// commentSafeArgs returns args with each text argument made safe to sit in a
+// `--` comment. The slice passed in is not changed.
+func commentSafeArgs(args []any) []any {
+	safe := make([]any, len(args))
+	for i, arg := range args {
+		switch typed := arg.(type) {
+		case string:
+			safe[i] = sqlutil.CommentText(typed)
+		case error:
+			safe[i] = sqlutil.CommentText(typed.Error())
+		case fmt.Stringer:
+			safe[i] = sqlutil.CommentText(typed.String())
+		default:
+			safe[i] = arg
+		}
+	}
+	return safe
+}
+
+// WriteLine writes s and a newline.
 func (w *Writer) WriteLine(s string) {
 	_, err := fmt.Fprint(&w.output, s+"\n")
 	if err != nil {
