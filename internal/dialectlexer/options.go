@@ -101,6 +101,17 @@ var lineComments = descriptortable.New(func(described descriptor.Dialect) []stri
 	return slices.Clone(described.Lexical.LineComments)
 })
 
+// lineCommentsFor returns the line comment markers dialect states: a built-in
+// descriptor's, or the ones a provider declared for an engine the registry
+// does not describe ([DeclareLexical]). The two never name one engine, since
+// a declaration for a described name is refused.
+func lineCommentsFor(dialect string) []string {
+	if entry, found := declared.Load(declaredKey(dialect)); found {
+		return slices.Clone(entry.(*declaration).lexical.LineComments)
+	}
+	return lineComments.Get(dialect)
+}
+
 // ClientDelimiterRules is how a script written for dialect spells its
 // literals, for the client delimiter rewrite: where a literal or comment ends
 // decides whether a line that reads like a directive stands inside one. The
@@ -116,10 +127,13 @@ func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules c
 	}
 	options := ForSession(dialect, caps)
 	return clientdelimiter.Rules{
-		BackslashEscapes:   options.BackslashEscapes,
-		EscapeStrings:      options.PostgreSQLEscapeStrings,
+		BackslashEscapes: options.BackslashEscapes,
+		EscapeStrings:    options.PostgreSQLEscapeStrings,
+		// No descriptor field states the dollar rule itself. Executable
+		// comments are what the descriptors set on MySQL and MariaDB alone,
+		// so they stand in for it.
 		DollarQuotes:       options.ExecutableComments == lexer.ExecutableCommentsNone,
-		LineComments:       lineComments.Get(dialect),
+		LineComments:       lineCommentsFor(dialect),
 		BracketIdentifiers: options.BracketIdentifiers,
 	}, true
 }

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -97,4 +98,22 @@ func TestDeclareLexical_FailurePath(t *testing.T) {
 		c.Assert(dialectlexer.Options("fresh-engine"), qt.DeepEquals, lexer.Options{StandardStrings: true})
 		c.Assert(dialectlexer.Options("held-engine").PostgreSQLEscapeStrings, qt.IsTrue)
 	})
+}
+
+// The line comment markers a provider declares reach the client delimiter
+// rewrite, so a directive after a `#` comment holding an apostrophe is read
+// on that engine as it is on a built-in one. Once the registration ends, the
+// engine has no markers beside "--".
+func TestDeclareLexical_LineCommentsReachTheDelimiterRules(t *testing.T) {
+	c := qt.New(t)
+	release, err := dialectlexer.DeclareLexical(descriptor.Lexical{LineComments: []string{"#"}}, "hash-engine")
+	c.Assert(err, qt.IsNil)
+
+	rules, ok := dialectlexer.ClientDelimiterRules("hash-engine", capability.Capabilities{})
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(rules.LineComments, qt.DeepEquals, []string{"#"})
+	release()
+	rules, ok = dialectlexer.ClientDelimiterRules("hash-engine", capability.Capabilities{})
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(rules.LineComments, qt.HasLen, 0)
 }
