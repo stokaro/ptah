@@ -1,8 +1,8 @@
 package lint_test
 
 import (
-	"regexp"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
