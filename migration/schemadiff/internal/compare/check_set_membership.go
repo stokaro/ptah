@@ -1,9 +1,8 @@
-package normalize
+package compare
 
 import (
 	"slices"
 	"strings"
-	"unicode"
 )
 
 // canonicalizeCheckSetMembership renders a membership test in one spelling,
@@ -251,8 +250,4 @@ func skipCheckParens(expr string, i int) int {
 		}
 	}
 	return i
-}
-
-func isCheckIdentChar(ch rune) bool {
-	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
 }

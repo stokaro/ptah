@@ -86,6 +86,12 @@ const (
 	CheckNamingColumnOrConstraint CheckNaming = "column-or-constraint"
 )
 
+// CodePointRange is the code points from First to Last, both included.
+type CodePointRange struct {
+	First rune `json:"first"`
+	Last  rune `json:"last"`
+}
+
 // CheckNames states where a server keeps the name of a CHECK unique, and how
 // it refuses a CHECK whose name is taken there.
 type CheckNames struct {
@@ -103,6 +109,11 @@ type CheckNames struct {
 	// TableRefusal is the first line of that error where both CHECKs belong to
 	// one table, where it differs from Refusal. Empty means Refusal.
 	TableRefusal string `json:"table_refusal,omitempty"`
+	// FoldedRanges are the code points beyond ASCII whose simple lowercase the
+	// server folds when it compares two names, under an ASCII comparison. A
+	// letter outside them compares exactly, so a pair the server accepts is
+	// never refused, and a pair it refuses outside them reaches the server.
+	FoldedRanges []CodePointRange `json:"folded_ranges,omitempty"`
 }
 
 // CheckNameScope is where a server keeps the name of a CHECK unique.
@@ -416,7 +427,13 @@ func (d Dialect) validateCheckNames() error {
 		return fmt.Errorf("%w: dialect %q: CHECK names state a scope and the refusal it answers together, or neither",
 			ErrInvalidDescriptor, d.Name)
 	}
-	if names.Scope == "" && (names.Comparison != "" || names.TableRefusal != "") {
+	for _, folded := range names.FoldedRanges {
+		if folded.First < 0x80 || folded.Last < folded.First {
+			return fmt.Errorf("%w: dialect %q: CHECK names fold the code points %U to %U, which are not a range beyond ASCII",
+				ErrInvalidDescriptor, d.Name, folded.First, folded.Last)
+		}
+	}
+	if names.Scope == "" && (names.Comparison != "" || names.TableRefusal != "" || len(names.FoldedRanges) != 0) {
 		return fmt.Errorf("%w: dialect %q: CHECK names state a comparison or a table refusal without a scope",
 			ErrInvalidDescriptor, d.Name)
 	}

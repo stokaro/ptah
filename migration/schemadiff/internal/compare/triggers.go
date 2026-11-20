@@ -330,8 +330,8 @@ func foldTriggerColumn(name string) string {
 // constant already has, so it is dropped from both sides before they are
 // folded; without that, every such trigger is replaced on every plan.
 func sameTriggerCondition(declared, observed string, quoting normalize.Quoting) bool {
-	return normalize.CheckExpression(withoutTypeAnnotations(declared), quoting) ==
-		normalize.CheckExpression(withoutTypeAnnotations(observed), quoting)
+	return normalizeCheckExpression(withoutTypeAnnotations(declared), quoting) ==
+		normalizeCheckExpression(withoutTypeAnnotations(observed), quoting)
 }
 
 // withoutTypeAnnotations removes each CockroachDB type annotation, `:::` and

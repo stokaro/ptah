@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
@@ -41,8 +42,18 @@ var ErrDuplicateCheckName = errors.New("two CHECK constraints claim the same nam
 // its table CHECKs, which is the order a render creates them in, so the CHECK
 // reported second is the one the server refuses. A nil database passes.
 func ValidateCheckNames(database *schemamodel.Database, dialect string) error {
+	return ValidateCheckNamesAs(database, dialect, identifier.ForDialect(dialect))
+}
+
+// ValidateCheckNamesAs is [ValidateCheckNames] for a caller that holds the
+// semantics a server resolved. Beside the names the descriptor says the server
+// compares as one, it refuses two CHECKs of one table whose names those
+// semantics identify, which is the pair the comparison would otherwise reject
+// as one owner declared twice, with an error of its own. Without resolved
+// names the semantics identify only what the dialect's static comparison does.
+func ValidateCheckNamesAs(database *schemamodel.Database, dialect string, semantics identifier.Semantics) error {
 	rules := checkNameRules(dialect)
-	return validateCheckNames(database, dialect, rules, rules.Scope)
+	return validateCheckNames(database, semantics, rules, rules.Scope)
 }
 
 // ValidateCheckNamesWithinTables refuses what [ValidateCheckNames] refuses
@@ -56,7 +67,7 @@ func ValidateCheckNamesWithinTables(database *schemamodel.Database, dialect stri
 	if within != "" {
 		within = descriptor.CheckNameScopeTable
 	}
-	return validateCheckNames(database, dialect, rules, within)
+	return validateCheckNames(database, identifier.ForDialect(dialect), rules, within)
 }
 
 // checkNameRules is what the descriptor of dialect states about CHECK names, and
@@ -71,18 +82,32 @@ func checkNameRules(dialect string) descriptor.CheckNames {
 // validateCheckNames refuses two CHECKs of database whose names collide within
 // the scope they are checked in. rules word the refusal, and their scope is
 // the server's even where within checks a narrower one.
-func validateCheckNames(database *schemamodel.Database, dialect string, rules descriptor.CheckNames, within descriptor.CheckNameScope) error {
+func validateCheckNames(database *schemamodel.Database, semantics identifier.Semantics, rules descriptor.CheckNames, within descriptor.CheckNameScope) error {
 	if database == nil {
 		return nil
 	}
-	semantics := identifier.ForDialect(dialect)
 	held := make(map[checkNameKey]declaredCheck)
+	identified := make(map[checkNameKey]declaredCheck)
 	for _, check := range declaredChecks(database) {
 		key := check.key(rules, semantics, within)
 		if first, taken := held[key]; taken {
 			return duplicateCheckName(rules, first, check)
 		}
 		held[key] = check
+		if rules.Scope == "" {
+			continue
+		}
+		// The identity the comparison gives a constraint is its table and its
+		// name as the semantics identify names, so two CHECKs of one table that
+		// share it cannot be told apart there.
+		identity := checkNameKey{
+			scope: semantics.QualifiedTableIdentityKey(check.table.QualifiedName()),
+			name:  semantics.IndexIdentityKey(check.name),
+		}
+		if first, taken := identified[identity]; taken {
+			return duplicateCheckName(rules, first, check)
+		}
+		identified[identity] = check
 	}
 	return nil
 }
@@ -112,7 +137,7 @@ func (dc declaredCheck) key(rules descriptor.CheckNames, semantics identifier.Se
 	if rules.Scope == "" {
 		return checkNameKey{scope: table, name: semantics.IndexIdentityKey(dc.name)}
 	}
-	name := semantics.NameIdentityKey(identifier.Comparison(rules.Comparison), dc.name)
+	name := foldRanges(semantics.NameIdentityKey(identifier.Comparison(rules.Comparison), dc.name), rules.FoldedRanges)
 	if within == descriptor.CheckNameScopeTable {
 		return checkNameKey{scope: table, name: name}
 	}
@@ -179,4 +204,20 @@ func duplicateCheckName(rules descriptor.CheckNames, first, second declaredCheck
 	}
 	return fmt.Errorf("%w: %s, and the server keeps one CHECK of a name per %s: %s",
 		ErrDuplicateCheckName, where, rules.Scope, strings.ReplaceAll(refusal, "{name}", secondName))
+}
+
+// foldRanges lowercases each letter of name that lies in one of ranges, which
+// are the code points the server folds beyond ASCII.
+func foldRanges(name string, ranges []descriptor.CodePointRange) string {
+	if len(ranges) == 0 {
+		return name
+	}
+	return strings.Map(func(r rune) rune {
+		for _, folded := range ranges {
+			if r >= folded.First && r <= folded.Last {
+				return unicode.ToLower(r)
+			}
+		}
+		return r
+	}, name)
 }
