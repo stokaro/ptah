@@ -326,11 +326,10 @@ func validateEmptyMigrationName(name string) error {
 }
 
 func emptyMigrationSQL(name, generatedAt, direction string) string {
-	name = sqlutil.CommentText(name)
-	return fmt.Sprintf(`-- Migration: %s
+	return fmt.Sprintf(`%s
 -- Generated on: %s
 -- Direction: %s
 
 -- Add your migration SQL here.
-`, name, generatedAt, direction)
+`, sqlutil.LineComment("Migration: "+name), generatedAt, direction)
 }
