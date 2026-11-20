@@ -1261,6 +1261,15 @@
   },
   {
     "area": "Database engines",
+    "feature": "ClickHouse table re-creation (`allow_recreate`)",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "A change ClickHouse has no ALTER TABLE for is refused unless asked: `--allow-table-rebuild`, or `diff \"clickhouse\" { allow_recreate }` on compat. Rows are kept; not atomic.",
+    "evidence": "Measured on ClickHouse 24.10 and 26.10 (stokaro/ptah#6336). Without the request, schema plan refused an engine change, a PARTITION BY change, a PRIMARY KEY change, a reordered ORDER BY and a Replicated*MergeTree engine change at a fixed path, and the refusal names the request. With it, the plan copies the rows to ptah_rebuild_<table>, drops the table SYNC, creates it from the declaration and copies the rows back; the table definition and the rows were read back from the server for each. The pinned community binary (atlas community version v1.4.0) answers `unknown driver \"clickhouse\"` for any ClickHouse URL, so it plans nothing here. Measured on that binary with an sqlite URL: a top-level or env-level `diff \"<label>\" { allow_recreate = true }` block is accepted under any label and applies nothing, a nested skip inside it is type-checked, and an env that references it with `diff = diff.<label>` fails with `incorrect type ref`. The issue reports the setting as a paid Atlas feature; that was not run here, so the Atlas Pro column stays unknown. ptah-compat reads the top-level block for a dialect that rebuilds tables, and PTAH_ALLOW_TABLE_REBUILD=1 as the variable twin of the native flag; PTAH_ATLAS_STRICT_COMPAT=1 refuses the block as an ignored construct. The rebuild refuses a table something reads (a materialized view fires again on the copy back and a SummingMergeTree target counts every row twice, measured on both versions), a Replicated or Shared engine, and any plan that would drop a holding table left by a stopped rebuild."
+  },
+  {
+    "area": "Database engines",
     "feature": "CockroachDB (cockroachdb, crdb)",
     "ptah": "yes",
     "atlas_oss": "no",

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/lexer"
@@ -110,7 +109,7 @@ func SettingsChange(before, after string) (set []Setting, reset []string, err er
 }
 
 func fixedSettingError(name string) error {
-	return fmt.Errorf("%w: ClickHouse fixes table setting %s when the table is created; create the table again and copy its rows", ptaherr.ErrUnsupportedFeature, name)
+	return &RecreateRequired{Limit: fmt.Sprintf("ClickHouse fixes table setting %s when the table is created", name)}
 }
 
 // sameSettings compares the current SETTINGS clause with the declared one as

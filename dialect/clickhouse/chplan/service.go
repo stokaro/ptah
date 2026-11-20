@@ -26,8 +26,10 @@ import (
 // Service plans changes to the sorting key, sampling key, TTL rules and
 // settings of a surviving MergeTree table in place, and checks the storage
 // dependencies of common column operations. A change to the engine, PARTITION
-// BY or PRIMARY KEY is refused by name: ClickHouse has no ALTER TABLE for them,
-// and creating the table again and copying its rows is not planned. When the
+// BY or PRIMARY KEY is refused by name: ClickHouse has no ALTER TABLE for them.
+// A planner that creates the table again takes such a change out of the
+// request, asking [RecreationReason], and the service then accounts for the
+// table's rebuild as a parent operation. When the
 // sorting key gains an expression, the operation takes over the table's column
 // additions, because ClickHouse adds to the key only columns the same ALTER
 // TABLE adds. Its zero value supports concurrent use without database access.
@@ -88,6 +90,40 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		return featureplan.Result{}, err
 	}
 	return result, nil
+}
+
+// RecreationReason reports whether ClickHouse can make change only by creating
+// the table again, and if so which limit of the server says so, in a sentence
+// without a final stop. That is the case for a change of a table's engine,
+// PARTITION BY or PRIMARY KEY, of a setting the server fixes when the table is
+// created, of an ORDER BY that MODIFY ORDER BY cannot make, and any change to a
+// table outside the MergeTree family. It is also the case for a new sorting-key
+// expression over a column the table has, which MODIFY ORDER BY takes only over
+// columns it adds: existing names the columns of the table as it is, and
+// declared those of the declaration. Service refuses such a change, so a
+// planner that creates the table again takes it out of the request first. A
+// change that is invalid, or refused for another reason, reports false.
+func RecreationReason(change *chdiff.Table, existing, declared []string) (string, bool) {
+	if required, ok := errors.AsType[*chsql.RecreateRequired](chsql.ValidateStorageChange(change)); ok {
+		return required.Limit, true
+	}
+	after, err := change.After.Observed()
+	if err != nil || chsql.SameKey(change.Before.OrderBy, after.OrderBy) {
+		return "", false
+	}
+	key, err := chsql.SortingKey(change.Before.OrderBy, after.OrderBy, after.PrimaryKey)
+	if err != nil {
+		return "", false
+	}
+	universe := slices.Concat(existing, declared)
+	slices.Sort(universe)
+	used := referencedColumns(slices.Compact(universe), key.Added...)
+	for _, name := range existing {
+		if used[name] {
+			return existingKeyColumn(name).(*chsql.RecreateRequired).Limit, true
+		}
+	}
+	return "", false
 }
 
 func refusal(kind schemaext.Kind, err error, change, parent *int) featureplan.Result {

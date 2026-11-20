@@ -758,7 +758,7 @@ func diffResolvedStates(
 				opts.Policy, diff, to, fromSide.database, dialect, capabilities,
 			),
 			OmitNullBackfill:    opts.OmitNullBackfill,
-			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+			AllowTableRebuild:   opts.Policy.AllowsTableRebuild(dialect),
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
 			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,

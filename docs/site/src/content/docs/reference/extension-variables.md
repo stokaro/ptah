@@ -51,7 +51,7 @@ community CLI does on the same input.
 | [`PTAH_ALLOW_RESERVED_ROLE_NAMES`](#ptah_allow_reserved_role_names) | Plan a reserved role name |
 | [`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`](#ptah_sqlite_allow_virtual_table_drop) | Plan a virtual-table drop |
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
-| [`PTAH_ALLOW_TABLE_REBUILD`](#ptah_allow_table_rebuild) | Plan a YDB key, type or NOT NULL change as a table rebuild |
+| [`PTAH_ALLOW_TABLE_REBUILD`](#ptah_allow_table_rebuild) | Plan a change the target cannot make in place as a table rebuild |
 | [`PTAH_ALLOW_SERVER_CLEAN`](#ptah_allow_server_clean) | Clean a whole MySQL or MariaDB server |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
 | [`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`](#ptah_atlas_diff_without_dev_url) | Diff a schema file with a database, no dev database |
@@ -190,13 +190,23 @@ database is not affected. See
 ## `PTAH_ALLOW_TABLE_REBUILD`
 
 By default, `ptah-compat schema apply`, `schema diff`, `schema plan new` and
-`migrate diff` refuse a change the target cannot make in place: on YDB, a
-primary key change, a column type change and `SET NOT NULL`. The refusal names
-this variable. Set it to `1` and the YDB provider plans the change as a
+`migrate diff` refuse a change the target cannot make in place. On YDB that is a
+primary key change, a column type change and `SET NOT NULL`. On ClickHouse it is a
+change of the engine, `PARTITION BY` or `PRIMARY KEY`, or of an `ORDER BY` that
+`MODIFY ORDER BY` cannot make. The refusal names this variable.
+
+Set it to `1` and the YDB provider plans the change as a
 [table rebuild](https://github.com/stokaro/ptah-ydb-plugin#native-table-rebuild): a new table, a copy of the
-rows and a swap, whose steps are not atomic and lose rows written during them.
-It matches the native `--allow-table-rebuild` flag, which reads no variable. The
-community CLI has no YDB driver and plans no rebuild.
+rows and a swap. The steps are not atomic and lose rows written during them.
+
+On ClickHouse the plan copies the rows to a holding table, drops the table, creates it
+again and copies the rows back, with the same loss. See
+[Creating a table again](../../databases/clickhouse/#creating-a-table-again).
+
+The variable matches the native `--allow-table-rebuild` flag, which reads no variable.
+A top-level `diff "clickhouse" { allow_recreate = true }` block in `atlas.hcl` asks for
+the same on ClickHouse alone. The community CLI has no YDB or ClickHouse driver and
+plans no rebuild.
 
 ## `PTAH_ATLAS_LINT_WITHOUT_DEV_URL`
 

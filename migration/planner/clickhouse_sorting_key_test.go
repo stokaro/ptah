@@ -120,8 +120,9 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseSortingKey_FailurePath(t *tes
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `the primary key of t changes \(`+test.want+`\): ClickHouse fixes a MergeTree table's`+
-				` primary key when the table is created, and no ALTER changes it; create the table again with the new key and copy its rows`)
+			c.Assert(err, qt.ErrorMatches, `unsupported feature: the primary key of t changes \(`+test.want+`\): ClickHouse fixes a MergeTree table's`+
+				` primary key when the table is created, and no ALTER changes it; Ptah creates the table again and keeps its rows`+
+				` when asked with --allow-table-rebuild: the steps are not atomic, and rows written to the table while they run are lost`)
 			c.Assert(got, qt.IsNil)
 		})
 	}

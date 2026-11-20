@@ -51,12 +51,33 @@ func Changed(a, b *chschema.ObservedTable) []Clause {
 	return changed
 }
 
+// RecreateRequired is the refusal of a storage change ClickHouse can make only
+// by creating the table again: a change of the engine, PARTITION BY, PRIMARY KEY
+// or a table setting the server fixes at creation, an ORDER BY that MODIFY ORDER
+// BY cannot make, or any change to a table outside the MergeTree family. It
+// wraps ptaherr.ErrUnsupportedFeature, so a caller that does not rebuild tables
+// refuses it like any other change ClickHouse has no statement for, and a
+// caller that does asks errors.As for this type.
+type RecreateRequired struct {
+	// Limit says which limit of the server the change meets, as a sentence
+	// without a final stop.
+	Limit string
+}
+
+// Error returns the limit and the step the author takes without a rebuild.
+func (e *RecreateRequired) Error() string {
+	return fmt.Sprintf("%v: %s; create the table again and copy its rows", ptaherr.ErrUnsupportedFeature, e.Limit)
+}
+
+// Unwrap returns ptaherr.ErrUnsupportedFeature.
+func (e *RecreateRequired) Unwrap() error { return ptaherr.ErrUnsupportedFeature }
+
 // ValidateStorageChange checks a transition before planning, encoding,
 // rendering and reversal, so no stage can acknowledge a change another would
 // refuse. ClickHouse has no ALTER TABLE that changes a table's engine, its
-// PARTITION BY or its PRIMARY KEY, and those are refused by name with
-// ptaherr.ErrUnsupportedFeature, as is any change to a table whose engine is
-// not in the MergeTree family. The sorting key, the sampling key and the
+// PARTITION BY or its PRIMARY KEY, and those are refused by name with a
+// [*RecreateRequired], as is any change to a table whose engine is not in the
+// MergeTree family. The sorting key, the sampling key and the
 // settings must also pass [SortingKey], [SampleKey] and [SettingsChange].
 // Whether a new sorting-key expression uses only columns the same ALTER TABLE
 // adds depends on the table's columns, which the planner checks. Operands with
@@ -80,11 +101,11 @@ func ValidateStorageChange(change *chdiff.Table) error {
 	}
 	for _, clause := range changed {
 		if clause == Engine || clause == PartitionBy || clause == PrimaryKey {
-			return fmt.Errorf("%w: ClickHouse has no ALTER TABLE that changes a table's %s; create the table again and copy its rows", ptaherr.ErrUnsupportedFeature, clause)
+			return &RecreateRequired{Limit: fmt.Sprintf("ClickHouse has no ALTER TABLE that changes a table's %s", clause)}
 		}
 	}
 	if !chresolve.IsMergeTree(after.Engine) {
-		return fmt.Errorf("%w: changing a table's %s in place requires a MergeTree engine", ptaherr.ErrUnsupportedFeature, clauseList(changed))
+		return &RecreateRequired{Limit: fmt.Sprintf("changing a table's %s in place requires a MergeTree engine", clauseList(changed))}
 	}
 	if slices.Contains(changed, OrderBy) {
 		if _, err := SortingKey(change.Before.OrderBy, after.OrderBy, after.PrimaryKey); err != nil {
@@ -139,7 +160,8 @@ type SortingKeyChange struct {
 //
 // An added expression that the old key holds is refused here: it keeps an
 // existing column, so the key reordered or lost an expression other than its
-// last. Every refusal wraps ptaherr.ErrUnsupportedFeature.
+// last. Every refusal is a [*RecreateRequired], which wraps
+// ptaherr.ErrUnsupportedFeature.
 func SortingKey(before, after, primaryKey string) (SortingKeyChange, error) {
 	old, current := keyItems(before), keyItems(after)
 	var change SortingKeyChange
@@ -150,16 +172,16 @@ func SortingKey(before, after, primaryKey string) (SortingKeyChange, error) {
 			continue
 		}
 		if slices.ContainsFunc(old, func(previous listItem) bool { return slices.Equal(previous.tokens, item.tokens) }) {
-			return SortingKeyChange{}, fmt.Errorf("%w: MODIFY ORDER BY can only drop the last expressions of a sorting key and add expressions over columns the same ALTER TABLE adds, and %s is already in the key %s",
-				ptaherr.ErrUnsupportedFeature, item.text, before)
+			return SortingKeyChange{}, &RecreateRequired{Limit: fmt.Sprintf("MODIFY ORDER BY can only drop the last expressions of a sorting key and add expressions over columns the same ALTER TABLE adds, and %s is already in the key %s",
+				item.text, before)}
 		}
 		change.Added = append(change.Added, item.text)
 	}
 	change.Dropped = len(old) - kept
 	primary := keyItems(primaryKey)
 	if len(primary) > len(current) || !slices.EqualFunc(primary, current[:len(primary)], func(a, b listItem) bool { return slices.Equal(a.tokens, b.tokens) }) {
-		return SortingKeyChange{}, fmt.Errorf("%w: ClickHouse keeps the primary key %s a prefix of the sorting key, and the new ORDER BY %s does not start with it; create the table again and copy its rows",
-			ptaherr.ErrUnsupportedFeature, primaryKey, after)
+		return SortingKeyChange{}, &RecreateRequired{Limit: fmt.Sprintf("ClickHouse keeps the primary key %s a prefix of the sorting key, and the new ORDER BY %s does not start with it",
+			primaryKey, after)}
 	}
 	return change, nil
 }

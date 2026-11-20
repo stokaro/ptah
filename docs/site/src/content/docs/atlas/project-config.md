@@ -147,8 +147,26 @@ env "local" {
 | `diff.skip.drop_index` | Omits standalone index drops and their comment cleanup from the same commands. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
+| `diff "clickhouse" { allow_recreate }` | A top-level block. `true` lets a ClickHouse plan create a table again, and keep its rows, where the server has no `ALTER TABLE` for the change; see [Creating a table again](../../databases/clickhouse/#creating-a-table-again). A label of a dialect with no table rebuild is refused. |
 | `check "migrate_apply".drift.on_error` | Whether `migrate apply` stops on drift (`FAIL`, the default) or reports it and applies (`CONTINUE`). |
 | `check "migrate_apply".drift.exclude` | Resource exclusion filters for the drift check; they replace `env.exclude` for it. |
+
+### `diff "<dialect>"`
+
+`allow_recreate` in a top-level `diff "clickhouse"` block asks for the same plan
+as `PTAH_ALLOW_TABLE_REBUILD=1`, scoped to ClickHouse: a change of the engine,
+`PARTITION BY` or `PRIMARY KEY`, or of an `ORDER BY` that `MODIFY ORDER BY`
+cannot make, is planned as the table created again with its rows kept, instead
+of refused. A block set to `false` asks for nothing. Any other attribute or
+nested block in it is reported as having no effect, and an env-level `diff
+"clickhouse"` block is refused.
+
+Measured on the pinned community binary v1.4.0, which has no ClickHouse driver
+(`unknown driver "clickhouse"`): it accepts a top-level or env-level `diff`
+block under any label and applies nothing from it, and an env that references
+the block with `diff = diff.clickhouse` fails with `incorrect type ref`. The
+strict policy, `PTAH_ATLAS_STRICT_COMPAT=1`, reads the block as ignored and
+therefore refuses it, as it refuses every ignored construct.
 
 ### `diff.skip`
 

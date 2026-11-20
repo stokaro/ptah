@@ -46,7 +46,9 @@ func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 		}, true
 	case name == platform.ClickHouse:
 		return func(opts planext.Options) planext.Planner {
-			return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(name)).WithStatementStyle(opts.Statements)
+			return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(name)).
+				WithStatementStyle(opts.Statements).
+				WithTableRebuild(opts.AllowTableRebuild, opts.TableRebuildWords())
 		}, true
 	case name == platform.SQLite:
 		return func(opts planext.Options) planext.Planner {

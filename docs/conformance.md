@@ -308,12 +308,17 @@ each verb does on YDB is on the [YDB provider's page](https://docs.ptah.run/edge
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
 
-A primary key change, a column type change or `SET NOT NULL` on YDB is refused
-on this surface unless `PTAH_ALLOW_TABLE_REBUILD=1` asks the provider for a
-table rebuild, the variable twin of the native `--allow-table-rebuild` flag; the
-refusal names the variable. The community binary plans no rebuild, so strict
-mode refuses the variable:
-`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
+A primary key change, a column type change or `SET NOT NULL` on YDB, and a
+change of the engine, `PARTITION BY`, `PRIMARY KEY` or an unmakeable `ORDER BY`
+on ClickHouse, is refused on this surface unless `PTAH_ALLOW_TABLE_REBUILD=1`
+asks for a table rebuild, the variable twin of the native
+`--allow-table-rebuild` flag; the refusal names the variable. A top-level
+`diff "clickhouse" { allow_recreate = true }` block in `atlas.hcl` asks for it on
+ClickHouse alone. The community binary plans no rebuild, so strict mode refuses
+the variable:
+`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`. The
+community binary accepts a `diff` block under any label and applies nothing from
+it, and strict mode reads the block as an ignored construct, which it refuses.
 
 A `docker://ydb` dev URL is checked before its dialect, so strict mode answers
 it as the pinned binary answers an image it does not start, not as it answers a

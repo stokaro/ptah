@@ -107,11 +107,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 209 capabilities below:
+Across the 210 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 194 |
+| Ptah supports it fully | 195 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
@@ -119,7 +119,7 @@ Across the 209 capabilities below:
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 56 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 11 |
+| An Atlas column is ❔ — not established by this page's evidence | 12 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
@@ -347,6 +347,7 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Capability profile of a live target (`ptah db capabilities`) | ✅ | ❔ | ❌ | Reports the dialect, resolved preset and how it was reached, the support level and every capability key for a connected server, as text or stable JSON. No source here names an Atlas equivalent. |
 | ClickHouse (clickhouse, ch) | ✅ | ❌ | ✅ | Tables, indexes, plain views, materialized views including the refreshable form, roles, grants, row policies and named table CHECKs. Other kinds are named on render and on the plan path. |
+| ClickHouse table re-creation (`allow_recreate`) | ✅ | ❌ | ❔ | A change ClickHouse has no ALTER TABLE for is refused unless asked: `--allow-table-rebuild`, or `diff "clickhouse" { allow_recreate }` on compat. Rows are kept; not atomic. |
 | CockroachDB (cockroachdb, crdb) | ✅ | ❌ | ✅ | `CONCURRENTLY`, XML, advisory locks and DEFERRABLE are engine limits; 25.4 also refuses generic DROP CONSTRAINT, and 26.2 accepts it. Row-level TTL is fully managed. |
 | Declared support level per database release line | ✅ | ❔ | ❔ | Every declared release line carries a support level, counted in the generated table the evidence names. End-of-life lowers the level, not the behavior; an undeclared line resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |

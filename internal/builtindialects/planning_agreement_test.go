@@ -14,7 +14,8 @@ import (
 // grammar facts to the family checks they replace in migration/planner,
 // migration/generator and internal/concurrentindex: the PostgreSQL family
 // builds indexes concurrently and adds a constraint NOT VALID, and the MySQL
-// family asks for ALGORITHM= and LOCK=.
+// family asks for ALGORITHM= and LOCK=, and ClickHouse is the bundled engine
+// whose planner creates a table again where it has no ALTER TABLE.
 func TestDescriptors_PlanningGrammarAgreesWithTheFamilies(t *testing.T) {
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {
@@ -25,6 +26,7 @@ func TestDescriptors_PlanningGrammarAgreesWithTheFamilies(t *testing.T) {
 			c.Assert(dialect.OnlineAlter == descriptor.OnlineAlterNotValid, qt.Equals, postgresFamily)
 			c.Assert(dialect.OnlineAlter == descriptor.OnlineAlterAlgorithmLock, qt.Equals, mysqlFamily)
 			c.Assert(dialect.OnlineAlter == "", qt.Equals, !postgresFamily && !mysqlFamily)
+			c.Assert(dialect.TableRebuild, qt.Equals, dialect.Name == platform.ClickHouse)
 		})
 	}
 }

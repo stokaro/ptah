@@ -516,3 +516,69 @@ func TestSchemaScopeNamesDatabase(t *testing.T) {
 		})
 	}
 }
+
+// A SELECT reads a server's own catalog on the dev connection, so a plan that
+// asks system.tables before a destructive step is rehearsed. A statement that
+// changes anything, or reads another database, is still refused.
+func TestRescopeStatementsForDevDatabaseAllowsReadingTheCatalog(t *testing.T) {
+	c := qt.New(t)
+	statements := []string{
+		"SELECT count() FROM system.tables WHERE database = currentDatabase()",
+		"SELECT 1 FROM INFORMATION_SCHEMA.TABLES",
+	}
+
+	got, err := rescopeStatementsForDevDatabase(statements, platform.ClickHouse, "app", "appdev")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, statements)
+}
+
+func TestRescopeStatementsForDevDatabaseRefusesWhatOnlyLooksLikeAReadOfTheCatalog(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		wantName  string
+	}{
+		{name: "a write to the catalog", statement: "INSERT INTO system.settings VALUES (1)", wantName: "system"},
+		{name: "a read of another database", statement: "SELECT 1 FROM elsewhere.t", wantName: "elsewhere"},
+		{name: "a read of the catalog beside another database", statement: "SELECT 1 FROM system.tables, elsewhere.t", wantName: "elsewhere"},
+		{name: "a second statement that changes the catalog", statement: "SELECT 1; DROP TABLE system.x", wantName: "system"},
+		{name: "a second statement hidden after a comment", statement: "SELECT 1; -- done\nDROP TABLE system.x", wantName: "system"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := rescopeStatementsForDevDatabase([]string{test.statement}, platform.ClickHouse, "app", "appdev")
+
+			var scope *DevScopeError
+			c.Assert(err, qt.ErrorAs, &scope)
+			c.Assert(scope.Schema, qt.Equals, test.wantName)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}
+
+// Only ClickHouse reads its catalog through a statement the plan hands the dev
+// connection. Another dialect that names a database in a schema keeps the
+// refusal, whatever the statement is.
+func TestRescopeStatementsForDevDatabaseKeepsTheCatalogRefusalOutsideClickHouse(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := rescopeStatementsForDevDatabase([]string{"SELECT 1 FROM information_schema.tables"}, platform.MySQL, "app", "appdev")
+
+	var scope *DevScopeError
+	c.Assert(err, qt.ErrorAs, &scope)
+	c.Assert(scope.Schema, qt.Equals, "information_schema")
+	c.Assert(got, qt.IsNil)
+}
+
+func TestRescopeStatementsForDevDatabaseAllowsACommentBeforeTheCatalogRead(t *testing.T) {
+	c := qt.New(t)
+	statement := "-- the table must be read by nothing\nSELECT count() FROM system.tables;"
+
+	got, err := rescopeStatementsForDevDatabase([]string{statement}, platform.ClickHouse, "app", "appdev")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{statement})
+}

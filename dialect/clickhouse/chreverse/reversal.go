@@ -4,6 +4,7 @@ package chreverse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ptah.run/core/platform"
@@ -40,7 +41,11 @@ func (Service) ReverseChanges(ctx context.Context, request schemaext.ReversalReq
 		if !ok {
 			return nil, fmt.Errorf("%w: reversal requires a ClickHouse table change", schemaext.ErrInvalidValue)
 		}
-		if err := chsql.ValidateStorageChange(change); err != nil {
+		// A change only a table created again can make reverses to one: the
+		// planner of the reverse direction creates the table again too, or
+		// refuses it in the words of the request it was not given.
+		var recreate *chsql.RecreateRequired
+		if err := chsql.ValidateStorageChange(change); err != nil && !errors.As(err, &recreate) {
 			return nil, err
 		}
 		declared, err := change.After.Observed()
@@ -51,8 +56,8 @@ func (Service) ReverseChanges(ctx context.Context, request schemaext.ReversalReq
 		result = append(result, schemaext.Reversal{
 			Change:       schemaext.ChangeRecord{Subject: record.Subject, Value: &chdiff.Table{Before: after, After: change.Before.Desired()}},
 			ForwardState: []schemaext.ProjectedValue{{Placement: schemaext.FacetPlacement, Kind: chschema.TableKind, Value: after.Clone()}},
-			Strategy:     "restore the captured storage clauses in place",
-			Limitations:  limitations(change.Before, after),
+			Strategy:     strategy(recreate),
+			Limitations:  limitations(change.Before, after, recreate),
 		})
 	}
 	if err := ctx.Err(); err != nil {
@@ -61,13 +66,24 @@ func (Service) ReverseChanges(ctx context.Context, request schemaext.ReversalReq
 	return result, nil
 }
 
+// strategy says how the reverse restores the storage clauses.
+func strategy(recreate *chsql.RecreateRequired) string {
+	if recreate != nil {
+		return "restore the captured storage clauses by creating the table again and copying its rows"
+	}
+	return "restore the captured storage clauses in place"
+}
+
 // limitations says what restoring each changed clause cannot recover. A
 // sorting key that gained expressions has nothing to recover: parts sorted by
 // the longer key are sorted by the shorter one too. Restoring the sorting key
 // does not decide whether the reverse is possible in place; the reverse plan
 // checks it against the columns it adds and removes, like any other.
-func limitations(before, after *chschema.ObservedTable) []string {
+func limitations(before, after *chschema.ObservedTable, recreate *chsql.RecreateRequired) []string {
 	var result []string
+	if recreate != nil {
+		result = append(result, "Restoring the definition creates the table again, which is not atomic: rows written to the table while it runs are lost.")
+	}
 	for _, clause := range chsql.Changed(before, after) {
 		switch clause {
 		case chsql.OrderBy:

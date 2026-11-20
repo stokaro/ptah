@@ -21,6 +21,7 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
@@ -72,6 +73,12 @@ type AtlasLoadOptions struct {
 	// starts the dev database a block declares when a selected env references
 	// it.
 	IgnoreDockerBlocks bool
+	// IgnoreDialectDiffBlocks leaves every top-level `diff "<label>"` block
+	// unapplied, as Atlas Community Edition leaves it: the block is reported as
+	// ignored whatever its label and attributes. The default reads `diff
+	// "clickhouse" { allow_recreate = true }` as the request to create a table
+	// again where ClickHouse has no ALTER TABLE for the change.
+	IgnoreDialectDiffBlocks bool
 }
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -252,6 +259,7 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectExternalSchema = opts.RejectExternalSchema
 	p.rejectAzureDBToken = opts.RejectAzureDBToken
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
+	p.ignoreDialectDiffBlocks = opts.IgnoreDialectDiffBlocks
 	configs, err := p.parseCollection(body, opts.EnvName)
 	if err != nil {
 		return nil, err
@@ -323,6 +331,8 @@ type atlasParser struct {
 	// rejectListMapForEach selects the narrower dynamic-env type boundary for
 	// consumers that need it without narrowing the parser's default behavior.
 	rejectListMapForEach bool
+	// ignoreDialectDiffBlocks is [AtlasLoadOptions.IgnoreDialectDiffBlocks].
+	ignoreDialectDiffBlocks bool
 	// ignoreDockerBlocks is [AtlasLoadOptions.IgnoreDockerBlocks].
 	ignoreDockerBlocks bool
 	// externalSchemas holds the declared data.external_schema sources by name.
@@ -501,7 +511,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		blocks.locals,
 		blocks.data,
 		blocks.docker,
-		atlasEvaluationRoots(body.Attributes, blocks.globalDiff, blocks.globalLint, blocks.exporters, selected),
+		atlasEvaluationRoots(body.Attributes, append(slices.Clone(blocks.globalDiff), blocks.dialectDiff...), blocks.globalLint, blocks.exporters, selected),
 	); err != nil {
 		return nil, err
 	}
@@ -531,6 +541,9 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		}
 	}
 	if err := p.parseSingleAtlasBlock(blocks.globalDiff, &base, p.parseDiff); err != nil {
+		return nil, err
+	}
+	if err := p.parseDialectDiffs(blocks.dialectDiff, &base); err != nil {
 		return nil, err
 	}
 	if err := p.parseSingleAtlasBlock(blocks.globalLint, &base, p.parseLint); err != nil {
@@ -576,11 +589,13 @@ type atlasTopBlocks struct {
 	data       []*hclsyntax.Block
 	docker     []*hclsyntax.Block
 	globalDiff []*hclsyntax.Block
-	globalLint []*hclsyntax.Block
-	envs       []atlasEnvBlock
-	locals     []*hclsyntax.Block
-	variables  []*hclsyntax.Block
-	exporters  []*hclsyntax.Block
+	// dialectDiff holds the top-level diff blocks that carry a label.
+	dialectDiff []*hclsyntax.Block
+	globalLint  []*hclsyntax.Block
+	envs        []atlasEnvBlock
+	locals      []*hclsyntax.Block
+	variables   []*hclsyntax.Block
+	exporters   []*hclsyntax.Block
 }
 
 func (p atlasParser) collectAtlasTopBlocks(blocks []*hclsyntax.Block) (atlasTopBlocks, error) {
@@ -827,6 +842,10 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 		// env references it; see atlas_docker.go.
 		collected.docker = append(collected.docker, block)
 	case "diff":
+		if len(block.Labels) > 0 {
+			collected.dialectDiff = append(collected.dialectDiff, block)
+			break
+		}
 		collected.globalDiff = append(collected.globalDiff, block)
 	case "env":
 		env, err := atlasEnvBlockFromHCL(block)
@@ -1959,6 +1978,65 @@ func (p atlasParser) parseDiff(block *hclsyntax.Block, cfg *Config) error {
 		"skip":             p.parseDiffSkip,
 		"concurrent_index": p.parseDiffConcurrentIndex,
 	})
+}
+
+// parseDialectDiffs reads every top-level diff block that carries a label.
+func (p atlasParser) parseDialectDiffs(blocks []*hclsyntax.Block, cfg *Config) error {
+	for _, block := range blocks {
+		if err := p.parseDialectDiff(block, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// parseDialectDiff reads a top-level `diff "<dialect>" { allow_recreate = ... }`
+// block: whether a plan for that dialect creates a table again, and keeps its
+// rows, where the engine has no ALTER TABLE for the change.
+//
+// Atlas Community Edition accepts the block under any label and applies
+// nothing from it, so a strict policy reads it as ignored. The default refuses
+// a label no dialect plans a rebuild for, rather than accept a request it
+// cannot meet. Any attribute but allow_recreate, and any nested block, takes
+// the tolerance path and is reported as having no effect.
+func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) != 1 {
+		return unsupportedBlock(block)
+	}
+	if p.ignoreDialectDiffBlocks {
+		if err := p.evaluateIgnoredBody("diff", block.Body); err != nil {
+			return err
+		}
+		p.noteIgnored("block", block.Type, block.TypeRange)
+		return nil
+	}
+	dialect := platform.NormalizeDialect(block.Labels[0])
+	if described, found := platform.Lookup(dialect); !found || !described.TableRebuild {
+		return unsupportedBlock(block)
+	}
+	for _, name := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[name]
+		if name != "allow_recreate" {
+			if err := p.tolerateUnknownAttr("diff", name, attr); err != nil {
+				return err
+			}
+			continue
+		}
+		value, err := p.configBoolAttr(name, attr)
+		if err != nil {
+			return err
+		}
+		if cfg.Diff.AllowRecreate == nil {
+			cfg.Diff.AllowRecreate = make(map[string]ConfigBool)
+		}
+		cfg.Diff.AllowRecreate[dialect] = value
+	}
+	for _, child := range block.Body.Blocks {
+		if err := p.tolerateUnknownBlock("diff", child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {

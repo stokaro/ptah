@@ -33,11 +33,13 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
@@ -52,6 +54,9 @@ type Planner struct {
 	// decisions: whether a dropped table carries the line comment that only
 	// describes it, and whether a guard no earlier statement needs stays.
 	statements planext.StatementStyle
+	// rebuild says whether a change ClickHouse has no ALTER TABLE for creates
+	// the table again, or is refused.
+	rebuild tableRebuildPolicy
 }
 
 // WithStatementStyle returns a copy of the planner that spells its statements
@@ -145,13 +150,17 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		result = append(result, ast.NewComment("CLICKHOUSE: enum changes are ignored; declare ClickHouse Enum8/Enum16 columns inline via platform.clickhouse.type"))
 	}
 
-	if err := refusePrimaryKeyChanges(diff); err != nil {
+	if err := refuseUnfinishedRebuilds(diff); err != nil {
+		return nil, err
+	}
+	rebuilds, err := p.planRebuilds(diff)
+	if err != nil {
 		return nil, err
 	}
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff)
 	before := result
-	columns, err := p.modifyExistingTables(nil, diff)
+	columns, err := p.modifyExistingTables(nil, diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
@@ -159,14 +168,14 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
-	indexes, err := p.addNewIndexes(nil, diff)
+	indexes, err := p.addNewIndexes(nil, diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
-	indexes = p.removeIndexes(indexes, diff)
+	indexes = p.removeIndexes(indexes, diff, rebuilds)
 	last := p.removeTables(nil, diff)
 
-	nodes, err := p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, after: after, indexes: indexes, last: last})
+	nodes, err := p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, rebuilds: rebuilds, after: after, indexes: indexes, last: last})
 	if err != nil {
 		return nil, err
 	}
@@ -204,8 +213,14 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, rebuilds tableRebuilds) ([]ast.Node, error) {
+	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(platform.ClickHouse))
 	for _, td := range diff.TablesModified {
+		if rebuilds.has(builder, td.TableName) {
+			// The table is created again from its declaration, which holds
+			// every column, comment and constraint this change would make.
+			continue
+		}
 		if td.CommentChange != nil {
 			result = append(result, &ast.AlterTableNode{
 				Name:       td.TableName,
@@ -264,43 +279,10 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 	return result, nil
 }
 
-// refusePrimaryKeyChanges refuses a plan that moves a column into or out of an
-// existing table's primary key.
-//
-// A MergeTree table's primary key is fixed when the table is created. Measured
-// on 24.10 and 26.9: `ALTER TABLE t MODIFY PRIMARY KEY` is a syntax error, and
-// `MODIFY ORDER BY` must keep the primary key as a prefix of the sorting key,
-// so it can neither reorder the key nor take a column out of it. The column
-// change the comparison reports is planned as a MODIFY COLUMN, which the server
-// accepts and which changes no key, so the plan would apply and the next one
-// would report the same change (stokaro/ptah#4104). The table has to be
-// created again with the new key, which drops its rows, so that is the
-// author's step rather than the plan's.
-func refusePrimaryKeyChanges(diff *difftypes.SchemaDiff) error {
-	for _, table := range diff.TablesModified {
-		for _, column := range table.ColumnsModified {
-			change, moved := column.Changes["primary_key"]
-			if !moved {
-				continue
-			}
-			return &ptaherr.CapabilityError{
-				Dialect: platform.ClickHouse,
-				Feature: "changing a table's primary key",
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf(
-					"the primary key of %s changes (column %s: %s): ClickHouse fixes a MergeTree table's"+
-						" primary key when the table is created, and no ALTER changes it; create the table"+
-						" again with the new key and copy its rows",
-					table.TableName, column.ColumnName, change),
-			}
-		}
-	}
-	return nil
-}
-
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
+	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
 	if len(diff.IndexesAdded) == 0 {
 		return result, nil
@@ -310,43 +292,53 @@ func (p *Planner) addNewIndexes(
 		diff.IndexRemovals(),
 	)
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
+	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(platform.ClickHouse))
 	for _, change := range diff.IndexesAdded {
+		if rebuilds.has(builder, change.TableName) {
+			// The rebuild creates every index the table declares.
+			continue
+		}
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
-		index := change.Index
-		tableName := ref.TableName
 		if replacements.Contains(ref) {
-			result = append(result, ast.NewDropIndex(ref.Name).SetTable(tableName).SetIfExists())
+			result = append(result, ast.NewDropIndex(ref.Name).SetTable(ref.TableName).SetIfExists())
 		}
-		node := ast.NewIndex(index.Name, tableName, index.Fields...)
-		if index.Unique {
-			node.Unique = true
-		}
-		if index.Comment != "" {
-			node.Comment = index.Comment
-		}
-		if index.Type != "" {
-			node.Type = index.Type
-		}
-		// The owned skipping-index settings travel with the declaration; the
-		// renderer resolves the creation defaults for any it leaves out.
-		node.Facets = index.Facets
-		// ClickHouse has no payload columns. The node carries them anyway, so
-		// the renderer refuses the index with the message a render of the same
-		// schema gives, instead of writing a skipping index without them
-		// (stokaro/ptah#4112).
-		node.IncludeColumns = append([]string(nil), index.IncludeColumns...)
-		result = append(result, node)
+		result = append(result, indexNode(change.Index, ref.TableName))
 	}
 	return result, nil
 }
 
-func (p *Planner) removeIndexes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+// indexNode is the ADD INDEX of a declared skipping index on a table.
+func indexNode(index schemamodel.Index, tableName string) *ast.IndexNode {
+	node := ast.NewIndex(index.Name, tableName, index.Fields...)
+	if index.Unique {
+		node.Unique = true
+	}
+	if index.Comment != "" {
+		node.Comment = index.Comment
+	}
+	if index.Type != "" {
+		node.Type = index.Type
+	}
+	// The owned skipping-index settings travel with the declaration; the
+	// renderer resolves the creation defaults for any it leaves out.
+	node.Facets = index.Facets
+	// ClickHouse has no payload columns. The node carries them anyway, so
+	// the renderer refuses the index with the message a render of the same
+	// schema gives, instead of writing a skipping index without them
+	// (stokaro/ptah#4112).
+	node.IncludeColumns = append([]string(nil), index.IncludeColumns...)
+	return node
+}
+
+func (p *Planner) removeIndexes(result []ast.Node, diff *difftypes.SchemaDiff, rebuilds tableRebuilds) []ast.Node {
 	replacements := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		diff.IndexAdditions(),
 	)
+	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(platform.ClickHouse))
 	for _, ref := range diff.IndexRemovals() {
-		if replacements.Contains(ref) {
+		if replacements.Contains(ref) || rebuilds.has(builder, ref.TableName) {
+			// A table created again takes its indexes with the old table.
 			continue
 		}
 		result = append(result, ast.NewDropIndex(ref.Name).SetTable(ref.TableName).SetIfExists())

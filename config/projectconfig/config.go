@@ -855,6 +855,12 @@ type DiffConfig struct {
 	// without blocking writes: the MySQL-family ALGORITHM and LOCK clauses, or
 	// a PostgreSQL constraint added NOT VALID and validated separately.
 	OnlineAlter ConfigBool
+	// AllowRecreate holds the `diff "<dialect>" { allow_recreate = ... }`
+	// blocks of an Atlas project file, by the dialect's name. A dialect set to
+	// true has its plans create a table again, and keep its rows, where the
+	// engine has no ALTER TABLE for the change. Each value is a tri-state so an
+	// explicit false can override an inherited true.
+	AllowRecreate map[string]ConfigBool
 }
 
 // DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
@@ -937,6 +943,26 @@ func (c DiffConfig) ConcurrentIndexDrop() bool {
 // engine.
 func (c DiffConfig) OnlineAlterRequested() bool {
 	return c.OnlineAlter.Value
+}
+
+// TableRebuildAllowed reports whether the policy lets a plan for the dialect
+// create a table again where the engine has no ALTER TABLE for the change. The
+// name is the dialect's, as [ptah.run/core/platform.NormalizeDialect] spells it.
+func (c DiffConfig) TableRebuildAllowed(dialect string) bool {
+	return c.AllowRecreate[dialect].Value
+}
+
+// TableRebuildDialects returns the dialects the policy lets create a table
+// again, in alphabetical order.
+func (c DiffConfig) TableRebuildDialects() []string {
+	var dialects []string
+	for dialect, value := range c.AllowRecreate {
+		if value.Value {
+			dialects = append(dialects, dialect)
+		}
+	}
+	slices.Sort(dialects)
+	return dialects
 }
 
 // DiffConcurrentIndexConfig holds Atlas diff.concurrent_index policy.
@@ -1619,6 +1645,15 @@ func mergeDiff(base, override DiffConfig) DiffConfig {
 	result.ConcurrentIndex.Create = mergeBool(result.ConcurrentIndex.Create, override.ConcurrentIndex.Create)
 	result.ConcurrentIndex.Drop = mergeBool(result.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop)
 	result.OnlineAlter = mergeBool(result.OnlineAlter, override.OnlineAlter)
+	if len(override.AllowRecreate) > 0 {
+		result.AllowRecreate = maps.Clone(base.AllowRecreate)
+		if result.AllowRecreate == nil {
+			result.AllowRecreate = make(map[string]ConfigBool, len(override.AllowRecreate))
+		}
+		for dialect, value := range override.AllowRecreate {
+			result.AllowRecreate[dialect] = mergeBool(result.AllowRecreate[dialect], value)
+		}
+	}
 	return result
 }
 

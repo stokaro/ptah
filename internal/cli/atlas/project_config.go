@@ -445,6 +445,9 @@ func atlasProjectLoadOptions(
 		// The community binary reads no docker block; the default surface
 		// starts the one a selected env references (stokaro/ptah#4041).
 		IgnoreDockerBlocks: policy.IsStrictCE(),
+		// The community binary reads a diff block with a label and applies
+		// nothing in it.
+		IgnoreDialectDiffBlocks: policy.IsStrictCE(),
 		// So a refusal about a for_each env names the command the operator
 		// ran (stokaro/ptah#1696). Empty where no command is in scope, which
 		// leaves the sentence general rather than wrong.
@@ -1626,5 +1629,6 @@ func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
+		TableRebuildDialects:          cfg.Diff.TableRebuildDialects(),
 	}, nil
 }
