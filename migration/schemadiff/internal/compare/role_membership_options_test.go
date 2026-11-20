@@ -180,6 +180,7 @@ func TestRoleMemberships_AMemberThatStatesItsMembershipsLosesAnOmittedOne(t *tes
 				Role: "readers", Member: "app",
 				Options: schemamodel.RoleMembershipOptions{Admin: new(false), Inherit: new(true), Set: new(true)},
 			}})
+			c.Assert(diff.UnmanagedRoleMemberships, qt.HasLen, 0)
 		})
 	}
 }
@@ -187,13 +188,20 @@ func TestRoleMemberships_AMemberThatStatesItsMembershipsLosesAnOmittedOne(t *tes
 // TestRoleMemberships_AMembershipTheDeclarationDoesNotOwnIsLeftAlone is the
 // control: the same live edge stays when the member never wrote member_of,
 // when the declaration does not name the group, and when it does not name the
-// member.
+// member. Only the first is listed as unmanaged: both roles are declared, so a
+// report names the membership the plan kept, which is what a reader who
+// deleted member_of from the member has to see.
 func TestRoleMemberships_AMembershipTheDeclarationDoesNotOwnIsLeftAlone(t *testing.T) {
 	tests := []struct {
-		name  string
-		roles []schemamodel.Role
+		name          string
+		roles         []schemamodel.Role
+		wantUnmanaged []difftypes.RoleMembershipRef
 	}{
-		{name: "the member never wrote member_of", roles: []schemamodel.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true}}},
+		{
+			name:          "the member never wrote member_of",
+			roles:         []schemamodel.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true}},
+			wantUnmanaged: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}},
+		},
 		{name: "the group is not declared", roles: []schemamodel.Role{{Name: "app", Inherit: true, MemberOfStated: true}}},
 		{name: "the member is not declared", roles: []schemamodel.Role{{Name: "readers", Inherit: true, MemberOfStated: true}}},
 	}
@@ -204,6 +212,8 @@ func TestRoleMemberships_AMembershipTheDeclarationDoesNotOwnIsLeftAlone(t *testi
 			diff := compareMemberships(capability.Postgres16(), test.roles, heldEdge(false, new(true), new(true)))
 			c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 0)
 			c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
+			c.Assert(diff.UnmanagedRoleMemberships, qt.DeepEquals, test.wantUnmanaged)
+			c.Assert(diff.HasChanges(), qt.IsFalse)
 		})
 	}
 }

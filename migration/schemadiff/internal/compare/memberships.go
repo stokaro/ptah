@@ -32,6 +32,9 @@ import (
 // member_of leaves its memberships to the server too: a role an application
 // connects as often holds its permissions through a membership granted outside
 // the schema, and a plan that read the omission as "none" would revoke them.
+// Such a membership between two declared roles is listed in
+// UnmanagedRoleMemberships, so a report can say the plan kept it: deleting
+// member_of from a role revokes nothing, and the line is how a reader finds out.
 //
 // A membership both sides hold is compared option by option, where the target
 // reports options. A declaration that states no option means the default:
@@ -83,14 +86,21 @@ func RoleMemberships(
 			!database.NotDescribed.Describes(coverage.RoleMembership, key.Member) {
 			continue
 		}
-		if _, isDeclared := declared[key]; !isDeclared && managed[key.Role] && owners[key.Member] {
-			removed := key
-			removed.Options = heldMembershipOptions(live, caps)
-			diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, removed)
+		if _, isDeclared := declared[key]; isDeclared || !managed[key.Role] || !managed[key.Member] {
+			continue
 		}
+		if !owners[key.Member] {
+			diff.UnmanagedRoleMemberships = append(diff.UnmanagedRoleMemberships,
+				difftypes.RoleMembershipRef{Role: key.Role, Member: key.Member})
+			continue
+		}
+		removed := key
+		removed.Options = heldMembershipOptions(live, caps)
+		diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, removed)
 	}
 	slices.SortFunc(diff.RoleMembershipsAdded, compareMemberships)
 	slices.SortFunc(diff.RoleMembershipsRemoved, compareMemberships)
+	slices.SortFunc(diff.UnmanagedRoleMemberships, compareMemberships)
 	slices.SortFunc(diff.RoleMembershipsModified, func(a, b difftypes.RoleMembershipChange) int {
 		return cmp.Or(cmp.Compare(a.Role, b.Role), cmp.Compare(a.Member, b.Member))
 	})

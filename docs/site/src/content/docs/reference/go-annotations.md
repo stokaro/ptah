@@ -939,7 +939,8 @@ PostgreSQL 16 and later. A target that cannot hold a stated option refuses the
 declaration, rather than leaving the option out. A role that states
 `member_of`, even as `member_of=""`, loses a membership the server holds in
 another declared role and the list leaves out; a role without the attribute
-keeps every membership the server holds. See
+keeps every membership the server holds, so deleting the attribute revokes
+nothing. See
 [Role memberships](../../databases/postgresql/#role-memberships).
 
 On YDB a role is a user, and `group="true"` declares a group instead. A user

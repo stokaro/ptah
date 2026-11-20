@@ -1273,11 +1273,23 @@ type SchemaDiff struct {
 	RoleMembershipsModified []RoleMembershipChange `json:"role_memberships_modified,omitempty"`
 
 	// RoleMembershipsRemoved is every membership the current database holds
-	// between two roles the target schema declares, and the schema does not.
-	// A membership in a role the schema does not declare is left alone; see
-	// [RoleMembershipRef]. Each carries the options the database holds, so the
-	// reverse of the change grants them again.
+	// between two roles the target schema declares, and the schema does not,
+	// where the member states its memberships
+	// ([schemamodel.Role.OwnsMemberships]). A membership in a role the schema
+	// does not declare is left alone; see [RoleMembershipRef]. Each carries the
+	// options the database holds, so the reverse of the change grants them
+	// again.
 	RoleMembershipsRemoved []RoleMembershipRef `json:"role_memberships_removed,omitempty"`
+
+	// UnmanagedRoleMemberships is every membership the current database holds
+	// between two roles the target schema declares, where the member does not
+	// state member_of. They are diagnostics, not changes: Ptah plans no REVOKE
+	// for a membership the declaration leaves to the server, a report writes
+	// one line for each beside its result, and [SchemaDiff.HasChanges] does not
+	// count them. The line is what tells a reader who deleted member_of from a
+	// role that the plan kept its memberships. Options are left empty. Like
+	// UnmanagedOwnerPrivileges it is not on the wire.
+	UnmanagedRoleMemberships []RoleMembershipRef `json:"-"`
 
 	// GrantsAdded contains PostgreSQL privilege grants that exist in the target
 	// schema but not in the current database schema.

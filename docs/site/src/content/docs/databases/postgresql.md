@@ -2037,6 +2037,15 @@ a membership granted outside the schema, and an absent list does not say it
 should lose them. A membership in a role the declaration does not name stays as
 the server holds it.
 
+Deleting `member_of` from a role therefore revokes nothing. To take away the
+last membership of a role, keep the key and leave the list empty. `schema apply`
+and `schema compare` write one line for each membership they keep this way, a
+membership in another declared role of a role that states no `member_of`:
+
+```text
+UNMANAGED: role "app" is a member of the declared role "readers", and its declaration states no member_of, so the plan keeps the membership; state member_of on "app" to manage its memberships, or an empty list to revoke them all
+```
+
 ```go
 //ptah:schema:role name="readers"
 //ptah:schema:role name="vault" login="true" member_of="readers(admin;inherit=false)"
