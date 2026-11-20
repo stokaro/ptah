@@ -469,7 +469,9 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   that target's policy. A scope naming both families is refused.
 - `roles`: `name`, `login`, `password`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, `comment`, on PostgreSQL `settings`
-  and `reset_settings`, and on YDB `group` and `member_of`. `settings` holds
+  and `reset_settings`, `member_of` and on YDB `group`. `member_of` lists the
+  groups a role joins, each with optional membership options in parentheses,
+  such as `readers(admin;inherit=false;set=true)`. `settings` holds
   `name = value` pairs separated by semicolons, each value written in SQL, such
   as `"statement_timeout = '30s'; search_path = '$user', public"`;
   `reset_settings` names settings to take away, separated by commas. A setting

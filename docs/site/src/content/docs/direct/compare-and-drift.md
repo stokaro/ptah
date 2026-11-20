@@ -286,7 +286,7 @@ findings do:
 | `materialized_views` | Materialized views. |
 | `triggers` | Triggers. |
 | `roles` | The roles the desired schema declares. A role it does not declare is not compared, so the database side counts only the declared roles it holds. |
-| `role_memberships` | Memberships of a role in another, on YDB, the target that compares them. The database side counts the declared memberships it holds, and every membership between two declared roles. |
+| `role_memberships` | Memberships of a role in another, on the targets that compare them: PostgreSQL, MySQL 8, ClickHouse and YDB. The database side counts the declared memberships it holds, and every membership between two declared roles. A membership whose options differ is reported as `role_memberships_modified`. |
 | `grants` | Privileges, one per role, privilege and object, or column of an object. A declared `ALL` is one, however many privileges the database reports for it. |
 | `schemas` | Databases, on a comparison of a whole MySQL or MariaDB server. |
 

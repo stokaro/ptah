@@ -629,6 +629,44 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 	})
 }
 
+// TestReadSchemaReadsRoleToRoleMemberships reports each role granted to a role
+// with its admin option, and nothing for a grant to a user, which the read
+// leaves to the server: a row with no role_name is not an edge Ptah manages.
+func TestReadSchemaReadsRoleToRoleMemberships(t *testing.T) {
+	c := qt.New(t)
+	server := mixedServer()
+	server.memberships = []membershipRow{
+		{role: "reader", member: "analyst"},
+		{role: "analyst", member: "reader", admin: true},
+	}
+	reader, sent := newRBACServer(c, server, withRoleManagement())
+
+	schema, err := reader.ReadSchemaContext(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.RoleMemberships, qt.DeepEquals, []catalog.RoleMembership{
+		{Role: "reader", Member: "analyst"},
+		{Role: "analyst", Member: "reader", AdminOption: true},
+	})
+	c.Assert(strings.Join(*sent, "\n"), qt.Contains, "role_name IS NOT NULL")
+}
+
+// TestReadSchemaRecordsMembershipsAsNotDescribedWhenTheCatalogIsDenied is the
+// degradation the roles already have: an account that may not read the access
+// catalog keeps the rest of its description, and the memberships are recorded
+// as not looked at rather than as none.
+func TestReadSchemaRecordsMembershipsAsNotDescribedWhenTheCatalogIsDenied(t *testing.T) {
+	c := qt.New(t)
+	reader, _ := newRBACServerFailing(c, mixedServer(), withRoleManagement(), "system.role_grants", accessDenied("system.role_grants"))
+
+	schema, err := reader.ReadSchemaContext(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.RoleMemberships, qt.HasLen, 0)
+	c.Assert(schema.NotDescribed.Describes(coverage.RoleMembership, "reader"), qt.IsFalse)
+	c.Assert(schema.NotDescribed.Describes(coverage.Role, "reader"), qt.IsFalse)
+}
+
 // accessDenied is the exception a server raises when the connected account may
 // not read a system table, built as the driver builds it so that the reader's
 // own predicate is what decides rather than a string this file invented.
@@ -712,7 +750,7 @@ func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T
 			// a surface can tell the user to grant the privilege rather than
 			// only that something was held back (stokaro/ptah#1346).
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals,
-				[]coverage.Object{coverage.Refused(coverage.Role)})
+				[]coverage.Object{coverage.Refused(coverage.Role), coverage.Refused(coverage.RoleMembership)})
 		})
 	}
 }

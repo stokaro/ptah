@@ -1432,6 +1432,20 @@ grants as a comparison limit instead of claiming the schemas are fully synced.
 Native `schema diff --format json` includes these limits in `comparison_limits`.
 An account that compares grants needs `SELECT` on `mysql.*`.
 
+### Role memberships
+
+On MySQL 8, `member_of` on a role names the roles it joins, and a plan runs
+``GRANT `group` TO `member` `` and `REVOKE`. A membership may state the `admin`
+option, which is `WITH ADMIN OPTION`. MySQL has no per-membership `inherit` or
+`set` option, so a declaration that states one is refused.
+
+A `GRANT WITH ADMIN OPTION` on a membership that exists adds the option. MySQL
+has no statement that withdraws the option alone (`REVOKE ADMIN OPTION FOR` is a
+syntax error on 8.4), and a plain `GRANT` leaves it on, so a plan that removes
+the option revokes the membership and grants it again. A declaration that states
+no option means the default, no admin option, so a membership that holds the
+option is brought back to it. MariaDB refuses a declared membership.
+
 ### Events
 
 A read reports an event rather than refuses over one, because Ptah does not model

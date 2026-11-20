@@ -1060,7 +1060,7 @@ access control:
 | Not managed | What that means for you |
 | --- | --- |
 | Users | No user is created, altered, or read, so no credential enters a description, a plan, or a log. Provision users outside Ptah and grant them a managed role. |
-| Role membership | `GRANT <role> TO <role>` is not modeled. Ptah reads and writes privilege grants only. |
+| Role membership of a user | A user is not managed, so `GRANT <role> TO <user>` is not modeled. Role-in-role membership is: see below. |
 | Quotas, settings profiles | Outside the schema model entirely; a declaration cannot express them and a read does not report them. |
 | Column-scoped grants | `GRANT SELECT(id) ON db.t` is refused when declared and excluded when read. Grants are managed at database and table scope. |
 | Wildcard and global scopes | `*.*` and a wildcard database are refused. Such a grant reaches objects no declared schema describes. |
@@ -1147,6 +1147,16 @@ The connected account needs the privileges these statements require —
 `ROLE ADMIN` plus `GRANT OPTION` on what it grants. The `docker-compose.yaml`
 in this repository configures `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, which
 is what gives its `ptah_user` that authority.
+
+### Role memberships
+
+`member_of` on a role names the roles it joins, and a plan runs ``GRANT `group` TO
+`member` `` and `REVOKE`. A membership may state the `admin` option, which is
+`WITH ADMIN OPTION`; ClickHouse has no per-membership `inherit` or `set` option,
+so a declaration that states one is refused. A plan withdraws the admin option in
+place with `REVOKE ADMIN OPTION FOR`, which keeps the membership. A declaration
+that states no option means no admin option. A read reports only the grants of a
+role to a role, and a grant of a role to a user is not read.
 
 ## Row policies
 

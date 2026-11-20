@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -120,4 +121,19 @@ func TestRoleMemberships_Options_AddedAndRemovedCarryTheirOptions(t *testing.T) 
 		Role: "readers", Member: "app",
 		Options: schemamodel.RoleMembershipOptions{Admin: new(true), Inherit: new(false), Set: new(true)},
 	}})
+}
+
+// TestRoleMemberships_AMembershipOfARoleTheReadRefusedIsUndecided plans no
+// GRANT for a role the read did not describe: the role is itself an undecided
+// addition, and the statement would name it before it exists.
+func TestRoleMemberships_AMembershipOfARoleTheReadRefusedIsUndecided(t *testing.T) {
+	c := qt.New(t)
+	database := &catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Role))}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.RoleMemberships(&schemamodel.Database{Roles: membershipRoles(true, schemamodel.RoleMembershipOptions{})},
+		database, diff, capability.Postgres16())
+
+	c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
+	c.Assert(diff.RoleMembershipsModified, qt.HasLen, 0)
 }

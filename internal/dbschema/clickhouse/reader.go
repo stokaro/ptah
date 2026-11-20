@@ -144,7 +144,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 			if !isAccessDenied(err) {
 				return nil, err
 			}
-			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
+			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role), coverage.Refused(coverage.RoleMembership))
 		}
 	}
 	if r.caps.Has(capability.RowLevelSecurity) {

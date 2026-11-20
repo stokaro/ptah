@@ -573,3 +573,30 @@ func parsedExtensions(c *qt.C, db *schemamodel.Database) map[string]pgextension.
 	}
 	return extensions
 }
+
+// TestRenderRoleMembershipOptionsRoundTripThroughParser writes the options a
+// membership states into member_of and reads them back, so an export that
+// dropped an option would lose it on the way back.
+func TestRenderRoleMembershipOptionsRoundTripThroughParser(t *testing.T) {
+	c := qt.New(t)
+	sourceDir := t.TempDir()
+	writeSource(c, filepath.Join(sourceDir, "schema.go"), "package models\n\n"+
+		`//ptah:schema:role name="app" login="true" member_of="readers(admin;inherit=false;set=true),writers"`+"\n"+
+		`//ptah:schema:role name="readers"`+"\n"+
+		"type PtahSchemaObjects struct{}\n")
+	before, err := goschema.ParseDir(builtintest.Annotations(), sourceDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.Roles[0].MemberOptions, qt.HasLen, 1)
+
+	files, err := goschematogo.Render(c.Context(),
+		&schemamodel.Database{Roles: before.Roles},
+		goschematogo.Options{Annotations: builtintest.Annotations(), PackageName: "models", SingleFile: true},
+	)
+	c.Assert(err, qt.IsNil)
+	dir := t.TempDir()
+	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
+	after, err := goschema.ParseDir(builtintest.Annotations(), dir)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(after.Roles, qt.DeepEquals, before.Roles)
+}

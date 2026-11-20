@@ -2022,6 +2022,51 @@ For another grantor, the refusal names the grantor and the connected role.
 Connect as the grantor and generate a new plan to remove the privilege or its
 grant option.
 
+### Role memberships
+
+`member_of` on a role names the roles it joins. A plan runs `GRANT "group" TO
+"member"`, and `REVOKE` for a membership between two declared roles that the
+declaration no longer lists. A membership in a role the declaration does not
+name stays as the server holds it.
+
+```go
+//ptah:schema:role name="readers"
+//ptah:schema:role name="vault" login="true" member_of="readers(admin;inherit=false)"
+```
+
+A group may carry the options of its membership in parentheses, separated by
+semicolons. YAML takes the same spelling, and an Atlas HCL document states
+them in a `membership` block:
+
+| Option | Clause | Held by |
+| --- | --- | --- |
+| `admin` | `WITH ADMIN OPTION`, written `ADMIN TRUE` or `ADMIN FALSE` on 16 and later | every line |
+| `inherit` | `INHERIT` | 16 and later |
+| `set` | `SET` | 16 and later |
+
+An option the declaration leaves out is the default: `admin` false, `set` true,
+and `inherit` as the member role's own `inherit` attribute. A membership that
+holds the defaults matches a declaration that states none, and matches one that
+states the same values. A membership that holds another value is changed back
+to the default, so a declaration that states no option is a statement that the
+defaults are wanted.
+
+On 16 and later one `GRANT` changes the options that differ, in place and
+without losing the membership: `GRANT "readers" TO "vault" WITH ADMIN FALSE`.
+Before 16 the admin option is the only one a membership has. It is granted with
+`WITH ADMIN OPTION` and withdrawn with `REVOKE ADMIN OPTION FOR`, which keeps
+the membership. A declaration that states `inherit` or `set` against a server
+before 16 is refused, naming the capability `role_membership_inherit_set`; it
+is not left out of the plan.
+
+PostgreSQL 16 keeps one row per grantor and Ptah does not read the grantor. A
+member holds the union of its rows, so an option another grantor's row grants
+stays on after a plan changes the connected role's own row, and the next
+comparison plans the change again. Connect as the grantor, or remove the other
+row, to converge.
+
+CockroachDB and YugabyteDB refuse a declared membership.
+
 ### Grants between two databases
 
 `schema diff` with a database as `--to` reads every grant that database holds, so

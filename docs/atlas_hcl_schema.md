@@ -101,8 +101,12 @@ current schema IR:
   `create_role`, `inherit`, `replication`, `password`, and `comment`. On YDB,
   `group = true` declares a group, and `member_of` lists the groups a role
   joins, each as `role.<name>` for a group the document declares or as a
-  quoted name, such as `"DATA-READERS"`, for one it does not. A target without
-  groups or memberships refuses either attribute
+  quoted name, such as `"DATA-READERS"`, for one it does not. A repeatable
+  `membership` block names a group with `role = role.<name>` and states the
+  options of that membership with the bool attributes `admin`, `inherit` and
+  `set`; an option left out is not stated. A target without groups or
+  memberships refuses either attribute, and one that cannot hold a stated
+  option refuses it
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
   `to`, `for`, `privileges`, `grantable`, and `comment`
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,

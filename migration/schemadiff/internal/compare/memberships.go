@@ -70,6 +70,12 @@ func RoleMemberships(
 		}
 		live, found := held[key]
 		if !found {
+			// A role the read refused to describe may not exist, and a GRANT
+			// planned beside the undecided CREATE would name it first.
+			if !database.NotDescribed.Describes(coverage.Role, key.Member) ||
+				!database.NotDescribed.Describes(coverage.Role, key.Role) {
+				continue
+			}
 			added := key
 			added.Options = want.options.Clone()
 			diff.RoleMembershipsAdded = append(diff.RoleMembershipsAdded, added)
