@@ -74,10 +74,7 @@ func prepareDriftCheck(
 	if err != nil {
 		return nil, func() {}, err
 	}
-	if declared := opts.driftDeclared; declared != nil && declared.ExcludeSet {
-		projectCfg.Exclude, projectCfg.ExcludeOrigin = declared.Exclude, declared.Origin()
-	}
-	exclude, sources, err := dbcli.EffectiveExclude(cmd, driftExcludeFlag, opts.driftExclude, projectCfg, runtime.Selections())
+	exclude, sources, err := dbcli.EffectiveDriftExclude(cmd, driftExcludeFlag, opts.driftExclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return nil, func() {}, err
 	}

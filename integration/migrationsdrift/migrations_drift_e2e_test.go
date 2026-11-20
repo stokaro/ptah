@@ -36,31 +36,41 @@ var driftMigrations = map[string]string{
 
 // driftEngine is a server the report runs against, reached with an account
 // that may create databases, with the statements that differ between engines.
+// Each query reads the connection's own schema.
 type driftEngine struct {
 	name   string
 	admin  dbtarget.Engine
 	drop   string
 	tables string
+	// nickname counts the columns named nickname that drift_users has.
+	nickname string
 }
 
-var driftEngines = []driftEngine{
-	{
+var (
+	postgresDrift = driftEngine{
 		name: "postgres", admin: dbtarget.PostgreSQL,
 		drop:   "DROP DATABASE IF EXISTS %s WITH (FORCE)",
-		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'",
-	},
-	{
+		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema()",
+		nickname: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() " +
+			"AND table_name = 'drift_users' AND column_name = 'nickname'",
+	}
+	mysqlDrift = driftEngine{
 		name: "mysql", admin: dbtarget.MySQLAdmin,
 		drop:   "DROP DATABASE IF EXISTS %s",
 		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()",
-	},
-}
+		nickname: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() " +
+			"AND table_name = 'drift_users' AND column_name = 'nickname'",
+	}
+	driftEngines = []driftEngine{postgresDrift, mysqlDrift}
+)
 
 // driftRun is a target database migrated to a version of driftMigrations and
 // an empty shadow database, both of the test's own on the engine's server.
 type driftRun struct {
 	engine              driftEngine
 	dir, target, shadow string
+	// targetName is the target database's name on the server.
+	targetName string
 }
 
 func newDriftRun(c *qt.C, engine driftEngine, version string, outOfBand ...string) driftRun {
@@ -85,7 +95,7 @@ func newDriftRun(c *qt.C, engine driftEngine, version string, outOfBand ...strin
 		}
 		dbschema.CloseAndWarn(admin)
 	})
-	run := driftRun{engine: engine, dir: c.TempDir(), target: urls[0], shadow: urls[1]}
+	run := driftRun{engine: engine, dir: c.TempDir(), target: urls[0], shadow: urls[1], targetName: names[0]}
 	for name, content := range driftMigrations {
 		c.Assert(os.WriteFile(filepath.Join(run.dir, name), []byte(content), 0o600), qt.IsNil)
 	}
@@ -123,10 +133,10 @@ func (r driftRun) appliedVersion(c *qt.C) int {
 	return r.scalar(c, r.target, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations WHERE state = 'applied'")
 }
 
-// columns counts the columns the target's drift_users table has.
-func (r driftRun) columns(c *qt.C) int {
-	return r.scalar(c, r.target,
-		"SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'drift_users' AND column_name = 'nickname'")
+// nicknameColumns counts the columns named nickname that the target's
+// drift_users table has: 1 while the out-of-band column is there, 0 after.
+func (r driftRun) nicknameColumns(c *qt.C) int {
+	return r.scalar(c, r.target, r.engine.nickname)
 }
 
 // document is the report with its diff left undecoded: the diff is the
@@ -187,7 +197,7 @@ func TestMigrationsDriftE2E_FailurePathReportsDrift(t *testing.T) {
 			c.Assert(got.Diff, qt.IsNotNil)
 			c.Assert(got.PlanError, qt.Equals, "")
 			c.Assert(got.Statements, qt.Not(qt.HasLen), 0)
-			c.Assert(run.columns(c), qt.Equals, 1)
+			c.Assert(run.nicknameColumns(c), qt.Equals, 1)
 			c.Assert(run.appliedVersion(c), qt.Equals, 1)
 			c.Assert(run.scalar(c, run.shadow, engine.tables), qt.Equals, 0)
 
@@ -196,7 +206,7 @@ func TestMigrationsDriftE2E_FailurePathReportsDrift(t *testing.T) {
 
 			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
 			c.Assert(again.Check.Outcome, qt.Equals, migrator.DriftClean)
-			c.Assert(run.columns(c), qt.Equals, 0)
+			c.Assert(run.nicknameColumns(c), qt.Equals, 0)
 		})
 	}
 }
@@ -204,7 +214,8 @@ func TestMigrationsDriftE2E_FailurePathReportsDrift(t *testing.T) {
 // The report holds the migration lock while it reads the history: a runner
 // holding the lock makes it wait, and --migration-lock-timeout bounds the
 // wait. A report under another lock name does not wait, which is what proves
-// the name reaches the lock rather than the run failing for another reason.
+// the name reaches the lock rather than the run failing for another reason,
+// and the name the project file sets reaches it the same way.
 func TestMigrationsDriftE2E_FailurePathWaitsForTheMigrationLock(t *testing.T) {
 	for _, engine := range driftEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -216,10 +227,14 @@ func TestMigrationsDriftE2E_FailurePathWaitsForTheMigrationLock(t *testing.T) {
 			holder, err := migrator.NewFSMigrator(conn, os.DirFS(run.dir))
 			c.Assert(err, qt.IsNil)
 
-			var waited, separate clirun.Result
+			project := filepath.Join(c.TempDir(), "ptah.yaml")
+			c.Assert(os.WriteFile(project, []byte("migration:\n  migration_lock_name: ptah_drift_project\n"), 0o600), qt.IsNil)
+
+			var waited, separate, configured clirun.Result
 			err = holder.HoldMigrationLock(c.Context(), "test", func(context.Context) error {
 				_, waited = run.report(c, "--migration-lock-timeout", "1s")
 				_, separate = run.report(c, "--migration-lock-timeout", "1s", "--migration-lock-name", "ptah_drift_report")
+				_, configured = run.report(c, "--migration-lock-timeout", "1s", "--config", project)
 				return nil
 			})
 
@@ -227,6 +242,7 @@ func TestMigrationsDriftE2E_FailurePathWaitsForTheMigrationLock(t *testing.T) {
 			c.Assert(waited.ExitCode, qt.Equals, 2, qt.Commentf("%s", waited.Stderr))
 			c.Assert(waited.Stderr, qt.Contains, `timed out acquiring migration lock "ptah_migrate"`)
 			c.Assert(separate.ExitCode, qt.Equals, 0, qt.Commentf("%s", separate.Stderr))
+			c.Assert(configured.ExitCode, qt.Equals, 0, qt.Commentf("%s", configured.Stderr))
 		})
 	}
 }

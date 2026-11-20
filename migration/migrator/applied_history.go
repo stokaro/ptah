@@ -77,9 +77,12 @@ const (
 	// higher one. A replay applies versions in order, so it would not run the
 	// statements in the order the database ran them.
 	UnreplayableOutOfOrder = "out_of_order"
-	// UnreplayableChanged is a repeatable migration whose file changed after
-	// it applied, and whose record keeps no body that hashes to the digest it
-	// applied, so nothing holds the earlier content the database ran.
+	// UnreplayableChanged is a migration whose file changed after it applied,
+	// so nothing in the directory holds the content the database ran. For a
+	// versioned migration the file no longer accounts for the checksum its
+	// revision recorded, under the rule an apply verifies before it runs; for a
+	// repeatable migration the record keeps no body that hashes to the digest
+	// it applied.
 	UnreplayableChanged = "changed"
 )
 
@@ -98,6 +101,10 @@ type UnreplayableHistoryError struct {
 	Repeatable string
 	// Detail says what was found, for a person.
 	Detail string
+	// Err is the finding beneath the reason when another error type carries
+	// it: a [*ChecksumMismatchError] for a versioned migration whose file
+	// changed. It is nil otherwise.
+	Err error
 }
 
 func (e *UnreplayableHistoryError) Error() string {
@@ -107,9 +114,17 @@ func (e *UnreplayableHistoryError) Error() string {
 	return fmt.Sprintf("the applied history cannot be replayed: version %s: %s", e.VersionKey, e.Detail)
 }
 
+// Unwrap returns the finding beneath the reason, or nil.
+func (e *UnreplayableHistoryError) Unwrap() error { return e.Err }
+
 // AppliedHistory reads the revision table and returns the migrations its
 // applied revisions name, or an [UnreplayableHistoryError] when the history
 // does not say what the database holds. It writes nothing.
+//
+// A versioned migration whose file no longer accounts for the checksum its
+// revision recorded is an [UnreplayableHistoryError] with reason
+// [UnreplayableChanged] wrapping the [*ChecksumMismatchError] an apply refuses
+// with: a replay would run the file as it is now, not what the database ran.
 //
 // When the provider loads repeatable migrations, it reads their record too.
 // Each one whose file hashes to the applied digest is in Repeatables. A
@@ -128,6 +143,9 @@ func (m *Migrator) AppliedHistory(ctx context.Context) (AppliedHistory, error) {
 	}
 	history, err := m.appliedHistory(revisions)
 	if err != nil {
+		return AppliedHistory{}, err
+	}
+	if err := m.refuseChangedAppliedFiles(revisions); err != nil {
 		return AppliedHistory{}, err
 	}
 	history.Repeatables, err = m.appliedRepeatables(ctx)
@@ -182,6 +200,28 @@ func (m *Migrator) appliedHistory(revisions []MigrationRevision) (AppliedHistory
 	}
 	slices.SortFunc(history.Migrations, func(a, b *Migration) int { return cmp.Compare(a.Version, b.Version) })
 	return history, nil
+}
+
+// refuseChangedAppliedFiles refuses a history in which an applied file no
+// longer accounts for the checksum its revision recorded. It asks the rule an
+// apply asks before it runs, so the history a drift check replays is one an
+// apply would accept, and a mismatch an apply tolerates as a coherent
+// projection of the history is tolerated here too.
+func (m *Migrator) refuseChangedAppliedFiles(revisions []MigrationRevision) error {
+	classified, err := m.classifyAppliedChecksums(m.migrationProvider.Migrations(), revisions)
+	if err != nil {
+		return fmt.Errorf("verify the applied checksums: %w", err)
+	}
+	if len(classified.mismatches) == 0 || classified.coherentProjection {
+		return nil
+	}
+	mismatch := classified.mismatches[0]
+	return &UnreplayableHistoryError{
+		Reason: UnreplayableChanged, Version: mismatch.Version, VersionKey: mismatch.RevisionKey,
+		Detail: fmt.Sprintf("its file changed after it applied (checksum stored %s, current %s), "+
+			"so the directory no longer holds what the database ran", mismatch.Stored, mismatch.Computed),
+		Err: mismatch,
+	}
 }
 
 // refuseOutOfOrderHistory refuses a history in which a version was applied
