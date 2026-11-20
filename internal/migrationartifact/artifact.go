@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
+	"strings"
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -61,12 +63,9 @@ func Capture(fsys fs.FS, format migrationfile.DirFormat) (fs.FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validateEntries(fsys); err != nil {
-		return nil, err
-	}
-	snapshot, err := migrationsnapshot.Capture(fsys)
+	snapshot, err := captureEntries(fsys)
 	if err != nil {
-		return nil, fmt.Errorf("capture migration artifact: %w", err)
+		return nil, err
 	}
 	files, err := migrationfile.Discover(snapshot, normalized)
 	if err != nil {
@@ -74,6 +73,21 @@ func Capture(fsys fs.FS, format migrationfile.DirFormat) (fs.FS, error) {
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("migration artifact contains no migration files")
+	}
+	return snapshot, nil
+}
+
+// captureEntries snapshots the files a migration directory is made of, after
+// refusing a symbolic link or any other entry that is not a regular file. It
+// does not read the files as migrations: [Capture] does that, and an
+// unvalidated pull stops here.
+func captureEntries(fsys fs.FS) (fs.FS, error) {
+	if err := validateEntries(fsys); err != nil {
+		return nil, err
+	}
+	snapshot, err := migrationsnapshot.Capture(fsys)
+	if err != nil {
+		return nil, fmt.Errorf("capture migration artifact: %w", err)
 	}
 	return snapshot, nil
 }
@@ -146,17 +160,75 @@ func PushTo(
 
 // Pull retrieves and validates a migration directory through client.
 func Pull(ctx context.Context, client *ociartifact.Client, ref string) (Artifact, error) {
-	if client == nil {
-		return Artifact{}, fmt.Errorf("OCI client is required")
-	}
-	pulled, err := client.Pull(ctx, ref, ociartifact.PullOptions{
-		ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
-		LayerMediaType:        LayerMediaType,
-	})
+	pulled, err := pullArtifact(ctx, client, ref)
 	if err != nil {
 		return Artifact{}, err
 	}
 	return validatePulled(pulled)
+}
+
+// PullUnvalidated retrieves a migration directory through client without
+// reading it as migrations. Everything the artifact says about itself is still
+// checked: the manifest, the artifact type, the layer media types, sizes and
+// digests, each file name and its path, the migration-format annotation, and
+// that every entry is a regular file, and that the artifact holds at least one
+// SQL file. What the files hold is not: a name the format does not read is
+// left for the command that reads the directory to report. An artifact with no
+// SQL file is refused here, because a directory with nothing in it reads as a
+// history with nothing to apply, and the next command would report success.
+func PullUnvalidated(ctx context.Context, client *ociartifact.Client, ref string) (Artifact, error) {
+	pulled, err := pullArtifact(ctx, client, ref)
+	if err != nil {
+		return Artifact{}, err
+	}
+	format, err := migrationfile.ParseDirFormat(pulled.Annotations[annotationDirFormat])
+	if err != nil {
+		return Artifact{}, fmt.Errorf("invalid migration artifact format: %w", err)
+	}
+	snapshot, err := captureEntries(pulled.FileSystem)
+	if err != nil {
+		return Artifact{}, err
+	}
+	holdsSQL, err := holdsSQLFile(snapshot)
+	if err != nil {
+		return Artifact{}, err
+	}
+	if !holdsSQL {
+		return Artifact{}, fmt.Errorf("migration artifact contains no migration files")
+	}
+	return Artifact{
+		FileSystem: snapshot,
+		Descriptor: pulled.Descriptor,
+		Reference:  pulled.Reference,
+		DirFormat:  format,
+	}, nil
+}
+
+// holdsSQLFile reports whether fsys holds a regular file whose name ends in
+// .sql, at any depth.
+func holdsSQLFile(fsys fs.FS) (bool, error) {
+	found := false
+	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && strings.EqualFold(path.Ext(name), ".sql") {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found, err
+}
+
+func pullArtifact(ctx context.Context, client *ociartifact.Client, ref string) (ociartifact.Artifact, error) {
+	if client == nil {
+		return ociartifact.Artifact{}, fmt.Errorf("OCI client is required")
+	}
+	return client.Pull(ctx, ref, ociartifact.PullOptions{
+		ExpectedArtifactTypes: []string{ociartifact.MigrationArtifactType},
+		LayerMediaType:        LayerMediaType,
+	})
 }
 
 // PullFrom retrieves and validates a migration directory from target.

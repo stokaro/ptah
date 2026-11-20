@@ -237,18 +237,15 @@ ptah migrations pull \
 The destination path must be absent. Ptah stages the captured files and
 renames them into place so a failed pull does not leave a partial directory.
 Any existing file, symlink, or directory, including an empty directory, is
-rejected without being overwritten.
+rejected without being overwritten, including one that appears during the pull.
 
-:::caution[Fixed: this did not hold on Windows]
-Earlier releases installed the staged directory with a move that asks Windows
-to replace whatever it finds. An entry appearing at the destination between the
-absence check and the install was therefore **overwritten there, and its
-contents lost** — measured on `windows-latest`, a file written at the
-destination mid-pull was gone and the pulled directory stood in its place. Unix
-was unaffected, where the same move refuses an occupied destination.
+### Pull without reading the directory
 
-The install now refuses on every platform ([#1547](https://github.com/stokaro/ptah/issues/1547)).
-:::
+`--skip-validation` is for a step that holds registry credentials and must not
+report what an artifact says. A file the format does not read is then reported
+by the next command that reads the directory, such as `migrations status --json`. Every check of the artifact
+itself still runs, and an artifact with no SQL file is still refused. `--json`
+adds `"unvalidated": true`, and a Git or HTTPS reference refuses the flag.
 
 ## Understand deployment reporting
 

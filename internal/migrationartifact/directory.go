@@ -48,6 +48,9 @@ type DirectoryPullOptions struct {
 	Reference string
 	Output    string
 	PlainHTTP bool
+	// SkipValidation writes the directory without reading it as migrations;
+	// see [PullUnvalidated].
+	SkipValidation bool
 }
 
 // DirectoryPullResult describes a reconstructed migration directory.
@@ -130,7 +133,11 @@ func PullDirectory(ctx context.Context, opts DirectoryPullOptions) (DirectoryPul
 	if err != nil {
 		return DirectoryPullResult{}, err
 	}
-	artifact, err := Pull(ctx, client, opts.Reference)
+	pull := Pull
+	if opts.SkipValidation {
+		pull = PullUnvalidated
+	}
+	artifact, err := pull(ctx, client, opts.Reference)
 	if err != nil {
 		return DirectoryPullResult{}, err
 	}
