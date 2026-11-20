@@ -567,6 +567,8 @@ func (p *Planner) modifyExistingColumns(
 			RemovesCheckProtection: removesMariaDBColumnCheck(p.targetDialect(), colDiff),
 			PreviousNullable:       previousColumnNullable(colDiff.Changes["nullable"]),
 			HasPreviousNullable:    colDiff.Changes["nullable"] != "",
+			PreviousUnique:         previousColumnNullable(colDiff.Changes["unique"]),
+			HasPreviousUnique:      colDiff.Changes["unique"] != "",
 			PreviousDefault:        previousDefault,
 			HasPreviousDefault:     defaultChanged,
 			PreviousCharset:        previousCharset(colDiff.CharsetChange),
@@ -768,11 +770,20 @@ func (p *Planner) withoutChangesConstraintsMake(
 		without("primary_key")
 		suppressPrimary = true
 	}
-	if _, changes := colDiff.Changes["unique"]; changes && p.targetDialect() == platform.SQLServer &&
+	if _, changes := colDiff.Changes["unique"]; changes && marksUniqueFromAnyKey(p.targetDialect()) &&
 		uniqueColumnChangeOwnedByConstraint(diff, table, colDiff.ColumnName, semantics) {
 		without("unique")
 	}
 	return colDiff, suppressPrimary, nothingLeft
+}
+
+// marksUniqueFromAnyKey reports whether dialect's reader marks a column unique
+// from a UNIQUE over it alone however the key was declared, so the column reads
+// as changing when the plan adds or drops a named key. SQL Server's and
+// Oracle's readers do; MySQL's reads a unique index the plan changes as an
+// index.
+func marksUniqueFromAnyKey(dialect string) bool {
+	return dialect == platform.SQLServer || dialect == platform.Oracle
 }
 
 // uniqueColumnChangeOwnedByConstraint reports whether a column reads as gaining or losing
@@ -3185,6 +3196,8 @@ func (p *Planner) dropConstraintNode(info difftypes.ConstraintRemovalInfo) ast.N
 	}
 }
 
+// previousColumnNullable reads the value before the change out of a boolean
+// change the comparison spells `before -> after`, such as nullable or unique.
 func previousColumnNullable(change string) bool {
 	before, _, ok := strings.Cut(change, " -> ")
 	return ok && strings.TrimSpace(before) == "true"

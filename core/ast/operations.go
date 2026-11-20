@@ -95,6 +95,14 @@ type ModifyColumnOperation struct {
 	PreviousNullable bool
 	// HasPreviousNullable reports whether PreviousNullable was populated.
 	HasPreviousNullable bool
+	// PreviousUnique is the best-known existing uniqueness before the
+	// modification: whether a key held the column alone. Most renderers
+	// ignore it. Oracle's MODIFY names UNIQUE when the column gains its key,
+	// and a key the column loses is dropped with a statement of its own.
+	PreviousUnique bool
+	// HasPreviousUnique reports whether PreviousUnique was populated, which a
+	// planner does only when the column's uniqueness changes.
+	HasPreviousUnique bool
 	// PreviousDefault is the best-known existing default before the
 	// modification, empty when the column had none.
 	//
