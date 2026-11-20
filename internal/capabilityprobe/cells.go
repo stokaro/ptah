@@ -725,20 +725,26 @@ var PresetsWithoutCell = map[string]string{
 	"CockroachDB23": "is the conservative historical preset below the maintained 25.x and 26.x lines; " +
 		"the matrix tests the vendor-supported lines through CockroachDB25 and CockroachDB26",
 	"MySQLLegacy": "describes MySQL before 8.0.13, which left vendor support on 2026-04-30; the 8.0 line " +
-		"is five presets split at 8.0.13, 8.0.16, 8.0.19 and 8.0.20, so no single 8.0 cell could name one of them",
+		"is six presets split at 8.0.13, 8.0.16, 8.0.19, 8.0.20 and 8.0.29, so no single 8.0 cell could name one of them",
 	"MySQL8013": "describes MySQL 8.0.13 to 8.0.15, inside the out-of-support 8.0 line. The split is where " +
 		"information_schema.VIEW_TABLE_USAGE arrived, which is below the 8.0.16 CHECK-enforcement step rather " +
 		"than at its edge (stokaro/ptah#916)",
 	"MySQL8016": "describes MySQL 8.0.16 to 8.0.18, inside the out-of-support 8.0 line",
 	"MySQL8019": "describes MySQL 8.0.19, inside the out-of-support 8.0 line",
-	"MySQL8020": "describes MySQL 8.0.20 to 8.3, inside the out-of-support 8.0 line. The split is where the " +
+	"MySQL8020": "describes MySQL 8.0.20 to 8.0.28, inside the out-of-support 8.0 line. The split is where the " +
 		"global SHOW_ROUTINE privilege arrived (stokaro/ptah#916)",
+	"MySQL8029": "describes MySQL 8.0.29 to 8.3, inside the out-of-support 8.0 line. The split is where a " +
+		"column placed before existing ones became an instant change: measured, 8.0.28 refuses ADD COLUMN ... " +
+		"FIRST with ALGORITHM=INSTANT and 8.0.29 accepts it",
 	"SQLite324": "describes SQLite below 3.25, which has no ALTER TABLE ... RENAME COLUMN. The engine " +
 		"Ptah links is pinned far above that floor, so no cell can name this preset: it exists for an " +
 		"offline render pinned with --server-version at an older consumer (stokaro/ptah#916)",
 	"SQLite352": "describes SQLite 3.25 through 3.52, which has no ALTER TABLE ... ALTER COLUMN ... SET NOT " +
 		"NULL or DROP NOT NULL. The engine Ptah links is pinned above that step, so no cell can name this " +
 		"preset: it exists for an offline render pinned with --server-version at an older consumer",
+	"MariaDB102": "describes MariaDB 10.2 and 10.3, whose newest release left support in 2023. The split is " +
+		"where a column placed before existing ones became an instant change: measured, 10.3.39 refuses ADD " +
+		"COLUMN ... FIRST with ALGORITHM=INSTANT and 10.4.34 accepts it",
 	"MariaDBLegacy": "describes MariaDB before 10.2, whose newest release left support in 2022; it is the " +
 		"conservative floor ForServerVersion assigns to such a server rather than a line anybody runs",
 }

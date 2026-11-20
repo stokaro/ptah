@@ -269,6 +269,11 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes",
 		AtlasCode: "MY141",
 	},
+	"MY142": {
+		Name:      "rewrite/add-column-before-existing",
+		Summary:   "adding a column FIRST or AFTER another rebuilds the table on MySQL before 8.0.29 and MariaDB before 10.4, where only a column added last is instant",
+		AtlasCode: "MY142",
+	},
 	"MY143": {
 		Name:      "rewrite/modify-generated-column",
 		Summary:   "changing a STORED generated column recomputes it for every row, copying the table and blocking writes",

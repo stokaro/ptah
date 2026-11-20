@@ -554,7 +554,7 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"mysql 8.0 at the check step", "mysql", "8.0.16", capability.MySQL8016(), false, false, "26.10"},
 		{"mysql 8.0 at the drop-constraint step", "mysql", "8.0.19", capability.MySQL8019(), false, false, "26.10"},
 		{"mysql 8.0 at the privilege step", "mysql", "8.0.20", capability.MySQL8020(), false, false, "26.10"},
-		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8020(), false, false, "26.10"},
+		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8029(), false, false, "26.10"},
 		{"mysql measured 8 LTS line", "mysql", "8.4.11", capability.MySQL84(), true, false, "26.10"},
 		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.10"},
 		{"mysql gap after measured 9 line", "mysql", "9.8.0", capability.MySQL84(), false, false, "26.10"},

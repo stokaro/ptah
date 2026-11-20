@@ -31,8 +31,9 @@ func mysql() descriptor.Dialect {
 		// bare "9.7.2", so the ladder is reached only through the declared
 		// dialect. The 8.0 steps are patch releases, each the threshold of the
 		// gate it replaced: VIEW_TABLE_USAGE at 8.0.13, enforced CHECK at
-		// 8.0.16, DROP CONSTRAINT at 8.0.19 and SHOW_ROUTINE at 8.0.20
-		// (stokaro/ptah#916).
+		// 8.0.16, DROP CONSTRAINT at 8.0.19, SHOW_ROUTINE at 8.0.20
+		// (stokaro/ptah#916) and an instant column placed before existing
+		// ones at 8.0.29.
 		Capabilities: descriptor.Capabilities{
 			DefaultPreset: "MySQL84",
 			Versions: descriptor.Versions{
@@ -43,6 +44,7 @@ func mysql() descriptor.Dialect {
 					{Min: "8.0.16", Preset: "MySQL8016"},
 					{Min: "8.0.19", Preset: "MySQL8019"},
 					{Min: "8.0.20", Preset: "MySQL8020"},
+					{Min: "8.0.29", Preset: "MySQL8029"},
 					{Min: "8.4", Preset: "MySQL84"},
 				},
 				Attribution: "measured-lines",

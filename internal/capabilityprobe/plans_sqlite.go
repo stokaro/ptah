@@ -274,7 +274,7 @@ func sqlitePlan() plan {
 		sqliteDDLInsideTransaction(),
 	}
 
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+	return plan{experiments: experiments, undecided: withoutColumnPosition(map[capability.Capability]string{
 		capability.AlterTableAlgorithmLock: "the key names the MySQL-family ALGORITHM and LOCK clauses; " +
 			"this server has neither and rebuilds a table to change it, so a refusal would answer a " +
 			"different question",
@@ -299,7 +299,7 @@ func sqlitePlan() plan {
 		capability.MigrationStatementTimeout: runtimePolicyReason,
 		capability.ShowRoutinePrivilege: "the key names a MySQL global privilege. SQLite has no principal to hold " +
 			"one and no statement that grants anything, so there is nothing to ask",
-	}}
+	})}
 }
 
 // sqliteDropConstraintGeneric decides DropConstraintGeneric by dropping both
