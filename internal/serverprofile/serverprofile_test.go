@@ -299,13 +299,13 @@ func TestFor_BestEffort(t *testing.T) {
 			// suite green.
 			name:              "a postgres major newer than the newest measured line",
 			dialect:           "postgres",
-			banner:            "PostgreSQL 19.1 (Debian 19.1-1.pgdg13+1) on x86_64-pc-linux-gnu",
-			wantVersion:       "19.1",
+			banner:            "PostgreSQL 20.1 (Debian 20.1-1.pgdg13+1) on x86_64-pc-linux-gnu",
+			wantVersion:       "20.1",
 			wantPresetDialect: "postgres",
 			wantSource:        serverprofile.SourceSaturated,
 			wantIdentifierMax: 63,
 			wantEnumModeling:  capability.EnumNamedType,
-			wantNoteContains:  "19.1 is newer than the newest measured release line",
+			wantNoteContains:  "20.1 is newer than the newest measured release line",
 		},
 		{
 			name:              "an unreadable banner names no server",

@@ -282,9 +282,18 @@ var Cells = []Cell{
 	// use the term LTS). Postgres16's own doc covers 15 and 16; 14 has its own
 	// preset because UNIQUE ... NULLS [NOT] DISTINCT arrived in 15.
 	//
-	// Re-read 2026-08-16: the release table's Supported column still reads Yes
-	// for 18, 17, 16, 15 and 14, and No for 13. Note 14's final release is
-	// 2026-11-12, so it is the next line due to move to legacy-tested.
+	// Re-read 2026-11-20: 19 was released on 2026-11-19, the Supported column
+	// reads Yes for 19, 18, 17, 16 and 15, and 14's final release was
+	// 2026-11-12.
+	{
+		Dialect: platform.Postgres, Line: "19",
+		Preset: capability.Postgres18, PresetName: "Postgres18",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:19",
+		Note: "PostgreSQL 19 was released on 2026-11-19, and the integration suite runs it: the " +
+			"suite follows the newest line, and 18 and older stay certified through the probe. " +
+			"Measured on 19.0 against Postgres18 by probe run 44785250174: 155 rows, 131 agreements, " +
+			"0 disagreements, and the cell's floor of 131 met, so the line has no preset of its own",
+	},
 	{
 		Dialect: platform.Postgres, Line: "18",
 		Preset: capability.Postgres18, PresetName: "Postgres18",
@@ -314,7 +323,7 @@ var Cells = []Cell{
 		Preset: capability.Postgres14, PresetName: "Postgres14",
 		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "postgres:14",
 		Unprobed: "upstream support ended on 2026-11-12 (endoflife.date/postgresql)",
-		Note: "upstream support ended 2026-11-12, and the integration suite starts PostgreSQL 18 " +
+		Note: "upstream support ended 2026-11-12, and the integration suite starts PostgreSQL 19 " +
 			"rather than this line, so it declares best-effort and no probe job is spent on it. The " +
 			"preset stands on the last live measurement, taken on 14.24 by probe run 43210830235: " +
 			"149 rows, 127 agreements, 0 disagreements, and the cell's floor of 127 met against " +

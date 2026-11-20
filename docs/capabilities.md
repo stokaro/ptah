@@ -943,6 +943,7 @@ nightly, from the workflow's Run button, or when somebody comments
 <!-- BEGIN GENERATED VERSION MATRIX -->
 | Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed by tier 2 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| `postgres` | 19 | certified | `Postgres18` | version-ladder | `postgres:19` | yes | yes |
 | `postgres` | 18 | certified | `Postgres18` | version-ladder | `postgres:18` | yes | yes |
 | `postgres` | 17 | certified | `Postgres17` | version-ladder | `postgres:17` | yes | yes |
 | `postgres` | 16 | certified | `Postgres16` | version-ladder | `postgres:16` | yes | yes |

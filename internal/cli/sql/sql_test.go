@@ -237,8 +237,8 @@ func TestSQLLint_RecognizedVersionLintsCleanly(t *testing.T) {
 			name:    "a server newer than the ladder names the line it planned as",
 			dialect: "postgres",
 			version: "99.0",
-			wantStderr: "warning: postgres 99.0 is newer than the newest measured release line 18.x;" +
-				" capabilities were planned as 18.x\n",
+			wantStderr: "warning: postgres 99.0 is newer than the newest measured release line 19.x;" +
+				" capabilities were planned as 19.x\n",
 		},
 	}
 	for _, tt := range tests {
@@ -272,7 +272,7 @@ func TestSQLLint_JSONCarriesTheVersionNote(t *testing.T) {
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Version, qt.Equals, "99.0")
-	c.Assert(report.VersionNote, qt.Contains, "planned as 18.x")
+	c.Assert(report.VersionNote, qt.Contains, "planned as 19.x")
 }
 
 // TestSQLLint_VersionWithoutDialectStillReportsTheOlderError guards the

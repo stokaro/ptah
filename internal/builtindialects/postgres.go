@@ -26,6 +26,8 @@ func postgres() descriptor.Dialect {
 		// first with CREATE OR REPLACE TRIGGER, Postgres16 the first with the
 		// PostgreSQL 15 grammar, and Postgres18 differs from Postgres17 by the
 		// named NOT NULL constraint a live 18 persists (stokaro/ptah#2161).
+		// PostgreSQL 19 is a line of its own planned as Postgres18: measured on
+		// 19.0, it agreed with Postgres18 on all 131 decided rows.
 		Capabilities: descriptor.Capabilities{
 			DefaultPreset: "Postgres17",
 			BannerTokens:  []string{"postgres"},
@@ -37,9 +39,10 @@ func postgres() descriptor.Dialect {
 					{Min: "15", Preset: "Postgres16"},
 					{Min: "17", Preset: "Postgres17"},
 					{Min: "18", Preset: "Postgres18"},
+					{Min: "19", Preset: "Postgres18"},
 				},
 				Attribution: "through-newest",
-				Newest:      "18",
+				Newest:      "19",
 			},
 		},
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes", Truncates: true},

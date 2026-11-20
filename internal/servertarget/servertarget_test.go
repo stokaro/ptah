@@ -87,13 +87,12 @@ func TestResolve_SaysWhatItPlannedInstead(t *testing.T) {
 			name:    "a version above the ladder names the line it planned as",
 			dialect: platform.Postgres,
 			version: "99.0",
-			// The note has always said 18.x. The preset it planned as is now
-			// the one named 18 too: a live PostgreSQL 18 disagreed with
-			// Postgres17 on named_not_null_constraints, so the line has its own
-			// preset and the note and the answer agree (stokaro/ptah#2161).
+			// The note names the newest measured line, 19, and the preset is
+			// the one that line is planned as: no measured key separates 19
+			// from 18, so it has no preset of its own.
 			want: capability.Postgres18(),
-			wantNote: "postgres 99.0 is newer than the newest measured release line 18.x; " +
-				"capabilities were planned as 18.x",
+			wantNote: "postgres 99.0 is newer than the newest measured release line 19.x; " +
+				"capabilities were planned as 19.x",
 		},
 		{
 			name:    "a version between measured lines",

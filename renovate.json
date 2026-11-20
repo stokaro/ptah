@@ -110,6 +110,17 @@
       "enabled": false
     },
     {
+      "description": "The mariadb and mariadb-dev integration services and docker-compose.yaml run 12.3, the newest MariaDB LTS line, which the 12.3 cell certifies. MariaDB 13.0 is a rolling release: the vendor ships no further fix release for it and replaces it with the next rolling release, so it is not a line a certified cell can stand on and must not displace 12.3. The next LTS line, 13.3, gets a cell and a service by hand, as the database server rule above describes. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 12.3 patch release.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "mariadb"
+      ],
+      "matchCurrentValue": "12.3",
+      "enabled": false
+    },
+    {
       "description": "The postgres-16 integration service is pinned to 16 deliberately: PostgreSQL 16 has no ALTER COLUMN SET EXPRESSION, so a changed generated column takes the manual-migration path there, and the generated-expression test points its rows at both 16 and the 18 service. A 17.x tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 16 patch release.",
       "matchDatasources": [
         "docker"

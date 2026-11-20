@@ -357,8 +357,8 @@ func TestReportCapabilityResolution(t *testing.T) {
 		{
 			name:      "postgres past the newest measured line reaches a person",
 			info:      catalog.ServerInfo{Dialect: "postgres", Version: "PostgreSQL 99.0"},
-			wantDebug: []string{"level=WARN", "dialect=postgres", "newest_measured=18.x"},
-			wantWarn:  []string{"level=WARN", "newest_measured=18.x"},
+			wantDebug: []string{"level=WARN", "dialect=postgres", "newest_measured=19.x"},
+			wantWarn:  []string{"level=WARN", "newest_measured=19.x"},
 		},
 		{
 			name: "an unparseable version stays a debug-level fallback",
