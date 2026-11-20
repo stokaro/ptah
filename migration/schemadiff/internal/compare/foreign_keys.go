@@ -23,21 +23,7 @@ func foreignKeyConstraintChanged(
 	dialect string,
 	semantics identifier.Semantics,
 ) bool {
-	// Compare local columns, under the dialect's column-name comparison rather
-	// than as raw strings: Oracle stores an unquoted `author_id` as AUTHOR_ID,
-	// and comparing the spellings made an untouched foreign key read as
-	// changed.
-	if !sameColumnNames(semantics, genConstraint.Columns, uniqueStringsPreserveOrder(dbConstraint.ColumnNamesOrDefault())) {
-		return true
-	}
-
-	// Compare referenced table
-	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint, semantics) {
-		return true
-	}
-
-	// Compare referenced columns, the same way.
-	if !sameColumnNames(semantics, genConstraint.ForeignColumnsOrDefault(), uniqueStringsPreserveOrder(dbConstraint.ForeignColumnsOrDefault())) {
+	if !sameForeignKeyReference(genConstraint, dbConstraint, semantics) {
 		return true
 	}
 
@@ -64,6 +50,23 @@ func foreignKeyConstraintChanged(
 	// constraint created without it reports no difference, so the plan is empty
 	// and the property never arrives (stokaro/ptah#1624).
 	return deferralChanged(genConstraint, dbConstraint)
+}
+
+// sameForeignKeyReference reports whether a declared and a database foreign
+// key have the same local columns and point at the same columns of the same
+// table: the part of a definition that says which key it is.
+//
+// Columns compare under the dialect's column-name comparison rather than as
+// raw strings: Oracle stores an unquoted `author_id` as AUTHOR_ID, and
+// comparing the spellings made an untouched foreign key read as changed.
+func sameForeignKeyReference(
+	genConstraint schemamodel.Constraint,
+	dbConstraint catalog.Constraint,
+	semantics identifier.Semantics,
+) bool {
+	return sameColumnNames(semantics, genConstraint.Columns, uniqueStringsPreserveOrder(dbConstraint.ColumnNamesOrDefault())) &&
+		foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint, semantics) &&
+		sameColumnNames(semantics, genConstraint.ForeignColumnsOrDefault(), uniqueStringsPreserveOrder(dbConstraint.ForeignColumnsOrDefault()))
 }
 
 // normalizeMatchType spells a foreign key's MATCH type as FULL or PARTIAL,

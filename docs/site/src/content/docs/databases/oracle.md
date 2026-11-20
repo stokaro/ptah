@@ -36,6 +36,14 @@ unnamed declaration by its condition, ignoring case and spacing, or by its
 columns in order. A changed condition is a drop and an add. `schema inspect`
 writes such a constraint with no name.
 
+A foreign key works the same way. Oracle names an unnamed one `SYS_C<n>`, and
+the declaration is satisfied by it when the local columns and the referenced
+table and columns are the same. A name written in the declaration is part of
+what was declared, so a key under another name is replaced. Oracle holds one
+foreign key for a list of columns and a reference (`ORA-02275`), so a plan that
+replaces a key over the same columns drops the old key first, and the table has
+no key between the two statements.
+
 Oracle holds a constraint name once per schema, so two `CHECK` constraints of
 one name are refused before anything runs (`ORA-02264`). `ck` and `"CK"` are
 one name.

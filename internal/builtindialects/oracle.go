@@ -279,6 +279,9 @@ END;`,
 				// that holds a key answers ORA-02260, whatever either key is
 				// named.
 				PrimaryKeyDroppedFirst: true,
+				// ORA-02275 refuses a second foreign key over the same
+				// columns and reference, so a replacement drops first.
+				OneForeignKeyPerReference: true,
 			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

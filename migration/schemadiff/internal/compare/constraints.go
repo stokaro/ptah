@@ -225,6 +225,7 @@ func pairedConstraints(
 		semantics,
 	)
 	pairNumberedForeignKeys(genConstraints, dbConstraints, dialect, semantics)
+	pairGeneratedNameForeignKeys(genConstraints, dbConstraints, semantics)
 	pairGeneratedNameChecks(genConstraints, dbConstraints, dialect)
 	pairGeneratedNameUniques(genConstraints, dbConstraints, semantics)
 

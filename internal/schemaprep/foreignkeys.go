@@ -77,6 +77,7 @@ func WithDefaultFieldForeignKeyName(
 	}
 	base := defaultFieldForeignKeyName(tableName, field)
 	field.ForeignKeyName = generatedForeignKeyName(base, fieldForeignKeyIdentity(field), targetPlatform)
+	field.ForeignKeyNameDerived = true
 	return field
 }
 
@@ -94,6 +95,7 @@ func WithDefaultConstraintForeignKeyName(
 	}
 	base := defaultConstraintForeignKeyName(tableName, constraint)
 	constraint.Name = generatedForeignKeyName(base, constraintForeignKeyIdentity(constraint), targetPlatform)
+	constraint.NameDerived = true
 	return constraint
 }
 
@@ -246,6 +248,12 @@ func assignFieldForeignKeyNames(
 		}
 		base := defaultFieldForeignKeyName(table.Name, *field)
 		candidate := generatedForeignKeyName(base, fieldForeignKeyIdentity(*field), targetPlatform)
+		// A name an embedded struct carries was written by its author, or
+		// derived where the struct was read; only a field with none is ours.
+		// A field generated from an embedded struct comes back here on a
+		// second pass with the name the first pass gave it, which is still
+		// ours, so the mark is kept rather than recomputed.
+		field.ForeignKeyNameDerived = field.ForeignKeyNameDerived || field.ForeignKeyName == ""
 		field.ForeignKeyName = allocateForeignKeyName(
 			base,
 			counts[foreignKeyNameReservationKey(candidate, targetPlatform)],
@@ -277,6 +285,7 @@ func assignConstraintForeignKeyNames(
 		}
 		base := defaultConstraintForeignKeyName(table.Name, *constraint)
 		candidate := generatedForeignKeyName(base, constraintForeignKeyIdentity(*constraint), targetPlatform)
+		constraint.NameDerived = true
 		constraint.Name = allocateForeignKeyName(
 			base,
 			counts[foreignKeyNameReservationKey(candidate, targetPlatform)],

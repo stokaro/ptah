@@ -2165,6 +2165,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	p.releaseForeignKeysOverMovedKeys(diff, &fkPlan)
 	p.releaseForeignKeysOverColumnKeyDrops(diff, &fkPlan)
 	p.releaseForeignKeysOverHeldKeys(diff, &fkPlan)
+	p.releaseForeignKeysOverReplacements(diff, &fkPlan)
 	result = append(result, fkPlan.drops...)
 
 	// 4a. Drop a removed key that holds the name a column's own UNIQUE takes,

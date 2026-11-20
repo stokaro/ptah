@@ -79,7 +79,7 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-504 fields are reachable from the desired schema, and each one carries
+506 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
@@ -87,7 +87,7 @@ exactly one disposition.
 | `ddl` | 405 | reaches rendered SQL on at least one target |
 | `comparison` | 38 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
-| `derived` | 10 | computed from other fields rather than authored |
+| `derived` | 12 | computed from other fields rather than authored |
 | `source` | 21 | identifies the source text the declaration was read from |
 | `export` | 13 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
@@ -476,6 +476,7 @@ migration nobody asked for.
 | `schemamodel.Constraint.Initially` | `ddl` | — |
 | `schemamodel.Constraint.Match` | `ddl` | — |
 | `schemamodel.Constraint.Name` | `ddl` | — |
+| `schemamodel.Constraint.NameDerived` | `derived` | set where default foreign key names are assigned, so a comparison can tell a derived name from a written one |
 | `schemamodel.Constraint.NotEnforced` | `ddl` | — |
 | `schemamodel.Constraint.NotValid` | `ddl` | — |
 | `schemamodel.Constraint.NullsDistinct` | `ddl` | — |
@@ -552,6 +553,7 @@ migration nobody asked for.
 | `schemamodel.Field.Foreign` | `ddl` | — |
 | `schemamodel.Field.ForeignKeyMatch` | `ddl` | — |
 | `schemamodel.Field.ForeignKeyName` | `ddl` | — |
+| `schemamodel.Field.ForeignKeyNameDerived` | `derived` | set where default foreign key names are assigned, so a comparison can tell a derived name from a written one |
 | `schemamodel.Field.ForeignKeyNotEnforced` | `ddl` | — |
 | `schemamodel.Field.GeneratedExpression` | `ddl` | — |
 | `schemamodel.Field.GeneratedFromEmbedded` | `derived` | marks a column Finalize materialized from an embedded declaration, so a later finalization can rebuild it rather than duplicate it |
