@@ -352,7 +352,8 @@ func TestClickHouseTableRebuild_AStoppedRebuildIsNeverDropped(t *testing.T) {
 // A materialized view that reads the table keeps firing after the table is
 // created again, so the copy back would feed the rows through it a second time,
 // and a SummingMergeTree target would count them twice. One that writes to the
-// table makes its source refuse inserts while the table is gone. The server
+// table makes its source refuse inserts while the table is gone. A Buffer table
+// loses the rows it holds when it flushes into the missing table. The server
 // refuses to drop a table a dictionary loads from. The first statement of the
 // rebuild fails when any of them depends on the table, before a table is
 // created.
@@ -373,6 +374,10 @@ func TestClickHouseTableRebuild_RefusesATableSomethingDependsOn(t *testing.T) {
 			name:       "a materialized view that writes to the table",
 			dependents: []string{"CREATE TABLE src (id UInt64, name String, ver UInt32, d Date) ENGINE = MergeTree ORDER BY id", "CREATE MATERIALIZED VIEW mv TO t AS SELECT id, name, ver, d FROM src"},
 			extraArgs:  []string{"--exclude", "mv", "--exclude", "src"},
+		},
+		{
+			name:       "a Buffer table that flushes into the table",
+			dependents: []string{"CREATE TABLE b (id UInt64, name String, ver UInt32, d Date) ENGINE = Buffer(currentDatabase(), t, 1, 10, 100, 10000, 1000000, 10000000, 100000000)"},
 		},
 		{
 			name:       "a dictionary that loads from the table",
@@ -399,15 +404,15 @@ func TestClickHouseTableRebuild_RefusesATableSomethingDependsOn(t *testing.T) {
 	}
 }
 
-// A view, a Merge or Buffer table and a remote() query only read the table.
+// A view, a Merge table and a remote() query only read the table.
 // They find no table while it is gone, and read the new one after, so they do
 // not stop the rebuild.
 func TestClickHouseTableRebuild_ReadersReadTheNewTable(t *testing.T) {
 	tests := []struct {
 		name   string
 		reader string
-		// extraArgs keep a view out of the plan. Ptah reads no Merge or
-		// Buffer table, so the plan leaves those alone.
+		// extraArgs keep a view out of the plan. Ptah reads no Merge table,
+		// so the plan leaves it alone.
 		extraArgs []string
 		probe     string
 		wantCount string
@@ -444,12 +449,6 @@ func TestClickHouseTableRebuild_ReadersReadTheNewTable(t *testing.T) {
 			name:      "a Merge table",
 			reader:    "CREATE TABLE m (id UInt64) ENGINE = Merge(currentDatabase(), '^t$')",
 			probe:     "SELECT toString(count()) FROM m",
-			wantCount: "3",
-		},
-		{
-			name:      "a Buffer table",
-			reader:    "CREATE TABLE b (id UInt64, name String, ver UInt32, d Date) ENGINE = Buffer(currentDatabase(), t, 1, 10, 100, 10000, 1000000, 10000000, 100000000)",
-			probe:     "SELECT toString(count()) FROM b",
 			wantCount: "3",
 		},
 	}

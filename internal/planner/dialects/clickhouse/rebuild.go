@@ -269,10 +269,10 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 		nodes = append(nodes, ast.NewComment("Computed columns are not copied, the server evaluates them: "+strings.Join(computed, ", ")))
 	}
 	nodes = append(nodes,
-		ast.NewComment("This statement fails, naming them, when a materialized view reads or writes the table, or a dictionary loads from it. "+
+		ast.NewComment("This statement fails, naming them, when a materialized view reads or writes the table, a Buffer table flushes into it, or a dictionary loads from it. "+
 			"The copy back would feed every row through a materialized view again, writes through one would fail while the table is gone, "+
-			"and the server refuses to drop a table a dictionary loads from."),
-		ast.NewComment("A view, a Merge, Buffer or Distributed table, or a remote() query that reads the table finds no table while these steps run, and reads the new one after."),
+			"rows a Buffer holds would be lost when it flushes into the missing table, and the server refuses to drop a table a dictionary loads from."),
+		ast.NewComment("A view, a Merge or Distributed table, or a remote() query that reads the table finds no table while these steps run, and reads the new one after."),
 		ast.NewRawSQL(dependentsGuard(table.TableName)),
 		holder,
 		ast.NewRawSQL(fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s;", holdingTable, columnList, strings.Join(read, ", "), current)),
@@ -457,12 +457,20 @@ func replicatedEngine(table *difftypes.TableDiff) (string, bool) {
 //   - a materialized view that writes to it (TO the table). Its source refuses
 //     inserts while the table is gone. The server lists it only among the
 //     dependencies of its source, so the guard reads its definition, whose TO
-//     target the server writes in a fixed place; see [materializedViewTarget].
+//     target the server writes right after the view's name; see
+//     [materializedViewTarget];
+//   - a Buffer table that flushes into it. The rows it holds in memory are not
+//     in the table when the rows are copied, and a flush into the missing table
+//     drops them. The guard reads the destination out of engine_full; see
+//     [bufferDestination].
 //
-// A view, a Merge, Buffer or Distributed table and a remote() query only read
-// the table. They find no table while it is gone and read the new one after,
-// which the plan's comment says; they do not stop the rebuild. All three were
-// measured on 24.10 and 26.10. The message is the error the server gives for a
+// A view, a Merge or Distributed table and a remote() query only read the
+// table. They find no table while it is gone and read the new one after, which
+// the plan's comment says; they do not stop the rebuild. A refreshable
+// materialized view owns the rows of the table it writes to: a refresh while
+// the table is gone fails and runs again, and the next one rewrites the rows,
+// so it does not stop the rebuild either, and the pattern does not match it.
+// Each case was measured on 24.10 and 26.10. The message is the error the server gives for a
 // string that is not a number, because throwIf takes only a constant message.
 func dependentsGuard(table string) string {
 	database, name := "currentDatabase()", chcolumn.StringLiteral(table)
@@ -472,20 +480,23 @@ func dependentsGuard(table string) string {
 			database = chcolumn.StringLiteral(ref.Schema)
 		}
 	}
-	target := chcolumn.StringLiteral(materializedViewTarget)
+	target, buffer := chcolumn.StringLiteral(materializedViewTarget), chcolumn.StringLiteral(bufferDestination)
 	return fmt.Sprintf("SELECT toUInt8(concat(%s, arrayStringConcat(arraySort(groupUniqArray(dependent)), ', '), %s)) FROM ("+
 		"SELECT concat(tupleElement(dependency, 1), '.', tupleElement(dependency, 2)) AS dependent FROM system.tables "+
 		"ARRAY JOIN arrayConcat(arrayZip(dependencies_database, dependencies_table), arrayZip(loading_dependent_database, loading_dependent_table)) AS dependency "+
 		"WHERE database = %s AND name = %s "+
 		"UNION ALL SELECT concat(database, '.', name) AS dependent FROM system.tables "+
 		"WHERE engine = 'MaterializedView' AND replaceAll(extractGroups(create_table_query, %s)[1], '`', '') = %s "+
-		"AND replaceAll(extractGroups(create_table_query, %s)[2], '`', '') = %s"+
+		"AND replaceAll(extractGroups(create_table_query, %s)[2], '`', '') = %s "+
+		"UNION ALL SELECT concat(database, '.', name) AS dependent FROM system.tables "+
+		"WHERE engine = 'Buffer' AND extractGroups(engine_full, %s)[1] = %s AND extractGroups(engine_full, %s)[2] = %s"+
 		") HAVING count() > 0;",
 		chcolumn.StringLiteral("cannot create "+table+" again: these depend on it: "),
 		chcolumn.StringLiteral(". A materialized view that reads the table would receive every row again, "+
-			"one that writes to it would fail while the table is gone, and the server refuses to drop a table a dictionary loads from. "+
+			"one that writes to it would fail while the table is gone, a Buffer would lose the rows it holds, "+
+			"and the server refuses to drop a table a dictionary loads from. "+
 			"Drop each one and create it again around the rebuild"),
-		database, name, target, database, target, name)
+		database, name, target, database, target, name, buffer, database, buffer, name)
 }
 
 // materializedViewTarget is the RE2 pattern, as the server's extractGroups()
@@ -494,9 +505,17 @@ func dependentsGuard(table string) string {
 // CREATE MATERIALIZED VIEW db.name TO db.table (columns) AS SELECT ..., with a
 // name in backticks only where it needs them, so the target sits right after
 // the view's own qualified name. A view with its own engine has no TO and does
-// not match.
+// not match, and neither does a refreshable one, whose REFRESH clause comes
+// before its TO.
 const materializedViewTarget = "^CREATE MATERIALIZED VIEW (?:`(?:[^`\\\\]|\\\\.)*`|[^ `.]+)\\.(?:`(?:[^`\\\\]|\\\\.)*`|[^ `]+) TO " +
 	"(`(?:[^`\\\\]|\\\\.)*`|[^ `.]+)\\.(`(?:[^`\\\\]|\\\\.)*`|[^ `(]+)"
+
+// bufferDestination is the RE2 pattern that takes the database and the table a
+// Buffer table flushes into out of its engine_full. The server writes both as
+// string literals, Buffer('db', 'table', ...), whatever spelling created the
+// table, with currentDatabase() already evaluated. A Buffer with no
+// destination has an empty table name, which names no table.
+const bufferDestination = "^Buffer\\('((?:[^'\\\\]|\\\\.)*)', '((?:[^'\\\\]|\\\\.)*)'"
 
 // refuseUnfinishedRebuilds refuses a plan that drops a holding table an earlier
 // rebuild left. The table carries the marker comment.

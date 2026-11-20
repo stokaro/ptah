@@ -401,13 +401,16 @@ the guard does not read the text of definitions:
 | --- | --- | --- |
 | A materialized view that reads the table | It keeps firing after the table is created again, so the copy back feeds every row through it a second time. A `SummingMergeTree` target counts them twice (measured: five rows read ten). | The table's `dependencies_table` in `system.tables` |
 | A dictionary, or a table whose default calls `dictGet` over it | The server refuses `DROP TABLE` while it exists, which would stop the rebuild after the first copy. | The table's `loading_dependent_table` |
-| A materialized view that writes to the table (`TO`) | Its source refuses inserts while the table is gone. | The `TO` target in the view's definition, which the server writes in a fixed place |
+| A materialized view that writes to the table (`TO`) | Its source refuses inserts while the table is gone. | The `TO` target in the view's definition, which the server writes right after the view's name |
+| A `Buffer` table that flushes into the table | The rows it holds in memory are not in the table when the rows are copied, and are lost when it flushes into the missing table. | The destination in the Buffer's `engine_full` |
 
 Drop each dependent it names and create it again by hand around the rebuild. A
-view, a `Merge`, `Buffer` or `Distributed` table and a `remote()` query only read
-the table. They find no table while the rebuild runs and read the new table after
-it, so they do not stop it; the plan's comments say so. Measured on 24.10 and
-26.10. The guard sees only the objects `system.tables` shows the connecting user.
+view, a `Merge` or `Distributed` table and a `remote()` query only read the
+table. They find no table while the rebuild runs and read the new table after it,
+so they do not stop it; the plan's comments say so. A refreshable materialized
+view owns the rows of the table it writes to. A refresh while the table is gone
+fails and runs again, and the next refresh rewrites the rows, so it does not stop
+the rebuild either. Measured on 24.10 and 26.10. The guard sees only the objects `system.tables` shows the connecting user.
 
 Ptah does not rebuild a table whose engine, as it is or as declared, is a
 `Replicated*MergeTree` or `Shared*MergeTree`, whatever the request says. The holding

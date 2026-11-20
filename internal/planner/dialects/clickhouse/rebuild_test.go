@@ -110,6 +110,7 @@ func TestRebuild_DependentsGuardReadsTheServersDependencies(t *testing.T) {
 	c.Assert(statements[0], qt.Contains, "ARRAY JOIN arrayConcat(arrayZip(dependencies_database, dependencies_table), "+
 		"arrayZip(loading_dependent_database, loading_dependent_table)) AS dependency WHERE database = currentDatabase() AND name = 'events'")
 	c.Assert(statements[0], qt.Contains, "WHERE engine = 'MaterializedView' AND replaceAll(extractGroups(create_table_query, ")
+	c.Assert(statements[0], qt.Contains, "WHERE engine = 'Buffer' AND extractGroups(engine_full, ")
 }
 
 // The pattern runs in the server's extractGroups(), which is RE2, the engine
@@ -140,7 +141,7 @@ func TestRebuild_DependentsGuardFindsAMaterializedViewsTarget(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			pattern := guardPattern(c)
+			pattern := guardPattern(c, "create_table_query")
 
 			found := pattern.FindStringSubmatch(test.query)
 
@@ -150,28 +151,67 @@ func TestRebuild_DependentsGuardFindsAMaterializedViewsTarget(t *testing.T) {
 	}
 }
 
-// A materialized view with its own engine writes to no other table.
-func TestRebuild_DependentsGuardSkipsAViewWithItsOwnEngine(t *testing.T) {
+// A materialized view with its own engine writes to no other table, and a
+// refreshable one owns the rows of the table it writes to, so neither matches.
+func TestRebuild_DependentsGuardSkipsViewsThatDoNotFeedTheTable(t *testing.T) {
+	queries := []string{
+		"CREATE MATERIALIZED VIEW `my-db`.mv_inner (`id` UInt64) ENGINE = MergeTree ORDER BY id " +
+			"SETTINGS index_granularity = 8192 AS SELECT id FROM `my-db`.t",
+		"CREATE MATERIALIZED VIEW `my-db`.r1 REFRESH EVERY 1 HOUR TO `my-db`.`t-1` (`id` UInt64) " +
+			"DEFINER = ptah_user SQL SECURITY DEFINER AS SELECT CAST('1', 'UInt64') AS id",
+		"CREATE MATERIALIZED VIEW `my-db`.r2 REFRESH EVERY 1 HOUR APPEND TO `my-db`.`t-1` (`id` UInt64) AS SELECT CAST('1', 'UInt64') AS id",
+	}
 	c := qt.New(t)
-	pattern := guardPattern(c)
+	pattern := guardPattern(c, "create_table_query")
 
-	found := pattern.FindStringSubmatch("CREATE MATERIALIZED VIEW `my-db`.mv_inner (`id` UInt64) ENGINE = MergeTree ORDER BY id " +
-		"SETTINGS index_granularity = 8192 AS SELECT id FROM `my-db`.t")
+	for _, query := range queries {
+		c.Assert(pattern.FindStringSubmatch(query), qt.IsNil, qt.Commentf("%s", query))
+	}
+}
 
-	c.Assert(found, qt.IsNil)
+// A Buffer table's engine_full names its destination as two string literals,
+// as 24.10 and 26.10 write it whatever spelling created the table.
+func TestRebuild_DependentsGuardFindsABuffersDestination(t *testing.T) {
+	tests := []struct {
+		name       string
+		engineFull string
+		wantGroup  []string
+	}{
+		{
+			name:       "a destination",
+			engineFull: "Buffer('my-db', 't-1', 1, 10, 100, 10000, 1000000, 10000000, 100000000)",
+			wantGroup:  []string{"my-db", "t-1"},
+		},
+		{
+			name:       "no destination",
+			engineFull: "Buffer('my-db', '', 1, 10, 100, 10000, 1000000, 10000000, 100000000)",
+			wantGroup:  []string{"my-db", ""},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			pattern := guardPattern(c, "engine_full")
+
+			found := pattern.FindStringSubmatch(test.engineFull)
+
+			c.Assert(found, qt.HasLen, 3)
+			c.Assert(found[1:], qt.DeepEquals, test.wantGroup)
+		})
+	}
 }
 
 // guardPattern plans a rebuild and reads the pattern its guard hands to
-// extractGroups() out of the first statement, undoing the ClickHouse string
-// escapes.
-func guardPattern(c *qt.C) *regexp.Regexp {
+// extractGroups() over column out of the first statement, undoing the
+// ClickHouse string escapes.
+func guardPattern(c *qt.C, column string) *regexp.Regexp {
 	c.Helper()
 	f := newRebuildFixture()
 	f.after.Engine.Value = "ReplacingMergeTree(ver)"
 	statements, err := f.plan(c, allowRebuild())
 	c.Assert(err, qt.IsNil)
-	found := regexp.MustCompile(`extractGroups\(create_table_query, '((?:[^'\\]|''|\\.)*)'\)`).FindStringSubmatch(statements[0])
-	c.Assert(found, qt.HasLen, 2, qt.Commentf("no extractGroups() in %s", statements[0]))
+	found := regexp.MustCompile(`extractGroups\(` + column + `, '((?:[^'\\]|''|\\.)*)'\)`).FindStringSubmatch(statements[0])
+	c.Assert(found, qt.HasLen, 2, qt.Commentf("no extractGroups(%s) in %s", column, statements[0]))
 	literal := strings.NewReplacer("''", "'", `\\`, `\`).Replace(found[1])
 	return must.Must(regexp.Compile(literal))
 }
