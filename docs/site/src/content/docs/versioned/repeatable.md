@@ -121,19 +121,17 @@ Two runners against one database take the migration lock in turn. The second
 reads the record after the first released the lock, finds the digest applied,
 and runs nothing. On Oracle the lock is a row lock that Ptah keeps on a session
 of its own; see [the Oracle page](../../databases/oracle/#the-migration-lock).
-CockroachDB has no session advisory lock, and Ptah takes none on ClickHouse, so
-it runs every migration on those two engines without one, repeatable migrations
-included: run one migrator at a time against them.
+CockroachDB has no session advisory lock and Ptah takes none on ClickHouse, so
+run one migrator at a time against those two engines.
 
 Without the lock, the record still decides which of two runners executes a
-changed repeatable migration, on every engine but ClickHouse. Each run has an
-ID of its own, and the record keeps the ID of the run that last attempted each
-file. A runner claims the row before the body runs by writing its ID over the
-one it read, and the write matches only while the row still holds that ID. A
-new file is claimed by inserting its row, and the record's key refuses the
-second insert. When a claim does not succeed cleanly, the runner reads the row
-back: its own ID means the claim took effect, and another run's ID means it
-lost. The runner that loses refuses with
+changed repeatable migration, on every engine but ClickHouse. The record keeps
+the ID of the run that last attempted each file. A runner claims the row before
+the body runs by writing its own ID over the one it read, a write that matches
+only while the row still holds that ID; a new file is claimed by inserting its
+row, and the record's key refuses a second insert. When a claim does not
+succeed cleanly, the runner reads the row back, and another run's ID means it
+lost. The loser refuses with
 `another run changed the repeatable migration's record after this run read it`
 before any statement of the body.
 
@@ -210,10 +208,9 @@ ptah migrations hash --dir ./migrations
 ```
 
 Without it, the integrity check of `ptah migrations up` refuses the directory
-before any migration runs. Regenerating `ptah.sum` does not relax anything for the
-versioned files: an applied versioned migration that was edited is still
-refused against the checksum its revision row recorded, and no repeatable
-migration runs in that run.
+before any migration runs. Regenerating `ptah.sum` relaxes nothing for the
+versioned files: an edited applied migration is still refused against its
+revision row's checksum, and no repeatable migration runs in that run.
 
 ## Preview and status
 
@@ -231,9 +228,8 @@ the applied digest), `applied`, `failed`, `running`, and `orphaned` for a
 record whose file is no longer in the directory. With `--json`, the status
 document carries them under `repeatables`, each with `identity`, `path`,
 `checksum`, `applied_checksum`, `state`, `orphaned`, and what the last attempt
-recorded. The text output counts the files on the first line and the orphaned
-records apart, after them, as the up run reports them; a clean orphaned record
-is not a pending change:
+recorded. The text output counts orphaned records apart, after the files, as
+the up run does; a clean orphaned record is not a pending change:
 
 ```text
 Repeatable Migrations: 1
@@ -268,38 +264,31 @@ selects an extra version is:
 }
 ```
 
-An entry may also bind the record the work runs over with `applied_checksum`:
-the digest the caller saw recorded as applied, or an empty string for an
-identity with no record yet. The dry run's `planned_repeatables` carries that
-value as `applied_checksum` on every entry, `""` included, so the approval
-copies it unchanged. Under the lock the run compares it with
-the record and refuses the run when another writer applied a different digest
-in between, so an approval that says "changed from" a digest holds only over
-that digest. Without the field the record is not compared. `null` is refused,
-because it could mean either.
+An entry may also carry `applied_checksum`: the applied digest the caller saw,
+or `""` for an identity with no record. The dry run's `planned_repeatables`
+carries it on every entry, so the approval copies it unchanged. Under the lock
+the run refuses when the record holds another digest, so an approval of a
+change holds only over the digest it showed. Without the field the record is
+not compared; `null` is refused as ambiguous.
 
 ## The record table
 
 The record is a table beside the revision table, named after it with
 `_repeatable`: `schema_migrations_repeatable` by default, `<table>_repeatable`
 under `--migrations-table <table>`, and in the schema `--migrations-schema`
-names when one is set. The refusals of `ptah migrations up` and `ptah
-migrations down` print the name quoted, the way the engine spells it, so copy
-it from there when you write SQL against the table. It holds one row per
-identity: the digest that last applied, the state of the last attempt, the
-digest that attempt executed, its position in that run, whether it ran in a
-transaction, the run identifier, when it started, when content last applied,
-the error of a failed attempt, and the bytes of the content that last applied,
-in the binary `body` column. The digest and the body are written in the
-attempt's own transaction when it runs in one, so the row and the work commit
-together.
+names when one is set. Refusals print the name quoted as the engine spells it;
+copy it from there for SQL against the table. It holds one row per identity:
+the digest that last applied and its bytes, in the binary `body` column, when
+content last applied, and of the last attempt its state, digest, position in
+its run, transaction mode, run identifier, start time and error. The digest and
+the body are written in the attempt's own transaction when it has one, so the
+row and the work commit together.
 
-The record stores each repeatable file verbatim, in the clear, and Ptah puts no
-limit on its size. The row stays after the file is deleted, until `ptah
-migrations repair --repeatable` removes it. `ptah migrations status` reads the
-row, and `ptah migrations up --check-drift` reads the body to replay it. Anyone
-who can read the record can read every repeatable migration that applied, so a
-repeatable file must not hold secrets.
+The record stores each repeatable file verbatim, in the clear, with no size
+limit, and keeps the row after the file is deleted until `ptah migrations
+repair --repeatable` removes it. `ptah migrations up --check-drift` reads the
+body to replay it. Anyone who can read the record can read every repeatable
+migration that applied, so a repeatable file must not hold secrets.
 
 The first run that has repeatable work creates the table, before its first
 versioned migration runs, so a database that refuses the table, for example for
