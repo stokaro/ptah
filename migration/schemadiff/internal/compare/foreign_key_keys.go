@@ -93,7 +93,70 @@ func removedKeysOf(
 			}
 		}
 	}
+	return append(keys, columnKeysReplaced(genConstraints, dbConstraints, database, dialect, semantics)...)
+}
+
+// columnKeysReplaced is, on a server that holds one key per ordered column
+// list ([descriptor.Dialect.SecondKeyRefusal]), the keys the server named for
+// a column alone that a key the declaration adds over that column replaces.
+// The read carries such a key on the column rather than as a constraint, and
+// the plan drops it by its column ahead of the addition, so a foreign key that
+// references it is rebuilt around the drop as for a removed key.
+func columnKeysReplaced(
+	genConstraints map[tableMemberKey]schemamodel.Constraint,
+	dbConstraints map[tableMemberKey]catalog.Constraint,
+	database *catalog.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) []removedKey {
+	if secondKeyRefusals.Get(dialect) == "" {
+		return nil
+	}
+	var keys []removedKey
+	for constraintKey, genConstraint := range genConstraints {
+		if _, live := dbConstraints[constraintKey]; live || len(genConstraint.Columns) != 1 ||
+			(!strings.EqualFold(genConstraint.Type, "UNIQUE") && !strings.EqualFold(genConstraint.Type, "PRIMARY KEY")) {
+			continue
+		}
+		if table, column, held := columnKeyHolder(database, constraintKey.table, genConstraint.Columns[0], semantics); held {
+			keys = append(keys, removedKey{table: table, columns: []string{column}})
+		}
+	}
 	return keys
+}
+
+// columnKeyHolder answers the identity key of the read table wanted, its
+// column as the read spells it, and whether that column holds the key the
+// server named for it alone: the read marks the column unique, and no UNIQUE or
+// PRIMARY KEY row covers the column alone. The read's spelling is what a
+// foreign key's referenced columns are compared with.
+func columnKeyHolder(
+	database *catalog.Database,
+	wanted tableIdentity,
+	column string,
+	semantics identifier.Semantics,
+) (table, readColumn string, held bool) {
+	columnKey := semantics.ColumnIdentityKey(column)
+	for _, read := range database.Tables {
+		if newTableIdentity(read.Schema, read.Name, semantics) != wanted {
+			continue
+		}
+		qualified := semantics.QualifiedTableIdentityKey(read.QualifiedName())
+		index := slices.IndexFunc(read.Columns, func(read catalog.Column) bool {
+			return read.IsUnique && semantics.ColumnIdentityKey(read.Name) == columnKey
+		})
+		named := slices.ContainsFunc(database.Constraints, func(constraint catalog.Constraint) bool {
+			columns := constraint.ColumnNamesOrDefault()
+			return (strings.EqualFold(constraint.Type, "UNIQUE") || strings.EqualFold(constraint.Type, "PRIMARY KEY")) &&
+				len(columns) == 1 && semantics.ColumnIdentityKey(columns[0]) == columnKey &&
+				semantics.QualifiedTableIdentityKey(constraint.QualifiedTableName()) == qualified
+		})
+		if index < 0 || named {
+			return "", "", false
+		}
+		return qualified, read.Columns[index].Name, true
+	}
+	return "", "", false
 }
 
 // dependsOnAny reports whether foreignKey depends on one of keys, which sit on the

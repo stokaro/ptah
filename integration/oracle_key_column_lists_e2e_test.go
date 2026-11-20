@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,16 +20,33 @@ const oracleKeysQuery = `SELECT c.table_name || ' ' || c.constraint_type || ' ' 
 	`DECODE(c.generated, 'USER NAME', c.constraint_name, 'SYS') || ' ' || ` +
 	`LISTAGG(cc.column_name, ',') WITHIN GROUP (ORDER BY cc.position) ` +
 	`FROM user_constraints c JOIN user_cons_columns cc ON cc.constraint_name = c.constraint_name ` +
-	`WHERE c.constraint_type IN ('P', 'U') AND c.table_name IN ('KL', 'KM', 'KN', 'KS') ` +
+	`WHERE c.constraint_type IN ('P', 'U') AND c.table_name IN ('KL', 'KM', 'KN', 'KQ', 'KS') ` +
 	`GROUP BY c.table_name, c.constraint_type, c.generated, c.constraint_name ORDER BY 1`
+
+// oracleForeignKeysQuery reads the foreign keys of KF and KG, one row per
+// foreign key: its table, its name, and the key it references, by name or SYS
+// where Oracle named that key.
+const oracleForeignKeysQuery = `SELECT c.table_name || ' ' || c.constraint_name || ' ' || ` +
+	`DECODE(r.generated, 'USER NAME', r.constraint_name, 'SYS') ` +
+	`FROM user_constraints c JOIN user_constraints r ON r.constraint_name = c.r_constraint_name ` +
+	`WHERE c.constraint_type = 'R' AND c.table_name IN ('KF', 'KG') ORDER BY 1`
+
+// oracleLongTableName is a table name of 126 bytes, so <table>_pkey is longer
+// than the 128 bytes Oracle takes.
+var oracleLongTableName = strings.Repeat("l", 126)
 
 // TestOracleKeyOverHeldColumnsE2E generates a migration that replaces keys
 // with others over the same ordered column lists, runs it, and rolls it back.
 // Oracle holds one key per list and answers the second with ORA-02261, so each
 // old key is dropped before its replacement is added: a named key, a named
-// key over two columns, the key Oracle named for a column alone, and a UNIQUE
-// a primary key replaces. The primary key keeps its declared name, which the
-// rollback drops it by, and the rollback gives the column its own key back.
+// key over two columns, the key Oracle named for a column alone, a UNIQUE a
+// primary key replaces, and the key Oracle named for a column that a named
+// primary key replaces. The primary keys keep their declared names, which the
+// rollback drops them by, and the rollback gives each column its own key back
+// after the primary key over it is gone. The foreign keys over KL and KM leave
+// before the keys they reference and come back over the new ones, since Oracle
+// answers the drop of a referenced key with ORA-02273. A primary key added to
+// a table with a 126-byte name gets a name cut to 128 bytes.
 //
 // Without the order the up file stops at the first ADD with ORA-02261. Without
 // the name the down file stops at `DROP CONSTRAINT ks_pk` with ORA-02443.
@@ -44,13 +62,27 @@ func TestOracleKeyOverHeldColumnsE2E(t *testing.T) {
 		`CREATE TABLE km (id NUMBER(10) PRIMARY KEY, a VARCHAR2(20), CONSTRAINT km_k1 UNIQUE (a))`,
 		`CREATE TABLE kn (id NUMBER(10) PRIMARY KEY, a VARCHAR2(20), b VARCHAR2(20), CONSTRAINT kn_k1 UNIQUE (a, b))`,
 		`CREATE TABLE ks (id NUMBER(10) NOT NULL, CONSTRAINT ks_u UNIQUE (id))`,
+		`CREATE TABLE kq (a NUMBER(10) NOT NULL UNIQUE)`,
+		`CREATE TABLE kf (r VARCHAR2(20), CONSTRAINT kf_fk FOREIGN KEY (r) REFERENCES kl (a))`,
+		`CREATE TABLE kg (r VARCHAR2(20), CONSTRAINT kg_fk FOREIGN KEY (r) REFERENCES km (a))`,
+		`CREATE TABLE ` + oracleLongTableName + ` (id NUMBER(10) NOT NULL)`,
 	})
-	built := []string{"KL P SYS ID", "KL U SYS A", "KM P SYS ID", "KM U KM_K1 A", "KN P SYS ID", "KN U KN_K1 A,B", "KS U KS_U ID"}
+	built := []string{
+		"KL P SYS ID", "KL U SYS A", "KM P SYS ID", "KM U KM_K1 A", "KN P SYS ID", "KN U KN_K1 A,B", "KQ U SYS A", "KS U KS_U ID",
+	}
+	builtForeignKeys := []string{"KF KF_FK SYS", "KG KG_FK KM_K1"}
+	longKeyQuery := `SELECT generated || ' ' || LENGTHB(constraint_name) FROM user_constraints ` +
+		`WHERE constraint_type = 'P' AND table_name = '` + strings.ToUpper(oracleLongTableName) + `'`
 	c.Assert(accountNames(c, ctx, conn, oracleKeysQuery), qt.DeepEquals, built)
+	c.Assert(accountNames(c, ctx, conn, oracleForeignKeysQuery), qt.DeepEquals, builtForeignKeys)
 	schemaPath := writeDeclaredSchema(c, `CREATE TABLE kl (id NUMBER(10) PRIMARY KEY, a VARCHAR2(20), CONSTRAINT kl_k2 UNIQUE (a));
 CREATE TABLE km (id NUMBER(10) PRIMARY KEY, a VARCHAR2(20), CONSTRAINT km_k2 UNIQUE (a));
 CREATE TABLE kn (id NUMBER(10) PRIMARY KEY, a VARCHAR2(20), b VARCHAR2(20), CONSTRAINT kn_k2 UNIQUE (a, b));
 CREATE TABLE ks (id NUMBER(10) NOT NULL, CONSTRAINT ks_pk PRIMARY KEY (id));
+CREATE TABLE kq (a NUMBER(10) NOT NULL, CONSTRAINT kq_pk PRIMARY KEY (a));
+CREATE TABLE kf (r VARCHAR2(20), CONSTRAINT kf_fk FOREIGN KEY (r) REFERENCES kl (a));
+CREATE TABLE kg (r VARCHAR2(20), CONSTRAINT kg_fk FOREIGN KEY (r) REFERENCES km (a));
+CREATE TABLE `+oracleLongTableName+` (id NUMBER(10) NOT NULL, PRIMARY KEY (id));
 `)
 	dir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
@@ -62,8 +94,10 @@ CREATE TABLE ks (id NUMBER(10) NOT NULL, CONSTRAINT ks_pk PRIMARY KEY (id));
 		"--db-url", dbURL, "--migrations-dir", dir, "--allow-destructive")
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", up, stderr))
 	c.Assert(accountNames(c, ctx, conn, oracleKeysQuery), qt.DeepEquals, []string{
-		"KL P SYS ID", "KL U KL_K2 A", "KM P SYS ID", "KM U KM_K2 A", "KN P SYS ID", "KN U KN_K2 A,B", "KS P KS_PK ID",
+		"KL P SYS ID", "KL U KL_K2 A", "KM P SYS ID", "KM U KM_K2 A", "KN P SYS ID", "KN U KN_K2 A,B", "KQ P KQ_PK A", "KS P KS_PK ID",
 	})
+	c.Assert(accountNames(c, ctx, conn, oracleForeignKeysQuery), qt.DeepEquals, []string{"KF KF_FK KL_K2", "KG KG_FK KM_K2"})
+	c.Assert(accountNames(c, ctx, conn, longKeyQuery), qt.DeepEquals, []string{"USER NAME 128"})
 	again, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
 		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--dry-run")
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, stderr))
@@ -74,6 +108,8 @@ CREATE TABLE ks (id NUMBER(10) NOT NULL, CONSTRAINT ks_pk PRIMARY KEY (id));
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", down, stderr))
 	c.Assert(accountNames(c, ctx, conn, oracleKeysQuery), qt.DeepEquals, built)
+	c.Assert(accountNames(c, ctx, conn, oracleForeignKeysQuery), qt.DeepEquals, builtForeignKeys)
+	c.Assert(accountNames(c, ctx, conn, longKeyQuery), qt.HasLen, 0)
 }
 
 // TestOracleSecondKeyOverColumnsE2E is refused before any statement runs: the

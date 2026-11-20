@@ -161,3 +161,39 @@ func TestPlanner_PrimaryKeyName_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestPlanner_OracleColumnKeyRestoredUnderForeignKey_HappyPath plans the
+// rollback of a named key that replaced the one Oracle named for column a,
+// while a foreign key the forward plan rebuilt over it is rebuilt back. The
+// foreign key leaves first, the named key goes, the column gets its own key
+// back, and the foreign key is added over that key. Added while l_k2 still
+// stood, the foreign key would reference it, and Oracle answers the drop of a
+// referenced key with ORA-02273.
+func TestPlanner_OracleColumnKeyRestoredUnderForeignKey_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded: difftypes.ConstraintAdditions{{
+			Name: "f_fk", TableName: "f", Type: "FOREIGN KEY", Columns: []string{"r"},
+			ForeignTable: "l", ForeignColumns: []string{"a"}, Identity: oracleKeyIdentity("f", "f_fk"),
+		}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{
+			keyRemoval("l", "l_k2", "UNIQUE", "a"),
+			{Name: "f_fk", TableName: "f", Type: "FOREIGN KEY", Columns: []string{"r"}, Identity: oracleKeyIdentity("f", "f_fk")},
+		},
+		ForeignKeysRemovedWithTables: []difftypes.ForeignKeyRemovalInfo{{
+			Name: "f_fk", TableName: "f", Columns: []string{"r"}, ForeignTable: "l", ForeignColumns: []string{"a"},
+			Identity: oracleKeyIdentity("f", "f_fk"),
+		}},
+		DeclaredConstraintHosts: []schemacapture.TableDeclaration{{
+			Table:  schemamodel.Table{StructName: "L", Name: "l"},
+			Fields: []schemamodel.Field{{StructName: "L", Name: "a", Type: "VARCHAR2(20)", Nullable: true, Unique: true}},
+		}},
+	}
+
+	sql := planOracle(c, diff)
+
+	c.Assert(sql, qt.Equals, "ALTER TABLE f DROP CONSTRAINT f_fk;\n"+
+		"ALTER TABLE l DROP CONSTRAINT l_k2;\n"+
+		"ALTER TABLE l ADD UNIQUE (a);\n"+
+		"ALTER TABLE f ADD CONSTRAINT f_fk FOREIGN KEY (r) REFERENCES l (a);\n")
+}

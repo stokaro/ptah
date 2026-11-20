@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -43,12 +44,17 @@ var secondKeyRefusals = descriptortable.New(func(described descriptor.Dialect) s
 //     drop, so `DROP UNIQUE (column)` finds it by its column.
 //
 // A removal under the addition's own name is a changed definition, which the
-// constraint step replaces itself.
+// constraint step replaces itself. A removal in alreadyDropped left earlier in
+// the plan, and is not dropped again.
 func (p *Planner) keyHolderDrops(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+	alreadyDropped map[constraintHostKey]struct{},
 ) ([]ast.Node, map[constraintHostKey]struct{}) {
-	holders := keyHolders{diff: diff, semantics: semantics, dropped: make(map[constraintHostKey]struct{}), hidden: make(map[string]bool)}
+	holders := keyHolders{diff: diff, semantics: semantics, dropped: maps.Clone(alreadyDropped), hidden: make(map[string]bool)}
+	if holders.dropped == nil {
+		holders.dropped = make(map[constraintHostKey]struct{})
+	}
 	if diff == nil || !holdsOneKeyPerColumnList(p.targetDialect()) {
 		return nil, holders.dropped
 	}
@@ -72,6 +78,41 @@ func (p *Planner) keyHolderDrops(
 		}
 	}
 	return drops, holders.dropped
+}
+
+// releaseForeignKeysOverHeldKeys adds to plan, on a server that holds one key
+// per column list, the foreign keys the diff removes or changes that reference
+// a table whose keys the plan adds or removes. They leave ahead of the column
+// and key changes: [Planner.keyHolderDrops] drops a key ahead of the constraint
+// removals, and Oracle answers the drop of a key a foreign key references with
+// ORA-02273. A foreign key the comparison rebuilds over a replaced key comes
+// back with the other additions, once the new key is there. Each of these
+// foreign keys leaves in this plan anyway, so the earlier drop costs nothing.
+func (p *Planner) releaseForeignKeysOverHeldKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
+	if diff == nil || !holdsOneKeyPerColumnList(p.targetDialect()) {
+		return
+	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	keyed := make(map[string]bool)
+	for _, add := range diff.ConstraintsAdded {
+		if isKeyType(add.Type) {
+			keyed[semantics.QualifiedTableIdentityKey(add.TableName)] = true
+		}
+	}
+	for _, removal := range diff.ConstraintsRemoved {
+		if isKeyType(removal.Type) {
+			keyed[semantics.QualifiedTableIdentityKey(removal.TableName)] = true
+		}
+	}
+	for _, info := range diff.ForeignKeysRemovedWithTables {
+		if _, done := plan.dropped[info.Identity]; done || !keyed[semantics.QualifiedTableIdentityKey(info.ForeignTable)] {
+			continue
+		}
+		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
+			Name: info.Name, TableName: info.TableName, Type: "FOREIGN KEY",
+		}))
+		plan.dropped[info.Identity] = struct{}{}
+	}
 }
 
 // keyHolders finds the keys that hold the column lists of the keys a plan
@@ -181,16 +222,26 @@ func (h keyHolders) columnStepDropsKey(table, column string) bool {
 	return false
 }
 
-// columnKeysRestoredAfterDrops answers the statements that give a column its
-// own key back after the plan drops a UNIQUE over that column alone, on a
-// server that holds one key per column list. The target declares the column
-// unique and names no key over it, so the key it wants is the one Oracle names
-// for the column, which `ADD UNIQUE (column)` creates. A rollback of a named
-// key that replaced an Oracle-named one has this shape: without it the column
-// is left with no key at all.
-func (p *Planner) columnKeysRestoredAfterDrops(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []ast.Node {
+// columnKeysRestored answers the statements that drop a UNIQUE the plan
+// removes over a column alone and give the column its own key back, on a
+// server that holds one key per column list, and the removals they carry out,
+// for the removal step to skip. The target declares the column unique and
+// names no key over it, so the key it wants is the one Oracle names for the
+// column, which `ADD UNIQUE (column)` creates once the named key is gone. A
+// rollback of a named key that replaced an Oracle-named one has this shape:
+// without it the column is left with no key at all. Both statements run ahead
+// of the constraint additions, so a foreign key the plan adds back over the
+// column references the column's own key rather than the one about to go,
+// which Oracle would refuse to drop with ORA-02273. A removal in alreadyDropped
+// left earlier in the plan, and is not dropped again.
+func (p *Planner) columnKeysRestored(
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+	alreadyDropped map[constraintHostKey]struct{},
+) ([]ast.Node, map[constraintHostKey]struct{}) {
+	dropped := make(map[constraintHostKey]struct{})
 	if diff == nil || !holdsOneKeyPerColumnList(p.targetDialect()) {
-		return nil
+		return nil, dropped
 	}
 	var restored []ast.Node
 	seen := make(map[string]bool)
@@ -198,9 +249,13 @@ func (p *Planner) columnKeysRestoredAfterDrops(diff *difftypes.SchemaDiff, seman
 		if !strings.EqualFold(removal.Type, "UNIQUE") || len(removal.Columns) != 1 {
 			continue
 		}
+		identity := removal.Identity
+		if identity == (difftypes.ConstraintIdentity{}) {
+			identity = constraintscope.Identity(semantics, removal.TableName, removal.Name)
+		}
 		column := semantics.ColumnIdentityKey(removal.Columns[0])
 		key := semantics.QualifiedTableIdentityKey(removal.TableName) + "\x00" + column
-		if seen[key] {
+		if _, done := alreadyDropped[identity]; done || seen[key] {
 			continue
 		}
 		declaration, found := declaredHost(diff.DeclaredConstraintHosts, removal.TableName, semantics)
@@ -208,11 +263,12 @@ func (p *Planner) columnKeysRestoredAfterDrops(diff *difftypes.SchemaDiff, seman
 			continue
 		}
 		seen[key] = true
-		restored = append(restored, &ast.AlterTableNode{Name: removal.TableName, Operations: []ast.AlterOperation{
+		dropped[identity] = struct{}{}
+		restored = append(restored, p.dropConstraintNode(removal), &ast.AlterTableNode{Name: removal.TableName, Operations: []ast.AlterOperation{
 			&ast.AddConstraintOperation{Constraint: ast.NewUniqueConstraint("", removal.Columns[0])},
 		}})
 	}
-	return restored
+	return restored, dropped
 }
 
 // declaredHost finds the declaration of table among the constraint hosts.

@@ -535,9 +535,11 @@ are two lists. A file that declares two keys over one list is refused before
 any statement runs, for example a column written `PRIMARY KEY UNIQUE` or a
 `UNIQUE` over the primary key's columns. A plan that replaces a key with
 another over the same list drops the old key first, including the key Oracle
-named for a column alone. A primary key added to an existing table is written
-with its declared name, or `<table>_pkey`, so a later file and a rollback drop
-it by that name.
+named for a column alone. Oracle refuses to drop a key a foreign key
+references (`ORA-02273`), so such a foreign key is dropped before the key and
+added back over the new one. A primary key added to an existing table is
+written with its declared name, or `<table>_pkey`, so a later file and a
+rollback drop it by that name.
 
 ## Primary keys on columns
 

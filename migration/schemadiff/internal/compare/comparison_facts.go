@@ -28,6 +28,9 @@ var (
 	foreignKeyNamings = descriptortable.New(func(described descriptor.Dialect) descriptor.ForeignKeyNaming {
 		return described.ForeignKeyNaming
 	})
+	secondKeyRefusals = descriptortable.New(func(described descriptor.Dialect) string {
+		return described.SecondKeyRefusal
+	})
 	describedDialects = descriptortable.New(func(described descriptor.Dialect) bool {
 		return described.Name != ""
 	})

@@ -173,6 +173,10 @@ END;`,
 		// Oracle stores a generated column's expression in a form of its own
 		// (stokaro/ptah#1915).
 		Comparison: descriptor.Comparison{
+			// Measured on Oracle Free 23.26: dropping a UNIQUE a foreign key
+			// references answers ORA-02273, so the foreign key leaves first
+			// and comes back once the key that replaces it is there.
+			ForeignKeyHoldsItsKey:        true,
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},
 			RewritesGeneratedExpressions: true,
