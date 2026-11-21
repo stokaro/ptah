@@ -236,3 +236,54 @@ type F struct{}
 func probeEscapeSource(source, placeholder, value string) string {
 	return strings.Replace(source, placeholder, value, 1)
 }
+
+// probeBackslashTable is the source of a table whose CHECK compares with a
+// string that ends in a backslash. The annotation spells the backslash twice,
+// and the CHECK holds one.
+const probeBackslashTable = `package models
+
+//ptah:schema:table name="t"
+type T struct {
+	//ptah:schema:field name="id" type="INT" primary
+	ID int
+	//ptah:schema:field name="code" type="TEXT" not_null
+	Code string
+	//ptah:schema:field name="amount" type="INT" not_null check="amount >= 0 AND code <> 'C:\\'" check_name="t_amount_check"
+	Amount int
+}
+`
+
+// TestPlanConvergesOnAStringThatEndsInABackslashE2E plans a CHECK the
+// database already holds, whose string ends in a backslash. The probe
+// transaction reads strings as standard, so the probe runs and the plan has
+// nothing to do. Read as an escape as well, the backslash would leave the
+// string open, the probe would not run, and the CHECK compared as written
+// would be dropped and added again on every run.
+//
+// CockroachDB is not here: it refuses the probe's temporary table, so no CHECK
+// probe runs there and the probe transaction decides nothing.
+func TestPlanConvergesOnAStringThatEndsInABackslashE2E(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+		{name: "YugabyteDB", engine: dbtarget.YugabyteDB},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := probeEscapeTargets[test.engine](c)
+			execProbeEscapeSQL(c, target, []string{
+				`CREATE TABLE t (id INT PRIMARY KEY, code TEXT NOT NULL, amount INT NOT NULL CONSTRAINT t_amount_check CHECK (amount >= 0 AND code <> 'C:\'))`,
+			})
+			models := filepath.Join(c.TempDir(), "models")
+			c.Assert(os.MkdirAll(models, 0o750), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(models, "models.go"), []byte(probeBackslashTable), 0o600), qt.IsNil)
+
+			plan := runPtahIn(c, "migrations", "plan", "--db-url", target.url, "--root-dir", models)
+
+			c.Assert(plan.Stdout, qt.Contains, "Safety: no executable migration statements", historyComment(plan))
+			c.Assert(plan.Stderr, qt.Not(qt.Contains), "compared as written", historyComment(plan))
+		})
+	}
+}

@@ -64,7 +64,7 @@ func TestCheck_FailurePath(t *testing.T) {
 	err = probetx.Check(ctx)
 
 	c.Assert(err, qt.ErrorIs, probetx.ErrTransactionChanged)
-	c.Assert(err, qt.ErrorMatches, `a probe ended the transaction it ran in; statements it ran may be committed \(transaction 17/1, now 18/1\)`)
+	c.Assert(err, qt.ErrorMatches, `a probe ended the transaction it ran in or changed how it reads statement text; statements it ran may be committed \(transaction 17/1, now 18/1\)`)
 }
 
 // TestCheck_ServerCannotBeAskedAgain answers the server's error, since a

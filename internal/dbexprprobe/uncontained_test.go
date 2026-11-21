@@ -297,3 +297,59 @@ func TestResolveColumnSpellings_StopsWhenAProbeEndsTheTransaction(t *testing.T) 
 	c.Assert(got, qt.IsNil)
 	c.Assert(refusals, qt.IsNil)
 }
+
+// recordingExecutor is an Oracle dev database that records each statement it
+// is sent and refuses it, as a server refuses a declaration it cannot store.
+type recordingExecutor struct{ sent *[]string }
+
+func (recordingExecutor) Info() catalog.ServerInfo {
+	return catalog.ServerInfo{Dialect: platform.Oracle}
+}
+
+func (e recordingExecutor) ExecContext(_ context.Context, query string, _ ...any) (sql.Result, error) {
+	*e.sent = append(*e.sent, query)
+	return nil, sql.ErrConnDone
+}
+
+func (e recordingExecutor) QueryContext(_ context.Context, query string, _ ...any) (*sql.Rows, error) {
+	*e.sent = append(*e.sent, query)
+	return nil, sql.ErrConnDone
+}
+
+// TestResolveGeneratedExpressions_UncontainedTextIsNotProbed sends nothing for
+// a CREATE whose declared expression holds a second statement, and leaves its
+// columns out of the answer, so they compare as written.
+func TestResolveGeneratedExpressions_UncontainedTextIsNotProbed(t *testing.T) {
+	c := qt.New(t)
+	ctx, stream := warnedRun()
+	var sent []string
+
+	got, err := dbexprprobe.ResolveGeneratedExpressions(ctx, recordingExecutor{sent: &sent}, []dbexprprobe.GeneratedExpressionProbe{{
+		Schema: "app", Table: "t", ProbeTable: "p", Generated: []string{"g"},
+		Create: "CREATE TABLE p (a NUMBER, g NUMBER GENERATED ALWAYS AS (a + 1)); DROP TABLE x; CREATE TABLE y (z NUMBER)",
+	}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, make(map[string]config.GeneratedExpression))
+	c.Assert(sent, qt.IsNil)
+	c.Assert(stream.String(), qt.Equals, separatorWarning("generated columns of app.t"))
+}
+
+// TestResolveGeneratedExpressions_ContainedTextIsProbed is the control: the
+// same table without the second statement is sent, and the server's refusal
+// leaves its column unresolved.
+func TestResolveGeneratedExpressions_ContainedTextIsProbed(t *testing.T) {
+	c := qt.New(t)
+	ctx, stream := warnedRun()
+	var sent []string
+	create := "CREATE TABLE p (a NUMBER, g NUMBER GENERATED ALWAYS AS (a + 1))"
+
+	got, err := dbexprprobe.ResolveGeneratedExpressions(ctx, recordingExecutor{sent: &sent}, []dbexprprobe.GeneratedExpressionProbe{{
+		Schema: "app", Table: "t", ProbeTable: "p", Generated: []string{"g"}, Create: create,
+	}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 1)
+	c.Assert(sent, qt.DeepEquals, []string{create})
+	c.Assert(stream.String(), qt.Equals, "")
+}

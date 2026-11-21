@@ -83,9 +83,9 @@ func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession
 	if err != nil {
 		return nil, err
 	}
-	// The bound ends the statement, and a session can read it in a way the
-	// parser does not; a bound that could end it under any reading is compared
-	// as written.
+	// The bound ends the statement, and the server can read it in a way the
+	// parser does not, as it reads a name in backticks; a bound that could end
+	// it under any reading the server has is compared as written.
 	if refusal := probetext.Fragment(dialect, bound); refusal != nil {
 		probetext.Warn(ctx, subject.String(), "partition bound of "+subject.Path(), refusal)
 		return nil, nil

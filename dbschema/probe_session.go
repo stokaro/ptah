@@ -42,7 +42,9 @@ import (
 // the transaction and began another, with a COMMIT among the statements it ran,
 // fails with an error whatever it returned: the statements before the COMMIT
 // may be committed, and the rollback undoes only the transaction the session is
-// in by then.
+// in by then. On the PostgreSQL family the transaction also runs with
+// standard_conforming_strings on, the reading declared text is checked under,
+// and a body that turned it off fails the same way.
 //
 // A connection a [NativeConnector] opened reports ran false with a nil error
 // too, and never runs body. It carries the provider's session and no *sql.DB,
@@ -109,6 +111,11 @@ func (dc *DatabaseConnection) rollBackOn(
 	// CockroachDB commits an explicit transaction ahead of a DDL statement
 	// unless the transaction asks it not to; its connector does.
 	if err := dc.engine().KeepDDLInTransaction(ctx, tx, dc.info); err != nil {
+		return false, fmt.Errorf("%s: %w", label, err)
+	}
+	// Before the transaction is named, so the name carries the reading and a
+	// probe that changes it fails the check as one that ends the transaction.
+	if err := dc.engine().PinTextReading(ctx, tx); err != nil {
 		return false, fmt.Errorf("%s: %w", label, err)
 	}
 	watched, err := probetx.Watch(ctx, func(ctx context.Context) (string, error) {

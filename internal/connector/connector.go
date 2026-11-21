@@ -116,10 +116,17 @@ type Service interface {
 	// KeepDDLInTransaction prepares tx, a transaction that will be rolled
 	// back, so that DDL run inside it stays inside it.
 	KeepDDLInTransaction(ctx context.Context, tx *sql.Tx, info catalog.ServerInfo) error
+	// PinTextReading sets, for the rest of tx, every session setting that
+	// decides how the server reads the text of a statement to the value
+	// ptah.run/internal/probetext checks declared text under, so that a
+	// probe statement means to the server what the check read in it.
+	PinTextReading(ctx context.Context, tx *sql.Tx) error
 	// TransactionIdentity names the transaction tx runs in, as the server
-	// reports it, so that a caller holding a transaction it will roll back
-	// can tell that statements it ran ended it and began another. Empty means
-	// the engine names none, and nothing is compared.
+	// reports it, together with the settings [Service.PinTextReading] pins,
+	// so that a caller holding a transaction it will roll back can tell that
+	// statements it ran ended it and began another, or changed how the server
+	// reads the next statement. Empty means the engine names none, and
+	// nothing is compared.
 	TransactionIdentity(ctx context.Context, tx *sql.Tx) (string, error)
 	// RestrictUntrustedSQL applies, and verifies, every restriction the
 	// engine offers on a session that will run SQL the caller does not
@@ -204,6 +211,9 @@ func (Base) OutsideTransaction(context.Context, *sql.Conn) bool { return false }
 
 // KeepDDLInTransaction does nothing.
 func (Base) KeepDDLInTransaction(context.Context, *sql.Tx, catalog.ServerInfo) error { return nil }
+
+// PinTextReading does nothing: the engine reads statement text one way only.
+func (Base) PinTextReading(context.Context, *sql.Tx) error { return nil }
 
 // TransactionIdentity names no transaction.
 func (Base) TransactionIdentity(context.Context, *sql.Tx) (string, error) { return "", nil }

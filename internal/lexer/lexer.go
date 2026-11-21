@@ -861,19 +861,35 @@ func (l *Lexer) isDollarQuotedString() bool {
 
 	// Look ahead to find the closing $ of the opening tag
 	pos := l.pos + 1
-	for pos < len(l.input) {
+	for first := true; pos < len(l.input); first = false {
 		ch, size := utf8.DecodeRuneInString(l.input[pos:])
 		if ch == '$' {
 			// Found potential closing $ of opening tag
 			return true
 		}
-		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' {
+		if !isDollarTagPart(ch, first) {
 			// Invalid character in tag name
 			return false
 		}
 		pos += size
 	}
 	return false
+}
+
+// isDollarTagPart reports whether ch may stand in a dollar-quote tag, first
+// saying it would be the tag's first character. PostgreSQL's scanner takes an
+// ASCII letter, an underscore or any byte above 0x7F, and so any character
+// outside ASCII, and a digit after the first: `$1$` is the parameter `$1`
+// followed by a `$`, not the start of a string.
+func isDollarTagPart(ch rune, first bool) bool {
+	switch {
+	case ch == '_', 'a' <= ch && ch <= 'z', 'A' <= ch && ch <= 'Z', ch >= utf8.RuneSelf:
+		return true
+	case '0' <= ch && ch <= '9':
+		return !first
+	default:
+		return false
+	}
 }
 
 // scanDollarQuotedString scans a PostgreSQL dollar-quoted string literal
@@ -896,13 +912,13 @@ func (l *Lexer) consumeDollarQuoted() bool {
 	l.advance() // consume first $
 
 	// Scan tag name (if any)
-	for {
+	for first := true; ; first = false {
 		ch := l.peek()
 		if ch == '$' {
 			l.advance() // consume closing $
 			break
 		}
-		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' {
+		if !isDollarTagPart(ch, first) {
 			l.pos = tagStart
 			return false
 		}

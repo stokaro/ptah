@@ -23,9 +23,12 @@ import (
 )
 
 // ErrTransactionChanged reports that a probe ended the rolled-back transaction
-// it ran in. Statements it ran may be committed, so a command that sees it
-// stops rather than reading anything the probe answered.
-var ErrTransactionChanged = errors.New("a probe ended the transaction it ran in; statements it ran may be committed")
+// it ran in, or changed a setting the transaction's name carries, which
+// decides how the server reads the next probe's text. Statements it ran may be
+// committed, so a command that sees it stops rather than reading anything the
+// probe answered.
+var ErrTransactionChanged = errors.New("a probe ended the transaction it ran in or changed how it reads statement text; " +
+	"statements it ran may be committed")
 
 // watch is the check a context carries: how to name the transaction now, and
 // the name it had when it began.

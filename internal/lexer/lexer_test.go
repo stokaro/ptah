@@ -686,6 +686,33 @@ func TestLexer_UTF8DollarQuotedStringTag(t *testing.T) {
 	c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)
 }
 
+// TestLexer_DollarQuoteTag reads a dollar-quote tag as PostgreSQL's scanner
+// does: an ASCII letter, an underscore or a character outside ASCII may begin
+// one, and a digit may follow. `$1$` is the parameter `$1` and a `$`, so the
+// text after it is SQL, not the inside of a string.
+func TestLexer_DollarQuoteTag(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		want  lexer.TokenType
+	}{
+		{name: "no tag", input: "$$a$$", want: lexer.TokenString},
+		{name: "letters then a digit", input: "$a1$b$a1$", want: lexer.TokenString},
+		{name: "an underscore first", input: "$_1$b$_1$", want: lexer.TokenString},
+		{name: "a character outside ASCII first", input: "$€$b$€$", want: lexer.TokenString},
+		{name: "a digit first", input: "$1$b$1$", want: lexer.TokenIdentifier},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			token := lexer.NewLexer(test.input).NextToken()
+
+			c.Assert(token.Type, qt.Equals, test.want)
+			c.Assert(token.Value, qt.Equals, test.input)
+		})
+	}
+}
+
 func TestLexer_LongDollarQuotedStringTag(t *testing.T) {
 	c := qt.New(t)
 

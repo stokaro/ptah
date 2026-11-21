@@ -104,9 +104,10 @@ func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, dia
 		return nil, err
 	}
 	table := sqlident.Qualified(platform.Postgres, sqlident.UnquoteDoubleQuoted(subject.Schema.Source), sqlident.UnquoteDoubleQuoted(subject.Parent.Source))
-	// The parser reads the clause one way; a session can read it another, as
-	// one with standard_conforming_strings off does. A clause that could reach
-	// past its parentheses under any reading is compared as written.
+	// The parser reads the clause one way, and the server can read it
+	// another: a name in backticks is one token to the parser and SQL to the
+	// server. A clause that could reach past its parentheses under any
+	// reading the server has is compared as written.
 	if refusal := probetext.Fragment(dialect, clause); refusal != nil {
 		probetext.Warn(ctx, subject.String(), "exclusion constraint "+subject.Name.Source+" on "+table, refusal)
 		return nil, nil

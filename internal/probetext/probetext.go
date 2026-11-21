@@ -18,12 +18,15 @@
 // or a comment counts for nothing, as it does on the server. A keyword list
 // could not do it: T-SQL needs no semicolon between two statements.
 //
-// The check is only as good as the lexer's agreement with the server, so it
-// reads the text every way a server of the dialect can: a PostgreSQL session
-// with standard_conforming_strings off reads a backslash in a string as an
-// escape, and CockroachDB ends a line comment at a line feed only, where
-// PostgreSQL and SQL Server end one at a carriage return too. Text is refused
-// when any reading lets it out.
+// The check is only as good as the lexer's agreement with the server. Where a
+// session setting decides how the server reads text, the probe transaction
+// pins it to the reading checked here: on the PostgreSQL family
+// standard_conforming_strings is on, so a backslash in an ordinary string is a
+// character, and a probe that turns it off fails the transaction check in
+// ptah.run/internal/probetx. Where servers of one dialect read text two ways,
+// the text is read both: CockroachDB ends a line comment at a line feed only,
+// where PostgreSQL ends one at a carriage return too. Text is refused when any
+// reading lets it out.
 package probetext
 
 import (
@@ -242,32 +245,22 @@ func (r reading) apply(text string) string {
 }
 
 // readings is every way a server of dialect can read text: its descriptor's
-// rules, with backslash escapes as well where a PostgreSQL session can turn
-// standard_conforming_strings off, and each with line comments ended at a
-// line feed only.
+// rules, and the same rules with line comments ended at a line feed only.
 //
 // The descriptor's EscapeStrings, the E'...' strings of the PostgreSQL family,
-// stands in for the two facts no descriptor field states: the family's servers
-// read dollar quotes, and its PostgreSQL servers let a session read a
-// backslash in an ordinary string as an escape. A dialect with a scanner of
-// its own is read by that scanner alone.
+// stands in for a fact no descriptor field states: the family's servers read
+// dollar quotes. A backslash in an ordinary string is read as the descriptor
+// states, because the probe transaction pins standard_conforming_strings on;
+// reading it as an escape as well would refuse every live string that ends in
+// one, such as `'C:\'`, and plan the declaration again on every run.
 func readings(dialect string) []reading {
 	options := dialectlexer.Options(dialect)
 	described, _ := platform.Lookup(dialect)
 	postgresStrings := described.Lexical.EscapeStrings
-	set := []lexer.Options{options}
-	if options.Scanner == nil && postgresStrings && !options.BackslashEscapes {
-		escaped := options
-		escaped.BackslashEscapes = true
-		set = append(set, escaped)
+	return []reading{
+		{options: options, dollarQuotes: postgresStrings},
+		{options: options, dollarQuotes: postgresStrings, lineFeedEndsComments: true},
 	}
-	readings := make([]reading, 0, 2*len(set))
-	for _, lineFeed := range []bool{false, true} {
-		for _, options := range set {
-			readings = append(readings, reading{options: options, dollarQuotes: postgresStrings, lineFeedEndsComments: lineFeed})
-		}
-	}
-	return readings
 }
 
 // read checks text under one reading.

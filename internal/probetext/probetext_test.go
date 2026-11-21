@@ -33,6 +33,11 @@ func TestFragment_HappyPath(t *testing.T) {
 		{name: "dollar quote where the server reads one", dialect: platform.Postgres, text: "note <> $q$ ) ; $q$"},
 		{name: "escaped quote in an escape string", dialect: platform.Postgres, text: `note <> E'\') ;'`},
 		{name: "doubled quote in a string", dialect: platform.SQLServer, text: "note <> ') '' ;'"},
+		// The probe transaction reads strings as standard, so a backslash
+		// before the closing quote is a character.
+		{name: "a string ending in a backslash on PostgreSQL", dialect: platform.Postgres, text: `amount >= 0 AND code <> 'C:\'`},
+		{name: "a string ending in a backslash on CockroachDB", dialect: platform.CockroachDB, text: `code <> 'C:\'`},
+		{name: "a string ending in a backslash on YugabyteDB", dialect: platform.YugabyteDB, text: `code <> 'C:\'`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -83,11 +88,11 @@ func TestFragment_FailurePath(t *testing.T) {
 			wantErr: "its text closes a parenthesis it does not open",
 		},
 		{
-			// With standard_conforming_strings off the first string ends at
-			// the second quote, and the parentheses after it are SQL.
-			name:    "a backslash escapes a quote in a session that reads it so",
+			// PostgreSQL reads `$1` as a parameter, so no string starts
+			// there and the parentheses after it are SQL.
+			name:    "a dollar tag cannot begin with a digit",
 			dialect: platform.Postgres,
-			text:    `amount > 0 OR 'a' = '\' || ' )) ; COMMIT ; SELECT (( '`,
+			text:    "amount > 0 $1$)); CREATE TABLE public.made_by_plan (x int); $1$",
 			wantErr: "its text closes a parenthesis it does not open",
 		},
 		{

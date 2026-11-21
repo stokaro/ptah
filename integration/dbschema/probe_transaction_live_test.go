@@ -48,7 +48,7 @@ var probeTransactionEngines = []struct {
 	{
 		name: "SQL Server", engine: dbtarget.SQLServer,
 		restart: "COMMIT BEGIN TRANSACTION", keep: "SAVE TRANSACTION ptah_keep ROLLBACK TRANSACTION ptah_keep",
-		restartAndFail: "COMMIT BEGIN TRANSACTION SELECT 1/0", restartAndFailErr: `probe: a probe ended the transaction it ran in; .*`,
+		restartAndFail: "COMMIT BEGIN TRANSACTION SELECT 1/0", restartAndFailErr: `probe: a probe ended the transaction it ran in or changed how it reads statement text; .*`,
 	},
 }
 
@@ -144,6 +144,66 @@ func TestWithRolledBackTransaction_LiveBodyThatEndsTheTransactionAndFailsFails(t
 			})
 
 			c.Assert(err, qt.ErrorMatches, test.restartAndFailErr)
+			c.Assert(ran, qt.IsTrue)
+		})
+	}
+}
+
+// standardStringEngines are the engines whose sessions can turn
+// standard_conforming_strings off; CockroachDB accepts no value but on.
+var standardStringEngines = []struct {
+	name   string
+	engine dbtarget.Engine
+}{
+	{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+	{name: "YugabyteDB", engine: dbtarget.YugabyteDB},
+}
+
+// TestWithRolledBackTransaction_LiveReadsStringsAsStandard runs the
+// transaction with standard_conforming_strings on, the reading probe text is
+// checked under, on a session that turned it off, and leaves the session's own
+// setting as it was.
+func TestWithRolledBackTransaction_LiveReadsStringsAsStandard(t *testing.T) {
+	for _, test := range standardStringEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := probeTransactionConnection(c, test.engine)
+			var inside, after string
+
+			err := conn.WithSession(c.Context(), func(session *dbschema.DatabaseConnection) error {
+				_, err := session.ExecContext(c.Context(), "SET standard_conforming_strings = off")
+				c.Assert(err, qt.IsNil)
+				ran, err := session.WithRolledBackTransaction(c.Context(), "probe", func(ctx context.Context, tx *sql.Tx) error {
+					return tx.QueryRowContext(ctx, "SELECT current_setting('standard_conforming_strings')").Scan(&inside)
+				})
+				c.Assert(err, qt.IsNil)
+				c.Assert(ran, qt.IsTrue)
+				return session.QueryRowContext(c.Context(), "SELECT current_setting('standard_conforming_strings')").Scan(&after)
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(inside, qt.Equals, "on")
+			c.Assert(after, qt.Equals, "off")
+		})
+	}
+}
+
+// TestWithRolledBackTransaction_LiveBodyThatTurnsStandardStringsOffFails turns
+// the setting off from inside the transaction, as a partition bound evaluated
+// at creation can. The next probe's text would be read another way than it
+// was checked, so the body fails as one that ended the transaction does.
+func TestWithRolledBackTransaction_LiveBodyThatTurnsStandardStringsOffFails(t *testing.T) {
+	for _, test := range standardStringEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := probeTransactionConnection(c, test.engine)
+
+			ran, err := conn.WithRolledBackTransaction(c.Context(), "probe", func(ctx context.Context, tx *sql.Tx) error {
+				_, execErr := tx.ExecContext(ctx, "SELECT set_config('standard_conforming_strings', 'off', true)")
+				return execErr
+			})
+
+			c.Assert(err, qt.ErrorIs, probetx.ErrTransactionChanged)
 			c.Assert(ran, qt.IsTrue)
 		})
 	}

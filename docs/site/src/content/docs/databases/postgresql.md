@@ -336,16 +336,16 @@ declaration is not asked when its text:
 - holds a semicolon outside a string.
 
 Such a declaration is compared as written, and the run prints a warning that
-names it and the reason. The text is read the way every session of the engine
-can read it: as a session with `standard_conforming_strings` off reads a
-backslash in a string, and as CockroachDB ends a line comment only at a line
-feed. A string that ends in a backslash is therefore not asked.
+names it and the reason. The transaction runs with `standard_conforming_strings`
+on, so a backslash in a string other than `E'...'` is an ordinary character, as
+it is in the text the reader is compared with. A line comment is read both
+ways, since CockroachDB ends one only at a line feed.
 
 A SQL-standard routine body may hold semicolons, so the server parses the
 statement first, without running it, and the routine is asked only when the
 server reads one statement. After each probe Ptah asks the server which
-transaction it is in, and a command whose probe ended the transaction stops
-with an error.
+transaction it is in, and a command whose probe ended the transaction, or
+turned `standard_conforming_strings` off in it, stops with an error.
 
 A generated column is asked on a temporary table that has the columns of the
 table the database holds. The server adds casts the declaration does not

@@ -86,8 +86,9 @@ func normalizePartition(ctx context.Context, session schemaext.ProbeSession, dia
 	if _, err := pgtablesource.ParsePartitionSQL(key); err != nil {
 		return nil, err
 	}
-	// The key ends the statement, and a session can read it in a way the parser
-	// does not; a key that could end it under any reading is compared as written.
+	// The key ends the statement, and the server can read it in a way the
+	// parser does not, as it reads a name in backticks; a key that could end it
+	// under any reading the server has is compared as written.
 	if refusal := probetext.Fragment(dialect, key); refusal != nil {
 		probetext.Warn(ctx, subject.String(), "partition key of "+subject.Path(), refusal)
 		return nil, nil
