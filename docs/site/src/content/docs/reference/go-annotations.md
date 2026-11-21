@@ -231,6 +231,7 @@ Maps a Go struct to a database table.
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. Needs `primary_key`; a field's `primary` key has no place for it. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |
+| `primary_key_without_overlaps` | No | `true` applies `WITHOUT OVERLAPS` to the last `primary_key` column, a range or multirange. Exactly `true` or `false`; bare form allowed. Needs two or more key columns and a target with `temporal_keys`; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `schema` | No | Database schema name. |
 
 The table engine, character set, collation and `AUTO_INCREMENT` start are
@@ -366,7 +367,7 @@ properties; a selected provider validates their values.
 | `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB or Spanner, and `COVER` columns on YDB. Order is preserved, and a changed list rebuilds the index. |
 | `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. `true`/`false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
 | `name` | No | Index name. |
-| `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
+| `nulls_distinct` | No | Controls NULLS DISTINCT behavior. Exactly `true` or `false`; bare form allowed. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `ops` | No | PostgreSQL operator class. |
 | `table` | No | Explicit target table. |
 | `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index and `vector_kmeans_tree` a vector index. |
@@ -445,13 +446,15 @@ Declares a table constraint.
 | `include` | No | Comma-separated INCLUDE columns for a covering UNIQUE or PRIMARY KEY constraint. Order is preserved. |
 | `key_block_size` | No | Block-size hint for a MySQL-family `PRIMARY KEY`. Any other constraint type refuses it when the source is read. Declare a unique index to give a `UNIQUE` key this option. |
 | `name` | No | Constraint name. |
-| `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
+| `nulls_distinct` | No | Controls NULLS DISTINCT behavior. Exactly `true` or `false`; bare form allowed. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_delete_columns` | No | CSV list of local columns changed by PostgreSQL `ON DELETE SET NULL` or `SET DEFAULT`. |
 | `on_update` | No | Foreign key ON UPDATE action. |
+| `period` | No | `true` applies `PERIOD` to the last column on each side of a FOREIGN KEY. Exactly `true` or `false`; bare form allowed. Needs two or more columns on each side, no action but `NO ACTION`, and a target with `temporal_keys`; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 | `table` | No | Explicit target table. |
 | `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, or FOREIGN KEY. |
 | `using` | No | PRIMARY KEY access method on MySQL and MariaDB (`BTREE` or `HASH`). Refused on UNIQUE, CHECK and FOREIGN KEY. |
+| `without_overlaps` | No | `true` applies `WITHOUT OVERLAPS` to the last column of a UNIQUE or PRIMARY KEY constraint, a range or multirange. Exactly `true` or `false`; bare form allowed. Needs two or more columns and a target with `temporal_keys`; see [Temporal keys](../../databases/postgresql/#temporal-keys). |
 
 `include` belongs to a UNIQUE or a PRIMARY KEY constraint, and the two accept it
 on different targets:

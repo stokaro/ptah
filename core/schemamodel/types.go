@@ -556,6 +556,14 @@ type Constraint struct {
 	// NotEnforced marks a CHECK or a FOREIGN KEY the server keeps and does not
 	// check. See [ptah.run/core/ast.ConstraintNode.NotEnforced].
 	NotEnforced bool
+	// WithoutOverlaps marks a PRIMARY KEY or UNIQUE constraint whose last column
+	// is a range or multirange the key keeps from overlapping. See
+	// [ptah.run/core/ast.ConstraintNode.WithoutOverlaps].
+	WithoutOverlaps bool
+	// Period marks a FOREIGN KEY whose last referencing and referenced columns
+	// are ranges, written with PERIOD. See
+	// [ptah.run/core/ast.ForeignKeyRef.Period].
+	Period bool
 	// NotValid marks a CHECK or FOREIGN KEY constraint that may stay
 	// unvalidated: the server checks new rows and has not checked the rows the
 	// table held when the constraint was added. A database that holds it
@@ -684,9 +692,15 @@ type Table struct {
 	// PrimaryKeyInitially is the default timing of a deferrable primary key:
 	// "deferred", "immediate", or empty for a clause the author did not write.
 	PrimaryKeyInitially string
-	Checks              []string                     // Table-level check constraints
-	CustomSQL           string                       // Custom SQL to append to CREATE TABLE
-	Overrides           map[string]map[string]string // Platform-specific overrides
+	// PrimaryKeyWithoutOverlaps marks a primary key whose last column is a range
+	// or multirange that the key keeps from overlapping. See
+	// [ptah.run/core/ast.ConstraintNode.WithoutOverlaps]. Such a key renders as
+	// a table constraint, because the column spelling has no place for the
+	// clause.
+	PrimaryKeyWithoutOverlaps bool
+	Checks                    []string                     // Table-level check constraints
+	CustomSQL                 string                       // Custom SQL to append to CREATE TABLE
+	Overrides                 map[string]map[string]string // Platform-specific overrides
 
 	// DependsOn names tables this one must be created after, beyond the ones
 	// its foreign keys imply. See [BuildDependencyGraph] for what a declared

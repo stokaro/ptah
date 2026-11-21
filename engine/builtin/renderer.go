@@ -80,6 +80,7 @@ import (
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/referencedkey"
+	"ptah.run/internal/referentialaction"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
@@ -87,6 +88,7 @@ import (
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/temporalkeys"
 )
 
 // SupportedDialects returns a list of all supported database dialects.
@@ -1100,7 +1102,9 @@ func prepareColumnNode(
 		return nil, err
 	}
 	if err := validateForeignKeyClauses(
-		dialect, caps, foreignKeyClauses{match: cloned.ForeignKey.Match, notEnforced: cloned.ForeignKey.NotEnforced},
+		dialect, caps, foreignKeyClauses{
+			match: cloned.ForeignKey.Match, notEnforced: cloned.ForeignKey.NotEnforced, period: cloned.ForeignKey.Period,
+		},
 		foreignKeyIdentity(cloned.ForeignKey.Name, node.Name),
 	); err != nil {
 		return nil, err
@@ -1236,6 +1240,9 @@ func prepareConstraintNode(
 	if err := refuseNodeDeferral(dialect, caps, node); err != nil {
 		return nil, err
 	}
+	if err := refuseNodeWithoutOverlaps(dialect, caps, node); err != nil {
+		return nil, err
+	}
 	if node.Type != ast.ForeignKeyConstraint {
 		return &cloned, nil
 	}
@@ -1249,7 +1256,9 @@ func prepareConstraintNode(
 		return nil, err
 	}
 	if err := validateForeignKeyClauses(
-		dialect, caps, foreignKeyClauses{match: cloned.Reference.Match, notEnforced: cloned.Reference.NotEnforced},
+		dialect, caps, foreignKeyClauses{
+			match: cloned.Reference.Match, notEnforced: cloned.Reference.NotEnforced, period: cloned.Reference.Period,
+		},
 		foreignKeyIdentity(node.Name, strings.Join(node.Columns, ", ")),
 	); err != nil {
 		return nil, err
@@ -1815,6 +1824,9 @@ func validateDeclaredKeysAndConstraints(
 	if err := validateDeclaredKeyDeferral(dialect, caps, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredTemporalKeys(dialect, caps, database); err != nil {
+		return err
+	}
 	if err := validateDeclaredPrimaryKeyOptions(dialect, database); err != nil {
 		return err
 	}
@@ -2054,6 +2066,81 @@ func refuseNodeDeferral(dialect string, caps capability.Capabilities, node *ast.
 	}
 }
 
+// validateDeclaredTemporalKeys refuses a WITHOUT OVERLAPS key and a PERIOD
+// foreign key that no server builds, and then the ones the target cannot
+// write, before any statement is built, for the reason
+// validateDeclaredNullsDistinct gives. A foreign key's PERIOD capability is
+// asked with its other clauses, in validateDeclaredEnforcementAndMatch.
+//
+// The shape is checked here, with the one predicate the Go annotation, YAML and
+// HCL readers call, because every reader and every provider reaches this
+// point, the SQL reader included, which copies the clause from the statement it
+// parsed. Without the check a key of one column and a PERIOD foreign key that
+// cascades reach the server, which refuses them only after the apply has run the
+// statements before them; the apply rolls back and records a failed run
+// (stokaro/ptah#6330).
+func validateDeclaredTemporalKeys(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := temporalkeys.CheckPrimaryKey(table); err != nil {
+			return &ptaherr.RenderError{Dialect: dialect, Err: err}
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if err := temporalkeys.CheckConstraint(constraint); err != nil {
+			return &ptaherr.RenderError{Dialect: dialect, Err: err}
+		}
+	}
+	for _, table := range database.Tables {
+		if !table.PrimaryKeyWithoutOverlaps {
+			continue
+		}
+		if err := refuseTemporalKey(dialect, caps, "PRIMARY KEY", keyIdentity(table.PrimaryKeyName, table.Name)); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if !constraint.WithoutOverlaps {
+			continue
+		}
+		if err := refuseTemporalKey(dialect, caps, constraint.Type, keyIdentity(constraint.Name, constraint.Table)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseNodeWithoutOverlaps refuses a PRIMARY KEY or UNIQUE node declared
+// WITHOUT OVERLAPS on a target without [capability.TemporalKeys], and answers
+// nil for a node that is not.
+func refuseNodeWithoutOverlaps(dialect string, caps capability.Capabilities, node *ast.ConstraintNode) error {
+	if !node.WithoutOverlaps {
+		return nil
+	}
+	return refuseTemporalKey(dialect, caps, node.Type.String(), keyIdentity(node.Name, ""))
+}
+
+// refuseTemporalKey refuses a WITHOUT OVERLAPS key or a PERIOD foreign key on
+// a target without [capability.TemporalKeys]. Written without the clause, a
+// key would accept the overlapping rows its author meant to forbid, and a
+// foreign key would compare its range columns by equality, so the declaration
+// is refused rather than weakened (stokaro/ptah#6330).
+func refuseTemporalKey(dialect string, caps capability.Capabilities, kind, identity string) error {
+	if caps.Has(capability.TemporalKeys) {
+		return nil
+	}
+	clause := "WITHOUT OVERLAPS"
+	if strings.EqualFold(kind, "FOREIGN KEY") {
+		clause = "PERIOD"
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "temporal keys",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s declares a %s with %s, which requires target capability %s, unavailable on this %s target",
+			identity, kind, clause, capability.TemporalKeys, platform.NormalizeDialect(dialect)),
+	}
+}
+
 // refuseDeferrableCheck refuses a deferrable CHECK on a target whose
 // descriptor does not keep a CHECK's deferral. Written without the clause,
 // the CHECK would reject at once the rows its author arranged to fix before
@@ -2119,7 +2206,9 @@ func validateDeclaredEnforcementAndMatch(
 			}
 		case strings.EqualFold(constraint.Type, "FOREIGN KEY"):
 			if err := validateForeignKeyClauses(
-				dialect, caps, foreignKeyClauses{match: constraint.Match, notEnforced: constraint.NotEnforced},
+				dialect, caps, foreignKeyClauses{
+					match: constraint.Match, notEnforced: constraint.NotEnforced, period: constraint.Period,
+				},
 				foreignKeyIdentity(constraint.Name, strings.Join(constraint.Columns, ", ")),
 			); err != nil {
 				return err
@@ -2148,6 +2237,7 @@ func refuseNotEnforcedCheck(dialect string, caps capability.Capabilities, identi
 type foreignKeyClauses struct {
 	match       string
 	notEnforced bool
+	period      bool
 }
 
 // validateForeignKeyClauses refuses a foreign key's NOT ENFORCED and MATCH
@@ -2158,6 +2248,11 @@ func validateForeignKeyClauses(
 	dialect string, caps capability.Capabilities, clauses foreignKeyClauses, identity string,
 ) error {
 	normalized := platform.NormalizeDialect(dialect)
+	if clauses.period {
+		if err := refuseTemporalKey(dialect, caps, "FOREIGN KEY", identity); err != nil {
+			return err
+		}
+	}
 	match := clauses.match
 	if clauses.notEnforced && !caps.Has(capability.NotEnforcedForeignKeys) {
 		return enforcementError(dialect, fmt.Sprintf(
@@ -2931,8 +3026,7 @@ func normalizeReferentialActions(
 }
 
 func normalizeReferentialAction(dialect, clause, action string) (string, error) {
-	action = strings.ReplaceAll(action, "_", " ")
-	action = strings.ToUpper(strings.Join(strings.Fields(action), " "))
+	action = referentialaction.Spelling(action)
 	if action == "" {
 		return "", nil
 	}

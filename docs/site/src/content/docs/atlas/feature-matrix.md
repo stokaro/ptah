@@ -107,16 +107,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 213 capabilities below:
+Across the 214 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 196 |
+| Ptah supports it fully | 197 |
 | Ptah supports it with a stated limitation | 5 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 58 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 59 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 13 |
@@ -164,6 +164,7 @@ seven of them as open capabilities regardless.
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
 | MySQL and MariaDB `PARTITION BY` in a desired schema | ❌ | ❌ | ❔ | Not modeled (stokaro/ptah#6357): refused by name from SQL, Go, YAML and HCL, and a table partitioned outside Ptah reads with a warning. The community binary writes an option the server refuses. |
 | PostgreSQL `CREATE TABLE ... PARTITION OF` in a SQL schema | ✅ | ❌ | ❔ | Read, compared and planned on PostgreSQL and YugabyteDB; other targets refuse it by name. The community binary accepts the file and creates no partition. |
+| PostgreSQL 18 temporal keys (`without_overlaps`, `period`) | ✅ | ❌ | ✅ | WITHOUT OVERLAPS keys and PERIOD foreign keys from HCL, SQL, Go annotations and YAML, read back and planned on PostgreSQL 18+. Other targets refuse them by name. |
 | Ptah-only HCL schema extensions | ✅ | ➖ | ➖ | platform/override per dialect, including ClickHouse index settings, EXCLUDE constraint block, column enum, table checks/custom, index ops, seed data block. |
 | SQL DDL schema files | ✅ | ✅ | ✅ | Native `--schema-file` and compat `--to`/`--from` accept DDL. COMMENT ON is modeled or refused. Supported PostgreSQL role-bootstrap DO blocks contribute roles; other procedural effects are refused. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |

@@ -6,6 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/referentialaction"
 )
 
 // foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.
@@ -43,6 +44,13 @@ func foreignKeyConstraintChanged(
 	// (stokaro/ptah#3853).
 	if normalizeMatchType(genConstraint.Match) != normalizeMatchType(dbConstraint.Match) ||
 		genConstraint.NotEnforced != dbConstraint.NotEnforced {
+		return true
+	}
+
+	// Compare PERIOD. A temporal key and a plain one over the same columns are
+	// different constraints, and the server cannot turn one into the other in
+	// place (stokaro/ptah#6330).
+	if genConstraint.Period != dbConstraint.Period {
 		return true
 	}
 
@@ -169,8 +177,7 @@ func sameColumnNames(semantics identifier.Semantics, left, right []string) bool 
 // DDL level, so the fold is NOT applied there — doing so would mask a genuine
 // RESTRICT <-> NO ACTION change the user intended.
 func normalizeReferentialAction(action, dialect string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(action))
-	normalized = strings.ReplaceAll(normalized, "_", " ")
+	normalized := referentialaction.Spelling(action)
 	if normalized == "" {
 		return "NO ACTION"
 	}

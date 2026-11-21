@@ -103,6 +103,31 @@ func TestCompare_FieldLevelForeignKeyActionDrift(t *testing.T) {
 	})
 }
 
+// TestCompare_ForeignKeyActionReadsTheRenderedSpelling compares an action the
+// way the renderer writes it: an underscore, a run of spaces and a tab between
+// the words are the one SET NULL the renderer writes and the catalog reports,
+// so an unchanged foreign key plans nothing. Spelled one way by the renderer
+// and another by the comparison, each run would replace the key.
+func TestCompare_ForeignKeyActionReadsTheRenderedSpelling(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+	}{
+		{name: "an HCL underscore", action: "SET_NULL"},
+		{name: "a run of spaces", action: "set   null"},
+		{name: "a tab", action: "set\tnull"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := must.Must(schemadiff.Compare(t.Context(), exportsSchema(test.action), exportsDBSchema("SET NULL"), must.Must(builtin.New())))
+
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
+		})
+	}
+}
+
 // TestCompare_FieldLevelForeignKeyActionIdempotency proves the fix does not
 // introduce a perpetual drop+add loop: once the schema and the database agree
 // on the FK action, repeated Compare runs keep reporting no changes. This is

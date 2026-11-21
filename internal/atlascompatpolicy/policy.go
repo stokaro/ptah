@@ -762,7 +762,26 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		// and its inspection of a commented enum type leaves the comment out.
 		// Strict mode refuses the comment rather than dropping it too.
 		{name: "enum comments", present: hasEnumComments(database)},
+		// Measured on v1.4.0 against PostgreSQL 18.6: it accepts
+		// without_overlaps on a primary_key or unique block and period on a
+		// foreign_key block and plans plain keys, refuses `type = GIST` on a
+		// key as an unknown variable, inspects a WITHOUT OVERLAPS key as
+		// `PRIMARY KEY USING gist` with the clause left out, and fails to
+		// inspect a database whose foreign key uses PERIOD. Strict mode refuses
+		// the keys rather than plan or describe them without their clause
+		// (stokaro/ptah#6330).
+		{name: "temporal keys", present: hasTemporalKeys(database)},
 	}
+}
+
+// hasTemporalKeys reports a WITHOUT OVERLAPS primary key or constraint, or a
+// PERIOD foreign key.
+func hasTemporalKeys(database *schemamodel.Database) bool {
+	return slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool {
+		return table.PrimaryKeyWithoutOverlaps
+	}) || slices.ContainsFunc(database.Constraints, func(constraint schemamodel.Constraint) bool {
+		return constraint.WithoutOverlaps || constraint.Period
+	})
 }
 
 func hasDefaultPrivileges(database *schemamodel.Database) bool {

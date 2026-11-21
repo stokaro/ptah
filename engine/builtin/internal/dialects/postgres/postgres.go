@@ -1935,7 +1935,7 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		if constraint.Name != "" {
 			line += fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(constraint.Name))
 		}
-		line += fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(r.escapeIdentifierList(constraint.Columns), ", "))
+		line += fmt.Sprintf("PRIMARY KEY (%s)", r.keyColumnList(constraint))
 		if len(constraint.IncludeColumns) > 0 {
 			line += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
 		}
@@ -1948,7 +1948,7 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		if constraint.NullsDistinct != nil {
 			clause += " " + renderNullsDistinctClause(constraint.NullsDistinct)
 		}
-		columns := fmt.Sprintf("(%s)", strings.Join(r.escapeIdentifierList(constraint.Columns), ", "))
+		columns := fmt.Sprintf("(%s)", r.keyColumnList(constraint))
 		if len(constraint.IncludeColumns) > 0 {
 			columns += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
 		}
@@ -2000,6 +2000,28 @@ func foreignKeyIdentity(constraint *ast.ConstraintNode) string {
 	return fmt.Sprintf("on (%s) references %s", strings.Join(constraint.Columns, ", "), table)
 }
 
+// keyColumnList writes the columns of a PRIMARY KEY or UNIQUE constraint, with
+// WITHOUT OVERLAPS after the last one when the key is temporal. The shared
+// renderer has refused a temporal key on a target without
+// [capability.TemporalKeys], so one that reaches here is written.
+func (r *Renderer) keyColumnList(constraint *ast.ConstraintNode) string {
+	list := r.escapeIdentifierList(constraint.Columns)
+	if constraint.WithoutOverlaps && len(list) > 0 {
+		list[len(list)-1] += " WITHOUT OVERLAPS"
+	}
+	return strings.Join(list, ", ")
+}
+
+// foreignKeyColumnList writes the columns of one side of a foreign key, with
+// PERIOD before the last one when the reference is temporal.
+func (r *Renderer) foreignKeyColumnList(columns []string, ref *ast.ForeignKeyRef) string {
+	list := r.escapeIdentifierList(columns)
+	if ref.Period && len(list) > 0 {
+		list[len(list)-1] = "PERIOD " + list[len(list)-1]
+	}
+	return strings.Join(list, ", ")
+}
+
 func renderNullsDistinctClause(nullsDistinct *bool) string {
 	if nullsDistinct != nil && *nullsDistinct {
 		return "NULLS DISTINCT"
@@ -2020,9 +2042,9 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		referenced = "%s (%s)"
 	}
 	foreignKey := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES "+referenced,
-		strings.Join(r.escapeIdentifierList(constraint.Columns), ", "),
+		r.foreignKeyColumnList(constraint.Columns, ref),
 		r.escapeQualifiedIdentifier(ref.Table),
-		strings.Join(r.escapeIdentifierList(ref.ReferencedColumns()), ", "))
+		r.foreignKeyColumnList(ref.ReferencedColumns(), ref))
 	// PostgreSQL takes the MATCH type right after the referenced columns.
 	if ref.Match != "" {
 		foreignKey += " MATCH " + ref.Match

@@ -406,6 +406,8 @@ func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) Cons
 			Initially:       declared.Initially,
 			Match:           declared.Match,
 			NotEnforced:     declared.NotEnforced,
+			WithoutOverlaps: declared.WithoutOverlaps,
+			Period:          declared.Period,
 			NotValid:        declared.NotValid,
 			Comment:         declared.Comment,
 		})
@@ -623,6 +625,13 @@ type ConstraintAdditionInfo struct {
 	// declaration said it does not (stokaro/ptah#3853).
 	Match       string `json:"match,omitempty"`
 	NotEnforced bool   `json:"not_enforced,omitempty"`
+	// WithoutOverlaps and Period carry a temporal key to the planner: a PRIMARY
+	// KEY or UNIQUE whose last column is kept from overlapping, and a foreign
+	// key whose last columns are compared as periods. An addition built
+	// without them writes a key that accepts the rows the declaration forbids
+	// (stokaro/ptah#6330).
+	WithoutOverlaps bool `json:"without_overlaps,omitempty"`
+	Period          bool `json:"period,omitempty"`
 	// NotValid asks for the constraint to be added without checking the rows
 	// the table holds, as the declaration allows; see
 	// [ptah.run/core/schemamodel.Constraint.NotValid].

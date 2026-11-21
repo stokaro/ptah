@@ -54,6 +54,9 @@ type Parser struct {
 	// the keyword handler reads it, and the node it belongs to is not built
 	// until the column list has been read too.
 	foreignKeyIndexName string
+	// localPeriod records that the foreign key being read wrote PERIOD before
+	// its last referencing column, until the reference it pairs with is read.
+	localPeriod bool
 	// keyOptions are the COMMENT and visibility after the parts of the key
 	// being read; see [Parser.readKeyOptions].
 	keyOptions keyOptions
@@ -2757,9 +2760,13 @@ func (p *Parser) refuseModifyReferences() error {
 func (p *Parser) handleReferences(column *ast.ColumnNode) error {
 	// Handle REFERENCES
 	p.advance()
+	at := p.current.Start
 	fkRef, err := p.parseForeignKeyReference([]string{column.Name}, nil)
 	if err != nil {
 		return fmt.Errorf("expected foreign key reference: %w", err)
+	}
+	if fkRef.Period {
+		return ptaherr.At(at, errPeriodOnColumn)
 	}
 
 	column.ForeignKey = fkRef
@@ -4987,7 +4994,9 @@ func (p *Parser) parseForeignKeyReference(localColumns []string, facets *schemae
 
 	// Get referenced column names
 	var columnNames []string
+	period := false
 	for {
+		marked := p.readPeriodMarker()
 		columnName, err := p.expectIdentifier()
 		if err != nil {
 			return nil, fmt.Errorf("expected column name in REFERENCES: %w", err)
@@ -4995,6 +5004,12 @@ func (p *Parser) parseForeignKeyReference(localColumns []string, facets *schemae
 		columnNames = append(columnNames, columnName)
 
 		p.skipWhitespace()
+		if marked {
+			period = true
+			if err := p.refuseKeyTail(errPeriodNotLast); err != nil {
+				return nil, err
+			}
+		}
 		if !p.current.MatchOperatorValue(",") {
 			break
 		}
@@ -5012,6 +5027,7 @@ func (p *Parser) parseForeignKeyReference(localColumns []string, facets *schemae
 	fkRef := &ast.ForeignKeyRef{
 		Table:  tableName,
 		Column: columnNames[0],
+		Period: period,
 	}
 	if len(columnNames) > 1 {
 		fkRef.Columns = columnNames
@@ -5500,7 +5516,9 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 	p.skipWhitespace()
 
 	// Parse column names
+	p.localPeriod = false
 	for {
+		period := constraint.Type == ast.ForeignKeyConstraint && p.readPeriodMarker()
 		column, err := p.parseConstraintColumn()
 		if err != nil {
 			return err
@@ -5509,6 +5527,20 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 		constraint.ColumnParts = append(constraint.ColumnParts, column)
 
 		p.skipWhitespace()
+		if period {
+			p.localPeriod = true
+			if err := p.refuseKeyTail(errPeriodNotLast); err != nil {
+				return err
+			}
+		}
+		if constraint.Type == ast.PrimaryKeyConstraint || constraint.Type == ast.UniqueConstraint {
+			if p.readWithoutOverlaps() {
+				constraint.WithoutOverlaps = true
+				if err := p.refuseKeyTail(errWithoutOverlapsNotLast); err != nil {
+					return err
+				}
+			}
+		}
 
 		if p.current.MatchOperatorValue(",") {
 			p.advance()
@@ -5807,8 +5839,12 @@ func (p *Parser) handleTableForeignKey(constraint *ast.ConstraintNode) error {
 		return fmt.Errorf("expected REFERENCES after FOREIGN KEY: %w", err)
 	}
 
+	at := p.current.Start
 	fkRef, err := p.parseForeignKeyReference(constraint.Columns, &constraint.Facets)
 	if err != nil {
+		return err
+	}
+	if err := p.checkPeriodSides(fkRef, at); err != nil {
 		return err
 	}
 	constraint.Reference = fkRef

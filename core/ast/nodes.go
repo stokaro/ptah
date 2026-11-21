@@ -683,6 +683,16 @@ type ConstraintNode struct {
 	// the clause refuses the constraint rather than write one that checks
 	// every row (stokaro/ptah#3853).
 	NotEnforced bool
+	// WithoutOverlaps marks a PRIMARY KEY or UNIQUE constraint whose last column
+	// is a range or multirange that the key keeps from overlapping between rows
+	// that agree on the other columns: `PRIMARY KEY (id, valid_at WITHOUT
+	// OVERLAPS)`. PostgreSQL 18 builds a GiST index for it and records
+	// pg_constraint.conperiod. A foreign key's PERIOD is on
+	// [ForeignKeyRef.Period]. A renderer for a target without
+	// [ptah.run/core/platform/capability.TemporalKeys] refuses the constraint
+	// rather than write a key that accepts the overlapping rows
+	// (stokaro/ptah#6330).
+	WithoutOverlaps bool
 	// UsingMethod specifies the primary key index access method.
 	UsingMethod string
 	// UsingIndex names the existing unique index a PRIMARY KEY or UNIQUE

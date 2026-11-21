@@ -2605,6 +2605,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 		constraint.IncludeColumns = postgresIncludeColumnsFromDefinition(constraintDefinition)
 		constraint.HashShardBuckets = hashShardBuckets(r.dialect, constraintDefinition)
 		constraint.NotEnforced = postgresNotEnforcedFromDefinition(constraintDefinition)
+		constraint.WithoutOverlaps, constraint.Period = postgresTemporalFromDefinition(constraint.Type, constraintDefinition)
 		if constraint.Type == "FOREIGN KEY" {
 			columns, err := pgtable.DeleteColumnsFromDefinition(constraintDefinition)
 			if err != nil {
@@ -2727,6 +2728,25 @@ func postgresIncludeColumnsFromDefinition(definition string) []string {
 // (stokaro/ptah#3853).
 func postgresNotEnforcedFromDefinition(definition string) bool {
 	return strings.HasSuffix(definition, " NOT ENFORCED")
+}
+
+// postgresTemporalFromDefinition answers whether pg_get_constraintdef prints a
+// temporal key: `PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)` and `UNIQUE (id,
+// k, valid_at WITHOUT OVERLAPS)` for a key, and `FOREIGN KEY (pid, PERIOD
+// valid_at) REFERENCES p(id, PERIOD valid_at)` for a foreign key, measured on
+// PostgreSQL 18.6. pg_constraint.conperiod is true for each. The definition is
+// read rather than the column, which exists only from PostgreSQL 18, so one
+// query serves every server the reader reads (stokaro/ptah#6330). A quoted
+// name that spells the words is not read as the clause.
+func postgresTemporalFromDefinition(constraintType, definition string) (withoutOverlaps, period bool) {
+	switch constraintType {
+	case "PRIMARY KEY", "UNIQUE":
+		return indexOutsideQuotes(definition, " WITHOUT OVERLAPS)") >= 0, false
+	case "FOREIGN KEY":
+		return false, indexOutsideQuotes(definition, ", PERIOD ") >= 0
+	default:
+		return false, false
+	}
 }
 
 // postgresMatchFromDefinition answers the MATCH type pg_get_constraintdef

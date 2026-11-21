@@ -612,6 +612,8 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 			Initially:      table.PrimaryKeyInitially,
 			UsingMethod:    optionalStringPtr(table.PrimaryKeyMethod),
 			Comment:        table.PrimaryKeyComment,
+
+			WithoutOverlaps: table.PrimaryKeyWithoutOverlaps,
 		})
 	}
 	for _, constraint := range constraints {
@@ -635,6 +637,9 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 			Match:          constraint.Match,
 			NotEnforced:    constraint.NotEnforced,
 			Requires:       slices.Clone(constraint.Requires),
+
+			WithoutOverlaps: constraint.WithoutOverlaps,
+			Period:          constraint.Period,
 		}
 		if constraint.ForeignTable != "" {
 			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)
@@ -695,6 +700,9 @@ func unnamedConstraintDefinition(constraint catalog.Constraint) string {
 		// two constraints (stokaro/ptah#3853).
 		strings.ToUpper(constraint.Match),
 		strconv.FormatBool(constraint.NotEnforced),
+		// Nor are a temporal key and a plain one (stokaro/ptah#6330).
+		strconv.FormatBool(constraint.WithoutOverlaps),
+		strconv.FormatBool(constraint.Period),
 	}, "\x00")
 }
 

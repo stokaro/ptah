@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/temporalkeys"
 	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
 )
@@ -388,6 +389,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		annotation.Subject{Kind: annotation.SubjectIndex, Struct: structName, Name: kv["name"], Table: tableName}, structName); err != nil {
 		return err
 	}
+	nullsDistinct, err := optionalBoolAttribute(kv, "nulls_distinct")
+	if err != nil {
+		return ownerAttributeError(ctx, err)
+	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		Facets:         facets,
 		StructName:     structName,
@@ -401,7 +406,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
 		Operator:       kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
 		IncludeColumns: includeColumns,
-		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
+		NullsDistinct:  nullsDistinct,
 		TableName:      tableName, // Target table name
 		StorageParams:  options,
 	})
@@ -461,6 +466,20 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 			fmt.Errorf("%w: constraint %q has unsupported common kind %q", ptaherr.ErrUnsupportedFeature, constraint.Name, constraint.Type))
 	}
 	constraint.Facets = facets
+	if constraint.NullsDistinct, err = optionalBoolAttribute(kv, "nulls_distinct"); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
+	// WITHOUT OVERLAPS qualifies the last column of a PRIMARY KEY or UNIQUE,
+	// and PERIOD the last columns of a FOREIGN KEY.
+	if constraint.WithoutOverlaps, err = flagAttribute(kv, "without_overlaps"); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
+	if constraint.Period, err = flagAttribute(kv, "period"); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
+	if err := temporalkeys.CheckConstraint(constraint); err != nil {
+		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
+	}
 	s.schemaConstraints = append(s.schemaConstraints, constraint)
 	return nil
 }
@@ -498,7 +517,6 @@ func parseConstraintComment(kvParser parseutils.KeyValueParser, comment *ast.Com
 		// UNIQUE/PRIMARY KEY constraint specific fields
 		Columns:        columns, // Column names
 		IncludeColumns: splitCommaList(kv["include"]),
-		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
 
 		// FOREIGN KEY constraint specific fields
 		ForeignTable:   kv["foreign_table"],  // Referenced table
@@ -524,11 +542,20 @@ func normalizeIdentityGeneration(value string) string {
 	}
 }
 
-func parseBoolPtr(value string) *bool {
-	if strings.TrimSpace(value) == "" {
-		return nil
+// flagAttribute reads a boolean attribute whose absence means false.
+func flagAttribute(kv map[string]string, name string) (bool, error) {
+	value, _, err := parseutils.BoolAttribute(kv, name)
+	return value, err
+}
+
+// optionalBoolAttribute reads a boolean attribute whose absence leaves the
+// engine's default, as nulls_distinct does.
+func optionalBoolAttribute(kv map[string]string, name string) (*bool, error) {
+	value, present, err := parseutils.BoolAttribute(kv, name)
+	if err != nil || !present {
+		return nil, err
 	}
-	return new(strings.EqualFold(value, "true"))
+	return new(value), nil
 }
 
 // extensionDirective is the frontend's extension directive, which a selected
@@ -721,7 +748,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		// no place for one.
 		return ownerAttributeError(ctx, errors.New("a setting of the primary key needs the key declared with primary_key"))
 	}
-	s.tableDirectives = append(s.tableDirectives, schemamodel.Table{
+	declared := schemamodel.Table{
 		StructName:        structName,
 		Name:              tableName,
 		APIName:           kv["api_name"],
@@ -738,7 +765,14 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		CustomSQL:         kv["custom"],
 		Facets:            facets,
 		Overrides:         parseutils.ParsePlatformSpecific(s.hostAttributes("ptah:schema:table", kv)),
-	})
+	}
+	if declared.PrimaryKeyWithoutOverlaps, err = flagAttribute(kv, "primary_key_without_overlaps"); err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	if err := temporalkeys.CheckPrimaryKey(declared); err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	s.tableDirectives = append(s.tableDirectives, declared)
 	return nil
 }
 

@@ -165,6 +165,9 @@ func countTableKeys(counts map[string]int, table schemamodel.Table) {
 	if table.PrimaryKeyDeferrable {
 		counts["DEFERRABLE on keys"]++
 	}
+	if table.PrimaryKeyWithoutOverlaps {
+		counts["WITHOUT OVERLAPS and PERIOD on keys"]++
+	}
 	if len(table.PrimaryKeyInclude) > 0 {
 		counts["INCLUDE columns on keys"]++
 	}
@@ -220,6 +223,9 @@ func countConstraint(counts map[string]int, constraint schemamodel.Constraint) {
 	}
 	if constraint.NotEnforced {
 		counts["NOT ENFORCED on constraints"]++
+	}
+	if constraint.WithoutOverlaps || constraint.Period {
+		counts["WITHOUT OVERLAPS and PERIOD on keys"]++
 	}
 	if len(constraint.IncludeColumns) > 0 {
 		counts["INCLUDE columns on keys"]++

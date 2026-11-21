@@ -375,6 +375,16 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartitionMember{}))}}}},
 		{name: "platform overrides", database: &schemamodel.Database{Fields: []schemamodel.Field{{Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}}}}}},
 		{name: "enum comments", database: &schemamodel.Database{Enums: []schemamodel.Enum{{Name: "mood", Values: []string{"ok"}, Comment: "x"}}}},
+		{name: "temporal keys", database: &schemamodel.Database{Tables: []schemamodel.Table{{
+			Name: "rooms", PrimaryKey: []string{"id", "valid_at"}, PrimaryKeyWithoutOverlaps: true,
+		}}}},
+		{name: "temporal keys", database: &schemamodel.Database{Constraints: []schemamodel.Constraint{{
+			Name: "rooms_uq", Type: "UNIQUE", Table: "rooms", Columns: []string{"id", "valid_at"}, WithoutOverlaps: true,
+		}}}},
+		{name: "temporal keys", database: &schemamodel.Database{Constraints: []schemamodel.Constraint{{
+			Name: "bookings_fk", Type: "FOREIGN KEY", Table: "bookings", Columns: []string{"room_id", "valid_at"},
+			ForeignTable: "rooms", ForeignColumns: []string{"id", "valid_at"}, Period: true,
+		}}}},
 	}
 
 	for _, test := range tests {
@@ -401,6 +411,34 @@ func TestStrictCEValidatesInspectedSchemaExtensions(t *testing.T) {
 	}),
 		qt.IsNil,
 	)
+}
+
+// temporalKeysDatabase holds a WITHOUT OVERLAPS primary key and a PERIOD
+// foreign key onto it.
+func temporalKeysDatabase() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "rooms", PrimaryKey: []string{"id", "valid_at"}, PrimaryKeyWithoutOverlaps: true},
+			{Name: "bookings"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			Name: "bookings_fk", Type: "FOREIGN KEY", Table: "bookings", Columns: []string{"room_id", "valid_at"},
+			ForeignTable: "rooms", ForeignColumns: []string{"id", "valid_at"}, Period: true,
+		}},
+	}
+}
+
+// TestStrictCERefusesInspectedTemporalKeys refuses temporal keys read from a
+// database too. Measured on v1.4.0 against PostgreSQL 18.6, the pinned
+// inspector describes a WITHOUT OVERLAPS key without the clause and fails on a
+// database whose foreign key uses PERIOD. The default surface keeps both sides.
+func TestStrictCERefusesInspectedTemporalKeys(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(atlascompatpolicy.StrictCE().ValidateInspectedSchema(temporalKeysDatabase()), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support inspected schema temporal keys`)
+	c.Assert(atlascompatpolicy.Full().ValidateInspectedSchema(temporalKeysDatabase()), qt.IsNil)
+	c.Assert(atlascompatpolicy.Full().ValidateDesiredSchema(temporalKeysDatabase()), qt.IsNil)
 }
 
 // TestStrictCEIgnoresOnlyInspectedSystemPlpgsqlExtension pins the carve-out

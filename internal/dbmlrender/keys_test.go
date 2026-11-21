@@ -203,3 +203,31 @@ func fieldNamed(fields []schemamodel.Field, structName, name string) schemamodel
 	}
 	return schemamodel.Field{}
 }
+
+// TestRender_NamesTemporalKeysItCannotCarry names a WITHOUT OVERLAPS key and a
+// PERIOD foreign key among the losses rather than writing the key without its
+// clause (stokaro/ptah#6330).
+func TestRender_NamesTemporalKeysItCannotCarry(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Room", Name: "rooms", PrimaryKey: []string{"id", "valid_at"}, PrimaryKeyWithoutOverlaps: true},
+			{StructName: "Booking", Name: "bookings"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Room", Name: "id", Type: "integer"},
+			{StructName: "Room", Name: "valid_at", Type: "daterange"},
+			{StructName: "Booking", Name: "room_id", Type: "integer"},
+			{StructName: "Booking", Name: "valid_at", Type: "daterange"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			StructName: "Booking", Table: "bookings", Name: "bookings_uq", Type: "UNIQUE",
+			Columns: []string{"room_id", "valid_at"}, WithoutOverlaps: true,
+		}},
+	}
+
+	result, err := renderDBML(c, db, dbmlrender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Omitted, qt.DeepEquals, []string{"WITHOUT OVERLAPS and PERIOD on keys (2)"})
+}

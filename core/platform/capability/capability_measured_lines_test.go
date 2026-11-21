@@ -215,6 +215,7 @@ func measuredLines() map[string]measuredLine {
 					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
 				capability.NotEnforcedChecks:           enforcementAndMatchCarried,
 				capability.NotEnforcedForeignKeys:      enforcementAndMatchCarried,
+				capability.TemporalKeys:                temporalKeysCarried,
 				capability.PublicationSchemas:          publicationCarried,
 				capability.PublicationGeneratedColumns: publicationCarried,
 				capability.ForeignKeyMatchFull:         enforcementAndMatchCarried,
@@ -417,6 +418,7 @@ func measuredLines() map[string]measuredLine {
 					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
 				capability.NotEnforcedChecks:           enforcementAndMatchCarried,
 				capability.NotEnforcedForeignKeys:      enforcementAndMatchCarried,
+				capability.TemporalKeys:                temporalKeysCarried,
 				capability.PublicationSchemas:          publicationCarried,
 				capability.PublicationGeneratedColumns: publicationCarried,
 				capability.ForeignKeyMatchFull:         enforcementAndMatchCarried,
@@ -620,6 +622,7 @@ func measuredLines() map[string]measuredLine {
 					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
 				capability.NotEnforcedChecks:           enforcementAndMatchCarried,
 				capability.NotEnforcedForeignKeys:      enforcementAndMatchCarried,
+				capability.TemporalKeys:                temporalKeysCarried,
 				capability.PublicationSchemas:          publicationCarried,
 				capability.PublicationGeneratedColumns: publicationCarried,
 				capability.ForeignKeyMatchFull:         enforcementAndMatchCarried,
@@ -979,3 +982,11 @@ const fullTextKeyCarried = "this run predates the YDB full-text key; the current
 
 // columnStoreKeyCarried distinguishes new probes from the historical transcripts.
 const columnStoreKeyCarried = "this run predates the YDB column-store keys; the current probe asks the YDB DDL on every engine"
+
+// temporalKeysCarried is the reason a line carries the temporal keys key. The
+// capability-matrix runs these lines come from predate it and sent no WITHOUT
+// OVERLAPS or PERIOD clause; the key is measured by the probe plan of
+// internal/capabilityprobe and by integration/temporal_keys_e2e_test.go
+// (stokaro/ptah#6330).
+const temporalKeysCarried = "these runs predate the key and sent no WITHOUT OVERLAPS or PERIOD clause; " +
+	"the probe plan decides it on the next matrix run"

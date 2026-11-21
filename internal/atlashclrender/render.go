@@ -1098,6 +1098,9 @@ func (r *renderer) renderPrimaryKey(slot ownerSlot, table schemamodel.Table, fie
 	if table.PrimaryKeyComment != "" {
 		r.warn(primaryKeyPath(table), "the primary key COMMENT option cannot be represented in HCL schema output")
 	}
+	if table.PrimaryKeyWithoutOverlaps {
+		r.rawAttr(2, "without_overlaps", "true")
+	}
 	r.reportSlotLosses(primaryKeyPath(table), slot)
 	renderPrimaryKeyMethod(r, table.PrimaryKeyMethod)
 	r.line("  }")
@@ -1145,6 +1148,9 @@ func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool
 			r.rawAttr(2, "include", columnRefs(constraint.IncludeColumns))
 		}
 		r.boolPtrAttr(2, "nulls_distinct", constraint.NullsDistinct)
+		if constraint.WithoutOverlaps {
+			r.rawAttr(2, "without_overlaps", "true")
+		}
 		r.line("  }")
 		return true
 	case "FOREIGN KEY":
@@ -1158,7 +1164,7 @@ func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool
 			constraint.ForeignColumnsOrDefault(),
 			constraint.OnDelete,
 			constraint.OnUpdate,
-			foreignKeyDeferral{deferrable: constraint.Deferrable, initially: constraint.Initially},
+			foreignKeyDeferral{deferrable: constraint.Deferrable, initially: constraint.Initially, period: constraint.Period},
 		)
 		return true
 	case "PRIMARY KEY":
@@ -1169,6 +1175,9 @@ func (r *renderer) renderAtlasConstraint(constraint schemamodel.Constraint) bool
 		r.rawAttr(2, "columns", columnRefs(constraint.Columns))
 		if len(constraint.IncludeColumns) > 0 {
 			r.rawAttr(2, "include", columnRefs(constraint.IncludeColumns))
+		}
+		if constraint.WithoutOverlaps {
+			r.rawAttr(2, "without_overlaps", "true")
 		}
 		r.line("  }")
 		return true
@@ -1189,6 +1198,12 @@ func (r *renderer) renderPtahConstraint(constraint schemamodel.Constraint) {
 		r.rawAttr(2, "include", stringList(constraint.IncludeColumns))
 	}
 	r.boolPtrAttr(2, "nulls_distinct", constraint.NullsDistinct)
+	if constraint.WithoutOverlaps {
+		r.rawAttr(2, "without_overlaps", "true")
+	}
+	if constraint.Period {
+		r.rawAttr(2, "period", "true")
+	}
 	r.stringAttr(2, "foreign_table", constraint.ForeignTable)
 	if foreignColumns := constraint.ForeignColumnsOrDefault(); len(foreignColumns) > 0 {
 		r.rawAttr(2, "foreign_columns", stringList(foreignColumns))
@@ -1254,6 +1269,9 @@ func atlasPrimaryKeyConstraint(constraint schemamodel.Constraint) bool {
 type foreignKeyDeferral struct {
 	deferrable bool
 	initially  string
+	// period is PERIOD on the last column of each side, which is not a
+	// deferral and rides here for the same reason the deferral does.
+	period bool
 }
 
 func (r *renderer) renderForeignKey(
@@ -1276,6 +1294,9 @@ func (r *renderer) renderForeignKey(
 		r.rawAttr(2, "deferrable", "true")
 	}
 	r.stringAttr(2, "initially", deferral.initially)
+	if deferral.period {
+		r.rawAttr(2, "period", "true")
+	}
 	r.line("  }")
 }
 

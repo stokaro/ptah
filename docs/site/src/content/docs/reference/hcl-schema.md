@@ -99,11 +99,11 @@ for the message and the flag it names.
 | `schema` | Labels and comments for table namespace references. |
 | `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, `platform`, `api_name`, `openapi_name`, `graphql_name`, and `proto_name` extensions. An executable provider may claim the `platform` block of its engine, such as the YDB provider's `platform "ydb"` TTL; an `override` it does not read is refused. |
 | `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum`, `platform`, `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` extensions. |
-| `primary_key` | `columns`; PostgreSQL also supports `include`, and MySQL and MariaDB support `type = HASH`. |
+| `primary_key` | `columns`; PostgreSQL also supports `include` and `without_overlaps` (with an optional `type = GIST`), and MySQL and MariaDB support `type = HASH`. |
 | `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, PostgreSQL include/storage options, and Ptah `platform` blocks for provider-owned source properties, such as a ClickHouse data-skipping index's `type` and `granularity`. |
-| `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. `using` is refused on a `UNIQUE`, `CHECK` or `FOREIGN KEY` constraint. |
-| `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
-| `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry, plus optional `on_delete`, `on_update`, `deferrable` and `initially`. |
+| `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. `using` is refused on a `UNIQUE`, `CHECK` or `FOREIGN KEY` constraint. On PostgreSQL it also takes `without_overlaps` on a `PRIMARY KEY` or `UNIQUE` constraint and `period` on a `FOREIGN KEY`. |
+| `unique` | `columns`; PostgreSQL also supports `include`, `nulls_distinct` and `without_overlaps` (with an optional `type = GIST`). |
+| `foreign_key` | `columns` and table-qualified `ref_columns`, plus optional `on_delete`, `on_update`, `deferrable`, `initially` and `period`. A `period` key takes no action but `NO_ACTION`. |
 | `check` | `expr`. |
 | `enum` | `values`, plus the `schema` that owns the type. A PostgreSQL enum is created in that schema and a column declared against it is qualified with it. |
 | `extension` | PostgreSQL installation `schema`, `if_not_exists`, `version`, and comments. |

@@ -628,6 +628,7 @@ func (ctx *renderContext) tableAttrs(table schemamodel.Table) []attr {
 	attrs = append(attrs, ctx.ownerAttrs(annotationext.Slot{Directive: tableDirective, Table: declared, PrimaryKey: true}, annotationext.WithOwnAttributes)...)
 	attrs = append(attrs,
 		attr{name: "primary_key", value: strings.Join(table.PrimaryKey, ","), set: len(table.PrimaryKey) > 0},
+		attr{name: "primary_key_without_overlaps", value: "true", set: table.PrimaryKeyWithoutOverlaps},
 		attr{name: "comment", value: table.Comment, set: table.Comment != ""},
 	)
 	attrs = append(attrs, ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)...)
@@ -704,6 +705,7 @@ func constraintAnnotation(constraint schemamodel.Constraint, owned []attr) strin
 		{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
 		{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
 		nullsDistinctAttr(constraint.NullsDistinct),
+		{name: "without_overlaps", value: "true", set: constraint.WithoutOverlaps},
 	}
 	// The owners' settings of the key stand after its column lists.
 	attrs = append(attrs, owned...)
@@ -715,6 +717,7 @@ func constraintAnnotation(constraint schemamodel.Constraint, owned []attr) strin
 		{name: "foreign_columns", value: strings.Join(constraint.ForeignColumns, ","), set: len(constraint.ForeignColumns) > 1},
 		{name: "on_delete", value: constraint.OnDelete, set: constraint.OnDelete != ""},
 		{name: "on_update", value: constraint.OnUpdate, set: constraint.OnUpdate != ""},
+		{name: "period", value: "true", set: constraint.Period},
 		{name: "comment", value: constraint.Comment, set: constraint.Comment != ""},
 	}...)...)
 }

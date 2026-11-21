@@ -70,14 +70,15 @@ func reverseIndexRemovals(
 			continue
 		}
 		restored = append(restored, difftypes.ConstraintAdditionInfo{
-			Name:           ref.Name,
-			TableName:      ref.TableName,
-			Type:           "UNIQUE",
-			Columns:        slices.Clone(columns),
-			IncludeColumns: slices.Clone(dbConstraint.IncludeColumns),
-			NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
-			Deferrable:     dbConstraint.Deferrable,
-			Initially:      dbConstraint.Initially,
+			Name:            ref.Name,
+			TableName:       ref.TableName,
+			Type:            "UNIQUE",
+			Columns:         slices.Clone(columns),
+			IncludeColumns:  slices.Clone(dbConstraint.IncludeColumns),
+			NullsDistinct:   cloneBoolPtr(dbConstraint.NullsDistinct),
+			Deferrable:      dbConstraint.Deferrable,
+			Initially:       dbConstraint.Initially,
+			WithoutOverlaps: dbConstraint.WithoutOverlaps,
 		})
 	}
 	return additions, restored
@@ -186,6 +187,7 @@ func priorConstraintAddition(removed difftypes.ConstraintRemovalInfo, current ca
 		NullsDistinct: cloneBoolPtr(current.NullsDistinct),
 		Deferrable:    current.Deferrable, Initially: current.Initially,
 		Comment: current.Comment, NotEnforced: current.NotEnforced, NotValid: current.NotValid,
+		WithoutOverlaps: current.WithoutOverlaps, Period: current.Period,
 		CheckExpression: derefString(current.CheckClause), UsingMethod: derefString(current.UsingMethod),
 	}, true
 }
@@ -219,6 +221,7 @@ func foreignKeyAdditionFromDBConstraint(
 		Match:       dbFK.Match,
 		NotEnforced: dbFK.NotEnforced,
 		NotValid:    dbFK.NotValid,
+		Period:      dbFK.Period,
 	}
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
 		info.Columns = uniqueStringsPreserveOrder(columns)

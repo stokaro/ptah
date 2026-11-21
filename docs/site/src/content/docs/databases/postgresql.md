@@ -208,6 +208,10 @@ PostgreSQL release lines differ in grammar that reaches generated SQL:
   older line Ptah refuses the declaration rather than render a constraint the
   server would check; see
   [Constraint enforcement and the MATCH type](#constraint-enforcement-and-the-match-type).
+- `WITHOUT OVERLAPS` on a primary key or unique constraint and `PERIOD` on a
+  foreign key require PostgreSQL 18+. On an older line, and on CockroachDB and
+  YugabyteDB, Ptah refuses the declaration rather than render a key that
+  accepts the overlapping rows; see [Temporal keys](#temporal-keys).
 - A `CHECK` name is held once per table: two tables may each hold a `CHECK`
   named `ck`, and two `CHECK` constraints of one name in one table, on a
   column or on the table, are refused before any statement runs, with the
@@ -565,6 +569,86 @@ render`, which connects to nothing, plans for PostgreSQL 17 unless
 ```bash
 ptah schema render --dialect postgres --server-version 18 --root-dir ./models
 ```
+
+## Temporal keys
+
+PostgreSQL 18 adds temporal keys. A primary key or unique constraint whose
+last column is a range or multirange type can be declared `WITHOUT OVERLAPS`:
+two rows that agree on the other columns may not have overlapping ranges. A
+foreign key can be declared with `PERIOD` before the last column of each side:
+the referencing range must be covered by the ranges of the referenced rows.
+
+```sql
+CREATE TABLE rooms (
+  id int,
+  valid_at daterange,
+  PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)
+);
+CREATE TABLE bookings (
+  room_id int,
+  valid_at daterange,
+  UNIQUE (room_id, valid_at WITHOUT OVERLAPS),
+  FOREIGN KEY (room_id, PERIOD valid_at) REFERENCES rooms (id, PERIOD valid_at)
+);
+```
+
+A key needs at least two columns. The server builds a GiST index for a
+`WITHOUT OVERLAPS` key, and a scalar column in that index needs the
+`btree_gist` extension, so declare `CREATE EXTENSION btree_gist` beside the
+tables. A key made only of range columns needs no extension.
+
+Each source spells the clauses its own way:
+
+- SQL writes the clause inside the key: `PRIMARY KEY (id, valid_at WITHOUT
+  OVERLAPS)`, `UNIQUE (id, valid_at WITHOUT OVERLAPS)`, and `FOREIGN KEY (id,
+  PERIOD valid_at) REFERENCES p (id, PERIOD valid_at)`.
+- A Go annotation sets `primary_key_without_overlaps="true"` beside the table's
+  `primary_key`, or `without_overlaps="true"` on a `PRIMARY KEY` or `UNIQUE`
+  constraint, and `period="true"` on a foreign key constraint with
+  `foreign_columns`.
+- YAML sets `primary_key_without_overlaps: true` on the table,
+  `without_overlaps: true` on a `PRIMARY KEY` or `UNIQUE` constraint, and
+  `period: true` on a foreign key constraint with `foreign_columns`.
+- HCL sets `without_overlaps = true` in a `primary_key` or `unique` block, and
+  `period = true` in a `foreign_key` block. The Ptah `constraint` block takes
+  `without_overlaps` and `period` too.
+
+A temporal key is always backed by a GiST index, so an HCL `primary_key` or
+`unique` block with `without_overlaps = true` may also write `type = GIST`, and
+reads the same with or without it. `type = GIST` on a key without
+`without_overlaps`, or another `type` on a temporal key, is refused. A Go
+annotation attribute written bare, such as `period`, means `true`; a value must
+be exactly `true` or `false`, and an empty value or another case is refused. A YAML key is read as every boolean key of a schema is, so
+`yes`, `on`, `no` and `off` are accepted too, and one written with no value or
+as `null` is refused. Read as false, either would declare a plain key.
+
+A temporal key of one column is refused from every source, SQL included,
+because PostgreSQL needs at least two. So is a `PERIOD` foreign key with an
+`ON DELETE` or `ON UPDATE` action other than `NO ACTION`: PostgreSQL 18.6 and
+19.0 answer `unsupported ON DELETE action for foreign key constraint using
+PERIOD` to the others. Both refusals come before any statement runs.
+
+Ptah reads the clauses from `pg_get_constraintdef`, which prints `WITHOUT
+OVERLAPS` after the last key column and `PERIOD` before the last column of each
+side. That is the text the server derives from `pg_constraint.conperiod`. The
+comparison treats the clause as part of the key: a key that gains or loses it,
+or that moves the range to another column, is dropped and added again, because
+PostgreSQL cannot change it in place. Replacing a primary key that foreign keys
+reference also drops and adds those foreign keys.
+
+A target that does not carry the `temporal_keys` capability refuses a
+declaration that uses either clause, and names the constraint and the
+capability. PostgreSQL 17 and earlier, CockroachDB, YugabyteDB, MySQL, MariaDB,
+SQLite, SQL Server, Oracle and ClickHouse all refuse. Render for PostgreSQL 18
+with `--server-version 18`, as for [other PostgreSQL 18
+clauses](#constraint-enforcement-and-the-match-type).
+
+The DBML export has no spelling for either clause and lists them among the
+losses it reports. The Go annotation and HCL exports write them.
+
+Under `PTAH_ATLAS_STRICT_COMPAT=1`, `ptah-compat` refuses a temporal key in a
+desired or an inspected schema; see
+[Strict CE mode](../../atlas/strict-ce-mode/#content-strict-mode-refuses).
 
 ## Unnamed constraints in a SQL file
 

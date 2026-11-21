@@ -1270,6 +1270,23 @@ const (
 	// constraint spelling and still has unique indexes, so coupling them would
 	// make a valid preset invalid (stokaro/ptah#2820).
 	UniqueNullsDistinctClause Capability = "unique_nulls_distinct_clause"
+	// TemporalKeys is whether the target takes PostgreSQL 18's temporal keys:
+	// `PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)` and `UNIQUE (id, valid_at
+	// WITHOUT OVERLAPS)`, which refuse two rows of one key whose last column's
+	// ranges overlap, and `FOREIGN KEY (id, PERIOD valid_at) REFERENCES p (id,
+	// PERIOD valid_at)`, which requires the referencing range to be covered by
+	// the referenced rows' ranges.
+	//
+	// One key covers both because the server grew them in one release and a
+	// schema that uses one uses the other. It is a capability rather than a list
+	// of dialect names because the answer moves with the release line:
+	// PostgreSQL 18 accepts, honors and records them (pg_constraint.conperiod),
+	// and PostgreSQL 17 answers a syntax error at or near "WITHOUT". The
+	// PostgreSQL renderer also serves YugabyteDB and CockroachDB, whose
+	// grammars have no such clause, so the family cannot decide it. A target
+	// without the key refuses the declaration: a plain key would accept the
+	// overlapping rows its author meant to forbid (stokaro/ptah#6330).
+	TemporalKeys Capability = "temporal_keys"
 	// ForeignKeyDeleteColumnList is whether the target takes a column list on
 	// a foreign key's `ON DELETE SET NULL` or `ON DELETE SET DEFAULT`, which
 	// limits the action to the listed referencing columns.
@@ -2315,6 +2332,9 @@ var registry = map[Capability]spec{
 	UniqueNullsDistinctClause: {
 		doc: "NULLS [NOT] DISTINCT accepted on a unique constraint or index (PostgreSQL 15+ and YugabyteDB 2025+ only)",
 	},
+	TemporalKeys: {
+		doc: "temporal keys: WITHOUT OVERLAPS on a primary key or unique constraint and PERIOD on a foreign key (PostgreSQL 18+ only)",
+	},
 	ForeignKeyDeleteColumnList: {
 		doc: "a column list on ON DELETE SET NULL or SET DEFAULT, limiting the action to those columns (PostgreSQL 15+ and YugabyteDB 2025+ only)",
 		// Deliberately no `requires: ForeignKeys`, for the reason
@@ -2821,6 +2841,7 @@ func buildMySQL84() Capabilities {
 		ForeignKeyMatchPartial:          true,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
+		TemporalKeys:                    false,
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
 		InstantAddColumnAnyPosition:     true,
@@ -3150,6 +3171,7 @@ func buildMariaDB1011() Capabilities {
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       false,
+		TemporalKeys:                    false,
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         true,
 		InstantAddColumnAnyPosition:     true,
@@ -3394,6 +3416,7 @@ func buildPostgres16() Capabilities {
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
 		UniqueNullsDistinctClause:       true,
+		TemporalKeys:                    false,
 		ForeignKeyDeleteColumnList:      true,
 		AlterTableAlgorithmLock:         false,
 		InstantAddColumnAnyPosition:     false,
@@ -3519,6 +3542,10 @@ var presetPostgres18 = sync.OnceValue(buildPostgres18)
 func buildPostgres18() Capabilities {
 	return Postgres17().
 		With(NamedNotNullConstraints, true).
+		// PostgreSQL 18 grew WITHOUT OVERLAPS and PERIOD keys. Measured: 18
+		// records pg_constraint.conperiod, and 17 answers a syntax error at or
+		// near "WITHOUT" (stokaro/ptah#6330).
+		With(TemporalKeys, true).
 		// PostgreSQL 18 grew NOT ENFORCED on a CHECK and a foreign key.
 		// Measured: 18.6 records conenforced false, and 17.11 answers a
 		// syntax error at or near "ENFORCED" (stokaro/ptah#3853).
@@ -3781,6 +3808,7 @@ func buildClickHouse24() Capabilities {
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               false,
 		UniqueNullsDistinctClause:       false,
+		TemporalKeys:                    false,
 		ForeignKeyDeleteColumnList:      false,
 		AlterTableAlgorithmLock:         false,
 		InstantAddColumnAnyPosition:     false,
@@ -4029,6 +4057,7 @@ func buildSQLite3() Capabilities {
 		// plan, so this value is a hand measurement rather than a probed one
 		// (stokaro/ptah#2820).
 		UniqueNullsDistinctClause:   false,
+		TemporalKeys:                false,
 		ForeignKeyDeleteColumnList:  false,
 		AlterTableAlgorithmLock:     false,
 		InstantAddColumnAnyPosition: false,
@@ -4369,6 +4398,7 @@ func buildSQLServer2022() Capabilities {
 		// both spellings rather than dropping whichever one is the default
 		// (stokaro/ptah#2820).
 		UniqueNullsDistinctClause:   false,
+		TemporalKeys:                false,
 		ForeignKeyDeleteColumnList:  false,
 		AlterTableAlgorithmLock:     false,
 		InstantAddColumnAnyPosition: false,
@@ -5014,6 +5044,7 @@ func buildOracle23() Capabilities {
 		ForeignKeyMatchPartial:      false,
 		UniqueConstraints:           true,
 		UniqueNullsDistinctClause:   false,
+		TemporalKeys:                false,
 		ForeignKeyDeleteColumnList:  false,
 		AlterTableAlgorithmLock:     false,
 		InstantAddColumnAnyPosition: false,
