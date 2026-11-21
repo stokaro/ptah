@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/testutils"
 )
 
 // The rows below pin how a forwarded verb reads --help beside its other
@@ -207,7 +208,7 @@ func TestCompatHelp_ExplicitFalseRunsTheVerb(t *testing.T) {
 
 			c.Assert(run.code, qt.Equals, 1)
 			c.Assert(run.stderr, qt.Equals,
-				"Error: migrations directory migrations: stat migrations: no such file or directory\n")
+				"Error: migrations directory migrations: "+testutils.StatMissingText("migrations")+"\n")
 			c.Assert(run.stdout, qt.Equals, "")
 		})
 	}
