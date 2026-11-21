@@ -28,7 +28,7 @@ here and what the classification is measured against.
 | value | meaning |
 | --- | --- |
 | none | no connection to a target is opened |
-| reads | the target is read and not written |
+| reads | the target is read; its schema, data and revision state are not written. A verb that holds the migration lock writes the lock's row on Oracle, and its description says so |
 | **writes** | the target is changed |
 
 **Second database** is the other one some verbs take: a dev, shadow or
@@ -124,7 +124,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations create` | none | none | — | writes an empty up and down migration file pair for someone to fill in by hand |
 | `migrations data` | reads | none | `--db-url` | reads reference and seed data from the target and writes a migration file for the drift |
 | `migrations down` | **writes** | **rewrites** | `--db-url`, `--shadow-db` | rolls back migrations against the target, after replaying and verifying the rollback plan in an ephemeral shadow database |
-| `migrations drift` | reads | **rewrites** | `--db-url`, `--shadow-db` | reports whether the target still holds the schema its applied migrations produce: it replays the applied history into an ephemeral shadow database and compares the target with it, under the migration lock; the target is only read, and the statements it prints are not run |
+| `migrations drift` | reads | **rewrites** | `--db-url`, `--shadow-db` | replays the applied history into an ephemeral shadow database under the migration lock and reports how the target differs from it; the revision state is only read and the statements it prints are not run, but on Oracle the lock adds its row to ptah_locks, creating the table when absent if the account may create a table in that schema |
 | `migrations edit` | reads | none | `--db-url` | rewrites a migration file and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations generate` | reads | **rewrites** | `--db-url`, `--dev-url`, `--shadow-db` | writes migration files from schema differences; the dev database it replays into "is reset destructively" and the shadow database verifies the result |
 | `migrations hash` | none | none | — | writes the directory's integrity file, so a later run can tell a hand-edited migration from an intact one |

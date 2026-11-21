@@ -437,8 +437,10 @@ and applies nothing, when:
 - the target read cannot describe an object the applied migrations create, so
   whether the target holds it is unknown.
 
-A dirty revision stops `up` before the check, as it always does. With
-`--allow-dirty`, the check reports the dirty row as a history it cannot replay.
+A dirty revision stops `up` before the check, as it always does, and so does
+an applied file that changed after it ran, whose checksum no longer matches.
+With `--allow-dirty`, the check reports the dirty row as a history it cannot
+replay.
 An Atlas baseline stands for every file at or below it, and those files are
 replayed. A database bootstrapped from a checkpoint replays from that
 checkpoint.
@@ -513,7 +515,8 @@ env "prod" {
 `--shadow-db` or the env's `dev` database as the shadow database. `on_error =
 FAIL`, the default, refuses on drift as `--check-drift` does, and `CONTINUE`
 reports the differences and applies. An `exclude` list in the `drift` block
-replaces the project's for the check. A `--check-drift` value, from the flag or
+replaces the project's for the check, and for `ptah migrations drift` run with
+the same env. A `--check-drift` value, from the flag or
 from `PTAH_CHECK_DRIFT`, wins over the block. `ptah-compat migrate apply` reads
 the same block; see
 [Pre-apply drift check](../../atlas/project-config/#pre-apply-drift-check).

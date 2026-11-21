@@ -24,7 +24,9 @@ type Target string
 const (
 	// TargetNone is a verb that opens no connection to a target at all.
 	TargetNone Target = "none"
-	// TargetReads is a verb that reads the target and writes nothing to it.
+	// TargetReads is a verb that reads the target and writes nothing to its
+	// schema, data or revision state. A verb that holds the migration lock
+	// writes the lock's row on Oracle, and its description says so.
 	TargetReads Target = "reads"
 	// TargetWrites is a verb that changes the target.
 	TargetWrites Target = "writes"

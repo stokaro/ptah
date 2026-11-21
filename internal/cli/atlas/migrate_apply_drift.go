@@ -75,12 +75,9 @@ func prepareAtlasApplyDrift(
 	if err != nil {
 		return nil, func() {}, err
 	}
-	if drift.ExcludeSet {
-		config.Exclude, config.ExcludeOrigin = drift.Exclude, drift.Origin()
-	}
 	// `migrate apply` has no --exclude, so the project's lists are the only
 	// selectors.
-	exclude, sources, err := dbcli.EffectiveExclude(cmd, "exclude", nil, config, runtime.Selections())
+	exclude, sources, err := dbcli.EffectiveDriftExclude(cmd, "exclude", nil, config, runtime.Selections())
 	if err != nil {
 		return nil, func() {}, err
 	}

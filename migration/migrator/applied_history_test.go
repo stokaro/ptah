@@ -114,6 +114,41 @@ func TestAppliedHistoryFailurePathRefusesAHistoryThatCannotBeReplayed(t *testing
 	}
 }
 
+// An applied file that changed is not what the database ran, so a replay of
+// it would compare the database with a history it never had. A comment-only
+// edit is refused too: the checksum cannot tell a harmless edit from another,
+// and an apply refuses both.
+func TestAppliedHistoryFailurePathRefusesAnAppliedFileThatChanged(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		orders string
+	}{
+		{name: "a schema change", orders: "CREATE TABLE orders (id INTEGER PRIMARY KEY, total INTEGER);"},
+		{name: "a comment", orders: "-- orders\nCREATE TABLE orders (id INTEGER PRIMARY KEY);"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := appliedHistoryTarget(c, appliedHistoryFixture, 2)
+			edited := maps.Clone(appliedHistoryFixture)
+			edited["0000000002_orders.up.sql"] = &fstest.MapFile{Data: []byte(test.orders)}
+			mig, err := migrator.NewFSMigrator(conn, edited)
+			c.Assert(err, qt.IsNil)
+			history, err := mig.AppliedHistory(t.Context())
+
+			c.Assert(history, qt.DeepEquals, migrator.AppliedHistory{})
+			var unreplayable *migrator.UnreplayableHistoryError
+			c.Assert(err, qt.ErrorAs, &unreplayable)
+			c.Assert(unreplayable.Reason, qt.Equals, migrator.UnreplayableChanged)
+			c.Assert(unreplayable.Version, qt.Equals, int64(2))
+			var mismatch *migrator.ChecksumMismatchError
+			c.Assert(err, qt.ErrorAs, &mismatch)
+			c.Assert(mismatch.Version, qt.Equals, int64(2))
+			c.Assert(err, qt.ErrorMatches, `the applied history cannot be replayed: version 2: the checksum it recorded when it applied is [0-9a-f]+ `+
+				`and the directory's is [0-9a-f]+: its file, or the checksums the directory carries, changed after it applied`)
+		})
+	}
+}
+
 // An applied repeatable records only its last run, so its history is not one
 // a replay reproduces.
 func TestAppliedHistoryFailurePathRefusesAnAppliedRepeatable(t *testing.T) {

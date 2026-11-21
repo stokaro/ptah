@@ -104,7 +104,7 @@ rather than a person.
 | `ptah migrations create` | Writes an empty up and down migration file pair for someone to fill in by hand | — |
 | `ptah migrations data` | Reads reference and seed data from the target and writes a migration file for the drift | — |
 | `ptah migrations down` | Rolls back migrations against the target, after replaying and verifying the rollback plan in an ephemeral shadow database | — |
-| `ptah migrations drift` | Reports whether the target still holds the schema its applied migrations produce: it replays the applied history into an ephemeral shadow database and compares the target with it, under the migration lock; the target is only read, and the statements it prints are not run | — |
+| `ptah migrations drift` | Replays the applied history into an ephemeral shadow database under the migration lock and reports how the target differs from it; the revision state is only read and the statements it prints are not run, but on Oracle the lock adds its row to ptah_locks, creating the table when absent if the account may create a table in that schema | — |
 | `ptah migrations edit` | Rewrites a migration file and re-hashes the directory; the target is read to check whether the migration has been applied | — |
 | `ptah migrations generate` | Writes migration files from schema differences; the dev database it replays into "is reset destructively" and the shadow database verifies the result | — |
 | `ptah migrations hash` | Writes the directory's integrity file, so a later run can tell a hand-edited migration from an intact one | — |

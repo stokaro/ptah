@@ -64,6 +64,26 @@ func EffectiveExclude(
 	return combined, sources, nil
 }
 
+// EffectiveDriftExclude is [EffectiveExclude] for a comparison of a target
+// with the schema its applied history produces. A drift block the selected
+// atlas.hcl env declares, `check "migrate_apply" { drift { exclude = [...] } }`,
+// replaces the env's `exclude` with its own list for that comparison when it
+// sets one, and the sources then name the block. Every verb that makes the
+// comparison resolves its selectors here, so the check before an apply and the
+// report on its own leave out the same objects.
+func EffectiveDriftExclude(
+	cmd *cobra.Command,
+	flagName string,
+	flagValues []string,
+	config projectconfig.Config,
+	selections selectext.Set,
+) ([]string, atlasfilter.ExcludeSources, error) {
+	if declared := config.PreApplyDrift; declared != nil && declared.ExcludeSet {
+		config.Exclude, config.ExcludeOrigin = declared.Exclude, declared.Origin()
+	}
+	return EffectiveExclude(cmd, flagName, flagValues, config, selections)
+}
+
 // flagSource names where the values of the flag called name came from: the
 // PTAH_* variable that set it, or the flag itself.
 func flagSource(cmd *cobra.Command, name string) string {

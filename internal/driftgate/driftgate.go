@@ -127,6 +127,11 @@ type Result struct {
 	// applied history produces, which Check.Findings itemize. It is nil unless
 	// Check.Outcome is [migrator.DriftDrifted].
 	Diff *difftypes.SchemaDiff
+	// Undecided are the objects the applied history creates that the target
+	// read could not describe, when the check found drift as well: the drift
+	// decides the outcome, and Diff does not cover these. A check that found
+	// no drift reports them in Check.Findings, as one that could not decide.
+	Undecided []migrator.DriftFinding
 }
 
 // Run makes the check now and returns what it found, for a caller that runs
@@ -238,7 +243,11 @@ func (c *Check) run(ctx context.Context) (Result, bool, error) {
 	switch {
 	case len(result.Drift) > 0:
 		check.Outcome, check.Findings = migrator.DriftDrifted, findings(result.Drift)
-		return Result{Check: check, Diff: result.Diff}, false, &DriftError{Check: check}
+		found := Result{Check: check, Diff: result.Diff}
+		if len(result.Undecided) > 0 {
+			found.Undecided = findings(result.Undecided)
+		}
+		return found, false, &DriftError{Check: check}
 	case len(result.Undecided) > 0:
 		check.Outcome, check.Stage, check.Reason = migrator.DriftUnable, "schema-match", "incomplete_coverage"
 		check.Findings = findings(result.Undecided)

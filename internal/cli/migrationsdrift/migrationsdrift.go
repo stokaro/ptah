@@ -104,8 +104,16 @@ applied migrations on the disposable --shadow-db, and compares the database with
 the schema the replay produced. Pending migrations are listed and never read as
 drift. The report names the version the database is at, the pending migrations,
 every missing, extra and modified object, the diff, and the statements that
-would bring the database back to its history. Nothing runs them, and nothing is
-written to the database.
+would bring the database back to its history. Nothing runs them. The revision
+state is only read; on Oracle the migration lock creates its table ptah_locks
+beside the revision table when it is absent and adds a row for the lock name,
+which needs CREATE TABLE (CREATE ANY TABLE in a schema the account does not
+own), or a table a DBA created with SELECT and INSERT granted.
+
+An applied migration whose file changed since it ran cannot be replayed, so it
+is reported as a comparison that could not decide, as 'migrations up' refuses
+it. The exclusions are the project's exclude list, replaced by an atlas.hcl
+drift block's own list when it sets one, and --exclude.
 
 It is the comparison 'ptah migrations up --check-drift' makes before it applies.
 
@@ -139,7 +147,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 			"it must be empty and distinct from the target, and it is emptied again afterwards. "+
 			"A docker:// URL starts a container for the run")
 	flags.StringArrayVar(&opts.exclude, excludeFlag, nil,
-		"Schema objects the comparison leaves out, as `schema diff --exclude` selects them (repeatable)")
+		"Schema objects the comparison leaves out, written as schema diff --exclude takes them (repeatable)")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false,
 		"Print the report as one JSON document, or the failure when no report could be made")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
@@ -286,7 +294,9 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 	if err != nil {
 		return err
 	}
-	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, excludeFlag, opts.exclude, projectCfg, runtime.Selections())
+	// The exclusions `migrations up --check-drift` makes, an atlas.hcl drift
+	// block's included, so the report and the check leave out the same objects.
+	exclude, excludeSources, err := dbcli.EffectiveDriftExclude(cmd, excludeFlag, opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return err
 	}
@@ -327,6 +337,7 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		WithLogger(observability.Logger()).
 		WithObserver(observability.Observer())
 
+	metadataTables := revisiontable.Configured(string(set.revisionFormat), opts.migrationsTable)
 	check := driftgate.New(driftgate.Options{
 		ShadowURL: shadowURL,
 		Selection: atlasschema.LiveSelection{
@@ -336,7 +347,7 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		Runtime:        runtime,
 		Conn:           conn,
 		History:        mig,
-		MetadataTables: revisiontable.Configured(string(set.revisionFormat), opts.migrationsTable),
+		MetadataTables: metadataTables,
 		OnDrift:        driftgate.Continue,
 	})
 
@@ -346,6 +357,9 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		// checkErr is what the check said about the target: a drift or an
 		// undecided comparison. err below is a run that made no report.
 		checkErr error
+		// other is the revision table of the other format, when the one the
+		// run read records nothing and that one records a history.
+		other *otherHistory
 	)
 	err = mig.HoldMigrationLock(ctx, "drift", func(ctx context.Context) error {
 		// The lock is taken by now. A report writes nothing to the target, so
@@ -358,13 +372,16 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 			return fmt.Errorf("error getting migration status: %w", statusErr)
 		}
 		found, checkErr = check.Run(ctx)
+		if len(status.AppliedMigrations) == 0 && found.Check.Outcome == migrator.DriftDrifted {
+			other = readOtherFormat(ctx, mig, set.revisionFormat)
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	document := newDocument(mig, conn, status, found)
+	document := newDocument(mig, conn, status, found, other)
 	if found.Check.Outcome == migrator.DriftDrifted {
 		document.reconcile(ctx, cmd.ErrOrStderr(), runtime, conn.Info(), found.Diff)
 	}
@@ -375,8 +392,8 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 }
 
 // exitStatus is the run's answer once the report is written: nothing for a
-// match, 1 for drift, which the report has described, and an error the root
-// prints and exits 2 for when the comparison could not decide. The gate's own
+// match, 1 for drift, and 2 when the comparison could not decide. The report
+// has said which, and why, so the root prints neither again. The gate's own
 // error says no pending migration ran, which is true of every report and says
 // nothing here.
 func exitStatus(check migrator.DriftCheck, checkErr error) error {
@@ -386,7 +403,36 @@ func exitStatus(check migrator.DriftCheck, checkErr error) error {
 	if _, drifted := errors.AsType[*driftgate.DriftError](checkErr); drifted {
 		return exitcode.New(1, errDrifted)
 	}
-	return &UndecidedError{Check: check, Err: checkErr}
+	return exitcode.New(2, &UndecidedError{Check: check, Err: checkErr})
+}
+
+// otherHistory is a revision table in the format the run did not select that
+// records applied migrations.
+type otherHistory struct {
+	format  migrator.RevisionTableFormat
+	table   string
+	applied int
+}
+
+// readOtherFormat reads the revision table the other format keeps by
+// default, for a run whose own revision table records nothing. A history
+// written in one format and read in the other is the likeliest reason a
+// database with objects has no applied migration, and naming it is what keeps
+// a person from running statements that drop the whole database. It reads
+// under the caller's suppressed writes, so an absent table is created by
+// neither format, and a read that fails says nothing: this is a hint, and
+// the report stands without it.
+func readOtherFormat(ctx context.Context, mig *migrator.Migrator, format migrator.RevisionTableFormat) *otherHistory {
+	otherFormat := migrator.RevisionTableFormatAtlas
+	if format == migrator.RevisionTableFormatAtlas {
+		otherFormat = migrator.RevisionTableFormatPtah
+	}
+	probe := mig.WithRevisionTableFormat(otherFormat).WithMigrationsTable("", "")
+	status, err := probe.GetMigrationStatus(ctx)
+	if err != nil || len(status.AppliedMigrations) == 0 {
+		return nil
+	}
+	return &otherHistory{format: otherFormat, table: probe.MigrationsTableIdentifier(), applied: len(status.AppliedMigrations)}
 }
 
 // UndecidedError is a report whose comparison could not decide whether the
@@ -408,6 +454,9 @@ type Document struct {
 	ContractVersion int    `json:"contract_version"`
 	Command         string `json:"command"`
 	Dialect         string `json:"dialect"`
+	// RevisionTable is the revision table the history was read from, quoted
+	// and qualified as the engine names it.
+	RevisionTable string `json:"revision_table"`
 	// CurrentVersion is the version the database last applied, as a person
 	// names it. It is absent when the revision table records none.
 	CurrentVersion string `json:"current_version,omitempty"`
@@ -418,6 +467,16 @@ type Document struct {
 	// Check is the comparison with the replayed history, in the form the run
 	// document of `migrations up --check-drift` reports it.
 	Check migrator.DriftCheck `json:"check"`
+	// Undecided are the objects the applied migrations create that the
+	// database read could not describe, reported beside the drift a check
+	// found. Whether the database holds them is unknown, and the statements
+	// do not cover them. A check that found nothing else carries them in
+	// Check.Findings instead, as one that could not decide.
+	Undecided []migrator.DriftFinding `json:"undecided,omitempty"`
+	// Warnings say what a person must know before acting on the report, such
+	// as a revision table that records no applied migration while the
+	// database holds objects.
+	Warnings []string `json:"warnings,omitempty"`
 	// Diff is the change that brings the database back to its history. It is
 	// present only when the check found drift.
 	Diff *difftypes.SchemaDiff `json:"diff,omitempty"`
@@ -459,19 +518,53 @@ func (d *Document) reconcile(
 	omissionnote.Report(ctx, diagnostics, plan.Result.Omissions)
 }
 
-func newDocument(mig *migrator.Migrator, conn *dbschema.DatabaseConnection, status *migrator.MigrationStatus, found driftgate.Result) Document {
+func newDocument(
+	mig *migrator.Migrator, conn *dbschema.DatabaseConnection, status *migrator.MigrationStatus,
+	found driftgate.Result, other *otherHistory,
+) Document {
+	revisionTable := mig.MigrationsTableIdentifier()
 	document := Document{
 		ContractVersion: ContractVersion,
 		Command:         Command,
 		Dialect:         conn.Info().Dialect,
+		RevisionTable:   revisionTable,
 		Pending:         mig.VersionLabels(status.PendingMigrations),
 		Check:           found.Check,
+		Undecided:       found.Undecided,
 		Diff:            found.Diff,
 	}
 	if len(status.AppliedMigrations) > 0 {
 		document.CurrentVersion = mig.VersionLabel(status.CurrentVersion)
 	}
+	// Every object then reads as one no migration created, and the statements
+	// drop them all, the history's real revision table among them when the
+	// run named the wrong one. A database with no object is not drift, and
+	// has nothing to warn about.
+	if len(status.AppliedMigrations) == 0 && found.Check.Outcome == migrator.DriftDrifted {
+		document.Warnings = append(document.Warnings, emptyHistoryWarning(revisionTable, other))
+	}
 	return document
+}
+
+// emptyHistoryWarning says why a database with objects reads as having no
+// applied migration, and how to name the history the run missed.
+func emptyHistoryWarning(revisionTable string, other *otherHistory) string {
+	const dropsEverything = "the statements below would drop every object the report compares"
+	if other != nil {
+		applied := "applied migrations"
+		if other.applied == 1 {
+			applied = "applied migration"
+		}
+		return fmt.Sprintf("the revision table %s records no applied migration, or does not exist, "+
+			"but the %s-format revision table %s records %d %s: run the report again with --%s %s; %s",
+			revisionTable, other.format, other.table, other.applied, applied,
+			dbcli.RevisionTableFormatFlagName, other.format, dropsEverything)
+	}
+	return fmt.Sprintf("the revision table %s records no applied migration, or does not exist, and the database "+
+		"holds objects: if the history is recorded elsewhere, name its table with --%s and --%s, "+
+		"and its format with --%s; %s",
+		revisionTable, dbcli.MigrationsTableFlagName, dbcli.MigrationsSchemaFlagName,
+		dbcli.RevisionTableFormatFlagName, dropsEverything)
 }
 
 // NewFailureDocument is what `migrations drift --json` prints when it fails
@@ -523,12 +616,16 @@ func writeText(w io.Writer, document Document) error {
 	if current == "" {
 		current = "none applied"
 	}
+	fmt.Fprintf(&b, "Revision table: %s\n", document.RevisionTable)
 	fmt.Fprintf(&b, "Current version: %s\n", current)
 	fmt.Fprintf(&b, "Pending migrations: %d\n", len(document.Pending))
 	for _, version := range document.Pending {
 		fmt.Fprintf(&b, "  - %s\n", version)
 	}
 	b.WriteString("\n")
+	for _, warning := range document.Warnings {
+		fmt.Fprintf(&b, "Warning: %s.\n\n", warning)
+	}
 	check := document.Check
 	switch check.Outcome {
 	case migrator.DriftClean:
@@ -538,6 +635,7 @@ func writeText(w io.Writer, document Document) error {
 		for _, finding := range check.Findings {
 			fmt.Fprintf(&b, "  - %s\n", finding.Message)
 		}
+		writeUndecided(&b, document.Undecided)
 		writeStatements(&b, document)
 	default:
 		fmt.Fprintf(&b, "Could not compare the database with its applied history: %s\n", check.Message)
@@ -547,6 +645,17 @@ func writeText(w io.Writer, document Document) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writeUndecided(b *strings.Builder, undecided []migrator.DriftFinding) {
+	if len(undecided) == 0 {
+		return
+	}
+	b.WriteString("\nThe database read could not describe these objects the applied migrations create, " +
+		"so whether the database holds them is unknown, and the statements below do not cover them:\n")
+	for _, finding := range undecided {
+		fmt.Fprintf(b, "  - %s\n", finding.Message)
+	}
 }
 
 func writeStatements(b *strings.Builder, document Document) {
