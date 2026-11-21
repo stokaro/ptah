@@ -59,8 +59,8 @@ func (r *Reader) sequenceNames(ctx context.Context, dbName string) ([]string, er
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT TABLE_NAME
 		FROM information_schema.TABLES
-		WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'SEQUENCE'
-		ORDER BY TABLE_NAME`, dbName)
+		WHERE `+sameName("TABLE_SCHEMA", "?")+` AND TABLE_TYPE = 'SEQUENCE'
+		ORDER BY TABLE_NAME`, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sequences: %w", err)
 	}

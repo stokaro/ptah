@@ -321,6 +321,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--advisories` | `string` | — | `PTAH_ADVISORIES` | — |
+| `--advisory-source` | `string` | `repository` | `PTAH_ADVISORY_SOURCE` | — |
 | `--db-url` | `stringArray` | `[]` | `PTAH_DB_URL` | — |
 | `--deployment` | `string` | `self-managed` | `PTAH_DEPLOYMENT` | — |
 | `--fail-on` | `string` | `both` | `PTAH_FAIL_ON` | — |

@@ -2806,10 +2806,17 @@ func (p *Parser) handleAs(column *ast.ColumnNode) error {
 	p.skipWhitespace()
 	if p.current.Type == lexer.TokenIdentifier {
 		storageType := strings.ToUpper(p.current.Value)
-		if storageType == "STORED" || storageType == "VIRTUAL" {
+		if storageType == "STORED" || storageType == "VIRTUAL" ||
+			(storageType == "PERSISTED" && p.target.grammar.Columns.PersistedComputedColumns) {
 			generatedKind = storageType
 			p.advance()
 		}
+	}
+	// T-SQL's bare AS (expr) is computed on read. Read with no kind, it would
+	// take the target's default, which on SQL Server is PERSISTED, and a file
+	// describing a computed column would build a stored one.
+	if generatedKind == "" && p.target.grammar.Columns.PersistedComputedColumns {
+		generatedKind = "VIRTUAL"
 	}
 
 	column.SetGenerated(expr.String(), generatedKind)

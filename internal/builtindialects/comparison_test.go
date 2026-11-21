@@ -114,6 +114,8 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			ExpressionProbes:               "sys-catalog",
 			AutoIncrementFlag:              true,
 			DefaultGeneratedKind:           "PERSISTED",
+			StoredGeneratedKind:            "PERSISTED",
+			GeneratedColumnTypesDerived:    true,
 			RespelledIndexReplaced:         true,
 		},
 		"clickhouse": {

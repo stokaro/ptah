@@ -85,7 +85,8 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 	c.Assert(emailLC, qt.IsNotNil)
 	c.Assert(emailLC.GeneratedExpression, qt.IsNotNil)
 	c.Assert(strings.ToLower(*emailLC.GeneratedExpression), qt.Contains, "lower")
-	c.Assert(emailLC.GeneratedKind, qt.Equals, "")
+	// Computed on read: without the kind it would read as a plain column.
+	c.Assert(emailLC.GeneratedKind, qt.Equals, "VIRTUAL")
 
 	emailLen := findSQLServerColumn(users.Columns, "email_len")
 	c.Assert(emailLen, qt.IsNotNil)

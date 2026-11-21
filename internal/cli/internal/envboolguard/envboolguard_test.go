@@ -119,13 +119,14 @@ var nonBooleanPtahVars = []string{
 	// `ptah-compat security scan` registers none of the scan's own options as
 	// flags, so its help names the variables of `ptah db vulnerabilities` that
 	// carry them.
-	"PTAH_ADVISORIES",    // local advisory snapshot JSON file
-	"PTAH_DEPLOYMENT",    // who patches the server: self-managed or managed
-	"PTAH_FAIL_ON",       // CI failure policy name
-	"PTAH_FAIL_SEVERITY", // lowest severity a finding needs to fail the run
-	"PTAH_IGNORE",        // advisory identifiers recorded as suppressed
-	"PTAH_MIN_SEVERITY",  // lowest severity reported
-	"PTAH_SUPPRESSIONS",  // suppression file path
+	"PTAH_ADVISORIES",      // local advisory snapshot JSON file
+	"PTAH_ADVISORY_SOURCE", // where the scan reads reviewed advisory snapshots
+	"PTAH_DEPLOYMENT",      // who patches the server: self-managed or managed
+	"PTAH_FAIL_ON",         // CI failure policy name
+	"PTAH_FAIL_SEVERITY",   // lowest severity a finding needs to fail the run
+	"PTAH_IGNORE",          // advisory identifiers recorded as suppressed
+	"PTAH_MIN_SEVERITY",    // lowest severity reported
+	"PTAH_SUPPRESSIONS",    // suppression file path
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

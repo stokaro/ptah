@@ -48,11 +48,11 @@ func (r *Reader) withHiddenForeignKeys(
 			REFERENCED_TABLE_NAME,
 			COALESCE(REFERENCED_COLUMN_NAME, '')
 		FROM information_schema.KEY_COLUMN_USAGE
-		WHERE TABLE_SCHEMA = ?
+		WHERE ` + sameName("TABLE_SCHEMA", "?") + `
 		AND REFERENCED_TABLE_NAME IS NOT NULL
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, fmt.Errorf("read foreign keys from KEY_COLUMN_USAGE: %w", err)
 	}

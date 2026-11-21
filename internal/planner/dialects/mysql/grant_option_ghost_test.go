@@ -45,27 +45,64 @@ func TestPlan_MySQLFamilyClearsAnOrphanedGrantOption(t *testing.T) {
 	}
 }
 
-// A removed privilege that is not the USAGE ghost revokes normally: MySQL and
-// MariaDB report a real privilege by its own name whether or not it carried
-// the grant option, so nothing here needs the GRANT OPTION spelling.
+// A removed privilege that is not the USAGE ghost revokes by its own name.
+// Where it carried the grant option and the role keeps no privilege with the
+// option on the object, the option goes first: a privilege revoke leaves it,
+// and the role is left with the USAGE ghost the next plan has to clear. Where
+// the role keeps a privilege with the option there, the option stays.
 func TestPlan_MySQLFamilyRevokesARealPrivilegeNormally(t *testing.T) {
-	diff := &difftypes.SchemaDiff{GrantsRemoved: []difftypes.GrantRef{
-		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
-	}}
-	for _, dialect := range []string{"mysql", "mariadb"} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				context.Background(), must.Must(builtin.New()),
-				diff, dialect,
-			)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, []string{
+	tests := []struct {
+		name    string
+		current []difftypes.GrantRef
+		want    []string
+	}{
+		{
+			name: "the last privilege with the option",
+			want: []string{
+				"REVOKE GRANT OPTION ON `orders` FROM `reader`",
 				"REVOKE SELECT ON `orders` FROM `reader`",
+			},
+		},
+		{
+			name: "a kept privilege holds the option",
+			current: []difftypes.GrantRef{
+				{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
+				{Role: "reader", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
+			},
+			want: []string{"REVOKE SELECT ON `orders` FROM `reader`"},
+		},
+		{
+			name: "another role holds the option",
+			current: []difftypes.GrantRef{
+				{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
+				{Role: "writer", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
+			},
+			want: []string{
+				"REVOKE GRANT OPTION ON `orders` FROM `reader`",
+				"REVOKE SELECT ON `orders` FROM `reader`",
+			},
+		},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				diff := &difftypes.SchemaDiff{
+					GrantsRemoved: []difftypes.GrantRef{
+						{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders", WithOption: true},
+					},
+					CurrentGrants: test.current,
+				}
+
+				statements, err := planner.GenerateSchemaDiffSQLStatements(
+					context.Background(), must.Must(builtin.New()),
+					diff, dialect,
+				)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(statements, qt.DeepEquals, test.want)
 			})
-		})
+		}
 	}
 }
 

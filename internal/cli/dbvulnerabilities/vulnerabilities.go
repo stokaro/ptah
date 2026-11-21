@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/advisorysource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/dburldisplay"
@@ -20,15 +21,16 @@ import (
 )
 
 type options struct {
-	dbURLs       []string
-	advisories   string
-	suppressions string
-	format       string
-	failOn       string
-	deployment   string
-	minSeverity  string
-	failSeverity string
-	ignore       []string
+	dbURLs         []string
+	advisories     string
+	advisorySource string
+	suppressions   string
+	format         string
+	failOn         string
+	deployment     string
+	minSeverity    string
+	failSeverity   string
+	ignore         []string
 }
 
 // NewCommand returns the native `db vulnerabilities` command.
@@ -36,15 +38,33 @@ func NewCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "vulnerabilities",
-		Short: "Match live databases against local vulnerability advisories",
-		Long: `Read each database's product and version, then match a pinned local advisory
+		Short: "Match live databases against reviewed vulnerability advisories",
+		Long: `Read each database's product and version, then match a reviewed advisory
 snapshot. PostgreSQL core and selected bundled contrib modules, MySQL, MariaDB
 and ClickHouse servers are covered. Unsupported products, unrecognized builds,
 stale advisories, partial snapshots, and installed extensions without a
 reviewed matcher are reported as incomplete. A target that cannot be read is
 reported with a scan error, never as clean. A managed deployment is reported
-as not applicable to operator-managed server patching. The command does not
-contact an advisory service or upload database inventory.`,
+as not applicable to operator-managed server patching.
+
+The snapshot is read from --advisories when it is set. Otherwise the command
+makes one outbound HTTPS GET per engine it scans, to --advisory-source, which
+by default is the reviewed snapshot files on the master branch of Ptah's
+repository, and keeps the copy in the user cache directory for an hour. The
+request names only the snapshot file, so the source learns which engines are
+scanned and nothing else about the databases. A copy is used when it passes
+the checks the snapshot built into this binary passes, is no older than the
+copy it replaces, and is dated no more than a day after this machine's clock.
+Each advisory is matched against both the copy and the built-in snapshot, and
+the stricter answer is reported: a copy can add a finding, but a removal, a
+narrowed range or wider coverage waits for a release. A request has 15 seconds.
+When the source gives no usable copy, the cached copy or the built-in snapshot
+is read instead, the failure is remembered for an hour, and the report says
+why. A run that names its source,
+with --advisory-source or PTAH_ADVISORY_SOURCE, also counts that as
+incomplete; a default run does not. --advisory-source bundled reads only the
+built-in snapshots and makes no request, so a network with no route to the
+source does not wait 5 seconds to find that out.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd, opts)
@@ -53,7 +73,10 @@ contact an advisory service or upload database inventory.`,
 	severities := strings.Join(vulnerability.SeverityNames(), ", ")
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.dbURLs, "db-url", nil, "Database URL to scan; repeat to scan several databases (required)")
-	flags.StringVar(&opts.advisories, "advisories", "", "Local advisory snapshot JSON; empty uses each engine's pinned snapshot")
+	flags.StringVar(&opts.advisories, "advisories", "", "Local advisory snapshot JSON for every target; empty reads --advisory-source")
+	flags.StringVar(&opts.advisorySource, "advisory-source", advisorysource.Repository,
+		"Where reviewed advisory snapshots come from: repository, the files at "+advisorysource.DefaultLocation+
+			", fetched over HTTPS by engine file name only; the https URL of a mirror serving the same files; or bundled, for the snapshots built into this binary")
 	flags.StringVar(&opts.suppressions, "suppressions", "", "Local JSON file of scoped advisory suppressions")
 	flags.StringVar(&opts.format, "format", "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, "fail-on", "both", "CI policy: findings, incomplete, both, or none")
@@ -82,6 +105,10 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	location, err := advisorysource.ParseLocation(opts.advisorySource)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("--advisory-source: %w", err))
+	}
 	if err := vulnerability.ValidateAdvisoryInput(opts.advisories); err != nil {
 		targets := make([]targetReport, 0, len(opts.dbURLs))
 		for _, dbURL := range opts.dbURLs {
@@ -93,10 +120,14 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	now := time.Now().UTC()
+	snapshots := advisorysource.New(advisorysource.Config{Location: location, CacheDir: advisorysource.DefaultCacheDir()})
 	targets := make([]targetReport, 0, len(opts.dbURLs))
 	var failures []error
 	for _, dbURL := range opts.dbURLs {
-		target, err := scan(cmd, dbURL, opts, policy, now)
+		target, err := scan(cmd, dbURL, opts, scanInput{policy: policy, snapshots: snapshots, now: now,
+			// The flag or PTAH_ADVISORY_SOURCE named the source, which a default
+			// run does not; Changed answers for both.
+			requireSource: cmd.Flags().Changed("advisory-source")})
 		targets = append(targets, target)
 		if err != nil {
 			failures = append(failures, err)
@@ -148,16 +179,26 @@ func validate(opts options) (vulnerability.Policy, error) {
 	return policy, nil
 }
 
+// scanInput is what every target of one run shares.
+type scanInput struct {
+	policy        vulnerability.Policy
+	snapshots     vulnerability.SnapshotSource
+	now           time.Time
+	requireSource bool
+}
+
 // scan assesses one target. A failure is returned with the target's report so
 // the other targets are still scanned and every one is written.
-func scan(cmd *cobra.Command, dbURL string, opts options, policy vulnerability.Policy, now time.Time) (targetReport, error) {
+func scan(cmd *cobra.Command, dbURL string, opts options, input scanInput) (targetReport, error) {
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), dbURL)
 	if err != nil {
 		return failedTarget(dbURL, vulnerability.Inventory{}, "not_assessed", "database connection failed"),
 			dburldisplay.RedactError(dbURL, fmt.Errorf("connect to --db-url %s: %w", dburldisplay.Format(dbURL), err))
 	}
 	defer func() { _ = conn.Close() }()
-	report, err := vulnerability.Scan(cmd.Context(), conn, opts.advisories, opts.suppressions, now, opts.deployment)
+	report, err := vulnerability.Scan(cmd.Context(), conn, vulnerability.ScanInput{AdvisoryPath: opts.advisories,
+		SuppressionPath: opts.suppressions, Snapshots: input.snapshots, RequireSource: input.requireSource,
+		Now: input.now, Deployment: opts.deployment})
 	if err != nil {
 		inventory := vulnerability.CollectIdentity(conn)
 		var scanErr *vulnerability.ScanError
@@ -166,18 +207,31 @@ func scan(cmd *cobra.Command, dbURL string, opts options, policy vulnerability.P
 		}
 		return failedTarget(dbURL, inventory, "not_assessed", "database inventory or suppression file is unreadable"), err
 	}
-	return targetReport{Target: dburldisplay.Format(dbURL), Report: policy.Apply(report)}, nil
+	return targetReport{Target: dburldisplay.Format(dbURL), Report: input.policy.Apply(report)}, nil
 }
 
 // warn drops each target's warnings about a product another target of the
 // run reports, since the entry they name is that target's, and writes the
-// rest to w once each. The reports keep the warnings that remain.
+// rest to w once each. The reports keep the warnings that remain. It also
+// writes, once per file, why the advisory source was not used and which
+// snapshot was read instead.
 func warn(w io.Writer, targets []targetReport) error {
 	reported := make([]string, 0, len(targets))
 	for _, target := range targets {
 		reported = append(reported, target.Inventory.Product)
 	}
 	written := make([]string, 0)
+	for _, target := range targets {
+		origin := target.Source.Origin
+		if origin.Fallback == "" || slices.Contains(written, origin.URL) {
+			continue
+		}
+		written = append(written, origin.URL)
+		if _, err := fmt.Fprintf(w, "warning: advisory source %s was not used: %s; %s is matched against %s\n",
+			origin.URL, origin.Fallback, target.Inventory.Product, fallbackSnapshot(origin)); err != nil {
+			return err
+		}
+	}
 	for index := range targets {
 		targets[index].Warnings = vulnerability.UnclaimedWarnings(targets[index].Warnings, reported)
 		for _, warning := range targets[index].Warnings {
@@ -191,6 +245,36 @@ func warn(w io.Writer, targets []targetReport) error {
 		}
 	}
 	return nil
+}
+
+// fallbackSnapshot names the snapshot a report reads when its advisory
+// source was not used.
+func fallbackSnapshot(origin vulnerability.Origin) string {
+	if origin.Kind == "remote" {
+		return "the cached copy the source confirmed at " + origin.FetchedAt.UTC().Format(originTimeLayout)
+	}
+	return "the snapshot built into this binary"
+}
+
+// originTimeLayout writes when the source confirmed a copy.
+const originTimeLayout = "2006-01-02 15:04 UTC"
+
+// originLine says where a report's snapshot came from, or nothing when the
+// report read none.
+func originLine(origin vulnerability.Origin) string {
+	switch {
+	case origin.Kind == "remote" && origin.Fallback != "":
+		return fmt.Sprintf("remote %s (cached copy confirmed by the source at %s; unconfirmed, because the source was not used: %s)",
+			origin.URL, origin.FetchedAt.UTC().Format(originTimeLayout), origin.Fallback)
+	case origin.Kind == "remote":
+		return fmt.Sprintf("remote %s (confirmed by the source at %s; %s)", origin.URL, origin.FetchedAt.UTC().Format(originTimeLayout), origin.Cache)
+	case origin.Kind == "bundled" && origin.Fallback != "":
+		return fmt.Sprintf("bundled, because %s was not used: %s", origin.URL, origin.Fallback)
+	case origin.Kind == "file":
+		return "the --advisories file"
+	default:
+		return origin.Kind
+	}
 }
 
 func failedTarget(dbURL string, inventory vulnerability.Inventory, status, message string) targetReport {
@@ -236,6 +320,11 @@ func writeTable(w io.Writer, target targetReport) error {
 	}
 	for _, page := range report.Source.AdditionalPages {
 		if _, err := fmt.Fprintf(w, "Advisories: %s (source SHA-256 %s)\n", page.URL, page.SHA256); err != nil {
+			return err
+		}
+	}
+	if line := originLine(report.Source.Origin); line != "" {
+		if _, err := fmt.Fprintf(w, "Advisory data: %s\n", line); err != nil {
 			return err
 		}
 	}

@@ -624,12 +624,14 @@ func TestWireDialectDetection_AProviderOnlyEngineBannerIsRefused(t *testing.T) {
 
 // bannerDB is a server that answers the questions a PostgreSQL-wire or
 // MySQL-wire connection asks when it is described: the version banner, the
-// session's schema and search path, and CockroachDB's integer width.
+// session's schema and search path, the database a MySQL-wire session
+// selected, and CockroachDB's integer width.
 func bannerDB(c *qt.C, version string) *dbtest.DB {
 	answers := map[string]dbtest.QueryResult{
 		"SELECT version()":        {Columns: []string{"version"}, Rows: [][]driver.Value{{version}}},
 		"SELECT VERSION()":        {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{version}}},
 		"SELECT current_schema()": {Columns: []string{"current_schema"}, Rows: [][]driver.Value{{"public"}}},
+		"SELECT DATABASE()":       {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{"app"}}},
 		"SELECT s FROM unnest(current_schemas(false)) WITH ORDINALITY AS path(s, n) ORDER BY n": {
 			Columns: []string{"s"}, Rows: [][]driver.Value{{"public"}},
 		},
@@ -762,15 +764,18 @@ func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
 	}
 }
 
-// mysqlSessionAnswers is a MariaDB server, as far as getDatabaseInfo asks.
+// mysqlSessionAnswers is a MariaDB server whose session selected shop, as far
+// as getDatabaseInfo asks.
 var mysqlSessionAnswers = map[string]dbtest.QueryResult{
-	"SELECT VERSION()": {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
+	"SELECT VERSION()":  {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
+	"SELECT DATABASE()": {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{"shop"}}},
 }
 
-// TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL checks that the database a
-// socket URL names is the one the connection reports. The path of that URL is
-// the socket, so a reader of the path reports a database called
-// run/mysqld/mysqld.sock while the driver connects to shop.
+// TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL checks that a socket URL
+// naming a database describes that database rather than the whole server. The
+// path of that URL is the socket, so a reader of the path alone finds no
+// database, or one called run/mysqld/mysqld.sock; the name reported is the
+// one the server gives the database the session selected.
 func TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 	c := qt.New(t)
 	const socketURL = "mariadb+unix://root@/run/mysqld/mysqld.sock?database=shop"
@@ -783,6 +788,7 @@ func TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Schema, qt.Equals, "shop")
+	c.Assert(info.WholeServer, qt.IsFalse)
 	c.Assert(info.Dialect, qt.Equals, platform.MariaDB)
 }
 

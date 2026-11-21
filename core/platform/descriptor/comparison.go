@@ -53,8 +53,8 @@ type Comparison struct {
 	// ExpressionProbes is the catalog the server is asked how it stores a
 	// declared expression: "pg-catalog" (CHECK, column, trigger, view and
 	// routine spellings, through PostgreSQL's catalog functions),
-	// "sys-catalog" (CHECK expressions, through SQL Server's), or empty for
-	// none.
+	// "sys-catalog" (CHECK and computed column expressions, through SQL
+	// Server's), or empty for none.
 	ExpressionProbes string `json:"expression_probes,omitempty"`
 	// ProbeViewsInSchema reports that an expression probe creates its view
 	// in a schema rather than as a temporary view.
@@ -216,6 +216,13 @@ type Comparison struct {
 	// and the plan makes it an ordinary column, as ClickHouse's REMOVE
 	// MATERIALIZED does. Without it such a column is left uncompared.
 	GeneratedColumnsBecomePlain bool `json:"generated_columns_become_plain,omitempty"`
+	// GeneratedColumnTypesDerived reports that the server derives a
+	// generated column's type and nullability from its expression and the
+	// column's DDL states neither, as SQL Server does for a computed column.
+	// On a column generated on both sides neither is compared: the declared
+	// type never reaches the server, and SQL Server refuses ALTER COLUMN on a
+	// computed column with Msg 4928.
+	GeneratedColumnTypesDerived bool `json:"generated_column_types_derived,omitempty"`
 	// ServerDatabases reports that a comparison of a whole server compares
 	// the databases it holds as well as the objects in them: a database only
 	// the declaration holds is created, one only the server holds is
