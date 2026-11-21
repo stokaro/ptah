@@ -26,14 +26,14 @@ import (
 // mean "skip the pre-migration checks", so one PTAH_SKIP_CHECKS serving both is
 // the right answer rather than a collision.
 //
-// A reason rather than a bare list, for the reason appendEnvArgs states: the
+// A reason rather than a bare list, for the reason withEnvArgs states: the
 // mark is not the default for a waiver. Setting PTAH_TO_TAG is a request for a
 // capability Ptah lacks and the loud refusal is correct; only a name another
 // verb has repurposed for a different capability earns the opt-out.
 var envMarkedFlags = make(map[string]string)
 
 // TestNoFlagCarriesTheEnvironmentMarkUnexplained keeps the paragraph above
-// appendEnvArgs from becoming a count nobody rechecks.
+// withEnvArgs from becoming a count nobody rechecks.
 //
 // It read "on this surface exactly one does" while zero did, which is the shape
 // stokaro/ptah#2496 was filed about: a comment stating a fact about the tree
@@ -54,7 +54,7 @@ func TestNoFlagCarriesTheEnvironmentMarkUnexplained(t *testing.T) {
 				qt.Not(qt.Equals),
 				"",
 				qt.Commentf("--%s opts out of PTAH_%s; record here which verb repurposed the name, "+
-					"and say so in the comment above appendEnvArgs", name, name),
+					"and say so in the comment above withEnvArgs", name, name),
 			)
 		})
 	}

@@ -215,8 +215,8 @@ func TestMap_HappyPathStringDefaultsMapToNativeFlags(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{
-		"--dir=migrations",
 		"--dir-format=atlas",
+		"--dir=migrations",
 	})
 }
 
@@ -229,8 +229,8 @@ func TestMap_HappyPathPlainQuestionMarkDirIsPreserved(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{
-		"--dir=migrations?format=atlas",
 		"--dir-format=atlas",
+		"--dir=migrations?format=atlas",
 	})
 }
 

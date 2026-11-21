@@ -104,7 +104,7 @@ func TestMap_EnvDisabledFlagsAreNotSynthesizedFromTheEnvironment(t *testing.T) {
 
 // Supported flags are still filled from the environment, so the exclusion is
 // keyed on the marker and not on the fallback being off. Without this case,
-// deleting appendEnvArgs entirely would pass everything above.
+// deleting withEnvArgs entirely would pass everything above.
 func TestMap_SupportedFlagsAreStillFilledFromTheEnvironment(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_TO_VERSION", "20260801000001")

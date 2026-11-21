@@ -232,7 +232,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 		},
 		{
 			// PTAH_MIGRATIONS_DIR is the native flag's own environment twin,
-			// the layer atlasargs.appendDefaultArgs consults before it fills
+			// the layer atlasargs.withDefaultArgs consults before it fills
 			// in a default. It has no counterpart on the pinned binary, so the
 			// rule it protects is Ptah's own: adding an Atlas default must not
 			// take a capability away (AGENTS.md, third part).

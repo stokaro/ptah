@@ -80,35 +80,10 @@ func atlasArgsHaveHelp(args []string) bool {
 // Go-template output: an explicit --format flag, or the PTAH_FORMAT
 // environment value the arg mapper would otherwise inject.
 func atlasMigrateDownWantsFormat(verb atlasVerb, args []string) bool {
-	if atlasArgsHaveFlag(verb.flags, args, "format") {
+	if atlasargs.FlagPresent(verb.flags, args, "format") {
 		return true
 	}
 	return os.Getenv("PTAH_FORMAT") != ""
-}
-
-// atlasArgsHaveFlag reports whether args contain the named flag as a flag
-// (not as the value of another value-taking flag), stopping at "--".
-func atlasArgsHaveFlag(flags []atlasargs.Flag, args []string, name string) bool {
-	valueFlags := atlasValueFlagNames(flags)
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
-			return false
-		}
-		flagName, inlineValue, ok := atlasFlagName(arg)
-		if !ok {
-			continue
-		}
-		if flagName == name {
-			return true
-		}
-		if !inlineValue {
-			if _, found := valueFlags[flagName]; found && i+1 < len(args) {
-				i++
-			}
-		}
-	}
-	return false
 }
 
 type atlasMigrateDownFormatOptions struct {

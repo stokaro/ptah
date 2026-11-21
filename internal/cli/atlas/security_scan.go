@@ -200,6 +200,8 @@ PTAH_FAIL_ON, PTAH_FAIL_SEVERITY, PTAH_MIN_SEVERITY and PTAH_DEPLOYMENT.`
 // reaches the scan through the native command's own PTAH_* variable, such as
 // PTAH_FAIL_ON or PTAH_ADVISORIES.
 func atlasSecurityScanVerb() atlasVerb {
+	url := atlasargs.NativeStringArray("url", "u", "URL of a database to scan; repeat it to scan several", "db-url")
+	url.MapValue = atlasSecurityScanURL
 	format := atlasargs.NativeString("format", "", "Go template to use to format the output", "format")
 	format.MapValue = atlasSecurityScanFormat
 	return atlasVerb{
@@ -226,10 +228,7 @@ func atlasSecurityScanVerb() atlasVerb {
 			"provider-exchanges",
 			"suppressions",
 		},
-		flags: []atlasargs.Flag{
-			atlasargs.NativeStringArray("url", "u", "URL of a database to scan; repeat it to scan several", "db-url"),
-			format,
-		},
+		flags: []atlasargs.Flag{url, format},
 	}
 }
 
@@ -258,6 +257,16 @@ func applyAtlasSecurityScanProject(
 		return nil, nil, errors.New(`required flag(s) "url" not set`)
 	}
 	return mappedArgs, nativeArgs, nil
+}
+
+// atlasSecurityScanURL refuses an empty -u/--url value. Refused here, the
+// error names the flag as the caller wrote it; forwarded, the native command
+// would name --db-url, which this surface does not accept.
+func atlasSecurityScanURL(value string) (string, error) {
+	if value == "" {
+		return "", errors.New("a database URL must not be empty")
+	}
+	return value, nil
 }
 
 // atlasSecurityScanFormat maps the Atlas --format template onto the native
