@@ -329,6 +329,23 @@ func (Service) OutsideTransaction(_ context.Context, session *sql.Conn) bool {
 	return err == nil && idle
 }
 
+// TransactionIdentity names the transaction tx runs in by its start time, to
+// the microsecond, as an epoch. A COMMIT followed by a BEGIN, whatever sends
+// them, starts another transaction with a later start: measured on PostgreSQL
+// 18, CockroachDB v26.4.1 and YugabyteDB 2026.1.2, a probe statement that ran
+// `COMMIT; ...; BEGIN` moved transaction_timestamp() on, and the rollback to a savepoint
+// after it did not move it back. The epoch rather than the timestamp's text,
+// so that a session's TimeZone or DateStyle cannot spell two instants alike.
+// transaction_timestamp() needs no privilege and, unlike txid_current(),
+// assigns no transaction ID, which a hot standby refuses.
+func (Service) TransactionIdentity(ctx context.Context, tx *sql.Tx) (string, error) {
+	var started string
+	if err := tx.QueryRowContext(ctx, "SELECT extract(epoch FROM transaction_timestamp())::text").Scan(&started); err != nil {
+		return "", fmt.Errorf("name the transaction: %w", err)
+	}
+	return started, nil
+}
+
 // txStatusIdle is the ReadyForQuery status byte of a session outside any
 // transaction block; 'T' is inside one and 'E' inside a failed one.
 const txStatusIdle = 'I'

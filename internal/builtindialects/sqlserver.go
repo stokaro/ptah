@@ -195,8 +195,11 @@ END`,
 		},
 
 		// Lexing: what internal/dialectlexer reads. [a] is a name, and #t and
-		// ##t are temporary tables, so # opens no comment.
-		Lexical: descriptor.Lexical{BracketIdentifiers: true, HashNames: true},
+		// ##t are temporary tables, so # opens no comment. A block comment
+		// holds block comments: measured on SQL Server 2025, `SELECT 1 /* a
+		// /* b */ c */ AS x` answers 1, where a comment ended at the first */
+		// leaves `c */ AS x` to parse.
+		Lexical: descriptor.Lexical{BracketIdentifiers: true, HashNames: true, NestedComments: true},
 
 		// Database URLs and the Atlas contract: what internal/atlasurl reads.
 		// The pinned community binary takes docker+sqlserver and answers

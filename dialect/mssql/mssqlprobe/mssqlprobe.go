@@ -18,6 +18,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlrender"
 	"ptah.run/dialect/mssql/mssqlschema"
+	"ptah.run/internal/probetext"
+	"ptah.run/internal/probetx"
 )
 
 // predicatesQuery reads back the predicates of the probe policy.
@@ -93,6 +95,9 @@ func (Service) NormalizeObjects(ctx context.Context, request schemaext.Normaliza
 			if err != nil {
 				return err
 			}
+			if err := probetx.Check(ctx); err != nil {
+				return fmt.Errorf("resolve security policy predicates: %s: %w", probe.object.Ref.Path(), err)
+			}
 			if !ok {
 				continue
 			}
@@ -165,7 +170,19 @@ func identity(request schemaext.NormalizationRequest, ref objectidentity.ID) obj
 // false, with a nil error, for a statement the server refuses or a predicate
 // it reports in a shape the owner does not read; it errs only when the
 // transaction cannot be returned to the savepoint.
+//
+// An argument is written between the parentheses of the call as declared, so
+// one that could reach past them is not run, and the declaration is compared
+// as written; see [probetext.Fragment].
 func spell(ctx context.Context, tx *sql.Tx, request schemaext.NormalizationRequest, probe probe) ([]mssqlschema.Predicate, bool, error) {
+	for _, predicate := range probe.value.Predicates {
+		for _, argument := range predicate.Arguments {
+			if refusal := probetext.Fragment(request.Target, argument); refusal != nil {
+				probetext.Warn(ctx, probe.object.Ref.String(), "security policy "+probe.object.Ref.Path(), refusal)
+				return nil, false, nil
+			}
+		}
+	}
 	suffix := make([]byte, 8)
 	if _, err := rand.Read(suffix); err != nil {
 		return nil, false, err

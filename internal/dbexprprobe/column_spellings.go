@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
+	"ptah.run/internal/probetx"
 )
 
 // ColumnSpellingProbe is one declared table whose column types and defaults
@@ -80,13 +83,17 @@ func ResolveColumnSpellings(
 	if len(probes) == 0 || !SupportsColumnSpellings(conn.Info().Dialect) {
 		return nil, nil, nil
 	}
+	dialect := conn.Info().Dialect
 	resolved := make(map[string]config.ColumnSpelling)
 	var refusals []ColumnSpellingRefusal
 	ran, err := conn.WithRolledBackTransaction(ctx, "resolve column spellings", func(ctx context.Context, tx *sql.Tx) error {
 		for _, probe := range probes {
-			refused, err := resolveColumnSpellingProbe(ctx, tx, probe, resolved)
+			refused, err := resolveColumnSpellingProbe(ctx, tx, dialect, probe, resolved)
 			if err != nil {
 				return err
+			}
+			if err := probetx.Check(ctx); err != nil {
+				return fmt.Errorf("resolve column spellings: table %s: %w", qualifiedName(probe.Schema, probe.Declared), err)
 			}
 			refusals = append(refusals, refused...)
 		}
@@ -114,6 +121,7 @@ type ColumnSpellingRefusal struct {
 func resolveColumnSpellingProbe(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	probe ColumnSpellingProbe,
 	resolved map[string]config.ColumnSpelling,
 ) ([]ColumnSpellingRefusal, error) {
@@ -121,18 +129,28 @@ func resolveColumnSpellingProbe(
 	for _, column := range probe.Columns {
 		keys[column.Name] = column.Key
 	}
-	refused, err := readColumnSpellings(ctx, tx, probe.Table, probe.Statement, keys, resolved)
-	if err != nil || refused == nil {
-		return nil, err
-	}
-	if temporaryTablesUnavailable(refused) {
-		for _, column := range probe.Columns {
-			resolved[column.Key] = config.ColumnSpelling{}
+	// A table statement the check refuses is not run, and each column's own
+	// statement is checked and tried instead, so one column whose text could
+	// reach past its place leaves only itself unresolved.
+	if probetext.Statement(dialect, probe.Statement) == nil {
+		refused, err := readColumnSpellings(ctx, tx, probe.Table, probe.Statement, keys, resolved)
+		if err != nil || refused == nil {
+			return nil, err
 		}
-		return nil, nil
+		if temporaryTablesUnavailable(refused) {
+			for _, column := range probe.Columns {
+				resolved[column.Key] = config.ColumnSpelling{}
+			}
+			return nil, nil
+		}
 	}
 	var refusals []ColumnSpellingRefusal
 	for _, column := range probe.Columns {
+		if refusal := probetext.Statement(dialect, column.Statement); refusal != nil {
+			resolved[column.Key] = config.ColumnSpelling{}
+			probetext.Warn(ctx, column.Key, "column "+qualifiedName(probe.Schema, probe.Declared, column.Name), refusal)
+			continue
+		}
 		refused, err := readColumnSpellings(
 			ctx, tx, column.Table, column.Statement, map[string]string{column.Name: column.Key}, resolved)
 		if err != nil {
@@ -196,4 +214,9 @@ const experimentalFeature = "XCEXF"
 func temporaryTablesUnavailable(refused error) bool {
 	var state interface{ SQLState() string }
 	return errors.As(refused, &state) && state.SQLState() == experimentalFeature
+}
+
+// qualifiedName joins the parts of a name that are not empty, for a message.
+func qualifiedName(parts ...string) string {
+	return strings.Join(slices.DeleteFunc(parts, func(part string) bool { return part == "" }), ".")
 }

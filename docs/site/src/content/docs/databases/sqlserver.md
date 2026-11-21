@@ -488,6 +488,18 @@ and compares the two stored forms. The type and nullability of a computed
 column are the ones SQL Server derives from the expression, so Ptah writes
 neither and compares neither.
 
+The temporary table is created inside a transaction that is rolled back, and a
+CHECK is asked the same way. T-SQL needs no semicolon between two statements,
+so an expression that closed the parentheses around it could end the
+transaction, and what it ran after a `COMMIT` would stay. An expression is
+therefore not asked when it leaves a string, a quoted name or a comment open,
+closes a parenthesis it does not open, leaves one open, or holds a semicolon
+outside a string. A block comment holds the block comments inside it, as SQL
+Server reads it. Such an expression is compared as written, and the run prints
+a warning that names the column or the constraint and the reason. After each
+probe Ptah reads `CURRENT_TRANSACTION_ID()` and `@@TRANCOUNT`, and a command
+whose probe ended the transaction stops with an error.
+
 SQL Server stores only a deterministic expression. A stored column that reads
 `GETDATE()` is refused when the migration runs, with `Computed column 'seen'
 in table 'events' cannot be persisted because the column is non-deterministic.

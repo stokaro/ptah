@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can
@@ -41,6 +42,9 @@ type CheckExpressionProbe struct {
 	// Expression is the declared CHECK, without the CHECK keyword and without
 	// its enclosing parentheses.
 	Expression string
+	// Object names the constraint in a warning, such as `CHECK ck_price on
+	// items`. It is never sent to the server.
+	Object string
 }
 
 // ResolveCheckExpressions asks the connected server to normalize each declared
@@ -93,8 +97,8 @@ func ResolveCheckExpressions(
 	if !supported {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve check expressions", probes,
-		func(probe CheckExpressionProbe) string { return probe.Key },
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve check expressions", probes,
+		func(probe CheckExpressionProbe) (string, string) { return probe.Key, probe.Object },
 		one)
 }
 
@@ -130,6 +134,7 @@ func checkProbeFor(dialect string) (probeFunc[CheckExpressionProbe, config.Check
 func resolveOnePostgresCheckExpression(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe CheckExpressionProbe,
 ) (config.CheckExpression, error) {
@@ -137,11 +142,15 @@ func resolveOnePostgresCheckExpression(
 	if expression == "" || len(probe.Columns) == 0 {
 		return config.CheckExpression{}, nil
 	}
+	written := ownSchemaStripped(expression, probe.Schema, probe.Table)
+	if err := probetext.Fragment(dialect, written); err != nil {
+		return config.CheckExpression{}, err
+	}
 
 	relation := newProbeRelation(probe.Table, "ptah_check_probe", index)
 	statements := relation.statements(fmt.Sprintf(
 		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s))",
-		relation.name, checkProbeColumnList(probe.Columns), ownSchemaStripped(expression, probe.Schema, probe.Table)))
+		relation.name, checkProbeColumnList(probe.Columns), written))
 
 	const savepoint = "ptah_check_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
@@ -215,12 +224,16 @@ func quoteCheckProbeIdentifier(name string) string {
 func resolveOneSQLServerCheckExpression(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe CheckExpressionProbe,
 ) (config.CheckExpression, error) {
 	expression := strings.TrimSpace(probe.Expression)
 	if expression == "" || len(probe.Columns) == 0 {
 		return config.CheckExpression{}, nil
+	}
+	if err := probetext.Fragment(dialect, expression); err != nil {
+		return config.CheckExpression{}, err
 	}
 
 	name := fmt.Sprintf("#ptah_check_probe_%d", index)

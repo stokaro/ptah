@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 )
 
 // IndexExpressionProbe is one declared index whose expression or predicate
@@ -30,6 +31,9 @@ type IndexExpressionProbe struct {
 	Parts      []string
 	// Predicate is the declared WHERE clause, empty for a full index.
 	Predicate string
+	// Object names the index in a warning, such as `index idx_lower_code on
+	// items`. It is never sent to the server.
+	Object string
 }
 
 // ResolveIndexExpressions asks the connected server to normalize each declared
@@ -55,14 +59,15 @@ func ResolveIndexExpressions(
 	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve index expressions", probes,
-		func(probe IndexExpressionProbe) string { return probe.Key },
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve index expressions", probes,
+		func(probe IndexExpressionProbe) (string, string) { return probe.Key, probe.Object },
 		resolveOneIndexExpression)
 }
 
 func resolveOneIndexExpression(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe IndexExpressionProbe,
 ) (config.IndexExpression, error) {
@@ -80,12 +85,16 @@ func resolveOneIndexExpression(
 	if strings.TrimSpace(over) == "" {
 		return config.IndexExpression{}, nil
 	}
+	where := ownSchemaStripped(predicate, probe.Schema, probe.Table)
+	if err := probetext.Fragments(dialect, over, where); err != nil {
+		return config.IndexExpression{}, err
+	}
 	create := fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s ((%s))", relation.name, over)
 	if expression == "" {
 		create = fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s (%s)", relation.name, over)
 	}
 	if predicate != "" {
-		create += fmt.Sprintf(" WHERE (%s)", ownSchemaStripped(predicate, probe.Schema, probe.Table))
+		create += fmt.Sprintf(" WHERE (%s)", where)
 	}
 	statements := relation.statements(
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),

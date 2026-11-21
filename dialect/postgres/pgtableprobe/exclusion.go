@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/internal/pgexclude"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/sqlident"
 )
 
@@ -85,7 +86,7 @@ func normalizeExclusionObject(ctx context.Context, request schemaext.Normalizati
 		}
 	}
 	if present && request.Session != nil {
-		value.Normalized, err = normalizeExclusion(ctx, request.Session, object.Ref, value)
+		value.Normalized, err = normalizeExclusion(ctx, request.Session, request.Target, object.Ref, value)
 		if err != nil {
 			return schemaext.Object{}, err
 		}
@@ -93,7 +94,7 @@ func normalizeExclusionObject(ctx context.Context, request schemaext.Normalizati
 	return object, nil
 }
 
-func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, subject objectidentity.ID, value *pgtable.DesiredExclusion) (*pgtable.NormalizedExclusion, error) {
+func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, dialect string, subject objectidentity.ID, value *pgtable.DesiredExclusion) (*pgtable.NormalizedExclusion, error) {
 	clause, err := pgtablerender.ExclusionSQL("", value)
 	if err != nil {
 		return nil, err
@@ -103,6 +104,13 @@ func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, sub
 		return nil, err
 	}
 	table := sqlident.Qualified(platform.Postgres, sqlident.UnquoteDoubleQuoted(subject.Schema.Source), sqlident.UnquoteDoubleQuoted(subject.Parent.Source))
+	// The parser reads the clause one way; a session can read it another, as
+	// one with standard_conforming_strings off does. A clause that could reach
+	// past its parentheses under any reading is compared as written.
+	if refusal := probetext.Fragment(dialect, clause); refusal != nil {
+		probetext.Warn(ctx, subject.String(), "exclusion constraint "+subject.Name.Source+" on "+table, refusal)
+		return nil, nil
+	}
 	temporary := sqlident.Qualified(platform.Postgres, "pg_temp", sqlident.UnquoteDoubleQuoted(subject.Parent.Source))
 	var definition string
 	ran, err := session.WithRolledBackTransaction(ctx, "normalize exclusion constraint", func(ctx context.Context, tx *sql.Tx) error {
