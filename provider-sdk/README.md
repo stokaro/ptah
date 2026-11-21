@@ -1044,6 +1044,10 @@ A complete reply (`complete=true`) holds:
   the common objects. `tables` and `enums` are the messages `ValidateSchema`
   already uses. `SQLRole` carries no password. `SQLGrant` has a `revoked` flag
   because a REVOKE asserts absence, which differs from an unlisted grant.
+  `SQLRole.member_of` is the role's complete list of groups: the host revokes
+  a membership the server holds between two roles of the reply that the list
+  leaves out. A provider whose documents cannot state a membership does not
+  return roles on an engine that advertises role memberships.
 - `native_objects`, the DESIRED values of provider-owned models whose source
   formats include `SQL`.
 - `facets`, the DESIRED facets of the declared tables and of their columns and
