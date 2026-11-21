@@ -1585,9 +1585,11 @@ type Role struct {
 
 	// MemberOfStated says the declaration states an empty member_of list, as
 	// `member_of=""` in an annotation, `member_of: []` in YAML or `member_of =
-	// []` in HCL: the role belongs to no role. It is false where MemberOf names
-	// a role, which states the memberships already, and a reader of a live
-	// server leaves it false. See [Role.OwnsMemberships].
+	// []` in HCL: the role belongs to no role. A provider's SQL document
+	// reading sets it for each role it declares in no group, because such a
+	// document states a membership only by a statement. It is false where
+	// MemberOf names a role, which states the memberships already, and a
+	// reader of a live server leaves it false. See [Role.OwnsMemberships].
 	MemberOfStated bool `json:",omitempty"`
 
 	// MemberOptions holds the options a membership states, keyed by the group

@@ -80,9 +80,17 @@ func sqlSchemaCommon(reply *protocol.SQLSchema, selections *scopeSelections) (sc
 		// provider.SQLRolePasswordsFeature, and the SDK refuses one otherwise.
 		// The model holds it as a Go, YAML or HCL source's, so a plan binds
 		// it as an execution input and no output prints it.
+		//
+		// A SQL document states a membership only by a statement, such as
+		// CREATE GROUP ... WITH USER, and takes one away by leaving it out or
+		// by ALTER GROUP ... DROP USER. So a role the document declares holds
+		// exactly the memberships the reading lists, and an empty list states
+		// that it belongs to no role. Without MemberOfStated, a role the
+		// document takes out of its last group keeps that membership on the
+		// server, and the next plan reads as synced.
 		database.Roles = append(database.Roles, schemamodel.Role{Name: role.GetName(), Login: role.GetLogin(), Password: role.GetPassword(), Superuser: role.GetSuperuser(),
 			CreateDB: role.GetCreateDb(), CreateRole: role.GetCreateRole(), Inherit: role.GetInherit(), Replication: role.GetReplication(), Comment: role.GetComment(),
-			Group: role.GetGroup(), MemberOf: slices.Clone(role.GetMemberOf())})
+			Group: role.GetGroup(), MemberOf: slices.Clone(role.GetMemberOf()), MemberOfStated: len(role.GetMemberOf()) == 0})
 	}
 	for _, declared := range reply.GetGrants() {
 		grant, err := sqlGrant(declared, selections)

@@ -126,6 +126,33 @@ func TestSQLSchemaCommonMapsDeclaredObjects(t *testing.T) {
 	c.Assert(database.RevokedGrants, qt.DeepEquals, []schemamodel.Grant{{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "app.items"}})
 }
 
+// TestSQLSchemaCommonRolesOwnTheirMemberships reads a document that declares a
+// group with one member and a user it takes out of the group. A SQL document
+// states a membership only by a statement, so every role it declares owns its
+// memberships, the one in no group included: the comparison then revokes the
+// membership the server still holds for the user. Read as a role that states
+// nothing, the user would keep it and the plan would read as synced.
+func TestSQLSchemaCommonRolesOwnTheirMemberships(t *testing.T) {
+	c := qt.New(t)
+	reply := &protocol.SQLSchema{Roles: []*protocol.SQLRole{
+		{Name: "dropped", Login: true},
+		{Name: "kept", MemberOf: []string{"crew"}},
+		{Name: "crew", Group: true},
+	}}
+
+	database, err := sqlSchemaCommon(reply, nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{
+		{Name: "dropped", Login: true, MemberOfStated: true},
+		{Name: "kept", MemberOf: []string{"crew"}},
+		{Name: "crew", Group: true, MemberOfStated: true},
+	})
+	for _, role := range database.Roles {
+		c.Assert(role.OwnsMemberships(), qt.IsTrue, qt.Commentf("%s", role.Name))
+	}
+}
+
 func TestSQLSchemaGrantTargets(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -482,7 +509,10 @@ func TestSQLSchemaCommonHoldsTheRolePasswordAReadingReturns(t *testing.T) {
 	database, err := sqlSchemaCommon(reply, nil)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "app", Login: true, Password: "s3cret-pw"}, {Name: "reader", Login: true}})
+	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{
+		{Name: "app", Login: true, Password: "s3cret-pw", MemberOfStated: true},
+		{Name: "reader", Login: true, MemberOfStated: true},
+	})
 }
 
 func TestContractIdentityBindsHowSQLDocumentsAreRead(t *testing.T) {
