@@ -1,6 +1,8 @@
 // Package grantrefusal holds the refusals the MySQL-family, SQL Server, Oracle
-// and ClickHouse renderers make for a GRANT or REVOKE whose target only the
-// PostgreSQL renderer spells: a function or procedure, and columns of a table.
+// and ClickHouse renderers make for a GRANT or REVOKE whose target they cannot
+// spell: a function or procedure, which only the PostgreSQL renderer spells,
+// and columns of a table, which the SQL Server, Oracle and ClickHouse
+// renderers do not.
 //
 // The SQL schema reader parses `GRANT EXECUTE ON FUNCTION f(uuid) TO r` and
 // `GRANT UPDATE (a) ON t TO r` for any dialect, and a plan carries the target
@@ -40,7 +42,7 @@ func Columns(dialect, statement, objectName string, columns []string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"%w: %s (%s) ON %s: column privileges are modeled for PostgreSQL only, not %s",
+		"%w: %s (%s) ON %s: column privileges are modeled for PostgreSQL, MySQL and MariaDB only, not %s",
 		ptaherr.ErrUnsupportedFeature, statement, strings.Join(columns, ", "), objectName, dialect)
 }
 

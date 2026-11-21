@@ -1212,10 +1212,10 @@ func rejectExternalForeignKeys(ctx context.Context, conn *sql.Conn, schema strin
 		FROM (
 			SELECT DISTINCT constraint_schema, constraint_name
 			FROM information_schema.key_column_usage
-			WHERE referenced_table_schema = ?
-			  AND constraint_schema <> ?
+			WHERE `+sameName("referenced_table_schema", "?")+`
+			  AND NOT `+sameName("constraint_schema", "?")+`
 		) AS external_foreign_keys
-	`, schema, schema).Scan(&count); err != nil {
+	`, nameBinds(schema, 2)...).Scan(&count); err != nil {
 		return fmt.Errorf("mysql: inspect cross-database foreign keys: %w", err)
 	}
 	if count > 0 {
@@ -1224,21 +1224,27 @@ func rejectExternalForeignKeys(ctx context.Context, conn *sql.Conn, schema strin
 	return nil
 }
 
+// internalForeignKeysQuery lists the foreign keys of the bound database whose
+// referenced table it names too, one bind per [sameName] predicate.
+func internalForeignKeysQuery() string {
+	return `
+		SELECT table_name, constraint_name
+		FROM (
+			SELECT DISTINCT table_name, constraint_name
+			FROM information_schema.key_column_usage
+			WHERE ` + sameName("constraint_schema", "?") + `
+			  AND referenced_table_name IS NOT NULL
+		) AS internal_foreign_keys
+		ORDER BY table_name, constraint_name
+	`
+}
+
 func listInternalForeignKeys(
 	ctx context.Context,
 	conn *sql.Conn,
 	schema string,
 ) ([]cleanupForeignKey, error) {
-	rows, err := conn.QueryContext(ctx, `
-		SELECT table_name, constraint_name
-		FROM (
-			SELECT DISTINCT table_name, constraint_name
-			FROM information_schema.key_column_usage
-			WHERE constraint_schema = ?
-			  AND referenced_table_name IS NOT NULL
-		) AS internal_foreign_keys
-		ORDER BY table_name, constraint_name
-	`, schema)
+	rows, err := conn.QueryContext(ctx, internalForeignKeysQuery(), nameBinds(schema, 1)...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: query internal foreign keys: %w", err)
 	}
@@ -1293,26 +1299,26 @@ func rejectExternalStoredPrograms(ctx context.Context, conn *sql.Conn, schema st
 				routine_name AS object_name,
 				routine_type AS object_kind
 			FROM information_schema.routines
-			WHERE routine_schema <> ?
+			WHERE NOT `+sameName("routine_schema", "?")+`
 			  AND routine_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 
 			UNION ALL
 
 			SELECT event_schema, event_name, 'EVENT'
 			FROM information_schema.events
-			WHERE event_schema <> ?
+			WHERE NOT `+sameName("event_schema", "?")+`
 			  AND event_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 
 			UNION ALL
 
 			SELECT trigger_schema, trigger_name, 'TRIGGER'
 			FROM information_schema.triggers
-			WHERE trigger_schema <> ?
+			WHERE NOT `+sameName("trigger_schema", "?")+`
 			  AND trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 		) AS external_stored_programs
 		ORDER BY object_schema, object_kind, object_name
 		LIMIT 1
-	`, schema, schema, schema).Scan(&externalSchema, &name, &kind)
+	`, nameBinds(schema, 3)...).Scan(&externalSchema, &name, &kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -1334,10 +1340,10 @@ func mySQLExternalViewCount(ctx context.Context, conn *sql.Conn, schema string) 
 		FROM (
 			SELECT DISTINCT view_schema, view_name
 			FROM information_schema.view_table_usage
-			WHERE table_schema = ?
-			  AND view_schema <> ?
+			WHERE `+sameName("table_schema", "?")+`
+			  AND NOT `+sameName("view_schema", "?")+`
 		) AS external_views
-	`, schema, schema).Scan(&count); err != nil {
+	`, nameBinds(schema, 2)...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("mysql: inspect cross-database views: %w", err)
 	}
 	return count, nil
@@ -1353,16 +1359,18 @@ func mariaDBExternalViewCount(ctx context.Context, conn *sql.Conn, schema string
 	if err := conn.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM information_schema.views
-		WHERE table_schema <> ?
+		WHERE NOT `+sameName("table_schema", "?")+`
 		  AND INSTR(view_definition, ?) > 0
-	`, schema, quoteIdent(schema)+".").Scan(&count); err != nil {
+	`, append(nameBinds(schema, 1), quoteIdent(schema)+".")...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("mariadb: inspect cross-database views: %w", err)
 	}
 	return count, nil
 }
 
-func listCleanupObjects(ctx context.Context, conn *sql.Conn, schema string) ([]cleanupObject, error) {
-	rows, err := conn.QueryContext(ctx, `
+// cleanupObjectsQuery lists the tables, views, sequences, routines and events
+// of the bound database in the order a cleanup drops them.
+func cleanupObjectsQuery() string {
+	return `
 		SELECT object_name, object_kind
 		FROM (
 			SELECT
@@ -1378,23 +1386,27 @@ func listCleanupObjects(ctx context.Context, conn *sql.Conn, schema string) ([]c
 					ELSE 30
 				END AS priority
 			FROM information_schema.tables
-			WHERE table_schema = ?
+			WHERE ` + sameName("table_schema", "?") + `
 			  AND table_type IN ('BASE TABLE', 'VIEW', 'SEQUENCE', 'SYSTEM VERSIONED')
 
 			UNION ALL
 
 			SELECT routine_name, routine_type, 20
 			FROM information_schema.routines
-			WHERE routine_schema = ?
+			WHERE ` + sameName("routine_schema", "?") + `
 
 			UNION ALL
 
 			SELECT event_name, 'EVENT', 0
 			FROM information_schema.events
-			WHERE event_schema = ?
+			WHERE ` + sameName("event_schema", "?") + `
 		) AS cleanup_objects
 		ORDER BY priority, object_kind, object_name
-	`, schema, schema, schema)
+	`
+}
+
+func listCleanupObjects(ctx context.Context, conn *sql.Conn, schema string) ([]cleanupObject, error) {
+	rows, err := conn.QueryContext(ctx, cleanupObjectsQuery(), nameBinds(schema, 3)...)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: query schema objects: %w", err)
 	}

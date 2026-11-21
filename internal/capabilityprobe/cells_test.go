@@ -406,7 +406,9 @@ func TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand(t *testing.T) {
 	}
 	c.Assert(repositories, qt.ContentEquals, []string{
 		"cockroachdb/cockroach",
+		"mariadb",
 		"mcr.microsoft.com/mssql/server",
+		"mysql",
 		"yugabytedb/yugabyte",
 	})
 }

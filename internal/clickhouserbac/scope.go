@@ -85,7 +85,7 @@ func ScopeOf(grant schemamodel.Grant, defaultDatabase string) (Scope, error) {
 			grant.Role, grant.OnSequence)
 	case len(grant.Columns) > 0:
 		return Scope{}, fmt.Errorf(
-			"grant to role %q names columns of %q: column privileges are modeled for PostgreSQL only",
+			"grant to role %q names columns of %q: column privileges are modeled for PostgreSQL, MySQL and MariaDB only",
 			grant.Role, grant.OnTable)
 	case grant.OnSchema != "" && grant.OnTable != "":
 		return Scope{}, fmt.Errorf(

@@ -112,17 +112,17 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 
 // readGrants reports the privileges the roles hold on the connected database.
 //
-// Both scopes MySQL accepts come from the information_schema privilege views;
-// [grantQuery] says why those rather than the grant tables. A grant on another
-// database is not reported, because the description this reader produces is of
-// one database and a grant elsewhere is not part of it.
+// The database, table and column scopes come from the information_schema
+// privilege views; [grantQuery] says why those rather than the grant tables. A
+// grant on another database is not reported, because the description this
+// reader produces is of one database and a grant elsewhere is not part of it.
 func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant, error) {
 	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
 	}
 	rolePredicateOn := func(prefix string) string { return qualifyPredicate(predicate, prefix) }
-	rows, err := r.db.QueryContext(ctx, grantQuery(rolePredicateOn("u.")), dbName, dbName)
+	rows, err := r.db.QueryContext(ctx, grantQuery(rolePredicateOn("u.")), nameBinds(dbName, grantQueryArms)...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +130,8 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant
 
 	var grants []catalog.Grant
 	for rows.Next() {
-		var role, objectSchema, object, privilege, grantable, objectType string
-		if err := rows.Scan(&role, &objectSchema, &object, &privilege, &grantable, &objectType); err != nil {
+		var role, objectSchema, object, column, privilege, grantable, objectType string
+		if err := rows.Scan(&role, &objectSchema, &object, &column, &privilege, &grantable, &objectType); err != nil {
 			return nil, err
 		}
 		grant := catalog.Grant{
@@ -139,6 +139,7 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant
 			Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
 			ObjectType: objectType,
 			WithOption: strings.EqualFold(strings.TrimSpace(grantable), "YES"),
+			Column:     column,
 		}
 		// The schema and the table are kept apart. QualifiedTarget joins them,
 		// and handing it a name that was already joined made it quote the whole
@@ -430,25 +431,40 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 //
 // The grantee is `'user'@'host'` in these views, so the user is cut out of it
 // to join against mysql.user, which is where the role discriminator lives.
+//
+// A privilege limited to columns is a row of COLUMN_PRIVILEGES per column and
+// no row of TABLE_PRIVILEGES: measured on MySQL 8.4.13 and MariaDB 11.8.9,
+// `GRANT SELECT (name) ON t TO r` adds nothing to TABLE_PRIVILEGES. Without
+// that view the read holds no such grant, and a plan for a declared one
+// grants it again on every run.
 func grantQuery(rolePredicate string) string {
 	const granteeUser = `REPLACE(SUBSTRING_INDEX(granted.grantee, '@', 1), '''', '')`
 	return `
-		SELECT ` + granteeUser + ` AS role_name, object_schema, object_name, privilege,
-			   grantable, object_type
+		SELECT ` + granteeUser + ` AS role_name, object_schema, object_name, column_name,
+			   privilege, grantable, object_type
 		FROM (
 			SELECT sp.GRANTEE AS grantee, sp.TABLE_SCHEMA AS object_schema,
-				   '' AS object_name, sp.PRIVILEGE_TYPE AS privilege,
+				   '' AS object_name, '' AS column_name, sp.PRIVILEGE_TYPE AS privilege,
 				   sp.IS_GRANTABLE AS grantable, 'SCHEMA' AS object_type
 			FROM information_schema.SCHEMA_PRIVILEGES AS sp
-			WHERE sp.TABLE_SCHEMA = ?
+			WHERE ` + sameName("sp.TABLE_SCHEMA", "?") + `
 			UNION ALL
-			SELECT tp.GRANTEE, tp.TABLE_SCHEMA, tp.TABLE_NAME, tp.PRIVILEGE_TYPE,
+			SELECT tp.GRANTEE, tp.TABLE_SCHEMA, tp.TABLE_NAME, '', tp.PRIVILEGE_TYPE,
 				   tp.IS_GRANTABLE, 'TABLE'
 			FROM information_schema.TABLE_PRIVILEGES AS tp
-			WHERE tp.TABLE_SCHEMA = ?
+			WHERE ` + sameName("tp.TABLE_SCHEMA", "?") + `
+			UNION ALL
+			SELECT cp.GRANTEE, cp.TABLE_SCHEMA, cp.TABLE_NAME, cp.COLUMN_NAME, cp.PRIVILEGE_TYPE,
+				   cp.IS_GRANTABLE, 'TABLE'
+			FROM information_schema.COLUMN_PRIVILEGES AS cp
+			WHERE ` + sameName("cp.TABLE_SCHEMA", "?") + `
 		) AS granted
 		JOIN mysql.user AS u ON u.user = ` + granteeUser + `
 		WHERE ` + rolePredicate + `
 			  AND u.user NOT LIKE 'mysql.%'
-		ORDER BY role_name, object_schema, object_name, privilege`
+		ORDER BY role_name, object_schema, object_name, column_name, privilege`
 }
+
+// grantQueryArms is the number of privilege views [grantQuery] reads, each
+// filtered on the database by one [sameName] predicate.
+const grantQueryArms = 3

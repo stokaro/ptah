@@ -1436,6 +1436,37 @@ grants as a comparison limit instead of claiming the schemas are fully synced.
 Native `schema diff --format json` includes these limits in `comparison_limits`.
 An account that compares grants needs `SELECT` on `mysql.*`.
 
+A grant may name columns of a table or a view, as in
+``GRANT SELECT (id, name) ON t1 TO `reader` ``. The server holds it as a
+privilege on each column and on nothing else: the role cannot read a column the
+grant leaves out. A read takes column privileges from
+`information_schema.COLUMN_PRIVILEGES`, and a plan grants and revokes them one
+column at a time. `SELECT`, `INSERT`, `UPDATE` and `REFERENCES` take a column
+list; any other privilege with one is refused by name before anything runs,
+because the server answers it with a syntax error.
+
+On MySQL and MariaDB a revoke reaches past the row it names. `REVOKE SELECT ON
+t1` takes every column `SELECT` the role holds on `t1`, and `REVOKE GRANT OPTION
+ON t1` takes the grant option of every privilege the role holds on `t1`,
+columns included. So a plan runs its revokes before its grants, grants again a
+kept column privilege that a revoke on its table takes, and takes away the grant
+option a revoked privilege leaves behind where the role keeps no privilege with
+it. One apply leaves the role with what the declaration states, and the next
+plan is empty.
+
+A privilege on a function or procedure is refused by name when a plan grants
+it, and the read does not report routine privileges, so a comparison cannot see
+an `EXECUTE` granted or revoked outside the schema.
+
+A database name is matched exactly. On a server started with
+`lower_case_table_names=0`, the Linux default, `app` and `APP` are two
+databases, and a read of one reports nothing of the other, although
+`information_schema` compares names without regard to case in its privilege
+views on MySQL and in every view on MariaDB. On a server started with
+`lower_case_table_names=1`, a URL may spell the database in any case: the
+server folds the name, and the read describes the database under the name the
+server gives it.
+
 ### Role memberships
 
 On MySQL 8, `member_of` on a role names the roles it joins, and a plan runs

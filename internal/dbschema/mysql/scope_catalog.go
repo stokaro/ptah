@@ -27,10 +27,10 @@ func (mysqlScopeCatalog) Tables(
 	query := `
 			SELECT table_schema, table_name
 			FROM information_schema.tables
-			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
+			WHERE ` + sameName("table_schema", scopedDatabase) + `
 			  AND table_type = 'BASE TABLE'
 			ORDER BY table_name`
-	return dbreset.QueryScopeTables(ctx, q, query, schema)
+	return dbreset.QueryScopeTables(ctx, q, query, nameBinds(schema, 1)...)
 }
 
 // Realm lists every user database of the server with the base tables it
@@ -45,7 +45,7 @@ func (mysqlScopeCatalog) Realm(
 		SELECT s.SCHEMA_NAME, COALESCE(t.TABLE_NAME, '')
 		FROM information_schema.SCHEMATA s
 		LEFT JOIN information_schema.TABLES t
-		  ON t.TABLE_SCHEMA = s.SCHEMA_NAME
+		  ON ` + sameName("t.TABLE_SCHEMA", "s.SCHEMA_NAME") + `
 		 AND t.TABLE_TYPE = 'BASE TABLE'
 		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("s.SCHEMA_NAME") + `
 		ORDER BY s.SCHEMA_NAME, t.TABLE_NAME`

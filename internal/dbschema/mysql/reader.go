@@ -551,12 +551,12 @@ func (r *Reader) readTables(
 	query := `
 		SELECT TABLE_NAME, TABLE_TYPE, COALESCE(TABLE_COMMENT, ''), COALESCE(TABLE_COLLATION, ''), COALESCE(ROW_FORMAT, '')
 		FROM information_schema.TABLES
-		WHERE TABLE_SCHEMA = ?
+		WHERE ` + sameName("TABLE_SCHEMA", "?") + `
 		AND TABLE_TYPE = 'BASE TABLE'
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY TABLE_NAME`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -634,11 +634,11 @@ func (r *Reader) readColumnsByTable(
 			GENERATION_EXPRESSION,
 			COLUMN_COMMENT
 		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = ?
+		WHERE ` + sameName("TABLE_SCHEMA", "?") + `
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY TABLE_NAME, ORDINAL_POSITION`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1097,11 +1097,11 @@ func (r *Reader) readViews(ctx context.Context, dbName string) (viewRead, error)
 	query := `
 		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION, SECURITY_TYPE, DEFINER, CURRENT_USER()
 		FROM information_schema.VIEWS
-		WHERE TABLE_SCHEMA = ?
+		WHERE ` + sameName("TABLE_SCHEMA", "?") + `
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY TABLE_NAME`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return viewRead{}, err
 	}
@@ -1182,14 +1182,14 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) (routineRead,
 			COALESCE(ROUTINE_COMMENT, ''),
 			ROUTINE_TYPE
 		FROM information_schema.ROUTINES
-		WHERE ROUTINE_SCHEMA = ?
+		WHERE ` + sameName("ROUTINE_SCHEMA", "?") + `
 		-- Both routine kinds. A procedure used to be filtered out here with
 		-- nothing saying so, so a comparison against a schema holding one
 		-- reported no difference and no diagnostic (stokaro/ptah#1722).
 		AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
 		ORDER BY ROUTINE_TYPE, ROUTINE_NAME`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return routineRead{}, err
 	}
@@ -1255,12 +1255,12 @@ func (r *Reader) readRoutineParameters(ctx context.Context, dbName string) (map[
 	query := `
 		SELECT ROUTINE_TYPE, SPECIFIC_NAME, PARAMETER_MODE, PARAMETER_NAME, DTD_IDENTIFIER
 		FROM information_schema.PARAMETERS
-		WHERE SPECIFIC_SCHEMA = ?
+		WHERE ` + sameName("SPECIFIC_SCHEMA", "?") + `
 		AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
 		AND ORDINAL_POSITION > 0
 		ORDER BY ROUTINE_TYPE, SPECIFIC_NAME, ORDINAL_POSITION`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1318,10 +1318,10 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 			ACTION_ORIENTATION,
 			ACTION_STATEMENT
 		FROM information_schema.TRIGGERS
-		WHERE TRIGGER_SCHEMA = ?
+		WHERE ` + sameName("TRIGGER_SCHEMA", "?") + `
 		ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,11 +1378,11 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]catalog.Enum, 
 			COLUMN_NAME,
 			COLUMN_TYPE
 		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = ?
+		WHERE ` + sameName("TABLE_SCHEMA", "?") + `
 		AND DATA_TYPE = 'enum'
 		ORDER BY TABLE_NAME, COLUMN_NAME`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1435,7 +1435,8 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]catalog.Enum, 
 //
 // It also reads the index's COMMENT and whether the optimizer uses it, and
 // the expression of a functional key part; see [Reader.statisticsProjections].
-const indexKeyPartsQuery = `
+func indexKeyPartsQuery() string {
+	return `
 		SELECT
 			s.INDEX_NAME,
 			s.TABLE_NAME,
@@ -1460,9 +1461,10 @@ const indexKeyPartsQuery = `
 			-- part; see [Reader.indexKeyExpressionColumn].
 			%s
 		FROM information_schema.STATISTICS s
-		WHERE s.TABLE_SCHEMA = ?
+		WHERE ` + sameName("s.TABLE_SCHEMA", "?") + `
 		AND s.TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX`
+}
 
 // readIndexes reads all indexes, assembling each key from its parts.
 func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Index, error) {
@@ -1470,7 +1472,7 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(indexKeyPartsQuery, invisible, expression), dbName)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(indexKeyPartsQuery(), invisible, expression), nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1696,7 +1698,7 @@ func (r *Reader) readConstraints(
 		FROM information_schema.TABLE_CONSTRAINTS tc
 		LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu ON
 			tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND
-			tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA AND
+			` + sameName("tc.TABLE_SCHEMA", "kcu.TABLE_SCHEMA") + ` AND
 			tc.TABLE_NAME = kcu.TABLE_NAME AND
 			-- KEY_COLUMN_USAGE carries no constraint type, so the referenced
 			-- table stands in for one: a foreign key's rows name it and every
@@ -1708,18 +1710,18 @@ func (r *Reader) readConstraints(
 				OR (tc.CONSTRAINT_TYPE <> 'FOREIGN KEY' AND kcu.REFERENCED_TABLE_NAME IS NULL))
 		LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON
 			tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND
-			tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA AND
+			` + sameName("tc.TABLE_SCHEMA", "rc.CONSTRAINT_SCHEMA") + ` AND
 			-- REFERENTIAL_CONSTRAINTS holds foreign keys alone, so a same-named
 			-- UNIQUE would otherwise borrow the foreign key's referential
 			-- actions. The table name is required for the same reason the type
 			-- is: the name is unique per table, not per schema.
 			tc.TABLE_NAME = rc.TABLE_NAME AND
 			tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
-		WHERE tc.TABLE_SCHEMA = ?
+		WHERE ` + sameName("tc.TABLE_SCHEMA", "?") + `
 		AND tc.TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
 
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, 1)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1986,7 +1988,7 @@ func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbNam
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE, LEVEL
 		FROM information_schema.CHECK_CONSTRAINTS
-		WHERE CONSTRAINT_SCHEMA = ?`, dbName)
+		WHERE `+sameName("CONSTRAINT_SCHEMA", "?"), nameBinds(dbName, 1)...)
 	if err != nil {
 		return err
 	}
@@ -2008,7 +2010,7 @@ func (r *Reader) readNameOnlyCheckConstraintClauses(ctx context.Context, dbName 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT CONSTRAINT_NAME, CHECK_CLAUSE
 		FROM information_schema.CHECK_CONSTRAINTS
-		WHERE CONSTRAINT_SCHEMA = ?`, dbName)
+		WHERE `+sameName("CONSTRAINT_SCHEMA", "?"), nameBinds(dbName, 1)...)
 	if err != nil {
 		return err
 	}

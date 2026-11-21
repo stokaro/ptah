@@ -233,6 +233,8 @@ func TestWriterDropAllTables_RejectsCrossDatabaseViews(t *testing.T) {
 	c.Assert(viewArgs, qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "test"},
 		{Ordinal: 2, Value: "test"},
+		{Ordinal: 3, Value: "test"},
+		{Ordinal: 4, Value: "test"},
 	})
 }
 
@@ -254,7 +256,8 @@ func TestWriterDropAllTables_RejectsMariaDBCrossDatabaseViews(t *testing.T) {
 	c.Assert(viewQuery, qt.Contains, "INSTR(view_definition, ?)")
 	c.Assert(viewArgs, qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "test"},
-		{Ordinal: 2, Value: "`test`."},
+		{Ordinal: 2, Value: "test"},
+		{Ordinal: 3, Value: "`test`."},
 	})
 }
 
@@ -902,6 +905,9 @@ func TestWriterDropAllTables_DropsAllSupportedObjects(t *testing.T) {
 		{Ordinal: 1, Value: "test"},
 		{Ordinal: 2, Value: "test"},
 		{Ordinal: 3, Value: "test"},
+		{Ordinal: 4, Value: "test"},
+		{Ordinal: 5, Value: "test"},
+		{Ordinal: 6, Value: "test"},
 	})
 }
 
