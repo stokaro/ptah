@@ -251,10 +251,18 @@ func (l *Lexer) Range(start, end int) *Lexer {
 	return ranged
 }
 
+// eof is what peek, peekNext, peekAfterNext and advance return past the end
+// of the input. No input holds it, so a zero byte in the text is read as a
+// character, and the server it is sent to decides what it means. If the end
+// were 0, a zero byte would end the input: a splitter would drop every
+// statement after it without a word, and `ptah migrations up` would record the
+// version as applied.
+const eof rune = -1
+
 // peek returns the character at the current position without advancing
 func (l *Lexer) peek() rune {
 	if l.pos >= len(l.input) {
-		return 0
+		return eof
 	}
 	ch, _ := utf8.DecodeRuneInString(l.input[l.pos:])
 	return ch
@@ -263,12 +271,12 @@ func (l *Lexer) peek() rune {
 // peekNext returns the character at the next position without advancing
 func (l *Lexer) peekNext() rune {
 	if l.pos >= len(l.input) {
-		return 0
+		return eof
 	}
 	_, size := utf8.DecodeRuneInString(l.input[l.pos:])
 	next := l.pos + size
 	if next >= len(l.input) {
-		return 0
+		return eof
 	}
 	ch, _ := utf8.DecodeRuneInString(l.input[next:])
 	return ch
@@ -277,17 +285,17 @@ func (l *Lexer) peekNext() rune {
 // peekAfterNext returns the rune after peekNext without advancing.
 func (l *Lexer) peekAfterNext() rune {
 	if l.pos >= len(l.input) {
-		return 0
+		return eof
 	}
 	_, size := utf8.DecodeRuneInString(l.input[l.pos:])
 	next := l.pos + size
 	if next >= len(l.input) {
-		return 0
+		return eof
 	}
 	_, nextSize := utf8.DecodeRuneInString(l.input[next:])
 	afterNext := next + nextSize
 	if afterNext >= len(l.input) {
-		return 0
+		return eof
 	}
 	ch, _ := utf8.DecodeRuneInString(l.input[afterNext:])
 	return ch
@@ -296,7 +304,7 @@ func (l *Lexer) peekAfterNext() rune {
 // advance moves to the next character and returns it
 func (l *Lexer) advance() rune {
 	if l.pos >= len(l.input) {
-		return 0
+		return eof
 	}
 	ch, size := utf8.DecodeRuneInString(l.input[l.pos:])
 	l.pos += size
@@ -329,7 +337,7 @@ func (l *Lexer) nextSQLToken() Token {
 	for {
 		ch := l.peek()
 
-		if ch == 0 {
+		if ch == eof {
 			return l.emit(TokenEOF)
 		}
 		if token, ok := l.scanSpecialToken(ch); ok {
@@ -397,7 +405,7 @@ func (l *Lexer) scanBracketedIdentifier() Token {
 	l.advance()
 	for {
 		switch l.peek() {
-		case 0:
+		case eof:
 			return l.emit(TokenUnknown)
 		case ']':
 			l.advance()
@@ -437,7 +445,7 @@ func (l *Lexer) scanStringLegacy() Token {
 
 	for {
 		ch := l.peek()
-		if ch == 0 {
+		if ch == eof {
 			// Unterminated string - return what we have
 			break
 		}
@@ -458,7 +466,7 @@ func (l *Lexer) scanStringLegacy() Token {
 				continue
 			}
 			l.advance() // consume backslash
-			if l.peek() != 0 {
+			if l.peek() != eof {
 				l.advance() // consume escaped character
 			}
 		} else {
@@ -571,7 +579,7 @@ func (l *Lexer) consumeQuoted(mode stringBackslashMode) rune {
 
 	for {
 		ch := l.peek()
-		if ch == 0 {
+		if ch == eof {
 			// Unterminated string - return what we have
 			break
 		}
@@ -589,7 +597,7 @@ func (l *Lexer) consumeQuoted(mode stringBackslashMode) rune {
 
 		if ch == '\\' && mode == stringBackslashEscape {
 			l.advance() // consume backslash
-			if l.peek() != 0 {
+			if l.peek() != eof {
 				l.advance() // consume escaped character
 			}
 			continue
@@ -615,7 +623,7 @@ func (l *Lexer) isDashDashComment() bool {
 		return true
 	}
 	afterMarker := l.peekAfterNext()
-	return afterMarker != 0 && (unicode.IsSpace(afterMarker) || unicode.IsControl(afterMarker))
+	return afterMarker != eof && (unicode.IsSpace(afterMarker) || unicode.IsControl(afterMarker))
 }
 
 func (l *Lexer) isExecutableBlockComment() bool {
@@ -657,7 +665,7 @@ func parseExecutableCommentVersion(comment string, prefixLength int) executableC
 }
 
 func isStringTerminator(ch rune) bool {
-	return ch == 0 || ch == ';' || ch == ',' || ch == ')'
+	return ch == eof || ch == ';' || ch == ',' || ch == ')'
 }
 
 // scanLineComment scans a line comment (-- comment)
@@ -667,7 +675,7 @@ func (l *Lexer) scanLineComment() Token {
 
 	for {
 		ch := l.peek()
-		if ch == 0 || ch == '\n' || ch == '\r' {
+		if ch == eof || ch == '\n' || ch == '\r' {
 			break
 		}
 		l.advance()
@@ -695,7 +703,7 @@ func (l *Lexer) scanMarkedLineComment(size int) Token {
 
 	for {
 		ch := l.peek()
-		if ch == 0 || ch == '\n' || ch == '\r' {
+		if ch == eof || ch == '\n' || ch == '\r' {
 			break
 		}
 		l.advance()
@@ -741,7 +749,7 @@ func (l *Lexer) scanBlockToken(tokenType TokenType) Token {
 
 	for {
 		ch := l.peek()
-		if ch == 0 {
+		if ch == eof {
 			// Unterminated comment - return what we have
 			break
 		}
@@ -799,7 +807,7 @@ func (l *Lexer) scanBacktickedIdentifier() Token {
 
 	for {
 		ch := l.peek()
-		if ch == 0 {
+		if ch == eof {
 			// Unterminated identifier - return what we have
 			break
 		}
@@ -816,7 +824,7 @@ func (l *Lexer) scanBacktickedIdentifier() Token {
 
 		if ch == '\\' {
 			l.advance() // consume backslash
-			if l.peek() != 0 {
+			if l.peek() != eof {
 				l.advance() // consume escaped character
 			}
 		} else {
@@ -907,7 +915,7 @@ func (l *Lexer) consumeDollarQuoted() bool {
 	// Scan until we find the matching closing tag
 	for {
 		ch := l.peek()
-		if ch == 0 {
+		if ch == eof {
 			// Unterminated dollar-quoted string - return what we have
 			break
 		}
