@@ -1459,13 +1459,15 @@ COLUMN`, and the privilege applies again to a table or column created under
 the same name. So a plan runs every revoke first, before it creates a table or
 adds a column; `REVOKE` on a name nothing holds succeeds. A revoke placed after
 them leaves the role the new object while the statements before it run, and
-for good when one of them fails. A kept column privilege that a revoke on its
-table takes comes back right after the revokes where its column exists, and
-after the `CREATE TABLE`, `CREATE VIEW` or `ADD COLUMN` that brings the column
+for good when one of them fails.
+
+A kept column privilege that a revoke on its table takes comes back right
+after the revokes where its column exists, and after the `CREATE TABLE`,
+`CREATE VIEW`, `CREATE OR REPLACE VIEW` or `ADD COLUMN` that brings the column
 back where it does not: the server refuses a grant on a missing column with
-ERROR 1054 and on a missing table or view with ERROR 1146. Until that statement runs, the role holds
-nothing there. An apply that completes leaves the role with what the
-declaration states, and the next plan is empty.
+ERROR 1054 and on a missing table or view with ERROR 1146. Until that statement
+runs, the role holds nothing there. An apply that completes leaves the role
+with what the declaration states, and the next plan is empty.
 
 On MariaDB the column of a column privilege is compared without regard to
 case, as the server compares column names. A declaration that spells `name`
@@ -1479,7 +1481,15 @@ as the grant does: measured on MySQL 8.4.13 and 26.10.0, with `SELECT (Name)`
 granted to the role, a user holding it runs `SELECT Name` and is refused
 `SELECT name` with ERROR 1143. So a declaration of `SELECT (name)` does not
 match a held privilege on `Name`: the plan revokes the privilege on `Name`
-first, then grants the one on `name`, as the declaration spells it.
+first, then grants the one on `name`, as the declaration spells it. The grant
+runs right after the revokes where the column exists, and after the statement
+that adds the column where it does not. A statement that fails later in the
+plan leaves the role with the column under the declared spelling.
+
+This holds for a role the schema does not create too. A declared grant of
+`SELECT (name)` replaces a held `SELECT (Name)`, and a declared
+`REVOKE SELECT (name)` takes the privilege under every spelling the server
+accepts for the column. A privilege the declaration says nothing about stays.
 
 The server keeps a column privilege in memory under one name and in
 `mysql.columns_priv` under each spelling, so a grant under one spelling and a

@@ -154,12 +154,18 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
+	// target is how the server compares names. A declared revoke is matched by
+	// it, because it asserts the privilege absent under every spelling the
+	// server takes for the column.
+	target := semantics
+	var respellings map[grantIdentity]difftypes.GrantRef
 	if options.ColumnsBySpelling {
 		// Within this comparison the column rule decides only how the column
 		// of a column privilege compares: tables and schemas have rules of
 		// their own. On MySQL a privilege a role gives on `Name` serves no
 		// statement that spells it `name`, so the two are two privileges.
 		semantics.ColumnNames = identifier.ComparisonExact
+		respellings = make(map[grantIdentity]difftypes.GrantRef)
 	}
 	diff.ConnectedRole = database.ConnectedRole
 	diff.ConnectedRoleSuperuser = database.ConnectedRoleSuperuser
@@ -170,12 +176,17 @@ func GrantsWithOptions(
 		generatedGrantRoles[grant.Role] = true
 		for _, ref := range grantRefsFromGenerated(grant) {
 			generatedGrantMap[sequences.desiredKey(newGrantIdentity(ref, semantics))] = ref
+			if respellings != nil && ref.Column != "" {
+				respellings[sequences.desiredKey(newGrantIdentity(ref, target))] = ref
+			}
 		}
 	}
 	// A revoked grant is asserted absent whoever holds it, so it reaches a
 	// grantee the removal map below never looks at: PUBLIC, and a role the
-	// schema does not manage.
-	revokedGrants := revokedGrantIdentities(desired, sequences, semantics)
+	// schema does not manage. On MySQL a revoke of SELECT (name) takes SELECT
+	// (Name) too: a member of the role reads the column spelled `Name` while
+	// the privilege stands.
+	revokedGrants := revokedGrantIdentities(desired, sequences, target)
 
 	managedRoles := make(map[string]bool)
 	for _, role := range desired.Roles {
@@ -190,9 +201,9 @@ func GrantsWithOptions(
 	}
 
 	read := grantRead{
-		database: database, sequences: sequences, semantics: semantics,
+		database: database, sequences: sequences, semantics: semantics, target: target,
 		managedRoles: managedRoles, generatedRoles: generatedGrantRoles,
-		revoked: revokedGrants, removable: removable,
+		revoked: revokedGrants, respellings: respellings, removable: removable,
 		coverage: removalCoverage(desired, semantics), objects: objects,
 	}
 	databaseGrantMapForAdditions, databaseGrantMapForRemovals := read.maps()
@@ -218,15 +229,22 @@ func GrantsWithOptions(
 }
 
 type grantRead struct {
-	database       *catalog.Database
-	sequences      columnSequences
-	semantics      identifier.Semantics
+	database  *catalog.Database
+	sequences columnSequences
+	semantics identifier.Semantics
+	// target is how the server compares names, which revoked and respellings
+	// are keyed by.
+	target         identifier.Semantics
 	managedRoles   map[string]bool
 	generatedRoles map[string]bool
 	revoked        map[grantIdentity]bool
-	removable      func(difftypes.GrantRef) bool
-	coverage       Coverage
-	objects        OwnedObjects
+	// respellings is the declared column privileges, keyed as the server
+	// compares the column, on a target where a column privilege serves only
+	// its own spelling; see [GrantOptions.ColumnsBySpelling].
+	respellings map[grantIdentity]difftypes.GrantRef
+	removable   func(difftypes.GrantRef) bool
+	coverage    Coverage
+	objects     OwnedObjects
 }
 
 func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.GrantRef) {
@@ -256,6 +274,7 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 		}
 		ref := grantRefFromDatabase(grant)
 		key := read.sequences.databaseKey(newGrantIdentity(ref, read.semantics))
+		targetKey := read.sequences.databaseKey(newGrantIdentity(ref, read.target))
 		if read.managedRoles[ref.Role] || read.generatedRoles[ref.Role] {
 			previous, exists := additions[key]
 			if !exists || (ref.WithOption && !previous.WithOption) ||
@@ -263,23 +282,7 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 				additions[key] = ref
 			}
 		}
-		// A revoke of a table privilege takes it off every column too, as
-		// PostgreSQL does, so it reaches the column rows. A column the schema
-		// grants the privilege on is kept by the check below.
-		//
-		// An implicit row is a privilege the object holds by default, which a
-		// declaration that leaves it out does not ask to take away; only a
-		// revoke does. A CockroachDB routine's owner is one: it keeps EXECUTE
-		// through REVOKE ALL, so revoking it from a managed owner the
-		// declaration did not name would be planned again on every run.
-		//
-		// A grant on an object in a schema the desired state does not
-		// describe, or on that schema, is left alone for the same reason the
-		// object is, and so is a grant on an owner's object the desired
-		// source does not describe. A revoke the desired state writes out is
-		// still planned.
-		if (read.removable(ref) && !grant.Implicit && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant)) ||
-			read.revoked[key] || read.revoked[key.onWholeObject()] {
+		if read.removes(grant, ref, targetKey) {
 			previous, exists := removals[key]
 			if !exists || preferForeignGrantor(previous, ref, read.database.ConnectedRole, read.database.ConnectedRoleSuperuser) {
 				removals[key] = ref
@@ -287,6 +290,41 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 		}
 	}
 	return additions, removals
+}
+
+// removes reports whether the comparison removes the privilege a catalog
+// row grants, read as ref and keyed as the server compares names.
+//
+// A revoke of a table privilege takes it off every column too, as
+// PostgreSQL does, so it reaches the column rows. A column the schema
+// grants the privilege on is kept: [GrantsWithOptions] plans no removal of a
+// declared grant.
+//
+// An implicit row is a privilege the object holds by default, which a
+// declaration that leaves it out does not ask to take away; only a
+// revoke does. A CockroachDB routine's owner is one: it keeps EXECUTE
+// through REVOKE ALL, so revoking it from a managed owner the
+// declaration did not name would be planned again on every run.
+//
+// A grant on an object in a schema the desired state does not
+// describe, or on that schema, is left alone for the same reason the
+// object is, and so is a grant on an owner's object the desired
+// source does not describe. A revoke the desired state writes out is
+// still planned.
+//
+// A column privilege the declaration grants the same grantee under
+// another spelling is removed whoever holds it: it is the declared
+// privilege spelled the way no statement of the declaration uses, and
+// left beside the declared one it gives the catalog both spellings of
+// one column, which a later plan on the table is refused for.
+func (read grantRead) removes(grant catalog.Grant, ref difftypes.GrantRef, targetKey grantIdentity) bool {
+	if read.removable(ref) && !grant.Implicit && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant) {
+		return true
+	}
+	if read.revoked[targetKey] || read.revoked[targetKey.onWholeObject()] {
+		return true
+	}
+	return ref.Column != "" && declaredGrant(targetKey, read.respellings)
 }
 
 // publicExecuteByDefault reports whether the grant ref is PUBLIC's EXECUTE on a

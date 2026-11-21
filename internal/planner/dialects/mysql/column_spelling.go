@@ -35,8 +35,9 @@ type columnTarget struct {
 // privilege held through a role serves only the spelling the GRANT used (see
 // [platform.ColumnPrivilegeIsBySpelling]), so the comparison holds a privilege
 // on `Name` and a declared one on `name` apart, and the plan revokes the first
-// before it grants the second. The revokes run first, and the declaration
-// spells each column one way, so the catalog never holds both.
+// before it grants the second, whoever holds it. The revokes run first, and
+// the declaration spells each column one way, so a plan leaves the catalog
+// holding one spelling of a declared column privilege.
 type columnSpellings struct {
 	semantics identifier.Semantics
 	// bySpelling is set on a target where a column privilege serves only the

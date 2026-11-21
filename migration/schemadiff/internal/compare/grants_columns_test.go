@@ -151,3 +151,104 @@ func TestGrants_ColumnsCompareAsTheTargetDoes(t *testing.T) {
 		})
 	}
 }
+
+// A role the desired schema does not create keeps the privileges the schema
+// says nothing about. A revoke the schema writes out takes the privilege under
+// every spelling the server takes for its column, and a grant replaces a held
+// privilege that differs from it only in the spelling of the column, where the
+// target serves a column privilege only to its own spelling: on MySQL a member
+// of the role reads `Name` while SELECT (Name) stands, and the catalog holding
+// both spellings refuses the next plan on the table. A held privilege on
+// another column, or of another kind, stays.
+func TestGrants_ColumnPrivilegeOfARoleTheSchemaDoesNotCreate(t *testing.T) {
+	selectOn := func(column string) []schemamodel.Grant {
+		return []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{column}}}
+	}
+	updateOnName := []schemamodel.Grant{{Role: "app", Privileges: []string{"UPDATE"}, OnTable: "t", Columns: []string{"name"}}}
+	tests := []struct {
+		name        string
+		dialect     string
+		grants      []schemamodel.Grant
+		revokes     []schemamodel.Grant
+		wantAdded   []plannedColumnGrant
+		wantRemoved []plannedColumnGrant
+	}{
+		{
+			name:        "a revoke spelled otherwise",
+			dialect:     platform.MySQL,
+			revokes:     selectOn("name"),
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
+		},
+		{
+			name:        "a revoke spelled as held",
+			dialect:     platform.MySQL,
+			revokes:     selectOn("Name"),
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
+		},
+		{
+			name:        "a grant spelled otherwise",
+			dialect:     platform.MySQL,
+			grants:      selectOn("name"),
+			wantAdded:   []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "name"}},
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
+		},
+		{
+			name:        "a grant spelled in capitals",
+			dialect:     platform.MySQL,
+			grants:      selectOn("NAME"),
+			wantAdded:   []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "NAME"}},
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
+		},
+		{
+			name:      "a grant on another column",
+			dialect:   platform.MySQL,
+			grants:    selectOn("id"),
+			wantAdded: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "id"}},
+		},
+		{
+			name:      "a grant of another privilege",
+			dialect:   platform.MySQL,
+			grants:    updateOnName,
+			wantAdded: []plannedColumnGrant{{Role: "app", Privilege: "UPDATE", ObjectName: "t", Column: "name"}},
+		},
+		{
+			name:        "a revoke spelled otherwise",
+			dialect:     platform.MariaDB,
+			revokes:     selectOn("name"),
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
+		},
+		{
+			name:    "a grant spelled otherwise",
+			dialect: platform.MariaDB,
+			grants:  selectOn("name"),
+		},
+		{
+			name:    "a revoke of another column",
+			dialect: platform.Postgres,
+			revokes: selectOn("name"),
+		},
+		{
+			name:      "a grant on another column",
+			dialect:   platform.Postgres,
+			grants:    selectOn("name"),
+			wantAdded: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "name"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect+"/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Grants: test.grants, RevokedGrants: test.revokes}
+			database := &catalog.Database{Grants: []catalog.Grant{
+				{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", Column: "Name"},
+			}}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.GrantsWithOptions(desired, database, diff, identifier.ForDialect(test.dialect), compare.GrantOptions{
+				ColumnsBySpelling: platform.ColumnPrivilegeIsBySpelling(test.dialect),
+			})
+
+			c.Assert(plannedColumnGrants(diff.GrantsAdded), qt.DeepEquals, append(make([]plannedColumnGrant, 0), test.wantAdded...))
+			c.Assert(plannedColumnGrants(diff.GrantsRemoved), qt.DeepEquals, append(make([]plannedColumnGrant, 0), test.wantRemoved...))
+		})
+	}
+}

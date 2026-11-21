@@ -65,7 +65,8 @@ func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaD
 //
 // On MySQL, MariaDB and SQL Server the revokes have run by now, at the start
 // of the plan, and so have the grants that give back the column privileges a
-// revoke on their table takes, where the column exists (see
+// revoke on their table takes, where the column exists, and the grants that
+// give a privilege the revokes take back under the declared spelling (see
 // [Planner.planRevokesFirst]). The ones on a column the plan creates come back
 // here, first, after the tables, views and columns. A column is named as
 // [columnSpellings] says.
@@ -77,13 +78,9 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 		_, later := p.columnGrantsGivenBack(diff)
 		result = append(result, later...)
 	}
+	_, added := p.grantsAdded(diff)
+	result = p.grantPrivileges(result, diff, added)
 	spellings := newColumnSpellings(diff, p.targetDialect())
-	for _, grant := range diff.GrantsAdded {
-		result = append(result, ast.NewGrantPrivilege(
-			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetColumns(spellings.columns(grant)).
-			SetWithOption(grant.WithOption))
-	}
 	for _, grant := range diff.GrantOptionsAdded {
 		result = append(result, ast.NewGrantPrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
@@ -136,13 +133,68 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 // of the same name under it as the permission on each column, so a diff never
 // holds both and nothing comes back after the revokes there. A permission
 // goes with its column or table when either is dropped.
+//
+// On MySQL a column privilege serves only the spelling it was granted under,
+// so a privilege the declaration spells another way is revoked and granted
+// again under the declared spelling. That GRANT runs with the ones above where
+// the column exists: placed after the tables, a statement that fails in
+// between leaves the role without the column, measured on MySQL 8.4 and
+// 26.10 with a UNIQUE key failing on duplicate rows.
 func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RoleManagement) || !p.revokesFirst() {
 		return result
 	}
 	result = p.revokeGrants(result, diff)
 	now, _ := p.columnGrantsGivenBack(diff)
-	return append(result, now...)
+	result = append(result, now...)
+	respelled, _ := p.grantsAdded(diff)
+	return p.grantPrivileges(result, diff, respelled)
+}
+
+// grantPrivileges emits a GRANT for each of grants, naming the column as
+// [columnSpellings] says.
+func (p *Planner) grantPrivileges(result []ast.Node, diff *difftypes.SchemaDiff, grants []difftypes.GrantRef) []ast.Node {
+	spellings := newColumnSpellings(diff, p.targetDialect())
+	for _, grant := range grants {
+		result = append(result, ast.NewGrantPrivilege(
+			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetColumns(spellings.columns(grant)).
+			SetWithOption(grant.WithOption))
+	}
+	return result
+}
+
+// grantsAdded splits diff.GrantsAdded by when a plan that revokes first runs
+// each GRANT: respelled holds the grants that give back, under the declared
+// spelling, a column privilege the diff removes under another spelling, on a
+// column the database holds; later holds the rest. respelled is empty where
+// a column privilege serves every spelling of its column, or where the plan
+// does not revoke first.
+func (p *Planner) grantsAdded(diff *difftypes.SchemaDiff) (respelled, later []difftypes.GrantRef) {
+	spellings := newColumnSpellings(diff, p.targetDialect())
+	if !p.revokesFirst() || !spellings.bySpelling {
+		return nil, diff.GrantsAdded
+	}
+	// removed is the spellings each removed column privilege is held under,
+	// keyed with the column compared as the server compares it.
+	removed := make(map[columnGrant][]string)
+	for _, grant := range diff.GrantsRemoved {
+		if grant.Column != "" {
+			key := spellings.columnGrant(grant)
+			removed[key] = append(removed[key], strings.TrimSpace(grant.Column))
+		}
+	}
+	created := newCreatedColumns(diff, spellings.semantics)
+	for _, grant := range diff.GrantsAdded {
+		spelled := strings.TrimSpace(grant.Column)
+		otherwise := slices.ContainsFunc(removed[spellings.columnGrant(grant)], func(held string) bool { return held != spelled })
+		if spelled != "" && otherwise && !created.holds(grant) {
+			respelled = append(respelled, grant)
+			continue
+		}
+		later = append(later, grant)
+	}
+	return respelled, later
 }
 
 // columnGrantsGivenBack is [columnGrantsRevokedWithTheirTable] split by where
@@ -165,8 +217,8 @@ func (p *Planner) columnGrantsGivenBack(diff *difftypes.SchemaDiff) (now, later 
 	return now, later
 }
 
-// createdColumns are the tables and views a plan creates and the columns it
-// adds to the tables the database holds, keyed the way the target compares
+// createdColumns are the tables and views a plan creates or replaces and the
+// columns it adds to the tables the database holds, keyed the way the target compares
 // their names. A privilege on a view is a privilege on a table to the server.
 type createdColumns struct {
 	semantics identifier.Semantics
@@ -185,6 +237,11 @@ func newCreatedColumns(diff *difftypes.SchemaDiff, semantics identifier.Semantic
 	}
 	for _, view := range diff.ViewsAdded {
 		created.tables[semantics.QualifiedTableIdentityKey(view.Name)] = true
+	}
+	// A view the plan replaces may gain the column only when CREATE OR REPLACE
+	// VIEW runs, and a GRANT on it before then fails with ERROR 1054.
+	for _, view := range diff.ViewsModified {
+		created.tables[semantics.QualifiedTableIdentityKey(view.ViewName)] = true
 	}
 	for _, table := range diff.TablesModified {
 		key := semantics.QualifiedTableIdentityKey(table.TableName)
