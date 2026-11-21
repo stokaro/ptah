@@ -13,7 +13,8 @@ import (
 // shadowGrants is a one-database read of app_shadow holding the grants a
 // replay of `GRANT SELECT ON t1`, `GRANT SELECT ON v1` and `GRANT SHOW VIEW ON *`
 // writes there, with a grant on a table of another database and one on that
-// whole database beside them.
+// whole database beside them, and the same two for APP_SHADOW, a database whose
+// name differs from the shadow's in case alone.
 func shadowGrants() *catalog.Database {
 	return &catalog.Database{
 		Tables: []catalog.Table{{Name: "t1"}},
@@ -23,22 +24,28 @@ func shadowGrants() *catalog.Database {
 			{Role: "reader", Privilege: "SHOW VIEW", ObjectType: "SCHEMA", ObjectName: "app_shadow"},
 			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "other", ObjectName: "x"},
 			{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "other"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "APP_SHADOW", ObjectName: "t1"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "APP_SHADOW"},
 		},
 	}
 }
 
 // A grant read from the shadow database names it as the database of its
 // object, and the target's read names the target's database. Each grant on an
-// object of the shadow database is the target's grant on its own object: a
-// table grant is left unqualified, as the table is, and a grant on the whole
-// database names the target's database. A grant on another database keeps it.
+// object of the shadow database, or on the whole of it, is the target's grant
+// on its own, and names the target's database: a ClickHouse grant refuses to
+// name none. A grant on another database keeps it, and so does one on a
+// database whose name differs from the shadow's in case alone, which is
+// another database where the server keeps the case of a name.
 func TestRebindDatabaseGrants_HappyPath(t *testing.T) {
 	want := []catalog.Grant{
-		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"},
-		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1", WithOption: true},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "v1", WithOption: true},
 		{Role: "reader", Privilege: "SHOW VIEW", ObjectType: "SCHEMA", ObjectName: "app"},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "other", ObjectName: "x"},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "other"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "APP_SHADOW", ObjectName: "t1"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "APP_SHADOW"},
 	}
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB, platform.ClickHouse} {
 		t.Run(dialect, func(t *testing.T) {

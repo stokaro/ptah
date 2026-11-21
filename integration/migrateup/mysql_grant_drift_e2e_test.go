@@ -74,7 +74,7 @@ func TestMySQLGrantDriftCheckE2E_HappyPath(t *testing.T) {
 
 // A grant the target lost is still drift, and so is one the target holds and
 // the history does not write. Without these the happy path would pass for a
-// check that ignores grants.
+// check that ignores grants. Both name the object by the target's database.
 func TestMySQLGrantDriftCheckE2E_FailurePath(t *testing.T) {
 	for _, engine := range mysqlViewDriftEngines {
 		t.Run(engine.name+"/a grant revoked on the target", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestMySQLGrantDriftCheckE2E_FailurePath(t *testing.T) {
 			c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftDrifted)
 			c.Assert(document.DriftCheck.Findings, qt.HasLen, 1, qt.Commentf("%+v", document.DriftCheck.Findings))
 			c.Assert(document.DriftCheck.Findings[0].Kind, qt.Equals, "missing_grant")
-			c.Assert(document.DriftCheck.Findings[0].Object, qt.Equals, role+" SELECT ON TABLE items")
+			c.Assert(document.DriftCheck.Findings[0].Object, qt.Matches, role+` SELECT ON TABLE ptah_view_drift_\d+\.items`)
 		})
 		t.Run(engine.name+"/a grant added on the target", func(t *testing.T) {
 			c := qt.New(t)

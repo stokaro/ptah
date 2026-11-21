@@ -323,24 +323,29 @@ func unquoteSchemaName(token lexer.Token) string {
 // drift check compares a shadow database's replay with the target with it.
 //
 // A read of one database records that database on each view, on each
-// ClickHouse materialized view, on each MySQL or MariaDB routine and MariaDB
-// sequence, and on each grant, where a table is left unqualified, and the
-// server qualifies the relations of a stored view body with it. Compared as
-// read, the same view in a shadow database `app_shadow` and in the target
-// `app` is a missing view and an extra view, and recreated as read on a dev
-// database `appdev` the baseline wrote `app`.`v`, which the baseline guard
-// refused as a write to another database. Each of these objects in source's
-// database is left unqualified, as its tables are, and a view body reads
-// destination's tables instead. A view body that also reads another database
-// keeps that name, and an object in another database keeps its qualifier.
+// ClickHouse materialized view, and on each MySQL or MariaDB routine and
+// MariaDB sequence, where a table is left unqualified, and the server
+// qualifies the relations of a stored view body with it. Compared as read,
+// the same view in a shadow database `app_shadow` and in the target `app` is a
+// missing view and an extra view, and recreated as read on a dev database
+// `appdev` the baseline wrote `app`.`v`, which the baseline guard refused as a
+// write to another database. Each of these objects in source's database is
+// left unqualified, as its tables are, and a view body reads destination's
+// tables instead. A view body that also reads another database keeps that
+// name, and an object in another database keeps its qualifier.
 //
+// The read records the database on each grant too, and a grant in source's
+// database is moved to destination's database rather than left unqualified.
 // A grant on a table, a view or a sequence names its object by the database
-// and the object, and is left unqualified the same way: `GRANT SELECT ON t`
-// replayed in `app_shadow` reads as a grant on `app_shadow`.`t`, and it is the
-// target's grant on `app`.`t`. A grant on the whole database names that
-// database as its object, so it is moved to destination's database, which a
-// grant cannot leave unnamed: `GRANT SELECT ON *` replayed there reads as a
-// grant on `app_shadow`.*, and it is the target's grant on `app`.*.
+// and the object, so `GRANT SELECT ON t` replayed in `app_shadow` reads as a
+// grant on `app_shadow`.`t`, and it is the target's grant on `app`.`t`. A
+// grant on the whole database names that database as its object, so
+// `GRANT SELECT ON *` replayed there reads as a grant on `app_shadow`.*, and
+// it is the target's grant on `app`.*. Left unqualified, a ClickHouse table
+// grant is refused, since a ClickHouse grant always names its database, and a
+// MySQL one is reported under another name than the target's own grants. A
+// name compares exactly: on a server that keeps the case of a database name,
+// `APP_SHADOW` is another database than `app_shadow`.
 //
 // A routine body is not rewritten: it is procedural text, and a name in it
 // that reads source's database is left as written. On a dev database of the
@@ -389,7 +394,7 @@ func RebindDatabase(state *catalog.Database, source, destination catalog.ServerI
 				grant.ObjectName = to
 			}
 		case grant.Schema == from:
-			grant.Schema = ""
+			grant.Schema = to
 		}
 	}
 	return &moved
