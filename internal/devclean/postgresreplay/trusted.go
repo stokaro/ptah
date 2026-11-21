@@ -60,9 +60,9 @@ import (
 //   - the CockroachDB and YugabyteDB operations of their own: cluster settings,
 //     jobs and schedules that run on their own after the statement, and
 //     objects the cleanup does not read.
-func postgresUnconfinedOperation(tokens []lexer.Token) string {
+func postgresUnconfinedOperation(stmt string, tokens []lexer.Token) string {
 	if isGlobalAllRolesDefaultPrivileges(tokens) {
 		return ""
 	}
-	return postgresServerWideOperation(tokens, replay.Scope{})
+	return postgresServerWideOperation(stmt, tokens, replay.Scope{})
 }

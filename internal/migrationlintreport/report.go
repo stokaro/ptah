@@ -98,6 +98,10 @@ type Report struct {
 	// its own documented shape.
 	SchemaCurrent string `json:"-"`
 	SchemaDesired string `json:"-"`
+	// AdvisoryOrigin is where the advisory data the extension rules matched
+	// came from, zero when the run matched none. A Fallback is the notice
+	// [WriteAdvisorySourceNotice] writes.
+	AdvisoryOrigin vulnerability.Origin `json:"-"`
 }
 
 // Runtime supplies conversion, reporting, and schema rendering for replayed
@@ -434,6 +438,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Analysis:          analysis,
 		SchemaCurrent:     schemas.current,
 		SchemaDesired:     schemas.desired,
+		AdvisoryOrigin:    outcome.advisories,
 	}
 	if err != nil {
 		report.Error = err.Error()
@@ -646,7 +651,7 @@ func lintDirectory(
 	}
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL, opts.Runtime)
 	capture := newReplaySchemaCapture(opts, analysis)
-	extensions := newExtensionCollector(analysis.ExtensionRequests())
+	extensions := newExtensionCollector(analysis.ExtensionRequests(), analysis.ExtensionVersions())
 	server := newServerTargetCollector(lintOptions.Target, deferred, lintOptions.RequireOnline)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:                 opts.Dir,
@@ -656,7 +661,7 @@ func lintDirectory(
 		FS:                  analysis.SnapshotFS(),
 		AtlasTemplateData:   migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
 		RevisionVersions:    opts.RevisionVersions,
-		ObserveVersion:      replayVersionObserver(baseline, capture),
+		ObserveVersion:      versionObservers(replayVersionObserver(baseline, capture), extensions.versionObserver()),
 		ObserveReplayed:     replayedObservers(capture.replayedObserver(ctx), extensions.observer(ctx)),
 		ObserveServer:       server.observe,
 		// The replay runs each file the way the rules judge it.
@@ -666,7 +671,7 @@ func lintDirectory(
 		// error that follows it is downstream of an input that was already
 		// wrong.
 		if server.err != nil {
-			return lintOutcome{analysis, capture.result(), dialect}, server.err
+			return lintOutcome{analysis: analysis, schemas: capture.result(), dialect: dialect}, server.err
 		}
 		learned, learnedServer := server.learned()
 		learnedDialect := deferred.dialectFrom(server)
@@ -676,21 +681,21 @@ func lintDirectory(
 		if learnedDialect != "" {
 			dialect = learnedDialect
 		}
-		return lintOutcome{analysis, capture.result(), dialect}, fmt.Errorf(
+		return lintOutcome{analysis: analysis, schemas: capture.result(), dialect: dialect}, fmt.Errorf(
 			"error validating migration SQL on dev database: %w", err)
 	}
 	if server.err != nil {
-		return lintOutcome{analysis, capture.result(), dialect}, server.err
+		return lintOutcome{analysis: analysis, schemas: capture.result(), dialect: dialect}, server.err
 	}
 	schemas := capture.result()
 	learned, learnedServer := server.learned()
 	learnedDialect := deferred.dialectFrom(server)
-	assessed, err := extensions.assess(ctx, opts)
+	assessed, origin, err := extensions.assess(ctx, opts)
 	if err != nil {
-		return lintOutcome{analysis, schemas, dialect}, fmt.Errorf("match the extensions the migrations install against advisory data: %w", err)
+		return lintOutcome{analysis, schemas, dialect, origin}, fmt.Errorf("match the extensions the migrations install against advisory data: %w", err)
 	}
 	if len(baseline.read) == 0 && !learnedServer && learnedDialect == "" && assessed == nil {
-		return lintOutcome{analysis, schemas, dialect}, nil
+		return lintOutcome{analysis, schemas, dialect, origin}, nil
 	}
 	lintOptions.Extensions = assessed
 	if learnedDialect != "" {
@@ -717,7 +722,7 @@ func lintDirectory(
 	// it does not replay, so the schema pair the replay captured is still the
 	// one that belongs to this analysis.
 	reanalyzed, err := lint.AnalyzeFS(ctx, opts.Runtime, fsys, lintOptions)
-	return lintOutcome{reanalyzed, schemas, dialect}, err
+	return lintOutcome{reanalyzed, schemas, dialect, origin}, err
 }
 
 // refusesRun reports whether a run refuses the directory for a file the
@@ -733,6 +738,9 @@ type lintOutcome struct {
 	analysis lint.Analysis
 	schemas  replayedSchemas
 	dialect  string
+	// advisories is where the advisory data the extension rules read came
+	// from, zero when the run read none.
+	advisories vulnerability.Origin
 }
 
 // analysisWithLearnedTarget re-ranks the findings against what the connection

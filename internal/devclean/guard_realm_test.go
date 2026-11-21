@@ -97,6 +97,9 @@ var postgresExtensionUpdates = []struct {
 	{name: "to the default version", statement: `ALTER EXTENSION pgcrypto UPDATE`},
 	{name: "to a named version", statement: `ALTER EXTENSION pgcrypto UPDATE TO '1.3'`},
 	{name: "quoted name and version", statement: `ALTER EXTENSION "uuid-ossp" UPDATE TO "1.1";`},
+	{name: "escape string version", statement: `ALTER EXTENSION citext UPDATE TO E'1.6'`},
+	{name: "dollar-quoted version", statement: `ALTER EXTENSION citext UPDATE TO $$1.6$$`},
+	{name: "Unicode escape name and version", statement: `ALTER EXTENSION U&"cit\0065xt" UPDATE TO U&'1\002e6'`},
 }
 
 // TestReplayGuardProvisionedServer_PostgresLiftsAnExtensionUpdate pins that an
@@ -129,6 +132,13 @@ func TestReplayGuardProvisionedServer_PostgresRefusesOtherExtensionChanges(t *te
 		`ALTER EXTENSION pgcrypto ADD FUNCTION app.digest(text)`,
 		`ALTER EXTENSION pgcrypto DROP FUNCTION app.digest(text)`,
 		`ALTER EXTENSION pgcrypto UPDATE TO '1.3' CASCADE`,
+		// An update whose name or version migration lint cannot read stays
+		// refused, so the replay never runs an install lint did not assess.
+		`ALTER EXTENSION pgcrypto UPDATE TO 1.3`,
+		`ALTER EXTENSION pgcrypto UPDATE TO '1.2' TO '1.3'`,
+		`ALTER EXTENSION U&"\zz" UPDATE`,
+		"ALTER EXTENSION pgcrypto UPDATE -- \x00\n",
+		`ALTER EXTENSION pgcrypto UPDATE; LOAD 'x'`,
 	} {
 		t.Run(statement, func(t *testing.T) {
 			c := qt.New(t)

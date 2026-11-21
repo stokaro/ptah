@@ -363,6 +363,7 @@ type Analysis struct {
 	snapshot         fsnapshot.Snapshot
 	baselineVersions []int64
 	extensions       []ExtensionRequest
+	extensionAt      []int64
 	unmetInputs      []UnmetInput
 	unjudged         []UnjudgedStatement
 	target           Target
@@ -415,10 +416,21 @@ func (a Analysis) BaselineVersions() []int64 {
 // for them, each once and sorted by extension, version and cascade.
 //
 // It is empty for a run with nothing to ask about, so a caller can skip the
-// dev-database read, the advisory data and the second analysis. Feed the
-// answers back through [Options.Extensions].
+// dev-database read and the advisory data. Feed the answers back through
+// [Options.Extensions]; a run whose extension statements none could be read
+// still passes an [ExtensionAssessments] with no answers, so those statements
+// are reported with the reason rather than counted as an unmet input.
 func (a Analysis) ExtensionRequests() []ExtensionRequest {
 	return slices.Clone(a.extensions)
+}
+
+// ExtensionVersions returns the versions of the up files that hold an
+// extension statement the rules that read [Options.Extensions] judge, read or
+// not, sorted: the versions at whose start a caller reads which extensions the
+// dev database holds, for [ExtensionAssessments.Held]. It is empty exactly
+// when no file needs [Options.Extensions].
+func (a Analysis) ExtensionVersions() []int64 {
+	return slices.Clone(a.extensionAt)
 }
 
 // UnmetInputs returns every rule that asked for an analyzer input this run did
@@ -676,12 +688,14 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return findings[i].Rule < findings[j].Rule
 	})
 
+	requests, requestVersions := extensionRequests(files, opts, rules)
 	return Analysis{
 		files:            files,
 		findings:         cloneFindings(findings),
 		snapshot:         snapshot,
 		baselineVersions: baselineVersions(files, opts, rules),
-		extensions:       extensionRequests(files, opts, rules),
+		extensions:       requests,
+		extensionAt:      requestVersions,
 		unmetInputs:      unmetInputs(files, opts, rules),
 		unjudged:         unjudgedStatements(files, split),
 		target:           target,

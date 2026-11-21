@@ -197,11 +197,13 @@ have done either out of sight. After either, the statement is reported too.
 ### Extensions a migration installs
 
 `security/vulnerable-extension` and `coverage/unassessed-extension` read another
-input, the extension advisory assessment. After the replay, the run reads what
-each `CREATE EXTENSION` and `ALTER EXTENSION ... UPDATE` of an up file installs
-on the dev database: the version the statement names or the server's default,
-and with `CASCADE` each extension that version requires. It matches each install
-against the reviewed advisories that
+input, the extension advisory assessment. Lint reads each `CREATE EXTENSION`
+and `ALTER EXTENSION ... UPDATE` of an up file, with its name and version
+decoded as the server decodes them: a quoted or `U&` identifier, and an escape,
+`U&` or dollar-quoted string. After the replay, the run asks the dev database
+what each statement installs: the version the statement names or the server's
+default, and with `CASCADE` each extension that version requires. It matches
+each install against the reviewed advisories that
 [`ptah db vulnerabilities`](../../operate/vulnerability-scan/) reads, from the
 same [advisory source](../../operate/advisory-source/), and reports at the
 statement's line:
@@ -210,13 +212,40 @@ statement's line:
   affects on the dev database's server, with the advisory and its fixed release;
 - `coverage/unassessed-extension`, info, for one the data cannot call clean: no
   reviewed data covers it, the data is past its age, the banner names a vendor
-  build, or a run that named the source could not read it.
+  build, or a run that named the source could not read it. A statement lint
+  recognizes and cannot read, such as a version written as a number or an
+  option the statement does not take, is reported the same way, with the
+  reason.
+
+A statement is reported for what it adds to the database. Before each version
+that installs an extension, the run reads which extensions the dev database
+holds, and it follows the file's statements in order from there:
+
+- `CREATE EXTENSION IF NOT EXISTS` of an extension the database holds installs
+  nothing and is not reported;
+- `CASCADE` reports each extension it adds, and leaves out one the database
+  holds or an earlier statement installed;
+- `ALTER EXTENSION ... UPDATE` to the version the database holds is not
+  reported;
+- `DROP EXTENSION` takes what it names out of the held set, and with `CASCADE`,
+  which may drop more than it names, the held set is emptied;
+- a `DO` block empties the held set too, since it may have dropped anything.
+
+Lint does not read a `DO` block or a routine body, so an extension installed
+inside one is not assessed.
 
 The run assesses the dev database's server, so run it at the release the
-migration will meet. PostgreSQL is the only engine assessed. Without a dev
-database neither rule reports, and the notice above names both. An
+migration will meet. PostgreSQL is the only engine assessed. The banner of an
+official `postgres` image built on Debian names the distribution's package, and
+the assessment reads that as a vendor build, so each install there is reported
+as unassessed. An `-alpine` tag, such as `docker://postgres/16-alpine/dev`,
+names the upstream release and gives an assessed result. Without a dev database
+neither rule reports, and the notice above names both. A default run that
+cannot read the advisory source matches the snapshot built into the binary and
+says so on stderr once, in the line `ptah db vulnerabilities` writes. An
 `ALTER EXTENSION ... UPDATE` replays only on a server Ptah provisions from a
-`docker://` dev URL. `ptah-compat migrate lint` reports neither rule.
+`docker://` or `docker+<driver>://` dev URL. `ptah-compat migrate lint` reports
+neither rule.
 
 ## How rules are named
 
@@ -243,7 +272,7 @@ rule registry and runners implement.
 | Kind | Ptah behavior |
 | --- | --- |
 | **Builtin** | Every rule on this page. It decides from what it is handed — the migration SQL, or the SQL file — and reaches no server and no other process. |
-| **Server-assisted** | One: the `baseline schema` input above, replayed onto the dev database `--dev-url` names. It is optional, and its absence is announced rather than absorbed. |
+| **Server-assisted** | The `baseline schema` and `extension advisory assessment` inputs above, read from the dev database `--dev-url` names after the replay. Each is optional, and its absence is announced rather than absorbed. |
 | **Optional provider** | None. No external analyzer is integrated, and no analysis path starts another process. The only process any lint path runs is `git`, to resolve `--git-base`. |
 
 The server-assisted one is optional in the strict sense: without a dev database
@@ -484,7 +513,7 @@ Neither apply gate reports even that much, so a rule listed below is not by itse
 
 | Rule | Meaning | Surface | Atlas check |
 | --- | --- | --- | --- |
-| `coverage/unassessed-extension` | an extension a migration installs that the reviewed advisory data cannot call clean on the dev database's server: no reviewed data covers it, the data is past its age, or the server's release line is outside it | native only | — |
+| `coverage/unassessed-extension` | an install the advisory data cannot call clean on the dev database's server: no data covers it, the data is stale or unreadable, the server is a vendor build or outside the data, or lint cannot read the statement | native only | — |
 | `design/column-alignment` | the declared column order can waste tuple padding | both | `PG110` |
 | `design/disable-autovacuum` | disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later | both | `PG320` |
 | `locking/add-exclusion-constraint` | adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row | both | `PG109` |

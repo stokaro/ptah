@@ -303,6 +303,9 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
+	if err := migrationlintreport.WriteAdvisorySourceNotice(cmd.ErrOrStderr(), report); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
 	if report.Failed {
 		return exitcode.New(1, errLintFindings)
 	}

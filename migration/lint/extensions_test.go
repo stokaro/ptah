@@ -32,7 +32,8 @@ func analyzeExtensions(c *qt.C, dialect, migration string, opts lint.Options) li
 
 // TestExtensionRequests_HappyPath pins what the analysis asks a dev database
 // about: each extension statement once, with the name folded as the server
-// folds it and the version the statement names.
+// folds it and the version the statement names, and the version of the file
+// that asks.
 func TestExtensionRequests_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeExtensions(c, "postgres", extensionMigration+"CREATE EXTENSION pgcrypto;\n", lint.Options{})
@@ -41,6 +42,26 @@ func TestExtensionRequests_HappyPath(t *testing.T) {
 		{Extension: "pgcrypto"},
 		{Extension: "pgcrypto", Version: "1.4"},
 		{Extension: "uuid-ossp"},
+	})
+	c.Assert(analysis.ExtensionVersions(), qt.DeepEquals, []int64{1})
+}
+
+// TestExtensionRequests_DecodesEverySpelling pins that a name or a version
+// written in any form the server decodes is asked about as the server reads
+// it: an escape string, a dollar-quoted string, a Unicode escape identifier
+// and a Unicode escape string. A reader that skipped these left the install
+// unassessed and the run clean.
+func TestExtensionRequests_DecodesEverySpelling(t *testing.T) {
+	c := qt.New(t)
+	analysis := analyzeExtensions(c, "postgres", "CREATE EXTENSION pgcrypto VERSION E'1.3';\n"+
+		"CREATE EXTENSION U&\"cit\\0065xt\" VERSION $$1.5$$;\n"+
+		"CREATE EXTENSION \"fuzzystrmatch\" VERSION U&'1\\002e1';\n"+
+		"ALTER EXTENSION citext UPDATE TO E'1.6';\n", lint.Options{})
+	c.Assert(analysis.ExtensionRequests(), qt.DeepEquals, []lint.ExtensionRequest{
+		{Extension: "citext", Version: "1.5"},
+		{Extension: "citext", Version: "1.6"},
+		{Extension: "fuzzystrmatch", Version: "1.1"},
+		{Extension: "pgcrypto", Version: "1.3"},
 	})
 }
 
@@ -64,7 +85,7 @@ func TestExtensionRequests_FailurePath(t *testing.T) {
 		{
 			name: "statements that install nothing", dialect: "postgres",
 			migration: "ALTER EXTENSION pgcrypto SET SCHEMA app;\nDROP EXTENSION pgcrypto;\nCOMMENT ON EXTENSION pgcrypto IS 'x';\n" +
-				"ALTER EXTENSION pgcrypto UPDATE TO '1.3' CASCADE;\nCREATE EXTENSION pgcrypto FROM unpackaged;\n",
+				"SELECT 'CREATE EXTENSION pgcrypto';\n",
 			opts: lint.Options{},
 		},
 	}

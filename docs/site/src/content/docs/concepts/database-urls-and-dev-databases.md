@@ -412,11 +412,14 @@ reaches past the dev database:
   schema, language or parameter, CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`, `DROP OWNED`,
   `REASSIGN OWNED`, `COMMENT ON` a role, a database, or an extension or
-  schema of the dev database, and `ALTER EXTENSION ... UPDATE [TO ...]`. A
-  server declared disposable lifts all of these except the comment on an
-  extension or a schema and the extension update, because that server outlives
-  the run and its reset keeps them. Any other `ALTER EXTENSION` stays refused. A [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own
-  comment and privileges where its reset returns them.
+  schema of the dev database, and `ALTER EXTENSION ... UPDATE [TO ...]` whose
+  name and version Ptah reads. A server declared disposable lifts all of these
+  except the comment on an extension or a schema and the extension update,
+  because that server outlives the run and its reset keeps them. Replay does
+  not read a `DO` block or a routine body; outside one, any other
+  `ALTER EXTENSION` stays refused. A
+  [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own comment
+  and privileges where its reset returns them.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,

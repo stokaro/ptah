@@ -269,8 +269,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		NativeOnly: true,
 	},
 	"coverage/unassessed-extension": {
-		Summary: "an extension a migration installs that the reviewed advisory data cannot call clean on the dev database's server: " +
-			"no reviewed data covers it, the data is past its age, or the server's release line is outside it",
+		Summary: "an install the advisory data cannot call clean on the dev database's server: no data covers it, the data is stale " +
+			"or unreadable, the server is a vendor build or outside the data, or lint cannot read the statement",
 		NativeOnly: true,
 	},
 	"online/unproven": {

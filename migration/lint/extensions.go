@@ -3,16 +3,18 @@ package lint
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"ptah.run/core/platform/descriptor"
-	"ptah.run/internal/lintkit"
+	"ptah.run/internal/pgextensioninstall"
 )
 
 // ExtensionRequest is an extension a statement creates or updates, as the
 // statement names it: CREATE EXTENSION name [VERSION version] [CASCADE], or
-// ALTER EXTENSION name UPDATE [TO version].
+// ALTER EXTENSION name UPDATE [TO version]. The name and the version are
+// decoded as the server decodes them, from any spelling it reads.
 type ExtensionRequest struct {
 	// Extension is the extension's name as the server stores it: a bare name
 	// folded to lower case, a quoted one as written.
@@ -36,6 +38,17 @@ type ExtensionAssessments struct {
 	// Answers holds one answer per request. A request with no answer is
 	// reported as unassessed, never as clean.
 	Answers []ExtensionAnswer
+	// Held is, for each version of [Analysis.ExtensionVersions] the run read,
+	// the extensions the dev database held when that version started, by name
+	// with the version installed.
+	//
+	// A statement is judged against it and the statements before it in its
+	// file: CREATE EXTENSION IF NOT EXISTS of an extension the database holds
+	// installs nothing, CASCADE installs only what the database lacks, and an
+	// update to the version the database holds installs nothing. A version
+	// missing from it is judged as if the database held no extension, which
+	// reports an install that may not happen rather than miss one that does.
+	Held map[int64]map[string]string
 }
 
 // ExtensionAnswer is what one [ExtensionRequest] installs on the dev
@@ -95,11 +108,12 @@ const (
 )
 
 // extensionRules are security/vulnerable-extension and
-// coverage/unassessed-extension. Both read the statements that install an
-// extension ([extensionRequestAt]) and the answers [Options.Extensions]
-// carries, and neither runs on the compatibility surface: the community
-// binary's analyzer for vulnerable extensions has no check code in the
-// reviewed Atlas reference, so `ptah-compat migrate lint` reports neither.
+// coverage/unassessed-extension. Both read what the statements of a file that
+// install an extension install ([fileInstalls]) and the answers
+// [Options.Extensions] carries, and neither runs on the compatibility surface:
+// the community binary's analyzer for vulnerable extensions has no check code
+// in the reviewed Atlas reference, so `ptah-compat migrate lint` reports
+// neither.
 //
 // Their dialects are those whose descriptor says a run reads what a dev
 // database installs for an extension and matches it against advisory data.
@@ -129,12 +143,8 @@ func extensionRules() []Rule {
 // a published advisory affects on the dev database's server.
 func vulnerableExtensionFindings(file *File) []Finding {
 	var findings []Finding
-	for _, index := range extensionStatements(file) {
-		answer, ok := file.extensions.answerFor(extensionRequestAt(file, index))
-		if !ok {
-			continue
-		}
-		for position, installed := range answer.Installs {
+	for _, statement := range fileInstalls(file) {
+		for _, installed := range statement.installs {
 			if len(installed.Advisories) == 0 {
 				continue
 			}
@@ -149,38 +159,163 @@ func vulnerableExtensionFindings(file *File) []Finding {
 			message := fmt.Sprintf("%s, which this statement installs%s, is affected on the dev database's server%s: %s. "+
 				"A server at the fixed release or later is not affected; the dev database's server is what this run assessed, "+
 				"so check the release the migration will run on",
-				installedName(installed), cascaded(position), serverName(file.extensions.Server), strings.Join(advisories, "; "))
-			findings = append(findings, extensionFinding(file, index, "security/vulnerable-extension", vulnerableExtensionTitle, message))
+				installedName(installed.InstalledExtension), installed.how(), serverName(file.extensions.Server),
+				strings.Join(advisories, "; "))
+			findings = append(findings, extensionFinding(file, statement.index, "security/vulnerable-extension", vulnerableExtensionTitle, message))
 		}
 	}
 	return findings
 }
 
 // unassessedExtensionFindings reports each extension a statement installs that
-// the advisory data cannot call clean, and each statement whose installs the
-// dev database could not say.
+// the advisory data cannot call clean, each statement whose installs the dev
+// database could not say, and each extension statement the reader could not
+// read.
 func unassessedExtensionFindings(file *File) []Finding {
 	var findings []Finding
-	for _, index := range extensionStatements(file) {
-		request := extensionRequestAt(file, index)
-		answer, ok := file.extensions.answerFor(request)
-		if !ok || len(answer.Installs) == 0 {
+	for _, statement := range fileInstalls(file) {
+		switch {
+		case statement.unread != "":
+			message := "this statement creates or updates an extension, but " + statement.unread +
+				", so no advisory was checked for what it installs"
+			findings = append(findings, extensionFinding(file, statement.index, "coverage/unassessed-extension", unassessedExtensionTitle, message))
+			continue
+		case !statement.answered:
 			message := fmt.Sprintf("the dev database's server%s did not say what this statement installs for extension %s, "+
-				"so no advisory was checked for it", serverApposition(file.extensions.Server), request.Extension)
-			findings = append(findings, extensionFinding(file, index, "coverage/unassessed-extension", unassessedExtensionTitle, message))
+				"so no advisory was checked for it", serverApposition(file.extensions.Server), statement.request.Extension)
+			findings = append(findings, extensionFinding(file, statement.index, "coverage/unassessed-extension", unassessedExtensionTitle, message))
 			continue
 		}
-		for position, installed := range answer.Installs {
+		for _, installed := range statement.installs {
 			if len(installed.Unassessed) == 0 {
 				continue
 			}
 			message := fmt.Sprintf("%s, which this statement installs%s, was not fully assessed against published advisories "+
 				"on the dev database's server%s: %s",
-				installedName(installed), cascaded(position), serverName(file.extensions.Server), strings.Join(installed.Unassessed, "; "))
-			findings = append(findings, extensionFinding(file, index, "coverage/unassessed-extension", unassessedExtensionTitle, message))
+				installedName(installed.InstalledExtension), installed.how(), serverName(file.extensions.Server),
+				strings.Join(installed.Unassessed, "; "))
+			findings = append(findings, extensionFinding(file, statement.index, "coverage/unassessed-extension", unassessedExtensionTitle, message))
 		}
 	}
 	return findings
+}
+
+// statementInstalls is what one extension statement of a file installs, as
+// the extension rules report it.
+type statementInstalls struct {
+	// index is the statement's index in the file.
+	index int
+	// request is what the statement names, and unread why the reader could
+	// not read it, empty when it read it.
+	request ExtensionRequest
+	unread  string
+	// answered reports that the dev database said what the statement
+	// installs.
+	answered bool
+	// installs are what the statement installs where the database lacks it,
+	// in the order the answer lists them.
+	installs []reportedInstall
+}
+
+// reportedInstall is one extension a statement installs, and whether it
+// arrives through CASCADE.
+type reportedInstall struct {
+	InstalledExtension
+	cascaded bool
+}
+
+// fileInstalls walks the statements of an up file in order, from what the
+// dev database held when the file's version started, and returns what each
+// extension statement installs, for a run that has the dev database's
+// answers and is not the compatibility surface's.
+//
+// A statement the reviewed-schema filter leaves out is not reported, as it is
+// left out of every rule, but it still changes what the database holds. A DO
+// block is not read, so after one the walk holds nothing, as it does after a
+// DROP EXTENSION ... CASCADE or a DROP EXTENSION it cannot read: each may have
+// dropped an extension, and a later statement is then judged as installing
+// what it names rather than as installing nothing.
+func fileInstalls(file *File) []statementInstalls {
+	if file.extensions == nil || !file.IsUp || file.compatibility == CompatibilityProfileAtlas {
+		return nil
+	}
+	held := maps.Clone(file.extensions.Held[file.Version])
+	if held == nil {
+		held = make(map[string]string)
+	}
+	var statements []statementInstalls
+	for index := range file.Statements {
+		statement, ok, err := pgextensioninstall.Read(file.Statements[index].SQL)
+		switch {
+		case !ok:
+			if firstWordIs(&file.Statements[index], "DO") {
+				clear(held)
+			}
+			continue
+		case statement.Kind == pgextensioninstall.Drop:
+			dropped(held, statement, err)
+			continue
+		case err != nil:
+			if !file.scopeExcluded[index] {
+				statements = append(statements, statementInstalls{index: index, unread: err.Error()})
+			}
+			continue
+		}
+		installs, found := statementAgainst(file.extensions, statement, held)
+		if found && !file.scopeExcluded[index] {
+			installs.index = index
+			statements = append(statements, installs)
+		}
+	}
+	return statements
+}
+
+// statementAgainst is what a read CREATE EXTENSION or ALTER EXTENSION ...
+// UPDATE installs where the database holds held, which it updates. found is
+// false for a statement that installs nothing: CREATE EXTENSION IF NOT EXISTS
+// of an extension the database holds, or an update to the version it holds.
+func statementAgainst(assessments *ExtensionAssessments, statement pgextensioninstall.Statement, held map[string]string) (statementInstalls, bool) {
+	request := requestOf(statement)
+	if _, holds := held[request.Extension]; holds && statement.IfNotExists {
+		return statementInstalls{}, false
+	}
+	answer, ok := assessments.answerFor(request)
+	if !ok || len(answer.Installs) == 0 {
+		if statement.Kind == pgextensioninstall.Create {
+			held[request.Extension] = ""
+		}
+		return statementInstalls{request: request}, true
+	}
+	if version, holds := held[request.Extension]; holds && statement.Kind == pgextensioninstall.Update && version == answer.Installs[0].Version {
+		return statementInstalls{}, false
+	}
+	installs := statementInstalls{request: request, answered: true}
+	for position, installed := range answer.Installs {
+		if _, holds := held[installed.Extension]; holds && position > 0 {
+			continue
+		}
+		installs.installs = append(installs.installs, reportedInstall{InstalledExtension: installed, cascaded: position > 0})
+		held[installed.Extension] = installed.Version
+	}
+	return installs, true
+}
+
+// dropped removes what a DROP EXTENSION drops from held: the extensions it
+// names, and everything when it cascades or could not be read, since what
+// depends on them is not known here.
+func dropped(held map[string]string, statement pgextensioninstall.Statement, err error) {
+	if err != nil || statement.Cascade {
+		clear(held)
+		return
+	}
+	for _, name := range statement.Dropped {
+		delete(held, name)
+	}
+}
+
+// firstWordIs reports whether a statement's first word is word.
+func firstWordIs(stmt *Statement, word string) bool {
+	return len(stmt.Words) != 0 && stmt.Words[0] == word
 }
 
 // extensionFinding is a finding of an extension rule on one statement. The
@@ -201,10 +336,10 @@ func installedName(installed InstalledExtension) string {
 	return strings.TrimSpace(installed.Extension + " " + installed.Version)
 }
 
-// cascaded says how the statement installs the extension at position: the
-// first is the one it names, and the rest arrive through CASCADE.
-func cascaded(position int) string {
-	if position == 0 {
+// how says how the statement installs the extension in a message: by naming
+// it, which needs no words, or through CASCADE.
+func (r reportedInstall) how() string {
+	if !r.cascaded {
 		return ""
 	}
 	return " through CASCADE"
@@ -228,19 +363,10 @@ func serverApposition(server string) string {
 	return ", " + server + ","
 }
 
-// extensionStatements returns the indexes of the statements of an up file
-// that install an extension, on a run that has the dev database's answers
-// and is not the compatibility surface's. The reviewed-schema filter leaves
-// out what it leaves out of every rule.
-func extensionStatements(file *File) []int {
-	if file.extensions == nil {
-		return nil
-	}
-	return extensionStatementIndexes(file)
-}
-
 // extensionStatementIndexes returns the indexes of the statements of an up
-// file that install an extension, whether or not the run read the answers.
+// file that create or update an extension, read or not, whether or not the
+// run read the answers. The reviewed-schema filter leaves out what it leaves
+// out of every rule.
 func extensionStatementIndexes(file *File) []int {
 	if !file.IsUp || file.compatibility == CompatibilityProfileAtlas {
 		return nil
@@ -250,117 +376,58 @@ func extensionStatementIndexes(file *File) []int {
 		if file.scopeExcluded[index] {
 			continue
 		}
-		if _, ok := extensionRequestOf(&file.Statements[index]); ok {
+		statement, ok, _ := pgextensioninstall.Read(file.Statements[index].SQL)
+		if ok && statement.Kind != pgextensioninstall.Drop {
 			indexes = append(indexes, index)
 		}
 	}
 	return indexes
 }
 
-// extensionRequestAt is the request of the statement at index, which
-// [extensionStatementIndexes] found to make one.
-func extensionRequestAt(file *File, index int) ExtensionRequest {
-	request, _ := extensionRequestOf(&file.Statements[index])
-	return request
+// requestOf is the request a read CREATE EXTENSION or ALTER EXTENSION ...
+// UPDATE makes.
+func requestOf(statement pgextensioninstall.Statement) ExtensionRequest {
+	return ExtensionRequest{Extension: statement.Name, Version: statement.Version, Cascade: statement.Cascade}
 }
 
-// extensionRequestOf reads the extension a statement creates or updates:
-//
-//	CREATE EXTENSION [IF NOT EXISTS] name [WITH] [SCHEMA s | VERSION v | CASCADE]...
-//	ALTER EXTENSION name UPDATE [TO v]
-//
-// The options of CREATE EXTENSION may come in any order, as the server reads
-// them. A statement whose name or version is not a bare word, a quoted
-// identifier or a string literal is not read.
-func extensionRequestOf(stmt *Statement) (ExtensionRequest, bool) {
-	w := stmt.Words
-	switch {
-	case lintkit.HasWordPrefix(w, "CREATE", "EXTENSION"):
-		at := lintkit.SkipIfNotExists(w, 2)
-		name, ok := extensionWord(stmt, at)
-		if !ok {
-			return ExtensionRequest{}, false
-		}
-		request := ExtensionRequest{Extension: name}
-		for i := at + 1; i < len(w); {
-			switch w[i] {
-			case "WITH":
-				i++
-			case "SCHEMA":
-				i += 2
-			case "VERSION":
-				version, ok := extensionWord(stmt, i+1)
-				if !ok {
-					return ExtensionRequest{}, false
-				}
-				request.Version = version
-				i += 2
-			case "CASCADE":
-				request.Cascade = true
-				i++
-			default:
-				return ExtensionRequest{}, false
-			}
-		}
-		return request, true
-	case lintkit.HasWordPrefix(w, "ALTER", "EXTENSION") && len(w) > 3 && w[3] == "UPDATE":
-		name, ok := extensionWord(stmt, 2)
-		if !ok {
-			return ExtensionRequest{}, false
-		}
-		request := ExtensionRequest{Extension: name}
-		switch {
-		case len(w) == 4:
-			return request, true
-		case len(w) == 6 && w[4] == "TO":
-			version, ok := extensionWord(stmt, 5)
-			if !ok {
-				return ExtensionRequest{}, false
-			}
-			request.Version = version
-			return request, true
+// fileRequests returns the requests every read CREATE EXTENSION and ALTER
+// EXTENSION ... UPDATE of an up file makes, the statements the reviewed-schema
+// filter leaves out included, since they change what the database holds.
+func fileRequests(file *File) []ExtensionRequest {
+	var requests []ExtensionRequest
+	for index := range file.Statements {
+		statement, ok, err := pgextensioninstall.Read(file.Statements[index].SQL)
+		if ok && err == nil && statement.Kind != pgextensioninstall.Drop {
+			requests = append(requests, requestOf(statement))
 		}
 	}
-	return ExtensionRequest{}, false
-}
-
-// extensionWord reads the name or version at index as the server stores it:
-// a bare word folded to lower case, a quoted identifier or a string literal
-// with its quotes removed and doubled quotes undone.
-func extensionWord(stmt *Statement, index int) (string, bool) {
-	if index >= len(stmt.Words) {
-		return "", false
-	}
-	word := lintkit.SourceWordAt(stmt.Words, stmt.sourceWords, index)
-	switch {
-	case len(word) >= 2 && word[0] == '"' && word[len(word)-1] == '"':
-		return strings.ReplaceAll(word[1:len(word)-1], `""`, `"`), len(word) > 2
-	case len(word) >= 2 && word[0] == '\'' && word[len(word)-1] == '\'':
-		return strings.ReplaceAll(word[1:len(word)-1], `''`, `'`), len(word) > 2
-	case lintkit.IdentLike(word) && word[0] != '`':
-		return strings.ToLower(word), true
-	}
-	return "", false
+	return requests
 }
 
 // extensionRequests returns every request the selected up files make, for a
 // rule the run applies that reads the dev database's answers, each once and
-// sorted. A run that has none to ask about makes no round trip.
-func extensionRequests(files []File, opts Options, rules []Rule) []ExtensionRequest {
+// sorted, and the versions of the files that hold an extension statement, read
+// or not, sorted. A run that has none to ask about makes no round trip.
+func extensionRequests(files []File, opts Options, rules []Rule) ([]ExtensionRequest, []int64) {
 	var requests []ExtensionRequest
+	var versions []int64
 	for i := range files {
 		file := &files[i]
-		if !file.Selected || !extensionAnswersWanted(file, opts, rules) {
+		if !file.Selected || !file.IsUp || file.compatibility == CompatibilityProfileAtlas || !extensionAnswersWanted(file, opts, rules) {
 			continue
 		}
-		for _, index := range extensionStatementIndexes(file) {
-			requests = append(requests, extensionRequestAt(file, index))
+		asked := fileRequests(file)
+		if len(asked) == 0 && len(extensionStatementIndexes(file)) == 0 {
+			continue
 		}
+		requests = append(requests, asked...)
+		versions = append(versions, file.Version)
 	}
 	slices.SortFunc(requests, func(a, b ExtensionRequest) int {
 		return cmp.Or(strings.Compare(a.Extension, b.Extension), strings.Compare(a.Version, b.Version), boolOrder(a.Cascade, b.Cascade))
 	})
-	return slices.Compact(requests)
+	slices.Sort(versions)
+	return slices.Compact(requests), slices.Compact(versions)
 }
 
 // extensionAnswersWanted reports whether a rule the run applies to file reads

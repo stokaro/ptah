@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/pgextensioninstall"
 )
 
 // postgresServerWideOperation names a statement whose only reason to be
@@ -49,7 +50,7 @@ import (
 // schema's comment lifts that comment on any server; see
 // [replay.Scope.SchemaCommentReturned]. A comment on a protected namespace such
 // as pg_catalog stays refused, as its mutation is.
-func postgresServerWideOperation(tokens []lexer.Token, scope replay.Scope) string {
+func postgresServerWideOperation(stmt string, tokens []lexer.Token, scope replay.Scope) string {
 	if len(tokens) == 0 {
 		return ""
 	}
@@ -62,7 +63,7 @@ func postgresServerWideOperation(tokens []lexer.Token, scope replay.Scope) strin
 	case "CREATE", "DROP":
 		return postgresServerWideCreateOrDrop(first, tokens)
 	case "ALTER":
-		return postgresServerWideAlter(tokens, scope)
+		return postgresServerWideAlter(stmt, tokens, scope)
 	case "GRANT", "REVOKE":
 		return postgresServerWidePrivilege(tokens)
 	case "REASSIGN":
@@ -100,13 +101,13 @@ func postgresServerWideCreateOrDrop(first string, tokens []lexer.Token) string {
 // altered without SET or RESET, and ALTER DEFAULT PRIVILEGES FOR ALL ROLES
 // without IN SCHEMA, which the realm cleanup cannot reset, and on a
 // provisioned server an extension update.
-func postgresServerWideAlter(tokens []lexer.Token, scope replay.Scope) string {
+func postgresServerWideAlter(stmt string, tokens []lexer.Token, scope replay.Scope) string {
 	if definesPostgresRoutine(tokens) {
 		return "ALTER routine definition"
 	}
 	switch replay.NormalizedIdentifier(replay.TokenAt(tokens, 1)) {
 	case "EXTENSION":
-		if scope.Provisioned && postgresExtensionUpdate(tokens) {
+		if scope.Provisioned && postgresExtensionUpdate(stmt) {
 			return "ALTER EXTENSION UPDATE"
 		}
 	case "ROLE", "USER", "GROUP":
@@ -185,15 +186,12 @@ func validatePostgresServerWideStatement(dialect string, tokens []lexer.Token, s
 // nothing longer: the statement runs the update scripts the server ships for
 // the extension, in the dev database. Every other ALTER EXTENSION form, which
 // moves the extension or changes its members, stays refused on any server.
-func postgresExtensionUpdate(tokens []lexer.Token) bool {
-	if !replay.TokenSequenceAt(tokens, 1, "EXTENSION") || !replay.TokenSequenceAt(tokens, 3, "UPDATE") {
-		return false
-	}
-	switch len(tokens) {
-	case 4:
-		return true
-	case 6:
-		return replay.TokenSequenceAt(tokens, 4, "TO")
-	}
-	return false
+//
+// The statement is read by [pgextensioninstall.Read], the reader migration
+// lint reads it with, and is lifted only where that reader read all of it. A
+// name or a version the reader cannot decode would run here while lint could
+// not say what it installed, so such an update stays refused.
+func postgresExtensionUpdate(stmt string) bool {
+	statement, ok, err := pgextensioninstall.Read(stmt)
+	return ok && err == nil && statement.Kind == pgextensioninstall.Update
 }

@@ -119,8 +119,10 @@ and the warning says the source was not used. `bundled` asks for no source.
 [`ptah migrations lint`](../../reference/lint-rules/#extensions-a-migration-installs)
 reads the same source, with the same flag and variable, for the extensions a
 migration installs on its dev database. It asks only when a migration installs
-one. An extension the source could not answer for in a run that names the
-source is reported as `coverage/unassessed-extension`, never as clean.
+one, and falls back the same way. Each fallback writes the scan's warning on
+stderr once. In a run that names the source, an extension matched after the
+fallback is reported as `coverage/unassessed-extension`, never as clean; a
+default run reports what the snapshot it read says.
 
 A suppression entry must name an advisory that a snapshot the run reads
 pins, and an entry that names none fails the scan. After a fallback the entry
