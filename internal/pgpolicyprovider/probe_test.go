@@ -118,7 +118,7 @@ func TestNormalizeObjects_AttachesTheServersSpelling(t *testing.T) {
 		"SAVEPOINT ptah_policy_probe",
 		searchPath,
 		`CREATE TEMPORARY TABLE pg_temp."orders" (LIKE "app"."orders")`,
-		"CREATE POLICY ptah_policy_probe ON pg_temp.\"orders\" TO CURRENT_USER, \"reader\"\n    USING (owner = 'x')\n",
+		"CREATE POLICY ptah_policy_probe ON pg_temp.\"orders\" TO CURRENT_USER, \"reader\"\n    USING (owner = 'x'\n)\n",
 		"ROLLBACK TO SAVEPOINT ptah_policy_probe",
 	})
 }
@@ -156,7 +156,7 @@ func TestNormalizeObjects_LeavesWhatItCouldNotAnswer(t *testing.T) {
 		}},
 		{name: "an answer without the declared clause", server: server{roles: `["app"]`, using: nil}, wantExecuted: []string{
 			"SAVEPOINT ptah_policy_probe", searchPath, `CREATE TEMPORARY TABLE pg_temp."orders" (LIKE "app"."orders")`,
-			"CREATE POLICY ptah_policy_probe ON pg_temp.\"orders\"\n    USING (owner = 'x')\n", "ROLLBACK TO SAVEPOINT ptah_policy_probe",
+			"CREATE POLICY ptah_policy_probe ON pg_temp.\"orders\"\n    USING (owner = 'x'\n)\n", "ROLLBACK TO SAVEPOINT ptah_policy_probe",
 		}},
 	}
 

@@ -183,7 +183,7 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, index int, pr
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return "", false, fmt.Errorf("resolve continuous aggregate bodies: savepoint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, statement); err != nil {
+	if err := probetext.Exec(ctx, tx, statement); err != nil {
 		if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 			return "", false, fmt.Errorf("resolve continuous aggregate bodies: roll back to savepoint after %q: %w", probe.object.Ref, rollbackErr)
 		}

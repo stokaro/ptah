@@ -87,7 +87,7 @@ func resolveOneTriggerCondition(
 	statements := relation.statements(
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),
 		fmt.Sprintf("CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $ptah$BEGIN RETURN NULL; END$ptah$", function),
-		fmt.Sprintf("CREATE TRIGGER ptah_trigger_probe %s %s ON %s FOR EACH %s WHEN (%s) EXECUTE FUNCTION %s()",
+		fmt.Sprintf("CREATE TRIGGER ptah_trigger_probe %s\n %s\n ON %s FOR EACH %s\n WHEN (%s\n) EXECUTE FUNCTION %s()",
 			probe.Timing, probe.Event, relation.name, forEach, when, function),
 	)
 

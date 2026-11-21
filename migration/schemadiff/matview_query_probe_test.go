@@ -89,7 +89,7 @@ func TestCompareWithDatabase_SpellsAMaterializedViewsQuery(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(server.created, qt.HasLen, 1)
-	c.Assert(server.created[0], qt.Matches, `(?s)CREATE TEMPORARY VIEW \S+ AS\nSELECT n FROM generate_series\(1, 7\) AS n`)
+	c.Assert(server.created[0], qt.Matches, `(?s)CREATE TEMPORARY VIEW \S+ AS\nSELECT n FROM generate_series\(1, 7\) AS n\n`)
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
 	c.Assert(diff.Matched.MaterializedViews, qt.Equals, 1)
 }

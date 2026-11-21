@@ -91,13 +91,13 @@ type probeViewPlacement func(name, body string) (probeRelation, string)
 // the search path for the reason [newProbeRelation] gives.
 func temporaryProbeView(name, body string) (probeRelation, string) {
 	view := probeRelation{name: name, regclass: "pg_temp." + name, setup: []string{searchPathWithTempLast}}
-	return view, "CREATE TEMPORARY VIEW " + name + " AS\n" + body
+	return view, "CREATE TEMPORARY VIEW " + name + " AS\n" + body + "\n"
 }
 
 // schemaProbeView places the probe view in the session's current schema, for a
 // server that refuses temporary views.
 func schemaProbeView(name, body string) (probeRelation, string) {
-	return probeRelation{name: name, regclass: name}, "CREATE VIEW " + name + " AS\n" + body
+	return probeRelation{name: name, regclass: name}, "CREATE VIEW " + name + " AS\n" + body + "\n"
 }
 
 // resolveOneViewBody creates one probe view, reads its definition back and

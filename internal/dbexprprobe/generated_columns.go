@@ -184,7 +184,7 @@ func resolveOnePostgresGeneratedColumn(
 	if len(probe.Columns) > 0 {
 		columns = append(columns, checkProbeColumnList(probe.Columns))
 	}
-	columns = append(columns, fmt.Sprintf("%s %s GENERATED ALWAYS AS (%s) STORED",
+	columns = append(columns, fmt.Sprintf("%s %s GENERATED ALWAYS AS (%s\n) STORED",
 		quoteCheckProbeIdentifier(probe.Column), probe.Type, written))
 	relation := newProbeRelation(probe.Table, "ptah_generated_probe", index)
 	statements := relation.statements(fmt.Sprintf(
@@ -232,7 +232,7 @@ func resolveOneSQLServerGeneratedColumn(
 	if len(probe.Columns) > 0 {
 		columns = append(columns, sqlServerProbeColumnList(probe.Columns))
 	}
-	columns = append(columns, fmt.Sprintf("%s AS (%s)", quoteSQLServerProbeIdentifier(probe.Column), expression))
+	columns = append(columns, fmt.Sprintf("%s AS (%s\n)", quoteSQLServerProbeIdentifier(probe.Column), expression))
 	name := fmt.Sprintf("#ptah_generated_probe_%d", index)
 	statements := []string{fmt.Sprintf("CREATE TABLE %s (%s)", name, strings.Join(columns, ", "))}
 

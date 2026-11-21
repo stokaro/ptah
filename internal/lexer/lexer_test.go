@@ -713,6 +713,113 @@ func TestLexer_DollarQuoteTag(t *testing.T) {
 	}
 }
 
+// TestLexer_PostgreSQLFamilyReading holds text the PostgreSQL family reads
+// another way than the shared rules do, under the option that reads it the
+// family's way. Each row is measured on PostgreSQL 18, CockroachDB v26.4.1
+// or YugabyteDB 2026.1.2: the servers read every character outside ASCII as
+// part of a name, a digit after `$` as a parameter, and CockroachDB reads
+// b'...' as a byte string whose backslash escapes. want is the first token
+// with the option set, and plain the first token without it.
+func TestLexer_PostgreSQLFamilyReading(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		options lexer.Options
+		input   string
+		want    lexer.Token
+		plain   lexer.Token
+	}{
+		{
+			name:    "a euro sign in a name",
+			options: lexer.Options{NonASCIINames: true},
+			input:   "x€$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "x€$a$"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "x"},
+		},
+		{
+			name:    "a no-break space in a name",
+			options: lexer.Options{NonASCIINames: true},
+			input:   "x\u00a0$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "x\u00a0$a$"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "x"},
+		},
+		{
+			name:    "an ideographic space first",
+			options: lexer.Options{NonASCIINames: true},
+			input:   "\u3000$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "\u3000$a$"},
+			plain:   lexer.Token{Type: lexer.TokenWhitespace, Value: "\u3000"},
+		},
+		{
+			name:    "a combining accent in a name",
+			options: lexer.Options{NonASCIINames: true},
+			input:   "x\u0301$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "x\u0301$a$"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "x"},
+		},
+		{
+			name:    "an Arabic digit first",
+			options: lexer.Options{NonASCIINames: true},
+			input:   "\u0663$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "\u0663$a$"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "\u0663"},
+		},
+		{
+			name:    "a parameter before a dollar quote",
+			options: lexer.Options{DollarParameters: true},
+			input:   "$1$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "$1"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "$1$a$"},
+		},
+		{
+			name:    "a parameter of two digits",
+			options: lexer.Options{DollarParameters: true},
+			input:   "$12$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "$12"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "$12$a$"},
+		},
+		{
+			// CockroachDB reads B'...' as a bit string, whose backslash is a
+			// character.
+			name:    "a bit string",
+			options: lexer.Options{StandardStrings: true, ByteStringEscapes: true},
+			input:   "B'\\'' ; '",
+			want:    lexer.Token{Type: lexer.TokenIdentifier, Value: "B"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "B"},
+		},
+		{
+			name:    "a byte string with an escaped quote",
+			options: lexer.Options{StandardStrings: true, ByteStringEscapes: true},
+			input:   "b'\\'' ; '",
+			want:    lexer.Token{Type: lexer.TokenString, Value: "b'\\''"},
+			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "b"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			read := lexer.NewLexerWithOptions(test.input, test.options).NextToken()
+			plain := lexer.NewLexerWithOptions(test.input, lexer.Options{StandardStrings: true}).NextToken()
+
+			c.Assert(lexer.Token{Type: read.Type, Value: read.Value}, qt.Equals, test.want)
+			c.Assert(lexer.Token{Type: plain.Type, Value: plain.Value}, qt.Equals, test.plain)
+		})
+	}
+}
+
+// TestLexer_DollarParametersLeaveTheQuoteAfterThem reads `$1` and then the
+// dollar quote the server opens after it, which holds the semicolon.
+func TestLexer_DollarParametersLeaveTheQuoteAfterThem(t *testing.T) {
+	c := qt.New(t)
+	scanner := lexer.NewLexerWithOptions("$1$a$ ; $a$", lexer.Options{DollarParameters: true})
+
+	parameter := scanner.NextToken()
+	quoted := scanner.NextToken()
+
+	c.Assert(parameter.Value, qt.Equals, "$1")
+	c.Assert(quoted.Type, qt.Equals, lexer.TokenString)
+	c.Assert(quoted.Value, qt.Equals, "$a$ ; $a$")
+}
+
 func TestLexer_LongDollarQuotedStringTag(t *testing.T) {
 	c := qt.New(t)
 

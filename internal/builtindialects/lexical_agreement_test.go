@@ -26,7 +26,8 @@ import (
 //   - internal/sqlreach refused Oracle's alternative-quoted literals.
 //
 // Where a descriptor differs from the switches, it does so deliberately,
-// with a measurement in its comment. MySQL and MariaDB state their # comments
+// with a measurement in its comment. YugabyteDB states PostgreSQL's continued
+// and U&'...' strings, which 2026.1.2 reads. MySQL and MariaDB state their # comments
 // and their string escapes, so the body scanner of internal/deporder reads
 // both on these two, where its switch read neither; the shared lexer read
 // both there already, and
@@ -41,7 +42,7 @@ func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	want := map[string]descriptor.Lexical{
 		platform.Postgres:    {EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true, NestedComments: true},
 		platform.CockroachDB: postgresFamily,
-		platform.YugabyteDB:  postgresFamily,
+		platform.YugabyteDB:  {EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true, NestedComments: true},
 		platform.MySQL: {
 			LineComments: []string{"#"}, BackslashEscapes: true,
 			DashCommentNeedsSpace: true, ExecutableComments: descriptor.ExecutableCommentsBang,

@@ -149,7 +149,7 @@ func resolveOnePostgresCheckExpression(
 
 	relation := newProbeRelation(probe.Table, "ptah_check_probe", index)
 	statements := relation.statements(fmt.Sprintf(
-		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s))",
+		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s\n))",
 		relation.name, checkProbeColumnList(probe.Columns), written))
 
 	const savepoint = "ptah_check_probe"
@@ -157,7 +157,7 @@ func resolveOnePostgresCheckExpression(
 		return config.CheckExpression{}, fmt.Errorf("resolve check expressions: savepoint: %w", err)
 	}
 	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if err := probetext.Exec(ctx, tx, statement); err != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 				return config.CheckExpression{}, fmt.Errorf(
 					"resolve check expressions: roll back to savepoint after %q: %w",
@@ -238,7 +238,7 @@ func resolveOneSQLServerCheckExpression(
 
 	name := fmt.Sprintf("#ptah_check_probe_%d", index)
 	statements := []string{
-		fmt.Sprintf("CREATE TABLE %s (%s, CONSTRAINT ck_ptah_check_probe_%d CHECK (%s))",
+		fmt.Sprintf("CREATE TABLE %s (%s, CONSTRAINT ck_ptah_check_probe_%d CHECK (%s\n))",
 			name, sqlServerProbeColumnList(probe.Columns), index, expression),
 	}
 

@@ -150,12 +150,14 @@ func TestWithRolledBackTransaction_LiveBodyThatEndsTheTransactionAndFailsFails(t
 }
 
 // standardStringEngines are the engines whose sessions can turn
-// standard_conforming_strings off; CockroachDB accepts no value but on.
+// standard_conforming_strings off. CockroachDB accepts no value but on, and
+// PostgreSQL 19 refuses off with SQLSTATE 0A000, so the PostgreSQL row runs on
+// PostgreSQL 16.
 var standardStringEngines = []struct {
 	name   string
 	engine dbtarget.Engine
 }{
-	{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+	{name: "PostgreSQL 16", engine: dbtarget.PostgreSQL16},
 	{name: "YugabyteDB", engine: dbtarget.YugabyteDB},
 }
 

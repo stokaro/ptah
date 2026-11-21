@@ -28,6 +28,11 @@ func TestFragment_HappyPath(t *testing.T) {
 		{name: "semicolon in a block comment", dialect: platform.Postgres, text: "amount > 0 /* ; */"},
 		{name: "line comment ended by a line feed", dialect: platform.CockroachDB, text: "amount > 0 -- ) ;\n"},
 		{name: "nested comment on SQL Server", dialect: platform.SQLServer, text: "amount > 0 /* a /* ) */ ; */"},
+		// SQL Server ends the comment at the carriage return, so the string
+		// after it holds the line feed and the parenthesis. Read with the
+		// comment running to the line feed, the parenthesis closes one the
+		// text does not open.
+		{name: "a carriage return ends a SQL Server comment", dialect: platform.SQLServer, text: "amount > 0 -- c\r'\n)'"},
 		{name: "parenthesis in a quoted name", dialect: platform.Postgres, text: `"a)b" > 0`},
 		{name: "parenthesis in a bracketed name", dialect: platform.SQLServer, text: "[a)b] > 0"},
 		{name: "dollar quote where the server reads one", dialect: platform.Postgres, text: "note <> $q$ ) ; $q$"},
@@ -38,6 +43,15 @@ func TestFragment_HappyPath(t *testing.T) {
 		{name: "a string ending in a backslash on PostgreSQL", dialect: platform.Postgres, text: `amount >= 0 AND code <> 'C:\'`},
 		{name: "a string ending in a backslash on CockroachDB", dialect: platform.CockroachDB, text: `code <> 'C:\'`},
 		{name: "a string ending in a backslash on YugabyteDB", dialect: platform.YugabyteDB, text: `code <> 'C:\'`},
+		// The probe statement writes a line break after the text, which
+		// ends the comment before the statement's closing parenthesis.
+		{name: "ends in a line comment on SQL Server", dialect: platform.SQLServer, text: "amount > 0 -- note"},
+		{name: "ends in a line comment on PostgreSQL", dialect: platform.Postgres, text: "amount > 0 -- note ) ;"},
+		{name: "ends in a line comment on CockroachDB", dialect: platform.CockroachDB, text: "amount > 0 -- note ) ;"},
+		{name: "a name outside ASCII", dialect: platform.Postgres, text: "prix€ > 0"},
+		// The server reads `$1` and then a dollar quote, which holds the
+		// parenthesis and the semicolon.
+		{name: "a dollar quote after a parameter", dialect: platform.Postgres, text: "1 = $1$a$ ) ; $a$"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -138,14 +152,6 @@ func TestFragment_FailurePath(t *testing.T) {
 			wantErr: "its text leaves a string, quoted name or comment open",
 		},
 		{
-			// The statement goes on after the text on the same line, so the
-			// comment would take its closing parenthesis.
-			name:    "ends in a line comment",
-			dialect: platform.SQLServer,
-			text:    "amount > 0 -- note",
-			wantErr: "its text leaves a string, quoted name or comment open",
-		},
-		{
 			name:    "dollar quote where the server reads none",
 			dialect: platform.SQLServer,
 			text:    "note <> $q$ )) COMMIT SELECT (( $q$",
@@ -221,32 +227,112 @@ func TestStatement_HappyPath(t *testing.T) {
 
 // TestStatement_FailurePath holds statements with a second statement after the
 // first semicolon, or an unbalanced declaration in them.
+//
+// The rows from "a name ending in a euro sign" on are each two statements to
+// the dialect's server, measured with a prepare on PostgreSQL 18, CockroachDB
+// v26.4.1 and YugabyteDB 2026.1.2, and one statement to a lexer that reads the
+// semicolon inside a string: the servers read every character outside ASCII
+// as part of a name, so `x€$a$` opens no dollar quote; CockroachDB reads
+// b'...' as a byte string whose backslash escapes; and CockroachDB and
+// YugabyteDB continue E'a' on the next line in escape mode, YugabyteDB across a
+// line comment too.
 func TestStatement_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
+		dialect   string
 		statement string
 		wantErr   string
 	}{
 		{
 			name:      "a second statement",
+			dialect:   platform.Postgres,
 			statement: "CREATE FUNCTION pg_temp.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$; COMMIT",
 			wantErr:   "its text holds a statement separator",
 		},
 		{
 			name:      "two semicolons",
+			dialect:   platform.Postgres,
 			statement: "CREATE FUNCTION pg_temp.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;;",
 			wantErr:   "its text holds a statement separator",
 		},
 		{
 			name:      "a default closing the argument list",
+			dialect:   platform.Postgres,
 			statement: "CREATE FUNCTION pg_temp.f(a int DEFAULT 1)) RETURNS int LANGUAGE sql AS $$ SELECT 1 $$",
 			wantErr:   "its text closes a parenthesis it does not open",
+		},
+		{
+			name:      "a name ending in a euro sign",
+			dialect:   platform.Postgres,
+			statement: "SELECT x€$a$ ; SELECT y€$a$",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "a name ending in a no-break space",
+			dialect:   platform.CockroachDB,
+			statement: "SELECT x\u00a0$a$ ; SELECT y\u00a0$a$",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "a name ending in an ideographic space",
+			dialect:   platform.YugabyteDB,
+			statement: "SELECT x\u3000$a$ ; SELECT y\u3000$a$",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "a name ending in a combining accent",
+			dialect:   platform.Postgres,
+			statement: "SELECT x\u0301$a$ ; SELECT y\u0301$a$",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "a name that starts with an Arabic digit",
+			dialect:   platform.CockroachDB,
+			statement: "SELECT \u0663$a$ ; SELECT \u0663$a$",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "a CockroachDB byte string",
+			dialect:   platform.CockroachDB,
+			statement: "SELECT b'\\'' ; SELECT 1 --'\n",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "a continued escape string on CockroachDB",
+			dialect:   platform.CockroachDB,
+			statement: "SELECT E'a'\n'\\'' ; SELECT 1 --'\n",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			// PostgreSQL 18 and YugabyteDB 2026.1.2 read b'...' as a bit string,
+			// whose backslash is a character, and refuse the prepared text as
+			// two commands. CockroachDB reads one byte string.
+			name:      "a bit string on PostgreSQL",
+			dialect:   platform.Postgres,
+			statement: "SELECT b'\\' ; SELECT 1 --'\n",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			// CockroachDB v26.4.1 continues no string across a comment: it reads
+			// '\' as a string of its own and stops at the backslash with a
+			// syntax error, where PostgreSQL and YugabyteDB continue the escape
+			// string and read one statement.
+			name:      "a string after a comment on CockroachDB",
+			dialect:   platform.CockroachDB,
+			statement: "SELECT E'a' -- c\n'\\' ; SELECT 1 --'\n",
+			wantErr:   "its text holds a statement separator",
+		},
+		{
+			name:      "an escape string continued across a comment on YugabyteDB",
+			dialect:   platform.YugabyteDB,
+			statement: "SELECT E'a' --c\n'\\'' ; SELECT 1 --'\n",
+			wantErr:   "its text holds a statement separator",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := probetext.Statement(platform.Postgres, test.statement)
+			err := probetext.Statement(test.dialect, test.statement)
 			c.Assert(err, qt.ErrorIs, probetext.ErrUncontained)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

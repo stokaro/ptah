@@ -197,6 +197,9 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, probe probe) 
 		probetext.Warn(ctx, probe.object.Ref.String(), "policy "+probe.object.Ref.Path(), refusal)
 		return nil, nil
 	}
+	// A clause the check accepts may end in a line comment, which a line
+	// break ends before the renderer closes the parenthesis.
+	declared.Using, declared.WithCheck = lineEnded(declared.Using), lineEnded(declared.WithCheck)
 	statements := []string{
 		searchPathWithTempLast,
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (LIKE %s.%s)", copied, schema, table),
@@ -206,7 +209,7 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, probe probe) 
 		return nil, fmt.Errorf("resolve row-security policies: savepoint: %w", err)
 	}
 	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if err := probetext.Exec(ctx, tx, statement); err != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 				return nil, fmt.Errorf("resolve row-security policies: roll back to savepoint after %s: %w", probe.object.Ref, rollbackErr)
 			}
@@ -252,4 +255,12 @@ func clauseText(clause *string) string {
 		return ""
 	}
 	return *clause
+}
+
+// lineEnded is clause followed by a line break. A nil clause stays nil.
+func lineEnded(clause *string) *string {
+	if clause == nil {
+		return nil
+	}
+	return new(*clause + "\n")
 }

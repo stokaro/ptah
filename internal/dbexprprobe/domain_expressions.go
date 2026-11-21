@@ -114,19 +114,19 @@ func resolveOneDomainExpression(
 	}
 
 	name := fmt.Sprintf("pg_temp.ptah_domain_probe_%d", index)
-	statement := fmt.Sprintf("CREATE DOMAIN %s AS %s", name, probe.BaseType)
+	statement := fmt.Sprintf("CREATE DOMAIN %s AS %s\n", name, probe.BaseType)
 	if probe.Default != "" {
-		statement += " DEFAULT " + probe.Default
+		statement += " DEFAULT " + probe.Default + "\n"
 	}
 	if probe.Check != "" {
-		statement += " CHECK (" + probe.Check + ")"
+		statement += " CHECK (" + probe.Check + "\n)"
 	}
 
 	const savepoint = "ptah_domain_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return DomainExpression{}, fmt.Errorf("resolve domain expressions: savepoint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, statement); err != nil {
+	if err := probetext.Exec(ctx, tx, statement); err != nil {
 		if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 			return DomainExpression{}, fmt.Errorf(
 				"resolve domain expressions: roll back to savepoint after %q: %w",

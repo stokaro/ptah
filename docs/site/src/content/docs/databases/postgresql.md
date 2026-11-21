@@ -336,10 +336,23 @@ declaration is not asked when its text:
 - holds a semicolon outside a string.
 
 Such a declaration is compared as written, and the run prints a warning that
-names it and the reason. The transaction runs with `standard_conforming_strings`
-on, so a backslash in a string other than `E'...'` is an ordinary character, as
-it is in the text the reader is compared with. A line comment is read both
-ways, since CockroachDB ends one only at a line feed.
+names it and the reason. The text is read the way the servers read it. Every
+character outside ASCII is part of a name, so `x€$a$` is one name, and `$1` is a
+parameter, so in `$1$a$` a dollar quote starts after it. On CockroachDB a
+backslash escapes a quote in `b'...'`, as it does in `E'...'`. CockroachDB and
+YugabyteDB continue a string on the next line in the escape mode of the first
+segment. Where the servers differ, the text is read each way, and a declaration
+is asked only when every reading finds one statement. The transaction runs with
+`standard_conforming_strings` on, so a backslash in a string other than `E'...'`
+is an ordinary character, as it is in the text the reader is compared with. A
+line comment is read both ways, since CockroachDB ends one only at a line feed.
+
+The check keeps the warning accurate, and a second rule keeps the text inside
+its statement. Every probe statement that carries declared text is sent
+prepared, on the extended protocol. A PostgreSQL-family server refuses a
+prepared statement that holds two commands, and runs neither of them. The
+probe writes a line break after the declared text, so a line comment at its end
+closes there and the declaration is asked.
 
 A SQL-standard routine body may hold semicolons, so the server parses the
 statement first, without running it, and the routine is asked only when the
@@ -1285,6 +1298,15 @@ the session's time zone, and a session in another zone reads it as another bound
 bound computed by a volatile function, such as `now()`, stores a value that never
 matches its declaration again. Without a connection, a bound spelled differently stays
 undecided.
+
+Only a bound built from constants goes through the temporary copy: strings, numbers,
+negative numbers, `MINVALUE`, `MAXVALUE`, `NULL`, `TRUE` and `FALSE`, each optionally
+cast with `::` to a type named in one word. PostgreSQL evaluates a bound
+when it creates the partition, so a function or an operator in a bound would run
+during the comparison, and what it did outside the transaction would stay: a value
+taken from a sequence is not returned by a rollback. Such a bound is compared as
+written, and the run prints a warning that names the partition. Where the server
+spells it differently, the comparison stays undecided.
 
 A partition the document leaves out is a table the plan drops, with its rows. Plans
 mark it destructive and the destructive gates hold it as they hold any `DROP TABLE`.

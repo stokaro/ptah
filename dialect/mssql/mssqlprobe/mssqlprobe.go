@@ -191,6 +191,14 @@ func spell(ctx context.Context, tx *sql.Tx, request schemaext.NormalizationReque
 	off := false
 	declared := probe.value.Copy()
 	declared.Enabled, declared.Normalized = &off, nil
+	// An argument the check accepts may end in a line comment, which a line
+	// break ends before the call's parenthesis. SQL Server stores the
+	// predicate in its own spelling, so the break is not read back.
+	for i := range declared.Predicates {
+		for j := range declared.Predicates[i].Arguments {
+			declared.Predicates[i].Arguments[j] += "\n"
+		}
+	}
 	if _, err := tx.ExecContext(ctx, "SAVE TRANSACTION "+savepoint); err != nil {
 		return nil, false, err
 	}

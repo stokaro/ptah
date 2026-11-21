@@ -709,7 +709,7 @@ casts a quoted one. Beside a text type it is quoted, so `DEFAULT 007` on a
 `VARCHAR` column is the string `'007'`.
 
 **A PostgreSQL string constant is read in every spelling the server reads.**
-With `--dialect postgres`, a comment, a column or domain default and an enum
+With `--dialect postgres` or `yugabytedb`, a comment, a column or domain default and an enum
 label may each be written as a dollar-quoted string, an `E'...'` escape string,
 a `U&'...'` Unicode escape string with an optional `UESCAPE` clause, or a
 string continued on the next line:
@@ -725,10 +725,11 @@ against a database it was applied to. The continuation follows PostgreSQL's
 rule: only whitespace between the two strings, with at least one newline in
 it, and a `--` comment counts as whitespace. Two strings on one line, or with a
 block comment between them, are refused, as PostgreSQL refuses them, and so is
-an escape the server rejects, such as `U&'\0000'`. With `--dialect cockroachdb`
-or `yugabytedb`, a comment, default or label written as a continued string or a
-`U&'...'` string is refused: CockroachDB applies a different continuation rule
-and has no `U&'...'` strings, and YugabyteDB has not been measured.
+an escape the server rejects, such as `U&'\0000'`. YugabyteDB 2026.1.2 reads
+both spellings by the same rules. With `--dialect cockroachdb`, a comment,
+default or label written as a continued string or a `U&'...'` string is
+refused: CockroachDB applies a different continuation rule and has no `U&'...'`
+strings.
 
 On PostgreSQL, CockroachDB and YugabyteDB a block comment may hold another, as
 `/* a /* b */ c */`, and reads as one comment to its own `*/`, as the server

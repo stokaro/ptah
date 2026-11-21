@@ -45,7 +45,9 @@ func TestExclusionNormalization_ServerSpelling(t *testing.T) {
 	c.Assert(value.Normalized.Elements, qt.Equals, "((room + 1)) WITH =")
 	c.Assert(value.Normalized.SourceKey, qt.Equals, pgtable.ExclusionComparisonKey(value.Exclusion))
 	c.Assert(value.Comment, qt.Equals, "Room schedule")
-	c.Assert(statements, qt.DeepEquals, []string{`CREATE TEMPORARY TABLE "pg_temp"."Rooms" (LIKE "App.One"."Rooms", EXCLUDE USING btree ((room + 1) WITH =))`})
+	c.Assert(statements, qt.DeepEquals, []string{"CREATE TEMPORARY TABLE \"pg_temp\".\"Rooms\" (LIKE \"App.One\".\"Rooms\", EXCLUDE USING btree ((room + 1) WITH =)\n)"})
+	// A prepared statement is one command to the server.
+	c.Assert(db.Prepared(), qt.DeepEquals, statements)
 	input, err := request.Desired.Objects.All()
 	c.Assert(err, qt.IsNil)
 	c.Assert(input[0].Value.(*pgtable.DesiredExclusion).Normalized, qt.IsNil)

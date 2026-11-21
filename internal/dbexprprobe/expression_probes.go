@@ -89,12 +89,12 @@ func resolveOneIndexExpression(
 	if err := probetext.Fragments(dialect, over, where); err != nil {
 		return config.IndexExpression{}, err
 	}
-	create := fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s ((%s))", relation.name, over)
+	create := fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s ((%s\n))", relation.name, over)
 	if expression == "" {
-		create = fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s (%s)", relation.name, over)
+		create = fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s (%s\n)", relation.name, over)
 	}
 	if predicate != "" {
-		create += fmt.Sprintf(" WHERE (%s)", where)
+		create += fmt.Sprintf(" WHERE (%s\n)", where)
 	}
 	statements := relation.statements(
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),

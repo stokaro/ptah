@@ -161,8 +161,7 @@ func resolveOneRoutineArguments(
 			answer.Body = body
 			answer.BodyResolved = true
 		}
-		_, err := tx.ExecContext(ctx, probe.Drop)
-		return err
+		return probetext.Exec(ctx, tx, probe.Drop)
 	}
 	refusal, err := routineStatementRefusal(ctx, tx, dialect, probe)
 	if err != nil {

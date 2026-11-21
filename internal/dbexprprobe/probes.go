@@ -45,17 +45,21 @@ func resolveProbes[Probe any, Answer any](
 		for i, probe := range probes {
 			key, object := describe(probe)
 			answer, err := one(ctx, tx, dialect, i, probe)
-			if errors.Is(err, probetext.ErrUncontained) {
+			uncontained := errors.Is(err, probetext.ErrUncontained)
+			if err != nil && !uncontained {
+				return err
+			}
+			// A probe refused for its text may have run a statement first, as
+			// a routine's fallback does after its main statement is refused,
+			// so the transaction is named again on this path too.
+			if err := probetx.Check(ctx); err != nil {
+				return fmt.Errorf("%s: %s: %w", label, object, err)
+			}
+			if uncontained {
 				probetext.Warn(ctx, key, object, err)
 				var unresolved Answer
 				resolved[key] = unresolved
 				continue
-			}
-			if err != nil {
-				return err
-			}
-			if err := probetx.Check(ctx); err != nil {
-				return fmt.Errorf("%s: %s: %w", label, object, err)
 			}
 			resolved[key] = answer
 		}
@@ -168,7 +172,7 @@ func runRefusableProbe(
 		return nil, fmt.Errorf("%s: savepoint: %w", label, err)
 	}
 	for _, statement := range statements {
-		if _, refused := tx.ExecContext(ctx, statement); refused != nil {
+		if refused := marks.exec(ctx, tx, statement); refused != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, marks.rollback(savepoint)); rollbackErr != nil {
 				return nil, fmt.Errorf("%s: roll back to savepoint after %q: %w", label, key, rollbackErr)
 			}
@@ -198,7 +202,8 @@ type probeFunc[Probe any, Answer any] func(
 	probe Probe,
 ) (Answer, error)
 
-// savepointSyntax is how one engine spells a savepoint and the rollback to it.
+// savepointSyntax is how one engine spells a savepoint and the rollback to it,
+// and how it runs a probe statement.
 //
 // The two engines that need a probe spell both differently, and SQL Server
 // answers `Could not find stored procedure 'SAVEPOINT'` for the other's
@@ -207,20 +212,30 @@ type probeFunc[Probe any, Answer any] func(
 type savepointSyntax struct {
 	save     func(name string) string
 	rollback func(name string) string
+	// exec runs one probe statement, which may carry declared text.
+	exec func(ctx context.Context, tx *sql.Tx, statement string) error
 }
 
 // postgresSavepoints is the SQL-standard spelling, which the PostgreSQL family
-// takes.
+// takes. A statement runs through [probetext.Exec], so the server reads it as
+// one command.
 var postgresSavepoints = savepointSyntax{
 	save:     func(name string) string { return "SAVEPOINT " + name },
 	rollback: func(name string) string { return "ROLLBACK TO SAVEPOINT " + name },
+	exec:     probetext.Exec,
 }
 
 // sqlServerSavepoints is T-SQL's, where a savepoint is a named transaction mark
-// and the rollback names it directly.
+// and the rollback names it directly. A batch may hold several statements
+// whichever way the driver sends it, so a statement runs as it is, and the
+// text check and the transaction check are what keep declared text in place.
 var sqlServerSavepoints = savepointSyntax{
 	save:     func(name string) string { return "SAVE TRANSACTION " + name },
 	rollback: func(name string) string { return "ROLLBACK TRANSACTION " + name },
+	exec: func(ctx context.Context, tx *sql.Tx, statement string) error {
+		_, err := tx.ExecContext(ctx, statement)
+		return err
+	},
 }
 
 // isPostgresFamily reports whether the server answers the probes through

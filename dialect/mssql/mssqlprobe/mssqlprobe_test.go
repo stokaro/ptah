@@ -116,7 +116,7 @@ func TestNormalizeObjects_AttachesTheServersSpelling(t *testing.T) {
 	c.Assert(value.Normalized, qt.DeepEquals, []mssqlschema.Predicate{filter("CONVERT([int],[tenant])+(0)")})
 	c.Assert(script.execs, qt.HasLen, 3)
 	c.Assert(script.execs[0], qt.Equals, "SAVE TRANSACTION ptah_policy_probe")
-	c.Assert(script.execs[1], qt.Matches, `(?s)CREATE SECURITY POLICY \[rls\]\.\[ptah_probe_[0-9a-f]{16}\]\n    ADD FILTER PREDICATE \[rls\]\.\[fn\]\(CAST\(tenant AS int\) \+ 0\) ON \[app\]\.\[orders\]\n    WITH \(STATE = OFF, SCHEMABINDING = ON\);`)
+	c.Assert(script.execs[1], qt.Matches, `(?s)CREATE SECURITY POLICY \[rls\]\.\[ptah_probe_[0-9a-f]{16}\]\n    ADD FILTER PREDICATE \[rls\]\.\[fn\]\(CAST\(tenant AS int\) \+ 0\n\) ON \[app\]\.\[orders\]\n    WITH \(STATE = OFF, SCHEMABINDING = ON\);`)
 	c.Assert(script.execs[2], qt.Equals, "ROLLBACK TRANSACTION ptah_policy_probe")
 }
 

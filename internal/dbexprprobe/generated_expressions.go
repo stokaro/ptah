@@ -10,7 +10,6 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/internal/exprkey"
-	"ptah.run/internal/probetext"
 )
 
 // GeneratedExpressionProbe is one declared table whose generated columns need
@@ -113,17 +112,6 @@ func resolveOneGeneratedProbe(
 	}
 	table := probe.ProbeTable
 
-	// go-ora runs one statement per call, so text that leaves its place in
-	// Create cannot add a statement of its own; it is kept out all the same,
-	// as every other probe keeps it out, and its columns compare as written.
-	if refusal := probetext.Statement(dialect, probe.Create); refusal != nil {
-		declared := probe.Table
-		if probe.Schema != "" {
-			declared = probe.Schema + "." + probe.Table
-		}
-		probetext.Warn(ctx, "generated:"+declared, "generated columns of "+declared, refusal)
-		return nil
-	}
 	if _, err := dev.ExecContext(ctx, probe.Create); err != nil {
 		// A declaration the server refuses has no stored form, and saying so is
 		// the point: an unresolved entry leaves the expression uncompared

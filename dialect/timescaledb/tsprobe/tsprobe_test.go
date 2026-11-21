@@ -114,6 +114,8 @@ func TestNormalizeObjects_AttachesTheServersSpelling(t *testing.T) {
 		"CREATE MATERIALIZED VIEW \"Metrics\".ptah_cagg_probe_0 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS\nSELECT 1 AS one\nWITH NO DATA",
 		"ROLLBACK TO SAVEPOINT ptah_cagg_probe",
 	})
+	// A prepared statement is one command to the server.
+	c.Assert(db.Prepared(), qt.DeepEquals, scripted.executed[1:2])
 }
 
 // TestNormalizeObjects_LeavesWhatItCouldNotAnswer pins the cases that attach

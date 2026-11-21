@@ -66,13 +66,13 @@ var (
 	errEncoding     = uncontained{"its text is not valid UTF-8 or holds a NUL character"}
 )
 
-// sentinel follows the text on the line the lexer reads. A string, quoted
-// name or comment the text leaves open runs into it, which is how an open one
-// is told from one that ends where the text does. It starts with a space, not
-// a line break, because the statement goes on after the text on the same
-// line: a line comment that runs to the end of the text takes the statement's
-// closing parenthesis with it.
-const sentinel = " )"
+// sentinel follows the text the lexer reads. A string, quoted name or comment
+// the text leaves open runs into it, which is how an open one is told from one
+// that ends where the text does. It starts with a line break because every
+// probe statement writes one after the declared text, so a line comment that
+// ends the text, as in `a > 0 -- positive only`, ends there and leaves the
+// statement's closing parenthesis to the statement.
+const sentinel = "\n )"
 
 // separators says where a semicolon may stand in the checked text.
 type separators int
@@ -91,7 +91,9 @@ const (
 // Fragment reports why text, declared for dialect, could reach past the
 // clause a probe statement writes it in, or nil when it cannot. It is for text
 // written inside a statement Ptah spells around it: an expression between
-// parentheses, a view's body after AS, a type or a default.
+// parentheses, a view's body after AS, a type or a default. The statement
+// writes a line break after the text, so a line comment the text ends with
+// ends there.
 //
 // Refused is text that leaves a string, quoted name or comment open; that
 // closes a parenthesis it does not open, or leaves one open; that holds a
@@ -134,6 +136,33 @@ func Statement(dialect, statement string) error {
 // holds two.
 func StatementWithBody(dialect, statement string) error {
 	return check(dialect, statement, anySeparator)
+}
+
+// Exec runs statement, a probe statement that carries declared text, inside
+// tx on a PostgreSQL-family server, as one command. It prepares the statement
+// and runs the prepared statement, so the server parses the text on the
+// extended query protocol, where one statement holds one command: text that
+// adds a second is refused when it is prepared, before any of it runs. The
+// three servers answer as [ParseAlone] says.
+//
+// tx.ExecContext is not that. pgx sends a statement with no arguments on the
+// simple query protocol, which runs every command the text holds, so text that
+// slips past [Fragment] or [Statement] would run as SQL of its own, and a
+// function it calls, such as dblink_exec, can commit on another connection
+// without ending the transaction. A refused statement answers the server's
+// error, as tx.ExecContext does, and leaves tx aborted for the caller to roll
+// back to its savepoint. Measured on PostgreSQL 18, CockroachDB v26.4.1 and
+// YugabyteDB 2026.1.2, the prepared statement is released after a refusal too.
+func Exec(ctx context.Context, tx *sql.Tx, statement string) error {
+	prepared, err := tx.PrepareContext(ctx, statement)
+	if err != nil {
+		return err
+	}
+	_, err = prepared.ExecContext(ctx)
+	if closeErr := prepared.Close(); closeErr != nil {
+		return errors.Join(err, closeErr)
+	}
+	return err
 }
 
 // errSeveralStatements is the refusal of [ParseAlone].
@@ -244,23 +273,49 @@ func (r reading) apply(text string) string {
 	return strings.ReplaceAll(text, "\r", " ")
 }
 
-// readings is every way a server of dialect can read text: its descriptor's
-// rules, and the same rules with line comments ended at a line feed only.
+// readings is every way a server of dialect can read text.
+//
+// Outside the PostgreSQL family it is the descriptor's rules alone. SQL Server
+// is the one engine there whose probes write declared text, and measured on
+// SQL Server 2025 through go-mssqldb it ends a line comment at a carriage
+// return, as the shared lexer does.
 //
 // The descriptor's EscapeStrings, the E'...' strings of the PostgreSQL family,
-// stands in for a fact no descriptor field states: the family's servers read
-// dollar quotes. A backslash in an ordinary string is read as the descriptor
-// states, because the probe transaction pins standard_conforming_strings on;
-// reading it as an escape as well would refuse every live string that ends in
-// one, such as `'C:\'`, and plan the declaration again on every run.
+// stands in for facts no descriptor field states, measured on PostgreSQL 18,
+// CockroachDB v26.4.1 and YugabyteDB 2026.1.2. Their servers read dollar
+// quotes; they read every character outside ASCII as a name character, so
+// `x€$a$` is one name and opens no dollar quote; and they read `$1$a$` as the
+// parameter `$1` and a dollar quote. The family's servers also differ among
+// themselves, and the text is read every way they do: CockroachDB reads
+// b'...' as a byte string whose backslash escapes, where PostgreSQL's B'...'
+// is a bit string; CockroachDB continues a string across a line break but not
+// across a comment, where its descriptor states no continued strings; and
+// CockroachDB ends a line comment at a line feed only.
+//
+// A backslash in an ordinary string is read as the descriptor states, because
+// the probe transaction pins standard_conforming_strings on; reading it as an
+// escape as well would refuse every live string that ends in one, such as
+// `'C:\'`, and plan the declaration again on every run.
 func readings(dialect string) []reading {
 	options := dialectlexer.Options(dialect)
 	described, _ := platform.Lookup(dialect)
-	postgresStrings := described.Lexical.EscapeStrings
-	return []reading{
-		{options: options, dollarQuotes: postgresStrings},
-		{options: options, dollarQuotes: postgresStrings, lineFeedEndsComments: true},
+	if !described.Lexical.EscapeStrings {
+		return []reading{{options: options}}
 	}
+	options.NonASCIINames = true
+	options.DollarParameters = true
+	var set []reading
+	for _, continued := range []bool{false, true} {
+		for _, byteEscapes := range []bool{false, true} {
+			for _, lineFeedOnly := range []bool{false, true} {
+				read := options
+				read.PostgreSQLStringConstants = continued
+				read.ByteStringEscapes = byteEscapes
+				set = append(set, reading{options: read, dollarQuotes: true, lineFeedEndsComments: lineFeedOnly})
+			}
+		}
+	}
+	return set
 }
 
 // read checks text under one reading.

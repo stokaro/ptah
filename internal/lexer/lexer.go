@@ -176,6 +176,26 @@ type Options struct {
 	// options it takes.
 	AlternativeQuoting bool
 
+	// NonASCIINames reads every character outside ASCII as a name character,
+	// as the PostgreSQL family's scanners do: they read each byte above 0x7F
+	// as part of a name. So `x€$a$` is one name there, where the default rules
+	// end a name at a character that is not a letter or a digit and read the
+	// rest as an operator and a dollar quote. A space outside ASCII, such as
+	// U+00A0, is a name character too.
+	NonASCIINames bool
+
+	// DollarParameters reads `$` followed by a digit as a positional
+	// parameter, the digits and nothing more, as the PostgreSQL family does:
+	// in `$1$a$ ... $a$` the server reads `$1` and then a dollar quote. Unset,
+	// `$1$a$` is one name, which it is on MySQL.
+	DollarParameters bool
+
+	// ByteStringEscapes reads b'...' the way PostgreSQLEscapeStrings reads
+	// E'...', a backslash escaping the next character, as CockroachDB reads
+	// its byte strings. B'...' is a bit string there, as b'...' and B'...'
+	// are on PostgreSQL, and its backslash is a character.
+	ByteStringEscapes bool
+
 	// Scanner is a lexer of an engine's own. When it is set, it reads the
 	// text in place of every rule the fields above select, which it does not
 	// consult, and [StringValue] asks it for the text of a string.
@@ -345,6 +365,8 @@ func (l *Lexer) nextSQLToken() Token {
 		}
 
 		switch {
+		case l.opts.NonASCIINames && ch >= utf8.RuneSelf:
+			return l.scanIdentifier()
 		case unicode.IsSpace(ch):
 			return l.scanWhitespace()
 		case l.isPostgreSQLEscapeString(ch):
@@ -354,14 +376,7 @@ func (l *Lexer) nextSQLToken() Token {
 		case ch == '\'' || ch == '"':
 			return l.scanString()
 		case ch == '$':
-			// Check for PostgreSQL dollar-quoted strings
-			if l.isDollarQuotedString() {
-				return l.scanDollarQuotedString()
-			}
-			if isIdentifierPart(l.peekNext()) {
-				return l.scanIdentifier()
-			}
-			return l.scanOperator()
+			return l.scanDollar()
 		case ch == '-' && l.peekNext() == '-' && l.isDashDashComment():
 			return l.scanLineComment()
 		case ch == '/' && l.peekNext() == '*':
@@ -610,7 +625,11 @@ func (l *Lexer) consumeQuoted(mode stringBackslashMode) rune {
 }
 
 func (l *Lexer) isPostgreSQLEscapeString(ch rune) bool {
-	return l.opts.PostgreSQLEscapeStrings && (ch == 'e' || ch == 'E') && l.peekNext() == '\''
+	if l.peekNext() != '\'' {
+		return false
+	}
+	return l.opts.PostgreSQLEscapeStrings && (ch == 'e' || ch == 'E') ||
+		l.opts.ByteStringEscapes && ch == 'b'
 }
 
 func (l *Lexer) isUnicodeEscapeString(ch rune) bool {
@@ -770,12 +789,49 @@ func (l *Lexer) scanBlockToken(tokenType TokenType) Token {
 func (l *Lexer) scanIdentifier() Token {
 	for {
 		ch := l.peek()
-		if !isIdentifierPart(ch) {
+		if !l.isNamePart(ch) {
 			break
 		}
 		l.advance()
 	}
 	return l.emit(TokenIdentifier)
+}
+
+// scanDollar scans the token that starts at a `$`: a positional parameter
+// where [Options.DollarParameters] is set, a dollar-quoted string, a name that
+// continues after the sign, or the sign as an operator.
+func (l *Lexer) scanDollar() Token {
+	if l.opts.DollarParameters && isASCIIDigit(l.peekNext()) {
+		return l.scanParameter()
+	}
+	if l.isDollarQuotedString() {
+		return l.scanDollarQuotedString()
+	}
+	if isIdentifierPart(l.peekNext()) {
+		return l.scanIdentifier()
+	}
+	return l.scanOperator()
+}
+
+// scanParameter scans `$` and the digits after it, a positional parameter
+// where [Options.DollarParameters] is set. It is an identifier token, the
+// kind a number is too.
+func (l *Lexer) scanParameter() Token {
+	l.advance() // consume $
+	for isASCIIDigit(l.peek()) {
+		l.advance()
+	}
+	return l.emit(TokenIdentifier)
+}
+
+// isNamePart is isIdentifierPart under this lexer's options: with
+// [Options.NonASCIINames], every character outside ASCII as well.
+func (l *Lexer) isNamePart(ch rune) bool {
+	return isIdentifierPart(ch) || l.opts.NonASCIINames && ch >= utf8.RuneSelf
+}
+
+func isASCIIDigit(ch rune) bool {
+	return '0' <= ch && ch <= '9'
 }
 
 func (l *Lexer) scanTemporaryIdentifier() Token {

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"strconv"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,6 +16,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbexprprobe"
+	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/probetx"
 	"ptah.run/internal/rundiag"
 )
@@ -298,58 +302,54 @@ func TestResolveColumnSpellings_StopsWhenAProbeEndsTheTransaction(t *testing.T) 
 	c.Assert(refusals, qt.IsNil)
 }
 
-// recordingExecutor is an Oracle dev database that records each statement it
-// is sent and refuses it, as a server refuses a declaration it cannot store.
-type recordingExecutor struct{ sent *[]string }
+// restartingScriptedSession is [scriptedSession] whose transaction the server
+// names 17 when it begins and 18 every time after, as [restartingSession]
+// does, so a probe that sends statements runs them against the scripted
+// database and the transaction check still finds the transaction changed.
+type restartingScriptedSession struct{ scriptedSession }
 
-func (recordingExecutor) Info() catalog.ServerInfo {
-	return catalog.ServerInfo{Dialect: platform.Oracle}
+func (s restartingScriptedSession) WithRolledBackTransaction(ctx context.Context, label string, body func(context.Context, *sql.Tx) error) (bool, error) {
+	calls := 0
+	watched, err := probetx.Watch(ctx, func(context.Context) (string, error) {
+		calls++
+		return strconv.Itoa(16 + min(calls, 2)), nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return s.scriptedSession.WithRolledBackTransaction(watched, label, body)
 }
 
-func (e recordingExecutor) ExecContext(_ context.Context, query string, _ ...any) (sql.Result, error) {
-	*e.sent = append(*e.sent, query)
-	return nil, sql.ErrConnDone
+// errFallbackRefused is the scripted server's refusal of a routine's
+// fallback statement.
+var errFallbackRefused = errors.New("function body refused")
+
+// refuseRoutines refuses every statement that creates a routine and runs the
+// rest.
+func refuseRoutines(statement string, _ []driver.NamedValue) (driver.Result, error) {
+	if strings.HasPrefix(statement, "CREATE FUNCTION") {
+		return nil, errFallbackRefused
+	}
+	return driver.RowsAffected(0), nil
 }
 
-func (e recordingExecutor) QueryContext(_ context.Context, query string, _ ...any) (*sql.Rows, error) {
-	*e.sent = append(*e.sent, query)
-	return nil, sql.ErrConnDone
-}
-
-// TestResolveGeneratedExpressions_UncontainedTextIsNotProbed sends nothing for
-// a CREATE whose declared expression holds a second statement, and leaves its
-// columns out of the answer, so they compare as written.
-func TestResolveGeneratedExpressions_UncontainedTextIsNotProbed(t *testing.T) {
+// TestResolveRoutineArguments_StopsWhenAFallbackEndsTheTransaction refuses a
+// routine's statement for its text and runs its fallback, which the server
+// refuses. The probe then answers with the first refusal, and the fallback
+// ran statements first, so the transaction check still runs and stops the
+// command.
+func TestResolveRoutineArguments_StopsWhenAFallbackEndsTheTransaction(t *testing.T) {
 	c := qt.New(t)
-	ctx, stream := warnedRun()
-	var sent []string
+	db := dbtest.OpenWithExec(t, routineAnswer, refuseRoutines)
 
-	got, err := dbexprprobe.ResolveGeneratedExpressions(ctx, recordingExecutor{sent: &sent}, []dbexprprobe.GeneratedExpressionProbe{{
-		Schema: "app", Table: "t", ProbeTable: "p", Generated: []string{"g"},
-		Create: "CREATE TABLE p (a NUMBER, g NUMBER GENERATED ALWAYS AS (a + 1)); DROP TABLE x; CREATE TABLE y (z NUMBER)",
-	}})
+	got, err := dbexprprobe.ResolveRoutineArguments(context.Background(), restartingScriptedSession{scriptedSession{db: db.SQL}},
+		[]dbexprprobe.RoutineArgumentsProbe{{
+			Key: "k", Name: "f", Object: "routine f",
+			Statement: "CREATE FUNCTION pg_temp.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$; COMMIT",
+			Fallback:  "CREATE FUNCTION pg_temp.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$",
+		}})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.DeepEquals, make(map[string]config.GeneratedExpression))
-	c.Assert(sent, qt.IsNil)
-	c.Assert(stream.String(), qt.Equals, separatorWarning("generated columns of app.t"))
-}
-
-// TestResolveGeneratedExpressions_ContainedTextIsProbed is the control: the
-// same table without the second statement is sent, and the server's refusal
-// leaves its column unresolved.
-func TestResolveGeneratedExpressions_ContainedTextIsProbed(t *testing.T) {
-	c := qt.New(t)
-	ctx, stream := warnedRun()
-	var sent []string
-	create := "CREATE TABLE p (a NUMBER, g NUMBER GENERATED ALWAYS AS (a + 1))"
-
-	got, err := dbexprprobe.ResolveGeneratedExpressions(ctx, recordingExecutor{sent: &sent}, []dbexprprobe.GeneratedExpressionProbe{{
-		Schema: "app", Table: "t", ProbeTable: "p", Generated: []string{"g"}, Create: create,
-	}})
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.HasLen, 1)
-	c.Assert(sent, qt.DeepEquals, []string{create})
-	c.Assert(stream.String(), qt.Equals, "")
+	c.Assert(err, qt.ErrorIs, probetx.ErrTransactionChanged)
+	c.Assert(err, qt.ErrorMatches, `resolve routine arguments: routine f: a probe ended the transaction .* \(transaction 17, now 18\)`)
+	c.Assert(got, qt.IsNil)
 }

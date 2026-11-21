@@ -90,6 +90,10 @@ func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession
 		probetext.Warn(ctx, subject.String(), "partition bound of "+subject.Path(), refusal)
 		return nil, nil
 	}
+	if !constantBound(bound) {
+		probetext.Warn(ctx, subject.String(), "partition bound of "+subject.Path(), errEvaluatedBound)
+		return nil, nil
+	}
 	parent := sqlident.Qualified(platform.Postgres, member.ParentSchema, member.Parent)
 	var definition sql.NullString
 	ran, err := session.WithRolledBackTransaction(ctx, "normalize table partition bound", func(ctx context.Context, tx *sql.Tx) error {
@@ -103,9 +107,9 @@ func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession
 			// #nosec G202 -- Identifiers are quoted; the key is the server's own text, and the owner parsed the bound.
 			"CREATE TABLE pg_temp.ptah_partition_bound_parent (LIKE " + parent + ") PARTITION BY " + key.String,
 			// #nosec G202 -- The owner parsed the bound as one clause before the rolled-back probe.
-			"CREATE TABLE pg_temp.ptah_partition_bound_probe PARTITION OF pg_temp.ptah_partition_bound_parent " + bound,
+			"CREATE TABLE pg_temp.ptah_partition_bound_probe PARTITION OF pg_temp.ptah_partition_bound_parent " + bound + "\n",
 		} {
-			if _, err := tx.ExecContext(ctx, statement); err != nil {
+			if err := probetext.Exec(ctx, tx, statement); err != nil {
 				// A bound the server refuses leaves no fact, and the apply reports
 				// the server's answer.
 				return nil
