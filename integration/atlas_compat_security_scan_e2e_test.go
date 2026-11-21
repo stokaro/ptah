@@ -23,7 +23,11 @@ type compatSecurityScanReport struct {
 			ServerBanner string `json:"server_banner"`
 		} `json:"inventory"`
 		Source struct {
-			URL string `json:"url"`
+			URL    string `json:"url"`
+			Origin struct {
+				Kind     string `json:"kind"`
+				Fallback string `json:"fallback"`
+			} `json:"origin"`
 		} `json:"source"`
 		Assessments []json.RawMessage `json:"assessments"`
 	} `json:"targets"`
@@ -35,12 +39,19 @@ func compatSecurityScanEnvironment(variables ...string) []string {
 	return append(environmentWithoutPtahVariables(), variables...)
 }
 
+// bundledAdvisories selects the advisory snapshots built into the binary, so
+// a run makes no request and its result does not depend on the network.
+const bundledAdvisories = "PTAH_ADVISORY_SOURCE=bundled"
+
 // TestCompatSecurityScan_RoutesToTheNativeScanE2E runs the shipped
 // ptah-compat with PTAH_ATLAS_SECURITY_SCAN against the MySQL server CI
 // starts. The JSON report is the native scan's: the server version it names
 // is the one the server reports when read directly, and it assesses every
 // advisory of the bundled MySQL snapshot. PTAH_FAIL_ON=none keeps the
-// permanent partial-coverage gap from deciding the exit code.
+// permanent partial-coverage gap from deciding the exit code, and
+// PTAH_ADVISORY_SOURCE reaches the forwarded scan: the report reads the
+// bundled snapshot by choice, with no fallback, where the default source would
+// fetch the snapshot or report why it could not.
 func TestCompatSecurityScan_RoutesToTheNativeScanE2E(t *testing.T) {
 	c := qt.New(t)
 	url := dbtarget.URL(c, dbtarget.MySQL)
@@ -53,7 +64,7 @@ func TestCompatSecurityScan_RoutesToTheNativeScanE2E(t *testing.T) {
 
 	result := clirun.Run(c, clirun.Compat, clirun.Options{
 		Dir: c.TempDir(),
-		Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON=none"),
+		Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON=none", bundledAdvisories),
 	}, "security", "scan", "-u", url, "--format", "{{ json . }}")
 
 	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
@@ -65,6 +76,8 @@ func TestCompatSecurityScan_RoutesToTheNativeScanE2E(t *testing.T) {
 	c.Assert(report.Targets[0].Inventory.Product, qt.Equals, "mysql")
 	c.Assert(report.Targets[0].Inventory.ServerBanner, qt.Equals, banner)
 	c.Assert(report.Targets[0].Source.URL, qt.Equals, snapshot.Source)
+	c.Assert(report.Targets[0].Source.Origin.Kind, qt.Equals, "bundled")
+	c.Assert(report.Targets[0].Source.Origin.Fallback, qt.Equals, "")
 	c.Assert(report.Targets[0].Assessments, qt.HasLen, len(snapshot.Advisories))
 }
 
@@ -77,7 +90,7 @@ func TestCompatSecurityScan_ScansEveryURLE2E(t *testing.T) {
 
 	result := clirun.Run(c, clirun.Compat, clirun.Options{
 		Dir: c.TempDir(),
-		Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON=none"),
+		Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON=none", bundledAdvisories),
 	}, "security", "scan", "-u", dbtarget.URL(c, dbtarget.MySQL), "--url", "sqlite://app.db", "--format", "{{ json . }}")
 
 	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
@@ -108,7 +121,7 @@ func TestCompatSecurityScan_NativeVariablesReachTheScanE2E(t *testing.T) {
 			c := qt.New(t)
 			result := clirun.Run(c, clirun.Compat, clirun.Options{
 				Dir: c.TempDir(),
-				Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON="+tt.failOn),
+				Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON="+tt.failOn, bundledAdvisories),
 			}, "security", "scan", "--url", dbtarget.URL(c, dbtarget.MySQL))
 
 			c.Assert(result.ExitCode, qt.Equals, tt.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))

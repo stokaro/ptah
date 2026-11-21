@@ -189,8 +189,8 @@ against reviewed vendor advisories and reports what affects it. --format
 '{{ json . }}' prints the report as JSON; without it the report is a table.
 
 The scan's other options are the native command's environment variables:
-PTAH_ADVISORIES, PTAH_SUPPRESSIONS, PTAH_IGNORE, PTAH_FAIL_ON,
-PTAH_FAIL_SEVERITY, PTAH_MIN_SEVERITY and PTAH_DEPLOYMENT.`
+PTAH_ADVISORIES, PTAH_ADVISORY_SOURCE, PTAH_SUPPRESSIONS, PTAH_IGNORE,
+PTAH_FAIL_ON, PTAH_FAIL_SEVERITY, PTAH_MIN_SEVERITY and PTAH_DEPLOYMENT.`
 
 // atlasSecurityScanVerb forwards `ptah-compat security scan` to the native
 // `ptah db vulnerabilities`. -u/--url names a database and repeats, and an
@@ -214,6 +214,7 @@ func atlasSecurityScanVerb() atlasVerb {
 		projectConfig: applyAtlasSecurityScanProject,
 		nativeOnlyFlags: []string{
 			"advisories",
+			"advisory-source",
 			"db-url",
 			"deployment",
 			"fail-on",

@@ -111,6 +111,7 @@
   "/migrate-from/goose/",
   "/migrate-from/liquibase/",
   "/migrate-from/overview/",
+  "/operate/advisory-source/",
   "/operate/ai-agent-changes/",
   "/operate/ai-agent-connect/",
   "/operate/ai-agent-permissions/",
