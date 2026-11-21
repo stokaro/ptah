@@ -460,7 +460,7 @@ const (
 // and an advisory for a product built on MySQL Server, which Oracle files
 // under that product.
 var noMySQLPage = []byte("<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>\nCVE-2026-90000\n" +
-	"<td>Oracle Communications Unified Assurance</td>\n<td>Core (MySQL Server)</td>\n")
+	"<td>Oracle Communications Unified Assurance</td>\n<td>Core (MySQL Server)</td>\n</body>\n</html>\n")
 
 // decemberMatrix is the MySQL matrix the December update rows carry.
 const decemberMatrix = "CVE-2099-99001 CVE-2099-99002"
@@ -470,6 +470,13 @@ const decemberMatrix = "CVE-2099-99001 CVE-2099-99002"
 func decemberPage(heading string) []byte {
 	return []byte("<script>nonce-7</script>\n" + heading + "Oracle MySQL Risk Matrix</h4>\n" + decemberMatrix +
 		"\n<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>\nCVE-2026-90000\n")
+}
+
+// decemberPageBefore is the December update with the appendix after the
+// MySQL matrix opened by next, so the matrix ends there.
+func decemberPageBefore(next string) []byte {
+	return []byte("<script>nonce-7</script>\n<h4 id=\"AppendixMSQL\">Oracle MySQL Risk Matrix</h4>\n" + decemberMatrix +
+		"\n" + next + "Oracle PeopleSoft Risk Matrix</h4>\nCVE-2026-90000\n")
 }
 
 // servedPages answers the URLs it holds and refuses every other, so a check
@@ -572,7 +579,7 @@ func TestCheckVersioned_UpdateWithoutMySQLRowsMovesValidUntil(t *testing.T) {
 	current := twoPageSnapshot(c, now.Add(-24*time.Hour), time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC))
 	pages := map[string][]byte{
 		oracleIndexURL: oracleIndex(octoberUpdate, novemberUpdate, decemberUpdate),
-		decemberUpdate: []byte(`<h4 id="AppendixPS">Oracle PeopleSoft Risk Matrix</h4>CVE-2026-90000`),
+		decemberUpdate: []byte("<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>CVE-2026-90000\n</body>\n</html>\n"),
 		novemberUpdate: oraclePage("nonce-5", "CVE-2026-00002"),
 		octoberUpdate:  oraclePage("nonce-6", "CVE-2026-00001"),
 	}
@@ -636,6 +643,23 @@ func TestCheckVersioned_NewerMatrixIsReviewed(t *testing.T) {
 		{name: "a single-quoted heading id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
 			pages: map[string][]byte{decemberUpdate: decemberPage(`<h4 id='AppendixMSQL'>`)}, wantSource: decemberUpdate,
 			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "an unquoted heading id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(`<h4 id=AppendixMSQL>`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "an upper-case heading tag and id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(`<H4 ID="AppendixMSQL">`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "a single-quoted next appendix", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPageBefore(`<h4 id='AppendixPS'>`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "an unquoted next appendix", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPageBefore(`<h4 id=AppendixPS>`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "an upper-case next appendix", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPageBefore(`<H4 ID="AppendixPS">`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "an upper-case href in the index", anchors: []string{`<a HREF="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(standard)}, wantSource: decemberUpdate, wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
 		{name: "a quarterly update after a monthly one with nothing for MySQL",
 			anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`, `<a href="/security-alerts/cpujan2027.html">January</a>`},
 			pages:   map[string][]byte{decemberUpdate: noMySQLPage, januaryUpdate: oraclePage("nonce-8", "CVE-2099-99003")}, wantSource: januaryUpdate,
@@ -685,6 +709,24 @@ func TestCheckVersioned_UnreadUpdate_FailurePath(t *testing.T) {
 		{name: "a page that titles the MySQL matrix under another id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
 			december: []byte("<h4 id=\"AppendixMYSQL\">Oracle MySQL Risk Matrix</h4>\n" + decemberMatrix),
 			want:     `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page names "Oracle MySQL Risk Matrix" but has no MySQL risk matrix heading the source check reads`},
+		{name: "a complete page that names the MySQL matrix in lower case", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: []byte("<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>\n<p>see the oracle mysql risk matrix</p>\n</body>\n</html>\n"),
+			want:     `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page names "Oracle MySQL Risk Matrix" but has no MySQL risk matrix heading the source check reads`},
+		{name: "an empty page", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: make([]byte, 0),
+			want:     `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page carries no product's risk matrix heading, so it is not a complete update page`},
+		{name: "an access denied page", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: []byte("<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n" +
+				"You don't have permission to access this page on this server.<P>\nReference #18.5c3d1b2a.1765900000.abc\n</BODY>\n</HTML>\n"),
+			want: `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page carries no product's risk matrix heading, so it is not a complete update page`},
+		{name: "a script challenge page", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: []byte("<!DOCTYPE html><html><head><title>Just a moment...</title>" +
+				"<script>window.challenge={id:'7'};document.cookie='verified=1';location.reload();</script></head>" +
+				"<body><noscript>Enable JavaScript and cookies to continue</noscript></body></html>\n"),
+			want: `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page carries no product's risk matrix heading, so it is not a complete update page`},
+		{name: "a truncated page", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: []byte("<script>nonce-7</script>\n<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>\n<table><tr><td>CVE-2026-90000</td>"),
+			want:     `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page does not end with </html>, so the download may be truncated`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -66,6 +66,10 @@ var appendixHeading = regexp.MustCompile(`<(?i:h4)\s(?:[^>]*\s)?(?i:id)\s*=\s*["
 // heading mysqlMatrixHeading reads has changed shape.
 var mysqlMatrixMarkers = []string{"AppendixMSQL", "Oracle MySQL Risk Matrix"}
 
+// updatePageEnd closes every Oracle update page. A download cut short does not
+// end with it.
+const updatePageEnd = "</html>"
+
 const scheduleLead = "next four dates are:"
 
 // scheduledDates reads one of the index's lists of upcoming release dates,
@@ -307,8 +311,12 @@ func newerUpdate(current vulnerability.VersionedSnapshot, index []byte, fetchPag
 }
 
 // mysqlMatrix reports whether an Oracle update page carries a MySQL risk
-// matrix. A page that names the matrix without a heading the check reads is an
-// error: read as having no matrix, it would let the check move valid_until
+// matrix. It answers no only for a page that is recognizably a whole update:
+// one that carries another product's risk matrix heading and ends with
+// updatePageEnd. Anything else is an error, and so is a page that names the
+// MySQL matrix without a heading the check reads. An empty response, an
+// access-denied or challenge page served with status 200, or a truncated
+// download, read as having no matrix, would let the check move valid_until
 // past advisories nobody reviewed.
 func mysqlMatrix(page []byte) (bool, error) {
 	if mysqlMatrixHeading.Match(page) {
@@ -319,6 +327,12 @@ func mysqlMatrix(page []byte) (bool, error) {
 		if bytes.Contains(lower, bytes.ToLower([]byte(marker))) {
 			return false, fmt.Errorf("the page names %q but has no MySQL risk matrix heading the source check reads", marker)
 		}
+	}
+	if !appendixHeading.Match(page) {
+		return false, errors.New("the page carries no product's risk matrix heading, so it is not a complete update page")
+	}
+	if !bytes.HasSuffix(bytes.TrimSpace(page), []byte(updatePageEnd)) {
+		return false, fmt.Errorf("the page does not end with %s, so the download may be truncated", updatePageEnd)
 	}
 	return false, nil
 }
