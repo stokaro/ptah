@@ -76,6 +76,7 @@ resolves nothing, and reports less than it should while the command still exits
 | --- | --- |
 | statement text | The migration SQL, and nothing else. The default. |
 | baseline schema | The above, plus the schema state the version starts from, read from the replayed dev database. |
+| extension advisory assessment | The migration SQL, plus what each extension statement installs on the dev database and what reviewed advisories say about it; see [below](#extensions-a-migration-installs). |
 
 The declaration decides what a run reads, and what it says when a read is
 missing:
@@ -193,6 +194,64 @@ table to it, and a statement whose effect its words do not show, such as a
 `DO` block, a `CALL`, a prepared statement or a `SET` of the search path, may
 have done either out of sight. After either, the statement is reported too.
 
+### Extensions a migration installs
+
+`security/vulnerable-extension` and `coverage/unassessed-extension` read another
+input, the extension advisory assessment. Lint reads each `CREATE EXTENSION`
+and `ALTER EXTENSION ... UPDATE` of an up file, with its name and version
+decoded as the server decodes them: a quoted or `U&` identifier, and an escape,
+`U&` or dollar-quoted string. After the replay, the run asks the dev database
+what each statement installs: the version the statement names or the server's
+default, and with `CASCADE` each extension that version requires. It matches
+each install against the reviewed advisories that
+[`ptah db vulnerabilities`](../../operate/vulnerability-scan/) reads, from the
+same [advisory source](../../operate/advisory-source/), and reports at the
+statement's line:
+
+- `security/vulnerable-extension`, a warning, for an extension an advisory
+  affects on the dev database's server, with the advisory and its fixed release;
+- `coverage/unassessed-extension`, info, for one the data cannot call clean: no
+  reviewed data covers it, the data is past its age, the banner names a vendor
+  build, or a run that named the source could not read it. A statement lint
+  recognizes and cannot read, such as a version written as a number or an
+  option the statement does not take, is reported the same way, with the
+  reason.
+
+A statement is reported for what it adds to the database. Before each version
+that installs an extension, the run reads which extensions the dev database
+holds, and it follows the file's statements in order from there:
+
+- `CREATE EXTENSION IF NOT EXISTS` of an extension the database holds installs
+  nothing and is not reported;
+- `CASCADE` reports each extension it adds, and leaves out one the database
+  holds or an earlier statement installed;
+- `ALTER EXTENSION ... UPDATE` to the version the database holds is not
+  reported;
+- `DROP EXTENSION` takes what it names out of the held set, and with `CASCADE`,
+  which may drop more than it names, the held set is emptied;
+- a `DO` block empties the held set too, since it may have dropped anything.
+
+Lint does not read a `DO` block or a routine body, so an extension installed
+inside one is not assessed.
+
+With `--latest`, the versions before the window are replayed and not
+reported. An extension one of them installs is held when the window starts, so
+a `CREATE EXTENSION IF NOT EXISTS` inside the window reports nothing for it.
+Lint the whole directory to assess every extension it installs.
+
+The run assesses the dev database's server, so run it at the release the
+migration will meet. PostgreSQL is the only engine assessed. The banner of an
+official `postgres` image built on Debian names the distribution's package, and
+the assessment reads that as a vendor build, so each install there is reported
+as unassessed. An `-alpine` tag, such as `docker://postgres/16-alpine/dev`,
+names the upstream release and gives an assessed result. Without a dev database
+neither rule reports, and the notice above names both. A default run that
+cannot read the advisory source matches the snapshot built into the binary and
+says so on stderr once, in the line `ptah db vulnerabilities` writes. An
+`ALTER EXTENSION ... UPDATE` replays only on a server Ptah provisions from a
+`docker://` or `docker+<driver>://` dev URL. `ptah-compat migrate lint` reports
+neither rule.
+
 ## How rules are named
 
 A rule is identified by its Ptah name, `category/name`, such as
@@ -218,7 +277,7 @@ rule registry and runners implement.
 | Kind | Ptah behavior |
 | --- | --- |
 | **Builtin** | Every rule on this page. It decides from what it is handed — the migration SQL, or the SQL file — and reaches no server and no other process. |
-| **Server-assisted** | One: the `baseline schema` input above, replayed onto the dev database `--dev-url` names. It is optional, and its absence is announced rather than absorbed. |
+| **Server-assisted** | The `baseline schema` and `extension advisory assessment` inputs above, read from the dev database `--dev-url` names after the replay. Each is optional, and its absence is announced rather than absorbed. |
 | **Optional provider** | None. No external analyzer is integrated, and no analysis path starts another process. The only process any lint path runs is `git`, to resolve `--git-base`. |
 
 The server-assisted one is optional in the strict sense: without a dev database
@@ -310,7 +369,7 @@ Every rule has a Ptah name, `category/name`, and no numeric code. A selector in 
 | --- | --- | --- |
 | `capability` | 4 | the target server version lacks a capability the statement needs |
 | `correctness` | 3 | the statement is wrong as written: malformed, naming a column the schema does not declare, or declaring a property its body breaks |
-| `coverage` | 5 | something the linter did not read, so a clean result does not mean it was checked |
+| `coverage` | 6 | something the linter did not read, so a clean result does not mean it was checked |
 | `data-dependent` | 5 | the statement succeeds, fails or changes values depending on the rows the table already holds |
 | `dependency` | 4 | the statement drops or renames something another object still uses |
 | `design` | 3 | a schema choice that applies cleanly and costs later, in row padding, table bloat or rows with no key to address them by; silencing it hides advice, never a statement that fails or blocks |
@@ -322,14 +381,14 @@ Every rule has a Ptah name, `category/name`, and no numeric code. A selector in 
 | `online` | 2 | online mode, which the user selects, could not prove the statement runs without a lock that blocks reads or writes; its rules fire only in that mode, so `--disable locking` leaves them on |
 | `rewrite` | 24 | the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent |
 | `rollout` | 4 | the change breaks a client or a consumer deployed against the current schema |
-| `security` | 7 | the statement weakens access control, or writes a secret or an unquoted value into SQL |
+| `security` | 8 | the statement weakens access control, writes a secret or an unquoted value into SQL, or installs an extension a published advisory affects |
 | `side-effect` | 14 | the statement resets, ignores or leaves behind something its text does not show; silenced, a migration can succeed and leave the database different from what it says |
 | `transaction` | 6 | the statement cannot run, or runs differently, inside the migration's transaction or query |
 | `ydb` | 1 | a statement form only YDB refuses |
 
 ## Migration lint rules
 
-118 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `file-form/refused-file`, `naming/identifier-collision`, `naming/identifier-too-long` and `rollout/rename`, which only native `ptah` emits.
+120 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `coverage/unassessed-extension`, `file-form/refused-file`, `naming/identifier-collision`, `naming/identifier-too-long`, `rollout/rename` and `security/vulnerable-extension`, which only native `ptah` emits.
 
 Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database. `ptah migrations up` disables 60 advisory rules (migration-file form, backward compatibility, and the locking and rewrite rules of PostgreSQL, MySQL and MariaDB) and refuses only on blocking findings of `destructive/drop-table`, `destructive/drop-column`, `dependency/drop-column-in-use`, `data-dependent/alter-column-type`, `integrity/drop-not-null`, `integrity/drop-untyped-constraint`, `destructive/remove-enum-value`, `destructive/drop-object`, `destructive/truncate-table`, `security/disable-row-level-security` and `security/no-force-row-level-security`, unless the policy's `gate` section names more rules or categories.
 
@@ -459,6 +518,7 @@ Neither apply gate reports even that much, so a rule listed below is not by itse
 
 | Rule | Meaning | Surface | Atlas check |
 | --- | --- | --- | --- |
+| `coverage/unassessed-extension` | an install the advisory data cannot call clean on the dev database's server: no data covers it, the data is stale or unreadable, the server is a vendor build or outside the data, or lint cannot read the statement | native only | — |
 | `design/column-alignment` | the declared column order can waste tuple padding | both | `PG110` |
 | `design/disable-autovacuum` | disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later | both | `PG320` |
 | `locking/add-exclusion-constraint` | adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row | both | `PG109` |
@@ -479,6 +539,7 @@ Neither apply gate reports even that much, so a rule listed below is not by itse
 | `rewrite/volatile-default` | a volatile DEFAULT on an added column rewrites or evaluates every existing row | both | `PG302` |
 | `rollout/weaken-replica-identity` | REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table | both | `PG314` |
 | `security/definer-without-search-path` | a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's | both | — |
+| `security/vulnerable-extension` | `CREATE EXTENSION` or `ALTER EXTENSION ... UPDATE` installs an extension, at the version it names or the dev database's default and with what `CASCADE` adds, that a reviewed advisory affects on the dev database's server | native only | — |
 | `transaction/add-enum-value` | ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it | both | — |
 | `transaction/concurrent-index` | CONCURRENTLY cannot run inside the migration's transaction | both | `PG103` |
 | `transaction/mixed-statements` | the migration mixes statements that cannot share one transaction | both | `TX101` |
@@ -666,7 +727,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 - `transaction/scheme-and-data-in-one-query`
 - `ydb/add-column-form`
 
-The other 88 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per category. `ptah sql lint` reads the `rules:` severities the same file sets for `capability/missing`, `correctness/index-on-undeclared-column`, `correctness/syntax-error`, `coverage/dynamic-sql`, `coverage/unanalyzed-statements`, `coverage/unsupported-statement`, `design/no-primary-key`, `naming/identifier-collision` and `naming/identifier-too-long`, so the severities above are the defaults. `--disable` refuses a selector covering `correctness/syntax-error` or `coverage/unsupported-statement`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+The other 90 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per category. `ptah sql lint` reads the `rules:` severities the same file sets for `capability/missing`, `correctness/index-on-undeclared-column`, `correctness/syntax-error`, `coverage/dynamic-sql`, `coverage/unanalyzed-statements`, `coverage/unsupported-statement`, `design/no-primary-key`, `naming/identifier-collision` and `naming/identifier-too-long`, so the severities above are the defaults. `--disable` refuses a selector covering `correctness/syntax-error` or `coverage/unsupported-statement`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## Atlas check codes
 

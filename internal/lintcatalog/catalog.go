@@ -263,6 +263,16 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDB:     YDBProviderReads,
 		YDBNote: "the rule is about Ptah's SQL parser, and YQL is read by its provider",
 	},
+	"security/vulnerable-extension": {
+		Summary: "`CREATE EXTENSION` or `ALTER EXTENSION ... UPDATE` installs an extension, at the version it names or the dev database's default " +
+			"and with what `CASCADE` adds, that a reviewed advisory affects on the dev database's server",
+		NativeOnly: true,
+	},
+	"coverage/unassessed-extension": {
+		Summary: "an install the advisory data cannot call clean on the dev database's server: no data covers it, the data is stale " +
+			"or unreadable, the server is a vendor build or outside the data, or lint cannot read the statement",
+		NativeOnly: true,
+	},
 	"online/unproven": {
 		Summary: "the statement is outside the set measured to take no lock that conflicts with reads and writes: on PostgreSQL it is unmeasured, and on MySQL and " +
 			"MariaDB it does not ask the server to apply it without blocking writes, so the server was never given the chance to refuse",

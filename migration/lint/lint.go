@@ -210,6 +210,18 @@ const (
 	// went without the refinement is thinner in a direction the reader
 	// cannot see from the findings (stokaro/ptah#2957).
 	InputBaselineRefinement
+	// InputExtensionAssessment additionally reads what a dev database
+	// installs for each extension a statement creates or updates, and what
+	// reviewed advisory data says about it, handed back through
+	// [Options.Extensions]; see [ExtensionAssessments].
+	//
+	// Like [InputRoutineBody] it has no subjects predicate: which statements
+	// need it is which of them install an extension, and the analysis lists
+	// them in [Analysis.ExtensionRequests]. A run that supplies no answers
+	// names the rule as unmet, as it names a rule that went without the
+	// baseline schema. Only this package's rules read it: an engine owner
+	// cannot declare it, because the host reads the dev database.
+	InputExtensionAssessment
 )
 
 // readsBaseline reports whether an input kind reads the schema state a
@@ -230,6 +242,8 @@ func (i RuleInput) String() string {
 		return "baseline schema"
 	case InputBaselineRefinement:
 		return "baseline schema that refines the statement text"
+	case InputExtensionAssessment:
+		return "extension advisory assessment"
 	case InputStatementText:
 		return "statement text"
 	default:
@@ -424,6 +438,14 @@ type Options struct {
 	// assume nothing. A version with rows was read whether or not it is
 	// listed, and lists no kind of object in full. See [lintext.BaselineRead].
 	BaselineRead []lintext.BaselineRead
+
+	// Extensions carries what the dev database installs for each request of
+	// [Analysis.ExtensionRequests] and what reviewed advisory data says about
+	// it, for the rules that read [InputExtensionAssessment]. Nil analyzes
+	// SQL text alone, which is what every run without a dev database does;
+	// those rules then report nothing and are named in
+	// [Analysis.UnmetInputs].
+	Extensions *ExtensionAssessments
 
 	// Naming is the naming convention the NM rules enforce, normally the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block

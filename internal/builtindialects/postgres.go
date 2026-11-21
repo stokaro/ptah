@@ -118,6 +118,10 @@ func postgres() descriptor.Dialect {
 			OnlineMeasured:   true,
 			TypeRestatements: "pgtype",
 			AtlasAnalyzer:    "PG",
+			// The advisory data reviews PostgreSQL's own contrib modules,
+			// fixed in its server releases, and the dev database's catalog
+			// says what an extension statement installs.
+			ExtensionAdvisories: true,
 			// The read lists every enum, domain, composite and range type,
 			// view, materialized view, trigger and sequence of the schemas it
 			// reads. Lint takes a continuous aggregate, which the read records

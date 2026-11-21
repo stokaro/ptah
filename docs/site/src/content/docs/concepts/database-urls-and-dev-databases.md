@@ -411,11 +411,15 @@ reaches past the dev database:
   without `SET` or `RESET`, role membership, privileges on a role, database,
   schema, language or parameter, CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`, `DROP OWNED`,
-  `REASSIGN OWNED`, and `COMMENT ON` a role, a database, or an extension or
-  schema of the dev database. A server declared disposable lifts all of these
-  except the comment on an extension or a schema, because that server outlives
-  the run. A [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own
-  comment and privileges where its reset returns them.
+  `REASSIGN OWNED`, `COMMENT ON` a role, a database, or an extension or
+  schema of the dev database, and `ALTER EXTENSION ... UPDATE [TO ...]` whose
+  name and version Ptah reads. A server declared disposable lifts all of these
+  except the comment on an extension or a schema and the extension update,
+  because that server outlives the run and its reset keeps them. Replay does
+  not read a `DO` block or a routine body; outside one, any other
+  `ALTER EXTENSION` stays refused. A
+  [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own comment
+  and privileges where its reset returns them.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
@@ -462,7 +466,8 @@ A server Ptah did not start can be as disposable: a CI service container
 the job throws away, or a container the operator runs. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
 `--dev-url` names is the run's own. Replay then runs the statements listed
 above on it, as on a server Ptah provisions, except a comment on an extension
-or a schema of the dev database, and refuses the same rest.
+or a schema of the dev database and an extension update, and refuses the same
+rest.
 
 ```bash
 PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url "$DEV_URL"
@@ -530,7 +535,8 @@ accepts:
 
 - on PostgreSQL, CockroachDB and YugabyteDB, the statements a
   [server Ptah provisions](#a-server-ptah-provisions) accepts except a comment
-  on an extension or a schema of the dev database, and also an external `COPY`,
+  on an extension or a schema of the dev database and an extension update, and
+  also an external `COPY`,
   `dblink` and `IMPORT FOREIGN SCHEMA`;
 - on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements, users,
   roles, `GRANT`, `REVOKE`, loadable functions, other databases and writes to

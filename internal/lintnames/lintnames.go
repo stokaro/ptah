@@ -61,7 +61,8 @@ var categories = []Category{
 		"its rules fire only in that mode, so `--disable locking` leaves them on"},
 	{Name: "rewrite", Summary: "the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent"},
 	{Name: "rollout", Summary: "the change breaks a client or a consumer deployed against the current schema"},
-	{Name: "security", Summary: "the statement weakens access control, or writes a secret or an unquoted value into SQL"},
+	{Name: "security", Summary: "the statement weakens access control, writes a secret or an unquoted value into SQL, " +
+		"or installs an extension a published advisory affects"},
 	{Name: "side-effect", Summary: "the statement resets, ignores or leaves behind something its text does not show; " +
 		"silenced, a migration can succeed and leave the database different from what it says"},
 	{Name: "transaction", Summary: "the statement cannot run, or runs differently, inside the migration's transaction or query"},

@@ -250,8 +250,7 @@ func warn(w io.Writer, targets []targetReport) error {
 			continue
 		}
 		written = append(written, origin.URL)
-		if _, err := fmt.Fprintf(w, "warning: advisory source %s was not used: %s; %s is matched against %s\n",
-			origin.URL, origin.Fallback, target.Inventory.Product, fallbackSnapshot(origin)); err != nil {
+		if _, err := io.WriteString(w, vulnerability.FallbackWarning(origin, target.Inventory.Product)); err != nil {
 			return err
 		}
 	}
@@ -270,27 +269,15 @@ func warn(w io.Writer, targets []targetReport) error {
 	return nil
 }
 
-// fallbackSnapshot names the snapshot a report reads when its advisory
-// source was not used.
-func fallbackSnapshot(origin vulnerability.Origin) string {
-	if origin.Kind == "remote" {
-		return "the cached copy the source confirmed at " + origin.FetchedAt.UTC().Format(originTimeLayout)
-	}
-	return "the snapshot built into this binary"
-}
-
-// originTimeLayout writes when the source confirmed a copy.
-const originTimeLayout = "2006-01-02 15:04 UTC"
-
 // originLine says where a report's snapshot came from, or nothing when the
 // report read none.
 func originLine(origin vulnerability.Origin) string {
 	switch {
 	case origin.Kind == "remote" && origin.Fallback != "":
 		return fmt.Sprintf("remote %s (cached copy confirmed by the source at %s; unconfirmed, because the source was not used: %s)",
-			origin.URL, origin.FetchedAt.UTC().Format(originTimeLayout), origin.Fallback)
+			origin.URL, origin.FetchedAt.UTC().Format(vulnerability.OriginTimeLayout), origin.Fallback)
 	case origin.Kind == "remote":
-		return fmt.Sprintf("remote %s (confirmed by the source at %s; %s)", origin.URL, origin.FetchedAt.UTC().Format(originTimeLayout), origin.Cache)
+		return fmt.Sprintf("remote %s (confirmed by the source at %s; %s)", origin.URL, origin.FetchedAt.UTC().Format(vulnerability.OriginTimeLayout), origin.Cache)
 	case origin.Kind == "bundled" && origin.Fallback != "":
 		return fmt.Sprintf("bundled, because %s was not used: %s", origin.URL, origin.Fallback)
 	case origin.Kind == "file":

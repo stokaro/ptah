@@ -113,6 +113,8 @@ func ruleInputUnmet(rule Rule, file *File, opts Options) bool {
 		return file.IsUp && file.baseline.Unread() && ruleWantsBaseline(rule, file, opts)
 	case InputRoutineBody:
 		return ruleWantsRoutineBody(rule, file, opts)
+	case InputExtensionAssessment:
+		return file.extensions == nil && ruleRunsOnFile(rule, file, opts) && len(extensionStatementIndexes(file)) != 0
 	case InputStatementText:
 		return false
 	default:

@@ -4415,6 +4415,19 @@ it lists in full. Only a listed kind can show an object absent, which is what
 lets an `IF EXISTS` drop of a missing type, view or trigger count nothing and
 report nothing; a kind left unlisted is judged as if the object were there.
 
+`Analysis.ExtensionRequests` lists the extensions the up files create or
+update, each with the decoded name, the version it names and whether it
+cascades, for the rules that match what a dev database installs against
+reviewed advisory data. `Analysis.ExtensionVersions` names the versions whose
+files make them. A caller with a dev database answers them through
+`Options.Extensions` (`ExtensionAssessments`), with `Held` saying which
+extensions the database held when each of those versions started, and
+analyzes again. A version `Held` does not name is judged as holding nothing.
+Without answers those rules report nothing and are named in
+`Analysis.UnmetInputs`. With answers, an extension statement the analysis
+cannot read is reported as unassessed with the reason; a run whose statements
+none could be read passes answers with no entries.
+
 Atlas-ignored files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native
 Ptah behavior is the zero-value default.

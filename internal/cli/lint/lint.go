@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/internal/advisorysource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -42,6 +43,9 @@ const (
 	gitDirFlag    = "git-dir"
 	attachFlag    = "attach"
 	plainHTTPFlag = "plain-http"
+	// advisorySourceFlag selects the advisory data the extension rules read,
+	// as `ptah db vulnerabilities` spells the same choice.
+	advisorySourceFlag = "advisory-source"
 )
 
 var errLintFindings = errors.New("lint findings exceed the failure threshold")
@@ -67,6 +71,7 @@ func NewLintCommand() *cobra.Command {
 	var attach bool
 	var plainHTTP bool
 	var trustReplaySQL bool
+	var advisorySource string
 
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -104,6 +109,7 @@ Rules can be disabled by name or category via --disable or .ptah-lint.yaml.`,
 				latest:         latest,
 				attach:         attach,
 				plainHTTP:      plainHTTP,
+				advisorySource: advisorySource,
 				positional:     args,
 			})
 		},
@@ -130,6 +136,10 @@ Rules can be disabled by name or category via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().BoolVar(&attach, attachFlag, false, "Attach the canonical JSON lint report to an OCI migration artifact")
 	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &plainHTTP)
 	dbcli.RegisterTrustReplaySQLFlag(cmd.Flags(), &trustReplaySQL)
+	cmd.Flags().StringVar(&advisorySource, advisorySourceFlag, advisorysource.Repository,
+		"Where the reviewed advisory snapshots that the extensions a migration installs on the dev database are matched against come from: "+
+			"repository, the files at "+advisorysource.DefaultLocation+", fetched over HTTPS by engine file name only; "+
+			"the https URL of a mirror serving the same files; or bundled, for the snapshots built into this binary")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -153,6 +163,7 @@ type runOptions struct {
 	latest         uint
 	attach         bool
 	plainHTTP      bool
+	advisorySource string
 	positional     []string
 }
 
@@ -172,6 +183,10 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	if err := migrationlintreport.ValidateFailOn(opts.failOn); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, failOnError, err.Error())
+	}
+	advisoryLocation, err := advisorysource.ParseLocation(opts.advisorySource)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, "--"+advisorySourceFlag+": "+err.Error())
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
 	if err != nil {
@@ -214,6 +229,13 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	reportOpts.DevServerDisposable = devServerDisposable
+	// The extension rules match what the dev database installs against the
+	// advisory data the vulnerability scan reads, asked for only when a
+	// migration installs an extension. A run that names the source, with the
+	// flag or PTAH_ADVISORY_SOURCE, reports an extension the source did not
+	// answer for as unassessed; a default run reads the fallback.
+	reportOpts.Advisories = advisorysource.New(advisorysource.Config{Location: advisoryLocation, CacheDir: advisorysource.DefaultCacheDir()})
+	reportOpts.RequireAdvisorySource = cmd.Flags().Changed(advisorySourceFlag)
 	reportOpts.TransactionOwner = runner.TransactionOwner()
 	// A run over Ptah's revision table refuses an Atlas version that is not a
 	// number, which the directory's layout does not say either.
@@ -279,6 +301,9 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
 	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
+	if err := migrationlintreport.WriteAdvisorySourceNotice(cmd.ErrOrStderr(), report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
 	if report.Failed {
