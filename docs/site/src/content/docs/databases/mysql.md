@@ -1445,6 +1445,12 @@ column at a time. `SELECT`, `INSERT`, `UPDATE` and `REFERENCES` take a column
 list; any other privilege with one is refused by name before anything runs,
 because the server answers it with a syntax error.
 
+A declared `REVOKE ALL ON t1` takes every privilege the role holds on `t1` and
+on its columns, whatever the server calls it: `ALTER`, `CREATE`, `DROP`,
+`INDEX`, `CREATE VIEW` and `SHOW VIEW`, and `DELETE HISTORY` on MariaDB, as well
+as the privileges PostgreSQL also has. A grant after the revoke in the file is
+what the role keeps.
+
 On MySQL and MariaDB a revoke reaches past the row it names. `REVOKE SELECT ON
 t1` takes every column `SELECT` the role holds on `t1`, and `REVOKE GRANT OPTION
 ON t1` takes the grant option of every privilege the role holds on `t1`,

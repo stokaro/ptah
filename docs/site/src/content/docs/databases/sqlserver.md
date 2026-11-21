@@ -619,6 +619,12 @@ What SQL Server itself refuses is refused as well: `IF NOT EXISTS`,
 event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
 `Msg 195`.
 
+## Revoking every permission
+
+`REVOKE ALL ON t FROM r` takes every permission the role holds on `t` and its
+columns. SQL Server's own `REVOKE ALL` leaves `ALTER`, `CONTROL` and
+`VIEW DEFINITION`, through which a member still reads and drops the table.
+
 ## Permissions on columns
 
 `GRANT SELECT (id, name) ON dbo.t TO reader` limits a permission to columns

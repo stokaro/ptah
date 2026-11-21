@@ -18,16 +18,9 @@ func expandGrantedAll(privileges []string, objectType string) []string {
 	if !routineObjectTypes[strings.ToUpper(objectType)] {
 		return privileges
 	}
-	return expandAll(privileges, objectType)
-}
-
-// expandAll replaces ALL with the privileges it names on objectType. A REVOKE
-// expands every kind, because asserting the absence of a privilege the server
-// does not have is harmless.
-func expandAll(privileges []string, objectType string) []string {
 	expanded := make([]string, 0, len(privileges))
 	for _, privilege := range privileges {
-		if strings.EqualFold(privilege, "ALL") {
+		if strings.EqualFold(privilege, allPrivileges) {
 			expanded = append(expanded, pgprivilege.All(objectType)...)
 			continue
 		}
@@ -35,6 +28,10 @@ func expandAll(privileges []string, objectType string) []string {
 	}
 	return expanded
 }
+
+// allPrivileges is the keyword GRANT and REVOKE spell for every privilege on
+// their object.
+const allPrivileges = "ALL"
 
 // routineObjectTypes are the target kinds that name a function or procedure.
 var routineObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "ROUTINE": true}
@@ -122,31 +119,65 @@ func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, s
 // only about a grant this file made: it has no spelling for "held, but without
 // the option" on its own, so that form is refused when no earlier GRANT here
 // carries the privilege.
+//
+// A REVOKE ALL is kept as ALL, the absence of every privilege on the object,
+// on every kind of object and for every source platform. Spelled as a list,
+// it would name the privileges ALL covers on one server and miss the rest
+// elsewhere: written as PostgreSQL's table list, a REVOKE ALL on MySQL takes
+// SELECT and TRIGGER and leaves ALTER, DROP and INDEX held, measured on MySQL
+// 8.4.13. The comparison matches it against whatever the database reports on
+// the object, so the list is never needed.
 func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode, sourcePlatform string) error {
 	revoked := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
 	setGrantTarget(&revoked, node.ObjectType, node.ObjectName, node.Arguments, sourcePlatform)
 	revoked.Columns = normalizeColumns(sourcePlatform, node.Columns)
 	revoked.Canonicalize()
 	target := revoked.TargetKey()
-	privileges := expandAll(node.Privileges, node.ObjectType)
+	privileges := make([]string, 0, len(node.Privileges))
+	for _, privilege := range node.Privileges {
+		privileges = append(privileges, strings.ToUpper(strings.TrimSpace(privilege)))
+	}
 	if err := refuseColumnRevokeUnderTableGrant(database, revoked, privileges); err != nil {
 		return err
 	}
-	if privilegefold.HeldAsAll(database.Grants, revoked.Role, target) {
+	revokesAll := slices.Contains(privileges, allPrivileges)
+	if !revokesAll && privilegefold.HeldAsAll(database.Grants, revoked.Role, target) {
 		return fmt.Errorf(
 			"REVOKE ON %s FROM %s follows a GRANT ALL on it, which this schema keeps as ALL rather than as the "+
 				"privileges ALL names on a given server, so it cannot take one privilege out of it; "+
 				"name the privileges in the GRANT", target, revoked.Role)
 	}
 	if node.GrantOptionFor {
+		if revokesAll {
+			privileges = heldPrivileges(database.Grants, revoked.Role, target)
+		}
 		return revokeGrantOption(database, revoked.Role, target, privileges)
 	}
-	revoked.Privileges = make([]string, 0, len(privileges))
-	for _, privilege := range privileges {
-		revoked.Privileges = append(revoked.Privileges, strings.ToUpper(strings.TrimSpace(privilege)))
-	}
+	revoked.Privileges = privileges
 	privilegefold.Merge(database, &schemamodel.Database{RevokedGrants: []schemamodel.Grant{revoked}})
 	return nil
+}
+
+// heldPrivileges is every privilege an earlier grant in this file gives role on
+// target, in the order the file grants them, which is what REVOKE GRANT OPTION
+// FOR ALL names. It is ALL alone when the file grants nothing there, so the
+// refusal for a grant this file does not make names what the statement says.
+func heldPrivileges(grants []schemamodel.Grant, role, target string) []string {
+	var held []string
+	for _, grant := range grants {
+		if grant.Role != role || grant.TargetKey() != target {
+			continue
+		}
+		for _, privilege := range grant.Privileges {
+			if !slices.Contains(held, privilege) {
+				held = append(held, privilege)
+			}
+		}
+	}
+	if len(held) == 0 {
+		return []string{allPrivileges}
+	}
+	return held
 }
 
 // revokeGrantOption clears WITH GRANT OPTION from privileges an earlier GRANT
@@ -186,13 +217,17 @@ func refuseColumnRevokeUnderTableGrant(database *schemamodel.Database, revoked s
 		return nil
 	}
 	for _, privilege := range privileges {
-		privilege = strings.ToUpper(strings.TrimSpace(privilege))
-		if privilegefold.HeldOnTable(database.Grants, revoked.Role, revoked.OnTable, privilege) {
-			return fmt.Errorf(
-				"REVOKE %s (%s) ON %s FROM %s follows a GRANT of %s on the whole table, which covers every column, "+
-					"so revoking it on columns takes nothing away; grant it on the columns that keep it instead",
-				privilege, strings.Join(revoked.Columns, ", "), revoked.OnTable, revoked.Role, privilege)
+		if !privilegefold.HeldOnTable(database.Grants, revoked.Role, revoked.OnTable, privilege) {
+			continue
 		}
+		granted := "a GRANT of " + privilege
+		if privilege == allPrivileges {
+			granted = "a GRANT"
+		}
+		return fmt.Errorf(
+			"REVOKE %s (%s) ON %s FROM %s follows %s on the whole table, which covers every column, "+
+				"so revoking it on columns takes nothing away; grant it on the columns that keep it instead",
+			privilege, strings.Join(revoked.Columns, ", "), revoked.OnTable, revoked.Role, granted)
 	}
 	return nil
 }

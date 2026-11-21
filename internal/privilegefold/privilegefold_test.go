@@ -48,6 +48,26 @@ func TestMerge_HappyPath(t *testing.T) {
 			wantRevoked: []schemamodel.Grant{grant("other", "t", "SELECT")},
 		},
 		{
+			name: "a later revoke of ALL takes every privilege of its grantee on its object and its columns",
+			dst: schemamodel.Database{Grants: []schemamodel.Grant{
+				grant("r", "t", "SELECT", "ALTER"),
+				{Role: "r", OnTable: "t", Columns: []string{"a"}, Privileges: []string{"UPDATE"}},
+				grant("r", "t", "ALL"),
+				grant("other", "t", "SELECT"),
+				grant("r", "u", "SELECT"),
+			}},
+			src:         schemamodel.Database{RevokedGrants: []schemamodel.Grant{grant("r", "t", "ALL")}},
+			wantGrants:  []schemamodel.Grant{grant("other", "t", "SELECT"), grant("r", "u", "SELECT")},
+			wantRevoked: []schemamodel.Grant{grant("r", "t", "ALL")},
+		},
+		{
+			name:        "a later grant of one privilege leaves a revoked ALL in place",
+			dst:         schemamodel.Database{RevokedGrants: []schemamodel.Grant{grant("r", "t", "ALL")}},
+			src:         schemamodel.Database{Grants: []schemamodel.Grant{grant("r", "t", "SELECT")}},
+			wantGrants:  []schemamodel.Grant{grant("r", "t", "SELECT")},
+			wantRevoked: []schemamodel.Grant{grant("r", "t", "ALL")},
+		},
+		{
 			name:        "a revoke is recorded once however often it is repeated",
 			dst:         schemamodel.Database{RevokedGrants: []schemamodel.Grant{grant("r", "t", "SELECT")}},
 			src:         schemamodel.Database{RevokedGrants: []schemamodel.Grant{grant("r", "t", "SELECT")}},

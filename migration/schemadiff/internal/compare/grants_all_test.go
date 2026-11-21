@@ -1,6 +1,7 @@
 package compare_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -127,6 +128,43 @@ func TestGrants_All(t *testing.T) {
 				{Role: "app", Privilege: "MAINTAIN", ObjectType: "TABLE", ObjectName: "public.t"},
 				{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "public.t"},
 			},
+		},
+		{
+			name: "a revoked ALL removes privileges no PostgreSQL table privilege is called",
+			desired: schemamodel.Database{RevokedGrants: []schemamodel.Grant{{
+				Role: "app", Privileges: []string{"ALL"}, OnTable: "t",
+			}}},
+			database: tableRows("app", false, "SELECT", "ALTER", "DROP", "INDEX", "CONTROL"),
+			wantRemoved: []plannedGrant{
+				{Role: "app", Privilege: "ALTER", ObjectType: "TABLE", ObjectName: "public.t"},
+				{Role: "app", Privilege: "CONTROL", ObjectType: "TABLE", ObjectName: "public.t"},
+				{Role: "app", Privilege: "DROP", ObjectType: "TABLE", ObjectName: "public.t"},
+				{Role: "app", Privilege: "INDEX", ObjectType: "TABLE", ObjectName: "public.t"},
+				{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "public.t"},
+			},
+		},
+		{
+			name: "a revoked ALL removes the column privileges of the table",
+			desired: schemamodel.Database{RevokedGrants: []schemamodel.Grant{{
+				Role: "app", Privileges: []string{"ALL"}, OnTable: "t",
+			}}},
+			database: []catalog.Grant{
+				{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "public", ObjectName: "t", Column: "a"},
+			},
+			wantRemoved: []plannedGrant{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "public.t"}},
+		},
+		{
+			name: "a revoked ALL keeps what the schema grants and what other roles and objects hold",
+			desired: schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+			database: slices.Concat(
+				tableRows("app", false, "SELECT", "ALTER"),
+				tableRows("other", false, "ALTER"),
+				[]catalog.Grant{{Role: "app", Privilege: "ALTER", ObjectType: "TABLE", Schema: "public", ObjectName: "u"}},
+			),
+			wantRemoved: []plannedGrant{{Role: "app", Privilege: "ALTER", ObjectType: "TABLE", ObjectName: "public.t"}},
 		},
 		{
 			name: "every table privilege revoked on a created table is one REVOKE ALL",
