@@ -79,8 +79,9 @@ func CloneMemberOptions(options map[string]RoleMembershipOptions) map[string]Rol
 // the options map is nil when no entry states one.
 //
 // A malformed entry, an option name other than admin, inherit and set, an
-// option stated twice, and a group written twice with different options are
-// refused, each naming the entry.
+// option value other than exactly true or false, an option stated twice, and a
+// group written twice with different options are refused, each naming the
+// entry.
 func ParseMemberOf(entries []string) ([]string, map[string]RoleMembershipOptions, error) {
 	var groups []string
 	var options map[string]RoleMembershipOptions
@@ -135,12 +136,14 @@ func parseMemberOfEntry(entry string) (string, RoleMembershipOptions, error) {
 		name = strings.ToLower(strings.TrimSpace(name))
 		enabled := true
 		if hasValue {
-			parsed, err := strconv.ParseBool(strings.TrimSpace(value))
-			if err != nil {
+			switch written := strings.TrimSpace(value); written {
+			case "true":
+			case "false":
+				enabled = false
+			default:
 				return "", RoleMembershipOptions{}, fmt.Errorf(
-					"member_of entry %q: option %s takes true or false, got %q", entry, name, strings.TrimSpace(value))
+					"member_of entry %q: option %s takes true or false, got %q", entry, name, written)
 			}
-			enabled = parsed
 		}
 		var target **bool
 		switch name {

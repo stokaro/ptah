@@ -128,7 +128,8 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			result, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.DeepEquals, tt.expected)
 		})
 	}
@@ -423,28 +424,26 @@ func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			result, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			c.Assert(err, qt.IsNil)
 			c.Assert(result[tt.attr], qt.Equals, tt.expected)
 		})
 	}
 }
 
-func TestParseKeyValueComment_IgnoreNonBooleans(t *testing.T) {
+// A stray word after the attributes reaches validation, which refuses it as
+// an unknown attribute. A word of a directive name is no exception: table is
+// an attribute of other directives, not of a field.
+func TestParseKeyValueComment_StrayWordsReachValidation(t *testing.T) {
 	c := qt.New(t)
 
-	// Test that non-boolean words are not treated as booleans
 	comment := `//ptah:schema:field name="test" type="VARCHAR" ptah schema field table`
-	result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(comment)
+	result, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(comment)
 
-	// These should not be treated as boolean attributes
-	c.Assert(result["ptah"], qt.Equals, "")
-	c.Assert(result["schema"], qt.Equals, "")
-	c.Assert(result["field"], qt.Equals, "")
-	c.Assert(result["table"], qt.Equals, "")
-
-	// These should be parsed correctly
-	c.Assert(result["name"], qt.Equals, "test")
-	c.Assert(result["type"], qt.Equals, "VARCHAR")
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, map[string]string{
+		"name": "test", "type": "VARCHAR", "ptah": "true", "schema": "true", "field": "true", "table": "true",
+	})
 }
 
 func TestParseKeyValueComment_PrecedenceRules(t *testing.T) {
@@ -452,7 +451,8 @@ func TestParseKeyValueComment_PrecedenceRules(t *testing.T) {
 
 	// Test that explicit key=value takes precedence over standalone boolean
 	comment := `//ptah:schema:field not_null not_null="false"`
-	result := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(comment)
+	result, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(comment)
+	c.Assert(err, qt.IsNil)
 
 	// The explicit not_null="false" should take precedence over standalone not_null
 	c.Assert(result["not_null"], qt.Equals, "false")
@@ -825,7 +825,8 @@ func TestParseRLSPolicyComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			kv, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			c.Assert(err, qt.IsNil)
 			policy := schemamodel.RLSPolicy{
 				StructName:          "TestStruct",
 				Name:                kv["name"],
@@ -871,7 +872,8 @@ func TestParseRLSEnableComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			kv, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(tt.comment)
+			c.Assert(err, qt.IsNil)
 			rlsEnabled := schemamodel.RLSEnabledTable{
 				StructName: "TestStruct",
 				Table:      kv["table"],

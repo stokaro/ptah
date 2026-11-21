@@ -54,8 +54,8 @@ func Common() Catalog {
 // for engines the runtime does not serve; their directives follow set's. It
 // refuses an unselected set, an owner directive that takes the name of one of
 // the frontend's own or of another owner's, an owner attribute the directive
-// declares already, and owner attributes or target scopes on a directive that
-// is not the frontend's.
+// declares already, owner attributes or target scopes on a directive that is
+// not the frontend's, and an attribute whose Value and Boolean disagree.
 func NewCatalog(set annotation.Set, more ...annotation.Set) (Catalog, error) {
 	sets := append([]annotation.Set{set}, more...)
 	for _, each := range sets {
@@ -94,7 +94,33 @@ func NewCatalog(set annotation.Set, more ...annotation.Set) (Catalog, error) {
 			joined = append(joined, directive)
 		}
 	}
+	for _, directive := range joined {
+		for _, attribute := range directive.Attributes {
+			if err := checkBooleanDeclaration(directive.Name, attribute); err != nil {
+				return Catalog{}, err
+			}
+		}
+	}
 	return Catalog{directives: joined}, nil
+}
+
+// checkBooleanDeclaration refuses an attribute whose value is a boolean and
+// that is not declared Boolean, and one declared Boolean whose value is not a
+// boolean. The parser reads a bare word as true only for an attribute declared
+// Boolean and refuses one for any other: a boolean declared without it would
+// refuse the bare form every other boolean takes, and a value of another
+// shape declared with it would read as "true".
+func checkBooleanDeclaration(directive string, attribute Attribute) error {
+	holdsBoolean := attribute.Value == valueBoolean
+	if holdsBoolean && !attribute.Boolean {
+		return fmt.Errorf("attribute %q of %q holds a boolean and is not declared Boolean; every boolean attribute may be written bare",
+			attribute.Name, directive)
+	}
+	if attribute.Boolean && !holdsBoolean {
+		return fmt.Errorf("attribute %q of %q is declared Boolean and holds a %q value; only a boolean attribute may be written bare",
+			attribute.Name, directive, attribute.Value)
+	}
+	return nil
 }
 
 // checkSet refuses an unselected set, and one whose owners add attributes to,
@@ -213,6 +239,21 @@ func (c Catalog) MissingRequiredAttributes(directive string, values map[string]s
 	return out
 }
 
+// Attribute returns the declaration of attribute name on directive. It
+// reports false for a name the directive does not declare, a
+// platform.<dialect>.<key> override among them.
+func (c Catalog) Attribute(directive, name string) (Attribute, bool) {
+	spec, ok := c.Lookup(directive)
+	if !ok {
+		return Attribute{}, false
+	}
+	i := slices.IndexFunc(spec.Attributes, func(attr Attribute) bool { return attr.Name == name })
+	if i < 0 {
+		return Attribute{}, false
+	}
+	return spec.Attributes[i], true
+}
+
 // AllowsAttribute reports whether key is valid for directive.
 func (c Catalog) AllowsAttribute(directive, key string) bool {
 	spec, ok := c.Lookup(directive)
@@ -324,34 +365,6 @@ func (c Catalog) AllSensitiveAttributes() map[string]bool {
 	return sensitive
 }
 
-// BooleanAttributes returns the attributes accepted as bare booleans.
-func (c Catalog) BooleanAttributes() map[string]bool {
-	out := make(map[string]bool)
-	for _, directive := range c.directives {
-		for _, attr := range directive.Attributes {
-			if attr.Boolean {
-				out[attr.Name] = true
-			}
-		}
-	}
-	return out
-}
-
-// DirectiveTokens returns every directive path segment that must not be
-// auto-promoted to a bare boolean attribute by annotation parsers.
-func (c Catalog) DirectiveTokens() map[string]bool {
-	out := map[string]bool{
-		"ptah":   true,
-		"schema": true,
-	}
-	for _, directive := range c.directives {
-		for part := range strings.SplitSeq(directive.Name, ":") {
-			out[part] = true
-		}
-	}
-	return out
-}
-
 // Markdown returns concise documentation for hover cards.
 func Markdown(directive Directive) string {
 	var b strings.Builder
@@ -428,7 +441,7 @@ var directives = []Directive{
 			attr("unique_expr", "Uniqueness over an expression. Not implemented: rendering refuses a column that declares it.", valueSQL, false, false),
 			attr("generated", "Generated column expression.", valueSQL, false, false),
 			attr("generated_kind", "Generated column kind: STORED or VIRTUAL, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL.", valueString, false, false),
-			attr("stored", "Shortcut controlling generated column storage.", valueBoolean, false, false),
+			attr("stored", "Shortcut controlling generated column storage.", valueBoolean, false, true),
 			attr("default", "Literal column default.", valueString, false, false),
 			attr("default_expr", "SQL default expression.", valueSQL, false, false),
 			attr("foreign", "Foreign key reference in table(column) form.", valueString, false, false),
@@ -561,7 +574,7 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Extension name.", valueString, false, false),
 			attr("schema", "PostgreSQL installation schema.", valueString, false, false),
-			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, false),
+			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, true),
 			attr("version", "Extension version.", valueString, false, false),
 			attr("comment", "Extension comment.", valueString, false, false),
 			dialectsAttr(),
@@ -626,9 +639,9 @@ var directives = []Directive{
 			attr("minvalue", "MINVALUE bound.", valueString, false, false),
 			attr("maxvalue", "MAXVALUE bound.", valueString, false, false),
 			attr("cache", "CACHE size.", valueString, false, false),
-			attr("cycle", "Enables CYCLE wrap-around.", valueBoolean, false, false),
+			attr("cycle", "Enables CYCLE wrap-around.", valueBoolean, false, true),
 			attr("owned_by", "Owning table.column association (OWNED BY).", valueString, false, false),
-			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, false),
+			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, true),
 			attr("comment", "Sequence comment.", valueString, false, false),
 			dialectsAttr(),
 		},
@@ -641,7 +654,7 @@ var directives = []Directive{
 			attr("name", "Domain name.", valueString, true, false),
 			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("type", "Underlying base data type.", valueString, true, false),
-			attr("not_null", "Marks the domain NOT NULL.", valueBoolean, false, false),
+			attr("not_null", "Marks the domain NOT NULL.", valueBoolean, false, true),
 			attr("default", "Literal DEFAULT value.", valueString, false, false),
 			attr("default_expr", "DEFAULT expression.", valueSQL, false, false),
 			attr("check", "CHECK constraint expression (uses VALUE).", valueSQL, false, false),
@@ -738,7 +751,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeFile, ScopeStruct},
 		Attributes: []Attribute{
 			attr("table", "Target table.", valueString, false, false),
-			attr("force", "Apply the table's policies to its owner too.", valueBoolean, false, false),
+			attr("force", "Apply the table's policies to its owner too.", valueBoolean, false, true),
 			attr("comment", "RLS enablement comment.", valueString, false, false),
 			dialectsAttr(),
 		},
@@ -749,18 +762,18 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("name", "Role name.", valueString, false, false),
-			attr("login", "Creates the role with LOGIN.", valueBoolean, false, false),
+			attr("login", "Creates the role with LOGIN.", valueBoolean, false, true),
 			sensitiveAttr("password", "Role password.", valueString, false, false),
-			attr("superuser", "Creates the role as SUPERUSER.", valueBoolean, false, false),
-			attr("createdb", "Allows database creation.", valueBoolean, false, false),
-			alias("create_db", "createdb", "Alias for createdb.", valueBoolean, false),
-			attr("createrole", "Allows role creation.", valueBoolean, false, false),
-			alias("create_role", "createrole", "Alias for createrole.", valueBoolean, false),
-			attr("inherit", "Controls role inheritance; defaults to true.", valueBoolean, false, false),
-			attr("replication", "Allows replication.", valueBoolean, false, false),
+			attr("superuser", "Creates the role as SUPERUSER.", valueBoolean, false, true),
+			attr("createdb", "Allows database creation.", valueBoolean, false, true),
+			alias("create_db", "createdb", "Alias for createdb.", valueBoolean, true),
+			attr("createrole", "Allows role creation.", valueBoolean, false, true),
+			alias("create_role", "createrole", "Alias for createrole.", valueBoolean, true),
+			attr("inherit", "Controls role inheritance; defaults to true.", valueBoolean, false, true),
+			attr("replication", "Allows replication.", valueBoolean, false, true),
 			attr("comment", "Role comment.", valueString, false, false),
 			attr("group", "Declares a group, which never logs in and has members. YDB only.",
-				valueBoolean, false, false),
+				valueBoolean, false, true),
 			attr("member_of", "Comma-separated groups the role is a member of. A group may carry membership options "+
 				"in parentheses, such as readers(admin;inherit=false;set=true). A role that states the attribute, even "+
 				"empty, loses a membership the server holds in another declared role and the list leaves out; a role "+
@@ -779,7 +792,7 @@ var directives = []Directive{
 			attr("on_table", "Target table.", valueString, false, false),
 			attr("on_schema", "Target schema.", valueString, false, false),
 			attr("on_sequence", "Target sequence.", valueString, false, false),
-			attr("on_database", "Targets the database itself. YDB only.", valueBoolean, false, false),
+			attr("on_database", "Targets the database itself. YDB only.", valueBoolean, false, true),
 			attr("on_function", "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
 				valueString, false, false),
 			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",
@@ -787,8 +800,8 @@ var directives = []Directive{
 		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
 				"state,decided_at. PostgreSQL only.", valueList, false, false),
-			attr("with_option", "Adds WITH GRANT OPTION where supported.", valueBoolean, false, false),
-			alias("grant_option", "with_option", "Alias for with_option.", valueBoolean, false),
+			attr("with_option", "Adds WITH GRANT OPTION where supported.", valueBoolean, false, true),
+			alias("grant_option", "with_option", "Alias for with_option.", valueBoolean, true),
 			attr("comment", "Grant comment.", valueString, false, false),
 			dialectsAttr(),
 		}),
@@ -805,7 +818,7 @@ var directives = []Directive{
 			attr("on_table", "Target table.", valueString, false, false),
 			attr("on_schema", "Target schema.", valueString, false, false),
 			attr("on_sequence", "Target sequence.", valueString, false, false),
-			attr("on_database", "Targets the database itself. YDB only.", valueBoolean, false, false),
+			attr("on_database", "Targets the database itself. YDB only.", valueBoolean, false, true),
 			attr("on_function", "Target function with its argument types, such as purge(uuid). PostgreSQL only.",
 				valueString, false, false),
 			attr("on_procedure", "Target procedure with its argument types, such as archive(uuid). PostgreSQL only.",

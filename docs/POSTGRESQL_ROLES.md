@@ -49,6 +49,10 @@ The following attributes are supported for PostgreSQL roles:
 See [Role Settings](#role-settings) for what Ptah manages and what it leaves
 alone.
 
+A boolean attribute takes exactly `true` or `false`, and its bare name means
+`true`: `login createdb` is `login="true" createdb="true"`. Any other value,
+`TRUE`, `yes` or an empty one included, is refused.
+
 ## Grant Definition
 
 Define table and schema privileges using the `//ptah:schema:grant` annotation:
@@ -72,7 +76,8 @@ type AccessControl struct{}
 - `on_table`: Target table for table privileges
 - `on_schema`: Target schema for schema privileges such as `USAGE`
 - `on_sequence`: Target sequence for sequence privileges (`USAGE`, `SELECT`, `UPDATE`)
-- `with_option`: Whether to emit `WITH GRANT OPTION` (default: `false`)
+- `with_option`: Whether to emit `WITH GRANT OPTION` (default: `false`); a
+  bare `with_option` means `true`
 - `comment`: Optional comment describing the grant
 
 `on_table`, `on_schema`, and `on_sequence` are mutually exclusive. Table grants are compared at the individual privilege level, so `privilege="SELECT,INSERT"` round-trips with PostgreSQL introspection, which reports one row per privilege.

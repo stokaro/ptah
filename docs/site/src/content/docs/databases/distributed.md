@@ -267,6 +267,8 @@ server rewrites the value it stores:
 - **Zero and negative knob values are refused.** The server rejects a negative
   value and accepts zero while storing the parameter nowhere at all, so neither
   can ever read back as declared. Omit the property to keep the engine default.
+- **A boolean parameter takes exactly `true` or `false`.** `TRUE`, `1` or a
+  value with a space around it is refused rather than read as true.
 - **A `false` boolean normalizes to "not declared"**, because on the server
   those are the same state: `ttl_pause = false` is stored nowhere, and setting
   it erases an existing `true` exactly as a reset does.

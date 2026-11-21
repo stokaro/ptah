@@ -7,7 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
+	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/referentialaction"
 	"ptah.run/migration/generator"
 )
 
@@ -181,12 +184,19 @@ func readFKReferentialActions(ctx context.Context, conn *dbschema.DatabaseConnec
 	return updateRule, deleteRule, nil
 }
 
-// normalizeReferentialAction maps RESTRICT to NO ACTION on the MySQL family,
-// where the two are semantically identical and interchangeable in server
-// reporting (mirrors the comparator's dialect-aware normalization).
+// restrictIsNoAction reports, per dialect, that its server treats RESTRICT
+// and NO ACTION alike, as the comparison reads it.
+var restrictIsNoAction = descriptortable.New(func(described descriptor.Dialect) bool {
+	return described.Comparison.RestrictIsNoAction
+})
+
+// normalizeReferentialAction spells action as the renderer and the comparison
+// do, and maps RESTRICT to NO ACTION where the dialect's server treats the two
+// alike and reports either: the MySQL family.
 func normalizeReferentialAction(dialect, action string) string {
-	if (dialect == "mysql" || dialect == "mariadb") && strings.EqualFold(action, "RESTRICT") {
+	spelled := referentialaction.Spelling(action)
+	if spelled == "RESTRICT" && restrictIsNoAction.Get(dialect) {
 		return "NO ACTION"
 	}
-	return strings.ToUpper(action)
+	return spelled
 }

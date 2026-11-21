@@ -64,13 +64,13 @@ func TestParseSource_NullsDistinct_FailurePath(t *testing.T) {
 			name: "a constraint value in another case",
 			source: "package test\n\n" +
 				`//ptah:schema:constraint name="u" type="UNIQUE" columns="email" nulls_distinct="TRUE"` + "\ntype T struct{}\n",
-			want: `(?s).*nulls_distinct="TRUE" is not a boolean; write true or false.*`,
+			want: `(?s).*invalid "nulls_distinct" value "TRUE" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name: "an empty constraint value",
 			source: "package test\n\n" +
 				`//ptah:schema:constraint name="u" type="UNIQUE" columns="email" nulls_distinct=""` + "\ntype T struct{}\n",
-			want: `(?s).*nulls_distinct="" is not a boolean; write true or false.*`,
+			want: `(?s).*invalid "nulls_distinct" value "" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name: "an index value that is not a boolean",
@@ -78,7 +78,7 @@ func TestParseSource_NullsDistinct_FailurePath(t *testing.T) {
 				"\t//ptah:schema:field name=\"email\" type=\"TEXT\"\n" +
 				"\t//ptah:schema:index name=\"users_email_idx\" fields=\"email\" unique nulls_distinct=\"no\"\n" +
 				"\tEmail string\n}\n",
-			want: `(?s).*nulls_distinct="no" is not a boolean; write true or false.*`,
+			want: `(?s).*invalid "nulls_distinct" value "no" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 	}
 	for _, test := range tests {

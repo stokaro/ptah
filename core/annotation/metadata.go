@@ -45,13 +45,18 @@ type Attribute struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	// Value names the value's shape for documentation and the editor, such
-	// as "string" or "boolean".
+	// as "string" or "boolean". A "boolean" attribute must also set Boolean;
+	// the catalog refuses one that does not.
 	Value    string `json:"value"`
 	Required bool   `json:"required,omitempty"`
 	// AllowEmpty lets a required attribute hold an empty or whitespace-only
 	// string. The attribute must still be present.
 	AllowEmpty bool `json:"allow_empty,omitempty"`
-	// Boolean marks an attribute that may be written bare, meaning true.
+	// Boolean marks a boolean attribute, which may be written bare, meaning
+	// true, and whose written value is exactly true or false; the Go
+	// annotation parser refuses any other. Value must be "boolean", and the
+	// catalog refuses Boolean on any other. The parser refuses a bare word
+	// naming an attribute without Boolean, which takes a value.
 	Boolean bool `json:"boolean,omitempty"`
 	// AliasFor names the attribute this one is another spelling of.
 	AliasFor string `json:"alias_for,omitempty"`

@@ -23,8 +23,7 @@ func decode(c *qt.C, properties map[string]string) ([]schemaext.Value, error) {
 }
 
 // TestPropertyService_DecodeProperties_HappyPath reads the two platform
-// properties: `true` turns an option on, and `false` and an empty value leave
-// it off.
+// properties: `true` turns an option on, and `false` leaves it off.
 func TestPropertyService_DecodeProperties_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -35,7 +34,6 @@ func TestPropertyService_DecodeProperties_HappyPath(t *testing.T) {
 			want: sqlitetable.Options{Strict: true, WithoutRowID: true}},
 		{name: "one on", properties: map[string]string{"without_rowid": "true"}, want: sqlitetable.Options{WithoutRowID: true}},
 		{name: "false is off", properties: map[string]string{"strict": "false", "without_rowid": "false"}},
-		{name: "empty states nothing", properties: map[string]string{"strict": ""}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -50,8 +48,8 @@ func TestPropertyService_DecodeProperties_HappyPath(t *testing.T) {
 }
 
 // TestPropertyService_DecodeProperties_FailurePath refuses a key the owner
-// does not have and a value that is not true or false, rather than reading
-// a typo as an option left out.
+// does not have and a value that is not exactly true or false, an empty one
+// included, rather than reading a typo as an option left out.
 func TestPropertyService_DecodeProperties_FailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -61,6 +59,8 @@ func TestPropertyService_DecodeProperties_FailurePath(t *testing.T) {
 		{name: "an unknown key", properties: map[string]string{"stricter": "true"}, want: `.*unknown SQLite table property "stricter"`},
 		{name: "not a boolean", properties: map[string]string{"strict": "yes"}, want: `.*SQLite table property strict is "yes", not true or false`},
 		{name: "another spelling of true", properties: map[string]string{"without_rowid": "1"}, want: `.*without_rowid is "1", not true or false`},
+		{name: "true in capitals", properties: map[string]string{"strict": "TRUE"}, want: `.*strict is "TRUE", not true or false`},
+		{name: "an empty value", properties: map[string]string{"strict": ""}, want: `.*SQLite table property strict is "", not true or false`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

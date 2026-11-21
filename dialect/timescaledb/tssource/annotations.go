@@ -90,7 +90,7 @@ func continuousAggregateDirective() annotation.Directive {
 			{Name: "schema", Description: "Schema holding the aggregate.", Value: "string"},
 			{Name: "body", Description: "The SELECT the aggregate materializes.", Value: "string", Required: true},
 			{Name: "materialized_only", Description: "Read only materialized data, rather than combining it with " +
-				"the rows since the last refresh.", Value: "boolean"},
+				"the rows since the last refresh.", Value: "boolean", Boolean: true},
 			{Name: "comment", Description: "Continuous aggregate comment.", Value: "string"},
 		},
 	}
@@ -108,7 +108,7 @@ func hypertableDirective() annotation.Directive {
 			{Name: "chunk_interval", Description: "Width of one chunk, spelled the way PostgreSQL spells an " +
 				"interval. Omit to take TimescaleDB's default.", Value: "string"},
 			{Name: "if_not_exists", Description: "Skip a table that is already a hypertable instead of failing.",
-				Value: "boolean"},
+				Value: "boolean", Boolean: true},
 			{Name: "comment", Description: "Hypertable comment.", Value: "string"},
 		},
 	}

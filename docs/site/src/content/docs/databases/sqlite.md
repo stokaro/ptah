@@ -55,7 +55,9 @@ The SQLite renderer and planner support:
   `platform.sqlite.strict="true"` and `platform.sqlite.without_rowid="true"`,
   YAML in the table's `sqlite` platform group, HCL as the table's `strict` and
   `without_rowid` attributes, SQL after the column list, and another target
-  leaves them out. A table declared without them has neither. SQLite has no
+  leaves them out. A property takes exactly `true` or `false`, and any other
+  value, an empty one included, is refused. A table declared without them has
+  neither. SQLite has no
   statement that turns either on or off for a table that exists, so a changed
   option rebuilds the table, as below.
 - Enum annotations as `TEXT` columns plus a generated

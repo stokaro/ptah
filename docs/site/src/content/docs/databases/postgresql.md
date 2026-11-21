@@ -3535,7 +3535,8 @@ a transaction at all — without it the server answers
 default rather than `false`. The default is not a constant across TimescaleDB
 versions — measured on 2.29.2, an aggregate created without the option is
 reported with it `true` — so a declaration that did not choose is not compared
-against it.
+against it. In a Go annotation, `materialized_only` and the hypertable's
+`if_not_exists` take exactly `true` or `false`, and a bare name means `true`.
 
 The create runs after `create_hypertable`, because the extension checks: over an
 ordinary table, `WITH (timescaledb.continuous)` answers

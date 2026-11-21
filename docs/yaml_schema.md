@@ -471,7 +471,8 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `create_role`, `inherit`, `replication`, `comment`, on PostgreSQL `settings`
   and `reset_settings`, `member_of` and on YDB `group`. `member_of` lists the
   groups a role joins, each with optional membership options in parentheses,
-  such as `readers(admin;inherit=false;set=true)`; `member_of: []` states that
+  such as `readers(admin;inherit=false;set=true)`, where an option written
+  alone is true and a value is exactly `true` or `false`; `member_of: []` states that
   the role belongs to no role, and a role without the key keeps the memberships
   the server holds. `settings` holds
   `name = value` pairs separated by semicolons, each value written in SQL, such

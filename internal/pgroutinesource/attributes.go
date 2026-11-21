@@ -27,9 +27,9 @@ func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner: pgroutine.PropertiesOwner, Kinds: []schemaext.Kind{pgroutine.PropertiesKind},
 		Attributes: []annotation.DirectiveAttributes{{Directive: functionDirective, Attributes: []annotation.Attribute{
-			{Name: "leakproof", Value: "boolean", Description: "Marks the function LEAKPROOF, letting a filter using it be pushed past a security barrier."},
+			{Name: "leakproof", Value: "boolean", Boolean: true, Description: "Marks the function LEAKPROOF, letting a filter using it be pushed past a security barrier."},
 			{Name: "parallel", Value: "string", Description: "Parallel level: SAFE, RESTRICTED or UNSAFE."},
-			{Name: "strict", Value: "boolean", Description: "Marks the function STRICT: it returns NULL without running when any argument is NULL."},
+			{Name: "strict", Value: "boolean", Boolean: true, Description: "Marks the function STRICT: it returns NULL without running when any argument is NULL."},
 		}, Decode: properties}},
 		Coverage: annotation.Unlimited(Coverage), Encoder: annotationEncoder{}, Encodes: []schemaext.Kind{pgroutine.PropertiesKind},
 	}

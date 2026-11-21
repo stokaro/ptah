@@ -403,7 +403,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "name": {
               "description": "Aggregate name, which is also the view name.",
@@ -569,7 +570,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "schema": {
               "description": "Target schema/namespace.",
@@ -767,7 +769,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "name": {
               "description": "Extension name.",
@@ -932,7 +935,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "type": {
               "description": "Database column type.",
@@ -993,7 +997,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "name": {
               "description": "Function name.",
@@ -1029,7 +1034,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "volatility": {
               "description": "Volatility class.",
@@ -1074,7 +1080,8 @@
                 "false"
               ],
               "type": "string",
-              "x-ptah-alias-for": "with_option"
+              "x-ptah-alias-for": "with_option",
+              "x-ptah-bare-boolean": true
             },
             "on_async_replication": {
               "description": "Target async replication, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
@@ -1090,7 +1097,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "on_external_data_source": {
               "description": "Target external data source, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
@@ -1159,7 +1167,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             }
           },
           "type": "object"
@@ -1199,7 +1208,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "table": {
               "description": "Table to partition, optionally schema-qualified.",
@@ -1682,7 +1692,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "on_external_data_source": {
               "description": "Target external data source, its name qualified by its directory as on_table names a table, such as app.events. YDB only.",
@@ -1782,7 +1793,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "table": {
               "description": "Target table.",
@@ -1875,7 +1887,8 @@
                 "false"
               ],
               "type": "string",
-              "x-ptah-alias-for": "createdb"
+              "x-ptah-alias-for": "createdb",
+              "x-ptah-bare-boolean": true
             },
             "create_role": {
               "description": "Alias for createrole.",
@@ -1884,7 +1897,8 @@
                 "false"
               ],
               "type": "string",
-              "x-ptah-alias-for": "createrole"
+              "x-ptah-alias-for": "createrole",
+              "x-ptah-bare-boolean": true
             },
             "createdb": {
               "description": "Allows database creation.",
@@ -1892,7 +1906,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "createrole": {
               "description": "Allows role creation.",
@@ -1900,7 +1915,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "dialects": {
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
@@ -1912,7 +1928,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "inherit": {
               "description": "Controls role inheritance; defaults to true.",
@@ -1920,7 +1937,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "login": {
               "description": "Creates the role with LOGIN.",
@@ -1928,7 +1946,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "member_of": {
               "description": "Comma-separated groups the role is a member of. A group may carry membership options in parentheses, such as readers(admin;inherit=false;set=true). A role that states the attribute, even empty, loses a membership the server holds in another declared role and the list leaves out; a role without it keeps every membership the server holds.",
@@ -1948,7 +1967,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "reset_settings": {
               "description": "Comma-separated PostgreSQL settings to take away from the role with ALTER ROLE ... RESET, such as \"work_mem, app.tenant\".",
@@ -1964,7 +1984,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             }
           },
           "type": "object"
@@ -2079,7 +2100,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "dialects": {
               "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
@@ -2091,7 +2113,8 @@
                 "true",
                 "false"
               ],
-              "type": "string"
+              "type": "string",
+              "x-ptah-bare-boolean": true
             },
             "increment": {
               "description": "INCREMENT BY value; must be non-zero.",
