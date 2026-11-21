@@ -2679,9 +2679,9 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
-| `--dialect` | `stringSlice` | `[]` | `PTAH_DIALECT` | — |
-| `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
-| `--schema-file` | `stringSlice` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--dialect` | `stringArray` | `[]` | `PTAH_DIALECT` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 
 </div>
@@ -2744,6 +2744,6 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `--url`, `-u` | `stringSlice` | `[]` | `PTAH_URL` | — |
+| `--url`, `-u` | `stringArray` | `[]` | `PTAH_URL` | — |
 
 </div>

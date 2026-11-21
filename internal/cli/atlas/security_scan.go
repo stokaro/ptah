@@ -46,11 +46,9 @@ const atlasSecurityJSONFormat = "{{json.}}"
 // environment of whoever built them. The group and its verb both read their
 // own flags, which is what lets a help flag reach the decision: a help flag
 // cobra parses is answered with help at exit 0 before any run function, and
-// the community binary refuses `security --help` at exit 1.
-//
-// Shell completion is the one place the group shows while disabled: once its
-// name is typed, cobra completes its verb and flag names before any function
-// of it runs.
+// the community binary refuses `security --help` at exit 1. The help command
+// and shell completion run no function of the group, so
+// gateAtlasSecurityRequests decides for them.
 func newAtlasSecurityCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                "security [command]",
@@ -99,19 +97,16 @@ func requireAtlasSecurityScan(cmd *cobra.Command) error {
 // gateAtlasSecurityHelp makes the help of the security group and its verb the
 // root's help while PTAH_ATLAS_SECURITY_SCAN is not enabled, which is what
 // `help security` prints in a tree without the group. A help function cannot
-// fail the run, so a malformed value is reported on stderr before the root's
-// help rather than passed over.
+// fail the run, so the help command refuses a malformed value before it gets
+// here (gateAtlasSecurityRequests), and here a malformed value counts as not
+// enabled.
 //
 // It wraps the help function the usage tree installed, so it runs after
 // installAtlasUsageTree.
 func gateAtlasSecurityHelp(cmd *cobra.Command) {
 	help := cmd.HelpFunc()
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		enabled, err := atlasSecurityScan.Resolve()
-		if err != nil {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", cmdutil.ErrorPrefix(cmd), err)
-		}
-		if !enabled {
+		if enabled, err := atlasSecurityScan.Resolve(); err != nil || !enabled {
 			// The help command initializes the help flag of the command it
 			// found, which is this one; the root's help lists the root's.
 			root := cmd.Root()
@@ -124,6 +119,64 @@ func gateAtlasSecurityHelp(cmd *cobra.Command) {
 	for _, child := range cmd.Commands() {
 		gateAtlasSecurityHelp(child)
 	}
+}
+
+// gateAtlasSecurityRequests decides for the two commands that reach the
+// security group without running a function of it: the help command and shell
+// completion. Both are children of root, so root's persistent pre-run runs
+// before them; the gate wraps it, and installs last so nothing wraps it in
+// turn.
+//
+// `help security` with a malformed value is refused as every other spelling
+// of the group refuses it, at exit 1, because a help function cannot fail the
+// run. Completion while the variable is not enabled, malformed included, runs
+// against the tree without the group: the group is taken out for the request
+// and put back after it, so cobra offers neither its verb nor its flags.
+func gateAtlasSecurityRequests(root, security *cobra.Command) {
+	preRun := root.PersistentPreRunE
+	postRun := root.PersistentPostRunE
+	removed := false
+	root.PersistentPreRunE = func(run *cobra.Command, args []string) error {
+		if preRun != nil {
+			if err := preRun(run, args); err != nil {
+				return err
+			}
+		}
+		switch {
+		case run.Name() == cobra.ShellCompRequestCmd && run.Parent() == root:
+			if enabled, err := atlasSecurityScan.Resolve(); err != nil || !enabled {
+				root.RemoveCommand(security)
+				removed = true
+			}
+		case run.Name() == "help" && run.Parent() == root && atlasCommandWithin(root, args, security):
+			if _, err := atlasSecurityScan.Resolve(); err != nil {
+				return failAtlasCommand(run, err)
+			}
+		}
+		return nil
+	}
+	root.PersistentPostRunE = func(run *cobra.Command, args []string) error {
+		if removed {
+			root.AddCommand(security)
+			removed = false
+		}
+		if postRun != nil {
+			return postRun(run, args)
+		}
+		return nil
+	}
+}
+
+// atlasCommandWithin reports whether the command args name under root is
+// within, or is, group.
+func atlasCommandWithin(root *cobra.Command, args []string, group *cobra.Command) bool {
+	target, _, err := root.Find(args)
+	for ; err == nil && target != nil; target = target.Parent() {
+		if target == group {
+			return true
+		}
+	}
+	return false
 }
 
 // atlasSecurityScanLong is the help text of `security scan`. It names the

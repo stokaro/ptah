@@ -138,9 +138,9 @@ against each `-u`/`--url`, and reads an `atlas.hcl` environment's `url` under
 `--env`. The group is hidden and off by default: until
 [`PTAH_ATLAS_SECURITY_SCAN=1`](../extension-variables/#ptah_atlas_security_scan)
 is set, every spelling of `security` is the unknown command the community CLI
-reports, and `help security` prints the root's help. Shell completion is the one
-exception: once `security` is typed, it offers the group's verb and flag names.
-Strict mode removes the group and refuses the variable.
+reports, `help security` prints the root's help, and shell completion offers
+neither the group nor its flags. Strict mode removes the group and refuses the
+variable.
 
 ### Placeholder arguments
 

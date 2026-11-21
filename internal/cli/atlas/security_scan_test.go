@@ -48,12 +48,14 @@ func withoutSecurity(c *qt.C) *cobra.Command {
 }
 
 // TestCompatSecurity_DisabledAnswersAsTheTreeWithoutIt runs every spelling of
-// the group, with the variable unset and set to false, through the full tree
-// and through the same tree with the group taken out. The outcomes match byte
-// for byte, exit code included: an invocation is the unknown-command error
-// the community binary gives, and a help request is the root's help. Without
-// the run-time gate the group would print its own help at exit 0, and without
-// the help gate `help security` would print the group's help.
+// the group, with the variable unset and set to each false spelling, through
+// the full tree and through the same tree with the group taken out. The
+// outcomes match byte for byte, exit code included: an invocation is the
+// unknown-command error the community binary gives, a help request is the
+// root's help, and shell completion offers what the tree without the group
+// offers. Without the run-time gate the group would print its own help at exit
+// 0, without the help gate `help security` would print the group's help, and
+// without the completion gate `__complete security sc` would offer `scan`.
 func TestCompatSecurity_DisabledAnswersAsTheTreeWithoutIt(t *testing.T) {
 	// A regression that reaches the scan opens sqlite://x.db; it does so in a
 	// scratch directory rather than in this package.
@@ -64,6 +66,8 @@ func TestCompatSecurity_DisabledAnswersAsTheTreeWithoutIt(t *testing.T) {
 	}{
 		{name: "unset", setup: envbooltest.Unset(securityScanVar)},
 		{name: "false", setup: envbooltest.Set(securityScanVar, "false")},
+		{name: "0", setup: envbooltest.Set(securityScanVar, "0")},
+		{name: "FALSE", setup: envbooltest.Set(securityScanVar, "FALSE")},
 	}
 	invocations := [][]string{
 		{"security"},
@@ -79,6 +83,13 @@ func TestCompatSecurity_DisabledAnswersAsTheTreeWithoutIt(t *testing.T) {
 		{"-h", "security"},
 		{"help", "security"},
 		{"help", "security", "scan"},
+		{"__complete", "sec"},
+		{"__complete", "security", "sc"},
+		{"__complete", "security", ""},
+		{"__complete", "security", "scan", "--"},
+		{"__complete", "security", "scan", "-"},
+		{"__completeNoDesc", "security", "sc"},
+		{"__completeNoDesc", "security", "scan", "--"},
 	}
 	for _, value := range values {
 		for _, args := range invocations {
@@ -128,8 +139,8 @@ func TestCompatSecurity_EnabledServesTheGroup(t *testing.T) {
 			wantStdout: "Forwards to `ptah db vulnerabilities`.\n"},
 		{name: "the verb's help names the native variables", args: []string{"security", "scan", "--help"},
 			wantStdout: "PTAH_FAIL_SEVERITY, PTAH_MIN_SEVERITY and PTAH_DEPLOYMENT.\n"},
-		{name: "the verb takes -u", args: []string{"help", "security", "scan"},
-			wantStdout: "  -u, --url strings     URL of a database to scan; repeat it to scan several [env: PTAH_URL]\n"},
+		{name: "the verb takes -u, one database per occurrence", args: []string{"help", "security", "scan"},
+			wantStdout: "  -u, --url stringArray   URL of a database to scan; repeat it to scan several [env: PTAH_URL]\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -141,6 +152,35 @@ func TestCompatSecurity_EnabledServesTheGroup(t *testing.T) {
 			c.Assert(got.code, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.stderr))
 			c.Assert(got.stdout, qt.Contains, tt.wantStdout)
 			c.Assert(got.stderr, qt.Equals, "")
+		})
+	}
+}
+
+// TestCompatSecurity_EnabledCompletesTheGroup is the control for the
+// completion rows above: with the variable enabled, completion offers the
+// group's verb and the verb's flags.
+func TestCompatSecurity_EnabledCompletesTheGroup(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantStdout string
+	}{
+		{name: "the verb", args: []string{"__complete", "security", "sc"},
+			wantStdout: "scan\tReport known server vulnerabilities of connected databases\n"},
+		{name: "the verb's flags", args: []string{"__complete", "security", "scan", "--"},
+			wantStdout: "--url\tURL of a database to scan; repeat it to scan several [env: PTAH_URL]\n"},
+		{name: "the verb without descriptions", args: []string{"__completeNoDesc", "security", "sc"},
+			wantStdout: "scan\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Set(securityScanVar, "1")(t)
+
+			got := runTree(atlas.NewCompatCommand("atlas"), tt.args...)
+
+			c.Assert(got.code, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.stderr))
+			c.Assert(got.stdout, qt.Contains, tt.wantStdout)
 		})
 	}
 }
@@ -165,6 +205,12 @@ func TestCompatSecurityScan_FailurePath(t *testing.T) {
 			wantStderr: "Error: atlas security scan does not accept native Ptah flag --db-url\n"},
 		{name: "a native scan option", args: []string{"security", "scan", "-u", "sqlite://x.db", "--fail-on", "none"},
 			wantStderr: "Error: atlas security scan does not accept native Ptah flag --fail-on\n"},
+		{name: "-u with no value", args: []string{"security", "scan", "-u"},
+			wantStderr: "Error: flag needs an argument: 'u' in -u\n"},
+		{name: "--url with no value", args: []string{"security", "scan", "-u", "sqlite://x.db", "--url"},
+			wantStderr: "Error: flag needs an argument: --url\n"},
+		{name: "arguments after the separator", args: []string{"security", "scan", "-u", "sqlite://x.db", "--", "--format", "y"},
+			wantStderr: "Error: unexpected positional arguments [\"--format\" \"y\"]\n"},
 		{name: "no database", args: []string{"security", "scan"},
 			wantStderr: "Error: required flag(s) \"url\" not set\n"},
 	}
@@ -212,8 +258,9 @@ func TestCompatSecurityScan_DatabaseFromTheEnvironment(t *testing.T) {
 }
 
 // TestCompatSecurity_MalformedValue_FailurePath refuses a value that is not a
-// boolean on every invocation of the group, before it reads a flag, and
-// reports it on stderr when it asks for help.
+// boolean on every invocation of the group, before it reads a flag, the help
+// command included: a help function cannot fail the run, so without the gate
+// in root's pre-run `help security` would print the root's help at exit 0.
 func TestCompatSecurity_MalformedValue_FailurePath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	tests := []struct {
@@ -223,6 +270,8 @@ func TestCompatSecurity_MalformedValue_FailurePath(t *testing.T) {
 		{name: "the group", args: []string{"security"}},
 		{name: "the verb", args: []string{"security", "scan", "-u", "sqlite://x.db"}},
 		{name: "the verb's help flag", args: []string{"security", "scan", "--help"}},
+		{name: "the help command on the group", args: []string{"help", "security"}},
+		{name: "the help command on the verb", args: []string{"help", "security", "scan"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -239,33 +288,81 @@ func TestCompatSecurity_MalformedValue_FailurePath(t *testing.T) {
 	}
 }
 
-// TestCompatSecurity_MalformedValueInTheHelpCommand reads `help security`
-// with a malformed value: the help command cannot fail the run, so the value
-// is named on stderr and the root's help follows.
-func TestCompatSecurity_MalformedValueInTheHelpCommand(t *testing.T) {
+// TestCompatSecurity_MalformedValueCompletesAsTheTreeWithoutIt completes
+// with a malformed value: completion cannot fail, so it offers what the tree
+// without the group offers, as for a disabled value.
+func TestCompatSecurity_MalformedValueCompletesAsTheTreeWithoutIt(t *testing.T) {
+	invocations := [][]string{
+		{"__complete", "security", "sc"},
+		{"__complete", "security", "scan", "--"},
+	}
+	for _, args := range invocations {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Set(securityScanVar, "maybe")(t)
+
+			got := runTree(atlas.NewCompatCommand("atlas"), args...)
+			want := runTree(withoutSecurity(c), args...)
+
+			c.Assert(got, qt.Equals, want)
+		})
+	}
+}
+
+// TestCompatSecurity_CompletionKeepsTheGroup runs a disabled completion and
+// then, on the same tree, the enabled group: the group the completion took out
+// is back, so a tree that serves more than one run keeps it.
+func TestCompatSecurity_CompletionKeepsTheGroup(t *testing.T) {
 	c := qt.New(t)
+	root := atlas.NewCompatCommand("atlas")
 	envbooltest.Unset(securityScanVar)(t)
-	rootHelp := runTree(withoutSecurity(c), "help", "security")
-	envbooltest.Set(securityScanVar, "maybe")(t)
+	runTree(root, "__complete", "security", "sc")
+	envbooltest.Set(securityScanVar, "1")(t)
 
-	got := runTree(atlas.NewCompatCommand("atlas"), "help", "security")
+	got := runTree(root, "security", "--help")
 
-	c.Assert(got, qt.Equals, compatRun{
-		stdout: rootHelp.stdout,
-		stderr: "Error: invalid boolean value \"maybe\" for PTAH_ATLAS_SECURITY_SCAN\n",
-	})
+	c.Assert(got.code, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.stderr))
+	c.Assert(got.stdout, qt.Contains, "  scan        Report known server vulnerabilities of connected databases\n")
 }
 
 // TestCompatSecurity_MalformedValueLeavesOtherCommands is the control for the
-// refusals above: a command that does not own the variable runs as usual.
+// refusals above: a command that does not own the variable runs as usual, and
+// so does the help command on another group.
 func TestCompatSecurity_MalformedValueLeavesOtherCommands(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Set(securityScanVar, "maybe")(t)
+	invocations := [][]string{
+		{"license"},
+		{"help", "schema"},
+	}
+	for _, args := range invocations {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Set(securityScanVar, "maybe")(t)
 
-	got := runTree(atlas.NewCompatCommand("atlas"), "license")
+			got := runTree(atlas.NewCompatCommand("atlas"), args...)
+
+			c.Assert(got.code, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.stderr))
+			c.Assert(got.stderr, qt.Equals, "")
+		})
+	}
+}
+
+// TestCompatSecurityScan_ScansEveryURL repeats -u: each URL is its own
+// target. Joined into one --db-url value, the two would be one target that
+// names neither database.
+func TestCompatSecurityScan_ScansEveryURL(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	envbooltest.Set(securityScanVar, "1")(t)
+	envbooltest.Set("PTAH_FAIL_ON", "none")(t)
+	envbooltest.Unset("PTAH_URL")(t)
+	envbooltest.Unset("PTAH_DB_URL")(t)
+
+	got := runTree(atlas.NewCompatCommand("atlas"), "security", "scan", "-u", "sqlite://a.db", "--url", "sqlite://b.db")
 
 	c.Assert(got.code, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.stderr))
-	c.Assert(got.stderr, qt.Equals, "")
+	c.Assert(strings.Count(got.stdout, "Target: "), qt.Equals, 2)
+	c.Assert(got.stdout, qt.Contains, "Target: sqlite://a.db\n")
+	c.Assert(got.stdout, qt.Contains, "Target: sqlite://b.db\n")
 }
 
 // TestCompatSecurity_StrictRefusesTheVariable resolves the strict profile

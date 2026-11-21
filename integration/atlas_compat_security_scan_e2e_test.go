@@ -68,6 +68,28 @@ func TestCompatSecurityScan_RoutesToTheNativeScanE2E(t *testing.T) {
 	c.Assert(report.Targets[0].Assessments, qt.HasLen, len(snapshot.Advisories))
 }
 
+// TestCompatSecurityScan_ScansEveryURLE2E repeats -u with the MySQL server CI
+// starts and a SQLite file: the report has a target for each, in the order
+// given. Joined into one native --db-url value, the two URLs would be one URL
+// that names neither database.
+func TestCompatSecurityScan_ScansEveryURLE2E(t *testing.T) {
+	c := qt.New(t)
+
+	result := clirun.Run(c, clirun.Compat, clirun.Options{
+		Dir: c.TempDir(),
+		Env: compatSecurityScanEnvironment("PTAH_ATLAS_SECURITY_SCAN=1", "PTAH_FAIL_ON=none"),
+	}, "security", "scan", "-u", dbtarget.URL(c, dbtarget.MySQL), "--url", "sqlite://app.db", "--format", "{{ json . }}")
+
+	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+	var report compatSecurityScanReport
+	c.Assert(json.Unmarshal([]byte(result.Stdout), &report), qt.IsNil)
+	c.Assert(report.Targets, qt.HasLen, 2)
+	c.Assert(report.Targets[0].ScanError, qt.Equals, "")
+	c.Assert(report.Targets[0].Inventory.Product, qt.Equals, "mysql")
+	c.Assert(report.Targets[1].ScanError, qt.Equals, "")
+	c.Assert(report.Targets[1].Inventory.Product, qt.Equals, "sqlite")
+}
+
 // TestCompatSecurityScan_NativeVariablesReachTheScanE2E runs the table
 // report under the native policy variable. A MySQL report is always
 // incomplete, so `incomplete` fails and `none` passes: the variable reaches

@@ -29,13 +29,15 @@ const (
 	BoolFlag
 	// UintFlag describes an Atlas unsigned integer flag.
 	UintFlag
-	// StringArrayFlag describes a repeatable Atlas string flag (pflag prints
-	// these as `strings`). Every occurrence contributes a value, and the whole
-	// set is forwarded to the native flag as one comma-separated value.
+	// StringArrayFlag describes a repeatable Atlas string flag. Every
+	// occurrence contributes a value. The set is forwarded to the native flag
+	// as one comma-separated value, or, with [Flag.ForwardEach], as one native
+	// occurrence per value.
 	//
-	// It exists because forwarding each occurrence separately would silently
-	// drop all but the last one against a native flag that takes a single
-	// string, which is the failure shape a repeatable Atlas flag must not have.
+	// Joining exists because forwarding each occurrence separately would
+	// silently drop all but the last one against a native flag that takes a
+	// single string, which is the failure shape a repeatable Atlas flag must
+	// not have.
 	StringArrayFlag
 )
 
@@ -55,6 +57,12 @@ type Flag struct {
 	UnsupportedReason string
 	MapValue          func(string) (string, error)
 	EnvDisabled       bool
+	// ForwardEach, on a [StringArrayFlag], forwards every occurrence as its
+	// own native --flag=value, in the order given, for a native flag that is
+	// itself repeatable. Joined, such a flag reads `a,b` as one value: two
+	// database URLs become one URL that names neither. A value is forwarded as
+	// written, an empty one included, so the native flag judges it.
+	ForwardEach bool
 }
 
 type parsedFlag struct {
@@ -96,7 +104,8 @@ func NativeStringDefault(name, shorthand, usage, nativeName, defaultValue string
 }
 
 // NativeStringArray creates a repeatable Atlas string flag that forwards every
-// occurrence to a single native Ptah flag as one comma-separated value.
+// occurrence to a single native Ptah flag as one comma-separated value. Set
+// [Flag.ForwardEach] when the native flag is itself repeatable.
 func NativeStringArray(name, shorthand, usage, nativeName string) Flag {
 	flag := Flag{Name: name, Shorthand: shorthand, Usage: usage, Kind: StringArrayFlag}
 	flag.NativeName = nativeName
@@ -311,9 +320,10 @@ func Map(group, use string, flags []Flag, args []string) ([]string, error) {
 	// native counterpart takes one value, so the occurrences have to be joined
 	// rather than forwarded one by one.
 	arrays := newStringArrayValues(flags)
+	var positional []string
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--" {
-			out = append(out, args[i:]...)
+			positional = args[i:]
 			break
 		}
 		emitted, consumed, err := mapOneArg(group, use, flags, arrays, args, i)
@@ -323,7 +333,9 @@ func Map(group, use string, flags []Flag, args []string) ([]string, error) {
 		out = append(out, emitted...)
 		i += consumed - 1
 	}
-	return arrays.appendTo(out), nil
+	// The repeatable flags go before the separator: after it, the native
+	// command reads them as positional arguments.
+	return append(arrays.appendTo(out), positional...), nil
 }
 
 // mapOneArg translates the argument at index and reports how many arguments it
@@ -353,6 +365,9 @@ func mapOneArg(
 	if flag.Unsupported {
 		return nil, 0, UnsupportedFlagError(group, use, flag, displayName)
 	}
+	if flag.Kind == StringArrayFlag && !parsed.hasValue && index+1 >= len(args) {
+		return nil, 0, missingValueError(parsed.name)
+	}
 	nativeFlag := "--" + nativeFlagName(flag)
 	emitted, consumed, err = mapFlagOccurrence(flag, parsed, arrays, nativeFlag, args, index)
 	if err != nil {
@@ -376,11 +391,6 @@ func mapFlagOccurrence(
 		if err != nil {
 			return nil, 0, err
 		}
-		if consumed == 0 {
-			// A trailing occurrence with no value: forward it unchanged and let
-			// the native command report the missing value.
-			return []string{nativeFlag}, 1, nil
-		}
 		return nil, consumed, nil
 	case flag.Kind == BoolFlag && parsed.hasValue:
 		return []string{nativeFlag + "=" + parsed.value}, 1, nil
@@ -403,6 +413,17 @@ func mapFlagOccurrence(
 	}
 }
 
+// missingValueError is pflag's refusal of a flag that ends the arguments with
+// no value, spelled as the caller typed the flag. A repeatable flag is refused
+// here rather than forwarded bare, because the native command would name its
+// own flag, which this surface does not accept.
+func missingValueError(name string) error {
+	if len(name) == 1 {
+		return fmt.Errorf("flag needs an argument: %q in -%s", rune(name[0]), name)
+	}
+	return fmt.Errorf("flag needs an argument: --%s", name)
+}
+
 func nativeFlagName(flag Flag) string {
 	if flag.NativeName != "" {
 		return flag.NativeName
@@ -411,10 +432,9 @@ func nativeFlagName(flag Flag) string {
 }
 
 // collectStringArrayValue records one occurrence of a repeatable flag and
-// reports how many args it consumed: 1 for an inline `--flag=value`, 2 when the
-// value is the next arg, and 0 when the occurrence is trailing and has no value
-// at all, which the caller forwards unchanged so the native command produces
-// the diagnostic.
+// reports how many args it consumed: 1 for an inline `--flag=value` and 2 when
+// the value is the next arg. A trailing occurrence with no value is refused
+// before it gets here.
 func collectStringArrayValue(
 	arrays *stringArrayValues,
 	flag Flag,
@@ -425,9 +445,6 @@ func collectStringArrayValue(
 	value := parsed.value
 	consumed = 1
 	if !parsed.hasValue {
-		if index+1 >= len(args) {
-			return 0, nil
-		}
 		value = args[index+1]
 		consumed = 2
 	}
@@ -461,21 +478,23 @@ func (a *stringArrayValues) add(name, value string) {
 	a.values[name] = append(a.values[name], value)
 }
 
-// appendTo emits one native flag per repeatable flag that was used, carrying
-// every occurrence's value. Empty values are dropped rather than forwarded as
-// empty list members, matching what the native comma-separated parsers do with
-// them.
+// appendTo emits the native form of every repeatable flag that was used: one
+// native flag carrying every occurrence's value comma-separated, or with
+// ForwardEach one native flag per occurrence.
 func (a *stringArrayValues) appendTo(out []string) []string {
 	for _, flag := range a.order {
 		values := a.values[flag.Name]
 		if len(values) == 0 {
 			continue
 		}
-		nativeName := flag.Name
-		if flag.NativeName != "" {
-			nativeName = flag.NativeName
+		nativeFlag := "--" + nativeFlagName(flag) + "="
+		if !flag.ForwardEach {
+			out = append(out, nativeFlag+strings.Join(values, ","))
+			continue
 		}
-		out = append(out, "--"+nativeName+"="+strings.Join(values, ","))
+		for _, value := range values {
+			out = append(out, nativeFlag+value)
+		}
 	}
 	return out
 }
