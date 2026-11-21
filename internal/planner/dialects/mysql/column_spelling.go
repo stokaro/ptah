@@ -152,7 +152,9 @@ func (s columnSpellings) refuseTwoSpellings(diff *difftypes.SchemaDiff, dialect 
 // Granting under the catalog's spelling instead would give a privilege that a
 // user writing the column as declared cannot use (ERROR 1143), so the plan is
 // refused before it runs. The declaration has two ways out: name the kept
-// privileges under the declared spelling, or revoke them. On MariaDB a grant
+// privileges under the declared spelling, or revoke them under the spelling
+// the catalog holds, which a revoke beside the grant may use because the two
+// share no privilege. On MariaDB a grant
 // takes the catalog's spelling of a column the role holds a privilege on, so
 // this never fires there.
 func (s columnSpellings) refuseASecondSpelling(diff *difftypes.SchemaDiff, dialect string) error {
@@ -190,10 +192,10 @@ func (s columnSpellings) refuseASecondSpelling(diff *difftypes.SchemaDiff, diale
 		return fmt.Errorf(
 			"%w: role %q keeps %s on one column of %s as %q, and the plan grants %s on it as %q, the declared "+
 				"spelling; %s would then hold the column under two spellings for the role, and a later plan on %s "+
-				"is refused for that -- declare the role's privileges on the column as %q too, or revoke them",
+				"is refused for that -- declare the role's privileges on the column as %q too, or revoke them as %q",
 			ptaherr.ErrUnsupportedFeature, added.Role, strings.Join(slices.Compact(kept), ", "), added.ObjectName,
 			spelling, strings.ToUpper(strings.TrimSpace(added.Privilege)), columns[0],
-			strings.ToUpper(platform.NormalizeDialect(dialect)), added.ObjectName, columns[0],
+			strings.ToUpper(platform.NormalizeDialect(dialect)), added.ObjectName, columns[0], spelling,
 		)
 	}
 	return nil
