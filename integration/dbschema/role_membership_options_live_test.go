@@ -3,6 +3,7 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -57,8 +58,12 @@ func openMembershipRun(c *qt.C, engine dbtarget.Engine, quote func(string) strin
 		},
 	}
 	c.Cleanup(func() {
-		_ = conn.Writer().ExecuteSQL(c.Context(), run.dropSQL(run.member))
-		_ = conn.Writer().ExecuteSQL(c.Context(), run.dropSQL(run.group))
+		// The test's context is canceled before a cleanup runs, and a role is
+		// server-wide: one left behind is a role every later read of the
+		// server inspects, which strict compatibility refuses.
+		ctx := context.WithoutCancel(c.Context())
+		c.Check(conn.Writer().ExecuteSQL(ctx, run.dropSQL(run.member)), qt.IsNil)
+		c.Check(conn.Writer().ExecuteSQL(ctx, run.dropSQL(run.group)), qt.IsNil)
 	})
 	return run
 }
