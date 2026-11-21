@@ -135,6 +135,20 @@ func TestCommand_RedactsFailedConnection(t *testing.T) {
 	c.Assert(stdout, qt.Contains, "SCAN ERROR: database connection failed\n")
 }
 
+// TestCommand_ConnectErrorNamesTheFlag names --db-url in the refusal of a
+// database the scan cannot connect to, and writes the target's report first.
+// It is the control for the compatibility surface, which names its own -u/--url
+// there.
+func TestCommand_ConnectErrorNamesTheFlag(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, _, err := run("--db-url", "notaurl")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(err, qt.ErrorMatches, `connect to --db-url notaurl: invalid database URL: missing scheme`)
+	c.Assert(stdout, qt.Contains, "Target: notaurl\nSCAN ERROR: database connection failed\n")
+}
+
 func TestCommand_FailurePath(t *testing.T) {
 	tests := []struct {
 		name string

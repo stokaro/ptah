@@ -211,6 +211,10 @@ func TestCompatSecurityScan_FailurePath(t *testing.T) {
 			wantStderr: "Error: flag needs an argument: 'u' in -u\n"},
 		{name: "--url with no value", args: []string{"security", "scan", "-u", "sqlite://x.db", "--url"},
 			wantStderr: "Error: flag needs an argument: --url\n"},
+		{name: "an empty --url", args: []string{"security", "scan", "--url="},
+			wantStderr: "Error: atlas security scan --url: a database URL must not be empty\n"},
+		{name: "an empty --url beside a database", args: []string{"security", "scan", "-u", "sqlite://x.db", "--url="},
+			wantStderr: "Error: atlas security scan --url: a database URL must not be empty\n"},
 		{name: "arguments after the separator", args: []string{"security", "scan", "-u", "sqlite://x.db", "--", "--format", "y"},
 			wantStderr: "Error: unexpected positional arguments [\"--format\" \"y\"]\n"},
 		{name: "no database", args: []string{"security", "scan"},
@@ -226,6 +230,40 @@ func TestCompatSecurityScan_FailurePath(t *testing.T) {
 			got := runTree(atlas.NewCompatCommand("atlas"), tt.args...)
 
 			c.Assert(got, qt.Equals, compatRun{stderr: tt.wantStderr, code: 1})
+		})
+	}
+}
+
+// TestCompatSecurityScan_ConnectErrorNamesTheFlagAsTyped refuses a database
+// the scan cannot connect to under -u/--url, the flag the caller wrote in
+// each spelling pflag reads; `-u=` gives -u the value "=". Forwarded, the
+// native command names its own --db-url there, a flag this surface refuses.
+func TestCompatSecurityScan_ConnectErrorNamesTheFlagAsTyped(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   []string
+		target string
+	}{
+		{name: "--url", args: []string{"--url", "notaurl"}, target: "notaurl"},
+		{name: "--url with =", args: []string{"--url=notaurl"}, target: "notaurl"},
+		{name: "-u", args: []string{"-u", "notaurl"}, target: "notaurl"},
+		{name: "an attached -u value", args: []string{"-unotaurl"}, target: "notaurl"},
+		{name: "-u with = and a value", args: []string{"-u=notaurl"}, target: "notaurl"},
+		{name: "-u with = alone", args: []string{"-u="}, target: "="},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			envbooltest.Set(securityScanVar, "1")(t)
+			envbooltest.Unset("PTAH_URL")(t)
+			envbooltest.Unset("PTAH_DB_URL")(t)
+
+			got := runTree(atlas.NewCompatCommand("atlas"), append([]string{"security", "scan"}, tt.args...)...)
+
+			c.Assert(got.code, qt.Equals, 1)
+			c.Assert(got.stderr, qt.Equals, "Error: connect to --url "+tt.target+": invalid database URL: missing scheme\n")
+			c.Assert(got.stdout, qt.Contains, "Target: "+tt.target+"\nSCAN ERROR: database connection failed\n")
 		})
 	}
 }

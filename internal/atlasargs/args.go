@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -63,13 +62,6 @@ type Flag struct {
 	// database URLs become one URL that names neither. A value is forwarded as
 	// written, an empty one included, so the native flag judges it.
 	ForwardEach bool
-}
-
-type parsedFlag struct {
-	name     string
-	value    string
-	hasValue bool
-	ok       bool
 }
 
 // String creates an Atlas string flag descriptor.
@@ -132,7 +124,7 @@ func NativeLocalDir(name, shorthand, usage, nativeName string) Flag {
 // default directory URL for the flag.
 //
 // The default is what [registerAtlasFlags] prints in `--help` and what
-// [appendDefaultArgs] folds into the arguments when no layer named a directory,
+// [withDefaultArgs] folds into the arguments when no layer named a directory,
 // so declaring it here is what makes the help line and the runtime agree. On
 // the pinned community binary every migrate verb that registers --dir
 // documents `(default "file://migrations")`; Ptah honored it on some verbs and
@@ -308,13 +300,13 @@ func ParseLocalDir(value string) (LocalDir, error) {
 }
 
 // Map translates Atlas-style args to native Ptah args using the provided flag
-// descriptors.
+// descriptors. It reads a group of shorthands as [ExpandShorthands] splits it.
 func Map(group, use string, flags []Flag, args []string) ([]string, error) {
-	args, err := appendEnvArgs(flags, args)
+	args, err := withEnvArgs(flags, ExpandShorthands(flags, args))
 	if err != nil {
 		return nil, err
 	}
-	args = appendDefaultArgs(flags, args)
+	args = withDefaultArgs(flags, args)
 	out := make([]string, 0, len(args))
 	// Repeatable flags are accumulated instead of emitted in place: their
 	// native counterpart takes one value, so the occurrences have to be joined
@@ -349,24 +341,16 @@ func mapOneArg(
 	args []string,
 	index int,
 ) (emitted []string, consumed int, err error) {
-	arg := args[index]
-	parsed := splitFlag(arg)
-	if !parsed.ok {
-		return []string{arg}, 1, nil
-	}
-	flag, found := findFlag(flags, parsed.name)
+	parsed, flag, found := readArg(flags, args[index])
 	if !found {
-		return []string{arg}, 1, nil
+		return []string{args[index]}, 1, nil
 	}
-	displayName := "--" + flag.Name
-	if len(parsed.name) == 1 {
-		displayName = "-" + parsed.name
-	}
+	displayName := parsed.Spelling()
 	if flag.Unsupported {
 		return nil, 0, UnsupportedFlagError(group, use, flag, displayName)
 	}
-	if flag.Kind == StringArrayFlag && !parsed.hasValue && index+1 >= len(args) {
-		return nil, 0, missingValueError(parsed.name)
+	if flag.Kind != BoolFlag && !parsed.HasValue && index+1 >= len(args) {
+		return nil, 0, missingValueError(parsed)
 	}
 	nativeFlag := "--" + nativeFlagName(flag)
 	emitted, consumed, err = mapFlagOccurrence(flag, parsed, arrays, nativeFlag, args, index)
@@ -379,7 +363,7 @@ func mapOneArg(
 // mapFlagOccurrence emits the native spelling of one recognized flag.
 func mapFlagOccurrence(
 	flag Flag,
-	parsed parsedFlag,
+	parsed Arg,
 	arrays *stringArrayValues,
 	nativeFlag string,
 	args []string,
@@ -392,18 +376,16 @@ func mapFlagOccurrence(
 			return nil, 0, err
 		}
 		return nil, consumed, nil
-	case flag.Kind == BoolFlag && parsed.hasValue:
-		return []string{nativeFlag + "=" + parsed.value}, 1, nil
+	case flag.Kind == BoolFlag && parsed.HasValue:
+		return []string{nativeFlag + "=" + parsed.Value}, 1, nil
 	case flag.Kind == BoolFlag:
 		return []string{nativeFlag}, 1, nil
-	case parsed.hasValue:
-		value, err := mapFlagValue(flag, parsed.value)
+	case parsed.HasValue:
+		value, err := mapFlagValue(flag, parsed.Value)
 		if err != nil {
 			return nil, 0, err
 		}
 		return []string{nativeFlag + "=" + value}, 1, nil
-	case index+1 >= len(args):
-		return []string{nativeFlag}, 1, nil
 	default:
 		value, err := mapFlagValue(flag, args[index+1])
 		if err != nil {
@@ -413,15 +395,15 @@ func mapFlagOccurrence(
 	}
 }
 
-// missingValueError is pflag's refusal of a flag that ends the arguments with
-// no value, spelled as the caller typed the flag. A repeatable flag is refused
-// here rather than forwarded bare, because the native command would name its
-// own flag, which this surface does not accept.
-func missingValueError(name string) error {
-	if len(name) == 1 {
-		return fmt.Errorf("flag needs an argument: %q in -%s", rune(name[0]), name)
+// missingValueError is pflag's refusal of a flag that takes a value and ends
+// the arguments without one, spelled as the caller typed the flag. It is
+// refused here rather than forwarded bare, because the native command would
+// name its own flag, `--db-url` for `-u`, which this surface does not accept.
+func missingValueError(arg Arg) error {
+	if arg.Shorthand {
+		return fmt.Errorf("flag needs an argument: %q in %s", rune(arg.Name[0]), arg.Spelling())
 	}
-	return fmt.Errorf("flag needs an argument: --%s", name)
+	return fmt.Errorf("flag needs an argument: %s", arg.Spelling())
 }
 
 func nativeFlagName(flag Flag) string {
@@ -438,13 +420,13 @@ func nativeFlagName(flag Flag) string {
 func collectStringArrayValue(
 	arrays *stringArrayValues,
 	flag Flag,
-	parsed parsedFlag,
+	parsed Arg,
 	args []string,
 	index int,
 ) (consumed int, err error) {
-	value := parsed.value
+	value := parsed.Value
 	consumed = 1
-	if !parsed.hasValue {
+	if !parsed.HasValue {
 		value = args[index+1]
 		consumed = 2
 	}
@@ -499,20 +481,19 @@ func (a *stringArrayValues) appendTo(out []string) []string {
 	return out
 }
 
-func appendDefaultArgs(flags []Flag, args []string) []string {
-	out := args
-	cloned := false
+// withDefaultArgs puts a --flag=default before args for each flag with a
+// default that args and the native environment leave unset. The added
+// arguments go first and carry their values, so a flag the caller wrote last
+// still ends the arguments, and nothing lands after a `--`.
+func withDefaultArgs(flags []Flag, args []string) []string {
+	var added []string
 	for _, flag := range flags {
-		if flag.Default == "" || flagPresent(args, flag) || nativeEnvironmentPresent(flag) {
+		if flag.Default == "" || FlagPresent(flags, args, flag.Name) || nativeEnvironmentPresent(flag) {
 			continue
 		}
-		if !cloned {
-			out = slices.Clone(args)
-			cloned = true
-		}
-		out = append(out, "--"+flag.Name+"="+flag.Default)
+		added = append(added, "--"+flag.Name+"="+flag.Default)
 	}
-	return out
+	return append(added, args...)
 }
 
 func nativeEnvironmentPresent(flag Flag) bool {
@@ -523,9 +504,10 @@ func nativeEnvironmentPresent(flag Flag) bool {
 	return ok && value != ""
 }
 
-// appendEnvArgs fills unset flags from their PTAH_<FLAG> environment twins,
+// withEnvArgs fills unset flags from their PTAH_<FLAG> environment twins,
 // including unsupported ones: setting PTAH_TO_TAG is a request for --to-tag,
 // and the loud refusal is the correct answer to a request Ptah cannot honor.
+// It puts the added arguments before args, as [withDefaultArgs] does.
 //
 // Only a flag marked EnvDisabled opts out. No flag on this surface carries the
 // mark today: the one that did was `migrate down --skip-checks`, a waiver whose
@@ -540,14 +522,13 @@ func nativeEnvironmentPresent(flag Flag) bool {
 // paragraph from becoming a count nobody rechecks: it fails when a flag takes
 // the mark, so whoever adds one has to say here why the name collides
 // (stokaro/ptah#2496).
-func appendEnvArgs(flags []Flag, args []string) ([]string, error) {
-	out := args
-	cloned := false
+func withEnvArgs(flags []Flag, args []string) ([]string, error) {
+	var added []string
 	for _, flag := range flags {
 		if flag.EnvDisabled {
 			continue
 		}
-		if flagPresent(args, flag) {
+		if FlagPresent(flags, args, flag.Name) {
 			continue
 		}
 		value, ok := os.LookupEnv(envName("PTAH", flag.Name))
@@ -574,13 +555,9 @@ func appendEnvArgs(flags []Flag, args []string) ([]string, error) {
 				return nil, fmt.Errorf("invalid unsigned integer value %q for %s", value, envName("PTAH", flag.Name))
 			}
 		}
-		if !cloned {
-			out = slices.Clone(args)
-			cloned = true
-		}
-		out = append(out, "--"+flag.Name+"="+value)
+		added = append(added, "--"+flag.Name+"="+value)
 	}
-	return out, nil
+	return append(added, args...), nil
 }
 
 func envName(prefix, flagName string) string {
@@ -588,50 +565,9 @@ func envName(prefix, flagName string) string {
 	return strings.ToUpper(prefix + "_" + name)
 }
 
-func flagPresent(args []string, flag Flag) bool {
-	long := "--" + flag.Name
-	short := ""
-	if flag.Shorthand != "" {
-		short = "-" + flag.Shorthand
-	}
-	for _, arg := range args {
-		if arg == long || strings.HasPrefix(arg, long+"=") {
-			return true
-		}
-		if short != "" && (arg == short || strings.HasPrefix(arg, short+"=")) {
-			return true
-		}
-	}
-	return false
-}
-
 func mapFlagValue(flag Flag, value string) (string, error) {
 	if flag.MapValue == nil {
 		return value, nil
 	}
 	return flag.MapValue(value)
-}
-
-func splitFlag(arg string) parsedFlag {
-	switch {
-	case strings.HasPrefix(arg, "--") && len(arg) > len("--"):
-		body := strings.TrimPrefix(arg, "--")
-		if before, after, found := strings.Cut(body, "="); found {
-			return parsedFlag{name: before, value: after, hasValue: true, ok: true}
-		}
-		return parsedFlag{name: body, ok: true}
-	case strings.HasPrefix(arg, "-") && len(arg) == 2:
-		return parsedFlag{name: strings.TrimPrefix(arg, "-"), ok: true}
-	default:
-		return parsedFlag{}
-	}
-}
-
-func findFlag(flags []Flag, name string) (Flag, bool) {
-	for _, flag := range flags {
-		if flag.Name == name || flag.Shorthand == name {
-			return flag, true
-		}
-	}
-	return Flag{}, false
 }

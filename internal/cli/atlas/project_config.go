@@ -1438,12 +1438,8 @@ func atlasFlagRegistered(flags []atlasargs.Flag, name string) bool {
 	return false
 }
 
-func atlasFlagPresent(flags []atlasargs.Flag, args []string, name string) bool {
-	return atlasFlagPresentByName(args, name, atlasFlagShorthand(flags, name))
-}
-
 func atlasFlagValueSet(flags []atlasargs.Flag, args []string, name string) bool {
-	return atlasFlagPresent(flags, args, name) || atlasFlagEnvironmentPresent(flags, name)
+	return atlasargs.FlagPresent(flags, args, name) || atlasFlagEnvironmentPresent(flags, name)
 }
 
 func atlasFlagEnvironmentPresent(flags []atlasargs.Flag, name string) bool {
@@ -1465,28 +1461,6 @@ func atlasFlagEnvironmentPresent(flags []atlasargs.Flag, name string) bool {
 func nonEmptyEnvironmentVariable(name string) bool {
 	value, ok := os.LookupEnv(name)
 	return ok && value != ""
-}
-
-func atlasFlagPresentByName(args []string, name, short string) bool {
-	long := "--" + name
-	for _, arg := range args {
-		if arg == long || strings.HasPrefix(arg, long+"=") {
-			return true
-		}
-		if short != "" && (arg == "-"+short || strings.HasPrefix(arg, "-"+short+"=")) {
-			return true
-		}
-	}
-	return false
-}
-
-func atlasFlagShorthand(flags []atlasargs.Flag, name string) string {
-	for _, flag := range flags {
-		if flag.Name == name {
-			return flag.Shorthand
-		}
-	}
-	return ""
 }
 
 // atlasSourceProjectEnv packages the evaluated atlas.hcl environment for the

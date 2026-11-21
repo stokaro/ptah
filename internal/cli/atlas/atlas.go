@@ -1363,6 +1363,17 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 			mapper,
 			verb.prefixArgs...,
 		)
+		// The forward command reads its own arguments, and pflag splits a group
+		// of shorthands such as -ls before it reads a flag. Split here, the help
+		// check and every reader after it see the flags pflag would see. cobra
+		// declares -h on every command, and pflag reads it in a group as any
+		// boolean: -lh and -hl ask for this command's help rather than reaching
+		// the native one.
+		groupFlags := append(slices.Clone(verb.flags), atlasargs.Bool("help", "h", "help for "+verb.use))
+		forward := cmd.RunE
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			return forward(cmd, atlasargs.ExpandShorthands(groupFlags, args))
+		}
 		registerAtlasFlags(cmd, verb.flags)
 		cmdforward.Refuse(cmd, verb.nativeOnlyFlags...)
 		return cmd
@@ -1818,7 +1829,7 @@ func splitAtlasPositionals(valueFlags map[string]struct{}, args []string) (
 			positionals = append(positionals, args[i+1:]...)
 			break
 		}
-		name, inlineValue, ok := atlasFlagName(arg)
+		name, inlineValue, ok := atlasFlagName(valueFlags, arg)
 		if ok {
 			withoutPositionals = append(withoutPositionals, arg)
 			if !inlineValue {
@@ -1888,17 +1899,15 @@ func atlasLongFlagName(arg string) (string, bool) {
 	return before, true
 }
 
-func atlasFlagName(arg string) (name string, inlineValue, ok bool) {
-	switch {
-	case strings.HasPrefix(arg, "--") && len(arg) > len("--"):
-		before, _ := atlasLongFlagName(arg)
-		_, _, found := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
-		return before, found, true
-	case strings.HasPrefix(arg, "-") && len(arg) == 2:
-		return strings.TrimPrefix(arg, "-"), false, true
-	default:
-		return "", false, false
-	}
+// atlasFlagName reads arg with [atlasargs.ParseArg], with valueFlags naming
+// the flags that take a value, and returns the name it spells, the long name
+// or the shorthand letter, and whether the argument carries the value.
+func atlasFlagName(valueFlags map[string]struct{}, arg string) (name string, inlineValue, ok bool) {
+	parsed, ok := atlasargs.ParseArg(arg, func(shorthand string) bool {
+		_, found := valueFlags[shorthand]
+		return found
+	})
+	return parsed.Name, parsed.HasValue, ok
 }
 
 // quietingLogLevelArgs returns the native --log-level argument that keeps a

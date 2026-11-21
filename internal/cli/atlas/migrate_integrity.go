@@ -471,7 +471,7 @@ func rewriteAtlasMigrateSourceArgs(verb atlasVerb, args []string, dir, dirFormat
 			tail = args[i:]
 			break
 		}
-		name, inlineValue, ok := atlasFlagName(arg)
+		name, inlineValue, ok := atlasFlagName(valueFlags, arg)
 		if !ok {
 			out = append(out, arg)
 			continue

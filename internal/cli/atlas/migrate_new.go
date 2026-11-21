@@ -128,7 +128,7 @@ func atlasMigrateNewVerb() atlasVerb {
 			// native command is also reachable as `ptah migrations create`,
 			// where no Atlas default is owed, and atlas.hcl `migration.dir`
 			// and PTAH_MIGRATIONS_DIR both still win because
-			// atlasargs.appendDefaultArgs only fills an absent flag.
+			// atlasargs.withDefaultArgs only fills an absent flag.
 			atlasargs.NativeLocalDirDefault(
 				"dir", "", "Migration directory", "migrations-dir", atlasDefaultMigrationDirURL,
 			),

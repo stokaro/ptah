@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/advisorysource"
+	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/dburldisplay"
@@ -72,7 +73,7 @@ source does not wait 5 seconds to find that out.`,
 	}
 	severities := strings.Join(vulnerability.SeverityNames(), ", ")
 	flags := cmd.Flags()
-	flags.StringArrayVar(&opts.dbURLs, "db-url", nil, "Database URL to scan; repeat to scan several databases (required)")
+	flags.StringArrayVar(&opts.dbURLs, dbURLFlag, nil, "Database URL to scan; repeat to scan several databases (required)")
 	flags.StringVar(&opts.advisories, "advisories", "", "Local advisory snapshot JSON for every target; empty reads --advisory-source")
 	flags.StringVar(&opts.advisorySource, "advisory-source", advisorysource.Repository,
 		"Where reviewed advisory snapshots come from: repository, the files at "+advisorysource.DefaultLocation+
@@ -98,6 +99,21 @@ type targetReport struct {
 
 type document struct {
 	Targets []targetReport `json:"targets"`
+}
+
+// dbURLFlag is the flag that names a database to scan.
+const dbURLFlag = "db-url"
+
+// dbURLFlagAsTyped names --db-url the way the operator spelled it:
+// ptah-compat's `security scan` forwards its -u/--url here, and a message
+// naming --db-url there names a flag that surface refuses. Only the connect
+// error needs it: that surface refuses an absent or empty URL itself, before
+// it forwards.
+func dbURLFlagAsTyped(cmd *cobra.Command) string {
+	if cmdadapter.Forwarded(cmd) {
+		return "url"
+	}
+	return dbURLFlag
 }
 
 func run(cmd *cobra.Command, opts options) error {
@@ -152,7 +168,7 @@ func run(cmd *cobra.Command, opts options) error {
 
 func validate(opts options) (vulnerability.Policy, error) {
 	if len(opts.dbURLs) == 0 || slices.Contains(opts.dbURLs, "") {
-		return vulnerability.Policy{}, errors.New("--db-url is required and must not be empty")
+		return vulnerability.Policy{}, errors.New("--" + dbURLFlag + " is required and must not be empty")
 	}
 	if opts.format != "table" && opts.format != "json" {
 		return vulnerability.Policy{}, errors.New("--format must be table or json")
@@ -193,7 +209,7 @@ func scan(cmd *cobra.Command, dbURL string, opts options, input scanInput) (targ
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), dbURL)
 	if err != nil {
 		return failedTarget(dbURL, vulnerability.Inventory{}, "not_assessed", "database connection failed"),
-			dburldisplay.RedactError(dbURL, fmt.Errorf("connect to --db-url %s: %w", dburldisplay.Format(dbURL), err))
+			dburldisplay.RedactError(dbURL, fmt.Errorf("connect to --%s %s: %w", dbURLFlagAsTyped(cmd), dburldisplay.Format(dbURL), err))
 	}
 	defer func() { _ = conn.Close() }()
 	report, err := vulnerability.Scan(cmd.Context(), conn, vulnerability.ScanInput{AdvisoryPath: opts.advisories,
