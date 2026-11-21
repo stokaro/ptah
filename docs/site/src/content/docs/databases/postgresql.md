@@ -2488,6 +2488,13 @@ server version, and PostgreSQL 16 has no `MAINTAIN` to report. A `REVOKE` of
 everything `ALL` names on a table the plan creates is planned as `REVOKE ALL`,
 because PostgreSQL 16 refuses the word `MAINTAIN`.
 
+A declared `REVOKE ALL` takes every privilege the server reports the role
+holding on the object and on its columns, whatever the server calls it. On
+PostgreSQL that is what `ALL` names. On CockroachDB it also takes `DROP`,
+`ZONECONFIG`, `CHANGEFEED` and the other privileges CockroachDB adds, and a
+grant the catalog reports as one `ALL` row. A grant after the revoke in a SQL
+file is what the role keeps.
+
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
 statement order, and the later statement about one privilege of one role on
 one object wins. Go annotations, HCL and YAML have no statement order, so

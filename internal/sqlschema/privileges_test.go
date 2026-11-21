@@ -51,7 +51,7 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 			sql: "REVOKE ALL ON FUNCTION purge_workspace(uuid) FROM PUBLIC;\n" +
 				"GRANT EXECUTE ON FUNCTION purge_workspace(uuid) TO wpmgr_app;",
 			wantGrants:  []privilege{{Role: "wpmgr_app", Target: "ROUTINE purge_workspace(uuid)", Privileges: []string{"EXECUTE"}}},
-			wantRevoked: []privilege{{Role: "PUBLIC", Target: "ROUTINE purge_workspace(uuid)", Privileges: []string{"EXECUTE"}}},
+			wantRevoked: []privilege{{Role: "PUBLIC", Target: "ROUTINE purge_workspace(uuid)", Privileges: []string{"ALL"}}},
 		},
 		{
 			name: "a table revoke with no grant before it is kept, one privilege each",
@@ -74,17 +74,33 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 			wantGrants: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}}},
 		},
 		{
-			name: "REVOKE ALL on a table names every table privilege",
-			sql:  "REVOKE ALL PRIVILEGES ON TABLE t FROM r;",
-			wantRevoked: []privilege{
+			name:        "REVOKE ALL on a table is the absence of every privilege on it",
+			sql:         "REVOKE ALL PRIVILEGES ON TABLE t FROM r;",
+			wantRevoked: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"ALL"}}},
+		},
+		{
+			name:        "REVOKE ALL takes every earlier grant on the table and its columns",
+			sql:         "GRANT SELECT, INSERT ON t TO r;\nGRANT UPDATE (a) ON t TO r;\nGRANT SELECT ON u TO r;\nREVOKE ALL ON t FROM r;",
+			wantGrants:  []privilege{{Role: "r", Target: "TABLE u", Privileges: []string{"SELECT"}}},
+			wantRevoked: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"ALL"}}},
+		},
+		{
+			name:        "a grant after REVOKE ALL is the one privilege held",
+			sql:         "REVOKE ALL ON t FROM r;\nGRANT SELECT ON t TO r;",
+			wantGrants:  []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}}},
+			wantRevoked: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"ALL"}}},
+		},
+		{
+			name:        "REVOKE ALL after GRANT ALL",
+			sql:         "GRANT ALL ON t TO r;\nREVOKE ALL ON t FROM r;",
+			wantRevoked: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"ALL"}}},
+		},
+		{
+			name: "GRANT OPTION FOR ALL clears the option on what the file granted",
+			sql:  "GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantGrants: []privilege{
 				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
 				{Role: "r", Target: "TABLE t", Privileges: []string{"INSERT"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"UPDATE"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"DELETE"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"TRUNCATE"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"REFERENCES"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"TRIGGER"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"MAINTAIN"}},
 			},
 		},
 		{
@@ -139,6 +155,21 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 			wantErr: `REVOKE GRANT OPTION FOR SELECT ON TABLE t FROM r names a grant this schema does not make: .*`,
 		},
 		{
+			name:    "GRANT OPTION FOR ALL with no grant in the file",
+			sql:     "REVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t FROM r names a grant this schema does not make: .*`,
+		},
+		{
+			name:    "REVOKE ALL on a column after a grant on the whole table",
+			sql:     "GRANT SELECT ON t TO r;\nREVOKE ALL (a) ON t FROM r;",
+			wantErr: `REVOKE ALL \(a\) ON t FROM r follows a GRANT on the whole table, which covers every column, .*`,
+		},
+		{
+			name:    "a column revoke after GRANT ALL on the whole table",
+			sql:     "GRANT ALL ON t TO r;\nREVOKE SELECT (a) ON t FROM r;",
+			wantErr: `REVOKE SELECT \(a\) ON t FROM r follows a GRANT of SELECT on the whole table, which covers every column, .*`,
+		},
+		{
 			name:    "a revoke of one privilege after GRANT ALL on a table",
 			sql:     "GRANT ALL ON t TO r;\nREVOKE TRUNCATE ON t FROM r;",
 			wantErr: `REVOKE ON TABLE t FROM r follows a GRANT ALL on it, .*name the privileges in the GRANT`,
@@ -153,6 +184,35 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.wantErr)
 			c.Assert(database.Grants, qt.IsNil)
+		})
+	}
+}
+
+// TestRead_RevokeAll_HappyPath pins that REVOKE ALL reads as ALL from every
+// source platform. What ALL names differs from one server to the next -- on
+// MySQL 8.4.13 it covers ALTER, DROP and INDEX, which no PostgreSQL table
+// privilege is called -- so a list written here would leave the rest held.
+func TestRead_RevokeAll_HappyPath(t *testing.T) {
+	tests := []struct {
+		platform string
+		sql      string
+		want     []privilege
+	}{
+		{platform: platform.Postgres, sql: "REVOKE ALL ON t1 FROM r;", want: []privilege{{Role: "r", Target: "TABLE t1", Privileges: []string{"ALL"}}}},
+		{platform: platform.MySQL, sql: "REVOKE ALL ON t1 FROM r;", want: []privilege{{Role: "r", Target: "TABLE t1", Privileges: []string{"ALL"}}}},
+		{platform: platform.MariaDB, sql: "REVOKE ALL PRIVILEGES ON t1 FROM r;", want: []privilege{{Role: "r", Target: "TABLE t1", Privileges: []string{"ALL"}}}},
+		{platform: platform.SQLServer, sql: "REVOKE ALL ON t1 FROM r;", want: []privilege{{Role: "r", Target: "TABLE t1", Privileges: []string{"ALL"}}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.platform, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), test.platform)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Grants, qt.HasLen, 0)
+			c.Assert(privileges(database.RevokedGrants), qt.DeepEquals, test.want)
 		})
 	}
 }

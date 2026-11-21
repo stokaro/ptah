@@ -38,6 +38,13 @@ import (
 // it on any column: measured on PostgreSQL 18, REVOKE UPDATE ON t after GRANT
 // UPDATE (a) ON t empties the column's ACL, and a table privilege covers every
 // column.
+//
+// A revoke spelling ALL takes every privilege of its grantee on its object out
+// of dst, whatever the privilege is called, and is recorded as ALL: what ALL
+// names differs from one server to the next, and a list of it would leave
+// whatever it misses held. A later grant of one privilege leaves the revoked
+// ALL in place, so the two together say the grantee holds that privilege and
+// nothing else on the object.
 func Merge(dst, src *schemamodel.Database) {
 	for _, declared := range src.RevokedGrants {
 		if len(declared.Privileges) == 0 {
@@ -75,7 +82,7 @@ func mergeRevoke(dst *schemamodel.Database, revoked schemamodel.Grant) {
 
 func mergeGrant(dst *schemamodel.Database, grant schemamodel.Grant) {
 	target := grant.TargetKey()
-	all := slices.Contains(grant.Privileges, "ALL")
+	all := slices.Contains(grant.Privileges, allPrivileges)
 	dst.RevokedGrants = slices.DeleteFunc(dst.RevokedGrants, func(revoked schemamodel.Grant) bool {
 		sameTarget := revoked.TargetKey() == target ||
 			(tableWide(grant) && revoked.OnTable == grant.OnTable && len(revoked.Columns) > 0)
@@ -92,14 +99,15 @@ func tableWide(grant schemamodel.Grant) bool {
 		grant.OnRoutine == "" && len(grant.Columns) == 0
 }
 
-// withoutColumns takes one privilege out of every column grant of it to role
-// on table, dropping a grant left with no privilege.
+// withoutColumns takes one privilege, or every privilege for ALL, out of every
+// column grant of it to role on table, dropping a grant left with no
+// privilege.
 func withoutColumns(grants []schemamodel.Grant, role, table, privilege string) []schemamodel.Grant {
 	kept := make([]schemamodel.Grant, 0, len(grants))
 	for _, grant := range grants {
 		if grant.Role == role && grant.OnTable == table && len(grant.Columns) > 0 {
 			grant.Privileges = slices.DeleteFunc(slices.Clone(grant.Privileges), func(name string) bool {
-				return name == privilege
+				return names(privilege, name)
 			})
 			if len(grant.Privileges) == 0 {
 				continue
@@ -111,24 +119,25 @@ func withoutColumns(grants []schemamodel.Grant, role, table, privilege string) [
 }
 
 // HeldOnTable reports whether a grant to role gives privilege, or ALL, on the
-// whole of table. A revoke of that privilege on one column cannot take it
-// away: the table privilege covers every column.
+// whole of table, where privilege ALL asks about any grant there. A revoke of
+// that privilege on one column cannot take it away: the table privilege covers
+// every column.
 func HeldOnTable(grants []schemamodel.Grant, role, table, privilege string) bool {
 	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {
 		return grant.Role == role && tableWide(grant) && grant.OnTable == table &&
-			(slices.Contains(grant.Privileges, privilege) || slices.Contains(grant.Privileges, "ALL"))
+			slices.ContainsFunc(grant.Privileges, func(name string) bool { return names(privilege, name) || name == allPrivileges })
 	})
 }
 
-// Without takes one privilege out of every grant of it to role on target,
-// dropping a grant left with no privilege. It returns a new slice and leaves
-// grants as it was.
+// Without takes one privilege, or every privilege for ALL, out of every grant
+// of it to role on target, dropping a grant left with no privilege. It returns
+// a new slice and leaves grants as it was.
 func Without(grants []schemamodel.Grant, role, target, privilege string) []schemamodel.Grant {
 	kept := make([]schemamodel.Grant, 0, len(grants))
 	for _, grant := range grants {
 		if grant.Role == role && grant.TargetKey() == target {
 			grant.Privileges = slices.DeleteFunc(slices.Clone(grant.Privileges), func(name string) bool {
-				return name == privilege
+				return names(privilege, name)
 			})
 			if len(grant.Privileges) == 0 {
 				continue
@@ -143,8 +152,18 @@ func Without(grants []schemamodel.Grant, role, target, privilege string) []schem
 // single privilege cannot be taken out of without knowing the server's list.
 func HeldAsAll(grants []schemamodel.Grant, role, target string) bool {
 	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {
-		return grant.Role == role && grant.TargetKey() == target && slices.Contains(grant.Privileges, "ALL")
+		return grant.Role == role && grant.TargetKey() == target && slices.Contains(grant.Privileges, allPrivileges)
 	})
+}
+
+// allPrivileges is the keyword a grant or a revoke spells for every privilege
+// on its object.
+const allPrivileges = "ALL"
+
+// names reports whether a revoke of privilege takes the privilege called name:
+// its own, or any for ALL.
+func names(privilege, name string) bool {
+	return privilege == allPrivileges || name == privilege
 }
 
 func isRevoked(revoked []schemamodel.Grant, role, target, privilege string) bool {

@@ -1051,6 +1051,8 @@ role it does not know. `GRANT ... WITH GRANT OPTION` is emitted when the
 declaration asks for it, and taking that option away again is the single
 statement `REVOKE GRANT OPTION FOR ...`, which leaves the privilege itself in
 place. Removing a grant emits `REVOKE <privileges> ON <scope> FROM <role>`.
+A declared `REVOKE ALL ON <table>` takes every access type `system.grants`
+reports for the role on the table, whatever the release calls it.
 `DROP ROLE IF EXISTS` has a rendering for a schema source that spells one out,
 but comparison never plans it — see "Roles are never dropped" below.
 

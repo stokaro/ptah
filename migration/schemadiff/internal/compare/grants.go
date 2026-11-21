@@ -237,7 +237,7 @@ type grantRead struct {
 	target         identifier.Semantics
 	managedRoles   map[string]bool
 	generatedRoles map[string]bool
-	revoked        map[grantIdentity]bool
+	revoked        revokedIdentities
 	// respellings is the declared column privileges, keyed as the server
 	// compares the column, on a target where a column privilege serves only
 	// its own spelling; see [GrantOptions.ColumnsBySpelling].
@@ -321,7 +321,7 @@ func (read grantRead) removes(grant catalog.Grant, ref difftypes.GrantRef, targe
 	if read.removable(ref) && !grant.Implicit && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant) {
 		return true
 	}
-	if read.revoked[targetKey] || read.revoked[targetKey.onWholeObject()] {
+	if read.revoked.covers(targetKey) {
 		return true
 	}
 	return ref.Column != "" && declaredGrant(targetKey, read.respellings)
@@ -388,7 +388,7 @@ func unmanagedOwnerPrivileges(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	declared map[grantIdentity]difftypes.GrantRef,
-	revoked map[grantIdentity]bool,
+	revoked revokedIdentities,
 	sequences columnSequences,
 	semantics identifier.Semantics,
 ) []difftypes.OwnerPrivilegeDeviation {
@@ -401,7 +401,7 @@ func unmanagedOwnerPrivileges(
 		}
 		ref := grantRefFromDatabase(grant)
 		key := sequences.databaseKey(newGrantIdentity(ref, semantics))
-		if declaredGrant(key, declared) || revoked[key] || !declaresGrantObject(desired, ref, semantics) {
+		if declaredGrant(key, declared) || revoked.covers(key) || !declaresGrantObject(desired, ref, semantics) {
 			continue
 		}
 		at := object{objectType: strings.ToUpper(ref.ObjectType), name: ref.ObjectName, owner: ref.Role}
@@ -535,25 +535,36 @@ func declaredGrant(key grantIdentity, declared map[grantIdentity]difftypes.Grant
 	return slices.Contains(pgprivilege.All(key.objectType), key.privilege)
 }
 
-// revokedGrantIdentities keys every privilege the desired schema revokes. A
-// revoked ALL is keyed as itself and as each privilege it names, so it matches
-// a catalog read's per-privilege rows as well as a file's ALL.
+// revokedIdentities keys every privilege the desired schema revokes, a revoked
+// ALL keyed as itself.
+type revokedIdentities map[grantIdentity]bool
+
+// covers reports whether the desired schema revokes the privilege key names:
+// that privilege, or ALL, on the same object or on the whole of its table.
+//
+// A revoked ALL covers every privilege the database reports on the object,
+// whatever it is called, rather than a list of what ALL names. The list
+// differs from one server to the next and grows with releases, and a REVOKE
+// that misses a privilege leaves it held: written as PostgreSQL's table list,
+// a REVOKE ALL leaves a MySQL 8.4.13 role ALTER, DROP and INDEX, and the next
+// plan reads as synced. A privilege ALL leaves out on some server, such as
+// CONTROL on SQL Server, is covered too: the declaration says the grantee
+// holds nothing on the object, and a member holding CONTROL still reads it.
+func (r revokedIdentities) covers(key grantIdentity) bool {
+	table := key.onWholeObject()
+	return r[key] || r[table] || r[key.withPrivilege(allPrivilege)] || r[table.withPrivilege(allPrivilege)]
+}
+
+// revokedGrantIdentities keys every privilege the desired schema revokes.
 func revokedGrantIdentities(
 	desired *schemamodel.Database,
 	sequences columnSequences,
 	semantics identifier.Semantics,
-) map[grantIdentity]bool {
-	revoked := make(map[grantIdentity]bool)
+) revokedIdentities {
+	revoked := make(revokedIdentities)
 	for _, grant := range desired.RevokedGrants {
 		for _, ref := range grantRefsFromGenerated(grant) {
-			key := sequences.desiredKey(newGrantIdentity(ref, semantics))
-			revoked[key] = true
-			if key.privilege != allPrivilege {
-				continue
-			}
-			for _, privilege := range pgprivilege.All(key.objectType) {
-				revoked[key.withPrivilege(privilege)] = true
-			}
+			revoked[sequences.desiredKey(newGrantIdentity(ref, semantics))] = true
 		}
 	}
 	return revoked
