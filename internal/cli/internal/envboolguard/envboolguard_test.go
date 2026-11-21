@@ -51,6 +51,7 @@ var nonBooleanPtahVars = []string{
 	// Two spellings, because the rename in stokaro/ptah#1887 honors the old one
 	// so a checkout configured before it keeps working -- and both have to be
 	// classified, or this guard reports the compatibility as an oversight.
+	"PTAH_ADVISORY_SOURCE",       // where db vulnerabilities reads reviewed advisory snapshots
 	"PTAH_ASSIST_CONFIG",         // path to the operator's Ptah Assist provider profiles
 	"PTAH_ASSIST_MODEL",          // model identifier for a profile that states none
 	"PTAH_ASSIST_PROFILE",        // provider profile to use when nothing else selects one

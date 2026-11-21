@@ -288,7 +288,7 @@ seven of them as open capabilities regardless.
 | Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Schema security findings over roles, grants and policies | 🔷 | ❌ | ✅ | Findings over a live schema's grants, policies, routines and role graph, including how much of the database each role reaches, local and with no account. Skipped rules are named, not silent. |
-| Server version vulnerability scan | 🟡 | ❌ | ✅ | `ptah db vulnerabilities` matches server versions to local advisories and sends no inventory; `ptah-compat security scan` runs it under PTAH_ATLAS_SECURITY_SCAN. No SQL Server (stokaro/ptah#6327). |
+| Server version vulnerability scan | 🟡 | ❌ | ✅ | `ptah db vulnerabilities` matches server versions to reviewed advisories from Ptah's repository or the binary and sends no inventory; `ptah-compat security scan` runs it. No SQL Server (#6327). |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--server-version` server string; text/json output, rule disable. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
 

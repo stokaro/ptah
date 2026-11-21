@@ -149,6 +149,12 @@ func TestCommand_FailurePath(t *testing.T) {
 		{name: "unknown threshold", args: []string{"--db-url", "sqlite:///:memory:", "--fail-severity", "High"}, want: `--fail-severity: unknown severity "High"`},
 		{name: "malformed ignore", args: []string{"--db-url", "sqlite:///:memory:", "--ignore", "GHSA-1234"}, want: `--ignore: invalid or repeated ignored advisory ID "GHSA-1234"`},
 		{name: "repeated ignore", args: []string{"--db-url", "sqlite:///:memory:", "--ignore", "CVE-2026-9547", "--ignore", "CVE-2026-9547"}, want: `--ignore: invalid or repeated ignored advisory ID "CVE-2026-9547"`},
+		// An unreachable PostgreSQL target would be written as a scan error; an
+		// empty stdout shows the source is refused before any connection.
+		{name: "advisory source over plain http", args: []string{"--db-url", "postgres://user:secret@127.0.0.1:1/app", "--advisory-source", "http://mirror.example.org/"},
+			want: `--advisory-source: advisory source http://mirror.example.org/: http is accepted only for a loopback host; use https`},
+		{name: "empty advisory source", args: []string{"--db-url", "postgres://user:secret@127.0.0.1:1/app", "--advisory-source", ""},
+			want: `--advisory-source: advisory source is neither "repository", "bundled" nor an absolute URL`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

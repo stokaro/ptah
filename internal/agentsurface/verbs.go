@@ -90,7 +90,8 @@ var verbs = map[string]Verb{
 	"db read": {TargetReads, ScratchNone,
 		"introspects the database and prints what it found"},
 	"db vulnerabilities": {TargetReads, ScratchNone,
-		"reads the database product, server version and installed extensions, then matches them against a local advisory snapshot"},
+		"reads the database product, server version and installed extensions, then matches them against a reviewed advisory " +
+			"snapshot it carries built in or fetches over HTTPS, naming only each scanned engine's snapshot file"},
 	"db verify": {TargetReads, ScratchNone,
 		"evaluates release assertions against the database it is given; every assertion is " +
 			"proved to be a read-only SELECT before it is sent, and the session is opened " +
