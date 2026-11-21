@@ -24,7 +24,9 @@ import (
 // bracketed names, which the switch did not give it, and which SQLite 3.51
 // reads (see internal/builtindialects/sqlite.go). So does the PostgreSQL
 // family, whose descriptors state nested block comments, which no switch read
-// and which PostgreSQL 18.6, CockroachDB v26.3.5 and YugabyteDB 2026.1.2 read.
+// and which PostgreSQL 18.6, CockroachDB v26.3.5 and YugabyteDB 2026.1.2 read,
+// and so does SQL Server, whose descriptor states them too: SQL Server 2025
+// ends `/* /* */ ' */` at the second `*/`, not the first.
 var switchAnswers = map[string]lexer.Options{
 	platform.Postgres: {
 		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true, NestedBlockComments: true,
@@ -42,8 +44,10 @@ var switchAnswers = map[string]lexer.Options{
 	},
 	platform.ClickHouse: {StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#", "//"}},
 	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true, LineCommentsDeclared: true},
-	platform.SQLServer:  {StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true, LineCommentsDeclared: true},
-	platform.Oracle:     {StandardStrings: true, LineCommentsDeclared: true},
+	platform.SQLServer: {
+		StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true, NestedBlockComments: true, LineCommentsDeclared: true,
+	},
+	platform.Oracle: {StandardStrings: true, LineCommentsDeclared: true},
 }
 
 // TestOptions_AgreesWithTheSwitchItReplaces pins Options for every spelling

@@ -67,6 +67,25 @@ var (
 		},
 	}
 
+	// UnprobedDeclarations is a declaration a probe would spell that is
+	// compared as written instead, because its text could reach past the
+	// place the probe statement writes it in: it leaves a string, quoted name
+	// or comment open, closes a parenthesis it does not open or leaves one
+	// open, or holds a statement separator. The probe runs in a transaction it
+	// rolls back, and such text could end that transaction and run statements
+	// that outlive the rollback. Its records carry the declaration as the
+	// "object" attribute and why its probe did not run as the "cause"
+	// attribute, and like [UndecidedObjects] the summary names every
+	// declaration.
+	UnprobedDeclarations = &Category{
+		Name: "unprobed-declaration",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d declarations are compared as written, not in the form the server stores: "+
+				"the text of each could reach past its place in the probe statement that spells it, so the probe does not run: %s",
+				len(records), objectsByCause(records))
+		},
+	}
+
 	// IgnoredProjectSettings is an atlas.hcl name the community binary
 	// accepts without acting on.
 	IgnoredProjectSettings = &Category{

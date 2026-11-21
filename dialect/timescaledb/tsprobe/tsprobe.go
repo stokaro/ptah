@@ -15,6 +15,8 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/internal/probetext"
+	"ptah.run/internal/probetx"
 	"ptah.run/internal/sqlident"
 )
 
@@ -87,9 +89,12 @@ func (Service) NormalizeObjects(ctx context.Context, request schemaext.Normaliza
 				return nil
 			}
 			for i, probe := range probes {
-				body, ok, err := normalizeOne(ctx, tx, i, probe)
+				body, ok, err := normalizeOne(ctx, tx, request.Target, i, probe)
 				if err != nil {
 					return err
+				}
+				if err := probetx.Check(ctx); err != nil {
+					return fmt.Errorf("resolve continuous aggregate bodies: %s: %w", probe.object.Ref.Path(), err)
 				}
 				normalized[i], resolved[i] = body, ok
 			}
@@ -155,7 +160,15 @@ func rekey(request schemaext.NormalizationRequest, ref objectidentity.ID) object
 // a transaction block`. The probe sends the declared option too, because the
 // catalog reports it beside the definition and a probe naming a value the
 // declaration did not would answer for a different declaration.
-func normalizeOne(ctx context.Context, tx *sql.Tx, index int, probe probe) (string, bool, error) {
+//
+// The body follows AS at the top level of the statement, so a body that could
+// reach past it is not run, and the declaration is compared as written.
+func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, index int, probe probe) (string, bool, error) {
+	body := tsschema.FoldBody(probe.value.Body)
+	if refusal := probetext.Fragment(dialect, body); refusal != nil {
+		probetext.Warn(ctx, probe.object.Ref.String(), "continuous aggregate "+probe.object.Ref.Path(), refusal)
+		return "", false, nil
+	}
 	name := fmt.Sprintf("ptah_cagg_probe_%d", index)
 	qualified := name
 	if schema := tsschema.AuthoredSchema(probe.object.Ref); strings.TrimSpace(schema) != "" {
@@ -165,7 +178,7 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, index int, probe probe) (stri
 	if probe.value.MaterializedOnly != nil {
 		options += fmt.Sprintf(", timescaledb.materialized_only = %t", *probe.value.MaterializedOnly)
 	}
-	statement := fmt.Sprintf("CREATE MATERIALIZED VIEW %s WITH (%s) AS\n%s\nWITH NO DATA", qualified, options, tsschema.FoldBody(probe.value.Body))
+	statement := fmt.Sprintf("CREATE MATERIALIZED VIEW %s WITH (%s) AS\n%s\nWITH NO DATA", qualified, options, body)
 	const savepoint = "ptah_cagg_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return "", false, fmt.Errorf("resolve continuous aggregate bodies: savepoint: %w", err)

@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsprobe"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/probetx"
 )
 
 // server scripts the statements a probe sends: whether the extension is
@@ -149,6 +151,57 @@ func TestNormalizeObjects_LeavesWhatItCouldNotAnswer(t *testing.T) {
 			c.Assert(scripted.executed, qt.DeepEquals, test.wantExecuted)
 		})
 	}
+}
+
+// TestNormalizeObjects_DoesNotRunABodyThatEndsItsStatement leaves a body the
+// statement could not contain to compare as written, and sends nothing for
+// it: the body follows AS at the top level, where a semicolon ends the
+// statement and what follows it runs on its own.
+func TestNormalizeObjects_DoesNotRunABodyThatEndsItsStatement(t *testing.T) {
+	c := qt.New(t)
+	scripted := &server{installed: true, stored: "SELECT 1;"}
+	db := dbtest.OpenWithExec(t, scripted.query, scripted.exec)
+	held := tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{
+		Body: "SELECT 1 WITH NO DATA; COMMIT; CREATE TABLE public.made_by_plan (x int); BEGIN; SELECT 1"})
+
+	result, err := tsprobe.Service{}.NormalizeObjects(t.Context(), request(c, session{db: db.SQL}, held))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalized(c, result, "", "hourly"), qt.IsNil)
+	c.Assert(scripted.executed, qt.IsNil)
+}
+
+// restartingSession runs the probe as session does, in a transaction the
+// server names 17 when it begins and 18 every time after, as it names one a
+// probe ended and began again.
+type restartingSession struct{ session }
+
+func (s restartingSession) WithRolledBackTransaction(ctx context.Context, label string, body func(context.Context, *sql.Tx) error) (bool, error) {
+	calls := 0
+	watched, err := probetx.Watch(ctx, func(context.Context) (string, error) {
+		calls++
+		return strconv.Itoa(16 + min(calls, 2)), nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return s.session.WithRolledBackTransaction(watched, label, body)
+}
+
+// TestNormalizeObjects_StopsWhenAProbeEndsTheTransaction fails the
+// normalization, naming the aggregate, when the transaction is not the one
+// the probe began in.
+func TestNormalizeObjects_StopsWhenAProbeEndsTheTransaction(t *testing.T) {
+	c := qt.New(t)
+	scripted := &server{installed: true, stored: "SELECT 1;"}
+	db := dbtest.OpenWithExec(t, scripted.query, scripted.exec)
+	held := tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{Body: "SELECT 1"})
+
+	result, err := tsprobe.Service{}.NormalizeObjects(t.Context(), request(c, restartingSession{session{db: db.SQL}}, held))
+
+	c.Assert(err, qt.ErrorIs, probetx.ErrTransactionChanged)
+	c.Assert(err, qt.ErrorMatches, `resolve continuous aggregate bodies: .*hourly: a probe ended the transaction .*`)
+	c.Assert(result, qt.DeepEquals, schemaext.NormalizationResult{})
 }
 
 // TestNormalizeObjects_FailurePath pins the refusals that come before any

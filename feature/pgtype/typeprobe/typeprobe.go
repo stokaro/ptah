@@ -69,7 +69,7 @@ func (Service) NormalizeObjects(ctx context.Context, request schemaext.Normaliza
 	if len(probes) == 0 {
 		return result, nil
 	}
-	answers, err := dbexprprobe.ProbeDomainExpressions(ctx, request.Session, asked)
+	answers, err := dbexprprobe.ProbeDomainExpressions(ctx, request.Session, request.Target, asked)
 	if err != nil {
 		return schemaext.NormalizationResult{}, err
 	}
@@ -127,7 +127,7 @@ func heldProbes(request schemaext.NormalizationRequest) ([]probe, []dbexprprobe.
 		}
 		probes = append(probes, probe{object: object, value: value})
 		asked = append(asked, dbexprprobe.DomainExpressionProbe{Key: strconv.Itoa(len(asked)), BaseType: value.BaseType,
-			Check: value.Check, Default: defaultSQL})
+			Check: value.Check, Default: defaultSQL, Object: "domain " + object.Ref.Path()})
 	}
 	return probes, asked, nil
 }

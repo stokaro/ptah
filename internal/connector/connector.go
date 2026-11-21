@@ -116,6 +116,11 @@ type Service interface {
 	// KeepDDLInTransaction prepares tx, a transaction that will be rolled
 	// back, so that DDL run inside it stays inside it.
 	KeepDDLInTransaction(ctx context.Context, tx *sql.Tx, info catalog.ServerInfo) error
+	// TransactionIdentity names the transaction tx runs in, as the server
+	// reports it, so that a caller holding a transaction it will roll back
+	// can tell that statements it ran ended it and began another. Empty means
+	// the engine names none, and nothing is compared.
+	TransactionIdentity(ctx context.Context, tx *sql.Tx) (string, error)
 	// RestrictUntrustedSQL applies, and verifies, every restriction the
 	// engine offers on a session that will run SQL the caller does not
 	// trust.
@@ -199,6 +204,9 @@ func (Base) OutsideTransaction(context.Context, *sql.Conn) bool { return false }
 
 // KeepDDLInTransaction does nothing.
 func (Base) KeepDDLInTransaction(context.Context, *sql.Tx, catalog.ServerInfo) error { return nil }
+
+// TransactionIdentity names no transaction.
+func (Base) TransactionIdentity(context.Context, *sql.Tx) (string, error) { return "", nil }
 
 // RestrictUntrustedSQL does nothing: the engine offers no session-level
 // restriction.

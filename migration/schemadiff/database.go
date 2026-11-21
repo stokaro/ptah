@@ -289,6 +289,7 @@ func resolveTriggerConditions(
 			Event:   canonical.Event,
 			ForEach: canonical.ForEach,
 			When:    canonical.When,
+			Object:  fmt.Sprintf("trigger %s on %s", trigger.Name, trigger.Table),
 		})
 	}
 	if len(probes) == 0 {
@@ -414,19 +415,19 @@ func resolveViewBodies(
 	}
 	seen := make(map[string]bool)
 	var probes []dbexprprobe.ViewBodyProbe
-	ask := func(name, body string) {
+	ask := func(kind, name, body string) {
 		key := exprkey.ViewBody(body)
 		if seen[key] || !held[strings.ToLower(bareName(name))] {
 			return
 		}
 		seen[key] = true
-		probes = append(probes, dbexprprobe.ViewBodyProbe{Key: key, Body: body})
+		probes = append(probes, dbexprprobe.ViewBodyProbe{Key: key, Body: body, Object: kind + " " + name})
 	}
 	for _, view := range desired.Views {
-		ask(view.Name, view.Body)
+		ask("view", view.Name, view.Body)
 	}
 	for _, view := range desired.MaterializedViews {
-		ask(view.Name, compare.MaterializedViewQuery(view.Body, dialect))
+		ask("materialized view", view.Name, compare.MaterializedViewQuery(view.Body, dialect))
 	}
 	if len(probes) == 0 {
 		return nil, nil
@@ -462,7 +463,7 @@ func routineArgumentsProbe(
 ) (dbexprprobe.RoutineArgumentsProbe, bool, error) {
 	dialect := info.Dialect
 	name := fmt.Sprintf("ptah_routine_probe_%d", index)
-	probe := dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name}
+	probe := dbexprprobe.RoutineArgumentsProbe{Key: key, Name: name, Object: "routine " + function.Name}
 	declared := schemamodel.Function{
 		Name:       "pg_temp." + name,
 		Kind:       function.Kind,
@@ -503,6 +504,7 @@ func routineArgumentsProbe(
 		return dbexprprobe.RoutineArgumentsProbe{}, false, err
 	}
 	probe.Statement, probe.Drop = result.Fragments[0].SQL, result.Fragments[1].SQL
+	probe.BareBody = routinebody.SQLStandard(declared.Language, declared.Body)
 	if probe.SQLStandardBody {
 		signature := declared
 		signature.Language = "sql"
@@ -829,6 +831,7 @@ func resolveCheckExpressions(
 			Schema:     cmp.Or(live.schema, conn.Info().Schema),
 			Columns:    live.columns,
 			Expression: constraint.CheckExpression,
+			Object:     fmt.Sprintf("CHECK %s on %s", constraint.Name, constraint.Table),
 		})
 	}
 	if len(probes) == 0 {
@@ -1151,6 +1154,7 @@ func resolveIndexExpressions(
 			Expression: expression,
 			Parts:      parts,
 			Predicate:  index.Condition,
+			Object:     fmt.Sprintf("index %s on %s", index.Name, owners[position]),
 		})
 	}
 	if len(probes) == 0 {

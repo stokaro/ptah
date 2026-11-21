@@ -326,6 +326,27 @@ holds a routine of that name. Its temporary copy has the declared arguments and
 return type, and a body the server does not check, because the signature does
 not depend on the body.
 
+The declared text goes into the statement that creates the temporary object,
+inside the transaction that is rolled back. Text that ended the statement could
+end the transaction too, and what it ran after a `COMMIT` would stay. So a
+declaration is not asked when its text:
+
+- leaves a string, quoted name or comment open;
+- closes a parenthesis it does not open, or leaves one open;
+- holds a semicolon outside a string.
+
+Such a declaration is compared as written, and the run prints a warning that
+names it and the reason. The text is read the way every session of the engine
+can read it: as a session with `standard_conforming_strings` off reads a
+backslash in a string, and as CockroachDB ends a line comment only at a line
+feed. A string that ends in a backslash is therefore not asked.
+
+A SQL-standard routine body may hold semicolons, so the server parses the
+statement first, without running it, and the routine is asked only when the
+server reads one statement. After each probe Ptah asks the server which
+transaction it is in, and a command whose probe ended the transaction stops
+with an error.
+
 A generated column is asked on a temporary table that has the columns of the
 table the database holds. The server adds casts the declaration does not
 write: over a `varchar` column, `coalesce(title, '')` is stored as
