@@ -43,6 +43,12 @@ type Lint struct {
 	// OnlineMeasured reports that the online lint mode has a measurement for
 	// the dialect behind it.
 	OnlineMeasured bool `json:"online_measured,omitempty"`
+	// ExtensionAdvisories reports that a run reads, from a dev database of
+	// the dialect, what CREATE EXTENSION and ALTER EXTENSION ... UPDATE
+	// install, and matches each extension installed against reviewed
+	// advisory data, which the rules security/vulnerable-extension and
+	// coverage/unassessed-extension report.
+	ExtensionAdvisories bool `json:"extension_advisories,omitempty"`
 	// AtlasAnalyzer is the code prefix of the Atlas lint analyzer whose
 	// engine-specific codes cover the dialect, such as "MY", so an Atlas code
 	// a policy names is aliased only where its analyzer runs. Empty means no

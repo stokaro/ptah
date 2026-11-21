@@ -39,11 +39,13 @@ import (
 // role in a DO block is ordinary, and on a server the run owns the body can
 // only change what the run owns.
 //
-// A comment on an extension or a schema of the dev database is lifted here only
-// in a scope with [replay.Scope.Provisioned]. A server the operator named or
-// declared disposable outlives the run with the extensions and schemas its reset
-// keeps, so a later run on the same dev database would read a comment the reset
-// does not return; a provisioned server is discarded. A reset that returns a
+// A comment on an extension or a schema of the dev database, and ALTER
+// EXTENSION ... UPDATE, are lifted here only in a scope with
+// [replay.Scope.Provisioned]. A server the operator named or declared
+// disposable outlives the run with the extensions and schemas its reset keeps,
+// so a later run on the same dev database would read a comment, or an
+// extension version, the reset does not return; a provisioned server is
+// discarded. A reset that returns a
 // schema's comment lifts that comment on any server; see
 // [replay.Scope.SchemaCommentReturned]. A comment on a protected namespace such
 // as pg_catalog stays refused, as its mutation is.
@@ -60,7 +62,7 @@ func postgresServerWideOperation(tokens []lexer.Token, scope replay.Scope) strin
 	case "CREATE", "DROP":
 		return postgresServerWideCreateOrDrop(first, tokens)
 	case "ALTER":
-		return postgresServerWideAlter(tokens)
+		return postgresServerWideAlter(tokens, scope)
 	case "GRANT", "REVOKE":
 		return postgresServerWidePrivilege(tokens)
 	case "REASSIGN":
@@ -96,12 +98,17 @@ func postgresServerWideCreateOrDrop(first string, tokens []lexer.Token) string {
 
 // postgresServerWideAlter names a routine alteration, a role, user or group
 // altered without SET or RESET, and ALTER DEFAULT PRIVILEGES FOR ALL ROLES
-// without IN SCHEMA, which the realm cleanup cannot reset.
-func postgresServerWideAlter(tokens []lexer.Token) string {
+// without IN SCHEMA, which the realm cleanup cannot reset, and on a
+// provisioned server an extension update.
+func postgresServerWideAlter(tokens []lexer.Token, scope replay.Scope) string {
 	if definesPostgresRoutine(tokens) {
 		return "ALTER routine definition"
 	}
 	switch replay.NormalizedIdentifier(replay.TokenAt(tokens, 1)) {
+	case "EXTENSION":
+		if scope.Provisioned && postgresExtensionUpdate(tokens) {
+			return "ALTER EXTENSION UPDATE"
+		}
 	case "ROLE", "USER", "GROUP":
 		if replay.TokenSequenceAt(tokens, 1, "USER", "MAPPING") ||
 			replay.ContainsIdentifier(tokens[2:], "SET") || replay.ContainsIdentifier(tokens[2:], "RESET") {
@@ -172,4 +179,21 @@ func validatePostgresServerWideStatement(dialect string, tokens []lexer.Token, s
 		)
 	}
 	return nil
+}
+
+// postgresExtensionUpdate reports ALTER EXTENSION name UPDATE [TO version] and
+// nothing longer: the statement runs the update scripts the server ships for
+// the extension, in the dev database. Every other ALTER EXTENSION form, which
+// moves the extension or changes its members, stays refused on any server.
+func postgresExtensionUpdate(tokens []lexer.Token) bool {
+	if !replay.TokenSequenceAt(tokens, 1, "EXTENSION") || !replay.TokenSequenceAt(tokens, 3, "UPDATE") {
+		return false
+	}
+	switch len(tokens) {
+	case 4:
+		return true
+	case 6:
+		return replay.TokenSequenceAt(tokens, 4, "TO")
+	}
+	return false
 }

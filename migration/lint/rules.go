@@ -105,6 +105,7 @@ func builtinRules() []Rule {
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionControlRules()...)
 	rules = append(rules, atlasGapRules()...)
+	rules = append(rules, extensionRules()...)
 	return rules
 }
 
@@ -146,10 +147,11 @@ func validateRule(rule Rule) error {
 				"rule %s declares the %s input and must set BaselineSubjects to say which statements need it",
 				rule.Name, rule.Input)
 		}
-	case InputRoutineBody:
+	case InputRoutineBody, InputExtensionAssessment:
 		// No subjects predicate: which statements need a body is not a choice
 		// the rule makes, it is which of them define a routine, and the
-		// analysis already knows that (stokaro/ptah#2357).
+		// analysis already knows that (stokaro/ptah#2357). Which need the dev
+		// database's extension answers is which of them install an extension.
 		if rule.BaselineSubjects != nil {
 			return fmt.Errorf(
 				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",

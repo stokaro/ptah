@@ -983,6 +983,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--advisory-source` | `string` | `repository` | `PTAH_ADVISORY_SOURCE` | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
 | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
 | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |

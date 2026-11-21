@@ -116,6 +116,12 @@ A run that names the source, with `--advisory-source repository`, a URL or
 fallback as a gap. Findings only the copy carries are absent from that run,
 and the warning says the source was not used. `bundled` asks for no source.
 
+[`ptah migrations lint`](../../reference/lint-rules/#extensions-a-migration-installs)
+reads the same source, with the same flag and variable, for the extensions a
+migration installs on its dev database. It asks only when a migration installs
+one. An extension the source could not answer for in a run that names the
+source is reported as `coverage/unassessed-extension`, never as clean.
+
 A suppression entry must name an advisory that a snapshot the run reads
 pins, and an entry that names none fails the scan. After a fallback the entry
 may name an advisory only the copy carries, so it is a warning instead: the

@@ -87,6 +87,57 @@ func TestReplayGuardProvisionedServer_PostgresLiftsDevDatabaseComments(t *testin
 	}
 }
 
+// postgresExtensionUpdates are accepted only on a server the run provisioned:
+// each installs another version of an extension, which the reset of a server
+// that outlives the run keeps.
+var postgresExtensionUpdates = []struct {
+	name      string
+	statement string
+}{
+	{name: "to the default version", statement: `ALTER EXTENSION pgcrypto UPDATE`},
+	{name: "to a named version", statement: `ALTER EXTENSION pgcrypto UPDATE TO '1.3'`},
+	{name: "quoted name and version", statement: `ALTER EXTENSION "uuid-ossp" UPDATE TO "1.1";`},
+}
+
+// TestReplayGuardProvisionedServer_PostgresLiftsAnExtensionUpdate pins that an
+// extension update is accepted on a server the run provisioned and refused on
+// one the operator declared disposable or named, and that the refusal names the
+// remedy that lifts it.
+func TestReplayGuardProvisionedServer_PostgresLiftsAnExtensionUpdate(t *testing.T) {
+	for _, test := range postgresExtensionUpdates {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(postgresGuard(devclean.ReplayRealmProvisionedServer).ValidateStatement(test.statement), qt.IsNil)
+			c.Assert(postgresGuard(devclean.ReplayRealmServer).WithServerRealmRemedy(replayRemedy).ValidateStatement(test.statement),
+				qt.ErrorMatches, `postgres migration replay rejects ALTER EXTENSION because its effects cannot be confined `+
+					`to the disposable database realm; use a docker:// or docker\+<driver>:// dev URL, `+
+					`since a server declared disposable keeps this after the run`)
+			c.Assert(postgresGuard(devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy).ValidateStatement(test.statement),
+				qt.ErrorMatches, `postgres migration replay rejects ALTER EXTENSION .*; use a docker:// .*`)
+		})
+	}
+}
+
+// TestReplayGuardProvisionedServer_PostgresRefusesOtherExtensionChanges is the
+// control for the test above: an ALTER EXTENSION that moves an extension or
+// changes its members stays refused on a server the run provisioned, so the
+// lift is the update's shape and not the statement's first words.
+func TestReplayGuardProvisionedServer_PostgresRefusesOtherExtensionChanges(t *testing.T) {
+	guard := postgresGuard(devclean.ReplayRealmProvisionedServer)
+	for _, statement := range []string{
+		`ALTER EXTENSION pgcrypto SET SCHEMA app`,
+		`ALTER EXTENSION pgcrypto ADD FUNCTION app.digest(text)`,
+		`ALTER EXTENSION pgcrypto DROP FUNCTION app.digest(text)`,
+		`ALTER EXTENSION pgcrypto UPDATE TO '1.3' CASCADE`,
+	} {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(guard.ValidateStatement(statement), qt.ErrorMatches,
+				`postgres migration replay rejects ALTER EXTENSION because its effects cannot be confined to the disposable database realm`)
+		})
+	}
+}
+
 // TestReplayGuardDatabaseRealm_PostgresRefusesServerWideStatements is the
 // control for the test above: the same statements are refused on a server the
 // operator named, so the realm is what lifted them.

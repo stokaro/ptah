@@ -43,6 +43,7 @@ import (
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/vulnerability"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -217,6 +218,18 @@ type Options struct {
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
 	DevServerDisposable bool
+
+	// Advisories supplies the reviewed advisory snapshots that the
+	// extensions a migration installs on the dev database are matched
+	// against, as [vulnerability.ScanInput.Snapshots] does for a scan. Nil
+	// reads the snapshots built into the binary and makes no request. It is
+	// asked only on a run whose migrations install an extension and that
+	// replays them on a dev database.
+	Advisories vulnerability.SnapshotSource
+	// RequireAdvisorySource reports an extension as unassessed when
+	// Advisories did not get its snapshot from the advisory source, as a scan
+	// that names its source counts that as incomplete.
+	RequireAdvisorySource bool
 }
 
 // ChangedOptions records which CLI values were explicitly provided. This lets
@@ -633,6 +646,7 @@ func lintDirectory(
 	}
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL, opts.Runtime)
 	capture := newReplaySchemaCapture(opts, analysis)
+	extensions := newExtensionCollector(analysis.ExtensionRequests())
 	server := newServerTargetCollector(lintOptions.Target, deferred, lintOptions.RequireOnline)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:                 opts.Dir,
@@ -643,7 +657,7 @@ func lintDirectory(
 		AtlasTemplateData:   migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
 		RevisionVersions:    opts.RevisionVersions,
 		ObserveVersion:      replayVersionObserver(baseline, capture),
-		ObserveReplayed:     capture.replayedObserver(ctx),
+		ObserveReplayed:     replayedObservers(capture.replayedObserver(ctx), extensions.observer(ctx)),
 		ObserveServer:       server.observe,
 		// The replay runs each file the way the rules judge it.
 		OwnTransactions: lintOptions.TransactionOwner == lintext.TransactionOwnerFile,
@@ -671,9 +685,14 @@ func lintDirectory(
 	schemas := capture.result()
 	learned, learnedServer := server.learned()
 	learnedDialect := deferred.dialectFrom(server)
-	if len(baseline.read) == 0 && !learnedServer && learnedDialect == "" {
+	assessed, err := extensions.assess(ctx, opts)
+	if err != nil {
+		return lintOutcome{analysis, schemas, dialect}, fmt.Errorf("match the extensions the migrations install against advisory data: %w", err)
+	}
+	if len(baseline.read) == 0 && !learnedServer && learnedDialect == "" && assessed == nil {
 		return lintOutcome{analysis, schemas, dialect}, nil
 	}
+	lintOptions.Extensions = assessed
 	if learnedDialect != "" {
 		// The rules a run applies follow the product that answered, not the
 		// scheme that addressed it: `mysql://` reaching MariaDB ran MySQL's
