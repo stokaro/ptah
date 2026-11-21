@@ -162,7 +162,9 @@ func TestPlan_MySQLFamilyMergesAGhostWithAKeptPrivilegesOptionOnTheSameObject(t 
 // SQL Server and Oracle share this planner's type but not the MySQL-family
 // grant-option-per-object quirk, and neither reports a bare USAGE for an
 // orphaned grant option, so a USAGE removal there is left for the renderer's
-// own T-SQL refusal rather than rerouted as the ghost.
+// own T-SQL refusal rather than rerouted as the ghost. SQL Server takes the
+// option of a grantable privilege away before the privilege, so the refusal
+// comes twice, once for each statement.
 func TestPlan_SQLServerDoesNotTreatUsageAsAGrantOptionGhost(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{GrantsRemoved: []difftypes.GrantRef{
@@ -176,6 +178,7 @@ func TestPlan_SQLServerDoesNotTreatUsageAsAGrantOptionGhost(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
-		`-- SQLSERVER: revoke from "reader" names USAGE, which T-SQL has no privilege for; nothing was granted under that name either.`,
+		`-- SQLSERVER: revoke from "reader" names USAGE, which T-SQL has no privilege for; nothing was granted under that name either.` + "\n" +
+			`-- SQLSERVER: revoke from "reader" names USAGE, which T-SQL has no privilege for; nothing was granted under that name either.`,
 	})
 }

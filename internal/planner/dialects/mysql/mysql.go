@@ -2004,9 +2004,11 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 // # Migration Order
 //
 // The SQL statements are generated in a specific order to avoid dependency conflicts:
-//  0. On MySQL and MariaDB, revoke every privilege the plan takes away, since
-//     the server keeps a table or column privilege across DROP TABLE and DROP
-//     COLUMN and it applies again to an object created under the same name
+//  0. On MySQL, MariaDB and SQL Server, revoke every privilege the plan takes
+//     away: MySQL and MariaDB keep a table or column privilege across DROP
+//     TABLE and DROP COLUMN, and it applies again to an object created under
+//     the same name; on all three a revoke or a grant on a whole table reaches
+//     the column privileges of the same name
 //  1. Create new tables (MySQL handles enums inline, no separate enum creation needed)
 //  2. Modify existing tables (add/modify/remove columns)
 //  3. Add new indexes
@@ -2115,10 +2117,8 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps
 
-	// 00. On MySQL and MariaDB every revoke runs first, before a database, a
-	// table or a column is created: a privilege outlives the object it names
-	// and applies again to one created under its name. See
-	// [Planner.planRevokesFirst].
+	// 00. On MySQL, MariaDB and SQL Server every revoke runs first, before a
+	// database, a table or a column is created. See [Planner.planRevokesFirst].
 	result = p.planRevokesFirst(result, diff)
 
 	// 0. The schemas the added objects live in are created before any of

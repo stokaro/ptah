@@ -943,7 +943,7 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if err := grantrefusal.Routine("sqlserver", "GRANT", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
-	if err := grantrefusal.Columns("sqlserver", "GRANT", node.ObjectName, node.Columns); err != nil {
+	if err := refuseColumnPermissions("GRANT", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
 		return err
 	}
 	if r.refuses(capability.RoleManagement, "GRANT", node.Role) {
@@ -962,7 +962,7 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 		return nil
 	}
 	statement := fmt.Sprintf("GRANT %s ON %s TO %s",
-		strings.Join(privileges, ", "),
+		permissionList(privileges, node.Columns),
 		grantTargetIdentifier(node.ObjectType, node.ObjectName),
 		escapeIdentifier(unquoteIdentifier(node.Role)))
 	if node.WithOption {
@@ -984,7 +984,7 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if err := grantrefusal.Routine("sqlserver", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
-	if err := grantrefusal.Columns("sqlserver", "REVOKE", node.ObjectName, node.Columns); err != nil {
+	if err := refuseColumnPermissions("REVOKE", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
 		return err
 	}
 	if r.refuses(capability.RoleManagement, "REVOKE", node.Role) {
@@ -1006,7 +1006,7 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if node.GrantOptionFor {
 		parts = append(parts, "GRANT OPTION FOR")
 	}
-	parts = append(parts, strings.Join(privileges, ", "),
+	parts = append(parts, permissionList(privileges, node.Columns),
 		"ON", grantTargetIdentifier(node.ObjectType, node.ObjectName),
 		"FROM", escapeIdentifier(unquoteIdentifier(node.Role)))
 	if node.GrantOptionFor {
@@ -1014,6 +1014,49 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// columnPermissions are the permissions SQL Server grants on columns.
+// Measured on SQL Server 2019, 2022 and 2025, any other permission with a
+// column list is Msg 1020, "Sub-entity lists (such as column or security
+// expressions) cannot be specified for entity-level permissions": `GRANT
+// INSERT (id) ON t`. UNMASK takes a column list from SQL Server 2022 on.
+var columnPermissions = map[string]bool{"SELECT": true, "UPDATE": true, "REFERENCES": true, "UNMASK": true}
+
+// refuseColumnPermissions refuses a column list SQL Server cannot keep, by
+// name, before the server sees it. A column permission is on a table or a
+// view, which the reader names TABLE, and is one of [columnPermissions].
+func refuseColumnPermissions(statement, objectType, objectName string, privileges, columns []string) error {
+	if len(columns) == 0 {
+		return nil
+	}
+	if kind := strings.ToUpper(strings.TrimSpace(objectType)); kind != "TABLE" && kind != "VIEW" {
+		return fmt.Errorf("%w: %s (%s) ON %s %s: a column permission is on a table or a view",
+			ptaherr.ErrUnsupportedFeature, statement, strings.Join(columns, ", "), kind, objectName)
+	}
+	for _, privilege := range privileges {
+		normalized := strings.ToUpper(strings.TrimSpace(privilege))
+		if !columnPermissions[normalized] {
+			return fmt.Errorf("%w: %s %s (%s) ON %s: sqlserver grants only SELECT, UPDATE, REFERENCES and UNMASK on columns",
+				ptaherr.ErrUnsupportedFeature, statement, normalized, strings.Join(columns, ", "), objectName)
+		}
+	}
+	return nil
+}
+
+// permissionList spells the permissions of a GRANT or a REVOKE. With columns,
+// each permission carries the list, `SELECT ([a], [b]), UPDATE ([a], [b])`, as
+// the node limits every permission to them.
+func permissionList(privileges, columns []string) string {
+	if len(columns) == 0 {
+		return strings.Join(privileges, ", ")
+	}
+	list := " (" + strings.Join(escapeIdentifierList(columns), ", ") + ")"
+	spelled := make([]string, 0, len(privileges))
+	for _, privilege := range privileges {
+		spelled = append(spelled, privilege+list)
+	}
+	return strings.Join(spelled, ", ")
 }
 
 // tsqlAbsentPrivileges are the PostgreSQL privilege names T-SQL has no keyword

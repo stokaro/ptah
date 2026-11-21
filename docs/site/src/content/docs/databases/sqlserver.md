@@ -619,6 +619,25 @@ What SQL Server itself refuses is refused as well: `IF NOT EXISTS`,
 event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
 `Msg 195`.
 
+## Permissions on columns
+
+`GRANT SELECT (id, name) ON dbo.t TO reader` limits a permission to columns
+of a table or a view. `SELECT`, `UPDATE`, `REFERENCES` and `UNMASK` take a
+column list, `UNMASK` from SQL Server 2022 on. Any other permission with one
+is refused by name, as the server refuses it with `Msg 1020`.
+
+A table permission replaces the column rows of the same permission, and a
+column revoke under one withholds the column, so a plan runs every revoke
+before any grant. A table permission with a column row of another state under
+it, such as a `REVOKE SELECT (secret)`, reads as the permission on each other
+column.
+
+A grantable permission loses its option first, with `REVOKE GRANT OPTION FOR
+... CASCADE`, because the server refuses the revoke otherwise (`Msg 4611`).
+`CASCADE` also revokes the permission from every principal the role granted it
+to. Column names compare under the database's
+[collation](#identifier-collation). Measured on SQL Server 2019, 2022 and 2025.
+
 ## Limitations
 
 - No PostgreSQL-style extensions and no materialized views.

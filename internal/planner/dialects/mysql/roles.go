@@ -18,7 +18,7 @@ import (
 // Roles go before tables and grants go after them, because a grant names an
 // object that has to exist and a role that has to exist. The removals mirror
 // that: revoke, then drop the role, after the tables its grants named are gone.
-// On MySQL and MariaDB the revokes go first of all instead; see
+// On MySQL, MariaDB and SQL Server the revokes go first of all instead; see
 // [Planner.planRevokesFirst].
 //
 // The capability is the switch, not the dialect name. A target that leaves
@@ -62,9 +62,9 @@ func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaD
 // role could read every column, the one the declaration left out included, and
 // the next comparison would revoke the table grant and plan it again.
 //
-// On MySQL and MariaDB the revokes have run by now, at the start of the plan,
-// and so have the grants that give back the column privileges a revoke on
-// their table takes (see [Planner.planRevokesFirst]). A column is named the
+// On MySQL, MariaDB and SQL Server the revokes have run by now, at the start
+// of the plan, and so have the grants that give back the column privileges a
+// revoke on their table takes (see [Planner.planRevokesFirst]). A column is named the
 // way the catalog spells it; see [columnSpellings].
 func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RoleManagement) {
@@ -87,7 +87,8 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 }
 
 // planRevokesFirst emits the REVOKE statements at the start of the plan on
-// MySQL and MariaDB, before any database, table or column is created.
+// MySQL, MariaDB and SQL Server, before any database, table or column is
+// created.
 //
 // A revoke reaches further than the row it names there. Measured on MySQL
 // 8.4.13 and MariaDB 11.8.9: `REVOKE SELECT ON t FROM r` takes every column
@@ -111,8 +112,20 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 // fails later in the plan leaves the role without the privileges the diff
 // takes away, and with every one it keeps. Each of them is on a column the
 // database holds, so the GRANT needs nothing the plan creates.
+//
+// On SQL Server a permission on a whole table takes the place of the column
+// permissions of the same name, and a column revoke under one withholds the
+// column. Measured on SQL Server 2019, 2022 and 2025: `GRANT SELECT ON t`
+// over `SELECT (id)` leaves one row for the table, `REVOKE SELECT ON t` takes
+// the column rows too, and `REVOKE SELECT (id) ON t` under a table grant
+// leaves a REVOKE row, so a member of the role gets Msg 230 reading id. A plan
+// that widens `SELECT (id)` to `SELECT ON t` and grants first leaves the role
+// unable to read id. The reader reports a table permission with column rows
+// of the same name under it as the permission on each column, so a diff never
+// holds both and nothing comes back after the revokes there. A permission
+// goes with its column or table when either is dropped.
 func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	if !p.capabilities().Has(capability.RoleManagement) || !p.grantOptionCoversTheObject() {
+	if !p.capabilities().Has(capability.RoleManagement) || !p.revokesFirst() {
 		return result
 	}
 	result = p.revokeGrants(result, diff)
@@ -129,7 +142,9 @@ func grantColumns(grant difftypes.GrantRef) []string {
 }
 
 // revokeGrants emits the REVOKE statements: the grant options a diff takes
-// away, the orphaned grant options, then the privileges.
+// away, the orphaned grant options, then the privileges. Where
+// [Planner.revokesGrantOptionFirst] holds, a privilege held with the grant
+// option loses the option before the privilege is revoked.
 func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	spellings := newColumnSpellings(diff, p.targetDialect())
 	ghosts, removed := p.splitGrantOptionGhosts(diff.GrantsRemoved)
@@ -137,6 +152,13 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 	if p.grantOptionCoversTheObject() {
 		revokes = append(revokes, grantOptionsLeftBehind(removed, diff.CurrentGrants, spellings)...)
 		removed = withoutColumnRevokesTheirTableTakes(removed, spellings)
+	}
+	if p.revokesGrantOptionFirst() {
+		for _, grant := range removed {
+			if grant.WithOption {
+				revokes = append(revokes, grant)
+			}
+		}
 	}
 	for _, revoke := range p.grantOptionRevocations(revokes) {
 		result = append(result, revoke)
@@ -301,7 +323,8 @@ func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings col
 }
 
 // removeGrantsAndRoles revokes first and drops the roles afterwards. On
-// MySQL and MariaDB [Planner.planRevokesFirst] has run the revokes.
+// MySQL, MariaDB and SQL Server [Planner.planRevokesFirst] has run the
+// revokes.
 //
 // A role still holding permissions is not droppable on any engine in this
 // family that has roles at all, so the order is the engine's rather than a
@@ -310,7 +333,7 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	if !p.grantOptionCoversTheObject() {
+	if !p.revokesFirst() {
 		result = p.revokeGrants(result, diff)
 	}
 	for _, role := range diff.RolesRemoved {

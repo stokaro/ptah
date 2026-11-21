@@ -233,16 +233,14 @@ func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 	}
 }
 
-// SQL Server and Oracle share this planner and have no column grant spelling
-// here, so a plan holding one is refused by name rather than granted on the
-// whole table.
+// Oracle shares this planner and has no column grant spelling here, so a plan
+// holding one is refused by name rather than granted on the whole table.
 func TestPlan_MySQLFamilyColumnGrants_FailurePath(t *testing.T) {
 	tests := []struct {
 		dialect string
 		wantErr string
 	}{
-		{dialect: "sqlserver", wantErr: `(?s).*column privileges are modeled for PostgreSQL, MySQL and MariaDB only, not sqlserver.*`},
-		{dialect: "oracle", wantErr: `(?s).*column privileges are modeled for PostgreSQL, MySQL and MariaDB only, not oracle.*`},
+		{dialect: "oracle", wantErr: `(?s).*column privileges are modeled for PostgreSQL, MySQL, MariaDB and SQL Server only, not oracle.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
