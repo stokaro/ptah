@@ -126,3 +126,137 @@ func TestPlan_MySQLFamilyGrantsBackAColumnPrivilegeOnceItsColumnExists(t *testin
 		})
 	}
 }
+
+// columnPrivilegeOnAReplacedView is a diff that replaces the view v1 with one
+// that has an extra column, and revokes SELECT on all of v1, while the role
+// keeps the privilege the catalog holds on extra: the server kept it from a v1
+// that had the column before it was replaced without it.
+func columnPrivilegeOnAReplacedView() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		ViewsModified: []difftypes.ViewDiff{{
+			ViewName: "v1",
+			Changes:  map[string]string{"body": "SELECT id FROM t1 -> SELECT id, secret AS extra FROM t1"},
+			Desired:  schemamodel.View{Name: "v1", Body: "SELECT id, secret AS extra FROM t1"},
+		}},
+		GrantsRemoved: []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1"}},
+		CurrentGrants: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1", Column: "extra"},
+		},
+	}
+}
+
+// respelledColumnPrivilege is a diff that replaces SELECT on the Name column
+// of t1 with SELECT on name, beside the schema change change makes to it.
+func respelledColumnPrivilege(change func(*difftypes.SchemaDiff, *schemamodel.Database)) func() *difftypes.SchemaDiff {
+	return func() *difftypes.SchemaDiff {
+		held := difftypes.GrantRef{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Column: "Name"}
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{
+				{StructName: "T1", Name: "t1", PrimaryKey: []string{"id"}},
+				{StructName: "T2", Name: "t2", PrimaryKey: []string{"id"}},
+			},
+			Fields: []schemamodel.Field{
+				{StructName: "T1", Name: "id", Type: "INT", Primary: true},
+				{StructName: "T1", Name: "name", Type: "VARCHAR(50)", Nullable: true},
+				{StructName: "T2", Name: "id", Type: "INT", Primary: true},
+			},
+		}
+		diff := &difftypes.SchemaDiff{
+			GrantsAdded:   []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Column: "name"}},
+			GrantsRemoved: []difftypes.GrantRef{held},
+			CurrentGrants: []difftypes.GrantRef{held},
+		}
+		change(diff, desired)
+		return withDeclaredObjects(diff, desired)
+	}
+}
+
+// The view a plan replaces is the view the column privilege comes back on:
+// CREATE OR REPLACE VIEW is what gives v1 its extra column, and a GRANT on
+// the column before it fails with ERROR 1054, measured on MySQL 8.4 and 26.10
+// and MariaDB 11.8 and 12.3.
+func TestPlan_MySQLFamilyGrantsBackAColumnPrivilegeOnceItsViewIsReplaced(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()), columnPrivilegeOnAReplacedView(), dialect,
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, []string{
+				"REVOKE SELECT ON `v1` FROM `reader`",
+				"CREATE OR REPLACE VIEW `v1` AS\nSELECT id, secret AS extra FROM t1",
+				"GRANT SELECT (`extra`) ON `v1` TO `reader`",
+			})
+		})
+	}
+}
+
+// On MySQL a privilege the declaration spells another way is revoked at the
+// start of the plan and granted again under the declared spelling right after
+// the revokes, where the column exists: placed after the tables, a statement
+// failing in between leaves the role without the column. On a column the plan
+// adds, the GRANT waits for the ADD COLUMN.
+func TestPlan_MySQLGrantsARespelledColumnPrivilegeOnceItsColumnExists(t *testing.T) {
+	tests := []struct {
+		name string
+		diff func() *difftypes.SchemaDiff
+		want []string
+	}{
+		{
+			name: "beside a created table",
+			diff: respelledColumnPrivilege(func(diff *difftypes.SchemaDiff, desired *schemamodel.Database) {
+				diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "t2")
+			}),
+			want: []string{
+				"REVOKE SELECT (`Name`) ON `t1` FROM `reader`",
+				"GRANT SELECT (`name`) ON `t1` TO `reader`",
+				"CREATE TABLE `t2` (\n  `id` INT PRIMARY KEY\n)",
+			},
+		},
+		{
+			// The control: a privilege revoked on another column is not the
+			// declared one spelled otherwise, so the GRANT waits for the tables.
+			name: "beside a revoke on another column",
+			diff: respelledColumnPrivilege(func(diff *difftypes.SchemaDiff, desired *schemamodel.Database) {
+				diff.TablesAdded = difftypes.TableCreationsFor(desired, identifier.ForDialect("mysql"), "t2")
+				held := difftypes.GrantRef{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Column: "secret"}
+				diff.GrantsRemoved = []difftypes.GrantRef{held}
+				diff.CurrentGrants = []difftypes.GrantRef{held}
+			}),
+			want: []string{
+				"REVOKE SELECT (`secret`) ON `t1` FROM `reader`",
+				"CREATE TABLE `t2` (\n  `id` INT PRIMARY KEY\n)",
+				"GRANT SELECT (`name`) ON `t1` TO `reader`",
+			},
+		},
+		{
+			name: "on a column the plan adds",
+			diff: respelledColumnPrivilege(func(diff *difftypes.SchemaDiff, _ *schemamodel.Database) {
+				diff.TablesModified = []difftypes.TableDiff{{TableName: "t1", ColumnsAdded: difftypes.ColumnChanges{
+					{StructName: "T1", Name: "name", Type: "VARCHAR(50)", Nullable: true},
+				}}}
+			}),
+			want: []string{
+				"REVOKE SELECT (`Name`) ON `t1` FROM `reader`",
+				"-- Modify table: t1\nALTER TABLE `t1` ADD COLUMN `name` VARCHAR(50)",
+				"GRANT SELECT (`name`) ON `t1` TO `reader`",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()), test.diff(), "mysql",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, test.want)
+		})
+	}
+}

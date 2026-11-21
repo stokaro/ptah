@@ -110,8 +110,8 @@ func TestSchemaApplyMySQLFamilyRevokesBeforeANameComesBackE2E(t *testing.T) {
 
 // A column privilege the declaration keeps and the revoke of its table's
 // privilege takes away comes back at once where its column exists, and after
-// the CREATE TABLE, CREATE VIEW or ADD COLUMN that brings the column back
-// where it does not: the server keeps the privilege of a dropped column, table
+// the CREATE TABLE, CREATE VIEW, CREATE OR REPLACE VIEW or ADD COLUMN that
+// brings the column back where it does not: the server keeps the privilege of a dropped column, table
 // or view, so the read reports it as held, and a GRANT on the missing column
 // before it is created fails with ERROR 1054 or 1146 and leaves the role with
 // nothing.
@@ -165,6 +165,22 @@ func TestSchemaApplyMySQLFamilyGrantsBackAColumnPrivilegeOnceItsColumnExistsE2E(
 			want:   []string{"column v1.id SELECT NO"},
 			reads:  "SELECT id FROM v1",
 			denied: "SELECT name FROM v1",
+		},
+		{
+			// The plan replaces v1, and CREATE OR REPLACE VIEW is what gives it
+			// the extra column back.
+			name: "a view replaced without the column",
+			held: []string{
+				"CREATE VIEW `%[1]s`.v1 AS SELECT id, secret AS extra FROM `%[1]s`.t1",
+				"GRANT SELECT ON `%[1]s`.v1 TO %[2]s",
+				"GRANT SELECT (extra) ON `%[1]s`.v1 TO %[2]s",
+				"CREATE OR REPLACE VIEW `%[1]s`.v1 AS SELECT id FROM `%[1]s`.t1",
+			},
+			final: "CREATE TABLE t1 (id INT PRIMARY KEY, name VARCHAR(50) NOT NULL, secret VARCHAR(50));\n" +
+				"CREATE VIEW v1 AS SELECT id, secret AS extra FROM t1;\nCREATE ROLE %[1]s;\nGRANT SELECT (extra) ON v1 TO %[1]s;\n",
+			want:   []string{"column v1.extra SELECT NO"},
+			reads:  "SELECT extra FROM v1",
+			denied: "SELECT id FROM v1",
 		},
 	}
 	for _, engine := range mysqlServerEngines {
