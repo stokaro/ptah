@@ -79,6 +79,8 @@ type compatURLFixture struct {
 	// not in front of the command body.
 	unhashedDir string
 	desiredURL  string
+	// absentPath is a bare path, written without file://, that names nothing.
+	absentPath string
 }
 
 func newCompatURLFixture(c *qt.C) compatURLFixture {
@@ -104,7 +106,12 @@ func newCompatURLFixture(c *qt.C) compatURLFixture {
 
 	desired := filepath.Join(root, "desired.hcl")
 	c.Assert(os.WriteFile(desired, []byte("schema \"main\" {\n}\n"), 0o600), qt.IsNil)
-	return compatURLFixture{dir: dir, unhashedDir: unhashed, desiredURL: "file://" + desired}
+	return compatURLFixture{
+		dir:         dir,
+		unhashedDir: unhashed,
+		desiredURL:  "file://" + desired,
+		absentPath:  filepath.Join(root, "absent.sql"),
+	}
 }
 
 // compatURLRow is one measured cell.
@@ -316,6 +323,27 @@ func compatURLRows() []compatURLRow {
 				return []string{"schema", "inspect", "--url", "notadriver://x"}
 			},
 			wantStderr: compatURLUnknownDriver,
+		},
+		{
+			// A bare path that names a file is resolved as a schema file, a
+			// retained divergence; one that names nothing gets the pinned
+			// binary's answer. Measured on v1.4.0 on 2026-11-21.
+			name: "schema inspect reports a missing scheme for a bare path that names nothing",
+			verb: "schema inspect",
+			args: func(fx compatURLFixture) []string {
+				return []string{"schema", "inspect", "--url", fx.absentPath}
+			},
+			wantStderr: compatURLMissingScheme,
+		},
+		{
+			// The scheme is answered before the dev database is: with one named,
+			// the pinned binary still prints the same line.
+			name: "schema inspect reports a missing scheme for a bare path that names nothing beside a dev database",
+			verb: "schema inspect",
+			args: func(fx compatURLFixture) []string {
+				return []string{"schema", "inspect", "--url", fx.absentPath, "--dev-url", "sqlite://dev?mode=memory"}
+			},
+			wantStderr: compatURLMissingScheme,
 		},
 		{
 			// `maria` is a driver spelling, and `maria+tcp` is not one: the
