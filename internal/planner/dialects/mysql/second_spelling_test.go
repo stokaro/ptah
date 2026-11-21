@@ -55,7 +55,7 @@ func TestPlan_MySQLSecondColumnSpelling_FailurePath(t *testing.T) {
 			wantErr: `unsupported feature: role "reader" keeps INSERT, UPDATE on one column of app.t1 as "Name", ` +
 				`and the plan grants SELECT on it as "name", the declared spelling; MYSQL would then hold the column ` +
 				`under two spellings for the role, and a later plan on app.t1 is refused for that -- declare the ` +
-				`role's privileges on the column as "name" too, or revoke them`,
+				`role's privileges on the column as "name" too, or revoke them as "Name"`,
 		},
 		{
 			name:    "a new privilege beside kept ones",

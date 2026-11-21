@@ -1493,18 +1493,27 @@ accepts for the column. A privilege the declaration says nothing about stays.
 So where such a role keeps `UPDATE (Name)`, a plan that grants it
 `SELECT (name)` would leave the column under two spellings, and it is refused
 before it runs. Declare the role's privileges on the column under one
-spelling, or revoke them.
+spelling, or revoke them as the catalog spells them: `REVOKE UPDATE (Name)`
+beside `GRANT SELECT (name)` names no privilege twice.
 
 The server keeps a column privilege in memory under one name and in
 `mysql.columns_priv` under each spelling, so a grant under one spelling and a
 revoke under the other leave the two disagreeing: measured on MySQL 8.4.13 and
 26.10.0 and MariaDB 11.8.9 and 12.3.3, a user holding the role reads a column
-the plan revoked and cannot update one it granted. So a declaration that
-spells one column of a table two ways for one role is refused, a `REVOKE`
-counted with the grants: `GRANT SELECT (Name)` beside `REVOKE SELECT (name)`
-is refused. So is a plan that changes a role's privileges on a table where the
-database holds one of its columns under two spellings. Revoke the privileges
-under both spellings by hand, then plan again.
+the plan revoked and cannot update one it granted. So these are refused before
+anything runs:
+
+- a declaration that grants one column of a table under two spellings to one
+  role;
+- a `REVOKE` that takes back, under another spelling, a privilege a grant gives
+  on the column: `GRANT SELECT (Name)` beside `REVOKE SELECT (name)` asks for
+  one privilege both held and absent;
+- a plan that changes a role's privileges on a table where the database holds
+  one of its columns under two spellings. Revoke the privileges under both
+  spellings by hand, then plan again.
+
+A revoke of another privilege on the column, and two revokes, are accepted
+under any spelling, because a revoke takes the privilege under every spelling.
 
 A privilege on a function or procedure is refused by name when a plan grants
 it, and the read does not report routine privileges, so a comparison cannot see

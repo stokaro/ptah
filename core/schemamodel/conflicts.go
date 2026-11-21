@@ -923,27 +923,31 @@ func ValidateGrantOptionConsistency(db *Database, dialect string) error {
 	return nil
 }
 
-// ValidateGrantColumnSpellings refuses grants and revokes that name one column
-// of one object for one role in two spellings the target takes for the same
-// column, for a target where [platform.GrantOptionIsPerObject] holds: MySQL
-// and MariaDB.
+// ValidateGrantColumnSpellings refuses grants that name one column of one
+// object for one role in two spellings the target takes for the same column,
+// and a revoke that takes back, under another spelling, a privilege a grant
+// gives on that column, for a target where [platform.GrantOptionIsPerObject]
+// holds: MySQL and MariaDB.
 //
 // Both compare column names without case, and so does the server's in-memory
 // copy of the column privileges, but mysql.columns_priv keeps one row per
 // spelling. Measured on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and
 // 12.3.3: after `GRANT SELECT (Name) ON t TO r` and `GRANT UPDATE (name) ON t
 // TO r`, `REVOKE SELECT (Name) ON t FROM r` leaves a user holding r able to
-// read the column and unable to update it. A declaration that spells the
-// column two ways asks for exactly that pair, so it is refused before anything
-// is compared.
+// read the column and unable to update it. A declaration that grants the
+// column under two spellings asks for exactly that pair, so it is refused
+// before anything is compared.
 //
-// A revoke counts as a spelling too. Beside a grant of `SELECT (Name)`, a
-// revoke of `SELECT (name)` asks for one privilege both held and absent, and
-// the grant, spelled as the catalog is, keeps a held `SELECT (Name)`: measured
-// on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and 12.3.3, the plan is empty
-// and a user holding the role reads the column. Grants and revokes for two
-// roles, or on two objects, do not meet: the server keeps the column
-// privileges of each grantee and object apart.
+// A grant of `SELECT (Name)` beside a revoke of `SELECT (name)` is one
+// privilege both granted and revoked. Spelled alike, the statement reader
+// folds the two, the later one winning; spelled apart, both reach the
+// comparison, and the grant keeps a held `SELECT (Name)`: measured on MySQL
+// 8.4.13 and 26.10.0 and MariaDB 11.8.9 and 12.3.3, the plan is empty and a
+// user holding the role reads the column. A revoke of another privilege on
+// the column, or two revokes, never contradict: a revoke takes a privilege
+// under every spelling. Grants and revokes for two roles, or on two objects,
+// do not meet: the server keeps the column privileges of each grantee and
+// object apart.
 func ValidateGrantColumnSpellings(db *Database, dialect string) error {
 	if db == nil || !platform.GrantOptionIsPerObject(dialect) {
 		return nil
@@ -952,43 +956,81 @@ func ValidateGrantColumnSpellings(db *Database, dialect string) error {
 	type columnKey struct {
 		role, target, column string
 	}
-	type spelling struct {
-		column, statement string
+	keyOf := func(grant Grant, column string) columnKey {
+		return columnKey{
+			role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant),
+			column: semantics.ColumnIdentityKey(column),
+		}
 	}
-	spelled := make(map[columnKey]spelling)
-	for _, declared := range []struct {
-		statement string
-		grants    []Grant
-	}{{statement: "GRANT", grants: db.Grants}, {statement: "REVOKE", grants: db.RevokedGrants}} {
-		for _, grant := range declared.grants {
-			if !dialectscope.Includes(grant.Dialects, dialect) {
+	spelled := make(map[columnKey]string)
+	granted := make(map[columnKey][]string)
+	for _, grant := range db.Grants {
+		if !dialectscope.Includes(grant.Dialects, dialect) {
+			continue
+		}
+		for _, column := range grant.Columns {
+			column = strings.TrimSpace(column)
+			key := keyOf(grant, column)
+			granted[key] = append(granted[key], grant.Privileges...)
+			previous, seen := spelled[key]
+			if !seen {
+				spelled[key] = column
 				continue
 			}
-			for _, column := range grant.Columns {
-				column = strings.TrimSpace(column)
-				key := columnKey{
-					role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant),
-					column: semantics.ColumnIdentityKey(column),
-				}
-				previous, seen := spelled[key]
-				if !seen {
-					spelled[key] = spelling{column: column, statement: declared.statement}
-					continue
-				}
-				if previous.column == column {
-					continue
-				}
-				return fmt.Errorf(
-					"%w: role %q has one column of %s spelled %q in a %s and %q in a %s; %s compares column "+
-						"names without case, so the two are one column, and a privilege granted under one spelling "+
-						"and revoked under the other stays in effect -- spell the column one way",
-					ptaherr.ErrInvalidSchemaDiff, key.role, key.target, previous.column, previous.statement,
-					column, declared.statement, strings.ToUpper(platform.NormalizeDialect(dialect)),
-				)
+			if previous == column {
+				continue
 			}
+			return fmt.Errorf(
+				"%w: role %q is granted privileges on one column of %s as %q and as %q; %s compares column "+
+					"names without case, so the two are one column, and a privilege granted under one spelling "+
+					"and revoked under the other stays in effect -- spell the column one way",
+				ptaherr.ErrInvalidSchemaDiff, key.role, key.target, previous, column,
+				strings.ToUpper(platform.NormalizeDialect(dialect)),
+			)
+		}
+	}
+	for _, revoked := range db.RevokedGrants {
+		if !dialectscope.Includes(revoked.Dialects, dialect) {
+			continue
+		}
+		for _, column := range revoked.Columns {
+			column = strings.TrimSpace(column)
+			key := keyOf(revoked, column)
+			previous, seen := spelled[key]
+			if !seen || previous == column {
+				continue
+			}
+			privilege, shared := sharedPrivilege(granted[key], revoked.Privileges)
+			if !shared {
+				continue
+			}
+			return fmt.Errorf(
+				"%w: role %q is granted %s on one column of %s as %q and has it revoked as %q; %s compares "+
+					"column names without case, so the two name one privilege the declaration both grants and "+
+					"revokes -- declare one or the other",
+				ptaherr.ErrInvalidSchemaDiff, key.role, privilege, key.target, previous, column,
+				strings.ToUpper(platform.NormalizeDialect(dialect)),
+			)
 		}
 	}
 	return nil
+}
+
+// sharedPrivilege is the first privilege of revoked that granted gives too,
+// ALL on either side standing for every privilege, and whether there is one.
+func sharedPrivilege(granted, revoked []string) (string, bool) {
+	normalize := func(privilege string) string { return strings.ToUpper(strings.TrimSpace(privilege)) }
+	for _, revoke := range revoked {
+		for _, grant := range granted {
+			switch {
+			case normalize(revoke) == normalize(grant), normalize(grant) == "ALL":
+				return normalize(revoke), true
+			case normalize(revoke) == "ALL":
+				return normalize(grant), true
+			}
+		}
+	}
+	return "", false
 }
 
 // grantObjectIdentity is a grant's target, ignoring the columns it limits

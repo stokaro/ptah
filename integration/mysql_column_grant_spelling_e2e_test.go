@@ -100,8 +100,9 @@ func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_HappyPath(t *testing.T) {
 	}
 }
 
-// A declaration that spells one column two ways is refused before anything
-// runs, a revoke counted as a spelling, and so is a plan that changes a role's
+// A declaration that grants one column under two spellings is refused before
+// anything runs, and so is one that revokes, under another spelling, a
+// privilege it grants on the column, and a plan that changes a role's
 // privileges on a table where the catalog already holds one column under two
 // spellings for it. The role keeps what it held. Measured on MySQL 8.4.13 and
 // 26.10.0 and MariaDB 11.8.9 and 12.3.3, a GRANT SELECT (Name) beside a REVOKE
@@ -117,7 +118,7 @@ func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_FailurePath(t *testing.T) 
 		{
 			name:     "two spellings declared",
 			declared: spellingSchema + "GRANT SELECT (Name) ON t1 TO %[1]s;\nGRANT UPDATE (name) ON t1 TO %[1]s;\n",
-			wantErr:  "spell the column one way",
+			wantErr:  `is granted privileges on one column of TABLE t1 as "Name" and as "name"`,
 		},
 		{
 			name: "two spellings held",
@@ -133,14 +134,14 @@ func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_FailurePath(t *testing.T) 
 			name:     "a grant and a revoke spelled two ways",
 			held:     []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"},
 			declared: spellingSchema + "GRANT SELECT (Name) ON t1 TO %[1]s;\nREVOKE SELECT (name) ON t1 FROM %[1]s;\n",
-			wantErr:  `has one column of TABLE t1 spelled "Name" in a GRANT and "name" in a REVOKE`,
+			wantErr:  `is granted SELECT on one column of TABLE t1 as "Name" and has it revoked as "name"`,
 			want:     []string{"column t1.Name SELECT NO"},
 		},
 		{
 			name:     "a grant and a revoke spelled two ways, for a role the schema does not create",
 			held:     []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"},
 			declared: unmanagedSchema + "GRANT SELECT (Name) ON t1 TO %[1]s;\nREVOKE SELECT (name) ON t1 FROM %[1]s;\n",
-			wantErr:  `has one column of TABLE t1 spelled "Name" in a GRANT and "name" in a REVOKE`,
+			wantErr:  `is granted SELECT on one column of TABLE t1 as "Name" and has it revoked as "name"`,
 			want:     []string{"column t1.Name SELECT NO"},
 		},
 	}
@@ -172,7 +173,9 @@ const unmanagedSchema = "CREATE TABLE t1 (id INT PRIMARY KEY, name VARCHAR(50) N
 // against a held SELECT (Name), and a user holding the role read `Name` after
 // the apply. The revoke spelled as the catalog spells it is the control, and
 // so is a grant the script revokes again under the same spelling; SELECT (id),
-// which the declaration says nothing about, stays.
+// which the declaration says nothing about, stays. Two revokes of the
+// privilege under two spellings ask for one absence, so they are planned as
+// one.
 func TestSchemaApplyMySQLFamilyRevokesAColumnPrivilegeUnderEverySpellingE2E(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -183,6 +186,10 @@ func TestSchemaApplyMySQLFamilyRevokesAColumnPrivilegeUnderEverySpellingE2E(t *t
 		{
 			name:   "a grant and then a revoke spelled as held",
 			revoke: "GRANT SELECT (Name) ON t1 TO %[1]s;\nREVOKE SELECT (Name) ON t1 FROM %[1]s;\n",
+		},
+		{
+			name:   "two revokes spelled two ways",
+			revoke: "REVOKE SELECT (Name) ON t1 FROM %[1]s;\nREVOKE SELECT (name) ON t1 FROM %[1]s;\n",
 		},
 	}
 	for _, engine := range mysqlServerEngines {
@@ -371,10 +378,12 @@ func TestSchemaApplyMySQLRefusesASecondSpellingOfAColumnE2E(t *testing.T) {
 
 // A grant beside privileges a role keeps on the column is planned where it
 // leaves one spelling: on MariaDB, which compares the column without case and
-// grants it as the catalog spells it, and on MySQL for a role the schema
-// creates, whose privileges the declaration leaves out are revoked. A user
-// holding the role runs what the declaration gives, and the next plan finds
-// nothing to change.
+// grants it as the catalog spells it; on MySQL for a role the schema creates,
+// whose privileges the declaration leaves out are revoked; and on both where
+// the declaration revokes the kept privileges, under either spelling, as the
+// second-spelling refusal advises. A revoke of UPDATE and INSERT beside a
+// grant of SELECT names no privilege twice. A user holding the role runs what
+// the declaration gives, and the next plan finds nothing to change.
 func TestSchemaApplyMySQLFamilyGrantsBesideAKeptColumnPrivilegeE2E(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -421,6 +430,36 @@ func TestSchemaApplyMySQLFamilyGrantsBesideAKeptColumnPrivilegeE2E(t *testing.T)
 			want:  []string{"column t1.name SELECT NO"},
 			reads: "SELECT name FROM t1",
 		},
+		{
+			name:     "MySQL, the kept privileges revoked as the catalog spells them",
+			admin:    dbtarget.MySQLAdmin,
+			held:     keptBesideHeld,
+			declared: unmanagedSchema + revokeKeptPrivileges("Name"),
+			planned:  revokedBesideARespelledGrant,
+			want:     []string{"column t1.id SELECT NO", "column t1.name SELECT NO", "column v1.Name SELECT NO"},
+			reads:    "SELECT name FROM t1",
+		},
+		{
+			name:     "MySQL, the kept privileges revoked as the declaration spells them",
+			admin:    dbtarget.MySQLAdmin,
+			held:     keptBesideHeld,
+			declared: unmanagedSchema + revokeKeptPrivileges("name"),
+			planned:  revokedBesideARespelledGrant,
+			want:     []string{"column t1.id SELECT NO", "column t1.name SELECT NO", "column v1.Name SELECT NO"},
+			reads:    "SELECT name FROM t1",
+		},
+		{
+			name:     "MariaDB, the kept privileges revoked as the catalog spells them",
+			admin:    dbtarget.MariaDBAdmin,
+			held:     keptBesideHeld,
+			declared: unmanagedSchema + revokeKeptPrivileges("Name"),
+			planned: []string{
+				"REVOKE INSERT (`Name`) ON `t1` FROM `%[1]s`;",
+				"REVOKE UPDATE (`Name`) ON `t1` FROM `%[1]s`;",
+			},
+			want:  []string{"column t1.id SELECT NO", "column t1.Name SELECT NO", "column v1.Name SELECT NO"},
+			reads: "SELECT name FROM t1",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -441,6 +480,23 @@ func TestSchemaApplyMySQLFamilyGrantsBesideAKeptColumnPrivilegeE2E(t *testing.T)
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 		})
 	}
+}
+
+// revokeKeptPrivileges grants the run's role SELECT on name of t1 and revokes
+// the UPDATE and INSERT it keeps there, with the column of the revoke spelled
+// as given.
+func revokeKeptPrivileges(column string) string {
+	return "GRANT SELECT (name) ON t1 TO %[1]s;\nREVOKE UPDATE (" + column + "), INSERT (" + column + ") ON t1 FROM %[1]s;\n"
+}
+
+// revokedBesideARespelledGrant is the MySQL plan for [revokeKeptPrivileges]
+// against [keptBesideHeld]: the privileges on Name revoked, then SELECT granted
+// on name.
+var revokedBesideARespelledGrant = []string{
+	"REVOKE INSERT (`Name`) ON `t1` FROM `%[1]s`;",
+	"REVOKE SELECT (`Name`) ON `t1` FROM `%[1]s`;",
+	"REVOKE UPDATE (`Name`) ON `t1` FROM `%[1]s`;",
+	"GRANT SELECT (`name`) ON `t1` TO `%[1]s`;",
 }
 
 // forRole is planned with the role put in place of %[1]s.

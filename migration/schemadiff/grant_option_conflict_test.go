@@ -91,7 +91,7 @@ func TestCompareWithDatabaseInfoRefusesAColumnSpelledTwoWays(t *testing.T) {
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{}, mysqlFamilyInfo(dialect), nil, must.Must(builtin.New()))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(err, qt.ErrorMatches, `.*has one column of TABLE orders spelled "Total" in a GRANT and "total" in a GRANT.*`)
+			c.Assert(err, qt.ErrorMatches, `.*is granted privileges on one column of TABLE orders as "Total" and as "total".*`)
 			c.Assert(diff, qt.IsNil)
 		})
 	}
