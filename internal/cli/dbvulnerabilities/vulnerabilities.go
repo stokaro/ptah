@@ -202,10 +202,17 @@ func scan(cmd *cobra.Command, dbURL string, opts options, input scanInput) (targ
 	if err != nil {
 		inventory := vulnerability.CollectIdentity(conn)
 		var scanErr *vulnerability.ScanError
-		if errors.As(err, &scanErr) && scanErr.Stage == "advisory snapshot" {
-			return failedTarget(dbURL, inventory, "invalid", "advisory snapshot is unavailable or invalid"), err
+		if !errors.As(err, &scanErr) {
+			scanErr = new(vulnerability.ScanError)
 		}
-		return failedTarget(dbURL, inventory, "not_assessed", "database inventory or suppression file is unreadable"), err
+		target := failedTarget(dbURL, inventory, "not_assessed", "database inventory or suppression file is unreadable")
+		if scanErr.Stage == "advisory snapshot" {
+			target = failedTarget(dbURL, inventory, "invalid", "advisory snapshot is unavailable or invalid")
+		}
+		// A failure after the snapshot was selected keeps where it came from,
+		// so warn still says when the advisory source was not used.
+		target.Source.Origin = scanErr.Origin
+		return target, err
 	}
 	return targetReport{Target: dburldisplay.Format(dbURL), Report: input.policy.Apply(report)}, nil
 }
