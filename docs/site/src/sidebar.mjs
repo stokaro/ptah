@@ -262,6 +262,7 @@ export const sidebar = [
       { slug: 'operate/verify-a-release' },
       { slug: 'operate/staged-rollout' },
       { slug: 'operate/vulnerability-scan' },
+      { slug: 'operate/advisory-source' },
       { slug: 'operate/trace-migrations' },
       { slug: 'operate/oci-registry', label: 'Use OCI registries' },
       { slug: 'operate/git-sources', label: 'Pull from Git' },
