@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
+	"ptah.run/internal/planrefusal"
 )
 
 // generatedCodeChange is a stored generated column of tasks, declared with typ
@@ -184,6 +185,39 @@ func TestPlanner_AGeneratedColumnsKind_FailurePath(t *testing.T) {
 			c.Assert(nodes, qt.IsNil)
 		})
 	}
+}
+
+// TestPlanner_GeneratedKindRefusalNamesEveryColumn_FailurePath changes the kind
+// of two generated columns in two tables, one in each direction, beside a third
+// column whose expression changes under one kind. The refusal carries the two
+// columns with both kinds, in the comparison's order, so a plan report can name
+// each one; the third is not a kind change and stays out of it.
+func TestPlanner_GeneratedKindRefusalNamesEveryColumn_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	diff := generatedKindChange("VIRTUAL", "STORED")
+	second := generatedKindChange("STORED", "VIRTUAL").TablesModified[0]
+	second.TableName = "orders"
+	same := generatedKindChange("STORED", "STORED").TablesModified[0].ColumnsModified[0]
+	same.ColumnName = "label"
+	same.Desired.Name = "label"
+	same.Desired.GeneratedExpression = "lower(title)"
+	second.ColumnsModified = append(second.ColumnsModified, same)
+	diff.TablesModified = append(diff.TablesModified, second)
+
+	nodes, err := postgres.NewWithCapabilities(capability.Postgres18()).
+		GenerateMigrationAST(c.Context(), must.Must(builtin.New()), diff)
+
+	var refusal *planrefusal.GeneratedKindError
+	c.Assert(err, qt.ErrorAs, &refusal)
+	c.Assert(refusal.Columns, qt.DeepEquals, []planrefusal.GeneratedKind{
+		{Table: "tasks", Column: "code", HeldKind: "VIRTUAL", DeclaredKind: "STORED"},
+		{Table: "orders", Column: "code", HeldKind: "STORED", DeclaredKind: "VIRTUAL"},
+	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: `+
+		`generated column tasks\.code is VIRTUAL and the schema declares it STORED; .* or declare it VIRTUAL; `+
+		`generated column orders\.code is STORED and the schema declares it VIRTUAL; .* or declare it STORED`)
+	c.Assert(nodes, qt.IsNil)
 }
 
 // TestPlanner_AGeneratedColumnsExpressionOfOneKind_HappyPath is the control:

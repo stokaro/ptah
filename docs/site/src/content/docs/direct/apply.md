@@ -636,6 +636,7 @@ file does not record the field, so `apply --plan` does not report it; the
 | `dependent-object` | `plan`, and `apply` without `--plan` | The plan drops an object something else depends on. The error message names both |
 | `declaration-refused` | `plan`, and `apply` without `--plan` | The target cannot host or plan what the schema states. The error message names it |
 | `backslash-mode` | `apply --plan`, and `apply` with `--dev-url` | A statement holds a backslash, and the session it would run on reads it differently, because one `sql_mode` names `NO_BACKSLASH_ESCAPES` and the other does not: the target session for a saved plan, or the dev session for the rehearsal. The error message names both modes; see [MySQL](../../databases/mysql/) |
+| `generated-kind` | `plan`, and `apply` without `--plan` | The plan would change the kind of a generated column the database holds, `STORED` to `VIRTUAL` or back. `generated_columns` lists each `table`, `column`, `held_kind` and `declared_kind`; see [PostgreSQL](../../databases/postgresql/#the-kind-of-a-generated-column) |
 
 A consumer that does not know a code still knows what `refused` means, and
 reads the error message for the rest.

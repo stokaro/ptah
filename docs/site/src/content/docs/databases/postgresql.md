@@ -1575,6 +1575,11 @@ both kinds, and writes nothing:
 generated column public.t.m is VIRTUAL and the schema declares it STORED; the postgres planner cannot change a generated column's kind in place, so drop the column and add it back, or declare it VIRTUAL
 ```
 
+The error names every such column. Under `--json`, `schema plan` and
+`schema apply` report it as `outcome: refused` with the code `generated-kind`,
+and `generated_columns` lists each column with `held_kind` and
+`declared_kind`. See [Refusal codes](../../direct/apply/#refusal-codes).
+
 The error stops the whole plan, not only that column: a new table declared in
 the same schema is not created either. Every apply against the database stops
 here until the declaration names the kind the column has. For a column written

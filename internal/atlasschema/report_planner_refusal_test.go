@@ -25,6 +25,7 @@ func plannerRefusals() []struct {
 	cause := fmt.Errorf("%w: what the plan would do", ptaherr.ErrUnsupportedFeature)
 	options := []planrefusal.ViewOption{{View: "v", Option: "security_invoker"}}
 	definers := []planrefusal.ViewDefiner{{View: "v", Definer: "owner@%", Account: "app@%"}}
+	generated := []planrefusal.GeneratedKind{{Table: "public.items", Column: "total", HeldKind: "VIRTUAL", DeclaredKind: "STORED"}}
 	return []struct {
 		name string
 		err  error
@@ -44,6 +45,11 @@ func plannerRefusals() []struct {
 			name: "an object something else depends on",
 			err:  fmt.Errorf("generate schema apply operations: %w", &planrefusal.DependentObjectError{Err: cause}),
 			want: &atlasschema.Refusal{Code: atlasschema.RefusalDependentObject},
+		},
+		{
+			name: "a generated column's kind",
+			err:  fmt.Errorf("generate schema apply operations: %w", &planrefusal.GeneratedKindError{Columns: generated, Err: cause}),
+			want: &atlasschema.Refusal{Code: atlasschema.RefusalGeneratedKind, GeneratedColumns: generated},
 		},
 		{
 			name: "a declaration the comparison refused",
