@@ -2562,9 +2562,11 @@ command tree and requires every verb registering `--url` to be either pinned by
 a row or named here, so a seventh cannot appear carrying the old wording.
 
 **Two retained divergences, both measured.** `schema inspect --url <bare path>`
-answers `missing scheme` on the pinned binary; Ptah resolves a bare path as a
-local schema file, and refusing it would delete a capability, so that value is
-still accepted. And `schema apply --plan` has no row at all: the pinned binary
+answers `missing scheme` on the pinned binary; Ptah resolves a bare path that
+names a file or a directory as a local schema file, and refusing it would delete
+a capability, so that value is still accepted. A bare path that names nothing,
+`-u=` among them, gets the pinned binary's `missing scheme` line, since neither
+binary can read it. And `schema apply --plan` has no row at all: the pinned binary
 answers every `--url` spelling under it with
 `Abort: 'atlas schema apply --plan' is not supported by the community version.`
 The plan path carries the same plural spelling as the plan-free path so one verb

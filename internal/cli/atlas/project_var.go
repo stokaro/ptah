@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/spf13/pflag"
+
+	"ptah.run/internal/cli/internal/cmdflags"
 )
 
 // atlasVarValue is the `--var` flag value of the Atlas-compatible surface: a
@@ -27,7 +29,8 @@ import (
 // `--var a=1,b` is refused naming `b`, an empty value fails with `EOF` and an
 // unbalanced quote fails with the reader's own parse error. Splitting the rule
 // across a Set here and a validator there would be two rules that have to
-// agree. This one only renders and collects.
+// agree. Set only renders and collects. CheckArg hands an argument to that same
+// rule and collects nothing, for a parse that must change no flag.
 //
 // It implements [pflag.SliceValue] because [resetAtlasProjectFlags] clears a
 // repeatable flag through that interface and falls back to `Set(DefValue)` for
@@ -85,9 +88,18 @@ func (v *atlasVarValue) Append(raw string) error {
 	return v.Set(raw)
 }
 
+// CheckArg refuses raw for the reason the pinned binary refuses it, the inner
+// error of [validateAtlasVarFlagValue], and collects nothing. The read that
+// decides whether a forwarded verb's arguments ask for help goes through it,
+// so `-h --var foo` is refused as `--var foo` is; see [cmdflags.ParseOnly].
+func (v *atlasVarValue) CheckArg(raw string) error {
+	return atlasVarSyntaxError(raw)
+}
+
 var (
-	_ pflag.Value      = (*atlasVarValue)(nil)
-	_ pflag.SliceValue = (*atlasVarValue)(nil)
+	_ pflag.Value         = (*atlasVarValue)(nil)
+	_ pflag.SliceValue    = (*atlasVarValue)(nil)
+	_ cmdflags.ArgChecker = (*atlasVarValue)(nil)
 )
 
 // atlasVarFlagRawValues reads the values collected for --var off the flag's own

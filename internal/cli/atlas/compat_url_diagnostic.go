@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -79,9 +81,10 @@ const atlasURLReference = ". See: https://atlasgo.io/url"
 const atlasMissingDriverMessage = "sql/sqlclient: missing driver" + atlasURLReference
 
 // atlasMissingSchemeMessage is what the pinned binary prints when `schema
-// inspect` is handed an empty `--url`. That verb's URL names a desired-state
-// source rather than a connection, so it is answered by a different layer and
-// carries no `sql/sqlclient:` prefix.
+// inspect` is handed an empty `--url`, or a value with no scheme that names
+// nothing on disk. That verb's URL names a desired-state source rather than a
+// connection, so it is answered by a different layer and carries no
+// `sql/sqlclient:` prefix.
 const atlasMissingSchemeMessage = "missing scheme" + atlasURLReference
 
 // atlasRequiredURLSpelling is one verb's measured wording for a `--url` that
@@ -144,19 +147,38 @@ func atlasDatabaseURLDiagnostic(ctx context.Context, rawURL string) error {
 // scheme added to [atlassource.Classify] later is recognized here without this
 // file being edited.
 //
-// A bare local path is deliberately let through. The pinned binary answers it
-// `missing scheme`; Ptah resolves it as a schema file, and refusing it would
-// delete a capability rather than match one (AGENTS.md compatibility rule (c)).
-// That retained divergence is named in docs/conformance.md.
+// A bare local path that names a file or a directory is deliberately let
+// through. The pinned binary answers it `missing scheme`; Ptah resolves it as a
+// schema file, and refusing it would delete a capability rather than match one
+// (AGENTS.md compatibility rule (c)). That retained divergence is named in
+// docs/conformance.md. A bare path that names nothing is a value neither binary
+// can read, so it gets the pinned binary's answer. Without that answer `-u=`
+// reads as the file `=` and is refused for a `--dev-url` the operator never
+// gave.
 func atlasDesiredStateURLDiagnostic(ctx context.Context, rawURL string) error {
 	if strings.TrimSpace(rawURL) == "" {
 		return errors.New(atlasMissingSchemeMessage)
 	}
-	_, err := atlassource.Classify(rawURL, nil)
+	source, err := atlassource.Classify(rawURL, nil)
 	if unsupported, ok := errors.AsType[*atlassource.UnsupportedSchemeError](err); ok && !providerServesScheme(ctx, unsupported.Scheme) {
 		return atlasUnknownDriverError(unsupported.Scheme)
 	}
+	if err == nil && atlasBarePathNamesNothing(rawURL, source) {
+		return errors.New(atlasMissingSchemeMessage)
+	}
 	return nil
+}
+
+// atlasBarePathNamesNothing reports whether rawURL is a bare local path, a
+// schema file written without `file://`, that names no file or directory. A
+// `file://` URL keeps the loader's own answer, which names the path it could
+// not stat.
+func atlasBarePathNamesNothing(rawURL string, source atlassource.Source) bool {
+	if source.Kind != atlassource.KindLocalFile || strings.Contains(rawURL, "://") {
+		return false
+	}
+	_, err := os.Stat(source.Path)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // atlasURLScheme reports the scheme rawURL selects a driver with.

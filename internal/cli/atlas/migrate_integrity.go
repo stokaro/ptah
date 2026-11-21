@@ -93,7 +93,7 @@ func newAtlasMigrateIntegrityCommand(
 	cmd := newAtlasAdapterCommand("migrate", verb)
 	forward := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) (runErr error) {
-		if atlasArgsHaveHelp(args) {
+		if cmdadapter.AnswersHelp(cmd, args) {
 			return forward(cmd, args)
 		}
 		cleanup := &cmdadapter.CleanupScope{}
@@ -532,6 +532,13 @@ func checkAtlasMigrateSourceArgs(cmd *cobra.Command, verb atlasVerb, args []stri
 // the positional migration name out of it. Two copies of this loop would be two
 // answers to "which flags does this verb accept", and the second one is always
 // the one that misses a newly registered flag.
+//
+// It declares --help as cobra does, so `--help=false` parses as false and runs
+// the verb, and `--help=maybe` is refused, as on the pinned binary. Without the
+// declaration pflag answers any spelling of --help with [pflag.ErrHelp], and
+// cobra prints help at exit 0. A --help that asks for help never reaches this
+// set: the forwarding adapter answers it first. The values carry the standard
+// library's parse errors, which is the wording that binary prints.
 func atlasVerbFlagSet(verb atlasVerb) *pflag.FlagSet {
 	flagSet := pflag.NewFlagSet("atlas migrate "+verb.use, pflag.ContinueOnError)
 	flagSet.SetOutput(io.Discard)
@@ -547,5 +554,7 @@ func atlasVerbFlagSet(verb atlasVerb) *pflag.FlagSet {
 			flagSet.StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
 		}
 	}
+	flagSet.BoolP("help", "h", false, "help for "+verb.use)
+	cmdflags.InstallStdlibFlagValues(flagSet)
 	return flagSet
 }
