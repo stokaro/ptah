@@ -101,9 +101,11 @@ func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_HappyPath(t *testing.T) {
 }
 
 // A declaration that spells one column two ways is refused before anything
-// runs, and so is a plan that changes a role's privileges on a table where the
-// catalog already holds one column under two spellings for it. The role keeps
-// what it held.
+// runs, a revoke counted as a spelling, and so is a plan that changes a role's
+// privileges on a table where the catalog already holds one column under two
+// spellings for it. The role keeps what it held. Measured on MySQL 8.4.13 and
+// 26.10.0 and MariaDB 11.8.9 and 12.3.3, a GRANT SELECT (Name) beside a REVOKE
+// SELECT (name) planned nothing, and a user holding the role read the column.
 func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -126,6 +128,20 @@ func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_FailurePath(t *testing.T) 
 			declared: spellingSchema + "GRANT UPDATE (name) ON t1 TO %[1]s;\n",
 			wantErr:  "revoke the privileges under both spellings by hand",
 			want:     []string{"column t1.Name SELECT NO", "column t1.name UPDATE NO"},
+		},
+		{
+			name:     "a grant and a revoke spelled two ways",
+			held:     []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"},
+			declared: spellingSchema + "GRANT SELECT (Name) ON t1 TO %[1]s;\nREVOKE SELECT (name) ON t1 FROM %[1]s;\n",
+			wantErr:  `has one column of TABLE t1 spelled "Name" in a GRANT and "name" in a REVOKE`,
+			want:     []string{"column t1.Name SELECT NO"},
+		},
+		{
+			name:     "a grant and a revoke spelled two ways, for a role the schema does not create",
+			held:     []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"},
+			declared: unmanagedSchema + "GRANT SELECT (Name) ON t1 TO %[1]s;\nREVOKE SELECT (name) ON t1 FROM %[1]s;\n",
+			wantErr:  `has one column of TABLE t1 spelled "Name" in a GRANT and "name" in a REVOKE`,
+			want:     []string{"column t1.Name SELECT NO"},
 		},
 	}
 	for _, engine := range mysqlServerEngines {
@@ -155,7 +171,8 @@ const unmanagedSchema = "CREATE TABLE t1 (id INT PRIMARY KEY, name VARCHAR(50) N
 // MySQL 8.4.13 and 26.10.0, a declared `REVOKE SELECT (name)` planned nothing
 // against a held SELECT (Name), and a user holding the role read `Name` after
 // the apply. The revoke spelled as the catalog spells it is the control, and
-// SELECT (id), which the declaration says nothing about, stays.
+// so is a grant the script revokes again under the same spelling; SELECT (id),
+// which the declaration says nothing about, stays.
 func TestSchemaApplyMySQLFamilyRevokesAColumnPrivilegeUnderEverySpellingE2E(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -163,6 +180,10 @@ func TestSchemaApplyMySQLFamilyRevokesAColumnPrivilegeUnderEverySpellingE2E(t *t
 	}{
 		{name: "a revoke spelled otherwise", revoke: "REVOKE SELECT (name) ON t1 FROM %[1]s;\n"},
 		{name: "a revoke spelled as held", revoke: "REVOKE SELECT (Name) ON t1 FROM %[1]s;\n"},
+		{
+			name:   "a grant and then a revoke spelled as held",
+			revoke: "GRANT SELECT (Name) ON t1 TO %[1]s;\nREVOKE SELECT (Name) ON t1 FROM %[1]s;\n",
+		},
 	}
 	for _, engine := range mysqlServerEngines {
 		for _, test := range tests {
@@ -287,6 +308,137 @@ func TestSchemaApplyMySQLFamilyRespelledColumnPrivilegeOutlivesAFailedApplyE2E(t
 			var names int
 			c.Assert(member.QueryRowContext(c.Context(), "SELECT COUNT(name) FROM t1").Scan(&names), qt.IsNil)
 			c.Assert(names, qt.Equals, 2)
+		})
+	}
+}
+
+// keptBesideHeld is what the role holds before the runs of the second-spelling
+// tests: SELECT, UPDATE and INSERT on Name and SELECT on id of t1, and SELECT
+// on Name of v1.
+var keptBesideHeld = []string{
+	"GRANT SELECT (id, Name), UPDATE (Name), INSERT (Name) ON `%[1]s`.t1 TO %[2]s",
+	"GRANT SELECT (Name) ON `%[1]s`.v1 TO %[2]s",
+}
+
+// A plan that would leave a role holding one column under two spellings is
+// refused before it runs, on MySQL, where a grant takes the declared spelling.
+// Measured on MySQL 8.4.13 and 26.10.0, a role the schema does not create kept
+// INSERT and UPDATE on Name while the plan moved SELECT to name, and the next
+// apply that changed the role's privileges on t1 exited 2 with the
+// two-spellings refusal. The role keeps what it held, and a user holding it
+// reads the column as the catalog spells it.
+func TestSchemaApplyMySQLRefusesASecondSpellingOfAColumnE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		held     []string
+		declared string
+		wantErr  string
+		want     []string
+	}{
+		{
+			name:     "a respelled privilege beside kept ones",
+			held:     keptBesideHeld,
+			declared: unmanagedSchema + "GRANT SELECT (name) ON t1 TO %[1]s;\n",
+			wantErr:  `keeps INSERT, UPDATE on one column of t1 as "Name", and the plan grants SELECT on it as "name"`,
+			want: []string{
+				"column t1.id SELECT NO", "column t1.Name INSERT NO", "column t1.Name SELECT NO",
+				"column t1.Name UPDATE NO", "column v1.Name SELECT NO",
+			},
+		},
+		{
+			name:     "a new privilege beside a kept one",
+			held:     []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"},
+			declared: unmanagedSchema + "GRANT UPDATE (name) ON t1 TO %[1]s;\n",
+			wantErr:  `keeps SELECT on one column of t1 as "Name", and the plan grants UPDATE on it as "name"`,
+			want:     []string{"column t1.Name SELECT NO"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newColumnGrantRun(c, dbtarget.MySQLAdmin, test.held)
+
+			applied := run.apply(c, test.declared, "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s", applied.Stdout))
+			c.Assert(applied.Stderr, qt.Contains, test.wantErr)
+			c.Assert(run.privileges(c), qt.DeepEquals, test.want)
+			_, err := run.member(c).ExecContext(c.Context(), "SELECT Name FROM t1")
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// A grant beside privileges a role keeps on the column is planned where it
+// leaves one spelling: on MariaDB, which compares the column without case and
+// grants it as the catalog spells it, and on MySQL for a role the schema
+// creates, whose privileges the declaration leaves out are revoked. A user
+// holding the role runs what the declaration gives, and the next plan finds
+// nothing to change.
+func TestSchemaApplyMySQLFamilyGrantsBesideAKeptColumnPrivilegeE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		admin    dbtarget.Engine
+		held     []string
+		declared string
+		planned  []string
+		want     []string
+		reads    string
+	}{
+		{
+			name:     "MariaDB, a respelled privilege beside kept ones",
+			admin:    dbtarget.MariaDBAdmin,
+			held:     keptBesideHeld,
+			declared: unmanagedSchema + "GRANT SELECT (name) ON t1 TO %[1]s;\n",
+			want: []string{
+				"column t1.id SELECT NO", "column t1.Name INSERT NO", "column t1.Name SELECT NO",
+				"column t1.Name UPDATE NO", "column v1.Name SELECT NO",
+			},
+			reads: "SELECT name FROM t1",
+		},
+		{
+			name:     "MariaDB, a new privilege beside a kept one",
+			admin:    dbtarget.MariaDBAdmin,
+			held:     []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"},
+			declared: unmanagedSchema + "GRANT UPDATE (name) ON t1 TO %[1]s;\n",
+			planned:  []string{"GRANT UPDATE (`Name`) ON `t1` TO `%[1]s`;"},
+			want:     []string{"column t1.Name SELECT NO", "column t1.Name UPDATE NO"},
+			reads:    "UPDATE t1 SET name = 'b'",
+		},
+		{
+			name:     "MySQL, a role the schema creates",
+			admin:    dbtarget.MySQLAdmin,
+			held:     keptBesideHeld,
+			declared: spellingSchema + "GRANT SELECT (name) ON t1 TO %[1]s;\n",
+			planned: []string{
+				"REVOKE INSERT (`Name`) ON `t1` FROM `%[1]s`;",
+				"REVOKE SELECT (`Name`) ON `t1` FROM `%[1]s`;",
+				"REVOKE UPDATE (`Name`) ON `t1` FROM `%[1]s`;",
+				"REVOKE SELECT (`id`) ON `t1` FROM `%[1]s`;",
+				"REVOKE SELECT (`Name`) ON `v1` FROM `%[1]s`;",
+				"GRANT SELECT (`name`) ON `t1` TO `%[1]s`;",
+			},
+			want:  []string{"column t1.name SELECT NO"},
+			reads: "SELECT name FROM t1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newColumnGrantRun(c, test.admin, test.held)
+
+			applied := run.apply(c, test.declared, "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(grantStatements(applied.Stdout, run.database), qt.DeepEquals, forRole(test.planned, run.role))
+			c.Assert(run.privileges(c), qt.DeepEquals, test.want)
+			_, err := run.member(c).ExecContext(c.Context(), test.reads)
+			c.Assert(err, qt.IsNil)
+
+			again := run.apply(c, test.declared, "--dry-run")
+
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 		})
 	}
 }
