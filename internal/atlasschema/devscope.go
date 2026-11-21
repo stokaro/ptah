@@ -334,6 +334,19 @@ func unquoteSchemaName(token lexer.Token) string {
 // tables instead. A view body that also reads another database keeps that
 // name, and an object in another database keeps its qualifier.
 //
+// The read records the database on each grant too, and a grant in source's
+// database is moved to destination's database rather than left unqualified.
+// A grant on a table, a view or a sequence names its object by the database
+// and the object, so `GRANT SELECT ON t` replayed in `app_shadow` reads as a
+// grant on `app_shadow`.`t`, and it is the target's grant on `app`.`t`. A
+// grant on the whole database names that database as its object, so
+// `GRANT SELECT ON *` replayed there reads as a grant on `app_shadow`.*, and
+// it is the target's grant on `app`.*. Left unqualified, a ClickHouse table
+// grant is refused, since a ClickHouse grant always names its database, and a
+// MySQL one is reported under another name than the target's own grants. A
+// name compares exactly: on a server that keeps the case of a database name,
+// `APP_SHADOW` is another database than `app_shadow`.
+//
 // A routine body is not rewritten: it is procedural text, and a name in it
 // that reads source's database is left as written. On a dev database of the
 // target's server the dev cleanup refuses first, since another database
@@ -370,6 +383,18 @@ func RebindDatabase(state *catalog.Database, source, destination catalog.ServerI
 	for i := range moved.Sequences {
 		if moved.Sequences[i].Schema == from {
 			moved.Sequences[i].Schema = ""
+		}
+	}
+	moved.Grants = slices.Clone(state.Grants)
+	for i := range moved.Grants {
+		grant := &moved.Grants[i]
+		switch {
+		case strings.EqualFold(grant.ObjectType, "SCHEMA"):
+			if grant.ObjectName == from {
+				grant.ObjectName = to
+			}
+		case grant.Schema == from:
+			grant.Schema = to
 		}
 	}
 	return &moved

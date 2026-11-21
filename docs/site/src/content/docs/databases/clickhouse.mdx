@@ -1143,6 +1143,14 @@ for that. And a ClickHouse role is server-wide rather than database-scoped, so a
 role created against a dev or throwaway database outlives the database that
 workflow drops.
 
+A grant outlives its table in the same way. `migrations drift` and
+`migrations up --check-drift` replay the history's grants in the shadow
+database and compare each one as the target's grant on its own table or
+database. A `schema apply --dev-url` rehearsal with `PTAH_TRUST_REPLAY_SQL=1`
+writes the target's grants onto the dev database's tables. In both cases the
+role keeps the grants on the shadow or dev database after its tables are
+dropped.
+
 The connected account needs the privileges these statements require —
 `ROLE ADMIN` plus `GRANT OPTION` on what it grants. The `docker-compose.yaml`
 in this repository configures `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, which
