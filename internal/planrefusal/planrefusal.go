@@ -102,3 +102,32 @@ func (e *DeclarationError) Error() string { return e.Err.Error() }
 
 // Unwrap returns the wrapped refusal.
 func (e *DeclarationError) Unwrap() error { return e.Err }
+
+// GeneratedKind is one generated column whose kind a plan would have to
+// change in place.
+type GeneratedKind struct {
+	// Table is the column's table, as the comparison names it.
+	Table string `json:"table"`
+	// Column is the column, as the schema spells it.
+	Column string `json:"column"`
+	// HeldKind is the kind the database holds: STORED or VIRTUAL.
+	HeldKind string `json:"held_kind"`
+	// DeclaredKind is the kind the schema declares: STORED or VIRTUAL.
+	DeclaredKind string `json:"declared_kind"`
+}
+
+// GeneratedKindError is the refusal of a plan that would change the kind of a
+// generated column the database holds, which no statement does in place.
+type GeneratedKindError struct {
+	// Columns are the columns whose kinds differ, in the order the comparison
+	// lists the tables and each table's columns.
+	Columns []GeneratedKind
+	// Err is the refusal as the command reports it, naming every column.
+	Err error
+}
+
+// Error returns the message of the wrapped refusal.
+func (e *GeneratedKindError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped refusal.
+func (e *GeneratedKindError) Unwrap() error { return e.Err }

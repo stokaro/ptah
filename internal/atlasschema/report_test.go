@@ -590,10 +590,12 @@ func TestReports_OutcomeAndRefusalValues(t *testing.T) {
 		atlasschema.RefusalDependentObject,
 		atlasschema.RefusalDeclarationRefused,
 		atlasschema.RefusalBackslashMode,
+		atlasschema.RefusalGeneratedKind,
 	}, qt.DeepEquals, []atlasschema.RefusalCode{
 		"stale-plan", "protected-table", "lock-timeout", "transaction-preflight", "transaction-unavailable",
 		"simulation-failed", "view-security-option", "view-definer", "definer-privilege", "missing-owner-role",
 		"owner-transfer", "owner-schema-privilege", "dependent-object", "declaration-refused", "backslash-mode",
+		"generated-kind",
 	})
 	c.Assert(atlasschema.PlanReportContractVersion, qt.Equals, 3)
 	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 4)

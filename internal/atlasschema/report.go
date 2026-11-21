@@ -180,6 +180,11 @@ const (
 	// dev session the target disagrees with. Apply the desired schema without
 	// --plan, or give both sessions one sql_mode.
 	RefusalBackslashMode RefusalCode = "backslash-mode"
+	// RefusalGeneratedKind means the plan would change the kind of a generated
+	// column the database holds, STORED to VIRTUAL or back, and no statement
+	// changes it in place. Declare the kind the column has, or drop the column
+	// and add it back.
+	RefusalGeneratedKind RefusalCode = "generated-kind"
 )
 
 // Refusal is the reason a plan or an apply refused, with the details a caller
@@ -206,6 +211,10 @@ type Refusal struct {
 	// definer and the account the replacement would make its definer, in the
 	// order the comparison lists the views.
 	ViewDefiners []planrefusal.ViewDefiner `json:"view_definers,omitempty"`
+	// GeneratedColumns are the columns a generated-kind refusal names, each
+	// with the kind the database holds and the kind the schema declares, in
+	// the order the comparison lists the tables.
+	GeneratedColumns []planrefusal.GeneratedKind `json:"generated_columns,omitempty"`
 	// DefinerPrivileges are the statements a definer-privilege refusal names,
 	// each with the definer it names, the connected account and the privilege
 	// that account lacks, in statement order.
@@ -598,6 +607,7 @@ func refusalFor(err error) *Refusal {
 	var ownerTransfer *OwnerTransferError
 	var ownerSchema *OwnerSchemaError
 	var dependentObject *planrefusal.DependentObjectError
+	var generatedKind *planrefusal.GeneratedKindError
 	var declaration *planrefusal.DeclarationError
 	var backslash *BackslashModeError
 	switch {
@@ -644,6 +654,8 @@ func refusalFor(err error) *Refusal {
 		}}
 	case errors.As(err, &dependentObject):
 		return &Refusal{Code: RefusalDependentObject}
+	case errors.As(err, &generatedKind):
+		return &Refusal{Code: RefusalGeneratedKind, GeneratedColumns: generatedKind.Columns}
 	case errors.As(err, &declaration):
 		return &Refusal{Code: RefusalDeclarationRefused}
 	case errors.As(err, &backslash):

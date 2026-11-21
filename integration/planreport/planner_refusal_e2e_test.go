@@ -38,13 +38,23 @@ type viewOption struct {
 	Option string `json:"option"`
 }
 
+// generatedColumn is one entry of a refusal's generated_columns, read by its
+// wire names.
+type generatedColumn struct {
+	Table        string `json:"table"`
+	Column       string `json:"column"`
+	HeldKind     string `json:"held_kind"`
+	DeclaredKind string `json:"declared_kind"`
+}
+
 // document is what a caller parses from either command's standard output.
 type document struct {
 	ContractVersion int    `json:"contract_version"`
 	Outcome         string `json:"outcome"`
 	Refusal         *struct {
-		Code        string       `json:"code"`
-		ViewOptions []viewOption `json:"view_options"`
+		Code             string            `json:"code"`
+		ViewOptions      []viewOption      `json:"view_options"`
+		GeneratedColumns []generatedColumn `json:"generated_columns"`
 	} `json:"refusal"`
 	Error *struct {
 		Message string `json:"message"`
@@ -134,6 +144,10 @@ const (
 	docsView         = "SELECT id FROM docs"
 	docsSecurity     = "ALTER TABLE docs ENABLE ROW LEVEL SECURITY"
 	docsPolicyOnView = "CREATE POLICY docs_owner ON docs USING (id IN (SELECT id FROM allowed_view))"
+	// itemsTable names no kind for its generated column. PostgreSQL 18 and
+	// later build it VIRTUAL, and Ptah reads the same declaration as STORED.
+	itemsTable    = "CREATE TABLE items (id bigint PRIMARY KEY, qty integer NOT NULL, price integer NOT NULL, total integer GENERATED ALWAYS AS (qty * price))"
+	heldTotalKind = "SELECT attgenerated::text FROM pg_attribute WHERE attrelid = 'items'::regclass AND attname = 'total'"
 )
 
 // TestPlannerRefusalReportE2E_FailurePath runs each plan the planner refuses over
@@ -148,6 +162,7 @@ func TestPlannerRefusalReportE2E_FailurePath(t *testing.T) {
 		declared        string
 		wantCode        string
 		wantViewOptions []viewOption
+		wantGenerated   []generatedColumn
 		wantMessage     string
 		query           string
 		wantHeld        string
@@ -211,6 +226,18 @@ func TestPlannerRefusalReportE2E_FailurePath(t *testing.T) {
 			query:       routinesNamedFn,
 			wantHeld:    "1",
 		},
+		{
+			name:     "a generated column the database holds VIRTUAL and the schema declares STORED",
+			built:    []string{itemsTable},
+			declared: itemsTable + ";\n",
+			wantCode: "generated-kind",
+			wantGenerated: []generatedColumn{
+				{Table: "public.items", Column: "total", HeldKind: "VIRTUAL", DeclaredKind: "STORED"},
+			},
+			wantMessage: `(?s)generate schema apply operations: unsupported feature: generated column public\.items\.total is VIRTUAL and the schema declares it STORED; .*`,
+			query:       heldTotalKind,
+			wantHeld:    "v",
+		},
 	}
 	for _, test := range tests {
 		for _, command := range verbs {
@@ -226,6 +253,7 @@ func TestPlannerRefusalReportE2E_FailurePath(t *testing.T) {
 				c.Assert(got.Refusal, qt.IsNotNil)
 				c.Assert(got.Refusal.Code, qt.Equals, test.wantCode)
 				c.Assert(got.Refusal.ViewOptions, qt.DeepEquals, test.wantViewOptions)
+				c.Assert(got.Refusal.GeneratedColumns, qt.DeepEquals, test.wantGenerated)
 				c.Assert(got.Error, qt.IsNotNil)
 				c.Assert(got.Error.Message, qt.Matches, test.wantMessage)
 				c.Assert(readBack(c, db, test.query), qt.Equals, test.wantHeld)
