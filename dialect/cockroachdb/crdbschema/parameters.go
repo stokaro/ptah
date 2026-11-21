@@ -193,11 +193,12 @@ func assignDeclared(p *Policy, name, value string) error {
 	}
 	for _, flag := range p.flags() {
 		if flag.name == name {
-			parsed, err := strconv.ParseBool(strings.TrimSpace(value))
-			if err != nil {
+			// Exactly true or false, as every boolean a schema declares: read
+			// through strconv.ParseBool, TRUE, 1 and t would pause the job too.
+			if value != "true" && value != "false" {
 				return fmt.Errorf("%w: %s = %q, which is not true or false", schemaext.ErrInvalidValue, name, value)
 			}
-			*flag.value = parsed
+			*flag.value = value == "true"
 			return nil
 		}
 	}

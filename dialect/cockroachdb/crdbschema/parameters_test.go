@@ -41,7 +41,7 @@ func TestDecodeDeclared_HappyPath(t *testing.T) {
 				"ttl_expiration_expression": "expires_at", "ttl_expire_after": "3 days", "ttl_row_stats_poll_interval": "10m",
 				"ttl_job_cron": "@daily", "ttl_select_batch_size": "500", "ttl_delete_batch_size": " 100 ",
 				"ttl_select_rate_limit": "200", "ttl_delete_rate_limit": "300", "ttl_pause": "true",
-				"ttl_label_metrics": "TRUE", "ttl_disable_changefeed_replication": "1",
+				"ttl_label_metrics": "true", "ttl_disable_changefeed_replication": "true",
 			},
 			want: crdbschema.Policy{
 				ExpirationExpression: "expires_at", ExpireAfter: "3 days", RowStatsPollInterval: "10m", JobCron: "@daily",
@@ -56,7 +56,7 @@ func TestDecodeDeclared_HappyPath(t *testing.T) {
 			name: "false flags declare the default",
 			parameters: map[string]string{
 				"ttl_expiration_expression": "expires_at", "ttl_pause": "false",
-				"ttl_label_metrics": "false", "ttl_disable_changefeed_replication": "0",
+				"ttl_label_metrics": "false", "ttl_disable_changefeed_replication": "false",
 			},
 			want: crdbschema.Policy{ExpirationExpression: "expires_at"},
 		},
@@ -118,6 +118,23 @@ func TestDecodeDeclared_FailurePath(t *testing.T) {
 			name:       "a flag that is not a boolean",
 			parameters: map[string]string{"ttl_expiration_expression": "expires_at", "ttl_pause": "maybe"},
 			wantErr:    `(?s).*ttl_pause = "maybe", which is not true or false.*`,
+		},
+		{
+			// strconv.ParseBool reads each of these as true, and the flag
+			// would pause the deletion job.
+			name:       "true in capitals",
+			parameters: map[string]string{"ttl_expiration_expression": "expires_at", "ttl_pause": "TRUE"},
+			wantErr:    `(?s).*ttl_pause = "TRUE", which is not true or false.*`,
+		},
+		{
+			name:       "true as a digit",
+			parameters: map[string]string{"ttl_expiration_expression": "expires_at", "ttl_pause": "1"},
+			wantErr:    `(?s).*ttl_pause = "1", which is not true or false.*`,
+		},
+		{
+			name:       "true with a space",
+			parameters: map[string]string{"ttl_expiration_expression": "expires_at", "ttl_pause": " true"},
+			wantErr:    `(?s).*ttl_pause = " true", which is not true or false.*`,
 		},
 		{
 			name:       "an interval this owner cannot read",

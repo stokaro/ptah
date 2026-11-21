@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
 
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
@@ -49,8 +48,9 @@ func PropertyDefinitions() []schemaext.PropertyDefinition {
 }
 
 // DecodeProperties decodes an ordered batch into DesiredTable values. A value
-// is `true` or `false`, and an empty value states nothing, as the option left
-// out does. An unknown property and any other value wrap
+// is exactly `true` or `false`; an empty one is refused rather than read as
+// the option left out, since `strict=""` reads as a value nobody finished
+// writing. An unknown property and any other value wrap
 // schemaext.ErrInvalidValue. Any failure or cancellation returns no partial
 // batch.
 func (PropertyService) DecodeProperties(ctx context.Context, request schemaext.PropertyDecodeRequest) ([]schemaext.Value, error) {
@@ -76,14 +76,10 @@ func (PropertyService) DecodeProperties(ctx context.Context, request schemaext.P
 				return nil, fmt.Errorf("%w: unknown SQLite table property %q", schemaext.ErrInvalidValue, key)
 			}
 			value := fragment.Properties[key]
-			if value == "" {
-				continue
-			}
-			on, err := strconv.ParseBool(value)
-			if err != nil || (value != "true" && value != "false") {
+			if value != "true" && value != "false" {
 				return nil, fmt.Errorf("%w: SQLite table property %s is %q, not true or false", schemaext.ErrInvalidValue, key, value)
 			}
-			*target = on
+			*target = value == "true"
 		}
 		result = append(result, table)
 	}

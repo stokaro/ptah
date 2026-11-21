@@ -46,10 +46,11 @@ type annotationErrorContext struct {
 	catalog annotationmeta.Catalog
 }
 
-// validateAttributes rejects any key the directive does not recognize.
-// Platform-specific overrides are accepted only for directives whose schema IR
-// retains them. This catches typos and unsupported overrides at parse time
-// instead of silently dropping them and producing wrong SQL.
+// validateAttributes rejects any key the directive does not recognize, and a
+// boolean attribute whose value is neither true nor false. Platform-specific
+// overrides are accepted only for directives whose schema IR retains them.
+// This catches typos and unsupported overrides at parse time instead of
+// silently dropping them and producing wrong SQL.
 func validateAttributes(kv map[string]string, ctx annotationErrorContext) error {
 	directive := strings.TrimPrefix(ctx.directive, "//")
 	for _, k := range slices.Sorted(maps.Keys(kv)) {
@@ -73,24 +74,95 @@ func validateAttributes(kv map[string]string, ctx annotationErrorContext) error 
 				Message:   fmt.Sprintf("%s on %s at %s: %s", k, ctx.directive, ctx.location, reason),
 			}
 		}
-		if ctx.catalog.AllowsAttribute(directive, k) {
+		if !ctx.catalog.AllowsAttribute(directive, k) {
+			return unknownAttributeError(ctx, k)
+		}
+		if err := checkBooleanValue(kv, k, ctx); err != nil {
+			return err
+		}
+	}
+	return checkOneSpelling(kv, ctx)
+}
+
+// checkOneSpelling refuses an attribute written under two of its spellings,
+// such as createdb and create_db. A reader takes one spelling, or either of
+// them, so the other is dropped or overrides it: read either way,
+// createdb="false" create_db declares CREATEDB.
+func checkOneSpelling(kv map[string]string, ctx annotationErrorContext) error {
+	directive := strings.TrimPrefix(ctx.directive, "//")
+	spelledAs := make(map[string]string, len(kv))
+	for _, k := range slices.Sorted(maps.Keys(kv)) {
+		canonical := k
+		if declared, ok := ctx.catalog.Attribute(directive, k); ok && declared.AliasFor != "" {
+			canonical = declared.AliasFor
+		}
+		first, seen := spelledAs[canonical]
+		if !seen {
+			spelledAs[canonical] = k
 			continue
 		}
-		slog.Error("unknown annotation attribute",
+		slog.Error("annotation attribute written twice",
 			"directive", ctx.directive,
-			"attribute", k,
+			"attribute", canonical,
 			"location", ctx.location,
 		)
 		return &ptaherr.ParseError{
 			File:      ctx.file,
 			Line:      ctx.line,
-			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Directive: directive,
 			Attribute: k,
-			Err:       ptaherr.ErrUnknownAttribute,
-			Message:   fmt.Sprintf("unknown annotation attribute %q on %s at %s", k, ctx.directive, ctx.location),
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("%q and %q on %s at %s spell one attribute; write one of them",
+				first, k, ctx.directive, ctx.location),
 		}
 	}
 	return nil
+}
+
+// checkBooleanValue refuses a boolean attribute written with a value other
+// than exactly true or false. It is the one check of every boolean attribute
+// of every directive, an owner's included, so a reader can compare the value
+// with "true": without it TRUE, yes and an empty value read as false and
+// declare the opposite of what their author wrote.
+func checkBooleanValue(kv map[string]string, key string, ctx annotationErrorContext) error {
+	directive := strings.TrimPrefix(ctx.directive, "//")
+	declared, ok := ctx.catalog.Attribute(directive, key)
+	if !ok || !declared.Boolean {
+		return nil
+	}
+	if _, _, err := parseutils.BoolAttribute(kv, key); err == nil {
+		return nil
+	}
+	slog.Error("invalid boolean annotation attribute",
+		"directive", ctx.directive,
+		"attribute", key,
+		"location", ctx.location,
+	)
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: directive,
+		Attribute: key,
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message:   fmt.Sprintf("invalid %q value %q on %s at %s: %v", key, kv[key], ctx.directive, ctx.location, parseutils.ErrNotBoolean),
+	}
+}
+
+// unknownAttributeError refuses key, which directive does not declare.
+func unknownAttributeError(ctx annotationErrorContext, k string) error {
+	slog.Error("unknown annotation attribute",
+		"directive", ctx.directive,
+		"attribute", k,
+		"location", ctx.location,
+	)
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: k,
+		Err:       ptaherr.ErrUnknownAttribute,
+		Message:   fmt.Sprintf("unknown annotation attribute %q on %s at %s", k, ctx.directive, ctx.location),
+	}
 }
 
 // parseDialectScope resolves the `dialects=` attribute of a directive that
@@ -153,7 +225,10 @@ func (s *schemaParseState) parseFieldComment(
 	field *ast.Field,
 	structName string,
 ) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 
 	// Validate the directive itself, not each named carrier. For anonymous /
 	// embedded fields field.Names is nil and the loop below would never run,
@@ -262,13 +337,14 @@ func generatedColumnKind(kv map[string]string) string {
 	if strings.TrimSpace(kv["generated"]) == "" {
 		return ""
 	}
-	if stored := strings.TrimSpace(kv["stored"]); stored != "" {
-		if strings.EqualFold(stored, "true") {
-			return "STORED"
-		}
+	switch kv["stored"] {
+	case "true":
+		return "STORED"
+	case "false":
 		return "VIRTUAL"
+	default:
+		return ""
 	}
-	return ""
 }
 
 func hasIdentitySettings(kv map[string]string) bool {
@@ -276,7 +352,10 @@ func hasIdentitySettings(kv map[string]string) bool {
 }
 
 func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	if err := validateAttributes(
 		kv,
 		s.annotationContext(comment, "//ptah:embedded", structName),
@@ -318,7 +397,10 @@ func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast
 }
 
 func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	if err := validateAttributes(
 		kv,
 		s.annotationContext(comment, "//ptah:schema:index", structName),
@@ -389,10 +471,6 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		annotation.Subject{Kind: annotation.SubjectIndex, Struct: structName, Name: kv["name"], Table: tableName}, structName); err != nil {
 		return err
 	}
-	nullsDistinct, err := optionalBoolAttribute(kv, "nulls_distinct")
-	if err != nil {
-		return ownerAttributeError(ctx, err)
-	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		Facets:         facets,
 		StructName:     structName,
@@ -406,7 +484,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
 		Operator:       kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
 		IncludeColumns: includeColumns,
-		NullsDistinct:  nullsDistinct,
+		NullsDistinct:  optionalBool(kv, "nulls_distinct"),
 		TableName:      tableName, // Target table name
 		StorageParams:  options,
 	})
@@ -446,7 +524,10 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	if err := validateAttributes(
 		kv,
 		s.annotationContext(comment, "//ptah:schema:constraint", structName),
@@ -460,23 +541,17 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	if err != nil {
 		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
 	}
-	constraint := parseConstraintComment(s.kv, comment, structName)
+	constraint := parseConstraintComment(kv, structName)
 	if !constraintkind.Valid(constraint.Type) {
 		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName),
 			fmt.Errorf("%w: constraint %q has unsupported common kind %q", ptaherr.ErrUnsupportedFeature, constraint.Name, constraint.Type))
 	}
 	constraint.Facets = facets
-	if constraint.NullsDistinct, err = optionalBoolAttribute(kv, "nulls_distinct"); err != nil {
-		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
-	}
+	constraint.NullsDistinct = optionalBool(kv, "nulls_distinct")
 	// WITHOUT OVERLAPS qualifies the last column of a PRIMARY KEY or UNIQUE,
 	// and PERIOD the last columns of a FOREIGN KEY.
-	if constraint.WithoutOverlaps, err = flagAttribute(kv, "without_overlaps"); err != nil {
-		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
-	}
-	if constraint.Period, err = flagAttribute(kv, "period"); err != nil {
-		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
-	}
+	constraint.WithoutOverlaps = kv["without_overlaps"] == "true"
+	constraint.Period = kv["period"] == "true"
 	if err := temporalkeys.CheckConstraint(constraint); err != nil {
 		return ownerAttributeError(s.annotationContext(comment, "//ptah:schema:constraint", structName), err)
 	}
@@ -484,9 +559,7 @@ func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structNa
 	return nil
 }
 
-func parseConstraintComment(kvParser parseutils.KeyValueParser, comment *ast.Comment, structName string) schemamodel.Constraint {
-	kv := kvParser.ParseKeyValueComment(comment.Text)
-
+func parseConstraintComment(kv map[string]string, structName string) schemamodel.Constraint {
 	// Parse columns for UNIQUE/PRIMARY KEY constraints
 	var columns []string
 	if kv["columns"] != "" {
@@ -542,20 +615,15 @@ func normalizeIdentityGeneration(value string) string {
 	}
 }
 
-// flagAttribute reads a boolean attribute whose absence means false.
-func flagAttribute(kv map[string]string, name string) (bool, error) {
-	value, _, err := parseutils.BoolAttribute(kv, name)
-	return value, err
-}
-
-// optionalBoolAttribute reads a boolean attribute whose absence leaves the
-// engine's default, as nulls_distinct does.
-func optionalBoolAttribute(kv map[string]string, name string) (*bool, error) {
-	value, present, err := parseutils.BoolAttribute(kv, name)
-	if err != nil || !present {
-		return nil, err
+// optionalBool reads a boolean attribute whose absence leaves the engine's
+// default, as nulls_distinct does. validateAttributes has refused every value
+// other than true and false.
+func optionalBool(kv map[string]string, name string) *bool {
+	written, present := kv[name]
+	if !present {
+		return nil
 	}
-	return new(value), nil
+	return new(written == "true")
 }
 
 // extensionDirective is the frontend's extension directive, which a selected
@@ -596,7 +664,10 @@ func (s *schemaParseState) refuseUnhostedScope(directive string, scope []string)
 }
 
 func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:extension", kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -651,7 +722,10 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 // Omitted provenance is [coverage.Declared]. Explicit reason and provenance
 // preserve the evidence of an exported source, including unknown provenance.
 func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:notdescribed", kv["kind"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -694,7 +768,10 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 }
 
 func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	if err := validateAttributes(
 		kv,
 		s.annotationContext(comment, "//ptah:schema:schema", kv["name"]),
@@ -716,7 +793,10 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 }
 
 func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	schemaName, tableName := tableDirectiveName(kv["schema"], kv["name"])
 	if err := validateAttributes(
 		kv,
@@ -766,9 +846,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Facets:            facets,
 		Overrides:         parseutils.ParsePlatformSpecific(s.hostAttributes("ptah:schema:table", kv)),
 	}
-	if declared.PrimaryKeyWithoutOverlaps, err = flagAttribute(kv, "primary_key_without_overlaps"); err != nil {
-		return ownerAttributeError(ctx, err)
-	}
+	declared.PrimaryKeyWithoutOverlaps = kv["primary_key_without_overlaps"] == "true"
 	if err := temporalkeys.CheckPrimaryKey(declared); err != nil {
 		return ownerAttributeError(ctx, err)
 	}
@@ -873,6 +951,32 @@ func (s *schemaParseState) annotationContext(
 		ctx.line = s.fset.Position(comment.Slash).Line
 	}
 	return ctx
+}
+
+// attributes splits comment into its attributes. A bare word naming an
+// attribute that takes a value is refused here, where the word is still
+// visible: in the map it would be either missing or a value nobody wrote.
+func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, error) {
+	kv, err := s.kv.ParseKeyValueComment(comment.Text)
+	var bare *parseutils.BareValueError
+	if !errors.As(err, &bare) {
+		return kv, err
+	}
+	ctx := s.annotationContext(comment, "//"+bare.Directive, "")
+	slog.Error("bare annotation attribute that takes a value",
+		"directive", ctx.directive,
+		"attribute", bare.Attribute,
+		"file", ctx.file,
+		"line", ctx.line,
+	)
+	return nil, &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: bare.Directive,
+		Attribute: bare.Attribute,
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message:   fmt.Sprintf("%s at %s:%d", bare.Error(), ctx.file, ctx.line),
+	}
 }
 
 func (s *schemaParseState) parseStructComment(comment *ast.Comment, target schemaCommentTarget) error {
@@ -1052,7 +1156,10 @@ func scopePlace(scope annotationmeta.Scope) string {
 }
 
 func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	if err := validateAttributes(
 		kv,
 		s.annotationContext(comment, "//ptah:schema:enum", kv["name"]),
@@ -1319,9 +1426,11 @@ func (s *schemaParseState) mapTableDirectiveStructName(comment *ast.Comment, str
 	if !ok || directive.Name != "ptah:schema:table" {
 		return
 	}
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	// A comment the parser refuses maps no name; parseTableComment reports
+	// the refusal when it reads the same comment.
+	kv, err := s.attributes(comment)
 	tableName := kv["name"]
-	if tableName == "" {
+	if err != nil || tableName == "" {
 		return
 	}
 	s.tableNameToStructName[tableName] = structName
@@ -1380,7 +1489,10 @@ func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment) error
 }
 
 func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:rls:policy", kv["table"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1419,7 +1531,10 @@ func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment)
 }
 
 func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:rls:enable", kv["table"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1482,7 +1597,10 @@ func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structNam
 	// The attributes are validated against the procedure's own directive, so
 	// `returns=` is refused by name rather than accepted and then rejected
 	// below -- the registry is where an operator reads what a directive takes.
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	if err := validateAttributes(kv, s.annotationContext(comment, "//ptah:schema:procedure", structName)); err != nil {
 		return err
 	}
@@ -1513,7 +1631,10 @@ func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structNam
 }
 
 func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:function", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1550,7 +1671,10 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 }
 
 func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:sequence", kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1675,7 +1799,10 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 // parseUserTypeComment validates a domain or composite type declaration and
 // hands it to the owner that reads its scope, which reads every attribute.
 func (s *schemaParseState) parseUserTypeComment(comment *ast.Comment, structName, directive string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//"+directive, kv["name"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1691,7 +1818,10 @@ func (s *schemaParseState) parseUserTypeComment(comment *ast.Comment, structName
 }
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:view", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1760,7 +1890,10 @@ func parseObjectOwner(kv map[string]string, ctx annotationErrorContext) (string,
 }
 
 func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:matview", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1827,7 +1960,10 @@ func ownerAttributeError(ctx annotationErrorContext, err error) error {
 }
 
 func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:trigger", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1859,7 +1995,10 @@ func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName 
 }
 
 func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:rls:policy", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1923,7 +2062,10 @@ func rlsPolicyRestrictive(kv map[string]string, ctx annotationErrorContext) (boo
 }
 
 func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:rls:enable", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1943,7 +2085,10 @@ func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structNam
 }
 
 func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:role", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -1989,7 +2134,10 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 }
 
 func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:grant", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -2032,7 +2180,10 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 // role is declared not to hold, one [schemamodel.Grant] per directive in
 // [schemamodel.Database.RevokedGrants].
 func (s *schemaParseState) parseRevokeComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:revoke", structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -2162,7 +2313,10 @@ func setObjectTarget(grant *schemamodel.Grant, kv map[string]string, ctx annotat
 }
 
 func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structName string) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//ptah:schema:data", kv["table"])
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err

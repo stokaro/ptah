@@ -33,7 +33,10 @@ type pendingFacet struct {
 // owner the declaration; what the owner returns joins the schema the way the
 // frontend's own feature declarations do.
 func (s *schemaParseState) parseOwnerDirective(comment *ast.Comment, directive annotationmeta.Directive, target schemaCommentTarget) error {
-	kv := s.kv.ParseKeyValueComment(comment.Text)
+	kv, err := s.attributes(comment)
+	if err != nil {
+		return err
+	}
 	ctx := s.annotationContext(comment, "//"+directive.Name, target.structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
@@ -94,7 +97,11 @@ func (s *schemaParseState) ownerSubject(directive annotationmeta.Directive, targ
 	if target.group != nil {
 		for _, other := range target.group.List {
 			if matched, ok := s.catalog.MatchCommentDirective(other.Text); ok && matched.Name == sibling {
-				written = append(written, s.kv.ParseKeyValueComment(other.Text))
+				kv, err := s.attributes(other)
+				if err != nil {
+					return annotation.Subject{}, err
+				}
+				written = append(written, kv)
 			}
 		}
 	}

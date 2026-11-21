@@ -87,17 +87,17 @@ func TestParseSource_TemporalKeys_FailurePath(t *testing.T) {
 		{
 			name:    "without_overlaps that is not a boolean",
 			comment: `//ptah:schema:constraint name="u" type="UNIQUE" columns="id,valid_at" without_overlaps="yes"`,
-			want:    `(?s).*without_overlaps="yes" is not a boolean; write true or false.*`,
+			want:    `(?s).*invalid "without_overlaps" value "yes" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name:    "an empty without_overlaps",
 			comment: `//ptah:schema:constraint name="u" type="UNIQUE" columns="id,valid_at" without_overlaps=""`,
-			want:    `(?s).*without_overlaps="" is not a boolean; write true or false.*`,
+			want:    `(?s).*invalid "without_overlaps" value "" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name:    "without_overlaps in another case",
 			comment: `//ptah:schema:constraint name="u" type="UNIQUE" columns="id,valid_at" without_overlaps="TRUE"`,
-			want:    `(?s).*without_overlaps="TRUE" is not a boolean; write true or false.*`,
+			want:    `(?s).*invalid "without_overlaps" value "TRUE" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name: "period with an action other than NO ACTION",
@@ -108,12 +108,12 @@ func TestParseSource_TemporalKeys_FailurePath(t *testing.T) {
 		{
 			name:    "period that is not a boolean",
 			comment: `//ptah:schema:constraint name="f" type="FOREIGN KEY" columns="a,b" foreign_table="p" foreign_columns="a,b" period="1"`,
-			want:    `(?s).*period="1" is not a boolean; write true or false.*`,
+			want:    `(?s).*invalid "period" value "1" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name:    "primary_key_without_overlaps that is not a boolean",
 			comment: `//ptah:schema:table name="t" primary_key="id,valid_at" primary_key_without_overlaps="valid_at"`,
-			want:    `(?s).*primary_key_without_overlaps="valid_at" is not a boolean; write true or false.*`,
+			want:    `(?s).*invalid "primary_key_without_overlaps" value "valid_at" on //ptah:schema:\w+ at \w+: not a boolean; write true or false.*`,
 		},
 		{
 			name:    "primary_key_without_overlaps with no primary_key",

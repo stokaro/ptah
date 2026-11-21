@@ -44,8 +44,17 @@ space-separated `key="value"` attributes.
 //ptah:schema:table name="products"
 ```
 
-- Attributes marked "bare form allowed" may be written without a value:
-  `primary` is equivalent to `primary="true"`.
+- A boolean attribute, marked "bare form allowed", takes exactly `true` or
+  `false`, and may be written without a value: `primary` is equivalent to
+  `primary="true"`. Any other value, `TRUE`, `1` and an empty value included,
+  fails parsing with `invalid "<name>" value "<value>" on //<directive> at
+  <location>: not a boolean; write true or false`.
+- Any other attribute written without a value fails parsing with `<name> on
+  //<directive> takes a value and is written bare; write <name>="..."`.
+- An attribute and its alias, such as `createdb` and `create_db`, cannot both
+  be written on one directive, whatever their values: the pair fails parsing
+  with `"<one>" and "<other>" on //<directive> at <location> spell one
+  attribute; write one of them`.
 - An unknown attribute fails parsing with
   `unknown annotation attribute "<name>" on //<directive>`.
 - An unknown directive, a `//ptah:` comment on a struct or a field that names
@@ -293,7 +302,7 @@ Maps a Go struct field to a database column.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
-| `auto_increment` | No | Marks the column as auto-incrementing. `true`/`false`; bare form allowed. |
+| `auto_increment` | No | Marks the column as auto-incrementing. Exactly `true` or `false`; bare form allowed. |
 | `check` | No | Column CHECK expression. |
 | `check_name` | No | Explicit CHECK constraint name. |
 | `comment` | No | Column comment. |
@@ -309,13 +318,13 @@ Maps a Go struct field to a database column.
 | `identity_options` | No | Raw SQL identity options. |
 | `identity_start` | No | SQL identity start value. |
 | `name` | No | Column name. |
-| `not_null` | No | Marks the column NOT NULL. `true`/`false`; bare form allowed. |
+| `not_null` | No | Marks the column NOT NULL. Exactly `true` or `false`; bare form allowed. |
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_update` | No | Foreign key ON UPDATE action. |
-| `primary` | No | Marks the column as part of the primary key. `true`/`false`; bare form allowed. |
-| `stored` | No | Shortcut controlling generated column storage. `true`/`false`. Ignored unless `generated` is set. |
+| `primary` | No | Marks the column as part of the primary key. Exactly `true` or `false`; bare form allowed. |
+| `stored` | No | Shortcut controlling generated column storage: `true` is `STORED`, `false` is `VIRTUAL`. Exactly `true` or `false`; bare form allowed. Ignored unless `generated` is set. |
 | `type` | No | Database column type. |
-| `unique` | No | Adds a single-column unique constraint. `true`/`false`; bare form allowed. |
+| `unique` | No | Adds a single-column unique constraint. Exactly `true` or `false`; bare form allowed. |
 | `unique_expr` | No | Uniqueness over an expression. Not implemented: rendering fails with `column "…" declares unique_expr`, because emitting the column's own `UNIQUE` instead would enforce a different constraint. |
 
 Platform overrides: yes.
@@ -337,7 +346,7 @@ Controls how an embedded Go field contributes schema objects.
 | `field` | No | Generated relation field name. |
 | `mode` | No | Embedding mode: inline, json, or relation. |
 | `name` | No | Column name for json embedding. |
-| `nullable` | No | Marks generated embedded columns nullable. `true`/`false`; bare form allowed. |
+| `nullable` | No | Marks generated embedded columns nullable. Exactly `true` or `false`; bare form allowed. |
 | `on_delete` | No | Generated foreign key ON DELETE action. |
 | `on_update` | No | Generated foreign key ON UPDATE action. |
 | `prefix` | No | Column prefix for inline embedded fields. |
@@ -365,13 +374,13 @@ properties; a selected provider validates their values.
 | `fields` | No | Comma-separated Go field or column names. |
 | `key_block_size` | No | MySQL-family index block-size hint. Zero uses the engine default. See [MySQL and MariaDB](../../databases/mysql/) for retention and range limits. |
 | `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB or Spanner, and `COVER` columns on YDB. Order is preserved, and a changed list rebuilds the index. |
-| `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. `true`/`false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
+| `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. Exactly `true` or `false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
 | `name` | No | Index name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. Exactly `true` or `false`; bare form allowed. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
 | `ops` | No | PostgreSQL operator class. |
 | `table` | No | Explicit target table. |
 | `type` | No | Index type or method. On YDB, `async` builds a `GLOBAL ASYNC` index and `vector_kmeans_tree` a vector index. |
-| `unique` | No | Creates a unique index. `true`/`false`; bare form allowed. |
+| `unique` | No | Creates a unique index. Exactly `true` or `false`; bare form allowed. |
 | `where` | No | Atlas-style partial index condition alias. |
 
 Omit `include` when the index has no payload columns. A present value with any
@@ -498,7 +507,7 @@ declaration; use `dialects="postgres"` to limit its scope.
 | `elements` | Yes | Ordered expressions and operators, without outer parentheses. |
 | `using` | Yes | Index access method, such as `btree` or `gist`. |
 | `condition` | No | Optional WHERE predicate, without outer parentheses. |
-| `deferrable` | No | Allows deferred enforcement. Bare form allowed. |
+| `deferrable` | No | Allows deferred enforcement. Exactly `true` or `false`; bare form allowed. |
 | `initially` | No | `immediate` or `deferred`. Deferred timing requires `deferrable`. |
 | `comment` | No | Constraint comment. |
 | `table` | No | Explicit target table. |
@@ -534,7 +543,7 @@ Declares a PostgreSQL domain type.
 | `default_expr` | No | DEFAULT expression. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Domain name. |
-| `not_null` | No | Marks the domain NOT NULL. `true`/`false`. |
+| `not_null` | No | Marks the domain NOT NULL. Exactly `true` or `false`; bare form allowed. |
 | `schema` | No | Target schema/namespace. |
 | `type` | Yes | Underlying base data type. |
 
@@ -608,7 +617,7 @@ incomplete extension coverage rather than treating unread extensions as absent.
 | --- | --- | --- |
 | `comment` | No | Extension comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `if_not_exists` | No | Adds IF NOT EXISTS where supported. `true`/`false`. |
+| `if_not_exists` | No | Adds IF NOT EXISTS where supported. Exactly `true` or `false`; bare form allowed. |
 | `name` | No | Extension name. |
 | `schema` | No | PostgreSQL installation schema. Empty means the target's default schema. |
 | `version` | No | Extension version. |
@@ -705,9 +714,9 @@ Declares a standalone PostgreSQL sequence.
 | `as` | No | Underlying integer type, such as bigint. |
 | `cache` | No | CACHE size. |
 | `comment` | No | Sequence comment. |
-| `cycle` | No | Enables CYCLE wrap-around. `true`/`false`. |
+| `cycle` | No | Enables CYCLE wrap-around. Exactly `true` or `false`; bare form allowed. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `if_not_exists` | No | Adds IF NOT EXISTS where supported. `true`/`false`. |
+| `if_not_exists` | No | Adds IF NOT EXISTS where supported. Exactly `true` or `false`; bare form allowed. |
 | `increment` | No | INCREMENT BY value; must be non-zero. |
 | `maxvalue` | No | MAXVALUE bound. |
 | `minvalue` | No | MINVALUE bound. |
@@ -726,7 +735,7 @@ Declares a database function.
 | `comment` | No | Function comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `language` | No | Function language. Omitted means the target's own: plpgsql on PostgreSQL, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle. |
-| `leakproof` | No | Marks the function `LEAKPROOF`. `true`/`false`. |
+| `leakproof` | No | Marks the function `LEAKPROOF`. Exactly `true` or `false`; bare form allowed. |
 | `name` | No | Function name. |
 | `parallel` | No | Parallel level: `SAFE`, `RESTRICTED` or `UNSAFE`. |
 | `params` | No | Function parameter list. |
@@ -734,7 +743,7 @@ Declares a database function.
 | `schema` | No | Target schema/namespace. |
 | `security` | No | Security mode: DEFINER or INVOKER. Omitted means the target's own: INVOKER on PostgreSQL and SQL Server, DEFINER on MySQL, MariaDB and Oracle. |
 | `settings` | No | Routine configuration settings, `name=value`, separated by `;`. |
-| `strict` | No | Marks the function `STRICT`. `true`/`false`. |
+| `strict` | No | Marks the function `STRICT`. Exactly `true` or `false`; bare form allowed. |
 | `volatility` | No | Volatility class. |
 
 `strict` makes the function return NULL without running its body when any
@@ -898,21 +907,25 @@ Declares a database role.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | Role comment. |
-| `create_db` | No | Alias for `createdb`. `true`/`false`. |
-| `create_role` | No | Alias for `createrole`. `true`/`false`. |
-| `createdb` | No | Allows database creation. `true`/`false`. |
-| `createrole` | No | Allows role creation. `true`/`false`. |
+| `create_db` | No | Alias for `createdb`. Exactly `true` or `false`; bare form allowed. |
+| `create_role` | No | Alias for `createrole`. Exactly `true` or `false`; bare form allowed. |
+| `createdb` | No | Allows database creation. Exactly `true` or `false`; bare form allowed. |
+| `createrole` | No | Allows role creation. Exactly `true` or `false`; bare form allowed. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `group` | No | Declares a group, which never logs in and has members. YDB only. `true`/`false`. |
-| `inherit` | No | Controls role inheritance; defaults to true. `true`/`false`. |
-| `login` | No | Creates the role with LOGIN. `true`/`false`. |
+| `group` | No | Declares a group, which never logs in and has members. YDB only. Exactly `true` or `false`; bare form allowed. |
+| `inherit` | No | Controls role inheritance; defaults to true. Exactly `true` or `false`; bare form allowed. |
+| `login` | No | Creates the role with LOGIN. Exactly `true` or `false`; bare form allowed. |
 | `member_of` | No | Comma-separated groups the role is a member of. A group may carry membership options in parentheses, such as readers(admin;inherit=false;set=true). A role that states the attribute, even empty, loses a membership the server holds in another declared role and the list leaves out; a role without it keeps every membership the server holds. |
 | `name` | No | Role name. |
 | `password` | No | Role password, a password hash, or `$PTAH_SECRET_<NAME>` to read it from that variable. Ptah never prints it; statements name the variable it is read from. See [Role passwords](../../databases/postgresql/#role-passwords). |
-| `replication` | No | Allows replication. `true`/`false`. |
+| `replication` | No | Allows replication. Exactly `true` or `false`; bare form allowed. |
 | `reset_settings` | No | Comma-separated settings to take away with `ALTER ROLE ... RESET`, such as `work_mem, app.tenant`. PostgreSQL only. |
 | `settings` | No | Configuration defaults the role logs in with, `name = value` separated by semicolons, each value written in SQL: `statement_timeout = '30s'; search_path = '$user', public`. PostgreSQL only. |
-| `superuser` | No | Creates the role as SUPERUSER. `true`/`false`. |
+| `superuser` | No | Creates the role as SUPERUSER. Exactly `true` or `false`; bare form allowed. |
+
+A membership option in `member_of` written alone is true, as in
+`readers(admin)`; written with a value, the value is exactly `true` or
+`false`, and `admin=TRUE` or `admin=1` is refused.
 
 `settings` and `reset_settings` manage only the settings they name: a setting
 the role holds and neither attribute names stays as the server holds it. A
@@ -962,10 +975,10 @@ Declares database grants.
 | `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
 | `comment` | No | Grant comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `grant_option` | No | Alias for `with_option`. `true`/`false`. |
+| `grant_option` | No | Alias for `with_option`. Exactly `true` or `false`; bare form allowed. |
 | `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_coordination_node` | No | Target coordination node, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
-| `on_database` | No | Targets the database itself. YDB only. `true`/`false`. |
+| `on_database` | No | Targets the database itself. YDB only. Exactly `true` or `false`; bare form allowed. |
 | `on_external_data_source` | No | Target external data source, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_external_table` | No | Target external table, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
@@ -981,7 +994,7 @@ Declares database grants.
 | `privilege` | No | Privilege or comma-separated privileges. |
 | `privileges` | No | Alias for `privilege`. |
 | `role` | No | Target role. |
-| `with_option` | No | Adds WITH GRANT OPTION where supported. `true`/`false`. |
+| `with_option` | No | Adds WITH GRANT OPTION where supported. Exactly `true` or `false`; bare form allowed. |
 
 A function or procedure is named with its argument types in parentheses,
 because PostgreSQL tells overloads apart by them. A name without them is
@@ -1025,7 +1038,7 @@ PRIVILEGES` gives a role on a new table.
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_coordination_node` | No | Target coordination node, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
-| `on_database` | No | Targets the database itself. YDB only. `true`/`false`. |
+| `on_database` | No | Targets the database itself. YDB only. Exactly `true` or `false`; bare form allowed. |
 | `on_external_data_source` | No | Target external data source, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_external_table` | No | Target external table, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |
 | `on_function` | No | Target function with its argument types, such as `purge(uuid)`. PostgreSQL only. |
@@ -1114,7 +1127,7 @@ Enables row-level security on a table.
 | --- | --- | --- |
 | `comment` | No | RLS enablement comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
-| `force` | No | Apply the table's policies to its owner too. `true`/`false`. |
+| `force` | No | Apply the table's policies to its owner too. Exactly `true` or `false`; bare form allowed. |
 | `table` | No | Target table. |
 
 Enabling row-level security leaves the table's owner exempt from every policy on

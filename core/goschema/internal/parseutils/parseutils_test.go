@@ -12,8 +12,9 @@ import (
 func TestParseKeyValueComment_UnquotesEscapedValues(t *testing.T) {
 	c := qt.New(t)
 
-	kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(`//ptah:schema:function name="normalize" body="BEGIN RAISE NOTICE \"hello\";\nRETURN NEW; END;" path="C:\\tmp"`)
+	kv, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(`//ptah:schema:function name="normalize" body="BEGIN RAISE NOTICE \"hello\";\nRETURN NEW; END;" path="C:\\tmp"`)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(kv["name"], qt.Equals, "normalize")
 	c.Assert(kv["body"], qt.Equals, "BEGIN RAISE NOTICE \"hello\";\nRETURN NEW; END;")
 	c.Assert(kv["path"], qt.Equals, `C:\tmp`)
@@ -22,8 +23,9 @@ func TestParseKeyValueComment_UnquotesEscapedValues(t *testing.T) {
 func TestParseKeyValueComment_EnumDirectiveTokenIsNotBooleanAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	kv := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(`//ptah:schema:enum name="status" values="active,inactive"`)
+	kv, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(`//ptah:schema:enum name="status" values="active,inactive"`)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(kv["enum"], qt.Equals, "")
 	c.Assert(kv["name"], qt.Equals, "status")
 	c.Assert(kv["values"], qt.Equals, "active,inactive")
@@ -97,55 +99,113 @@ func TestParsePlatformSpecific_CopiesNoDialectDescriptor(t *testing.T) {
 	c.Assert(allocs < 10, qt.IsTrue, qt.Commentf("allocations per call: %v", allocs))
 }
 
-func TestBoolAttribute_HappyPath(t *testing.T) {
+// A bare word reads as true when the comment's directive declares it a bare
+// boolean, and when the directive does not declare it or retired it, so that
+// validation refuses the last two by name. The word is decided by the
+// directive it is written on: stored is a boolean of a field, not of a table.
+func TestParseKeyValueComment_BareWord_HappyPath(t *testing.T) {
 	tests := []struct {
-		name        string
-		attributes  map[string]string
-		wantValue   bool
-		wantPresent bool
+		name    string
+		comment string
+		want    map[string]string
 	}{
-		{name: "absent", attributes: make(map[string]string), wantValue: false, wantPresent: false},
-		{name: "true", attributes: map[string]string{"period": "true"}, wantValue: true, wantPresent: true},
-		{name: "false", attributes: map[string]string{"period": "false"}, wantValue: false, wantPresent: true},
+		{
+			name:    "a bare boolean of the directive",
+			comment: `//ptah:schema:role name="app" login createdb`,
+			want:    map[string]string{"name": "app", "login": "true", "createdb": "true"},
+		},
+		{
+			name:    "an alias of a bare boolean",
+			comment: `//ptah:schema:grant role="app" privileges="SELECT" on_table="t" grant_option`,
+			want:    map[string]string{"role": "app", "privileges": "SELECT", "on_table": "t", "grant_option": "true"},
+		},
+		{
+			name:    "a word the directive does not declare",
+			comment: `//ptah:schema:table name="t" stored`,
+			want:    map[string]string{"name": "t", "stored": "true"},
+		},
+		{
+			name:    "a retired attribute",
+			comment: `//ptah:schema:matview name="v" body="SELECT 1" refresh_strategy`,
+			want:    map[string]string{"name": "v", "body": "SELECT 1", "refresh_strategy": "true"},
+		},
+		{
+			name:    "a value wins over the bare word",
+			comment: `//ptah:schema:sequence name="s" cycle cycle="false"`,
+			want:    map[string]string{"name": "s", "cycle": "false"},
+		},
+		{
+			name:    "a word of the directive name",
+			comment: `//ptah:schema:enum name="status" values="a,b"`,
+			want:    map[string]string{"name": "status", "values": "a,b"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			value, present, err := parseutils.BoolAttribute(test.attributes, "period")
+			kv, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(test.comment)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(value, qt.Equals, test.wantValue)
-			c.Assert(present, qt.Equals, test.wantPresent)
+			c.Assert(kv, qt.DeepEquals, test.want)
 		})
 	}
 }
 
-// A written value that is not exactly true or false is refused rather than
-// read as false. Another case is refused, and so is an empty value, which is
-// written and says neither.
-func TestBoolAttribute_FailurePath(t *testing.T) {
+// A bare word naming an attribute that takes a value is refused by name.
+// Dropped, a bare schema would put the table in the default schema and a bare
+// table would leave the policy table unnamed; read as true, either would name
+// an object "true". A platform override takes a value too, and so does an
+// attribute whose name is also a word of a directive name.
+func TestParseKeyValueComment_BareWord_FailurePath(t *testing.T) {
 	tests := []struct {
-		name  string
-		value string
-		want  string
+		name          string
+		comment       string
+		wantDirective string
+		wantAttribute string
+		wantMessage   string
 	}{
-		{name: "empty", value: "", want: `without_overlaps="" is not a boolean; write true or false`},
-		{name: "another case", value: "TRUE", want: `without_overlaps="TRUE" is not a boolean; write true or false`},
-		{name: "surrounding space", value: " true ", want: `without_overlaps=" true " is not a boolean; write true or false`},
-		{name: "yes", value: "yes", want: `without_overlaps="yes" is not a boolean; write true or false`},
-		{name: "one", value: "1", want: `without_overlaps="1" is not a boolean; write true or false`},
-		{name: "a column name", value: "valid_at", want: `without_overlaps="valid_at" is not a boolean; write true or false`},
+		{
+			name:          "a string attribute",
+			comment:       `//ptah:schema:role name`,
+			wantDirective: "ptah:schema:role",
+			wantAttribute: "name",
+			wantMessage:   `name on //ptah:schema:role takes a value and is written bare; write name="..."`,
+		},
+		{
+			name:          "an attribute named like a directive",
+			comment:       `//ptah:schema:table name="t" schema`,
+			wantDirective: "ptah:schema:table",
+			wantAttribute: "schema",
+			wantMessage:   `schema on //ptah:schema:table takes a value and is written bare; write schema="..."`,
+		},
+		{
+			name:          "the table of a row-level security switch",
+			comment:       `//ptah:schema:rls:enable table force`,
+			wantDirective: "ptah:schema:rls:enable",
+			wantAttribute: "table",
+			wantMessage:   `table on //ptah:schema:rls:enable takes a value and is written bare; write table="..."`,
+		},
+		{
+			name:          "a platform override",
+			comment:       `//ptah:schema:field name="a" type="INT" platform.mysql.type`,
+			wantDirective: "ptah:schema:field",
+			wantAttribute: "platform.mysql.type",
+			wantMessage:   `platform.mysql.type on //ptah:schema:field takes a value and is written bare; write platform.mysql.type="..."`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			value, present, err := parseutils.BoolAttribute(map[string]string{"without_overlaps": test.value}, "without_overlaps")
+			kv, err := parseutils.NewKeyValueParser(annotationmeta.Common()).ParseKeyValueComment(test.comment)
 
-			c.Assert(err, qt.ErrorMatches, test.want)
-			c.Assert(value, qt.IsFalse)
-			c.Assert(present, qt.IsTrue)
+			c.Assert(err, qt.ErrorMatches, test.wantMessage)
+			var bare *parseutils.BareValueError
+			c.Assert(err, qt.ErrorAs, &bare)
+			c.Assert(bare.Directive, qt.Equals, test.wantDirective)
+			c.Assert(bare.Attribute, qt.Equals, test.wantAttribute)
+			c.Assert(kv, qt.IsNil)
 		})
 	}
 }

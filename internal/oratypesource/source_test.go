@@ -100,7 +100,7 @@ func TestAnnotations_FailurePath(t *testing.T) {
 		name, directive, attribute, want string
 	}{
 		{name: "a NOT NULL that is no boolean", directive: `//ptah:schema:domain name="d" type="NUMBER" not_null="yes" dialects="oracle"`,
-			attribute: "not_null", want: `(?s).*parsing "yes": invalid syntax.*`},
+			attribute: "not_null", want: `(?s).*invalid "not_null" value "yes" on //ptah:schema:domain at d: not a boolean; write true or false.*`},
 		{name: "a field without a type", directive: `//ptah:schema:composite name="t" fields="a:NUMBER,b" dialects="oracle"`,
 			attribute: "fields", want: `(?s).*invalid object type attribute "b".*`},
 	}
