@@ -43,6 +43,11 @@ func sqlServer() descriptor.Dialect {
 		},
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "characters"},
 
+		// @@VERSION names the build and the servicing branch it is on, GDR
+		// or CU, and a security fix ships as one build per branch, so a
+		// scan matches the build against the fixed build of its own branch.
+		VulnerabilityScan: "supported",
+
 		// How a connection reaches the server.
 		Driver: "sqlserver",
 
