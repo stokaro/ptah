@@ -66,7 +66,7 @@ func TestPlanner_AddedColumnComment_HappyPath(t *testing.T) {
 			table:   schemamodel.Table{StructName: "Task", Name: "tasks"},
 			want: "-- Modify table: tasks\n" +
 				"ALTER TABLE [tasks] ADD [note] NVARCHAR(64);\n" +
-				"ALTER TABLE [tasks] ADD [code] AS (upper(title));\n" +
+				"ALTER TABLE [tasks] ADD [code] AS (upper(title)) PERSISTED;\n" +
 				"EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'plain note', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'tasks', @level2type = N'COLUMN', @level2name = N'note';\n" +
 				"EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'derived code', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'tasks', @level2type = N'COLUMN', @level2name = N'code';\n",
 		},
@@ -77,7 +77,7 @@ func TestPlanner_AddedColumnComment_HappyPath(t *testing.T) {
 			table:   schemamodel.Table{StructName: "Task", Schema: "app", Name: "tasks"},
 			want: "-- Modify table: app.tasks\n" +
 				"ALTER TABLE [app].[tasks] ADD [note] NVARCHAR(64);\n" +
-				"ALTER TABLE [app].[tasks] ADD [code] AS (upper(title));\n" +
+				"ALTER TABLE [app].[tasks] ADD [code] AS (upper(title)) PERSISTED;\n" +
 				"EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'plain note', @level0type = N'SCHEMA', @level0name = N'app', @level1type = N'TABLE', @level1name = N'tasks', @level2type = N'COLUMN', @level2name = N'note';\n" +
 				"EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'derived code', @level0type = N'SCHEMA', @level0name = N'app', @level1type = N'TABLE', @level1name = N'tasks', @level2type = N'COLUMN', @level2name = N'code';\n",
 		},

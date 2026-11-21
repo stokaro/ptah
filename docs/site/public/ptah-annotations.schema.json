@@ -868,7 +868,7 @@
               "type": "string"
             },
             "generated_kind": {
-              "description": "Generated column kind: STORED or VIRTUAL, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL.",
+              "description": "Generated column kind: STORED or VIRTUAL, on SQL Server also PERSISTED, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL.",
               "type": "string"
             },
             "graphql_name": {

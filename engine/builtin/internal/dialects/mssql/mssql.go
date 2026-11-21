@@ -1102,7 +1102,11 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 		return "", fmt.Errorf("nil column")
 	}
 	if column.GeneratedExpression != "" {
-		return "  " + escapeIdentifier(column.Name) + " " + renderGeneratedColumn(column), nil
+		generated, err := renderGeneratedColumn(column)
+		if err != nil {
+			return "", err
+		}
+		return "  " + escapeIdentifier(column.Name) + " " + generated, nil
 	}
 	if err := refusePrimaryKeyBesideUnique(column); err != nil {
 		return "", err
@@ -1248,12 +1252,32 @@ func renderIdentity(column *ast.ColumnNode) string {
 	return fmt.Sprintf("IDENTITY(%s,%s)", start, increment)
 }
 
-func renderGeneratedColumn(column *ast.ColumnNode) string {
+// renderGeneratedColumn writes a computed column, which SQL Server either
+// stores, as PERSISTED, or computes when it is read. STORED and PERSISTED are
+// stored, and so is a column that names no kind, which is the default the
+// SQL Server descriptor states as GeneratedColumnDefault; VIRTUAL is computed
+// on read. Without PERSISTED a column declared STORED is computed on read,
+// which sys.computed_columns reports as is_persisted = 0, and the next plan
+// reads it as a column of another kind.
+//
+// Any other kind is refused: SQL Server has no clause for it, and writing the
+// column either way would build another column than the one declared.
+func renderGeneratedColumn(column *ast.ColumnNode) (string, error) {
 	sql := fmt.Sprintf("AS (%s)", column.GeneratedExpression)
-	if strings.EqualFold(strings.TrimSpace(column.GeneratedKind), "PERSISTED") {
-		sql += " PERSISTED"
+	switch strings.ToUpper(strings.TrimSpace(column.GeneratedKind)) {
+	case "", "STORED", "PERSISTED":
+		return sql + " PERSISTED", nil
+	case "VIRTUAL":
+		return sql, nil
+	default:
+		return "", &ptaherr.CapabilityError{
+			Dialect: platform.SQLServer,
+			Feature: "generated column kind",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("column %s is generated as %s: SQL Server takes STORED or PERSISTED, "+
+				"which it stores, and VIRTUAL, which it computes on read", column.Name, column.GeneratedKind),
+		}
 	}
-	return sql
 }
 
 // columnTypeFor writes a type the caller named for this target as it stands,

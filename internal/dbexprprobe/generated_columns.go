@@ -70,9 +70,17 @@ type GeneratedColumnProbe struct {
 // not about a column: its columns are returned with Resolved false and none
 // of them is a refusal, as [ResolveColumnSpellings] does.
 //
-// Only a server whose descriptor names the pg-catalog probes is asked; every
-// other dialect returns nil. Oracle's generated columns are resolved by
-// [ResolveGeneratedExpressions], since Oracle commits the probe's DDL itself.
+// SQL Server rewrites a computed column's expression too: measured on 2022
+// (RTM-CU28), a declared `a + 1` is stored as `([a]+(1))`, persisted or not.
+// The probe there is a `#name` table whose computed column is read back from
+// tempdb.sys.computed_columns. The column is not persisted: SQL Server
+// persists only a deterministic expression, and a column computed on read has
+// the same stored form.
+//
+// Only a server whose descriptor names the pg-catalog or sys-catalog probes
+// is asked; every other dialect returns nil. Oracle's generated columns are
+// resolved by [ResolveGeneratedExpressions], since Oracle commits the probe's
+// DDL itself.
 // A connection pinned to a session with a transaction open also returns nil,
 // for the reason the package documentation gives.
 func ResolveGeneratedColumns(
@@ -83,12 +91,13 @@ func ResolveGeneratedColumns(
 	if conn == nil {
 		return nil, nil, fmt.Errorf("resolve generated expressions: database connection is nil")
 	}
-	if len(probes) == 0 || !isPostgresFamily(conn.Info().Dialect) {
+	one, supported := generatedColumnProbeFor(conn.Info().Dialect)
+	if len(probes) == 0 || !supported {
 		return nil, nil, nil
 	}
 	answers, err := resolveProbes(ctx, conn, "resolve generated expressions", probes,
 		func(probe GeneratedColumnProbe) string { return probe.Key },
-		resolveOnePostgresGeneratedColumn)
+		one)
 	if err != nil || answers == nil {
 		return nil, nil, err
 	}
@@ -112,7 +121,21 @@ func ResolveGeneratedColumns(
 // SpellsGeneratedColumns reports that [ResolveGeneratedColumns] asks a server
 // of dialect, so a caller can tell whether a connection is worth opening.
 func SpellsGeneratedColumns(dialect string) bool {
-	return isPostgresFamily(dialect)
+	_, supported := generatedColumnProbeFor(dialect)
+	return supported
+}
+
+// generatedColumnProbeFor picks the probe an engine's catalog needs, or
+// reports that its server is not asked.
+func generatedColumnProbeFor(dialect string) (probeFunc[GeneratedColumnProbe, generatedColumnAnswer], bool) {
+	switch expressionProbes(dialect) {
+	case "pg-catalog":
+		return resolveOnePostgresGeneratedColumn, true
+	case "sys-catalog":
+		return resolveOneSQLServerGeneratedColumn, true
+	default:
+		return nil, false
+	}
 }
 
 // GeneratedColumnRefusal is a generated column whose probe the server refused.
@@ -172,6 +195,45 @@ func resolveOnePostgresGeneratedColumn(
 	refusal, err := runRefusableProbe(ctx, tx, "resolve generated expressions", probe.Key, "ptah_generated_probe",
 		postgresSavepoints, statements, func(ctx context.Context, tx *sql.Tx) error {
 			return tx.QueryRowContext(ctx, query, relation.regclass, probe.Column).Scan(&stored)
+		})
+	if err != nil || refusal != nil {
+		return generatedColumnAnswer{refusal: refusal}, err
+	}
+	return generatedColumnAnswer{expression: config.GeneratedExpression{Expression: strings.TrimSpace(stored), Resolved: true}}, nil
+}
+
+// resolveOneSQLServerGeneratedColumn is [resolveOnePostgresGeneratedColumn]
+// for SQL Server: the probe is a `#name` table, the computed column takes no
+// type, and its stored form is read from tempdb.sys.computed_columns, the
+// catalog the reader asks of a live column.
+func resolveOneSQLServerGeneratedColumn(
+	ctx context.Context,
+	tx *sql.Tx,
+	index int,
+	probe GeneratedColumnProbe,
+) (generatedColumnAnswer, error) {
+	expression := strings.TrimSpace(probe.Expression)
+	if expression == "" || strings.TrimSpace(probe.Column) == "" {
+		return generatedColumnAnswer{}, nil
+	}
+
+	columns := make([]string, 0, len(probe.Columns)+1)
+	if len(probe.Columns) > 0 {
+		columns = append(columns, sqlServerProbeColumnList(probe.Columns))
+	}
+	columns = append(columns, fmt.Sprintf("%s AS (%s)", quoteSQLServerProbeIdentifier(probe.Column), expression))
+	name := fmt.Sprintf("#ptah_generated_probe_%d", index)
+	statements := []string{fmt.Sprintf("CREATE TABLE %s (%s)", name, strings.Join(columns, ", "))}
+
+	const query = `
+		SELECT COALESCE(MAX(c.definition), '')
+		FROM tempdb.sys.computed_columns c
+		WHERE c.object_id = OBJECT_ID(@p1) AND c.name = @p2`
+
+	var stored string
+	refusal, err := runRefusableProbe(ctx, tx, "resolve generated expressions", probe.Key, "ptah_generated_probe",
+		sqlServerSavepoints, statements, func(ctx context.Context, tx *sql.Tx) error {
+			return tx.QueryRowContext(ctx, query, "tempdb.."+name, probe.Column).Scan(&stored)
 		})
 	if err != nil || refusal != nil {
 		return generatedColumnAnswer{refusal: refusal}, err

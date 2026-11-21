@@ -150,9 +150,11 @@ The SQL Server support is deliberately conservative:
 - No PostgreSQL-style extensions, roles/grants, or materialized views.
   Row-level security is a `SECURITY POLICY` of the owner in
   `dialect/mssql/mssqlschema`, not PostgreSQL's policy model.
-- Column drift planning supports direct `ALTER COLUMN` only for type and
-  nullability changes. Default, generated expression, unique, and CHECK changes
-  require explicit constraint-aware planning before they can be emitted safely.
+- Column drift planning supports direct `ALTER COLUMN` for type and
+  nullability changes and replaces a default through its constraint. A computed
+  column's type and nullability are derived by SQL Server from the expression,
+  so neither is compared. A change of a computed column's expression or kind,
+  and unique and CHECK changes, are refused by name.
 - Automatic column removal is rejected because SQL Server requires dependent
   constraints, defaults, and indexes to be dropped in the correct order first.
 - SQL Server metadata repair/baseline paths use SQL Server-compatible revision

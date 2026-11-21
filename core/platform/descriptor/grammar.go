@@ -155,6 +155,13 @@ type ColumnGrammar struct {
 	// it. A bare IDENTITY is IDENTITY(1, 1). Without it IDENTITY is refused
 	// as an unsupported column attribute.
 	IdentityProperty bool `json:"identity_property,omitempty"`
+	// PersistedComputedColumns reports that a column written `AS (expr)` is
+	// computed when it is read, and one written `AS (expr) PERSISTED` is
+	// stored, as T-SQL writes them. The column reads VIRTUAL or PERSISTED as
+	// its generated kind. Without it a bare `AS (expr)` states no kind, which
+	// is the target's default, and PERSISTED is refused as an unsupported
+	// column attribute.
+	PersistedComputedColumns bool `json:"persisted_computed_columns,omitempty"`
 	// QualifiedCollations reports that a column's COLLATE names a collation
 	// by a name or by a schema and a name, each an identifier that folds to
 	// lower case unless it is quoted. The model keeps the name the server

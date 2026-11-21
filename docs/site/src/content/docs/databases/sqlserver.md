@@ -470,6 +470,30 @@ before it. That clause has to name a type to change a nullability too, so under
 `--dev-url` a clause that names the type the column holds is not reported, and `data-dependent/set-not-null`
 speaks for the `NOT NULL`. Without a dev database every such clause is reported.
 
+## Computed columns
+
+A generated column is a SQL Server computed column, and SQL Server either
+stores it or computes it when it is read. A column declared `STORED`, written
+`stored`, or declared with no kind is stored, as `AS (expr) PERSISTED`. A
+column declared `VIRTUAL`, or `stored="false"`, is computed on read, as
+`AS (expr)`. `ptah db read` and `ptah introspect` describe each column with
+the kind it has, and `ptah-compat schema inspect` writes it as the `type` of
+the `as` block, `PERSISTED` or `VIRTUAL`. A SQL schema file reads `AS (expr)`
+as computed on read and `AS (expr) PERSISTED` as stored.
+
+SQL Server stores the expression rewritten: `amount + 1` is stored as
+`([amount]+(1))`. A comparison against a connected database creates the
+declared column in a temporary table, reads back how the server stores it,
+and compares the two stored forms. The type and nullability of a computed
+column are the ones SQL Server derives from the expression, so Ptah writes
+neither and compares neither.
+
+SQL Server stores only a deterministic expression. A stored column that reads
+`GETDATE()` is refused when the migration runs, with `Computed column 'seen'
+in table 'events' cannot be persisted because the column is non-deterministic.
+(4936)`, and the migration leaves no table behind. Declare such a column
+`VIRTUAL`.
+
 ## Routines
 
 A function or a procedure is written `CREATE OR ALTER`. Its header's `WITH`
@@ -609,8 +633,9 @@ event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
   rewritten, such as a `CAST`; a comparison against a connected database asks
   the server how it stores the declaration.
 - Column drift planning handles type, nullability, and default changes (see
-  [Column defaults](#column-defaults)); generated-expression, unique, and
-  `CHECK` changes need a manual migration.
+  [Column defaults](#column-defaults)). A change of a computed column's
+  expression or kind, and unique and `CHECK` changes, need a manual
+  migration; the plan refuses them by name.
 - Automatic column removal is rejected, because dependent constraints,
   defaults, and indexes must be dropped in the correct order first.
 - Routines have no overloads. A schema that declares two functions, or two

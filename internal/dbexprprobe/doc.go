@@ -2,8 +2,10 @@
 // a comparison holds the same spelling on both sides.
 //
 // Several engines store a rewrite of an expression rather than the text they
-// were given: PostgreSQL prints a CHECK back from its parse tree, and Oracle
-// upper-cases and re-quotes a generated column's expression. (A TimescaleDB
+// were given: PostgreSQL prints a CHECK back from its parse tree, SQL Server
+// brackets the columns and parenthesizes the literals of a CHECK and a
+// computed column, and Oracle upper-cases and re-quotes a generated column's
+// expression. (A TimescaleDB
 // continuous aggregate's SELECT is rewritten the same way; its owner,
 // dialect/timescaledb/tsprobe, probes it.) Comparing a declaration against such a
 // read-back is comparing two languages, and acting on the difference plans
