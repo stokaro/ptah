@@ -58,6 +58,38 @@ func TestInspect_EmptyDatabaseRendersItsSchemaBlock(t *testing.T) {
 	c.Assert(rendered, qt.Not(qt.Contains), "not supported")
 }
 
+// TestInspect_EmptyDatabaseReportsItsSchemaUnderAnySelection pins that a
+// schema selection does not take the one namespace away from SQLite. The
+// connection is the whole realm there and no name narrows it, so the pinned
+// community binary v1.4.0 prints `{"schemas":[{"name":"main"}]}` for an empty
+// database with `--schema main` and with `--schema other` alike, as the reader
+// already describes main's tables under either.
+func TestInspect_EmptyDatabaseReportsItsSchemaUnderAnySelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		schemas []string
+	}{
+		{name: "the namespace itself", schemas: []string{"main"}},
+		{name: "a name the engine has no namespace for", schemas: []string{"other"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-empty-selected.db"))
+			defer dbschema.CloseAndWarn(conn)
+
+			renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
+				Format:  "json",
+				Schemas: test.schemas,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(renderedResult.Rendered, qt.Equals, `{"schemas":[{"name":"main"}]}`)
+		})
+	}
+}
+
 // TestInspect_SQLOutputHasNoStatementForTheDefaultNamespace pins the SQL
 // rendering of the same schema row: the binary emits no statement for `main`,
 // and an empty rendering must not reach the script as a bare `;`.

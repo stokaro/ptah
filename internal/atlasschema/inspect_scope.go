@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/schemascope"
 )
@@ -80,13 +81,21 @@ func inspectSchemaNames(
 // proof the schema exists — it was opened against it.
 //
 // It does not fire when `--schema` named something, because there the empty
-// result is the answer: the named schema is not there.
+// result is the answer: the named schema is not there. The exception is an
+// engine with a single namespace (descriptor.SchemaSelectionSingle), where the
+// connection is the whole realm and no name narrows it. The reader describes
+// that namespace's tables whatever `--schema` says, so the namespace is
+// described too, and an empty SQLite database renders `schema "main" {}` as the
+// pinned community binary does, with `--schema main` or `--schema other` alike.
 func withConnectedSchemaRow(
 	schema *catalog.Database,
 	info catalog.ServerInfo,
 	requested []string,
 ) *catalog.Database {
-	if schema == nil || len(schemascope.UniqueNames(requested)) > 0 {
+	if schema == nil {
+		return schema
+	}
+	if len(schemascope.UniqueNames(requested)) > 0 && described(info.Dialect).Schemas.Selection != descriptor.SchemaSelectionSingle {
 		return schema
 	}
 	name := connectedSchemaName(info)

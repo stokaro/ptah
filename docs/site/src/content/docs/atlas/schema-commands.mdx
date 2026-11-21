@@ -235,7 +235,9 @@ run a realm-scoped URL.
 `--schema` / `-s` narrows inspection when the underlying database reader supports
 schema scoping, and outranks the URL's scope: naming a schema that does not
 exist renders an empty document rather than falling back to the connection's
-own schema.
+own schema. SQLite has the one namespace `main`, and `--schema` does not narrow
+it, as on Atlas CE: an empty database renders `schema "main" {}` with any
+`--schema` value.
 
 Every verb reads a `--schema` value as one line of comma-separated fields, as
 Atlas CE does. `-s one,two` names two schemas, `-s '"a,b"'` names the one schema
