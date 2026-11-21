@@ -35,7 +35,7 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 	cmd := newAtlasAdapterCommand("migrate", verb)
 	forward := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) (runErr error) {
-		if atlasArgsHaveHelp(args) {
+		if cmdadapter.AnswersHelp(cmd, args) {
 			return forward(cmd, args)
 		}
 		cleanup := &cmdadapter.CleanupScope{}

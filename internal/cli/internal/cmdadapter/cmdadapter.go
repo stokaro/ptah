@@ -188,8 +188,14 @@ func newForwardCommandWithArgsMapper(
 			defer func() {
 				runErr = errors.Join(runErr, cleanup.Close())
 			}()
-			if help == adapterHelp && hasHelpArg(args) {
-				return cmd.Help()
+			if help == adapterHelp {
+				asked, err := askedForHelp(cmd, args)
+				if err != nil {
+					return cmd.FlagErrorFunc()(cmd, err)
+				}
+				if asked {
+					return cmd.Help()
+				}
 			}
 			forwardContext := cmd.Context()
 			if mapper != nil {
@@ -208,6 +214,10 @@ func newForwardCommandWithArgsMapper(
 			defer restoreCommandContexts(target, targetContexts)
 			resetCommandFlags(target)
 			installForwardedTargetEnv(target)
+			// cobra adds --help to a command only when it executes it, after the
+			// values below are replaced, so it is added here first: without it a
+			// malformed `--help=maybe` keeps pflag's wording on the target.
+			walkCommands(target, (*cobra.Command).InitDefaultHelpFlag)
 			// A factory need not return a command from either assembled tree, so the
 			// target gets the surface's value wording here rather than by inheritance.
 			cmdflags.InstallStdlibValues(target)
@@ -311,6 +321,43 @@ func normalizeUsageEnvSuffix(usage string) string {
 		return usage
 	}
 	return usage[:start+len(marker)+end+1]
+}
+
+// AnswersHelp reports whether cmd, a command built by
+// [NewForwardCommandWithArgsMapper] or one of the constructors that call it,
+// answers args itself rather than forwarding them: it prints help, or refuses
+// the argument that wins over help. A wrapper that does work before it hands
+// args to cmd asks this first, so the work and the help answer cannot disagree
+// about which arguments ask for help.
+func AnswersHelp(cmd *cobra.Command, args []string) bool {
+	// The refusal, if any, is the forwarding command's to report; it reads the
+	// same arguments again.
+	answers, _ := askedForHelp(cmd, args)
+	return answers
+}
+
+// askedForHelp reads args with the flags cmd declares, as cobra reads them for
+// a command that parses its own flags, and reports whether they set --help. An
+// argument that another flag takes as its value, or that follows `--`, asks
+// for nothing, and `--help=false` asks for nothing either.
+//
+// When the arguments ask for help it also returns the first argument pflag
+// refuses, an unknown flag included: cobra parses every flag before it looks
+// at --help, so a refused argument wins over help wherever it stands. When
+// they do not, the arguments go on to the mapper and the forwarded command as
+// they are, and what those refuse is their own answer. The flags of cmd are
+// read and never written; see [cmdflags.ParseOnly].
+func askedForHelp(cmd *cobra.Command, args []string) (bool, error) {
+	cmd.InitDefaultHelpFlag()
+	lenient := cmdflags.ParseOnly(cmd.LocalFlags(), cmd.InheritedFlags())
+	lenient.ParseErrorsAllowlist.UnknownFlags = true
+	// A refusal ends this read, so the arguments after it are not read for
+	// help; they are forwarded, and the refusal is the forwarded command's.
+	_ = lenient.Parse(args)
+	if asked, _ := lenient.GetBool("help"); !asked {
+		return false, nil
+	}
+	return true, cmdflags.ParseOnly(cmd.LocalFlags(), cmd.InheritedFlags()).Parse(args)
 }
 
 func hasHelpArg(args []string) bool {

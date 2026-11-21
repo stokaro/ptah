@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
@@ -49,7 +50,7 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 	cmd := newAtlasAdapterCommand("migrate", verb)
 	forward := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if atlasArgsHaveHelp(args) {
+		if cmdadapter.AnswersHelp(cmd, args) {
 			return forward(cmd, args)
 		}
 		repeatables, err := resolveAtlasRepeatableReading()
@@ -63,17 +64,6 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 		return runAtlasMigrateDownFormat(cmd, verb, policy, repeatables, args)
 	}
 	return cmd
-}
-
-// atlasArgsHaveHelp mirrors the forward adapter's help detection so a --help
-// anywhere in the args keeps rendering the adapter help.
-func atlasArgsHaveHelp(args []string) bool {
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			return true
-		}
-	}
-	return false
 }
 
 // atlasMigrateDownWantsFormat reports whether the invocation requests Atlas
