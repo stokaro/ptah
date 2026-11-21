@@ -212,7 +212,13 @@ func repeatableScratchDatabaseURL(c *qt.C, t *testing.T, engine repeatableEngine
 	c.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		_, dropErr := admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+database+engine.drop)
+		// A connection of its own: YugabyteDB refuses DROP DATABASE on a
+		// session whose catalog snapshot the test's migrations moved, with
+		// "Restart read required" (SQLSTATE 40001).
+		dropper, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer dbschema.CloseAndWarn(dropper)
+		_, dropErr := dropper.ExecContext(ctx, "DROP DATABASE IF EXISTS "+database+engine.drop)
 		c.Check(dropErr, qt.IsNil)
 	})
 	parsed, err := url.Parse(adminURL)

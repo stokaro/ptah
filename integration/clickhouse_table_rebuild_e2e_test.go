@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -166,7 +167,12 @@ func TestClickHouseTableRebuild_KeepsWhatAttachesToTheTable(t *testing.T) {
 		rebuildFixtureRows,
 		"CREATE ROW POLICY mine ON t FOR SELECT USING id > 0 TO ALL",
 	)
-	c.Cleanup(func() { _, _ = conn.ExecContext(c.Context(), "DROP ROW POLICY IF EXISTS mine ON t") })
+	c.Cleanup(func() {
+		// The test's context is canceled before a cleanup runs, and a row
+		// policy outlives the database that holds its table.
+		_, err := conn.ExecContext(context.WithoutCancel(c.Context()), "DROP ROW POLICY IF EXISTS mine ON t")
+		c.Check(err, qt.IsNil)
+	})
 	declaration := "tables:\n  t:\n    platform:\n      clickhouse:\n        engine: ReplacingMergeTree(ver)\n        order_by: id\n" +
 		rebuildFixtureColumns +
 		"    indexes:\n      name_idx:\n        fields: [name]\n        platform:\n          clickhouse:\n            type: bloom_filter(0.01)\n            granularity: \"3\"\n" +
