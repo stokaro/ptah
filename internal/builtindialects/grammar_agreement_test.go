@@ -193,6 +193,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 	platform.SQLServer: {
 		Columns: descriptor.ColumnGrammar{
 			IdentityProperty: true, CurrentTimestampNiladic: true, NextValueClause: "NEXT VALUE FOR",
+			PersistedComputedColumns: true,
 		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},

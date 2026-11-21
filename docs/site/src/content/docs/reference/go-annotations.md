@@ -312,7 +312,7 @@ Maps a Go struct field to a database column.
 | `foreign` | No | Foreign key reference in table(column) form. |
 | `foreign_key_name` | No | Explicit foreign key constraint name. |
 | `generated` | No | Generated column expression. |
-| `generated_kind` | No | Generated column kind: STORED or VIRTUAL, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL. Only ClickHouse's EPHEMERAL stands without `generated`; any other kind without an expression is refused. |
+| `generated_kind` | No | Generated column kind: STORED or VIRTUAL, on SQL Server also PERSISTED, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL. Only ClickHouse's EPHEMERAL stands without `generated`; any other kind without an expression is refused. |
 | `identity_generation` | No | SQL identity generation mode. |
 | `identity_increment` | No | SQL identity increment value. |
 | `identity_options` | No | Raw SQL identity options. |

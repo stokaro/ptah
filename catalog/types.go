@@ -700,7 +700,8 @@ type Column struct {
 	// columns.
 	GeneratedExpression *string `json:"generated_expression,omitempty"`
 	// GeneratedKind names the generated-column kind, for example STORED,
-	// VIRTUAL, MATERIALIZED, ALIAS, or EPHEMERAL. Empty for plain columns.
+	// VIRTUAL, PERSISTED, MATERIALIZED, ALIAS, or EPHEMERAL. Empty for plain
+	// columns.
 	GeneratedKind string `json:"generated_kind,omitempty"`
 
 	// IdentityGeneration records an identity column's generation mode, mirroring

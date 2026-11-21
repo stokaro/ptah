@@ -406,6 +406,12 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 		if generatedExpression.Valid && generatedExpression.String != "" {
 			expr := generatedExpression.String
 			column.GeneratedExpression = &expr
+			// A computed column the server does not store is computed on
+			// read, which is what VIRTUAL names on every other target. Left
+			// with no kind it reads as a plain column: the comparison would
+			// not ask the server how it spells the expression, and a
+			// declaration that names VIRTUAL would plan a change of kind.
+			column.GeneratedKind = "VIRTUAL"
 			if generatedPersisted.Valid && generatedPersisted.Bool {
 				column.GeneratedKind = "PERSISTED"
 			}

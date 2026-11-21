@@ -163,8 +163,14 @@ END`,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,
 			ExpressionProbes:               "sys-catalog",
-			DefaultGeneratedKind:           "PERSISTED",
 			AutoIncrementFlag:              true,
+			// A computed column is PERSISTED or computed on read, and the
+			// reader names the second VIRTUAL. One declared with no kind, or
+			// STORED, is created PERSISTED. Its type and nullability are the
+			// ones the server derives from the expression.
+			DefaultGeneratedKind:        "PERSISTED",
+			StoredGeneratedKind:         "PERSISTED",
+			GeneratedColumnTypesDerived: true,
 			// An index renamed only in case is rebuilt under the declared spelling.
 			RespelledIndexReplaced: true,
 		},
@@ -203,6 +209,9 @@ END`,
 			Columns: descriptor.ColumnGrammar{
 				IdentityProperty:        true,
 				CurrentTimestampNiladic: true,
+				// `db read` describes a computed column as SQL Server stores
+				// it: `AS (expr)` computed on read, or `AS (expr) PERSISTED`.
+				PersistedComputedColumns: true,
 				// SQL Server 2022 reads a shift in a default and stores
 				// 1 + 1 << 2 as (left_shift((1)+(1),(2))). The operator is
 				// new in SQL Server 2022, so SQL Server 2019 refuses it when

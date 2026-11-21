@@ -583,26 +583,13 @@ func columnsWithDesiredDomains(
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
 	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType &&
-		!storedAs(ctx.storedType, dbRawType, dialect) {
+		!storedAs(ctx.storedType, dbRawType, dialect) && !generatedTypeDerived(genCol, dbCol, dialect) {
 		colDiff.Changes["type"] = change
 		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
 		colDiff.PreviousType = strings.TrimSpace(dbRawType)
 	}
 
-	// Compare nullable. On the engines that enforce it, a primary key column is
-	// NOT NULL whatever the field says, and the reader reports it that way, so
-	// the generated side is normalized to match or every primary key would show
-	// a permanent diff.
-	genNullable := columnNullable(genCol, dialect, ctx)
-	dbNullable := dbCol.IsNullable == "YES"
-	if genNullable != dbNullable {
-		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
-		// A rule above may hold the column NOT NULL whatever the field says, and the
-		// plan writes the clause from the field.
-		colDiff.Desired.Nullable = genNullable
-		// Empty on a column the change makes NOT NULL, whose read reports no name.
-		colDiff.ReleasedNotNullConstraintName = dbCol.NotNullConstraintName
-	}
+	applyNullableChange(&colDiff, genCol, dbCol, dialect, ctx)
 	applyColumnSequence(&colDiff, genCol, dbCol, ctx)
 	if change := identityChange(genCol, dbCol, dialect); change != "" {
 		colDiff.Changes["identity"] = change
@@ -2334,6 +2321,37 @@ func tablePrimaryKeyColumns(table schemamodel.Table) []string {
 // that a MODIFY would not make (stokaro/ptah#1915).
 func generatedExpressionIsRewritten(dialect string) bool {
 	return comparisonOf(dialect).RewritesGeneratedExpressions
+}
+
+// applyNullableChange compares nullability. On the engines that enforce it, a
+// primary key column is NOT NULL whatever the field says, and the reader
+// reports it that way, so the generated side is normalized to match or every
+// primary key would show a permanent diff. A nullability the server derives
+// ([generatedTypeDerived]) is not compared.
+func applyNullableChange(colDiff *difftypes.ColumnDiff, genCol schemamodel.Field, dbCol catalog.Column, dialect string, ctx columnContext) {
+	genNullable := columnNullable(genCol, dialect, ctx)
+	dbNullable := dbCol.IsNullable == "YES"
+	if genNullable == dbNullable || generatedTypeDerived(genCol, dbCol, dialect) {
+		return
+	}
+	colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
+	// A rule above may hold the column NOT NULL whatever the field says, and the
+	// plan writes the clause from the field.
+	colDiff.Desired.Nullable = genNullable
+	// Empty on a column the change makes NOT NULL, whose read reports no name.
+	colDiff.ReleasedNotNullConstraintName = dbCol.NotNullConstraintName
+}
+
+// generatedTypeDerived reports that the column is generated on both sides on a
+// target that derives a generated column's type and nullability
+// ([descriptor.Comparison.GeneratedColumnTypesDerived]). Measured on SQL Server
+// 2022, `CASE WHEN amount > 0 THEN 'p' ELSE 'n' END` declared NVARCHAR(1) and
+// nullable is a VARCHAR(1) NOT NULL column, and the ALTER COLUMN a comparison
+// of the two plans is refused with Msg 4928.
+func generatedTypeDerived(genCol schemamodel.Field, dbCol catalog.Column, dialect string) bool {
+	return comparisonOf(dialect).GeneratedColumnTypesDerived &&
+		strings.TrimSpace(genCol.GeneratedExpression) != "" &&
+		dbCol.GeneratedExpression != nil && strings.TrimSpace(*dbCol.GeneratedExpression) != ""
 }
 
 // generatedColumnDiff compares a generated column, using the server's own
