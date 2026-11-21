@@ -379,7 +379,9 @@ func TestCompatURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 // merely lack the flag; `script` is not registered there at all -- every
 // spelling answers `unknown command`. So there is no invocation of it that
 // could produce wording to copy, and a row pinning one would be pinning an
-// answer no binary gives (stokaro/ptah#1017).
+// answer no binary gives (stokaro/ptah#1017). `security scan` is absent from
+// the pinned binary for the same reason: every spelling of `security` answers
+// `unknown command`.
 func compatURLVerbsWithoutOracleRow() []string {
 	return []string{
 		"migrate down",
@@ -387,6 +389,7 @@ func compatURLVerbsWithoutOracleRow() []string {
 		"script exec",
 		"script loop",
 		"script query",
+		"security scan",
 	}
 }
 

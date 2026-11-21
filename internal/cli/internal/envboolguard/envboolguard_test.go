@@ -115,6 +115,17 @@ var nonBooleanPtahVars = []string{
 	// has a variable of its own rather than a flag twin.
 	"PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE", // selectors to exclude, comma-separated
 	"PTAH_ATLAS_MIGRATE_DIFF_INCLUDE", // selectors to keep, comma-separated
+
+	// `ptah-compat security scan` registers none of the scan's own options as
+	// flags, so its help names the variables of `ptah db vulnerabilities` that
+	// carry them.
+	"PTAH_ADVISORIES",    // local advisory snapshot JSON file
+	"PTAH_DEPLOYMENT",    // who patches the server: self-managed or managed
+	"PTAH_FAIL_ON",       // CI failure policy name
+	"PTAH_FAIL_SEVERITY", // lowest severity a finding needs to fail the run
+	"PTAH_IGNORE",        // advisory identifiers recorded as suppressed
+	"PTAH_MIN_SEVERITY",  // lowest severity reported
+	"PTAH_SUPPRESSIONS",  // suppression file path
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

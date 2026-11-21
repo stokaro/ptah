@@ -72,7 +72,7 @@ func TestClassify_SeparatesTheFourAnswers(t *testing.T) {
 // TestClassify_CountsTheRealPoliciesApart is the measurement the reference
 // prints, asserted where it can fail loudly.
 //
-// 12 + 10 + 2 + 4. The two that exit 0 are the ones a reader most needs told,
+// 12 + 10 + 2 + 6. The two that exit 0 are the ones a reader most needs told,
 // because a caller testing only the status cannot tell them from success, and
 // they are the pair a change to the policy is most likely to move.
 func TestClassify_CountsTheRealPoliciesApart(t *testing.T) {
@@ -84,7 +84,7 @@ func TestClassify_CountsTheRealPoliciesApart(t *testing.T) {
 		{name: "refused by its own gate", class: cmdref.Refused, want: 12},
 		{name: "refused by its group", class: cmdref.RefusedByGroup, want: 10},
 		{name: "absorbed by the group", class: cmdref.AbsorbedByGroup, want: 2},
-		{name: "unknown command", class: cmdref.UnknownCommand, want: 4},
+		{name: "unknown command", class: cmdref.UnknownCommand, want: 6},
 	}
 
 	counted := make(map[cmdref.Availability]int)

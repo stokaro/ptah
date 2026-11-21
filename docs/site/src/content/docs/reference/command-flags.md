@@ -2724,3 +2724,26 @@ Read the columns as follows.
 | `--url` | `string` | — | `PTAH_URL` | — |
 
 </div>
+
+**`ptah-compat security`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config`, `-c` | `string` | `file://atlas.hcl` | `PTAH_CONFIG` | inherited by subcommands |
+| `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
+| `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
+
+</div>
+
+**`ptah-compat security scan`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--url`, `-u` | `stringSlice` | `[]` | `PTAH_URL` | — |
+
+</div>

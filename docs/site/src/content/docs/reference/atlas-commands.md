@@ -106,6 +106,8 @@ listed.
 | `ptah-compat script exec` | Run a declared exec script | — |
 | `ptah-compat script loop` | Run a declared loop script | — |
 | `ptah-compat script query` | Run a declared query script | — |
+| `ptah-compat security` | Security checks of connected databases | group, hidden |
+| `ptah-compat security scan` | Report known server vulnerabilities of connected databases | — |
 | `ptah-compat version` | Print Ptah version information | — |
 <!-- END GENERATED COMPAT COMMANDS -->
 
@@ -127,6 +129,18 @@ rename.
 `ptah-compat script query`, `script exec` and `script loop` run one `script`
 block from `--file` against `--url`. `--run` names the block when the file
 declares more than one of that kind. Strict mode removes the group.
+
+## Security commands
+
+`ptah-compat security scan` runs the
+[server vulnerability scan](../../operate/vulnerability-scan/#from-ptah-compat)
+against each `-u`/`--url`, and reads an `atlas.hcl` environment's `url` under
+`--env`. The group is hidden and off by default: until
+[`PTAH_ATLAS_SECURITY_SCAN=1`](../extension-variables/#ptah_atlas_security_scan)
+is set, every spelling of `security` is the unknown command the community CLI
+reports, and `help security` prints the root's help. Shell completion is the one
+exception: once `security` is typed, it offers the group's verb and flag names.
+Strict mode removes the group and refuses the variable.
 
 ### Placeholder arguments
 
@@ -194,8 +208,8 @@ place cannot read. The refused forms include:
 `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas Community Edition policy,
 which constructs a smaller command tree before dispatch. The
 [Atlas compatibility overview](../../atlas/overview/) states what that selector
-is for and what else it narrows. This section is the command-level answer: 28
-of the 52 paths above leave the surface, and they do not all answer the same
+is for and what else it narrows. This section is the command-level answer: 30
+of the 54 paths above leave the surface, and they do not all answer the same
 way.
 
 - **refused** — 12 paths stay registered and hidden, so each one's own gate
@@ -205,7 +219,7 @@ way.
   a script searching the message for its own verb finds nothing.
 - **absorbed by the group** — 2 paths are unregistered below a group cobra will
   run, so that group runs in their place.
-- **unknown command** — 4 paths are unregistered below the root, which cobra
+- **unknown command** — 6 paths are unregistered below the root, which cobra
   cannot run, so it reports the first segment it could not resolve.
 
 Two paths exit `0`, and they are the ones worth knowing about.
@@ -269,6 +283,8 @@ the file name it was installed as.
 | `ptah-compat script exec` | unknown command | `1` | stderr | `ptah-compat script` |
 | `ptah-compat script loop` | unknown command | `1` | stderr | `ptah-compat script` |
 | `ptah-compat script query` | unknown command | `1` | stderr | `ptah-compat script` |
+| `ptah-compat security` | unknown command | `1` | stderr | `ptah-compat security` |
+| `ptah-compat security scan` | unknown command | `1` | stderr | `ptah-compat security` |
 
 </div>
 

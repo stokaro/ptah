@@ -885,7 +885,10 @@ func (t Trees) resolve(tree, cmd *cobra.Command, word string, flags, rest []stri
 	}
 	if next := subcommand(cmd, word); next != nil {
 		switch {
-		case next.DisableFlagParsing:
+		// A group that parses no flags still has its subcommands found: cobra
+		// looks for the command before any flag is parsed, so the walk goes on
+		// into the group and checks the verb it names.
+		case next.DisableFlagParsing && !next.HasSubCommands():
 			return next, finished, t.forwarded(next, append(append([]string(nil), flags...), rest...))
 		case next.Name() == "help" && next.Parent() == tree:
 			return next, finished, t.helpTarget(tree, next, append(append([]string(nil), flags...), rest...))

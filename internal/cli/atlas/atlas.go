@@ -307,8 +307,19 @@ func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *
 	if !policy.IsStrictCE() {
 		cmd.AddCommand(newAtlasScriptCommand(policy))
 	}
+	// `security` is outside the strict CE profile for the same reason, and
+	// inside the full one it is hidden behind PTAH_ATLAS_SECURITY_SCAN: unset,
+	// it answers every spelling exactly as the community binary does.
+	var securityCommand *cobra.Command
+	if !policy.IsStrictCE() {
+		securityCommand = newAtlasSecurityCommand()
+		cmd.AddCommand(securityCommand)
+	}
 	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
+	if securityCommand != nil {
+		gateAtlasSecurityHelp(securityCommand)
+	}
 	installAtlasProjectFlagResetTree(schemaCommand)
 	installAtlasProjectFlagResetTree(migrateCommand)
 	installAtlasProjectFlagResetRoot(cmd, schemaCommand, migrateCommand)

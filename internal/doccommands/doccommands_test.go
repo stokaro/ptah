@@ -16,8 +16,9 @@ import (
 // native tree has a root that runs, a group that runs (schema) and one that
 // does not (migrations), an alias, persistent flags, shorthands, and booleans.
 // The compatibility tree has a forwarding verb that registers a flag of its
-// own, builds a detached target, and refuses one of the target's flags, and a
-// forwarding verb that registers and builds nothing.
+// own, builds a detached target, and refuses one of the target's flags, a
+// forwarding verb that registers and builds nothing, and a group that parses
+// no flags of its own over a forwarding verb.
 func fixture() doccommands.Trees {
 	run := func(*cobra.Command, []string) error { return nil }
 	native := &cobra.Command{Use: "ptah", Version: "v0.0.0", RunE: run}
@@ -56,7 +57,17 @@ func fixture() doccommands.Trees {
 		return target
 	})
 	migrate.AddCommand(forward, raw, edit)
-	compat.AddCommand(migrate)
+	security := &cobra.Command{Use: "security", DisableFlagParsing: true, RunE: run}
+	security.PersistentFlags().String("env", "", "")
+	scan := &cobra.Command{Use: "scan", DisableFlagParsing: true, RunE: run}
+	scan.Flags().StringArrayP("url", "u", nil, "")
+	cmdforward.Register(scan, "db vulnerabilities", func() *cobra.Command {
+		target := &cobra.Command{Use: "vulnerabilities", RunE: run}
+		target.Flags().StringArray("db-url", nil, "")
+		return target
+	})
+	security.AddCommand(scan)
+	compat.AddCommand(migrate, security)
 	return doccommands.NewTrees(native, compat)
 }
 
@@ -107,6 +118,10 @@ func TestCheck_HappyPath(t *testing.T) {
 		// with or without "=".
 		compat("migrate", "edit", "1", "--engine=x"),
 		compat("migrate", "edit", "1", "--engine", "x"),
+		// cobra finds the verb of a group that parses no flags.
+		compat("security", "scan", "-u", "sqlite://app.db"),
+		compat("security", "scan", "--env", "local"),
+		compat("security", "--help"),
 	} {
 		t.Run(strings.Join(append([]string{line.Program}, line.Args...), " "), func(t *testing.T) {
 			c := qt.New(t)
@@ -149,6 +164,9 @@ func TestCheck_FailurePath(t *testing.T) {
 		// not reach it.
 		{compat("migrate", "down", "--verbose"), `"ptah-compat migrate down" has no flag --verbose`},
 		{compat("migrate", "bogus"), `"ptah-compat migrate" has no subcommand "bogus"`},
+		// The verb, not the group, is what refuses a flag neither declares.
+		{compat("security", "scan", "--bogus"), `"ptah-compat security scan" has no flag --bogus`},
+		{compat("security", "bogus"), `"ptah-compat security" has no subcommand "bogus"`},
 	} {
 		t.Run(strings.Join(append([]string{test.line.Program}, test.line.Args...), " "), func(t *testing.T) {
 			c := qt.New(t)
