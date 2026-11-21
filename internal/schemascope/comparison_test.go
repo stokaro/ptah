@@ -68,12 +68,12 @@ func TestComparisonScope(t *testing.T) {
 			want: []string{"only_this"},
 		},
 		{
-			name:      "a comma-separated selection is split like the flag",
+			name:      "a name holding a comma is one name: the flag that read it already split its value",
 			info:      postgresPinned,
 			requested: []string{"one,two"},
 			base:      []string{"public"},
 			desired:   &schemamodel.Database{},
-			want:      []string{"one", "two"},
+			want:      []string{"one,two"},
 		},
 		{
 			name: "the URL's realm scope is read whether or not the document names it",

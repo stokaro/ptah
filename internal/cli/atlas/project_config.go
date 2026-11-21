@@ -1590,11 +1590,44 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 //
 // The last three rows are the ones this helper exists for: the flag replaces
 // the configured list rather than intersecting with it, which is what
-// [effectiveStringArray] does when cobra reports the flag changed. The
-// empty-list row is why a zero-length configured value must fall through to the
-// flag instead of restricting to nothing.
-func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {
-	return effectiveStringArray(cmd, "schema", flagValues, cfg.Schemas)
+// [projectListStandsIn] decides from cobra's Changed bit. The empty-list row is
+// why a zero-length configured value must fall through to the flag instead of
+// restricting to nothing.
+//
+// Each configured value is read as the pinned binary reads it, as one value of
+// -s/--schema, so the list and the flag share one grammar:
+//
+//	schemas = ["one,two"]   -> one, two
+//	schemas = ["\"one\""]   -> one
+//	schemas = ["a,b"]       -> schemas a and b
+//	schemas = ["a\"b"]      -> refused: invalid argument "a\"b" for "-s, --schema" flag
+//
+// One divergence is deliberate. The pinned binary keeps the space in
+// `schemas = [" one"]` and `--schema "one, two"` and then describes nothing, so
+// the schemas the author named are dropped without a word.
+// [schemascope.UniqueNames] trims a schema name, so Ptah describes `one` and
+// `two`.
+func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) ([]string, error) {
+	if !projectListStandsIn(cmd, atlasSchemaFlagName, cfg.Schemas) {
+		return flagValues, nil
+	}
+	return readAtlasSchemaList(cfg.Schemas)
+}
+
+// readAtlasSchemaList reads a project file's schema list through the flag
+// [registerAtlasSchemaFlag] declares, so a configured value is split, unquoted
+// and refused exactly as the same text on the command line is, and a refusal
+// names the flag the way pflag names it there.
+func readAtlasSchemaList(values []string) ([]string, error) {
+	flags := pflag.NewFlagSet(atlasSchemaFlagName, pflag.ContinueOnError)
+	var schemas []string
+	registerAtlasSchemaFlag(flags, &schemas, "")
+	for _, value := range values {
+		if err := flags.Set(atlasSchemaFlagName, value); err != nil {
+			return nil, err
+		}
+	}
+	return schemas, nil
 }
 
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {

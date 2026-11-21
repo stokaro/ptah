@@ -142,7 +142,7 @@ func (s Scope) fold() identifier.Fold {
 // with only Exclude patterns is not positive: callers keep the plain
 // exclusion path for it.
 func (s Scope) Positive() bool {
-	if len(schemascope.SplitNames(s.Schemas)) > 0 {
+	if len(schemascope.UniqueNames(s.Schemas)) > 0 {
 		return true
 	}
 	for _, value := range s.Include {
@@ -742,7 +742,7 @@ func (s *scopeSelection) emptySelectionError(scope Scope) error {
 
 func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection {
 	allowed := make(map[string]struct{})
-	for _, schema := range schemascope.SplitNames(scope.Schemas) {
+	for _, schema := range schemascope.UniqueNames(scope.Schemas) {
 		allowed[schema] = struct{}{}
 	}
 	return &scopeSelection{

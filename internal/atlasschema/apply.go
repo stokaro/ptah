@@ -508,7 +508,7 @@ func preflightApplyReadScope(
 	conn *dbschema.DatabaseConnection,
 	schemas []string,
 ) ([]string, error) {
-	if requested := schemascope.SplitNames(schemas); len(requested) > 0 {
+	if requested := schemascope.UniqueNames(schemas); len(requested) > 0 {
 		return requested, nil
 	}
 	// A search-path engine's realm is every schema of the database, which

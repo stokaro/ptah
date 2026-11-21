@@ -390,7 +390,7 @@ func PreparePlanFileReportingUndecided(
 	}
 
 	scope := planReadScope{
-		schemas:          schemascope.Union(schemascope.SplitNames(opts.Schemas), nil),
+		schemas:          schemascope.Union(schemascope.UniqueNames(opts.Schemas), nil),
 		schemasBeyondURL: computation.schemasBeyondURL,
 	}
 	// A selection is read as itself, so nothing beyond the URL needs carrying.

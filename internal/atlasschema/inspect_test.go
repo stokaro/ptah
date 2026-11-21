@@ -150,14 +150,6 @@ func TestInspect_FailurePath(t *testing.T) {
 	})
 }
 
-func TestSplitSchemaNames(t *testing.T) {
-	c := qt.New(t)
-
-	schemas := atlasschema.SplitSchemaNames([]string{"public, auth", "tenant"})
-
-	c.Assert(schemas, qt.DeepEquals, []string{"public", "auth", "tenant"})
-}
-
 func createInspectSchema(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 	_, err := conn.ExecContext(context.Background(), `

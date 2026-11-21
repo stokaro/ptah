@@ -53,7 +53,7 @@ func ReadNames(
 	requested []string,
 	q schemaselection.RealmConnection,
 ) ([]string, error) {
-	if names := SplitNames(requested); len(names) > 0 {
+	if names := UniqueNames(requested); len(names) > 0 {
 		return names, nil
 	}
 	if !schemaselection.Realm(info.Dialect, info.URL, info.Schema) {
@@ -70,7 +70,7 @@ func ReadNames(
 // reports no schema at all reaches that, and inventing a name for it here would
 // describe a schema the server never confirmed.
 func connectedSchemaNames(info catalog.ServerInfo) []string {
-	if names := SplitNames([]string{info.Schema}); len(names) > 0 {
+	if names := UniqueNames([]string{info.Schema}); len(names) > 0 {
 		return names
 	}
 	return nil

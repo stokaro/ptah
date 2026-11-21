@@ -12,22 +12,24 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-// SplitNames expands repeated and comma-separated schema filter values.
-func SplitNames(values []string) []string {
-	seen := make(map[string]struct{})
+// UniqueNames returns the schema names in values in first-seen order, trimmed
+// of surrounding spaces, without repeats and without blank names. Each value is
+// one schema name: the grammar that turns a command-line value into names
+// belongs to the surface that declares the flag, so a comma is part of the name
+// it appears in.
+func UniqueNames(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
 	var schemas []string
 	for _, value := range values {
-		for part := range strings.SplitSeq(value, ",") {
-			schema := strings.TrimSpace(part)
-			if schema == "" {
-				continue
-			}
-			if _, ok := seen[schema]; ok {
-				continue
-			}
-			seen[schema] = struct{}{}
-			schemas = append(schemas, schema)
+		schema := strings.TrimSpace(value)
+		if schema == "" {
+			continue
 		}
+		if _, ok := seen[schema]; ok {
+			continue
+		}
+		seen[schema] = struct{}{}
+		schemas = append(schemas, schema)
 	}
 	return schemas
 }
@@ -245,7 +247,7 @@ func FilterDatabaseWithDefaultSchema(
 
 func schemaSet(values []string) map[string]struct{} {
 	set := make(map[string]struct{})
-	for _, schema := range SplitNames(values) {
+	for _, schema := range UniqueNames(values) {
 		set[schema] = struct{}{}
 	}
 	return set

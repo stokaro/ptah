@@ -231,6 +231,11 @@ Semantics, all measured against a PostgreSQL database holding schemas `one`,
 | `schemas = []` | all of them — an empty list is not a selection |
 | attribute absent | all of them |
 
+Each element is read as one `--schema` value, so it takes the flag's
+comma-separated grammar. `schemas = ["one,two"]` names `one` and `two`,
+`schemas = ["\"a,b\""]` names the one schema `a,b`, and `schemas = ["a\"b"]` is
+refused with the message the flag prints for the same text.
+
 `--schema` outranks the attribute outright and does not intersect with it: with
 `schemas = ["one"]` in the file, `--schema two` describes `two` alone.
 

@@ -369,7 +369,7 @@ func creationPlanOf(
 // them is created; a grant on the database, which no schema holds, is not.
 func readIsPartial(opts InspectOptions, info catalog.ServerInfo) bool {
 	_, urlLimited := schemaselection.URLScope(info.URL)
-	return len(SplitSchemaNames(opts.Schemas)) > 0 || len(opts.Include) > 0 || urlLimited
+	return len(schemascope.UniqueNames(opts.Schemas)) > 0 || len(opts.Include) > 0 || urlLimited
 }
 
 // reportOmittedVirtualTables answers for a SQLite virtual table the rendering
@@ -511,11 +511,6 @@ func applyInspectFileExports(files []atlasreport.SchemaInspectFile) error {
 	return fileplan.Apply(plan)
 }
 
-// SplitSchemaNames expands repeated and comma-separated Atlas schema filters.
-func SplitSchemaNames(values []string) []string {
-	return schemascope.SplitNames(values)
-}
-
 // describesSchemas reports whether this run chose the schemas it describes,
 // rather than having the connection URL choose for it.
 //
@@ -526,7 +521,7 @@ func SplitSchemaNames(values []string) []string {
 // to. The measurements are on
 // [ptah.run/internal/atlasreport.SchemaInspectReport].
 func describesSchemas(info catalog.ServerInfo, opts InspectOptions) bool {
-	if len(SplitSchemaNames(opts.Schemas)) > 0 {
+	if len(schemascope.UniqueNames(opts.Schemas)) > 0 {
 		return true
 	}
 	return ConnectionIsRealmScoped(info)

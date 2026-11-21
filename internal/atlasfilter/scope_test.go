@@ -18,7 +18,7 @@ func TestScopePositive(t *testing.T) {
 	}{
 		{name: "zero scope", scope: atlasfilter.Scope{Selections: ownerSelections()}, want: false},
 		{name: "exclude only", scope: atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"users"}}, want: false},
-		{name: "blank values", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{" ", ","}, Include: []string{"  "}}, want: false},
+		{name: "blank values", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{" ", ""}, Include: []string{"  "}}, want: false},
 		{name: "schema scope", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}}, want: true},
 		{name: "include selector", scope: atlasfilter.Scope{Selections: ownerSelections(), Include: []string{"users"}}, want: true},
 	}

@@ -76,7 +76,7 @@ func UndescribedRemovals(
 	desired *schemamodel.Database,
 	diff *difftypes.SchemaDiff,
 ) ([]Undescribed, error) {
-	if diff == nil || len(diff.TablesRemoved) == 0 || len(SplitNames(requested)) > 0 || !searchPathRealm(info) {
+	if diff == nil || len(diff.TablesRemoved) == 0 || len(UniqueNames(requested)) > 0 || !searchPathRealm(info) {
 		return nil, nil
 	}
 	declared, err := DeclaredSchemaNames(desired)

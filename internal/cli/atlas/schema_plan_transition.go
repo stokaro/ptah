@@ -126,7 +126,10 @@ func resolveAtlasSchemaPlanTransitionConfig(
 			projectCfg.StringValue(projectconfig.StringDevURL),
 		)
 		in.exclude, in.excludeSources = effectiveAtlasExclude(cmd, in.exclude, projectCfg)
-		in.schemas = effectiveAtlasSchemas(cmd, in.schemas, projectCfg)
+		in.schemas, err = effectiveAtlasSchemas(cmd, in.schemas, projectCfg)
+		if err != nil {
+			return in, policy, err
+		}
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {
 			return in, policy, err
