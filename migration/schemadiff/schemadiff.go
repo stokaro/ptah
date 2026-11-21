@@ -262,9 +262,10 @@ func compareReportingUndecidedAdditions(
 	// object is silence about its grants, and so is its silence about an
 	// object the owner keeps.
 	compare.GrantsWithOptions(desired, database, diff, identifierSemantics, compare.GrantOptions{
-		Objects:         compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures, Effective: desired.FeatureObjects},
-		DesiredComplete: opts.DesiredGrantsComplete,
-		DesiredRead:     opts.DesiredReadGrants,
+		Objects:           compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures, Effective: desired.FeatureObjects},
+		DesiredComplete:   opts.DesiredGrantsComplete,
+		DesiredRead:       opts.DesiredReadGrants,
+		ColumnsBySpelling: platform.ColumnPrivilegeIsBySpelling(opts.Dialect),
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).

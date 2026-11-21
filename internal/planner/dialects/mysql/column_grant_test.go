@@ -9,8 +9,10 @@ import (
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // columnGrantsChanged is a diff that grants SELECT on one column, revokes
@@ -120,6 +122,33 @@ func columnSpelledOtherwise() *difftypes.SchemaDiff {
 	}
 }
 
+// columnRespelled is a diff that replaces SELECT on the Name column of t1 with
+// SELECT on name, as a comparison that holds the two spellings apart finds it.
+func columnRespelled() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		GrantsAdded: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "name"},
+		},
+		GrantsRemoved: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "Name"},
+		},
+		CurrentGrants: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "Name"},
+		},
+	}
+}
+
+// twoSpellingsHeldByAnother is [twoSpellingsHeld] with a diff that grants
+// another role SELECT on the id column of t1 instead.
+func twoSpellingsHeldByAnother() *difftypes.SchemaDiff {
+	diff := twoSpellingsHeld("t1")
+	diff.GrantsRemoved = nil
+	diff.GrantsAdded = []difftypes.GrantRef{
+		{Role: "writer", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "id"},
+	}
+	return diff
+}
+
 // twoSpellingsHeld is a catalog holding, for one role, SELECT on Name and
 // UPDATE on name of t1 and SELECT on Name of t2, with a diff that revokes the
 // role's SELECT on Name of table.
@@ -146,9 +175,9 @@ func twoSpellingsHeld(table string) *difftypes.SchemaDiff {
 // comes back right after the table revoke that takes it, before the plan's own
 // grants, with its grant option unless the diff revokes the option on that
 // table; a privilege the table revoke does not take, or another role holds, is
-// left alone. A column is named as the catalog spells
-// it, and a column the catalog spells two ways on one table does not hold up a
-// change on another.
+// left alone. A column the catalog spells two ways for one role does not hold
+// up a change on another table, or a change of another role's privileges on
+// the same one.
 func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -207,14 +236,14 @@ func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 			},
 		},
 		{
-			name: "a column the catalog spells another way",
-			diff: columnSpelledOtherwise,
-			want: []string{"GRANT UPDATE (`Name`) ON `app`.`t1` TO `reader`"},
-		},
-		{
 			name: "two spellings held on another table",
 			diff: func() *difftypes.SchemaDiff { return twoSpellingsHeld("t2") },
 			want: []string{"REVOKE SELECT (`Name`) ON `app`.`t2` FROM `reader`"},
+		},
+		{
+			name: "two spellings held by another role",
+			diff: twoSpellingsHeldByAnother,
+			want: []string{"GRANT SELECT (`id`) ON `app`.`t1` TO `writer`"},
 		},
 	}
 	for _, dialect := range []string{"mysql", "mariadb"} {
@@ -230,6 +259,54 @@ func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 				c.Assert(statements, qt.DeepEquals, test.want)
 			})
 		}
+	}
+}
+
+// A column is named as the declaration spells it on MySQL, where a column
+// privilege held through a role serves only the spelling the GRANT used, and
+// as the catalog spells it on MariaDB, which serves both. On MySQL a privilege
+// moved from one spelling to the other is revoked under the old one first, so
+// the catalog never holds the column under both.
+func TestPlan_MySQLFamilyColumnSpelledOtherwise_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		diff    func() *difftypes.SchemaDiff
+		want    []string
+	}{
+		{
+			name:    "a privilege added",
+			dialect: "mysql",
+			diff:    columnSpelledOtherwise,
+			want:    []string{"GRANT UPDATE (`name`) ON `app`.`t1` TO `reader`"},
+		},
+		{
+			name:    "a privilege respelled",
+			dialect: "mysql",
+			diff:    columnRespelled,
+			want: []string{
+				"REVOKE SELECT (`Name`) ON `app`.`t1` FROM `reader`",
+				"GRANT SELECT (`name`) ON `app`.`t1` TO `reader`",
+			},
+		},
+		{
+			name:    "a privilege added",
+			dialect: "mariadb",
+			diff:    columnSpelledOtherwise,
+			want:    []string{"GRANT UPDATE (`Name`) ON `app`.`t1` TO `reader`"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect+"/"+test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()), test.diff(), test.dialect,
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, test.want)
+		})
 	}
 }
 
@@ -278,5 +355,62 @@ func TestPlan_MySQLFamilyColumnSpellings_FailurePath(t *testing.T) {
 				`(?s).*role "reader" holds privileges on one column of app.t1 as "Name" and as "name".*revoke the privileges under both spellings by hand.*`)
 			c.Assert(statements, qt.IsNil)
 		})
+	}
+}
+
+// grantsAllOnT1 is t1 and a role, with the grants given: a declared state
+// rather than a catalog read, so a GRANT ALL stays one grant of ALL.
+func grantsAllOnT1(grants ...schemamodel.Grant) *schemamodel.Database {
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T1", Name: "t1"}},
+		Fields: []schemamodel.Field{
+			{StructName: "T1", Name: "id", Type: "INT", Primary: true},
+			{StructName: "T1", Name: "name", Type: "VARCHAR(9)", Nullable: true},
+		},
+		Roles:  []schemamodel.Role{{Name: "reader"}},
+		Grants: grants,
+	}
+	schemamodel.Finalize(db)
+	return db
+}
+
+// A comparison of two declared states keeps the ALL a state grants, so a plan
+// from one holding ALL on t1 and SELECT on its id column revokes ALL, which
+// takes the column privilege with it on MySQL and MariaDB. Kept, the column
+// privilege comes back after the revoke; removed, it is not revoked a second
+// time, which the server answers with ERROR 1147.
+func TestPlan_MySQLFamilyRevokeAllBetweenTwoStates_HappyPath(t *testing.T) {
+	all := schemamodel.Grant{Role: "reader", Privileges: []string{"ALL"}, OnTable: "t1"}
+	id := schemamodel.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t1", Columns: []string{"id"}}
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		want    []string
+	}{
+		{
+			name:    "the column privilege kept",
+			desired: grantsAllOnT1(id),
+			want:    []string{"REVOKE ALL ON `t1` FROM `reader`", "GRANT SELECT (`id`) ON `t1` TO `reader`"},
+		},
+		{
+			name:    "the column privilege removed",
+			desired: grantsAllOnT1(),
+			want:    []string{"REVOKE ALL ON `t1` FROM `reader`"},
+		},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				runtime := must.Must(builtin.New())
+				diff, err := schemadiff.CompareSchemas(c.Context(), test.desired, grantsAllOnT1(all, id), dialect, runtime)
+				c.Assert(err, qt.IsNil)
+
+				statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), runtime, diff, dialect)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(statements, qt.DeepEquals, test.want)
+			})
+		}
 	}
 }

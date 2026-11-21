@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/rolemembership"
 )
@@ -64,11 +65,17 @@ func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaD
 //
 // On MySQL, MariaDB and SQL Server the revokes have run by now, at the start
 // of the plan, and so have the grants that give back the column privileges a
-// revoke on their table takes (see [Planner.planRevokesFirst]). A column is named the
-// way the catalog spells it; see [columnSpellings].
+// revoke on their table takes, where the column exists (see
+// [Planner.planRevokesFirst]). The ones on a column the plan creates come back
+// here, first, after the tables, views and columns. A column is named as
+// [columnSpellings] says.
 func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
+	}
+	if p.revokesFirst() {
+		_, later := p.columnGrantsGivenBack(diff)
+		result = append(result, later...)
 	}
 	spellings := newColumnSpellings(diff, p.targetDialect())
 	for _, grant := range diff.GrantsAdded {
@@ -108,10 +115,15 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 // only leave the role with less than it held.
 //
 // The column privileges the diff keeps and a revoke on their table takes come
-// back right after the revokes, before anything else runs: a statement that
-// fails later in the plan leaves the role without the privileges the diff
-// takes away, and with every one it keeps. Each of them is on a column the
-// database holds, so the GRANT needs nothing the plan creates.
+// back right after the revokes, before anything else runs, where the column
+// exists: a statement that fails later in the plan leaves the role without the
+// privileges the diff takes away, and with every one it keeps. A privilege on
+// a column the plan creates comes back with the other grants, after the CREATE
+// TABLE, CREATE VIEW or ADD COLUMN: the server keeps the privilege of a dropped
+// column, table or view, so the read reports it held, and a GRANT on the
+// missing column fails with ERROR 1054 or 1146, measured on MySQL 8.4 and
+// 26.10 and MariaDB 11.8 and 12.3. The role then holds nothing on it until the
+// apply completes.
 //
 // On SQL Server a permission on a whole table takes the place of the column
 // permissions of the same name, and a column revoke under one withholds the
@@ -129,7 +141,65 @@ func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff
 		return result
 	}
 	result = p.revokeGrants(result, diff)
-	return append(result, columnGrantsRevokedWithTheirTable(diff, newColumnSpellings(diff, p.targetDialect()))...)
+	now, _ := p.columnGrantsGivenBack(diff)
+	return append(result, now...)
+}
+
+// columnGrantsGivenBack is [columnGrantsRevokedWithTheirTable] split by where
+// the column is: now holds the grants on a column the database holds, later
+// the grants on a column of a table or view the plan creates or a column it
+// adds.
+func (p *Planner) columnGrantsGivenBack(diff *difftypes.SchemaDiff) (now, later []ast.Node) {
+	spellings := newColumnSpellings(diff, p.targetDialect())
+	created := newCreatedColumns(diff, spellings.semantics)
+	for _, kept := range columnGrantsRevokedWithTheirTable(diff, spellings) {
+		node := ast.NewGrantPrivilege(kept.grant.Role, kept.grant.ObjectType, kept.grant.ObjectName, []string{kept.grant.Privilege}).
+			SetColumns(grantColumns(kept.grant)).
+			SetWithOption(kept.withOption)
+		if created.holds(kept.grant) {
+			later = append(later, node)
+			continue
+		}
+		now = append(now, node)
+	}
+	return now, later
+}
+
+// createdColumns are the tables and views a plan creates and the columns it
+// adds to the tables the database holds, keyed the way the target compares
+// their names. A privilege on a view is a privilege on a table to the server.
+type createdColumns struct {
+	semantics identifier.Semantics
+	tables    map[string]bool
+	columns   map[createdColumn]bool
+}
+
+// createdColumn is one column of one table, keyed as [createdColumns] keys it.
+type createdColumn struct{ table, column string }
+
+// newCreatedColumns reads the tables and the columns diff creates.
+func newCreatedColumns(diff *difftypes.SchemaDiff, semantics identifier.Semantics) createdColumns {
+	created := createdColumns{semantics: semantics, tables: make(map[string]bool), columns: make(map[createdColumn]bool)}
+	for _, table := range diff.TablesAdded {
+		created.tables[semantics.QualifiedTableIdentityKey(table.Name)] = true
+	}
+	for _, view := range diff.ViewsAdded {
+		created.tables[semantics.QualifiedTableIdentityKey(view.Name)] = true
+	}
+	for _, table := range diff.TablesModified {
+		key := semantics.QualifiedTableIdentityKey(table.TableName)
+		for _, column := range table.ColumnsAdded {
+			created.columns[createdColumn{table: key, column: semantics.ColumnIdentityKey(column.Name)}] = true
+		}
+	}
+	return created
+}
+
+// holds reports whether grant is on a table or view the plan creates or on a
+// column it adds.
+func (c createdColumns) holds(grant difftypes.GrantRef) bool {
+	table := c.semantics.QualifiedTableIdentityKey(grant.ObjectName)
+	return c.tables[table] || c.columns[createdColumn{table: table, column: c.semantics.ColumnIdentityKey(grant.Column)}]
 }
 
 // grantColumns is the column list of the statement a grant reference plans:
@@ -181,7 +251,8 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 // `REVOKE SELECT (secret)` after `REVOKE SELECT ON t1` with ERROR 1147, and
 // the apply stops before it grants SELECT (id) again. The privilege stays a
 // removal of the diff, so [columnGrantsRevokedWithTheirTable] does not grant
-// it back.
+// it back. A revoke of ALL comes from a comparison of two schema files, which
+// keeps the ALL a file grants; a catalog read reports each privilege.
 func withoutColumnRevokesTheirTableTakes(removed []difftypes.GrantRef, spellings columnSpellings) []difftypes.GrantRef {
 	tableRevokes := make(map[revokedPrivilege]bool)
 	for _, grant := range removed {
@@ -272,18 +343,26 @@ func (s columnSpellings) columnGrant(grant difftypes.GrantRef) columnGrant {
 	return columnGrant{target: s.target(grant), privilege: strings.ToUpper(strings.TrimSpace(grant.Privilege))}
 }
 
-// columnGrantsRevokedWithTheirTable is a GRANT for each column privilege the
-// database holds and the diff keeps, where the diff revokes the same
-// privilege on the whole table: the table revoke takes the column privilege
-// with it, and without the GRANT the role loses a privilege the declaration
-// keeps until the next plan grants it again. A REVOKE ALL takes every
-// privilege. The grant option comes back with the privilege unless the diff
-// takes the option away from the role on that table.
+// keptColumnGrant is a column privilege a plan gives back, and whether it
+// comes back with the grant option.
+type keptColumnGrant struct {
+	grant      difftypes.GrantRef
+	withOption bool
+}
+
+// columnGrantsRevokedWithTheirTable is each column privilege the database
+// holds and the diff keeps, where the diff revokes the same privilege on the
+// whole table: the table revoke takes the column privilege with it, and
+// without a GRANT the role loses a privilege the declaration keeps until the
+// next plan grants it again. A REVOKE ALL takes every privilege; a catalog
+// read reports one row for each privilege, and a comparison of two schema
+// files carries the ALL a file grants. The grant option comes back with the
+// privilege unless the diff takes the option away from the role on that table.
 //
 // A column privilege the diff removes is left revoked, whether or not the
 // plan names it in a statement of its own; see
 // [withoutColumnRevokesTheirTableTakes].
-func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings columnSpellings) []ast.Node {
+func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings columnSpellings) []keptColumnGrant {
 	tableRevokes := make(map[revokedPrivilege]bool)
 	columnRevokes := make(map[columnGrant]bool)
 	for _, grant := range diff.GrantsRemoved {
@@ -302,7 +381,7 @@ func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings col
 	for _, grant := range diff.GrantOptionsRevoked {
 		optionRevoked[grantObjectOf(grant)] = true
 	}
-	var nodes []ast.Node
+	var kept []keptColumnGrant
 	for _, grant := range diff.CurrentGrants {
 		if grant.Column == "" || columnRevokes[spellings.columnGrant(grant)] {
 			continue
@@ -313,13 +392,9 @@ func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings col
 		if !tableRevokes[revoked] && !tableRevokes[all] {
 			continue
 		}
-		keepsOption := grant.WithOption && !optionRevoked[grantObjectOf(grant)]
-		nodes = append(nodes, ast.NewGrantPrivilege(
-			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetColumns(grantColumns(grant)).
-			SetWithOption(keepsOption))
+		kept = append(kept, keptColumnGrant{grant: grant, withOption: grant.WithOption && !optionRevoked[grantObjectOf(grant)]})
 	}
-	return nodes
+	return kept
 }
 
 // removeGrantsAndRoles revokes first and drops the roles afterwards. On

@@ -87,6 +87,12 @@ type Dialect struct {
 	// the grantee at the whole object rather than to one privilege, so
 	// revoking the option from one privilege revokes it from all of them.
 	GrantOptionPerObject bool `json:"grant_option_per_object,omitempty"`
+	// ColumnPrivilegeBySpelling reports that a privilege on a column, held
+	// through a role, serves only a statement that spells the column the way
+	// the GRANT did, although the engine compares column names without case
+	// everywhere else. A comparison of column privileges then compares the
+	// column by its spelling, and a plan names it as the declaration does.
+	ColumnPrivilegeBySpelling bool `json:"column_privilege_by_spelling,omitempty"`
 
 	// Driver is the database/sql driver a connection to the dialect opens,
 	// such as "pgx". A connection may take another driver where the URL asks

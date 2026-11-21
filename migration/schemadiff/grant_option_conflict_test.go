@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -94,4 +95,51 @@ func TestCompareWithDatabaseInfoRefusesAColumnSpelledTwoWays(t *testing.T) {
 			c.Assert(diff, qt.IsNil)
 		})
 	}
+}
+
+// TestCompareWithDatabaseInfoComparesAColumnPrivilegeAsTheTargetServesIt
+// drives the comparison entry point with a role that holds SELECT on the Name
+// column of orders and a declaration of SELECT on name. On MySQL a privilege a
+// role gives on Name serves no statement that spells the column name, so the
+// declared privilege replaces the held one. MariaDB serves both spellings and
+// plans nothing.
+func TestCompareWithDatabaseInfoComparesAColumnPrivilegeAsTheTargetServesIt(t *testing.T) {
+	tests := []struct {
+		dialect     string
+		wantAdded   []string
+		wantRemoved []string
+	}{
+		{dialect: "mysql", wantAdded: []string{"name"}, wantRemoved: []string{"Name"}},
+		{dialect: "mariadb"},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{
+				Roles:  []schemamodel.Role{{Name: "reader", Inherit: true}},
+				Grants: []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders", Columns: []string{"name"}}},
+			}
+			database := &catalog.Database{
+				Roles: []catalog.Role{{Name: "reader", Inherit: true}},
+				Grants: []catalog.Grant{
+					{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders", Column: "Name"},
+				},
+			}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, database, mysqlFamilyInfo(test.dialect), nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(grantColumnsOf(diff.GrantsAdded), qt.DeepEquals, append(make([]string, 0), test.wantAdded...))
+			c.Assert(grantColumnsOf(diff.GrantsRemoved), qt.DeepEquals, append(make([]string, 0), test.wantRemoved...))
+		})
+	}
+}
+
+// grantColumnsOf is the column of each grant, in order.
+func grantColumnsOf(refs []difftypes.GrantRef) []string {
+	columns := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		columns = append(columns, ref.Column)
+	}
+	return columns
 }

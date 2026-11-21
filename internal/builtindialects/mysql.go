@@ -55,6 +55,10 @@ func mysql() descriptor.Dialect {
 		},
 		IdentifierLimit:      descriptor.IdentifierLimit{Max: 64, Unit: "characters"},
 		GrantOptionPerObject: true,
+		// A column privilege held through a role serves only the spelling
+		// the GRANT used; see platform.ColumnPrivilegeIsBySpelling. MariaDB
+		// serves either, so its descriptor leaves this out.
+		ColumnPrivilegeBySpelling: true,
 
 		// How a connection reaches the server.
 		Driver: "mysql",

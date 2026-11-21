@@ -27,12 +27,22 @@ type columnTarget struct {
 // `GRANT UPDATE (name) ON t TO r`, COLUMN_PRIVILEGES reports both spellings,
 // and `REVOKE SELECT (Name) ON t FROM r` leaves a user holding r able to read
 // the column and unable to update it, while the table holds `name: Update`.
-// So a statement names a column the way the catalog already does, and a plan
-// that touches a role's privileges on an object where the catalog holds one
-// column under two spellings is refused.
+// So on MariaDB a statement names a column the way the catalog already does,
+// and on both a plan that touches a role's privileges on an object where the
+// catalog holds one column under two spellings is refused.
+//
+// On MySQL a statement names a column the way the declaration does: a column
+// privilege held through a role serves only the spelling the GRANT used (see
+// [platform.ColumnPrivilegeIsBySpelling]), so the comparison holds a privilege
+// on `Name` and a declared one on `name` apart, and the plan revokes the first
+// before it grants the second. The revokes run first, and the declaration
+// spells each column one way, so the catalog never holds both.
 type columnSpellings struct {
 	semantics identifier.Semantics
-	spelled   map[columnTarget]string
+	// bySpelling is set on a target where a column privilege serves only the
+	// spelling it was granted under.
+	bySpelling bool
+	spelled    map[columnTarget]string
 	// twice holds the columns the catalog spells two ways, in the order the
 	// read reports them, so a refusal names the same column on every run.
 	twice []spelledTwice
@@ -47,8 +57,9 @@ type spelledTwice struct {
 // newColumnSpellings reads the spellings from the grants the database holds.
 func newColumnSpellings(diff *difftypes.SchemaDiff, dialect string) columnSpellings {
 	spellings := columnSpellings{
-		semantics: diff.EffectiveIdentifierSemantics(dialect),
-		spelled:   make(map[columnTarget]string),
+		semantics:  diff.EffectiveIdentifierSemantics(dialect),
+		bySpelling: platform.ColumnPrivilegeIsBySpelling(dialect),
+		spelled:    make(map[columnTarget]string),
 	}
 	for _, grant := range diff.CurrentGrants {
 		column := strings.TrimSpace(grant.Column)
@@ -77,14 +88,16 @@ func (s columnSpellings) target(grant difftypes.GrantRef) columnTarget {
 	}
 }
 
-// columns is the column list of the statement grant plans: the catalog's
-// spelling of its column where the role holds a privilege on it, the grant's
-// own spelling otherwise, and none for a grant on the whole object.
+// columns is the column list of the statement grant plans: none for a grant on
+// the whole object, the grant's own spelling on a target that serves a column
+// privilege by its spelling, and otherwise the catalog's spelling of the
+// column where the role holds a privilege on it, the grant's own where it
+// holds none.
 func (s columnSpellings) columns(grant difftypes.GrantRef) []string {
 	if grant.Column == "" {
 		return nil
 	}
-	if spelled, held := s.spelled[s.target(grant)]; held {
+	if spelled, held := s.spelled[s.target(grant)]; held && !s.bySpelling {
 		return []string{spelled}
 	}
 	return []string{grant.Column}
