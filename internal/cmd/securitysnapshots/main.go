@@ -85,7 +85,7 @@ var cveID = regexp.MustCompile(`CVE-[0-9]{4}-[0-9]{4,}`)
 
 // reviewSchemaVersion changes whenever a review field changes meaning, so a
 // pending report in an older shape is written again rather than kept.
-const reviewSchemaVersion = 3
+const reviewSchemaVersion = 4
 
 // review is the report a changed versioned source leaves for a person. Added
 // and removed IDs compare the observed page with the CVE IDs the reviewed
@@ -94,6 +94,9 @@ const reviewSchemaVersion = 3
 // ObservedIDs is the list the updated snapshot records for the page. Source
 // is the observed page; ReviewedSource is set when that page is a newer one
 // than the reviewed snapshot's, such as the next Oracle update.
+// UnrecordedKBArticles and UnansweredKBRows are SQL Server's: the KB articles
+// the changed guide names with no reviewed record, and the rows it decides by
+// absence with no reviewed answer, each to be read from its article.
 type review struct {
 	SchemaVersion  int       `json:"schema_version"`
 	Product        string    `json:"product"`
@@ -105,6 +108,9 @@ type review struct {
 	AddedIDs       []string  `json:"added_cve_ids"`
 	RemovedIDs     []string  `json:"removed_cve_ids"`
 	ObservedIDs    []string  `json:"observed_cve_ids"`
+
+	UnrecordedKBArticles []string     `json:"unrecorded_kb_articles,omitempty"`
+	UnansweredKBRows     []kbQuestion `json:"unanswered_kb_rows,omitempty"`
 }
 
 var products = []string{"postgresql", "mariadb", "clickhouse", "mysql", "sqlserver"}
@@ -539,6 +545,11 @@ func reconcileVersioned(current vulnerability.VersionedSnapshot, pages map[strin
 			if err != nil {
 				return err
 			}
+			if product == "sqlserver" {
+				if report, err = withKBQuestions(report, current, content); err != nil {
+					return err
+				}
+			}
 			return writeReview(report)
 		}
 		// The page is the reviewed one, so its IDs are the recorded list. A
@@ -547,6 +558,15 @@ func reconcileVersioned(current vulnerability.VersionedSnapshot, pages map[strin
 		if observed := sourceCVEIDs(content); !slices.Equal(observed, source.ids) {
 			return fmt.Errorf("%s differ from the reviewed source: not recorded %s; recorded but absent %s", source.label,
 				idList(difference(observed, source.ids)), idList(difference(source.ids, observed)))
+		}
+		if product == "sqlserver" {
+			evidence, err := readKBEvidence(kbEvidencePath)
+			if err != nil {
+				return err
+			}
+			if err := verifySQLServerSnapshot(current, content, evidence); err != nil {
+				return err
+			}
 		}
 	}
 	if err := os.Remove(reviewFile(product)); err != nil && !errors.Is(err, os.ErrNotExist) {
