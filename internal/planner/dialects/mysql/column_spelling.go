@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/difftypes"
@@ -131,6 +132,69 @@ func (s columnSpellings) refuseTwoSpellings(diff *difftypes.SchemaDiff, dialect 
 				)
 			}
 		}
+	}
+	return nil
+}
+
+// refuseASecondSpelling refuses a diff that grants a role a privilege on a
+// column under one spelling while the role keeps other privileges on that
+// column under another.
+//
+// On MySQL a plan grants a column privilege as the declaration spells it, and
+// it revokes a held privilege the declaration names under another spelling.
+// A role the schema does not create keeps the privileges the declaration says
+// nothing about, so a grant of SELECT (name) beside a kept UPDATE (Name)
+// leaves the catalog holding the column under two spellings, and
+// [columnSpellings.refuseTwoSpellings] refuses the next plan that touches the
+// role's privileges on the object. Measured on MySQL 8.4.13 and 26.10.0:
+// planned, the next apply exits 2 with that refusal.
+//
+// Granting under the catalog's spelling instead would give a privilege that a
+// user writing the column as declared cannot use (ERROR 1143), so the plan is
+// refused before it runs. The declaration has two ways out: name the kept
+// privileges under the declared spelling, or revoke them. On MariaDB a grant
+// takes the catalog's spelling of a column the role holds a privilege on, so
+// this never fires there.
+func (s columnSpellings) refuseASecondSpelling(diff *difftypes.SchemaDiff, dialect string) error {
+	removed := make(map[columnGrant][]string)
+	for _, grant := range diff.GrantsRemoved {
+		if grant.Column != "" {
+			key := s.columnGrant(grant)
+			removed[key] = append(removed[key], strings.TrimSpace(grant.Column))
+		}
+	}
+	for _, added := range diff.GrantsAdded {
+		columns := s.columns(added)
+		if len(columns) == 0 {
+			continue
+		}
+		target := s.target(added)
+		spelling, kept := "", []string(nil)
+		for _, held := range diff.CurrentGrants {
+			column := strings.TrimSpace(held.Column)
+			if column == "" || column == columns[0] || s.target(held) != target ||
+				slices.Contains(removed[s.columnGrant(held)], column) {
+				continue
+			}
+			if spelling == "" {
+				spelling = column
+			}
+			if column == spelling {
+				kept = append(kept, strings.ToUpper(strings.TrimSpace(held.Privilege)))
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		slices.Sort(kept)
+		return fmt.Errorf(
+			"%w: role %q keeps %s on one column of %s as %q, and the plan grants %s on it as %q, the declared "+
+				"spelling; %s would then hold the column under two spellings for the role, and a later plan on %s "+
+				"is refused for that -- declare the role's privileges on the column as %q too, or revoke them",
+			ptaherr.ErrUnsupportedFeature, added.Role, strings.Join(slices.Compact(kept), ", "), added.ObjectName,
+			spelling, strings.ToUpper(strings.TrimSpace(added.Privilege)), columns[0],
+			strings.ToUpper(platform.NormalizeDialect(dialect)), added.ObjectName, columns[0],
+		)
 	}
 	return nil
 }

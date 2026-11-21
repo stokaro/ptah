@@ -923,10 +923,10 @@ func ValidateGrantOptionConsistency(db *Database, dialect string) error {
 	return nil
 }
 
-// ValidateGrantColumnSpellings refuses grants that name one column of one
-// object for one role in two spellings the target takes for the same column,
-// for a target where [platform.GrantOptionIsPerObject] holds: MySQL and
-// MariaDB.
+// ValidateGrantColumnSpellings refuses grants and revokes that name one column
+// of one object for one role in two spellings the target takes for the same
+// column, for a target where [platform.GrantOptionIsPerObject] holds: MySQL
+// and MariaDB.
 //
 // Both compare column names without case, and so does the server's in-memory
 // copy of the column privileges, but mysql.columns_priv keeps one row per
@@ -935,8 +935,15 @@ func ValidateGrantOptionConsistency(db *Database, dialect string) error {
 // TO r`, `REVOKE SELECT (Name) ON t FROM r` leaves a user holding r able to
 // read the column and unable to update it. A declaration that spells the
 // column two ways asks for exactly that pair, so it is refused before anything
-// is compared. Grants to two roles, or on two objects, do not meet: the server
-// keeps the column privileges of each grantee and object apart.
+// is compared.
+//
+// A revoke counts as a spelling too. Beside a grant of `SELECT (Name)`, a
+// revoke of `SELECT (name)` asks for one privilege both held and absent, and
+// the grant, spelled as the catalog is, keeps a held `SELECT (Name)`: measured
+// on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and 12.3.3, the plan is empty
+// and a user holding the role reads the column. Grants and revokes for two
+// roles, or on two objects, do not meet: the server keeps the column
+// privileges of each grantee and object apart.
 func ValidateGrantColumnSpellings(db *Database, dialect string) error {
 	if db == nil || !platform.GrantOptionIsPerObject(dialect) {
 		return nil
@@ -945,32 +952,40 @@ func ValidateGrantColumnSpellings(db *Database, dialect string) error {
 	type columnKey struct {
 		role, target, column string
 	}
-	spelled := make(map[columnKey]string)
-	for _, grant := range db.Grants {
-		if !dialectscope.Includes(grant.Dialects, dialect) {
-			continue
-		}
-		for _, column := range grant.Columns {
-			column = strings.TrimSpace(column)
-			key := columnKey{
-				role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant),
-				column: semantics.ColumnIdentityKey(column),
-			}
-			previous, seen := spelled[key]
-			if !seen {
-				spelled[key] = column
+	type spelling struct {
+		column, statement string
+	}
+	spelled := make(map[columnKey]spelling)
+	for _, declared := range []struct {
+		statement string
+		grants    []Grant
+	}{{statement: "GRANT", grants: db.Grants}, {statement: "REVOKE", grants: db.RevokedGrants}} {
+		for _, grant := range declared.grants {
+			if !dialectscope.Includes(grant.Dialects, dialect) {
 				continue
 			}
-			if previous == column {
-				continue
+			for _, column := range grant.Columns {
+				column = strings.TrimSpace(column)
+				key := columnKey{
+					role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant),
+					column: semantics.ColumnIdentityKey(column),
+				}
+				previous, seen := spelled[key]
+				if !seen {
+					spelled[key] = spelling{column: column, statement: declared.statement}
+					continue
+				}
+				if previous.column == column {
+					continue
+				}
+				return fmt.Errorf(
+					"%w: role %q has one column of %s spelled %q in a %s and %q in a %s; %s compares column "+
+						"names without case, so the two are one column, and a privilege granted under one spelling "+
+						"and revoked under the other stays in effect -- spell the column one way",
+					ptaherr.ErrInvalidSchemaDiff, key.role, key.target, previous.column, previous.statement,
+					column, declared.statement, strings.ToUpper(platform.NormalizeDialect(dialect)),
+				)
 			}
-			return fmt.Errorf(
-				"%w: role %q is granted privileges on one column of %s as %q and as %q; %s compares column "+
-					"names without case, so the two are one column, and a privilege granted under one spelling "+
-					"and revoked under the other stays in effect -- spell the column one way",
-				ptaherr.ErrInvalidSchemaDiff, key.role, key.target, previous, column,
-				strings.ToUpper(platform.NormalizeDialect(dialect)),
-			)
 		}
 	}
 	return nil
