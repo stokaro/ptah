@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/mysqlgrants"
+	"ptah.run/internal/mysqlname"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
@@ -421,8 +422,11 @@ func (m *Migrator) collectMySQLSchemaObjects(
 	}
 	if err := m.collectMySQLCatalogNames(
 		ctx,
-		"SELECT event_object_table FROM information_schema.triggers WHERE trigger_schema = ?",
-		[]any{schema},
+		// MariaDB compares trigger_schema without case: with
+		// lower_case_table_names=0 a plain equality on r_t reads the triggers
+		// of R_T as well.
+		"SELECT event_object_table FROM information_schema.triggers WHERE "+mysqlname.SameDatabase("trigger_schema", "?"),
+		[]any{schema, schema},
 		relation,
 	); err != nil {
 		return fmt.Errorf("failed to inspect MySQL-family triggers: %w", err)

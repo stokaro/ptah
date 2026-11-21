@@ -18,6 +18,8 @@ import (
 // Roles go before tables and grants go after them, because a grant names an
 // object that has to exist and a role that has to exist. The removals mirror
 // that: revoke, then drop the role, after the tables its grants named are gone.
+// On MySQL and MariaDB the revokes go first of all instead; see
+// [Planner.planRevokesFirst].
 //
 // The capability is the switch, not the dialect name. A target that leaves
 // RoleManagement off keeps the named skip reportUnsupportedRoutinesAndRoles
@@ -60,38 +62,61 @@ func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaD
 // role could read every column, the one the declaration left out included, and
 // the next comparison would revoke the table grant and plan it again.
 //
-// On MySQL and MariaDB a revoke reaches further than the row it names, so the
-// revokes run before the grants, and the column privileges a revoke takes
-// with it are granted again after them. Measured on MySQL 8.4.13 and MariaDB
-// 11.8.9: `REVOKE SELECT ON t FROM r` takes every column SELECT r holds on t,
-// and `REVOKE GRANT OPTION ON t FROM r` takes the grant option of every
-// privilege r holds on t. A plan that narrows `GRANT SELECT ON t` to
-// `GRANT SELECT (name) ON t` and runs the GRANT first leaves the role with
-// nothing on t, and the next plan grants the column again.
+// On MySQL and MariaDB the revokes have run by now, at the start of the plan,
+// and so have the grants that give back the column privileges a revoke on
+// their table takes (see [Planner.planRevokesFirst]). A column is named the
+// way the catalog spells it; see [columnSpellings].
 func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	perObject := p.grantOptionCoversTheObject()
-	if perObject {
-		result = p.revokeGrants(result, diff)
-	}
+	spellings := newColumnSpellings(diff, p.targetDialect())
 	for _, grant := range diff.GrantsAdded {
 		result = append(result, ast.NewGrantPrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetColumns(grantColumns(grant)).
+			SetColumns(spellings.columns(grant)).
 			SetWithOption(grant.WithOption))
 	}
 	for _, grant := range diff.GrantOptionsAdded {
 		result = append(result, ast.NewGrantPrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetColumns(grantColumns(grant)).
+			SetColumns(spellings.columns(grant)).
 			SetWithOption(true))
 	}
-	if perObject {
-		result = append(result, columnGrantsRevokedWithTheirTable(diff)...)
-	}
 	return result
+}
+
+// planRevokesFirst emits the REVOKE statements at the start of the plan on
+// MySQL and MariaDB, before any database, table or column is created.
+//
+// A revoke reaches further than the row it names there. Measured on MySQL
+// 8.4.13 and MariaDB 11.8.9: `REVOKE SELECT ON t FROM r` takes every column
+// SELECT r holds on t, and `REVOKE GRANT OPTION ON t FROM r` takes the grant
+// option of every privilege r holds on t. A plan that narrows
+// `GRANT SELECT ON t` to `GRANT SELECT (name) ON t` and runs the GRANT first
+// leaves the role with nothing on t.
+//
+// And a privilege outlives its object. Both engines keep a table or column
+// privilege after DROP TABLE and DROP COLUMN, and the privilege applies again
+// to an object created under the same name. Revoked after the CREATE TABLE or
+// ADD COLUMN that brings the name back, it is live in between, and a
+// statement failing in between keeps it: measured on MariaDB 12.3.3, a role
+// whose SELECT (secret) a failed apply left behind reads the secret column
+// once a later apply adds it again. A REVOKE succeeds on a table or a column
+// that does not exist, on both engines, so running every revoke first can
+// only leave the role with less than it held.
+//
+// The column privileges the diff keeps and a revoke on their table takes come
+// back right after the revokes, before anything else runs: a statement that
+// fails later in the plan leaves the role without the privileges the diff
+// takes away, and with every one it keeps. Each of them is on a column the
+// database holds, so the GRANT needs nothing the plan creates.
+func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if !p.capabilities().Has(capability.RoleManagement) || !p.grantOptionCoversTheObject() {
+		return result
+	}
+	result = p.revokeGrants(result, diff)
+	return append(result, columnGrantsRevokedWithTheirTable(diff, newColumnSpellings(diff, p.targetDialect()))...)
 }
 
 // grantColumns is the column list of the statement a grant reference plans:
@@ -106,10 +131,12 @@ func grantColumns(grant difftypes.GrantRef) []string {
 // revokeGrants emits the REVOKE statements: the grant options a diff takes
 // away, the orphaned grant options, then the privileges.
 func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	spellings := newColumnSpellings(diff, p.targetDialect())
 	ghosts, removed := p.splitGrantOptionGhosts(diff.GrantsRemoved)
 	revokes := slices.Concat(diff.GrantOptionsRevoked, ghosts)
 	if p.grantOptionCoversTheObject() {
-		revokes = append(revokes, grantOptionsLeftBehind(revokes, removed, diff.CurrentGrants)...)
+		revokes = append(revokes, grantOptionsLeftBehind(removed, diff.CurrentGrants, spellings)...)
+		removed = withoutColumnRevokesTheirTableTakes(removed, spellings)
 	}
 	for _, revoke := range p.grantOptionRevocations(revokes) {
 		result = append(result, revoke)
@@ -117,9 +144,38 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 	for _, grant := range removed {
 		result = append(result, ast.NewRevokePrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetColumns(grantColumns(grant)))
+			SetColumns(spellings.columns(grant)))
 	}
 	return result
+}
+
+// withoutColumnRevokesTheirTableTakes answers removed without the column
+// privileges that a revoke of the same privilege, or of ALL, on their table
+// takes with it.
+//
+// On MySQL and MariaDB a revoke of a column privilege the role no longer holds
+// fails: measured on all four servers, a role holding SELECT on t1, SELECT
+// (secret) and SELECT (id) and declared SELECT (id) answers
+// `REVOKE SELECT (secret)` after `REVOKE SELECT ON t1` with ERROR 1147, and
+// the apply stops before it grants SELECT (id) again. The privilege stays a
+// removal of the diff, so [columnGrantsRevokedWithTheirTable] does not grant
+// it back.
+func withoutColumnRevokesTheirTableTakes(removed []difftypes.GrantRef, spellings columnSpellings) []difftypes.GrantRef {
+	tableRevokes := make(map[revokedPrivilege]bool)
+	for _, grant := range removed {
+		if grant.Column == "" {
+			tableRevokes[spellings.revokedPrivilege(grant)] = true
+		}
+	}
+	return slices.DeleteFunc(slices.Clone(removed), func(grant difftypes.GrantRef) bool {
+		if grant.Column == "" {
+			return false
+		}
+		revoked := spellings.revokedPrivilege(grant)
+		all := revoked
+		all.privilege = "ALL"
+		return tableRevokes[revoked] || tableRevokes[all]
+	})
 }
 
 // grantOptionsLeftBehind is a grant option revocation for each object a
@@ -134,29 +190,26 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []
 // leaves the role able to grant what the declaration gives it without the
 // option, until the next plan takes the option away. A privilege the plan
 // grants with the option runs after this and has it again.
-func grantOptionsLeftBehind(revokes, removed, current []difftypes.GrantRef) []difftypes.GrantRef {
-	revoked := make(map[grantObject]bool, len(revokes))
-	for _, grant := range revokes {
-		revoked[grantObjectOf(grant)] = true
-	}
-	removedKeys := make(map[difftypes.GrantRef]bool, len(removed))
+//
+// An object can come back more than once, and the diff can revoke the option
+// there itself: [Planner.grantOptionRevocations] makes one statement of every
+// revocation on one object, so each is left in.
+func grantOptionsLeftBehind(removed, current []difftypes.GrantRef, spellings columnSpellings) []difftypes.GrantRef {
+	removedKeys := make(map[columnGrant]bool, len(removed))
 	for _, grant := range removed {
-		removedKeys[columnGrantKey(grant)] = true
+		removedKeys[spellings.columnGrant(grant)] = true
 	}
 	keepsOption := make(map[grantObject]bool)
 	for _, grant := range current {
-		if grant.WithOption && !removedKeys[columnGrantKey(grant)] {
+		if grant.WithOption && !removedKeys[spellings.columnGrant(grant)] {
 			keepsOption[grantObjectOf(grant)] = true
 		}
 	}
 	var left []difftypes.GrantRef
 	for _, grant := range removed {
-		object := grantObjectOf(grant)
-		if !grant.WithOption || revoked[object] || keepsOption[object] {
-			continue
+		if grant.WithOption && !keepsOption[grantObjectOf(grant)] {
+			left = append(left, grant)
 		}
-		revoked[object] = true
-		left = append(left, grant)
 	}
 	return left
 }
@@ -169,10 +222,32 @@ func grantObjectOf(grant difftypes.GrantRef) grantObject {
 	}
 }
 
-// grantedPrivilege is a privilege a role holds on one object, as the read
-// names them.
-type grantedPrivilege struct {
-	role, objectName, privilege string
+// revokedPrivilege is a privilege of a role on one object, the object keyed
+// the way the target compares it.
+type revokedPrivilege struct {
+	role, objectType, object, privilege string
+}
+
+// revokedPrivilege is the privilege grant names on its object, its column
+// aside.
+func (s columnSpellings) revokedPrivilege(grant difftypes.GrantRef) revokedPrivilege {
+	target := s.target(grant)
+	return revokedPrivilege{
+		role: target.role, objectType: target.objectType, object: target.object,
+		privilege: strings.ToUpper(strings.TrimSpace(grant.Privilege)),
+	}
+}
+
+// columnGrant is the identity of a column privilege, the grant option aside,
+// with the column keyed the way the target compares column names.
+type columnGrant struct {
+	target    columnTarget
+	privilege string
+}
+
+// columnGrant is the identity of the column privilege grant names.
+func (s columnSpellings) columnGrant(grant difftypes.GrantRef) columnGrant {
+	return columnGrant{target: s.target(grant), privilege: strings.ToUpper(strings.TrimSpace(grant.Privilege))}
 }
 
 // columnGrantsRevokedWithTheirTable is a GRANT for each column privilege the
@@ -183,18 +258,19 @@ type grantedPrivilege struct {
 // privilege. The grant option comes back with the privilege unless the diff
 // takes the option away from the role on that table.
 //
-// The diff's removals and the current grants both name an object as the read
-// does, so they compare exactly.
-func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff) []ast.Node {
-	tableRevokes := make(map[grantedPrivilege]bool)
-	columnRevokes := make(map[difftypes.GrantRef]bool)
+// A column privilege the diff removes is left revoked, whether or not the
+// plan names it in a statement of its own; see
+// [withoutColumnRevokesTheirTableTakes].
+func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings columnSpellings) []ast.Node {
+	tableRevokes := make(map[revokedPrivilege]bool)
+	columnRevokes := make(map[columnGrant]bool)
 	for _, grant := range diff.GrantsRemoved {
 		switch {
 		case grant.Column != "":
-			columnRevokes[columnGrantKey(grant)] = true
+			columnRevokes[spellings.columnGrant(grant)] = true
 		case strings.EqualFold(grant.ObjectType, "SCHEMA") || grant.Privilege == usageGrantOptionGhost:
 		default:
-			tableRevokes[grantedPrivilege{grant.Role, grant.ObjectName, grant.Privilege}] = true
+			tableRevokes[spellings.revokedPrivilege(grant)] = true
 		}
 	}
 	if len(tableRevokes) == 0 {
@@ -206,12 +282,13 @@ func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff) []ast.Node {
 	}
 	var nodes []ast.Node
 	for _, grant := range diff.CurrentGrants {
-		if grant.Column == "" || columnRevokes[columnGrantKey(grant)] {
+		if grant.Column == "" || columnRevokes[spellings.columnGrant(grant)] {
 			continue
 		}
-		revoked := tableRevokes[grantedPrivilege{grant.Role, grant.ObjectName, grant.Privilege}] ||
-			tableRevokes[grantedPrivilege{grant.Role, grant.ObjectName, "ALL"}]
-		if !revoked {
+		revoked := spellings.revokedPrivilege(grant)
+		all := revoked
+		all.privilege = "ALL"
+		if !tableRevokes[revoked] && !tableRevokes[all] {
 			continue
 		}
 		keepsOption := grant.WithOption && !optionRevoked[grantObjectOf(grant)]
@@ -223,17 +300,8 @@ func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff) []ast.Node {
 	return nodes
 }
 
-// columnGrantKey is the identity of a column privilege, the grant option
-// aside.
-func columnGrantKey(grant difftypes.GrantRef) difftypes.GrantRef {
-	return difftypes.GrantRef{
-		Role: grant.Role, Privilege: grant.Privilege, ObjectType: grant.ObjectType,
-		ObjectName: grant.ObjectName, Column: grant.Column,
-	}
-}
-
 // removeGrantsAndRoles revokes first and drops the roles afterwards. On
-// MySQL and MariaDB [Planner.planGrants] runs the revokes, before the grants.
+// MySQL and MariaDB [Planner.planRevokesFirst] has run the revokes.
 //
 // A role still holding permissions is not droppable on any engine in this
 // family that has roles at all, so the order is the engine's rather than a

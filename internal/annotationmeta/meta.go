@@ -799,7 +799,7 @@ var directives = []Directive{
 				valueString, false, false),
 		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
-				"state,decided_at. PostgreSQL only.", valueList, false, false),
+				"state,decided_at. PostgreSQL, MySQL and MariaDB.", valueList, false, false),
 			attr("with_option", "Adds WITH GRANT OPTION where supported.", valueBoolean, false, true),
 			alias("grant_option", "with_option", "Alias for with_option.", valueBoolean, true),
 			attr("comment", "Grant comment.", valueString, false, false),
@@ -825,7 +825,7 @@ var directives = []Directive{
 				valueString, false, false),
 		}, objectTargetAttributes(), []Attribute{
 			attr("columns", "Comma-separated columns of on_table the privileges are limited to, such as "+
-				"state,decided_at. PostgreSQL only.", valueList, false, false),
+				"state,decided_at. PostgreSQL, MySQL and MariaDB.", valueList, false, false),
 			attr("comment", "Comment.", valueString, false, false),
 			dialectsAttr(),
 		}),

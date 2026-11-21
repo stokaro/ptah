@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/tableref"
@@ -918,6 +919,59 @@ func ValidateGrantOptionConsistency(db *Database, dialect string) error {
 			ptaherr.ErrInvalidSchemaDiff, key.role, strings.Join(with.Privileges, ", "), key.target,
 			strings.Join(without.Privileges, ", "), strings.ToUpper(platform.NormalizeDialect(dialect)),
 		)
+	}
+	return nil
+}
+
+// ValidateGrantColumnSpellings refuses grants that name one column of one
+// object for one role in two spellings the target takes for the same column,
+// for a target where [platform.GrantOptionIsPerObject] holds: MySQL and
+// MariaDB.
+//
+// Both compare column names without case, and so does the server's in-memory
+// copy of the column privileges, but mysql.columns_priv keeps one row per
+// spelling. Measured on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and
+// 12.3.3: after `GRANT SELECT (Name) ON t TO r` and `GRANT UPDATE (name) ON t
+// TO r`, `REVOKE SELECT (Name) ON t FROM r` leaves a user holding r able to
+// read the column and unable to update it. A declaration that spells the
+// column two ways asks for exactly that pair, so it is refused before anything
+// is compared. Grants to two roles, or on two objects, do not meet: the server
+// keeps the column privileges of each grantee and object apart.
+func ValidateGrantColumnSpellings(db *Database, dialect string) error {
+	if db == nil || !platform.GrantOptionIsPerObject(dialect) {
+		return nil
+	}
+	semantics := identifier.ForDialect(dialect)
+	type columnKey struct {
+		role, target, column string
+	}
+	spelled := make(map[columnKey]string)
+	for _, grant := range db.Grants {
+		if !dialectscope.Includes(grant.Dialects, dialect) {
+			continue
+		}
+		for _, column := range grant.Columns {
+			column = strings.TrimSpace(column)
+			key := columnKey{
+				role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant),
+				column: semantics.ColumnIdentityKey(column),
+			}
+			previous, seen := spelled[key]
+			if !seen {
+				spelled[key] = column
+				continue
+			}
+			if previous == column {
+				continue
+			}
+			return fmt.Errorf(
+				"%w: role %q is granted privileges on one column of %s as %q and as %q; %s compares column "+
+					"names without case, so the two are one column, and a privilege granted under one spelling "+
+					"and revoked under the other stays in effect -- spell the column one way",
+				ptaherr.ErrInvalidSchemaDiff, key.role, key.target, previous, column,
+				strings.ToUpper(platform.NormalizeDialect(dialect)),
+			)
+		}
 	}
 	return nil
 }

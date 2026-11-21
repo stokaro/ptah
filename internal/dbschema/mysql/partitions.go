@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlpartition"
 	"ptah.run/internal/readscope"
 )
@@ -28,7 +29,7 @@ func (r *Reader) readPartitionedTables(ctx context.Context, database string) ([]
 		return nil, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT TABLE_NAME FROM information_schema.PARTITIONS
-		WHERE `+sameName("TABLE_SCHEMA", "?")+` AND PARTITION_NAME IS NOT NULL ORDER BY TABLE_NAME`, nameBinds(database, 1)...)
+		WHERE `+mysqlname.SameDatabase("TABLE_SCHEMA", "?")+` AND PARTITION_NAME IS NOT NULL ORDER BY TABLE_NAME`, nameBinds(database, 1)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read partitioned tables: %w", err)
 	}

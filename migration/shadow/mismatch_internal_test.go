@@ -23,6 +23,24 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
+// A privilege on a column names the column: two grants of one privilege on
+// one table, each on its own column, are two mismatches a reader can tell
+// apart, in column order.
+func TestCollectMismatches_NamesTheColumnOfAColumnGrant(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{GrantsRemoved: []difftypes.GrantRef{
+		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", Column: "secret"},
+		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", Column: "id"},
+		{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+	}}
+
+	c.Assert(collectMismatches(diff), qt.DeepEquals, []Mismatch{
+		{Kind: "extra_grant", Object: "app SELECT ON TABLE users", Message: "extra grant app SELECT ON TABLE users"},
+		{Kind: "extra_grant", Object: "app SELECT ON TABLE users (id)", Message: "extra grant app SELECT ON TABLE users (id)"},
+		{Kind: "extra_grant", Object: "app SELECT ON TABLE users (secret)", Message: "extra grant app SELECT ON TABLE users (secret)"},
+	})
+}
+
 // Every adjustment reaches shadow verification with its role identity and
 // privilege names. A mismatch without its rights cannot explain a failed apply.
 func TestCollectMismatches_ReportsEveryDefaultPrivilegeDirection(t *testing.T) {

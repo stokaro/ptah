@@ -1,6 +1,7 @@
 // Package mysqlname derives the names MySQL and MariaDB give a foreign key or
 // a CHECK a statement leaves unnamed, and recognizes the name of the index the
-// server builds for a foreign key.
+// server builds for a foreign key. It also holds the SQL predicates that
+// compare a database name the way the server keeps it; see [SameDatabase].
 //
 // Three parts of Ptah need the same answer. The SQL parser reads which object
 // the name written inside a FOREIGN KEY clause names. The SQL schema reader

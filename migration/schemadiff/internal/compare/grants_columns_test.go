@@ -100,3 +100,40 @@ func TestGrants_Columns(t *testing.T) {
 		})
 	}
 }
+
+// TestGrants_ColumnsCompareAsTheTargetDoes compares the column of a column
+// privilege the way the target compares column names. MySQL and MariaDB take
+// Name and name for one column, so a declaration that spells it otherwise than
+// the catalog plans nothing there; PostgreSQL keeps them apart and grants the
+// declared column.
+func TestGrants_ColumnsCompareAsTheTargetDoes(t *testing.T) {
+	tests := []struct {
+		dialect     string
+		wantAdded   []plannedColumnGrant
+		wantRemoved []plannedColumnGrant
+	}{
+		{dialect: platform.MySQL},
+		{dialect: platform.MariaDB},
+		{
+			dialect:   platform.Postgres,
+			wantAdded: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "name"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Grants: []schemamodel.Grant{{
+				Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"name"},
+			}}}
+			database := &catalog.Database{Grants: []catalog.Grant{
+				{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", Column: "Name"},
+			}}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.GrantsWithSemantics(desired, database, diff, identifier.ForDialect(test.dialect))
+
+			c.Assert(plannedColumnGrants(diff.GrantsAdded), qt.DeepEquals, append(make([]plannedColumnGrant, 0), test.wantAdded...))
+			c.Assert(plannedColumnGrants(diff.GrantsRemoved), qt.DeepEquals, append(make([]plannedColumnGrant, 0), test.wantRemoved...))
+		})
+	}
+}

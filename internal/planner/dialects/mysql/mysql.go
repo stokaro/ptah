@@ -1986,6 +1986,12 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), p.capabilities(), diff); err != nil {
 		return err
 	}
+	// A nil diff is refused as invalid further on, where every planner refuses it.
+	if diff != nil && p.capabilities().Has(capability.RoleManagement) && p.grantOptionCoversTheObject() {
+		if err := newColumnSpellings(diff, p.targetDialect()).refuseTwoSpellings(diff, p.targetDialect()); err != nil {
+			return err
+		}
+	}
 	return schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff)
 }
 
@@ -1998,6 +2004,9 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 // # Migration Order
 //
 // The SQL statements are generated in a specific order to avoid dependency conflicts:
+//  0. On MySQL and MariaDB, revoke every privilege the plan takes away, since
+//     the server keeps a table or column privilege across DROP TABLE and DROP
+//     COLUMN and it applies again to an object created under the same name
 //  1. Create new tables (MySQL handles enums inline, no separate enum creation needed)
 //  2. Modify existing tables (add/modify/remove columns)
 //  3. Add new indexes
@@ -2105,6 +2114,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps
+
+	// 00. On MySQL and MariaDB every revoke runs first, before a database, a
+	// table or a column is created: a privilege outlives the object it names
+	// and applies again to one created under its name. See
+	// [Planner.planRevokesFirst].
+	result = p.planRevokesFirst(result, diff)
 
 	// 0. The schemas the added objects live in are created before any of
 	// them, by guards put in front of the finished plan; see the end of this

@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlsystemdb"
 )
 
@@ -52,7 +53,7 @@ func crossDatabaseForeignKeysQuery() string {
 		SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
 		FROM information_schema.KEY_COLUMN_USAGE
 		WHERE REFERENCED_TABLE_SCHEMA IS NOT NULL
-		  AND NOT ` + sameName("REFERENCED_TABLE_SCHEMA", "TABLE_SCHEMA") + `
+		  AND NOT ` + mysqlname.SameDatabase("REFERENCED_TABLE_SCHEMA", "TABLE_SCHEMA") + `
 		  AND ` + mysqlsystemdb.MySQLUserDatabasesPredicate("TABLE_SCHEMA") + `
 		ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME`
 }
@@ -181,19 +182,19 @@ func storedObjectsQuery() string {
 		FROM (
 			SELECT routine_name AS object_name, routine_type AS object_kind
 			FROM information_schema.routines
-			WHERE ` + sameName("routine_schema", scopedDatabase) + `
+			WHERE ` + mysqlname.SameDatabase("routine_schema", scopedDatabase) + `
 
 			UNION ALL
 
 			SELECT event_name, 'EVENT'
 			FROM information_schema.events
-			WHERE ` + sameName("event_schema", scopedDatabase) + `
+			WHERE ` + mysqlname.SameDatabase("event_schema", scopedDatabase) + `
 
 			UNION ALL
 
 			SELECT table_name, 'SEQUENCE'
 			FROM information_schema.tables
-			WHERE ` + sameName("table_schema", scopedDatabase) + `
+			WHERE ` + mysqlname.SameDatabase("table_schema", scopedDatabase) + `
 			  AND table_type = 'SEQUENCE'
 		) AS cleanup_objects
 		ORDER BY object_kind, object_name`
@@ -207,19 +208,19 @@ func disabledMariaDBStoredObjectsQuery() string {
 		FROM (
 			SELECT routine_name AS object_name, routine_type AS object_kind
 			FROM information_schema.routines
-			WHERE ` + sameName("routine_schema", scopedDatabase) + `
+			WHERE ` + mysqlname.SameDatabase("routine_schema", scopedDatabase) + `
 
 			UNION ALL
 
 			SELECT name, 'EVENT'
 			FROM mysql.event
-			WHERE ` + sameName("db", scopedDatabase) + `
+			WHERE ` + mysqlname.SameDatabase("db", scopedDatabase) + `
 
 			UNION ALL
 
 			SELECT table_name, 'SEQUENCE'
 			FROM information_schema.tables
-			WHERE ` + sameName("table_schema", scopedDatabase) + `
+			WHERE ` + mysqlname.SameDatabase("table_schema", scopedDatabase) + `
 			  AND table_type = 'SEQUENCE'
 		) AS cleanup_objects
 		ORDER BY object_kind, object_name`

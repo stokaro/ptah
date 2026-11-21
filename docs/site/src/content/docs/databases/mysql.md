@@ -1448,11 +1448,36 @@ because the server answers it with a syntax error.
 On MySQL and MariaDB a revoke reaches past the row it names. `REVOKE SELECT ON
 t1` takes every column `SELECT` the role holds on `t1`, and `REVOKE GRANT OPTION
 ON t1` takes the grant option of every privilege the role holds on `t1`,
-columns included. So a plan runs its revokes before its grants, grants again a
-kept column privilege that a revoke on its table takes, and takes away the grant
-option a revoked privilege leaves behind where the role keeps no privilege with
-it. One apply leaves the role with what the declaration states, and the next
-plan is empty.
+columns included. So a plan grants a kept column privilege again right after
+the revoke on its table that takes it, plans no revoke of a column privilege
+that a revoke on its table already takes, since the server refuses a revoke of
+a privilege nothing holds, and takes away the grant option a revoked privilege
+leaves behind where the role keeps no privilege with it.
+
+The server keeps a table or column privilege after `DROP TABLE` and `DROP
+COLUMN`, and the privilege applies again to a table or column created under
+the same name. So a plan runs every revoke first, before it creates a table or
+adds a column; `REVOKE` on a name nothing holds succeeds. A revoke placed after
+them leaves the role the new object while the statements before it run, and
+for good when one of them fails. An apply that completes leaves the role
+with what the declaration states, and the next plan is empty.
+
+A column name is compared without regard to case, as the server compares it.
+A declaration that spells `name` where the database holds a privilege on
+`Name` matches it, and a privilege the plan adds on that column names it
+`Name`. The server keeps a column privilege in memory under one name and in
+`mysql.columns_priv` under each spelling, so a grant under one spelling and a
+revoke under the other leave the two disagreeing: measured on MySQL 8.4.13 and
+26.10.0 and MariaDB 11.8.9 and 12.3.3, a user holding the role reads a column
+the plan revoked and cannot update one it granted.
+
+So a declaration that spells one column of a table two ways for one role is
+refused, and so is a plan that changes a role's privileges on a table where the
+database holds one of its columns under two spellings. Revoke the privileges
+under both spellings by hand, then plan again. On MySQL, a column privilege a
+role gives serves a statement that spells the column as the grant does: with
+`SELECT (Name)` granted to the role, `SELECT name` is refused with ERROR 1143.
+MariaDB serves either spelling.
 
 A privilege on a function or procedure is refused by name when a plan grants
 it, and the read does not report routine privileges, so a comparison cannot see
@@ -1462,10 +1487,16 @@ A database name is matched exactly. On a server started with
 `lower_case_table_names=0`, the Linux default, `app` and `APP` are two
 databases, and a read of one reports nothing of the other, although
 `information_schema` compares names without regard to case in its privilege
-views on MySQL and in every view on MariaDB. On a server started with
-`lower_case_table_names=1`, a URL may spell the database in any case: the
-server folds the name, and the read describes the database under the name the
-server gives it.
+views on both engines, and in `TRIGGERS` and `EVENTS` on MariaDB. On a server
+started with `lower_case_table_names=1`, a URL may spell the database in any
+case: the server folds the name, and the read describes the database under the
+name the server gives it.
+
+With `lower_case_table_names=2`, which needs a file system that ignores case,
+MariaDB answers `DATABASE()` in the spelling of the URL while its privilege
+views spell the database in lower case. The read describes the database and its
+grants under the first spelling, so a plan converges. Measured on MariaDB 11.8.9 and 12.3.3 and MySQL 26.10.0 with that
+setting; Ptah's CI runs no server with it.
 
 ### Role memberships
 

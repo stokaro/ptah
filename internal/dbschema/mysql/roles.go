@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/internal/mysqlname"
 )
 
 // readRoles reports the roles this server holds, and nothing else that lives in
@@ -145,10 +146,19 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant
 		// and handing it a name that was already joined made it quote the whole
 		// dotted string as one identifier -- `"mysrc`.`t"` -- which the server
 		// refuses to parse.
+		//
+		// The database is the one this read describes, spelled as the
+		// description spells it, not as the row does: every row the query
+		// returns is of that database, and on a server that folds names the
+		// privilege views spell it in lower case. Measured on MariaDB 11.8.9
+		// and 12.3.3 with lower_case_table_names=2, a session that selects R_LC
+		// reads DATABASE() = R_LC and TABLE_SCHEMA = r_lc in the privilege
+		// views, and grants keyed by r_lc are missing under R_LC and extra
+		// under r_lc on every comparison.
 		if strings.EqualFold(objectType, "SCHEMA") {
-			grant.ObjectName = objectSchema
+			grant.ObjectName = dbName
 		} else {
-			grant.Schema = objectSchema
+			grant.Schema = dbName
 			grant.ObjectName = object
 		}
 		grants = append(grants, grant)
@@ -447,17 +457,17 @@ func grantQuery(rolePredicate string) string {
 				   '' AS object_name, '' AS column_name, sp.PRIVILEGE_TYPE AS privilege,
 				   sp.IS_GRANTABLE AS grantable, 'SCHEMA' AS object_type
 			FROM information_schema.SCHEMA_PRIVILEGES AS sp
-			WHERE ` + sameName("sp.TABLE_SCHEMA", "?") + `
+			WHERE ` + mysqlname.SameDatabase("sp.TABLE_SCHEMA", "?") + `
 			UNION ALL
 			SELECT tp.GRANTEE, tp.TABLE_SCHEMA, tp.TABLE_NAME, '', tp.PRIVILEGE_TYPE,
 				   tp.IS_GRANTABLE, 'TABLE'
 			FROM information_schema.TABLE_PRIVILEGES AS tp
-			WHERE ` + sameName("tp.TABLE_SCHEMA", "?") + `
+			WHERE ` + mysqlname.SameDatabase("tp.TABLE_SCHEMA", "?") + `
 			UNION ALL
 			SELECT cp.GRANTEE, cp.TABLE_SCHEMA, cp.TABLE_NAME, cp.COLUMN_NAME, cp.PRIVILEGE_TYPE,
 				   cp.IS_GRANTABLE, 'TABLE'
 			FROM information_schema.COLUMN_PRIVILEGES AS cp
-			WHERE ` + sameName("cp.TABLE_SCHEMA", "?") + `
+			WHERE ` + mysqlname.SameDatabase("cp.TABLE_SCHEMA", "?") + `
 		) AS granted
 		JOIN mysql.user AS u ON u.user = ` + granteeUser + `
 		WHERE ` + rolePredicate + `
@@ -466,5 +476,5 @@ func grantQuery(rolePredicate string) string {
 }
 
 // grantQueryArms is the number of privilege views [grantQuery] reads, each
-// filtered on the database by one [sameName] predicate.
+// filtered on the database by one [mysqlname.SameDatabase] predicate.
 const grantQueryArms = 3
