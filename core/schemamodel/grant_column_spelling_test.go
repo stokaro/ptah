@@ -37,6 +37,22 @@ func TestValidateGrantColumnSpellings_HappyPath(t *testing.T) {
 			dialect: "mariadb",
 		},
 		{
+			name: "a grant and a revoke spelled alike",
+			db: &schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"name"}}},
+				RevokedGrants: []schemamodel.Grant{{Role: "reader", Privileges: []string{"UPDATE"}, OnTable: "t", Columns: []string{"name"}}},
+			},
+			dialect: "mysql",
+		},
+		{
+			name: "a revoke from another role",
+			db: &schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"Name"}}},
+				RevokedGrants: []schemamodel.Grant{{Role: "writer", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"name"}}},
+			},
+			dialect: "mysql",
+		},
+		{
 			name: "two tables",
 			db: &schemamodel.Database{Grants: []schemamodel.Grant{
 				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"Name"}},
@@ -87,7 +103,7 @@ func TestValidateGrantColumnSpellings_FailurePath(t *testing.T) {
 				{Role: "reader", Privileges: []string{"UPDATE"}, OnTable: "t", Columns: []string{"name"}},
 			}},
 			dialect: "mysql",
-			wantErr: `invalid schema diff: role "reader" is granted privileges on one column of TABLE t as "Name" and as "name"; ` +
+			wantErr: `invalid schema diff: role "reader" has one column of TABLE t spelled "Name" in a GRANT and "name" in a GRANT; ` +
 				`MYSQL compares column names without case, so the two are one column, and a privilege granted under one ` +
 				`spelling and revoked under the other stays in effect -- spell the column one way`,
 		},
@@ -97,7 +113,27 @@ func TestValidateGrantColumnSpellings_FailurePath(t *testing.T) {
 				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"NAME", "Name"}},
 			}},
 			dialect: "mariadb",
-			wantErr: `invalid schema diff: role "reader" is granted privileges on one column of TABLE t as "NAME" and as "Name"; ` +
+			wantErr: `invalid schema diff: role "reader" has one column of TABLE t spelled "NAME" in a GRANT and "Name" in a GRANT; ` +
+				`MARIADB compares column names without case.*`,
+		},
+		{
+			name: "a grant and a revoke, on mysql",
+			db: &schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"Name"}}},
+				RevokedGrants: []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"name"}}},
+			},
+			dialect: "mysql",
+			wantErr: `invalid schema diff: role "reader" has one column of TABLE t spelled "Name" in a GRANT and "name" in a REVOKE; ` +
+				`MYSQL compares column names without case.*`,
+		},
+		{
+			name: "two revokes, on mariadb",
+			db: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{
+				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"Name"}},
+				{Role: "reader", Privileges: []string{"UPDATE"}, OnTable: "t", Columns: []string{"NAME"}},
+			}},
+			dialect: "mariadb",
+			wantErr: `invalid schema diff: role "reader" has one column of TABLE t spelled "Name" in a REVOKE and "NAME" in a REVOKE; ` +
 				`MARIADB compares column names without case.*`,
 		},
 	}

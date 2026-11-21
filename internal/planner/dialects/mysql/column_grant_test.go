@@ -265,8 +265,10 @@ func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 // A column is named as the declaration spells it on MySQL, where a column
 // privilege held through a role serves only the spelling the GRANT used, and
 // as the catalog spells it on MariaDB, which serves both. On MySQL a privilege
-// moved from one spelling to the other is revoked under the old one first, so
-// the catalog never holds the column under both.
+// moved from one spelling to the other is revoked under the old one first, and
+// a grant beside a privilege the role keeps under the other spelling is
+// refused (TestPlan_MySQLSecondColumnSpelling_FailurePath), so a plan never
+// leaves the catalog holding the column under both.
 func TestPlan_MySQLFamilyColumnSpelledOtherwise_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -274,12 +276,6 @@ func TestPlan_MySQLFamilyColumnSpelledOtherwise_HappyPath(t *testing.T) {
 		diff    func() *difftypes.SchemaDiff
 		want    []string
 	}{
-		{
-			name:    "a privilege added",
-			dialect: "mysql",
-			diff:    columnSpelledOtherwise,
-			want:    []string{"GRANT UPDATE (`name`) ON `app`.`t1` TO `reader`"},
-		},
 		{
 			name:    "a privilege respelled",
 			dialect: "mysql",
