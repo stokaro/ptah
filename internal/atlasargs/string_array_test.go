@@ -84,3 +84,90 @@ func TestMap_RepeatableFlagJoinsEveryOccurrence(t *testing.T) {
 		})
 	}
 }
+
+// TestMap_RepeatableFlagStaysBeforeTheSeparator holds the joined value in
+// front of a `--` separator, past which the native command would read it as a
+// positional argument.
+func TestMap_RepeatableFlagStaysBeforeTheSeparator(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv("PTAH_SCHEMA", "")
+
+	got, err := atlasargs.Map("migrate", "checkpoint", checkpointSchemaFlags(), []string{"--schema", "public", "--", "tag"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"--schemas=public", "--", "tag"})
+}
+
+// scanURLFlags is a repeatable Atlas flag whose native flag is repeatable too,
+// as `security scan -u` forwards to `db vulnerabilities --db-url`.
+func scanURLFlags() []atlasargs.Flag {
+	url := atlasargs.NativeStringArray("url", "u", "Database URL", "db-url")
+	url.ForwardEach = true
+	return []atlasargs.Flag{url, atlasargs.String("format", "", "Format")}
+}
+
+// TestMap_ForwardEachForwardsEveryOccurrence is the counterpart of the join:
+// against a native flag that is itself repeatable, a joined value is one value,
+// so two URLs reach the scan as one URL that names neither. Each occurrence is
+// forwarded as written, in order, and before a separator.
+func TestMap_ForwardEachForwardsEveryOccurrence(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "repeated long form", args: []string{"--url", "sqlite://a.db", "--url", "sqlite://b.db"},
+			want: []string{"--db-url=sqlite://a.db", "--db-url=sqlite://b.db"}},
+		{name: "repeated inline form", args: []string{"--url=sqlite://a.db", "--url=sqlite://b.db"},
+			want: []string{"--db-url=sqlite://a.db", "--db-url=sqlite://b.db"}},
+		{name: "shorthand form", args: []string{"-u", "sqlite://a.db", "-u", "sqlite://b.db"},
+			want: []string{"--db-url=sqlite://a.db", "--db-url=sqlite://b.db"}},
+		{name: "a value holding a comma stays one value", args: []string{"-u", "postgres://h1,h2/app"},
+			want: []string{"--db-url=postgres://h1,h2/app"}},
+		{name: "an empty value is forwarded for the native flag to judge", args: []string{"-u", "", "-u", "sqlite://b.db"},
+			want: []string{"--db-url=", "--db-url=sqlite://b.db"}},
+		{name: "occurrences are collected past other flags", args: []string{"-u", "sqlite://a.db", "--format", "x", "-u", "sqlite://b.db"},
+			want: []string{"--format", "x", "--db-url=sqlite://a.db", "--db-url=sqlite://b.db"}},
+		{name: "occurrences stay before the separator", args: []string{"-u", "sqlite://a.db", "--", "--format", "x"},
+			want: []string{"--db-url=sqlite://a.db", "--", "--format", "x"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv("PTAH_URL", "")
+			c.Setenv("PTAH_FORMAT", "")
+
+			got, err := atlasargs.Map("security", "scan", scanURLFlags(), test.args)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestMap_RepeatableFlagWithoutValue_FailurePath refuses a repeatable flag
+// that ends the arguments with no value, in pflag's words and with the flag
+// as the caller spelled it. Forwarded bare, it would be refused by the native
+// command under the native name, which this surface does not accept.
+func TestMap_RepeatableFlagWithoutValue_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "shorthand", args: []string{"-u"}, want: `flag needs an argument: 'u' in -u`},
+		{name: "long form", args: []string{"--format", "x", "--url"}, want: `flag needs an argument: --url`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv("PTAH_URL", "")
+			c.Setenv("PTAH_FORMAT", "")
+
+			got, err := atlasargs.Map("security", "scan", scanURLFlags(), test.args)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}

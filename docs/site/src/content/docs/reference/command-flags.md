@@ -2679,9 +2679,9 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
-| `--dialect` | `stringSlice` | `[]` | `PTAH_DIALECT` | — |
-| `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
-| `--schema-file` | `stringSlice` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--dialect` | `stringArray` | `[]` | `PTAH_DIALECT` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 
 </div>
@@ -2722,5 +2722,28 @@ Read the columns as follows.
 | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--url` | `string` | — | `PTAH_URL` | — |
+
+</div>
+
+**`ptah-compat security`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config`, `-c` | `string` | `file://atlas.hcl` | `PTAH_CONFIG` | inherited by subcommands |
+| `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
+| `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
+
+</div>
+
+**`ptah-compat security scan`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--url`, `-u` | `stringArray` | `[]` | `PTAH_URL` | — |
 
 </div>

@@ -63,6 +63,7 @@ community CLI does on the same input.
 | [`PTAH_HCL_STRICT_REDECLARATIONS`](#ptah_hcl_strict_redeclarations) | Refuse four more repeated block kinds |
 | [`PTAH_HCL_SCHEMA_SCOPED_ENUMS`](#ptah_hcl_schema_scoped_enums) | Key `enum` blocks by qualified name |
 | [`PTAH_ATLAS_REPEATABLE_MIGRATIONS`](#ptah_atlas_repeatable_migrations) | Run `R__<identity>.sql` again whenever it changes |
+| [`PTAH_ATLAS_SECURITY_SCAN`](#ptah_atlas_security_scan) | Run the server vulnerability scan as `security scan` |
 
 ## `PTAH_ATLAS_INSPECT_ALL_BLOCKS`
 
@@ -370,6 +371,20 @@ and say to set it. While it is set, `migrate down` refuses a directory that
 holds an `R__` file, and `migrate diff` and `migrate lint` say on stderr that
 they read such a file as the version `R`. The community CLI has no
 re-run-on-change semantics, so strict mode refuses the enabled value.
+
+## `PTAH_ATLAS_SECURITY_SCAN`
+
+By default, `ptah-compat security` and `ptah-compat security scan` are unknown
+commands, as on the community CLI: every spelling, help flags included, fails
+with `unknown command "security"` and exit code 1, and `help security` prints
+the root's help. Set it to `1` and `ptah-compat security scan` runs the
+[server vulnerability scan](../../operate/vulnerability-scan/#from-ptah-compat),
+`ptah db vulnerabilities`, with Atlas-style flags: `-u`/`--url` names a database
+and repeats, `--env` reads the `url` of an `atlas.hcl` environment, and
+`--format '{{ json . }}'` prints the JSON report. The scan's other options are
+read from the native command's variables, such as `PTAH_FAIL_ON` and
+`PTAH_ADVISORIES`. The community CLI has no security command, so strict mode
+refuses the enabled value and its command tree has no `security` group.
 
 ## One shape has no Atlas-readable form at all
 

@@ -2,6 +2,7 @@
 package atlas
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -307,11 +308,25 @@ func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *
 	if !policy.IsStrictCE() {
 		cmd.AddCommand(newAtlasScriptCommand(policy))
 	}
+	// `security` is outside the strict CE profile for the same reason, and
+	// inside the full one it is hidden behind PTAH_ATLAS_SECURITY_SCAN: unset,
+	// it answers every spelling exactly as the community binary does.
+	var securityCommand *cobra.Command
+	if !policy.IsStrictCE() {
+		securityCommand = newAtlasSecurityCommand()
+		cmd.AddCommand(securityCommand)
+	}
 	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
+	if securityCommand != nil {
+		gateAtlasSecurityHelp(securityCommand)
+	}
 	installAtlasProjectFlagResetTree(schemaCommand)
 	installAtlasProjectFlagResetTree(migrateCommand)
 	installAtlasProjectFlagResetRoot(cmd, schemaCommand, migrateCommand)
+	if securityCommand != nil {
+		gateAtlasSecurityRequests(cmd, securityCommand)
+	}
 	return cmd
 }
 
@@ -1337,6 +1352,7 @@ func newAtlasLicenseCommand() *cobra.Command {
 }
 
 func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
+	verb.flags = atlasRepeatedFlagsForTarget(group, verb)
 	mapper := atlasArgMapper(group, verb)
 	if verb.factory != nil {
 		cmd := cmdadapter.NewForwardCommandWithArgsMapper(
@@ -1367,6 +1383,44 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 	return cmd
 }
 
+// atlasRepeatedFlagsForTarget returns verb's flags with ForwardEach set on
+// every repeatable flag whose native flag is repeatable too, a pflag
+// stringArray. Such a native flag reads `a,b` as one value, so its values are
+// forwarded one occurrence each; a native string or stringSlice flag reads the
+// comma-separated join. The answer is read from the native command rather than
+// declared beside the flag, so a native flag that changes type changes how it
+// is forwarded. A repeatable flag whose native flag is missing or of another
+// type panics when the tree is built, rather than forward values the native
+// command misreads.
+func atlasRepeatedFlagsForTarget(group string, verb atlasVerb) []atlasargs.Flag {
+	if verb.factory == nil || !slices.ContainsFunc(verb.flags, func(flag atlasargs.Flag) bool {
+		return flag.Kind == atlasargs.StringArrayFlag
+	}) {
+		return verb.flags
+	}
+	native := verb.factory()
+	flags := slices.Clone(verb.flags)
+	for i, flag := range flags {
+		if flag.Kind != atlasargs.StringArrayFlag {
+			continue
+		}
+		name := cmp.Or(flag.NativeName, flag.Name)
+		target := native.Flags().Lookup(name)
+		if target == nil {
+			panic(fmt.Sprintf("atlas %s %s --%s forwards to --%s, which ptah %s does not register", group, verb.use, flag.Name, name, verb.native))
+		}
+		switch target.Value.Type() {
+		case "stringArray":
+			flags[i].ForwardEach = true
+		case "string", "stringSlice":
+		default:
+			panic(fmt.Sprintf("atlas %s %s --%s forwards to --%s of type %s, which takes neither a joined list nor one value per occurrence",
+				group, verb.use, flag.Name, name, target.Value.Type()))
+		}
+	}
+	return flags
+}
+
 func atlasAdapterUse(verb atlasVerb) string {
 	if verb.displayUse != "" {
 		return verb.displayUse
@@ -1389,6 +1443,20 @@ func atlasCommandLong(group string, verb atlasVerb) string {
 	return fmt.Sprintf("Atlas OSS `atlas %s %s` command path. The current native Ptah implementation is `ptah %s`.", group, verb.use, verb.native)
 }
 
+// registerAtlasRepeatedFlag declares a repeatable flag with the type its values
+// are forwarded with. A joined flag is a StringSlice: Atlas prints these as
+// `strings`, and the native command splits the joined value on its commas,
+// which is what a pipeline passing `--schema a,b` expects. A flag forwarded
+// one occurrence per value is a StringArray, because nothing splits its
+// values: `-u` with a URL that holds a comma names one database.
+func registerAtlasRepeatedFlag(flags *pflag.FlagSet, flag atlasargs.Flag) {
+	if flag.ForwardEach {
+		flags.StringArrayP(flag.Name, flag.Shorthand, nil, flag.Usage)
+		return
+	}
+	flags.StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
+}
+
 func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 	for _, flag := range flags {
 		switch flag.Kind {
@@ -1399,10 +1467,7 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 		case atlasargs.UintFlag:
 			cmd.Flags().UintP(flag.Name, flag.Shorthand, 0, flag.Usage)
 		case atlasargs.StringArrayFlag:
-			// StringSlice, not StringArray: Atlas prints these as `strings`
-			// and splits a comma-separated value, which is the behavior a
-			// pipeline passing `--schema a,b` expects.
-			cmd.Flags().StringSliceP(flag.Name, flag.Shorthand, nil, flag.Usage)
+			registerAtlasRepeatedFlag(cmd.Flags(), flag)
 		}
 		if flag.NativeName != "" {
 			if err := cmdflags.AddForwardedEnvBinding(
