@@ -1365,6 +1365,17 @@ func appendGeneratedIdentifierNames(
 	for _, constraint := range desired.Constraints {
 		names = append(names, constraint.Name)
 	}
+	// A grant names its table and columns as the grant declaration spells
+	// them, which need not be how the table and its fields are declared. Left
+	// out, such a name has no answer from the server and keeps its spelling, so
+	// a column grant on NAME never matches the name column the catalog reports
+	// and every plan grants and revokes it again.
+	for _, grant := range desired.Grants {
+		if grant.OnTable != "" {
+			names = appendQualifiedIdentifier(names, grant.OnTable)
+		}
+		names = append(names, grant.Columns...)
+	}
 	return names
 }
 

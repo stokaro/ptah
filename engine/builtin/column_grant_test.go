@@ -14,9 +14,10 @@ import (
 )
 
 // TestRenderSQL_ColumnPrivilege_HappyPath pins the spelling of a privilege
-// limited to columns on PostgreSQL, MySQL and MariaDB: the list follows each
-// privilege. The grant option is the grantee's at the table on MySQL and
-// MariaDB, so revoking it names no column.
+// limited to columns on PostgreSQL, MySQL, MariaDB and SQL Server: the list
+// follows each privilege. The grant option is the grantee's at the table on
+// MySQL and MariaDB, so revoking it names no column; SQL Server keeps it per
+// column and revokes it with CASCADE.
 func TestRenderSQL_ColumnPrivilege_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -70,6 +71,39 @@ func TestRenderSQL_ColumnPrivilege_HappyPath(t *testing.T) {
 				SetColumns([]string{"name"}).SetGrantOptionFor(true),
 			want: "REVOKE GRANT OPTION ON `db`.`t` FROM `app`;\n",
 		},
+		{
+			name:    "a SQL Server grant on two columns",
+			dialect: platform.SQLServer,
+			node: ast.NewGrantPrivilege("app", "TABLE", "dbo.t", []string{"SELECT", "UPDATE"}).
+				SetColumns([]string{"name", "Label"}),
+			want: "GRANT SELECT ([name], [Label]), UPDATE ([name], [Label]) ON [dbo].[t] TO [app];\n",
+		},
+		{
+			name:    "a SQL Server column REFERENCES with the grant option",
+			dialect: platform.SQLServer,
+			node: ast.NewGrantPrivilege("app", "TABLE", "dbo.t", []string{"REFERENCES"}).
+				SetColumns([]string{"id"}).SetWithOption(true),
+			want: "GRANT REFERENCES ([id]) ON [dbo].[t] TO [app] WITH GRANT OPTION;\n",
+		},
+		{
+			name:    "a SQL Server UNMASK on a column",
+			dialect: platform.SQLServer,
+			node:    ast.NewGrantPrivilege("app", "TABLE", "dbo.t", []string{"UNMASK"}).SetColumns([]string{"secret"}),
+			want:    "GRANT UNMASK ([secret]) ON [dbo].[t] TO [app];\n",
+		},
+		{
+			name:    "a SQL Server revoke on a column",
+			dialect: platform.SQLServer,
+			node:    ast.NewRevokePrivilege("app", "TABLE", "dbo.t", []string{"SELECT"}).SetColumns([]string{"secret"}),
+			want:    "REVOKE SELECT ([secret]) ON [dbo].[t] FROM [app];\n",
+		},
+		{
+			name:    "a SQL Server grant option revoked from a column grant",
+			dialect: platform.SQLServer,
+			node: ast.NewRevokePrivilege("app", "TABLE", "dbo.t", []string{"UPDATE"}).
+				SetColumns([]string{"name"}).SetGrantOptionFor(true),
+			want: "REVOKE GRANT OPTION FOR UPDATE ([name]) ON [dbo].[t] FROM [app] CASCADE;\n",
+		},
 	}
 
 	for _, test := range tests {
@@ -113,22 +147,34 @@ func TestRenderSQL_ColumnPrivilege_FailurePath(t *testing.T) {
 			wantErr: `(?s).*GRANT \(a\) ON SCHEMA db: a column privilege is on a table or a view.*`,
 		},
 		{
-			name:    "SQL Server",
+			name:    "SQL Server, a permission with no column form",
 			dialect: platform.SQLServer,
-			node:    ast.NewRevokePrivilege("app", "TABLE", "t", []string{"SELECT"}).SetColumns([]string{"a", "b"}),
-			wantErr: `(?s).*REVOKE \(a, b\) ON t: column privileges are modeled for PostgreSQL, MySQL and MariaDB only, not sqlserver.*`,
+			node:    ast.NewGrantPrivilege("app", "TABLE", "dbo.t", []string{"SELECT", "INSERT"}).SetColumns([]string{"a", "b"}),
+			wantErr: `(?s).*GRANT INSERT \(a, b\) ON dbo.t: sqlserver grants only SELECT, UPDATE, REFERENCES and UNMASK on columns.*`,
+		},
+		{
+			name:    "SQL Server, a revoke of a permission with no column form",
+			dialect: platform.SQLServer,
+			node:    ast.NewRevokePrivilege("app", "TABLE", "dbo.t", []string{"DELETE"}).SetColumns([]string{"a"}),
+			wantErr: `(?s).*REVOKE DELETE \(a\) ON dbo.t: sqlserver grants only SELECT, UPDATE, REFERENCES and UNMASK on columns.*`,
+		},
+		{
+			name:    "SQL Server, columns of a schema",
+			dialect: platform.SQLServer,
+			node:    ast.NewGrantPrivilege("app", "SCHEMA", "dbo", []string{"SELECT"}).SetColumns([]string{"a"}),
+			wantErr: `(?s).*GRANT \(a\) ON SCHEMA dbo: a column permission is on a table or a view.*`,
 		},
 		{
 			name:    "Oracle",
 			dialect: platform.Oracle,
 			node:    ast.NewGrantPrivilege("app", "TABLE", "t", []string{"UPDATE"}).SetColumns([]string{"a"}),
-			wantErr: `(?s).*GRANT \(a\) ON t: column privileges are modeled for PostgreSQL, MySQL and MariaDB only, not oracle.*`,
+			wantErr: `(?s).*GRANT \(a\) ON t: column privileges are modeled for PostgreSQL, MySQL, MariaDB and SQL Server only, not oracle.*`,
 		},
 		{
 			name:    "ClickHouse",
 			dialect: platform.ClickHouse,
 			node:    ast.NewGrantPrivilege("app", "TABLE", "db.t", []string{"SELECT"}).SetColumns([]string{"a"}),
-			wantErr: `(?s).*GRANT \(a\) ON db.t: column privileges are modeled for PostgreSQL, MySQL and MariaDB only, not clickhouse.*`,
+			wantErr: `(?s).*GRANT \(a\) ON db.t: column privileges are modeled for PostgreSQL, MySQL, MariaDB and SQL Server only, not clickhouse.*`,
 		},
 	}
 

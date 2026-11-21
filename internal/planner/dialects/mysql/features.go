@@ -45,6 +45,29 @@ func (p *Planner) hostsTypes() bool { return p.targetDialect() == platform.Oracl
 // routine.
 func (p *Planner) dropsRoutinesLate() bool { return p.targetDialect() == platform.SQLServer }
 
+// revokesFirst reports whether a plan runs its revokes before it creates or
+// changes anything else. MySQL, MariaDB and SQL Server do, because a revoke or
+// a grant on a whole table reaches the column privileges of the same name
+// there; see [Planner.planRevokesFirst]. Oracle revokes where it drops the
+// roles, after the tables.
+func (p *Planner) revokesFirst() bool {
+	switch p.targetDialect() {
+	case platform.MySQL, platform.MariaDB, platform.SQLServer:
+		return true
+	default:
+		return false
+	}
+}
+
+// revokesGrantOptionFirst reports whether a revoke of a privilege the role
+// holds WITH GRANT OPTION takes the option away before the privilege. SQL
+// Server needs it: measured on SQL Server 2019, 2022 and 2025, `REVOKE SELECT
+// ON t FROM r` over a grantable SELECT answers Msg 4611, "To revoke or deny
+// grantable privileges, specify the CASCADE option", and
+// `REVOKE GRANT OPTION FOR SELECT ON t FROM r CASCADE` leaves a plain SELECT
+// that the REVOKE then takes. The same holds for a column permission.
+func (p *Planner) revokesGrantOptionFirst() bool { return p.targetDialect() == platform.SQLServer }
+
 // refuseUnhostedFeatureChanges refuses the feature changes this planner has
 // no window for: every one on a target without owners, and the settings of a
 // materialized view, which no dialect of this planner has a window for.

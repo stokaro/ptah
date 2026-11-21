@@ -1719,7 +1719,8 @@ type Grant struct {
 	// than adding one. On ClickHouse, `GRANT SELECT ON db.* TO r` followed by
 	// `REVOKE SELECT ON db.t FROM r` leaves two rows in system.grants, the
 	// second with is_partial_revoke = 1, and SHOW GRANTS prints both lines. A
-	// SQL Server DENY reads the same way.
+	// SQL Server DENY reads the same way, and so does the REVOKE row SQL Server
+	// keeps for a column revoked under a grant on its whole table.
 	//
 	// Ptah does not manage that shape — a grant minus exceptions has no
 	// declaration to compare against — so nothing plans one. The field exists
@@ -1733,10 +1734,14 @@ type Grant struct {
 	IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
 
 	// Column names the column of the table target this privilege is limited
-	// to, as pg_attribute.attacl or the MySQL family's
-	// information_schema.COLUMN_PRIVILEGES records it. Empty for a privilege
-	// on the whole object. A column privilege and the table privilege of the
-	// same name are two rows.
+	// to, as pg_attribute.attacl, the MySQL family's
+	// information_schema.COLUMN_PRIVILEGES or SQL Server's
+	// sys.database_permissions records it. Empty for a privilege on the whole
+	// object. On PostgreSQL and the MySQL family a column privilege and the
+	// table privilege of the same name are two rows. On SQL Server the table
+	// privilege takes the place of the column rows, and a table privilege with
+	// a column row of another state under it holds for the other columns only,
+	// so it is reported as the privilege on each of them.
 	Column string `json:"column,omitempty"`
 }
 

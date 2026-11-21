@@ -1062,7 +1062,7 @@
           "additionalProperties": false,
           "properties": {
             "columns": {
-              "description": "Comma-separated columns of on_table the privileges are limited to, such as state,decided_at. PostgreSQL, MySQL and MariaDB.",
+              "description": "Comma-separated columns of on_table the privileges are limited to, such as state,decided_at. PostgreSQL, MySQL, MariaDB and SQL Server.",
               "type": "string"
             },
             "comment": {
@@ -1667,7 +1667,7 @@
           "additionalProperties": false,
           "properties": {
             "columns": {
-              "description": "Comma-separated columns of on_table the privileges are limited to, such as state,decided_at. PostgreSQL, MySQL and MariaDB.",
+              "description": "Comma-separated columns of on_table the privileges are limited to, such as state,decided_at. PostgreSQL, MySQL, MariaDB and SQL Server.",
               "type": "string"
             },
             "comment": {
