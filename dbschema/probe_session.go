@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"ptah.run/core/platform"
+	"ptah.run/internal/probetx"
 	"ptah.run/internal/sessiontx"
 )
 
@@ -34,6 +36,13 @@ import (
 // discard the owner's work along with the probe's. The false is the whole
 // answer -- a caller that must not proceed without the transaction has to check
 // ran, not just err. label names the caller in every error.
+//
+// On PostgreSQL, CockroachDB, YugabyteDB and SQL Server the server names the
+// transaction before body runs and again when body returns. A body that ended
+// the transaction and began another, with a COMMIT among the statements it ran,
+// fails with an error whatever it returned: the statements before the COMMIT
+// may be committed, and the rollback undoes only the transaction the session is
+// in by then.
 //
 // A connection a [NativeConnector] opened reports ran false with a nil error
 // too, and never runs body. It carries the provider's session and no *sql.DB,
@@ -102,8 +111,53 @@ func (dc *DatabaseConnection) rollBackOn(
 	if err := dc.engine().KeepDDLInTransaction(ctx, tx, dc.info); err != nil {
 		return false, fmt.Errorf("%s: %w", label, err)
 	}
+	watched, err := probetx.Watch(ctx, func(ctx context.Context) (string, error) {
+		return dc.engine().TransactionIdentity(ctx, tx)
+	})
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", label, err)
+	}
 
-	return true, body(ctx, tx)
+	restore, err := markProbeStart(watched, tx, dc.info.Dialect)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", label, err)
+	}
+
+	err = body(watched, tx)
+	// The rollback below undoes the transaction the session is in when it
+	// runs. Where body ended the one begun above and began another, that is
+	// all it undoes, so the check runs whatever body answered. A failure to
+	// ask after body failed is the same failure seen again, and its own error
+	// is not added; a changed transaction always is.
+	if checkErr := probetx.Settle(watched, restore); checkErr != nil && (err == nil || errors.Is(checkErr, probetx.ErrTransactionChanged)) {
+		err = errors.Join(err, fmt.Errorf("%s: %w", label, checkErr))
+	}
+	return true, err
+}
+
+// probeStartSavepoint is the savepoint [markProbeStart] sets. No probe names
+// it, so the transaction it was set in is the only one that holds it.
+const probeStartSavepoint = "ptah_probe_transaction"
+
+// markProbeStart sets a savepoint in a watched transaction and returns the
+// rollback to it, for [probetx.Settle] to name a transaction the body left
+// failed: measured on PostgreSQL 18, a single-probe body that answers the
+// server's refusal of its statement returns with the transaction aborted
+// (SQLSTATE 25P02), and nothing names it until the rollback to a savepoint.
+// An unwatched transaction, or an engine with no savepoint, gets none.
+func markProbeStart(ctx context.Context, tx *sql.Tx, dialect string) (func(context.Context) error, error) {
+	described, _ := platform.Lookup(dialect)
+	syntax := described.Savepoint
+	if !probetx.Watched(ctx) || syntax.Create == "" || syntax.Rollback == "" {
+		return nil, nil
+	}
+	if _, err := tx.ExecContext(ctx, syntax.Create+" "+probeStartSavepoint); err != nil {
+		return nil, fmt.Errorf("set savepoint %s: %w", probeStartSavepoint, err)
+	}
+	return func(ctx context.Context) error {
+		_, err := tx.ExecContext(ctx, syntax.Rollback+" "+probeStartSavepoint)
+		return err
+	}, nil
 }
 
 // pinnedSessionOutsideTransaction reports whether the pinned session is

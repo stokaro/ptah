@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlprobe"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/probetx"
 )
 
 // server scripts the probe: the CREATE SECURITY POLICY it is given succeeds
@@ -74,7 +76,7 @@ func filter(argument string) mssqlschema.Predicate {
 
 // request declares tenancy with argument against a database holding it with
 // the catalog's spelling of a cast.
-func request(c *qt.C, s session, argument string) schemaext.NormalizationRequest {
+func request(c *qt.C, s schemaext.ProbeSession, argument string) schemaext.NormalizationRequest {
 	c.Helper()
 	declared := must.Must(mssqlschema.DesiredSecurityPolicyObject(ref, mssqlschema.DesiredSecurityPolicy{
 		Predicates: []mssqlschema.Predicate{filter(argument)}}))
@@ -132,6 +134,9 @@ func TestNormalizeObjects_LeavesTheUnansweredAlone(t *testing.T) {
 		{name: "an argument that agrees offline", argument: "CONVERT([int],[tenant])+(0)"},
 		{name: "a statement the server refuses", argument: "CAST(tenant AS int) + 0", refuse: true, wantExecs: 3},
 		{name: "a declined session", argument: "CAST(tenant AS int) + 0", declined: true},
+		// T-SQL needs no semicolon, so text that closes the call ends the
+		// statement and could commit the probe's transaction.
+		{name: "an argument that closes its call", argument: "tenant) )) COMMIT CREATE TABLE app.made_by_plan (x int) BEGIN TRANSACTION SELECT ((1"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -146,6 +151,39 @@ func TestNormalizeObjects_LeavesTheUnansweredAlone(t *testing.T) {
 			c.Assert(script.execs, qt.HasLen, test.wantExecs)
 		})
 	}
+}
+
+// restartingSession runs the probe as session does, in a transaction the
+// server names 17 when it begins and 18 every time after, as it names one a
+// probe ended and began again.
+type restartingSession struct{ session }
+
+func (s restartingSession) WithRolledBackTransaction(ctx context.Context, label string, body func(context.Context, *sql.Tx) error) (bool, error) {
+	calls := 0
+	watched, err := probetx.Watch(ctx, func(context.Context) (string, error) {
+		calls++
+		return strconv.Itoa(16 + min(calls, 2)), nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return s.session.WithRolledBackTransaction(watched, label, body)
+}
+
+// TestNormalizeObjects_StopsWhenAProbeEndsTheTransaction fails the
+// normalization, naming the policy, when the transaction is not the one the
+// probe began in.
+func TestNormalizeObjects_StopsWhenAProbeEndsTheTransaction(t *testing.T) {
+	c := qt.New(t)
+	script := &server{stored: []driver.Value{"app", "orders", "([rls].[fn](CONVERT([int],[tenant])+(0)))", "FILTER", ""}}
+	db := dbtest.OpenWithExec(t, script.query, script.exec)
+
+	result, err := mssqlprobe.Service{}.NormalizeObjects(t.Context(),
+		request(c, restartingSession{session{db: db.SQL}}, "CAST(tenant AS int) + 0"))
+
+	c.Assert(err, qt.ErrorIs, probetx.ErrTransactionChanged)
+	c.Assert(err, qt.ErrorMatches, `resolve security policy predicates: rls\.tenancy: a probe ended the transaction .*`)
+	c.Assert(result, qt.DeepEquals, schemaext.NormalizationResult{})
 }
 
 func TestNormalizeObjects_FailurePath(t *testing.T) {

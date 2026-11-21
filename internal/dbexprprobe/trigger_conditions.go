@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -29,6 +30,9 @@ type TriggerConditionProbe struct {
 	ForEach string
 	// When is the declared condition, without its parentheses.
 	When string
+	// Object names the trigger in a warning, such as `trigger audit on
+	// items`. It is never sent to the server.
+	Object string
 }
 
 // ResolveTriggerConditions asks the connected server to print each declared
@@ -54,14 +58,15 @@ func ResolveTriggerConditions(
 	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve trigger conditions", probes,
-		func(probe TriggerConditionProbe) string { return probe.Key },
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve trigger conditions", probes,
+		func(probe TriggerConditionProbe) (string, string) { return probe.Key, probe.Object },
 		resolveOneTriggerCondition)
 }
 
 func resolveOneTriggerCondition(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe TriggerConditionProbe,
 ) (config.TriggerCondition, error) {
@@ -72,6 +77,9 @@ func resolveOneTriggerCondition(
 	forEach := strings.TrimSpace(probe.ForEach)
 	if forEach == "" {
 		forEach = "ROW"
+	}
+	if err := probetext.Fragments(dialect, probe.Timing, probe.Event, forEach, when); err != nil {
+		return config.TriggerCondition{}, err
 	}
 
 	relation := newProbeRelation(probe.Table, "ptah_trigger_probe", index)

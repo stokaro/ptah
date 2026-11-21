@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/internal/pgtablesource"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/sqlident"
 )
 
@@ -57,7 +58,7 @@ func (Service) NormalizeFacets(ctx context.Context, request schemaext.FacetNorma
 			return parent.Subject.Key() == record.Subject.Key() && parent.Current && parent.Desired
 		})
 		if held && request.Session != nil {
-			normalized, err := normalizePartition(ctx, request.Session, record.Subject, cloned)
+			normalized, err := normalizePartition(ctx, request.Session, request.Target, record.Subject, cloned)
 			if err != nil {
 				return schemaext.FacetNormalizationResult{}, err
 			}
@@ -74,7 +75,7 @@ func (Service) NormalizeFacets(ctx context.Context, request schemaext.FacetNorma
 	return result, nil
 }
 
-func normalizePartition(ctx context.Context, session schemaext.ProbeSession, subject objectidentity.ID, value *pgtable.DesiredPartition) (*pgtable.NormalizedPartition, error) {
+func normalizePartition(ctx context.Context, session schemaext.ProbeSession, dialect string, subject objectidentity.ID, value *pgtable.DesiredPartition) (*pgtable.NormalizedPartition, error) {
 	key, err := pgtablerender.PartitionSQL(value)
 	if err != nil {
 		return nil, err
@@ -84,6 +85,12 @@ func normalizePartition(ctx context.Context, session schemaext.ProbeSession, sub
 	// arbitrary statement text as a key expression.
 	if _, err := pgtablesource.ParsePartitionSQL(key); err != nil {
 		return nil, err
+	}
+	// The key ends the statement, and a session can read it in a way the parser
+	// does not; a key that could end it under any reading is compared as written.
+	if refusal := probetext.Fragment(dialect, key); refusal != nil {
+		probetext.Warn(ctx, subject.String(), "partition key of "+subject.Path(), refusal)
+		return nil, nil
 	}
 	table := sqlident.Qualified("postgres", subject.Schema.Source, subject.Name.Source)
 	var definition string

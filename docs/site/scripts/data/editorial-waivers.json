@@ -66,6 +66,12 @@
     "reason": "The engine reference keeps PostgreSQL-family object and release behavior together for target-specific lookup."
   },
   {
+    "route": "/databases/sqlserver/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The engine reference keeps SQL Server object, computed column, permission and migration behavior together for target-specific lookup."
+  },
+  {
     "route": "/extend/public-api/",
     "check": "page-length",
     "target": "page",

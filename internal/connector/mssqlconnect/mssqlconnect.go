@@ -102,6 +102,20 @@ func (Service) NewWriter(_ *connector.Pool, info catalog.ServerInfo, runner sqlr
 	return mssql.NewSQLServerWriterForRunner(runner, info.Schema)
 }
 
+// TransactionIdentity names the transaction tx runs in by
+// CURRENT_TRANSACTION_ID() and the session's @@TRANCOUNT. The count alone does
+// not tell two transactions apart: measured on SQL Server 2025, a statement
+// that ran `COMMIT BEGIN TRANSACTION` left @@TRANCOUNT at 1 and moved the
+// transaction ID on. CURRENT_TRANSACTION_ID() needs no permission: a login
+// holding none read it.
+func (Service) TransactionIdentity(ctx context.Context, tx *sql.Tx) (string, error) {
+	var identity string
+	if err := tx.QueryRowContext(ctx, "SELECT CONCAT(CURRENT_TRANSACTION_ID(), N'/', @@TRANCOUNT)").Scan(&identity); err != nil {
+		return "", fmt.Errorf("name the transaction: %w", err)
+	}
+	return identity, nil
+}
+
 // OutsideTransaction asks the server: a session with @@TRANCOUNT zero is
 // outside any transaction, whoever opened the last one.
 func (Service) OutsideTransaction(ctx context.Context, session *sql.Conn) bool {

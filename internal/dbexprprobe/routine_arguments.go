@@ -3,9 +3,11 @@ package dbexprprobe
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/routineargs"
 )
 
@@ -48,6 +50,16 @@ type RoutineArgumentsProbe struct {
 	// so the arguments and the result are still answered and only the body
 	// is left to compare as written. Empty means there is none.
 	Fallback string
+	// BareBody reports that Statement carries the declared body as SQL rather
+	// than inside a string: a SQL-standard body, `BEGIN ATOMIC ... END` or
+	// `RETURN expression`. A semicolon in it separates the body's own
+	// statements, and only the server can tell one of those from a semicolon
+	// that ends Statement, so the server parses Statement before it runs; see
+	// [probetext.ParseAlone].
+	BareBody bool
+	// Object names the routine in a warning, such as `routine
+	// public.item_count`. It is never sent to the server.
+	Object string
 }
 
 // ResolveRoutineArguments asks the connected server to spell each declared
@@ -96,8 +108,8 @@ func ResolveRoutineArguments(
 	if len(probes) == 0 || !SupportsRoutineArguments(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve routine arguments", probes,
-		func(probe RoutineArgumentsProbe) string { return probe.Key },
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve routine arguments", probes,
+		func(probe RoutineArgumentsProbe) (string, string) { return probe.Key, probe.Object },
 		resolveOneRoutineArguments)
 }
 
@@ -115,9 +127,15 @@ const uncheckedBodies = `SELECT set_config('check_function_bodies', 'off', true)
 
 // resolveOneRoutineArguments creates one probe routine and reads its arguments
 // and result back.
+//
+// Statement is checked as a whole statement, and one carrying a bare body is
+// parsed by the server before it runs; see [RoutineArgumentsProbe.BareBody].
+// A Statement refused either way leaves the body to compare as written, and
+// the Fallback, checked as a whole statement, answers for the signature.
 func resolveOneRoutineArguments(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	_ int,
 	probe RoutineArgumentsProbe,
 ) (config.RoutineArguments, error) {
@@ -146,19 +164,54 @@ func resolveOneRoutineArguments(
 		_, err := tx.ExecContext(ctx, probe.Drop)
 		return err
 	}
-	answered, err := runProbe(ctx, tx, "resolve routine arguments", probe.Name, "ptah_routine_probe",
-		postgresSavepoints, []string{uncheckedBodies, probe.Statement}, read)
+	refusal, err := routineStatementRefusal(ctx, tx, dialect, probe)
+	if err != nil {
+		return config.RoutineArguments{}, err
+	}
+	answered := false
+	if refusal == nil {
+		answered, err = runProbe(ctx, tx, "resolve routine arguments", probe.Name, "ptah_routine_probe",
+			postgresSavepoints, []string{uncheckedBodies, probe.Statement}, read)
+	}
 	if err == nil && !answered && probe.Fallback != "" {
+		if fallbackRefusal := probetext.Statement(dialect, probe.Fallback); fallbackRefusal != nil {
+			return config.RoutineArguments{}, fallbackRefusal
+		}
 		probe.ReadsBody, probe.SQLStandardBody = false, false
 		answer = config.RoutineArguments{}
 		answered, err = runProbe(ctx, tx, "resolve routine arguments", probe.Name, "ptah_routine_probe",
 			postgresSavepoints, []string{uncheckedBodies, probe.Fallback}, read)
 	}
-	if err != nil || !answered {
+	if err != nil {
 		return config.RoutineArguments{}, err
+	}
+	if errors.Is(refusal, probetext.ErrUncontained) {
+		if !answered {
+			return config.RoutineArguments{}, refusal
+		}
+		// The signature is answered and the body is not: the warning says
+		// why the body is compared as written.
+		probetext.Warn(ctx, probe.Key, probe.Object, refusal)
+	}
+	if !answered {
+		return config.RoutineArguments{}, nil
 	}
 	answer.Resolved = true
 	return answer, nil
+}
+
+// routineStatementRefusal is why probe's Statement may not run, nil when it
+// may, and an error of the transaction itself. A refusal that does not wrap
+// [probetext.ErrUncontained] is the server's refusal to parse the statement,
+// which the probe answers as it answers the server refusing to run it.
+func routineStatementRefusal(ctx context.Context, tx *sql.Tx, dialect string, probe RoutineArgumentsProbe) (refusal, err error) {
+	if !probe.BareBody {
+		return probetext.Statement(dialect, probe.Statement), nil
+	}
+	if refusal := probetext.StatementWithBody(dialect, probe.Statement); refusal != nil {
+		return refusal, nil
+	}
+	return probetext.ParseAlone(ctx, tx, probe.Statement)
 }
 
 // routineProbeQuery reads a probe routine back from the schema it was created
