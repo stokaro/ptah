@@ -1732,9 +1732,10 @@ type Grant struct {
 	IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
 
 	// Column names the column of the table target this privilege is limited
-	// to, as pg_attribute.attacl records it. Empty for a privilege on the
-	// whole object. A column privilege and the table privilege of the same
-	// name are two rows.
+	// to, as pg_attribute.attacl or the MySQL family's
+	// information_schema.COLUMN_PRIVILEGES records it. Empty for a privilege
+	// on the whole object. A column privilege and the table privilege of the
+	// same name are two rows.
 	Column string `json:"column,omitempty"`
 }
 

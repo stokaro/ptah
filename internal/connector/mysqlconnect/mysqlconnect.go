@@ -147,7 +147,7 @@ func convertMySQLURL(dbURL string) string {
 }
 
 // Describe reads the version banner, the product it names and the database
-// the URL selects.
+// the URL selects, by the name the server gives it.
 func (Service) Describe(
 	ctx context.Context,
 	opened *connector.Pool,
@@ -168,6 +168,13 @@ func (Service) Describe(
 	// and the empty schema is what every realm question reads it by.
 	info.Schema = strings.TrimPrefix(request.Parsed.Path, "/")
 	info.WholeServer = info.Schema == ""
+	if !info.WholeServer {
+		selected, err := selectedDatabase(ctx, opened)
+		if err != nil {
+			return info, err
+		}
+		info.Schema = selected
+	}
 	// A MySQL-family schema is a database, so no static dialect rule can
 	// name the one that owns an unqualified table the way "public" and
 	// "main" do; only the connection knows it. Leaving the field empty is
@@ -181,6 +188,24 @@ func (Service) Describe(
 	// the same place.
 	info.IdentifierSemantics.DefaultSchema = info.Schema
 	return info, nil
+}
+
+// selectedDatabase is the name the server gives the database the session
+// selected. A server started with lower_case_table_names=1 folds the name a
+// URL spells: measured on MySQL 8.4.13 and MariaDB 11.8.9, a URL naming R_LC
+// selects r_lc, and DATABASE() and every catalog row say r_lc. The schema
+// reader reads DATABASE(), so a schema taken from the URL keys the
+// description by a name no object carries, and a comparison reports each view
+// and grant twice, missing under one name and extra under the other.
+func selectedDatabase(ctx context.Context, opened *connector.Pool) (string, error) {
+	var selected sql.NullString
+	if err := opened.DB.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&selected); err != nil {
+		return "", fmt.Errorf("failed to read the selected MySQL/MariaDB database: %w", err)
+	}
+	if !selected.Valid || selected.String == "" {
+		return "", errors.New("the MySQL/MariaDB session selected no database although the URL names one")
+	}
+	return selected.String, nil
 }
 
 // detectMySQLWireDialect names the product behind a MySQL-wire connection from its

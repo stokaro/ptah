@@ -151,6 +151,19 @@ const (
 	// REVOKE ADMIN OPTION FOR. A plan that is right on 16 and 18 is wrong here
 	// if it names an option the older server calls a syntax error.
 	PostgreSQL13
+	// MySQLFoldedServer is a MySQL server started with
+	// --lower-case-table-names=1, and MariaDBFoldedServer a MariaDB server
+	// started the same way, each reached with an account that may create and
+	// drop databases and through a URL naming none.
+	//
+	// They are engines of their own because the setting is what they are
+	// for. Such a server folds the database name a URL spells, so a URL
+	// naming R_LC selects r_lc, and a run that keys its description by the
+	// URL's spelling compares objects under a name none of them carries. A
+	// server takes the setting only when its data directory is created, so no
+	// other server the suite starts can serve these tests.
+	MySQLFoldedServer
+	MariaDBFoldedServer
 )
 
 // source is where one engine's address comes from.
@@ -280,6 +293,14 @@ var sources = map[Engine]source{
 		canonical: "POSTGRES_16_TEST_URL",
 		scheme:    []string{"postgres", "postgresql"},
 	},
+	MySQLFoldedServer: {
+		canonical: "MYSQL_FOLDED_SERVER_URL",
+		scheme:    []string{"mysql"},
+	},
+	MariaDBFoldedServer: {
+		canonical: "MARIADB_FOLDED_SERVER_URL",
+		scheme:    []string{"mariadb", "mysql"},
+	},
 	PostgreSQL13: {
 		canonical: "POSTGRES_13_TEST_URL",
 		scheme:    []string{"postgres", "postgresql"},
@@ -383,28 +404,30 @@ func engineName(engine Engine) string {
 
 // engineNames are the names engineName gives each engine.
 var engineNames = map[Engine]string{
-	PostgreSQL:        "PostgreSQL",
-	MySQL:             "MySQL",
-	MySQLAdmin:        "MySQL with an administrative account",
-	PostgreSQLPooled:  "PostgreSQL behind a transaction-pooling proxy",
-	TimescaleDB:       "PostgreSQL with the TimescaleDB extension",
-	MariaDB:           "MariaDB",
-	MariaDBAdmin:      "MariaDB with an administrative account",
-	ClickHouse:        "ClickHouse",
-	SQLServer:         "SQL Server",
-	CockroachDB:       "CockroachDB",
-	YugabyteDB:        "YugabyteDB",
-	Oracle:            "Oracle",
-	OracleAdmin:       "Oracle with an administrative account",
-	MySQLSocket:       "MySQL through its Unix socket",
-	MariaDBSocket:     "MariaDB through its Unix socket",
-	PostgreSQLAliased: "PostgreSQL database that the pooler also serves under another name",
-	PostgreSQLAlias:   "PostgreSQL database reached through the pooler under another name",
-	MySQLDevServer:    "second MySQL server",
-	MariaDBDevServer:  "second MariaDB server",
-	MariaDB118:        "MariaDB 11.8 server with an administrative account",
-	PostgreSQL16:      "PostgreSQL 16 server with an administrative account",
-	PostgreSQL13:      "PostgreSQL 13 server with an administrative account",
+	PostgreSQL:          "PostgreSQL",
+	MySQL:               "MySQL",
+	MySQLAdmin:          "MySQL with an administrative account",
+	PostgreSQLPooled:    "PostgreSQL behind a transaction-pooling proxy",
+	TimescaleDB:         "PostgreSQL with the TimescaleDB extension",
+	MariaDB:             "MariaDB",
+	MariaDBAdmin:        "MariaDB with an administrative account",
+	ClickHouse:          "ClickHouse",
+	SQLServer:           "SQL Server",
+	CockroachDB:         "CockroachDB",
+	YugabyteDB:          "YugabyteDB",
+	Oracle:              "Oracle",
+	OracleAdmin:         "Oracle with an administrative account",
+	MySQLSocket:         "MySQL through its Unix socket",
+	MariaDBSocket:       "MariaDB through its Unix socket",
+	PostgreSQLAliased:   "PostgreSQL database that the pooler also serves under another name",
+	PostgreSQLAlias:     "PostgreSQL database reached through the pooler under another name",
+	MySQLDevServer:      "second MySQL server",
+	MariaDBDevServer:    "second MariaDB server",
+	MariaDB118:          "MariaDB 11.8 server with an administrative account",
+	PostgreSQL16:        "PostgreSQL 16 server with an administrative account",
+	PostgreSQL13:        "PostgreSQL 13 server with an administrative account",
+	MySQLFoldedServer:   "MySQL server that folds names to lower case",
+	MariaDBFoldedServer: "MariaDB server that folds names to lower case",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -479,7 +502,8 @@ func LookupDriverDSN(engine Engine) (string, error) {
 // driver.
 func driverForm(engine Engine, address string) string {
 	switch engine {
-	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin, MySQLDevServer, MariaDBDevServer, MariaDB118:
+	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin, MySQLDevServer, MariaDBDevServer, MariaDB118,
+		MySQLFoldedServer, MariaDBFoldedServer:
 		return mysqlNetworkDSN(address)
 	case MySQLSocket, MariaDBSocket:
 		// The socket form is Ptah's to read, so it is read by the parser Ptah
@@ -552,6 +576,7 @@ func Engines() []Engine {
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
 		MySQLDevServer, MariaDBDevServer, MariaDB118, PostgreSQL16, PostgreSQL13,
+		MySQLFoldedServer, MariaDBFoldedServer,
 	}
 }
 

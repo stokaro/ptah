@@ -2627,7 +2627,7 @@ names the form:
 
 A privilege on a function or procedure is modeled for PostgreSQL only; the
 other renderers refuse the statement by name. Column privileges are modeled for
-PostgreSQL only too.
+PostgreSQL, MySQL and MariaDB; the other renderers refuse them by name too.
 
 New-role SQL fails closed when the role already
 exists, so later comments and grants cannot be applied to a role with

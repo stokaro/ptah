@@ -69,7 +69,8 @@ func (r *Reader) readEvents(ctx context.Context, account sessionAccount, databas
 // listEvents lists the names of the events of database that the account may see.
 func (r *Reader) listEvents(ctx context.Context, database string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME`, database)
+		`SELECT EVENT_NAME FROM information_schema.EVENTS WHERE `+sameName("EVENT_SCHEMA", "?")+` ORDER BY EVENT_NAME`,
+		nameBinds(database, 1)...)
 	if err != nil {
 		return nil, err
 	}

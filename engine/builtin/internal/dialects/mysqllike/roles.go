@@ -155,14 +155,14 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if err := grantrefusal.Routine(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
-	if err := grantrefusal.Columns(r.dialect, "GRANT", node.ObjectName, node.Columns); err != nil {
+	if err := r.refuseColumnPrivileges("GRANT", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
 		return err
 	}
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("grant", node.Role)
 		return nil
 	}
-	statement := "GRANT " + strings.Join(node.Privileges, ", ") +
+	statement := "GRANT " + privilegeList(node.Privileges, node.Columns) +
 		" ON " + grantScope(node.ObjectType, node.ObjectName) + " TO " + escapeIdentifier(node.Role)
 	if node.WithOption {
 		statement += " WITH GRANT OPTION"
@@ -192,20 +192,65 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if err := grantrefusal.Routine(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
-	if err := grantrefusal.Columns(r.dialect, "REVOKE", node.ObjectName, node.Columns); err != nil {
-		return err
+	if !node.GrantOptionFor {
+		if err := r.refuseColumnPrivileges("REVOKE", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
+			return err
+		}
 	}
 	if !r.caps.Has(capability.RoleManagement) {
 		r.notGenerated("revoke", node.Role)
 		return nil
 	}
-	revoked := strings.Join(node.Privileges, ", ")
+	revoked := privilegeList(node.Privileges, node.Columns)
+	// The grant option belongs to the grantee at the table, its column
+	// privileges included, so taking it away names no column either.
 	if node.GrantOptionFor {
 		revoked = "GRANT OPTION"
 	}
 	r.w.WriteLinef("REVOKE %s ON %s FROM %s;",
 		revoked, grantScope(node.ObjectType, node.ObjectName), escapeIdentifier(node.Role))
 	return nil
+}
+
+// columnPrivileges are the privileges MySQL and MariaDB grant on columns.
+// Measured on MySQL 8.4.13 and MariaDB 11.8.9, any other privilege with a
+// column list is ERROR 1064, a syntax error: `GRANT DELETE (name) ON t`.
+var columnPrivileges = map[string]bool{"SELECT": true, "INSERT": true, "UPDATE": true, "REFERENCES": true}
+
+// refuseColumnPrivileges refuses a column list this family cannot keep, by
+// name, before the server sees it. A column privilege is on a table or a view,
+// and is one of [columnPrivileges].
+func (r *Renderer) refuseColumnPrivileges(statement, objectType, objectName string, privileges, columns []string) error {
+	if len(columns) == 0 {
+		return nil
+	}
+	if kind := strings.ToUpper(strings.TrimSpace(objectType)); kind != "TABLE" && kind != "VIEW" {
+		return fmt.Errorf("%w: %s (%s) ON %s %s: a column privilege is on a table or a view",
+			ptaherr.ErrUnsupportedFeature, statement, strings.Join(columns, ", "), kind, objectName)
+	}
+	for _, privilege := range privileges {
+		normalized := strings.ToUpper(strings.TrimSpace(privilege))
+		if !columnPrivileges[normalized] {
+			return fmt.Errorf("%w: %s %s (%s) ON %s: %s grants only SELECT, INSERT, UPDATE and REFERENCES on columns",
+				ptaherr.ErrUnsupportedFeature, statement, normalized, strings.Join(columns, ", "), objectName, r.dialect)
+		}
+	}
+	return nil
+}
+
+// privilegeList spells the privileges of a GRANT or a REVOKE. With columns,
+// each privilege carries the list, `SELECT (`a`, `b`), UPDATE (`a`, `b`)`, as
+// the node limits every privilege to them.
+func privilegeList(privileges, columns []string) string {
+	if len(columns) == 0 {
+		return strings.Join(privileges, ", ")
+	}
+	list := " (" + strings.Join(escapeIdentifierList(columns), ", ") + ")"
+	spelled := make([]string, 0, len(privileges))
+	for _, privilege := range privileges {
+		spelled = append(spelled, privilege+list)
+	}
+	return strings.Join(spelled, ", ")
 }
 
 // unsupportedRoleAttribute names the first declared attribute a MySQL-family

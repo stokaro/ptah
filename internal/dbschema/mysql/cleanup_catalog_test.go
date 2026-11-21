@@ -83,7 +83,7 @@ func TestCleanupCatalog_Objects_UsesMariaDBEventTableWhenSchedulerDisabled(t *te
 	c := qt.New(t)
 	refused := &mysqldriver.MySQLError{Number: 1577, Message: "Cannot proceed, because event scheduler is disabled"}
 	queries := []string{"FROM information_schema.events", "SELECT @@event_scheduler", "FROM mysql.event"}
-	argCounts := []int{3, 0, 3}
+	argCounts := []int{6, 0, 6}
 	results := []dbtest.QueryResult{
 		{Columns: []string{"object_name", "object_kind"}, TerminalErr: refused},
 		{Columns: []string{"@@event_scheduler"}, Rows: [][]driver.Value{{"DISABLED"}}},

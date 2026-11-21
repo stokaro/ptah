@@ -70,9 +70,11 @@ func TestScopeCatalog_Tables_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tables, qt.DeepEquals, []dbreset.ScopeTable{{Schema: "app", Name: "orders"}, {Schema: "app", Name: "customers"}})
-			c.Assert(reads.args, qt.DeepEquals, [][]any{{schema}})
+			c.Assert(reads.args, qt.DeepEquals, [][]any{{schema, schema}})
 			c.Assert(reads.queries, qt.HasLen, 1)
-			c.Assert(reads.queries[0], qt.Contains, "WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())")
+			c.Assert(reads.queries[0], qt.Contains, "WHERE (table_schema = COALESCE(NULLIF(?, ''), DATABASE())")
+			c.Assert(reads.queries[0], qt.Contains,
+				"CONVERT(table_schema USING utf8mb4) COLLATE utf8mb4_bin = CONVERT(COALESCE(NULLIF(?, ''), DATABASE()) USING utf8mb4)")
 			c.Assert(reads.queries[0], qt.Contains, "AND table_type = 'BASE TABLE'")
 		})
 	}

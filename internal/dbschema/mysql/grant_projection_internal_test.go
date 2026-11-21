@@ -36,6 +36,7 @@ func TestReadGrants_ReadsThePrivilegeViewsRatherThanTheGrantTables(t *testing.T)
 	}{
 		{name: "schema scope comes from the view", fragment: "information_schema.SCHEMA_PRIVILEGES"},
 		{name: "table scope comes from the view", fragment: "information_schema.TABLE_PRIVILEGES"},
+		{name: "column scope comes from the view", fragment: "information_schema.COLUMN_PRIVILEGES"},
 		{name: "the privilege is the view's own column", fragment: "PRIVILEGE_TYPE"},
 		{name: "the grant option is read", fragment: "IS_GRANTABLE"},
 	}
