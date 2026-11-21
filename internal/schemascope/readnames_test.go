@@ -54,7 +54,7 @@ func TestReadNames(t *testing.T) {
 			wantProbes: 0,
 		},
 		{
-			name: "a comma-separated selection is split like the flag",
+			name: "a name holding a comma is one name: the flag that read it already split its value",
 			info: catalog.ServerInfo{
 				Dialect: "postgres",
 				URL:     "postgres://localhost/db",
@@ -62,7 +62,7 @@ func TestReadNames(t *testing.T) {
 			},
 			requested:  []string{"one,two"},
 			probe:      realmProbeRows("public", "extra"),
-			want:       []string{"one", "two"},
+			want:       []string{"one,two"},
 			wantProbes: 0,
 		},
 		{

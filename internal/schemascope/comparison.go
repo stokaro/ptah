@@ -26,7 +26,7 @@ func ComparisonReadNames(
 	q schemaselection.RealmConnection,
 	desired *schemamodel.Database,
 ) ([]string, error) {
-	if names := SplitNames(requested); len(names) > 0 {
+	if names := UniqueNames(requested); len(names) > 0 {
 		return names, nil
 	}
 	urlScope, err := ReadNames(ctx, info, nil, q)
@@ -65,7 +65,7 @@ func ComparisonReadNames(
 //
 // An explicit selection outranks both: it is the operator naming the scope.
 func ComparisonScope(info catalog.ServerInfo, requested, urlScope []string, desired *schemamodel.Database) ([]string, error) {
-	if names := SplitNames(requested); len(names) > 0 {
+	if names := UniqueNames(requested); len(names) > 0 {
 		return names, nil
 	}
 	declared, err := DeclaredSchemaNames(desired)

@@ -14,12 +14,15 @@ import (
 	"ptah.run/internal/schemascope"
 )
 
-func TestSplitNames(t *testing.T) {
+// TestUniqueNames pins that each value is one name: a comma belongs to the name,
+// because splitting a command-line value is the grammar of the flag that read
+// it. Surrounding spaces are trimmed, so " auth" repeats "auth".
+func TestUniqueNames(t *testing.T) {
 	c := qt.New(t)
 
-	got := schemascope.SplitNames([]string{" auth, billing ", "auth", "", "metrics"})
+	got := schemascope.UniqueNames([]string{"auth", "a,b", "auth", "", " auth", "  ", "metrics"})
 
-	c.Assert(got, qt.DeepEquals, []string{"auth", "billing", "metrics"})
+	c.Assert(got, qt.DeepEquals, []string{"auth", "a,b", "metrics"})
 }
 
 // declaredExtensions gives db the extensions as the owner's declarations,

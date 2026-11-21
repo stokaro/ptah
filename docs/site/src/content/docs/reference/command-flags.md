@@ -2270,7 +2270,7 @@ Read the columns as follows.
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--lock-timeout` | `duration` | `10s` | `PTAH_LOCK_TIMEOUT` | — |
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
 </div>
@@ -2485,7 +2485,7 @@ Read the columns as follows.
 | `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
 | `--lock-timeout` | `duration` | `10s` | `PTAH_LOCK_TIMEOUT` | — |
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
 | `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
@@ -2521,7 +2521,7 @@ Read the columns as follows.
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--from`, `-f` | `stringArray` | `[]` | `PTAH_FROM` | — |
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 | `--web`, `-w` | `bool` | `false` | `PTAH_WEB` | — |
 
@@ -2539,7 +2539,7 @@ Read the columns as follows.
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 | `--web`, `-w` | `bool` | `false` | `PTAH_WEB` | — |
 
@@ -2568,7 +2568,7 @@ Read the columns as follows.
 | `--push` | `bool` | `false` | `PTAH_PUSH` | — |
 | `--repo` | `string` | — | `PTAH_REPO` | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
@@ -2589,7 +2589,7 @@ Read the columns as follows.
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
 | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
 </div>
@@ -2612,7 +2612,7 @@ Read the columns as follows.
 | `--name-format` | `string` | — | `PTAH_NAME_FORMAT` | — |
 | `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
 | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
 </div>
@@ -2643,7 +2643,7 @@ Read the columns as follows.
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
 | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
 </div>

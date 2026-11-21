@@ -562,7 +562,7 @@ func prepareDiff(
 		return preparedDiff{}, err
 	}
 	opts = normalizeDiffOptions(opts)
-	schemas := schemascope.SplitNames(opts.Schemas)
+	schemas := schemascope.UniqueNames(opts.Schemas)
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.Format)
 	if err := atlasreport.ValidateMigrateDiffTemplate(format); err != nil {
 		return preparedDiff{}, err

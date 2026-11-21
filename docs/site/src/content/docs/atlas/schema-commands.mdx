@@ -237,6 +237,14 @@ schema scoping, and outranks the URL's scope: naming a schema that does not
 exist renders an empty document rather than falling back to the connection's
 own schema.
 
+Every verb reads a `--schema` value as one line of comma-separated fields, as
+Atlas CE does. `-s one,two` names two schemas, `-s '"a,b"'` names the one schema
+`a,b`, and `-s '"one"'` names `one`. A value that is not a valid line, such as
+`-s 'a"b'`, is refused before the run starts:
+`invalid argument "a\"b" for "-s, --schema" flag: parse error on line 1, column 2: bare " in non-quoted-field`.
+Spaces around a name are trimmed, so `-s "one, two"` names `one` and `two`.
+Atlas CE keeps the spaces and then describes nothing.
+
 A MySQL or MariaDB URL that names no database is the whole server, as the
 community binary reads it
 ([stokaro/ptah#3789](https://github.com/stokaro/ptah/issues/3789)):

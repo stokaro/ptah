@@ -86,7 +86,7 @@ func withConnectedSchemaRow(
 	info catalog.ServerInfo,
 	requested []string,
 ) *catalog.Database {
-	if schema == nil || len(SplitSchemaNames(requested)) > 0 {
+	if schema == nil || len(schemascope.UniqueNames(requested)) > 0 {
 		return schema
 	}
 	name := connectedSchemaName(info)

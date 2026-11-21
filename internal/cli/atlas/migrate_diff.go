@@ -191,37 +191,12 @@ func runAtlasMigrateDiff(
 	defer closeAtlasProject(&project, &runErr)
 	projectCfg := project.Config
 	if loaded {
-		opts.devURL = dbcli.EffectiveString(
-			cmd,
-			"dev-url",
-			opts.devURL,
-			projectCfg.StringValue(projectconfig.StringDevURL),
-		)
-		opts.dirURL = dbcli.EffectiveString(
-			cmd,
-			"dir",
-			opts.dirURL,
-			projectCfg.StringValue(projectconfig.StringMigrationDir),
-		)
-		// migration.format names the layout as --dir-format does, and the flag
-		// wins. Without it, a golang-migrate directory named by its env was
-		// hashed as an Atlas one, and the checksum gate refused every
-		// `.down.sql` as added; hash, validate and new already read it.
-		opts.dirFormat = dbcli.EffectiveString(
-			cmd,
-			"dir-format",
-			opts.dirFormat,
-			projectCfg.StringValue(projectconfig.StringMigrationFormat),
-		)
-		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
-		opts.exclude = atlasMigrateDiffExclude(opts.exclude, projectCfg)
-		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
-		formatConfigured = formatConfigured || formatValue.Present
-		policy, err = atlasDiffPolicy(projectCfg)
+		configuredFormat, configuredPolicy, err := applyAtlasMigrateDiffProjectConfig(cmd, &opts, projectCfg)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		formatConfigured = formatConfigured || configuredFormat
+		policy = configuredPolicy
 	}
 	policy = withAtlasTableRebuild(policy, rebuild)
 	// Captured after the atlas.hcl merge, because an env supplying `dev` counts
@@ -468,6 +443,51 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+// applyAtlasMigrateDiffProjectConfig fills the options a selected atlas.hcl env
+// supplies, where the command line left them unset. It reports whether the env
+// configured the output format, and returns the env's diff policy.
+func applyAtlasMigrateDiffProjectConfig(
+	cmd *cobra.Command,
+	opts *atlasMigrateDiffOptions,
+	projectCfg projectconfig.Config,
+) (bool, atlasschema.DiffPolicy, error) {
+	opts.devURL = dbcli.EffectiveString(
+		cmd,
+		"dev-url",
+		opts.devURL,
+		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
+	opts.dirURL = dbcli.EffectiveString(
+		cmd,
+		"dir",
+		opts.dirURL,
+		projectCfg.StringValue(projectconfig.StringMigrationDir),
+	)
+	// migration.format names the layout as --dir-format does, and the flag
+	// wins. Without it, a golang-migrate directory named by its env was
+	// hashed as an Atlas one, and the checksum gate refused every
+	// `.down.sql` as added; hash, validate and new already read it.
+	opts.dirFormat = dbcli.EffectiveString(
+		cmd,
+		"dir-format",
+		opts.dirFormat,
+		projectCfg.StringValue(projectconfig.StringMigrationFormat),
+	)
+	schemas, err := effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
+	if err != nil {
+		return false, atlasschema.DiffPolicy{}, err
+	}
+	opts.schemas = schemas
+	opts.exclude = atlasMigrateDiffExclude(opts.exclude, projectCfg)
+	formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
+	opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+	policy, err := atlasDiffPolicy(projectCfg)
+	if err != nil {
+		return false, atlasschema.DiffPolicy{}, err
+	}
+	return formatValue.Present, policy, nil
 }
 
 // noteAtlasMigrateDiffRepeatables says, under reading, that the replay of the

@@ -41,7 +41,7 @@ type rehearsalSeed struct {
 // connection info describes, under the selection schemas, include and exclude
 // name.
 func newRehearsalSeed(info catalog.ServerInfo, selections selectext.Set, schemas, include, exclude []string) rehearsalSeed {
-	selected := len(schemascope.SplitNames(schemas)) > 0 ||
+	selected := len(schemascope.UniqueNames(schemas)) > 0 ||
 		slices.ContainsFunc(include, atlasfilter.NamesSelector) ||
 		slices.ContainsFunc(exclude, atlasfilter.NamesSelector)
 	bound := described(info.Dialect).Schemas.Selection == descriptor.SchemaSelectionSearchPath &&
@@ -150,7 +150,7 @@ func providerSchemasTarget(ctx context.Context, conn *dbschema.DatabaseConnectio
 			return nil, fmt.Errorf("read schemas %s of the target through its provider: %w", quotedList(selectors), err)
 		}
 		return read, nil
-	}, schemascope.SplitNames([]string{conn.Info().Schema}))
+	}, schemascope.UniqueNames([]string{conn.Info().Schema}))
 }
 
 // providerDatabaseTarget is [rehearsalSeed.target] over a provider session

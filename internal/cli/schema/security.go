@@ -14,8 +14,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/dbschema"
-	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/convert/dbschematogo"
@@ -178,7 +178,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", securityDBURLFlag, err))
 	}
 	defer func() { _ = conn.Close() }()
-	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, atlasschema.SplitSchemaNames([]string{opts.schemas}))
+	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas))
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}
