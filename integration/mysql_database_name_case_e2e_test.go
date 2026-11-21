@@ -21,9 +21,9 @@ import (
 // case of a database name (lower_case_table_names=0, the Linux default), beside
 // a second database whose name differs from it in case alone. information_schema
 // compares a database name without regard to case in its privilege views on
-// MySQL and in every view on MariaDB, so a filter on the name the read selects
-// matches the rows of the twin as well. A plan built on that read revokes the
-// twin's grants, and on MariaDB plans drops of its routines and triggers.
+// both engines, and in TRIGGERS and EVENTS on MariaDB, so a filter on the name
+// the read selects matches the rows of the twin as well. A plan built on that
+// read revokes the twin's grants, and on MariaDB plans drops of its triggers.
 
 // caseTwinRun is a database holding items, its twin holding objects of every
 // kind a read describes, and a role holding privileges on both.
@@ -163,6 +163,64 @@ func TestSchemaApplyMySQLFamilyRevokesOnlyInTheDatabaseItNamesE2E(t *testing.T) 
 
 			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+		})
+	}
+}
+
+// A migration that writes to items runs under tx-mode file beside a twin whose
+// items carries a trigger. The trigger is the twin's: read by name without the
+// byte comparison, MariaDB's TRIGGERS reports it for the database too, and the
+// run is refused as one writing to a table with indirect behavior.
+func TestMigrationsUpMySQLFamilyIgnoresATriggerOfADatabaseDifferingInCaseE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newCaseTwinRun(c, engine.admin)
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "1_fill.up.sql"), []byte("INSERT INTO items VALUES (1, 'a');\n"), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "1_fill.down.sql"), []byte("DELETE FROM items;\n"), 0o600), qt.IsNil)
+
+			applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Timeout: time.Minute},
+				"migrations", "up", "--db-url", run.url, "--migrations-dir", dir)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			var rows int
+			c.Assert(run.scratch.admin.QueryRowContext(c.Context(),
+				"SELECT COUNT(*) FROM `"+run.database+"`.items").Scan(&rows), qt.IsNil)
+			c.Assert(rows, qt.Equals, 1)
+		})
+	}
+}
+
+// A cleanup of the database leaves a twin that holds a view of its own items
+// as it was. MariaDB writes the view's reference as `R_T`.`items`, and a
+// search for `r_t`. that ignores case counts the view as one of another
+// database reading this one, and refuses the cleanup. The twin holds nothing
+// that runs, since a cleanup refuses beside any routine, event or trigger of
+// another database.
+func TestDBDropAllMySQLFamilyIgnoresAViewOfADatabaseDifferingInCaseE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine.admin)
+			database, url := scratch.builtFrom(c, "CREATE TABLE items (id INT PRIMARY KEY);")
+			twin := strings.ToUpper(database)
+			createMySQLDatabase(c, c.Context(), scratch.admin, twin)
+			c.Cleanup(func() { dropMySQLDatabase(c, context.Background(), scratch.admin, twin) })
+			for _, statement := range []string{
+				"CREATE TABLE `" + twin + "`.items (id INT PRIMARY KEY)",
+				"CREATE VIEW `" + twin + "`.twin_ids AS SELECT id FROM `" + twin + "`.items",
+			} {
+				_, err := scratch.admin.ExecContext(c.Context(), statement)
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+			}
+
+			dropped := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: time.Minute},
+				"db", "drop-all", "--db-url", url, "--auto-approve")
+
+			c.Assert(dropped.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", dropped.Stdout, dropped.Stderr))
+			c.Assert(scratch.tableCount(c, database), qt.Equals, 0)
+			c.Assert(scratch.tableCount(c, twin), qt.Equals, 2)
 		})
 	}
 }

@@ -972,7 +972,7 @@ Declares database grants.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
-| `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
+| `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL, MySQL and MariaDB. |
 | `comment` | No | Grant comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `grant_option` | No | Alias for `with_option`. Exactly `true` or `false`; bare form allowed. |
@@ -1033,7 +1033,7 @@ PRIVILEGES` gives a role on a new table.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
-| `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL only. |
+| `columns` | No | Comma-separated columns of `on_table` the privileges are limited to, such as `state,decided_at`. PostgreSQL, MySQL and MariaDB. |
 | `comment` | No | Comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `on_async_replication` | No | Target async replication, its name qualified by its directory as `on_table` names a table, such as `app.events`. YDB only. |

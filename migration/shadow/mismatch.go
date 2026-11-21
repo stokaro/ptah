@@ -362,6 +362,11 @@ func grantMismatches(refs []difftypes.GrantRef, kind, label string) []Mismatch {
 	var mismatches []Mismatch
 	for _, ref := range sortedGrantRefs(refs) {
 		object := fmt.Sprintf("%s %s ON %s %s", ref.Role, ref.Privilege, ref.ObjectType, ref.ObjectName)
+		// A privilege on one column is a grant of its own, and two of them on
+		// one table differ only here.
+		if ref.Column != "" {
+			object += " (" + ref.Column + ")"
+		}
 		mismatches = append(mismatches, Mismatch{Kind: kind, Object: object, Message: label + " " + object})
 	}
 	return mismatches
@@ -462,6 +467,7 @@ func compareGrantRefs(left, right difftypes.GrantRef) int {
 		{left.Privilege, right.Privilege},
 		{left.ObjectType, right.ObjectType},
 		{left.ObjectName, right.ObjectName},
+		{left.Column, right.Column},
 	} {
 		if compared := strings.Compare(values[0], values[1]); compared != 0 {
 			return compared

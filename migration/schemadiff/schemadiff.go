@@ -464,6 +464,11 @@ func validateDeclaredBeforeComparison(
 	if err := schemamodel.ValidateGrantOptionConsistency(desired, info.Dialect); err != nil {
 		return err
 	}
+	// So would one column granted under two spellings, where the target takes
+	// them for one column.
+	if err := schemamodel.ValidateGrantColumnSpellings(desired, info.Dialect); err != nil {
+		return err
+	}
 	// The same ClickHouse refusals the renderer applies, at the other entry
 	// point a declaration reaches before a server does. The empty default
 	// database matches the renderer's, so one set of declarations cannot be

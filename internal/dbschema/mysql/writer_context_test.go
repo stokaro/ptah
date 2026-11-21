@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -253,11 +254,12 @@ func TestWriterDropAllTables_RejectsMariaDBCrossDatabaseViews(t *testing.T) {
 	c.Assert(recorder.statements(), qt.HasLen, 0)
 	viewQuery, viewArgs := recorder.viewCatalog()
 	c.Assert(viewQuery, qt.Contains, "information_schema.views")
-	c.Assert(viewQuery, qt.Contains, "INSTR(view_definition, ?)")
+	c.Assert(viewQuery, qt.Contains, mysqlname.ContainsName("view_definition", "?"))
 	c.Assert(viewArgs, qt.DeepEquals, []driver.NamedValue{
 		{Ordinal: 1, Value: "test"},
 		{Ordinal: 2, Value: "test"},
 		{Ordinal: 3, Value: "`test`."},
+		{Ordinal: 4, Value: "`test`."},
 	})
 }
 

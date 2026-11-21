@@ -716,7 +716,10 @@ type grantIdentity struct {
 	arguments  string
 	// column is the column a table privilege is limited to, empty for the
 	// whole object. A column privilege and the table privilege of the same
-	// name are two rows in the catalog, so they are two identities.
+	// name are two rows in the catalog, so they are two identities. It is
+	// keyed the way the target compares column names: on MySQL and MariaDB
+	// `Name` and `name` are one column, and a declaration spelling it one way
+	// matches a privilege the catalog spells the other.
 	column string
 }
 
@@ -746,7 +749,7 @@ func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) gr
 		objectType: objectType,
 		object:     object,
 		arguments:  arguments,
-		column:     strings.TrimSpace(ref.Column),
+		column:     semantics.ColumnIdentityKey(strings.TrimSpace(ref.Column)),
 	}
 }
 

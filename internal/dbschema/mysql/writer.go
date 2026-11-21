@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlsystemdb"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
@@ -1212,8 +1213,8 @@ func rejectExternalForeignKeys(ctx context.Context, conn *sql.Conn, schema strin
 		FROM (
 			SELECT DISTINCT constraint_schema, constraint_name
 			FROM information_schema.key_column_usage
-			WHERE `+sameName("referenced_table_schema", "?")+`
-			  AND NOT `+sameName("constraint_schema", "?")+`
+			WHERE `+mysqlname.SameDatabase("referenced_table_schema", "?")+`
+			  AND NOT `+mysqlname.SameDatabase("constraint_schema", "?")+`
 		) AS external_foreign_keys
 	`, nameBinds(schema, 2)...).Scan(&count); err != nil {
 		return fmt.Errorf("mysql: inspect cross-database foreign keys: %w", err)
@@ -1225,14 +1226,14 @@ func rejectExternalForeignKeys(ctx context.Context, conn *sql.Conn, schema strin
 }
 
 // internalForeignKeysQuery lists the foreign keys of the bound database whose
-// referenced table it names too, one bind per [sameName] predicate.
+// referenced table it names too, one bind per [mysqlname.SameDatabase] predicate.
 func internalForeignKeysQuery() string {
 	return `
 		SELECT table_name, constraint_name
 		FROM (
 			SELECT DISTINCT table_name, constraint_name
 			FROM information_schema.key_column_usage
-			WHERE ` + sameName("constraint_schema", "?") + `
+			WHERE ` + mysqlname.SameDatabase("constraint_schema", "?") + `
 			  AND referenced_table_name IS NOT NULL
 		) AS internal_foreign_keys
 		ORDER BY table_name, constraint_name
@@ -1299,21 +1300,21 @@ func rejectExternalStoredPrograms(ctx context.Context, conn *sql.Conn, schema st
 				routine_name AS object_name,
 				routine_type AS object_kind
 			FROM information_schema.routines
-			WHERE NOT `+sameName("routine_schema", "?")+`
+			WHERE NOT `+mysqlname.SameDatabase("routine_schema", "?")+`
 			  AND routine_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 
 			UNION ALL
 
 			SELECT event_schema, event_name, 'EVENT'
 			FROM information_schema.events
-			WHERE NOT `+sameName("event_schema", "?")+`
+			WHERE NOT `+mysqlname.SameDatabase("event_schema", "?")+`
 			  AND event_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 
 			UNION ALL
 
 			SELECT trigger_schema, trigger_name, 'TRIGGER'
 			FROM information_schema.triggers
-			WHERE NOT `+sameName("trigger_schema", "?")+`
+			WHERE NOT `+mysqlname.SameDatabase("trigger_schema", "?")+`
 			  AND trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 		) AS external_stored_programs
 		ORDER BY object_schema, object_kind, object_name
@@ -1340,8 +1341,8 @@ func mySQLExternalViewCount(ctx context.Context, conn *sql.Conn, schema string) 
 		FROM (
 			SELECT DISTINCT view_schema, view_name
 			FROM information_schema.view_table_usage
-			WHERE `+sameName("table_schema", "?")+`
-			  AND NOT `+sameName("view_schema", "?")+`
+			WHERE `+mysqlname.SameDatabase("table_schema", "?")+`
+			  AND NOT `+mysqlname.SameDatabase("view_schema", "?")+`
 		) AS external_views
 	`, nameBinds(schema, 2)...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("mysql: inspect cross-database views: %w", err)
@@ -1359,9 +1360,9 @@ func mariaDBExternalViewCount(ctx context.Context, conn *sql.Conn, schema string
 	if err := conn.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM information_schema.views
-		WHERE NOT `+sameName("table_schema", "?")+`
-		  AND INSTR(view_definition, ?) > 0
-	`, append(nameBinds(schema, 1), quoteIdent(schema)+".")...).Scan(&count); err != nil {
+		WHERE NOT `+mysqlname.SameDatabase("table_schema", "?")+`
+		  AND `+mysqlname.ContainsName("view_definition", "?")+`
+	`, append(nameBinds(schema, 1), nameBinds(quoteIdent(schema)+".", 1)...)...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("mariadb: inspect cross-database views: %w", err)
 	}
 	return count, nil
@@ -1386,20 +1387,20 @@ func cleanupObjectsQuery() string {
 					ELSE 30
 				END AS priority
 			FROM information_schema.tables
-			WHERE ` + sameName("table_schema", "?") + `
+			WHERE ` + mysqlname.SameDatabase("table_schema", "?") + `
 			  AND table_type IN ('BASE TABLE', 'VIEW', 'SEQUENCE', 'SYSTEM VERSIONED')
 
 			UNION ALL
 
 			SELECT routine_name, routine_type, 20
 			FROM information_schema.routines
-			WHERE ` + sameName("routine_schema", "?") + `
+			WHERE ` + mysqlname.SameDatabase("routine_schema", "?") + `
 
 			UNION ALL
 
 			SELECT event_name, 'EVENT', 0
 			FROM information_schema.events
-			WHERE ` + sameName("event_schema", "?") + `
+			WHERE ` + mysqlname.SameDatabase("event_schema", "?") + `
 		) AS cleanup_objects
 		ORDER BY priority, object_kind, object_name
 	`

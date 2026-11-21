@@ -73,3 +73,25 @@ func TestCompareWithDatabaseInfoStillComparesAgreeingGrants(t *testing.T) {
 		})
 	}
 }
+
+// TestCompareWithDatabaseInfoRefusesAColumnSpelledTwoWays wires
+// [schemamodel.ValidateGrantColumnSpellings] into the comparison entry point,
+// so a declaration spelling one column two ways for one role is refused before
+// a live grant is read.
+func TestCompareWithDatabaseInfoRefusesAColumnSpelledTwoWays(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Grants: []schemamodel.Grant{
+				{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders", Columns: []string{"Total"}},
+				{Role: "reader", Privileges: []string{"UPDATE"}, OnTable: "orders", Columns: []string{"total"}},
+			}}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{}, mysqlFamilyInfo(dialect), nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `.*is granted privileges on one column of TABLE orders as "Total" and as "total".*`)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}

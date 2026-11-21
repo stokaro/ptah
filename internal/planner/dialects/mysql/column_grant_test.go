@@ -91,16 +91,64 @@ func tableGrantRevokedAll() *difftypes.SchemaDiff {
 	}
 }
 
+// tableAndColumnRevoked is a diff that revokes SELECT on the whole of t1 and
+// SELECT on its secret column from a role that keeps SELECT on its id column.
+func tableAndColumnRevoked() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		GrantsRemoved: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "secret"},
+		},
+		CurrentGrants: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "secret"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "id"},
+		},
+	}
+}
+
+// columnSpelledOtherwise is a diff that grants UPDATE on the name column of t1
+// to a role the catalog holds SELECT on it for, spelled Name.
+func columnSpelledOtherwise() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		GrantsAdded: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "app.t1", Column: "name"},
+		},
+		CurrentGrants: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "Name"},
+		},
+	}
+}
+
+// twoSpellingsHeld is a catalog holding, for one role, SELECT on Name and
+// UPDATE on name of t1 and SELECT on Name of t2, with a diff that revokes the
+// role's SELECT on Name of table.
+func twoSpellingsHeld(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		GrantsRemoved: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app." + table, Column: "Name"},
+		},
+		CurrentGrants: []difftypes.GrantRef{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t1", Column: "Name"},
+			{Role: "reader", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "app.t1", Column: "name"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t2", Column: "Name"},
+		},
+	}
+}
+
 // A grant limited to a column is planned on that column and no wider, and the
 // revokes go first: on MySQL and MariaDB a revoke on a table takes the column
 // privileges of the same kind, and a revoke of the grant option takes it from
 // every privilege on the table. The grant option of a column privilege is the
 // grantee's at the table, so the two columns of t2 losing it plan one
 // statement for t2, and a revoked privilege that carried it takes it along
-// where the role keeps no privilege with it. A column privilege the role keeps comes back after the
-// table revoke that takes it, with its grant option unless the diff revokes
-// the option on that table; a privilege the table revoke does not take, or
-// another role holds, is left alone.
+// where the role keeps no privilege with it. A column privilege the role keeps
+// comes back right after the table revoke that takes it, before the plan's own
+// grants, with its grant option unless the diff revokes the option on that
+// table; a privilege the table revoke does not take, or another role holds, is
+// left alone. A column is named as the catalog spells
+// it, and a column the catalog spells two ways on one table does not hold up a
+// change on another.
 func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -124,9 +172,9 @@ func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 				"REVOKE GRANT OPTION ON `app`.`t1` FROM `reader`",
 				"REVOKE SELECT ON `app`.`t1` FROM `reader`",
 				"REVOKE INSERT ON `app`.`t1` FROM `reader`",
-				"GRANT SELECT (`name`) ON `t1` TO `reader`",
 				"GRANT SELECT (`id`) ON `app`.`t1` TO `reader`",
 				"GRANT INSERT (`id`) ON `app`.`t1` TO `reader`",
+				"GRANT SELECT (`name`) ON `t1` TO `reader`",
 			},
 		},
 		{
@@ -145,6 +193,28 @@ func TestPlan_MySQLFamilyColumnGrants_HappyPath(t *testing.T) {
 				"REVOKE ALL ON `app`.`t1` FROM `reader`",
 				"GRANT UPDATE (`id`) ON `app`.`t1` TO `reader` WITH GRANT OPTION",
 			},
+		},
+		{
+			// The table revoke takes SELECT (secret) with it, and the server
+			// refuses a revoke of a privilege nothing holds with ERROR 1147, so
+			// the column revoke is not planned and SELECT (secret) does not
+			// come back with SELECT (id).
+			name: "the whole table and a column it takes",
+			diff: tableAndColumnRevoked,
+			want: []string{
+				"REVOKE SELECT ON `app`.`t1` FROM `reader`",
+				"GRANT SELECT (`id`) ON `app`.`t1` TO `reader`",
+			},
+		},
+		{
+			name: "a column the catalog spells another way",
+			diff: columnSpelledOtherwise,
+			want: []string{"GRANT UPDATE (`Name`) ON `app`.`t1` TO `reader`"},
+		},
+		{
+			name: "two spellings held on another table",
+			diff: func() *difftypes.SchemaDiff { return twoSpellingsHeld("t2") },
+			want: []string{"REVOKE SELECT (`Name`) ON `app`.`t2` FROM `reader`"},
 		},
 	}
 	for _, dialect := range []string{"mysql", "mariadb"} {
@@ -187,6 +257,27 @@ func TestPlan_MySQLFamilyColumnGrants_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// A change to a role's privileges on a table where the catalog holds one
+// column under two spellings for it is refused: the server's in-memory copy
+// keeps one of them, the table both, and a GRANT or REVOKE under either
+// changes one and not the other.
+func TestPlan_MySQLFamilyColumnSpellings_FailurePath(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()), twoSpellingsHeld("t1"), dialect,
+			)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches,
+				`(?s).*role "reader" holds privileges on one column of app.t1 as "Name" and as "name".*revoke the privileges under both spellings by hand.*`)
 			c.Assert(statements, qt.IsNil)
 		})
 	}

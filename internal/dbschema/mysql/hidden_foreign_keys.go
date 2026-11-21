@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 )
@@ -48,7 +49,7 @@ func (r *Reader) withHiddenForeignKeys(
 			REFERENCED_TABLE_NAME,
 			COALESCE(REFERENCED_COLUMN_NAME, '')
 		FROM information_schema.KEY_COLUMN_USAGE
-		WHERE ` + sameName("TABLE_SCHEMA", "?") + `
+		WHERE ` + mysqlname.SameDatabase("TABLE_SCHEMA", "?") + `
 		AND REFERENCED_TABLE_NAME IS NOT NULL
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
 		ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`
