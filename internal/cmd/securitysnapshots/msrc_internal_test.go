@@ -29,13 +29,13 @@ func guideRows(nonce string) []map[string]any {
 	}
 	return []map[string]any{
 		{"id": "row-1", "cveNumber": "CVE-2026-40001", "product": "Microsoft SQL Server 2022 for x64-based Systems (GDR)",
-			"baseScore": "8.8", "temporalScore": nonce, "kbArticles": kb("5000001", "16.0.1140.6")},
+			"baseScore": "8.8", "releaseNumber": "2026-Nov", "temporalScore": nonce, "kbArticles": kb("5000001", "16.0.1140.6")},
 		{"id": "row-2", "cveNumber": "CVE-2026-40001", "product": "Microsoft SQL Server 2022 for x64-based Systems (CU 19)",
-			"baseScore": "8.8", "temporalScore": nonce, "kbArticles": kb("5000002", "16.0.4200.1")},
+			"baseScore": "8.8", "releaseNumber": "2026-Nov", "temporalScore": nonce, "kbArticles": kb("5000002", "16.0.4200.1")},
 		{"id": "row-3", "cveNumber": "CVE-2026-40003", "product": "Microsoft ODBC Driver 18 for SQL Server on Linux",
 			"baseScore": "7.5", "temporalScore": nonce, "kbArticles": kb("5000003", "18.5.1.1")},
 		{"id": "row-4", "cveNumber": "CVE-2026-40002", "product": "Microsoft SQL Server 2019 for x64-based Systems (GDR)",
-			"baseScore": "", "temporalScore": nonce, "kbArticles": kb("5000004", "15.0.2135.5")},
+			"baseScore": "", "releaseNumber": "2026-Nov", "temporalScore": nonce, "kbArticles": kb("5000004", "15.0.2135.5")},
 	}
 }
 
@@ -79,11 +79,11 @@ func TestGuideContent_HappyPath(t *testing.T) {
 	var entries []guideEntry
 	c.Assert(json.Unmarshal(content, &entries), qt.IsNil)
 	c.Assert(entries, qt.DeepEquals, []guideEntry{
-		{CVE: "CVE-2026-40001", Product: "Microsoft SQL Server 2022 for x64-based Systems (CU 19)", CVSS: "8.8",
+		{CVE: "CVE-2026-40001", Product: "Microsoft SQL Server 2022 for x64-based Systems (CU 19)", Month: "2026-Nov", CVSS: "8.8",
 			Fixes: []guideFix{{KB: "5000002", Build: "16.0.4200.1"}}},
-		{CVE: "CVE-2026-40001", Product: "Microsoft SQL Server 2022 for x64-based Systems (GDR)", CVSS: "8.8",
+		{CVE: "CVE-2026-40001", Product: "Microsoft SQL Server 2022 for x64-based Systems (GDR)", Month: "2026-Nov", CVSS: "8.8",
 			Fixes: []guideFix{{KB: "5000001", Build: "16.0.1140.6"}}},
-		{CVE: "CVE-2026-40002", Product: "Microsoft SQL Server 2019 for x64-based Systems (GDR)",
+		{CVE: "CVE-2026-40002", Product: "Microsoft SQL Server 2019 for x64-based Systems (GDR)", Month: "2026-Nov",
 			Fixes: []guideFix{{KB: "5000004", Build: "15.0.2135.5"}}},
 	})
 }
@@ -247,6 +247,35 @@ func guideSnapshot(c *qt.C, rows []map[string]any, retrievedAt, validUntil time.
 	return snapshot
 }
 
+// guideArticles records the three engine articles guideRows names, all
+// released in November 2026.
+var guideArticles = []kbArticle{
+	{KB: "5000001", Month: "2026-Nov", Line: "16.0", Branch: "gdr", Build: "16.0.1140.6"},
+	{KB: "5000002", Month: "2026-Nov", Line: "16.0", Branch: "cu", Build: "16.0.4200.1"},
+	{KB: "5000004", Month: "2026-Nov", Line: "15.0", Branch: "gdr", Build: "15.0.2135.5"},
+}
+
+// guideAnswers answers every row guideRows decides by absence: no article
+// lists an advisory the guide does not name it for.
+var guideAnswers = []kbRow{
+	{CVE: "CVE-2026-40001", KB: "5000004"},
+	{CVE: "CVE-2026-40002", KB: "5000001"},
+	{CVE: "CVE-2026-40002", KB: "5000002"},
+}
+
+// guideGaps answers the one gap guideRows leaves: CVE-2026-40002 on the CU
+// branch of 15.0, which no November article updates.
+var guideGaps = []kbGap{{CVE: "CVE-2026-40002", Line: "15.0", Branch: "cu"}}
+
+// writeKBEvidence writes the reviewed KB record where the check reads it.
+func writeKBEvidence(c *qt.C, articles []kbArticle, rows []kbRow) {
+	c.Helper()
+	c.Assert(os.MkdirAll(filepath.Dir(kbEvidencePath), 0o755), qt.IsNil)
+	data, err := json.Marshal(kbEvidence{Articles: articles, Rows: rows, Gaps: guideGaps})
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(kbEvidencePath, data, 0o600), qt.IsNil)
+}
+
 // TestCheckVersioned_UnchangedGuideMovesValidUntil reads the guide after
 // Microsoft's December release added nothing for SQL Server: the reviewed
 // rows are unchanged, so the check refreshes the snapshot and records the
@@ -254,7 +283,7 @@ func guideSnapshot(c *qt.C, rows []map[string]any, retrievedAt, validUntil time.
 func TestCheckVersioned_UnchangedGuideMovesValidUntil(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
-	c.Assert(os.MkdirAll(filepath.Join("internal", "vulnerability"), 0o755), qt.IsNil)
+	writeKBEvidence(c, guideArticles, guideAnswers)
 	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
 	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
 	pages := guidePages(c, guideRows("nonce-2"))
@@ -279,6 +308,7 @@ func TestCheckVersioned_UnchangedGuideMovesValidUntil(t *testing.T) {
 func TestCheckVersioned_NewGuideAdvisoryIsReviewed(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
+	writeKBEvidence(c, guideArticles, guideAnswers)
 	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
 	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
 	rows := append(guideRows("nonce-2"), map[string]any{"id": "row-5", "cveNumber": "CVE-2026-49999",
@@ -313,4 +343,107 @@ func TestCheckVersioned_UnpublishedReleaseKeepsValidUntil(t *testing.T) {
 	err := checkVersioned(current, servedPages(pages), now)
 
 	c.Assert(err, qt.ErrorMatches, `the security release index lists no 2026-Dec release, so the release due on 2026-12-08 is unread`)
+}
+
+// TestCheckVersioned_GuideOnlySnapshotIsRefused reads an unchanged guide
+// against a record whose November GDR article for 2022 lists CVE-2026-40002,
+// which the guide names for 2019 only. The snapshot pins only the guide's
+// build, so the check refuses it instead of refreshing it.
+func TestCheckVersioned_GuideOnlySnapshotIsRefused(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	answers := slices.Clone(guideAnswers)
+	answers[1].Lists = true
+	writeKBEvidence(c, guideArticles, answers)
+	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+	pages := guidePages(c, guideRows("nonce-2"))
+	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+	err := checkVersioned(current, servedPages(pages), now)
+
+	c.Assert(err, qt.ErrorMatches, `CVE-2026-40002 carries the fixed builds 15.0 gdr 15.0.2135.5, and the guide with the reviewed KB articles gives 15.0 gdr 15.0.2135.5, 16.0 gdr 16.0.1140.6`)
+	_, err = os.Stat(filepath.Join("internal", "vulnerability", "sqlserver.json"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// TestCheckVersioned_UnansweredRowIsRefused reads an unchanged guide against
+// a record that answers one row too few.
+func TestCheckVersioned_UnansweredRowIsRefused(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeKBEvidence(c, guideArticles, guideAnswers[:2])
+	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+	pages := guidePages(c, guideRows("nonce-2"))
+	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+	err := checkVersioned(current, servedPages(pages), now)
+
+	c.Assert(err, qt.ErrorMatches, `the guide decides CVE-2026-40002 on 16.0 cu by absence, and internal/vulnerability/sqlserver-kb.json does not answer it from https://support.microsoft.com/help/5000002; unanswered rows: 1`)
+}
+
+// TestCheckVersioned_ReviewListsWhatTheRecordDoesNotCover adds two engine
+// rows: one names a recorded article, so the other November articles become
+// rows to answer, and one names an article the record does not hold.
+func TestCheckVersioned_ReviewListsWhatTheRecordDoesNotCover(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeKBEvidence(c, guideArticles, guideAnswers)
+	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+	rows := append(guideRows("nonce-2"),
+		map[string]any{"id": "row-6", "cveNumber": "CVE-2026-49998", "product": "Microsoft SQL Server 2022 for x64-based Systems (GDR)",
+			"kbArticles": []map[string]any{{"articleName": "5000001", "fixedBuildNumber": "16.0.1140.6"}}},
+		map[string]any{"id": "row-7", "cveNumber": "CVE-2026-49997", "product": "Microsoft SQL Server 2022 for x64-based Systems (CU 20)",
+			"kbArticles": []map[string]any{{"articleName": "5000007", "fixedBuildNumber": "16.0.4210.2"}}})
+	pages := guidePages(c, rows)
+	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+	c.Assert(checkVersioned(current, servedPages(pages), now), qt.IsNil)
+
+	data, err := os.ReadFile(reviewFile("sqlserver"))
+	c.Assert(err, qt.IsNil)
+	var pending review
+	c.Assert(json.Unmarshal(data, &pending), qt.IsNil)
+	c.Assert(pending.AddedIDs, qt.DeepEquals, []string{"CVE-2026-49997", "CVE-2026-49998"})
+	c.Assert(pending.UnrecordedKBArticles, qt.DeepEquals, []string{"https://support.microsoft.com/help/5000007"})
+	c.Assert(pending.UnansweredKBRows, qt.DeepEquals, []kbQuestion{
+		{CVE: "CVE-2026-49998", Line: "15.0", Branch: "gdr", Months: []string{"2026-Nov"}, KB: "5000004", URL: "https://support.microsoft.com/help/5000004"},
+		{CVE: "CVE-2026-49998", Line: "16.0", Branch: "cu", Months: []string{"2026-Nov"}, KB: "5000002", URL: "https://support.microsoft.com/help/5000002"},
+	})
+}
+
+// TestCheckVersioned_UnrecordedArticleIsRefused reads an unchanged guide
+// against a record that holds no entry for the 2019 article the guide names.
+func TestCheckVersioned_UnrecordedArticleIsRefused(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeKBEvidence(c, guideArticles[:2], guideAnswers[1:])
+	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+	pages := guidePages(c, guideRows("nonce-2"))
+	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+	err := checkVersioned(current, servedPages(pages), now)
+
+	c.Assert(err, qt.ErrorMatches, `the guide names KB articles internal/vulnerability/sqlserver-kb.json has no record of, or one the guide disagrees with: KB5000004`)
+}
+
+// TestCheckVersioned_UnpinnedAdvisoryIsRefused reads an unchanged guide
+// against a snapshot that leaves out an advisory the guide names a fix for on
+// a covered line.
+func TestCheckVersioned_UnpinnedAdvisoryIsRefused(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeKBEvidence(c, guideArticles, guideAnswers)
+	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+	current.Advisories = current.Advisories[:1]
+	pages := guidePages(c, guideRows("nonce-2"))
+	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+	err := checkVersioned(current, servedPages(pages), now)
+
+	c.Assert(err, qt.ErrorMatches, `CVE-2026-40002 has fixed builds on a covered line, 15.0 gdr 15.0.2135.5, and the snapshot does not pin it`)
 }

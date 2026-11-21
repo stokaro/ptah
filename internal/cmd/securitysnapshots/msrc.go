@@ -45,6 +45,7 @@ type guideRow struct {
 	CVE        string `json:"cveNumber"`
 	Product    string `json:"product"`
 	BaseScore  string `json:"baseScore"`
+	Release    string `json:"releaseNumber"`
 	KBArticles []struct {
 		ArticleName      string `json:"articleName"`
 		FixedBuildNumber string `json:"fixedBuildNumber"`
@@ -59,10 +60,12 @@ type guideFix struct {
 
 // guideEntry is the reviewed part of one engine row: what changes when
 // Microsoft adds, revises or withdraws an advisory, its product or its fix,
-// and nothing that changes on each request.
+// and nothing that changes on each request. Month is the monthly release
+// that first published the advisory, such as 2026-Nov.
 type guideEntry struct {
 	CVE     string     `json:"cve"`
 	Product string     `json:"product"`
+	Month   string     `json:"month,omitempty"`
 	CVSS    string     `json:"cvss,omitempty"`
 	Fixes   []guideFix `json:"fixes"`
 }
@@ -154,13 +157,17 @@ func guideContent(pages []byte) ([]byte, error) {
 		return nil, errors.New("the guide lists no SQL Server engine row")
 	}
 	slices.SortFunc(entries, func(a, b guideEntry) int {
-		return cmp.Or(cmp.Compare(a.CVE, b.CVE), cmp.Compare(a.Product, b.Product), cmp.Compare(fixesKey(a), fixesKey(b)), cmp.Compare(a.CVSS, b.CVSS))
+		return cmp.Or(cmp.Compare(a.CVE, b.CVE), cmp.Compare(a.Product, b.Product), cmp.Compare(fixesKey(a), fixesKey(b)),
+			cmp.Compare(a.CVSS, b.CVSS), cmp.Compare(a.Month, b.Month))
 	})
 	return json.MarshalIndent(entries, "", " ")
 }
 
 func entryOf(row guideRow) guideEntry {
-	entry := guideEntry{CVE: row.CVE, Product: row.Product, CVSS: strings.TrimSpace(row.BaseScore), Fixes: make([]guideFix, 0, len(row.KBArticles))}
+	entry := guideEntry{
+		CVE: row.CVE, Product: row.Product, Month: strings.TrimSpace(row.Release), CVSS: strings.TrimSpace(row.BaseScore),
+		Fixes: make([]guideFix, 0, len(row.KBArticles)),
+	}
 	for _, article := range row.KBArticles {
 		entry.Fixes = append(entry.Fixes, guideFix{KB: strings.TrimSpace(article.ArticleName), Build: strings.TrimSpace(article.FixedBuildNumber)})
 	}
