@@ -161,10 +161,10 @@ func TestDefaultLocation_NamesTheFilesOnMaster(t *testing.T) {
 // TestCodeOwners_NotifyOnWhatReleasedBinariesRead holds .github/CODEOWNERS
 // to the files released binaries fetch from master: every bundled snapshot is
 // matched by the owned pattern, and a change to it, to the fetching code, to
-// the refresh workflow or to the CODEOWNERS file itself notifies the same
-// owner. The rules notify; the scan's merge with the bundled snapshot is what
-// keeps a merged change from reading a server as cleaner than the bundled
-// snapshot reads it.
+// the code that validates and merges a copy, to the refresh workflow or to the
+// CODEOWNERS file itself notifies the same owner. The rules notify; the scan's
+// merge with the bundled snapshot is what keeps a merged change from reading
+// an advisory as cleaner than the bundled snapshot reads it.
 func TestCodeOwners_NotifyOnWhatReleasedBinariesRead(t *testing.T) {
 	c := qt.New(t)
 	data, err := os.ReadFile(filepath.Join("..", "..", ".github", "CODEOWNERS"))
@@ -173,6 +173,10 @@ func TestCodeOwners_NotifyOnWhatReleasedBinariesRead(t *testing.T) {
 	for _, rule := range []string{
 		"/internal/vulnerability/*.json @denisvmedia",
 		"/internal/advisorysource/ @denisvmedia",
+		"/internal/vulnerability/merge.go @denisvmedia",
+		"/internal/vulnerability/origin.go @denisvmedia",
+		"/internal/vulnerability/snapshot.go @denisvmedia",
+		"/internal/vulnerability/versioned.go @denisvmedia",
 		"/.github/workflows/security-snapshots.yml @denisvmedia",
 		"/.github/CODEOWNERS @denisvmedia",
 	} {

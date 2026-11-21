@@ -54,8 +54,8 @@ Each engine's snapshot comes from the first of:
 
 The scan does not rely on how changes reach master. Each advisory is matched
 against both the built-in snapshot and the remote or cached copy, and the
-report keeps the stricter answer, so a result is never cleaner than the
-built-in snapshot. The two answers combine by these rules:
+report keeps the stricter answer, so no advisory reads cleaner than the
+built-in snapshot reads it. The two answers combine by these rules:
 
 - An advisory is `affected` when either snapshot says so. Otherwise the more
   uncertain answer wins: `uncertain`, then `fixed`, then `unaffected`.
@@ -63,15 +63,36 @@ built-in snapshot. The two answers combine by these rules:
   unscored stays unscored, since no severity floor removes it.
 - Partial coverage in either snapshot keeps the report partial.
 - `retrieved_at`, `valid_until`, `stale_from` and the freshness state come
-  from the snapshot retrieved later.
+  from the snapshot retrieved later. A copy retrieved before the built-in
+  snapshot's `valid_until` cannot hold the update scheduled for that date, so
+  that date still counts unless the copy schedules an earlier one.
 
 A refresh therefore adds an advisory, widens a range, raises a score and
-renews the retrieval time without a release. A change that would make a
-result cleaner waits for a Ptah release: an advisory removed or moved to
-another component, a range narrowed, a score lowered or added, a release line
-or covered line added, and partial coverage claimed complete. When the
-PostgreSQL release lines rotate each year, a server on the newly covered line
-reads `uncertain` until a release carries that line.
+renews the retrieval time without a release. A change that would make an
+advisory's answer cleaner waits for a Ptah release: an advisory removed or
+moved to another component, a range narrowed, a score lowered or added, a
+release line or covered line added, and partial coverage claimed complete.
+
+A copy can still let a run pass that the built-in snapshot alone fails:
+
+- A copy retrieved later makes a `due` or `stale` report `current`. Each copy
+  renews it for at most 30 days from its `retrieved_at`, which may be up to
+  24 hours ahead of this machine's clock.
+- Where the built-in snapshot reads an advisory as `uncertain` and the copy
+  reads it as `affected`, the report carries the finding without the coverage
+  gap the uncertain answer gives. `--fail-on incomplete` then passes, and so
+  does `--fail-on both` when a suppression or `--ignore` records the finding
+  as suppressed.
+
+PostgreSQL's covered release lines rotate each year, for example from 14 to
+18 onto 15 to 19. A server on the newly covered line reads `uncertain` until a
+release carries that line. A server on the dropped line reads `uncertain` for
+every advisory the built-in snapshot does not find affected, with a gap saying
+that its release line is outside snapshot coverage, within about an hour of
+the refresh merging. Under the default `--fail-on both`, every released binary
+that reads the default source then fails that server, as a release with the
+new lines would. This is intended: the refreshed snapshot does not review the
+dropped line.
 
 A copy must also pass the built-in validators, be no older than the built-in
 snapshot or the cached copy, and be dated no more than 24 hours after this
@@ -91,8 +112,14 @@ permissions, the reason says that too.
 
 A run that names the source, with `--advisory-source repository`, a URL or
 `PTAH_ADVISORY_SOURCE`, counts the fallback as a coverage gap, so
-`--fail-on incomplete` and `both` fail. A default run does not, so a network
-outage leaves its exit code unchanged, and `bundled` asks for no source.
+`--fail-on incomplete` and `both` fail. A default run does not count the
+fallback as a gap. Findings only the copy carries are absent from that run,
+and the warning says the source was not used. `bundled` asks for no source.
+
+A suppression entry must name an advisory that a snapshot the run reads
+pins, and an entry that names none fails the scan. After a fallback the entry
+may name an advisory only the copy carries, so it is a warning instead: the
+warning names the fallback reason, and the entry suppresses nothing.
 
 A connection not open within 5 seconds fails, and so does a request with no
 response headers 10 seconds after it is sent or no complete answer within 15

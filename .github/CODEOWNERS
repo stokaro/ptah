@@ -1,17 +1,29 @@
 # Released ptah binaries read the advisory snapshots below live from master
 # (internal/advisorysource.DefaultLocation), so a change merged here reaches
 # every installed binary without a release. The rules below notify the
-# repository owner of each change to the snapshots, to the code that fetches
-# and validates them, to the workflow that proposes a refresh, and to this
-# file. They are a notification, not a protection: GitHub enforces nothing
-# here unless branch protection requires code-owner review, and an author
-# cannot approve their own pull request. What protects a scan is the rule the
-# binary applies, vulnerability.EvaluateVersionedWithFloor: each advisory is
-# matched against a copy read from master and against the snapshot built into
-# the binary, and the stricter answer is reported, so a copy can add a finding
-# but cannot make a result cleaner than the built-in snapshot.
+# repository owner of each change to the snapshots, to the code that fetches,
+# validates and merges them, to the workflow that proposes a refresh, and to
+# this file. They are a notification, not a protection: GitHub enforces
+# nothing here unless branch protection requires code-owner review, and an
+# author cannot approve their own pull request. What protects a scan is the
+# rule the binary applies, vulnerability.EvaluateWithFloor for PostgreSQL and
+# vulnerability.EvaluateVersionedWithFloor for the other engines: each
+# advisory is matched against a copy read from master and against the
+# snapshot built into the binary, and the stricter answer is reported, so a
+# copy can add a finding but cannot make any advisory's answer cleaner than
+# the built-in snapshot's. A copy can still let a run pass that the built-in
+# snapshot alone fails. A copy retrieved later renews freshness, for at most
+# 30 days from a retrieval time up to 24 hours ahead of the scanning machine's
+# clock. An advisory the built-in snapshot reads as uncertain and the copy as
+# affected loses its coverage gap, so --fail-on incomplete, a suppression or
+# --ignore can pass. A change to the merging or validating code below reaches
+# a binary only in a release.
 
 /internal/vulnerability/*.json @denisvmedia
 /internal/advisorysource/ @denisvmedia
+/internal/vulnerability/merge.go @denisvmedia
+/internal/vulnerability/origin.go @denisvmedia
+/internal/vulnerability/snapshot.go @denisvmedia
+/internal/vulnerability/versioned.go @denisvmedia
 /.github/workflows/security-snapshots.yml @denisvmedia
 /.github/CODEOWNERS @denisvmedia
