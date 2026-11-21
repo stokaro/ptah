@@ -48,6 +48,7 @@ func TestCommand_UnsupportedProductRemainsIncomplete(t *testing.T) {
 	url := sqliteURL(c)
 	stdout, stderr, err := run("--db-url", url, "--format", "json")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, `vulnerability scan meets --fail-on=both: sqlite://\S+ has incomplete coverage`)
 	c.Assert(stderr, qt.Equals, "")
 	doc := decode(c, stdout)
 	c.Assert(doc.Targets, qt.HasLen, 1)

@@ -102,17 +102,18 @@ func run(cmd *cobra.Command, opts options) error {
 			failures = append(failures, err)
 		}
 	}
+	if err := warn(cmd.ErrOrStderr(), targets); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("write vulnerability warnings: %w", err))
+	}
 	if err := write(cmd.OutOrStdout(), opts.format, targets); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("write vulnerability report: %w", err))
 	}
 	if len(failures) != 0 {
 		return cmdutil.Fail(cmd, errors.Join(failures...))
 	}
-	failFindings := opts.failOn == "findings" || opts.failOn == "both"
-	failIncomplete := opts.failOn == "incomplete" || opts.failOn == "both"
 	for _, target := range targets {
-		if (failFindings && target.HasFindingsAtOrAbove(policy.FailSeverity)) || (failIncomplete && target.IsIncomplete()) {
-			return exitcode.New(1, fmt.Errorf("vulnerability scan meets --fail-on=%s", opts.failOn))
+		if reason := policy.Failure(target.Report); reason != "" {
+			return exitcode.New(1, fmt.Errorf("vulnerability scan meets --fail-on=%s: %s has %s", opts.failOn, target.Target, reason))
 		}
 	}
 	return nil
@@ -125,7 +126,8 @@ func validate(opts options) (vulnerability.Policy, error) {
 	if opts.format != "table" && opts.format != "json" {
 		return vulnerability.Policy{}, errors.New("--format must be table or json")
 	}
-	if opts.failOn != "findings" && opts.failOn != "incomplete" && opts.failOn != "both" && opts.failOn != "none" {
+	failOn, err := vulnerability.ParseFailOn(opts.failOn)
+	if err != nil {
 		return vulnerability.Policy{}, errors.New("--fail-on must be findings, incomplete, both, or none")
 	}
 	if opts.deployment != "self-managed" && opts.deployment != "managed" {
@@ -139,7 +141,7 @@ func validate(opts options) (vulnerability.Policy, error) {
 	if err != nil {
 		return vulnerability.Policy{}, fmt.Errorf("--fail-severity: %w", err)
 	}
-	policy := vulnerability.Policy{MinSeverity: minSeverity, FailSeverity: failSeverity, Ignore: opts.ignore}
+	policy := vulnerability.Policy{MinSeverity: minSeverity, FailSeverity: failSeverity, Ignore: opts.ignore, FailOn: failOn}
 	if err := policy.Validate(); err != nil {
 		return vulnerability.Policy{}, fmt.Errorf("--ignore: %w", err)
 	}
@@ -165,6 +167,30 @@ func scan(cmd *cobra.Command, dbURL string, opts options, policy vulnerability.P
 		return failedTarget(dbURL, inventory, "not_assessed", "database inventory or suppression file is unreadable"), err
 	}
 	return targetReport{Target: dburldisplay.Format(dbURL), Report: policy.Apply(report)}, nil
+}
+
+// warn drops each target's warnings about a product another target of the
+// run reports, since the entry they name is that target's, and writes the
+// rest to w once each. The reports keep the warnings that remain.
+func warn(w io.Writer, targets []targetReport) error {
+	reported := make([]string, 0, len(targets))
+	for _, target := range targets {
+		reported = append(reported, target.Inventory.Product)
+	}
+	written := make([]string, 0)
+	for index := range targets {
+		targets[index].Warnings = vulnerability.UnclaimedWarnings(targets[index].Warnings, reported)
+		for _, warning := range targets[index].Warnings {
+			if slices.Contains(written, warning.Message) {
+				continue
+			}
+			written = append(written, warning.Message)
+			if _, err := fmt.Fprintf(w, "warning: %s\n", warning.Message); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func failedTarget(dbURL string, inventory vulnerability.Inventory, status, message string) targetReport {
@@ -207,6 +233,16 @@ func writeTable(w io.Writer, target targetReport) error {
 		report.Inventory.Product, report.Inventory.ServerBanner, report.Deployment, report.Applicability, report.Source.URL,
 		report.Source.SHA256, report.Source.AgeDays, report.Source.Status, report.Source.SnapshotSHA256); err != nil {
 		return err
+	}
+	for _, page := range report.Source.AdditionalPages {
+		if _, err := fmt.Fprintf(w, "Advisories: %s (source SHA-256 %s)\n", page.URL, page.SHA256); err != nil {
+			return err
+		}
+	}
+	for _, warning := range report.Warnings {
+		if _, err := fmt.Fprintf(w, "WARNING %s\n", warning.Message); err != nil {
+			return err
+		}
 	}
 	if report.Filter != nil {
 		if _, err := fmt.Fprintf(w, "Severity floor: %s (%d advisories below it left out)\n",

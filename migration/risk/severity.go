@@ -19,8 +19,8 @@ package risk
 // sources publish it. None is a level, and folding them onto this scale would
 // put a word in a published document that does not mean what it says there.
 //
-// severity_vocabulary_test.go reads the tree and holds that sentence to it: a
-// third vocabulary has to be recorded there with its reason, which is the
+// severity_vocabulary_test.go reads the tree and holds that sentence to it:
+// another vocabulary has to be recorded there with its reason, which is the
 // review a package-local `type Severity string` never got
 // (stokaro/ptah#2395).
 type Severity string
