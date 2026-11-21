@@ -51,7 +51,6 @@ var nonBooleanPtahVars = []string{
 	// Two spellings, because the rename in stokaro/ptah#1887 honors the old one
 	// so a checkout configured before it keeps working -- and both have to be
 	// classified, or this guard reports the compatibility as an oversight.
-	"PTAH_ADVISORY_SOURCE",       // where db vulnerabilities reads reviewed advisory snapshots
 	"PTAH_ASSIST_CONFIG",         // path to the operator's Ptah Assist provider profiles
 	"PTAH_ASSIST_MODEL",          // model identifier for a profile that states none
 	"PTAH_ASSIST_PROFILE",        // provider profile to use when nothing else selects one
@@ -120,13 +119,14 @@ var nonBooleanPtahVars = []string{
 	// `ptah-compat security scan` registers none of the scan's own options as
 	// flags, so its help names the variables of `ptah db vulnerabilities` that
 	// carry them.
-	"PTAH_ADVISORIES",    // local advisory snapshot JSON file
-	"PTAH_DEPLOYMENT",    // who patches the server: self-managed or managed
-	"PTAH_FAIL_ON",       // CI failure policy name
-	"PTAH_FAIL_SEVERITY", // lowest severity a finding needs to fail the run
-	"PTAH_IGNORE",        // advisory identifiers recorded as suppressed
-	"PTAH_MIN_SEVERITY",  // lowest severity reported
-	"PTAH_SUPPRESSIONS",  // suppression file path
+	"PTAH_ADVISORIES",      // local advisory snapshot JSON file
+	"PTAH_ADVISORY_SOURCE", // where the scan reads reviewed advisory snapshots
+	"PTAH_DEPLOYMENT",      // who patches the server: self-managed or managed
+	"PTAH_FAIL_ON",         // CI failure policy name
+	"PTAH_FAIL_SEVERITY",   // lowest severity a finding needs to fail the run
+	"PTAH_IGNORE",          // advisory identifiers recorded as suppressed
+	"PTAH_MIN_SEVERITY",    // lowest severity reported
+	"PTAH_SUPPRESSIONS",    // suppression file path
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

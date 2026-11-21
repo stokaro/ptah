@@ -205,6 +205,8 @@ func TestCompatSecurityScan_FailurePath(t *testing.T) {
 			wantStderr: "Error: atlas security scan does not accept native Ptah flag --db-url\n"},
 		{name: "a native scan option", args: []string{"security", "scan", "-u", "sqlite://x.db", "--fail-on", "none"},
 			wantStderr: "Error: atlas security scan does not accept native Ptah flag --fail-on\n"},
+		{name: "the native advisory source", args: []string{"security", "scan", "-u", "sqlite://x.db", "--advisory-source", "bundled"},
+			wantStderr: "Error: atlas security scan does not accept native Ptah flag --advisory-source\n"},
 		{name: "-u with no value", args: []string{"security", "scan", "-u"},
 			wantStderr: "Error: flag needs an argument: 'u' in -u\n"},
 		{name: "--url with no value", args: []string{"security", "scan", "-u", "sqlite://x.db", "--url"},
