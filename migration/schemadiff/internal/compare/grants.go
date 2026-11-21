@@ -139,6 +139,10 @@ type GrantOptions struct {
 	// DesiredRead is the grants of the read the desired state was made from;
 	// see [ptah.run/config.CompareOptions.DesiredReadGrants].
 	DesiredRead []catalog.Grant
+	// ColumnsBySpelling compares the column of a column privilege by its
+	// spelling, where the target compares column names without case
+	// elsewhere; see [ptah.run/core/platform.ColumnPrivilegeIsBySpelling].
+	ColumnsBySpelling bool
 }
 
 // GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
@@ -150,6 +154,13 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
+	if options.ColumnsBySpelling {
+		// Within this comparison the column rule decides only how the column
+		// of a column privilege compares: tables and schemas have rules of
+		// their own. On MySQL a privilege a role gives on `Name` serves no
+		// statement that spells it `name`, so the two are two privileges.
+		semantics.ColumnNames = identifier.ComparisonExact
+	}
 	diff.ConnectedRole = database.ConnectedRole
 	diff.ConnectedRoleSuperuser = database.ConnectedRoleSuperuser
 	sequences := newColumnSequences(desired, database, semantics)
@@ -717,9 +728,10 @@ type grantIdentity struct {
 	// column is the column a table privilege is limited to, empty for the
 	// whole object. A column privilege and the table privilege of the same
 	// name are two rows in the catalog, so they are two identities. It is
-	// keyed the way the target compares column names: on MySQL and MariaDB
-	// `Name` and `name` are one column, and a declaration spelling it one way
-	// matches a privilege the catalog spells the other.
+	// keyed the way the target compares column names: on MariaDB `Name` and
+	// `name` are one column, and a declaration spelling it one way matches a
+	// privilege the catalog spells the other. On MySQL the column of a column
+	// privilege compares by its spelling; see [GrantOptions.ColumnsBySpelling].
 	column string
 }
 

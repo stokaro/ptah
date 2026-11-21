@@ -70,3 +70,17 @@ func GrantOptionIsPerObject(dialect string) bool {
 	target, found := described(dialect)
 	return found && target.GrantOptionPerObject
 }
+
+// ColumnPrivilegeIsBySpelling reports whether a privilege on a column, held
+// through a role, serves only a statement that spells the column the way the
+// GRANT did. The answer is the descriptor's ColumnPrivilegeBySpelling; see
+// [Lookup]. A spelling no descriptor claims answers false.
+//
+// Measured on MySQL 8.4 and 26.10: with `GRANT SELECT (Name) ON t TO r`, a
+// user holding r runs `SELECT Name FROM t` and gets ERROR 1143 for `SELECT
+// name FROM t`, while a user granted SELECT (Name) directly runs both. MariaDB
+// 11.8 and 12.3 serve both spellings either way.
+func ColumnPrivilegeIsBySpelling(dialect string) bool {
+	target, found := described(dialect)
+	return found && target.ColumnPrivilegeBySpelling
+}

@@ -69,3 +69,60 @@ func TestPlan_MySQLFamilyRevokesBeforeANameComesBack(t *testing.T) {
 		})
 	}
 }
+
+// columnPrivilegeOnANameThatComesBack is a diff that creates t2 and the view
+// v1, adds secret to t1, and revokes SELECT on all of t1, t2 and v1, while the
+// role keeps the column privileges the catalog holds on t1's id, t1's secret,
+// t2's id and v1's id. secret, t2 and v1 are the ones the database dropped,
+// and the server kept the privileges on.
+func columnPrivilegeOnANameThatComesBack() *difftypes.SchemaDiff {
+	diff := nameComesBack()
+	diff.ViewsAdded = difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t2"}}
+	diff.GrantsRemoved = []difftypes.GrantRef{
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t2"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1"},
+	}
+	diff.CurrentGrants = []difftypes.GrantRef{
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Column: "id"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t1", Column: "Secret"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t2"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t2", Column: "id"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v1", Column: "id"},
+	}
+	return diff
+}
+
+// A column privilege the role keeps and a table revoke takes comes back right
+// after the revokes where its column exists, and after the CREATE TABLE,
+// CREATE VIEW or ADD COLUMN that brings it back where it does not: the server
+// answers a GRANT on a missing column with ERROR 1054, and on a missing table
+// or view with 1146. The column is matched without case, as the server
+// matches it.
+func TestPlan_MySQLFamilyGrantsBackAColumnPrivilegeOnceItsColumnExists(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatements(
+				context.Background(), must.Must(builtin.New()), columnPrivilegeOnANameThatComesBack(), dialect,
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, []string{
+				"REVOKE SELECT ON `t1` FROM `reader`",
+				"REVOKE SELECT ON `t2` FROM `reader`",
+				"REVOKE SELECT ON `v1` FROM `reader`",
+				"GRANT SELECT (`id`) ON `t1` TO `reader`",
+				"CREATE TABLE `t2` (\n  `id` INT PRIMARY KEY\n)",
+				"-- Modify table: t1\nALTER TABLE `t1` ADD COLUMN `secret` VARCHAR(50)",
+				"CREATE VIEW `v1` AS\nSELECT id FROM t2",
+				"GRANT SELECT (`Secret`) ON `t1` TO `reader`",
+				"GRANT SELECT (`id`) ON `t2` TO `reader`",
+				"GRANT SELECT (`id`) ON `v1` TO `reader`",
+			})
+		})
+	}
+}

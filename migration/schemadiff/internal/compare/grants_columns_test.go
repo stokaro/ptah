@@ -102,35 +102,49 @@ func TestGrants_Columns(t *testing.T) {
 }
 
 // TestGrants_ColumnsCompareAsTheTargetDoes compares the column of a column
-// privilege the way the target compares column names. MySQL and MariaDB take
-// Name and name for one column, so a declaration that spells it otherwise than
-// the catalog plans nothing there; PostgreSQL keeps them apart and grants the
-// declared column.
+// privilege the way the target compares column names, with the options the
+// schema comparison passes for the target. MariaDB takes Name and name for one
+// column, so a declaration that spells it otherwise than the catalog plans
+// nothing there. MySQL takes them for one column too, but a privilege held
+// through a role on Name serves no statement that spells it name, so the
+// declared spelling replaces the held one. PostgreSQL keeps the two columns
+// apart, so the role, which the declaration manages, loses the privilege on
+// Name and gains the one on name.
 func TestGrants_ColumnsCompareAsTheTargetDoes(t *testing.T) {
 	tests := []struct {
 		dialect     string
 		wantAdded   []plannedColumnGrant
 		wantRemoved []plannedColumnGrant
 	}{
-		{dialect: platform.MySQL},
+		{
+			dialect:     platform.MySQL,
+			wantAdded:   []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "name"}},
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
+		},
 		{dialect: platform.MariaDB},
 		{
-			dialect:   platform.Postgres,
-			wantAdded: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "name"}},
+			dialect:     platform.Postgres,
+			wantAdded:   []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "name"}},
+			wantRemoved: []plannedColumnGrant{{Role: "app", Privilege: "SELECT", ObjectName: "t", Column: "Name"}},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			desired := &schemamodel.Database{Grants: []schemamodel.Grant{{
-				Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"name"},
-			}}}
+			desired := &schemamodel.Database{
+				Roles: []schemamodel.Role{{Name: "app"}},
+				Grants: []schemamodel.Grant{{
+					Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", Columns: []string{"name"},
+				}},
+			}
 			database := &catalog.Database{Grants: []catalog.Grant{
 				{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", Column: "Name"},
 			}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.GrantsWithSemantics(desired, database, diff, identifier.ForDialect(test.dialect))
+			compare.GrantsWithOptions(desired, database, diff, identifier.ForDialect(test.dialect), compare.GrantOptions{
+				ColumnsBySpelling: platform.ColumnPrivilegeIsBySpelling(test.dialect),
+			})
 
 			c.Assert(plannedColumnGrants(diff.GrantsAdded), qt.DeepEquals, append(make([]plannedColumnGrant, 0), test.wantAdded...))
 			c.Assert(plannedColumnGrants(diff.GrantsRemoved), qt.DeepEquals, append(make([]plannedColumnGrant, 0), test.wantRemoved...))

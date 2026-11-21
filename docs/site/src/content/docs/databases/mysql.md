@@ -1459,25 +1459,37 @@ COLUMN`, and the privilege applies again to a table or column created under
 the same name. So a plan runs every revoke first, before it creates a table or
 adds a column; `REVOKE` on a name nothing holds succeeds. A revoke placed after
 them leaves the role the new object while the statements before it run, and
-for good when one of them fails. An apply that completes leaves the role
-with what the declaration states, and the next plan is empty.
+for good when one of them fails. A kept column privilege that a revoke on its
+table takes comes back right after the revokes where its column exists, and
+after the `CREATE TABLE`, `CREATE VIEW` or `ADD COLUMN` that brings the column
+back where it does not: the server refuses a grant on a missing column with
+ERROR 1054 and on a missing table or view with ERROR 1146. Until that statement runs, the role holds
+nothing there. An apply that completes leaves the role with what the
+declaration states, and the next plan is empty.
 
-A column name is compared without regard to case, as the server compares it.
-A declaration that spells `name` where the database holds a privilege on
-`Name` matches it, and a privilege the plan adds on that column names it
-`Name`. The server keeps a column privilege in memory under one name and in
+On MariaDB the column of a column privilege is compared without regard to
+case, as the server compares column names. A declaration that spells `name`
+where the database holds a privilege on `Name` matches it, and a privilege the
+plan adds on that column names it `Name`. MariaDB 11.8.9 and 12.3.3 serve
+either spelling to a user holding the role.
+
+On MySQL the column of a column privilege is compared by its spelling. A
+column privilege a role gives serves only a statement that spells the column
+as the grant does: measured on MySQL 8.4.13 and 26.10.0, with `SELECT (Name)`
+granted to the role, a user holding it runs `SELECT Name` and is refused
+`SELECT name` with ERROR 1143. So a declaration of `SELECT (name)` does not
+match a held privilege on `Name`: the plan revokes the privilege on `Name`
+first, then grants the one on `name`, as the declaration spells it.
+
+The server keeps a column privilege in memory under one name and in
 `mysql.columns_priv` under each spelling, so a grant under one spelling and a
 revoke under the other leave the two disagreeing: measured on MySQL 8.4.13 and
 26.10.0 and MariaDB 11.8.9 and 12.3.3, a user holding the role reads a column
-the plan revoked and cannot update one it granted.
-
-So a declaration that spells one column of a table two ways for one role is
-refused, and so is a plan that changes a role's privileges on a table where the
-database holds one of its columns under two spellings. Revoke the privileges
-under both spellings by hand, then plan again. On MySQL, a column privilege a
-role gives serves a statement that spells the column as the grant does: with
-`SELECT (Name)` granted to the role, `SELECT name` is refused with ERROR 1143.
-MariaDB serves either spelling.
+the plan revoked and cannot update one it granted. So a declaration that
+spells one column of a table two ways for one role is refused, and so is a
+plan that changes a role's privileges on a table where the database holds one
+of its columns under two spellings. Revoke the privileges under both
+spellings by hand, then plan again.
 
 A privilege on a function or procedure is refused by name when a plan grants
 it, and the read does not report routine privileges, so a comparison cannot see

@@ -3,9 +3,12 @@
 package integration_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/dbtarget"
 )
 
 // MySQL and MariaDB take `Name` and `name` for one column, and so does the
@@ -20,33 +23,77 @@ import (
 const spellingSchema = "CREATE TABLE t1 (id INT PRIMARY KEY, name VARCHAR(50) NOT NULL, secret VARCHAR(50));\n" +
 	"CREATE VIEW v1 AS SELECT id, name FROM t1;\nCREATE ROLE %[1]s;\n"
 
-// A declaration that spells a column the way the catalog does not matches the
-// privilege the catalog holds, and a privilege it adds on that column is
-// granted under the catalog's spelling. A user holding the role reads and
-// updates the column, and the next plan finds nothing to change.
+// grantStatements is the GRANT and REVOKE lines of a printed plan, in order,
+// with the database the run creates left out of each name.
+func grantStatements(printed, database string) []string {
+	statements := make([]string, 0)
+	for line := range strings.SplitSeq(printed, "\n") {
+		for _, verb := range []string{"GRANT ", "REVOKE "} {
+			if strings.HasPrefix(line, verb) {
+				statements = append(statements, strings.ReplaceAll(line, "`"+database+"`.", ""))
+			}
+		}
+	}
+	return statements
+}
+
+// A declaration that spells a column the way the catalog does not is applied
+// under the declared spelling on MySQL and matches the catalog's on MariaDB.
+// A user holding the role reads and updates the column as the declaration
+// spells it, and the next plan finds nothing to change.
 //
-// The user spells the column as the privileges do. Measured on MySQL 8.4.13
-// and 26.10.0, a column privilege a user holds through a role serves only a
-// statement that spells the column the way the GRANT did: with SELECT (Name)
-// granted to the role, `SELECT Name` runs and `SELECT name` is ERROR 1143.
-// MariaDB 11.8.9 and 12.3.3 serve both.
+// Measured on MySQL 8.4.13 and 26.10.0, a column privilege a user holds
+// through a role serves only a statement that spells the column the way the
+// GRANT did: with SELECT (Name) granted to the role, `SELECT Name` runs and
+// `SELECT name` is ERROR 1143. So on MySQL the plan revokes the privilege on
+// `Name` before it grants the declared one on `name`, and the catalog never
+// holds both. MariaDB 11.8.9 and 12.3.3 serve both spellings, so there the
+// held privilege stands and the one the plan adds takes the catalog's
+// spelling.
 func TestSchemaApplyMySQLFamilyColumnGrantSpellingE2E_HappyPath(t *testing.T) {
-	for _, engine := range mysqlServerEngines {
-		t.Run(engine.name, func(t *testing.T) {
+	tests := []struct {
+		name    string
+		admin   dbtarget.Engine
+		planned []string
+		want    []string
+	}{
+		{
+			name:  "MySQL",
+			admin: dbtarget.MySQLAdmin,
+			planned: []string{
+				"REVOKE SELECT (`Name`) ON `t1` FROM `%[1]s`;",
+				"GRANT SELECT (`name`) ON `t1` TO `%[1]s`;",
+				"GRANT UPDATE (`name`) ON `t1` TO `%[1]s`;",
+			},
+			want: []string{"column t1.name SELECT NO", "column t1.name UPDATE NO"},
+		},
+		{
+			name:    "MariaDB",
+			admin:   dbtarget.MariaDBAdmin,
+			planned: []string{"GRANT UPDATE (`Name`) ON `t1` TO `%[1]s`;"},
+			want:    []string{"column t1.Name SELECT NO", "column t1.Name UPDATE NO"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			run := newColumnGrantRun(c, engine.admin, []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"})
+			run := newColumnGrantRun(c, test.admin, []string{"GRANT SELECT (Name) ON `%[1]s`.t1 TO %[2]s"})
 			declared := spellingSchema + "GRANT SELECT (name) ON t1 TO %[1]s;\nGRANT UPDATE (name) ON t1 TO %[1]s;\n"
+			planned := make([]string, 0, len(test.planned))
+			for _, statement := range test.planned {
+				planned = append(planned, strings.ReplaceAll(statement, "%[1]s", run.role))
+			}
 
 			applied := run.apply(c, declared, "--auto-approve")
 
 			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-			c.Assert(applied.Stdout, qt.Contains, "GRANT UPDATE (`Name`) ON")
-			c.Assert(applied.Stdout, qt.Not(qt.Contains), "REVOKE")
-			c.Assert(run.privileges(c), qt.DeepEquals, []string{"column t1.Name SELECT NO", "column t1.Name UPDATE NO"})
+			c.Assert(grantStatements(applied.Stdout, run.database), qt.DeepEquals, planned)
+			c.Assert(run.privileges(c), qt.DeepEquals, test.want)
 			member := run.member(c)
 			var names int
-			c.Assert(member.QueryRowContext(c.Context(), "SELECT COUNT(Name) FROM t1").Scan(&names), qt.IsNil)
-			_, err := member.ExecContext(c.Context(), "UPDATE t1 SET Name = 'b'")
+			c.Assert(member.QueryRowContext(c.Context(), "SELECT COUNT(name) FROM t1").Scan(&names), qt.IsNil)
+			c.Assert(names, qt.Equals, 0)
+			_, err := member.ExecContext(c.Context(), "UPDATE t1 SET name = 'b'")
 			c.Assert(err, qt.IsNil)
 
 			again := run.apply(c, declared, "--dry-run")
