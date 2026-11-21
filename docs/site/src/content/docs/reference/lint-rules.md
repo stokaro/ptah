@@ -234,6 +234,11 @@ holds, and it follows the file's statements in order from there:
 Lint does not read a `DO` block or a routine body, so an extension installed
 inside one is not assessed.
 
+With `--latest`, the versions before the window are replayed and not
+reported. An extension one of them installs is held when the window starts, so
+a `CREATE EXTENSION IF NOT EXISTS` inside the window reports nothing for it.
+Lint the whole directory to assess every extension it installs.
+
 The run assesses the dev database's server, so run it at the release the
 migration will meet. PostgreSQL is the only engine assessed. The banner of an
 official `postgres` image built on Debian names the distribution's package, and
