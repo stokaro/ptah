@@ -28,11 +28,14 @@ const refreshInterval = 14 * 24 * time.Hour
 const sourceLimit = 8 << 20
 
 // sourceURLs names each product's fixed advisory page. MySQL has none: its
-// pages are Oracle's updates, which oracleIndexURL lists.
+// pages are Oracle's updates, which oracleIndexURL lists. SQL Server's is the
+// first page of the Security Update Guide's list, which readGuide follows to
+// its end.
 var sourceURLs = map[string]string{
 	"postgresql": vulnerability.SourceURL,
 	"mariadb":    "https://mariadb.com/docs/server/security/cve/community-server.md",
 	"clickhouse": "https://clickhouse.com/docs/resources/changelogs/security-changelog.md",
+	"sqlserver":  guideURL,
 }
 
 // oracleIndexURL lists Oracle's updates and schedules the next ones. Oracle
@@ -82,7 +85,7 @@ var cveID = regexp.MustCompile(`CVE-[0-9]{4}-[0-9]{4,}`)
 
 // reviewSchemaVersion changes whenever a review field changes meaning, so a
 // pending report in an older shape is written again rather than kept.
-const reviewSchemaVersion = 3
+const reviewSchemaVersion = 4
 
 // review is the report a changed versioned source leaves for a person. Added
 // and removed IDs compare the observed page with the CVE IDs the reviewed
@@ -91,6 +94,9 @@ const reviewSchemaVersion = 3
 // ObservedIDs is the list the updated snapshot records for the page. Source
 // is the observed page; ReviewedSource is set when that page is a newer one
 // than the reviewed snapshot's, such as the next Oracle update.
+// UnrecordedKBArticles and UnansweredKBRows are SQL Server's: the KB articles
+// the changed guide names with no reviewed record, and the rows it decides by
+// absence with no reviewed answer, each to be read from its article.
 type review struct {
 	SchemaVersion  int       `json:"schema_version"`
 	Product        string    `json:"product"`
@@ -102,9 +108,12 @@ type review struct {
 	AddedIDs       []string  `json:"added_cve_ids"`
 	RemovedIDs     []string  `json:"removed_cve_ids"`
 	ObservedIDs    []string  `json:"observed_cve_ids"`
+
+	UnrecordedKBArticles []string     `json:"unrecorded_kb_articles,omitempty"`
+	UnansweredKBRows     []kbQuestion `json:"unanswered_kb_rows,omitempty"`
 }
 
-var products = []string{"postgresql", "mariadb", "clickhouse", "mysql"}
+var products = []string{"postgresql", "mariadb", "clickhouse", "mysql", "sqlserver"}
 
 // fetcher reads one page by its URL.
 type fetcher func(url string) ([]byte, error)
@@ -141,11 +150,12 @@ func refreshAll(products []string, checkProduct func(string) error) error {
 }
 
 // fetch reads one upstream page. Every URL it is given is a constant source,
-// the Oracle index, or an Oracle update page that oracleUpdate has confined to
-// www.oracle.com/security-alerts/: a link read from the index or a page a
-// reviewed snapshot names, both checked before they are fetched.
+// the Oracle index, an Oracle update page that oracleUpdate has confined to
+// www.oracle.com/security-alerts/ (a link read from the index or a page a
+// reviewed snapshot names, both checked before they are fetched), or a next
+// page of the Security Update Guide that guideFilter has confined to its API.
 func fetch(client *http.Client, url string) ([]byte, error) {
-	response, err := client.Get(url) // #nosec G107 -- the URL is a constant source or an Oracle update page oracleUpdate confines.
+	response, err := client.Get(url) // #nosec G107 -- the URL is a constant source, an Oracle update page oracleUpdate confines, or a guide page guideFilter confines.
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +193,8 @@ func check(product string, fetchPage fetcher, now time.Time) error {
 // checkVersioned leaves a review of a newer update when one carries
 // advisories for the product, and otherwise reconciles every page the
 // snapshot reviews. For MySQL it also reads when Oracle's next update is due,
-// which the refreshed snapshot records as valid_until.
+// and for SQL Server it takes Microsoft's next monthly release; the refreshed
+// snapshot records either as valid_until.
 func checkVersioned(current vulnerability.VersionedSnapshot, fetchPage fetcher, now time.Time) error {
 	sources := reviewedSources(current)
 	for _, source := range sources {
@@ -211,15 +222,34 @@ func checkVersioned(current vulnerability.VersionedSnapshot, fetchPage fetcher, 
 			return err
 		}
 	}
+	if current.Product == "sqlserver" {
+		index, err := fetchPage(cvrfIndexURL)
+		if err != nil {
+			return fmt.Errorf("read the security release index: %w", err)
+		}
+		next = patchTuesday(now)
+		if err := confirmPublishedRelease(current.ValidUntil, next, index); err != nil {
+			return err
+		}
+	}
 	pages := make(map[string][]byte, len(sources))
 	for _, source := range sources {
-		page, err := fetchPage(source.url)
+		page, err := fetchSource(current.Product, source.url, fetchPage)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", source.url, err)
 		}
 		pages[source.url] = page
 	}
 	return reconcileVersioned(current, pages, next, now)
+}
+
+// fetchSource reads one reviewed source: SQL Server's guide list whole, every
+// other product's page as it is.
+func fetchSource(product, url string, fetchPage fetcher) ([]byte, error) {
+	if product == "sqlserver" {
+		return readGuide(fetchPage, url)
+	}
+	return fetchPage(url)
 }
 
 // updateKey orders Oracle update pages by month. The second result is false
@@ -393,8 +423,13 @@ func scheduledUpdate(index []byte, now time.Time) (time.Time, error) {
 
 // advisoryContent returns the part of a source page its advisories come from.
 // An Oracle page carries every product's risk matrix and a script that
-// changes on each request, so the MySQL snapshot reviews its own matrix.
+// changes on each request, so the MySQL snapshot reviews its own matrix. The
+// guide's pages carry scores, dates and row IDs that change without the
+// advisories changing, so the SQL Server snapshot reviews its engine rows.
 func advisoryContent(product string, source []byte) ([]byte, error) {
+	if product == "sqlserver" {
+		return guideContent(source)
+	}
 	if product != "mysql" {
 		return source, nil
 	}
@@ -510,6 +545,11 @@ func reconcileVersioned(current vulnerability.VersionedSnapshot, pages map[strin
 			if err != nil {
 				return err
 			}
+			if product == "sqlserver" {
+				if report, err = withKBQuestions(report, current, content); err != nil {
+					return err
+				}
+			}
 			return writeReview(report)
 		}
 		// The page is the reviewed one, so its IDs are the recorded list. A
@@ -518,6 +558,15 @@ func reconcileVersioned(current vulnerability.VersionedSnapshot, pages map[strin
 		if observed := sourceCVEIDs(content); !slices.Equal(observed, source.ids) {
 			return fmt.Errorf("%s differ from the reviewed source: not recorded %s; recorded but absent %s", source.label,
 				idList(difference(observed, source.ids)), idList(difference(source.ids, observed)))
+		}
+		if product == "sqlserver" {
+			evidence, err := readKBEvidence(kbEvidencePath)
+			if err != nil {
+				return err
+			}
+			if err := verifySQLServerSnapshot(current, content, evidence); err != nil {
+				return err
+			}
 		}
 	}
 	if err := os.Remove(reviewFile(product)); err != nil && !errors.Is(err, os.ErrNotExist) {

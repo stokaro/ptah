@@ -154,7 +154,7 @@ func TestBuildReview_FailurePath(t *testing.T) {
 // its page needs the page, so the daily source check is what catches a stale
 // list.
 func TestBundledVersionedSnapshotsRecordSourceCVEIDs(t *testing.T) {
-	for _, product := range []string{"mariadb", "clickhouse", "mysql"} {
+	for _, product := range []string{"mariadb", "clickhouse", "mysql", "sqlserver"} {
 		t.Run(product, func(t *testing.T) {
 			c := qt.New(t)
 			current, err := vulnerability.ReadVersionedSnapshot(product, "")
