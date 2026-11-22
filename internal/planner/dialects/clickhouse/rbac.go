@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
@@ -123,8 +124,8 @@ func reportRoleRemovals(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Nod
 //
 // The order costs nothing when the two sets do not overlap: revoking a grant a
 // role does not hold is a silent no-op on both measured servers.
-func planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	result = revokeGrants(result, diff)
+func planGrants(result []ast.Node, diff *difftypes.SchemaDiff, revoked []difftypes.GrantRef) []ast.Node {
+	result = revokeGrants(result, diff, revoked)
 	result = revokeGrantOptions(result, diff)
 	return addGrants(result, diff)
 }
@@ -149,9 +150,13 @@ func addGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	return result
 }
 
-// revokeGrants plans REVOKE for a grant the schema no longer declares.
-func revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+// revokeGrants plans REVOKE for a grant the schema no longer declares, except
+// the ones in revoked, which a name handover revokes ahead of its drop.
+func revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, revoked []difftypes.GrantRef) []ast.Node {
 	for _, grant := range diff.GrantsRemoved {
+		if slices.Contains(revoked, grant) {
+			continue
+		}
 		result = append(result, revokeNode(grant))
 	}
 	return result

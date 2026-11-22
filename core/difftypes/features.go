@@ -13,10 +13,13 @@ import "ptah.run/core/schemaext"
 // planner can tell an object the read recorded and could not describe from
 // one the database does not hold.
 //
-// ContextObjects and ContextCoverage are what a filtered read established,
-// as context only, about the objects of a provider's planning context kinds
-// outside its scope (catalog.Database.PlanningContextObjects). Nothing
-// compares them.
+// ContextObjects and ContextCoverage are the planning context of the database
+// read (catalog.Database.PlanningContextObjects), and nothing compares them:
+// what a filtered read established about the objects of a provider's planning
+// context kinds outside its scope, and the definitions the ClickHouse read
+// keeps of the row policies it could not describe. A rollback keeps the
+// context of the read its forward plan made, so it can create those policies
+// again.
 type FeatureContext struct {
 	DesiredObjects  schemaext.Objects
 	DesiredCoverage schemaext.Coverage

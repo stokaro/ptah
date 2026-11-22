@@ -141,6 +141,8 @@ func TestClickHouseRelationHandover_DropsTheOldRelationsRowPolicies(t *testing.T
 				c.Assert(handoverEngine(c, conn), qt.Equals, "MergeTree")
 				c.Assert(handoverVisibleRows(c, conn), qt.Equals, uint64(1))
 				c.Assert(outlivedPolicies(c, conn), qt.DeepEquals, []string{"v tenant permissive id > 100"})
+				// The read-back above shows the leak is gone; this pins the order
+				// that removes it: the policy drop comes directly before DROP VIEW.
 				c.Assert(applied.Stdout, qt.Contains, "DROP ROW POLICY `leak` ON `v`;\nDROP VIEW ")
 				again := rebuildApply(c, url, handoverTenant)
 				c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
@@ -161,4 +163,78 @@ func dropPoliciesAtCleanup(c *qt.C, conn *dbschema.DatabaseConnection, policies 
 			c.Check(err, qt.IsNil)
 		}
 	})
+}
+
+// handoverReader is a role named for the connection's scratch database, so
+// no other test shares it, which the test drops when it ends because a role
+// is server-wide.
+func handoverReader(c *qt.C, conn *dbschema.DatabaseConnection) string {
+	c.Helper()
+	var database string
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT currentDatabase()").Scan(&database), qt.IsNil)
+	role := database + "_reader"
+	rebuildExec(c, conn, "CREATE ROLE "+role)
+	c.Cleanup(func() {
+		_, err := conn.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(err, qt.IsNil)
+	})
+	return role
+}
+
+// handoverGrants reads the grants role holds in the connection's database.
+func handoverGrants(c *qt.C, conn *dbschema.DatabaseConnection, role string) uint64 {
+	c.Helper()
+	var grants uint64
+	c.Assert(conn.QueryRowContext(c.Context(),
+		"SELECT count() FROM system.grants WHERE role_name = ? AND database = currentDatabase()", role).Scan(&grants), qt.IsNil)
+	return grants
+}
+
+// TestClickHouseRelationHandover_RevokesTheOldRelationsGrants gives the name
+// of a relation holding a SELECT grant to a relation of another kind, with
+// the grant's role declared and the grant not. ClickHouse binds a grant to
+// the name as it binds a row policy, so the plan revokes it ahead of the drop:
+// revoked after the CREATE, it would apply to the new relation until then.
+// After one apply the role holds no grant in the database, and the next apply
+// plans nothing.
+func TestClickHouseRelationHandover_RevokesTheOldRelationsGrants(t *testing.T) {
+	tests := []struct {
+		name        string
+		current     string
+		declaration string
+		drop        string
+	}{
+		{
+			name:        "a table to a view",
+			current:     "CREATE TABLE v (id UInt64) ENGINE = MergeTree ORDER BY id",
+			declaration: handoverBase + "views:\n  v:\n    body: SELECT id FROM base\n",
+			drop:        "DROP TABLE v;",
+		},
+		{
+			name:        "a view to a table",
+			current:     "CREATE VIEW v AS SELECT id FROM base",
+			declaration: handoverBase + "  v:\n" + handoverColumns,
+			drop:        "DROP VIEW ",
+		},
+	}
+	for _, server := range clickHouseServers(qt.New(t)) {
+		for _, test := range tests {
+			t.Run(server.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				url, conn := handoverDatabase(c, server.url, test.current)
+				role := handoverReader(c, conn)
+				rebuildExec(c, conn, "GRANT SELECT ON v TO "+role)
+				declaration := "roles:\n  " + role + ": {}\n" + test.declaration
+
+				applied := rebuildApply(c, url, declaration)
+
+				c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				c.Assert(handoverGrants(c, conn, role), qt.Equals, uint64(0))
+				c.Assert(applied.Stdout, qt.Matches, "(?s).*REVOKE SELECT ON `[^`]+`\\.`v` FROM `"+role+"`;\n"+test.drop+".*")
+				again := rebuildApply(c, url, declaration)
+				c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+				c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+			})
+		}
+	}
 }

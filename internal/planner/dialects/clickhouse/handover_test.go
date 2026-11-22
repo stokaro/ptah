@@ -35,6 +35,12 @@ func viewPolicies() difftypes.FeatureContext {
 			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: `the policy is on "v" (engine View)`}}}))}
 }
 
+// selectOnV is the grant of SELECT on the relation v to the role reader, as
+// the reader records one.
+func selectOnV() difftypes.GrantRef {
+	return difftypes.GrantRef{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "d1.v"}
+}
+
 // tableRemoved is the removal of the table name, as the catalog captured it.
 func tableRemoved(name string) difftypes.TableRemoval {
 	return difftypes.TableRemoval{Name: name, Current: capturedColumnFixture(schemamodel.Table{Name: name}).Current}
@@ -87,6 +93,17 @@ func TestGenerateMigrationAST_HandsANameToAnotherRelationKind(t *testing.T) {
 		{name: "a table to a view",
 			diff: &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{tableRemoved("v")}, ViewsAdded: difftypes.ViewChanges{{Name: "v", Body: "SELECT 1 AS id"}}},
 			want: []string{"DROP TABLE IF EXISTS v", "CREATE VIEW `v` AS"}},
+		{name: "a table to a view named in another spelling",
+			diff: &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{tableRemoved("v")}, ViewsAdded: difftypes.ViewChanges{{Name: "d1.v", Body: "SELECT 1 AS id"}}},
+			want: []string{"DROP TABLE IF EXISTS v", "CREATE VIEW `d1`.`v` AS"}},
+		{name: "a table holding a grant to a view",
+			diff: &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{tableRemoved("v")}, ViewsAdded: difftypes.ViewChanges{{Name: "v", Body: "SELECT 1 AS id"}},
+				GrantsRemoved: []difftypes.GrantRef{selectOnV()}},
+			want: []string{"REVOKE SELECT ON `d1`.`v` FROM `reader`", "DROP TABLE IF EXISTS v", "CREATE VIEW `v` AS"}},
+		{name: "a view holding a grant to a table",
+			diff: &difftypes.SchemaDiff{ViewsRemoved: difftypes.ViewChanges{{Name: "d1.v"}}, TablesAdded: difftypes.TableChanges{tableNamed("v")},
+				GrantsRemoved: []difftypes.GrantRef{selectOnV()}},
+			want: []string{"REVOKE SELECT ON `d1`.`v` FROM `reader`", "DROP VIEW IF EXISTS `d1`.`v`", "CREATE TABLE v ("}},
 		{name: "a table to a materialized view",
 			diff: &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{tableRemoved("v")}, MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "v", Body: "SELECT 1 AS id"}}},
 			want: []string{"DROP TABLE IF EXISTS v", "CREATE MATERIALIZED VIEW `v` ENGINE = MergeTree ORDER BY tuple() AS"}},
