@@ -11,6 +11,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/errorkind"
 )
 
@@ -51,9 +52,9 @@ func regionName(c *qt.C, dbPath, code string) string {
 }
 
 // protectedTableSources are the two spellings of one fence. Each row sets
-// PTAH_PROTECTED_TABLE, to an empty value where the fence is typed: the
-// binding reads an empty value as no value, so the typed row runs with no
-// fence from the environment, whatever the shell exported.
+// PTAH_PROTECTED_TABLE, to an empty value where the fence is typed: a flag
+// typed on the command line does not read its variable, so the typed row runs
+// with no fence from the environment, whatever the shell exported.
 var protectedTableSources = []struct {
 	name        string
 	environment string
@@ -111,7 +112,8 @@ func TestSchemaApplyPlanWithoutAFenceChangesTheRow(t *testing.T) {
 	c := qt.New(t)
 	f := newRowsFixture(c)
 	planPath := f.saveRowsPlan(c)
-	t.Setenv("PTAH_PROTECTED_TABLE", "")
+	// Unset rather than empty: an empty PTAH_PROTECTED_TABLE is refused.
+	envbooltest.Unset("PTAH_PROTECTED_TABLE")(t)
 
 	_, stderr, err := runApplyThroughRoot("--db-url", f.dbURL, "--plan", planPath, "--auto-approve")
 

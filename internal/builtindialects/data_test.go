@@ -45,8 +45,11 @@ func TestDescriptors_DataAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.MySQL:       mysqlFamily,
 		platform.MariaDB:     mysqlFamily,
 		platform.SQLite: {
-			literals:  descriptor.Literals{BinaryPrefix: "X'", BinarySuffix: "'", TimestampOffset: true},
-			seeds:     descriptor.Seeds{Transactional: true},
+			literals: descriptor.Literals{BinaryPrefix: "X'", BinarySuffix: "'", TimestampOffset: true},
+			seeds: descriptor.Seeds{
+				Transactional: true,
+				TablesQuery:   `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\_%' ESCAPE '\'`,
+			},
 			savepoint: portableSavepoint,
 		},
 		platform.ClickHouse: {

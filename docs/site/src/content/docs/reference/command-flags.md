@@ -839,7 +839,7 @@ Read the columns as follows.
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
-| `--target` | `string` | `0` | `PTAH_TARGET` | — |
+| `--target` | `string` | — | `PTAH_TARGET` | — |
 | `--to-tag` | `string` | — | `PTAH_TO_TAG` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |

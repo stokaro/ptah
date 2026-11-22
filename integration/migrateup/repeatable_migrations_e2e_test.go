@@ -282,7 +282,7 @@ func TestRepeatableMigrationsE2E_HappyPath(t *testing.T) {
 		c.Assert(records[1].State, qt.Equals, migrator.RepeatableStateOrphaned)
 		c.Assert(records[1].Orphaned, qt.IsTrue)
 
-		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		result = r.ptah(c, "migrations", "down", "--target", "0", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
 		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 		c.Assert(result.Stderr, qt.Matches,
 			`(?s).*cannot roll back: this database records repeatable migrations account_names, account_names_v2,.*`)
@@ -308,7 +308,7 @@ func TestRepeatableMigrationsE2E_HappyPath(t *testing.T) {
 
 		_, err := r.conn.ExecContext(c.Context(), "DROP VIEW account_names")
 		c.Assert(err, qt.IsNil)
-		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		result = r.ptah(c, "migrations", "down", "--target", "0", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
 		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
 		c.Assert(userTables(c, r.conn), qt.Not(qt.Contains), "accounts")
 	})
@@ -388,7 +388,7 @@ func TestRepeatableMigrationsE2E_FailurePath(t *testing.T) {
 		result, _ := r.up(c)
 		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
 
-		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		result = r.ptah(c, "migrations", "down", "--target", "0", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
 		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 		c.Assert(result.Stderr, qt.Matches, `(?s).*cannot roll back: this database records repeatable migrations account_names.*`)
 		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
@@ -404,7 +404,7 @@ func TestRepeatableMigrationsE2E_FailurePath(t *testing.T) {
 		result = r.ptah(c, "migrations", "hash", "--dir", r.dir)
 		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
 
-		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		result = r.ptah(c, "migrations", "down", "--target", "0", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
 		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 		c.Assert(result.Stderr, qt.Matches,
 			`(?s).*cannot roll back: this database records repeatable migrations account_names, .*"schema_migrations_repeatable".*`)

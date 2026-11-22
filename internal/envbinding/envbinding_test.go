@@ -99,6 +99,18 @@ func TestEmptyRuleCheck_FailurePath(t *testing.T) {
 			rule:    envbinding.EmptyRule{Omitted: "use the default"},
 			wantErr: `PTAH_SCHEMA is set but empty: give it a value, or unset it and leave --schema out to use the default`,
 		},
+		{
+			name:    "a single value, spaces",
+			rule:    envbinding.EmptyRule{Omitted: "use the default"},
+			value:   "  ",
+			wantErr: `PTAH_SCHEMA is set to "  ", which names nothing: give it a value, or unset it and leave --schema out to use the default`,
+		},
+		{
+			name:    "a single value, a tab",
+			rule:    envbinding.EmptyRule{Omitted: "use the default"},
+			value:   "\t",
+			wantErr: `PTAH_SCHEMA is set to "\t", which names nothing: give it a value, or unset it and leave --schema out to use the default`,
+		},
 	}
 
 	for _, test := range tests {
@@ -114,8 +126,8 @@ func TestEmptyRuleCheck_FailurePath(t *testing.T) {
 }
 
 // TestEmptyRuleCheck_HappyPath holds the refusal to values that name nothing.
-// A single value is not split, so a comma or a space is a value there; that
-// row is the control for the list reading.
+// A single value is not split, so a comma between spaces is a value there;
+// that row is the control for the list reading.
 func TestEmptyRuleCheck_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -128,6 +140,8 @@ func TestEmptyRuleCheck_HappyPath(t *testing.T) {
 		{name: "a name before a blank field", rule: listRule, value: "app,"},
 		{name: "a quoted empty name is left to the flag", rule: listRule, value: `""`},
 		{name: "a single value holding blank fields", rule: envbinding.EmptyRule{Omitted: "use the default"}, value: " , "},
+		{name: "a single value in spaces", rule: envbinding.EmptyRule{Omitted: "use the default"}, value: " 1 "},
+		{name: "a single zero", rule: envbinding.EmptyRule{Omitted: "use the default"}, value: "0"},
 		{name: "the zero rule", value: ""},
 	}
 

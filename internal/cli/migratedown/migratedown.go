@@ -143,6 +143,11 @@ This command applies down migrations to revert the database schema to an earlier
 version. All migrations with versions higher than the target version will be
 rolled back in reverse order.
 
+The rollback needs a stop, and it has no default: --target names the version
+(--target 0 rolls back every applied migration), --to-tag names a tag recorded
+by "migrations tag", and --limit names how many of the last applied migrations
+to roll back.
+
 Each migration rollback is run in a transaction, so if any rollback fails, it will
 be rolled back and the migration process will stop. With --runner golang-migrate,
 a down file runs the way golang-migrate runs it: on PostgreSQL in the transactions
@@ -177,12 +182,17 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
-	flags.StringVar(&opts.target, targetFlag, "0", "Target version to migrate down to (required)")
+	flags.StringVar(&opts.target, targetFlag, "",
+		"Version to roll back to; 0 rolls back every applied migration (this, --"+toTagFlag+" or --"+limitFlag+" is required)")
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Ephemeral shadow database URL where the rollback plan is replayed and verified before touching the target")
 	flags.StringVar(&opts.toTag, toTagFlag, "",
 		"Migration tag to roll back to, resolved against the tags recorded by `migrations tag`")
 	flags.Uint64Var(&opts.limit, limitFlag, 0,
 		"Roll back only the last N applied migrations (0 sets no limit); exclusive with --"+targetFlag+" and --"+toTagFlag)
+	// Read as unset, an empty variable leaves the stop to whatever else names
+	// one, and a PTAH_TARGET=0 beside it rolls the whole history back.
+	dbcli.RefuseEmptyValueEnv(flags, targetFlag, "stop at --"+toTagFlag+" or --"+limitFlag)
+	dbcli.RefuseEmptyValueEnv(flags, limitFlag, "stop at --"+targetFlag+" or --"+toTagFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false,
 		"Skip the pre-migration checks embedded in the down migrations being rolled back")
 	flags.BoolVar(&opts.plan, planFlag, false,
@@ -490,7 +500,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	if migrationsDir == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
-	if err := refuseMalformedTarget(targetVersionValue); err != nil {
+	if err := requireStop(cmd.Flags(), opts, targetVersionValue); err != nil {
 		return err
 	}
 
@@ -580,9 +590,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		return err
 	}
 	document.Migrator = mig
-	targetVersion, err := mig.ResolveVersion(targetVersionValue)
+	targetVersion, err := typedTargetVersion(cmd.Flags(), mig, targetVersionValue)
 	if err != nil {
-		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
+		return err
 	}
 
 	// Before the lock, so a run that waits for it has said which lock it waits
@@ -983,6 +993,43 @@ func refuseMalformedTarget(value string) error {
 		return fmt.Errorf("invalid target version %q: the target is empty", value)
 	}
 	return nil
+}
+
+// errNoStop refuses a rollback that names no stop; see [requireStop].
+var errNoStop = fmt.Errorf("name where the rollback stops: pass --%s <version> (--%s 0 rolls back every applied migration), "+
+	"--%s <tag> or --%s <n>; \"ptah migrations status\" lists the applied versions",
+	targetFlag, targetFlag, toTagFlag, limitFlag)
+
+// requireStop refuses a rollback that names no stop: none of --target, a
+// --to-tag naming a tag, or a --limit above 0, typed or set by its variable.
+// The rollback has no default stop, because a default of version 0 rolls back
+// every applied migration, the largest rollback there is, on a run that asked
+// for none in particular. A --target that is given goes to
+// [refuseMalformedTarget]. It runs once the database URL and the directory are
+// known to be given, so a run missing those is told about them first, and
+// before the directory is read or the database connected.
+func requireStop(flags *pflag.FlagSet, opts *options, target string) error {
+	if flags.Changed(targetFlag) {
+		return refuseMalformedTarget(target)
+	}
+	if opts.toTag == "" && opts.limit == 0 {
+		return errNoStop
+	}
+	return nil
+}
+
+// typedTargetVersion resolves --target against the directory mig read. With
+// no --target, --to-tag or --limit names the stop, and resolveStop replaces
+// the 0 it returns under the lock; see [requireStop].
+func typedTargetVersion(flags *pflag.FlagSet, mig *migrator.Migrator, target string) (int64, error) {
+	if !flags.Changed(targetFlag) {
+		return 0, nil
+	}
+	version, err := mig.ResolveVersion(target)
+	if err != nil {
+		return 0, fmt.Errorf("invalid target version %q: %w", target, err)
+	}
+	return version, nil
 }
 
 // refuseFlagCombinations refuses, before anything is read or connected, the

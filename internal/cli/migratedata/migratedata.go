@@ -90,6 +90,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Print the migration SQL instead of writing files")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow generating a data migration that updates or deletes existing rows")
 	flags.StringArrayVar(&opts.protectedTables, protectedTableFlag, nil, "Managed table that requires --allow-prod to modify; repeat to add more")
+	dbcli.RefuseEmptyListEnv(flags, protectedTableFlag, dbcli.OmittedProtectedTable)
 	flags.BoolVar(&opts.allowProd, allowProdFlag, false, "Allow generating a data migration that modifies a protected table")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }

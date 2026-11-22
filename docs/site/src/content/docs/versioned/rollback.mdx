@@ -107,9 +107,18 @@ Database is now at version: 1785255953
 ## Roll back to a target version
 
 `--target` names the version the database should end up at. Everything
-applied above it is rolled back, newest first. Name the stop on every run:
-`ptah migrations down` with no `--target`, `--to-tag` or `--limit` rolls back
-to version 0, which reverts every applied migration.
+applied above it is rolled back, newest first. The rollback has no default
+stop: `ptah migrations down` with no `--target`, `--to-tag` or `--limit`, typed
+or set by its variable, is refused before it reads the directory or connects.
+The refusal says how to name one:
+
+```text
+error: name where the rollback stops: pass --target <version> (--target 0 rolls back every applied migration), --to-tag <tag> or --limit <n>; "ptah migrations status" lists the applied versions
+```
+
+An empty or blank `PTAH_TARGET` or `PTAH_LIMIT` is refused as well, even
+beside a typed stop; see
+[variables that narrow a write](../../reference/configuration/#variables-that-narrow-a-write).
 
 To count instead of naming a version, pass `--limit N`: the last N applied
 migrations are rolled back, and a limit larger than the history rolls back
@@ -297,7 +306,8 @@ rollback verification failed: shadow database must be distinct from target datab
   current version, with `--plan` or without, when no pending migration sits
   below it. A pending one is handled as the item above says.
 - `--target 0` rolls back everything, returning the database to an empty
-  application schema.
+  application schema. It is the only way to ask for that rollback, since a run
+  that names no stop is refused.
 - To roll back one step, pass `--limit 1`. It reverts the last applied
   migration, and no version has to be read first.
 

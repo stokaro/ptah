@@ -59,7 +59,7 @@ func (r emptyRollbackRun) ptah(c *qt.C, args ...string) clirun.Result {
 
 func (r emptyRollbackRun) down(c *qt.C, flags ...string) clirun.Result {
 	c.Helper()
-	return r.ptah(c, append([]string{"migrations", "down", "--db-url", r.database, "--migrations-dir", "migrations", "--confirm"}, flags...)...)
+	return r.ptah(c, append([]string{"migrations", "down", "--target", "0", "--db-url", r.database, "--migrations-dir", "migrations", "--confirm"}, flags...)...)
 }
 
 func (r emptyRollbackRun) up(c *qt.C) clirun.Result {

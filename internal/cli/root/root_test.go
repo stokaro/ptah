@@ -294,7 +294,7 @@ func TestNewRootCommand_TypedMigrationTimeoutsRefuseATargetWithoutThem(t *testin
 		},
 		{
 			name: "down",
-			verb: []string{"migrations", "down", "--confirm"},
+			verb: []string{"migrations", "down", "--target", "0", "--confirm"},
 			wantErr: `--statement-timeout sets a timeout for every migration, and dialect "sqlite" has no lock or ` +
 				`statement timeout Ptah can set and restore around a migration. Remove --statement-timeout to run without one`,
 		},

@@ -393,6 +393,18 @@ func nativeLimitDown(targetURL string) []string {
 // that holds both and the database URL.
 func appliedLimitHistory(c *qt.C) (dir, targetURL string) {
 	c.Helper()
+	dir, targetURL = pendingLimitHistory(c)
+	applied := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
+		"migrate", "apply", "--url", targetURL, "--dir", "file://migrations")
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(limitHistoryTables(c, targetURL), qt.DeepEquals, []string{"a", "b", "c"})
+	return dir, targetURL
+}
+
+// pendingLimitHistory writes the directory [appliedLimitHistory] applies, with
+// its atlas.sum, and names an empty SQLite database beside it.
+func pendingLimitHistory(c *qt.C) (dir, targetURL string) {
+	c.Helper()
 	dir = c.TempDir()
 	migrations := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrations, 0o750), qt.IsNil)
@@ -405,12 +417,7 @@ func appliedLimitHistory(c *qt.C) (dir, targetURL string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrations, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 
-	targetURL = atlasurl.SQLiteURLFromPath(filepath.Join(dir, "target.db"))
-	applied := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
-		"migrate", "apply", "--url", targetURL, "--dir", "file://migrations")
-	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(limitHistoryTables(c, targetURL), qt.DeepEquals, []string{"a", "b", "c"})
-	return dir, targetURL
+	return dir, atlasurl.SQLiteURLFromPath(filepath.Join(dir, "target.db"))
 }
 
 // limitHistoryTables reads back which of the history's tables the target holds.

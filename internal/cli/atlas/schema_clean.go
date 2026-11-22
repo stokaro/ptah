@@ -96,6 +96,8 @@ a failed run names the drops that ran before the failure.`
 	if !policy.IsStrictCE() {
 		flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in the cleanup")
 		flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from the cleanup")
+		dbcli.RefuseEmptyListEnv(flags, "include", dbcli.OmittedInclude)
+		dbcli.RefuseEmptyListEnv(flags, "exclude", dbcli.OmittedExclude)
 	}
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)

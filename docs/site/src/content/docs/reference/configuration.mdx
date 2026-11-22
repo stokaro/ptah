@@ -105,6 +105,37 @@ Unset the variable to get that default. A flag typed on the command line wins
 without reading the variable. An empty value typed on the command line keeps
 the meaning the flag's `--help` gives it, `--schemas ''` included.
 
+## Variables that narrow a write
+
+A command that writes refuses an empty or blank value of a variable that
+narrows what it changes, where the variable read as unset would change more
+than any value does. Read as unset, an empty `PTAH_EXCLUDE` plans the `DROP` a
+value keeps out. Blank means only spaces, or for a list only blank fields.
+
+| Command | Variables | Leaving the flag out |
+| --- | --- | --- |
+| `ptah schema apply` | `PTAH_EXCLUDE`, `PTAH_INCLUDE`, `PTAH_PROTECTED_TABLE` | Excludes nothing, includes every object, protects no table |
+| `ptah migrations generate` | `PTAH_EXCLUDE`, `PTAH_INCLUDE` | Excludes nothing, includes every object |
+| `ptah migrations data`, `ptah seed` | `PTAH_PROTECTED_TABLE` | Protects no table |
+| `ptah migrations up` | `PTAH_LIMIT`, `PTAH_TO_VERSION` | Applies every pending migration |
+| `ptah migrations down` | `PTAH_TARGET`, `PTAH_LIMIT` | Leaves the stop to the other flags; with none, the run is refused |
+| `ptah-compat schema apply`, `ptah-compat schema clean` | `PTAH_EXCLUDE`, `PTAH_INCLUDE` | Excludes nothing, includes every object |
+| `ptah-compat migrate apply` | `PTAH_TO_VERSION` | Applies every pending migration |
+
+The refusal names the variable and says what leaving the flag out does on
+that command:
+
+```text
+error: PTAH_EXCLUDE is set but empty: give it a value, or unset it and leave --exclude out to exclude nothing
+error: PTAH_TO_VERSION is set to " ", which names nothing: give it a value, or unset it and leave --to-version out to apply every pending migration
+```
+
+A command that only reads, or writes a plan for review such as
+`ptah schema plan`, reads an empty value as unset. So does
+`ptah-compat migrate down` for `PTAH_TO_VERSION`: its default reverts one
+migration, which is narrower than any version. Unset the variable to get the
+default. A typed flag wins without reading the variable.
+
 ## Boolean environment variables
 
 Every boolean `PTAH_*` variable follows one rule, whether it is a flag's
@@ -145,7 +176,8 @@ inspection variable does not break an unrelated SQLite command or
 `ptah version`.
 
 Other non-boolean `PTAH_*` variables read an empty value as unset, except the
-[schema-selecting variables](#schema-selecting-variables).
+[schema-selecting variables](#schema-selecting-variables) and the
+[variables that narrow a write](#variables-that-narrow-a-write).
 
 ### Atlas CE strict compatibility
 
