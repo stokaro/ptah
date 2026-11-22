@@ -32,6 +32,7 @@ func storedRead() catalog.Database {
 		Triggers:        []catalog.Trigger{{Name: "t1", Schema: "APP", Table: "orders"}},
 		Roles:           []catalog.Role{{Name: "reader"}, {Name: "READER"}},
 		RolesOutOfScope: []catalog.Role{{Name: "writer"}},
+		RoleMemberships: []catalog.RoleMembership{{Role: "TEAM", Member: "reader"}},
 		Grants: []catalog.Grant{
 			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"},
 			{Role: "READER", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
@@ -69,6 +70,8 @@ func TestSpell_StoredOracleRead(t *testing.T) {
 	c.Assert(got.Roles[0].Name, qt.Equals, `"reader"`)
 	c.Assert(got.Roles[1].Name, qt.Equals, "READER")
 	c.Assert(got.RolesOutOfScope[0].Name, qt.Equals, `"writer"`)
+	c.Assert(got.RoleMemberships[0].Role, qt.Equals, "TEAM")
+	c.Assert(got.RoleMemberships[0].Member, qt.Equals, `"reader"`)
 	c.Assert(got.Grants[0].Role, qt.Equals, `"reader"`)
 	c.Assert(got.Grants[0].ObjectName, qt.Equals, `"orders"`)
 	c.Assert(got.Grants[1].Role, qt.Equals, "READER")

@@ -129,6 +129,11 @@ func spellPrivileges(read catalog.Database, spell func(string) string) catalog.D
 	for index := range read.RolesOutOfScope {
 		read.RolesOutOfScope[index].Name = spell(read.RolesOutOfScope[index].Name)
 	}
+	read.RoleMemberships = slices.Clone(read.RoleMemberships)
+	for index := range read.RoleMemberships {
+		membership := &read.RoleMemberships[index]
+		membership.Role, membership.Member = spell(membership.Role), spell(membership.Member)
+	}
 	read.Grants = slices.Clone(read.Grants)
 	for index := range read.Grants {
 		grant := &read.Grants[index]

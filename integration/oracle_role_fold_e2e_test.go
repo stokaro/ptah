@@ -128,6 +128,86 @@ func TestSchemaApplyOracleRevokesFromAQuotedRoleE2E(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*ORA-00942.*`)
 }
 
+// A role and a table created quoted, and a grant on the table to PUBLIC, are
+// written by `db read` with the names that address them. Replayed after both
+// objects are gone, the file creates the role stored as ptah_rq_<stamp> and the
+// table stored as qt_q, grants SELECT to the role and to PUBLIC again, and the
+// next plan is empty. A file that wrote the names bare would create PTAH_RQ_
+// and QT_Q instead.
+func TestDBReadOracleQuotedNamesReplayE2E(t *testing.T) {
+	c := qt.New(t)
+	stamp := fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000)
+	role := "ptah_rq_" + stamp
+	account := newOracleRoleFoldAccount(c, stamp, role, `CREATE ROLE "`+role+`"`)
+	for _, statement := range []string{
+		`CREATE TABLE "qt_q" (id NUMBER(10) PRIMARY KEY)`,
+		`GRANT SELECT ON "qt_q" TO "` + role + `"`,
+		`GRANT SELECT ON "qt_q" TO PUBLIC`,
+	} {
+		_, err := account.owner.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
+	read := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: 3 * time.Minute},
+		"db", "read", "--db-url", account.url)
+
+	c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", read.Stdout, read.Stderr))
+	c.Assert(read.Stdout, qt.Contains, `CREATE ROLE "`+role+`";`)
+	c.Assert(read.Stdout, qt.Contains, "CREATE TABLE "+account.name+`."qt_q" (`)
+	c.Assert(read.Stdout, qt.Contains, "GRANT SELECT ON "+account.name+`."qt_q" TO "PUBLIC";`)
+	c.Assert(read.Stdout, qt.Contains, "GRANT SELECT ON "+account.name+`."qt_q" TO "`+role+`";`)
+	execOracle(c.Context(), c, account.admin, "DROP TABLE "+account.name+`."qt_q" PURGE`)
+	execOracle(c.Context(), c, account.admin, `DROP ROLE "`+role+`"`)
+	c.Assert(account.roles(c, role), qt.IsNil)
+	replayed := account.apply(c, read.Stdout, "--auto-approve")
+
+	c.Assert(replayed.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replayed.Stdout, replayed.Stderr))
+	c.Assert(account.roles(c, role), qt.DeepEquals, []string{role})
+	c.Assert(account.privileges(c, role, "qt_q"), qt.DeepEquals, []string{"SELECT"})
+	c.Assert(account.privileges(c, "PUBLIC", "qt_q"), qt.DeepEquals, []string{"SELECT"})
+	again := account.apply(c, read.Stdout, "--dry-run")
+
+	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+	c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+	member := account.member(c, role)
+	_, err := member.ExecContext(c.Context(), strings.ReplaceAll(`SELECT id FROM {account}."qt_q"`, "{account}", account.name))
+	c.Assert(err, qt.IsNil)
+}
+
+// A bare role name declared beside a role created quoted under the same
+// letters is a different role: the plan creates it with the bare name, the
+// server stores it as PTAH_RF_<stamp> and it holds SELECT, and the role stored
+// as ptah_rf_<stamp> is left as it was and holds nothing. Matched by its
+// letters alone, the declared role would be the existing one, the plan would
+// create nothing, and the GRANT would go to it.
+func TestSchemaApplyOracleBareRoleBesideAQuotedRoleE2E(t *testing.T) {
+	c := qt.New(t)
+	stamp := fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000)
+	lower := "ptah_rf_" + stamp
+	upper := "PTAH_RF_" + stamp
+	account := newOracleRoleFoldAccount(c, stamp, upper, `CREATE ROLE "`+lower+`"`)
+	c.Cleanup(func() { dropOracleRole(context.Background(), c, account.admin, `"`+lower+`"`) })
+	declared := "CREATE ROLE " + lower + ";\nCREATE TABLE t1 (id NUMBER(10) PRIMARY KEY);\nGRANT SELECT ON t1 TO " + lower + ";\n"
+	planned := account.apply(c, declared, "--dry-run")
+
+	c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+	c.Assert(planned.Stdout, qt.Contains, "CREATE ROLE "+lower+";")
+	for range 2 {
+		applied := account.apply(c, declared, "--auto-approve")
+
+		c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	}
+	again := account.apply(c, declared, "--dry-run")
+
+	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+	c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+	c.Assert(account.roles(c, lower, upper), qt.DeepEquals, []string{lower, upper})
+	c.Assert(account.privileges(c, upper, "T1"), qt.DeepEquals, []string{"SELECT"})
+	c.Assert(account.privileges(c, lower, "T1"), qt.IsNil)
+	member := account.member(c, upper)
+	_, err := member.ExecContext(c.Context(), strings.ReplaceAll("SELECT id FROM {account}.t1", "{account}", account.name))
+	c.Assert(err, qt.IsNil)
+}
+
 // oracleRoleFoldAccount is an account that may read the role catalog and
 // create roles, and owns what an apply creates.
 type oracleRoleFoldAccount struct {
@@ -194,6 +274,25 @@ func (a oracleRoleFoldAccount) privileges(c *qt.C, stored, table string) []strin
 	}
 	c.Assert(rows.Err(), qt.IsNil)
 	return held
+}
+
+// roles is each of the names a role is stored under on the server, in the
+// order given, leaving out the ones no role has.
+func (a oracleRoleFoldAccount) roles(c *qt.C, stored ...string) []string {
+	c.Helper()
+	var found []string
+	for _, name := range stored {
+		rows, err := a.owner.QueryContext(c.Context(), "SELECT role FROM dba_roles WHERE role = :1", name)
+		c.Assert(err, qt.IsNil)
+		for rows.Next() {
+			var role string
+			c.Assert(rows.Scan(&role), qt.IsNil)
+			found = append(found, role)
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		c.Assert(rows.Close(), qt.IsNil)
+	}
+	return found
 }
 
 // member is a session of a user the role stored as stored is granted to.

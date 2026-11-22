@@ -29,7 +29,7 @@ func TestMembershipRemovalRequiresIndependentCoverage(t *testing.T) {
 			desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app", MemberOfStated: true}, {Name: "team", Group: true}}, NotDescribed: test.desired}
 			current := &catalog.Database{RoleMemberships: []catalog.RoleMembership{{Role: "team", Member: "app"}}, NotDescribed: test.observed}
 			var diff difftypes.SchemaDiff
-			compare.RoleMemberships(desired, current, &diff, capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
+			compare.RoleMemberships(desired, current, &diff, postgresSemantics(), capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
 			c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, test.removed)
 			c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
 		})
@@ -41,10 +41,10 @@ func TestMembershipAdditionRetainsExplicitIntentWithUnreadCurrentState(t *testin
 	desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "app", MemberOf: []string{"team"}}}}
 	current := &catalog.Database{NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.RoleMembership))}
 	var diff difftypes.SchemaDiff
-	compare.RoleMemberships(desired, current, &diff, capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
+	compare.RoleMemberships(desired, current, &diff, postgresSemantics(), capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
 	c.Assert(diff.RoleMembershipsAdded, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "team", Member: "app"}})
 	desired.NotDescribed = coverage.Set{}.With(coverage.Refused(coverage.RoleMembership))
 	diff = difftypes.SchemaDiff{}
-	compare.RoleMemberships(desired, current, &diff, capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
+	compare.RoleMemberships(desired, current, &diff, postgresSemantics(), capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
 	c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
 }

@@ -67,3 +67,70 @@ func TestObjectComments_RoleStoredNames(t *testing.T) {
 	c.Assert(diff.ObjectCommentsChanged[0].Kind, qt.Equals, difftypes.CommentedRole)
 	c.Assert(diff.ObjectCommentsChanged[0].Name, qt.Equals, "reader")
 }
+
+// TestRoleMemberships_StoredNames matches a declared membership with the one
+// Oracle stores under the roles' names, in a read already given the spelling
+// that addresses them: a bare reader member of team is READER in TEAM, and
+// the membership of the role created quoted is another one. A planned
+// addition names the roles as declared.
+func TestRoleMemberships_StoredNames(t *testing.T) {
+	tests := []struct {
+		name  string
+		held  []catalog.RoleMembership
+		added []difftypes.RoleMembershipRef
+	}{
+		{name: "the membership of the roles in upper case", held: []catalog.RoleMembership{{Role: "TEAM", Member: "READER"}}},
+		{
+			name:  "the membership of the role created quoted",
+			held:  []catalog.RoleMembership{{Role: "TEAM", Member: `"reader"`}},
+			added: []difftypes.RoleMembershipRef{{Role: "team", Member: "reader"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Roles: []schemamodel.Role{
+				{Name: "reader", MemberOf: []string{"team"}, MemberOfStated: true},
+				{Name: "team", Group: true},
+			}}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.RoleMemberships(desired, &catalog.Database{RoleMemberships: test.held}, diff, identifier.ForDialect("oracle"),
+				capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
+
+			c.Assert(diff.RoleMembershipsAdded, qt.DeepEquals, test.added)
+			c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestRoleMemberships_StoredNamesRemoval removes a membership between two
+// declared roles that the declaration does not state, matching both roles by
+// the names Oracle stores, and names it as the read does: TEAM, or "team" for
+// the group created quoted.
+func TestRoleMemberships_StoredNamesRemoval(t *testing.T) {
+	tests := []struct {
+		name  string
+		group string
+	}{
+		{name: "a group in upper case", group: "TEAM"},
+		{name: "a group created quoted", group: `"team"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Roles: []schemamodel.Role{
+				{Name: "reader", MemberOfStated: true},
+				{Name: test.group, Group: true},
+			}}
+			database := &catalog.Database{RoleMemberships: []catalog.RoleMembership{{Role: test.group, Member: "READER"}}}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.RoleMemberships(desired, database, diff, identifier.ForDialect("oracle"),
+				capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
+
+			c.Assert(diff.RoleMembershipsRemoved, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: test.group, Member: "READER"}})
+			c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
+		})
+	}
+}

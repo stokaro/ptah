@@ -398,7 +398,7 @@ func TestRoleMemberships_CountsTheMembershipsBothSidesHold(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RoleMemberships(desired, database, diff, capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
+	compare.RoleMemberships(desired, database, diff, postgresSemantics(), capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
 
 	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{RoleMemberships: 1})
 	c.Assert(diff.RoleMembershipsAdded, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "writers", Member: "batch"}})
