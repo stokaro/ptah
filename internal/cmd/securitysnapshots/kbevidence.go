@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,8 +30,10 @@ import (
 // answers give together, so a snapshot rebuilt from the guide alone cannot
 // pass it.
 
-// kbEvidencePath is the reviewed record of the KB articles.
-var kbEvidencePath = filepath.Join("internal", "vulnerability", "sqlserver-kb.json")
+// kbEvidencePath is the reviewed record of the KB articles. It is spelled with
+// forward slashes, which every platform's file API accepts, so the refusals
+// that name it read the same on Windows as elsewhere.
+const kbEvidencePath = "internal/vulnerability/sqlserver-kb.json"
 
 // sqlServerEngine is a guide product the snapshot pins: a SQL Server database
 // engine of one release year on one servicing branch.
