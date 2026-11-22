@@ -55,40 +55,66 @@ import (
 // keeps it and reports it rather than dropping it. Whether a relation of the
 // name exists is asked of system.tables, which lists dictionaries too, and
 // only when some policy's table is not one the read holds.
-func (r *Reader) readRowPolicies(ctx context.Context, dbName string, held func(string) bool) ([]schemaext.Object, []schemaext.SubjectCoverage, error) {
-	read, err := r.readRowPolicyRows(ctx, dbName)
+//
+// Such a policy's definition is still read, as an object the comparison never
+// reads. A plan that drops a view drops its policies with it, and the
+// rollback that creates the view again recreates them from this definition:
+// system.row_policies reports the filter, the composition and both role lists
+// for a policy on a view as it does for one on a table, measured on
+// 24.10.4.191 and 26.10.3.7.
+func (r *Reader) readRowPolicies(ctx context.Context, dbName string, held func(string) bool) (rowPolicyRead, error) {
+	rows, err := r.readRowPolicyRows(ctx, dbName)
 	if err != nil {
-		return nil, nil, err
+		return rowPolicyRead{}, err
 	}
 	var relations map[string]string
-	var policies []schemaext.Object
-	var unread []schemaext.SubjectCoverage
-	for _, row := range read {
+	unheldEngine := func(table string) (string, bool, error) {
+		if held(table) {
+			return "", false, nil
+		}
+		if relations == nil {
+			if relations, err = r.readRelationEngines(ctx, dbName); err != nil {
+				return "", false, err
+			}
+		}
+		engine, found := relations[table]
+		return engine, found, nil
+	}
+	var read rowPolicyRead
+	for _, row := range rows {
 		if row.table == "" {
-			unread = append(unread, schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", "*", row.name),
+			read.unread = append(read.unread, schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", "*", row.name),
 				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: fmt.Sprintf(
 					"the policy is written ON %s.*, for every table of the database, which Ptah does not model; the plan keeps the policy", dbName)}})
 			continue
 		}
-		if !held(row.table) {
-			if relations == nil {
-				if relations, err = r.readRelationEngines(ctx, dbName); err != nil {
-					return nil, nil, err
-				}
-			}
-			if engine, found := relations[row.table]; found {
-				unread = append(unread, schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", row.table, row.name),
-					Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: unreadRelationReason(row.table, engine)}})
-				continue
-			}
-		}
-		policy, err := chschema.ObservedRowPolicyObject(chschema.RowPolicyRef("", row.table, row.name), row.observed)
+		ref := chschema.RowPolicyRef("", row.table, row.name)
+		object, err := chschema.ObservedRowPolicyObject(ref, row.observed)
 		if err != nil {
-			return nil, nil, err
+			return rowPolicyRead{}, err
 		}
-		policies = append(policies, policy)
+		engine, unheld, err := unheldEngine(row.table)
+		if err != nil {
+			return rowPolicyRead{}, err
+		}
+		if !unheld {
+			read.policies = append(read.policies, object)
+			continue
+		}
+		read.unread = append(read.unread, schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: ref,
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: unreadRelationReason(row.table, engine)}})
+		read.definitions = append(read.definitions, object)
 	}
-	return policies, unread, nil
+	return read, nil
+}
+
+// rowPolicyRead is what one read of system.row_policies establishes: the
+// policies the read describes, the records of the ones it cannot, and the
+// definitions of the ones on a relation, kept as planning context.
+type rowPolicyRead struct {
+	policies    []schemaext.Object
+	unread      []schemaext.SubjectCoverage
+	definitions []schemaext.Object
 }
 
 // rowPolicyRow is one row of system.row_policies: a policy's name, its table,

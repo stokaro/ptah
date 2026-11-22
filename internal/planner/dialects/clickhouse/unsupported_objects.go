@@ -6,11 +6,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chschema"
@@ -69,7 +71,7 @@ func planObjectsAfterTables(
 	if err != nil {
 		return nil, nil, err
 	}
-	result = planGrants(result, diff)
+	result = planGrants(result, diff, handovers.revoked)
 	result = reportTriggers(result, diff)
 	return result, replacementDrops, nil
 }
@@ -236,6 +238,11 @@ func reportViewLikes(
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, platform.ClickHouse) {
 		result = append(result, nodes[identityOf(object)])
 	}
+	restores, err := rowPolicyRestores(diff, replaced, semantics)
+	if err != nil {
+		return nil, nil, err
+	}
+	result = append(result, restores...)
 	vacated := droppedviews.Vacated(diff, semantics)
 	for _, removal := range gone {
 		if slices.Contains(handovers.viewLikes, removal) {
@@ -277,6 +284,70 @@ func rowPolicyDrops(diff *difftypes.SchemaDiff, name string, semantics identifie
 			Transaction: plangraph.TransactionForbidden})
 	}
 	return nodes
+}
+
+// rowPolicyRestores creates the row policies the target holds on each view or
+// materialized view the plan creates under a name no view-like removal gives
+// up. Such a policy is one the target's read could not describe, so it is a
+// coverage record on the desired side, and its definition is the object the
+// read kept beside it ([difftypes.FeatureContext.ContextObjects]). Only a
+// rollback has such a desired side: the down migration of a plan that dropped
+// a view, which dropped its policies with it ([rowPolicyDrops]), creates the
+// view again and then its policies. A declaration cannot write a policy on a
+// view, so a forward plan has none to create. A view another view-like
+// replaces keeps its policies, and nothing creates them.
+//
+// A policy whose definition the read did not keep is named in a note, with
+// the reason, rather than left out.
+func rowPolicyRestores(diff *difftypes.SchemaDiff, replaced []droppedviews.Removal, semantics identifier.Semantics) ([]ast.Node, error) {
+	records := chpolicysource.Undescribed(diff.Features.DesiredCoverage)
+	if len(records) == 0 {
+		return nil, nil
+	}
+	definitions, err := diff.Features.ContextObjects.All()
+	if err != nil {
+		return nil, err
+	}
+	var nodes []ast.Node
+	for _, name := range slices.Concat(diff.ViewsAdded.Names(), diff.MaterializedViewsAdded.Names()) {
+		if droppedviews.Holds(replaced, name, semantics) {
+			continue
+		}
+		created := []droppedviews.Removal{{Name: name}}
+		for _, record := range records {
+			if !droppedviews.Below(created, record.Subject, semantics) {
+				continue
+			}
+			policy, found := rowPolicyDefinition(definitions, created, record.Subject, semantics)
+			if !found {
+				nodes = append(nodes, ast.NewComment(fmt.Sprintf(
+					"CLICKHOUSE: row policy %q on %q is not created again: the read kept no definition of it (%s)",
+					record.Subject.Name.Source, record.Subject.Parent.Source, record.Knowledge.Reason)))
+				continue
+			}
+			nodes = append(nodes, &ast.ExtensionStatement{Payload: &chast.RowPolicyCommand{Action: "CREATE",
+				Database: chschema.RowPolicyDatabase(record.Subject), Table: record.Subject.Parent.Source, Name: record.Subject.Name.Source,
+				Values: policy.Desired(), FilterSet: policy.Filter != nil, RolesSet: true},
+				Transaction: plangraph.TransactionForbidden})
+		}
+	}
+	return nodes, nil
+}
+
+// rowPolicyDefinition finds the definition of the policy subject names among
+// definitions: on the relation created names, under the same policy name. It
+// matches by name rather than by key, since a comparison qualifies a coverage
+// record with the connection's database and the read's object names none.
+func rowPolicyDefinition(definitions []schemaext.Object, created []droppedviews.Removal, subject objectidentity.ID, semantics identifier.Semantics) (*chschema.ObservedRowPolicy, bool) {
+	for _, object := range definitions {
+		policy, ok := object.Value.(*chschema.ObservedRowPolicy)
+		if !ok || object.Ref.Kind != subject.Kind || !droppedviews.Below(created, object.Ref, semantics) ||
+			object.Ref.Name.Normalized != subject.Name.Normalized {
+			continue
+		}
+		return policy, true
+	}
+	return nil, false
 }
 
 // appendMaterializedViewReplacementDrop writes the drop half of a replacement

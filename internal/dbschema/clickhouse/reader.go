@@ -157,30 +157,47 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		// conclude "this policy is missing" from a read that admits it did not
 		// look, so a declared policy becomes an undecided addition instead of
 		// a CREATE nothing verified.
-		held := make(map[string]bool, len(schema.Tables))
-		for _, table := range schema.Tables {
-			held[table.Name] = true
-		}
-		policies, unread, readErr := r.readRowPolicies(ctx, dbName, func(table string) bool { return held[table] })
-		if readErr != nil && !isAccessDenied(readErr) {
-			return nil, fmt.Errorf("clickhouse: read row policies: %w", readErr)
-		}
-		read, err := schemaext.NewObjects(policies...)
-		if err != nil {
-			return nil, err
-		}
-		if schema.FeatureObjects, err = schema.FeatureObjects.Merge(read); err != nil {
-			return nil, err
-		}
-		known, err := rowPolicyCoverage(readErr, unread)
-		if err != nil {
-			return nil, err
-		}
-		if schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(known); err != nil {
+		if err := r.readRowPolicyState(ctx, dbName, schema); err != nil {
 			return nil, err
 		}
 	}
 	return schema, nil
+}
+
+// readRowPolicyState adds the row policies of the database to schema: the
+// ones the read describes as feature objects, a coverage record for each it
+// cannot, and the definitions of those on a relation as planning context,
+// which no comparison reads and a rollback recreates (see readRowPolicies).
+// An account refused system.row_policies leaves the policies not inspected.
+func (r *Reader) readRowPolicyState(ctx context.Context, dbName string, schema *catalog.Database) error {
+	held := make(map[string]bool, len(schema.Tables))
+	for _, table := range schema.Tables {
+		held[table.Name] = true
+	}
+	read, readErr := r.readRowPolicies(ctx, dbName, func(table string) bool { return held[table] })
+	if readErr != nil && !isAccessDenied(readErr) {
+		return fmt.Errorf("clickhouse: read row policies: %w", readErr)
+	}
+	policies, err := schemaext.NewObjects(read.policies...)
+	if err != nil {
+		return err
+	}
+	if schema.FeatureObjects, err = schema.FeatureObjects.Merge(policies); err != nil {
+		return err
+	}
+	definitions, err := schemaext.NewObjects(read.definitions...)
+	if err != nil {
+		return err
+	}
+	if schema.PlanningContextObjects, err = schema.PlanningContextObjects.Merge(definitions); err != nil {
+		return err
+	}
+	known, err := rowPolicyCoverage(readErr, read.unread)
+	if err != nil {
+		return err
+	}
+	schema.FeatureCoverage, err = schema.FeatureCoverage.Combine(known)
+	return err
 }
 
 // materializedViewInnerTablesSubquery names the tables ClickHouse creates for
