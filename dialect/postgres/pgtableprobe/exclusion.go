@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/internal/pgexclude"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/sqlident"
 )
 
@@ -85,7 +86,7 @@ func normalizeExclusionObject(ctx context.Context, request schemaext.Normalizati
 		}
 	}
 	if present && request.Session != nil {
-		value.Normalized, err = normalizeExclusion(ctx, request.Session, object.Ref, value)
+		value.Normalized, err = normalizeExclusion(ctx, request.Session, request.Target, object.Ref, value)
 		if err != nil {
 			return schemaext.Object{}, err
 		}
@@ -93,7 +94,7 @@ func normalizeExclusionObject(ctx context.Context, request schemaext.Normalizati
 	return object, nil
 }
 
-func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, subject objectidentity.ID, value *pgtable.DesiredExclusion) (*pgtable.NormalizedExclusion, error) {
+func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, dialect string, subject objectidentity.ID, value *pgtable.DesiredExclusion) (*pgtable.NormalizedExclusion, error) {
 	clause, err := pgtablerender.ExclusionSQL("", value)
 	if err != nil {
 		return nil, err
@@ -103,12 +104,21 @@ func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, sub
 		return nil, err
 	}
 	table := sqlident.Qualified(platform.Postgres, sqlident.UnquoteDoubleQuoted(subject.Schema.Source), sqlident.UnquoteDoubleQuoted(subject.Parent.Source))
+	// The parser reads the clause one way, and the server can read it
+	// another: a name in backticks is one token to the parser and SQL to the
+	// server. A clause that could reach past its parentheses under any
+	// reading the server has is compared as written.
+	if refusal := probetext.Fragment(dialect, clause); refusal != nil {
+		probetext.Warn(ctx, subject.String(), "exclusion constraint "+subject.Name.Source+" on "+table, refusal)
+		return nil, nil
+	}
 	temporary := sqlident.Qualified(platform.Postgres, "pg_temp", sqlident.UnquoteDoubleQuoted(subject.Parent.Source))
 	var definition string
 	ran, err := session.WithRolledBackTransaction(ctx, "normalize exclusion constraint", func(ctx context.Context, tx *sql.Tx) error {
 		// #nosec G202 -- Identifiers are quoted and the owner validates one complete EXCLUDE clause before the rolled-back probe.
-		statement := "CREATE TEMPORARY TABLE " + temporary + " (LIKE " + table + ", " + clause + ")"
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		statement := "CREATE TEMPORARY TABLE " + temporary + " (LIKE " + table + ", " + clause + "\n)"
+		if err := probetext.Exec(ctx, tx, statement); err != nil {
+			probetext.WarnRefused(ctx, subject.String(), "exclusion constraint "+subject.Name.Source+" on "+table, err)
 			return nil
 		}
 		return tx.QueryRowContext(ctx, `SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid=$1::regclass AND contype='x'`, temporary).Scan(&definition)

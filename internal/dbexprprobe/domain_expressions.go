@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/probetext"
 )
 
 // DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need the
@@ -25,6 +26,9 @@ type DomainExpressionProbe struct {
 	Check string
 	// Default is the declared DEFAULT expression or literal.
 	Default string
+	// Object names the domain in a warning, such as `domain public.email`. It
+	// is never sent to the server.
+	Object string
 }
 
 // DomainExpression is one domain's CHECK and DEFAULT in the target server's
@@ -70,6 +74,7 @@ type DomainExpression struct {
 func ProbeDomainExpressions(
 	ctx context.Context,
 	session schemaext.ProbeSession,
+	dialect string,
 	probes []DomainExpressionProbe,
 ) (map[string]DomainExpression, error) {
 	if session == nil {
@@ -78,8 +83,8 @@ func ProbeDomainExpressions(
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	return resolveProbes(ctx, session, "resolve domain expressions", probes,
-		func(probe DomainExpressionProbe) string { return probe.Key },
+	return resolveProbes(ctx, session, dialect, "resolve domain expressions", probes,
+		func(probe DomainExpressionProbe) (string, string) { return probe.Key, probe.Object },
 		resolveOneDomainExpression)
 }
 
@@ -93,6 +98,7 @@ func ProbeDomainExpressions(
 func resolveOneDomainExpression(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe DomainExpressionProbe,
 ) (DomainExpression, error) {
@@ -103,20 +109,24 @@ func resolveOneDomainExpression(
 		return DomainExpression{Resolved: true}, nil
 	}
 
+	if err := probetext.Fragments(dialect, probe.BaseType, probe.Default, probe.Check); err != nil {
+		return DomainExpression{}, err
+	}
+
 	name := fmt.Sprintf("pg_temp.ptah_domain_probe_%d", index)
-	statement := fmt.Sprintf("CREATE DOMAIN %s AS %s", name, probe.BaseType)
+	statement := fmt.Sprintf("CREATE DOMAIN %s AS %s\n", name, probe.BaseType)
 	if probe.Default != "" {
-		statement += " DEFAULT " + probe.Default
+		statement += " DEFAULT " + probe.Default + "\n"
 	}
 	if probe.Check != "" {
-		statement += " CHECK (" + probe.Check + ")"
+		statement += " CHECK (" + probe.Check + "\n)"
 	}
 
 	const savepoint = "ptah_domain_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return DomainExpression{}, fmt.Errorf("resolve domain expressions: savepoint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, statement); err != nil {
+	if err := probetext.Exec(ctx, tx, statement); err != nil {
 		if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 			return DomainExpression{}, fmt.Errorf(
 				"resolve domain expressions: roll back to savepoint after %q: %w",
@@ -126,8 +136,9 @@ func resolveOneDomainExpression(
 		}
 		// The declaration is the caller's, and refusing it here would fail a
 		// comparison over a domain the server will refuse later anyway, with a
-		// worse message. Unresolved is the honest answer.
-		return DomainExpression{}, nil
+		// worse message. Unresolved is the honest answer, with a warning where
+		// the server read more than one statement.
+		return DomainExpression{}, uncontainedOnly(err)
 	}
 
 	const query = `

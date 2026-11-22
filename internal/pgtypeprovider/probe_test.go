@@ -108,7 +108,7 @@ func TestNormalizeTypes_AttachesTheServersSpelling(t *testing.T) {
 	c.Assert(normalizedDomain(c, result, "fresh"), qt.IsNil)
 	c.Assert(scripted.executed, qt.DeepEquals, []string{
 		"SAVEPOINT ptah_domain_probe",
-		"CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS text DEFAULT 'it''s' CHECK (VALUE <> '')",
+		"CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS text\n DEFAULT 'it''s'\n CHECK (VALUE <> ''\n)",
 		"ROLLBACK TO SAVEPOINT ptah_domain_probe",
 	})
 }
@@ -126,7 +126,7 @@ func TestNormalizeTypes_AsksForAnExpressionAsWritten(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(normalizedDomain(c, result, "mail"), qt.DeepEquals, &pgtype.NormalizedDomain{Default: "lower('X'::text)"})
-	c.Assert(scripted.executed[1], qt.Equals, "CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS text DEFAULT lower('X')")
+	c.Assert(scripted.executed[1], qt.Equals, "CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS text\n DEFAULT lower('X')\n")
 }
 
 // TestNormalizeTypes_LeavesWhatItCouldNotAnswer pins the cases that attach
@@ -142,11 +142,11 @@ func TestNormalizeTypes_LeavesWhatItCouldNotAnswer(t *testing.T) {
 	}{
 		{name: "a declined session", server: server{check: "true"}, declined: true},
 		{name: "a refused declaration", server: server{refuse: "CREATE DOMAIN"}, wantExecuted: []string{
-			"SAVEPOINT ptah_domain_probe", "CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS missing CHECK (VALUE > 0)",
+			"SAVEPOINT ptah_domain_probe", "CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS missing\n CHECK (VALUE > 0\n)",
 			"ROLLBACK TO SAVEPOINT ptah_domain_probe",
 		}},
 		{name: "an answer the model cannot hold", server: server{check: "VALUE > 0\x00"}, wantExecuted: []string{
-			"SAVEPOINT ptah_domain_probe", "CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS missing CHECK (VALUE > 0)",
+			"SAVEPOINT ptah_domain_probe", "CREATE DOMAIN pg_temp.ptah_domain_probe_0 AS missing\n CHECK (VALUE > 0\n)",
 			"ROLLBACK TO SAVEPOINT ptah_domain_probe",
 		}},
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 )
 
 // GeneratedColumnProbe is one declared generated column whose expression needs
@@ -95,8 +96,10 @@ func ResolveGeneratedColumns(
 	if len(probes) == 0 || !supported {
 		return nil, nil, nil
 	}
-	answers, err := resolveProbes(ctx, conn, "resolve generated expressions", probes,
-		func(probe GeneratedColumnProbe) string { return probe.Key },
+	answers, err := resolveProbes(ctx, conn, conn.Info().Dialect, "resolve generated expressions", probes,
+		func(probe GeneratedColumnProbe) (string, string) {
+			return probe.Key, "generated column " + qualifiedName(probe.Schema, probe.Table, probe.Column)
+		},
 		one)
 	if err != nil || answers == nil {
 		return nil, nil, err
@@ -164,6 +167,7 @@ type generatedColumnAnswer struct {
 func resolveOnePostgresGeneratedColumn(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe GeneratedColumnProbe,
 ) (generatedColumnAnswer, error) {
@@ -171,14 +175,17 @@ func resolveOnePostgresGeneratedColumn(
 	if expression == "" || strings.TrimSpace(probe.Column) == "" || strings.TrimSpace(probe.Type) == "" {
 		return generatedColumnAnswer{}, nil
 	}
+	written := ownSchemaStripped(expression, probe.Schema, probe.Table)
+	if err := probetext.Fragment(dialect, written); err != nil {
+		return generatedColumnAnswer{}, err
+	}
 
 	columns := make([]string, 0, len(probe.Columns)+1)
 	if len(probe.Columns) > 0 {
 		columns = append(columns, checkProbeColumnList(probe.Columns))
 	}
-	columns = append(columns, fmt.Sprintf("%s %s GENERATED ALWAYS AS (%s) STORED",
-		quoteCheckProbeIdentifier(probe.Column), probe.Type,
-		ownSchemaStripped(expression, probe.Schema, probe.Table)))
+	columns = append(columns, fmt.Sprintf("%s %s GENERATED ALWAYS AS (%s\n) STORED",
+		quoteCheckProbeIdentifier(probe.Column), probe.Type, written))
 	relation := newProbeRelation(probe.Table, "ptah_generated_probe", index)
 	statements := relation.statements(fmt.Sprintf(
 		"CREATE TEMPORARY TABLE %s (%s)", relation.name, strings.Join(columns, ", ")))
@@ -209,6 +216,7 @@ func resolveOnePostgresGeneratedColumn(
 func resolveOneSQLServerGeneratedColumn(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe GeneratedColumnProbe,
 ) (generatedColumnAnswer, error) {
@@ -216,12 +224,15 @@ func resolveOneSQLServerGeneratedColumn(
 	if expression == "" || strings.TrimSpace(probe.Column) == "" {
 		return generatedColumnAnswer{}, nil
 	}
+	if err := probetext.Fragment(dialect, expression); err != nil {
+		return generatedColumnAnswer{}, err
+	}
 
 	columns := make([]string, 0, len(probe.Columns)+1)
 	if len(probe.Columns) > 0 {
 		columns = append(columns, sqlServerProbeColumnList(probe.Columns))
 	}
-	columns = append(columns, fmt.Sprintf("%s AS (%s)", quoteSQLServerProbeIdentifier(probe.Column), expression))
+	columns = append(columns, fmt.Sprintf("%s AS (%s\n)", quoteSQLServerProbeIdentifier(probe.Column), expression))
 	name := fmt.Sprintf("#ptah_generated_probe_%d", index)
 	statements := []string{fmt.Sprintf("CREATE TABLE %s (%s)", name, strings.Join(columns, ", "))}
 

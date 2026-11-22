@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/postgres/pgtable"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/sqlident"
 )
 
@@ -57,7 +58,7 @@ func (PartitionMemberService) NormalizeFacets(ctx context.Context, request schem
 			return parent.Subject.Key() == record.Subject.Key() && parent.Current && parent.Desired
 		})
 		if held && request.Session != nil {
-			normalized, err := normalizePartitionBound(ctx, request.Session, value.PartitionMember)
+			normalized, err := normalizePartitionBound(ctx, request.Session, request.Target, record.Subject, value.PartitionMember)
 			if err != nil {
 				return schemaext.FacetNormalizationResult{}, err
 			}
@@ -74,13 +75,24 @@ func (PartitionMemberService) NormalizeFacets(ctx context.Context, request schem
 	return result, nil
 }
 
-func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession, member pgtable.PartitionMember) (*pgtable.NormalizedPartitionBound, error) {
+func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession, dialect string, subject objectidentity.ID, member pgtable.PartitionMember) (*pgtable.NormalizedPartitionBound, error) {
 	// The owner parser rejects statement separators and incomplete values before
 	// any text enters a transaction. Rollback must not depend on accepting
 	// arbitrary statement text as a bound.
 	bound, err := pgtable.ParsePartitionBound(member.Bound)
 	if err != nil {
 		return nil, err
+	}
+	// The bound ends the statement, and the server can read it in a way the
+	// parser does not, as it reads a name in backticks; a bound that could end
+	// it under any reading the server has is compared as written.
+	if refusal := probetext.Fragment(dialect, bound); refusal != nil {
+		probetext.Warn(ctx, subject.String(), "partition bound of "+subject.Path(), refusal)
+		return nil, nil
+	}
+	if !constantBound(bound) {
+		probetext.Warn(ctx, subject.String(), "partition bound of "+subject.Path(), errEvaluatedBound)
+		return nil, nil
 	}
 	parent := sqlident.Qualified(platform.Postgres, member.ParentSchema, member.Parent)
 	var definition sql.NullString
@@ -95,11 +107,12 @@ func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession
 			// #nosec G202 -- Identifiers are quoted; the key is the server's own text, and the owner parsed the bound.
 			"CREATE TABLE pg_temp.ptah_partition_bound_parent (LIKE " + parent + ") PARTITION BY " + key.String,
 			// #nosec G202 -- The owner parsed the bound as one clause before the rolled-back probe.
-			"CREATE TABLE pg_temp.ptah_partition_bound_probe PARTITION OF pg_temp.ptah_partition_bound_parent " + bound,
+			"CREATE TABLE pg_temp.ptah_partition_bound_probe PARTITION OF pg_temp.ptah_partition_bound_parent " + bound + "\n",
 		} {
-			if _, err := tx.ExecContext(ctx, statement); err != nil {
+			if err := probetext.Exec(ctx, tx, statement); err != nil {
 				// A bound the server refuses leaves no fact, and the apply reports
 				// the server's answer.
+				probetext.WarnRefused(ctx, subject.String(), "partition bound of "+subject.Path(), err)
 				return nil
 			}
 		}

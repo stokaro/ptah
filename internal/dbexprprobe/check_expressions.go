@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can
@@ -41,6 +42,9 @@ type CheckExpressionProbe struct {
 	// Expression is the declared CHECK, without the CHECK keyword and without
 	// its enclosing parentheses.
 	Expression string
+	// Object names the constraint in a warning, such as `CHECK ck_price on
+	// items`. It is never sent to the server.
+	Object string
 }
 
 // ResolveCheckExpressions asks the connected server to normalize each declared
@@ -93,8 +97,8 @@ func ResolveCheckExpressions(
 	if !supported {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve check expressions", probes,
-		func(probe CheckExpressionProbe) string { return probe.Key },
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve check expressions", probes,
+		func(probe CheckExpressionProbe) (string, string) { return probe.Key, probe.Object },
 		one)
 }
 
@@ -130,6 +134,7 @@ func checkProbeFor(dialect string) (probeFunc[CheckExpressionProbe, config.Check
 func resolveOnePostgresCheckExpression(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe CheckExpressionProbe,
 ) (config.CheckExpression, error) {
@@ -137,18 +142,22 @@ func resolveOnePostgresCheckExpression(
 	if expression == "" || len(probe.Columns) == 0 {
 		return config.CheckExpression{}, nil
 	}
+	written := ownSchemaStripped(expression, probe.Schema, probe.Table)
+	if err := probetext.Fragment(dialect, written); err != nil {
+		return config.CheckExpression{}, err
+	}
 
 	relation := newProbeRelation(probe.Table, "ptah_check_probe", index)
 	statements := relation.statements(fmt.Sprintf(
-		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s))",
-		relation.name, checkProbeColumnList(probe.Columns), ownSchemaStripped(expression, probe.Schema, probe.Table)))
+		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s\n))",
+		relation.name, checkProbeColumnList(probe.Columns), written))
 
 	const savepoint = "ptah_check_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return config.CheckExpression{}, fmt.Errorf("resolve check expressions: savepoint: %w", err)
 	}
 	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if err := probetext.Exec(ctx, tx, statement); err != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 				return config.CheckExpression{}, fmt.Errorf(
 					"resolve check expressions: roll back to savepoint after %q: %w",
@@ -156,8 +165,9 @@ func resolveOnePostgresCheckExpression(
 			}
 			// The declaration is the caller's, and refusing it here would fail a
 			// comparison over a constraint the server will refuse later anyway,
-			// with a worse message. Unresolved is the honest answer.
-			return config.CheckExpression{}, nil
+			// with a worse message. Unresolved is the honest answer, with a
+			// warning where the server read more than one statement.
+			return config.CheckExpression{}, uncontainedOnly(err)
 		}
 	}
 
@@ -215,6 +225,7 @@ func quoteCheckProbeIdentifier(name string) string {
 func resolveOneSQLServerCheckExpression(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe CheckExpressionProbe,
 ) (config.CheckExpression, error) {
@@ -222,10 +233,13 @@ func resolveOneSQLServerCheckExpression(
 	if expression == "" || len(probe.Columns) == 0 {
 		return config.CheckExpression{}, nil
 	}
+	if err := probetext.Fragment(dialect, expression); err != nil {
+		return config.CheckExpression{}, err
+	}
 
 	name := fmt.Sprintf("#ptah_check_probe_%d", index)
 	statements := []string{
-		fmt.Sprintf("CREATE TABLE %s (%s, CONSTRAINT ck_ptah_check_probe_%d CHECK (%s))",
+		fmt.Sprintf("CREATE TABLE %s (%s, CONSTRAINT ck_ptah_check_probe_%d CHECK (%s\n))",
 			name, sqlServerProbeColumnList(probe.Columns), index, expression),
 	}
 

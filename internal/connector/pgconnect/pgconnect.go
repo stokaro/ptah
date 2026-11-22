@@ -329,6 +329,46 @@ func (Service) OutsideTransaction(_ context.Context, session *sql.Conn) bool {
 	return err == nil && idle
 }
 
+// PinTextReading turns standard_conforming_strings on for the rest of tx, so a
+// backslash in an ordinary string is a character, as ptah.run/internal/probetext
+// reads it. A session with the setting off reads it as an escape: the live
+// CHECK `code <> 'C:\'` is then text the check would have to refuse, and its
+// probe would not run. SET LOCAL, so a pooled session keeps its own setting
+// after the rollback. Measured on PostgreSQL 18, CockroachDB v26.4.1 and
+// YugabyteDB 2026.1.2, all three accept the statement inside a transaction;
+// CockroachDB accepts no other value.
+func (Service) PinTextReading(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, "SET LOCAL standard_conforming_strings = on"); err != nil {
+		return fmt.Errorf("read strings as standard: %w", err)
+	}
+	return nil
+}
+
+// TransactionIdentity names the transaction tx runs in by its start time, to
+// the microsecond, as an epoch, followed by the standard_conforming_strings
+// setting [Service.PinTextReading] pins. A COMMIT followed by a BEGIN,
+// whatever sends them, starts another transaction with a later start:
+// measured on PostgreSQL 18, CockroachDB v26.4.1 and YugabyteDB 2026.1.2, a
+// probe statement that ran `COMMIT; ...; BEGIN` moved transaction_timestamp()
+// on, and the rollback to a savepoint after it did not move it back. The epoch
+// rather than the timestamp's text, so that a session's TimeZone or DateStyle
+// cannot spell two instants alike. transaction_timestamp() needs no privilege
+// and, unlike txid_current(), assigns no transaction ID, which a hot standby
+// refuses; CockroachDB v26.4.1 has no pg_current_xact_id(). The setting is in
+// the name because a probe can turn it off without a statement of its own: a
+// partition bound is evaluated when the partition is created, and measured on
+// PostgreSQL 18 `FOR VALUES IN (set_config('standard_conforming_strings',
+// 'off', true))` leaves it off for the rest of the transaction.
+func (Service) TransactionIdentity(ctx context.Context, tx *sql.Tx) (string, error) {
+	var started string
+	if err := tx.QueryRowContext(ctx,
+		"SELECT extract(epoch FROM transaction_timestamp())::text || '/' || current_setting('standard_conforming_strings')",
+	).Scan(&started); err != nil {
+		return "", fmt.Errorf("name the transaction: %w", err)
+	}
+	return started, nil
+}
+
 // txStatusIdle is the ReadyForQuery status byte of a session outside any
 // transaction block; 'T' is inside one and 'E' inside a failed one.
 const txStatusIdle = 'I'

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -29,6 +30,9 @@ type TriggerConditionProbe struct {
 	ForEach string
 	// When is the declared condition, without its parentheses.
 	When string
+	// Object names the trigger in a warning, such as `trigger audit on
+	// items`. It is never sent to the server.
+	Object string
 }
 
 // ResolveTriggerConditions asks the connected server to print each declared
@@ -54,14 +58,15 @@ func ResolveTriggerConditions(
 	if !isPostgresFamily(conn.Info().Dialect) {
 		return nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve trigger conditions", probes,
-		func(probe TriggerConditionProbe) string { return probe.Key },
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve trigger conditions", probes,
+		func(probe TriggerConditionProbe) (string, string) { return probe.Key, probe.Object },
 		resolveOneTriggerCondition)
 }
 
 func resolveOneTriggerCondition(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe TriggerConditionProbe,
 ) (config.TriggerCondition, error) {
@@ -73,13 +78,16 @@ func resolveOneTriggerCondition(
 	if forEach == "" {
 		forEach = "ROW"
 	}
+	if err := probetext.Fragments(dialect, probe.Timing, probe.Event, forEach, when); err != nil {
+		return config.TriggerCondition{}, err
+	}
 
 	relation := newProbeRelation(probe.Table, "ptah_trigger_probe", index)
 	function := fmt.Sprintf("pg_temp.ptah_trigger_probe_fn_%d", index)
 	statements := relation.statements(
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),
 		fmt.Sprintf("CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $ptah$BEGIN RETURN NULL; END$ptah$", function),
-		fmt.Sprintf("CREATE TRIGGER ptah_trigger_probe %s %s ON %s FOR EACH %s WHEN (%s) EXECUTE FUNCTION %s()",
+		fmt.Sprintf("CREATE TRIGGER ptah_trigger_probe %s\n %s\n ON %s FOR EACH %s\n WHEN (%s\n) EXECUTE FUNCTION %s()",
 			probe.Timing, probe.Event, relation.name, forEach, when, function),
 	)
 

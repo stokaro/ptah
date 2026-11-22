@@ -20,6 +20,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
+	"ptah.run/internal/probetext"
+	"ptah.run/internal/probetx"
 	"ptah.run/internal/sqlident"
 )
 
@@ -90,9 +92,12 @@ func (Service) NormalizeObjects(ctx context.Context, request schemaext.Normaliza
 	ran, err := request.Session.WithRolledBackTransaction(ctx, "resolve row-security policies",
 		func(ctx context.Context, tx *sql.Tx) error {
 			for i, probe := range probes {
-				answer, err := normalizeOne(ctx, tx, probe)
+				answer, err := normalizeOne(ctx, tx, request.Target, probe)
 				if err != nil {
 					return err
+				}
+				if err := probetx.Check(ctx); err != nil {
+					return fmt.Errorf("resolve row-security policies: %s: %w", probe.object.Ref.Path(), err)
 				}
 				answers[i] = answer
 			}
@@ -180,12 +185,21 @@ const savepoint = "ptah_policy_probe"
 // the stored policy back. A statement the server refuses rolls back to the
 // savepoint and answers nil, so one refused declaration does not take the
 // rest with it.
-func normalizeOne(ctx context.Context, tx *sql.Tx, probe probe) (*pgpolicy.NormalizedPolicy, error) {
+func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, probe probe) (*pgpolicy.NormalizedPolicy, error) {
 	schema := sqlident.Quote(platform.Postgres, probe.object.Ref.Schema.Source)
 	table := sqlident.Quote(platform.Postgres, probe.object.Ref.Parent.Source)
 	copied := "pg_temp." + table
 	declared := probe.value.Copy()
 	declared.Using, declared.WithCheck = probeClause(declared.Using, probe.object.Ref), probeClause(declared.WithCheck, probe.object.Ref)
+	// A clause that could reach past its parentheses is not run; the
+	// declaration is then answered the way a refused probe's is.
+	if refusal := probetext.Fragments(dialect, clauseText(declared.Using), clauseText(declared.WithCheck)); refusal != nil {
+		probetext.Warn(ctx, probe.object.Ref.String(), "policy "+probe.object.Ref.Path(), refusal)
+		return nil, nil
+	}
+	// A clause the check accepts may end in a line comment, which a line
+	// break ends before the renderer closes the parenthesis.
+	declared.Using, declared.WithCheck = lineEnded(declared.Using), lineEnded(declared.WithCheck)
 	statements := []string{
 		searchPathWithTempLast,
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (LIKE %s.%s)", copied, schema, table),
@@ -195,10 +209,11 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, probe probe) (*pgpolicy.Norma
 		return nil, fmt.Errorf("resolve row-security policies: savepoint: %w", err)
 	}
 	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if err := probetext.Exec(ctx, tx, statement); err != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 				return nil, fmt.Errorf("resolve row-security policies: roll back to savepoint after %s: %w", probe.object.Ref, rollbackErr)
 			}
+			probetext.WarnRefused(ctx, probe.object.Ref.String(), "policy "+probe.object.Ref.Path(), err)
 			return nil, nil
 		}
 	}
@@ -233,4 +248,20 @@ func text(value sql.NullString) *string {
 		return nil
 	}
 	return &value.String
+}
+
+// clauseText is the text of clause, empty when the policy has none.
+func clauseText(clause *string) string {
+	if clause == nil {
+		return ""
+	}
+	return *clause
+}
+
+// lineEnded is clause followed by a line break. A nil clause stays nil.
+func lineEnded(clause *string) *string {
+	if clause == nil {
+		return nil
+	}
+	return new(*clause + "\n")
 }

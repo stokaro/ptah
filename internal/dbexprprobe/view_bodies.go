@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/probetext"
 )
 
 // ViewBodyProbe is one declared view or materialized view whose SELECT needs
@@ -20,6 +21,9 @@ type ViewBodyProbe struct {
 	Key string
 	// Body is the declared SELECT, without the CREATE prefix.
 	Body string
+	// Object names the view in a warning, such as `view active_items`. It is
+	// never sent to the server.
+	Object string
 }
 
 // ResolveViewBodies asks the connected server to spell each declared view body
@@ -72,10 +76,10 @@ func ResolveViewBodies(
 	if described, _ := platform.Lookup(conn.Info().Dialect); described.Comparison.ProbeViewsInSchema {
 		place = schemaProbeView
 	}
-	return resolveProbes(ctx, conn, "resolve view bodies", probes,
-		func(probe ViewBodyProbe) string { return probe.Key },
-		func(ctx context.Context, tx *sql.Tx, index int, probe ViewBodyProbe) (config.ViewBody, error) {
-			return resolveOneViewBody(ctx, tx, index, probe, place)
+	return resolveProbes(ctx, conn, conn.Info().Dialect, "resolve view bodies", probes,
+		func(probe ViewBodyProbe) (string, string) { return probe.Key, probe.Object },
+		func(ctx context.Context, tx *sql.Tx, dialect string, index int, probe ViewBodyProbe) (config.ViewBody, error) {
+			return resolveOneViewBody(ctx, tx, dialect, index, probe, place)
 		})
 }
 
@@ -87,13 +91,13 @@ type probeViewPlacement func(name, body string) (probeRelation, string)
 // the search path for the reason [newProbeRelation] gives.
 func temporaryProbeView(name, body string) (probeRelation, string) {
 	view := probeRelation{name: name, regclass: "pg_temp." + name, setup: []string{searchPathWithTempLast}}
-	return view, "CREATE TEMPORARY VIEW " + name + " AS\n" + body
+	return view, "CREATE TEMPORARY VIEW " + name + " AS\n" + body + "\n"
 }
 
 // schemaProbeView places the probe view in the session's current schema, for a
 // server that refuses temporary views.
 func schemaProbeView(name, body string) (probeRelation, string) {
-	return probeRelation{name: name, regclass: name}, "CREATE VIEW " + name + " AS\n" + body
+	return probeRelation{name: name, regclass: name}, "CREATE VIEW " + name + " AS\n" + body + "\n"
 }
 
 // resolveOneViewBody creates one probe view, reads its definition back and
@@ -101,6 +105,7 @@ func schemaProbeView(name, body string) (probeRelation, string) {
 func resolveOneViewBody(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe ViewBodyProbe,
 	place probeViewPlacement,
@@ -108,6 +113,12 @@ func resolveOneViewBody(
 	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(probe.Body), ";"))
 	if body == "" || SelectsStar(body) {
 		return config.ViewBody{}, nil
+	}
+	// The body follows AS at the top level of the statement, where nothing
+	// but a semicolon ends it: the PostgreSQL family needs one between two
+	// statements.
+	if err := probetext.Fragment(dialect, body); err != nil {
+		return config.ViewBody{}, err
 	}
 	name := fmt.Sprintf("ptah_view_probe_%d", index)
 	view, create := place(name, body)

@@ -470,6 +470,25 @@ func TestUndecidedObjects_SummaryNamesEachObjectByItsCause(t *testing.T) {
 		`role "a", role "b" (roles were not read); sequence "s" (sequences were not read)`)
 }
 
+// The declarations whose probe did not run are named by the cause their text
+// gave, as the undecided objects are.
+func TestUnprobedDeclarations_SummaryNamesEachDeclarationByItsCause(t *testing.T) {
+	c := qt.New(t)
+	unprobed := func(object, cause string) rundiag.Record {
+		return rundiag.Record{Attrs: []slog.Attr{slog.String("object", object), slog.String("cause", cause)}}
+	}
+
+	summary := rundiag.UnprobedDeclarations.Summary([]rundiag.Record{
+		unprobed("CHECK c on t", "its text closes a parenthesis it does not open"),
+		unprobed("view v", "its text holds a statement separator"),
+		unprobed("generated column dbo.t.g", "its text closes a parenthesis it does not open"),
+	})
+
+	c.Assert(summary, qt.Equals, "3 declarations are compared as written, not in the form the server stores: "+
+		"the text of each could reach past its place in the probe statement that spells it, so the probe does not run: "+
+		"CHECK c on t, generated column dbo.t.g (its text closes a parenthesis it does not open); view v (its text holds a statement separator)")
+}
+
 // The omitted blocks name the variable that keeps them, which the records
 // carry, so the summary keeps the remedy each object's line gives.
 func TestAtlasOmittedBlocks_SummaryNamesTheVariableTheRecordsShare(t *testing.T) {

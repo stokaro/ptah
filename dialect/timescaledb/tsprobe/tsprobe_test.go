@@ -1,11 +1,13 @@
 package tsprobe_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,6 +20,8 @@ import (
 	"ptah.run/dialect/timescaledb/tsprobe"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/probetx"
+	"ptah.run/internal/rundiag"
 )
 
 // server scripts the statements a probe sends: whether the extension is
@@ -25,8 +29,10 @@ import (
 type server struct {
 	installed bool
 	refuse    string
-	stored    string
-	executed  []string
+	// split is text whose statement the server refuses as two commands.
+	split    string
+	stored   string
+	executed []string
 }
 
 func (s *server) query(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -44,8 +50,21 @@ func (s *server) exec(query string, _ []driver.NamedValue) (driver.Result, error
 	if s.refuse != "" && strings.Contains(query, s.refuse) {
 		return nil, errors.New(`syntax error at or near "FROM"`)
 	}
+	if s.split != "" && strings.Contains(query, s.split) {
+		return nil, severalCommands{}
+	}
 	return driver.RowsAffected(0), nil
 }
+
+// severalCommands is the error PostgreSQL answers a prepared statement that
+// holds two commands with.
+type severalCommands struct{}
+
+func (severalCommands) Error() string {
+	return "ERROR: cannot insert multiple commands into a prepared statement (SQLSTATE 42601)"
+}
+
+func (severalCommands) SQLState() string { return "42601" }
 
 // session runs the body in a transaction it always rolls back, the contract
 // a connection's probe session keeps. declined answers as a session that
@@ -112,6 +131,8 @@ func TestNormalizeObjects_AttachesTheServersSpelling(t *testing.T) {
 		"CREATE MATERIALIZED VIEW \"Metrics\".ptah_cagg_probe_0 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS\nSELECT 1 AS one\nWITH NO DATA",
 		"ROLLBACK TO SAVEPOINT ptah_cagg_probe",
 	})
+	// A prepared statement is one command to the server.
+	c.Assert(db.Prepared(), qt.DeepEquals, scripted.executed[1:2])
 }
 
 // TestNormalizeObjects_LeavesWhatItCouldNotAnswer pins the cases that attach
@@ -151,6 +172,57 @@ func TestNormalizeObjects_LeavesWhatItCouldNotAnswer(t *testing.T) {
 	}
 }
 
+// TestNormalizeObjects_DoesNotRunABodyThatEndsItsStatement leaves a body the
+// statement could not contain to compare as written, and sends nothing for
+// it: the body follows AS at the top level, where a semicolon ends the
+// statement and what follows it runs on its own.
+func TestNormalizeObjects_DoesNotRunABodyThatEndsItsStatement(t *testing.T) {
+	c := qt.New(t)
+	scripted := &server{installed: true, stored: "SELECT 1;"}
+	db := dbtest.OpenWithExec(t, scripted.query, scripted.exec)
+	held := tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{
+		Body: "SELECT 1 WITH NO DATA; COMMIT; CREATE TABLE public.made_by_plan (x int); BEGIN; SELECT 1"})
+
+	result, err := tsprobe.Service{}.NormalizeObjects(t.Context(), request(c, session{db: db.SQL}, held))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalized(c, result, "", "hourly"), qt.IsNil)
+	c.Assert(scripted.executed, qt.IsNil)
+}
+
+// restartingSession runs the probe as session does, in a transaction the
+// server names 17 when it begins and 18 every time after, as it names one a
+// probe ended and began again.
+type restartingSession struct{ session }
+
+func (s restartingSession) WithRolledBackTransaction(ctx context.Context, label string, body func(context.Context, *sql.Tx) error) (bool, error) {
+	calls := 0
+	watched, err := probetx.Watch(ctx, func(context.Context) (string, error) {
+		calls++
+		return strconv.Itoa(16 + min(calls, 2)), nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return s.session.WithRolledBackTransaction(watched, label, body)
+}
+
+// TestNormalizeObjects_StopsWhenAProbeEndsTheTransaction fails the
+// normalization, naming the aggregate, when the transaction is not the one
+// the probe began in.
+func TestNormalizeObjects_StopsWhenAProbeEndsTheTransaction(t *testing.T) {
+	c := qt.New(t)
+	scripted := &server{installed: true, stored: "SELECT 1;"}
+	db := dbtest.OpenWithExec(t, scripted.query, scripted.exec)
+	held := tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{Body: "SELECT 1"})
+
+	result, err := tsprobe.Service{}.NormalizeObjects(t.Context(), request(c, restartingSession{session{db: db.SQL}}, held))
+
+	c.Assert(err, qt.ErrorIs, probetx.ErrTransactionChanged)
+	c.Assert(err, qt.ErrorMatches, `resolve continuous aggregate bodies: .*hourly: a probe ended the transaction .*`)
+	c.Assert(result, qt.DeepEquals, schemaext.NormalizationResult{})
+}
+
 // TestNormalizeObjects_FailurePath pins the refusals that come before any
 // statement: another target family and a request with no session.
 func TestNormalizeObjects_FailurePath(t *testing.T) {
@@ -177,4 +249,23 @@ func TestNormalizeObjects_FailurePath(t *testing.T) {
 			c.Assert(result.Desired.Objects.Len(), qt.Equals, 0)
 		})
 	}
+}
+
+// TestNormalizeObjects_WarnsWhenTheServerReadsSeveralStatements has the
+// server refuse the probe's CREATE as two commands. The aggregate is compared
+// as written, and the run warns that names it.
+func TestNormalizeObjects_WarnsWhenTheServerReadsSeveralStatements(t *testing.T) {
+	c := qt.New(t)
+	scripted := &server{installed: true, split: "CREATE MATERIALIZED VIEW", stored: "SELECT 1;"}
+	db := dbtest.OpenWithExec(t, scripted.query, scripted.exec)
+	held := tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{Body: "SELECT 1"})
+	var stream bytes.Buffer
+	ctx := rundiag.With(context.Background(), rundiag.New(rundiag.Options{Stream: &stream, Listing: rundiag.ListedAtDebugLevel}))
+
+	result, err := tsprobe.Service{}.NormalizeObjects(ctx, request(c, session{db: db.SQL}, held))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalized(c, result, "", "hourly"), qt.IsNil)
+	c.Assert(stream.String(), qt.Equals, "warning: continuous aggregate public.hourly is compared as written, not in the form the server stores: "+
+		"the probe that spells it does not run, because the server reads more than one statement in its text\n")
 }

@@ -3,6 +3,7 @@ package dbexprprobe
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/ownqualifier"
+	"ptah.run/internal/probetext"
+	"ptah.run/internal/probetx"
 )
 
 // resolveProbes runs every probe through one rolled-back transaction and
@@ -21,22 +24,44 @@ import (
 // the rollback, and returning nil for a pinned session with a transaction open
 // -- lives in [Session.WithRolledBackTransaction] beneath
 // it.
+//
+// one checks the text it writes into its statements with
+// [ptah.run/internal/probetext] before it runs any of them, and answers the
+// check's error for text that could reach past its place. That probe gets the
+// zero answer, as a declaration the server refused does, and a warning naming
+// it; the probes after it run. After each probe the transaction is named again
+// ([ptah.run/internal/probetx]), and one that is not the transaction the probes
+// began in stops them all with an error.
 func resolveProbes[Probe any, Answer any](
 	ctx context.Context,
 	conn schemaext.ProbeSession,
-	label string,
+	dialect, label string,
 	probes []Probe,
-	key func(Probe) string,
-	one func(ctx context.Context, tx *sql.Tx, index int, probe Probe) (Answer, error),
+	describe func(Probe) (key, object string),
+	one probeFunc[Probe, Answer],
 ) (map[string]Answer, error) {
 	resolved := make(map[string]Answer, len(probes))
 	ran, err := conn.WithRolledBackTransaction(ctx, label, func(ctx context.Context, tx *sql.Tx) error {
 		for i, probe := range probes {
-			answer, err := one(ctx, tx, i, probe)
-			if err != nil {
+			key, object := describe(probe)
+			answer, err := one(ctx, tx, dialect, i, probe)
+			uncontained := errors.Is(err, probetext.ErrUncontained)
+			if err != nil && !uncontained {
 				return err
 			}
-			resolved[key(probe)] = answer
+			// A probe refused for its text may have run a statement first, as
+			// a routine's fallback does after its main statement is refused,
+			// so the transaction is named again on this path too.
+			if err := probetx.Check(ctx); err != nil {
+				return fmt.Errorf("%s: %s: %w", label, object, err)
+			}
+			if uncontained {
+				probetext.Warn(ctx, key, object, err)
+				var unresolved Answer
+				resolved[key] = unresolved
+				continue
+			}
+			resolved[key] = answer
 		}
 		return nil
 	})
@@ -129,6 +154,11 @@ func runProbe(
 	read func(ctx context.Context, tx *sql.Tx) error,
 ) (bool, error) {
 	refusal, err := runRefusableProbe(ctx, tx, label, key, savepoint, marks, statements, read)
+	if err == nil && errors.Is(refusal, probetext.ErrUncontained) {
+		// The server read more than one statement in the declared text, and
+		// the caller's warning names the declaration.
+		return false, refusal
+	}
 	return err == nil && refusal == nil, err
 }
 
@@ -147,7 +177,7 @@ func runRefusableProbe(
 		return nil, fmt.Errorf("%s: savepoint: %w", label, err)
 	}
 	for _, statement := range statements {
-		if _, refused := tx.ExecContext(ctx, statement); refused != nil {
+		if refused := marks.exec(ctx, tx, statement); refused != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, marks.rollback(savepoint)); rollbackErr != nil {
 				return nil, fmt.Errorf("%s: roll back to savepoint after %q: %w", label, key, rollbackErr)
 			}
@@ -163,17 +193,33 @@ func runRefusableProbe(
 	return nil, nil
 }
 
+// uncontainedOnly is refused when the server refused a probe statement because
+// it read more than one statement in the declared text, which the caller
+// reports as a warning, and nil for any other refusal, which leaves the
+// declaration unresolved without one.
+func uncontainedOnly(refused error) error {
+	if errors.Is(refused, probetext.ErrUncontained) {
+		return refused
+	}
+	return nil
+}
+
 // probeFunc is one engine's way of putting a declaration through the server and
 // reading back what it stored. It is a named type so a resolver can pick one by
 // dialect without spelling the signature out twice.
+//
+// dialect is the session's, which the probe checks the text it writes into
+// its statements under; see [ptah.run/internal/probetext].
 type probeFunc[Probe any, Answer any] func(
 	ctx context.Context,
 	tx *sql.Tx,
+	dialect string,
 	index int,
 	probe Probe,
 ) (Answer, error)
 
-// savepointSyntax is how one engine spells a savepoint and the rollback to it.
+// savepointSyntax is how one engine spells a savepoint and the rollback to it,
+// and how it runs a probe statement.
 //
 // The two engines that need a probe spell both differently, and SQL Server
 // answers `Could not find stored procedure 'SAVEPOINT'` for the other's
@@ -182,20 +228,30 @@ type probeFunc[Probe any, Answer any] func(
 type savepointSyntax struct {
 	save     func(name string) string
 	rollback func(name string) string
+	// exec runs one probe statement, which may carry declared text.
+	exec func(ctx context.Context, tx *sql.Tx, statement string) error
 }
 
 // postgresSavepoints is the SQL-standard spelling, which the PostgreSQL family
-// takes.
+// takes. A statement runs through [probetext.Exec], so the server reads it as
+// one command.
 var postgresSavepoints = savepointSyntax{
 	save:     func(name string) string { return "SAVEPOINT " + name },
 	rollback: func(name string) string { return "ROLLBACK TO SAVEPOINT " + name },
+	exec:     probetext.Exec,
 }
 
 // sqlServerSavepoints is T-SQL's, where a savepoint is a named transaction mark
-// and the rollback names it directly.
+// and the rollback names it directly. A batch may hold several statements
+// whichever way the driver sends it, so a statement runs as it is, and the
+// text check and the transaction check are what keep declared text in place.
 var sqlServerSavepoints = savepointSyntax{
 	save:     func(name string) string { return "SAVE TRANSACTION " + name },
 	rollback: func(name string) string { return "ROLLBACK TRANSACTION " + name },
+	exec: func(ctx context.Context, tx *sql.Tx, statement string) error {
+		_, err := tx.ExecContext(ctx, statement)
+		return err
+	},
 }
 
 // isPostgresFamily reports whether the server answers the probes through

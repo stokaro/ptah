@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/internal/pgtablesource"
+	"ptah.run/internal/probetext"
 	"ptah.run/internal/sqlident"
 )
 
@@ -57,7 +58,7 @@ func (Service) NormalizeFacets(ctx context.Context, request schemaext.FacetNorma
 			return parent.Subject.Key() == record.Subject.Key() && parent.Current && parent.Desired
 		})
 		if held && request.Session != nil {
-			normalized, err := normalizePartition(ctx, request.Session, record.Subject, cloned)
+			normalized, err := normalizePartition(ctx, request.Session, request.Target, record.Subject, cloned)
 			if err != nil {
 				return schemaext.FacetNormalizationResult{}, err
 			}
@@ -74,7 +75,7 @@ func (Service) NormalizeFacets(ctx context.Context, request schemaext.FacetNorma
 	return result, nil
 }
 
-func normalizePartition(ctx context.Context, session schemaext.ProbeSession, subject objectidentity.ID, value *pgtable.DesiredPartition) (*pgtable.NormalizedPartition, error) {
+func normalizePartition(ctx context.Context, session schemaext.ProbeSession, dialect string, subject objectidentity.ID, value *pgtable.DesiredPartition) (*pgtable.NormalizedPartition, error) {
 	key, err := pgtablerender.PartitionSQL(value)
 	if err != nil {
 		return nil, err
@@ -85,12 +86,20 @@ func normalizePartition(ctx context.Context, session schemaext.ProbeSession, sub
 	if _, err := pgtablesource.ParsePartitionSQL(key); err != nil {
 		return nil, err
 	}
+	// The key ends the statement, and the server can read it in a way the
+	// parser does not, as it reads a name in backticks; a key that could end it
+	// under any reading the server has is compared as written.
+	if refusal := probetext.Fragment(dialect, key); refusal != nil {
+		probetext.Warn(ctx, subject.String(), "partition key of "+subject.Path(), refusal)
+		return nil, nil
+	}
 	table := sqlident.Qualified("postgres", subject.Schema.Source, subject.Name.Source)
 	var definition string
 	ran, err := session.WithRolledBackTransaction(ctx, "normalize table partition key", func(ctx context.Context, tx *sql.Tx) error {
 		// #nosec G202 -- Identifiers are quoted; the owner parses the key as one clause before the rolled-back probe.
-		statement := "CREATE TABLE pg_temp.ptah_partition_probe (LIKE " + table + ") PARTITION BY " + key
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		statement := "CREATE TABLE pg_temp.ptah_partition_probe (LIKE " + table + ") PARTITION BY " + key + "\n"
+		if err := probetext.Exec(ctx, tx, statement); err != nil {
+			probetext.WarnRefused(ctx, subject.String(), "partition key of "+subject.Path(), err)
 			return nil
 		}
 		if err := tx.QueryRowContext(ctx, "SELECT pg_get_partkeydef('pg_temp.ptah_partition_probe'::regclass)").Scan(&definition); err != nil {

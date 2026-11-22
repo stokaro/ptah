@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"sync"
 	"sync/atomic"
 )
 
@@ -40,6 +41,7 @@ type ExecContextHandler func(ctx context.Context, query string, args []driver.Na
 
 type DB struct {
 	SQL        *sql.DB
+	prepared   *preparedLog
 	queryCount *atomic.Int64
 	execCount  *atomic.Int64
 	beginCount *atomic.Int64
@@ -75,7 +77,9 @@ func OpenWithExecContext(
 	beginCount := new(atomic.Int64)
 	commits := new(atomic.Int64)
 	rollbacks := new(atomic.Int64)
+	prepared := new(preparedLog)
 	sql.Register(name, &countingDriver{
+		prepared:     prepared,
 		queryHandler: queryHandler,
 		execHandler:  execHandler,
 		queryCount:   queryCount,
@@ -93,12 +97,38 @@ func OpenWithExecContext(
 	})
 	return &DB{
 		SQL:        db,
+		prepared:   prepared,
 		queryCount: queryCount,
 		execCount:  execCount,
 		beginCount: beginCount,
 		commits:    commits,
 		rollbacks:  rollbacks,
 	}
+}
+
+// Prepared is every statement a caller prepared, in the order it prepared
+// them. A statement run without a prepare is in the exec or query handler's
+// log and not here.
+func (db *DB) Prepared() []string {
+	return db.prepared.all()
+}
+
+// preparedLog is the statements a [DB] prepared, shared by its connections.
+type preparedLog struct {
+	mu         sync.Mutex
+	statements []string
+}
+
+func (l *preparedLog) add(statement string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.statements = append(l.statements, statement)
+}
+
+func (l *preparedLog) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.statements...)
 }
 
 func (db *DB) QueryCount() int {
@@ -124,6 +154,7 @@ func (db *DB) RollbackCount() int {
 var driverID atomic.Int64
 
 type countingDriver struct {
+	prepared     *preparedLog
 	queryHandler QueryHandler
 	execHandler  ExecContextHandler
 	queryCount   *atomic.Int64
@@ -135,6 +166,7 @@ type countingDriver struct {
 
 func (d *countingDriver) Open(_ string) (driver.Conn, error) {
 	return &countingConn{
+		prepared:     d.prepared,
 		queryHandler: d.queryHandler,
 		execHandler:  d.execHandler,
 		queryCount:   d.queryCount,
@@ -146,6 +178,7 @@ func (d *countingDriver) Open(_ string) (driver.Conn, error) {
 }
 
 type countingConn struct {
+	prepared     *preparedLog
 	queryHandler QueryHandler
 	execHandler  ExecContextHandler
 	queryCount   *atomic.Int64
@@ -155,8 +188,12 @@ type countingConn struct {
 	rollbacks    *atomic.Int64
 }
 
-func (c *countingConn) Prepare(_ string) (driver.Stmt, error) {
-	return nil, fmt.Errorf("prepare is not supported")
+// Prepare answers a statement that runs through the scripted handlers, as
+// the query or exec it would be without the prepare, so a caller that
+// prepares each statement before it runs it meets the same script.
+func (c *countingConn) Prepare(query string) (driver.Stmt, error) {
+	c.prepared.add(query)
+	return &stmt{conn: c, query: query}, nil
 }
 
 func (c *countingConn) Close() error {
@@ -206,6 +243,47 @@ func (tx *tx) Rollback() error {
 	tx.rollbacks.Add(1)
 	return nil
 }
+
+// stmt is a prepared statement of [countingConn]: running it runs its query
+// through the connection.
+type stmt struct {
+	conn  *countingConn
+	query string
+}
+
+func (s *stmt) Close() error { return nil }
+
+// NumInput is -1: the driver does not count placeholders, and database/sql
+// then passes every argument through.
+func (s *stmt) NumInput() int { return -1 }
+
+func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
+	return s.ExecContext(context.Background(), namedValues(args))
+}
+
+func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
+	return s.QueryContext(context.Background(), namedValues(args))
+}
+
+func (s *stmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	return s.conn.ExecContext(ctx, s.query, args)
+}
+
+func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	return s.conn.QueryContext(ctx, s.query, args)
+}
+
+// namedValues is args in the shape the context methods take.
+func namedValues(args []driver.Value) []driver.NamedValue {
+	named := make([]driver.NamedValue, len(args))
+	for i, arg := range args {
+		named[i] = driver.NamedValue{Ordinal: i + 1, Value: arg}
+	}
+	return named
+}
+
+var _ driver.StmtExecContext = (*stmt)(nil)
+var _ driver.StmtQueryContext = (*stmt)(nil)
 
 var _ driver.ConnBeginTx = (*countingConn)(nil)
 var _ driver.ExecerContext = (*countingConn)(nil)
