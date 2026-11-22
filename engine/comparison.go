@@ -38,6 +38,15 @@ import (
 // [schemaext.ObjectComparisonRequest.CurrentContext]. Such a service names at
 // least one declared kind or declared facet kind, each with an observed model
 // its owner registers.
+//
+// OutlivesParent reports that the target keeps an object of the service's
+// kinds when the object's table is dropped, bound to the table's name rather
+// than to the table, so the current side may hold one, or a coverage record
+// for one, below a table it does not hold. The service compares such an
+// object as an object of its own: its change is not the transition of a
+// table, even where the plan creates a table of that name, and the host plans
+// it apart from any table. Without OutlivesParent the runtime refuses an
+// observed object below a table the current side does not hold.
 type ObjectComparison struct {
 	Target             string
 	Kinds              []schemaext.Kind
@@ -46,6 +55,7 @@ type ObjectComparison struct {
 	DeclaredKinds      []schemaext.Kind
 	DeclaredFacetKinds []schemaext.Kind
 	CurrentContext     bool
+	OutlivesParent     bool
 	Service            schemaext.ObjectComparisonService
 }
 
@@ -281,10 +291,17 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
-	if err := comparisonInputSubjects(request); err != nil {
+	if err := comparisonInputSubjects(request, func(kind schemaext.Kind) bool { return r.outlivesParent(request.Target, kind) }); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	return request, nil
+}
+
+// outlivesParent reports whether the comparison of kind on target declares
+// [ObjectComparison.OutlivesParent].
+func (r *Runtime) outlivesParent(target string, kind schemaext.Kind) bool {
+	service, found := r.comparisons[conversionKey{target: target, kind: kind}]
+	return found && r.comparisonServices[service].OutlivesParent
 }
 
 // declaredObjects returns the identity of every object of desired whose kind
@@ -468,7 +485,11 @@ func snapshotDeclaredRoles(refs []objectidentity.ID) ([]objectidentity.ID, error
 	return refs, nil
 }
 
-func comparisonInputSubjects(request schemaext.ObjectComparisonRequest) error {
+// comparisonInputSubjects refuses an object marked absent, and an object below
+// a table its own side does not hold. An observed object of a kind whose
+// comparison outlives its parent is the exception: the target kept it when
+// the table was dropped; see [ObjectComparison.OutlivesParent].
+func comparisonInputSubjects(request schemaext.ObjectComparisonRequest, outlives func(schemaext.Kind) bool) error {
 	for _, source := range []struct {
 		state     schemaext.ObjectState
 		direction schemaext.Representation
@@ -483,6 +504,9 @@ func comparisonInputSubjects(request schemaext.ObjectComparisonRequest) error {
 				continue
 			}
 			parent, found := comparisonParent(request.Parents, ref)
+			if source.direction == schemaext.Observed && (!found || !parent.Current) && outlives(schemaext.Kind(ref.Kind)) {
+				continue
+			}
 			if !found || (source.direction == schemaext.Desired && !parent.Desired) || (source.direction == schemaext.Observed && !parent.Current) {
 				return fmt.Errorf("%w: feature object has no parent on its source side: %s", schemaext.ErrInvalidValue, ref)
 			}

@@ -53,7 +53,7 @@ func registerClickHouseServices(provider *engine.Provider, name string) {
 	provider.Conversions = []engine.Conversion{{Target: name,
 		Kinds: []schemaext.Kind{chschema.TableKind, chschema.IndexKind, chschema.RefreshKind, chschema.RowPolicyKind}, Service: chconvert.Service{}}}
 	provider.Comparisons = []engine.ObjectComparison{{Target: name, Kinds: []schemaext.Kind{chschema.RowPolicyKind},
-		ChangeKinds: []schemaext.Kind{chdiff.RowPolicyKind}, Service: chcompare.RowPolicyService{}}}
+		ChangeKinds: []schemaext.Kind{chdiff.RowPolicyKind}, OutlivesParent: true, Service: chcompare.RowPolicyService{}}}
 	provider.Normalizations = []engine.Normalization{{Target: name, Kinds: []schemaext.Kind{chschema.RowPolicyKind}, Service: chprobe.Service{}}}
 	provider.FacetComparisons = []engine.FacetComparison{
 		{

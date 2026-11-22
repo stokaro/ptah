@@ -27,15 +27,13 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	seen := make(map[objectidentity.Key]bool)
-	for _, change := range result.Changes {
-		if !slices.Contains(r.comparisonServices[service].ChangeKinds, change.Value.Kind()) || !comparisonSubject(request, change.Subject) || seen[change.Subject.Key()] {
-			return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison returned an unrelated or duplicate change for %s", schemaext.ErrInvalidValue, change.Subject)
-		}
-		if parent, found := comparisonParent(request.Parents, change.Subject); found && (!parent.Desired || !parent.Current) {
-			return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: parent transition already owns change for %s", schemaext.ErrInvalidValue, change.Subject)
-		}
-		seen[change.Subject.Key()] = true
+	var detached map[objectidentity.Key]bool
+	if r.comparisonServices[service].OutlivesParent {
+		detached = detachedSubjects(request)
+	}
+	seen, err := comparisonChanges(request, r.comparisonServices[service].ChangeKinds, result.Changes, detached)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
 	}
 	result.Undecided = slices.Clone(result.Undecided)
 	type diagnosticKey struct {
@@ -46,7 +44,7 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 	for _, diagnostic := range result.Undecided {
 		key := diagnosticKey{diagnostic.Kind, diagnostic.Subject.Key()}
 		if !slices.Contains(request.Kinds, diagnostic.Kind) ||
-			strings.TrimSpace(diagnostic.Reason) == "" || !comparisonDiagnosticSubject(request, diagnostic) ||
+			strings.TrimSpace(diagnostic.Reason) == "" || !comparisonDiagnosticSubject(request, diagnostic, detached) ||
 			diagnostics[key] || seen[diagnostic.Subject.Key()] {
 			return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: invalid comparison diagnostic for %s", schemaext.ErrInvalidValue, diagnostic.Subject)
 		}
@@ -61,6 +59,26 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	return result, nil
+}
+
+// comparisonChanges refuses a change of a kind the service does not own, for
+// a subject the request does not hold, for a subject changed twice, or for an
+// object a table's transition owns, unless it is among detached (see
+// [detachedSubjects]). It returns the subjects changed.
+func comparisonChanges(request schemaext.ObjectComparisonRequest, kinds []schemaext.Kind, changes []schemaext.ChangeRecord,
+	detached map[objectidentity.Key]bool,
+) (map[objectidentity.Key]bool, error) {
+	seen := make(map[objectidentity.Key]bool, len(changes))
+	for _, change := range changes {
+		if !slices.Contains(kinds, change.Value.Kind()) || !comparisonSubject(request, change.Subject, detached) || seen[change.Subject.Key()] {
+			return nil, fmt.Errorf("%w: comparison returned an unrelated or duplicate change for %s", schemaext.ErrInvalidValue, change.Subject)
+		}
+		if parent, found := comparisonParent(request.Parents, change.Subject); found && (!parent.Desired || !parent.Current) && !detached[change.Subject.Key()] {
+			return nil, fmt.Errorf("%w: parent transition already owns change for %s", schemaext.ErrInvalidValue, change.Subject)
+		}
+		seen[change.Subject.Key()] = true
+	}
+	return seen, nil
 }
 
 // comparisonCounts checks the counts a comparer reports against its changes:
@@ -189,7 +207,7 @@ func comparisonDesired(request schemaext.ObjectComparisonRequest, result schemae
 		}
 	}
 	for _, ref := range result.Objects.Refs() {
-		if !slices.Contains(request.Kinds, schemaext.Kind(ref.Kind)) || !comparisonSubject(request, ref) {
+		if !slices.Contains(request.Kinds, schemaext.Kind(ref.Kind)) || !comparisonSubject(request, ref, nil) {
 			return fmt.Errorf("%w: comparison invented an unrelated desired object %s", schemaext.ErrInvalidValue, ref)
 		}
 		if parent, found := comparisonParent(request.Parents, ref); found && !parent.Desired {
@@ -214,12 +232,12 @@ func comparisonCoverageSubject(request schemaext.ObjectComparisonRequest, record
 		return false
 	}
 	if record.Subject.Kind == objectidentity.Kind(record.Kind) {
-		return comparisonSubject(request, record.Subject)
+		return comparisonSubject(request, record.Subject, nil)
 	}
 	return slices.ContainsFunc(request.Parents, func(parent schemaext.ParentState) bool { return parent.Subject.Key() == record.Subject.Key() })
 }
 
-func comparisonDiagnosticSubject(request schemaext.ObjectComparisonRequest, diagnostic schemaext.UndecidedChange) bool {
+func comparisonDiagnosticSubject(request schemaext.ObjectComparisonRequest, diagnostic schemaext.UndecidedChange, detached map[objectidentity.Key]bool) bool {
 	subject := diagnostic.Subject
 	if subject == (objectidentity.ID{}) {
 		for _, state := range []schemaext.ObjectState{request.Desired, request.Current} {
@@ -233,15 +251,19 @@ func comparisonDiagnosticSubject(request schemaext.ObjectComparisonRequest, diag
 	if subject.Kind != objectidentity.KindTable && subject.Kind != objectidentity.Kind(diagnostic.Kind) {
 		return false
 	}
-	return slices.ContainsFunc(request.Parents, func(parent schemaext.ParentState) bool { return parent.Subject.Key() == subject.Key() }) || comparisonSubject(request, subject)
+	return slices.ContainsFunc(request.Parents, func(parent schemaext.ParentState) bool { return parent.Subject.Key() == subject.Key() }) || comparisonSubject(request, subject, detached)
 }
 
-func comparisonSubject(request schemaext.ObjectComparisonRequest, subject objectidentity.ID) bool {
+// comparisonSubject reports whether subject is one the request holds: an
+// object or a coverage record of a requested kind on either side, below a
+// table the request names or among detached, the subjects of a comparison
+// that outlives its parent (see [detachedSubjects]). detached may be nil.
+func comparisonSubject(request schemaext.ObjectComparisonRequest, subject objectidentity.ID, detached map[objectidentity.Key]bool) bool {
 	if !slices.Contains(request.Kinds, schemaext.Kind(subject.Kind)) {
 		return false
 	}
 	if !subject.Parent.Empty() {
-		if _, found := comparisonParent(request.Parents, subject); !found {
+		if _, found := comparisonParent(request.Parents, subject); !found && !detached[subject.Key()] {
 			return false
 		}
 	}
@@ -254,6 +276,31 @@ func comparisonSubject(request schemaext.ObjectComparisonRequest, subject object
 		}
 	}
 	return false
+}
+
+// detachedSubjects returns the subjects the current side holds, as objects or
+// as coverage records, below a table it does not hold: the ones a comparison
+// that outlives its parent compares as objects of their own (see
+// [ObjectComparison.OutlivesParent]).
+func detachedSubjects(request schemaext.ObjectComparisonRequest) map[objectidentity.Key]bool {
+	detached := make(map[objectidentity.Key]bool)
+	add := func(subject objectidentity.ID) {
+		if subject.Parent.Empty() {
+			return
+		}
+		if parent, found := comparisonParent(request.Parents, subject); !found || !parent.Current {
+			detached[subject.Key()] = true
+		}
+	}
+	for _, ref := range request.Current.Objects.Refs() {
+		add(ref)
+	}
+	for _, record := range request.Current.Coverage.SubjectRecords() {
+		if record.Subject.Kind == objectidentity.Kind(record.Kind) {
+			add(record.Subject)
+		}
+	}
+	return detached
 }
 
 func comparisonParent(parents []schemaext.ParentState, subject objectidentity.ID) (schemaext.ParentState, bool) {

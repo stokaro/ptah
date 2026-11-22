@@ -326,6 +326,11 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 		ref := tableidentity.Subject(table.Schema, table.Name, target, semantics)
 		declarations[ref.Key()] = table
 	}
+	observedTables := make(map[objectidentity.Key]catalog.Table, len(current.Tables))
+	for _, observed := range current.Tables {
+		ref := tableidentity.Subject(observed.Schema, observed.Name, target, semantics)
+		observedTables[ref.Key()] = observed
+	}
 	for _, change := range changes {
 		// A materialized view's changes join its entry once the view
 		// comparison has run, and a routine's once the routine comparison
@@ -348,6 +353,17 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 		if change.Subject.Kind == objectidentity.KindTable {
 			parent = change.Subject
 		}
+		if _, observed := observedTables[parent.Key()]; !observed && change.Subject.Kind != objectidentity.KindTable {
+			// The target kept the object when its table was dropped, and its
+			// owner compared it as an object of its own (see
+			// [ptah.run/engine.ObjectComparison.OutlivesParent]), so it has no
+			// table entry to join. A table the plan creates under the name
+			// leaves the object to this change: it exists, and creating it
+			// again with the table is refused.
+			diff.FeatureChanges = append(diff.FeatureChanges, change)
+			withoutCreatedChild(diff.TablesAdded, parent, change.Subject, target, semantics)
+			continue
+		}
 		position, found := positions[parent.Key()]
 		if !found {
 			table, exists := declarations[parent.Key()]
@@ -360,11 +376,6 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 		}
 		diff.TablesModified[position].FeatureChanges = append(diff.TablesModified[position].FeatureChanges, change)
 	}
-	observedTables := make(map[objectidentity.Key]catalog.Table, len(current.Tables))
-	for _, observed := range current.Tables {
-		ref := tableidentity.Subject(observed.Schema, observed.Name, target, semantics)
-		observedTables[ref.Key()] = observed
-	}
 	for i := range diff.TablesModified {
 		table := &diff.TablesModified[i]
 		ref := tableidentity.Subject(table.Desired.Table.Schema, table.Desired.Table.Name, target, semantics)
@@ -376,6 +387,16 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 		return schemaext.CompareRefs(tableidentity.Subject(a.Desired.Table.Schema, a.Desired.Table.Name, target, semantics), tableidentity.Subject(b.Desired.Table.Schema, b.Desired.Table.Name, target, semantics))
 	})
 	return nil
+}
+
+// withoutCreatedChild takes subject out of the children the creation of parent
+// creates with the table, when tables creates parent.
+func withoutCreatedChild(tables difftypes.TableChanges, parent, subject objectidentity.ID, target string, semantics identifier.Semantics) {
+	for i := range tables {
+		if tableidentity.Subject(tables[i].Table.Schema, tables[i].Table.Name, target, semantics).Key() == parent.Key() {
+			tables[i].OwnedObjects = tables[i].OwnedObjects.Select(func(ref objectidentity.ID) bool { return ref.Key() != subject.Key() })
+		}
+	}
 }
 
 // constraintHostObservations uses the same structured identity as feature

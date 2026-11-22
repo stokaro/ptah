@@ -156,7 +156,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		// conclude "this policy is missing" from a read that admits it did not
 		// look, so a declared policy becomes an undecided addition instead of
 		// a CREATE nothing verified.
-		policies, readErr := r.readRowPolicies(ctx, dbName)
+		held := make(map[string]bool, len(schema.Tables))
+		for _, table := range schema.Tables {
+			held[table.Name] = true
+		}
+		policies, unread, readErr := r.readRowPolicies(ctx, dbName, func(table string) bool { return held[table] })
 		if readErr != nil && !isAccessDenied(readErr) {
 			return nil, fmt.Errorf("clickhouse: read row policies: %w", readErr)
 		}
@@ -167,7 +171,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		if schema.FeatureObjects, err = schema.FeatureObjects.Merge(read); err != nil {
 			return nil, err
 		}
-		known, err := rowPolicyCoverage(readErr)
+		known, err := rowPolicyCoverage(readErr, unread)
 		if err != nil {
 			return nil, err
 		}

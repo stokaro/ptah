@@ -1403,12 +1403,22 @@ refused rather than dropped:
 - A command other than `SELECT`. A row policy filters reads only.
 - A comment, which a row policy cannot hold.
 
-A policy written `ON db.*` applies to every table of a database. Ptah does
-not read or plan it. Neither does it read a policy whose table the database does
-not hold: the server keeps a policy when its table is dropped, and accepts one for
-a table that does not exist yet. A declared policy of the same name on a table the
-plan creates is then refused by the server with code 493
-(`ACCESS_ENTITY_ALREADY_EXISTS`), measured on 24.10 and 26.10.
+The server binds a policy to a table name, not to a table. It keeps the policy
+when the table is dropped, accepts one for a name no table has, and applies it at
+once to the next table created under that name. A read reports such a policy
+like any other, and the plan changes it on its own, before any `CREATE TABLE` of
+the name:
+
+- A policy the declaration leaves out is dropped with `DROP ROW POLICY`.
+- A declared policy of the same name is changed with `ALTER ROW POLICY`. The
+  server refuses a `CREATE ROW POLICY` for it with code 493
+  (`ACCESS_ENTITY_ALREADY_EXISTS`), measured on 24.10 and 26.10.
+
+A policy written `ON db.*` applies to every table of a database, and Ptah does
+not model it. Nor does Ptah read a view, a materialized view, a dictionary, a
+`Null` or `Distributed` table, or its own bookkeeping tables as tables. A policy
+on any of these is kept: the plan changes nothing for it and reports it as a
+policy the comparison could not decide.
 
 ## The revision table's storage engine
 

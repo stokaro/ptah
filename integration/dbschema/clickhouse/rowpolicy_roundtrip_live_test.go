@@ -12,12 +12,14 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
-	"ptah.run/migration/schemadiff"
 )
 
 // TestRowPolicyFromGoSourceRoundTripsLive drives the whole shipping path: a
@@ -94,47 +96,87 @@ func rowPolicyFilters(c *qt.C, conn *dbschema.DatabaseConnection, name string) [
 	return filters
 }
 
-// TestRowPolicyOfAMissingTableIsNotReadLive keeps a policy whose table is gone
-// out of the read. The server keeps a policy when its table is dropped, and
-// read, the policy has no table to be compared beside, so every comparison of
-// the database fails with "feature object has no parent on its source side".
-func TestRowPolicyOfAMissingTableIsNotReadLive(t *testing.T) {
+// TestRowPolicyOfADroppedTableIsReadLive reads, on the server itself, what
+// ClickHouse keeps of a policy whose table was dropped and of policies on
+// relations the read does not describe as tables or on every table of the
+// database. The policy on the dropped table is read as an observed policy,
+// which the comparison plans as a policy of its own; each of the others is
+// recorded as one the read cannot describe, naming the relation's engine as
+// system.tables reports it, so the comparison keeps it and reports it.
+func TestRowPolicyOfADroppedTableIsReadLive(t *testing.T) {
 	c := qt.New(t)
-	conn := openLiveClickHouseRBACTarget(c)
-	database := conn.Info().Schema
-	table := uniqueClickHouseRBACName("gone_orders")
-	policy := uniqueClickHouseRBACName("gone_policy")
-	createClickHouseRBACTable(c, conn, database, table)
-	dropClickHouseRowPolicyAfterTest(c, conn, database, table, policy)
-	qualified := sqlident.Qualified(platform.ClickHouse, database, table)
-	executeClickHouseRBACFixture(c, conn,
-		"CREATE ROW POLICY "+sqlident.Quote(platform.ClickHouse, policy)+" ON "+qualified+" USING id > 0 TO ALL",
-		"DROP TABLE "+qualified+" SYNC",
-	)
-	c.Assert(rowPolicyTables(c, conn, policy), qt.DeepEquals, []string{table})
+	relations := []struct {
+		name, create string
+		want         schemaext.Knowledge
+	}{
+		{"base", "CREATE TABLE base (id UInt64) ENGINE = MergeTree ORDER BY id", schemaext.Knowledge{State: schemaext.Complete}},
+		{"gone", "CREATE TABLE gone (id UInt64) ENGINE = MergeTree ORDER BY id", schemaext.Knowledge{State: schemaext.Complete}},
+		{"v", "CREATE VIEW v AS SELECT id FROM base", undescribedRelation("v", "View")},
+		{"mv", "CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM base", undescribedRelation("mv", "MaterializedView")},
+		{"nul", "CREATE TABLE nul (id UInt64) ENGINE = Null", undescribedRelation("nul", "Null")},
+		{"dict", "CREATE DICTIONARY dict (id UInt64) PRIMARY KEY id SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)", undescribedRelation("dict", "Dictionary")},
+		{"ptah_schema_apply_log", "CREATE TABLE ptah_schema_apply_log (id UInt64) ENGINE = MergeTree ORDER BY id", schemaext.Knowledge{State: schemaext.Unrepresentable,
+			Reason: `the policy is on "ptah_schema_apply_log", Ptah's own bookkeeping table, which the read leaves out; the plan keeps the policy`}},
+	}
+	var names []string
+	for _, relation := range relations {
+		names = append(names, relation.name)
+	}
+	conn := openOutlivedPolicyDatabase(c, names...)
+	wide := "p_wide ON " + sqlident.Quote(platform.ClickHouse, conn.Info().Schema) + ".*"
+	c.Cleanup(func() { cleanupClickHouseRBACFixture(c, conn, "DROP ROW POLICY IF EXISTS "+wide) })
+	for _, relation := range relations {
+		executeClickHouseRBACFixture(c, conn, relation.create, "CREATE ROW POLICY p_"+relation.name+" ON "+relation.name+" USING 1 TO ALL")
+	}
+	executeClickHouseRBACFixture(c, conn, "CREATE ROW POLICY "+wide+" USING 1 TO ALL", "DROP TABLE gone SYNC")
 
 	live := readLive(c, conn)
-	_, err := schemadiff.CompareWithDatabase(c.Context(), conn, &schemamodel.Database{}, live, nil, must.Must(builtin.New()))
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(rowPolicyFilters(c, conn, policy), qt.HasLen, 0)
+	var read []string
+	for _, object := range must.Must(live.FeatureObjects.All()) {
+		read = append(read, object.Ref.String())
+	}
+	c.Assert(read, qt.DeepEquals, []string{chschema.RowPolicyRef("", "base", "p_base").String(), chschema.RowPolicyRef("", "gone", "p_gone").String()})
+	for _, relation := range relations {
+		c.Assert(live.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", relation.name, "p_"+relation.name)),
+			qt.DeepEquals, relation.want, qt.Commentf("%s", relation.name))
+	}
+	c.Assert(live.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "*", "p_wide")), qt.DeepEquals, schemaext.Knowledge{
+		State: schemaext.Unrepresentable, Reason: "the policy is written ON " + conn.Info().Schema + ".*, for every table of the database, " +
+			"which Ptah does not model; the plan keeps the policy"})
 }
 
-// rowPolicyTables reads the tables the server holds the named policy on,
-// whether or not they exist.
-func rowPolicyTables(c *qt.C, conn *dbschema.DatabaseConnection, name string) []string {
+// undescribedRelation is what a read knows about a policy on the relation
+// name, whose engine it does not describe as a table.
+func undescribedRelation(name, engine string) schemaext.Knowledge {
+	return schemaext.Knowledge{State: schemaext.Unrepresentable,
+		Reason: fmt.Sprintf("the policy is on %q (engine %s), which the read does not describe as a table; the plan keeps the policy", name, engine)}
+}
+
+// openOutlivedPolicyDatabase creates a database for one test and connects to
+// it, so a policy the test leaves on a missing table is in no other test's
+// database. When the test ends it drops the database and, before it, the
+// policy p_<relation> on each of relations: ClickHouse keeps a row policy
+// when its table or its database is dropped.
+func openOutlivedPolicyDatabase(c *qt.C, relations ...string) *dbschema.DatabaseConnection {
 	c.Helper()
-	rows, err := conn.QueryContext(c.Context(), "SELECT table FROM system.row_policies WHERE short_name = ? ORDER BY table", name)
-	c.Assert(err, qt.IsNil)
-	defer func() { c.Check(rows.Close(), qt.IsNil) }()
-	var tables []string
-	for rows.Next() {
-		var table string
-		c.Assert(rows.Scan(&table), qt.IsNil)
-		tables = append(tables, table)
+	admin := openLiveClickHouseRBACTarget(c)
+	database := uniqueClickHouseRBACName("outlived")
+	quoted := sqlident.Quote(platform.ClickHouse, database)
+	executeClickHouseRBACFixture(c, admin, "CREATE DATABASE "+quoted)
+	c.Cleanup(func() { cleanupClickHouseRBACFixture(c, admin, "DROP DATABASE IF EXISTS "+quoted+" SYNC") })
+	for _, relation := range relations {
+		c.Cleanup(func() {
+			cleanupClickHouseRBACFixture(c, admin, "DROP ROW POLICY IF EXISTS "+sqlident.Quote(platform.ClickHouse, "p_"+relation)+
+				" ON "+sqlident.Qualified(platform.ClickHouse, database, relation))
+		})
 	}
-	c.Assert(rows.Err(), qt.IsNil)
-	return tables
+	scratch, err := atlasurl.WithDatabaseName(dbtarget.URL(c, dbtarget.ClickHouse), database)
+	c.Assert(err, qt.IsNil)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), scratch)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
 }
 
 // dropClickHouseRowPolicyAfterTest removes the policy this suite created, so a

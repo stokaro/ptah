@@ -1233,6 +1233,17 @@ values. A source-wide uninspected namespace makes no claim about applicability
 to the selected target; its knowledge remains unchanged without a handler.
 Concrete values, explicit defaults, and subject limitations require a handler.
 
+The runtime refuses an object below a table its own side does not hold.
+`ObjectComparison.OutlivesParent` relaxes that for the current side only: it
+declares that the target keeps an object of the registration's kinds when its
+table is dropped, bound to the table's name, as ClickHouse keeps a row policy.
+The service then receives such an object, or a coverage record for one, and
+its change or diagnostic for it is the object's own rather than part of a
+table's transition, including where the plan creates a table of that name.
+`difftypes.SchemaDiff.FeatureChanges` carries that change apart from any table
+entry, and the table's creation leaves the object out. A declared
+object still needs its declared table.
+
 `Provider.FacetComparisons` assigns attached model kinds and their change codecs
 to a contextual comparison service. Each registration must declare its common
 object kinds in `OwnerKinds`. The runtime captures that list and sends only those
