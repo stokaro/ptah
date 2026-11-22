@@ -142,8 +142,9 @@ func TestDefaultLocation_NamesTheFilesOnMaster(t *testing.T) {
 		"mariadb":    "https://raw.githubusercontent.com/stokaro/ptah/master/internal/vulnerability/mariadb.json",
 		"mysql":      "https://raw.githubusercontent.com/stokaro/ptah/master/internal/vulnerability/mysql.json",
 		"postgres":   "https://raw.githubusercontent.com/stokaro/ptah/master/internal/vulnerability/postgresql.json",
+		"sqlserver":  "https://raw.githubusercontent.com/stokaro/ptah/master/internal/vulnerability/sqlserver.json",
 	}
-	c.Assert(vulnerability.BundledProducts(), qt.DeepEquals, []string{"clickhouse", "mariadb", "mysql", "postgres"})
+	c.Assert(vulnerability.BundledProducts(), qt.DeepEquals, []string{"clickhouse", "mariadb", "mysql", "postgres", "sqlserver"})
 	for _, product := range vulnerability.BundledProducts() {
 		name, data, ok := vulnerability.BundledSnapshot(product)
 		c.Assert(ok, qt.IsTrue)
