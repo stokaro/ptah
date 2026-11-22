@@ -213,6 +213,7 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, probe probe) 
 			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
 				return nil, fmt.Errorf("resolve row-security policies: roll back to savepoint after %s: %w", probe.object.Ref, rollbackErr)
 			}
+			probetext.WarnRefused(ctx, probe.object.Ref.String(), "policy "+probe.object.Ref.Path(), err)
 			return nil, nil
 		}
 	}

@@ -136,8 +136,9 @@ func resolveOneDomainExpression(
 		}
 		// The declaration is the caller's, and refusing it here would fail a
 		// comparison over a domain the server will refuse later anyway, with a
-		// worse message. Unresolved is the honest answer.
-		return DomainExpression{}, nil
+		// worse message. Unresolved is the honest answer, with a warning where
+		// the server read more than one statement.
+		return DomainExpression{}, uncontainedOnly(err)
 	}
 
 	const query = `

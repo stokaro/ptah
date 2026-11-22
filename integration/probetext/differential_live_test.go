@@ -33,13 +33,15 @@ var differentialEngines = []struct {
 // comments, dollar quotes and names in the spellings on which a lexer and a
 // PostgreSQL-family server have disagreed about where a string or a name
 // ends. Each is followed by a space when it is joined, and some end in a line
-// break of their own.
+// break of their own; the last start with a space outside ASCII, which the
+// servers read as part of a name even after an ASCII space.
 var differentialPieces = []string{
 	"1", "1 AS x", `'\'`, `'\''`, `E'\''`, `e'\''`, `b'\''`, `B'\''`, `x'0'`, `U&'\0041'`,
 	"$a$ $a$", "$$ $$", "x€$a$", "x $a$", "x́$a$", "ε$a$", "٣$a$", "x　$a$",
 	"AS y€$a$", "AS y $a$", "--'\n", "/* ' */", "/* /* */ */", "E'a'\n'\\''", "'a'\n'\\''",
 	"E'a' --c\n'\\''", `'\'' --'` + "\n", `AS "x;"`, "-- '\n", "\r--'\n", "-- \r'\n", `1e'\''`, `$1e'\''`,
 	"$1$a$", "1 AS $a$", "AS x$a$", "U&'a' UESCAPE '!'", `E'\\'`, "'x'", "''", "AS y", "$a$", "'", "E'",
+	"\u00a0$a$", "\u0085$a$", "\u2028$a$", "\u3000$a$",
 }
 
 // differentialCorpus is texts of two statements as a lexer might not see
@@ -117,7 +119,7 @@ func severalStatements(err error) bool {
 // no disagreement and pass.
 const differentialFloor = 1000
 
-// TestProbeText_LiveCheckAndServerAgreeOnOneStatement prepares every text of
+// TestStatement_LiveCheckAndServerAgreeOnOneStatement prepares every text of
 // a fixed corpus that the probe text check accepts as one statement, on each
 // PostgreSQL-family server, and finds none the server reads as two. Each text
 // holds a semicolon the check reads inside a string, a quoted name or a

@@ -1,6 +1,7 @@
 package policyprobe_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -12,6 +13,7 @@ import (
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyprobe"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/rundiag"
 )
 
 // scriptedSession runs the probe body in the scripted database's
@@ -63,4 +65,43 @@ func policyStatements(statements []string) []string {
 		}
 	}
 	return policies
+}
+
+// severalCommands is the error PostgreSQL answers a prepared statement that
+// holds two commands with.
+type severalCommands struct{}
+
+func (severalCommands) Error() string {
+	return "ERROR: cannot insert multiple commands into a prepared statement (SQLSTATE 42601)"
+}
+
+func (severalCommands) SQLState() string { return "42601" }
+
+// splittingServer is a database whose server refuses every CREATE POLICY as
+// two commands.
+func splittingServer(c *qt.C) *sql.DB {
+	return dbtest.OpenWithExec(c, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, nil
+	}, func(statement string, _ []driver.NamedValue) (driver.Result, error) {
+		if strings.HasPrefix(statement, "CREATE POLICY") {
+			return nil, severalCommands{}
+		}
+		return driver.RowsAffected(0), nil
+	}).SQL
+}
+
+// TestNormalizeObjects_WarnsWhenTheServerReadsSeveralStatements has the
+// server refuse the CREATE POLICY as two commands. The policy is compared as
+// written, and the run warns that names it.
+func TestNormalizeObjects_WarnsWhenTheServerReadsSeveralStatements(t *testing.T) {
+	c := qt.New(t)
+	var stream bytes.Buffer
+	ctx := rundiag.With(context.Background(), rundiag.New(rundiag.Options{Stream: &stream, Listing: rundiag.ListedAtDebugLevel}))
+	declared := &pgpolicy.DesiredPolicy{Using: new("owner_name = current_user")}
+
+	_, err := policyprobe.Service{}.NormalizeObjects(ctx, escapingRequest(scriptedSession{db: splittingServer(c)}, declared))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stream.String(), qt.Equals, "warning: policy public.docs.p is compared as written, not in the form the server stores: "+
+		"the probe that spells it does not run, because the server reads more than one statement in its text\n")
 }

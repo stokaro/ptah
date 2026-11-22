@@ -764,6 +764,13 @@ func TestLexer_PostgreSQLFamilyReading(t *testing.T) {
 			plain:   lexer.Token{Type: lexer.TokenIdentifier, Value: "\u0663"},
 		},
 		{
+			name:    "a no-break space after a space",
+			options: lexer.Options{NonASCIINames: true},
+			input:   " \u00a0$a$ ; $a$",
+			want:    lexer.Token{Type: lexer.TokenWhitespace, Value: " "},
+			plain:   lexer.Token{Type: lexer.TokenWhitespace, Value: " \u00a0"},
+		},
+		{
 			name:    "a parameter before a dollar quote",
 			options: lexer.Options{DollarParameters: true},
 			input:   "$1$a$ ; $a$",

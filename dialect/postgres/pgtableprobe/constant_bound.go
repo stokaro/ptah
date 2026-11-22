@@ -44,6 +44,13 @@ var stringPrefixes = []string{"B", "X", "N"}
 // spelling of a constant, such as `1e3` or `timestamp '2026-01-01'`, is not
 // probed and is compared as written.
 //
+// A bound built from constants can still run code the database already
+// holds: a cast to a type of one word, such as `'1'::d`, runs the CHECK of a
+// domain d or a cast its owner created, and the server coerces each value to
+// the type of the partition key, which may be such a domain too. Either can
+// call any function the database holds. The rule keeps the declaration from
+// naming a function; it does not make the server's coercion free of them.
+//
 // bound is one the probe text check accepted, so its parentheses balance.
 func constantBound(bound string) bool {
 	tokens := boundTokens(bound)

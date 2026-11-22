@@ -116,7 +116,7 @@ func TestProbes_PrepareEveryStatementThatCarriesDeclaredText(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var sent []string
-			db := dbtest.OpenWithExec(t, routineAnswer, func(statement string, _ []driver.NamedValue) (driver.Result, error) {
+			db := dbtest.OpenWithExec(c, routineAnswer, func(statement string, _ []driver.NamedValue) (driver.Result, error) {
 				sent = append(sent, statement)
 				return driver.RowsAffected(0), nil
 			})
@@ -174,7 +174,7 @@ func TestProbes_WriteALineBreakAfterTheDeclaredText(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var sent []string
-			db := dbtest.OpenWithExec(t, routineAnswer, func(statement string, _ []driver.NamedValue) (driver.Result, error) {
+			db := dbtest.OpenWithExec(c, routineAnswer, func(statement string, _ []driver.NamedValue) (driver.Result, error) {
 				sent = append(sent, statement)
 				return driver.RowsAffected(0), nil
 			})
@@ -183,6 +183,103 @@ func TestProbes_WriteALineBreakAfterTheDeclaredText(t *testing.T) {
 
 			c.Assert(marked(sent), qt.HasLen, 1)
 			c.Assert(marked(sent)[0], qt.Contains, declared+"\n")
+		})
+	}
+}
+
+// severalCommands is the error PostgreSQL answers a prepared statement that
+// holds two commands with.
+type severalCommands struct{}
+
+func (severalCommands) Error() string {
+	return "ERROR: cannot insert multiple commands into a prepared statement (SQLSTATE 42601)"
+}
+
+func (severalCommands) SQLState() string { return "42601" }
+
+// syntaxError is a refusal of the same code for another reason.
+type syntaxError struct{}
+
+func (syntaxError) Error() string { return `ERROR: syntax error at or near "x" (SQLSTATE 42601)` }
+
+func (syntaxError) SQLState() string { return "42601" }
+
+// refusingServer is a scripted server that refuses each statement carrying
+// the declaration with refusal, and answers the routine probe's read.
+func refusingServer(c *qt.C, refusal error) scriptedSession {
+	db := dbtest.OpenWithExec(c, routineAnswer, func(statement string, _ []driver.NamedValue) (driver.Result, error) {
+		if strings.Contains(statement, marker) {
+			return nil, refusal
+		}
+		return driver.RowsAffected(0), nil
+	})
+	return scriptedSession{db: db.SQL}
+}
+
+// severalProbes runs each probe of the PostgreSQL family whose statement the
+// shared runners or the probe itself prepare, with the object named object.
+var severalProbes = []struct {
+	name   string
+	object string
+	probe  func(ctx context.Context, session scriptedSession) error
+}{
+	{name: "CHECK", object: "CHECK ck on t", probe: func(ctx context.Context, session scriptedSession) error {
+		_, err := dbexprprobe.ResolveCheckExpressions(ctx, session, []dbexprprobe.CheckExpressionProbe{{
+			Key: "k", Table: "t", Columns: []dbexprprobe.CheckProbeColumn{{Name: "amount", Type: "text"}},
+			Expression: "amount <> '" + marker + "'", Object: "CHECK ck on t"}})
+		return err
+	}},
+	{name: "domain", object: "domain public.d", probe: func(ctx context.Context, session scriptedSession) error {
+		_, err := dbexprprobe.ProbeDomainExpressions(ctx, session, platform.Postgres, []dbexprprobe.DomainExpressionProbe{{
+			Key: "k", BaseType: "text", Check: "VALUE <> '" + marker + "'", Object: "domain public.d"}})
+		return err
+	}},
+	{name: "view", object: "view v", probe: func(ctx context.Context, session scriptedSession) error {
+		_, err := dbexprprobe.ResolveViewBodies(ctx, session, []dbexprprobe.ViewBodyProbe{{
+			Key: "k", Body: "SELECT '" + marker + "' AS x", Object: "view v"}})
+		return err
+	}},
+	{name: "trigger", object: "trigger audit on t", probe: func(ctx context.Context, session scriptedSession) error {
+		_, err := dbexprprobe.ResolveTriggerConditions(ctx, session, []dbexprprobe.TriggerConditionProbe{{
+			Key: "k", Table: "t", Columns: []dbexprprobe.CheckProbeColumn{{Name: "amount", Type: "text"}},
+			Timing: "AFTER", Event: "INSERT", When: "NEW.amount <> '" + marker + "'", Object: "trigger audit on t"}})
+		return err
+	}},
+}
+
+// TestProbes_WarnWhenTheServerReadsSeveralStatements has the server refuse
+// the prepared probe statement as two commands. The declaration is compared
+// as written, and the run warns that names it, as it does for text the check
+// refuses before the probe runs.
+func TestProbes_WarnWhenTheServerReadsSeveralStatements(t *testing.T) {
+	for _, test := range severalProbes {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, stream := warnedRun()
+
+			err := test.probe(ctx, refusingServer(c, severalCommands{}))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(stream.String(), qt.Equals, "warning: "+test.object+" is compared as written, not in the form "+
+				"the server stores: the probe that spells it does not run, because the server reads more than one "+
+				"statement in its text\n")
+		})
+	}
+}
+
+// TestProbes_RefusedForAnotherReasonRaiseNoWarning is the control: a refusal
+// of the same SQLSTATE for a syntax error leaves the declaration unresolved
+// without a warning or an error, since the apply reports the server's answer.
+func TestProbes_RefusedForAnotherReasonRaiseNoWarning(t *testing.T) {
+	for _, test := range severalProbes {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, stream := warnedRun()
+
+			err := test.probe(ctx, refusingServer(c, syntaxError{}))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(stream.String(), qt.Equals, "")
 		})
 	}
 }

@@ -149,11 +149,33 @@ func StatementWithBody(dialect, statement string) error {
 // simple query protocol, which runs every command the text holds, so text that
 // slips past [Fragment] or [Statement] would run as SQL of its own, and a
 // function it calls, such as dblink_exec, can commit on another connection
-// without ending the transaction. A refused statement answers the server's
-// error, as tx.ExecContext does, and leaves tx aborted for the caller to roll
-// back to its savepoint. Measured on PostgreSQL 18, CockroachDB v26.4.1 and
-// YugabyteDB 2026.1.2, the prepared statement is released after a refusal too.
+// without ending the transaction. A refused statement leaves tx aborted for
+// the caller to roll back to its savepoint. A statement the server reads as
+// more than one is answered with an error that wraps both [ErrUncontained]
+// and the server's error, so the caller warns about the declaration as it
+// does for text the check refuses; any other refusal is the server's error.
+// Measured on PostgreSQL 18,
+// CockroachDB v26.4.1 and YugabyteDB 2026.1.2, the prepared statement is
+// released after a refusal too.
 func Exec(ctx context.Context, tx *sql.Tx, statement string) error {
+	err := execPrepared(ctx, tx, statement)
+	if severalStatements(err) {
+		return splitByServer{server: err}
+	}
+	return err
+}
+
+// splitByServer is the refusal of [Exec] for a statement the server read as
+// more than one. It reads as the refusal of [ParseAlone] and keeps the
+// server's error, with its SQLSTATE, in its chain.
+type splitByServer struct{ server error }
+
+func (e splitByServer) Error() string { return errSeveralStatements.reason }
+
+func (e splitByServer) Unwrap() []error { return []error{ErrUncontained, e.server} }
+
+// execPrepared prepares statement in tx, runs it and releases it.
+func execPrepared(ctx context.Context, tx *sql.Tx, statement string) error {
 	prepared, err := tx.PrepareContext(ctx, statement)
 	if err != nil {
 		return err
@@ -394,6 +416,16 @@ func (s *readState) take(token lexer.Token) error {
 	case lexer.TokenComment, lexer.TokenWhitespace, lexer.TokenEOF:
 	}
 	return nil
+}
+
+// WarnRefused is [Warn] for refused, the error of a probe statement [Exec]
+// ran: it warns when the server read more than one statement in the text, and
+// says nothing for any other refusal, which leaves the declaration compared
+// as written without a warning.
+func WarnRefused(ctx context.Context, key, object string, refused error) {
+	if errors.Is(refused, ErrUncontained) {
+		Warn(ctx, key, object, refused)
+	}
 }
 
 // Warn raises, for the run ctx carries, the warning that object is compared as

@@ -112,6 +112,7 @@ func normalizePartitionBound(ctx context.Context, session schemaext.ProbeSession
 			if err := probetext.Exec(ctx, tx, statement); err != nil {
 				// A bound the server refuses leaves no fact, and the apply reports
 				// the server's answer.
+				probetext.WarnRefused(ctx, subject.String(), "partition bound of "+subject.Path(), err)
 				return nil
 			}
 		}

@@ -434,9 +434,11 @@ func (l *Lexer) scanBracketedIdentifier() Token {
 	}
 }
 
-// scanWhitespace scans whitespace characters
+// scanWhitespace scans whitespace characters. Under
+// [Options.NonASCIINames] it stops at a character outside ASCII, a no-break
+// space or U+3000 among them, which those servers read as part of a name.
 func (l *Lexer) scanWhitespace() Token {
-	for unicode.IsSpace(l.peek()) {
+	for ch := l.peek(); unicode.IsSpace(ch) && (!l.opts.NonASCIINames || ch < utf8.RuneSelf); ch = l.peek() {
 		l.advance()
 	}
 	return l.emit(TokenWhitespace)

@@ -165,8 +165,9 @@ func resolveOnePostgresCheckExpression(
 			}
 			// The declaration is the caller's, and refusing it here would fail a
 			// comparison over a constraint the server will refuse later anyway,
-			// with a worse message. Unresolved is the honest answer.
-			return config.CheckExpression{}, nil
+			// with a worse message. Unresolved is the honest answer, with a
+			// warning where the server read more than one statement.
+			return config.CheckExpression{}, uncontainedOnly(err)
 		}
 	}
 

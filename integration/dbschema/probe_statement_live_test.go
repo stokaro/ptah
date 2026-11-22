@@ -109,8 +109,10 @@ func sqlState(err error) string {
 // the extended protocol and refuses it before it runs either: PostgreSQL and
 // YugabyteDB answer SQLSTATE 42601, CockroachDB 42P14, and the sequence the
 // first statement takes a value of has given none, which no rollback could
-// have undone. The savepoint returns the aborted transaction to the state
-// the transaction check reads.
+// have undone. Exec reads each server's refusal as text the server read as
+// more than one statement, so the caller warns about the declaration. The
+// savepoint returns the aborted transaction to the state the transaction
+// check reads.
 func TestExec_LiveRefusesTwoStatements(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -136,6 +138,8 @@ func TestExec_LiveRefusesTwoStatements(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(ran, qt.IsTrue)
 			c.Assert(sqlState(refused), qt.Equals, test.code, qt.Commentf("%v", refused))
+			c.Assert(refused, qt.ErrorIs, probetext.ErrUncontained)
+			c.Assert(refused, qt.ErrorMatches, "the server reads more than one statement in its text")
 			c.Assert(nextValue(c, conn, sequence), qt.Equals, int64(1))
 		})
 	}

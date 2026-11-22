@@ -154,6 +154,11 @@ func runProbe(
 	read func(ctx context.Context, tx *sql.Tx) error,
 ) (bool, error) {
 	refusal, err := runRefusableProbe(ctx, tx, label, key, savepoint, marks, statements, read)
+	if err == nil && errors.Is(refusal, probetext.ErrUncontained) {
+		// The server read more than one statement in the declared text, and
+		// the caller's warning names the declaration.
+		return false, refusal
+	}
 	return err == nil && refusal == nil, err
 }
 
@@ -186,6 +191,17 @@ func runRefusableProbe(
 		return nil, fmt.Errorf("%s: release probe: %w", label, err)
 	}
 	return nil, nil
+}
+
+// uncontainedOnly is refused when the server refused a probe statement because
+// it read more than one statement in the declared text, which the caller
+// reports as a warning, and nil for any other refusal, which leaves the
+// declaration unresolved without one.
+func uncontainedOnly(refused error) error {
+	if errors.Is(refused, probetext.ErrUncontained) {
+		return refused
+	}
+	return nil
 }
 
 // probeFunc is one engine's way of putting a declaration through the server and

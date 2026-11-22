@@ -336,13 +336,18 @@ declaration is not asked when its text:
 - holds a semicolon outside a string.
 
 Such a declaration is compared as written, and the run prints a warning that
-names it and the reason. The text is read the way the servers read it. Every
-character outside ASCII is part of a name, so `x€$a$` is one name, and `$1` is a
-parameter, so in `$1$a$` a dollar quote starts after it. On CockroachDB a
-backslash escapes a quote in `b'...'`, as it does in `E'...'`. CockroachDB and
-YugabyteDB continue a string on the next line in the escape mode of the first
-segment. Where the servers differ, the text is read each way, and a declaration
-is asked only when every reading finds one statement. The transaction runs with
+names it and the reason. The text is read the way the servers read it:
+
+- every character outside ASCII is part of a name, a no-break space or U+3000
+  among them, even after an ASCII space, so `x€$a$` is one name;
+- `$1` is a parameter, so in `$1$a$` a dollar quote starts after it;
+- on CockroachDB a backslash escapes a quote in `b'...'`, as it does in
+  `E'...'`;
+- CockroachDB and YugabyteDB continue a string on the next line in the escape
+  mode of the first segment.
+
+Where the servers differ, the text is read each way, and a declaration is asked
+only when every reading finds one statement. The transaction runs with
 `standard_conforming_strings` on, so a backslash in a string other than `E'...'`
 is an ordinary character, as it is in the text the reader is compared with. A
 line comment is read both ways, since CockroachDB ends one only at a line feed.
@@ -351,7 +356,11 @@ The check keeps the warning accurate, and a second rule keeps the text inside
 its statement. Every probe statement that carries declared text is sent
 prepared, on the extended protocol. A PostgreSQL-family server refuses a
 prepared statement that holds two commands, and runs neither of them. The
-probe writes a line break after the declared text, so a line comment at its end
+declaration is then compared as written, and the run prints the same warning,
+saying the server reads more than one statement. A probe the server refuses for
+another reason, such as a syntax error, is compared as written without a
+warning, since applying the declaration reports the server's answer. The probe
+writes a line break after the declared text, so a line comment at its end
 closes there and the declaration is asked.
 
 A SQL-standard routine body may hold semicolons, so the server parses the
@@ -1306,7 +1315,11 @@ when it creates the partition, so a function or an operator in a bound would run
 during the comparison, and what it did outside the transaction would stay: a value
 taken from a sequence is not returned by a rollback. Such a bound is compared as
 written, and the run prints a warning that names the partition. Where the server
-spells it differently, the comparison stays undecided.
+spells it differently, the comparison stays undecided. The rule keeps the
+declaration from naming a function. Code the database already holds can still
+run: a cast to a domain runs its CHECK, a cast its owner created runs its
+function, and so does the conversion of each value to a key whose type is a
+domain.
 
 A partition the document leaves out is a table the plan drops, with its rows. Plans
 mark it destructive and the destructive gates hold it as they hold any `DROP TABLE`.

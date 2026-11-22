@@ -190,6 +190,7 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, dialect string, index int, pr
 		// The declaration is the author's, and refusing it here would fail a
 		// comparison over an aggregate the server refuses later anyway, with a
 		// worse message. Unresolved is the honest answer.
+		probetext.WarnRefused(ctx, probe.object.Ref.String(), "continuous aggregate "+probe.object.Ref.Path(), err)
 		return "", false, nil
 	}
 	query := `SELECT c.view_definition FROM ` + aggregateCatalog + ` c WHERE c.view_name = $1`

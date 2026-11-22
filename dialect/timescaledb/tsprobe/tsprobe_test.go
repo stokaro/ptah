@@ -1,6 +1,7 @@
 package tsprobe_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -20,6 +21,7 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/probetx"
+	"ptah.run/internal/rundiag"
 )
 
 // server scripts the statements a probe sends: whether the extension is
@@ -27,8 +29,10 @@ import (
 type server struct {
 	installed bool
 	refuse    string
-	stored    string
-	executed  []string
+	// split is text whose statement the server refuses as two commands.
+	split    string
+	stored   string
+	executed []string
 }
 
 func (s *server) query(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
@@ -46,8 +50,21 @@ func (s *server) exec(query string, _ []driver.NamedValue) (driver.Result, error
 	if s.refuse != "" && strings.Contains(query, s.refuse) {
 		return nil, errors.New(`syntax error at or near "FROM"`)
 	}
+	if s.split != "" && strings.Contains(query, s.split) {
+		return nil, severalCommands{}
+	}
 	return driver.RowsAffected(0), nil
 }
+
+// severalCommands is the error PostgreSQL answers a prepared statement that
+// holds two commands with.
+type severalCommands struct{}
+
+func (severalCommands) Error() string {
+	return "ERROR: cannot insert multiple commands into a prepared statement (SQLSTATE 42601)"
+}
+
+func (severalCommands) SQLState() string { return "42601" }
 
 // session runs the body in a transaction it always rolls back, the contract
 // a connection's probe session keeps. declined answers as a session that
@@ -232,4 +249,23 @@ func TestNormalizeObjects_FailurePath(t *testing.T) {
 			c.Assert(result.Desired.Objects.Len(), qt.Equals, 0)
 		})
 	}
+}
+
+// TestNormalizeObjects_WarnsWhenTheServerReadsSeveralStatements has the
+// server refuse the probe's CREATE as two commands. The aggregate is compared
+// as written, and the run warns that names it.
+func TestNormalizeObjects_WarnsWhenTheServerReadsSeveralStatements(t *testing.T) {
+	c := qt.New(t)
+	scripted := &server{installed: true, split: "CREATE MATERIALIZED VIEW", stored: "SELECT 1;"}
+	db := dbtest.OpenWithExec(t, scripted.query, scripted.exec)
+	held := tsschema.DesiredContinuousAggregateObject("", "hourly", tsschema.DesiredContinuousAggregate{Body: "SELECT 1"})
+	var stream bytes.Buffer
+	ctx := rundiag.With(context.Background(), rundiag.New(rundiag.Options{Stream: &stream, Listing: rundiag.ListedAtDebugLevel}))
+
+	result, err := tsprobe.Service{}.NormalizeObjects(ctx, request(c, session{db: db.SQL}, held))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalized(c, result, "", "hourly"), qt.IsNil)
+	c.Assert(stream.String(), qt.Equals, "warning: continuous aggregate public.hourly is compared as written, not in the form the server stores: "+
+		"the probe that spells it does not run, because the server reads more than one statement in its text\n")
 }

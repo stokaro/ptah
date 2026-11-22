@@ -99,6 +99,7 @@ func normalizePartition(ctx context.Context, session schemaext.ProbeSession, dia
 		// #nosec G202 -- Identifiers are quoted; the owner parses the key as one clause before the rolled-back probe.
 		statement := "CREATE TABLE pg_temp.ptah_partition_probe (LIKE " + table + ") PARTITION BY " + key + "\n"
 		if err := probetext.Exec(ctx, tx, statement); err != nil {
+			probetext.WarnRefused(ctx, subject.String(), "partition key of "+subject.Path(), err)
 			return nil
 		}
 		if err := tx.QueryRowContext(ctx, "SELECT pg_get_partkeydef('pg_temp.ptah_partition_probe'::regclass)").Scan(&definition); err != nil {

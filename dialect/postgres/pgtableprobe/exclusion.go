@@ -118,6 +118,7 @@ func normalizeExclusion(ctx context.Context, session schemaext.ProbeSession, dia
 		// #nosec G202 -- Identifiers are quoted and the owner validates one complete EXCLUDE clause before the rolled-back probe.
 		statement := "CREATE TEMPORARY TABLE " + temporary + " (LIKE " + table + ", " + clause + "\n)"
 		if err := probetext.Exec(ctx, tx, statement); err != nil {
+			probetext.WarnRefused(ctx, subject.String(), "exclusion constraint "+subject.Name.Source+" on "+table, err)
 			return nil
 		}
 		return tx.QueryRowContext(ctx, `SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid=$1::regclass AND contype='x'`, temporary).Scan(&definition)
