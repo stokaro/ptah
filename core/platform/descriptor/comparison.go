@@ -59,6 +59,11 @@ type Comparison struct {
 	// ProbeViewsInSchema reports that an expression probe creates its view
 	// in a schema rather than as a temporary view.
 	ProbeViewsInSchema bool `json:"probe_views_in_schema,omitempty"`
+	// TemporaryTablesSetting names the session setting that makes temporary
+	// tables available, on a server that refuses them while it is off. A
+	// CHECK probe turns it on for its own transaction before it creates its
+	// temporary table. Empty where temporary tables need no setting.
+	TemporaryTablesSetting string `json:"temporary_tables_setting,omitempty"`
 	// RewritesGeneratedExpressions reports that the server stores a
 	// generated column's expression in a form of its own, so only the server
 	// can say what a declaration becomes.

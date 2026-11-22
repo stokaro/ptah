@@ -340,16 +340,15 @@ type T struct {
 // transaction reads strings as standard, so the probe runs and the plan has
 // nothing to do. Read as an escape as well, the backslash would leave the
 // string open, the probe would not run, and the CHECK compared as written
-// would be dropped and added again on every run.
-//
-// CockroachDB is not here: it refuses the probe's temporary table, so no CHECK
-// probe runs there and the probe transaction decides nothing.
+// would be dropped and added again on every run. CockroachDB stores the CHECK
+// as `(code != e'C:\\'::text)`, which only the probe's answer matches.
 func TestPlanConvergesOnAStringThatEndsInABackslashE2E(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		engine dbtarget.Engine
 	}{
 		{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+		{name: "CockroachDB", engine: dbtarget.CockroachDB},
 		{name: "YugabyteDB", engine: dbtarget.YugabyteDB},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -377,9 +376,6 @@ func TestPlanConvergesOnAStringThatEndsInABackslashE2E(t *testing.T) {
 // open to the end of the statement, the comment would keep the probe from
 // running, and the object compared as written would be planned again on every
 // run.
-//
-// CockroachDB has no CHECK row: it refuses the probe's temporary table, so no
-// CHECK probe runs there.
 func TestPlanConvergesOnTextThatEndsInALineCommentE2E(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -391,6 +387,7 @@ func TestPlanConvergesOnTextThatEndsInALineCommentE2E(t *testing.T) {
 		{name: "CockroachDB view", engine: dbtarget.CockroachDB, live: probeCommentView, source: probeCommentViewSource},
 		{name: "YugabyteDB view", engine: dbtarget.YugabyteDB, live: probeCommentView, source: probeCommentViewSource},
 		{name: "PostgreSQL CHECK", engine: dbtarget.PostgreSQL, live: probeCommentCheck, source: probeCommentCheckSource},
+		{name: "CockroachDB CHECK", engine: dbtarget.CockroachDB, live: probeCommentCheck, source: probeCommentCheckSource},
 		{name: "YugabyteDB CHECK", engine: dbtarget.YugabyteDB, live: probeCommentCheck, source: probeCommentCheckSource},
 	} {
 		t.Run(test.name, func(t *testing.T) {

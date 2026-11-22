@@ -70,6 +70,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			ExpressionProbes:               "pg-catalog",
 			ProbeViewsInSchema:             true,
+			TemporaryTablesSetting:         "experimental_enable_temp_tables",
 			RewritesRoutineBodies:          true,
 			RolePasswords:                  true,
 			RoutineTypeAliases:             "pg-aliases",

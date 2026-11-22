@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/config"
+	"ptah.run/core/platform"
 	"ptah.run/internal/probetext"
 )
 
@@ -74,7 +76,10 @@ type CheckExpressionProbe struct {
 // A probe the server refuses -- an expression that does not parse, a column the
 // live table does not have -- is returned with Resolved false rather than
 // omitted, because an absent key and an unresolvable one are different facts
-// and only one of them is a constraint the caller may compare.
+// and only one of them is a constraint the caller may compare. A probe refused
+// for lack of privilege, SQLSTATE 42501, as for a role without TEMPORARY on
+// the database or without USAGE on a schema the CHECK names, is unresolved
+// too, and the run warns that the CHECK is compared as written.
 //
 // Dialects other than the ones below return nil: this rewrite is theirs, and
 // the engines that store the text they were given need no normalization at
@@ -148,6 +153,9 @@ func resolveOnePostgresCheckExpression(
 	}
 
 	relation := newProbeRelation(probe.Table, "ptah_check_probe", index)
+	if on := temporaryTablesOn(dialect); on != "" {
+		relation.setup = slices.Insert(relation.setup, 0, on)
+	}
 	statements := relation.statements(fmt.Sprintf(
 		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s\n))",
 		relation.name, checkProbeColumnList(probe.Columns), written))
@@ -166,8 +174,9 @@ func resolveOnePostgresCheckExpression(
 			// The declaration is the caller's, and refusing it here would fail a
 			// comparison over a constraint the server will refuse later anyway,
 			// with a worse message. Unresolved is the honest answer, with a
-			// warning where the server read more than one statement.
-			return config.CheckExpression{}, uncontainedOnly(err)
+			// warning where the server read more than one statement or the
+			// role lacks a privilege a probe statement needs.
+			return config.CheckExpression{}, warnedRefusal(err)
 		}
 	}
 
@@ -188,6 +197,24 @@ func resolveOnePostgresCheckExpression(
 		return config.CheckExpression{}, fmt.Errorf("resolve check expressions: release probe: %w", err)
 	}
 	return config.CheckExpression{Expression: strings.TrimSpace(stored), Resolved: true}, nil
+}
+
+// temporaryTablesOn is the statement that makes temporary tables available
+// for the rest of the transaction on dialect's server, or "" where they need
+// no setting
+// ([ptah.run/core/platform/descriptor.Comparison.TemporaryTablesSetting]).
+// Without it CockroachDB v26.4.1 refuses the probe table with XCEXF, and the
+// CHECK is compared as written: it stores `code <> 'C:x'` as
+// `(code != 'C:x'::text)`, so the plan drops the CHECK and adds it again on
+// every run. set_config's third argument keeps the setting to the
+// transaction, and the probe's rollback to its savepoint turns it off again.
+func temporaryTablesOn(dialect string) string {
+	described, _ := platform.Lookup(dialect)
+	setting := described.Comparison.TemporaryTablesSetting
+	if setting == "" {
+		return ""
+	}
+	return "SELECT set_config('" + setting + "', 'on', true)"
 }
 
 // checkProbeColumnList renders the probe table's columns.

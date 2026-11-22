@@ -430,7 +430,8 @@ func WarnRefused(ctx context.Context, key, object string, refused error) {
 
 // Warn raises, for the run ctx carries, the warning that object is compared as
 // written because refusal, an error of [Fragment], [Statement] or
-// [StatementWithBody], kept its probe from running, and writes it at once:
+// [StatementWithBody] or a refusal of the probe the caller reports the same
+// way, kept its probe from running, and writes it at once:
 // the comparison it changes is what the command prints next. key identifies
 // the declaration, so a run that probes it twice warns once, and object names
 // it the way a reader finds it, such as `CHECK ck_price on items`. Without a

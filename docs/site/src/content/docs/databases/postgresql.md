@@ -296,11 +296,16 @@ stores characters. Any other cast is part of the default. On a `numeric` column,
 changes a column's type sets its default only where the value differs.
 
 CockroachDB offers no temporary table by default, so it spells no declared
-default, and the value is read in the same way. A role that may not create a
-temporary table on PostgreSQL or YugabyteDB cannot have its defaults spelled
-either. A form the server rewrites, such as a timestamp literal it fills in,
-then reads as a change, so the run warns and names each such column whose type
-or default it plans to change.
+default, and the value is read in the same way. The CHECK probe is the
+exception: it turns on `experimental_enable_temp_tables` for its own
+transaction, so CockroachDB spells a declared CHECK as it does on PostgreSQL.
+A role that may not create a temporary table on PostgreSQL or YugabyteDB
+cannot have its defaults spelled either. A form the server rewrites, such as a
+timestamp literal it fills in, then reads as a change, so the run warns and
+names each such column whose type or default it plans to change. A CHECK whose
+probe the server refuses for lack of privilege, as it refuses a role without
+`TEMPORARY` on the database, is compared as written, and the run prints a
+warning that names the CHECK and the server's answer.
 
 | Declared | Read back |
 | --- | --- |

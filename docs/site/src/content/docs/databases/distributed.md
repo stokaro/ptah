@@ -65,6 +65,12 @@ anything is read, and is never inspected or planned as PostgreSQL.
   `ARRAY['a', 'b']`. An array default whose elements are numbers, strings or
   `NULL` is compared as the text PostgreSQL prints for it, `{a,b}`; any other
   array default is compared as written.
+  A CHECK is spelled by the server: its probe turns on
+  `experimental_enable_temp_tables` for its own transaction, and the rollback
+  that ends the probe turns it off again. So a CHECK that CockroachDB stores
+  as `(code != 'C:x'::text)` matches the declared `code <> 'C:x'`. The probe
+  needs the `TEMPORARY` privilege on the database; without it the CHECK is
+  compared as written, and the run prints a warning that names it.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
