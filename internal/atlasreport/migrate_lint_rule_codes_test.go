@@ -137,3 +137,35 @@ func TestWriteMigrateLintFormat_CarriesAPtahOnlyRuleName(t *testing.T) {
 	c.Assert(codes, qt.Equals, "destructive/truncate-table")
 	c.Assert(findings, qt.Equals, "destructive/truncate-table")
 }
+
+// compatDialectCodeRows are migrations whose rules Atlas gives each engine its
+// own code: a foreign key and a check added to a table are PG306 and PG305 on
+// PostgreSQL and MY131 and MY144 on MySQL. Each row fails if the run's dialect
+// does not reach the code lookup, whichever engine the lookup falls back to.
+var compatDialectCodeRows = []struct {
+	dialect string
+	link    string
+	codes   string
+}{
+	{dialect: "postgres", link: " https://atlasgo.io/lint/analyzers#PG306", codes: "PG306 PG305 "},
+	{dialect: "mysql", link: " https://atlasgo.io/lint/analyzers#MY131", codes: "MY131 MY144 "},
+}
+
+func TestWriteMigrateLint_NamesASharedRuleByTheRunDialectsCode(t *testing.T) {
+	for _, row := range compatDialectCodeRows {
+		t.Run(row.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			analysis := compatLintAnalysis(c, row.dialect,
+				"ALTER TABLE users ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES accounts (id);\n"+
+					"ALTER TABLE users ADD CONSTRAINT ck CHECK (a > 0);\n")
+
+			text := compatLintText(c, analysis)
+			codes := compatLintFormat(c, analysis, `{{ range (index .Files 0).Reports }}{{ range .Diagnostics }}{{ .Code }} {{ end }}{{ end }}`)
+			findings := compatLintFormat(c, analysis, `{{ range (index .Files 0).Findings }}{{ .Rule }} {{ end }}`)
+
+			c.Assert(text, qt.Contains, row.link)
+			c.Assert(codes, qt.Equals, row.codes)
+			c.Assert(findings, qt.Equals, row.codes)
+		})
+	}
+}

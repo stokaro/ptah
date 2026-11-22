@@ -81,3 +81,30 @@ func TestLintPlan_RunsOnlyTheRulesThePolicyNames(t *testing.T) {
 		})
 	}
 }
+
+// TestFormatPlanLintFindings_NamesTheRuleByTheDialectsCode holds the refusal
+// to the code each engine reports: rewrite/alter-column-type is Atlas PG301 on
+// PostgreSQL and MY130 on MySQL, so a lookup that ignores the dialect fails one
+// row whichever engine it falls back to. A rule Atlas has no check for keeps
+// its name.
+func TestFormatPlanLintFindings_NamesTheRuleByTheDialectsCode(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    string
+		dialect string
+		want    string
+	}{
+		{name: "postgres", rule: "rewrite/alter-column-type", dialect: "postgres", want: "\n  - PG301 error: m"},
+		{name: "mysql", rule: "rewrite/alter-column-type", dialect: "mysql", want: "\n  - MY130 error: m"},
+		{name: "a rule with no Atlas check", rule: "destructive/truncate-table", dialect: "postgres", want: "\n  - destructive/truncate-table error: m"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := atlasschema.FormatPlanLintFindings([]lint.Finding{{Rule: test.rule, Severity: lint.SeverityError, Message: "m"}}, test.dialect)
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
