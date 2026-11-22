@@ -169,7 +169,7 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	rebuild, err := atlasTableRebuildRequested()
+	requests, err := resolveAtlasPlanningRequests()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -198,7 +198,7 @@ func runAtlasMigrateDiff(
 		formatConfigured = formatConfigured || configuredFormat
 		policy = configuredPolicy
 	}
-	policy = withAtlasTableRebuild(policy, rebuild)
+	policy = requests.applyTo(policy)
 	// Captured after the atlas.hcl merge, because an env supplying `dev` counts
 	// as having given the flag: the pinned binary runs such an invocation rather
 	// than refusing it.
@@ -578,6 +578,7 @@ func planCompatBidirectionalSchemaDiff(
 			OmitNullBackfill:    input.OmitNullBackfill,
 			AllowTableRebuild:   input.AllowTableRebuild,
 			TableRebuildRequest: input.TableRebuildRequest,
+			SkipCheckScan:       input.SkipCheckScan,
 			Statements:          input.Statements,
 			Shape:               input.Shape,
 		},

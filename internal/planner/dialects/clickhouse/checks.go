@@ -1,6 +1,9 @@
 package clickhouse
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -10,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/rundiag"
 )
 
 // checkChanges are the CHECK constraint statements of the tables a plan keeps.
@@ -21,19 +25,40 @@ import (
 // have, both with code 47, so the drops go before the column changes of the
 // plan and the additions after them.
 //
+// So each added CHECK is scanned for: a SELECT counts the rows the table holds
+// that the CHECK refuses, a NULL result among them, as an INSERT refuses one
+// with code 469, and stops the plan with code 395 naming the constraint. One
+// scan runs before the change and one after the ADD, for a row written between
+// the two; a row written after the ADD is the constraint's to refuse. On a
+// table whose columns the plan does not change, the first scan goes ahead of
+// the drops, so a refused row stops the plan while the CHECK the table holds
+// is still there to refuse the rows written after it. On a table whose columns
+// change, the condition may read a column only the change makes, so the first
+// scan waits for the ADD, and a refused row stops the plan with the table's
+// dropped CHECK gone. Either way the constraint is absent when the scan before
+// it fails, so a retried apply plans it and stops again. A plan asked for
+// without the scans writes none, and says so above each ADD.
+//
 // A table the plan creates or rebuilds takes its CHECKs in its CREATE TABLE
 // ([withDeclaredChecks]), and a table the plan drops takes its CHECKs with it,
 // so neither has a statement here. Only CHECK is planned: ClickHouse's other
 // constraint, ASSUME, has no declaration, and the grammar has no UNIQUE or
 // FOREIGN KEY.
 type checkChanges struct {
-	drops, additions []ast.Node
+	drops, additions []columnStep
+}
+
+// addedCheck is a CHECK the plan adds to a table it keeps.
+type addedCheck struct {
+	table, name, expression string
 }
 
 // planCheckChanges collects the CHECK constraints the comparison adds and
 // removes, and the CHECK of each column the plan adds, which the column's own
-// ADD COLUMN cannot carry: ClickHouse has no CHECK on a column.
-func planCheckChanges(diff *difftypes.SchemaDiff, rebuilds tableRebuilds) checkChanges {
+// ADD COLUMN cannot carry: ClickHouse has no CHECK on a column. A planner
+// asked for plans without the scans ([Planner.WithCheckScanSkipped]) plans no
+// scan and raises [rundiag.UnscannedChecks] for each addition.
+func (p *Planner) planCheckChanges(ctx context.Context, diff *difftypes.SchemaDiff, rebuilds tableRebuilds) checkChanges {
 	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(platform.ClickHouse))
 	created := tableKeys(builder, diff.TablesAdded.Names())
 	removed := tableKeys(builder, diff.TablesRemoved.Names())
@@ -49,30 +74,91 @@ func planCheckChanges(diff *difftypes.SchemaDiff, rebuilds tableRebuilds) checkC
 	var changes checkChanges
 	for _, removal := range diff.ConstraintsRemoved {
 		if isCheck(removal.Type) && kept(removal.TableName) {
-			changes.drops = append(changes.drops, alterTable(removal.TableName, &ast.DropConstraintOperation{ConstraintName: removal.Name}))
+			changes.drops = append(changes.drops, columnStep{
+				table: removal.TableName, alter: alterTable(removal.TableName, &ast.DropConstraintOperation{ConstraintName: removal.Name}),
+			})
 		}
 	}
+	columnsChange := make(map[objectidentity.Key]bool)
+	var additions []addedCheck
 	for _, table := range diff.TablesModified {
 		if !kept(table.TableName) {
 			continue
 		}
+		if len(table.ColumnsAdded)+len(table.ColumnsRemoved)+len(table.ColumnsModified) > 0 {
+			columnsChange[builder.Table(table.TableName).Key()] = true
+		}
 		for _, column := range table.ColumnsAdded {
-			if column.Check == "" {
-				continue
+			if column.Check != "" {
+				additions = append(additions, addedCheck{table: table.TableName, name: chcolumn.CheckName(column.CheckName, table.TableName, column.Name), expression: column.Check})
 			}
-			changes.additions = append(changes.additions, alterTable(table.TableName, &ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{
-				Type: ast.CheckConstraint, Name: chcolumn.CheckName(column.CheckName, table.TableName, column.Name), Expression: column.Check,
-			}}))
 		}
 	}
 	for _, addition := range diff.ConstraintsAdded {
 		if isCheck(addition.Type) && addition.CheckExpression != "" && kept(addition.TableName) {
-			changes.additions = append(changes.additions, alterTable(addition.TableName, &ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{
-				Type: ast.CheckConstraint, Name: addition.Name, Expression: addition.CheckExpression,
-			}}))
+			additions = append(additions, addedCheck{table: addition.TableName, name: addition.Name, expression: addition.CheckExpression})
 		}
 	}
+	var ahead []columnStep
+	for _, added := range additions {
+		add := columnStep{table: added.table, alter: alterTable(added.table, &ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{
+			Type: ast.CheckConstraint, Name: added.name, Expression: added.expression,
+		}})}
+		if p.skipCheckScan {
+			warnUnscanned(ctx, added)
+			add.before = []ast.Node{ast.NewComment(unscannedNote(added))}
+			changes.additions = append(changes.additions, add)
+			continue
+		}
+		// The note goes above the ADD rather than above the first scan, so
+		// the statement a failed scan reports is the scan alone.
+		first := ast.NewRawSQL(heldRowScan(added))
+		add.before = []ast.Node{ast.NewComment(scannedNote(added))}
+		if columnsChange[builder.Table(added.table).Key()] {
+			add.before = append([]ast.Node{first}, add.before...)
+		} else {
+			ahead = append(ahead, columnStep{table: added.table, before: []ast.Node{first}})
+		}
+		add.after = []ast.Node{ast.NewRawSQL(heldRowScan(added))}
+		changes.additions = append(changes.additions, add)
+	}
+	changes.drops = append(ahead, changes.drops...)
+	rundiag.Settle(ctx, rundiag.UnscannedChecks)
 	return changes
+}
+
+// heldRowScan is the SELECT that stops the plan when table holds a row the
+// added CHECK refuses. throwIf takes only a constant message, which is why the
+// message names no count.
+func heldRowScan(added addedCheck) string {
+	return fmt.Sprintf("SELECT throwIf(count() > 0, %s) FROM %s WHERE NOT ifNull((%s), 0);",
+		chcolumn.StringLiteral(fmt.Sprintf("%s is broken by rows %s holds", added.name, added.table)), added.table,
+		strings.TrimSpace(added.expression))
+}
+
+// scannedNote is the comment above the ADD CONSTRAINT of a CHECK the plan
+// scans for.
+func scannedNote(added addedCheck) string {
+	return fmt.Sprintf("CLICKHOUSE: ADD CONSTRAINT %s checks only the rows written after it; "+
+		"a SELECT ahead of it and one after it scan %s for held rows the CHECK refuses", added.name, added.table)
+}
+
+// unscannedNote is the comment above an ADD CONSTRAINT planned without the
+// scans.
+func unscannedNote(added addedCheck) string {
+	return fmt.Sprintf("CLICKHOUSE: ADD CONSTRAINT %s checks only the rows written after it, "+
+		"and the plan has no scan: the rows %s already holds are not checked", added.name, added.table)
+}
+
+// warnUnscanned raises the run warning for a CHECK planned without the scans.
+func warnUnscanned(ctx context.Context, added addedCheck) {
+	check := added.table + "." + added.name
+	_ = rundiag.Warn(ctx, rundiag.Stream(ctx), rundiag.UnscannedChecks, rundiag.Record{
+		Key: check,
+		Line: fmt.Sprintf("CHECK %s on %s is added without a scan of the rows %s holds: "+
+			"the server checks only the rows written after ADD CONSTRAINT, so a held row the CHECK refuses stays", added.name, added.table, added.table),
+		Attrs: []slog.Attr{slog.String("check", check)},
+	})
 }
 
 // withDeclaredChecks adds to a CREATE TABLE the CHECK constraints the table

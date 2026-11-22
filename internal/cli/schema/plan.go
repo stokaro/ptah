@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/cli/internal/checkscan"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -132,6 +133,7 @@ environment variable.`,
 	cmd.MarkFlagsMutuallyExclusive(planSaveFlag, planDryRunFlag)
 	cmd.MarkFlagsMutuallyExclusive(planOutputFlag, planDryRunFlag)
 	tablerebuild.Register(cmd)
+	checkscan.Register(cmd)
 	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd

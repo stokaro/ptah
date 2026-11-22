@@ -14,6 +14,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -65,18 +66,46 @@ func reportedCheck(name, clause string) catalog.Constraint {
 }
 
 func checkStatements(c *qt.C, desired *schemamodel.Database, current *catalog.Database) []string {
+	return checkStatementsWith(c, planext.Options{}, desired, current)
+}
+
+func checkStatementsWith(c *qt.C, opts planext.Options, desired *schemamodel.Database, current *catalog.Database) []string {
 	runtime := must.Must(builtin.New())
 	diff, err := schemadiff.CompareWithDialect(c.Context(), desired, current, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(c.Context(), runtime, diff, "clickhouse")
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, "clickhouse", opts)
 	c.Assert(err, qt.IsNil)
 	return statements
+}
+
+// heldRowScan is the SELECT that stops the plan when table t holds a row the
+// CHECK name with condition refuses.
+func heldRowScan(name, condition string) string {
+	return fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM t WHERE NOT ifNull((%s), 0)", name, condition)
+}
+
+// scannedAdd is the ADD CONSTRAINT of a CHECK the plan scans for, with the
+// note above it.
+func scannedAdd(name, condition string) string {
+	return "-- CLICKHOUSE: ADD CONSTRAINT " + name + " checks only the rows written after it; " +
+		"a SELECT ahead of it and one after it scan t for held rows the CHECK refuses\n" +
+		fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s)", name, condition)
+}
+
+// unscannedAdd is the ADD CONSTRAINT of a CHECK planned without the scans,
+// with the note above it.
+func unscannedAdd(name, condition string) string {
+	return "-- CLICKHOUSE: ADD CONSTRAINT " + name + " checks only the rows written after it, " +
+		"and the plan has no scan: the rows t already holds are not checked\n" +
+		fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s)", name, condition)
 }
 
 // ClickHouse refuses a DROP COLUMN of a column a CHECK reads and an ADD
 // CONSTRAINT over a column the table lacks, so the CHECK drops go first and
 // the additions last. An unnamed CHECK takes the name ClickHouse needs, and an
 // added column's CHECK is a constraint of its own, since ADD COLUMN has none.
+// A condition may read a column the change makes, so on a table whose columns
+// change each scan waits for the column changes.
 func TestGenerateMigrationAST_PlansCheckChangesAroundTheColumnChanges(t *testing.T) {
 	c := qt.New(t)
 	desired := checkTable(
@@ -92,24 +121,16 @@ func TestGenerateMigrationAST_PlansCheckChangesAroundTheColumnChanges(t *testing
 		"ALTER TABLE t DROP CONSTRAINT t_u_check",
 		"ALTER TABLE t ADD COLUMN w Int32",
 		"ALTER TABLE t DROP COLUMN u",
-		heldRows + "SELECT throwIf(count() > 0, 't_w_check is broken by rows t holds') FROM t WHERE NOT ifNull((w > 0), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_w_check CHECK (w > 0)",
-		"SELECT throwIf(count() > 0, 't_w_check is broken by rows t holds') FROM t WHERE NOT ifNull((w > 0), 0)",
-		heldRows + "SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 0), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 0)",
-		"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 0), 0)",
-		heldRows + "SELECT throwIf(count() > 0, 't_named is broken by rows t holds') FROM t WHERE NOT ifNull((v < 100), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_named CHECK (v < 100)",
-		"SELECT throwIf(count() > 0, 't_named is broken by rows t holds') FROM t WHERE NOT ifNull((v < 100), 0)",
+		heldRowScan("t_w_check", "w > 0"), scannedAdd("t_w_check", "w > 0"), heldRowScan("t_w_check", "w > 0"),
+		heldRowScan("t_check", "v > 0"), scannedAdd("t_check", "v > 0"), heldRowScan("t_check", "v > 0"),
+		heldRowScan("t_named", "v < 100"), scannedAdd("t_named", "v < 100"), heldRowScan("t_named", "v < 100"),
 	})
 }
 
-// heldRows is the note before the scan that precedes each ADD CONSTRAINT of
-// table t.
-const heldRows = "-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan t for held rows the CHECK refuses\n"
-
 // A table whose only change is a CHECK has no column change for the request
-// to capture it by, and its steps still plan.
+// to capture it by, and its steps still plan. The condition reads only columns
+// the table has, so the first scan goes ahead of the drop: a held row it
+// refuses stops the plan with the CHECK the table holds still in place.
 func TestGenerateMigrationAST_PlansACheckOnlyChange(t *testing.T) {
 	c := qt.New(t)
 	desired := checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")}, tableCheck("", "v > 1"))
@@ -118,11 +139,125 @@ func TestGenerateMigrationAST_PlansACheckOnlyChange(t *testing.T) {
 	got := checkStatements(c, desired, current)
 
 	c.Assert(got, qt.DeepEquals, []string{
+		heldRowScan("t_check", "v > 1"),
 		"ALTER TABLE t DROP CONSTRAINT t_check",
-		heldRows + "SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1)",
-		"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0)",
+		scannedAdd("t_check", "v > 1"),
+		heldRowScan("t_check", "v > 1"),
 	})
+}
+
+// A plan asked for without the scans writes none, on a table whose columns
+// change and on one whose columns do not, and says above each ADD that the
+// rows the table holds are not checked.
+func TestGenerateMigrationAST_PlansNoScanWhenAskedWithout(t *testing.T) {
+	columnChange := func() (*schemamodel.Database, *catalog.Database) {
+		return checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", ""), int32Field("w", "w > 0")}, tableCheck("", "v > 1")),
+			observedCheckTable([]string{"id", "v"}, reportedCheck("t_check", "v > 0"))
+	}
+	checkOnly := func() (*schemamodel.Database, *catalog.Database) {
+		return checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")}, tableCheck("", "v > 1")),
+			observedCheckTable([]string{"id", "v"}, reportedCheck("t_check", "v > 0"))
+	}
+	for _, test := range []struct {
+		name    string
+		schemas func() (*schemamodel.Database, *catalog.Database)
+		opts    planext.Options
+		want    []string
+	}{
+		{
+			name: "a column change, scanned", schemas: columnChange,
+			want: []string{
+				"ALTER TABLE t DROP CONSTRAINT t_check", "ALTER TABLE t ADD COLUMN w Int32",
+				heldRowScan("t_w_check", "w > 0"), scannedAdd("t_w_check", "w > 0"), heldRowScan("t_w_check", "w > 0"),
+				heldRowScan("t_check", "v > 1"), scannedAdd("t_check", "v > 1"), heldRowScan("t_check", "v > 1"),
+			},
+		},
+		{
+			name: "a column change, unscanned", schemas: columnChange, opts: planext.Options{SkipCheckScan: true},
+			want: []string{
+				"ALTER TABLE t DROP CONSTRAINT t_check", "ALTER TABLE t ADD COLUMN w Int32",
+				unscannedAdd("t_w_check", "w > 0"), unscannedAdd("t_check", "v > 1"),
+			},
+		},
+		{
+			name: "a CHECK only, scanned", schemas: checkOnly,
+			want: []string{
+				heldRowScan("t_check", "v > 1"), "ALTER TABLE t DROP CONSTRAINT t_check",
+				scannedAdd("t_check", "v > 1"), heldRowScan("t_check", "v > 1"),
+			},
+		},
+		{
+			name: "a CHECK only, unscanned", schemas: checkOnly, opts: planext.Options{SkipCheckScan: true},
+			want: []string{"ALTER TABLE t DROP CONSTRAINT t_check", unscannedAdd("t_check", "v > 1")},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := test.schemas()
+
+			got := checkStatementsWith(c, test.opts, desired, current)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A plan without the scans warns before it is printed, once for the run:
+// one line names the one CHECK, and a plan that adds several counts them.
+func TestGenerateMigrationAST_WarnsOfTheChecksItDoesNotScan(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		desired *schemamodel.Database
+		want    string
+	}{
+		{
+			name:    "one CHECK",
+			desired: checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")}, tableCheck("", "v > 1")),
+			want: "warning: CHECK t_check on t is added without a scan of the rows t holds: " +
+				"the server checks only the rows written after ADD CONSTRAINT, so a held row the CHECK refuses stays\n",
+		},
+		{
+			name:    "two CHECKs",
+			desired: checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")}, tableCheck("", "v > 1"), tableCheck("", "v < 9")),
+			want: "warning: 2 CHECK constraints are added without a scan of the rows their tables hold: " +
+				"the server checks only the rows written after ADD CONSTRAINT, so a held row a CHECK refuses stays; " +
+				string(rundiag.ListedAtDebugLevel) + "\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var stream bytes.Buffer
+			ctx := rundiag.With(c.Context(), rundiag.New(rundiag.Options{Stream: &stream}))
+			runtime := must.Must(builtin.New())
+			diff := must.Must(schemadiff.CompareWithDialect(ctx, test.desired, observedCheckTable([]string{"id", "v"}), "clickhouse", runtime))
+			opts := planext.Options{SkipCheckScan: true}
+
+			_, first := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, runtime, diff, "clickhouse", opts)
+			_, second := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, runtime, diff, "clickhouse", opts)
+
+			c.Assert(first, qt.IsNil)
+			c.Assert(second, qt.IsNil)
+			c.Assert(stream.String(), qt.Equals, test.want)
+		})
+	}
+}
+
+// A plan with the scans raises no warning.
+func TestGenerateMigrationAST_WarnsOfNoCheckItScans(t *testing.T) {
+	c := qt.New(t)
+	var stream bytes.Buffer
+	report := rundiag.New(rundiag.Options{Stream: &stream})
+	ctx := rundiag.With(c.Context(), report)
+	runtime := must.Must(builtin.New())
+	desired := checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")}, tableCheck("", "v > 1"))
+	diff := must.Must(schemadiff.CompareWithDialect(ctx, desired, observedCheckTable([]string{"id", "v"}), "clickhouse", runtime))
+
+	got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(ctx, runtime, diff, "clickhouse", planext.Options{})
+	report.Flush()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{heldRowScan("t_check", "v > 1"), scannedAdd("t_check", "v > 1"), heldRowScan("t_check", "v > 1")})
+	c.Assert(stream.String(), qt.Equals, "")
 }
 
 // The same holds for a table whose only change is its comment.
@@ -335,13 +470,10 @@ func TestGenerateMigrationAST_AnUnnamedCheckKeepsTheNameTheServerHoldsItUnder(t 
 			observedCheckTable([]string{"id", "v", "V"}, reportedCheck("t_check", "v > 0"))
 	}
 	neighborPlan := []string{
+		heldRowScan("t_check", "v != 7"), heldRowScan("t_check2", "v < 10"),
 		"ALTER TABLE t DROP CONSTRAINT t_check",
-		heldRows + "SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v != 7), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_check CHECK (v != 7)",
-		"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v != 7), 0)",
-		heldRows + "SELECT throwIf(count() > 0, 't_check2 is broken by rows t holds') FROM t WHERE NOT ifNull((v < 10), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_check2 CHECK (v < 10)",
-		"SELECT throwIf(count() > 0, 't_check2 is broken by rows t holds') FROM t WHERE NOT ifNull((v < 10), 0)",
+		scannedAdd("t_check", "v != 7"), heldRowScan("t_check", "v != 7"),
+		scannedAdd("t_check2", "v < 10"), heldRowScan("t_check2", "v < 10"),
 	}
 	reformatted := func() (*schemamodel.Database, *catalog.Database) {
 		return checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")},
@@ -357,17 +489,13 @@ func TestGenerateMigrationAST_AnUnnamedCheckKeepsTheNameTheServerHoldsItUnder(t 
 		return checkTable([]schemamodel.Field{int32Field("id", ""), int32Field("v", "")}, tableCheck("", "v < 10")), current
 	}
 	elsewherePlan := []string{
-		heldRows + "SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v < 10), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_check CHECK (v < 10)",
-		"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v < 10), 0)",
+		heldRowScan("t_check", "v < 10"), scannedAdd("t_check", "v < 10"), heldRowScan("t_check", "v < 10"),
 		"-- WARNING: dropping table will delete all data\nDROP TABLE IF EXISTS u",
 	}
 	noStatements := make([]string, 0)
 	recasedPlan := []string{
-		"ALTER TABLE t DROP CONSTRAINT t_check",
-		heldRows + "SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((V > 0), 0)",
-		"ALTER TABLE t ADD CONSTRAINT t_check CHECK (V > 0)",
-		"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((V > 0), 0)",
+		heldRowScan("t_check", "V > 0"), "ALTER TABLE t DROP CONSTRAINT t_check",
+		scannedAdd("t_check", "V > 0"), heldRowScan("t_check", "V > 0"),
 	}
 	for _, test := range []struct {
 		name     string

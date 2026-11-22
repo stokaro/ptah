@@ -62,8 +62,13 @@ type DiffPolicy struct {
 	TableRebuildDialects []string
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and the
 	// refusal of a change only a rebuild can make names it. Empty names the
-	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
+	// native flag. See [ptah.run/core/planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
+	// SkipCheckScan plans an added CHECK without the scans of the rows the
+	// table holds; see [ptah.run/core/planext.Options.SkipCheckScan]. The
+	// native commands set it from --skip-check-scan, and the compatibility
+	// surface from PTAH_SKIP_CHECK_SCAN.
+	SkipCheckScan bool
 
 	// Dialects holds, by dialect, the values the labeled `diff "<dialect>"`
 	// blocks of an Atlas project file set. A plan for the dialect follows them

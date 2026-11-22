@@ -728,3 +728,37 @@ func TestPlanningRequestLeavesUnknownOrUnnegotiatedGrantsOut_HappyPath(t *testin
 		c.Assert(wire.Tables[0].CurrentGrants, qt.IsNil)
 	})
 }
+
+// checkScanPlan plans an empty change with options, as a provider whose host
+// plans its common tables.
+func checkScanPlan(c *qt.C, options planext.Options) ([]ast.Node, error) {
+	c.Helper()
+	base, err := engine.New()
+	c.Assert(err, qt.IsNil)
+	return commonPlanner{target: "fixture", options: options, assessParents: true, commonTables: true}.
+		GenerateMigrationAST(c.Context(), &commonPlanRecorder{Runtime: base}, &difftypes.SchemaDiff{})
+}
+
+// The host scans no table for the rows a CHECK refuses, so a plan asked for
+// without those scans is the plan it writes with them.
+func TestCommonPlannerTakesAPlanWithoutCheckScans_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	want, err := checkScanPlan(c, planext.Options{})
+	c.Assert(err, qt.IsNil)
+
+	got, err := checkScanPlan(c, planext.Options{SkipCheckScan: true})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, want)
+}
+
+// The control: an option the host cannot honor is refused by name, so the
+// happy path is the allowance and not the absence of a check.
+func TestCommonPlannerTakesAPlanWithoutCheckScans_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := checkScanPlan(c, planext.Options{SkipChangeKinds: []planext.ChangeKind{planext.DropTable}})
+
+	c.Assert(err, qt.ErrorMatches, `.*does not support Options.SkipChangeKinds`)
+	c.Assert(got, qt.IsNil)
+}

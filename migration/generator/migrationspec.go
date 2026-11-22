@@ -177,7 +177,7 @@ func bidirectionalPlanPolicy(policy DiffPolicy) BidirectionalPlanPolicy {
 	}
 	return BidirectionalPlanPolicy{
 		Create: createMode, Drop: dropMode, OnlineAlter: policy.OnlineAlter, AllowTableRebuild: policy.AllowTableRebuild,
-		Statements: planstyle.Statements,
+		SkipCheckScan: policy.SkipCheckScan, Statements: planstyle.Statements,
 	}
 }
 

@@ -86,9 +86,11 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// the planning entry in migration/planner removes those changes before
 	// this planner is built and passes no kinds, so options that still carry
 	// them are refused. The shape is the entry's too: it rewrites what this planner
-	// returns, and an engine that states no catalog form keeps it as it is.
+	// returns, and an engine that states no catalog form keeps it as it is. The
+	// statements below scan no table for the rows a CHECK refuses, so a plan
+	// asked for without those scans is the plan they write.
 	if err := onlyFields(p.options, "Shape", "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
-		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
+		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill", "SkipCheckScan"); err != nil {
 		return nil, err
 	}
 	// Matched and FeatureCounts count the objects a comparison paired and an

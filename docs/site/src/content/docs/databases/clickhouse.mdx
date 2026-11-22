@@ -610,19 +610,19 @@ out of the plan.
 
 `ALTER TABLE ... ADD CONSTRAINT` checks only the rows written after it, not the rows
 the table holds, measured on 24.10 and 26.10. So the plan counts the rows the table
-holds that the `CHECK` refuses, before each `ADD` and again after it, and says so in
-a comment:
+holds that the `CHECK` refuses, once ahead of the `ADD` and again after it, and says
+so in a comment above the `ADD`:
 
 ```sql
--- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan t for held rows the CHECK refuses
 SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+-- CLICKHOUSE: ADD CONSTRAINT t_check checks only the rows written after it; a SELECT ahead of it and one after it scan t for held rows the CHECK refuses
 ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
 SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
 ```
 
 A row the condition answers NULL for is counted, since an `INSERT` of it is refused
 with code 469 too. A held row the `CHECK` refuses stops the apply with code 395 and a
-message that names the constraint. The count before the `ADD` stops the apply while
+message that names the constraint. The count ahead of the `ADD` stops the apply while
 the constraint is absent, so a retried apply plans the `ADD` again and stops again
 until the rows are deleted or corrected. The count after the `ADD` finds a row
 written between the two counts. It stops the apply with the constraint on the table,
@@ -630,9 +630,24 @@ since ClickHouse has no transaction to undo the `ADD`, and the next plan finds t
 constraint and plans nothing, so delete or correct that row, or drop the constraint.
 A row written after the `ADD` is the constraint's to refuse.
 
-A plan drops a changed `CHECK` before it counts the rows for the new condition, so a
-held row the new condition refuses leaves the table with neither condition until the
-rows are corrected.
+A changed `CHECK` is dropped and added again. On a table whose columns the plan does
+not change, the first count runs ahead of the `DROP CONSTRAINT`, so a held row the
+new condition refuses stops the apply with the old `CHECK` still on the table,
+refusing the rows written after it:
+
+```sql
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0);
+ALTER TABLE t DROP CONSTRAINT t_check;
+-- CLICKHOUSE: ADD CONSTRAINT t_check checks only the rows written after it; a SELECT ahead of it and one after it scan t for held rows the CHECK refuses
+ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 5);
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0);
+```
+
+On a table whose columns the plan also changes, the new condition may read a column
+only that change makes, so the first count waits until the columns have changed and
+runs right ahead of the `ADD`. The old `CHECK` is dropped before the column changes,
+so a held row the new condition refuses then leaves the table with neither
+condition until the rows are corrected.
 
 The counts read the whole table twice for each `CHECK` the plan adds, so on a large
 table they cost what two of those `SELECT` statements cost. To find the rows before
@@ -644,6 +659,20 @@ SELECT count() FROM t WHERE NOT ifNull((v > 1), 0)
 
 `WHERE NOT (v > 1)` misses a row the condition answers NULL for, because `NOT` of
 NULL is NULL.
+
+To plan without the counts, pass `--skip-check-scan`, or set `PTAH_SKIP_CHECK_SCAN=1`,
+which the flag reads and which is the only way to ask on `ptah-compat`. The plan then
+reads no rows, a comment above each `ADD` says that the rows the table holds are not
+checked, and the run warns once before the plan:
+
+```sql
+-- CLICKHOUSE: ADD CONSTRAINT t_check checks only the rows written after it, and the plan has no scan: the rows t already holds are not checked
+ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
+```
+
+A held row the `CHECK` refuses then stays in the table, and the constraint refuses
+only the rows written after it. The strict compatibility profile,
+`PTAH_ATLAS_STRICT_COMPAT=1`, refuses the variable.
 
 The server refuses to drop a column that a `CHECK` reads, and to add a `CHECK` over
 a column the table does not have, both with code 47. A plan therefore drops `CHECK`

@@ -251,6 +251,10 @@ type DiffPolicy struct {
 	// explicit table rebuild, in both directions of the migration. See
 	// [planext.Options.AllowTableRebuild].
 	AllowTableRebuild bool
+	// SkipCheckScan plans the added CHECK constraints of both directions
+	// without the scans of the rows their tables hold. See
+	// [planext.Options.SkipCheckScan].
+	SkipCheckScan bool
 	// RotateSecrets names the secrets, by path as the operator wrote it, the up
 	// migration gives the value their declared variable holds when it runs.
 	// The down migration does not restore the earlier value, which was never

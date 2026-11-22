@@ -137,7 +137,7 @@ type ApplyOptions struct {
 	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
-	// [ptah.run/migration/planext.Options]. The caller selects it from its
+	// [ptah.run/core/planext.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
 	// Diagnostics receives out-of-band notices, such as an --exclude selector
@@ -683,6 +683,7 @@ func computeApplyPlan(
 			OmitNullBackfill:    opts.OmitNullBackfill,
 			AllowTableRebuild:   opts.Policy.AllowsTableRebuild(info.Dialect),
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			SkipCheckScan:       opts.Policy.SkipCheckScan,
 			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,
 			Shape:               opts.Shape,

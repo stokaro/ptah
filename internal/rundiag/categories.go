@@ -82,6 +82,20 @@ var (
 		},
 	}
 
+	// UnscannedChecks is a CHECK a plan adds without reading the rows the
+	// table holds for one it refuses, because the plan was asked for without
+	// the scans. A server whose ADD CONSTRAINT checks only the rows written
+	// after it, as ClickHouse's does, then keeps a held row the CHECK refuses.
+	// The warning is written before the plan it concerns; see [Settle]. Its
+	// records carry the CHECK as the "check" attribute.
+	UnscannedChecks = &Category{
+		Name: "unscanned-check",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d CHECK constraints are added without a scan of the rows their tables hold: "+
+				"the server checks only the rows written after ADD CONSTRAINT, so a held row a CHECK refuses stays", len(records))
+		},
+	}
+
 	// UnprobedDeclarations is a declaration a probe would spell that is
 	// compared as written instead, because its text could reach past the
 	// place the probe statement writes it in: it leaves a string, quoted name

@@ -63,6 +63,10 @@ type BidirectionalPlanPolicy struct {
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild. See
 	// [planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
+	// SkipCheckScan plans both directions' added CHECK constraints without
+	// the scans of the rows their tables hold. See
+	// [planext.Options.SkipCheckScan].
+	SkipCheckScan bool
 	// Statements selects the statement style of both directions. See
 	// [planext.Options.Statements].
 	Statements planext.StatementStyle
@@ -242,6 +246,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
+		SkipCheckScan:           opts.Policy.SkipCheckScan,
 		Statements:              opts.Policy.Statements,
 		Shape:                   opts.Policy.Shape,
 	}
@@ -307,6 +312,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
+		SkipCheckScan:           opts.Policy.SkipCheckScan,
 		Statements:              opts.Policy.Statements,
 	}
 	// The rollback's target is the schema the database currently holds, and it

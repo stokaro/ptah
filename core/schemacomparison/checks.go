@@ -37,7 +37,9 @@ type ChecksRequest struct {
 	// Current is the database the comparison reads. It holds the table and
 	// the CHECK of each pair.
 	Current *catalog.Database
-	// Pairs are the CHECKs to decide, each held CHECK named once.
+	// Pairs are the CHECKs to decide. A held CHECK may appear in several
+	// pairs, one for each declared expression it is compared with, and a
+	// declared expression in several, one for each held CHECK.
 	Pairs []CheckPair
 	// Session runs queries on the connected target, in a transaction that is
 	// always rolled back. It is nil on a comparison with no connection, such
@@ -45,8 +47,9 @@ type ChecksRequest struct {
 	Session schemaext.ProbeSession
 }
 
-// CheckPair is a declared CHECK expression and the CHECK a table holds under
-// the same name.
+// CheckPair is a declared CHECK expression and a CHECK the table holds that it
+// is compared with: the one under the same name, or one the comparison
+// considers for an unnamed declaration.
 type CheckPair struct {
 	// Held is the CHECK the database holds, as Current reports it.
 	Held catalog.Constraint

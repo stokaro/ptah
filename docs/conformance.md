@@ -318,6 +318,12 @@ level or in an env, asks for it on ClickHouse alone. The community binary plans
 no rebuild, so strict mode refuses the variable:
 `PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
 
+A `CHECK` a ClickHouse plan adds comes with two scans of the rows the table
+holds, statements only Ptah writes, since the community binary has no
+ClickHouse driver. `PTAH_SKIP_CHECK_SCAN=1` leaves them out, the variable twin
+of the native `--skip-check-scan` flag, and strict mode refuses it:
+`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_SKIP_CHECK_SCAN`.
+
 The community binary reads a labeled `diff` block as an unlabeled one and applies
 no `allow_recreate` in it, and strict mode reads the block as an ignored
 construct, which it refuses. A `skip` or `concurrent_index` block in a labeled block applies

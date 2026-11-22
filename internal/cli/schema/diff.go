@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/cli/internal/checkscan"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -120,6 +121,7 @@ refused.`,
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	tablerebuild.Register(cmd)
+	checkscan.Register(cmd)
 	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd

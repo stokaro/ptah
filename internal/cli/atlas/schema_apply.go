@@ -462,7 +462,7 @@ func classifiedAtlasApplyTo(ctx context.Context, opts atlasSchemaApplyOptions, p
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	// Before the first early return, so a malformed value fails every apply.
-	rebuild, err := atlasTableRebuildRequested()
+	requests, err := resolveAtlasPlanningRequests()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -511,7 +511,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		opts.lintPolicy = projectCfg.Lint
 	}
-	policy = withAtlasTableRebuild(policy, rebuild)
+	policy = requests.applyTo(policy)
 	opts.formatOutput = formatOutput
 	if err := validateAtlasSchemaApplyFormat(opts); err != nil {
 		return cmdutil.Fail(cmd, err)

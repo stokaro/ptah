@@ -24,6 +24,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/cli/internal/checkscan"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/diffreport"
@@ -115,6 +116,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringArrayVar(&opts.exclude, excludeFlag, nil, "Schema objects to exclude from the comparison (Atlas-style selectors)")
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	tablerebuild.Register(cmd)
+	checkscan.Register(cmd)
 	secretrotation.Register(cmd)
 }
 
@@ -299,6 +301,10 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	skipCheckScan, err := checkscan.Requested(cmd)
+	if err != nil {
+		return err
+	}
 	// The SQL is printed and run later, on a session nobody knows yet, so it
 	// is written for the default sql_mode; see [backslashmode.ForLater].
 	plan, err := planner.GenerateSchemaDiffTextPlan(
@@ -306,6 +312,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		diff, info.Dialect, planext.Options{
 			Capabilities:      backslashmode.ForLater(info.Capabilities),
 			AllowTableRebuild: rebuild,
+			SkipCheckScan:     skipCheckScan,
 			Statements:        planstyle.Statements,
 		},
 	)

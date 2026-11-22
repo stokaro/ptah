@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/cli/internal/checkscan"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -129,6 +130,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
+	checkscan.Register(cmd)
 	secretrotation.Register(cmd)
 }
 
@@ -292,11 +294,16 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	skipCheckScan, err := checkscan.Requested(cmd)
+	if err != nil {
+		return err
+	}
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		cmd.Context(), runtime,
 		diff, info.Dialect, planext.Options{
 			Capabilities:      written,
 			AllowTableRebuild: rebuild,
+			SkipCheckScan:     skipCheckScan,
 			Statements:        planstyle.Statements,
 		},
 	)

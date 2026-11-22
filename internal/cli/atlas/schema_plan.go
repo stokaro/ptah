@@ -177,7 +177,7 @@ its SQL. The registry sub-verbs (approve, list, pull, push, rm) and the
 
 func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	// Before the first early return, so a malformed value fails every plan.
-	rebuild, err := atlasTableRebuildRequested()
+	requests, err := resolveAtlasPlanningRequests()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -186,7 +186,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	policy = withAtlasTableRebuild(policy, rebuild)
+	policy = requests.applyTo(policy)
 	opts.atlasSchemaPlanTransitionFlags = transition
 	if err := validateAtlasSchemaPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)

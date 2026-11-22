@@ -38,8 +38,34 @@ import (
 // state the server kept, and after last where the plan drops the table, so a
 // rollback restores the state only once the table and its rows are gone.
 type storagePhases struct {
-	before, drops, columns, after, indexes, last []ast.Node
-	rebuilds                                     tableRebuilds
+	before, drops, after, indexes, last []ast.Node
+	columns                             []columnStep
+	rebuilds                            tableRebuilds
+}
+
+// columnStep is one step of the columns phase: an ALTER TABLE with one
+// operation and the statements that run with it, or statements that only read
+// a table, such as a scan for the rows a CHECK the plan adds refuses.
+type columnStep struct {
+	// table is the table the step changes or reads.
+	table string
+	// alter is the step's ALTER TABLE, nil for a step that only reads table.
+	alter *ast.AlterTableNode
+	// before and after run with alter, ahead of it and behind it.
+	before, after []ast.Node
+}
+
+// alterSteps makes a step of each ALTER TABLE of nodes.
+func alterSteps(nodes []ast.Node) ([]columnStep, error) {
+	steps := make([]columnStep, 0, len(nodes))
+	for _, node := range nodes {
+		alter, ok := node.(*ast.AlterTableNode)
+		if !ok {
+			return nil, fmt.Errorf("%w: expected one common column operation", schemaext.ErrInvalidValue)
+		}
+		steps = append(steps, columnStep{table: alter.Name, alter: alter})
+	}
+	return steps, nil
 }
 
 func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, phases storagePhases) ([]ast.Node, error) {
@@ -242,56 +268,71 @@ func commonIndexes(builder objectidentity.Builder, captured map[objectidentity.K
 	return steps, nil
 }
 
-// commonColumns adds one step per ALTER TABLE of the columns phase, in plan
-// order: a column change, a comment, or a CHECK constraint change.
+// commonColumns adds one step per step of the columns phase, in plan order: a
+// column change, a comment, a CHECK constraint change, or a read of a table.
 //
 // Parent binds a step to a captured table, as it does for an index. A table
 // whose only change is its comment or a CHECK constraint has no column or
 // feature change, so the request does not capture it, and its steps keep their
 // effects without a parent; the runtime refuses a parent it has not captured.
-func commonColumns(builder objectidentity.Builder, captured map[objectidentity.Key]bool, nodes []ast.Node) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep, error) {
+func commonColumns(builder objectidentity.Builder, captured map[objectidentity.Key]bool, columns []columnStep) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep, error) {
 	common := plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/common/clickhouse"}
 	var steps []featureplan.CommonStep
-	for i, node := range nodes {
-		alter, ok := node.(*ast.AlterTableNode)
-		if !ok || len(alter.Operations) != 1 {
-			return common, nil, fmt.Errorf("%w: expected one common column operation", schemaext.ErrInvalidValue)
-		}
-		table := builder.Table(alter.Name)
+	for i, column := range columns {
+		table := builder.Table(column.table)
 		step := featureplan.CommonStep{ID: plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("column/%d", i)}, Transaction: plangraph.TransactionForbidden}
 		if captured[table.Key()] {
 			step.Parent = table
 		}
-		var name string
-		var action plangraph.Action
-		switch operation := alter.Operations[0].(type) {
-		case *ast.AddColumnOperation:
-			name, action, step.AddedColumn = operation.Column.Name, plangraph.Create, operation.Column
-		case *ast.ModifyColumnOperation:
-			name, action = operation.Column.Name, plangraph.Alter
-		case *ast.DropColumnOperation:
-			name, action = operation.ColumnName, plangraph.Drop
-		case *ast.SetCommentOperation:
-			name, action = operation.Column, plangraph.Alter
-		case *ast.AddConstraintOperation, *ast.DropConstraintOperation:
-			// A CHECK alters the table; its name is no column's.
-			action = plangraph.Alter
-		default:
-			return common, nil, fmt.Errorf("%w: unexpected common column operation %T", schemaext.ErrInvalidValue, operation)
-		}
-		step.Effects = []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: builder.Column(alter.Name, name), Action: action}}
-		if name == "" {
-			// A table's own comment and its CHECK constraints alter the
-			// table, not a column of it.
-			step.Effects = []plangraph.Effect{{Subject: table, Action: plangraph.Alter}}
+		payload := slices.Concat(column.before, column.after)
+		if column.alter == nil {
+			step.Effects = []plangraph.Effect{{Subject: table, Action: plangraph.Read}}
+		} else {
+			effects, err := columnEffects(builder, table, column.alter, &step)
+			if err != nil {
+				return common, nil, err
+			}
+			step.Effects = effects
+			payload = slices.Concat(column.before, []ast.Node{column.alter}, column.after)
 		}
 		steps = append(steps, step)
-		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{ID: step.ID, Payload: []ast.Node{node}, Effects: slices.Clone(step.Effects), Transaction: step.Transaction})
+		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{ID: step.ID, Payload: payload, Effects: slices.Clone(step.Effects), Transaction: step.Transaction})
 		if i > 0 {
 			common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: common.Steps[i-1].ID, After: step.ID})
 		}
 	}
 	return common, steps, nil
+}
+
+// columnEffects are the effects of alter, an ALTER TABLE of table with one
+// operation, and the column step records the column an addition adds.
+func columnEffects(builder objectidentity.Builder, table objectidentity.ID, alter *ast.AlterTableNode, step *featureplan.CommonStep) ([]plangraph.Effect, error) {
+	if len(alter.Operations) != 1 {
+		return nil, fmt.Errorf("%w: expected one common column operation", schemaext.ErrInvalidValue)
+	}
+	var name string
+	var action plangraph.Action
+	switch operation := alter.Operations[0].(type) {
+	case *ast.AddColumnOperation:
+		name, action, step.AddedColumn = operation.Column.Name, plangraph.Create, operation.Column
+	case *ast.ModifyColumnOperation:
+		name, action = operation.Column.Name, plangraph.Alter
+	case *ast.DropColumnOperation:
+		name, action = operation.ColumnName, plangraph.Drop
+	case *ast.SetCommentOperation:
+		name, action = operation.Column, plangraph.Alter
+	case *ast.AddConstraintOperation, *ast.DropConstraintOperation:
+		// A CHECK alters the table; its name is no column's.
+		action = plangraph.Alter
+	default:
+		return nil, fmt.Errorf("%w: unexpected common column operation %T", schemaext.ErrInvalidValue, operation)
+	}
+	if name == "" {
+		// A table's own comment and its CHECK constraints alter the
+		// table, not a column of it.
+		return []plangraph.Effect{{Subject: table, Action: plangraph.Alter}}, nil
+	}
+	return []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: builder.Column(alter.Name, name), Action: action}}, nil
 }
 
 // materializedViewChanges adds the attached-setting changes of materialized

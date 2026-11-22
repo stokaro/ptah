@@ -145,7 +145,7 @@ type DiffOptions struct {
 	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
-	// [ptah.run/migration/planext.Options]. The caller selects it from its
+	// [ptah.run/core/planext.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
 	// MarkFileModeRefusals tags `-- atlas:txmode none` on each Atlas-layout
@@ -221,6 +221,8 @@ type BidirectionalPlanInput struct {
 	// to the injected planner.
 	AllowTableRebuild   bool
 	TableRebuildRequest string
+	// SkipCheckScan is the diff policy's, carried to the injected planner.
+	SkipCheckScan bool
 	// Statements is the statement style both directions are planned in; see
 	// [planstyle.Statements].
 	Statements planext.StatementStyle
@@ -674,6 +676,7 @@ func planDiffFileContents(
 				OmitNullBackfill:     opts.OmitNullBackfill,
 				AllowTableRebuild:    opts.Policy.AllowsTableRebuild(info.Dialect),
 				TableRebuildRequest:  opts.Policy.TableRebuildRequest,
+				SkipCheckScan:        opts.Policy.SkipCheckScan,
 				Statements:           planstyle.Statements,
 				Shape:                planext.StatementShapeCatalog,
 			},
@@ -696,6 +699,7 @@ func planDiffFileContents(
 			OmitNullBackfill:      opts.OmitNullBackfill,
 			AllowTableRebuild:     opts.Policy.AllowsTableRebuild(info.Dialect),
 			TableRebuildRequest:   opts.Policy.TableRebuildRequest,
+			SkipCheckScan:         opts.Policy.SkipCheckScan,
 			Statements:            planstyle.Statements,
 			Shape:                 planext.StatementShapeCatalog,
 		})
