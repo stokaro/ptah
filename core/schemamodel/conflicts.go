@@ -821,6 +821,9 @@ func ValidateRevokedGrants(db *Database) error {
 		return nil
 	}
 	for _, declared := range db.RevokedGrants {
+		// Compared as canonicalized, so ALL PRIVILEGES and a lower-case
+		// spelling meet the keyword. The copy leaves db as it was.
+		declared.Canonicalize()
 		for _, revoked := range declared.ByColumn() {
 			if err := contradictedRevoke(revoked, db.Grants); err != nil {
 				return err
@@ -839,6 +842,7 @@ func contradictedRevoke(revoked Grant, grants []Grant) error {
 	target := revoked.TargetKey()
 	tableTarget := Grant{OnTable: revoked.OnTable}.TargetKey()
 	for _, declared := range grants {
+		declared.Canonicalize()
 		for _, grant := range declared.ByColumn() {
 			if grant.Role != revoked.Role || !dialectScopesOverlap(grant.Dialects, revoked.Dialects) {
 				continue

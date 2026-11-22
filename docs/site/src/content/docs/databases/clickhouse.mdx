@@ -1227,6 +1227,13 @@ Three more boundaries shape what a run does:
   declaration cannot express an exception, so on a managed role Ptah refuses
   instead of comparing equal and reporting convergence. Remove the partial
   revoke, or stop declaring the role.
+- **A revoke under a database grant fails the comparison.** After
+  `GRANT SELECT ON db.* TO r`, a declared `REVOKE ALL ON db.t FROM r` has no
+  row on `db.t` to take, and taking `db.t` out of the database grant would leave
+  a partial revoke. Ptah refuses the revoke, for any role, unless the plan
+  removes the database grant, as it does for a role the schema creates and
+  does not grant that privilege on `db`. Revoke on `db.*`, or grant per table. A grant on
+  `*.*` is outside the read, so a revoke under one is not seen.
 - **An account that may not read the access catalog still gets a read.**
   Reading `system.roles` and `system.grants` needs a privilege reading a table
   does not, and an account holding only `SELECT`, `SHOW TABLES` and

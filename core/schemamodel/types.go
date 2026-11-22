@@ -1687,6 +1687,11 @@ type Grant struct {
 
 // Canonicalize fills in normalized privilege and object names used by renderers
 // and comparators.
+//
+// ALL PRIVILEGES becomes ALL, which every comparison and revoke reads as the
+// keyword. Kept as written, a revoke of ALL PRIVILEGES names a privilege no
+// catalog reports: the plan revokes nothing while the role holds everything,
+// and reads as synced.
 func (g *Grant) Canonicalize() {
 	seen := make(map[string]bool)
 	privileges := make([]string, 0, len(g.Privileges))
@@ -1696,6 +1701,9 @@ func (g *Grant) Canonicalize() {
 			continue
 		}
 		normalized := strings.ToUpper(trimmed)
+		if strings.Join(strings.Fields(normalized), " ") == "ALL PRIVILEGES" {
+			normalized = "ALL"
+		}
 		if !seen[normalized] {
 			seen[normalized] = true
 			privileges = append(privileges, normalized)

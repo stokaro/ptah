@@ -606,7 +606,7 @@ func revokeOnCreatedTargets(
 	revoked := make(map[target][]difftypes.GrantRef)
 	for _, grant := range desired.RevokedGrants {
 		for _, ref := range grantRefsFromGenerated(grant) {
-			if _, exists := planned[newGrantIdentity(ref, semantics)]; exists {
+			if removalCovers(planned, newGrantIdentity(ref, semantics)) {
 				continue
 			}
 			if !revokedTargetCreated(ref, desired, database, semantics) {
@@ -629,6 +629,30 @@ func revokeOnCreatedTargets(
 		}
 		diff.GrantsRemoved = append(diff.GrantsRemoved, refs...)
 	}
+}
+
+// removalCovers reports whether the removals already planned take what the
+// revoke key names: the privilege itself, or for ALL any privilege of the
+// grantee on the object, and on its columns where the revoke is on the whole
+// object. A table the plan creates can carry privileges in the catalog: MySQL
+// keeps the privileges of a dropped table under its name, and the table
+// created in its place holds them. The removals revoke each one, and a
+// REVOKE ALL after them has nothing left to take, which MySQL 8.4.13 answers
+// with ERROR 1147.
+func removalCovers(planned map[grantIdentity]difftypes.GrantRef, key grantIdentity) bool {
+	if _, exists := planned[key]; exists {
+		return true
+	}
+	if key.privilege != allPrivilege {
+		return false
+	}
+	for held := range planned {
+		held = held.withPrivilege(allPrivilege)
+		if held == key || (key.column == "" && held.onWholeObject() == key) {
+			return true
+		}
+	}
+	return false
 }
 
 // coversAll reports whether refs, all about one grantee and one object, have
