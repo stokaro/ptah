@@ -18,9 +18,9 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/backslashmode"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
@@ -952,7 +952,7 @@ func baselineStatements(
 	info := devConn.Info()
 	targetURL := targetInfo.URL
 	state = RebindDatabase(state, targetInfo, info)
-	target, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, state, info.Dialect, runtime)
+	target, err := atlassource.DesiredFromRead(ctx, state, info.Dialect, runtime)
 	if err != nil {
 		return nil, err
 	}

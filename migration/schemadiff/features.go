@@ -238,15 +238,7 @@ func withoutDroppedRelationObjects(undecided []schemaext.UndecidedChange, diff *
 		return undecided
 	}
 	return slices.DeleteFunc(slices.Clone(undecided), func(change schemaext.UndecidedChange) bool {
-		subject := change.Subject
-		if subject.Parent.Empty() || !outlives(change.Kind) {
-			return false
-		}
-		relation := subject.Parent.Source
-		if !subject.Schema.Defaulted && subject.Schema.Source != "" {
-			relation = subject.Schema.Source + "." + relation
-		}
-		return droppedviews.Holds(gone, relation, semantics)
+		return outlives(change.Kind) && droppedviews.Below(gone, change.Subject, semantics)
 	})
 }
 

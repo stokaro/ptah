@@ -263,11 +263,7 @@ func dropViewLike(removal droppedviews.Removal) ast.Node {
 func rowPolicyDrops(diff *difftypes.SchemaDiff, name string, semantics identifier.Semantics) []ast.Node {
 	var nodes []ast.Node
 	for _, record := range chpolicysource.Undescribed(diff.Features.CurrentCoverage) {
-		table := record.Subject.Parent.Source
-		if database := chschema.RowPolicyDatabase(record.Subject); database != "" {
-			table = database + "." + table
-		}
-		if !droppedviews.Holds([]droppedviews.Removal{{Name: name}}, table, semantics) {
+		if !droppedviews.Below([]droppedviews.Removal{{Name: name}}, record.Subject, semantics) {
 			continue
 		}
 		nodes = append(nodes, &ast.ExtensionStatement{Payload: &chast.RowPolicyCommand{Action: "DROP",

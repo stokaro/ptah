@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -107,6 +108,32 @@ func TestVacated(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(droppedviews.Vacated(test.diff, semantics), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestBelow matches an object to the removal its parent names, qualified by
+// the database its schema names when the source named one, and leaves out an
+// object with no parent.
+func TestBelow(t *testing.T) {
+	semantics := identifier.ForDialect(platform.ClickHouse)
+	removals := []droppedviews.Removal{{Name: "d1.v"}}
+	builder := objectidentity.NewBuilder(semantics)
+	tests := []struct {
+		name    string
+		subject objectidentity.ID
+		want    bool
+	}{
+		{name: "the parent in the removal's database", subject: objectidentity.ID{Schema: builder.Table("d1.v").Schema, Parent: builder.Table("d1.v").Name}, want: true},
+		{name: "the parent with no database", subject: objectidentity.ID{Parent: builder.Table("v").Name}, want: true},
+		{name: "the parent in another database", subject: objectidentity.ID{Schema: builder.Table("d2.v").Schema, Parent: builder.Table("d2.v").Name}},
+		{name: "another parent", subject: objectidentity.ID{Parent: builder.Table("w").Name}},
+		{name: "no parent", subject: objectidentity.ID{Name: builder.Table("v").Name}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(droppedviews.Below(removals, test.subject, semantics), qt.Equals, test.want)
 		})
 	}
 }

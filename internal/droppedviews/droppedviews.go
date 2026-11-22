@@ -17,6 +17,7 @@ package droppedviews
 
 import (
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/objectlookup"
 )
@@ -80,6 +81,22 @@ func Vacated(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []Remov
 		}
 	}
 	return vacated
+}
+
+// Below reports whether subject's parent is one of removals: the relation
+// subject's parent names, in the database its schema names when the source
+// named one, matched under the rule [Split] matches names by. The planner that
+// drops an object with its relation and the comparison that stops reporting
+// the object both ask this, so they agree on which objects go.
+func Below(removals []Removal, subject objectidentity.ID, semantics identifier.Semantics) bool {
+	if subject.Parent.Empty() {
+		return false
+	}
+	relation := subject.Parent.Source
+	if !subject.Schema.Defaulted && subject.Schema.Source != "" {
+		relation = subject.Schema.Source + "." + relation
+	}
+	return Holds(removals, relation, semantics)
 }
 
 // Holds reports whether one of removals is the relation name refers to,

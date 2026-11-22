@@ -31,6 +31,7 @@ import (
 	"ptah.run/feature/pgpublication"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/chpolicyexport"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
@@ -44,6 +45,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
@@ -280,7 +282,7 @@ func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect st
 	if s.Schema != nil {
 		notDescribed := s.Schema.NotDescribed
 		var err error
-		s.Schema, err = dbschematogo.ConvertDBSchemaToGoSchema(ctx, filtered, dialect, runtime)
+		s.Schema, err = DesiredFromRead(ctx, filtered, dialect, runtime)
 		if err != nil {
 			return State{}, err
 		}
@@ -544,7 +546,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 			return err
 		}
 	}
-	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, conn.Info().Dialect, opts.Runtime)
+	desired, err := DesiredFromRead(ctx, schema, conn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return fmt.Errorf("convert %s database schema: %w", s.Flag, err)
 	}
@@ -705,7 +707,7 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 			return State{}, err
 		}
 	}
-	desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, conn.Info().Dialect, opts.Runtime)
+	desired, err := DesiredFromRead(ctx, schema, conn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return State{}, fmt.Errorf("convert dev database schema: %w", err)
 	}
@@ -717,6 +719,24 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
 		Address:       conn.Info().URL,
 	}, nil
+}
+
+// DesiredFromRead is the desired form of a database read: the schema a
+// comparison reaches when the database, or a migration directory replayed on
+// it, is the side to reach. What no source can declare is left out of it, with
+// a warning on the run's stream, as a schema written from the read leaves it
+// out (see [chpolicyexport.Declarable]): a ClickHouse row policy whose table
+// is gone, and one the read could not describe. The read itself keeps both,
+// so a comparison that takes the database as the current side still plans the
+// removal of the first and keeps the second. Every conversion of a read into
+// the side to reach goes through it, so the two sides of a comparison agree
+// on what the read holds whichever path built them.
+func DesiredFromRead(ctx context.Context, schema *catalog.Database, dialect string, runtime dbschematogo.Runtime) (*schemamodel.Database, error) {
+	declarable, err := chpolicyexport.Declarable(ctx, rundiag.Stream(ctx), schema)
+	if err != nil {
+		return nil, err
+	}
+	return dbschematogo.ConvertDBSchemaToGoSchema(ctx, declarable, dialect, runtime)
 }
 
 func (s Set) ensureDevDialect(ctx context.Context, devURL string, opts ResolveOptions) error {

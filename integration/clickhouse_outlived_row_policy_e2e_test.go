@@ -268,7 +268,8 @@ func TestClickHouseOutlivedRowPolicy_ExportsLeaveOutWhatNoSourceDeclares(t *test
 
 				c.Assert(written.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", written.Stdout, written.Stderr))
 				c.Assert(written.Stderr, qt.Contains, `warning: ClickHouse row policy "leak" on table "t" is left out: the database holds it for a table `+
-					"it does not hold, and applies it to the next table created under that name; a schema applied from this output drops it with "+
+					"it does not hold, and applies it to the next table created under that name; no schema can declare it, so applying a schema "+
+					"written from this read drops it with "+
 					"DROP ROW POLICY `leak` ON `t`;\n")
 				document := written.Stdout + outlivedFile(c, dir, test.output)
 				c.Assert(written.Stdout+written.Stderr, qt.Contains, test.wantWide)
@@ -341,6 +342,35 @@ func TestClickHouseOutlivedRowPolicy_ViewDropTakesItsPolicy(t *testing.T) {
 			c.Assert(outlivedPolicies(c, conn), qt.HasLen, 0)
 			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+		})
+	}
+}
+
+// TestClickHouseOutlivedRowPolicy_DatabaseAsEitherSide compares a database
+// holding a policy whose table is gone, and one written ON the database, with
+// an empty one, each way round. As the desired side, the database stands for
+// a schema written from it: both policies are left out, each named, and the
+// plan creates neither. As the current side, the read keeps both: the plan
+// drops the policy whose table is gone and keeps the database-wide one.
+func TestClickHouseOutlivedRowPolicy_DatabaseAsEitherSide(t *testing.T) {
+	for _, server := range clickHouseServers(qt.New(t)) {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			orphaned, _ := outlivedExportScratch(c, server.url)
+			empty, _ := outlivedDatabase(c, server.url)
+			dir := c.TempDir()
+
+			toOrphaned := outlivedRun(c, dir, "schema", "diff", "--from", empty, "--to", orphaned)
+			fromOrphaned := outlivedRun(c, dir, "schema", "diff", "--from", orphaned, "--to", empty)
+
+			c.Assert(toOrphaned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", toOrphaned.Stdout, toOrphaned.Stderr))
+			c.Assert(toOrphaned.Stderr, qt.Contains, `warning: ClickHouse row policy "leak" on table "t" is left out:`)
+			c.Assert(toOrphaned.Stdout, qt.Contains, "CREATE TABLE keep (")
+			c.Assert(toOrphaned.Stderr, qt.Contains, `warning: ClickHouse row policy "on_all" on every table of the database is left out:`)
+			c.Assert(toOrphaned.Stdout, qt.Not(qt.Contains), "ROW POLICY")
+			c.Assert(fromOrphaned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", fromOrphaned.Stdout, fromOrphaned.Stderr))
+			c.Assert(fromOrphaned.Stdout, qt.Contains, "DROP ROW POLICY `leak` ON `t`;")
+			c.Assert(fromOrphaned.Stdout, qt.Not(qt.Contains), "on_all")
 		})
 	}
 }

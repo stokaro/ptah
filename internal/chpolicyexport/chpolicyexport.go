@@ -1,8 +1,10 @@
 // Package chpolicyexport prepares the ClickHouse row policies of a database
-// read for a schema written from it, which is what ptah db read, ptah schema
-// inspect and ptah introspect do. A read holds two kinds of policy that no
-// source can declare, and this package says what an export does with each
-// rather than letting the writer refuse the whole schema.
+// read for a schema written from it: the file ptah db read, ptah schema
+// inspect and ptah introspect write, and the desired schema a database or a
+// replayed migration directory stands for in a comparison. A read holds two
+// kinds of policy that no source can declare, and this package says what such
+// a schema does with each rather than letting the writer or the comparison
+// refuse the whole database.
 //
 // A policy whose table the read does not hold is one ClickHouse kept when the
 // table was dropped: the server binds a policy to a table name, so the policy
@@ -77,13 +79,42 @@ func Without(ctx context.Context, w io.Writer, schema *catalog.Database) (*catal
 		left[object.Ref.Key()] = true
 		named := fmt.Sprintf("ClickHouse row policy %q on table %q", object.Ref.Name.Source, object.Ref.Parent.Source)
 		line := fmt.Sprintf("%s is left out: the database holds it for a table it does not hold, and applies it to the next table "+
-			"created under that name; a schema applied from this output drops it with %s", named, statement)
+			"created under that name; no schema can declare it, so applying a schema written from this read drops it with %s", named, statement)
 		_ = rundiag.Warn(ctx, w, rundiag.LeftOutRowPolicies, rundiag.Record{Key: line, Line: line,
 			Attrs: []slog.Attr{slog.String("object", named), slog.String("statement", statement)}})
 	}
 	result := *schema
 	result.FeatureObjects = schema.FeatureObjects.Select(func(ref objectidentity.ID) bool { return !left[ref.Key()] })
 	return &result, nil
+}
+
+// Declarable returns schema as a source can declare it, for a comparison
+// that reaches the database read: without the policies [Without] leaves out,
+// and without the records of the policies the read could not describe, such
+// as one written ON db.*, each named on w as [ReportUndescribed] names it. A
+// desired side holds no table such a record could sit below, so the
+// comparison has nothing to compare it beside; without the record, the kind's
+// own knowledge says the policy is not declared, and a current side that
+// holds it keeps it as a policy its own read could not describe. A schema
+// holding neither is returned unchanged, and so is a nil one. The result
+// shares nothing it changes with schema.
+func Declarable(ctx context.Context, w io.Writer, schema *catalog.Database) (*catalog.Database, error) {
+	result, err := Without(ctx, w, schema)
+	if err != nil || result == nil {
+		return result, err
+	}
+	undescribed := chpolicysource.Undescribed(result.FeatureCoverage)
+	if len(undescribed) == 0 {
+		return result, nil
+	}
+	ReportUndescribed(ctx, w, result.FeatureCoverage)
+	left := make(map[objectidentity.Key]bool, len(undescribed))
+	for _, record := range undescribed {
+		left[record.Subject.Key()] = true
+	}
+	declarable := *result
+	declarable.FeatureCoverage = result.FeatureCoverage.SelectSubjects(func(subject objectidentity.ID) bool { return !left[subject.Key()] })
+	return &declarable, nil
 }
 
 // databaseWide is the table name a ClickHouse read records a policy written
