@@ -36,7 +36,7 @@ render a report, and return a non-zero status when any case fails.
 | `--seed-dir` | Default for seed steps | Default for seed steps | No default |
 | `--dir-format` | `auto`, `ptah`, or `atlas` | No | `ptah` |
 | `--db-url` | Optional explicit throwaway database | Optional explicit throwaway database | Ephemeral SQLite |
-| `--schema` | No | Repeatable desired-schema allow-list; database-wide extensions remain regardless of installation placement | All schemas |
+| `--schema` | No | Repeatable desired-schema allow-list; an unqualified object belongs to the schema the URL names, as described under [Isolation](#isolation); database-wide extensions remain regardless of installation placement | All schemas |
 | `--var` | No | Repeatable `name=value` value for a `variable` block of an HCL desired-schema file or a `.test.hcl` document | No overrides |
 | `--run` | Go regular expression matched against case names | Go regular expression matched against case names | All cases |
 | `--report` | `text`, `json`, or `html` | `text`, `json`, or `html` | `text` |
@@ -63,13 +63,31 @@ or receive a run-level `--seed-dir`.
 
 Without `--db-url`, every case gets a separate ephemeral SQLite database. With
 `--db-url`, all cases share the explicit caller-owned database and the caller
-must isolate and clean it. The explicit target must be disposable because test
+must isolate and clean it: the objects the run provisions stay there after it. The explicit target must be disposable because test
 steps mutate schema and data. Reusing it is supported for idempotent cases, but
 concurrent runners are not serialized and arbitrary SQL is not rolled back.
 
 `apply_schema` preserves unrelated objects, uses live dialect capabilities and
 identifier semantics, and can repair supported drift. Roles and grants are
 rejected because their effects can escape the database-local test lifecycle.
+
+`--schema` counts an object the desired schema leaves unqualified in the schema
+the throwaway database creates it in, and `--db-url` names that schema:
+
+| Throwaway database | Schema of an unqualified object |
+| --- | --- |
+| SQLite, and the ephemeral default | `main` |
+| PostgreSQL family | the one `search_path` schema the URL sets, otherwise `public` |
+| SQL Server | `dbo` |
+| MySQL and MariaDB | the database the URL names |
+
+So `CREATE TABLE users` with `--db-url 'postgres://localhost/dev?search_path=app'`
+is kept by `--schema app`, and `--schema public` keeps nothing and is refused.
+A `search_path` that lists more than one schema, such as `app,public`, is
+refused when the selection depends on it: the server creates the object in the
+first of those schemas that exists, which is not known before the run. A
+`--source-db-url` source is paired the same way, through the schema its own
+session reads: the introspection leaves that schema's objects unqualified.
 
 `schema test` names its desired schema with one selector: `--root-dir` for a
 directory of Go annotations, `--schema-file` for a `.sql`, `.yaml`, `.yml`,

@@ -343,7 +343,7 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from apply")
 	flags.StringVar(&opts.txMode, "tx-mode", string(migrator.MigrationTxModeFile), "Transaction mode: file or none")
-	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used", policy)
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in apply")
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")

@@ -122,7 +122,7 @@ env "local" {
 | `env.schema.src` | Default desired schema source for `schema apply`, `schema diff`, and `migrate diff`. |
 | `env.schema.mode.<object>` | Default object-kind exclusions for supported schema object kinds. |
 | `env.exclude` | Default Atlas-style resource exclusion filters. |
-| `env.schemas` | Restricts the schema universe that compatible `schema inspect`, `schema apply`, `schema diff`, `schema plan`, and `migrate diff` operate over. |
+| `env.schemas` | Restricts the schema universe that compatible `schema inspect`, `schema apply`, `schema diff`, `schema plan`, `migrate diff`, `migrate checkpoint`, and `schema test` operate over. |
 | `migration.baseline` | Migration version `migrate apply` marks applied before running the pending ones; the config spelling of its `--baseline` flag, which still wins when passed. |
 | `migration.dir` | Default migration directory. |
 | `migration.format` | Default migration directory format where supported; safety gate for `migrate apply`. |
@@ -322,7 +322,29 @@ The [compatibility difference](../retained-divergences/#an-empty---schema-value)
 records the measurement.
 
 `--schema` outranks the attribute outright and does not intersect with it: with
-`schemas = ["one"]` in the file, `--schema two` describes `two` alone.
+`schemas = ["one"]` in the file, `--schema two` describes `two` alone. A
+non-empty `PTAH_SCHEMA` sets the flag, so it outranks the attribute too, and a
+`PTAH_SCHEMA` that is set but empty leaves the attribute in effect.
+
+`migrate checkpoint` and `schema test` read the attribute as well, through the
+same grammar. Atlas CE has neither verb: each answers
+`'atlas migrate checkpoint' is not supported by the community version`, with
+its own name, and exits 1. Ignoring the attribute there would drop a selection
+the file states, so Ptah applies it, as it does on the verbs CE has. The
+checkpoint covers the listed schemas, and the schema test applies only those
+schemas of the desired schema. The precedence is the one above, and on
+`migrate checkpoint` a non-empty `PTAH_SCHEMAS` outranks the attribute as
+`PTAH_SCHEMA` does. These verbs pass their names on as one comma-separated
+list, so an element naming a schema that holds a comma, such as
+`schemas = ["\"a,b\""]`, is refused with a message that names the file and the
+env.
+
+Under `PTAH_ATLAS_STRICT_COMPAT=1`, an element naming a schema that begins or
+ends with white space, such as `schemas = [" one"]` or
+`schemas = ["one, two"]`, is refused with a message that names the file and
+the env. Atlas CE keeps the space, and Ptah cannot select such a schema
+([stokaro/ptah#6487](https://github.com/stokaro/ptah/issues/6487)); see
+[schema commands](../schema-commands/) for the `--schema` reading.
 
 Restricting the universe means Ptah describes less than it did before the
 attribute was honored. Set `PTAH_ATLAS_IGNORE_ENV_SCHEMAS=1` to keep the

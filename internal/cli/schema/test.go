@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -29,6 +30,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemaselection"
 	"ptah.run/migration/dbtest"
 )
 
@@ -342,7 +344,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 			return nil, fmt.Errorf("load desired schema from %s: %w",
 				strings.Join(opts.schemaFiles, ", "), err)
 		}
-		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
+		return scopeTestAuthoredSchema(ctx, opts, database, selection)
 	}
 	if source := strings.TrimSpace(opts.sourceDBURL); source != "" {
 		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{}, nil)
@@ -352,14 +354,14 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		if set.Kind != atlassource.KindDatabase {
 			return nil, fmt.Errorf("--%s %s is not a database URL", testSourceDBURLFlag, dburldisplay.Format(source))
 		}
-		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
+		return resolveTestDesiredDatabase(ctx, diag, opts, set, source, selection)
 	}
 	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{}, nil)
 	if err == nil && set.Kind == atlassource.KindDatabase {
 		if err := noteRootDirShape(diag, testSourceDBURLFlag, opts.rootDir); err != nil {
 			return nil, err
 		}
-		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
+		return resolveTestDesiredDatabase(ctx, diag, opts, set, opts.rootDir, selection)
 	}
 	info, statErr := os.Stat(opts.rootDir)
 	if statErr != nil || info.IsDir() {
@@ -371,7 +373,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", dburldisplay.Format(opts.rootDir), parseErr)
 		}
-		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), parsed, selection, "")
+		return scopeTestAuthoredSchema(ctx, opts, parsed, selection)
 	}
 	if err := noteRootDirShape(diag, testSchemaFileFlag, opts.rootDir); err != nil {
 		return nil, err
@@ -380,7 +382,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
-	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
+	return scopeTestAuthoredSchema(ctx, opts, database, selection)
 }
 
 // noteRootDirShape reports that --root-dir named something that is not a
@@ -401,17 +403,94 @@ func noteRootDirShape(diag io.Writer, flag, source string) error {
 	return nil
 }
 
+// scopeTestAuthoredSchema restricts a desired schema parsed from Go annotations
+// or a schema file. An object the source leaves unqualified is created in the
+// schema the throwaway database puts unqualified objects in, so it belongs to
+// that schema for the selection, as an introspected object does. Without it,
+// `CREATE TABLE t` in a schema file matches no selection, and `--schema main`
+// on the SQLite default refuses a run whose every table lives in `main`.
+func scopeTestAuthoredSchema(
+	ctx context.Context, opts testOptions,
+	database *schemamodel.Database,
+	selection []string,
+) (*schemamodel.Database, error) {
+	if len(selection) == 0 || database == nil {
+		return database, nil
+	}
+	owners, err := unqualifiedSchemas(ctx, opts.dbURL)
+	if err != nil {
+		return nil, err
+	}
+	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, testScopeURL{
+		flag: "--" + testDBURLFlag, url: opts.dbURL, owners: owners,
+	})
+}
+
+// unqualifiedSchemas names the schemas an object left unqualified can belong
+// to on the database rawURL names.
+//
+// A URL that limits a run to one schema answers alone: `main` on SQLite, the
+// search_path schema on the PostgreSQL family and the database on the MySQL
+// family, which is the pairing [schemafile.ScopeFromURLs] makes for the
+// compatibility verbs. A PostgreSQL-family search_path that lists several
+// schemas answers with every one of them, because the server creates an
+// unqualified object in the first of them that exists, and only the server
+// knows which exist. Otherwise the dialect's default schema answers: `public`,
+// `dbo`, or none on a MySQL-family URL that names no database. An empty URL is
+// the ephemeral SQLite default.
+func unqualifiedSchemas(ctx context.Context, rawURL string) ([]string, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return []string{identifier.ForDialect(platform.SQLite).DefaultSchema}, nil
+	}
+	if scope, limited := schemaselection.URLScope(rawURL); limited {
+		return []string{scope}, nil
+	}
+	if path := searchPathSchemas(rawURL); len(path) > 1 {
+		return path, nil
+	}
+	dialect, err := providerurl.Dialect(ctx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return []string{identifier.ForDialect(dialect).DefaultSchema}, nil
+}
+
+// searchPathSchemas lists the schemas a PostgreSQL-family URL's search_path
+// names, in order, without the double quotes that may wrap one.
+func searchPathSchemas(rawURL string) []string {
+	var schemas []string
+	for entry := range strings.SplitSeq(schemaselection.FromURL(rawURL).Raw, ",") {
+		if name := strings.Trim(strings.TrimSpace(entry), `"`); name != "" {
+			schemas = append(schemas, name)
+		}
+	}
+	return schemas
+}
+
+// testScopeURL is the URL that decides which schema owns an object the desired
+// schema leaves unqualified, the flag it came from, and the schemas it allows.
+type testScopeURL struct {
+	flag   string
+	url    string
+	owners []string
+}
+
 // scopeTestDesiredSchema restricts database to the selected schemas through the
 // same allow-list every other schema-scoped verb uses.
 //
-// defaultSchema names the schema that unqualified objects belong to. Objects
-// parsed from Go annotations or a schema file carry their own schema name and
-// pass "", but a live introspection leaves the default schema's objects
-// unqualified, so matching them against `--schema main` (or `public`, or `dbo`)
-// requires naming that default -- the same pairing internal/atlasmigrate/diff.go
-// makes for `migrate diff`. Without it every selection over a database source
-// would filter everything out and report the zero-match refusal below, turning
-// a supported combination into a refusal.
+// scope.owners names the schemas an unqualified object can belong to. Matching
+// an unqualified object against `--schema main` (or `public`, or `dbo`)
+// requires naming its schema -- the same pairing internal/atlasmigrate/diff.go
+// makes for `migrate diff`. Without it every selection over such a source
+// would filter those objects out and report the zero-match refusal below,
+// turning a supported combination into a refusal.
+//
+// When several schemas could own an unqualified object and the selection keeps
+// a different part of the desired schema for each, the run is refused: picking
+// one would provision a subset the server may not have meant, and the cases
+// would then report a missing object rather than the selection. Where every
+// candidate keeps the same part, because no object is unqualified, the run
+// goes ahead.
 //
 // A selection that keeps no tables out of a schema that had some is refused. The
 // alternative is provisioning an empty database and letting every case fail on a
@@ -421,14 +500,25 @@ func scopeTestDesiredSchema(
 	ctx context.Context, selections selectext.Set,
 	database *schemamodel.Database,
 	selection []string,
-	defaultSchema string,
+	scope testScopeURL,
 ) (*schemamodel.Database, error) {
 	if len(selection) == 0 || database == nil {
 		return database, nil
 	}
-	scoped, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, database, selection, defaultSchema)
-	if err != nil {
-		return nil, err
+	var scoped *schemamodel.Database
+	for i, owner := range scope.owners {
+		candidate, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, database, selection, owner)
+		if err != nil {
+			return nil, err
+		}
+		if i > 0 && !reflect.DeepEqual(candidate, scoped) {
+			return nil, fmt.Errorf(
+				"--%s %s: %s sets search_path %q, which lists more than one schema,"+
+					" so the selection cannot tell which of them owns an object the desired schema leaves unqualified;"+
+					" name one schema in search_path",
+				testSchemaFlag, strings.Join(selection, ","), scope.flag, schemaselection.FromURL(scope.url).Raw)
+		}
+		scoped = candidate
 	}
 	if len(database.Tables) > 0 && len(scoped.Tables) == 0 {
 		return nil, fmt.Errorf(
@@ -443,13 +533,15 @@ func scopeTestDesiredSchema(
 // fails on the mismatch rather than on whatever the connection would have done.
 //
 // The schema selection is applied here rather than by the caller because only
-// this branch knows the dialect, and the dialect is what names the default
-// schema an introspection leaves objects unqualified in.
+// this branch holds the introspection. sourceURL is the source as typed: the
+// introspection leaves the objects of the schema it names unqualified, so that
+// schema owns them for the selection, as [unqualifiedSchemas] reads it.
 func resolveTestDesiredDatabase(
 	ctx context.Context,
 	diag io.Writer,
 	opts testOptions,
 	set atlassource.Set,
+	sourceURL string,
 	selection []string,
 ) (*schemamodel.Database, error) {
 	devDialect, err := ensureTestDevDialect(ctx, set, opts.dbURL, opts.sourceFlag())
@@ -468,7 +560,16 @@ func resolveTestDesiredDatabase(
 	if err := dropClusterScopedTestState(diag, state.Schema); err != nil {
 		return nil, err
 	}
-	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), state.Schema, selection, identifier.ForDialect(devDialect).DefaultSchema)
+	if len(selection) == 0 {
+		return state.Schema, nil
+	}
+	owners, err := unqualifiedSchemas(ctx, sourceURL)
+	if err != nil {
+		return nil, err
+	}
+	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), state.Schema, selection, testScopeURL{
+		flag: opts.sourceFlag(), url: sourceURL, owners: owners,
+	})
 }
 
 // ensureTestDevDialect refuses a database desired-state source whose dialect

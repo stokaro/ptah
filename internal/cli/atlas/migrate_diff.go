@@ -122,7 +122,7 @@ diff policy values.` + atlasMigrateDiffExcludeHelp(policy) + atlasMigrateDiffInc
 	flags.StringVar(&opts.dirURL, "dir", "file://migrations", "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
-	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff", policy)
 	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring Atlas migration directory locks; zero or less tries them once")
 	flags.StringVar(&opts.qualifier, "qualifier", "", "Qualify tables with a custom qualifier when working on a single schema")
 	flags.BoolVar(&opts.edit, "edit", false, "Edit the generated migration files")
