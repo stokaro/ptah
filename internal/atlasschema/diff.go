@@ -116,6 +116,11 @@ type DiffOptions struct {
 	// dev database) and reading their initial connection metadata. A zero
 	// value leaves the caller's context deadline unchanged.
 	ConnectTimeout time.Duration
+	// Held are connections the caller already holds to databases FromURLs or
+	// ToURLs name. A side whose database lives in its held connection's one
+	// session, as an in-memory SQLite database does, is read on that
+	// connection, which stays open; see [atlassource.ResolveOptions.Held].
+	Held []*dbschema.DatabaseConnection
 	// Diagnostics receives non-fatal notices, such as unmatched --exclude
 	// selectors and undecidable additions. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
@@ -275,6 +280,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		ServerScope: (fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase) ||
 			isDevServer(opts.DevURL) || readsFromServerWithoutDev(opts.DevURL, fromSet),
 		ConnectTimeout:            opts.ConnectTimeout,
+		Held:                      opts.Held,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,
 		Vars:                      opts.Vars,

@@ -484,6 +484,17 @@ func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 	return info
 }
 
+// SingleSession reports whether the database lives in this connection's one
+// session, as an in-memory SQLite database does: `sqlite://:memory:`, or a URL
+// with `mode=memory`. Opening the same URL again does not reach it unless the
+// URL also says `cache=shared`: each open of a private in-memory database is a
+// new, empty database. A caller that needs this database read somewhere else
+// hands over this connection, not its URL. It is false for a database stored
+// on disk or on a server.
+func (dc *DatabaseConnection) SingleSession() bool {
+	return dc.singleSession
+}
+
 // VulnerabilityScanState reports "supported", "not_applicable", or
 // "unassessed" for this connection's engine. The deployment and advisory
 // source are separate scan decisions.
