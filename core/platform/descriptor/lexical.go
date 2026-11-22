@@ -75,6 +75,23 @@ type Lexical struct {
 	// lexer does not read them, so a scan that has to agree with the server
 	// about where a string ends refuses one.
 	AlternativeQuoting bool `json:"alternative_quoting,omitempty"`
+	// HeredocDollarTags reports that a dollar-quoted string, `$tag$ ...
+	// $tag$`, is read as a ClickHouse heredoc. Its tag is any run of ASCII
+	// letters, digits, underscores and characters outside ASCII, so it may
+	// begin with a digit: `$1abc$` opens a heredoc there. A tag that no closing
+	// tag follows opens nothing, so `SELECT 1 AS $ab$` names a column.
+	//
+	// ClickHouse 24.10 opens a heredoc at a tag holding any character but a
+	// dollar sign, `$a-b$` among them, and this rule does not read that tag.
+	// 26.9 and 26.10 refuse it, and a tag outside ASCII, with code 62; neither
+	// reads a character outside ASCII anywhere but in a heredoc or a quote, so
+	// reading one as part of a tag changes nothing those servers accept.
+	//
+	// Unset, a tag is spelled as the PostgreSQL family spells it: an ASCII
+	// letter, an underscore or any character outside ASCII, and a digit after
+	// the first, so `$1abc$` is the parameter `$1` followed by a name. The
+	// shared lexer and the client delimiter rewrite read it.
+	HeredocDollarTags bool `json:"heredoc_dollar_tags,omitempty"`
 }
 
 // LexerYQL is the [Lexical.Lexer] of YDB's query language.

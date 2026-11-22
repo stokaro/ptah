@@ -143,6 +143,12 @@ func clickHouse() descriptor.Dialect {
 			LineComments:               []string{"#", "//"},
 			BackslashEscapes:           true,
 			IdentifierBackslashEscapes: true,
+			// 26.10 reads `SELECT $1abc$x; y$1abc$` as one heredoc, as it
+			// does `$_$` and `$A1$`, and `SELECT 1 AS $ab$` as a column
+			// alias. 24.10 also reads a tag outside ASCII and `$a-b$` as
+			// heredoc tags; the descriptor field says which of them the rule
+			// reads.
+			HeredocDollarTags: true,
 		},
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{

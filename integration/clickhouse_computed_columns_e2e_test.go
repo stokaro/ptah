@@ -87,12 +87,19 @@ const computedRowsRead = "SELECT arrayStringConcat(groupArray(concat(toString(id
 // the registry, and 24.10, the oldest Ptah certifies, through its own variable.
 func clickHouseServers(c *qt.C) []struct{ name, url string } {
 	c.Helper()
-	legacy, configured := os.LookupEnv("PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL")
-	c.Assert(configured, qt.IsTrue, qt.Commentf("PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL names the 24.10 server"))
 	return []struct{ name, url string }{
 		{name: "current", url: dbtarget.URL(c, dbtarget.ClickHouse)},
-		{name: "24.10", url: legacy},
+		{name: "24.10", url: legacyClickHouseURL(c)},
 	}
+}
+
+// legacyClickHouseURL is the address of the 24.10 server CI starts, read from
+// its own variable.
+func legacyClickHouseURL(c *qt.C) string {
+	c.Helper()
+	legacy, configured := os.LookupEnv("PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL")
+	c.Assert(configured, qt.IsTrue, qt.Commentf("PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL names the 24.10 server"))
+	return legacy
 }
 
 // TestApplyClickHouseComputedColumnsE2E declares MATERIALIZED, ALIAS and

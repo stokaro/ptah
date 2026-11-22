@@ -36,7 +36,9 @@ import (
 // switch gave it, so a name such as [a;b] is one token wherever SQLite text
 // is lexed. The PostgreSQL family and SQL Server state nested block comments,
 // which no switch read and which PostgreSQL 18.6, CockroachDB v26.3.5,
-// YugabyteDB 2026.1.2 and SQL Server 2025 read as one comment.
+// YugabyteDB 2026.1.2 and SQL Server 2025 read as one comment. ClickHouse
+// states its heredocs, which no switch read: 26.10 reads `$1abc$` as one,
+// and `SELECT 1 AS $ab$` as a column alias.
 func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	postgresFamily := descriptor.Lexical{EscapeStrings: true, NestedComments: true}
 	want := map[string]descriptor.Lexical{
@@ -53,6 +55,7 @@ func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		},
 		platform.ClickHouse: {
 			LineComments: []string{"#", "//"}, BackslashEscapes: true, IdentifierBackslashEscapes: true,
+			HeredocDollarTags: true,
 		},
 		platform.SQLite:    {BracketIdentifiers: true},
 		platform.SQLServer: {BracketIdentifiers: true, HashNames: true, NestedComments: true},

@@ -3,6 +3,8 @@ package clientdelimiter
 import (
 	"sort"
 	"strings"
+
+	"ptah.run/internal/lexer"
 )
 
 // Origins maps an offset in the text [Normalize] returned to the offset in the
@@ -43,6 +45,10 @@ type Rules struct {
 	// Elsewhere a dollar sign is an ordinary character, as in the MySQL name
 	// `a$b$`.
 	DollarQuotes bool
+	// DollarTags is how the tag of such a literal is spelled, by the rule the
+	// shared lexer reads, so the rewrite and the statement splitter agree on
+	// where a body opens. The zero value is the PostgreSQL family's.
+	DollarTags lexer.DollarTagRule
 	// LineComments are the markers, beside "--", that open a comment running
 	// to the end of the line: "#" for MySQL and MariaDB, "#" and "//" for
 	// ClickHouse. Elsewhere "#" is an operator or a temporary-name prefix.
@@ -76,7 +82,7 @@ func Normalize(input string) (string, Origins) {
 // inside a quoted literal, a dollar-quoted body or a block comment is text
 // that happens to look like one, and stays where it was written.
 func NormalizeFor(input string, rules Rules) (string, Origins) {
-	tags := &dollarTags{input: input}
+	tags := &dollarTags{input: input, rule: rules.DollarTags}
 	delimiter := ";"
 	allowCommentDelimiter := false
 	var output strings.Builder
@@ -139,7 +145,7 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 			pos += len(delimiter)
 			written.add(outputStart+output.Len(), inputStart+pos)
 		case rules.DollarQuotes && input[pos] == '$':
-			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, inputStart, tags); ok {
+			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, inputStart, rules.DollarTags, tags); ok {
 				pos = nextPos
 				continue
 			}
@@ -351,6 +357,7 @@ func writeBracketedName(output *strings.Builder, input string, pos int) int {
 // whole script, so a script with many directives is not indexed again.
 type dollarTags struct {
 	input string
+	rule  lexer.DollarTagRule
 	last  map[string]int
 }
 
@@ -362,41 +369,27 @@ func (d *dollarTags) closesAfter(tag string, after int) bool {
 			if d.input[pos] != '$' {
 				continue
 			}
-			end := pos + 1
-			for end < len(d.input) && isTagByte(d.input[end]) {
-				end++
-			}
-			if end < len(d.input) && d.input[end] == '$' {
-				d.last[d.input[pos:end+1]] = pos
+			if length, ok := d.rule.OpeningTag(d.input[pos:]); ok {
+				d.last[d.input[pos:pos+length]] = pos
 			}
 		}
 	}
 	return d.last[tag] > after
 }
 
-func isTagByte(ch byte) bool {
-	return ch == '_' || ch >= '0' && ch <= '9' || ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z'
-}
-
 // writeDollarQuotedSQL copies a dollar-quoted body that opens at pos, when
 // tags says the tag closes later in the text.
-func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, tags *dollarTags) (int, bool) {
+func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, rule lexer.DollarTagRule, tags *dollarTags) (int, bool) {
 	// A dollar sign that follows a name character is part of that name, as in
 	// `a$b$`: PostgreSQL opens a quote only at the start of a token.
 	if pos > 0 && (isWordByte(input[pos-1]) || input[pos-1] == '$') {
 		return pos, false
 	}
-	tagEnd := pos + 1
-	for tagEnd < len(input) && input[tagEnd] != '$' {
-		ch := input[tagEnd]
-		if ch != '_' && (ch < '0' || ch > '9') && (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') {
-			return pos, false
-		}
-		tagEnd++
-	}
-	if tagEnd >= len(input) {
+	length, ok := rule.OpeningTag(input[pos:])
+	if !ok {
 		return pos, false
 	}
+	tagEnd := pos + length - 1
 
 	tag := input[pos : tagEnd+1]
 	if !tags.closesAfter(tag, base+tagEnd) {

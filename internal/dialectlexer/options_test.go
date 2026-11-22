@@ -28,7 +28,9 @@ import (
 // and so does SQL Server, whose descriptor states them too: SQL Server 2025
 // ends `/* /* */ ' */` at the second `*/`, not the first. YugabyteDB also
 // differs: its descriptor states PostgreSQL's string constants, which
-// YugabyteDB 2026.1.2 reads.
+// YugabyteDB 2026.1.2 reads. ClickHouse differs too: its descriptor states
+// its heredocs, whose tag may begin with a digit, so `$1abc$` opens one on
+// ClickHouse 26.10, and which a tag never closed does not open.
 var switchAnswers = map[string]lexer.Options{
 	platform.Postgres: {
 		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true, NestedBlockComments: true,
@@ -47,8 +49,11 @@ var switchAnswers = map[string]lexer.Options{
 		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#"},
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMariaDB,
 	},
-	platform.ClickHouse: {StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#", "//"}},
-	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true, LineCommentsDeclared: true},
+	platform.ClickHouse: {
+		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#", "//"},
+		DollarTags: lexer.HeredocDollarTags,
+	},
+	platform.SQLite: {StandardStrings: true, BracketIdentifiers: true, LineCommentsDeclared: true},
 	platform.SQLServer: {
 		StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true, NestedBlockComments: true, LineCommentsDeclared: true,
 	},
