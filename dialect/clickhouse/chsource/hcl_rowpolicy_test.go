@@ -103,22 +103,51 @@ func TestHCLRowPolicyRequiresSelectedOwner(t *testing.T) {
 	c.Assert(empty.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "orders", "p")).State, qt.Equals, schemaext.Uninspected)
 }
 
+// TestHCLRowPolicyExportRefusesIncompleteKnowledge refuses an export of a
+// read that did not describe the row policies as a whole, or did not inspect
+// one: the document claims every policy, so applying it would drop the ones
+// the read could not see.
 func TestHCLRowPolicyExportRefusesIncompleteKnowledge(t *testing.T) {
 	ref := chschema.RowPolicyRef("", "orders", "p")
-	for _, state := range []schemaext.KnowledgeState{schemaext.Uninspected, schemaext.Unrepresentable} {
-		for _, coverage := range []schemaext.Coverage{
-			must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: state, Reason: "not read"}, nil)),
-			must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{
-				{Kind: chschema.RowPolicyKind, Subject: ref, Knowledge: schemaext.Knowledge{State: state, Reason: "not read"}},
-			})),
-		} {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	tests := []struct {
+		name     string
+		coverage schemaext.Coverage
+	}{
+		{name: "the model uninspected", coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not read"}, nil))},
+		{name: "the model unrepresentable", coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "not read"}, nil))},
+		{name: "one policy uninspected", coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, complete, []schemaext.SubjectCoverage{
+			{Kind: chschema.RowPolicyKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not read"}},
+		}))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			encoded, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: coverage}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
+			encoded, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: test.coverage}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `(?s).*cannot be exported.*not read.*`)
 			c.Assert(encoded.Data, qt.IsNil)
-		}
+		})
 	}
+}
+
+// TestHCLRowPolicyExportNamesAPolicyNoBlockDeclares exports a read holding a
+// policy it met and no block can declare, such as one written ON db.*: the
+// document declares no block for it and says so in its header, as a SQL
+// export says so in a comment.
+func TestHCLRowPolicyExportNamesAPolicyNoBlockDeclares(t *testing.T) {
+	c := qt.New(t)
+	coverage := must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{
+		{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("d1", "*", "tenant"),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the policy is written ON d1.*"}},
+	}))
+
+	encoded, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: coverage}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(encoded.Data), qt.Contains,
+		"// ptah.run/clickhouse/row-policy d1.*.tenant was not described (the policy is written ON d1.*), and no block declares it\n")
+	c.Assert(string(encoded.Data), qt.Not(qt.Contains), "row_policy")
 }
 
 func TestHCLRowPolicyRefusesStrictCEAndKeepsFullMode(t *testing.T) {

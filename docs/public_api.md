@@ -1240,9 +1240,14 @@ table is dropped, bound to the table's name, as ClickHouse keeps a row policy.
 The service then receives such an object, or a coverage record for one, and
 its change or diagnostic for it is the object's own rather than part of a
 table's transition, including where the plan creates a table of that name.
-`difftypes.SchemaDiff.FeatureChanges` carries that change apart from any table
-entry, and the table's creation leaves the object out. A declared
-object still needs its declared table.
+`Runtime.OutlivesParent` answers whether a registration declares it.
+
+`difftypes.SchemaDiff.FeatureChanges` carries such a change apart from any
+table entry only for a kind the runtime answers true for, and the table's
+creation leaves the object out. A change of any other kind below a table the
+database does not hold joins the declared table's entry, and the comparison
+refuses it when no table of the name is declared. A declared object still needs
+its declared table.
 
 `Provider.FacetComparisons` assigns attached model kinds and their change codecs
 to a contextual comparison service. Each registration must declare its common

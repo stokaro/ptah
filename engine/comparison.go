@@ -291,15 +291,21 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
-	if err := comparisonInputSubjects(request, func(kind schemaext.Kind) bool { return r.outlivesParent(request.Target, kind) }); err != nil {
+	if err := comparisonInputSubjects(request, func(kind schemaext.Kind) bool { return r.OutlivesParent(request.Target, kind) }); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	return request, nil
 }
 
-// outlivesParent reports whether the comparison of kind on target declares
-// [ObjectComparison.OutlivesParent].
-func (r *Runtime) outlivesParent(target string, kind schemaext.Kind) bool {
+// OutlivesParent reports whether the comparison of kind on target declares
+// [ObjectComparison.OutlivesParent]: an object of kind may stand below a
+// table the current side does not hold, and its change is planned apart from
+// any table. It is false for a kind no comparison on target registers, and
+// for a nil runtime.
+func (r *Runtime) OutlivesParent(target string, kind schemaext.Kind) bool {
+	if r == nil {
+		return false
+	}
 	service, found := r.comparisons[conversionKey{target: target, kind: kind}]
 	return found && r.comparisonServices[service].OutlivesParent
 }

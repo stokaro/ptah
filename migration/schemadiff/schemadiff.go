@@ -205,7 +205,7 @@ func compareReportingUndecidedAdditions(
 		caps,
 	)
 
-	if err := attachFeatureChanges(diff, desired, database, comparisonChanges(featureResult), opts.Dialect, identifierSemantics); err != nil {
+	if err := attachFeatureChanges(diff, desired, database, comparisonChanges(featureResult), opts.Dialect, identifierSemantics, outlivingKinds(runtime, opts.Dialect)); err != nil {
 		return nil, Diagnostics{}, err
 	}
 	diff.SkippedFeatures = featureResult.Skipped
@@ -322,7 +322,8 @@ func compareReportingUndecidedAdditions(
 	if err := refuseComparisonChanges(ctx, runtime, opts.Dialect, identifierSemantics, caps, featureResult.Desired, database, diff); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	return diff, Diagnostics{Common: undecided, Features: featureResult.Undecided}, nil
+	features := withoutDroppedRelationObjects(featureResult.Undecided, diff, outlivingKinds(runtime, opts.Dialect), identifierSemantics)
+	return diff, Diagnostics{Common: undecided, Features: features}, nil
 }
 
 func normalizeInlineEnumsForCompare(

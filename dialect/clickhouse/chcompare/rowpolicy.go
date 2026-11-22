@@ -188,9 +188,11 @@ func compareDetachedRowPolicy(request schemaext.ObjectComparisonRequest, pair ro
 // reportUndescribedDetached reports as undecided each policy the read could
 // not describe below a table the current side does not hold, such as one on
 // a view: the comparison keeps it, and saying nothing would hide a filter
-// that still applies. A declaration of the same policy is the transition of
-// a table the plan creates, which the database refuses to create over the
-// relation that holds the name.
+// that still applies. A plan that drops the view for good drops the policy
+// with it, ahead of the view, so a table the plan creates under the name
+// never meets the view's policy, and a declared policy of the same name is
+// created with that table; the comparison then leaves the policy out of the
+// undecided ones (see ptah.run/internal/droppedviews).
 func reportUndescribedDetached(request schemaext.ObjectComparisonRequest, parents map[objectidentity.Key]schemaext.ParentState, result *schemaext.ObjectComparisonResult) {
 	for _, record := range request.Current.Coverage.SubjectRecords() {
 		if record.Kind != chschema.RowPolicyKind || !unknownKnowledge(record.Knowledge) || chschema.ValidateRowPolicyRef(record.Subject) != nil {

@@ -1382,7 +1382,8 @@ characters. Unsupported clauses are reported before planning.
 HCL uses a `row_policy` block with `on` pointing to its table. The `using`
 attribute accepts a string or `sql(...)`; `to` is a string with the same grammar
 as YAML. Quote a literal role named `ALL` with backticks inside that string.
-HCL export preserves the policy and refuses an incomplete read of policies.
+HCL export preserves the policy, and refuses a read that could not inspect the
+policies.
 The PostgreSQL `policy` block does not declare a ClickHouse row policy.
 The compatibility CLI refuses `row_policy` in strict CE mode, even when the
 dev database uses another dialect.
@@ -1405,20 +1406,41 @@ refused rather than dropped:
 
 The server binds a policy to a table name, not to a table. It keeps the policy
 when the table is dropped, accepts one for a name no table has, and applies it at
-once to the next table created under that name. A read reports such a policy
-like any other, and the plan changes it on its own, before any `CREATE TABLE` of
-the name:
+once to the next table created under that name. A comparison reports such a
+policy like any other, and the plan changes it on its own, before any
+`CREATE TABLE` of the name:
 
 - A policy the declaration leaves out is dropped with `DROP ROW POLICY`.
 - A declared policy of the same name is changed with `ALTER ROW POLICY`. The
   server refuses a `CREATE ROW POLICY` for it with code 493
   (`ACCESS_ENTITY_ALREADY_EXISTS`), measured on 24.10 and 26.10.
 
+The rollback changes the policy back only after its `DROP TABLE`, so the old
+filter is never in force on a table that still holds rows.
+
+A schema written from the database has no table to declare such a policy on.
+`ptah db read`, `ptah schema inspect` and `ptah introspect` leave it out, and
+name it on standard error with the statement that drops it:
+
+```text
+warning: ClickHouse row policy "p" on table "gone" is left out: the database holds it for a table it does not hold, and applies it to the next table created under that name; a schema applied from this output drops it with DROP ROW POLICY `p` ON `gone`;
+```
+
+Every schema source describes every row policy, so applying the written schema
+back drops the policy.
+
 A policy written `ON db.*` applies to every table of a database, and Ptah does
 not model it. Nor does Ptah read a view, a materialized view, a dictionary, a
 `Null` or `Distributed` table, or its own bookkeeping tables as tables. A policy
 on any of these is kept: the plan changes nothing for it and reports it as a
-policy the comparison could not decide.
+policy the comparison could not decide. A schema written from the database
+leaves it out too, and says so: a SQL export in a comment, an HCL export in its
+header, and `ptah introspect` on standard error.
+
+A plan that drops a view or materialized view drops the policies on it first,
+so the next relation created under the name does not inherit them, and the
+comparison does not report them. A view that another view or materialized view
+replaces under the same name keeps its policies.
 
 ## The revision table's storage engine
 

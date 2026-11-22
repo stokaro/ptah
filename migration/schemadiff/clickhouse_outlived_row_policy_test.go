@@ -8,10 +8,14 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -87,4 +91,163 @@ func TestClickHouseOutlivedRowPolicyIsPlannedBeforeItsTable(t *testing.T) {
 			c.Assert(firstLines, qt.DeepEquals, test.statements)
 		})
 	}
+}
+
+// tableBoundRuntime is the builtin runtime answering that no kind outlives its
+// table, the answer of a runtime whose registration does not declare
+// [engine.ObjectComparison.OutlivesParent]. The comparison it runs is the
+// builtin one, so the change reaches the diff as it does there.
+type tableBoundRuntime struct{ *engine.Runtime }
+
+func (tableBoundRuntime) OutlivesParent(string, schemaext.Kind) bool { return false }
+
+// noTableSource declares no table, from a source that describes every row
+// policy.
+func noTableSource() *schemamodel.Database {
+	return &schemamodel.Database{
+		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+}
+
+// TestClickHouseOutlivedRowPolicyWithNoTableDeclared_HappyPath drops the
+// policy a dropped table left behind when no table of the name is declared:
+// the change is planned apart from any table.
+func TestClickHouseOutlivedRowPolicyWithNoTableDeclared_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	diff, err := schemadiff.CompareWithDialect(t.Context(), noTableSource(), outlivedPolicyDatabase(), "clickhouse", must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.FeatureChanges, qt.HasLen, 1)
+	c.Assert(diff.FeatureChanges[0].Subject.Key(), qt.Equals, chschema.RowPolicyRef("", "orders", "leak").Key())
+	c.Assert(diff.TablesModified, qt.HasLen, 0)
+}
+
+// TestClickHouseOutlivedRowPolicyWithNoTableDeclared_FailurePath compares the
+// same states through a runtime whose kinds stay bound to their table: a
+// change below a table neither side holds has no table to join, and the
+// comparison refuses it rather than planning it alone.
+func TestClickHouseOutlivedRowPolicyWithNoTableDeclared_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	diff, err := schemadiff.CompareWithDialect(t.Context(), noTableSource(), outlivedPolicyDatabase(), "clickhouse", tableBoundRuntime{must.Must(builtin.New())})
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*feature change has no desired table .*orders.*`)
+	c.Assert(diff, qt.IsNil)
+}
+
+// viewPolicyDatabase holds the view v and a policy on it, which the read
+// records as one it could not describe.
+func viewPolicyDatabase() *catalog.Database {
+	return &catalog.Database{
+		Views: []catalog.View{{Name: "v", Body: "SELECT 1 AS id"}},
+		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+			Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", "v", "on_view"),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: `the policy is on "v" (engine View)`}}})),
+	}
+}
+
+// viewPolicySource describes every row policy and declares the given views
+// and tables.
+func viewPolicySource(views []schemamodel.View, tables ...string) *schemamodel.Database {
+	source := &schemamodel.Database{
+		Views:           views,
+		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+	}
+	for _, table := range tables {
+		source.Tables = append(source.Tables, schemamodel.Table{Name: table, StructName: table})
+		source.Fields = append(source.Fields, schemamodel.Field{Name: "id", StructName: table, Type: "UInt64", Primary: true})
+	}
+	return source
+}
+
+// TestClickHouseViewDropTakesItsRowPolicies drops the policies the read
+// recorded on a view together with the view, ahead of it: ClickHouse keeps a
+// policy bound to the name, so a policy left behind would filter the next
+// relation of the name, a table the plan creates among them. The comparison
+// then has nothing undecided to report about the policy.
+func TestClickHouseViewDropTakesItsRowPolicies(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		source  *schemamodel.Database
+		drops   []string
+		creates []string
+	}{
+		{name: "a view the declaration leaves out", source: viewPolicySource(nil),
+			drops: []string{"DROP ROW POLICY `on_view` ON `v`", "DROP VIEW IF EXISTS `v`"}},
+		{name: "a view replaced by a table", source: viewPolicySource(nil, "v"),
+			drops: []string{"DROP ROW POLICY `on_view` ON `v`", "DROP VIEW IF EXISTS `v`"}, creates: []string{"CREATE TABLE v ("}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			semantics := identifier.ForDialect("clickhouse")
+
+			diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), test.source, viewPolicyDatabase(),
+				&config.CompareOptions{Dialect: "clickhouse", IdentifierSemantics: &semantics}, runtime)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diagnostics.Features, qt.HasLen, 0)
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
+			c.Assert(err, qt.IsNil)
+			c.Assert(statementHeads(statements, "DROP "), qt.DeepEquals, test.drops)
+			c.Assert(statementHeads(statements, "CREATE "), qt.DeepEquals, test.creates)
+		})
+	}
+}
+
+// TestClickHouseKeptViewKeepsItsRowPolicies keeps the policy on a view the
+// declaration keeps, and reports it undecided: the read could not describe
+// it, and the filter still applies.
+func TestClickHouseKeptViewKeepsItsRowPolicies(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	semantics := identifier.ForDialect("clickhouse")
+
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), viewPolicySource([]schemamodel.View{{Name: "v", Body: "SELECT 1 AS id"}}),
+		viewPolicyDatabase(), &config.CompareOptions{Dialect: "clickhouse", IdentifierSemantics: &semantics}, runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnostics.Features, qt.HasLen, 1)
+	c.Assert(diagnostics.Features[0].Subject.Key(), qt.Equals, chschema.RowPolicyRef("", "v", "on_view").Key())
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "ROW POLICY")
+}
+
+// TestClickHouseRebuiltViewKeepsItsRowPolicies plans a diff that removes the
+// view d1.v and adds the view v: the shape of a view rebuilt under the same
+// name, spelled once by the catalog and once by the declaration. No
+// comparison is known to produce it, so the diff is built by hand. The plan
+// drops and creates the view and leaves its policy alone, since ClickHouse
+// keeps the policy for the view created under the name; dropping it would
+// change which rows the view shows.
+func TestClickHouseRebuiltViewKeepsItsRowPolicies(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	diff := &difftypes.SchemaDiff{
+		ViewsRemoved: difftypes.ViewChanges{{Name: "d1.v"}},
+		ViewsAdded:   difftypes.ViewChanges{{Name: "v", Body: "SELECT 1 AS id"}},
+		Features:     difftypes.FeatureContext{CurrentCoverage: viewPolicyDatabase().FeatureCoverage},
+	}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statementHeads(statements, "DROP "), qt.DeepEquals, []string{"DROP VIEW IF EXISTS `d1`.`v`"})
+	c.Assert(statementHeads(statements, "CREATE "), qt.DeepEquals, []string{"CREATE VIEW `v` AS"})
+}
+
+// statementHeads is the first line of each statement that starts with verb,
+// without its terminator, in plan order. A plan that creates nothing gives
+// nil.
+func statementHeads(statements []string, verb string) []string {
+	var lines []string
+	for _, statement := range statements {
+		head := strings.TrimSuffix(strings.SplitN(statement, "\n", 2)[0], ";")
+		if strings.HasPrefix(head, verb) {
+			lines = append(lines, head)
+		}
+	}
+	return lines
 }

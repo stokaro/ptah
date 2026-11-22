@@ -4,11 +4,14 @@ package integration_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/clirun"
 )
 
 // ClickHouse binds a row policy to a table name, not to a table: it keeps the
@@ -204,4 +207,140 @@ func keepsPoliciesOnUnmodeledRelations(c *qt.C, url string, conn *dbschema.Datab
 		"the plan keeps the policy)")
 	c.Assert(applied.Stdout, qt.Not(qt.Contains), "ROW POLICY")
 	c.Assert(outlivedPolicies(c, conn), qt.DeepEquals, []string{" on_all permissive id > 0", "dist on_dist permissive id > 1", "v on_view permissive id > 1"})
+}
+
+// outlivedExportScratch is a scratch database on the server serverURL names
+// that holds the table keep, the policy leak ClickHouse kept on the name t
+// when t was dropped, and the policy on_all written ON the database.
+func outlivedExportScratch(c *qt.C, serverURL string) (string, *dbschema.DatabaseConnection) {
+	c.Helper()
+	url, conn := outlivedScratch(c, serverURL, "USING 1 TO ALL")
+	database := conn.Info().Schema
+	c.Cleanup(func() {
+		_, err := conn.ExecContext(context.Background(), "DROP ROW POLICY IF EXISTS on_all ON "+database+".*")
+		c.Check(err, qt.IsNil)
+	})
+	rebuildExec(c, conn,
+		"CREATE TABLE keep (id UInt64) ENGINE = MergeTree ORDER BY id",
+		"CREATE ROW POLICY on_all ON "+database+".* USING id > 0 TO ALL",
+	)
+	return url, conn
+}
+
+// outlivedRun runs ptah with args in dir.
+func outlivedRun(c *qt.C, dir string, args ...string) clirun.Result {
+	c.Helper()
+	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()}, args...)
+}
+
+// TestClickHouseOutlivedRowPolicy_ExportsLeaveOutWhatNoSourceDeclares writes
+// a database holding a policy whose table is gone, and one written ON the
+// database, with every verb that writes a schema from a database. Each
+// succeeds and writes the table. The policy whose table is gone is named on
+// standard error with the statement that drops it; the database-wide one is
+// named where the format allows, in a comment of the document or, for Go
+// annotations, on standard error.
+func TestClickHouseOutlivedRowPolicy_ExportsLeaveOutWhatNoSourceDeclares(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		output     string
+		wantWide   string
+		wantOutput string
+	}{
+		{name: "schema inspect as SQL", args: []string{"schema", "inspect", "--format", "sql"},
+			wantWide: "ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: "CREATE TABLE keep ("},
+		{name: "schema inspect as HCL", args: []string{"schema", "inspect", "--format", "hcl"},
+			wantWide: "// ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: `table "keep" {`},
+		{name: "db read", args: []string{"db", "read"},
+			wantWide: "ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: "CREATE TABLE keep ("},
+		{name: "introspect", args: []string{"introspect", "--out", "models"}, output: "models/keep.go",
+			wantWide: `warning: ClickHouse row policy "on_all" on every table of the database is left out`, wantOutput: "type Keep struct"},
+	}
+	for _, server := range clickHouseServers(qt.New(t)) {
+		for _, test := range tests {
+			t.Run(server.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				url, _ := outlivedExportScratch(c, server.url)
+				dir := c.TempDir()
+
+				written := outlivedRun(c, dir, append(test.args, "--db-url", url)...)
+
+				c.Assert(written.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", written.Stdout, written.Stderr))
+				c.Assert(written.Stderr, qt.Contains, `warning: ClickHouse row policy "leak" on table "t" is left out: the database holds it for a table `+
+					"it does not hold, and applies it to the next table created under that name; a schema applied from this output drops it with "+
+					"DROP ROW POLICY `leak` ON `t`;\n")
+				document := written.Stdout + outlivedFile(c, dir, test.output)
+				c.Assert(written.Stdout+written.Stderr, qt.Contains, test.wantWide)
+				c.Assert(document, qt.Contains, test.wantOutput)
+				c.Assert(document, qt.Not(qt.Contains), "leak")
+			})
+		}
+	}
+}
+
+// outlivedFile reads the file name in dir, or nothing when name is empty.
+func outlivedFile(c *qt.C, dir, name string) string {
+	c.Helper()
+	if name == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	c.Assert(err, qt.IsNil)
+	return string(data)
+}
+
+// TestClickHouseOutlivedRowPolicy_AppliedExportDropsThePolicy applies the SQL
+// a database was written to back to it. The policy whose table is gone is
+// dropped, since the source describes every row policy; the one written ON
+// the database is kept, and the next apply plans nothing.
+func TestClickHouseOutlivedRowPolicy_AppliedExportDropsThePolicy(t *testing.T) {
+	for _, server := range clickHouseServers(qt.New(t)) {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, conn := outlivedExportScratch(c, server.url)
+			dir := c.TempDir()
+			written := outlivedRun(c, dir, "schema", "inspect", "--format", "sql", "--db-url", url)
+			c.Assert(written.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", written.Stderr))
+			c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(written.Stdout), 0o600), qt.IsNil)
+
+			applied := outlivedRun(c, dir, "schema", "apply", "--db-url", url, "--schema-file", "schema.sql", "--auto-approve")
+			again := outlivedRun(c, dir, "schema", "apply", "--db-url", url, "--schema-file", "schema.sql", "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stdout, qt.Contains, "DROP ROW POLICY `leak` ON `t`;")
+			c.Assert(outlivedPolicies(c, conn), qt.DeepEquals, []string{" on_all permissive id > 0"})
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Not(qt.Contains), "ROW POLICY")
+		})
+	}
+}
+
+// TestClickHouseOutlivedRowPolicy_ViewDropTakesItsPolicy applies a
+// declaration that leaves out a view holding a row policy. The plan drops the
+// policy with the view, ahead of it, so the server keeps no policy for the
+// next relation created under the name, and the next apply plans nothing.
+func TestClickHouseOutlivedRowPolicy_ViewDropTakesItsPolicy(t *testing.T) {
+	for _, server := range clickHouseServers(qt.New(t)) {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, conn := outlivedDatabase(c, server.url, "on_view ON v")
+			rebuildExec(c, conn,
+				"CREATE TABLE base (id UInt64) ENGINE = MergeTree ORDER BY id",
+				"CREATE VIEW v AS SELECT id FROM base",
+				"CREATE ROW POLICY on_view ON v USING id > 1 TO ALL",
+			)
+			declaration := "tables:\n  base:\n" + outlivedTable
+
+			applied := rebuildApply(c, url, declaration)
+			again := rebuildApply(c, url, declaration)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stdout, qt.Contains, "DROP ROW POLICY `on_view` ON `v`;\nDROP VIEW ")
+			c.Assert(applied.Stderr, qt.Not(qt.Contains), "on_view")
+			c.Assert(outlivedPolicies(c, conn), qt.HasLen, 0)
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+		})
+	}
 }

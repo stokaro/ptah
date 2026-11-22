@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/droppedviews"
 	"ptah.run/internal/routineidentity"
 	"ptah.run/internal/tableidentity"
 	"ptah.run/migration/internal/identifiervalidation"
@@ -225,6 +226,45 @@ func withObservedParents(parents map[objectidentity.Key]schemaext.ParentState, c
 	return result, nil
 }
 
+// withoutDroppedRelationObjects leaves out of undecided each object of a kind
+// that outlives its parent, below a view or materialized view the plan drops
+// for good and leaves its name to no view. The target keeps such an object
+// bound to the relation's name, and its planner drops the object together
+// with the relation; [droppedviews.Vacated] is the one answer to which
+// relations those are. Every other undecided object stays.
+func withoutDroppedRelationObjects(undecided []schemaext.UndecidedChange, diff *difftypes.SchemaDiff, outlives func(schemaext.Kind) bool, semantics identifier.Semantics) []schemaext.UndecidedChange {
+	gone := droppedviews.Vacated(diff, semantics)
+	if len(gone) == 0 {
+		return undecided
+	}
+	return slices.DeleteFunc(slices.Clone(undecided), func(change schemaext.UndecidedChange) bool {
+		subject := change.Subject
+		if subject.Parent.Empty() || !outlives(change.Kind) {
+			return false
+		}
+		relation := subject.Parent.Source
+		if !subject.Schema.Defaulted && subject.Schema.Source != "" {
+			relation = subject.Schema.Source + "." + relation
+		}
+		return droppedviews.Holds(gone, relation, semantics)
+	})
+}
+
+// parentOutliver is the part of a runtime that says which kinds a target keeps
+// past their table; *engine.Runtime is one (see
+// [ptah.run/engine.Runtime.OutlivesParent]).
+type parentOutliver interface {
+	OutlivesParent(target string, kind schemaext.Kind) bool
+}
+
+// outlivingKinds reports, for target, whether a kind's objects outlive their
+// table. A runtime that cannot say keeps every kind bound to its table, so a
+// change below a table no side holds is refused rather than planned alone.
+func outlivingKinds(runtime any, target string) func(schemaext.Kind) bool {
+	outliver, ok := runtime.(parentOutliver)
+	return func(kind schemaext.Kind) bool { return ok && outliver.OutlivesParent(target, kind) }
+}
+
 func comparisonChanges(result schemaext.ComparisonResult) []schemaext.ChangeRecord {
 	changes := slices.Clone(result.Changes)
 	for _, facet := range result.FacetChanges {
@@ -309,7 +349,7 @@ func standsInTheWay(dependent schemaext.ColumnTypeDependent, own string, retyped
 	return false
 }
 
-func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, changes []schemaext.ChangeRecord, target string, semantics identifier.Semantics) error {
+func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, changes []schemaext.ChangeRecord, target string, semantics identifier.Semantics, outlives func(schemaext.Kind) bool) error {
 	changes, err := withColumnDependentsRebuilt(changes, diff, semantics)
 	if err != nil {
 		return err
@@ -353,13 +393,15 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 		if change.Subject.Kind == objectidentity.KindTable {
 			parent = change.Subject
 		}
-		if _, observed := observedTables[parent.Key()]; !observed && change.Subject.Kind != objectidentity.KindTable {
+		if _, observed := observedTables[parent.Key()]; !observed && change.Subject.Kind != objectidentity.KindTable && outlives(schemaext.Kind(change.Subject.Kind)) {
 			// The target kept the object when its table was dropped, and its
 			// owner compared it as an object of its own (see
 			// [ptah.run/engine.ObjectComparison.OutlivesParent]), so it has no
 			// table entry to join. A table the plan creates under the name
 			// leaves the object to this change: it exists, and creating it
-			// again with the table is refused.
+			// again with the table is refused. A change of any other kind
+			// below a table the database does not hold joins the table's
+			// entry, and is refused when no table of the name is declared.
 			diff.FeatureChanges = append(diff.FeatureChanges, change)
 			withoutCreatedChild(diff.TablesAdded, parent, change.Subject, target, semantics)
 			continue

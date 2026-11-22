@@ -762,10 +762,11 @@ type SchemaDiff struct {
 
 	// FeatureChanges holds changes to standalone feature objects. Table-owned
 	// changes stay with their table, except a change to an object the current
-	// side holds below a table it does not hold, which the target kept when the
-	// table was dropped (see [ptah.run/engine.ObjectComparison.OutlivesParent]):
-	// it is planned here, and a [TableCreation] of that table leaves the object
-	// out of [TableCreation.OwnedObjects].
+	// side holds below a table it does not hold, of a kind whose registration
+	// says the target keeps it when the table is dropped (see
+	// [ptah.run/engine.ObjectComparison.OutlivesParent]): it is planned here,
+	// and a [TableCreation] of that table leaves the object out of
+	// [TableCreation.OwnedObjects].
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 	// SkippedFeatures are the objects the comparison left out because the
 	// target does not serve their model and their owner answers

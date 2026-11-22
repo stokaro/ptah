@@ -98,10 +98,16 @@ func (c *Collector) AddPolicy(origin string, ref objectidentity.ID, policy chsch
 func (c *Collector) Objects() schemaext.Objects { return c.objects }
 
 // RequireDescribed refuses row policy coverage a source format cannot write
-// back: knowledge of the model, or of one policy, that is not complete. A
+// back: a read that could not inspect the row policies, as a whole or one by
+// one, such as one by an account that may not read system.row_policies. A
 // format that declares row policies claims to describe every one, so an
-// export of a read that could not see them would declare none, and applying
-// it would drop the policies the server holds.
+// export of such a read would declare none, and applying it would drop the
+// policies the server holds.
+//
+// A single policy the read met and could not describe, such as one written ON
+// db.* or one on a view, passes: no source can declare it, so an export leaves
+// it out, and a comparison of the database keeps it, since the read records it
+// the same way. [Undescribed] lists those for the export to name.
 func RequireDescribed(coverage schemaext.Coverage) error {
 	for _, record := range coverage.KindRecords() {
 		if record.Model.Kind == chschema.RowPolicyKind && record.Knowledge.Unscoped().State != schemaext.Complete {
@@ -110,10 +116,30 @@ func RequireDescribed(coverage schemaext.Coverage) error {
 		}
 	}
 	for _, record := range coverage.SubjectRecords() {
-		if record.Kind == chschema.RowPolicyKind && record.Knowledge.State != schemaext.Complete && record.Knowledge.State != schemaext.Absent {
+		if record.Kind == chschema.RowPolicyKind && !exportable(record.Knowledge.State) {
 			return fmt.Errorf("%w: ClickHouse row policy %s cannot be exported: the read did not describe it (%s)",
 				ptaherr.ErrUnsupportedFeature, record.Subject, record.Knowledge.Reason)
 		}
 	}
 	return nil
+}
+
+// exportable reports whether an export can stand on what the read knows of
+// one policy: a description, a policy it knows is absent, or one no source
+// can declare. Knowledge of the whole model must be complete, since an export
+// that cannot see the policies would claim every one and declare none.
+func exportable(state schemaext.KnowledgeState) bool {
+	return state == schemaext.Complete || state == schemaext.Absent || state == schemaext.Unrepresentable
+}
+
+// Undescribed returns the row policies coverage records as met and not
+// described, in coverage order: the policies an export leaves out.
+func Undescribed(coverage schemaext.Coverage) []schemaext.SubjectCoverage {
+	var undescribed []schemaext.SubjectCoverage
+	for _, record := range coverage.SubjectRecords() {
+		if record.Kind == chschema.RowPolicyKind && record.Knowledge.State == schemaext.Unrepresentable {
+			undescribed = append(undescribed, record)
+		}
+	}
+	return undescribed
 }

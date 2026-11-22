@@ -45,6 +45,10 @@ func TestEncodeAnnotations_HappyPath(t *testing.T) {
 				Placement: annotation.AfterPolicies, Table: &orders, Attributes: []annotation.EncodedAttribute{
 					{Name: "name", Value: "open"}, {Name: "table", Value: "shop.orders"}}}}}},
 		{name: "nothing of the owner's", request: annotation.EncodeRequest{Tables: annotation.Tables{orders}}},
+		{name: "a policy no directive declares", request: annotation.EncodeRequest{Tables: annotation.Tables{orders},
+			Coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+				Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("shop", "*", "wide"),
+				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "written ON shop.*"}}}))}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
