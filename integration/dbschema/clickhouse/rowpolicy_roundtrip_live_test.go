@@ -17,6 +17,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/sqlident"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestRowPolicyFromGoSourceRoundTripsLive drives the whole shipping path: a
@@ -91,6 +92,49 @@ func rowPolicyFilters(c *qt.C, conn *dbschema.DatabaseConnection, name string) [
 		}
 	}
 	return filters
+}
+
+// TestRowPolicyOfAMissingTableIsNotReadLive keeps a policy whose table is gone
+// out of the read. The server keeps a policy when its table is dropped, and
+// read, the policy has no table to be compared beside, so every comparison of
+// the database fails with "feature object has no parent on its source side".
+func TestRowPolicyOfAMissingTableIsNotReadLive(t *testing.T) {
+	c := qt.New(t)
+	conn := openLiveClickHouseRBACTarget(c)
+	database := conn.Info().Schema
+	table := uniqueClickHouseRBACName("gone_orders")
+	policy := uniqueClickHouseRBACName("gone_policy")
+	createClickHouseRBACTable(c, conn, database, table)
+	dropClickHouseRowPolicyAfterTest(c, conn, database, table, policy)
+	qualified := sqlident.Qualified(platform.ClickHouse, database, table)
+	executeClickHouseRBACFixture(c, conn,
+		"CREATE ROW POLICY "+sqlident.Quote(platform.ClickHouse, policy)+" ON "+qualified+" USING id > 0 TO ALL",
+		"DROP TABLE "+qualified+" SYNC",
+	)
+	c.Assert(rowPolicyTables(c, conn, policy), qt.DeepEquals, []string{table})
+
+	live := readLive(c, conn)
+	_, err := schemadiff.CompareWithDatabase(c.Context(), conn, &schemamodel.Database{}, live, nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rowPolicyFilters(c, conn, policy), qt.HasLen, 0)
+}
+
+// rowPolicyTables reads the tables the server holds the named policy on,
+// whether or not they exist.
+func rowPolicyTables(c *qt.C, conn *dbschema.DatabaseConnection, name string) []string {
+	c.Helper()
+	rows, err := conn.QueryContext(c.Context(), "SELECT table FROM system.row_policies WHERE short_name = ? ORDER BY table", name)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var tables []string
+	for rows.Next() {
+		var table string
+		c.Assert(rows.Scan(&table), qt.IsNil)
+		tables = append(tables, table)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return tables
 }
 
 // dropClickHouseRowPolicyAfterTest removes the policy this suite created, so a

@@ -27,13 +27,19 @@ import (
 // server reports it with an empty table. The model holds a policy on one
 // table only (see [chschema.ValidateRowPolicyRef]), so those rows are not
 // read, and nothing is planned for them.
+//
+// A policy names its table, and the server keeps it when the table is dropped
+// and accepts one for a table that does not exist yet. Such a policy has no
+// table the comparison could hold it under, so it is not read either: read, it
+// fails every comparison of the database, because a policy is compared only
+// beside its table.
 func (r *Reader) readRowPolicies(ctx context.Context, dbName string) ([]schemaext.Object, error) {
 	query := `
 		SELECT short_name, table, select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except
 		FROM system.row_policies
-		WHERE database = ? AND table != ''
+		WHERE database = ? AND table != '' AND table IN (SELECT name FROM system.tables WHERE database = ?)
 		ORDER BY table, short_name`
-	rows, err := r.db.QueryContext(ctx, query, dbName)
+	rows, err := r.db.QueryContext(ctx, query, dbName, dbName)
 	if err != nil {
 		return nil, err
 	}

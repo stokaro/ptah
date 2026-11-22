@@ -1404,7 +1404,11 @@ refused rather than dropped:
 - A comment, which a row policy cannot hold.
 
 A policy written `ON db.*` applies to every table of a database. Ptah does
-not read or plan it.
+not read or plan it. Neither does it read a policy whose table the database does
+not hold: the server keeps a policy when its table is dropped, and accepts one for
+a table that does not exist yet. A declared policy of the same name on a table the
+plan creates is then refused by the server with code 493
+(`ACCESS_ENTITY_ALREADY_EXISTS`), measured on 24.10 and 26.10.
 
 ## The revision table's storage engine
 
