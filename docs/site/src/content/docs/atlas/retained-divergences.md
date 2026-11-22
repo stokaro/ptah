@@ -14,6 +14,7 @@ generated: false
 lastVerified: "2026-11-14"
 evidence:
   - "internal/cli/atlas/compat_1241_retained_divergence_test.go"
+  - "internal/cli/atlas/schema_value_grammar_test.go"
   - "stokaro/ptah#1241"
 searchAliases:
   - "retained divergences"
@@ -118,6 +119,7 @@ own measurement conditions.
 | Entry | `ptah-compat` | Pinned community binary v1.3.0 |
 | --- | --- | --- |
 | [A trailing positional argument](#a-trailing-positional-argument) | refuses one on a verb that defines none, naming the flag the value belongs to | accepts it and discards it without a word |
+| [An empty `--schema` value](#an-empty---schema-value) | refuses a `--schema` value or an `atlas.hcl` `schemas` element that names no schema | reads the empty value as no selection, so `schema apply` plans a `DROP` for every schema the desired schema leaves out |
 | [An edited already-applied migration file](#an-edited-already-applied-migration-file) | compares each applied migration against the checksum recorded when it ran, and refuses on a mismatch | records the same value and never compares it |
 | [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
 | [A file numbered above the current version that sorts below it as text](#a-file-numbered-above-the-current-version-that-sorts-below-it-as-text) | reports it as out of order and refuses it at the default `--exec-order linear` | reports `OK` and exits `0` with `No migration files to execute` under every `--exec-order`; the file never runs |
@@ -263,6 +265,53 @@ run is hashed into `atlas.sum` exactly as if the positional had not been typed.
 So the operator who meant `--dir extra` and dropped the flag gets a rewritten
 checksum file for a directory they did not name, at exit `0`, with nothing
 printed (stokaro/ptah#1623).
+
+## An empty `--schema` value
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat` refuses a `--schema` value that names no
+schema before the run starts, and an `atlas.hcl` `schemas` element that names
+none. The pinned community binary reads the empty value as no selection, so the
+run covers every schema in the database.
+
+Measured with `schema apply --dry-run` against a PostgreSQL 18 database that
+holds tables in the schemas `one`, `two` and `public`. The desired schema
+declares only `public.t_public`. Each cell counts the `DROP` statements in the
+plan:
+
+| value | Atlas CE v1.4.0 | `ptah-compat` |
+| --- | --- | --- |
+| no `--schema` | 2 | 2 |
+| `-s ''` | 2 | refused: `every field is empty, so the value names no schema` |
+| `--schema=` | 2 | refused, same wording |
+| `-s '""'` | 0 | refused, same wording |
+| `env { schemas = [""] }` | 2 | refused: `atlas.hcl: env "local": schemas value "": every field is empty, so the value names no schema` |
+| `env { schemas = ["\"\""] }` | 0 | refused, same wording |
+
+The binary reads `-s '""'` as one schema with an empty name, which selects
+nothing. Ptah refuses it with the empty value, because no schema has that name.
+
+The refusal stays because an empty value almost never means "every schema". It
+comes from a variable: `--schema "$SCHEMA"` in a script or a CI step, or the
+quoted form `"\"${schema}\""`. When that variable is empty, the binary turns a
+run meant for one schema into a run over the whole database, and `schema apply`
+plans a `DROP` for every schema the desired schema leaves out. The operator
+asked for one schema and gets a plan that drops the others, at exit `0`.
+
+The cost falls on a script that passes an empty value on purpose to mean every
+schema. That script fails on `ptah-compat`. Leaving the flag out, an env with no
+`schemas`, and `schemas = []` each select every schema on both binaries, so the
+fix is to drop the flag rather than empty it.
+
+The refusal holds in both policy profiles, `PTAH_ATLAS_STRICT_COMPAT=1`
+included, and no variable turns it off, for the reason
+[A trailing positional argument](#a-trailing-positional-argument) gives: a
+variable that restored the acceptance would default to the permissive side.
+`PTAH_SCHEMA=`, set but empty, counts as unset, as every non-boolean `PTAH_*`
+variable does, and selects every schema; the
+[schema commands](../schema-commands/) page says how to pass a CI variable that
+may be empty.
 
 ## An edited already-applied migration file
 
