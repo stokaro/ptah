@@ -175,6 +175,39 @@ $$;
 `,
 		},
 		{
+			// PostgreSQL 19 reads a tag outside ASCII, and stores the blank
+			// line inside the body.
+			name:   "goose body whose tag is outside ASCII",
+			format: "goose",
+			sql: "-- +goose Up\n-- +goose StatementBegin\nCREATE FUNCTION f() RETURNS void AS $\u00e9$\nBEGIN\n\nEND\n" +
+				"$\u00e9$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION f;\n",
+			want: "CREATE FUNCTION f() RETURNS void AS $\u00e9$\nBEGIN\n\nEND\n$\u00e9$ LANGUAGE plpgsql;\n",
+		},
+		{
+			// PostgreSQL 19 reads a$$b as a name, so the body opens at the
+			// $$ after AS and keeps its blank line.
+			name:   "goose body after a name that holds two dollar signs",
+			format: "goose",
+			sql: "-- +goose Up\nCREATE TABLE a$$b (id int);\n-- +goose StatementBegin\nCREATE FUNCTION f() RETURNS void AS $$\n" +
+				"BEGIN\n\nEND\n$$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION f;\n",
+			want: "CREATE TABLE a$$b (id int);\nCREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n\nEND\n$$ LANGUAGE plpgsql;\n",
+		},
+		{
+			// PostgreSQL 19 reads x$b$ as a name, as it reads a$$b.
+			name:   "goose body after a name that ends in its tag",
+			format: "goose",
+			sql: "-- +goose Up\nCREATE TABLE x$b$ (id int);\n-- +goose StatementBegin\nCREATE FUNCTION f() RETURNS void AS $b$\n" +
+				"BEGIN\n\nEND\n$b$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION f;\n",
+			want: "CREATE TABLE x$b$ (id int);\nCREATE FUNCTION f() RETURNS void AS $b$\nBEGIN\n\nEND\n$b$ LANGUAGE plpgsql;\n",
+		},
+		{
+			// PostgreSQL 19 reads 1$a$ as the number 1 and a string.
+			name:   "goose body after a number",
+			format: "goose",
+			sql:    "-- +goose Up\n-- +goose StatementBegin\nSELECT 1$a$\n\nx$a$;\n-- +goose StatementEnd\n-- +goose Down\nSELECT 2;\n",
+			want:   "SELECT 1$a$\n\nx$a$;\n",
+		},
+		{
 			name:   "dbmate",
 			format: "dbmate",
 			sql: `-- migrate:up

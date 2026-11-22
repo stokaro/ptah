@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/chpolicyexport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -115,6 +116,13 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// An object of a kind Ptah does not model is in no statement printed below
 	// either.
 	unmodelednote.Report(cmd.Context(), stderr, "the database", schema)
+
+	// A ClickHouse row policy whose table is gone has no statement a schema
+	// can declare it with; the warning names the one that drops it.
+	schema, err = chpolicyexport.Without(cmd.Context(), stderr, schema)
+	if err != nil {
+		return err
+	}
 
 	// A SQLite virtual table whose module this build cannot load leaves that
 	// module's own storage described as ordinary tables, and the statements

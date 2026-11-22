@@ -61,10 +61,11 @@ func engineTableServer(query string, _ []driver.NamedValue) (dbtest.QueryResult,
 		return dbtest.QueryResult{
 			Columns: []string{
 				"name", "comment", "sorting_key", "primary_key",
-				"engine_full", "partition_key", "sampling_key",
+				"engine_full", "partition_key", "sampling_key", "create_table_query",
 			},
 			Rows: [][]driver.Value{
-				{"events", "", "day, id", "day, id", engineFullFixture, "toYYYYMM(day)", "id"},
+				{"events", "", "day, id", "day, id", engineFullFixture, "toYYYYMM(day)", "id",
+					"CREATE TABLE default.events (`day` Date, `id` UInt64) ENGINE = " + engineFullFixture},
 			},
 		}, nil
 	default:

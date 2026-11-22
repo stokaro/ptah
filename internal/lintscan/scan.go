@@ -40,8 +40,13 @@ type Mode struct {
 	// every dialect without checking whether the server's own version would
 	// actually run it.
 	execComments bool
-	// dollarQuotes recognizes $tag$...$tag$ string bodies (PostgreSQL).
+	// dollarQuotes recognizes $tag$...$tag$ string bodies (PostgreSQL), and
+	// dollarTags is the rule their tags follow, the ClickHouse heredoc rule
+	// for a dialect whose descriptor states it
+	// (descriptor.Lexical.HeredocDollarTags) and the PostgreSQL rule
+	// otherwise, as the migrator's lexer reads them.
 	dollarQuotes bool
+	dollarTags   lexer.DollarTagRule
 	// nestedComments lets block comments nest (PostgreSQL).
 	nestedComments bool
 	// escapeStrings reads E'...' as one string in which a backslash escapes
@@ -95,6 +100,7 @@ func ForDialect(dialect string) Mode {
 		dialect:        dialect,
 		batchSeparator: described.Scripts.BatchSeparator,
 		escapeStrings:  described.Lexical.EscapeStrings,
+		dollarTags:     dialectlexer.DollarTags(described.Lexical),
 	}
 	switch described.Lint.Scanner {
 	case "hash":
@@ -163,11 +169,12 @@ func scanSQL(input string, mode Mode) []lintToken {
 	}
 	line := 1
 	execDepth := 0
+	quotes := lexer.NewDollarQuotes(mode.dollarTags, input)
 	for i < n {
 		start := i
 		startLine := line
 		var kind lintTokenKind
-		kind, i, execDepth = nextLintToken(input, i, mode, execDepth)
+		kind, i, execDepth = nextLintToken(input, i, mode, quotes, execDepth)
 		toks = append(toks, lintToken{kind: kind, text: input[start:i], start: start, end: i, line: startLine})
 		line += strings.Count(input[start:i], "\n")
 	}
@@ -176,7 +183,7 @@ func scanSQL(input string, mode Mode) []lintToken {
 
 // nextLintToken scans one token starting at input[i] and returns its kind,
 // the offset past its end, and the updated executable-comment depth.
-func nextLintToken(input string, i int, mode Mode, execDepth int) (kind lintTokenKind, end, depth int) {
+func nextLintToken(input string, i int, mode Mode, quotes *lexer.DollarQuotes, execDepth int) (kind lintTokenKind, end, depth int) {
 	c := input[i]
 	switch {
 	case isSpaceByte(c):
@@ -196,13 +203,13 @@ func nextLintToken(input string, i int, mode Mode, execDepth int) (kind lintToke
 	case c == ';':
 		return tokSemicolon, i + 1, execDepth
 	default:
-		return nextPunctToken(input, i, mode, execDepth)
+		return nextPunctToken(input, i, mode, quotes, execDepth)
 	}
 }
 
 // nextPunctToken handles the punctuation-led tokens: comment forms, dollar
 // quotes and bare operator characters.
-func nextPunctToken(input string, i int, mode Mode, execDepth int) (kind lintTokenKind, end, depth int) {
+func nextPunctToken(input string, i int, mode Mode, quotes *lexer.DollarQuotes, execDepth int) (kind lintTokenKind, end, depth int) {
 	n := len(input)
 	c := input[i]
 	switch {
@@ -219,8 +226,13 @@ func nextPunctToken(input string, i int, mode Mode, execDepth int) (kind lintTok
 	case c == '*' && execDepth > 0 && i+1 < n && input[i+1] == '/':
 		return tokComment, i + 2, execDepth - 1
 	case c == '$' && mode.dollarQuotes:
-		if end, ok := dollarQuoteEnd(input, i); ok {
+		if end, ok := quotes.End(i); ok {
 			return tokString, end, execDepth
+		}
+		// A sign that opens no string begins a name when the bytes after it
+		// continue one, as the migrator's lexer reads `$1$b$x$b$`.
+		if end := lexer.NameEnd(input, i+1); end > i+1 {
+			return tokWord, end, execDepth
 		}
 		return tokOp, i + 1, execDepth
 	default:
@@ -245,8 +257,17 @@ func whitespaceEnd(input string, i int) int {
 	return i
 }
 
+// wordEnd is where the bare word that starts at input[i] ends. A word that
+// starts with a digit runs through letters too, so 1abc is one word. A dollar
+// sign continues a word only after a byte that begins a name
+// ([lexer.NameStart]), so `a$b$` and `1a$b$` are words whole, and a dollar
+// sign right after the digits of `1$a$` can open a string, as the migrator's
+// lexer reads them.
 func wordEnd(input string, i int) int {
 	for i < len(input) && isWordByte(input[i]) {
+		if lexer.NameStart(input[i]) {
+			return lexer.NameEnd(input, i)
+		}
 		i++
 	}
 	return i
@@ -354,30 +375,6 @@ func quotedEnd(input string, i int, quote byte, backslashEscapes bool) int {
 		}
 	}
 	return i
-}
-
-// dollarQuoteEnd matches a PostgreSQL dollar-quoted body $tag$...$tag$
-// starting at input[i] == '$' and returns the offset past its end. The tag
-// follows identifier rules (it must not start with a digit: $1 is a
-// positional parameter, not a delimiter).
-func dollarQuoteEnd(input string, i int) (int, bool) {
-	n := len(input)
-	j := i + 1
-	if j < n && input[j] >= '0' && input[j] <= '9' {
-		return 0, false
-	}
-	for j < n && isWordByte(input[j]) {
-		j++
-	}
-	if j >= n || input[j] != '$' {
-		return 0, false
-	}
-	delim := input[i : j+1]
-	rest := strings.Index(input[j+1:], delim)
-	if rest < 0 {
-		return n, true // unterminated: consume the rest of the input
-	}
-	return j + 1 + rest + len(delim), true
 }
 
 // scanYQL tokenizes YQL with internal/lexer in its YQL mode, which is how the

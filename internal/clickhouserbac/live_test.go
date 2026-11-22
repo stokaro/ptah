@@ -159,6 +159,65 @@ func TestValidateLive_FailurePath(t *testing.T) {
 	}
 }
 
+// databaseSelect is what `GRANT SELECT ON shop.* TO reader` reads back as.
+var databaseSelect = &catalog.Database{Grants: []catalog.Grant{
+	{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
+}}
+
+// revokeOn is a declaration revoking privileges on table from reader, with
+// roles declared.
+func revokeOn(table string, privileges []string, roles ...string) *schemamodel.Database {
+	desired := managedSchema(roles...)
+	desired.RevokedGrants = []schemamodel.Grant{{Role: "reader", Privileges: privileges, OnTable: table}}
+	return desired
+}
+
+// TestValidateLive_RevokeUnderDatabaseGrant_FailurePath pins the revokes
+// refused because the role keeps the table through a grant on its database.
+func TestValidateLive_RevokeUnderDatabaseGrant_FailurePath(t *testing.T) {
+	declaredOnDatabase := revokeOn("orders", []string{"ALL"}, "reader")
+	declaredOnDatabase.Grants = []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"}}
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+	}{
+		{name: "ALL from a role the schema does not create", desired: revokeOn("orders", []string{"ALL"})},
+		{name: "the same privilege, qualified", desired: revokeOn("shop.orders", []string{"select"})},
+		{name: "a role the schema creates and grants the database", desired: declaredOnDatabase},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := clickhouserbac.ValidateLive(platform.ClickHouse, test.desired, databaseSelect)
+
+			c.Assert(err, qt.ErrorMatches, `role "reader" holds SELECT on shop\.\*, which covers shop\.orders, `+
+				`so a revoke on the table cannot take it: .*revoke SELECT on shop\.\* instead.*`)
+		})
+	}
+}
+
+// TestValidateLive_RevokeUnderDatabaseGrant_HappyPath pins the revokes a
+// database grant does not get in the way of.
+func TestValidateLive_RevokeUnderDatabaseGrant_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+	}{
+		// The schema does not grant the database, so the plan revokes it.
+		{name: "a role the schema creates", desired: revokeOn("orders", []string{"ALL"}, "reader")},
+		{name: "another privilege", desired: revokeOn("orders", []string{"INSERT"})},
+		{name: "a table of another database", desired: revokeOn("archive.orders", []string{"ALL"})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(clickhouserbac.ValidateLive(platform.ClickHouse, test.desired, databaseSelect), qt.IsNil)
+		})
+	}
+}
+
 // TestValidateLive_LeavesOtherDialectsAlone is the non-interference control.
 //
 // Only the ClickHouse reader ever sets IsPartialRevoke, but a live schema is

@@ -2,18 +2,21 @@ package clickhouse
 
 import (
 	"fmt"
-	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/chpolicysource"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/droppedviews"
 	"ptah.run/internal/modelast"
-	"ptah.run/internal/objectlookup"
 )
 
 // reportUnsupportedObjectsBeforeTables and planObjectsAfterTables append the
@@ -164,21 +167,9 @@ func reportViewLikes(
 	objects := make([]deporder.ViewLike, 0, capacity)
 	nodes := make(map[viewLikeIdentity]ast.Node, capacity)
 
-	replacedMaterializedViews := crossKindReplacements(
-		diff.MaterializedViewsRemoved.Names(),
-		diff.ViewsAdded.Names(),
-		semantics,
-	)
-	replacedViews := crossKindReplacements(
-		diff.ViewsRemoved.Names(),
-		diff.MaterializedViewsAdded.Names(),
-		semantics,
-	)
-	for _, name := range replacedMaterializedViews {
-		result = append(result, ast.NewDropMaterializedView(name).SetIfExists())
-	}
-	for _, name := range replacedViews {
-		result = append(result, ast.NewDropView(name).SetIfExists())
+	replaced, gone := droppedviews.Split(diff, semantics)
+	for _, removal := range replaced {
+		result = append(result, dropViewLike(removal))
 	}
 
 	for _, view := range diff.ViewsAdded {
@@ -242,41 +233,44 @@ func reportViewLikes(
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, platform.ClickHouse) {
 		result = append(result, nodes[identityOf(object)])
 	}
-	for _, view := range diff.ViewsRemoved {
-		if slices.Contains(replacedViews, view.Name) {
-			continue
+	vacated := droppedviews.Vacated(diff, semantics)
+	for _, removal := range gone {
+		if droppedviews.Holds(vacated, removal.Name, semantics) {
+			result = append(result, rowPolicyDrops(diff, removal.Name, semantics)...)
 		}
-		result = append(result, ast.NewDropView(view.Name).SetIfExists())
-	}
-	for _, view := range diff.MaterializedViewsRemoved {
-		if slices.Contains(replacedMaterializedViews, view.Name) {
-			continue
-		}
-		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
+		result = append(result, dropViewLike(removal))
 	}
 	return result, replacementDrops, nil
 }
 
-// crossKindReplacements returns the removed names the other kind's additions
-// claim, in the order the removals were reported.
-//
-// The two sides come from different schemas and do not have to spell the name
-// the same way — the database reader qualifies what a declaration leaves bare —
-// so membership is decided by objectlookup's identity rule rather than by `==`,
-// which is the mistake objectlookup exists to stop. The returned names are the
-// removal list's own elements, so the caller can skip them from that list by
-// exact string.
-func crossKindReplacements(removed, added []string, semantics identifier.Semantics) []string {
-	if len(removed) == 0 || len(added) == 0 {
-		return nil
+// dropViewLike drops the view or materialized view removal names.
+func dropViewLike(removal droppedviews.Removal) ast.Node {
+	if removal.Materialized {
+		return ast.NewDropMaterializedView(removal.Name).SetIfExists()
 	}
-	replaced := make([]string, 0, len(removed))
-	for _, name := range removed {
-		if objectlookup.Contains(added, name, semantics) {
-			replaced = append(replaced, name)
+	return ast.NewDropView(removal.Name).SetIfExists()
+}
+
+// rowPolicyDrops drops the row policies the read recorded on the view or
+// materialized view the plan drops under name. ClickHouse binds a policy to a
+// name and keeps it when the relation is dropped, so a policy left behind
+// would filter the next relation created under the name, a table among them,
+// and the next plan would find it without its relation. The read cannot
+// describe a policy on a view, so it is a coverage record rather than an
+// object, and the statement drops it by name. A view another view or
+// materialized view replaces keeps its policies, as a rebuilt table does
+// ([droppedviews.Vacated]).
+func rowPolicyDrops(diff *difftypes.SchemaDiff, name string, semantics identifier.Semantics) []ast.Node {
+	var nodes []ast.Node
+	for _, record := range chpolicysource.Undescribed(diff.Features.CurrentCoverage) {
+		if !droppedviews.Below([]droppedviews.Removal{{Name: name}}, record.Subject, semantics) {
+			continue
 		}
+		nodes = append(nodes, &ast.ExtensionStatement{Payload: &chast.RowPolicyCommand{Action: "DROP",
+			Database: chschema.RowPolicyDatabase(record.Subject), Table: record.Subject.Parent.Source, Name: record.Subject.Name.Source},
+			Transaction: plangraph.TransactionForbidden})
 	}
-	return replaced
+	return nodes
 }
 
 // appendMaterializedViewReplacementDrop writes the drop half of a replacement

@@ -63,3 +63,13 @@ func TestGrant_ObjectTarget(t *testing.T) {
 		schemamodel.Grant{OnTable: "app.events"}.TargetKey(),
 	}, qt.DeepEquals, []string{"COORDINATION NODE app.events", "SECRET app.events", "TABLE app.events"})
 }
+
+// TestGrant_CanonicalizeAllPrivileges pins that ALL PRIVILEGES, in any case
+// and spacing, is canonicalized to ALL, and once beside ALL.
+func TestGrant_CanonicalizeAllPrivileges(t *testing.T) {
+	c := qt.New(t)
+	grant := schemamodel.Grant{Role: "app", Privileges: []string{"all  privileges", "ALL", "select"}, OnTable: "t"}
+	grant.Canonicalize()
+
+	c.Assert(grant.Privileges, qt.DeepEquals, []string{"ALL", "SELECT"})
+}

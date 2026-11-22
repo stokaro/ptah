@@ -1237,6 +1237,7 @@ func sqlMasksForDialect(body, dialect string) sqlMasks {
 		quoteClose:       make([]bool, len(body)),
 		bracketNames:     brackets,
 	}
+	quotes := lexer.NewDollarQuotes(dialectlexer.DollarTags(lexical), body)
 	opensLineComment := func(rest string) bool {
 		return slices.ContainsFunc(lexical.LineComments, func(marker string) bool {
 			return marker != "" && strings.HasPrefix(rest, marker)
@@ -1262,11 +1263,20 @@ func sqlMasksForDialect(body, dialect string) sqlMasks {
 				masks.code[i] = true
 				masks.quotedIdentifier[i] = true
 			}
-		case body[i] == '$':
-			end, ok := skipDollarQuoted(body, i)
-			if !ok {
+		case lexer.NameStart(body[i]):
+			// A name runs whole, so a dollar sign inside it, as in a$b$,
+			// opens no string.
+			for end := lexer.NameEnd(body, i); i < end; i++ {
 				masks.code[i] = true
-				i++
+			}
+		case body[i] == '$':
+			end, ok := quotes.End(i)
+			if !ok {
+				// The sign is code, and it begins a name when the bytes after
+				// it continue one, as the lexer reads $1$b$x$b$.
+				for end := lexer.NameEnd(body, i+1); i < end; i++ {
+					masks.code[i] = true
+				}
 				continue
 			}
 			i = end
@@ -1364,30 +1374,6 @@ func quotedEnd(quoting normalize.Quoting, body string, start int) int {
 		return closeAt + 1
 	}
 	return len(body)
-}
-
-// skipDollarQuoted consumes a $tag$ ... $tag$ string, reporting false when the
-// dollar sign does not open one -- a positional parameter such as $1, or a
-// dollar sign inside an identifier.
-func skipDollarQuoted(body string, start int) (int, bool) {
-	end := start + 1
-	for end < len(body) {
-		r, size := utf8.DecodeRuneInString(body[end:])
-		if r == '_' || unicode.IsLetter(r) || (end > start+1 && unicode.IsDigit(r)) {
-			end += size
-			continue
-		}
-		break
-	}
-	if end >= len(body) || body[end] != '$' {
-		return start, false
-	}
-
-	tag := body[start : end+1]
-	if closing := strings.Index(body[end+1:], tag); closing >= 0 {
-		return end + 1 + closing + len(tag), true
-	}
-	return len(body), true
 }
 
 func isIdentifierBoundary(value string, index int) bool {

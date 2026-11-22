@@ -15,8 +15,13 @@ func validateClickHouseReplayStatementBase(tokens []lexer.Token, scope replay.Sc
 	}
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
-	case "USE", "SYSTEM":
+	case "USE":
 		return replay.Refuse(platform.ClickHouse, first)
+	case "SYSTEM":
+		if !confinedClickHouseMergeControl(tokens, scope.Database) {
+			return replay.Refuse(platform.ClickHouse, first)
+		}
+		return nil
 	case "SET":
 		if replay.TokenSequenceAt(tokens, 1, "GLOBAL") {
 			return replay.Refuse(platform.ClickHouse, "global SET")
@@ -39,6 +44,26 @@ func validateClickHouseReplayStatementBase(tokens []lexer.Token, scope replay.Sc
 		return replay.Refuse(platform.ClickHouse, "external file operation")
 	}
 	return rejectCrossDatabaseTargets(platform.ClickHouse, scope.Database, tokens)
+}
+
+// confinedClickHouseMergeControl reports SYSTEM STOP MERGES or SYSTEM START
+// MERGES of one table in the dev database, which stops or starts the background
+// merges of that table alone: a table rebuild stops them on the copy while it
+// is filled and counted. Without a table, or with ON VOLUME, the statement acts
+// on every table of the server, and with ON CLUSTER on other servers too, so
+// each of those is refused with the rest of SYSTEM.
+func confinedClickHouseMergeControl(tokens []lexer.Token, database string) bool {
+	if !replay.TokenSequenceAt(tokens, 1, "STOP", "MERGES") && !replay.TokenSequenceAt(tokens, 1, "START", "MERGES") {
+		return false
+	}
+	target, next := replay.QualifiedIdentifierAt(tokens, 3)
+	switch {
+	case next != len(tokens), len(target) == 0, len(target) > 2:
+		return false
+	case len(target) == 2:
+		return strings.TrimSpace(database) != "" && target[0] == database
+	}
+	return true
 }
 
 // clickHouseUnconfinedServerObject reports a statement [isGlobalClickHouseDDL]

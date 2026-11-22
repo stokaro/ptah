@@ -120,7 +120,7 @@ PTAH_SKIP_BROWSER_OPEN to write the file without opening it.`,
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL, schema file, migration directory, or env:// reference to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to evaluate non-database inspection sources")
-	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect", policy)
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringVar(&opts.format, "format", "", "Output Go template: exact hcl/sql/json and whitespace-wrapped variants are literal text")
 	if !policy.IsStrictCE() {

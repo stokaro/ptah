@@ -41,7 +41,7 @@ func clickHouseViewReaderQuery(
 	case strings.Contains(query, "engine LIKE '%MergeTree'"):
 		return dbtest.QueryResult{Columns: []string{
 			"name", "comment", "sorting_key", "primary_key",
-			"engine_full", "partition_key", "sampling_key",
+			"engine_full", "partition_key", "sampling_key", "create_table_query",
 		}}, nil
 	case strings.Contains(query, "engine = 'View'"):
 		return dbtest.QueryResult{

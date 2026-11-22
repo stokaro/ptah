@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -14,9 +15,8 @@ import (
 // ValidateLive refuses live ClickHouse state Ptah cannot compare against a
 // declaration, and returns nil for every other dialect.
 //
-// There is exactly one such shape, and it is the one thing about ClickHouse
-// grants that does not transfer from PostgreSQL: a PARTIAL REVOKE. Measured on
-// 26.7.3.19,
+// The first shape is the one thing about ClickHouse grants that does not
+// transfer from PostgreSQL: a PARTIAL REVOKE. Measured on 26.7.3.19,
 //
 //	GRANT SELECT ON db.* TO r ; REVOKE SELECT ON db.t FROM r
 //
@@ -35,6 +35,9 @@ import (
 // migration/schemadiff/internal/compare draws for revocation: a partial revoke
 // on a role no declaration names is somebody else's arrangement and is left
 // alone.
+//
+// The second shape is a declared revoke on a table the role keeps through a
+// grant on its whole database, for any role; see [revokesUnderDatabaseGrants].
 func ValidateLive(dialect string, desired *schemamodel.Database, current *catalog.Database) error {
 	if platform.NormalizeDialect(dialect) != platform.ClickHouse {
 		return nil
@@ -67,5 +70,72 @@ func ValidateLive(dialect string, desired *schemamodel.Database, current *catalo
 				"so it cannot describe this role's effective privileges — remove the partial revoke, or stop declaring the role",
 			grant.Role, grant.Privilege, ScopeOfLive(grant).Describe()))
 	}
+	problems = append(problems, revokesUnderDatabaseGrants(desired, current, managed)...)
 	return errors.Join(problems...)
+}
+
+// revokesUnderDatabaseGrants refuses a declared revoke on a table where the
+// role keeps a grant of the same privilege, or of any privilege for ALL, on the
+// table's whole database.
+//
+// A grant on db.* covers every table in db, and the catalog reports it once, on
+// the database. A revoke on db.t therefore finds no row on the table to take:
+// measured on ClickHouse 26.10, after `GRANT SELECT ON db.* TO r` the plan for
+// `REVOKE ALL ON t FROM r` revokes nothing, a member keeps reading t, and the
+// next plan reads as synced. Taking t out of the database grant would leave a
+// partial revoke, which Ptah does not model.
+//
+// A database grant the plan removes does not keep the table: an undeclared
+// grant on a role the schema manages. A grant on `*.*` is outside the read, so
+// it is not seen here.
+func revokesUnderDatabaseGrants(desired *schemamodel.Database, current *catalog.Database, managed map[string]bool) []error {
+	var problems []error
+	for _, revoke := range desired.RevokedGrants {
+		if revoke.OnTable == "" || revoke.OnSchema != "" {
+			continue
+		}
+		for _, grant := range current.Grants {
+			if !keepsTable(revoke, grant) || (managed[grant.Role] && !declaresOnDatabase(desired.Grants, grant)) {
+				continue
+			}
+			table := revoke.OnTable
+			if !strings.Contains(table, ".") {
+				table = grant.ObjectName + "." + table
+			}
+			problems = append(problems, fmt.Errorf(
+				"role %q holds %s on %s.*, which covers %s, so a revoke on the table cannot take it: "+
+					"ClickHouse keeps the database grant and Ptah does not model a partial revoke — "+
+					"revoke %s on %s.* instead, or grant it on each table that needs it",
+				grant.Role, grant.Privilege, grant.ObjectName, table, grant.Privilege, grant.ObjectName))
+		}
+	}
+	return problems
+}
+
+// keepsTable reports whether live is a grant on a whole database that gives
+// the role of revoke a privilege revoke takes on a table of that database. An
+// unqualified table is in the connected database, the only one the catalog
+// reads grants for.
+func keepsTable(revoke schemamodel.Grant, live catalog.Grant) bool {
+	database, _, qualified := strings.Cut(revoke.OnTable, ".")
+	return strings.EqualFold(strings.TrimSpace(live.ObjectType), "SCHEMA") && !live.IsPartialRevoke &&
+		live.Role == strings.TrimSpace(revoke.Role) && (!qualified || live.ObjectName == database) &&
+		revokeNames(revoke.Privileges, live.Privilege)
+}
+
+// revokeNames reports whether a revoke of privileges takes privilege.
+func revokeNames(privileges []string, privilege string) bool {
+	return slices.ContainsFunc(privileges, func(name string) bool {
+		name = strings.ToUpper(strings.TrimSpace(name))
+		return name == "ALL" || name == "ALL PRIVILEGES" || name == privilege
+	})
+}
+
+// declaresOnDatabase reports whether a declared grant gives the live
+// database-scope grant's privilege, or ALL, to its role on its database.
+func declaresOnDatabase(grants []schemamodel.Grant, live catalog.Grant) bool {
+	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {
+		return grant.Role == live.Role && grant.OnSchema == live.ObjectName && grant.OnTable == "" &&
+			revokeNames(grant.Privileges, live.Privilege)
+	})
 }

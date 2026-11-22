@@ -150,9 +150,6 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		result = append(result, ast.NewComment("CLICKHOUSE: enum changes are ignored; declare ClickHouse Enum8/Enum16 columns inline via platform.clickhouse.type"))
 	}
 
-	if err := refuseUnfinishedRebuilds(diff); err != nil {
-		return nil, err
-	}
 	rebuilds, err := p.planRebuilds(diff)
 	if err != nil {
 		return nil, err

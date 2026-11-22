@@ -111,6 +111,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 			"or YDB directories relative to the database root. Empty reads each connection's default schema "+
 			"with --shadow-db, and without it what ptah schema compare reads.",
 	)
+	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName,
+		"read each connection's default schema with --shadow-db, and without it what ptah schema compare reads")
 }
 
 func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error {

@@ -248,6 +248,33 @@ Spaces around a name are trimmed, so `-s "one, two"` names `one` and `two`.
 Atlas CE keeps the space, so ` two` names no schema there and only `one` is
 described.
 
+`PTAH_ATLAS_STRICT_COMPAT=1` reads the value as Atlas CE does and keeps the
+space, so ` two` is a schema of its own. Ptah cannot select a schema whose name
+begins or ends with white space: the readers and filters below the flag trim
+every schema name
+([stokaro/ptah#6487](https://github.com/stokaro/ptah/issues/6487)). So under
+strict mode such a name is refused before the run starts, rather than read as
+the schema without the space:
+`invalid argument "one, two" for "-s, --schema" flag: schema " two" begins or ends with white space, which the community binary keeps and Ptah cannot select`.
+Measured on Atlas CE v1.4.0, with `schema inspect`:
+
+| Run | Atlas CE | Ptah, strict mode |
+| --- | --- | --- |
+| `-s ' main'`, a document declaring `schema "main"` | refused: `schema "main" from paths ["main.hcl"] is not requested` | refused |
+| `-s ' a'`, a document declaring `schema " a"` | describes ` a` | refused |
+| `-s ' a'`, a PostgreSQL database holding `a` and ` a` | describes ` a` | refused |
+| `-s ' main'`, a SQLite database | describes `main`, as for any `-s` value | refused |
+
+The second and third rows are stricter than Atlas CE on purpose, because they
+name a schema Ptah cannot carry. Without the refusal, strict mode would trim the
+name: the database run describes `a`, which is another schema, and the document
+run is refused with `schema " a" from paths ["sa.hcl"] is not requested`. The
+last row is stricter for another reason. Atlas CE does not read `-s` on a SQLite
+URL at all, so `-s other`, `-s ' x'` and `-s 'main '` all describe `main` there,
+and Ptah refuses the value before it reads the URL. A field that is blank
+beside a name, as in `-s 'main, '`, is accepted: it selects nothing on either
+binary.
+
 A value that names no schema is refused before the run starts:
 `every field is empty, so the value names no schema`. That is the empty value,
 such as `-s ''` or `--schema=`, and a value whose every field is empty, such as
@@ -262,17 +289,43 @@ schema, leave the flag out. The
 records the measurement.
 
 `PTAH_SCHEMA` sets the flag and takes the same grammar, so `PTAH_SCHEMA='""'`
-is refused. A variable that is set but empty, `PTAH_SCHEMA=`, counts as unset,
-as every non-boolean `PTAH_*` variable does, and reads every schema. A CI
-variable that may be empty, such as `${{ vars.SCHEMA }}` in GitHub Actions,
-belongs on the flag, `--schema "$SCHEMA"`, where an empty value is refused.
+is refused. A variable that names no schema once it is split on commas and
+trimmed, `PTAH_SCHEMA=`, `PTAH_SCHEMA=' '` or `PTAH_SCHEMA=' , '`, is refused
+too, before the run starts:
+`PTAH_SCHEMA is set but empty: give it a value, or unset it and leave --schema out to select every schema`.
+A CI variable nobody filled, such as `${{ vars.SCHEMA }}` in GitHub Actions,
+arrives as such a value, and read as no selection it would select every schema.
+To read every schema, unset the variable. A `--schema` typed on the command line
+wins, and the variable is then not read.
 
 `migrate checkpoint` and `schema test` pass their schema names on to a native
 command as one comma-separated list. They read `--schema` with the same
 grammar, and refuse a name that holds a comma, such as `-s '"a,b"'`, rather
-than split it into two names. On `migrate checkpoint`, `PTAH_SCHEMAS`, the
-variable of the native `--schemas` flag, is read as a `--schema` value when
-`PTAH_SCHEMA` is absent or empty, so it takes the same grammar.
+than split it into two names. `migrate checkpoint` with `--schema` left out
+reads the connection default schema, not every schema, so its refusal of a
+`PTAH_SCHEMA` naming no schema ends
+`leave --schema out to read the connection default schema, and on YDB every directory`.
+`PTAH_SCHEMAS`, the variable of the native `--schemas` flag, is read as its
+`--schema` value when `PTAH_SCHEMA` is absent. It takes the same grammar, and a
+value naming no schema is refused in words that name the flag it belongs to:
+`PTAH_SCHEMAS is set but empty: give it a value, or unset it and leave --schemas out to read the connection default schema, and on YDB every directory`.
+
+Both verbs read an `atlas.hcl` environment's `schemas` when the run leaves the
+flag unset: no `--schema`, no `PTAH_SCHEMA` and, on `migrate checkpoint`, no
+`PTAH_SCHEMAS`. A variable that names no schema is refused even where the list
+would stand in, as on every other verb. Each element is one `--schema` value. Atlas CE has neither verb, so there is no CE behavior to
+match; see
+[`env.schemas`](../project-config/#envschemas) for the reason the list applies.
+
+On `schema test`, an object the desired schema leaves unqualified belongs to
+the schema the dev database creates it in, which the `--dev-url` names: `main`
+on SQLite, the one `search_path` schema or `public` on the PostgreSQL family,
+`dbo` on SQL Server, and the database on MySQL and MariaDB. So `-s main` keeps
+`CREATE TABLE t` on SQLite, and `-s other` keeps nothing and is refused:
+`--schema other selects no tables out of the desired schema`. A `search_path`
+that lists more than one schema is refused when the selection depends on it.
+The native `ptah schema test --schema` reads it the same way; see
+[test cases](../../reference/test-cases/#isolation).
 
 A MySQL or MariaDB URL that names no database is the whole server, as the
 community binary reads it

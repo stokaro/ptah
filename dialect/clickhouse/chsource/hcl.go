@@ -15,7 +15,9 @@ import (
 // schedules. Row policies use the same attributes and target scope as YAML.
 // Omitted and empty refresh values declare an insert-maintained view. The
 // schedule grammar and target scope match Go annotations and YAML. Export
-// refuses an uncaptured schedule rather than declaring it absent.
+// refuses an uncaptured schedule rather than declaring it absent, and row
+// policies a read could not inspect; a policy it could not describe is named
+// in the header and left out.
 func HCL() hclext.Extension {
 	return hclext.Extension{
 		Owner: chschema.Owner, Kinds: []schemaext.Kind{chschema.RefreshKind, chschema.RowPolicyKind},
@@ -65,6 +67,11 @@ func (hclSource) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (h
 		return hclext.EncodeResult{}, fmt.Errorf("%w: an HCL refresh schedule belongs to a materialized view", ptaherr.ErrUnsupportedFeature)
 	}
 	var result hclext.EncodeResult
+	// A policy the read could not describe has no block to declare it, as it
+	// has no statement in a SQL export; the header says which are left out.
+	for _, record := range chpolicysource.Undescribed(request.Coverage) {
+		result.Header = append(result.Header, fmt.Sprintf("%s was not described (%s), and no block declares it", record.Subject, record.Knowledge.Reason))
+	}
 	for _, object := range request.Objects {
 		if err := ctx.Err(); err != nil {
 			return hclext.EncodeResult{}, err

@@ -111,6 +111,11 @@ discarding it:
   refuses `type = GIST` on a key, and fails to inspect a database whose foreign
   key uses `PERIOD`; see
   [Temporal keys](../../databases/postgresql/#temporal-keys).
+- a `--schema` value or an `env.schemas` element naming a schema that begins
+  or ends with white space, such as `-s ' a'` or `-s 'one, two'`. Atlas CE keeps
+  the space and selects that exact schema, and Ptah, which trims every schema
+  name below the flag, would select another one; see
+  [schema commands](../schema-commands/).
 
 Checksum-only migration reads preserve those bytes because they do not execute
 or reinterpret the body.

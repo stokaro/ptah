@@ -27,8 +27,8 @@ func assessParent(request featureplan.Request, table featureplan.Table) (string,
 		return "remove storage settings with the table; all table data is lost", nil
 	}
 	if table.Action == featureplan.RebuildTable {
-		return "create the table again from its declaration, with the storage clauses it declares, and copy its rows back from a holding table; " +
-			"the steps are not atomic, and rows written to the table while they run are lost", nil
+		return "create the table again from its declaration, with the storage clauses it declares, under another name, copy its rows into it, " +
+			"and swap the two with EXCHANGE TABLES; the steps are not atomic, and rows written to the table while they run are lost", nil
 	}
 	if table.Action != featureplan.AlterTable {
 		return "", fmt.Errorf("ClickHouse storage has no plan for parent action %q", table.Action)

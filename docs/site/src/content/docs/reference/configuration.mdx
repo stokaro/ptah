@@ -34,7 +34,9 @@ begins. For example, `PTAH_DRY_RUN=notabool` fails with
 the default `false` value. An explicit CLI flag wins without reading its
 environment twin, including when that environment value is malformed. An empty
 value remains unset for every flag type except boolean, where it is rejected;
-see [Boolean environment variables](#boolean-environment-variables).
+see [Boolean environment variables](#boolean-environment-variables). The
+schema-selecting variables are the other exception; see
+[Schema-selecting variables](#schema-selecting-variables).
 
 `exclude` is the one key the table does not order: `--exclude` and
 `PTAH_EXCLUDE` add to the project list rather than replace it, as
@@ -76,6 +78,33 @@ for `ptah migrations up --json` would turn every plan preview and apply
 transcript in that environment into a JSON document. A caller that parses the
 document types the flag.
 
+## Schema-selecting variables
+
+`PTAH_SCHEMA` and `PTAH_SCHEMAS` refuse a value that names no schema on every
+command that binds them: the empty value, and a value whose comma-separated
+fields are all blank once trimmed, such as `' '`, `','` or `' , '`. Such a value
+usually comes from a CI variable nobody filled. Read as no selection, it would
+give the run the default of a flag left out.
+
+On the verbs that compare a database with a desired schema, that default is the
+widest. There, the `ptah-compat` flag `-s/--schema` left out selects every
+schema, and native `--schemas` left out lets the URL decide, which on a URL that
+pins no `search_path` is every schema. `schema apply` would then plan a `DROP` for
+each schema the desired schema leaves out. A verb that reads one connection
+has a narrower default: `ptah db read`, `ptah migrations checkpoint` and
+`ptah-compat migrate checkpoint` read the connection default schema. The
+refusal names the variable and says what leaving the flag out does on that
+verb:
+
+```text
+error: PTAH_SCHEMAS is set but empty: give it a value, or unset it and leave --schemas out to let the URL decide which schemas are read
+error: PTAH_SCHEMAS is set to " , ", which names nothing: give it a value, or unset it and leave --schemas out to let the URL decide which schemas are read
+```
+
+Unset the variable to get that default. A flag typed on the command line wins
+without reading the variable. An empty value typed on the command line keeps
+the meaning the flag's `--help` gives it, `--schemas ''` included.
+
 ## Boolean environment variables
 
 Every boolean `PTAH_*` variable follows one rule, whether it is a flag's
@@ -115,8 +144,8 @@ A command only validates the variables it owns. A malformed PostgreSQL
 inspection variable does not break an unrelated SQLite command or
 `ptah version`.
 
-Non-boolean `PTAH_*` variables are unchanged: an empty value still reads as
-unset for them.
+Other non-boolean `PTAH_*` variables read an empty value as unset, except the
+[schema-selecting variables](#schema-selecting-variables).
 
 ### Atlas CE strict compatibility
 

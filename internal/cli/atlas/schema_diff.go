@@ -106,7 +106,7 @@ refuses.`
 		"materialize a --from schema file compared with a database or directory, and place the unqualified names of two schema files")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
-	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used", policy)
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
 	if !policy.IsStrictCE() {
 		registerAtlasUIFlag(cmd, atlasSchemaExportFlag())

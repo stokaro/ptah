@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
@@ -445,8 +446,8 @@ func atlasProjectLoadOptions(
 		// The community binary reads no docker block; the default surface
 		// starts the one a selected env references (stokaro/ptah#4041).
 		IgnoreDockerBlocks: policy.IsStrictCE(),
-		// The community binary reads a diff block with a label and applies
-		// nothing in it.
+		// The community binary plans no table rebuild, so it applies no
+		// allow_recreate under any label.
 		IgnoreDialectDiffBlocks: policy.IsStrictCE(),
 		// So a refusal about a for_each env names the command the operator
 		// ran (stokaro/ptah#1696). Empty where no command is in scope, which
@@ -1256,6 +1257,10 @@ func applyAtlasProjectConfigToArgs(
 	if !cliLatest && gitDir.Value != "" {
 		args = appendAtlasProjectStringArg(flags, args, "git-dir", gitDir)
 	}
+	args, err = appendAtlasProjectSchemaArgs(flags, args, project.Config)
+	if err != nil {
+		return nil, nil, err
+	}
 	return args, nil, nil
 }
 
@@ -1279,6 +1284,10 @@ func applyAtlasSchemaTestProjectConfig(
 		"dev-url",
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
+	args, err = appendAtlasProjectSchemaArgs(flags, args, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
 	if atlasFlagValueSet(flags, args, "url") {
 		return args, nativeVars, nil
 	}
@@ -1430,12 +1439,19 @@ func appendAtlasProjectStringArg(
 }
 
 func atlasFlagRegistered(flags []atlasargs.Flag, name string) bool {
+	_, ok := atlasFlagNamed(flags, name)
+	return ok
+}
+
+// atlasFlagNamed returns the flag of flags called name, and false when there
+// is none.
+func atlasFlagNamed(flags []atlasargs.Flag, name string) (atlasargs.Flag, bool) {
 	for _, flag := range flags {
 		if flag.Name == name {
-			return true
+			return flag, true
 		}
 	}
-	return false
+	return atlasargs.Flag{}, false
 }
 
 func atlasFlagValueSet(flags []atlasargs.Flag, args []string, name string) bool {
@@ -1607,20 +1623,72 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 // `schemas = [" one"]` and `--schema "one, two"`, so ` one` and ` two` name no
 // schema and are dropped without a word: the first describes nothing, the
 // second describes `one` alone. [schemascope.UniqueNames] trims a schema name,
-// so Ptah describes `one`, and `one` and `two`. And an element that names no
-// schema, `""` or `"\"\""`, is refused as the flag refuses it; see
-// [registerAtlasSchemaFlag]. That refusal is Ptah's own, so it names the file
-// and the env the element came from rather than a flag nobody typed. The
-// refusal of `a"b` names the flag, in the pinned binary's words.
+// so Ptah describes `one`, and `one` and `two`; under the strict policy both
+// lists are refused, because Ptah cannot select the schema the pinned binary
+// reads. And an element that names no schema, `""` or `"\"\""`, is refused as
+// the flag refuses it; see [registerAtlasSchemaFlag]. Those refusals are Ptah's
+// own, so they name the file and the env the element came from rather than a
+// flag nobody typed. The refusal of `a"b` names the flag, in the pinned
+// binary's words.
 func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) ([]string, error) {
 	if !projectListStandsIn(cmd, atlasSchemaFlagName, cfg.Schemas) {
 		return flagValues, nil
 	}
-	schemas, err := readAtlasSchemaList(cfg.Schemas)
-	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok && errors.Is(err, errEmptySchemaValue) {
-		return nil, fmt.Errorf("%s: env %q: schemas value %q: %w", atlasEnvOrigin(cfg), cfg.EnvName, invalid.GetValue(), errEmptySchemaValue)
+	schemas, err := readAtlasSchemaList(cfg.Schemas, atlasCompatibilityPolicy(cmd))
+	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok {
+		return nil, atlasConfiguredSchemaError(cfg, invalid.GetValue(), err)
 	}
 	return schemas, err
+}
+
+// atlasConfiguredSchemaError is the refusal of value, one element of the
+// selected env's `schemas`. A refusal that is Ptah's own names the project
+// file and the env, where pflag names the flag; one in the pinned binary's
+// words is returned as it is.
+func atlasConfiguredSchemaError(cfg projectconfig.Config, value string, err error) error {
+	own, ok := errors.AsType[*schemaValueError](err)
+	if !ok {
+		return err
+	}
+	return fmt.Errorf("%s: env %q: schemas value %q: %w", atlasEnvOrigin(cfg), cfg.EnvName, value, own)
+}
+
+// appendAtlasProjectSchemaArgs gives a forwarded verb's -s/--schema the list
+// the selected env's `schemas` sets, one --schema value per element, so the
+// list takes the flag's grammar and [forwardAtlasSchemaValue] maps each value
+// as it maps one on the command line.
+//
+// The list stands in only where the run leaves the flag unset, as on the verbs
+// that read it themselves ([effectiveAtlasSchemas]): the flag wins, and so does
+// a PTAH_SCHEMA that names a schema, or the native variable a flag marked
+// [atlasargs.Flag.NativeEnv] reads, PTAH_SCHEMAS on `migrate checkpoint`. A
+// variable that names no schema is refused rather than outranked, as on those
+// verbs: someone set it, and the list does not say what they meant. The
+// refusal is asked for here, before the list is appended, because the appended
+// list reads as a typed --schema and [atlasargs.Map] then never consults the
+// variable.
+//
+// Each element is read here as well, before anything is forwarded, so a
+// refusal that is Ptah's own names the file and the env rather than the flag
+// the forward would name.
+func appendAtlasProjectSchemaArgs(flags []atlasargs.Flag, args []string, cfg projectconfig.Config) ([]string, error) {
+	flag, registered := atlasFlagNamed(flags, atlasSchemaFlagName)
+	if len(cfg.Schemas) == 0 || !registered || atlasargs.FlagPresent(flags, args, atlasSchemaFlagName) {
+		return args, nil
+	}
+	if err := atlasargs.CheckEmptyEnv(flag); err != nil {
+		return nil, err
+	}
+	if atlasFlagEnvironmentPresent(flags, atlasSchemaFlagName) {
+		return args, nil
+	}
+	for _, value := range cfg.Schemas {
+		if _, err := forwardAtlasSchemaValue(value); err != nil {
+			return nil, atlasConfiguredSchemaError(cfg, value, err)
+		}
+		args = append(args, "--"+atlasSchemaFlagName, value)
+	}
+	return args, nil
 }
 
 // atlasEnvOrigin names the project file that declares the selected env, as the
@@ -1638,10 +1706,10 @@ func atlasEnvOrigin(cfg projectconfig.Config) string {
 // [registerAtlasSchemaFlag] declares, so a configured value is split, unquoted
 // and refused exactly as the same text on the command line is, and a refusal
 // names the flag the way pflag names it there.
-func readAtlasSchemaList(values []string) ([]string, error) {
+func readAtlasSchemaList(values []string, policy atlascompatpolicy.Policy) ([]string, error) {
 	flags := pflag.NewFlagSet(atlasSchemaFlagName, pflag.ContinueOnError)
 	var schemas []string
-	registerAtlasSchemaFlag(flags, &schemas, "")
+	registerAtlasSchemaFlag(flags, &schemas, "", policy)
 	for _, value := range values {
 		if err := flags.Set(atlasSchemaFlagName, value); err != nil {
 			return nil, err
@@ -1650,12 +1718,45 @@ func readAtlasSchemaList(values []string) ([]string, error) {
 	return schemas, nil
 }
 
+// atlasDiffPolicy is the diff policy of the project file: the unlabeled diff
+// blocks, and for each dialect a labeled block names, the values the labeled
+// blocks set, which the plan reads once it knows its dialect.
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
-	return atlasschema.DiffPolicy{
+	policy := atlasschema.DiffPolicy{
 		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
 		TableRebuildDialects:          cfg.Diff.TableRebuildDialects(),
-	}, nil
+	}
+	for _, dialect := range cfg.Diff.PolicyDialects() {
+		labeled := cfg.Diff.Dialects[dialect]
+		if policy.Dialects == nil {
+			policy.Dialects = make(map[string]atlasschema.DialectDiffPolicy)
+		}
+		policy.Dialects[dialect] = atlasschema.DialectDiffPolicy{
+			TopLevel: atlasDiffSettings(labeled.TopLevel),
+			Env:      atlasDiffSettings(labeled.Env),
+		}
+	}
+	return policy, nil
+}
+
+// atlasDiffSettings returns the values one labeled diff block sets, by the
+// name the project file gives each.
+func atlasDiffSettings(values projectconfig.DialectDiffValues) atlasschema.DiffSettings {
+	settings := make(atlasschema.DiffSettings)
+	for setting, value := range map[atlasschema.DiffSetting]projectconfig.ConfigBool{
+		atlasschema.SkipSetting(planext.DropTable):  values.Skip.DropTable,
+		atlasschema.SkipSetting(planext.DropColumn): values.Skip.DropColumn,
+		atlasschema.SkipSetting(planext.DropIndex):  values.Skip.DropIndex,
+		atlasschema.SkipSetting(planext.DropEnum):   values.Skip.DropEnum,
+		atlasschema.ConcurrentIndexCreateSetting:    values.ConcurrentIndex.Create,
+		atlasschema.ConcurrentIndexDropSetting:      values.ConcurrentIndex.Drop,
+	} {
+		if value.Set {
+			settings[setting] = value.Value
+		}
+	}
+	return settings
 }

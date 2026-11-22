@@ -57,6 +57,13 @@ func TestGetOrderedCreateStatements_ARelativeTimeDefaultIsRefused_FailurePath(t 
 			wantErr: `column "a" of table "t": DEFAULT \('now'\) on a timestamptz` + tail,
 		},
 		{
+			// PostgreSQL 19 stores this default on a timestamptz as the moment
+			// the table was created, as it stores DEFAULT 'now'.
+			name: "a dollar-quoted string whose tag is outside ASCII", dialect: platform.Postgres,
+			field:   schemamodel.Field{Type: "timestamptz", DefaultExpr: "$\u00e9$now$\u00e9$"},
+			wantErr: `column "a" of table "t": DEFAULT \$\x{e9}\$now\$\x{e9}\$ on a timestamptz` + tail,
+		},
+		{
 			name: "YugabyteDB", dialect: platform.YugabyteDB,
 			field:   schemamodel.Field{Type: "timestamptz", DefaultExpr: "'now'::timestamptz"},
 			wantErr: `column "a" of table "t": DEFAULT 'now'::timestamptz on a timestamptz` + tail,

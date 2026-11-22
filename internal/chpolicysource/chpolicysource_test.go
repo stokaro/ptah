@@ -148,11 +148,15 @@ func TestCollector_RefusesTwoDeclarationsOfOnePolicy(t *testing.T) {
 	c.Assert(objects[0].Targets, qt.DeepEquals, []string{"clickhouse"})
 }
 
-// TestRequireDescribed refuses an export of row policies the read did not
-// describe, as a whole or one by one, and passes a complete description.
-func TestRequireDescribed(t *testing.T) {
+// TestRequireDescribed_FailurePath refuses an export of row policies the read
+// did not inspect, as a whole or one by one, and an export of a read that
+// could not describe the model as a whole: a format that declares row
+// policies claims every one, so the export would declare none, and applying
+// it would drop the policies the server holds.
+func TestRequireDescribed_FailurePath(t *testing.T) {
 	complete := schemaext.Knowledge{State: schemaext.Complete}
 	unread := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the account may not read system.row_policies"}
+	unmodeled := schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the server reports a form Ptah does not model"}
 	tests := []struct {
 		name     string
 		coverage schemaext.Coverage
@@ -160,6 +164,8 @@ func TestRequireDescribed(t *testing.T) {
 	}{
 		{name: "the model", coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, unread, nil)),
 			wantErr: `.*ClickHouse row policies cannot be exported: the read did not describe them \(the account may not read system.row_policies\)`},
+		{name: "the model unrepresentable", coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, unmodeled, nil)),
+			wantErr: `.*ClickHouse row policies cannot be exported: the read did not describe them \(the server reports a form Ptah does not model\)`},
 		{name: "one policy", coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, complete, []schemaext.SubjectCoverage{
 			{Kind: chschema.RowPolicyKind, Subject: chpolicysource.Ref("", "orders", "tenant"), Knowledge: unread}})),
 			wantErr: `.*ClickHouse row policy .* cannot be exported: the read did not describe it.*`},
@@ -172,6 +178,51 @@ func TestRequireDescribed(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		})
 	}
+}
+
+// TestRequireDescribed_HappyPath passes a complete description, a policy the
+// read knows is absent, and a policy the read met and no source can declare,
+// such as one written ON db.*: the export leaves that one out, and
+// [chpolicysource.Undescribed] names it.
+func TestRequireDescribed_HappyPath(t *testing.T) {
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	tests := []struct {
+		name     string
+		subjects []schemaext.SubjectCoverage
+	}{
+		{name: "a complete description"},
+		{name: "an absent policy", subjects: []schemaext.SubjectCoverage{{Kind: chschema.RowPolicyKind,
+			Subject: chpolicysource.Ref("", "orders", "tenant"), Knowledge: schemaext.Knowledge{State: schemaext.Absent}}}},
+		{name: "a database-wide policy", subjects: []schemaext.SubjectCoverage{{Kind: chschema.RowPolicyKind,
+			Subject: chpolicysource.Ref("d1", "*", "tenant"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "written ON d1.*"}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := chpolicysource.RequireDescribed(must.Must(chschema.RowPolicyCoverage(schemaext.Observed, complete, test.subjects)))
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestUndescribed lists the policies the read met and could not describe, in
+// coverage order, and leaves out the ones it knows are absent or did not
+// inspect.
+func TestUndescribed(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(chpolicysource.RequireDescribed(must.Must(chschema.RowPolicyCoverage(schemaext.Desired, complete, nil))), qt.IsNil)
+	wide := schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chpolicysource.Ref("d1", "*", "tenant"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "written ON d1.*"}}
+	onView := schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chpolicysource.Ref("d1", "v", "p"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "on a view"}}
+	absent := schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chpolicysource.Ref("d1", "orders", "gone"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Absent}}
+	coverage := must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{wide, absent, onView}))
+
+	got := chpolicysource.Undescribed(coverage)
+
+	c.Assert(got, qt.HasLen, 2)
+	c.Assert(got[0].Subject.Key(), qt.Equals, wide.Subject.Key())
+	c.Assert(got[1].Subject.Key(), qt.Equals, onView.Subject.Key())
+	c.Assert(chpolicysource.Undescribed(schemaext.Coverage{}), qt.HasLen, 0)
 }

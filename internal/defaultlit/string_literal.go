@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"ptah.run/internal/lexer"
 )
 
 // plainString reads text as one PostgreSQL string literal and returns its
@@ -25,8 +27,8 @@ func plainString(text string) (string, bool) {
 	case 'U', 'u':
 		return decodeUnicodeString(text[3 : len(text)-1])
 	default:
-		tag := dollarTag(text)
-		return text[len(tag) : len(text)-len(tag)], true
+		length, _ := lexer.PostgreSQLDollarTags.OpeningTag(text)
+		return text[length : len(text)-length], true
 	}
 }
 
@@ -49,10 +51,15 @@ func literalEnd(text string, start int) int {
 	case (rest[0] == 'U' || rest[0] == 'u') && strings.HasPrefix(rest[1:], "&'"):
 		return quotedEnd(text, start+3, false)
 	case rest[0] == '$':
-		tag := dollarTag(rest)
-		if tag == "" {
+		// The engines that fold a relative time word, PostgreSQL and
+		// YugabyteDB, are the readers' only callers, so the tag is that
+		// family's: a tag outside ASCII opens a string on PostgreSQL 19, and
+		// $1abc$ opens none.
+		length, ok := lexer.PostgreSQLDollarTags.OpeningTag(rest)
+		if !ok {
 			return -1
 		}
+		tag := rest[:length]
 		end := strings.Index(rest[len(tag):], tag)
 		if end < 0 {
 			return -1
@@ -78,26 +85,6 @@ func quotedEnd(text string, from int, escapes bool) int {
 		}
 	}
 	return -1
-}
-
-// dollarTag returns the delimiter that opens a dollar-quoted string at the
-// start of text, $$ or $tag$, or "" where none does. A tag starts with a
-// letter or an underscore, so $1 opens nothing.
-func dollarTag(text string) string {
-	if len(text) < 2 || text[0] != '$' {
-		return ""
-	}
-	for i := 1; i < len(text); i++ {
-		ch := text[i]
-		switch {
-		case ch == '$':
-			return text[:i+1]
-		case ch == '_' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || i > 1 && ch >= '0' && ch <= '9':
-		default:
-			return ""
-		}
-	}
-	return ""
 }
 
 // decodeEscapeString decodes the body of an escape string: \b, \f, \n, \r

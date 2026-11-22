@@ -47,6 +47,12 @@ func compareRowPolicies(c *qt.C, desired, current schemaext.ObjectState, parents
 	}))
 }
 
+// heldOrders is the parent of a policy on app.orders, a table both sides
+// hold.
+func heldOrders() schemaext.ParentState {
+	return schemaext.ParentState{Subject: objectidentity.NewBuilder(rowPolicySemantics()).TablePartsVerbatim("app", "orders"), Desired: true, Current: true}
+}
+
 var tenantPolicy = chschema.ObservedRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Permissive,
 	Roles: chschema.RoleSelection{Names: []string{"alice"}}}
 
@@ -58,7 +64,7 @@ func TestRowPolicyComparisonMatchesAnUnchangedPolicy(t *testing.T) {
 	desired := rowPolicyState(schemaext.Desired, complete(), declared("", chschema.DesiredRowPolicy{
 		Filter: new("tenant=1"), NormalizedFilter: new("tenant = 1"), Roles: chschema.RoleSelection{Names: []string{"alice"}}}))
 
-	result := compareRowPolicies(c, desired, rowPolicyState(schemaext.Observed, complete(), observed(tenantPolicy)))
+	result := compareRowPolicies(c, desired, rowPolicyState(schemaext.Observed, complete(), observed(tenantPolicy)), heldOrders())
 
 	c.Assert(result.Complete, qt.IsTrue)
 	c.Assert(result.Changes, qt.HasLen, 0)
@@ -92,7 +98,7 @@ func TestRowPolicyComparisonReportsEachTransition(t *testing.T) {
 			}
 
 			result := compareRowPolicies(c, rowPolicyState(schemaext.Desired, complete(), desiredObjects...),
-				rowPolicyState(schemaext.Observed, complete(), currentObjects...))
+				rowPolicyState(schemaext.Observed, complete(), currentObjects...), heldOrders())
 
 			c.Assert(result.Changes, qt.HasLen, 1)
 			change, ok := result.Changes[0].Value.(*chdiff.RowPolicy)
@@ -113,7 +119,7 @@ func TestRowPolicyComparisonKeepsAPolicyTheSourceCannotDescribe(t *testing.T) {
 	uninspected := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source states no row policies"}
 
 	result := compareRowPolicies(c, rowPolicyState(schemaext.Desired, uninspected),
-		rowPolicyState(schemaext.Observed, complete(), observed(tenantPolicy)))
+		rowPolicyState(schemaext.Observed, complete(), observed(tenantPolicy)), heldOrders())
 
 	c.Assert(result.Changes, qt.HasLen, 0)
 	adopted, found, err := result.Desired.Objects.Get(chschema.RowPolicyRef("app", "orders", "tenant"))
@@ -146,7 +152,7 @@ func TestRowPolicyComparisonLeavesUnestablishedStateUndecided(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := compareRowPolicies(c, test.desired, test.current)
+			result := compareRowPolicies(c, test.desired, test.current, heldOrders())
 
 			c.Assert(result.Changes, qt.HasLen, 0)
 			c.Assert(result.Undecided, qt.HasLen, 1)
@@ -193,13 +199,15 @@ func TestRowPolicyComparison_FailurePath(t *testing.T) {
 }
 
 // rowPolicyRuntime selects the row policy owner on ClickHouse and nothing
-// else, so the engine checks each count the owner states against its changes.
+// else, registered as engine/builtin registers it, so the engine checks each
+// count the owner states against its changes and each change against the
+// request.
 func rowPolicyRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
 	return must.Must(engine.New(engine.Provider{ID: chschema.Owner, Targets: []engine.Target{{Name: "clickhouse"}},
 		Codecs: append(chschema.RowPolicyCodecs(), chdiff.RowPolicyCodecs()...),
 		Comparisons: []engine.ObjectComparison{{Target: "clickhouse", Kinds: []schemaext.Kind{chschema.RowPolicyKind},
-			ChangeKinds: []schemaext.Kind{chdiff.RowPolicyKind}, Service: chcompare.RowPolicyService{}}},
+			ChangeKinds: []schemaext.Kind{chdiff.RowPolicyKind}, OutlivesParent: true, Service: chcompare.RowPolicyService{}}},
 	}))
 }
 
@@ -275,4 +283,116 @@ func TestRowPolicyComparison_CountsWhatItCompares(t *testing.T) {
 			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
 		})
 	}
+}
+
+// TestRowPolicyComparisonPlansAPolicyItsTableOutlived compares a policy the
+// server kept when its table was dropped as a policy of its own, whatever the
+// plan does to a table of the name: one the declaration leaves out is
+// dropped, and a declared one is altered in place, even where it agrees,
+// because a table created under the name would otherwise create a policy the
+// server already holds.
+func TestRowPolicyComparisonPlansAPolicyItsTableOutlived(t *testing.T) {
+	orders := objectidentity.NewBuilder(rowPolicySemantics()).TablePartsVerbatim("app", "orders")
+	created := []schemaext.ParentState{{Subject: orders, Desired: true}}
+	restrictive := chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Restrictive,
+		Roles: chschema.RoleSelection{Names: []string{"alice"}}}
+	for _, test := range []struct {
+		name          string
+		parents       []schemaext.ParentState
+		desired       []schemaext.Object
+		before, after bool
+		want          schemaext.ObjectCount
+	}{
+		{name: "an undeclared policy and no table of the name", before: true,
+			want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Removed: 1}},
+		{name: "an undeclared policy and a table the plan creates", parents: created, before: true,
+			want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Removed: 1}},
+		{name: "a declared policy that agrees", parents: created, desired: []schemaext.Object{declaredNamed("tenant")}, before: true, after: true,
+			want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Matched: 1}},
+		{name: "a declared policy that differs", parents: created, desired: []schemaext.Object{declared("app", restrictive)}, before: true, after: true,
+			want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Matched: 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := rowPolicyRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+				Target: "clickhouse", Identifiers: rowPolicySemantics(), Parents: test.parents,
+				Desired: rowPolicyState(schemaext.Desired, complete(), test.desired...),
+				Current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"))})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Undecided, qt.HasLen, 0)
+			c.Assert(result.Changes, qt.HasLen, 1)
+			c.Assert(result.Changes[0].Subject.Key(), qt.Equals, chschema.RowPolicyRef("app", "orders", "tenant").Key())
+			change, ok := result.Changes[0].Value.(*chdiff.RowPolicy)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(change.Before != nil, qt.Equals, test.before)
+			c.Assert(change.After != nil, qt.Equals, test.after)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
+		})
+	}
+}
+
+// TestRowPolicyComparisonLeavesAnOutlivingPolicyUndecided neither drops nor
+// adopts a policy the server kept for a dropped table when the desired source
+// does not describe row policies: it has not asked for the drop, and the
+// policy cannot be kept as declared beside a table the declaration does not
+// hold.
+func TestRowPolicyComparisonLeavesAnOutlivingPolicyUndecided(t *testing.T) {
+	c := qt.New(t)
+	uninspected := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source states no row policies"}
+
+	result, err := rowPolicyRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+		Target: "clickhouse", Identifiers: rowPolicySemantics(),
+		Desired: rowPolicyState(schemaext.Desired, uninspected),
+		Current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"))})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Desired.Objects.Len(), qt.Equals, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Subject.Key(), qt.Equals, chschema.RowPolicyRef("app", "orders", "tenant").Key())
+	c.Assert(result.Undecided[0].Reason, qt.Matches, `the database holds this policy for table "orders", which it does not hold, .*`)
+}
+
+// TestRowPolicyComparisonReportsAPolicyOnARelationItDoesNotModel reports, and
+// so keeps, a policy the read recorded as one it cannot describe below a
+// table it does not hold, such as a policy on a view; one on a table both
+// sides hold is decided beside its table and reported only when declared.
+func TestRowPolicyComparisonReportsAPolicyOnARelationItDoesNotModel(t *testing.T) {
+	c := qt.New(t)
+	onView := chschema.RowPolicyRef("app", "active_orders", "tenant")
+	onTable := chschema.RowPolicyRef("app", "orders", "tenant")
+	reason := "the policy is on \"active_orders\", whose engine View the read does not hold as a table; the plan keeps the policy"
+	current := schemaext.ObjectState{Coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, complete(), []schemaext.SubjectCoverage{
+		{Kind: chschema.RowPolicyKind, Subject: onView, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: reason}},
+		{Kind: chschema.RowPolicyKind, Subject: onTable, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "defined in users.xml"}},
+	}))}
+
+	result, err := rowPolicyRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+		Target: "clickhouse", Identifiers: rowPolicySemantics(), Parents: []schemaext.ParentState{heldOrders()},
+		Desired: rowPolicyState(schemaext.Desired, complete()), Current: current})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.DeepEquals, []schemaext.UndecidedChange{{Kind: chschema.RowPolicyKind, Subject: onView, Reason: reason}})
+}
+
+// TestRowPolicyComparison_RefusesAnOutlivingPolicySpelledTwoWays refuses a
+// declaration that pairs with a policy the server kept for a dropped table
+// under another spelling of its database: the change would name a policy the
+// request does not hold.
+func TestRowPolicyComparison_RefusesAnOutlivingPolicySpelledTwoWays(t *testing.T) {
+	c := qt.New(t)
+	orders := objectidentity.NewBuilder(rowPolicySemantics()).TablePartsVerbatim("app", "orders")
+
+	result, err := chcompare.RowPolicyService{}.CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+		Target: "clickhouse", Identifiers: rowPolicySemantics(), Kinds: []schemaext.Kind{chschema.RowPolicyKind},
+		Parents: []schemaext.ParentState{{Subject: orders, Desired: true}},
+		Desired: rowPolicyState(schemaext.Desired, complete(), declared("", *tenantPolicy.Desired())),
+		Current: rowPolicyState(schemaext.Observed, complete(), observed(tenantPolicy))})
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*spell one policy two ways`)
+	c.Assert(result.Changes, qt.HasLen, 0)
 }
