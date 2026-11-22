@@ -240,11 +240,11 @@ a `CREATE EXTENSION IF NOT EXISTS` inside the window reports nothing for it.
 Lint the whole directory to assess every extension it installs.
 
 The run assesses the dev database's server, so run it at the release the
-migration will meet. PostgreSQL is the only engine assessed. The banner of an
-official `postgres` image built on Debian names the distribution's package, and
-the assessment reads that as a vendor build, so each install there is reported
-as unassessed. An `-alpine` tag, such as `docker://postgres/16-alpine/dev`,
-names the upstream release and gives an assessed result. Without a dev database
+migration will meet. PostgreSQL is the only engine assessed. The official
+`postgres` images, on Debian and on Alpine, carry an upstream build and give an
+assessed result. A server built from a distribution's own package, such as
+Ubuntu's, may carry a backported fix, so the assessment reads it as a vendor
+build and each install there is reported as unassessed. Without a dev database
 neither rule reports, and the notice above names both. A default run that
 cannot read the advisory source matches the snapshot built into the binary and
 says so on stderr once, in the line `ptah db vulnerabilities` writes. An
