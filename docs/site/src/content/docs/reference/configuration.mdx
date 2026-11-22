@@ -33,10 +33,11 @@ begins. For example, `PTAH_DRY_RUN=notabool` fails with
 `invalid boolean value "notabool" for PTAH_DRY_RUN` instead of running with
 the default `false` value. An explicit CLI flag wins without reading its
 environment twin, including when that environment value is malformed. An empty
-value remains unset for every flag type except boolean, where it is rejected;
-see [Boolean environment variables](#boolean-environment-variables). The
-schema-selecting variables are the other exception; see
-[Schema-selecting variables](#schema-selecting-variables).
+value remains unset, except for a
+[boolean](#boolean-environment-variables), the
+[schema-selecting variables](#schema-selecting-variables), the
+[variables that narrow a write](#variables-that-narrow-a-write) and the
+[variables that name the migration history](#variables-that-name-the-migration-history).
 
 `exclude` is the one key the table does not order: `--exclude` and
 `PTAH_EXCLUDE` add to the project list rather than replace it, as
@@ -108,9 +109,9 @@ the meaning the flag's `--help` gives it, `--schemas ''` included.
 ## Variables that narrow a write
 
 A command that writes refuses an empty or blank value of a variable that
-narrows what it changes, where the variable read as unset would change more
-than any value does. Read as unset, an empty `PTAH_EXCLUDE` plans the `DROP` a
-value keeps out. Blank means only spaces, or for a list only blank fields.
+narrows what it changes: read as unset, an empty `PTAH_EXCLUDE` plans the
+`DROP` a value keeps out. Blank means only spaces, or for a list only blank
+fields.
 
 | Command | Variables | Leaving the flag out |
 | --- | --- | --- |
@@ -131,10 +132,19 @@ error: PTAH_TO_VERSION is set to " ", which names nothing: give it a value, or u
 ```
 
 A command that only reads, or writes a plan for review such as
-`ptah schema plan`, reads an empty value as unset. So does
-`ptah-compat migrate down` for `PTAH_TO_VERSION`: its default reverts one
-migration, which is narrower than any version. Unset the variable to get the
-default. A typed flag wins without reading the variable.
+`ptah schema plan`, reads an empty value as unset, and so does
+`ptah-compat migrate down` for `PTAH_TO_VERSION`, whose default reverts one
+migration.
+
+## Variables that name the migration history
+
+`PTAH_MIGRATIONS_TABLE`, `PTAH_MIGRATIONS_SCHEMA` and `PTAH_REVISION_FORMAT` on
+`ptah migrations`, and `PTAH_REVISIONS_SCHEMA` on `ptah-compat migrate`, name
+the history of applied migrations. Every command that reads one refuses an
+empty or blank value, a read-only one included. Read as unset, it names the
+default history: over a history in `--migrations-table mine`,
+`migrations up` runs every migration again. `ptah migrations lint` reads no
+history and reads an empty `PTAH_REVISION_FORMAT` as unset.
 
 ## Boolean environment variables
 
@@ -174,10 +184,6 @@ have consulted it, such as a `migrate lint` that already names `--latest`, or a
 A command only validates the variables it owns. A malformed PostgreSQL
 inspection variable does not break an unrelated SQLite command or
 `ptah version`.
-
-Other non-boolean `PTAH_*` variables read an empty value as unset, except the
-[schema-selecting variables](#schema-selecting-variables) and the
-[variables that narrow a write](#variables-that-narrow-a-write).
 
 ### Atlas CE strict compatibility
 

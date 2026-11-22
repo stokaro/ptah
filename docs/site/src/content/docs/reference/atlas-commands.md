@@ -826,6 +826,10 @@ The native `--limit` typed here is refused, and the native `PTAH_TARGET` and
 The community binary has no `migrate down`, so the documentation is the
 reference for this behavior.
 
+`PTAH_MIGRATIONS_TABLE` is not read either: the revision table is
+`atlas_schema_revisions`, as on `migrate apply` and `migrate status`. An empty
+or blank `PTAH_REVISIONS_SCHEMA` is refused, as on every verb that reads it.
+
 | Flag | Behavior |
 | --- | --- |
 | `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |

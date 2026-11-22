@@ -120,6 +120,7 @@ Native Ptah equivalent: ptah migrations up.`,
 	// register it, so strict CE mode omits it while the complete compatibility
 	// surface retains the documented extension.
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
+	dbcli.RefuseEmptyHistoryEnv(flags, "revisions-schema", dbcli.OmittedRevisionsSchema)
 	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring the migration lock, such as 10s or 2m; zero or less tries it once")
 	if !policy.IsStrictCE() {
 		flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")

@@ -103,7 +103,7 @@ var writeVariableRefusals = []string{
 }
 
 // emptyRefusingBindings walks tree and returns every bound flag outside
-// schemaVariables that declares an empty rule.
+// schemaVariables and historyVariables that declares an empty rule.
 func emptyRefusingBindings(tree *cobra.Command) []boundFlag {
 	var found []boundFlag
 	var walk func(cmd *cobra.Command)
@@ -111,7 +111,7 @@ func emptyRefusingBindings(tree *cobra.Command) []boundFlag {
 		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
 			variable, bound := envbinding.Of("PTAH", flag)
 			_, refused := envbinding.EmptyRefused(flag)
-			if bound && refused && !slices.Contains(schemaVariables, variable) {
+			if bound && refused && !slices.Contains(schemaVariables, variable) && !slices.Contains(historyVariables, variable) {
 				found = append(found, boundFlag{command: cmd.CommandPath(), variable: variable, flag: flag})
 			}
 		})
@@ -143,4 +143,75 @@ func TestWriteVariableRefusalsAreTheDeclaredOnes(t *testing.T) {
 	}
 	slices.Sort(found)
 	c.Assert(found, qt.DeepEquals, writeVariableRefusals)
+}
+
+// historyVariables are the variables that say where the history of applied
+// migrations is: the revision table, its schema and its layout. Read as unset,
+// an empty one names the default history instead of the one the operator
+// meant, and a run over it finds nothing applied.
+var historyVariables = []string{
+	"PTAH_MIGRATIONS_SCHEMA",
+	"PTAH_MIGRATIONS_TABLE",
+	"PTAH_REVISIONS_SCHEMA",
+	"PTAH_REVISION_FORMAT",
+}
+
+// historyVariablesReadAsUnset are the bindings of historyVariables that keep
+// reading an empty value as unset, by command path and flag name. `migrations
+// lint` reads no history: the format only decides whether a version that is
+// not a number is reported, and its default, ptah, reports it.
+var historyVariablesReadAsUnset = []string{
+	"ptah migrations lint --revision-format",
+}
+
+// minHistoryVariableBindings is a floor on the bindings the walk finds, so a
+// walk that stopped matching cannot pass by finding nothing. The native tree
+// binds the variables on 41 flags that refuse, and the compatibility tree
+// PTAH_REVISIONS_SCHEMA on 5.
+const minHistoryVariableBindings = 46
+
+// historyVariableBindings walks tree and returns every flag bound to one of
+// historyVariables, split into those whose variable refuses an empty value and
+// the command paths and flag names of those that read it as unset.
+func historyVariableBindings(tree *cobra.Command) (refusing []boundFlag, readAsUnset []string) {
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+			variable, bound := envbinding.Of("PTAH", flag)
+			if !bound || !slices.Contains(historyVariables, variable) {
+				return
+			}
+			if _, refused := envbinding.EmptyRefused(flag); refused {
+				refusing = append(refusing, boundFlag{command: cmd.CommandPath(), variable: variable, flag: flag})
+				return
+			}
+			readAsUnset = append(readAsUnset, cmd.CommandPath()+" --"+flag.Name)
+		})
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(tree)
+	return refusing, readAsUnset
+}
+
+// TestEveryHistoryVariableRefusesAnEmptyValue holds every binding of
+// historyVariables on both binaries to the refusal, except the ones
+// historyVariablesReadAsUnset names, so a flag added without it fails. Each
+// rule is asked to refuse the empty value too, so a declaration that refuses
+// nothing does not pass for one in effect.
+func TestEveryHistoryVariableRefusesAnEmptyValue(t *testing.T) {
+	c := qt.New(t)
+	nativeRefusing, nativeUnset := historyVariableBindings(root.NewRootCommand())
+	compatRefusing, compatUnset := historyVariableBindings(cmdrefviews.Compat(atlascompatpolicy.Full()))
+	refusing := slices.Concat(nativeRefusing, compatRefusing)
+
+	c.Assert(len(refusing) >= minHistoryVariableBindings, qt.IsTrue, qt.Commentf("found %d bindings", len(refusing)))
+	c.Assert(slices.Concat(nativeUnset, compatUnset), qt.DeepEquals, historyVariablesReadAsUnset)
+	for _, binding := range refusing {
+		rule, _ := envbinding.EmptyRefused(binding.flag)
+		comment := qt.Commentf("%s --%s reads %s", binding.command, binding.flag.Name, binding.variable)
+		c.Check(rule.Check(binding.variable, binding.flag.Name, ""), qt.ErrorIs, envbinding.ErrEmptyValue, comment)
+		c.Check(rule.Check(binding.variable, binding.flag.Name, " "), qt.ErrorIs, envbinding.ErrEmptyValue, comment)
+	}
 }

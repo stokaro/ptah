@@ -393,7 +393,7 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 		return nil, err
 	}
 	opts.amount = amount
-	if err := applyAtlasMigrateDownEnvFallback(flagSet); err != nil {
+	if err := applyAtlasMigrateDownEnvFallback(verb, flagSet); err != nil {
 		return nil, err
 	}
 	for _, name := range atlasMigrateDownUnsupportedFlags {
@@ -450,7 +450,7 @@ var atlasMigrateDownExplicitOnlyFlags []string
 // applyAtlasMigrateDownEnvFallback fills unset flags from PTAH_<FLAG>
 // environment values, mirroring the env convention the forward path's arg
 // mapper applies.
-func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
+func applyAtlasMigrateDownEnvFallback(verb atlasVerb, flagSet *pflag.FlagSet) error {
 	var envErr error
 	flagSet.VisitAll(func(flag *pflag.Flag) {
 		if envErr != nil || flag.Changed {
@@ -476,6 +476,11 @@ func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
 			if !parsed {
 				return
 			}
+		} else if err := atlasVerbEmptyEnvCheck(verb, flag.Name, value); err != nil {
+			// The rule the forwarded path's flag declares, so an empty
+			// PTAH_REVISIONS_SCHEMA is refused on both paths.
+			envErr = err
+			return
 		} else if value == "" {
 			return
 		}
@@ -486,6 +491,16 @@ func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
 		flag.Changed = true
 	})
 	return envErr
+}
+
+// atlasVerbEmptyEnvCheck applies the [atlasargs.Flag.EmptyEnv] rule verb
+// declares on the flag name to value, the value of its PTAH_* variable.
+func atlasVerbEmptyEnvCheck(verb atlasVerb, name, value string) error {
+	flag, ok := atlasVerbFlag(verb, name)
+	if !ok {
+		return nil
+	}
+	return flag.EmptyEnv.Check(atlasFlagEnvName(name), name, value)
 }
 
 func atlasFlagEnvName(flagName string) string {
@@ -646,16 +661,19 @@ func resolveAtlasDownFormatTag(
 const atlasMigrateDownLimitFlag = "limit"
 
 // atlasMigrateDownTarget is the native rollback `migrate down` forwards to,
-// with PTAH_LIMIT and PTAH_TARGET unbound. The adapter decides where every
-// forwarded run stops, from the amount argument, --to-version and its
-// PTAH_TO_VERSION, --to-tag, or the documented default, and forwards that
-// stop typed. A variable the target read itself would be a second decision:
-// a malformed PTAH_LIMIT would refuse a run the adapter had settled, and a
-// PTAH_TARGET the --format path does not read would make the two paths stop
-// at different versions.
+// with PTAH_LIMIT, PTAH_TARGET and PTAH_MIGRATIONS_TABLE unbound. The adapter
+// decides where every forwarded run stops, from the amount argument,
+// --to-version and its PTAH_TO_VERSION, --to-tag, or the documented default,
+// and forwards that stop typed. A variable the target read itself would be a
+// second decision: a malformed PTAH_LIMIT would refuse a run the adapter had
+// settled, and a PTAH_TARGET the --format path does not read would make the
+// two paths stop at different versions. The revision table is Atlas's
+// atlas_schema_revisions, which no Atlas flag renames, and `migrate apply`,
+// `migrate status` and the --format path read no PTAH_MIGRATIONS_TABLE: read
+// by the target, it would roll back a history the other verbs never see.
 func atlasMigrateDownTarget() *cobra.Command {
 	cmd := migratedown.NewMigrateDownCommand()
-	for _, name := range []string{atlasMigrateDownLimitFlag, "target"} {
+	for _, name := range []string{atlasMigrateDownLimitFlag, "target", dbcli.MigrationsTableFlagName} {
 		if err := cmdflags.DisableEnvBinding(cmd.Flags(), name); err != nil {
 			panic(err)
 		}

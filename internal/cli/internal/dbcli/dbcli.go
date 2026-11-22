@@ -153,17 +153,49 @@ func RegisterURLScopedDatabaseSchemasFlag(flags *pflag.FlagSet, target *string) 
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
 
-// RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.
+// What leaving a flag that names the migration history out does, in the words
+// the refusal of its empty variable prints after "to"; see
+// [RefuseEmptyHistoryEnv].
+const (
+	// OmittedMigrationsSchema is what leaving --migrations-schema out does.
+	OmittedMigrationsSchema = "use the project file's schema or the default schema"
+	// OmittedMigrationsTable is what leaving --migrations-table out does.
+	OmittedMigrationsTable = "use the project file's table or the revision format default"
+	// OmittedRevisionFormat is what leaving --revision-format out does.
+	OmittedRevisionFormat = "use the project file's format or ptah"
+	// OmittedRevisionsSchema is what leaving the --revisions-schema of
+	// `ptah-compat migrate` out does.
+	OmittedRevisionsSchema = "use the project file's schema or the Atlas default"
+)
+
+// RefuseEmptyHistoryEnv makes the variable of the flag name, which says where
+// the history of applied migrations is, refuse the empty value and a value of
+// only spaces; omitted is what leaving the flag out does. Read as unset, such a
+// value names the default history instead of the one the operator meant. Over a
+// history recorded under another table, an empty PTAH_MIGRATIONS_TABLE finds
+// nothing applied: `migrations up` runs every migration again, and
+// `migrations generate` writes a DROP of the history tables. Every verb that
+// reads the history refuses it, a read-only one included, since a status read
+// from the default history reports every migration pending.
+func RefuseEmptyHistoryEnv(flags *pflag.FlagSet, name, omitted string) {
+	refuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted})
+}
+
+// RegisterMigrationsSchemaFlag registers the migration tracking table schema
+// flag. Its variable refuses an empty value; see [RefuseEmptyHistoryEnv].
 func RegisterMigrationsSchemaFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsSchemaFlagName, "",
 		"Schema for the migration tracking table. Empty uses the connection default schema, except that "+
 			"--revision-format atlas on a PostgreSQL-family URL with no search_path uses atlas_schema_revisions, as Atlas does.",
 	)
+	RefuseEmptyHistoryEnv(flags, MigrationsSchemaFlagName, OmittedMigrationsSchema)
 }
 
-// RegisterMigrationsTableFlag registers the migration tracking table name flag.
+// RegisterMigrationsTableFlag registers the migration tracking table name
+// flag. Its variable refuses an empty value; see [RefuseEmptyHistoryEnv].
 func RegisterMigrationsTableFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsTableFlagName, "", "Table name for the migration tracking table. Empty uses the revision format default.")
+	RefuseEmptyHistoryEnv(flags, MigrationsTableFlagName, OmittedMigrationsTable)
 }
 
 // ActorFlagName is the flag that names who a run records itself as.
@@ -200,9 +232,12 @@ func RegisterMigrationsEngineFlag(flags *pflag.FlagSet, target *string) {
 		"Storage engine for Ptah's migration tracking table (ClickHouse; for example \"ReplicatedMergeTree('/clickhouse/tables/{shard}/schema_migrations', '{replica}')\"). Empty uses the dialect default.")
 }
 
-// RegisterRevisionTableFormatFlag registers the migration revision table layout flag.
+// RegisterRevisionTableFormatFlag registers the migration revision table
+// layout flag. The layout names the table a run reads, so its variable refuses
+// an empty value; see [RefuseEmptyHistoryEnv].
 func RegisterRevisionTableFormatFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, RevisionTableFormatFlagName, "ptah", "Migration revision table format: ptah or atlas.")
+	RefuseEmptyHistoryEnv(flags, RevisionTableFormatFlagName, OmittedRevisionFormat)
 }
 
 // ParseSchemas parses a comma-separated schema allow-list.

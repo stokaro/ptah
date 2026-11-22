@@ -836,7 +836,7 @@ func atlasMigrateDownVerb() atlasVerb {
 			// mapper it still fails loudly instead of leaking to the native
 			// command as an unknown flag.
 			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
-			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
+			atlasRevisionsSchemaFlag("Schema for the revision table"),
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
 			// --skip-checks bypasses the pre-migration checks the down bodies
 			// being rolled back carry.
@@ -887,12 +887,7 @@ func atlasMigrateTestVerb() atlasVerb {
 			// in"), the same spelling it carries on apply, status and set. It
 			// maps onto the native --migrations-schema, which places the
 			// revision table a migrate_to step writes.
-			atlasargs.NativeString(
-				"revisions-schema",
-				"",
-				"Schema the revision table written by a migrate_to step resides in",
-				"migrations-schema",
-			),
+			atlasRevisionsSchemaFlag("Schema the revision table written by a migrate_to step resides in"),
 		},
 	}
 }

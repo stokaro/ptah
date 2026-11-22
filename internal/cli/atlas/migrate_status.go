@@ -46,6 +46,7 @@ metadata.`,
 	flags.StringVar(&opts.dir, "dir", opts.dir, "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", opts.dirFormat, "Migration directory format")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the revision table")
+	dbcli.RefuseEmptyHistoryEnv(flags, "revisions-schema", dbcli.OmittedRevisionsSchema)
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the migration directory with --dir"))
 	return cmd
