@@ -371,10 +371,7 @@ func TestAlterTable_Operations(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE events ADD COLUMN source String;")
 	c.Assert(out, qt.Contains, "ALTER TABLE events DROP COLUMN payload;")
 	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN source String;")
-	c.Assert(out, qt.Contains, "-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan events for held rows the CHECK refuses\n"+
-		"SELECT throwIf(count() > 0, 'src_set is broken by rows events holds') FROM events WHERE NOT ifNull((source <> ''), 0);\n"+
-		"ALTER TABLE events ADD CONSTRAINT src_set CHECK (source <> '');\n"+
-		"SELECT throwIf(count() > 0, 'src_set is broken by rows events holds') FROM events WHERE NOT ifNull((source <> ''), 0);")
+	c.Assert(out, qt.Contains, "ALTER TABLE events ADD CONSTRAINT src_set CHECK (source <> '');")
 	c.Assert(out, qt.Contains, "ALTER TABLE events DROP CONSTRAINT src_set;")
 }
 

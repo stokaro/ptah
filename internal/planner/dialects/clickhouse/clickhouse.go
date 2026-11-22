@@ -58,6 +58,9 @@ type Planner struct {
 	// rebuild says whether a change ClickHouse has no ALTER TABLE for creates
 	// the table again, or is refused.
 	rebuild tableRebuildPolicy
+	// skipCheckScan plans an added CHECK without the scans of the rows the
+	// table holds; see [checkChanges].
+	skipCheckScan bool
 }
 
 // WithStatementStyle returns a copy of the planner that spells its statements
@@ -65,6 +68,16 @@ type Planner struct {
 func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
 	cp := *p
 	cp.statements = style
+	return &cp
+}
+
+// WithCheckScanSkipped returns a copy of the planner that adds a CHECK
+// without the SELECTs that scan the rows the table holds for one it refuses
+// when skip is true, and with them when it is false. The receiver is not
+// modified.
+func (p *Planner) WithCheckScanSkipped(skip bool) *Planner {
+	cp := *p
+	cp.skipCheckScan = skip
 	return &cp
 }
 
@@ -94,7 +107,8 @@ func (p *Planner) capabilities() capability.Capabilities {
 //  2. CREATE TABLE for every newly-added table, with its CHECK constraints,
 //     after DROP for a view or materialized view that gives its name to one.
 //  3. ALTER TABLE for every per-table column add/modify/drop, after the CHECK
-//     drops and before the CHECK additions; see [checkChanges].
+//     drops and before the CHECK additions, with the SELECTs that scan each
+//     table for the held rows an added CHECK refuses; see [checkChanges].
 //  4. DROP TABLE for a removed table that gives its name to a view or
 //     materialized view; CREATE ROLE; CREATE, CREATE OR REPLACE, or DROP for
 //     plain views; REVOKE and GRANT; plus diagnostics for functions,
@@ -164,12 +178,16 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, handovers.beforeTables...)
 	result = p.addNewTables(result, diff)
 	before := result
-	checks := planCheckChanges(diff, rebuilds)
-	columns, err := p.modifyExistingTables(checks.drops, diff, rebuilds)
+	checks := p.planCheckChanges(ctx, diff, rebuilds)
+	altered, err := p.modifyExistingTables(nil, diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
-	columns = append(columns, checks.additions...)
+	columns, err := alterSteps(altered)
+	if err != nil {
+		return nil, err
+	}
+	columns = slices.Concat(checks.drops, columns, checks.additions)
 	after, replacementDrops, err := planObjectsAfterTables(slices.Clone(handovers.beforeViews), diff, p.capabilities(), handovers)
 	if err != nil {
 		return nil, err

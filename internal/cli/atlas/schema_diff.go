@@ -124,7 +124,7 @@ refuses.`
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	// Before the first early return, so a malformed value fails every diff.
-	rebuild, err := atlasTableRebuildRequested()
+	requests, err := resolveAtlasPlanningRequests()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -181,7 +181,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	policy = withAtlasTableRebuild(policy, rebuild)
+	policy = requests.applyTo(policy)
 	// An exporter is a named format, so selecting one is choosing the template
 	// this run renders through (stokaro/ptah#1620).
 	exported, exportSelected, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})

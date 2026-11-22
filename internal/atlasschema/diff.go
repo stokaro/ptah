@@ -144,7 +144,7 @@ type DiffOptions struct {
 	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
-	// [ptah.run/migration/planext.Options]. The caller selects it from its
+	// [ptah.run/core/planext.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
 	// ValidateSchema applies a caller-selected policy to both fully resolved
@@ -769,6 +769,7 @@ func diffResolvedStates(
 			OmitNullBackfill:    opts.OmitNullBackfill,
 			AllowTableRebuild:   opts.Policy.AllowsTableRebuild(dialect),
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			SkipCheckScan:       opts.Policy.SkipCheckScan,
 			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,
 			Shape:               opts.Shape,

@@ -140,7 +140,7 @@ type Dialect struct {
 	// TableRebuild reports that Ptah plans a change the engine has no ALTER
 	// TABLE for as the table created again with its rows kept, when the
 	// operator asks for it, and refuses the change otherwise. The request is
-	// [ptah.run/migration/planext.Options.AllowTableRebuild].
+	// [ptah.run/core/planext.Options.AllowTableRebuild].
 	TableRebuild bool `json:"table_rebuild,omitempty"`
 
 	// Migrations: what the migrator reads.

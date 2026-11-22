@@ -52,6 +52,7 @@ community CLI does on the same input.
 | [`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`](#ptah_sqlite_allow_virtual_table_drop) | Plan a virtual-table drop |
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
 | [`PTAH_ALLOW_TABLE_REBUILD`](#ptah_allow_table_rebuild) | Plan a change the target cannot make in place as a table rebuild |
+| [`PTAH_SKIP_CHECK_SCAN`](#ptah_skip_check_scan) | Add a ClickHouse `CHECK` without scanning the rows the table holds |
 | [`PTAH_ALLOW_SERVER_CLEAN`](#ptah_allow_server_clean) | Clean a whole MySQL or MariaDB server |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
 | [`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`](#ptah_atlas_diff_without_dev_url) | Diff a schema file with a database, no dev database |
@@ -210,6 +211,22 @@ or in an env, asks for the same on ClickHouse alone. The variable asks on its ow
 to `1` it allows a rebuild a block set to `false` refuses, and set to `0` it withdraws
 nothing a block asks for. The community CLI has no YDB or ClickHouse driver and plans
 no rebuild.
+
+## `PTAH_SKIP_CHECK_SCAN`
+
+By default, `ptah-compat schema apply`, `schema diff`, `schema plan new` and
+`migrate diff` scan a ClickHouse table for the rows it holds that a `CHECK` the
+plan adds refuses, once ahead of `ADD CONSTRAINT` and again after it, because
+ClickHouse checks only the rows written after the `ADD`. A refused row stops the
+plan. Each scan reads the whole table.
+
+Set it to `1` and the plan writes no scan. A comment above each `ADD CONSTRAINT`
+says that the rows the table holds are not checked, the run warns once, and a held
+row the `CHECK` refuses stays in the table. See
+[CHECK constraints](../../databases/clickhouse/#check-constraints).
+
+The native `--skip-check-scan` flag reads the same variable. The community CLI has
+no ClickHouse driver and writes no scan, so the strict profile refuses the variable.
 
 ## `PTAH_ATLAS_LINT_WITHOUT_DEV_URL`
 

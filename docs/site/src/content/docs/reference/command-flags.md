@@ -940,6 +940,7 @@ Read the columns as follows.
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--skip-check-scan` | `bool` | `false` | `PTAH_SKIP_CHECK_SCAN` | — |
 | `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
@@ -1081,6 +1082,7 @@ Read the columns as follows.
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--skip-check-scan` | `bool` | `false` | `PTAH_SKIP_CHECK_SCAN` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -1674,6 +1676,7 @@ Read the columns as follows.
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
+| `--skip-check-scan` | `bool` | `false` | `PTAH_SKIP_CHECK_SCAN` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 | `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
@@ -1719,6 +1722,7 @@ Read the columns as follows.
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--skip-check-scan` | `bool` | `false` | `PTAH_SKIP_CHECK_SCAN` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -1744,6 +1748,7 @@ Read the columns as follows.
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--skip-check-scan` | `bool` | `false` | `PTAH_SKIP_CHECK_SCAN` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 | `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
@@ -1906,6 +1911,7 @@ Read the columns as follows.
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--skip-check-scan` | `bool` | `false` | `PTAH_SKIP_CHECK_SCAN` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>

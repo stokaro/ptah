@@ -206,6 +206,18 @@ type Options struct {
 	// native flag, [DefaultTableRebuildRequest]; a surface that has no such
 	// flag, such as ptah-compat, passes the spelling it reads instead.
 	TableRebuildRequest string
+	// SkipCheckScan plans an added CHECK constraint without the statements
+	// that read the rows the table already holds for one the constraint
+	// refuses. Only ClickHouse plans them: its ADD CONSTRAINT checks only the
+	// rows written after it, so the plan reads the table before the change
+	// and again after the ADD, and a held row the CHECK refuses stops the
+	// plan. Each read scans the whole table.
+	//
+	// Set, the plan reads no rows, says above each ADD CONSTRAINT that the
+	// rows the table holds were not checked, and the run warns once. A target
+	// whose ADD CONSTRAINT checks the rows the table holds plans as it would
+	// without this.
+	SkipCheckScan bool
 	// Statements selects the statement style. The zero value is
 	// [StatementStyleAnnotated]. Every Ptah command that plans a change, the
 	// native ones and ptah-compat alike, selects [StatementStyleExact], which

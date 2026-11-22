@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/cli/internal/checkscan"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -134,6 +135,7 @@ select nothing are refused.`,
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
+	checkscan.Register(cmd)
 	secretrotation.Register(cmd)
 
 	cmdutil.ConfigureCommand(cmd)
@@ -918,8 +920,8 @@ func loadGenerateSchema(
 
 // generateDiffPolicy maps the project's diff policy, and what the operator
 // asked this invocation to plan that a comparison alone would not -- a table
-// rebuild, and the rotation of the secrets named -- onto the generator's
-// policy.
+// rebuild, the rotation of the secrets named, and CHECK additions without
+// their scans -- onto the generator's policy.
 func generateDiffPolicy(cmd *cobra.Command, projectCfg projectconfig.Config) (generator.DiffPolicy, error) {
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
@@ -929,12 +931,17 @@ func generateDiffPolicy(cmd *cobra.Command, projectCfg projectconfig.Config) (ge
 	if err != nil {
 		return generator.DiffPolicy{}, err
 	}
+	skipCheckScan, err := checkscan.Requested(cmd)
+	if err != nil {
+		return generator.DiffPolicy{}, err
+	}
 	return generator.DiffPolicy{
 		SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
 		ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
 		OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
 		AllowTableRebuild:   rebuild,
+		SkipCheckScan:       skipCheckScan,
 		RotateSecrets:       rotateSecrets,
 	}, nil
 }

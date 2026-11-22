@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/clirun"
+	"ptah.run/internal/dbtarget"
 )
 
 // ClickHouse checks each row an INSERT writes against the CHECK constraints of
@@ -71,15 +74,19 @@ func checkInsert(c *qt.C, conn *dbschema.DatabaseConnection, row string) error {
 	return err
 }
 
-// heldRowsNote is the comment the plan writes before the scan that precedes
-// each ADD CONSTRAINT of table t.
-const heldRowsNote = "-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan t for held rows the CHECK refuses\n"
+// heldRowScan is the SELECT that stops the plan when table t holds a row the
+// CHECK name with condition refuses.
+func heldRowScan(name, condition string) string {
+	return fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM t WHERE NOT ifNull((%s), 0);\n", name, condition)
+}
 
 // addedCheck is the plan text that adds the CHECK name with condition to
-// table t: the note, the scan before the ADD, the ADD and the scan after it.
+// table t: the note, the ADD and the scan after it. The scan ahead of it comes
+// earlier in the plan.
 func addedCheck(name, condition string) string {
-	scan := fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM t WHERE NOT ifNull((%s), 0);\n", name, condition)
-	return heldRowsNote + scan + fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s);\n", name, condition) + scan
+	return "-- CLICKHOUSE: ADD CONSTRAINT " + name + " checks only the rows written after it; " +
+		"a SELECT ahead of it and one after it scan t for held rows the CHECK refuses\n" +
+		fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s);\n", name, condition) + heldRowScan(name, condition)
 }
 
 var (
@@ -119,10 +126,7 @@ func TestApplyClickHouseTableChecksE2E(t *testing.T) {
 
 			plan, changed := checkApply(c, url, changedChecks)
 			c.Assert(changed, qt.Equals, "Schema is synced, no changes to be made.\n")
-			c.Assert(plan, qt.Contains, heldRowsNote+
-				"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);\n"+
-				"ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);\n"+
-				"SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);\n")
+			c.Assert(plan, qt.Contains, heldRowScan("t_check", "v > 1")+addedCheck("t_check", "v > 1"))
 			c.Assert(catalogReadBack(c, url, []string{checkConstraints}), qt.DeepEquals,
 				[][]string{{"CONSTRAINT t_w_check CHECK, CONSTRAINT t_check CHECK"}})
 			c.Assert(checkInsert(c, conn, "(2, 1, 'b', 1)"), qt.ErrorMatches, "(?s).*code: 469, message: Constraint `t_check` .*")
@@ -234,9 +238,8 @@ func TestApplyClickHouseTableChecks_AnUnnamedCheckKeepsItsName(t *testing.T) {
 
 			c.Assert(swapped, qt.Equals, "Schema is synced, no changes to be made.\n")
 			c.Assert(again, qt.Equals, "Schema is synced, no changes to be made.\n")
-			c.Assert(plan, qt.Contains, "ALTER TABLE t DROP CONSTRAINT t_check;\n")
-			c.Assert(plan, qt.Contains, addedCheck("t_check", "v != 7"))
-			c.Assert(plan, qt.Contains, addedCheck("t_check2", "v < 10"))
+			c.Assert(plan, qt.Contains, heldRowScan("t_check", "v != 7")+heldRowScan("t_check2", "v < 10")+
+				"ALTER TABLE t DROP CONSTRAINT t_check;\n"+addedCheck("t_check", "v != 7")+addedCheck("t_check2", "v < 10"))
 			c.Assert(plan, qt.Not(qt.Contains), "t_check1")
 			c.Assert(catalogReadBack(c, url, []string{checkConstraints}), qt.DeepEquals,
 				[][]string{{"CONSTRAINT t_check1 CHECK, CONSTRAINT t_check CHECK, CONSTRAINT t_check2 CHECK"}})
@@ -263,8 +266,7 @@ func TestApplyClickHouseTableChecks_ACheckOnAColumnInAnotherCaseIsAnotherCheck(t
 			plan, again := checkApply(c, url, tableChecks(upperV, [2]string{"t_check", "V > 0"}))
 
 			c.Assert(again, qt.Equals, "Schema is synced, no changes to be made.\n")
-			c.Assert(plan, qt.Contains, "ALTER TABLE t DROP CONSTRAINT t_check;\n")
-			c.Assert(plan, qt.Contains, addedCheck("t_check", "V > 0"))
+			c.Assert(plan, qt.Contains, heldRowScan("t_check", "V > 0")+"ALTER TABLE t DROP CONSTRAINT t_check;\n"+addedCheck("t_check", "V > 0"))
 			c.Assert(checkInsert(c, conn, "(1, 1, 'a', 0)"), qt.ErrorMatches, "(?s).*code: 469, message: Constraint `t_check` .*")
 			c.Assert(checkInsert(c, conn, "(1, 0, 'a', 1)"), qt.IsNil)
 		})
@@ -322,5 +324,317 @@ func TestApplyClickHouseTableChecks_AnAddedCheckStopsOnAHeldRowItRefuses(t *test
 				c.Assert(again.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 			})
 		}
+	}
+}
+
+// TestApplyClickHouseTableChecks_AChangedCheckStopsAheadOfItsDrop changes the
+// condition of a CHECK while table t holds a row the new condition refuses and
+// the old one takes. The plan changes no column of t, so the scan runs ahead
+// of DROP CONSTRAINT: the apply stops with code 395 and reports the scan alone,
+// and the table keeps the old CHECK, which still refuses a row and still takes
+// the held value.
+func TestApplyClickHouseTableChecks_AChangedCheckStopsAheadOfItsDrop(t *testing.T) {
+	c := qt.New(t)
+	for _, server := range clickHouseServers(c) {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			url := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+			conn := connectDevDialect(c, url)
+			checkApply(c, url, tableChecks("", [2]string{"t_held", "v > 0"}))
+			c.Assert(checkInsert(c, conn, "(1, 3, 'a')"), qt.IsNil)
+			dir := checkEntityDir(c, tableChecks("", [2]string{"t_held", "v > 5"}))
+
+			applied := runPtahIn(c, "schema", "apply", "--db-url", url, "--root-dir", dir, "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0)
+			c.Assert(applied.Stderr, qt.Matches, "(?s).*code: 395, message: t_held is broken by rows t holds.*")
+			c.Assert(applied.Stderr, qt.Contains,
+				"\nSQL: SELECT throwIf(count() > 0, 't_held is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0)\n")
+			c.Assert(catalogReadBack(c, url, []string{checkConstraints, "SELECT count() FROM t"}), qt.DeepEquals,
+				[][]string{{"CONSTRAINT t_held CHECK"}, {"1"}})
+			c.Assert(checkInsert(c, conn, "(9, -7, 'b')"), qt.ErrorMatches, "(?s).*code: 469, message: Constraint `t_held` .*")
+			c.Assert(checkInsert(c, conn, "(2, 3, 'b')"), qt.IsNil)
+		})
+	}
+}
+
+// createdT is table t as a schema file, and checkedT is the same table with
+// the CHECK t_held.
+const (
+	createdT = "CREATE TABLE `t` (`id` UInt64, `v` Int32) ENGINE = MergeTree ORDER BY id;\n"
+	checkedT = "CREATE TABLE `t` (`id` UInt64, `v` Int32, CONSTRAINT `t_held` CHECK (v > 0)) ENGINE = MergeTree ORDER BY id;\n"
+)
+
+// unscannedWarning is the run warning of a plan that adds CHECK t_held to t
+// without the scans.
+const unscannedWarning = "warning: CHECK t_held on t is added without a scan of the rows t holds: " +
+	"the server checks only the rows written after ADD CONSTRAINT, so a held row the CHECK refuses stays\n"
+
+// TestApplyClickHouseTableChecks_WithoutTheScansAHeldRowStays adds a CHECK to
+// table t while it holds a row the CHECK refuses, with the scans skipped by the
+// flag and by its variable alone. The plan writes no scan and says so above
+// the ADD, the run warns, and the apply succeeds: the row stays, and the CHECK
+// refuses the rows written after it.
+func TestApplyClickHouseTableChecks_WithoutTheScansAHeldRowStays(t *testing.T) {
+	c := qt.New(t)
+	unscanned := "-- CLICKHOUSE: ADD CONSTRAINT t_held checks only the rows written after it, " +
+		"and the plan has no scan: the rows t already holds are not checked\nALTER TABLE t ADD CONSTRAINT t_held CHECK (v > 0);\n"
+	for _, server := range clickHouseServers(c) {
+		for _, test := range []struct {
+			name string
+			args []string
+			env  []string
+		}{
+			{name: "the flag", args: []string{"--skip-check-scan"}},
+			{name: "the variable", env: []string{"PTAH_SKIP_CHECK_SCAN=1"}},
+		} {
+			t.Run(server.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				url := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+				conn := connectDevDialect(c, url)
+				checkApply(c, url, tableChecks(""))
+				c.Assert(checkInsert(c, conn, "(1, 0, 'a')"), qt.IsNil)
+				dir := checkEntityDir(c, tableChecks("", [2]string{"t_held", "v > 0"}))
+
+				applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Env: append(environmentWithoutPtahVariables(), test.env...)},
+					append([]string{"schema", "apply", "--db-url", url, "--root-dir", dir, "--auto-approve"}, test.args...)...)
+
+				c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+				c.Assert(applied.Stdout, qt.Contains, unscanned)
+				c.Assert(applied.Stdout, qt.Not(qt.Contains), "throwIf")
+				c.Assert(applied.Stderr, qt.Contains, unscannedWarning)
+				c.Assert(catalogReadBack(c, url, []string{checkConstraints, "SELECT count() FROM t"}), qt.DeepEquals,
+					[][]string{{"CONSTRAINT t_held CHECK"}, {"1"}})
+				c.Assert(checkInsert(c, conn, "(2, 0, 'b')"), qt.ErrorMatches, "(?s).*code: 469, message: Constraint `t_held` .*")
+			})
+		}
+	}
+}
+
+// TestApplyClickHouseTableChecks_CompatReadsTheScanVariable adds a CHECK
+// through ptah-compat while table t holds a row the CHECK refuses. Without the
+// variable the scan stops the apply and the CHECK stays absent; with it the
+// apply succeeds, warns, and leaves the row.
+func TestApplyClickHouseTableChecks_CompatReadsTheScanVariable(t *testing.T) {
+	c := qt.New(t)
+	for _, server := range clickHouseServers(c) {
+		for _, test := range []struct {
+			name       string
+			env        []string
+			wantExit   int
+			wantStderr string
+			wantChecks string
+		}{
+			{name: "without the variable", wantExit: 1, wantStderr: "code: 395, message: t_held is broken by rows t holds"},
+			{name: "with the variable", env: []string{"PTAH_SKIP_CHECK_SCAN=1"}, wantStderr: unscannedWarning, wantChecks: "CONSTRAINT t_held CHECK"},
+		} {
+			t.Run(server.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				url := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+				devURL := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+				conn := connectDevDialect(c, url)
+				dir := c.TempDir()
+				project := "env \"local\" {\n  url = \"" + url + "\"\n  src = \"file://schema.sql\"\n  dev = \"" + devURL + "\"\n}\n"
+				c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
+				c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(createdT), 0o600), qt.IsNil)
+				first := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
+					"schema", "apply", "--env", "local", "--auto-approve")
+				c.Assert(first.ExitCode, qt.Equals, 0, historyComment(first))
+				c.Assert(checkInsert(c, conn, "(1, 0)"), qt.IsNil)
+				c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(checkedT), 0o600), qt.IsNil)
+
+				applied := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: append(environmentWithoutPtahVariables(), test.env...)},
+					"schema", "apply", "--env", "local", "--auto-approve")
+
+				c.Assert(applied.ExitCode, qt.Equals, test.wantExit, historyComment(applied))
+				c.Assert(applied.Stderr, qt.Contains, test.wantStderr)
+				c.Assert(catalogReadBack(c, url, []string{checkConstraints, "SELECT count() FROM t"}), qt.DeepEquals,
+					[][]string{{test.wantChecks}, {"1"}})
+			})
+		}
+	}
+}
+
+// TestGenerateClickHouseTableChecks_TheMigrationKeepsOrSkipsTheScans generates
+// a migration whose up file adds a CHECK to table t, and one whose down file
+// adds it back, with and without --skip-check-scan. By default the file scans t
+// for the held rows the CHECK refuses, ahead of the ADD and after it; with the
+// flag it writes no scan and says so above the ADD. Each row pins the whole
+// body after the generated header. The rollback adds the CHECK the database
+// holds, and its scans read the condition as the server stores it: 26.10 wraps
+// it in parentheses, and 24.10 does not.
+func TestGenerateClickHouseTableChecks_TheMigrationKeepsOrSkipsTheScans(t *testing.T) {
+	c := qt.New(t)
+	const up, down = "-- Migration generated from schema differences\n", "-- Migration rollback\n"
+	scanned := strings.TrimSuffix(heldRowScan("t_held", "v > 0")+addedCheck("t_held", "v > 0"), "\n")
+	stored := map[string]string{"current": "(v > 0)", "24.10": "v > 0"}
+	readBack := func(server string) string {
+		return strings.TrimSuffix(heldRowScan("t_held", stored[server])+
+			strings.TrimSuffix(addedCheck("t_held", "v > 0"), heldRowScan("t_held", "v > 0"))+heldRowScan("t_held", stored[server]), "\n")
+	}
+	unscanned := "-- CLICKHOUSE: ADD CONSTRAINT t_held checks only the rows written after it, " +
+		"and the plan has no scan: the rows t already holds are not checked\nALTER TABLE t ADD CONSTRAINT t_held CHECK (v > 0);"
+	held := tableChecks("", [2]string{"t_held", "v > 0"})
+	for _, server := range clickHouseServers(c) {
+		for _, test := range []struct {
+			name             string
+			current, desired string
+			file, header     string
+			args             []string
+			want             string
+		}{
+			{name: "up, scanned", current: tableChecks(""), desired: held, file: "*.up.sql", header: up, want: scanned},
+			{name: "up, unscanned", current: tableChecks(""), desired: held, file: "*.up.sql", header: up, args: []string{"--skip-check-scan"}, want: unscanned},
+			{name: "down, scanned", current: held, desired: tableChecks(""), file: "*.down.sql", header: down, want: readBack(server.name)},
+			{name: "down, unscanned", current: held, desired: tableChecks(""), file: "*.down.sql", header: down, args: []string{"--skip-check-scan"}, want: unscanned},
+		} {
+			t.Run(server.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				url := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+				checkApply(c, url, test.current)
+				dir := checkEntityDir(c, test.desired)
+				migrations := c.TempDir()
+
+				generated := runPtahIn(c, append([]string{"migrations", "generate", "--db-url", url, "--root-dir", dir, "--migrations-dir", migrations}, test.args...)...)
+				written, err := filepath.Glob(filepath.Join(migrations, test.file))
+
+				c.Assert(generated.ExitCode, qt.Equals, 0, historyComment(generated))
+				c.Assert(err, qt.IsNil)
+				c.Assert(written, qt.HasLen, 1)
+				body, err := os.ReadFile(written[0])
+				c.Assert(err, qt.IsNil)
+				c.Assert(string(body), qt.Matches, `(?s)`+regexp.QuoteMeta(test.header)+`.*\n\n`+regexp.QuoteMeta(test.want))
+			})
+		}
+	}
+}
+
+// planningProject is a directory whose schema.sql holds schema. Its atlas.hcl
+// env local names url, schema.sql, devURL and the migration directory
+// migrations, whose URL ends in query.
+func planningProject(c *qt.C, url, devURL, schema, query string) string {
+	c.Helper()
+	dir := c.TempDir()
+	project := "env \"local\" {\n  url = \"" + url + "\"\n  src = \"file://schema.sql\"\n  dev = \"" + devURL + "\"\n" +
+		"  migration {\n    dir = \"file://migrations" + query + "\"\n  }\n}\n"
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(schema), 0o600), qt.IsNil)
+	return dir
+}
+
+// Markers of the two plans, free of the characters JSON escapes, so they match
+// a plan document too: the scan's message, and the note above an ADD the plan
+// does not scan for.
+const (
+	scanMarker = "t_held is broken by rows t holds"
+	noteMarker = "ADD CONSTRAINT t_held checks only the rows written after it, " +
+		"and the plan has no scan: the rows t already holds are not checked"
+)
+
+// plannedChecks runs a planning verb in dir and returns what it planned: its
+// standard output and error, followed by the migration files it wrote for the
+// change named add.
+func plannedChecks(c *qt.C, target clirun.Target, dir string, env, args []string) string {
+	c.Helper()
+	got := clirun.Run(c, target, clirun.Options{Dir: dir, Env: append(environmentWithoutPtahVariables(), env...)}, args...)
+	c.Assert(got.ExitCode, qt.Equals, 0, historyComment(got))
+	written, err := filepath.Glob(filepath.Join(dir, "migrations", "*_add*.sql"))
+	c.Assert(err, qt.IsNil)
+	planned := []string{got.Stdout, got.Stderr}
+	for _, path := range written {
+		body, err := os.ReadFile(path)
+		c.Assert(err, qt.IsNil)
+		planned = append(planned, string(body))
+	}
+	return strings.Join(planned, "\n")
+}
+
+// TestPlanClickHouseTableChecks_EachPlanningVerbReadsTheOptOut plans the CHECK
+// t_held onto table t through each verb that plans without applying, once as
+// it is and once with the opt-out: --skip-check-scan on a native verb, and
+// PTAH_SKIP_CHECK_SCAN=1 on a ptah-compat verb, which takes no flag. The plan
+// scans t without the opt-out; with it the plan has the note and no scan.
+// The apply and generate tests above cover the verbs that write, and the next
+// test covers ptah-compat migrate diff.
+func TestPlanClickHouseTableChecks_EachPlanningVerbReadsTheOptOut(t *testing.T) {
+	c := qt.New(t)
+	for _, server := range clickHouseServers(c) {
+		for _, verb := range []struct {
+			name      string
+			target    clirun.Target
+			args      []string
+			optOutArg []string
+			optOutEnv []string
+		}{
+			{name: "schema compare", target: clirun.Ptah, args: []string{"schema", "compare", "--db-url", "{url}", "--schema-file", "schema.sql"},
+				optOutArg: []string{"--skip-check-scan"}},
+			{name: "schema diff", target: clirun.Ptah, args: []string{"schema", "diff", "--from", "{url}", "--to", "schema.sql"},
+				optOutArg: []string{"--skip-check-scan"}},
+			{name: "schema plan", target: clirun.Ptah, args: []string{"schema", "plan", "--db-url", "{url}", "--schema-file", "schema.sql", "--dry-run"},
+				optOutArg: []string{"--skip-check-scan"}},
+			{name: "migrations plan", target: clirun.Ptah, args: []string{"migrations", "plan", "--db-url", "{url}", "--schema-file", "schema.sql"},
+				optOutArg: []string{"--skip-check-scan"}},
+			{name: "compat schema diff", target: clirun.Compat, args: []string{"schema", "diff", "--env", "local", "--from", "{url}", "--to", "file://schema.sql"},
+				optOutEnv: []string{"PTAH_SKIP_CHECK_SCAN=1"}},
+			{name: "compat schema plan", target: clirun.Compat, args: []string{"schema", "plan", "--env", "local", "--dry-run"},
+				optOutEnv: []string{"PTAH_SKIP_CHECK_SCAN=1"}},
+		} {
+			t.Run(server.name+"/"+verb.name, func(t *testing.T) {
+				c := qt.New(t)
+				url := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+				devURL := createdDevDialectDatabase(c, server.url, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+				args := strings.Split(strings.ReplaceAll(strings.Join(verb.args, "\x00"), "{url}", url), "\x00")
+				_, err := connectDevDialect(c, url).ExecContext(c.Context(), createdT)
+				c.Assert(err, qt.IsNil)
+				dir := planningProject(c, url, devURL, checkedT, "")
+
+				plain := plannedChecks(c, verb.target, dir, nil, args)
+				optedOut := plannedChecks(c, verb.target, dir, verb.optOutEnv, append(args, verb.optOutArg...))
+
+				c.Assert(plain, qt.Contains, scanMarker)
+				c.Assert(plain, qt.Not(qt.Contains), noteMarker)
+				c.Assert(optedOut, qt.Contains, noteMarker)
+				c.Assert(optedOut, qt.Not(qt.Contains), scanMarker)
+				c.Assert(optedOut, qt.Contains, unscannedWarning)
+			})
+		}
+	}
+}
+
+// TestPlanClickHouseTableChecks_CompatMigrateDiffReadsTheOptOut writes a
+// migration directory that creates table t, then has ptah-compat migrate diff
+// add the CHECK t_held to it, with PTAH_SKIP_CHECK_SCAN=1 and without, in the
+// Atlas layout and in golang-migrate's, which plans a rollback too. The
+// migration file scans t without the variable; with it the file has the note
+// and no scan. It runs on the current line alone: migrate diff replays the
+// directory on the dev database and cleans it, and Ptah refuses that cleanup
+// on a server older than 24.11, which cannot prove it sees the whole catalog.
+func TestPlanClickHouseTableChecks_CompatMigrateDiffReadsTheOptOut(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		query      string
+		env        []string
+		want, omit string
+	}{
+		{name: "atlas, without the variable", want: scanMarker, omit: noteMarker},
+		{name: "atlas, with the variable", env: []string{"PTAH_SKIP_CHECK_SCAN=1"}, want: noteMarker, omit: scanMarker},
+		{name: "golang-migrate, without the variable", query: "?format=golang-migrate", want: scanMarker, omit: noteMarker},
+		{name: "golang-migrate, with the variable", query: "?format=golang-migrate", env: []string{"PTAH_SKIP_CHECK_SCAN=1"}, want: noteMarker, omit: scanMarker},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := dbtarget.URL(c, dbtarget.ClickHouse)
+			url := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
+			dir := planningProject(c, url, devURL, createdT, test.query)
+			initial := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()}, "migrate", "diff", "--env", "local", "init")
+			c.Assert(initial.ExitCode, qt.Equals, 0, historyComment(initial))
+			c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(checkedT), 0o600), qt.IsNil)
+
+			planned := plannedChecks(c, clirun.Compat, dir, test.env, []string{"migrate", "diff", "--env", "local", "add"})
+
+			c.Assert(planned, qt.Contains, test.want)
+			c.Assert(planned, qt.Not(qt.Contains), test.omit)
+		})
 	}
 }
