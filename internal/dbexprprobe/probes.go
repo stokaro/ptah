@@ -27,9 +27,11 @@ import (
 //
 // one checks the text it writes into its statements with
 // [ptah.run/internal/probetext] before it runs any of them, and answers the
-// check's error for text that could reach past its place. That probe gets the
-// zero answer, as a declaration the server refused does, and a warning naming
-// it; the probes after it run. After each probe the transaction is named again
+// check's error for text that could reach past its place, or an error
+// wrapping errNotPermitted where its temporary table was refused for lack of
+// privilege ([warnedRefusal]). That probe gets the zero answer, as a
+// declaration the server refused does, and a warning naming it; the probes
+// after it run. After each probe the transaction is named again
 // ([ptah.run/internal/probetx]), and one that is not the transaction the probes
 // began in stops them all with an error.
 func resolveProbes[Probe any, Answer any](
@@ -45,8 +47,8 @@ func resolveProbes[Probe any, Answer any](
 		for i, probe := range probes {
 			key, object := describe(probe)
 			answer, err := one(ctx, tx, dialect, i, probe)
-			uncontained := errors.Is(err, probetext.ErrUncontained)
-			if err != nil && !uncontained {
+			warned := errors.Is(err, probetext.ErrUncontained) || errors.Is(err, errNotPermitted)
+			if err != nil && !warned {
 				return err
 			}
 			// A probe refused for its text may have run a statement first, as
@@ -55,7 +57,7 @@ func resolveProbes[Probe any, Answer any](
 			if err := probetx.Check(ctx); err != nil {
 				return fmt.Errorf("%s: %s: %w", label, object, err)
 			}
-			if uncontained {
+			if warned {
 				probetext.Warn(ctx, key, object, err)
 				var unresolved Answer
 				resolved[key] = unresolved
@@ -200,6 +202,44 @@ func runRefusableProbe(
 func uncontainedOnly(refused error) error {
 	if errors.Is(refused, probetext.ErrUncontained) {
 		return refused
+	}
+	return nil
+}
+
+// insufficientPrivilege is the SQLSTATE a probe statement is refused with
+// when the role lacks a privilege it needs. A role without TEMPORARY on the
+// database is the common case: PostgreSQL 19 answers `permission denied to
+// create temporary tables in database`, and CockroachDB v26.4.1 `does not
+// have TEMPORARY privilege on database`. It is not the only one: PostgreSQL 19
+// answers `permission denied for schema private` for a CHECK that calls
+// `private.positive(amount)` from a schema the role may not use.
+const insufficientPrivilege = "42501"
+
+// errNotPermitted is what [warnedRefusal] wraps a refusal for lack of
+// privilege in. It reads as the reason in the warning [probetext.Warn] raises,
+// before the server's answer, which names the privilege.
+var errNotPermitted = errors.New("the role lacks a privilege the probe statement needs")
+
+// notPermitted is a probe statement's refusal for lack of privilege: it wraps
+// errNotPermitted and the server's answer.
+type notPermitted struct{ server error }
+
+func (e notPermitted) Error() string   { return errNotPermitted.Error() + ": " + e.server.Error() }
+func (e notPermitted) Unwrap() []error { return []error{errNotPermitted, e.server} }
+
+// warnedRefusal is [uncontainedOnly] for a probe that also warns when the
+// server refused one of its statements for lack of privilege. Without the
+// warning such a declaration is compared as written on every run with nothing
+// to say why, and a CHECK the server spells otherwise is planned again each
+// time. Any other refusal is nil, which leaves the declaration unresolved
+// without a warning.
+func warnedRefusal(refused error) error {
+	if errors.Is(refused, probetext.ErrUncontained) {
+		return refused
+	}
+	var state interface{ SQLState() string }
+	if errors.As(refused, &state) && state.SQLState() == insufficientPrivilege {
+		return notPermitted{server: refused}
 	}
 	return nil
 }

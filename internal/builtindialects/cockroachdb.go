@@ -168,6 +168,10 @@ func cockroachDB() descriptor.Dialect {
 			ExpressionProbes:               "pg-catalog",
 			ProbeViewsInSchema:             true,
 			RewritesRoutineBodies:          true,
+			// Without it CREATE TEMPORARY TABLE is refused with XCEXF, and a
+			// CHECK is compared as written: v26.4.1 stores `code <> 'C:x'` as
+			// `(code != 'C:x'::text)`, so every such CHECK is planned again.
+			TemporaryTablesSetting: "experimental_enable_temp_tables",
 			// The kind GeneratedColumnDefault creates a column declared with
 			// none, so such a declaration compares equal to the column Ptah
 			// built. CockroachDB itself builds `AS (expr)` VIRTUAL.
