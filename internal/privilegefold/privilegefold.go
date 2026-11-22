@@ -118,15 +118,20 @@ func withoutColumns(grants []schemamodel.Grant, role, table, privilege string) [
 	return kept
 }
 
-// HeldOnTable reports whether a grant to role gives privilege, or ALL, on the
-// whole of table, where privilege ALL asks about any grant there. A revoke of
-// that privilege on one column cannot take it away: the table privilege covers
-// every column.
-func HeldOnTable(grants []schemamodel.Grant, role, table, privilege string) bool {
-	return slices.ContainsFunc(grants, func(grant schemamodel.Grant) bool {
-		return grant.Role == role && tableWide(grant) && grant.OnTable == table &&
+// TableGrantOf returns the first grant to role that gives privilege, or ALL,
+// on the whole of a table onTable accepts, where privilege ALL asks about any
+// grant there. onTable receives the grant's table as the file spells it, so the
+// caller decides which spellings name one table. A revoke of that privilege on
+// one column cannot take it away: the table privilege covers every column.
+func TableGrantOf(grants []schemamodel.Grant, role, privilege string, onTable func(table string) bool) (schemamodel.Grant, bool) {
+	index := slices.IndexFunc(grants, func(grant schemamodel.Grant) bool {
+		return grant.Role == role && tableWide(grant) && onTable(grant.OnTable) &&
 			slices.ContainsFunc(grant.Privileges, func(name string) bool { return names(privilege, name) || name == allPrivileges })
 	})
+	if index < 0 {
+		return schemamodel.Grant{}, false
+	}
+	return grants[index], true
 }
 
 // Without takes one privilege, or every privilege for ALL, out of every grant

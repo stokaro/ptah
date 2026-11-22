@@ -283,6 +283,21 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 				`WITH GRANT OPTION`,
 		},
 		{
+			name: "a column revoke on a bare table after a grant on its qualified name",
+			sql:  "GRANT UPDATE ON public.t TO r;\nREVOKE UPDATE (name) ON t FROM r;",
+			wantErr: `REVOKE UPDATE \(name\) ON t FROM r follows a GRANT of UPDATE on the whole table, which covers every column, ` +
+				`so revoking it on columns takes nothing away; grant it on the columns that keep it instead; ` +
+				`if t and public.t are different tables, qualify both`,
+		},
+		{
+			name: "GRANT OPTION FOR on a bare table whose qualified name holds the privilege on the whole table",
+			sql: "GRANT UPDATE ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON public.t TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR UPDATE ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR UPDATE ON TABLE t FROM r takes the option from grants on the whole table, and an ` +
+				`earlier GRANT UPDATE \(name\) ON public.t gives it on columns, which keep it; declare that GRANT without ` +
+				`WITH GRANT OPTION; if t and public.t are different tables, qualify both`,
+		},
+		{
 			name:    "GRANT OPTION FOR on columns after a grant on the whole table",
 			sql:     "GRANT UPDATE ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR UPDATE (name) ON t FROM r;",
 			wantErr: `REVOKE GRANT OPTION FOR UPDATE \(name\) ON t FROM r follows a GRANT of UPDATE on the whole table, .*`,
