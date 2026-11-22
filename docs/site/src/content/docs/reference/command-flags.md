@@ -813,6 +813,7 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
 | `--json` | `bool` | `false` | — | — |
+| `--limit` | `uint64` | `0` | `PTAH_LIMIT` | — |
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
 | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
 | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |

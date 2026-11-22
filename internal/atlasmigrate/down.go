@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/rollbacklimit"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -21,8 +22,12 @@ type DownOptions struct {
 	// Dir is the resolved migration directory path used for diagnostics.
 	Dir string
 	// FS is the already captured migration filesystem to roll back.
-	FS                   fs.FS
-	TargetVersion        int64
+	FS            fs.FS
+	TargetVersion int64
+	// Limit, when above 0, reverts the last Limit applied migrations, and the
+	// version the rollback stops at is read from the history; see
+	// [rollbacklimit.Target]. It is refused beside a TargetVersion above 0.
+	Limit                uint64
 	DryRun               bool
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
@@ -122,6 +127,9 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	if err != nil {
 		return DownPlan{}, fmt.Errorf("error getting applied migrations: %w", err)
 	}
+	if opts.Limit > 0 {
+		opts.TargetVersion = rollbacklimit.Target(applied, opts.Limit)
+	}
 	return DownPlan{
 		Status:          status,
 		Migrations:      mig.MigrationProvider().Migrations(),
@@ -141,9 +149,21 @@ func (p DownPlan) Noop() bool {
 	return len(p.PlannedVersions) == 0
 }
 
+// ErrDownHistoryChanged reports a rollback whose applied history changed
+// between [PrepareDown] and [DownPlan.Execute]. Nothing is reverted.
+var ErrDownHistoryChanged = errors.New("the applied history changed after the rollback was planned")
+
 // Execute rolls back the planned migrations. Dry-run and no-op plans return
 // metadata without modifying schema state. On failure the returned result
 // still carries the reverted prefix so callers can render a partial report.
+//
+// PrepareDown reads the history without the migration lock, so Execute reads
+// it again under the lock and refuses, with [ErrDownHistoryChanged] and before
+// anything is reverted, when the migrations above the target are no longer
+// PlannedVersions. A run that counts back would otherwise revert a migration
+// applied in between, beside the ones it reports, and a run to a version would
+// revert migrations its plan did not show. This is the check native
+// `migrations down` makes when it takes the lock again after its prompt.
 func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 	result := DownResult{
 		Status:          p.Status,
@@ -156,6 +176,9 @@ func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 	}
 	executionStarted := false
 	err := p.mig.MigrateDownToWithPreflight(ctx, p.opts.TargetVersion, func(_ context.Context, plan migrator.MigrationPlan) error {
+		if err := p.refuseChangedHistory(plan.Versions); err != nil {
+			return err
+		}
 		executionStarted = len(plan.Versions) > 0
 		return nil
 	})
@@ -182,6 +205,24 @@ func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 	}
 	result.FinalStatus = finalStatus
 	return result, nil
+}
+
+// refuseChangedHistory returns [ErrDownHistoryChanged] when locked, the
+// versions the migrator reverts under the lock, are not PlannedVersions.
+func (p DownPlan) refuseChangedHistory(locked []int64) error {
+	planned := newestFirst(p.PlannedVersions)
+	now := newestFirst(locked)
+	if slices.Equal(planned, now) {
+		return nil
+	}
+	return fmt.Errorf("%w: it reverts %v, and the migrations applied above version %s are now %v; "+
+		"nothing was rolled back, run migrate down again", ErrDownHistoryChanged,
+		p.mig.VersionLabels(planned), p.mig.VersionLabel(p.TargetVersion), p.mig.VersionLabels(now))
+}
+
+// newestFirst returns a copy of versions in revert order.
+func newestFirst(versions []int64) []int64 {
+	return slices.SortedFunc(slices.Values(versions), func(a, b int64) int { return cmp.Compare(b, a) })
 }
 
 // revertedVersionsAfterError re-reads the revision state so a partial failure
@@ -224,7 +265,58 @@ func validateDownOptions(conn *dbschema.DatabaseConnection, opts DownOptions) er
 	if opts.TargetVersion < 0 {
 		return errors.New("migrate down target version must be greater than or equal to zero")
 	}
+	if opts.Limit > 0 && opts.TargetVersion > 0 {
+		return errors.New("migrate down takes a target version or a limit, not both")
+	}
 	return nil
+}
+
+// DownStop is what one `migrate down` invocation says about where the
+// rollback stops: the amount argument, --to-version and --to-tag.
+type DownStop struct {
+	// Amount is the amount argument, 0 when none was given.
+	Amount uint64
+	// ToVersion is the --to-version value. ToVersionGiven reports that the
+	// flag was typed, an empty value included, or that PTAH_TO_VERSION gave a
+	// value. An empty PTAH_TO_VERSION reads as absent, and so names no stop.
+	ToVersion      string
+	ToVersionGiven bool
+	// ToTag is the --to-tag value, and ToTagGiven reports the same for --to-tag
+	// and PTAH_TO_TAG.
+	ToTag      string
+	ToTagGiven bool
+}
+
+// Limit returns how many applied migrations the rollback reverts, counting
+// back from the last one: the amount when one was given, 1 when nothing names
+// where to stop, and 0 when --to-version or --to-tag names the stop instead.
+// The default of 1 is the documented one, which reverts the last applied
+// file: https://atlasgo.io/versioned/down.
+//
+// It refuses two of the three together, since each names where to stop and
+// preferring one would roll back to a version the operator did not choose,
+// and a version or tag that is empty or blank, which names no stop and would
+// otherwise read as absent.
+func (s DownStop) Limit() (uint64, error) {
+	if s.ToVersionGiven && strings.TrimSpace(s.ToVersion) == "" {
+		return 0, errors.New("--to-version is empty: give it a version, or leave it out to revert the last applied migration")
+	}
+	if s.ToTagGiven && strings.TrimSpace(s.ToTag) == "" {
+		return 0, errors.New("--to-tag is empty: give it a tag, or leave it out to revert the last applied migration")
+	}
+	if s.ToVersionGiven && s.ToTagGiven {
+		return 0, errors.New("--to-version and --to-tag both name where to stop; pass one")
+	}
+	if s.Amount > 0 && s.ToVersionGiven {
+		return 0, errors.New("the amount argument and --to-version both name where to stop; pass one")
+	}
+	if s.Amount > 0 && s.ToTagGiven {
+		return 0, errors.New("the amount argument and --to-tag both name where to stop; pass one")
+	}
+	if s.ToVersionGiven || s.ToTagGiven {
+		return 0, nil
+	}
+	return max(s.Amount, 1), nil
 }
 
 // plannedDownVersions selects the applied versions above the target, newest

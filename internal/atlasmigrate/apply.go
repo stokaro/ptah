@@ -494,6 +494,25 @@ func runApplyPreflight(
 // `-0` and `-1` would otherwise apply every pending migration where the
 // binary applies none. The refusals are worded as the binary words them.
 func ParseApplyAmount(args []string) (uint64, error) {
+	return parseAmount(args, "apply")
+}
+
+// ParseDownAmount parses the optional amount argument of `migrate down`: how
+// many applied migrations the run reverts, counting back from the last one,
+// documented at https://atlasgo.io/versioned/down. It returns 0 when args is
+// empty, and the caller decides what an absent amount reverts; see
+// [DownStop.Limit].
+//
+// The pinned community binary has no `migrate down` to measure, so the
+// argument is read as [ParseApplyAmount] reads the amount of `migrate apply`
+// and refused in the same words, with the verb `revert` in place of `apply`.
+func ParseDownAmount(args []string) (uint64, error) {
+	return parseAmount(args, "revert")
+}
+
+// parseAmount is the one reading of the amount argument both verbs take.
+// verb is the word the refusal of an amount below one names.
+func parseAmount(args []string, verb string) (uint64, error) {
 	if len(args) == 0 {
 		return 0, nil
 	}
@@ -509,7 +528,7 @@ func ParseApplyAmount(args []string) (uint64, error) {
 		return 0, fmt.Errorf("invalid amount argument %q (%v). Omit the argument or pass a valid integer instead", args[0], reason)
 	}
 	if amount < 1 {
-		return 0, fmt.Errorf("cannot apply '%d' migration files", amount)
+		return 0, fmt.Errorf("cannot %s '%d' migration files", verb, amount)
 	}
 	return uint64(amount), nil
 }

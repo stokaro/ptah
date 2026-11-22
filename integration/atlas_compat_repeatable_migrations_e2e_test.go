@@ -585,7 +585,9 @@ func buildCountingProgram(c *qt.C) string {
 // TestCompatRepeatableMigrationsDownEvaluatesTheProjectOnceE2E pins one
 // evaluation of atlas.hcl per `migrate down` with the variable set, on both
 // paths: the data "external" program that supplies the URL runs once, so a
-// program with side effects is not run twice to look for R__ files.
+// program with side effects is not run twice to look for R__ files. With no
+// amount the run reverts the last applied migration, so version 1 remains,
+// which says the run reached the database the program named.
 func TestCompatRepeatableMigrationsDownEvaluatesTheProjectOnceE2E(t *testing.T) {
 	for _, path := range downPaths {
 		t.Run(path.name, func(t *testing.T) {
@@ -621,14 +623,16 @@ env "local" {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(evaluations), qt.Equals, "evaluated\n")
 			c.Assert(repeatableStrings(c, url, "SELECT version FROM atlas_schema_revisions ORDER BY version"),
-				qt.HasLen, 0)
+				qt.DeepEquals, []string{"1"})
 		})
 	}
 }
 
 // TestCompatRepeatableMigrationsRollbackControlE2E is the control for the two
 // rollback refusals: with the variable set, a directory with no R__ file over
-// a database with no record rolls back.
+// a database with no record rolls back. It runs the invocation the refusals
+// run, with no amount, so it reverts the last applied migration and leaves
+// version 1.
 func TestCompatRepeatableMigrationsRollbackControlE2E(t *testing.T) {
 	c := qt.New(t)
 	binary := clirun.Build(c, clirun.Compat)
@@ -643,7 +647,7 @@ func TestCompatRepeatableMigrationsRollbackControlE2E(t *testing.T) {
 
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
 	c.Assert(repeatableStrings(c, url, "SELECT version FROM atlas_schema_revisions ORDER BY version"),
-		qt.HasLen, 0)
+		qt.DeepEquals, []string{"1"})
 }
 
 // TestCompatRepeatableMigrationsNoteE2E covers the line migrate diff and
