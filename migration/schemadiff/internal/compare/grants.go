@@ -232,7 +232,7 @@ func GrantsWithOptions(
 		}
 	}
 	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, lists,
-		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database},
+		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target},
 		diff, semantics)
 
 	sortGrantRefs(diff.GrantsAdded)
@@ -747,6 +747,9 @@ type createdGrants struct {
 	tablesTakeOnlyTableGrants bool
 	desired                   *schemamodel.Database
 	database                  *catalog.Database
+	// all is what ALL grants on each object kind of the target: a revoke of
+	// ALL on a table names what it grants on a table.
+	all descriptor.AllPrivileges
 }
 
 // needsRevoke reports whether a declared revoke on an object the plan creates
@@ -757,14 +760,15 @@ type createdGrants struct {
 // and the server refuses a revoke of a privilege the grantee does not hold
 // there: Error 1147 on MySQL and MariaDB, ORA-01927 on Oracle. Such a revoke
 // is left out. It is planned when a grant on the table's database, on every
-// table or to PUBLIC keeps the privilege, or when the read does not say
-// whether one does. The server then answers for the role, where a revoke left
-// out would leave the privilege in place with a plan that reads as synced.
+// table or to PUBLIC keeps the privilege, held or declared, or when the read
+// does not say whether one does. The server then answers for the role, where
+// a revoke left out would leave the privilege in place with a plan that reads
+// as synced.
 func (g createdGrants) needsRevoke(ref difftypes.GrantRef) bool {
 	if !g.tablesTakeOnlyTableGrants || ref.ObjectType != "TABLE" {
 		return true
 	}
-	covers, known := grantcover.Find(g.desired, g.database, ref.Role, []string{ref.Privilege}, ref.ObjectName)
+	covers, known := grantcover.Find(g.desired, g.database, ref.Role, []string{ref.Privilege}, ref.ObjectName, g.all)
 	return !known || len(covers) > 0
 }
 

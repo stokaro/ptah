@@ -29,8 +29,10 @@ func readNoWideGrants(grants ...catalog.Grant) catalog.Database {
 // MySQL, MariaDB and Oracle a REVOKE on a table takes only a grant on that
 // table and the server refuses one where there is none, so planning it fails
 // the apply. A grant on the database, on every table or to PUBLIC keeps the
-// privilege, and a read that does not say whether one exists cannot tell, so
-// the revoke is planned there and the server answers for the role.
+// privilege, held or declared, and a read that does not say whether one
+// exists cannot tell, so the revoke is planned there and the server answers
+// for the role. A revoke of ALL names what ALL grants on a table, so a grant
+// on the database of a privilege no table carries keeps nothing it names.
 func TestGrantsWithOptions_TableRevokesTakeOnlyTableGrants(t *testing.T) {
 	selectOnT2 := schemamodel.Grant{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t2"}
 	selectOnDatabase := catalog.Grant{Role: "app", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "d1"}
@@ -43,6 +45,7 @@ func TestGrantsWithOptions_TableRevokesTakeOnlyTableGrants(t *testing.T) {
 		onlyOnTable bool
 		desired     schemamodel.Database
 		database    catalog.Database
+		wantAdded   []plannedGrant
 		wantRemoved []plannedGrant
 	}{
 		{
@@ -115,12 +118,35 @@ func TestGrantsWithOptions_TableRevokesTakeOnlyTableGrants(t *testing.T) {
 			wantRemoved: revokedSelect,
 		},
 		{
-			name:        "and a revoke of ALL is kept by any privilege on the database",
+			name:        "and a revoke of ALL is kept by a table privilege on the database",
 			dialect:     platform.MySQL,
 			onlyOnTable: true,
 			desired:     createsT2(schemamodel.Grant{Role: "app", Privileges: []string{"ALL"}, OnTable: "t2"}),
 			database:    readNoWideGrants(selectOnDatabase),
 			wantRemoved: []plannedGrant{{Role: "app", Privilege: "ALL", ObjectType: "TABLE", ObjectName: "t2"}},
+		},
+		{
+			name:        "but not by privileges on the database no table carries",
+			dialect:     platform.MySQL,
+			onlyOnTable: true,
+			desired:     createsT2(schemamodel.Grant{Role: "app", Privileges: []string{"ALL"}, OnTable: "t2"}),
+			database: readNoWideGrants(
+				catalog.Grant{Role: "app", Privilege: "EXECUTE", ObjectType: "SCHEMA", ObjectName: "d1"},
+				catalog.Grant{Role: "app", Privilege: "LOCK TABLES", ObjectType: "SCHEMA", ObjectName: "d1"},
+			),
+		},
+		{
+			name:        "a grant on the database the schema declares keeps the privilege and plans the revoke",
+			dialect:     platform.MySQL,
+			onlyOnTable: true,
+			desired: schemamodel.Database{
+				Tables:        []schemamodel.Table{{Name: "t2"}},
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnSchema: "d1"}},
+				RevokedGrants: []schemamodel.Grant{selectOnT2},
+			},
+			database:    readNoWideGrants(),
+			wantAdded:   []plannedGrant{{Role: "app", Privilege: "ALL", ObjectType: "SCHEMA", ObjectName: "d1"}},
+			wantRemoved: revokedSelect,
 		},
 		{
 			name:        "a privilege the read reports under the created table's name is revoked",
@@ -154,10 +180,12 @@ func TestGrantsWithOptions_TableRevokesTakeOnlyTableGrants(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.GrantsWithOptions(&test.desired, &test.database, diff,
-				identifier.ForDialect(test.dialect), compare.GrantOptions{TableRevokesTakeOnlyTableGrants: test.onlyOnTable})
+			target, _ := platform.Lookup(test.dialect)
 
-			c.Assert(plannedGrants(diff.GrantsAdded), qt.IsNil)
+			compare.GrantsWithOptions(&test.desired, &test.database, diff, identifier.ForDialect(test.dialect),
+				compare.GrantOptions{TableRevokesTakeOnlyTableGrants: test.onlyOnTable, AllPrivileges: target.AllPrivileges})
+
+			c.Assert(plannedGrants(diff.GrantsAdded), qt.DeepEquals, test.wantAdded)
 			c.Assert(plannedGrants(diff.GrantsRemoved), qt.DeepEquals, test.wantRemoved)
 		})
 	}

@@ -1491,9 +1491,15 @@ answers that revoke with ERROR 1147, and a plan that left it out would read as
 synced while a member of the role keeps reading the table. So Ptah refuses a
 declared revoke on a table, existing or created, that such a grant keeps, and
 names the grant: revoke it where it was granted, or grant the privilege on
-each table that needs it. A database grant the plan removes keeps nothing:
-one the schema revokes under `revokes:` with `on_schema`, and an undeclared one
-held by a role the schema declares. Measured on 8.4.13, 10.11.19 and 11.8.9.
+each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
+
+A database grant the schema declares under `grants:` with `on_schema` keeps
+the privilege too, before the server holds it, because the plan grants it. A
+database grant the plan removes keeps nothing: one the schema revokes under
+`revokes:` with `on_schema`, and an undeclared one held by a role the schema
+declares. A revoke of `ALL` on a table names what `ALL` grants on a table, so a
+database grant of a privilege no table carries, such as `EXECUTE` or
+`LOCK TABLES`, keeps nothing it names.
 
 A kept column privilege that a revoke on its table takes comes back right
 after the revokes where its column exists, and after the `CREATE TABLE`,

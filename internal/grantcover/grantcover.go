@@ -1,9 +1,10 @@
 // Package grantcover finds the grants wider than one table that keep a
-// privilege a declared REVOKE on the table names. It serves targets where a
-// REVOKE on a table takes only a grant on that table
-// ([platform.TableRevokeTakesOnlyTableGrants]): there such a revoke cannot
-// take the privilege, and the server refuses it when the role holds nothing
-// on the table itself.
+// privilege a declared REVOKE on the table names: the ones the database
+// holds, and the grants on the table's database the schema declares and the
+// plan adds. It serves targets where a REVOKE on a table takes only a grant
+// on that table ([platform.TableRevokeTakesOnlyTableGrants]): there such a
+// revoke cannot take the privilege, and the server refuses it when the role
+// holds nothing on the table itself.
 //
 // The grant comparison asks [Find] before it leaves out a revoke on a table
 // the plan creates, and the comparison's callers refuse, through [Validate], a
@@ -20,6 +21,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 )
 
@@ -32,34 +34,60 @@ type Cover struct {
 	// Grantee holds the grant: the revoke's role, or PUBLIC.
 	Grantee string
 	// Grant is what the grantee holds, in the words a REVOKE of it uses:
-	// "SELECT ON d2.*", "SELECT ON *.*" or "SELECT ANY TABLE".
+	// "SELECT ON d2.*", "SELECT ON *.*" or "SELECT ANY TABLE". A declared
+	// grant is spelled with its own privileges, those the revoke names and
+	// the database does not hold yet: "ALL ON d2.*" or "SELECT, INSERT ON
+	// d2.*".
 	Grant string
+	// Declared is true for a grant on the table's database that the schema
+	// declares and the database does not hold yet. The plan grants it, so it
+	// keeps the privilege as a held one does.
+	Declared bool
 }
 
-// Find returns the grants in current wider than table that give role a
-// privilege privileges names, ALL naming every privilege: a grant on the
-// table's database, and a grant on every table, held by the role or by
-// PUBLIC. A grant on the database that the plan removes is left out, because
-// it keeps nothing once the plan runs: one desired revokes there, and one held
-// by a role desired declares and does not grant there.
+// Find returns the grants wider than table that give role a privilege
+// privileges names: a grant on the table's database, and a grant on every
+// table, that current holds for the role or for PUBLIC, and then a grant on
+// the table's database that desired declares for either and current does not
+// hold yet, which the plan adds before the revoke would run. A grant on the
+// database that the plan removes is left out, because it keeps nothing once
+// the plan runs: one desired revokes there, and one held by a role desired
+// declares and does not grant there.
+//
+// all is what ALL grants on each object kind of the target. ALL in privileges
+// names what it grants on a table, so a grant on the database of a privilege
+// no table carries, such as EXECUTE, keeps nothing a REVOKE ALL on a table
+// names. A declared grant on the database counts for a privilege only where
+// ALL on a schema of the target grants it: on MySQL and MariaDB a grant on a
+// database reaches its tables, and on Oracle, which lists nothing for a
+// schema, a declared grant on one is no grant on its tables. The zero value
+// lists nothing: ALL then names every privilege, and a declared grant counts
+// for every privilege it names.
+//
+// A table named without its database is in the database the read describes,
+// and a grant on any database counts for it: the read reports grants on that
+// database alone, and a declared grant whose database cannot be compared only
+// refuses more.
 //
 // known is false when current does not say which grants on every table
 // exist, as a read made without the privilege to look does not. The covers
 // are then the grants on the database alone, and a caller cannot tell that
 // nothing else covers the table.
-func Find(desired *schemamodel.Database, current *catalog.Database, role string, privileges []string, table string) (covers []Cover, known bool) {
+func Find(desired *schemamodel.Database, current *catalog.Database, role string, privileges []string, table string, all descriptor.AllPrivileges) (covers []Cover, known bool) {
 	if current == nil {
 		return nil, false
 	}
 	role = strings.TrimSpace(role)
+	privileges = onTable(privileges, all.All("TABLE"))
 	held := func(grantee string) bool {
-		return grantee == role || strings.EqualFold(grantee, publicGrantee)
+		return sameGrantee(grantee, role) || strings.EqualFold(grantee, publicGrantee)
 	}
 	database, _, qualified := strings.Cut(table, ".")
+	onDatabase := func(objectType, name string) bool {
+		return strings.EqualFold(strings.TrimSpace(objectType), "SCHEMA") && (!qualified || name == database)
+	}
 	for _, grant := range current.Grants {
-		onDatabase := strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") &&
-			(!qualified || grant.ObjectName == database)
-		if !onDatabase || !held(grant.Role) || !names(privileges, grant.Privilege) || removed(desired, grant) {
+		if !onDatabase(grant.ObjectType, grant.ObjectName) || !held(grant.Role) || !names(privileges, grant.Privilege) || removed(desired, grant) {
 			continue
 		}
 		covers = append(covers, Cover{Grantee: grant.Role, Grant: grant.Privilege + " ON " + grant.ObjectName + ".*"})
@@ -69,7 +97,49 @@ func Find(desired *schemamodel.Database, current *catalog.Database, role string,
 			covers = append(covers, Cover{Grantee: grant.Role, Grant: grant.Grant})
 		}
 	}
+	if desired != nil {
+		for _, declared := range desired.Grants {
+			grantee := strings.TrimSpace(declared.Role)
+			if declared.OnSchema == "" || !onDatabase("SCHEMA", declared.OnSchema) || !held(grantee) {
+				continue
+			}
+			if granted := planned(declared, current, privileges, all); granted != "" {
+				covers = append(covers, Cover{Grantee: grantee, Grant: granted + " ON " + declared.OnSchema + ".*", Declared: true})
+			}
+		}
+	}
 	return covers, current.WideGrants != nil
+}
+
+// planned returns what the declared grant on a database adds of privileges:
+// ALL when it names ALL, or else each privilege it names that privileges
+// names too, in its order. A privilege ALL on a schema of the target does not
+// grant adds nothing to the database's tables, nor does one current holds
+// there already.
+func planned(declared schemamodel.Grant, current *catalog.Database, privileges []string, all descriptor.AllPrivileges) string {
+	grantee := strings.TrimSpace(declared.Role)
+	onSchema := all.All("SCHEMA")
+	adds := func(privilege string) bool {
+		reaches := len(all.Kinds) == 0 || slices.ContainsFunc(onSchema, func(name string) bool { return strings.EqualFold(name, privilege) })
+		return reaches && names(privileges, privilege) && !slices.ContainsFunc(current.Grants, func(grant catalog.Grant) bool {
+			return strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") && sameGrantee(grant.Role, grantee) &&
+				grant.ObjectName == declared.OnSchema && strings.EqualFold(strings.TrimSpace(grant.Privilege), privilege)
+		})
+	}
+	var added []string
+	for _, privilege := range declared.Privileges {
+		privilege = strings.ToUpper(strings.TrimSpace(privilege))
+		if isAll(privilege) {
+			if slices.ContainsFunc(privileges, adds) {
+				return "ALL"
+			}
+			continue
+		}
+		if adds(privilege) {
+			added = append(added, privilege)
+		}
+	}
+	return strings.Join(added, ", ")
 }
 
 // Validate refuses each declared revoke on a table that a grant wider than
@@ -82,12 +152,13 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 	if !platform.TableRevokeTakesOnlyTableGrants(dialect) || desired == nil || current == nil {
 		return nil
 	}
+	target, _ := platform.Lookup(dialect)
 	var problems []error
 	for _, revoke := range desired.RevokedGrants {
 		if revoke.OnTable == "" {
 			continue
 		}
-		covers, _ := Find(desired, current, revoke.Role, revoke.Privileges, revoke.OnTable)
+		covers, _ := Find(desired, current, revoke.Role, revoke.Privileges, revoke.OnTable, target.AllPrivileges)
 		for _, cover := range covers {
 			problems = append(problems, refusal(revoke, cover))
 		}
@@ -95,9 +166,23 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 	return errors.Join(problems...)
 }
 
-// refusal says which grant keeps what revoke names, and where to revoke it.
+// refusal says which grant keeps what revoke names, and where to revoke it,
+// or for a grant the schema declares, that the schema gives the privilege on
+// the whole database.
 func refusal(revoke schemamodel.Grant, cover Cover) error {
 	role := strings.TrimSpace(revoke.Role)
+	if cover.Declared && cover.Grantee == role {
+		return fmt.Errorf(
+			"the schema grants %s to role %q, which covers table %s, so a revoke on the table cannot take it: "+
+				"grant the privilege on each table that needs it instead of on the database",
+			cover.Grant, role, revoke.OnTable)
+	}
+	if cover.Declared {
+		return fmt.Errorf(
+			"the schema grants %s to %s, which gives role %q the privilege on table %s, so a revoke on the table cannot take it: "+
+				"grant the privilege on each table that needs it instead of on the database",
+			cover.Grant, cover.Grantee, role, revoke.OnTable)
+	}
 	if cover.Grantee == role {
 		return fmt.Errorf(
 			"role %q holds %s, which covers table %s, so a revoke on the table cannot take it: "+
@@ -113,9 +198,39 @@ func refusal(revoke schemamodel.Grant, cover Cover) error {
 // names reports whether a revoke of privileges takes privilege.
 func names(privileges []string, privilege string) bool {
 	return slices.ContainsFunc(privileges, func(name string) bool {
-		name = strings.ToUpper(strings.TrimSpace(name))
-		return name == "ALL" || name == "ALL PRIVILEGES" || strings.EqualFold(name, strings.TrimSpace(privilege))
+		return isAll(name) || strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(privilege))
 	})
+}
+
+// sameGrantee reports whether two grantees are one: a role by its exact name,
+// and PUBLIC in any case, as MariaDB reports it in upper case whatever the
+// GRANT wrote.
+func sameGrantee(a, b string) bool {
+	return a == b || (strings.EqualFold(a, publicGrantee) && strings.EqualFold(b, publicGrantee))
+}
+
+// isAll reports whether privilege is the keyword ALL, in either spelling.
+func isAll(privilege string) bool {
+	privilege = strings.ToUpper(strings.TrimSpace(privilege))
+	return privilege == "ALL" || privilege == "ALL PRIVILEGES"
+}
+
+// onTable spells ALL in a revoke on a table as what ALL grants on a table of
+// the target, tableAll, and keeps every other privilege as it is. An empty
+// tableAll leaves ALL naming every privilege.
+func onTable(privileges, tableAll []string) []string {
+	if len(tableAll) == 0 || !slices.ContainsFunc(privileges, isAll) {
+		return privileges
+	}
+	spelled := make([]string, 0, len(privileges)+len(tableAll))
+	for _, privilege := range privileges {
+		if isAll(privilege) {
+			spelled = append(spelled, tableAll...)
+			continue
+		}
+		spelled = append(spelled, privilege)
+	}
+	return spelled
 }
 
 // removed reports whether the plan removes a grant on a database: desired
