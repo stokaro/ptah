@@ -109,6 +109,37 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 			wantGrants: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}}},
 		},
 		{
+			name: "GRANT OPTION FOR ALL beside a column grant without the option",
+			sql:  "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantGrants: []privilege{
+				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+			},
+		},
+		{
+			name: "GRANT OPTION FOR a privilege the column grant does not carry",
+			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR SELECT ON t FROM r;",
+			wantGrants: []privilege{
+				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}, WithOption: true},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+			},
+		},
+		{
+			name:       "GRANT OPTION FOR on the columns that carry it",
+			sql:        "GRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR UPDATE (name) ON t FROM r;",
+			wantGrants: []privilege{{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}}},
+		},
+		{
+			name: "GRANT OPTION FOR ALL beside another role's column grant",
+			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO other WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantGrants: []privilege{
+				{Role: "other", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}, WithOption: true},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+			},
+		},
+		{
 			name:       "GRANT ALL on a routine is EXECUTE",
 			sql:        "GRANT ALL ON PROCEDURE archive(integer) TO r;",
 			wantGrants: []privilege{{Role: "r", Target: "ROUTINE archive(integer)", Privileges: []string{"EXECUTE"}}},
@@ -173,6 +204,19 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 			name:    "a revoke of one privilege after GRANT ALL on a table",
 			sql:     "GRANT ALL ON t TO r;\nREVOKE TRUNCATE ON t FROM r;",
 			wantErr: `REVOKE ON TABLE t FROM r follows a GRANT ALL on it, .*name the privileges in the GRANT`,
+		},
+		{
+			name: "GRANT OPTION FOR ALL on a table whose columns carry the option",
+			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t FROM r takes the option from grants on the whole table, and an ` +
+				`earlier GRANT UPDATE \(name\) ON t gives it on columns, which keep it; .*`,
+		},
+		{
+			name: "GRANT OPTION FOR a privilege a column grant also carries",
+			sql: "GRANT UPDATE ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR UPDATE ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR UPDATE ON TABLE t FROM r takes the option from grants on the whole table, .*`,
 		},
 	}
 

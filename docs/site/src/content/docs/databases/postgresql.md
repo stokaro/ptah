@@ -2689,6 +2689,10 @@ names the form:
 - `REVOKE ... CASCADE`, `REVOKE ... GRANTED BY` and a list of grantees;
 - `REVOKE GRANT OPTION FOR`, on an object or in `ALTER DEFAULT PRIVILEGES`, on
   a privilege the same file does not grant;
+- `REVOKE GRANT OPTION FOR` on a whole table when the file grants one of its
+  privileges, or with `ALL` any privilege, on columns of that table
+  `WITH GRANT OPTION`. The column grant would keep the option, so declare it
+  without `WITH GRANT OPTION`, or revoke the option on those columns;
 - a `REVOKE` of one privilege after `GRANT ALL` on a table, because the members
   of a table's `ALL` depend on the server version. Name the privileges in the
   `GRANT` instead.

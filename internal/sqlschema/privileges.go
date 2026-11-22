@@ -148,6 +148,9 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 				"name the privileges in the GRANT", target, revoked.Role)
 	}
 	if node.GrantOptionFor {
+		if err := refuseOptionKeptOnColumns(database.Grants, revoked, privileges); err != nil {
+			return err
+		}
 		if revokesAll {
 			privileges = heldPrivileges(database.Grants, revoked.Role, target)
 		}
@@ -155,6 +158,39 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 	}
 	revoked.Privileges = privileges
 	privilegefold.Merge(database, &schemamodel.Database{RevokedGrants: []schemamodel.Grant{revoked}})
+	return nil
+}
+
+// refuseOptionKeptOnColumns refuses a REVOKE GRANT OPTION FOR on a whole table
+// when an earlier GRANT in this file gives the role one of the privileges it
+// names, or with ALL any privilege, on columns of that table WITH GRANT OPTION.
+// The option is cleared on the table grants alone, so the column grant would
+// keep it: a member could still grant the column privilege onward, and the
+// next plan would read as synced. PostgreSQL's own statement reaches the
+// column privileges too, other servers keep column and table privileges apart,
+// so the declaration is asked to say which grant loses the option.
+func refuseOptionKeptOnColumns(grants []schemamodel.Grant, revoked schemamodel.Grant, privileges []string) error {
+	table := strings.TrimSpace(revoked.OnTable)
+	if table == "" || len(revoked.Columns) > 0 || revoked.TargetKey() != "TABLE "+table {
+		return nil
+	}
+	revokesAll := slices.Contains(privileges, allPrivileges)
+	for _, grant := range grants {
+		if grant.Role != revoked.Role || !grant.WithOption || len(grant.Columns) == 0 || strings.TrimSpace(grant.OnTable) != table {
+			continue
+		}
+		for _, privilege := range grant.Privileges {
+			if !revokesAll && !slices.Contains(privileges, privilege) {
+				continue
+			}
+			return fmt.Errorf(
+				"REVOKE GRANT OPTION FOR %s ON %s FROM %s takes the option from grants on the whole table, and an "+
+					"earlier GRANT %s (%s) ON %s gives it on columns, which keep it; declare that GRANT without "+
+					"WITH GRANT OPTION, or revoke the option on those columns",
+				strings.Join(privileges, ", "), revoked.TargetKey(), revoked.Role,
+				privilege, strings.Join(grant.Columns, ", "), table)
+		}
+	}
 	return nil
 }
 
