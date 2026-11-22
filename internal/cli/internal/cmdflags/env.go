@@ -20,11 +20,12 @@ const (
 	appliedEnvAnnotation   = "ptah.env.applied"
 )
 
-// AddForwardedEnvBinding records an environment variable the command's native
-// forwarding target will bind after Atlas arguments are mapped. It does not
-// advertise or apply that variable on the adapter flag itself; policy
-// preflights use the annotation to account for work reachable only after
-// dispatch.
+// AddForwardedEnvBinding records an environment variable that reaches the
+// command's native forwarding target after Atlas arguments are mapped: the
+// target binds it, or the adapter reads it and disables the target's binding
+// ([DisableEnvBinding]). It does not advertise or apply that variable on the
+// adapter flag itself; policy preflights use the annotation to account for
+// work reachable only after dispatch.
 func AddForwardedEnvBinding(flags *pflag.FlagSet, name, envName string) error {
 	flag := flags.Lookup(name)
 	if flag == nil {

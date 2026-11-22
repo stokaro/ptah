@@ -236,6 +236,16 @@ comma-separated grammar. `schemas = ["one,two"]` names `one` and `two`,
 `schemas = ["\"a,b\""]` names the one schema `a,b`, and `schemas = ["a\"b"]` is
 refused with the message the flag prints for the same text.
 
+An element that names no schema, such as `schemas = [""]`,
+`schemas = ["\"\""]` or `schemas = [","]`, is refused too, with a message that
+names the file and the env:
+`atlas.hcl: env "local": schemas value "": every field is empty, so the value names no schema`.
+Atlas CE reads `schemas = [""]` as no selection and describes every schema.
+Ptah refuses it on purpose, for the reason the
+[schema commands](../schema-commands/) page gives for `--schema`: an empty
+variable would otherwise select every schema, and `schema apply` would plan a
+`DROP` for each one the desired schema leaves out.
+
 `--schema` outranks the attribute outright and does not intersect with it: with
 `schemas = ["one"]` in the file, `--schema two` describes `two` alone.
 

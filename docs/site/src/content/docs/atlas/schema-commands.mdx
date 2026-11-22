@@ -245,7 +245,32 @@ Atlas CE does. `-s one,two` names two schemas, `-s '"a,b"'` names the one schema
 `-s 'a"b'`, is refused before the run starts:
 `invalid argument "a\"b" for "-s, --schema" flag: parse error on line 1, column 2: bare " in non-quoted-field`.
 Spaces around a name are trimmed, so `-s "one, two"` names `one` and `two`.
-Atlas CE keeps the spaces and then describes nothing.
+Atlas CE keeps the space, so ` two` names no schema there and only `one` is
+described.
+
+A value that names no schema is refused before the run starts:
+`every field is empty, so the value names no schema`. That is the empty value,
+such as `-s ''` or `--schema=`, and a value whose every field is empty, such as
+`-s '""'`, `-s ','` or `-s '" "'`. Ptah refuses it on purpose, and is stricter
+than Atlas CE here. `--schema "$SCHEMA"` with an empty variable is the usual
+cause, and the run would otherwise read every schema, so `schema apply` would
+plan a `DROP` for each one the desired schema leaves out. Atlas CE reads the
+empty value as no selection and plans those `DROP` statements, and reads
+`-s '""'` as a schema with an empty name, which selects nothing. To read every
+schema, leave the flag out.
+
+`PTAH_SCHEMA` sets the flag and takes the same grammar, so `PTAH_SCHEMA='""'`
+is refused. A variable that is set but empty, `PTAH_SCHEMA=`, counts as unset,
+as every non-boolean `PTAH_*` variable does, and reads every schema. A CI
+variable that may be empty, such as `${{ vars.SCHEMA }}` in GitHub Actions,
+belongs on the flag, `--schema "$SCHEMA"`, where an empty value is refused.
+
+`migrate checkpoint` and `schema test` pass their schema names on to a native
+command as one comma-separated list. They read `--schema` with the same
+grammar, and refuse a name that holds a comma, such as `-s '"a,b"'`, rather
+than split it into two names. On `migrate checkpoint`, `PTAH_SCHEMAS`, the
+variable of the native `--schemas` flag, is read as a `--schema` value when
+`PTAH_SCHEMA` is absent or empty, so it takes the same grammar.
 
 A MySQL or MariaDB URL that names no database is the whole server, as the
 community binary reads it
@@ -1722,7 +1747,7 @@ error: apply --schema/--include to desired schema: the --schema/--include select
 add the missing objects to the selection or exclude the dependent objects
 ```
 
-An `--include` selection that matches neither the target nor the desired state
+An `--include` selection that matches neither the target nor the desired schema
 refuses the apply, because there is nothing to apply and a synced-schema
 message would claim success for work that did not happen. A `--schemas`
 selection that narrows to nothing is not an error. Malformed selectors fail

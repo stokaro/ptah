@@ -466,7 +466,7 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 				//
 				// --lock-name is deliberately absent: the named-lock family is
 				// one feature across five verbs and lands as its own change.
-				atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas"),
+				atlasForwardedSchemaFlag(atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas")),
 				atlasargs.String("qualifier", "", "Qualify tables with a custom qualifier when working on a single schema"),
 				atlasargs.NativeString(
 					"lock-timeout",
@@ -1182,7 +1182,7 @@ func atlasSchemaTestVerb() atlasVerb {
 			atlasSchemaTestSourceFlag(),
 			atlasTestDevURLFlag(),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
-			atlasargs.String(atlasSchemaFlagName, atlasSchemaFlagShorthand, "Restrict the desired schema to these schema names"),
+			atlasForwardedSchemaFlag(atlasargs.String(atlasSchemaFlagName, atlasSchemaFlagShorthand, "Restrict the desired schema to these schema names")),
 			atlasTestReportFlag(),
 			atlasTestSeedDirFlag(),
 		},
@@ -1359,7 +1359,7 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 			atlasAdapterUse(verb),
 			verb.short,
 			verb.native,
-			verb.factory,
+			atlasNativeEnvTarget(verb.factory, verb.flags),
 			mapper,
 			verb.prefixArgs...,
 		)
@@ -1392,6 +1392,33 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 	registerAtlasFlags(cmd, verb.flags)
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
+}
+
+// atlasNativeEnvTarget returns factory with the environment binding disabled on
+// the native flag of every flag marked [atlasargs.Flag.NativeEnv]. The adapter
+// reads that variable, maps it and forwards the result, and a forwarded value
+// marks the native flag as set. When the adapter forwards nothing, a target
+// left to read the variable itself would take it unmapped, so the binding is
+// disabled and the value is read once, by the adapter.
+func atlasNativeEnvTarget(factory func() *cobra.Command, flags []atlasargs.Flag) func() *cobra.Command {
+	var names []string
+	for _, flag := range flags {
+		if flag.NativeEnv && flag.NativeName != "" {
+			names = append(names, flag.NativeName)
+		}
+	}
+	if len(names) == 0 {
+		return factory
+	}
+	return func() *cobra.Command {
+		target := factory()
+		for _, name := range names {
+			if err := cmdflags.DisableEnvBinding(target.Flags(), name); err != nil {
+				panic(err)
+			}
+		}
+		return target
+	}
 }
 
 // atlasRepeatedFlagsForTarget returns verb's flags with ForwardEach set on

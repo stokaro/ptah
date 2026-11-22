@@ -174,8 +174,9 @@ type Options struct {
 	// a script may be matching on. Ignored when SchemaScope is empty.
 	SchemaScopeFlag string
 
-	// RequestedSchemas names the schemas a run selected, each value holding one
-	// name or several separated by commas. RefuseUnrequestedSchemas holds an HCL
+	// RequestedSchemas names the schemas a run selected, one name per value: the
+	// surface that read the flag has already split its value, so a comma is part
+	// of the name it appears in. RefuseUnrequestedSchemas holds an HCL
 	// desired state to them: a top-level `schema` block outside them is refused in
 	// the pinned Atlas community binary's words, measured on v1.3.0. A default
 	// compatibility run narrows the document to the selection instead, which is
@@ -292,11 +293,9 @@ func (o Options) checkRequestedSchemas(blocks []atlashcl.SchemaBlock, paths []st
 	if !o.RefuseUnrequestedSchemas || len(o.RequestedSchemas) == 0 {
 		return nil
 	}
-	var requested []string
+	requested := make([]string, 0, len(o.RequestedSchemas))
 	for _, schema := range o.RequestedSchemas {
-		for name := range strings.SplitSeq(schema, ",") {
-			requested = append(requested, strings.TrimSpace(name))
-		}
+		requested = append(requested, strings.TrimSpace(schema))
 	}
 	for _, block := range blocks {
 		if !slices.Contains(requested, block.Name) {
