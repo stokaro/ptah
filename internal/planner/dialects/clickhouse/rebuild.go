@@ -185,7 +185,13 @@ func recreationReasons(table *difftypes.TableDiff) []string {
 //     swaps two tables, and the user running the plan reads every row the
 //     table stores. A row policy or a table filter of the user's settings
 //     hides rows from the copy, and the hidden rows would go with the old
-//     table. See [rebuildGuard].
+//     table. See [rebuildGuard]. Where step 4 stops merges, SYSTEM START
+//     MERGES on the copy's name follows: the server checks the SYSTEM MERGES
+//     privilege before it looks for the table, and starting the merges of a
+//     table that does not exist does nothing, so a user without the privilege
+//     is refused with code 497, which names it, before anything is created,
+//     measured on 24.10 and 26.10. Neither line has a function that reads a
+//     privilege, and 24.10 has no CHECK GRANT for SYSTEM MERGES.
 //  2. CREATE TABLE, under the copy's name, from the declaration, then the
 //     skipping indexes it declares, so rows are written with them. The server
 //     refuses the statement when a table of that name exists, so nothing is
@@ -251,6 +257,9 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 
 	nodes := rebuildComments(diff, table, copyName, reasons, columns, carried, merges)
 	nodes = append(nodes, ast.NewRawSQL(rebuildGuard(table.TableName, projectionMode)))
+	if merges.copyRemovesRows() {
+		nodes = append(nodes, ast.NewRawSQL(fmt.Sprintf("SYSTEM START MERGES %s;", copyTable)))
+	}
 	// The renderer writes the name of the table it creates as it is, so the
 	// copy's name goes in quoted, like every other statement here names it.
 	create.Name = copyTable
@@ -317,6 +326,8 @@ type rebuildColumns struct {
 	copies, read []string
 	// added take their defaults, and the server evaluates computed.
 	added, computed []string
+	// retyped are the copied columns whose type changes.
+	retyped []string
 }
 
 // copiedColumns sorts the new table's columns into those the copy carries, those
@@ -337,12 +348,14 @@ func copiedColumns(table *difftypes.TableDiff, create *ast.CreateTableNode) (reb
 		present[column.Name] = true
 	}
 	changedType := make(map[string]bool)
+	newType := make(map[string]bool)
 	for _, column := range table.ColumnsModified {
 		_, typed := column.Changes["type"]
 		_, nullable := column.Changes["nullable"]
 		if typed || nullable {
 			changedType[column.ColumnName] = true
 		}
+		newType[column.ColumnName] = typed
 	}
 	var columns rebuildColumns
 	for _, column := range create.Columns {
@@ -355,6 +368,9 @@ func copiedColumns(table *difftypes.TableDiff, create *ast.CreateTableNode) (reb
 			continue
 		}
 		expression := quoteIdentifier(column.Name)
+		if newType[column.Name] {
+			columns.retyped = append(columns.retyped, column.Name)
+		}
 		if changedType[column.Name] {
 			mapping, err := chcolumn.Type(column)
 			if err != nil {
@@ -395,7 +411,9 @@ func rebuildComments(diff *difftypes.SchemaDiff, table *difftypes.TableDiff, cop
 	}
 	if merges.copyRemovesRows() {
 		nodes = append(nodes, ast.NewComment(fmt.Sprintf("Merges of %s stop while it is filled and counted, because %s when parts merge; "+
-			"they start again before the swap. SYSTEM STOP MERGES needs the SYSTEM MERGES privilege.", copyName, merges.copyRemoval)))
+			"they start again before the swap. SYSTEM STOP MERGES needs the SYSTEM MERGES privilege on %s; "+
+			"the SYSTEM START MERGES before CREATE TABLE checks it while %s does not exist, so a user without it is refused before anything is created.",
+			copyName, merges.copyRemoval, copyName, copyName)))
 	}
 	if len(columns.added) > 0 {
 		nodes = append(nodes, ast.NewComment("Columns the table gains take their defaults: "+strings.Join(columns.added, ", ")))
@@ -407,7 +425,7 @@ func rebuildComments(diff *difftypes.SchemaDiff, table *difftypes.TableDiff, cop
 	if len(columns.computed) > 0 {
 		nodes = append(nodes, ast.NewComment("Computed columns are not copied, the server evaluates them: "+strings.Join(columns.computed, ", ")))
 	}
-	if changes := declaredChanges(diff, table); len(changes) > 0 {
+	if changes := append(declaredChanges(diff, table), carried.lostCodecs()...); len(changes) > 0 {
 		nodes = append(nodes, ast.NewComment("The new table takes what the declaration states, which changes: "+strings.Join(changes, "; ")))
 	}
 	if kept := carried.names(); len(kept) > 0 {

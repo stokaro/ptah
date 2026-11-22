@@ -22,14 +22,23 @@ import (
 // keeps, and the table's projections. Without it the new table has none of
 // them, and the next plan reports nothing, since no comparison reads either.
 //
+// The codec of a column whose type changes is left behind, and the plan says
+// so. A codec fits the type it was chosen for: measured on 26.10, `x UInt64
+// CODEC(Delta, ZSTD)` declared as String would come back as `String
+// CODEC(Delta(8), ZSTD(1))`, which a CREATE TABLE of that column refuses with
+// code 36.
+//
 // The declaration states the rest of what the table keeps, and the new table
 // takes it from there: measured on 24.10 and 26.10, the ALTER path removes a
 // table or column comment the declaration leaves out, and leaves a codec and a
 // projection as they are, which is the line the carry follows.
 type carriedStorage struct {
-	// columns are the columns both tables have, which the check compares.
-	columns     []string
-	codecs      []carriedCodec
+	// columns are the columns both tables have with the same type, which the
+	// check compares.
+	columns []string
+	codecs  []carriedCodec
+	// lost are the codecs of the columns whose type changes.
+	lost        []carriedCodec
 	projections []catalog.Projection
 }
 
@@ -51,7 +60,10 @@ func carryStorage(table *difftypes.TableDiff, create *ast.CreateTableNode, colum
 		if !declared[column.Name] {
 			continue
 		}
-		carried.columns = append(carried.columns, column.Name)
+		retyped := slices.Contains(columns.retyped, column.Name)
+		if !retyped {
+			carried.columns = append(carried.columns, column.Name)
+		}
 		for _, clause := range column.StorageClauses {
 			if keyword := clauseKeyword(clause); keyword != "CODEC" {
 				return carriedStorage{}, unsupportedRebuild(table.TableName, fmt.Sprintf(
@@ -59,7 +71,12 @@ func carryStorage(table *difftypes.TableDiff, create *ast.CreateTableNode, colum
 						"Remove it from the column first, or create the table again by hand",
 					column.Name, keyword, clause))
 			}
-			carried.codecs = append(carried.codecs, carriedCodec{column: column.Name, clause: clause})
+			codec := carriedCodec{column: column.Name, clause: clause}
+			if retyped {
+				carried.lost = append(carried.lost, codec)
+				continue
+			}
+			carried.codecs = append(carried.codecs, codec)
 		}
 	}
 	dropped := droppedColumns(table, columns)
@@ -164,6 +181,18 @@ func (c carriedStorage) names() []string {
 		names = append(names, "the projections "+strings.Join(projections, ", "))
 	}
 	return names
+}
+
+// lostCodecs names, for the plan's comments, each codec the new table does not
+// take because its column's type changes: "column x: codec Delta(8), ZSTD(1)
+// -> none, the type changes".
+func (c carriedStorage) lostCodecs() []string {
+	lost := make([]string, len(c.lost))
+	for i, codec := range c.lost {
+		codecs := strings.TrimSuffix(strings.TrimPrefix(codec.clause, "CODEC("), ")")
+		lost[i] = "column " + codec.column + ": codec " + codecs + " -> none, the type changes"
+	}
+	return lost
 }
 
 // projectionModeGuard is a condition for [rebuildGuard] that fails when the

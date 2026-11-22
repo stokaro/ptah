@@ -74,6 +74,28 @@ func rebuildPolicy(c *qt.C, conn *dbschema.DatabaseConnection, name, table, usin
 	})
 }
 
+// rebuildUser creates a user that holds every privilege on the database the
+// connection uses except SYSTEM MERGES, drops it when the test ends, and
+// returns the URL that connects as it: a user outlives the database.
+func rebuildUser(c *qt.C, url string, conn *dbschema.DatabaseConnection) string {
+	c.Helper()
+	var database string
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT currentDatabase()").Scan(&database), qt.IsNil)
+	name := "ptah_" + database
+	rebuildExec(c, conn,
+		"CREATE USER "+name+" IDENTIFIED BY 'merges'",
+		"GRANT ALL ON "+database+".* TO "+name,
+		"REVOKE SYSTEM MERGES ON "+database+".* FROM "+name)
+	c.Cleanup(func() {
+		_, err := conn.ExecContext(context.WithoutCancel(c.Context()), "DROP USER IF EXISTS "+name)
+		c.Check(err, qt.IsNil)
+	})
+	parsed, err := neturl.Parse(url)
+	c.Assert(err, qt.IsNil)
+	parsed.User = neturl.UserPassword(name, "merges")
+	return parsed.String()
+}
+
 func rebuildExec(c *qt.C, conn *dbschema.DatabaseConnection, statements ...string) {
 	c.Helper()
 	for _, statement := range statements {
@@ -385,6 +407,25 @@ func TestClickHouseTableRebuild_FailurePath(t *testing.T) {
 		c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "MergeTree")
 		c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, rebuildFixtureRowsRead)
 		c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"t"})
+	})
+
+	// The copy's merges stop while it is filled, which takes SYSTEM MERGES. A
+	// statement before CREATE TABLE checks the privilege, so a user without it
+	// is refused with nothing created rather than with an empty copy left
+	// behind by the stop.
+	t.Run("a user without SYSTEM MERGES is refused before the copy", func(t *testing.T) {
+		c := qt.New(t)
+		url, conn := rebuildScratch(c)
+		rebuildExec(c, conn, rebuildCreate, rebuildFixtureRows)
+
+		applied := rebuildApply(c, rebuildUser(c, url, conn), rebuildEvents, "--allow-table-rebuild")
+
+		c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+		c.Assert(applied.Stderr, qt.Contains, "code: 497")
+		c.Assert(applied.Stderr, qt.Contains, "necessary to have the grant SYSTEM MERGES ON ")
+		c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"t"})
+		c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "MergeTree")
+		c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, rebuildFixtureRowsRead)
 	})
 
 	// The copy reads the table as the user running the plan. A row policy that
@@ -777,6 +818,31 @@ func TestClickHouseTableRebuild_KeepsWhatNoDeclarationStates(t *testing.T) {
 	}
 }
 
+// A codec fits the type it was chosen for: measured on 26.10, the codec of a
+// UInt64 column carried onto a String one is one that CREATE TABLE refuses with
+// code 36. So the new table does not take the codec of a column whose type
+// changes, and the plan says so.
+func TestClickHouseTableRebuild_LeavesTheCodecOfARetypedColumn(t *testing.T) {
+	c := qt.New(t)
+	url, conn := rebuildScratch(c)
+	rebuildExec(c, conn,
+		"CREATE TABLE t (id UInt64, x UInt64 CODEC(Delta, ZSTD), ver UInt32) ENGINE = MergeTree ORDER BY id",
+		"INSERT INTO t VALUES (1, 10, 1), (2, 20, 2)")
+	declaration := "tables:\n  t:\n    platform:\n      clickhouse:\n        engine: ReplacingMergeTree(ver)\n        order_by: id\n" +
+		"    columns:\n      id: {type: UInt64, not_null: true}\n      x: {type: String, not_null: true}\n      ver: {type: UInt32, not_null: true}\n"
+
+	applied := rebuildApply(c, url, declaration, "--allow-table-rebuild")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stdout, qt.Contains, "column x: codec Delta(8), ZSTD(1) -> none, the type changes")
+	c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "ReplacingMergeTree")
+	c.Assert(rebuildCount(c, conn,
+		"SELECT type || ' ' || compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 't' AND name = 'x'",
+	), qt.Equals, "String ")
+	c.Assert(rebuildRows(c, conn, "x"), qt.DeepEquals, [][2]string{{"1", "10"}, {"2", "20"}})
+	rebuildSynced(c, url, declaration)
+}
+
 // A rebuild that would lose something no declaration states, or could not
 // prove that the copy holds every row, is refused, and the table is untouched.
 func TestClickHouseTableRebuild_RefusesWhatTheNewTableWouldLose(t *testing.T) {
@@ -971,11 +1037,11 @@ func TestClickHouseTableRebuild_PlanIsMarkedDestructive(t *testing.T) {
 	}
 	c.Assert(json.Unmarshal([]byte(planned.Stdout), &document), qt.IsNil)
 	c.Assert(document.Plan.Destructive, qt.IsTrue)
-	c.Assert(document.Plan.Statements, qt.HasLen, 9)
+	c.Assert(document.Plan.Statements, qt.HasLen, 10)
 	c.Assert(document.Plan.Statements[0].SQL, qt.Contains, "WARNING: the steps are not atomic, and rows written to the table while they run are lost")
-	c.Assert(document.Plan.Statements[7].SQL, qt.Equals, "EXCHANGE TABLES `t` AND `ptah_rebuild_t`")
-	c.Assert(document.Plan.Statements[8].Severity, qt.Equals, "destructive")
-	c.Assert(document.Plan.Statements[8].SQL, qt.Equals, "DROP TABLE `ptah_rebuild_t` SYNC")
+	c.Assert(document.Plan.Statements[8].SQL, qt.Equals, "EXCHANGE TABLES `t` AND `ptah_rebuild_t`")
+	c.Assert(document.Plan.Statements[9].Severity, qt.Equals, "destructive")
+	c.Assert(document.Plan.Statements[9].SQL, qt.Equals, "DROP TABLE `ptah_rebuild_t` SYNC")
 	c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "MergeTree")
 	c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"t"})
 }

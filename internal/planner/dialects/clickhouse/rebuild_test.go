@@ -121,11 +121,12 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements, qt.HasLen, 9)
+		c.Assert(statements, qt.HasLen, 10)
 		c.Assert(statements[0], qt.Matches, "(?s)^-- ClickHouse table rebuild of events.*")
-		c.Assert(statements[1], qt.Contains, "CREATE TABLE `ptah_rebuild_events` (")
-		c.Assert(statements[1], qt.Contains, "ENGINE = ReplacingMergeTree(ver) ORDER BY (id)")
-		c.Assert(statements[2:], qt.DeepEquals, []string{
+		c.Assert(statements[1], qt.Equals, "SYSTEM START MERGES `ptah_rebuild_events`")
+		c.Assert(statements[2], qt.Contains, "CREATE TABLE `ptah_rebuild_events` (")
+		c.Assert(statements[2], qt.Contains, "ENGINE = ReplacingMergeTree(ver) ORDER BY (id)")
+		c.Assert(statements[3:], qt.DeepEquals, []string{
 			"SELECT throwIf((SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns " +
 				"WHERE database = currentDatabase() AND table = 'ptah_rebuild_events' AND name IN ('id', 'name', 'ver')) != " +
 				"(SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns " +
@@ -151,7 +152,8 @@ func TestRebuild_HappyPath(t *testing.T) {
 			"DROP TABLE `ptah_rebuild_events` SYNC",
 		})
 		c.Assert(statements[0], qt.Contains, "Merges of ptah_rebuild_events stop while it is filled and counted, because its engine ReplacingMergeTree merges rows when parts merge; "+
-			"they start again before the swap. SYSTEM STOP MERGES needs the SYSTEM MERGES privilege.")
+			"they start again before the swap. SYSTEM STOP MERGES needs the SYSTEM MERGES privilege on ptah_rebuild_events; "+
+			"the SYSTEM START MERGES before CREATE TABLE checks it while ptah_rebuild_events does not exist, so a user without it is refused before anything is created.")
 	})
 
 	t.Run("the plan says what each stop leaves, in every statement style", func(t *testing.T) {
@@ -184,7 +186,8 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements[1], qt.Contains, "TTL toDateTime(id) + INTERVAL 1 DAY")
+		c.Assert(statements[1], qt.Equals, "SYSTEM START MERGES `ptah_rebuild_events`")
+		c.Assert(statements[2], qt.Contains, "TTL toDateTime(id) + INTERVAL 1 DAY")
 		c.Assert(statements, qt.Contains, "SYSTEM STOP MERGES `ptah_rebuild_events`")
 		c.Assert(statements, qt.Contains, "SYSTEM START MERGES `ptah_rebuild_events`")
 		c.Assert(statements[0], qt.Contains, "because its TTL removes expired rows when parts merge")
@@ -301,8 +304,8 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements[1], qt.Contains, "CONSTRAINT events_ver_check CHECK")
-		c.Assert(statements[1], qt.Not(qt.Contains), "ptah_rebuild_events_ver_check")
+		c.Assert(statements[2], qt.Contains, "CONSTRAINT events_ver_check CHECK")
+		c.Assert(statements[2], qt.Not(qt.Contains), "ptah_rebuild_events_ver_check")
 	})
 
 	for _, test := range []struct {
@@ -321,7 +324,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements[0], qt.Contains, test.guard)
-			c.Assert(statements[1], qt.Contains, test.create)
+			c.Assert(statements[2], qt.Contains, test.create)
 		})
 	}
 
@@ -355,7 +358,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements[1], qt.Contains, "name String DEFAULT 'x'")
+		c.Assert(statements[2], qt.Contains, "name String DEFAULT 'x'")
 	})
 
 	t.Run("a column whose type changes is cast where the value is checked", func(t *testing.T) {
@@ -370,6 +373,28 @@ func TestRebuild_HappyPath(t *testing.T) {
 		c.Assert(statements, qt.Contains,
 			"INSERT INTO `ptah_rebuild_events` (`id`, `name`, `ver`) SELECT `id`, `name`, accurateCast(`ver`, 'UInt16') FROM `events` "+
 				"SETTINGS max_partitions_per_insert_block = 0, optimize_on_insert = 0, insert_deduplicate = 0")
+	})
+
+	// A codec fits the type it was chosen for, so the copy does not take the
+	// codec of a column whose type changes, and the check of the carried codecs
+	// leaves that column out.
+	t.Run("the codec of a column whose type changes is left behind and named", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.fields[1].Type = "UInt64"
+		f.current[1].StorageClauses = []string{"CODEC(ZSTD(3))"}
+		f.current[2].StorageClauses = []string{"CODEC(Delta(4), ZSTD(1))"}
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		joined := strings.Join(statements, "\n")
+		c.Assert(joined, qt.Not(qt.Contains), "MODIFY COLUMN `name`")
+		c.Assert(statements, qt.Contains, "ALTER TABLE `ptah_rebuild_events` MODIFY COLUMN `ver` CODEC(Delta(4), ZSTD(1))")
+		c.Assert(joined, qt.Contains, "WHERE database = currentDatabase() AND table = 'events' AND name IN ('id', 'ver'))")
+		c.Assert(statements[0], qt.Contains, "column name: codec ZSTD(3) -> none, the type changes")
+		c.Assert(statements[0], qt.Contains, "The new table keeps what no declaration states and events has: the codecs of columns ver CODEC(Delta(4), ZSTD(1))")
 	})
 
 	t.Run("a sorting key that does not start with the old one follows into the primary key", func(t *testing.T) {

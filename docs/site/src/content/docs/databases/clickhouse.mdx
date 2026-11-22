@@ -361,6 +361,7 @@ the two with `EXCHANGE TABLES`. The table stays as it is until the swap:
 
 ```sql
 SELECT throwIf((SELECT count() FROM system.databases WHERE name = currentDatabase() AND engine = 'Atomic') = 0, '...'), throwIf((SELECT count() FROM `events`) != (SELECT ifNull(sum(total_rows), 0) FROM system.tables WHERE database = currentDatabase() AND name = 'events'), '...') SETTINGS apply_deleted_mask = 0;
+SYSTEM START MERGES `ptah_rebuild_events`;
 CREATE TABLE `ptah_rebuild_events` (id UInt64, name String) ENGINE = ReplacingMergeTree ORDER BY (id) PRIMARY KEY (id) SETTINGS index_granularity = 8192;
 SELECT throwIf((SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns WHERE ... table = 'ptah_rebuild_events' ...) != (... table = 'events' ...), '...'), throwIf((SELECT arraySort(groupArray((name, query))) FROM system.projections WHERE ... table = 'ptah_rebuild_events') != (... table = 'events'), '...');
 SYSTEM STOP MERGES `ptah_rebuild_events`;
@@ -407,6 +408,14 @@ around the copy and the count, and starts them again before the swap. That needs
 the `SYSTEM MERGES` privilege on the copy. The rows a declared `TTL` has expired are
 then counted, and the merges of the new table remove them after the swap.
 
+The `SYSTEM START MERGES` before `CREATE TABLE` checks that privilege while the copy
+does not exist yet. The server checks the privilege before it looks for the table,
+and starting the merges of a table that does not exist does nothing, so a user
+without it is refused with code 497, which names the privilege, before anything is
+created. Neither 24.10 nor 26.10 has a function that reads a privilege, and 24.10 has
+no `CHECK GRANT` for `SYSTEM MERGES`. A copy whose merges remove no row has neither
+statement and needs no such privilege.
+
 The statement after the copy fails when the copy holds fewer rows than the table: a
 row was written to the table while it was copied, or a limit in the user's settings
 cut the copy short. It fails when the copy holds more rows, too, since rows deleted
@@ -418,7 +427,15 @@ The new table keeps what no declaration can state, and Ptah reads from the table
 the codec of each column it keeps, and every projection. They are added to the new
 table before the rows, and a check that the new table reports the same codecs and
 projections as the table stops the plan before the copy otherwise. The plan names
-them in a comment. What the declaration states follows the declaration, as it does
+them in a comment.
+
+A codec fits the type it was chosen for, so the codec of a column whose type changes
+is left behind, and the plan names it beside the declared changes, as in
+`column x: codec Delta(8), ZSTD(1) -> none, the type changes`. Carried onto a
+`String` column, the codec of a `UInt64` one is a codec `CREATE TABLE` refuses with
+code 36, measured on 26.10.
+
+What the declaration states follows the declaration, as it does
 on the `ALTER TABLE` path: a table or column comment the declaration leaves out is
 not on the new table, and the plan names each comment and index that changes. An
 unnamed `CHECK` keeps the name it has on the table. A rebuild that would lose
