@@ -200,8 +200,8 @@ Set it to `1` and the YDB provider plans the change as a
 [table rebuild](https://github.com/stokaro/ptah-ydb-plugin#native-table-rebuild): a new table, a copy of the
 rows and a swap. The steps are not atomic and lose rows written during them.
 
-On ClickHouse the plan copies the rows to a holding table, drops the table, creates it
-again and copies the rows back, with the same loss. See
+On ClickHouse the plan creates the new table under another name, copies the rows into
+it and swaps the two with `EXCHANGE TABLES`, with the same loss. See
 [Creating a table again](../../databases/clickhouse/#creating-a-table-again).
 
 The variable matches the native `--allow-table-rebuild` flag, which reads no variable.

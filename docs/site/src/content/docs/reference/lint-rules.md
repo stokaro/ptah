@@ -124,11 +124,13 @@ and their consumers between them, none of which writes a row or moves a table.
 The drop that ends it loses no row, so `destructive/drop-table`,
 `rollout/rename` and `rollout/drop-table` do not report its steps on the native surface.
 
-A ClickHouse rebuild is not one of those shapes: it copies the rows to a holding
-table, runs `DROP TABLE ... SYNC` on the table, creates it again and copies the
-rows back. `DS101` and `BC103` report that drop, and the report is meant to
-stand: the plan marks the rebuild destructive because the steps are not atomic
-and rows written during them are lost, which a reviewer has to see.
+A ClickHouse rebuild is not one of those shapes: it creates the copy, fills it,
+swaps the two tables with `EXCHANGE TABLES` and drops the old table under the
+copy's name. `destructive/drop-table` reads the swap, so it reports that drop as
+the drop of a table holding rows, and the report is meant to stand: the plan
+marks the rebuild destructive because the steps are not atomic and rows written
+during them are lost, which a reviewer has to see. The swap moves no name
+deployed code reads, so `rollout/drop-table` does not report it.
 
 A copy that keeps every row can still lose a column's values. The `INSERT`
 pairs its columns with the `SELECT` list by position, so each item has to be
