@@ -260,6 +260,9 @@ cannot be combined with --edit.`,
 	flags.StringArrayVar(&opts.protectedTables, applyProtectedTableFlag, nil,
 		"Declared row set this apply refuses to change, by table or schema.table; repeat to add more. There is no override. "+
 			"Refused with --plan: fence the plan with \"ptah schema plan --protected-table\" instead")
+	dbcli.RefuseEmptyListEnv(flags, applyIncludeFlag, dbcli.OmittedInclude)
+	dbcli.RefuseEmptyListEnv(flags, applyExcludeFlag, dbcli.OmittedExclude)
+	dbcli.RefuseEmptyListEnv(flags, applyProtectedTableFlag, dbcli.OmittedProtectedTable)
 	flags.StringVar(&opts.planPath, applyPlanFlag, "", "Pre-approved plan file saved by `ptah schema plan`; executed after fingerprint verification")
 	flags.BoolVar(&opts.requireApproval, applyRequireApprovalFlag, false,
 		"Refuse to execute a --plan that does not carry a verified approval")

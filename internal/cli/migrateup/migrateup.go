@@ -73,6 +73,10 @@ const (
 	expectSequenceFlag       = "expect-sequence"
 )
 
+// applyEveryPending is what leaving --limit and --to-version out does, in the
+// words the refusal of their empty variables prints.
+const applyEveryPending = "apply every pending migration"
+
 type options struct {
 	dbURL                string
 	migrationsDir        string
@@ -318,6 +322,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Apply pending migrations up to and including this version; a version the directory does not "+
 			"carry, or one the database has already passed, is refused (empty applies all)",
 	)
+	dbcli.RefuseEmptyValueEnv(flags, limitFlag, applyEveryPending)
+	dbcli.RefuseEmptyValueEnv(flags, toVersionFlag, applyEveryPending)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration assertion checks (+ptah check directives and Atlas txtar checks.sql)")
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")

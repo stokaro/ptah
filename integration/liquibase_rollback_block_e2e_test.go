@@ -54,7 +54,7 @@ func TestLiquibaseRollbackBlockE2E_HappyPath(t *testing.T) {
 			"migrations", "up", "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")
 		c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("up: %s", upErr))
 		_, downErr, err := runCLIProcess(ctx, work, native,
-			"migrations", "down", "--confirm", "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")
+			"migrations", "down", "--target", "0", "--confirm", "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")
 		c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("down: %s", downErr))
 
 		schema, _, err := runCLIProcess(ctx, work, native, "db", "read", "--db-url", "sqlite://app.db")

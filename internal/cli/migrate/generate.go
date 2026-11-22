@@ -129,6 +129,8 @@ select nothing are refused.`,
 	flags.StringArray(generateExcludeFlag, nil, "Schema objects to exclude from the generated migration (Atlas-style selectors)")
 	flags.StringArray(generateIncludeFlag, nil,
 		"Schema objects the generated migration may change, applied after --exclude; it neither creates nor drops anything else (Atlas-style selectors)")
+	dbcli.RefuseEmptyListEnv(flags, generateExcludeFlag, dbcli.OmittedExclude)
+	dbcli.RefuseEmptyListEnv(flags, generateIncludeFlag, dbcli.OmittedInclude)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterTrustReplaySQLFlag(flags, new(bool))
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))

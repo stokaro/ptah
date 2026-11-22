@@ -69,7 +69,7 @@ func TestProviderVerifiesARollbackOnItsShadowDatabase(t *testing.T) {
 			runProviderMigration(c, f.providerCLI, "up", "--migrations-dir", dir)
 
 			out, diagnostics, code := executeProviderCLI(c.Context(), migrationArguments(f.providerCLI, "down",
-				append([]string{"--migrations-dir", dir, "--shadow-db", "docker://fixture/1", "--dry-run"}, row.args...)...))
+				append([]string{"--migrations-dir", dir, "--target", "0", "--shadow-db", "docker://fixture/1", "--dry-run"}, row.args...)...))
 
 			f.assertStopped(c)
 			c.Assert(code, qt.Equals, 0, qt.Commentf("%s\n%s", out, diagnostics))
@@ -97,7 +97,7 @@ func TestProviderVerifiesARollbackOnItsShadowDatabase_FailurePath(t *testing.T) 
 			runProviderMigration(c, f.providerCLI, "up", "--migrations-dir", dir)
 
 			out, diagnostics, code := executeProviderCLI(c.Context(), migrationArguments(f.providerCLI, "down",
-				append([]string{"--migrations-dir", dir, "--shadow-db", f.address, "--dry-run"}, row.args...)...))
+				append([]string{"--migrations-dir", dir, "--target", "0", "--shadow-db", f.address, "--dry-run"}, row.args...)...))
 
 			f.assertStopped(c)
 			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("%s", out))

@@ -50,8 +50,9 @@ const (
 // refuses one; see [RefuseEmpty].
 var ErrEmptyValue = errors.New("names nothing")
 
-// EmptyRule is what a flag's variable refuses: the empty value, and for a list
-// a value that names nothing once it is split and trimmed.
+// EmptyRule is what a flag's variable refuses: a value that names nothing.
+// For a single value that is the empty value and a value of only spaces; for
+// a list it is a value with no field left once it is split and trimmed.
 //
 // Every other non-boolean variable reads an empty value as unset. For a flag
 // that selects something, unset can select more than any value does, so an
@@ -64,6 +65,8 @@ type EmptyRule struct {
 	Omitted string
 	// List reads the value as comma-separated fields, each trimmed of spaces,
 	// and refuses a value with no field left: " ", "," and " , " as well as "".
+	// Without it the value is read whole, and "" and " " are refused while ","
+	// is passed on to the flag.
 	List bool
 }
 
@@ -94,7 +97,7 @@ func (e *emptyValueError) Unwrap() error { return ErrEmptyValue }
 
 func (r EmptyRule) namesNothing(value string) bool {
 	if !r.List {
-		return value == ""
+		return strings.TrimSpace(value) == ""
 	}
 	for field := range strings.SplitSeq(value, ",") {
 		if strings.TrimSpace(field) != "" {

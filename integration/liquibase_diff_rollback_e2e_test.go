@@ -58,7 +58,7 @@ func TestLiquibaseDiffRollbackE2E_HappyPath(t *testing.T) {
 	recreated, _, err := runCLIProcess(ctx, work, native, "db", "read", "--db-url", "sqlite://app.db")
 	c.Assert(exitStatusOf(c, err), qt.Equals, 0)
 	_, downErr, err = runCLIProcess(ctx, work, native,
-		"migrations", "down", "--confirm", "--db-url", "sqlite://app.db", "--migrations-dir", "imported")
+		"migrations", "down", "--target", "0", "--confirm", "--db-url", "sqlite://app.db", "--migrations-dir", "imported")
 	c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("down to 0: %s", downErr))
 	emptied, _, err := runCLIProcess(ctx, work, native, "db", "read", "--db-url", "sqlite://app.db")
 

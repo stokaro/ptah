@@ -69,6 +69,7 @@ service and records it in a ledger of its own instead of schema_seeds.`,
 	cmd.Flags().StringVar(&env, "env", "", "Seed environment to apply (required), for example dev, test, or prod")
 	cmd.Flags().StringArrayVar(&protectedEnvs, "protected-env", seeder.DefaultProtectedEnvs(), "Environment name that requires --allow-prod; repeat to add more")
 	cmd.Flags().StringArrayVar(&protectedTables, "protected-table", nil, "Existing target table name that requires --allow-prod; repeat to add more")
+	dbcli.RefuseEmptyListEnv(cmd.Flags(), "protected-table", dbcli.OmittedProtectedTable)
 	cmd.Flags().BoolVar(&force, "force", false, "Re-run seeds even when they are already recorded in schema_seeds, including a seed file edited since it was applied")
 	cmd.Flags().BoolVar(&idempotent, "idempotent", false, "Treat duplicate-key conflicts as already-applied seed data, rolling the file back to a per-file savepoint (on YDB, which has none, rolling the whole file back)")
 	cmd.Flags().BoolVar(&allowProd, "allow-prod", false, "Allow seeding a protected production-like environment")

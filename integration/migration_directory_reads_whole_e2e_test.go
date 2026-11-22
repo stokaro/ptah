@@ -267,7 +267,7 @@ func TestMigrationDirectoryReadsWhole_TwoFilesForOneDirectionOfAVersion_FailureP
 			}
 
 			up := readsWholePtah(c, dir, "up")
-			down := readsWholePtah(c, dir, "down", "--confirm")
+			down := readsWholePtah(c, dir, "down", "--target", "0", "--confirm")
 			status := readsWholePtah(c, dir, "status")
 			checkpoint := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
 				"migrations", "checkpoint", "--migrations-dir", "migrations", "--shadow-db", "sqlite://shadow.db")

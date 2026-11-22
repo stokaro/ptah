@@ -77,6 +77,41 @@ func RefuseEmptySchemasEnv(flags *pflag.FlagSet, name, omitted string) {
 	}
 }
 
+// What leaving a selecting flag out does, in the words the refusal of its
+// empty variable prints after "to"; see [RefuseEmptyListEnv].
+const (
+	// OmittedExclude is what leaving --exclude out does.
+	OmittedExclude = "exclude nothing"
+	// OmittedInclude is what leaving --include out does.
+	OmittedInclude = "include every object"
+	// OmittedProtectedTable is what leaving --protected-table out does.
+	OmittedProtectedTable = "protect no table"
+)
+
+// RefuseEmptyListEnv makes the variable of the list flag name refuse a value
+// that names nothing: the empty value, and one whose comma-separated fields are
+// all blank. omitted is what leaving the flag out does; see
+// [cmdflags.RefuseEmptyEnv]. It is for a verb that writes, where the variable
+// read as unset would select more than any value does: an empty PTAH_EXCLUDE
+// plans the DROP a value keeps out. A pipeline variable nobody filled reaches
+// the flag as such a value. A read-only verb keeps reading it as unset.
+func RefuseEmptyListEnv(flags *pflag.FlagSet, name, omitted string) {
+	refuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted, List: true})
+}
+
+// RefuseEmptyValueEnv is [RefuseEmptyListEnv] for a flag that takes one value:
+// its variable refuses the empty value and a value of only spaces. An empty
+// PTAH_TO_VERSION read as unset applies every pending migration.
+func RefuseEmptyValueEnv(flags *pflag.FlagSet, name, omitted string) {
+	refuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted})
+}
+
+func refuseEmptyEnv(flags *pflag.FlagSet, name string, rule envbinding.EmptyRule) {
+	if err := cmdflags.RefuseEmptyEnv(flags, name, rule); err != nil {
+		panic(err) // the caller registers the flag first and names what leaving it out does
+	}
+}
+
 // RegisterURLScopedSchemasFlag registers the same flag for the verbs whose
 // empty value lets the database URL decide, through
 // [ptah.run/internal/schemascope.ReadNames]: a PostgreSQL-family URL that

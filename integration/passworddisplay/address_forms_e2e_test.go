@@ -92,7 +92,7 @@ var verbs = []struct {
 	{name: "migrations up", target: clirun.Ptah, args: []string{"migrations", "up", "--db-url", "ADDRESS", "--migrations-dir", "native", "--verbose"}},
 	{name: "migrations up, JSON", target: clirun.Ptah, args: []string{"migrations", "up", "--db-url", "ADDRESS", "--migrations-dir", "native", "--json"}},
 	{name: "migrations status, JSON", target: clirun.Ptah, args: []string{"migrations", "status", "--db-url", "ADDRESS", "--migrations-dir", "native", "--json"}},
-	{name: "migrations down", target: clirun.Ptah, args: []string{"migrations", "down", "--db-url", "ADDRESS", "--migrations-dir", "native", "--verbose"}},
+	{name: "migrations down", target: clirun.Ptah, args: []string{"migrations", "down", "--target", "0", "--db-url", "ADDRESS", "--migrations-dir", "native", "--verbose"}},
 	{name: "migrations log", target: clirun.Ptah, args: []string{"migrations", "log", "--db-url", "ADDRESS"}},
 	{name: "migrations lint", target: clirun.Ptah, args: []string{"migrations", "lint", "--dev-url", "ADDRESS", "--dir", "migrations", "--latest", "1", "--format", "json"}},
 	{name: "migrations validate", target: clirun.Ptah, args: []string{"migrations", "validate", "--dev-url", "ADDRESS", "--dir", "native"}},

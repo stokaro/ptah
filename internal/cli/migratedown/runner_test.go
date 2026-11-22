@@ -84,7 +84,7 @@ func TestMigrateDownCommand_GolangMigrateRunnerOnSQLiteKeepsTheTransactionAround
 	c.Assert(up.Execute(), qt.IsNil, qt.Commentf("%s", upOut.String()))
 
 	_, err := runDown("--db-url", atlasurl.SQLiteURLFromPath(dbPath), "--migrations-dir", dir, "--runner", "golang-migrate",
-		"--confirm")
+		"--target", "0", "--confirm")
 
 	c.Assert(err, qt.ErrorMatches, `.*migration 1 cannot run tx-mode file down statement 1 because it controls transaction state.*`)
 	c.Assert(tableCensus(c, dbPath), qt.DeepEquals, []string{"schema_migrations", "schema_migrations_log", "t"})

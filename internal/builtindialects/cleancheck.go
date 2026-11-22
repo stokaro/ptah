@@ -17,6 +17,11 @@ const (
 		"\n\t\t\tWHERE type = 'table'" +
 		"\n\t\t\t  AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'" +
 		"\n\t\t\tORDER BY rowid"
+	// sqliteSeedTables is the table list a seed's --protected-table fence
+	// reads. SQLite has no information_schema, so without it the fence fails
+	// with "no such table" before it can refuse anything. The ESCAPE clause is
+	// there for the reason sqliteCleanTables gives.
+	sqliteSeedTables = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"
 	// sqlServerCleanTables reads sys.tables. A replay and a rehearsal each empty
 	// every user schema of a SQL Server dev database, so the probe reads them
 	// all and returns the first table in byte order. is_ms_shipped leaves the

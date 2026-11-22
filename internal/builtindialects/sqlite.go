@@ -62,6 +62,7 @@ func sqlite() descriptor.Dialect {
 		},
 		Seeds: descriptor.Seeds{
 			Transactional: true,
+			TablesQuery:   sqliteSeedTables,
 		},
 
 		// How an identifier is written, and how a column's own key is named.

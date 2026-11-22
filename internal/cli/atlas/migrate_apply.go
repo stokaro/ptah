@@ -123,6 +123,7 @@ Native Ptah equivalent: ptah migrations up.`,
 	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring the migration lock, such as 10s or 2m; zero or less tries it once")
 	if !policy.IsStrictCE() {
 		flags.StringVar(&opts.toVersion, "to-version", "", "Migrate to this version, if set")
+		dbcli.RefuseEmptyValueEnv(flags, "to-version", "apply every pending migration")
 		registerAtlasLockNameFlag(flags, &opts.lock)
 		registerAtlasSkipLockFlag(flags, &opts.lock)
 	}

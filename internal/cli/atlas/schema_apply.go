@@ -345,6 +345,8 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	flags.StringVar(&opts.txMode, "tx-mode", string(migrator.MigrationTxModeFile), "Transaction mode: file or none")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used", policy)
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in apply")
+	dbcli.RefuseEmptyListEnv(flags, "exclude", dbcli.OmittedExclude)
+	dbcli.RefuseEmptyListEnv(flags, "include", dbcli.OmittedInclude)
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffixHCL+" or file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring the database lock; zero or less tries it once")

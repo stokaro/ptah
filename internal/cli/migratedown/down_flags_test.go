@@ -86,11 +86,11 @@ func TestMigrateDownToTagStopsWhereTheTagPoints(t *testing.T) {
 	c.Assert(tableCensus(c, dbPath), qt.Contains, "parent")
 }
 
-// TestMigrateDownRefusesAnUnknownTag keeps a typo from rolling everything back.
+// TestMigrateDownRefusesAnUnknownTag keeps a typo from rolling back further
+// than the operator asked.
 //
-// An unresolved tag must not fall through to the numeric default: --target
-// defaults to 0, so "ignore the tag" would revert the whole history where the
-// operator asked for a bounded rollback.
+// An unresolved tag must not be read as no tag: the run would then stop where
+// something else names, or nowhere the operator chose.
 func TestMigrateDownRefusesAnUnknownTag(t *testing.T) {
 	c := qt.New(t)
 	dir, dbPath := twoMigrationDir(c, childDownSQL)
@@ -402,4 +402,76 @@ func recordedVersion(c *qt.C, dbPath string) int64 {
 		"SELECT COALESCE(MAX(version), 0) FROM schema_migrations WHERE state = 'applied'",
 	).Scan(&version), qt.IsNil)
 	return version
+}
+
+var (
+	// revisionTablesOnly is the census of a database rolled back to version 0.
+	revisionTablesOnly = []string{"schema_migrations", "schema_migrations_log"}
+	// parentAndRevisionTables is the census of a database rolled back to version 1.
+	parentAndRevisionTables = []string{"parent", "schema_migrations", "schema_migrations_log"}
+)
+
+// TestMigrateDownRequiresAStop_FailurePath refuses a rollback that names no
+// stop. A default of version 0 would roll back every applied migration on a
+// run that asked for none in particular, so there is no default. The runs go
+// through the root command, which installs the PTAH_* binding.
+func TestMigrateDownRequiresAStop_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		env  []string
+	}{
+		{name: "no stop"},
+		{name: "an empty --to-tag", args: []string{"--to-tag", ""}},
+		{name: "a --limit of 0, which sets no limit", args: []string{"--limit", "0"}},
+		{name: "an empty PTAH_TO_TAG", env: []string{"PTAH_TO_TAG", ""}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir, dbPath := twoMigrationDir(c, childDownSQL)
+			before := tableCensus(c, dbPath)
+			for i := 0; i < len(tc.env); i += 2 {
+				t.Setenv(tc.env[i], tc.env[i+1])
+			}
+
+			_, err := runDownThroughRoot(slices.Concat([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", dir, "--confirm"},
+				tc.args)...)
+
+			c.Assert(err, qt.ErrorMatches, `name where the rollback stops: pass --target <version> \(--target 0 rolls back `+
+				`every applied migration\), --to-tag <tag> or --limit <n>; "ptah migrations status" lists the applied versions`)
+			c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
+		})
+	}
+}
+
+// TestMigrateDownRequiresAStop_HappyPath names the stop each way the
+// refusal accepts.
+func TestMigrateDownRequiresAStop_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		env  []string
+		want []string
+	}{
+		{name: "a typed --target of 0", args: []string{"--target", "0"}, want: revisionTablesOnly},
+		{name: "a typed --limit", args: []string{"--limit", "1"}, want: parentAndRevisionTables},
+		{name: "PTAH_TARGET", env: []string{"PTAH_TARGET", "1"}, want: parentAndRevisionTables},
+		{name: "PTAH_LIMIT", env: []string{"PTAH_LIMIT", "2"}, want: revisionTablesOnly},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir, dbPath := twoMigrationDir(c, childDownSQL)
+			for i := 0; i < len(tc.env); i += 2 {
+				t.Setenv(tc.env[i], tc.env[i+1])
+			}
+
+			out, err := runDownThroughRoot(slices.Concat([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", dir, "--confirm"},
+				tc.args)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(tableCensus(c, dbPath), qt.DeepEquals, tc.want)
+		})
+	}
 }
