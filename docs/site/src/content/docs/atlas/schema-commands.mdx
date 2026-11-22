@@ -263,12 +263,15 @@ Measured on Atlas CE v1.4.0, with `schema inspect`:
 | `-s ' main'`, a document declaring `schema "main"` | refused: `schema "main" from paths ["main.hcl"] is not requested` | refused |
 | `-s ' a'`, a document declaring `schema " a"` | describes ` a` | refused |
 | `-s ' a'`, a PostgreSQL database holding `a` and ` a` | describes ` a` | refused |
-| `-s ' main'`, a SQLite database | describes `main` | refused |
+| `-s ' main'`, a SQLite database | describes `main`, as for any `-s` value | refused |
 
-The last three rows are stricter than Atlas CE on purpose. Without the
-refusal, strict mode would trim the name: the database run describes `a`, which
-is another schema, and the document run is refused with
-`schema " a" from paths ["sa.hcl"] is not requested`. A field that is blank
+The second and third rows are stricter than Atlas CE on purpose, because they
+name a schema Ptah cannot carry. Without the refusal, strict mode would trim the
+name: the database run describes `a`, which is another schema, and the document
+run is refused with `schema " a" from paths ["sa.hcl"] is not requested`. The
+last row is stricter for another reason. Atlas CE does not read `-s` on a SQLite
+URL at all, so `-s other`, `-s ' x'` and `-s 'main '` all describe `main` there,
+and Ptah refuses the value before it reads the URL. A field that is blank
 beside a name, as in `-s 'main, '`, is accepted: it selects nothing on either
 binary.
 
@@ -306,11 +309,14 @@ match; see
 [`env.schemas`](../project-config/#envschemas) for the reason the list applies.
 
 On `schema test`, an object the desired schema leaves unqualified belongs to
-the dev database's default schema, `main` on SQLite and `public` on the
-PostgreSQL family, because that is where the dev database creates it. So
-`-s main` keeps `CREATE TABLE t` on SQLite, and `-s other` keeps nothing and is
-refused: `--schema other selects no tables out of the desired schema`. The
-native `ptah schema test --schema` reads it the same way.
+the schema the dev database creates it in, which the `--dev-url` names: `main`
+on SQLite, the one `search_path` schema or `public` on the PostgreSQL family,
+`dbo` on SQL Server, and the database on MySQL and MariaDB. So `-s main` keeps
+`CREATE TABLE t` on SQLite, and `-s other` keeps nothing and is refused:
+`--schema other selects no tables out of the desired schema`. A `search_path`
+that lists more than one schema is refused when the selection depends on it.
+The native `ptah schema test --schema` reads it the same way; see
+[test cases](../../reference/test-cases/#isolation).
 
 A MySQL or MariaDB URL that names no database is the whole server, as the
 community binary reads it
