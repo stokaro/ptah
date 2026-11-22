@@ -34,10 +34,12 @@ import (
 // [atlascompatpolicy.Policy.ValidateProjectConfig].
 //
 // The block's contract is Atlas's documented one, adapted here and nowhere
-// else. The applied history is replayed on the env's `dev` database. `exclude`
-// replaces the env's `exclude` for the check, and the revision table is left
-// out either way. A target with no applied migration is not checked.
-// `on_error = CONTINUE` reports what the check found and applies anyway.
+// else. The applied history is replayed on the env's `dev` database, in the
+// --tx-mode the apply runs its pending files in, as `ptah migrations up
+// --check-drift` replays it. `exclude` replaces the env's `exclude` for the
+// check, and the revision table is left out either way. A target with no
+// applied migration is not checked. `on_error = CONTINUE` reports what the
+// check found and applies anyway.
 
 // atlasApplyDriftDevURL is the dev database the declared drift check replays
 // the history on, or a refusal when the env declares a check and no dev
@@ -56,15 +58,17 @@ func atlasApplyDriftDevURL(config projectconfig.Config) (string, error) {
 }
 
 // prepareAtlasApplyDrift is the drift check the env declares, for the target
-// conn and the plan that applies to it, or nil when the env declares none. The
-// dev database is provisioned here when its URL is a docker:// one, before the
-// migration lock is taken. The release function is always safe to call.
+// conn and the plan that applies to it in txMode, or nil when the env declares
+// none. The dev database is provisioned here when its URL is a docker:// one,
+// before the migration lock is taken. The release function is always safe to
+// call.
 func prepareAtlasApplyDrift(
 	cmd *cobra.Command,
 	config projectconfig.Config,
 	targetURL, devURL string,
 	conn *dbschema.DatabaseConnection,
 	plan atlasmigrate.ApplyPlan,
+	txMode migrator.MigrationTxMode,
 ) (*driftgate.Check, func(), error) {
 	drift := config.PreApplyDrift
 	if drift == nil {
@@ -99,6 +103,7 @@ func prepareAtlasApplyDrift(
 		Conn:               conn,
 		History:            plan,
 		MetadataTables:     revisiontable.Configured("atlas", revisions),
+		TxMode:             txMode,
 		OnDrift:            onDrift,
 		SkipWithoutHistory: true,
 	}), release, nil

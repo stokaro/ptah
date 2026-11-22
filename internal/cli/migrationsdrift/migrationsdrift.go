@@ -62,6 +62,7 @@ const (
 	atlasEnvFlag             = "atlas-env"
 	shadowDBFlag             = "shadow-db"
 	excludeFlag              = "exclude"
+	txModeFlag               = "tx-mode"
 	jsonFlag                 = "json"
 	plainHTTPFlag            = "plain-http"
 	migrationLockTimeoutFlag = migratelock.TimeoutFlag
@@ -78,6 +79,7 @@ type options struct {
 	atlasEnv             string
 	shadowDB             string
 	exclude              []string
+	txMode               string
 	jsonOutput           bool
 	plainHTTP            bool
 	connectTimeout       string
@@ -100,11 +102,12 @@ func NewMigrationsDriftCommand() *cobra.Command {
 		Long: `Report whether the database still holds the schema its applied migrations produce.
 
 The command reads the revision table under the migration lock, replays the
-applied migrations on the disposable --shadow-db, and compares the database with
-the schema the replay produced. Pending migrations are listed and never read as
-drift. The report names the version the database is at, the pending migrations,
-every missing, extra and modified object, the diff, and the statements that
-would bring the database back to its history. Nothing runs them. The revision
+applied migrations on the disposable --shadow-db in --tx-mode, the transaction
+mode 'migrations up' applied them in, and compares the database with the schema
+the replay produced. Pending migrations are listed and never read as drift.
+The report names the version the database is at, the pending migrations, every
+missing, extra and modified object, the diff, and the statements that would
+bring the database back to its history. Nothing runs them. The revision
 state is only read; on Oracle the migration lock creates its table ptah_locks
 beside the revision table when it is absent and adds a row for the lock name,
 which needs CREATE TABLE (CREATE ANY TABLE in a schema the account does not
@@ -148,6 +151,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 			"A docker:// URL starts a container for the run")
 	flags.StringArrayVar(&opts.exclude, excludeFlag, nil,
 		"Schema objects the comparison leaves out, written as schema diff --exclude takes them (repeatable)")
+	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile),
+		"Transaction mode the replay runs the applied migrations in, as migrations up --tx-mode applies them: file, all, or none")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false,
 		"Print the report as one JSON document, or the failure when no report could be made")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
@@ -174,6 +179,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.shadowDB = effective(shadowDBFlag, opts.shadowDB, projectconfig.StringDevURL)
 	opts.dirFormat = effective(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
 	opts.atlasEnv = effective(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
+	opts.txMode = effective(txModeFlag, opts.txMode, projectconfig.StringMigrationTxMode)
 	opts.migrationsSchema = effective(dbcli.MigrationsSchemaFlagName, opts.migrationsSchema, projectconfig.StringMigrationRevisionsSchema)
 	opts.migrationsTable = effective(dbcli.MigrationsTableFlagName, opts.migrationsTable, projectconfig.StringMigrationRevisionsTable)
 	opts.revisionTableFormat = effective(dbcli.RevisionTableFormatFlagName, opts.revisionTableFormat, projectconfig.StringMigrationRevisionFormat)
@@ -188,6 +194,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 type settings struct {
 	dirFormat            migrationfile.DirFormat
 	revisionFormat       migrator.RevisionTableFormat
+	txMode               migrator.MigrationTxMode
 	connectTimeout       time.Duration
 	migrationLockTimeout time.Duration
 	lockName             migratelock.Name
@@ -210,6 +217,10 @@ func parseSettings(cmd *cobra.Command, opts options, projectCfg projectconfig.Co
 		return settings{}, err
 	}
 	revisionFormat, err := migrateflags.ParseRevisionTableFormat(opts.revisionTableFormat)
+	if err != nil {
+		return settings{}, err
+	}
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return settings{}, err
 	}
@@ -237,6 +248,7 @@ func parseSettings(cmd *cobra.Command, opts options, projectCfg projectconfig.Co
 	return settings{
 		dirFormat:            dirFormat,
 		revisionFormat:       revisionFormat,
+		txMode:               txMode,
 		connectTimeout:       connectTimeout,
 		migrationLockTimeout: lockTimeout,
 		lockName:             lockName,
@@ -348,6 +360,7 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		Conn:           conn,
 		History:        mig,
 		MetadataTables: metadataTables,
+		TxMode:         set.txMode,
 		OnDrift:        driftgate.Continue,
 	})
 

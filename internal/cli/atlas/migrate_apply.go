@@ -445,7 +445,7 @@ func runAtlasMigrateApplyTarget(
 
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
 
-	drift, releaseDrift, err := prepareAtlasApplyDrift(cmd, projectCfg, opts.url, driftDevURL, conn, plan)
+	drift, releaseDrift, err := prepareAtlasApplyDrift(cmd, projectCfg, opts.url, driftDevURL, conn, plan, txMode)
 	if err != nil {
 		return formatOutput, err
 	}

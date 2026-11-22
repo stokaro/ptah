@@ -500,7 +500,8 @@ The check is the one `ptah migrations up --check-drift` runs, and
 [Check the schema against its history](../../versioned/apply/#check-the-schema-against-its-history)
 describes what it compares and when it cannot decide. Under the migration lock,
 it replays the migrations the revision table records as applied on the env's
-`dev` database and compares that schema with the target's.
+`dev` database, in the `--tx-mode` the apply runs its pending files in, and
+compares that schema with the target's.
 
 | Setting | Behavior |
 | --- | --- |

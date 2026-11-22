@@ -26,7 +26,10 @@ cannot see a column added by hand or an index dropped during an incident.
 
 The command reads the revision table under the migration lock, replays the
 migrations it records as applied on a disposable shadow database, and compares
-the database with the schema the replay produced. The baseline is the applied
+the database with the schema the replay produced. The replay runs in
+`--tx-mode`, or the project's `migration.tx_mode`, which is `file` by default:
+give it the mode `ptah migrations up` applies the history in, because the
+revision table does not record it. The baseline is the applied
 history, not the directory, so a pending migration is listed and never read as
 drift. It is the comparison
 [`ptah migrations up --check-drift`](../apply/#check-the-schema-against-its-history)
@@ -162,7 +165,9 @@ the `stage` and `reason` it stopped at and exits with status 2, when:
   `ptah migrations up` accepts it, because the report replays versions in
   order and that order is not the one the database ran;
 - the shadow database cannot be used: it is the target under another name, it
-  is not empty, or the replay of the applied migrations fails on it;
+  is not empty, or the replay of the applied migrations fails on it. A history
+  applied with `--tx-mode none` fails in `file` where a migration holds a
+  statement that cannot run inside a transaction;
 - the database read cannot describe an object the applied migrations create,
   so whether the database holds it is unknown.
 

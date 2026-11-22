@@ -75,7 +75,12 @@ type Options struct {
 	// MetadataTables are the target's bookkeeping tables under the names the
 	// run configured, which no migration creates.
 	MetadataTables []string
-	OnDrift        OnDrift
+	// TxMode is the transaction mode the run applies its pending migrations
+	// in. The replay of the applied history runs in it, so a history applied
+	// under `none` replays as it ran; see [shadow.AppliedVerifyOptions.TxMode].
+	// Empty selects `file`.
+	TxMode  migrator.MigrationTxMode
+	OnDrift OnDrift
 	// SkipWithoutHistory skips the check on a target with no applied
 	// migration, where there is no history to compare with. Without it the
 	// check compares the target with an empty schema.
@@ -229,6 +234,7 @@ func (c *Check) run(ctx context.Context) (Result, bool, error) {
 		MetadataTables:    c.opts.MetadataTables,
 		Scope:             c.scope(),
 		ConnectTimeout:    c.opts.ConnectTimeout,
+		TxMode:            c.opts.TxMode,
 	})
 	if err != nil {
 		check.Outcome, check.Stage, check.Reason, check.Message = migrator.DriftUnable, "shadow", "verification_error", err.Error()

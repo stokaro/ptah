@@ -74,6 +74,14 @@ type AppliedVerifyOptions struct {
 	// ConnectTimeout bounds the shadow database connection attempt; zero or
 	// negative means no bound beyond the caller's context.
 	ConnectTimeout time.Duration
+	// TxMode is the transaction mode the target's runs apply their pending
+	// migrations in, and the replay applies the history in it. A migration's
+	// own directive wins, as it does in a run. [migrator.MigrationTxModeAll]
+	// replays each migration in a transaction of its own, as
+	// [migrator.MigrationTxModeFile] does, because the revision table does
+	// not record which migrations one run applied together. Empty selects
+	// [migrator.MigrationTxModeFile].
+	TxMode migrator.MigrationTxMode
 }
 
 // AppliedResult is what [VerifyApplied] found when it could compare the target
@@ -163,7 +171,7 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 		return AppliedResult{}, appliedErrorWithDisplayMessage("reset-schemas", "schema_reset_error", err.Error(), err)
 	}
 
-	if err := replayApplied(ctx, shadowConn, lease, replay); err != nil {
+	if err := replayApplied(ctx, shadowConn, lease, replay, opts.TxMode); err != nil {
 		return AppliedResult{}, err
 	}
 
@@ -226,7 +234,8 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	return result, nil
 }
 
-// replayApplied runs the replay on the shadow database and drops the
+// replayApplied runs the replay on the shadow database, in the transaction
+// mode [shadowdb.HistoryTxMode] gives the run's txMode, and drops the
 // bookkeeping it wrote: the revision table, its log and the record of
 // repeatable migrations. The lease drops them too if the replay stops
 // halfway.
@@ -235,8 +244,10 @@ func replayApplied(
 	shadowConn *dbschema.DatabaseConnection,
 	lease *shadowdb.Lease,
 	replay migrator.MigrationProvider,
+	txMode migrator.MigrationTxMode,
 ) error {
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, replay))
+	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, replay).
+		WithTransactionMode(shadowdb.HistoryTxMode(txMode)))
 	metadata := []string{mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(), mig.RepeatableTableIdentifier()}
 	lease.DropsMetadata(metadata...)
 	if err := mig.MigrateUp(ctx); err != nil {

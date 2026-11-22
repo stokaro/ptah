@@ -401,6 +401,16 @@ not drift. The revision table, its log and the record of repeatable
 migrations, under the names this run is configured with, are left out of the
 comparison.
 
+The replay runs each applied migration in this run's `--tx-mode`, the mode the
+pending migrations run in, and a file's own directive wins over it as it does
+for a pending file. The revision table does not record the mode a migration
+ran in, so a history applied with `--tx-mode none` is checked with
+`--tx-mode none`: in `file` the replay refuses a statement that cannot run
+inside a transaction, or that Ptah cannot verify there on MySQL and MariaDB.
+Under `all` each applied migration replays in a transaction of its own, as
+`file` replays it, because the revision table does not record which migrations
+one run applied together.
+
 Run it against the database this page migrated, with a shadow database that
 does not exist yet:
 

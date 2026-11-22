@@ -874,6 +874,7 @@ Read the columns as follows.
 | `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
