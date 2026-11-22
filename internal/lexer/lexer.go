@@ -190,6 +190,12 @@ type Options struct {
 	// `$1$a$` is one name, which it is on MySQL.
 	DollarParameters bool
 
+	// DollarTags is how a dollar-quoted string's tag is spelled, and whether
+	// a tag that is never closed opens one. The zero value is
+	// [PostgreSQLDollarTags]; internal/dialectlexer sets [HeredocDollarTags]
+	// for a dialect whose descriptor states it, as ClickHouse's does.
+	DollarTags DollarTagRule
+
 	// ByteStringEscapes reads b'...' the way PostgreSQLEscapeStrings reads
 	// E'...', a backslash escaping the next character, as CockroachDB reads
 	// its byte strings. B'...' is a bit string there, as b'...' and B'...'
@@ -223,6 +229,11 @@ type Lexer struct {
 	opts  Options
 	// own reads the text when opts.Scanner is set, and is nil otherwise.
 	own TokenReader
+	// lastTags holds the last offset each dollar-quote tag starts at, built
+	// over the whole input the first time a heredoc tag needs a closer. One
+	// search of the rest of the input per tag would read a text holding
+	// thousands of tags that never close in quadratic time.
+	lastTags map[string]int
 }
 
 type stringBackslashMode uint8
@@ -911,43 +922,36 @@ func (l *Lexer) scanOperator() Token {
 	return l.emit(TokenOperator)
 }
 
-// isDollarQuotedString checks if the current position starts a PostgreSQL dollar-quoted string
+// isDollarQuotedString reports whether a dollar-quoted string the options
+// allow opens at the current position.
 func (l *Lexer) isDollarQuotedString() bool {
-	if l.peek() != '$' {
-		return false
-	}
-
-	// Look ahead to find the closing $ of the opening tag
-	pos := l.pos + 1
-	for first := true; pos < len(l.input); first = false {
-		ch, size := utf8.DecodeRuneInString(l.input[pos:])
-		if ch == '$' {
-			// Found potential closing $ of opening tag
-			return true
-		}
-		if !isDollarTagPart(ch, first) {
-			// Invalid character in tag name
-			return false
-		}
-		pos += size
-	}
-	return false
+	_, ok := l.openingDollarTag()
+	return ok
 }
 
-// isDollarTagPart reports whether ch may stand in a dollar-quote tag, first
-// saying it would be the tag's first character. PostgreSQL's scanner takes an
-// ASCII letter, an underscore or any byte above 0x7F, and so any character
-// outside ASCII, and a digit after the first: `$1$` is the parameter `$1`
-// followed by a `$`, not the start of a string.
-func isDollarTagPart(ch rune, first bool) bool {
-	switch {
-	case ch == '_', 'a' <= ch && ch <= 'z', 'A' <= ch && ch <= 'Z', ch >= utf8.RuneSelf:
-		return true
-	case '0' <= ch && ch <= '9':
-		return !first
-	default:
-		return false
+// openingDollarTag reports the length of the tag that opens a dollar-quoted
+// string at the current position. On [HeredocDollarTags] a tag opens a
+// heredoc only where the same tag starts again after it, since ClickHouse
+// reads a tag that is never closed as part of a name; on
+// [PostgreSQLDollarTags] it opens a string that runs to the end of the input.
+func (l *Lexer) openingDollarTag() (int, bool) {
+	rest := l.input[l.pos:]
+	length, ok := l.opts.DollarTags.OpeningTag(rest)
+	if !ok || l.opts.DollarTags != HeredocDollarTags {
+		return length, ok
 	}
+	if l.lastTags == nil {
+		l.lastTags = make(map[string]int)
+		for pos := range len(l.input) {
+			if tag, found := l.opts.DollarTags.OpeningTag(l.input[pos:]); found {
+				l.lastTags[l.input[pos:pos+tag]] = pos
+			}
+		}
+	}
+	if l.lastTags[rest[:length]] < l.pos+length {
+		return 0, false
+	}
+	return length, true
 }
 
 // scanDollarQuotedString scans a PostgreSQL dollar-quoted string literal
@@ -965,26 +969,14 @@ func (l *Lexer) scanDollarQuotedString() Token {
 // and advances over nothing, when the opening tag holds a character no tag
 // may.
 func (l *Lexer) consumeDollarQuoted() bool {
-	// Extract the opening tag (e.g., "$$" or "$tag$")
-	tagStart := l.pos
-	l.advance() // consume first $
-
-	// Scan tag name (if any)
-	for first := true; ; first = false {
-		ch := l.peek()
-		if ch == '$' {
-			l.advance() // consume closing $
-			break
-		}
-		if !isDollarTagPart(ch, first) {
-			l.pos = tagStart
-			return false
-		}
-		l.advance()
+	// The opening tag, such as "$$" or "$tag$". It ends at an ASCII dollar
+	// sign, so the position after it is on a character boundary.
+	length, ok := l.openingDollarTag()
+	if !ok {
+		return false
 	}
-
-	// Extract the complete opening tag
-	openingTag := l.input[tagStart:l.pos]
+	openingTag := l.input[l.pos : l.pos+length]
+	l.pos += length
 
 	// Scan until we find the matching closing tag
 	for {

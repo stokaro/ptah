@@ -81,6 +81,10 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 	if scanner := builtin.Lookup(lexical.Lexer).Scanner; scanner != nil {
 		return lexer.Options{Scanner: scanner}
 	}
+	tags := lexer.PostgreSQLDollarTags
+	if lexical.HeredocDollarTags {
+		tags = lexer.HeredocDollarTags
+	}
 	return lexer.Options{
 		StandardStrings:                true,
 		BackslashEscapes:               lexical.BackslashEscapes,
@@ -93,6 +97,7 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 		LineComments:                   slices.Clone(lexical.LineComments),
 		DisableHashComments:            lexical.HashNames,
 		NestedBlockComments:            lexical.NestedComments,
+		DollarTags:                     tags,
 	}
 }
 
@@ -118,8 +123,9 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 // are the descriptor's. A `$tag$` body quotes in every dialect except MySQL and
 // MariaDB, where a dollar sign is a name character: the shared lexer reads
 // one for the rest, PostgreSQL's dollar quotes and ClickHouse's heredocs
-// among them. A blank dialect has no rules to read; ok is false and the caller
-// uses the permissive set [clientdelimiter.Normalize] reads with.
+// among them, and the rewrite reads its tag by the lexer's rule. A blank
+// dialect has no rules to read; ok is false and the caller uses the
+// permissive set [clientdelimiter.Normalize] reads with.
 func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules clientdelimiter.Rules, ok bool) {
 	if dialect == "" {
 		return clientdelimiter.Rules{}, false
@@ -135,5 +141,6 @@ func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules c
 		LineComments:         options.LineComments,
 		LineCommentsDeclared: true,
 		BracketIdentifiers:   options.BracketIdentifiers,
+		DollarTags:           options.DollarTags,
 	}, true
 }

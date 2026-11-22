@@ -153,6 +153,28 @@ objects a DBML source leaves outside its scope. External programs emit
 [SQL, YAML, or HCL](../../schema/orm-and-external/); they use the same syntax
 as the corresponding file format.
 
+## Heredocs in migration files
+
+A migration file may hold a heredoc, `$tag$ ... $tag$`, and Ptah splits the file
+into statements as ClickHouse reads it. A semicolon inside a heredoc, or the
+delimiter a `-- atlas:delimiter` directive declares, does not end the statement:
+
+```sql title="20240101000000_defaults.up.sql"
+CREATE TABLE notes (id UInt8, body String DEFAULT $1abc$x; y$1abc$) ENGINE = MergeTree ORDER BY id;
+```
+
+The server stores the default as `'x; y'`. A tag holds ASCII letters, digits,
+underscores and characters outside ASCII, and may begin with a digit, so `$1abc$`
+opens a heredoc here, where PostgreSQL reads `$1` as a parameter. A tag that is
+never closed opens nothing: `CREATE TABLE t (id UInt8, $ab$ UInt8)` names a column
+`$ab$`, and the statement ends at its semicolon.
+
+ClickHouse 24.10 also reads a tag that holds any other character but a dollar
+sign, so it reads `$a-b$x; y$a-b$` as one heredoc. Ptah does not, and splits that
+text at the semicolon, so the server refuses both parts. Use a tag of letters,
+digits and underscores on 24.10. ClickHouse 25.8, 26.3, 26.9 and 26.10 refuse a
+tag that holds a hyphen or a character outside ASCII with code 62.
+
 ## One database per run
 
 A run reads and writes the one database the URL names, or `default` when it names
