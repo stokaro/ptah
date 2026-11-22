@@ -43,8 +43,8 @@ func answerRowPolicyRelations(rows [][]driver.Value, refusal error, relations []
 		case strings.Contains(query, "SELECT name, engine"):
 			return dbtest.QueryResult{Columns: []string{"name", "engine"}, Rows: relations}, nil
 		case strings.Contains(query, "engine LIKE '%MergeTree'"):
-			return dbtest.QueryResult{Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key"},
-				Rows: [][]driver.Value{{"orders", "", "id", "id", "MergeTree ORDER BY id", "", ""}}}, nil
+			return dbtest.QueryResult{Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key", "create_table_query"},
+				Rows: [][]driver.Value{{"orders", "", "id", "id", "MergeTree ORDER BY id", "", "", "CREATE TABLE default.orders (`id` UInt64) ENGINE = MergeTree ORDER BY id"}}}, nil
 		default:
 			return clickHouseViewReaderQuery(query, args)
 		}
