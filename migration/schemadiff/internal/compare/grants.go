@@ -208,7 +208,7 @@ func GrantsWithOptions(
 	}
 	databaseGrantMapForAdditions, databaseGrantMapForRemovals := read.maps()
 
-	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, diff)
+	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, revokedGrants, diff)
 	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
 	if options.DesiredRead == nil {
 		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, sequences, semantics)
@@ -447,12 +447,18 @@ func declaresGrantObject(desired *schemamodel.Database, ref difftypes.GrantRef, 
 
 // planGrantAdditions plans each declared grant the database does not hold,
 // and the grant options a declaration and the database disagree on. An option
-// the database has and the declaration lacks is taken back only from a role
-// the schema manages. A declared grant the database holds is a pair, whether
-// or not its option differs.
+// the database has and the declaration lacks is taken back from a role the
+// schema manages, and from any role the schema revokes the privilege from: a
+// revoke of ALL beside a grant of one privilege says the role keeps that
+// privilege and nothing else, the option included. Without the revoke the
+// option stays on an unmanaged role: a REVOKE ALL followed by a GRANT SELECT
+// leaves SELECT grantable, the next plan reads as synced, and a member grants
+// SELECT onward. A declared grant the database holds is a pair, whether or
+// not its option differs.
 func planGrantAdditions(
 	declared, database map[grantIdentity]difftypes.GrantRef,
 	managedRoles map[string]bool,
+	revoked revokedIdentities,
 	diff *difftypes.SchemaDiff,
 ) {
 	for key, ref := range declared {
@@ -465,7 +471,7 @@ func planGrantAdditions(
 		if ref.WithOption && slices.ContainsFunc(held, func(held difftypes.GrantRef) bool { return !held.WithOption }) {
 			diff.GrantOptionsAdded = append(diff.GrantOptionsAdded, ref)
 		}
-		if ref.WithOption || !managedRoles[ref.Role] {
+		if ref.WithOption || (!managedRoles[ref.Role] && !revoked.covers(key)) {
 			continue
 		}
 		for _, databaseRef := range held {

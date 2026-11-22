@@ -167,6 +167,32 @@ func TestGrants_All(t *testing.T) {
 			wantRemoved: []plannedGrant{{Role: "app", Privilege: "ALTER", ObjectType: "TABLE", ObjectName: "public.t"}},
 		},
 		{
+			name: "a revoked ALL takes the option from a privilege the schema grants",
+			desired: schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+			database:           tableRows("app", true, "SELECT", "ALTER"),
+			wantRemoved:        []plannedGrant{{Role: "app", Privilege: "ALTER", ObjectType: "TABLE", ObjectName: "public.t"}},
+			wantOptionsRevoked: 1,
+		},
+		{
+			name: "a revoked ALL leaves the option a declared grant asks for",
+			desired: schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", WithOption: true}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+			database: tableRows("app", true, "SELECT"),
+		},
+		{
+			name: "a revoked ALL on another table leaves the option of a role the schema does not manage",
+			desired: schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "u"}},
+			},
+			database: tableRows("app", true, "SELECT"),
+		},
+		{
 			name: "every table privilege revoked on a created table is one REVOKE ALL",
 			desired: schemamodel.Database{
 				Tables:        []schemamodel.Table{{Name: "t"}},

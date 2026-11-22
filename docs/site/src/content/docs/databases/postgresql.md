@@ -2554,12 +2554,15 @@ holding on the object and on its columns, whatever the server calls it. On
 PostgreSQL that is what `ALL` names. On CockroachDB it also takes `DROP`,
 `ZONECONFIG`, `CHANGEFEED` and the other privileges CockroachDB adds, and a
 grant the catalog reports as one `ALL` row. A grant after the revoke in a SQL
-file is what the role keeps.
+file is what the role keeps, and it keeps the grant option only where that
+grant says `WITH GRANT OPTION`.
 
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
 statement order, and the later statement about one privilege of one role on
 one object wins. Go annotations, HCL and YAML have no statement order, so
-declaring the same privilege both granted and revoked is refused.
+declaring the same privilege both granted and revoked is refused. A grant of a
+privilege beside a revoke of `ALL` on the same object is accepted: the role
+keeps that privilege and nothing else.
 
 In HCL a function or procedure is named by `for` and its argument types by the
 Ptah attribute `args`:
