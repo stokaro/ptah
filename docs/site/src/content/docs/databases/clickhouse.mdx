@@ -1603,12 +1603,19 @@ creates under the name, since the plan drops the view ahead of the
 replaces under the same name keeps its policies.
 
 The down migration `ptah migrations generate` writes for such a plan creates
-the view again and then its policies. The read keeps each policy's filter,
-composition and role lists from `system.row_policies`, outside what the
+the view's policies again and then the view. The read keeps each policy's
+filter, composition and role lists from `system.row_policies`, outside what the
 comparison compares, and the rollback writes `CREATE ROW POLICY` from them
-after `CREATE VIEW`. A policy whose definition the read did not keep is named
-in a comment in the down file, with the reason. A table the up migration drops
-comes back with the policies the read described on it.
+ahead of every `CREATE VIEW`. ClickHouse accepts a policy on a name that holds
+no relation and filters the view created under it, measured on 24.10 and
+26.10. The statements run without a transaction, so the order decides what a
+failure leaves: a policy the server refuses, for a role dropped since the up
+migration for example, stops the rollback before the view exists, and nothing
+shows the rows the policy hid.
+
+A policy whose definition the read did not keep is named in a comment in the
+down file, with the reason. A table the up migration drops comes back with the
+policies the read described on it.
 
 ## The revision table's storage engine
 

@@ -235,14 +235,14 @@ func reportViewLikes(
 		nodes[identityOf(object)] = node
 	}
 
-	for _, object := range deporder.ViewLikesForCreateForDialect(objects, platform.ClickHouse) {
-		result = append(result, nodes[identityOf(object)])
-	}
 	restores, err := rowPolicyRestores(diff, replaced, semantics)
 	if err != nil {
 		return nil, nil, err
 	}
 	result = append(result, restores...)
+	for _, object := range deporder.ViewLikesForCreateForDialect(objects, platform.ClickHouse) {
+		result = append(result, nodes[identityOf(object)])
+	}
 	vacated := droppedviews.Vacated(diff, semantics)
 	for _, removal := range gone {
 		if slices.Contains(handovers.viewLikes, removal) {
@@ -292,10 +292,18 @@ func rowPolicyDrops(diff *difftypes.SchemaDiff, name string, semantics identifie
 // coverage record on the desired side, and its definition is the object the
 // read kept beside it ([difftypes.FeatureContext.ContextObjects]). Only a
 // rollback has such a desired side: the down migration of a plan that dropped
-// a view, which dropped its policies with it ([rowPolicyDrops]), creates the
-// view again and then its policies. A declaration cannot write a policy on a
+// a view, which dropped its policies with it ([rowPolicyDrops]), creates its
+// policies again and then the view. A declaration cannot write a policy on a
 // view, so a forward plan has none to create. A view another view-like
 // replaces keeps its policies, and nothing creates them.
+//
+// The policies come ahead of every view the plan creates, because the
+// statements run without a transaction and the order decides what a failure
+// leaves. ClickHouse accepts a policy on a name that holds no relation, and
+// filters the relation created under it later, as measured on 24.10.4.191
+// and 26.10.3.7. So a policy that fails, on a role dropped since the read for
+// example, leaves no view that shows the rows it hid, and a view that fails
+// leaves a policy on a name with no relation, which the next read reports.
 //
 // A policy whose definition the read did not keep is named in a note, with
 // the reason, rather than left out.

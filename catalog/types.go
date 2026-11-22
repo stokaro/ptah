@@ -58,11 +58,15 @@ type Database struct {
 	FeatureObjects schemaext.Objects `json:"feature_objects,omitzero"`
 	// FeatureCoverage records the model definitions and scopes this source actually describes.
 	FeatureCoverage schemaext.Coverage `json:"feature_coverage,omitzero"`
-	// PlanningContextObjects holds the objects of a provider's planning
-	// context kinds that a filtered read left out of its scope, and
-	// PlanningContextCoverage what the read established about them across the
-	// database. They are context for planning only: a comparison never reads
-	// them, so they neither appear nor disappear in a diff.
+	// PlanningContextObjects holds objects that are context for planning
+	// only, and PlanningContextCoverage what the read established about them
+	// across the database. Two reads fill them. A provider's filtered read
+	// fills both with the objects of its planning context kinds that it left
+	// out of its scope. The ClickHouse read fills PlanningContextObjects with
+	// the definition of each row policy it records in FeatureCoverage as not
+	// described, such as one on a view, which the down migration of a plan
+	// that drops the view creates again. A comparison never reads them, so
+	// they neither appear nor disappear in a diff.
 	PlanningContextObjects  schemaext.Objects  `json:"planning_context_objects,omitzero"`
 	PlanningContextCoverage schemaext.Coverage `json:"planning_context_coverage,omitzero"`
 	// Facets carries typed settings owned by feature providers.

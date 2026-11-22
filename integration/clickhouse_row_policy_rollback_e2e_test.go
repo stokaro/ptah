@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -69,7 +70,71 @@ func TestClickHouseRowPolicyRollback_RestoresAViewsPolicy(t *testing.T) {
 				c.Assert(handoverEngine(c, conn), qt.Equals, "View")
 				c.Assert(outlivedPolicies(c, conn), qt.DeepEquals, []string{"v vf permissive id > 100"})
 				c.Assert(rollbackVisible(c, conn), qt.Equals, uint64(1))
-				c.Assert(down, qt.Matches, "(?s).*CREATE VIEW [^;]*;\nCREATE ROW POLICY `vf` ON `v` USING \\(id > 100\\) AS PERMISSIVE TO ALL;.*")
+				// The read-back above shows the policy is back; this pins the
+				// order that keeps a failed policy from leaving v unfiltered.
+				c.Assert(down, qt.Matches, "(?s).*CREATE ROW POLICY `vf` ON `v` USING \\(id > 100\\) AS PERMISSIVE TO ALL;\nCREATE VIEW .*")
+			})
+		}
+	}
+}
+
+// rollbackRole creates a role named for the connection's database and suffix,
+// and drops it at cleanup.
+func rollbackRole(c *qt.C, conn *dbschema.DatabaseConnection, suffix string) string {
+	c.Helper()
+	var database string
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT currentDatabase()").Scan(&database), qt.IsNil)
+	role := database + "_" + suffix
+	rebuildExec(c, conn, "CREATE ROLE "+role)
+	c.Cleanup(func() {
+		_, err := conn.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(err, qt.IsNil)
+	})
+	return role
+}
+
+// rollbackRelations counts the relations named v in the connection's
+// database, of any engine.
+func rollbackRelations(c *qt.C, conn *dbschema.DatabaseConnection) uint64 {
+	c.Helper()
+	var relations uint64
+	c.Assert(conn.QueryRowContext(c.Context(),
+		"SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'v'").Scan(&relations), qt.IsNil)
+	return relations
+}
+
+// TestClickHouseRowPolicyRollback_LeavesNoUnfilteredViewWhenAPolicyFails
+// gives the view v the policy vf for two roles, writes a migration that drops
+// v and applies it, and then drops one of the roles. The rollback creates vf
+// again, which ClickHouse refuses for the missing role, and stops there. The
+// down migration creates the policy ahead of the view, so it leaves no
+// relation named v, and nothing shows the rows vf hid.
+func TestClickHouseRowPolicyRollback_LeavesNoUnfilteredViewWhenAPolicyFails(t *testing.T) {
+	tests := []struct {
+		name        string
+		declaration string
+	}{
+		{name: "a view a table takes the name of", declaration: handoverTenant},
+		{name: "a view the declaration leaves out", declaration: rollbackBase},
+	}
+	for _, server := range clickHouseServers(qt.New(t)) {
+		for _, test := range tests {
+			t.Run(server.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				url, conn := handoverDatabase(c, server.url, "CREATE VIEW v AS SELECT id FROM base")
+				kept, gone := rollbackRole(c, conn, "kept"), rollbackRole(c, conn, "gone")
+				dropPoliciesAtCleanup(c, conn, "vf ON v", "tenant ON v")
+				rebuildExec(c, conn, "INSERT INTO base VALUES (1), (2), (200)", "CREATE ROW POLICY vf ON v USING id > 100 TO "+kept+", "+gone)
+				dir := c.TempDir()
+				rollbackMigrationsIn(c, dir, url, test.declaration)
+				rebuildExec(c, conn, "DROP ROLE "+gone)
+
+				got := runPtahIn(c, "migrations", "down", "--db-url", url, "--migrations-dir", filepath.Join(dir, "migrations"), "--target", "0", "--confirm")
+
+				c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+				c.Assert(got.Stderr, qt.Contains, gone)
+				c.Assert(rollbackRelations(c, conn), qt.Equals, uint64(0))
+				c.Assert(outlivedPolicies(c, conn), qt.IsNil)
 			})
 		}
 	}
