@@ -132,7 +132,7 @@ const grantQuery = `
 SELECT p.grantee, p.privilege, p.table_name, p.grantable, p.type, p.grantor
 FROM all_tab_privs p
 WHERE p.table_schema = :1
-  AND p.type IN ('TABLE', 'VIEW', 'SEQUENCE')
+  AND p.type IN ('TABLE', 'VIEW', 'SEQUENCE', 'FUNCTION', 'PROCEDURE')
 ORDER BY p.grantee, p.table_name, p.privilege`
 
 // readGrants reads the object privileges held on this schema's objects.
@@ -146,14 +146,20 @@ ORDER BY p.grantee, p.table_name, p.privilege`
 //     and be planned as a REVOKE of a privilege nobody could have declared.
 //   - A role granted to a role (DBA_ROLE_PRIVS), for the same reason: Ptah
 //     models privileges held by a role, not membership between two of them.
-//   - A privilege on an object kind outside the TYPE filter above -- a
-//     procedure, a package, a directory, a user -- which no declaration can
-//     name either.
+//   - A privilege on an object kind outside the TYPE filter above: a
+//     package, a directory, a user. A function or a procedure is inside it:
+//     `GRANT EXECUTE ON f TO r` names one the way it names a table, and the
+//     declaration carries that grant as a table grant.
 //
-// Not reading them means Ptah leaves them alone, which is the only safe answer
-// while nothing can declare them. It is not a claim that they do not exist,
+// Not reading them means Ptah leaves them alone, which is the safe answer for
+// a row no declaration can name. It is not a claim that they do not exist,
 // and a reader adding any of the three has to give the comparator a
 // declaration shape to compare it against in the same change.
+//
+// A package is the exception, because a declaration can name one:
+// `GRANT EXECUTE ON pkg TO r` in a SQL schema file is carried as a table
+// grant, as a routine's is. The row it compares with is not read, so every
+// apply plans that GRANT again and no plan reports the schema synced.
 //
 // WITH GRANT OPTION is read even though the renderer refuses to emit it,
 // because the two answer different questions. Oracle refuses
@@ -193,14 +199,17 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 // A VIEW becomes TABLE rather than staying VIEW, because that is the word the
 // declared side carries for one: schemamodel.Grant spells every relation target
 // OnTable, on every dialect, and PostgreSQL's information_schema reports a
-// view grant the same way. Keying the two sides differently would make one
+// view grant the same way. A FUNCTION and a PROCEDURE become TABLE for the
+// same reason: Oracle's GRANT names one with no object kind, so the
+// declaration carries it OnTable, and the comparison takes what ALL grants on
+// it from the routine the catalog reads. Keying the two sides differently would make one
 // grant into two -- a GRANT planned because the declaration matched nothing,
 // and a REVOKE planned because the row matched nothing -- on every run of an
 // unchanged schema, which is stokaro/ptah#1232 in a comparator that builds its
 // own key.
 //
-// Only the three types [grantQuery] admits reach this function; anything else
-// is not read at all, for the reason [Reader.readGrants] gives.
+// Only the types [grantQuery] admits reach this function; anything else is not
+// read at all, for the reason [Reader.readGrants] gives.
 func grantObjectTypeFor(catalogType string) string {
 	switch strings.ToUpper(strings.TrimSpace(catalogType)) {
 	case "SEQUENCE":

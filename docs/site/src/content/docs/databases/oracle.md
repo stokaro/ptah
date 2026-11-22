@@ -661,6 +661,12 @@ and Oracle refuses a revoke of one the role does not hold there with
 creates therefore has no statement, which would fail after the `CREATE TABLE`
 has run.
 
+A plan that drops a table, a view, a sequence or a routine revokes nothing on
+it, and neither does one that replaces a changed routine with `DROP` and
+`CREATE`. The `DROP` takes every privilege on the object, and a `REVOKE` run
+after it answers `ORA-00942` once the `DROP` has committed. Measured on
+23.26.3.
+
 A system privilege held by the role or by `PUBLIC` gives the privilege on every
 table, and a revoke on one table cannot take it away. Ptah reads `SELECT`,
 `READ`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` and `FLASHBACK ANY TABLE` from
@@ -678,6 +684,14 @@ Oracle's `ALL` grants a role on a table: `ALTER`, `DEBUG`, `DELETE`,
 and `UPDATE`. On a view `MERGE VIEW` takes the place of `ALTER`. A role the
 schema creates keeps each of them on the table or the view. On a sequence
 `ALL` grants `ALTER` and `SELECT`. Measured on 21.3 and 23.26.
+
+`GRANT ALL ON fn_double TO READER` names a function or a procedure the way it
+names a table, and on either `ALL` grants `DEBUG` and `EXECUTE`. A declared
+`ALL` on a routine is held once the role holds both, and a role the schema
+creates keeps them. A privilege on a routine that the schema does not declare
+is revoked from a role the schema creates, as on a table, and `ptah db read`
+prints one as `GRANT EXECUTE ON APP.FN_DOUBLE TO READER;`. Measured on 21.3
+and 23.26.
 
 ## Versioned migrations
 

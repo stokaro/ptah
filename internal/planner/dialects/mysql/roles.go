@@ -144,7 +144,7 @@ func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff
 	if !p.capabilities().Has(capability.RoleManagement) || !p.revokesFirst() {
 		return result
 	}
-	result = p.revokeGrants(result, diff)
+	result = p.revokeGrants(result, diff, droppedObjects{})
 	now, _ := p.columnGrantsGivenBack(diff)
 	result = append(result, now...)
 	respelled, _ := p.grantsAdded(diff)
@@ -271,11 +271,12 @@ func grantColumns(grant difftypes.GrantRef) []string {
 // revokeGrants emits the REVOKE statements: the grant options a diff takes
 // away, the orphaned grant options, then the privileges. Where
 // [Planner.revokesGrantOptionFirst] holds, a privilege held with the grant
-// option loses the option before the privilege is revoked.
-func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+// option loses the option before the privilege is revoked. A privilege on an
+// object dropped holds is left out; see [Planner.removeGrantsAndRoles].
+func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, dropped droppedObjects) []ast.Node {
 	spellings := newColumnSpellings(diff, p.targetDialect())
-	ghosts, removed := p.splitGrantOptionGhosts(diff.GrantsRemoved)
-	revokes := slices.Concat(diff.GrantOptionsRevoked, ghosts)
+	ghosts, removed := p.splitGrantOptionGhosts(slices.DeleteFunc(slices.Clone(diff.GrantsRemoved), dropped.holds))
+	revokes := slices.DeleteFunc(slices.Concat(diff.GrantOptionsRevoked, ghosts), dropped.holds)
 	if p.grantOptionCoversTheObject() {
 		revokes = append(revokes, grantOptionsLeftBehind(removed, diff.CurrentGrants, spellings)...)
 		removed = withoutColumnRevokesTheirTableTakes(removed, spellings)
@@ -458,6 +459,15 @@ func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings col
 // MySQL, MariaDB and SQL Server [Planner.planRevokesFirst] has run the
 // revokes.
 //
+// On Oracle the revokes run here, after the tables, views, sequences and
+// routines the plan drops, and a privilege on one of those is not revoked.
+// The drop takes it: a role holds nothing on a table after DROP TABLE, and
+// nothing on a routine after DROP PROCEDURE, or after the DROP and CREATE that
+// replace a changed routine. A REVOKE naming the dropped object fails, measured
+// on Oracle 23.26.3: ORA-00942 after `DROP TABLE t1 PURGE`, and after
+// `DROP PROCEDURE rt`. The statement before it has committed by then, so the
+// apply stops half done.
+//
 // A role still holding permissions is not droppable on any engine in this
 // family that has roles at all, so the order is the engine's rather than a
 // preference.
@@ -466,7 +476,7 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 		return result
 	}
 	if !p.revokesFirst() {
-		result = p.revokeGrants(result, diff)
+		result = p.revokeGrants(result, diff, p.droppedObjects(diff))
 	}
 	for _, role := range diff.RolesRemoved {
 		drop := ast.NewDropRole(role.Name).SetIfExists()

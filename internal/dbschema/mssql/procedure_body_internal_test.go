@@ -126,6 +126,32 @@ func TestProcedureAwareReturns_AnswersNothingForAProcedure(t *testing.T) {
 	c.Assert(procedureAwareReturns("FN", "int"), qt.Equals, "int")
 }
 
+// TestIsTableValuedObjectType_DecidesTheReturnAndTheFlag pins that an inline
+// and a multi-statement table-valued function, padded the way sys.objects.type
+// arrives, return table and are flagged as returning one, and that a scalar
+// function and a procedure are neither. Without the flag a GRANT ALL on a
+// table-valued function compares with the FUNCTION list, which has no SELECT.
+func TestIsTableValuedObjectType_DecidesTheReturnAndTheFlag(t *testing.T) {
+	tests := []struct {
+		objectType  string
+		wantFlag    bool
+		wantReturns string
+	}{
+		{objectType: "IF", wantFlag: true, wantReturns: "table"},
+		{objectType: "TF", wantFlag: true, wantReturns: "table"},
+		{objectType: "if", wantFlag: true, wantReturns: "table"},
+		{objectType: "FN", wantFlag: false, wantReturns: "int"},
+		{objectType: "P ", wantFlag: false, wantReturns: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.objectType, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(isTableValuedObjectType(test.objectType), qt.Equals, test.wantFlag)
+			c.Assert(procedureAwareReturns(test.objectType, "int"), qt.Equals, test.wantReturns)
+		})
+	}
+}
+
 // TestProcedureBody_SkipsAParametersAs holds the other AS a header can carry:
 // T-SQL accepts `@a AS INT` in a procedure's parameter list, and the
 // definition keeps it, measured on SQL Server 2025 RTM-CU9.

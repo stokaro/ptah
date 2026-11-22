@@ -75,7 +75,8 @@ func (r *Reader) readFunctions(ctx context.Context) ([]catalog.Function, error) 
 			// A procedure returns nothing, and sys.parameters reports no
 			// return row for one, so asking functionReturns would produce the
 			// empty string by accident rather than by decision.
-			Returns: procedureAwareReturns(objectType, returns[key]),
+			Returns:      procedureAwareReturns(objectType, returns[key]),
+			ReturnsTable: isTableValuedObjectType(objectType),
 			// The language is the engine's own. T-SQL has no LANGUAGE clause --
 			// `LANGUAGE SQL` is `Incorrect syntax near 'LANGUAGE'` -- so there
 			// is nothing to read, and reporting the owner's language is what
@@ -547,11 +548,23 @@ func functionSecurity(executeAs string) string {
 // the declaration holds table reports a difference on every run, which is the
 // same non-convergence the key exists to prevent.
 func functionReturns(objectType, scalarType string) string {
+	if isTableValuedObjectType(objectType) {
+		return "table"
+	}
+	return scalarType
+}
+
+// isTableValuedObjectType reports whether sys.objects.type names a
+// table-valued function: IF, an inline one, or TF, a multi-statement one. It
+// decides both the return type the read spells and
+// [catalog.Function.ReturnsTable], so the two cannot disagree about a
+// function.
+func isTableValuedObjectType(objectType string) bool {
 	switch strings.ToUpper(strings.TrimSpace(objectType)) {
 	case "IF", "TF":
-		return "table"
+		return true
 	default:
-		return scalarType
+		return false
 	}
 }
 

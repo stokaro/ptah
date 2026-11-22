@@ -164,7 +164,7 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
-	lists := allPrivilegeLists{target: options.AllPrivileges}
+	lists := newAllPrivilegeLists(options.AllPrivileges, database, semantics)
 	// target is how the server compares names. A declared revoke is matched by
 	// it, because it asserts the privilege absent under every spelling the
 	// server takes for the column.
@@ -512,7 +512,61 @@ func (key grantIdentity) withPrivilege(privilege string) grantIdentity {
 // states none. A held ALL, a declared ALL and a revoke written as ALL read the
 // one answer, so the plan that grants ALL is the plan the next run reads as
 // held.
-type allPrivilegeLists struct{ target descriptor.AllPrivileges }
+type allPrivilegeLists struct {
+	target descriptor.AllPrivileges
+	// routines is the kind whose list ALL takes on each routine the catalog
+	// reads, keyed as a grant on a table names it. It is empty unless the
+	// target grants on a routine by its name; see
+	// [descriptor.AllPrivileges.RoutinesByName].
+	routines map[tableIdentity]string
+}
+
+// newAllPrivilegeLists reads the target's lists and, on a target that grants
+// on a routine by its name, what each routine database holds is.
+//
+// The kind is read from the catalog rather than from the declarations,
+// because the lists are compared with rows of the catalog: what the role
+// holds on the object that is there, which ALL granted according to what that
+// object is. A first apply has no rows on a routine it creates, so it plans
+// the declared ALL whichever list is read. A function the read reports as
+// returning a table, [catalog.Function.ReturnsTable], is left out, since a
+// grant on it takes the TABLE list. The return type is not consulted: Oracle
+// reports `table` as the return type of a function returning a nested-table
+// collection, and ALL grants on that function what it grants on any other.
+func newAllPrivilegeLists(target descriptor.AllPrivileges, database *catalog.Database, semantics identifier.Semantics) allPrivilegeLists {
+	lists := allPrivilegeLists{target: target}
+	if !target.RoutinesByName {
+		return lists
+	}
+	lists.routines = make(map[tableIdentity]string)
+	for _, function := range database.Functions {
+		kind := "FUNCTION"
+		switch {
+		case strings.EqualFold(strings.TrimSpace(function.Kind), schemamodel.FunctionKindProcedure):
+			kind = "PROCEDURE"
+		case function.ReturnsTable:
+			continue
+		}
+		lists.routines[newQualifiedTableIdentity(function.QualifiedName(), semantics)] = kind
+	}
+	return lists
+}
+
+// kind is the object kind whose list ALL takes under key: the routine's kind
+// where key names a routine the catalog reads, and the kind key names
+// otherwise. Without it a declared ALL on a SQL Server procedure is compared
+// with the table's list, which has no EXECUTE: it is never held, and a role
+// the schema manages has EXECUTE revoked on every run.
+//
+// A name the routines hold is a routine's and nothing else's, because SQL
+// Server and Oracle keep tables, views, sequences and routines in one
+// namespace per schema.
+func (al allPrivilegeLists) kind(key grantIdentity) string {
+	if kind, found := al.routines[key.object]; found {
+		return kind
+	}
+	return key.objectType
+}
 
 // all returns every privilege ALL grants on objectType on the newest release.
 func (al allPrivilegeLists) all(objectType string) []string {
@@ -559,7 +613,7 @@ func (al allPrivilegeLists) held(key grantIdentity, database map[grantIdentity]d
 	if key.privilege != allPrivilege {
 		return nil, false
 	}
-	required := al.required(key.objectType)
+	required := al.required(al.kind(key))
 	if len(required) == 0 {
 		return nil, false
 	}
@@ -586,7 +640,7 @@ func (al allPrivilegeLists) declared(key grantIdentity, declared map[grantIdenti
 	if _, exists := declared[key.withPrivilege(allPrivilege)]; !exists {
 		return false
 	}
-	return slices.Contains(al.all(key.objectType), key.privilege)
+	return slices.Contains(al.all(al.kind(key)), key.privilege)
 }
 
 // revokedIdentities keys every privilege the desired schema revokes, a revoked

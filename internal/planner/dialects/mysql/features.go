@@ -49,7 +49,8 @@ func (p *Planner) dropsRoutinesLate() bool { return p.targetDialect() == platfor
 // changes anything else. MySQL, MariaDB and SQL Server do, because a revoke or
 // a grant on a whole table reaches the column privileges of the same name
 // there; see [Planner.planRevokesFirst]. Oracle revokes where it drops the
-// roles, after the tables.
+// roles, after the tables, and revokes nothing on an object the plan drops;
+// see [Planner.removeGrantsAndRoles].
 func (p *Planner) revokesFirst() bool {
 	switch p.targetDialect() {
 	case platform.MySQL, platform.MariaDB, platform.SQLServer:

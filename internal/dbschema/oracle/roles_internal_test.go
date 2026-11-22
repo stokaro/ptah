@@ -8,6 +8,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,8 +106,16 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 			Schema: "APP", ObjectName: "DOCS", GrantedBy: "APP",
 		},
 		{
+			Role: "APP_READER", Privilege: "EXECUTE", ObjectType: "TABLE",
+			Schema: "APP", ObjectName: "TALLY", GrantedBy: "APP",
+		},
+		{
 			Role: "APP_READER", Privilege: "SELECT", ObjectType: "TABLE",
 			Schema: "APP", ObjectName: "TITLES", GrantedBy: "APP",
+		},
+		{
+			Role: "APP_READER", Privilege: "EXECUTE", ObjectType: "TABLE",
+			Schema: "APP", ObjectName: "TOUCH", GrantedBy: "APP",
 		},
 	})
 	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{
@@ -129,7 +138,7 @@ func TestReadRolesInto_LeavesWideGrantsUnreadWhereSystemPrivilegesAreRefused(t *
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
 	c.Assert(schema.Roles, qt.HasLen, 7)
-	c.Assert(schema.Grants, qt.HasLen, 2)
+	c.Assert(schema.Grants, qt.HasLen, len(grantRows().Rows))
 	c.Assert(schema.WideGrants, qt.IsNil)
 	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
 }
@@ -210,7 +219,8 @@ func faultingRoleCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 // mutant fail here: a query that stopped selecting AUTHENTICATION_TYPE would
 // scan two columns into one and report an error, where a fake keyed on the
 // call order would hand it the same rows and pass. DBA_SYS_PRIVS is matched
-// first, because its query names DBA_ROLES in a subquery.
+// first, because its query names DBA_ROLES in a subquery. ALL_TAB_PRIVS
+// answers the rows of [grantRows] whose TYPE the query admits.
 func roleCatalogAnswer(query string, roleErr, sysErr error) (dbtest.QueryResult, error) {
 	folded := strings.ToLower(query)
 	switch {
@@ -222,7 +232,7 @@ func roleCatalogAnswer(query string, roleErr, sysErr error) (dbtest.QueryResult,
 	case strings.Contains(folded, "from dba_roles"):
 		return roleRows(), roleErr
 	case strings.Contains(folded, "from all_tab_privs"):
-		return grantRows(), nil
+		return grantRowsAdmittedBy(query), nil
 	}
 	return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 }
@@ -242,12 +252,28 @@ func roleRows() dbtest.QueryResult {
 	}
 }
 
+// grantRows is one privilege on an object of each type the reader reads, in
+// the order the query sorts them.
 func grantRows() dbtest.QueryResult {
 	return dbtest.QueryResult{
 		Columns: []string{"GRANTEE", "PRIVILEGE", "TABLE_NAME", "GRANTABLE", "TYPE", "GRANTOR"},
 		Rows: [][]driver.Value{
 			{"APP_READER", "SELECT", "DOCS", "NO", "TABLE", "APP"},
+			{"APP_READER", "EXECUTE", "TALLY", "NO", "FUNCTION", "APP"},
 			{"APP_READER", "SELECT", "TITLES", "NO", "VIEW", "APP"},
+			{"APP_READER", "EXECUTE", "TOUCH", "NO", "PROCEDURE", "APP"},
 		},
 	}
+}
+
+// grantRowsAdmittedBy is the rows of [grantRows] whose TYPE query names as a
+// quoted literal, the way the TYPE filter of [grantQuery] does. A reader that
+// stops admitting a type loses that type's row here, as it would on a server,
+// so a test comparing the grants it reads sees the loss.
+func grantRowsAdmittedBy(query string) dbtest.QueryResult {
+	rows := grantRows()
+	rows.Rows = slices.DeleteFunc(rows.Rows, func(row []driver.Value) bool {
+		return !strings.Contains(query, fmt.Sprintf("'%s'", row[4]))
+	})
+	return rows
 }
