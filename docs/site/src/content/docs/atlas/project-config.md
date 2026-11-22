@@ -323,8 +323,11 @@ records the measurement.
 
 `--schema` outranks the attribute outright and does not intersect with it: with
 `schemas = ["one"]` in the file, `--schema two` describes `two` alone. A
-non-empty `PTAH_SCHEMA` sets the flag, so it outranks the attribute too, and a
-`PTAH_SCHEMA` that is set but empty leaves the attribute in effect.
+`PTAH_SCHEMA` that names a schema sets the flag, so it outranks the attribute
+too. A `PTAH_SCHEMA` that names none, such as `PTAH_SCHEMA=`, is refused with
+the attribute as without it: the variable was set, and the attribute does not
+say what it was meant to name. A `--schema` typed on the command line wins
+over the variable, which is then not read.
 
 `migrate checkpoint` and `schema test` read the attribute as well, through the
 same grammar. Atlas CE has neither verb: each answers
@@ -333,9 +336,10 @@ its own name, and exits 1. Ignoring the attribute there would drop a selection
 the file states, so Ptah applies it, as it does on the verbs CE has. The
 checkpoint covers the listed schemas, and the schema test applies only those
 schemas of the desired schema. The precedence is the one above, and on
-`migrate checkpoint` a non-empty `PTAH_SCHEMAS` outranks the attribute as
-`PTAH_SCHEMA` does. These verbs pass their names on as one comma-separated
-list, so an element naming a schema that holds a comma, such as
+`migrate checkpoint` a `PTAH_SCHEMAS` that names a schema outranks the
+attribute as `PTAH_SCHEMA` does, and one that names none is refused. These
+verbs pass their names on as one comma-separated list, so an element naming a
+schema that holds a comma, such as
 `schemas = ["\"a,b\""]`, is refused with a message that names the file and the
 env.
 

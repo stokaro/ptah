@@ -37,8 +37,7 @@ func TestMigrateCheckpointProjectSchemasLivePostgres(t *testing.T) {
 		devURL, appSchema,
 	)
 	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
-	c.Setenv("PTAH_SCHEMA", "")
-	c.Setenv("PTAH_SCHEMAS", "")
+	unsetCompatSchemaVariables(c)
 	c.Chdir(root)
 	runCheckpointCompat(c, "migrate", "hash", "--env", "local")
 
@@ -84,7 +83,7 @@ func TestSchemaTestProjectSchemasLivePostgres(t *testing.T) {
 		devURL, appSchema,
 	)
 	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
-	c.Setenv("PTAH_SCHEMA", "")
+	unsetCompatSchemaVariables(c)
 	c.Chdir(root)
 
 	runCheckpointCompat(c, "schema", "test", "--env", "local", "tests")
@@ -110,7 +109,7 @@ func TestSchemaTestProjectSchemasUnqualifiedTableLivePostgres(t *testing.T) {
 		devURL,
 	)
 	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
-	c.Setenv("PTAH_SCHEMA", "")
+	unsetCompatSchemaVariables(c)
 	c.Chdir(root)
 
 	runCheckpointCompat(c, "schema", "test", "--env", "local", "tests")

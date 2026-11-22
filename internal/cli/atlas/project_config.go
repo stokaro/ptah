@@ -1439,12 +1439,19 @@ func appendAtlasProjectStringArg(
 }
 
 func atlasFlagRegistered(flags []atlasargs.Flag, name string) bool {
+	_, ok := atlasFlagNamed(flags, name)
+	return ok
+}
+
+// atlasFlagNamed returns the flag of flags called name, and false when there
+// is none.
+func atlasFlagNamed(flags []atlasargs.Flag, name string) (atlasargs.Flag, bool) {
 	for _, flag := range flags {
 		if flag.Name == name {
-			return true
+			return flag, true
 		}
 	}
-	return false
+	return atlasargs.Flag{}, false
 }
 
 func atlasFlagValueSet(flags []atlasargs.Flag, args []string, name string) bool {
@@ -1653,16 +1660,26 @@ func atlasConfiguredSchemaError(cfg projectconfig.Config, value string, err erro
 //
 // The list stands in only where the run leaves the flag unset, as on the verbs
 // that read it themselves ([effectiveAtlasSchemas]): the flag wins, and so does
-// a non-empty PTAH_SCHEMA, or the native variable a flag marked
+// a PTAH_SCHEMA that names a schema, or the native variable a flag marked
 // [atlasargs.Flag.NativeEnv] reads, PTAH_SCHEMAS on `migrate checkpoint`. A
-// variable that is set but empty counts as unset there too.
+// variable that names no schema is refused rather than outranked, as on those
+// verbs: someone set it, and the list does not say what they meant. The
+// refusal is asked for here, before the list is appended, because the appended
+// list reads as a typed --schema and [atlasargs.Map] then never consults the
+// variable.
 //
 // Each element is read here as well, before anything is forwarded, so a
 // refusal that is Ptah's own names the file and the env rather than the flag
 // the forward would name.
 func appendAtlasProjectSchemaArgs(flags []atlasargs.Flag, args []string, cfg projectconfig.Config) ([]string, error) {
-	if len(cfg.Schemas) == 0 || !atlasFlagRegistered(flags, atlasSchemaFlagName) ||
-		atlasFlagValueSet(flags, args, atlasSchemaFlagName) {
+	flag, registered := atlasFlagNamed(flags, atlasSchemaFlagName)
+	if len(cfg.Schemas) == 0 || !registered || atlasargs.FlagPresent(flags, args, atlasSchemaFlagName) {
+		return args, nil
+	}
+	if err := atlasargs.CheckEmptyEnv(flag); err != nil {
+		return nil, err
+	}
+	if atlasFlagEnvironmentPresent(flags, atlasSchemaFlagName) {
 		return args, nil
 	}
 	for _, value := range cfg.Schemas {

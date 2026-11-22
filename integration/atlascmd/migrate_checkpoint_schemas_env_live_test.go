@@ -35,7 +35,7 @@ func TestMigrateCheckpointSchemasEnvironmentLivePostgres(t *testing.T) {
 	)
 	c.Assert(os.WriteFile(filepath.Join(dir, "20240101000000_init.sql"), []byte(history), 0o600), qt.IsNil)
 	runCheckpointCompat(c, "migrate", "hash", "--dir", "file://"+filepath.ToSlash(dir))
-	c.Setenv("PTAH_SCHEMA", "")
+	unsetCompatSchemaVariables(c)
 	c.Setenv("PTAH_SCHEMAS", appSchema)
 
 	runCheckpointCompat(c, "migrate", "checkpoint", "--dev-url", devURL, "--dir", "file://"+filepath.ToSlash(dir), "scoped")

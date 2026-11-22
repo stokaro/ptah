@@ -74,6 +74,7 @@ reading several databases can tell them apart without a job per database.`,
 	flags.StringVar(&opts.schemas, statsSchemaFlag, "",
 		"Comma-separated schemas to count: PostgreSQL-family and SQL Server schemas, or YDB directories relative "+
 			"to the database root. Empty uses the connection default, and on YDB every directory.")
+	dbcli.RefuseEmptySchemasEnv(flags, statsSchemaFlag, dbcli.ConnectionDefaultSchemas)
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }

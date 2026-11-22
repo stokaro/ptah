@@ -292,38 +292,37 @@ func TestAtlasForwardedSchemaValueGrammar_FailurePath(t *testing.T) {
 // reach a forwarded --schema take its grammar. On `migrate checkpoint` the
 // native flag is --schemas, whose own PTAH_SCHEMAS the native command would
 // split on every comma; the adapter reads it in its place, so the value is
-// refused as the flag refuses it. An empty PTAH_SCHEMA leaves PTAH_SCHEMAS to
-// decide, as an absent one does.
+// refused as the flag refuses it. An absent PTAH_SCHEMA leaves PTAH_SCHEMAS to
+// decide.
 func TestAtlasForwardedSchemaEnvironment_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
-		schema  string
-		schemas string
+		env     map[string]string
 		wantErr string
 	}{
 		{
 			name:    "migrate checkpoint PTAH_SCHEMAS holding a comma",
 			args:    []string{"migrate", "checkpoint", "--dev-url", "sqlite://file?mode=memory"},
-			schemas: `"a,b"`,
+			env:     map[string]string{"PTAH_SCHEMAS": `"a,b"`},
 			wantErr: `atlas migrate checkpoint --schema: schema "a,b" holds a comma, and this command passes its schema names on as one comma-separated list`,
 		},
 		{
 			name:    "migrate checkpoint PTAH_SCHEMAS naming no schema",
 			args:    []string{"migrate", "checkpoint", "--dev-url", "sqlite://file?mode=memory"},
-			schemas: `""`,
+			env:     map[string]string{"PTAH_SCHEMAS": `""`},
 			wantErr: `atlas migrate checkpoint --schema: invalid argument "\"\"" for "-s, --schema" flag: every field is empty, so the value names no schema`,
 		},
 		{
 			name:    "migrate checkpoint PTAH_SCHEMA holding a comma",
 			args:    []string{"migrate", "checkpoint", "--dev-url", "sqlite://file?mode=memory"},
-			schema:  `"a,b"`,
+			env:     map[string]string{"PTAH_SCHEMA": `"a,b"`},
 			wantErr: `atlas migrate checkpoint --schema: schema "a,b" holds a comma, and this command passes its schema names on as one comma-separated list`,
 		},
 		{
 			name:    "schema test PTAH_SCHEMA holding a comma",
 			args:    []string{"schema", "test", "--dev-url", "sqlite://file?mode=memory"},
-			schema:  `"a,b"`,
+			env:     map[string]string{"PTAH_SCHEMA": `"a,b"`},
 			wantErr: `atlas schema test --schema: schema "a,b" holds a comma, and this command passes its schema names on as one comma-separated list`,
 		},
 	}
@@ -332,8 +331,10 @@ func TestAtlasForwardedSchemaEnvironment_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			root := writeSchemaValueFixture(c)
-			c.Setenv("PTAH_SCHEMA", test.schema)
-			c.Setenv("PTAH_SCHEMAS", test.schemas)
+			unsetSchemaEnv(c)
+			for name, value := range test.env {
+				c.Setenv(name, value)
+			}
 
 			out, err := runSchemaValueCommand(c, root, test.args)
 

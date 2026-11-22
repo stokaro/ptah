@@ -201,6 +201,7 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")
 	flags.StringVar(&opts.run, testRunFlag, "", "Run only case names matching this Go regular expression")
 	flags.StringArrayVar(&opts.schemas, testSchemaFlag, nil, "Restrict the desired schema to these schema names")
+	dbcli.RefuseEmptySchemasEnv(flags, testSchemaFlag, "keep every schema of the desired schema")
 	flags.StringArrayVar(&opts.vars, testVarFlag, nil,
 		"Supply a value for a variable block of an HCL schema file or a .test.hcl document, as name=value (repeatable)")
 	// --schema-file reaches the shared loader, which pulls an oci:// reference

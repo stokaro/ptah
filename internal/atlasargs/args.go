@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/internal/envbinding"
 	"ptah.run/internal/envbool"
 )
 
@@ -62,6 +63,11 @@ type Flag struct {
 	// the forwarded target reads the variable itself and skips MapValue. The
 	// caller disables that binding on the target, so the value is read once.
 	NativeEnv bool
+	// EmptyEnv is what the flag's PTAH_* variable refuses, and on a
+	// [Flag.NativeEnv] flag its native flag's variable, rather than reading the
+	// value as unset; see [envbinding.EmptyRule]. The zero rule refuses
+	// nothing.
+	EmptyEnv envbinding.EmptyRule
 	// ForwardEach, on a [StringArrayFlag], forwards every occurrence as its
 	// own native --flag=value, in the order given, for a native flag that is
 	// itself repeatable. Joined, such a flag reads `a,b` as one value: two
@@ -538,11 +544,9 @@ func withEnvArgs(flags []Flag, args []string) ([]string, error) {
 		if FlagPresent(flags, args, flag.Name) {
 			continue
 		}
-		value, ok := os.LookupEnv(envName("PTAH", flag.Name))
-		if flag.NativeEnv && flag.NativeName != "" && value == "" {
-			if native, present := os.LookupEnv(envName("PTAH", flag.NativeName)); present {
-				value, ok = native, true
-			}
+		value, ok, err := lookupFlagEnv(flag)
+		if err != nil {
+			return nil, err
 		}
 		if !ok {
 			continue
@@ -570,6 +574,48 @@ func withEnvArgs(flags []Flag, args []string) ([]string, error) {
 		added = append(added, "--"+flag.Name+"="+value)
 	}
 	return append(added, args...), nil
+}
+
+// CheckEmptyEnv returns the refusal [Map] gives the variable flag reads when it
+// names nothing under [Flag.EmptyEnv], and nil for a flag marked
+// [Flag.EnvDisabled], one that declares no EmptyEnv, and a variable that is
+// absent or names something. A caller that puts a value for the flag into the
+// arguments before Map runs asks it first: Map then reads the flag as present
+// and never consults the variable, so the refusal would not run.
+func CheckEmptyEnv(flag Flag) error {
+	if flag.EnvDisabled {
+		return nil
+	}
+	_, _, err := lookupFlagEnv(flag)
+	return err
+}
+
+// lookupFlagEnv returns the value of the variable flag reads, and whether one
+// is set: the flag's own PTAH_* variable, else on a [Flag.NativeEnv] flag the
+// native flag's variable. On a flag that declares [Flag.EmptyEnv], a value of
+// either variable that names nothing is refused, so the native variable is
+// read only when the flag's own is absent; on one that declares none, it is
+// read when the flag's own is absent or empty.
+func lookupFlagEnv(flag Flag) (value string, ok bool, err error) {
+	name := envName("PTAH", flag.Name)
+	value, ok = os.LookupEnv(name)
+	if ok {
+		if err := flag.EmptyEnv.Check(name, flag.Name, value); err != nil {
+			return "", false, err
+		}
+	}
+	if !flag.NativeEnv || flag.NativeName == "" || value != "" {
+		return value, ok, nil
+	}
+	nativeName := envName("PTAH", flag.NativeName)
+	native, present := os.LookupEnv(nativeName)
+	if !present {
+		return value, ok, nil
+	}
+	if err := flag.EmptyEnv.Check(nativeName, flag.NativeName, native); err != nil {
+		return "", false, err
+	}
+	return native, true, nil
 }
 
 func envName(prefix, flagName string) string {

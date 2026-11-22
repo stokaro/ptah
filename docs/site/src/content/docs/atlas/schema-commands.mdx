@@ -289,22 +289,31 @@ schema, leave the flag out. The
 records the measurement.
 
 `PTAH_SCHEMA` sets the flag and takes the same grammar, so `PTAH_SCHEMA='""'`
-is refused. A variable that is set but empty, `PTAH_SCHEMA=`, counts as unset,
-as every non-boolean `PTAH_*` variable does, and reads every schema. A CI
-variable that may be empty, such as `${{ vars.SCHEMA }}` in GitHub Actions,
-belongs on the flag, `--schema "$SCHEMA"`, where an empty value is refused.
+is refused. A variable that names no schema once it is split on commas and
+trimmed, `PTAH_SCHEMA=`, `PTAH_SCHEMA=' '` or `PTAH_SCHEMA=' , '`, is refused
+too, before the run starts:
+`PTAH_SCHEMA is set but empty: give it a value, or unset it and leave --schema out to select every schema`.
+A CI variable nobody filled, such as `${{ vars.SCHEMA }}` in GitHub Actions,
+arrives as such a value, and read as no selection it would select every schema.
+To read every schema, unset the variable. A `--schema` typed on the command line
+wins, and the variable is then not read.
 
 `migrate checkpoint` and `schema test` pass their schema names on to a native
 command as one comma-separated list. They read `--schema` with the same
 grammar, and refuse a name that holds a comma, such as `-s '"a,b"'`, rather
-than split it into two names. On `migrate checkpoint`, `PTAH_SCHEMAS`, the
-variable of the native `--schemas` flag, is read as a `--schema` value when
-`PTAH_SCHEMA` is absent or empty, so it takes the same grammar.
+than split it into two names. `migrate checkpoint` with `--schema` left out
+reads the connection default schema, not every schema, so its refusal of a
+`PTAH_SCHEMA` naming no schema ends
+`leave --schema out to read the connection default schema, and on YDB every directory`.
+`PTAH_SCHEMAS`, the variable of the native `--schemas` flag, is read as its
+`--schema` value when `PTAH_SCHEMA` is absent. It takes the same grammar, and a
+value naming no schema is refused in words that name the flag it belongs to:
+`PTAH_SCHEMAS is set but empty: give it a value, or unset it and leave --schemas out to read the connection default schema, and on YDB every directory`.
 
 Both verbs read an `atlas.hcl` environment's `schemas` when the run leaves the
-flag unset: no `--schema`, no non-empty `PTAH_SCHEMA` and, on
-`migrate checkpoint`, no non-empty `PTAH_SCHEMAS`. Each element is one
-`--schema` value. Atlas CE has neither verb, so there is no CE behavior to
+flag unset: no `--schema`, no `PTAH_SCHEMA` and, on `migrate checkpoint`, no
+`PTAH_SCHEMAS`. A variable that names no schema is refused even where the list
+would stand in, as on every other verb. Each element is one `--schema` value. Atlas CE has neither verb, so there is no CE behavior to
 match; see
 [`env.schemas`](../project-config/#envschemas) for the reason the list applies.
 
