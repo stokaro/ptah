@@ -37,9 +37,13 @@ type rebuildFixture struct {
 	heldTables  []string
 	// table is the name of the table, events when empty.
 	table string
-	// projections and comment are what the table holds beside its columns.
+	// projections, assumptions, checks and comment are what the table holds
+	// beside its columns, and constraints are what the declaration states.
 	projections []catalog.Projection
+	assumptions []catalog.Assumption
+	checks      []catalog.Constraint
 	comment     string
+	constraints []schemamodel.Constraint
 }
 
 func (f *rebuildFixture) name() string {
@@ -68,14 +72,15 @@ func (f *rebuildFixture) plan(c *qt.C, opts planext.Options) ([]string, error) {
 	c.Helper()
 	runtime := must.Must(builtin.New())
 	source := &schemamodel.Database{
-		Tables:  []schemamodel.Table{{Name: f.name(), StructName: "Event", Facets: must.Must(schemaext.NewFacets(f.after))}},
-		Fields:  f.fields,
-		Indexes: f.indexes,
+		Tables:      []schemamodel.Table{{Name: f.name(), StructName: "Event", Facets: must.Must(schemaext.NewFacets(f.after))}},
+		Fields:      f.fields,
+		Indexes:     f.indexes,
+		Constraints: f.constraints,
 	}
 	current := &catalog.Database{FeatureCoverage: observedStorageCoverage(), Tables: []catalog.Table{{
 		Name: f.name(), Facets: must.Must(schemaext.NewFacets(f.before)), Columns: f.current,
-		Projections: f.projections, Comment: f.comment,
-	}}}
+		Projections: f.projections, Assumptions: f.assumptions, Comment: f.comment,
+	}}, Constraints: f.checks}
 	for _, name := range f.extraTables {
 		source.Tables = append(source.Tables, schemamodel.Table{Name: name, StructName: "Extra"})
 		source.Fields = append(source.Fields, schemamodel.Field{Name: "id", StructName: "Extra", Type: "UInt64", Primary: true})
@@ -250,6 +255,40 @@ func TestRebuild_HappyPath(t *testing.T) {
 		c.Assert(statements[0], qt.Contains, "The new table keeps what no declaration states and events has: "+
 			"the codecs of columns name CODEC(ZSTD(3)); the projections p_by_name, p q")
 		c.Assert(statements[0], qt.Not(qt.Contains), "merge_tree_settings")
+	})
+
+	t.Run("the new table holds the declared CHECKs and the ASSUME constraints the table has", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.constraints = []schemamodel.Constraint{
+			{StructName: "Event", Table: "events", Type: "CHECK", CheckExpression: "ver > 0"},
+			{StructName: "Event", Table: "events", Type: "CHECK", Name: "named", CheckExpression: "length(name) < 10"},
+		}
+		f.checks = []catalog.Constraint{
+			{Name: "events_check", TableName: "events", Type: "CHECK", CheckClause: new("ver > 1")},
+			{Name: "old_one", TableName: "events", Type: "CHECK", CheckClause: new("id > 0")},
+		}
+		f.assumptions = []catalog.Assumption{{Name: "a_name", Expression: "length(name) < 100"}}
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		at := func(prefix string) int {
+			return slices.IndexFunc(statements, func(s string) bool { return strings.HasPrefix(s, prefix) })
+		}
+		create := at("CREATE TABLE `ptah_rebuild_events` (")
+		assume := at("ALTER TABLE `ptah_rebuild_events` ADD CONSTRAINT `a_name` ASSUME length(name) < 100")
+		copied := at("INSERT INTO `ptah_rebuild_events`")
+		order := []int{create, assume, copied}
+		c.Assert(slices.IsSorted(order) && create >= 0, qt.IsTrue, qt.Commentf("%v %q", order, statements))
+		c.Assert(statements[create], qt.Contains, "  CONSTRAINT events_check CHECK (ver > 0),\n  CONSTRAINT named CHECK (length(name) < 10)\n)")
+		c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), " DROP CONSTRAINT ")
+		c.Assert(statements[0], qt.Contains, "Each row copied into ptah_rebuild_events is checked against its CHECK constraints, events_check, named, "+
+			"so a row that breaks one stops the plan before the swap, with code 469.")
+		c.Assert(statements[0], qt.Contains, "which changes: the CHECK constraints it adds are named; "+
+			"the CHECK constraints whose condition changes are events_check; the CHECK constraints it does not have are old_one\n")
+		c.Assert(statements[0], qt.Contains, "The new table keeps what no declaration states and events has: the ASSUME constraints a_name\n")
 	})
 
 	t.Run("projections on an engine that merges rows ask for deduplicate_merge_projection_mode", func(t *testing.T) {
@@ -601,6 +640,15 @@ func TestRebuild_RefusesWhatTheNewTableWouldLose(t *testing.T) {
 			},
 			wantErr: `unsupported feature: cannot create table events again: its projection p_by_name uses column name, which the declaration drops, ` +
 				`so the new table cannot have the projection\. Drop the projection first, or keep the column`,
+		},
+		{
+			name: "an ASSUME constraint over a column the declaration drops",
+			change: func(f *rebuildFixture) {
+				f.fields = slices.Delete(f.fields, 1, 2)
+				f.assumptions = []catalog.Assumption{{Name: "a_name", Expression: "length(name) < 100"}}
+			},
+			wantErr: `unsupported feature: cannot create table events again: its ASSUME constraint a_name uses column name, which the declaration drops, ` +
+				`so the new table cannot have the constraint\. Drop the constraint first, or keep the column`,
 		},
 		{
 			name: "a TinyLog table, which reports no row count",

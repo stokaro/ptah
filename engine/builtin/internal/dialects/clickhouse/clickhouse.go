@@ -778,9 +778,15 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				continue
 			}
 			if op.Constraint.Name == "" {
-				r.w.WriteLinef("-- CLICKHOUSE: ALTER TABLE %s ADD CHECK without a name is skipped (ClickHouse requires a constraint name)", node.Name)
-				continue
+				// Planning names every CHECK it adds, so an unnamed one is a
+				// caller's mistake; written as a comment it would vanish from
+				// the plan with nothing saying so.
+				return fmt.Errorf("%w: %s: ALTER TABLE %s ADD CONSTRAINT needs a name for its CHECK (%s); ClickHouse refuses a constraint without one",
+					ptaherr.ErrUnsupportedFeature, DialectName, node.Name, op.Constraint.Expression)
 			}
+			// Measured on 24.10 and 26.10: the statement succeeds over rows
+			// that break the CHECK, and only an INSERT after it is refused.
+			r.w.WriteLinef("-- CLICKHOUSE: ADD CONSTRAINT checks the rows written after it, not the rows %s holds", node.Name)
 			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s CHECK %s;", node.Name, op.Constraint.Name, parenList(op.Constraint.Expression))
 		case *ast.DropConstraintOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s;", node.Name, op.ConstraintName)

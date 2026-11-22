@@ -19,8 +19,9 @@ import (
 
 // carriedStorage is what a rebuild carries from the table onto the new one
 // because no declaration states it: the codec of each column the new table
-// keeps, and the table's projections. Without it the new table has none of
-// them, and the next plan reports nothing, since no comparison reads either.
+// keeps, the table's projections and its ASSUME constraints. Without it the new
+// table has none of them, and the next plan reports nothing, since no
+// comparison reads any of them.
 //
 // The codec of a column whose type changes is left behind, and the plan says
 // so. A codec fits the type it was chosen for: measured on 26.10, `x UInt64
@@ -40,6 +41,7 @@ type carriedStorage struct {
 	// lost are the codecs of the columns whose type changes.
 	lost        []carriedCodec
 	projections []catalog.Projection
+	assumptions []catalog.Assumption
 }
 
 type carriedCodec struct {
@@ -48,8 +50,9 @@ type carriedCodec struct {
 
 // carryStorage collects what the new table takes from the table. It refuses a
 // column whose definition holds a storage clause other than CODEC -- a column
-// TTL, STATISTICS or SETTINGS, which Ptah does not carry -- and a projection
-// that uses a column the declaration drops, which the new table cannot have.
+// TTL, STATISTICS or SETTINGS, which Ptah does not carry -- and a projection or
+// an ASSUME constraint that uses a column the declaration drops, which the new
+// table cannot have.
 func carryStorage(table *difftypes.TableDiff, create *ast.CreateTableNode, columns rebuildColumns) (carriedStorage, error) {
 	declared := make(map[string]bool, len(create.Columns))
 	for _, column := range create.Columns {
@@ -89,6 +92,15 @@ func carryStorage(table *difftypes.TableDiff, create *ast.CreateTableNode, colum
 		}
 		carried.projections = append(carried.projections, projection)
 	}
+	for _, assumption := range table.Current.Table.Assumptions {
+		if column, uses := expressionUses(assumption.Expression, dropped); uses {
+			return carriedStorage{}, unsupportedRebuild(table.TableName, fmt.Sprintf(
+				"its ASSUME constraint %s uses column %s, which the declaration drops, so the new table cannot have the constraint. "+
+					"Drop the constraint first, or keep the column",
+				assumption.Name, column))
+		}
+		carried.assumptions = append(carried.assumptions, assumption)
+	}
 	return carried, nil
 }
 
@@ -106,7 +118,13 @@ func clauseKeyword(clause string) string {
 // the column, so such a projection is refused rather than carried onto a table
 // that would refuse it.
 func projectionUses(projection catalog.Projection, dropped []string) (string, bool) {
-	lex := lexer.NewLexerWithOptions(projection.Definition, dialectlexer.Options(platform.ClickHouse))
+	return expressionUses(projection.Definition, dropped)
+}
+
+// expressionUses reports a column of dropped that text names, by the rule
+// [projectionUses] states.
+func expressionUses(text string, dropped []string) (string, bool) {
+	lex := lexer.NewLexerWithOptions(text, dialectlexer.Options(platform.ClickHouse))
 	for {
 		token := lex.NextToken()
 		if token.Type == lexer.TokenEOF {
@@ -121,16 +139,19 @@ func projectionUses(projection catalog.Projection, dropped []string) (string, bo
 	}
 }
 
-// statements carry the codecs and the projections onto the empty copy. ALTER
-// TABLE takes both as the server prints them in SHOW CREATE TABLE, every
-// projection form included, measured on 24.10 and 26.10.
+// statements carry the codecs, the projections and the ASSUME constraints onto
+// the empty copy. ALTER TABLE takes each as the server prints it in SHOW CREATE
+// TABLE, every projection form included, measured on 24.10 and 26.10.
 func (c carriedStorage) statements(copyTable string) []ast.Node {
-	nodes := make([]ast.Node, 0, len(c.codecs)+len(c.projections))
+	nodes := make([]ast.Node, 0, len(c.codecs)+len(c.projections)+len(c.assumptions))
 	for _, codec := range c.codecs {
 		nodes = append(nodes, ast.NewRawSQL(fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s;", copyTable, quoteIdentifier(codec.column), codec.clause)))
 	}
 	for _, projection := range c.projections {
 		nodes = append(nodes, ast.NewRawSQL(fmt.Sprintf("ALTER TABLE %s ADD PROJECTION %s %s;", copyTable, quoteIdentifier(projection.Name), projection.Definition)))
+	}
+	for _, assumption := range c.assumptions {
+		nodes = append(nodes, ast.NewRawSQL(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s ASSUME %s;", copyTable, quoteIdentifier(assumption.Name), assumption.Expression)))
 	}
 	return nodes
 }
@@ -179,6 +200,13 @@ func (c carriedStorage) names() []string {
 			projections[i] = projection.Name
 		}
 		names = append(names, "the projections "+strings.Join(projections, ", "))
+	}
+	if len(c.assumptions) > 0 {
+		assumptions := make([]string, len(c.assumptions))
+		for i, assumption := range c.assumptions {
+			assumptions[i] = assumption.Name
+		}
+		names = append(names, "the ASSUME constraints "+strings.Join(assumptions, ", "))
 	}
 	return names
 }

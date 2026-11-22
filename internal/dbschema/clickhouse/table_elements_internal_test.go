@@ -74,6 +74,58 @@ func TestParseTableElements_HappyPath(t *testing.T) {
 	}
 }
 
+func TestParseTableElements_ReadsConstraints(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		createQuery     string
+		wantChecks      []catalog.Constraint
+		wantAssumptions []catalog.Assumption
+	}{
+		{
+			name: "CHECK and ASSUME as the server formats them",
+			createQuery: "CREATE TABLE a6336c.m (`id` UInt64, `v` Int32, `s` String, CONSTRAINT c1 CHECK (v > 0) AND (v != 5), " +
+				"CONSTRAINT a1 ASSUME length(s) < 10, CONSTRAINT c2 CHECK (s IN ('a', 'b')) OR (s LIKE 'x%')) " +
+				"ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192",
+			wantChecks: []catalog.Constraint{
+				{Name: "c1", Type: "CHECK", CheckClause: new("(v > 0) AND (v != 5)")},
+				{Name: "c2", Type: "CHECK", CheckClause: new("(s IN ('a', 'b')) OR (s LIKE 'x%')")},
+			},
+			wantAssumptions: []catalog.Assumption{{Name: "a1", Expression: "length(s) < 10"}},
+		},
+		{
+			name: "a name the server quotes",
+			createQuery: "CREATE TABLE a6336c.d (`id` UInt64, `v` Int32, CONSTRAINT c1 CHECK v > 0, CONSTRAINT `we\\'ird` CHECK id >= 0) " +
+				"ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192",
+			wantChecks: []catalog.Constraint{
+				{Name: "c1", Type: "CHECK", CheckClause: new("v > 0")},
+				{Name: "we'ird", Type: "CHECK", CheckClause: new("id >= 0")},
+			},
+		},
+		{
+			name:        "no constraint",
+			createQuery: "CREATE TABLE rv2.t_Log (`id` UInt64) ENGINE = Log",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := parseTableElements(test.createQuery)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.checks, qt.DeepEquals, test.wantChecks)
+			c.Assert(got.assumptions, qt.DeepEquals, test.wantAssumptions)
+		})
+	}
+}
+
+func TestWithTableElements_NamesTheTableOfEachCheck(t *testing.T) {
+	c := qt.New(t)
+	table := catalog.Table{Name: "m", Columns: []catalog.Column{{Name: "id"}, {Name: "v"}}}
+	checks, err := withTableElements(&table, "CREATE TABLE a6336c.m (`id` UInt64, `v` Int32, CONSTRAINT c1 CHECK v > 0, "+
+		"CONSTRAINT a1 ASSUME v < 10) ENGINE = MergeTree ORDER BY id")
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.DeepEquals, []catalog.Constraint{{Name: "c1", TableName: "m", Type: "CHECK", CheckClause: new("v > 0")}})
+	c.Assert(table.Assumptions, qt.DeepEquals, []catalog.Assumption{{Name: "a1", Expression: "v < 10"}})
+}
+
 func TestParseTableElements_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name, createQuery, wantErr string
@@ -83,6 +135,9 @@ func TestParseTableElements_FailurePath(t *testing.T) {
 		{name: "empty element", createQuery: "CREATE TABLE t (`id` UInt64, ) ENGINE = Memory", wantErr: ".*an element is empty"},
 		{name: "projection without a definition", createQuery: "CREATE TABLE t (`id` UInt64, PROJECTION p) ENGINE = MergeTree ORDER BY id", wantErr: ".*a projection has no name and definition"},
 		{name: "malformed column name", createQuery: "CREATE TABLE t (`id\\x4` UInt64) ENGINE = Memory", wantErr: ".*column name .*"},
+		{name: "constraint without an expression", createQuery: "CREATE TABLE t (`id` UInt64, CONSTRAINT c CHECK) ENGINE = Memory", wantErr: ".*a constraint has no name, kind and expression"},
+		{name: "constraint of another kind", createQuery: "CREATE TABLE t (`id` UInt64, CONSTRAINT c UNIQUE (id)) ENGINE = Memory", wantErr: ".*constraint c is UNIQUE, neither CHECK nor ASSUME"},
+		{name: "malformed constraint name", createQuery: "CREATE TABLE t (`id` UInt64, CONSTRAINT `c\\x4` CHECK id > 0) ENGINE = Memory", wantErr: ".*constraint name .*"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -90,6 +145,7 @@ func TestParseTableElements_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, errTableElements)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.projections, qt.IsNil)
+			c.Assert(got.checks, qt.IsNil)
 			c.Assert(got.clauses, qt.IsNil)
 		})
 	}

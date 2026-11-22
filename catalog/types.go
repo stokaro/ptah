@@ -403,6 +403,21 @@ type Table struct {
 	// comparison reads them: a table rebuild carries them into the new table.
 	// A reader for another engine leaves it empty.
 	Projections []Projection `json:"projections,omitempty"`
+	// Assumptions are the ASSUME constraints of a ClickHouse table, in the
+	// order the server's CREATE TABLE lists them. The server checks no row
+	// against one; the optimizer takes it as true. No declaration states one
+	// and no comparison reads them: a table rebuild carries them into the new
+	// table. A reader for another engine leaves it empty.
+	Assumptions []Assumption `json:"assumptions,omitempty"`
+}
+
+// Assumption is one ASSUME constraint of a ClickHouse table. Name is the
+// constraint's name, unquoted. Expression is what follows ASSUME in the
+// server's CREATE TABLE, verbatim, which ALTER TABLE ... ADD CONSTRAINT takes
+// back as it is.
+type Assumption struct {
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
 }
 
 // Projection is one projection of a ClickHouse table. Name is the projection's

@@ -185,7 +185,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateComparison(info.Dialect, desired, database, virtualPolicy); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	desired = schemaprep.AssignDefaultForeignKeyNames(desired, info.Dialect)
+	desired = schemaprep.AssignDefaultConstraintNames(desired, info.Dialect)
 	semantics, err := comparisonSemantics(desired, database, info)
 	if err != nil {
 		return nil, Diagnostics{}, err

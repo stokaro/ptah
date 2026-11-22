@@ -13,6 +13,7 @@ func (t Table) Clone() Table {
 	}
 	t.Parents = slices.Clone(t.Parents)
 	t.Projections = slices.Clone(t.Projections)
+	t.Assumptions = slices.Clone(t.Assumptions)
 	return t
 }
 

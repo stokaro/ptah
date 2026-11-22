@@ -498,7 +498,7 @@ func validateRollbackTarget(
 	caps capability.Capabilities,
 ) error {
 	prepared := schemaprep.QualifyDeclaredUserTypes(
-		schemaprep.AssignDefaultForeignKeyNames(prior, dialect),
+		schemaprep.AssignDefaultConstraintNames(prior, dialect),
 		dialect,
 	)
 	if prepared == nil {

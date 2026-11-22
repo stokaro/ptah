@@ -595,7 +595,7 @@ func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime
 	if err != nil {
 		return err
 	}
-	scoped = schemaprep.AssignDefaultForeignKeyNames(scoped, info.Dialect)
+	scoped = schemaprep.AssignDefaultConstraintNames(scoped, info.Dialect)
 	if err := identifiervalidation.ValidateTarget(
 		scoped,
 		info.Dialect,
@@ -723,7 +723,7 @@ func targetComparisonInputs(
 	if err != nil {
 		return targetInputs{}, err
 	}
-	desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
+	desired = schemaprep.AssignDefaultConstraintNames(desired, opts.Dialect)
 	// The target rewrites what its reader reports in another shape, such
 	// as a UNIQUE constraint YDB holds as a unique index.
 	desired, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{

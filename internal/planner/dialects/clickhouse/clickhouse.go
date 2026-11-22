@@ -91,9 +91,10 @@ func (p *Planner) capabilities() capability.Capabilities {
 // be created before any subsequent ALTER references them:
 //
 //  1. Diagnostics for the extensions and sequences ClickHouse cannot host.
-//  2. CREATE TABLE for every newly-added table, after DROP for a view or
-//     materialized view that gives its name to one.
-//  3. ALTER TABLE for every per-table column add/modify/drop.
+//  2. CREATE TABLE for every newly-added table, with its CHECK constraints,
+//     after DROP for a view or materialized view that gives its name to one.
+//  3. ALTER TABLE for every per-table column add/modify/drop, after the CHECK
+//     drops and before the CHECK additions; see [checkChanges].
 //  4. DROP TABLE for a removed table that gives its name to a view or
 //     materialized view; CREATE ROLE; CREATE, CREATE OR REPLACE, or DROP for
 //     plain views; REVOKE and GRANT; plus diagnostics for functions,
@@ -163,10 +164,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, handovers.beforeTables...)
 	result = p.addNewTables(result, diff)
 	before := result
-	columns, err := p.modifyExistingTables(nil, diff, rebuilds)
+	checks := planCheckChanges(diff, rebuilds)
+	columns, err := p.modifyExistingTables(checks.drops, diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
+	columns = append(columns, checks.additions...)
 	after, replacementDrops, err := planObjectsAfterTables(slices.Clone(handovers.beforeViews), diff, p.capabilities(), handovers)
 	if err != nil {
 		return nil, err
@@ -207,6 +210,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		// The captured creation carries prepared storage facets alongside the
 		// common columns; the selected renderer owns their SQL spelling.
 		tableNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse, creation.Constraints)
+		withDeclaredChecks(tableNode, creation.Constraints)
 		// The table's row policies are created with it: the comparison leaves
 		// the children of a created table to the table's own transition.
 		tableNode.OwnedObjects = creation.OwnedObjects

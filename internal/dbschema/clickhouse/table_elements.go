@@ -11,8 +11,9 @@ import (
 )
 
 // tableElements is what a table's CREATE TABLE lists that no other system
-// table reports in a form a statement can take back: its projections, and the
-// storage clauses of each column.
+// table reports in a form a statement can take back: its projections, its
+// constraints, and the storage clauses of each column. ClickHouse has no
+// system table of constraints.
 //
 // system.projections has no definition the server accepts for every
 // projection: measured on 26.10, its query column reads `name` for
@@ -22,6 +23,9 @@ import (
 // there.
 type tableElements struct {
 	projections []catalog.Projection
+	// checks are the CHECK constraints, and assumptions the ASSUME ones.
+	checks      []catalog.Constraint
+	assumptions []catalog.Assumption
 	// clauses holds the storage clauses of each column that has one, by name.
 	clauses map[string][]string
 }
@@ -36,10 +40,13 @@ var errTableElements = errors.New("cannot read the elements of the CREATE TABLE 
 // parseTableElements reads the element list of a CREATE TABLE as
 // system.tables.create_table_query prints it.
 //
-// The server prints a column's name in backquotes, always, and a projection as
-// the bare keyword PROJECTION, so the first token of an element tells the two
-// apart; skipping indexes and constraints are read from their own system tables
-// and are left out here. A storage clause starts at its keyword where the
+// The server prints a column's name in backquotes, always, and a projection
+// and a constraint as the bare keywords PROJECTION and CONSTRAINT, so the first
+// token of an element tells them apart; skipping indexes are read from their own
+// system table and are left out here. A constraint is CONSTRAINT, its name, bare
+// unless it needs quoting, CHECK or ASSUME, and the expression as the server
+// formats it: measured on 24.10 and 26.10, `v>0 AND v<>5` reads back as
+// `(v > 0) AND (v != 5)`. A storage clause starts at its keyword where the
 // keyword stands outside parentheses, and runs to the next one or to the end of
 // the element. CODEC, STATISTICS and SETTINGS are each followed by a
 // parenthesis; TTL is followed by an expression, so a column a DEFAULT names
@@ -65,6 +72,10 @@ func parseTableElements(createQuery string) (tableElements, error) {
 				return tableElements{}, err
 			}
 			out.projections = append(out.projections, projection)
+		case first.Type == lexer.TokenIdentifier && first.Value == "CONSTRAINT":
+			if err := out.readConstraint(createQuery, element); err != nil {
+				return tableElements{}, err
+			}
 		case first.Type == lexer.TokenIdentifier && len(first.Value) > 0 && first.Value[0] == '`':
 			name, ok := chcolumn.UnquoteIdentifier(first.Value)
 			if !ok {
@@ -102,6 +113,28 @@ func splitElements(tokens []lexer.Token) ([][]lexer.Token, error) {
 		}
 	}
 	return nil, fmt.Errorf("%w: the element list does not close", errTableElements)
+}
+
+// readConstraint reads CONSTRAINT <name> CHECK|ASSUME <expression>, keeping
+// the expression as the server spells it.
+func (e *tableElements) readConstraint(createQuery string, element []lexer.Token) error {
+	if len(element) < 4 || element[1].Type != lexer.TokenIdentifier || element[2].Type != lexer.TokenIdentifier {
+		return fmt.Errorf("%w: a constraint has no name, kind and expression", errTableElements)
+	}
+	name, ok := chcolumn.UnquoteIdentifier(element[1].Value)
+	if !ok {
+		return fmt.Errorf("%w: constraint name %s", errTableElements, element[1].Value)
+	}
+	expression := createQuery[element[3].Start:element[len(element)-1].End]
+	switch element[2].Value {
+	case "CHECK":
+		e.checks = append(e.checks, catalog.Constraint{Name: name, Type: "CHECK", CheckClause: new(expression)})
+	case "ASSUME":
+		e.assumptions = append(e.assumptions, catalog.Assumption{Name: name, Expression: expression})
+	default:
+		return fmt.Errorf("%w: constraint %s is %s, neither CHECK nor ASSUME", errTableElements, name, element[2].Value)
+	}
+	return nil
 }
 
 // readProjection reads PROJECTION <name> <definition>, keeping the definition
@@ -148,16 +181,21 @@ func storageClauses(createQuery string, tokens []lexer.Token) []string {
 	return clauses
 }
 
-// withTableElements gives the table the projections and the column storage
-// clauses its CREATE TABLE lists.
-func withTableElements(table *catalog.Table, createQuery string) error {
+// withTableElements gives the table the projections, the ASSUME constraints
+// and the column storage clauses its CREATE TABLE lists, and returns its CHECK
+// constraints, which the schema lists beside every other table's.
+func withTableElements(table *catalog.Table, createQuery string) ([]catalog.Constraint, error) {
 	elements, err := parseTableElements(createQuery)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	table.Projections = elements.projections
+	table.Assumptions = elements.assumptions
 	for i := range table.Columns {
 		table.Columns[i].StorageClauses = elements.clauses[table.Columns[i].Name]
 	}
-	return nil
+	for i := range elements.checks {
+		elements.checks[i].TableName = table.Name
+	}
+	return elements.checks, nil
 }
