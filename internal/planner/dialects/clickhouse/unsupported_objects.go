@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
@@ -60,10 +61,11 @@ func planObjectsAfterTables(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	caps capability.Capabilities,
+	handovers nameHandovers,
 ) (after, replacementDrops []ast.Node, err error) {
 	result = planRoles(result, diff, caps)
 	result = reportFunctions(result, diff)
-	result, replacementDrops, err = reportViewLikes(result, diff, caps)
+	result, replacementDrops, err = reportViewLikes(result, diff, caps, handovers)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -160,6 +162,7 @@ func reportViewLikes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	caps capability.Capabilities,
+	handovers nameHandovers,
 ) (planned, replacementDrops []ast.Node, err error) {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	capacity := len(diff.ViewsAdded) + len(diff.ViewsModified) +
@@ -235,6 +238,9 @@ func reportViewLikes(
 	}
 	vacated := droppedviews.Vacated(diff, semantics)
 	for _, removal := range gone {
+		if slices.Contains(handovers.viewLikes, removal) {
+			continue
+		}
 		if droppedviews.Holds(vacated, removal.Name, semantics) {
 			result = append(result, rowPolicyDrops(diff, removal.Name, semantics)...)
 		}
