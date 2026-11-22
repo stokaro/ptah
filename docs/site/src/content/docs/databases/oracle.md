@@ -108,10 +108,17 @@ DROP TABLE APP."orders" PURGE;
 DROP TABLE APP.ORDERS PURGE;
 ```
 
+Role names follow the same rule. A declared `CREATE ROLE reader` is the role
+Oracle stores as `READER`, so the next plan finds it and creates nothing, and
+`GRANT SELECT ON orders TO reader` is held once `READER` holds `SELECT`.
+`CREATE ROLE "reader"` is the role stored as `reader`, which is a different
+role. A grant read for a role or on a table created quoted is revoked by the
+quoted names, as in `REVOKE SELECT ON APP."orders" FROM "reader"`.
+
 A database used as the desired side keeps the same spelling. `schema diff
 --from` and `--to` on one account plan nothing, and `schema inspect --format
-sql` and `db read` write `CREATE TABLE APP."orders"`, so the file creates the
-same objects when it is replayed.
+sql` and `db read` write `CREATE TABLE APP."orders"` and `CREATE ROLE
+"reader"`, so the file creates the same objects when it is replayed.
 
 A declaration that would replace such an object is refused. If the declaration
 names `orders`, the catalog has no `ORDERS`, and it holds the case-sensitive

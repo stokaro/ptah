@@ -10,8 +10,10 @@ import (
 )
 
 // storedRead is an Oracle read holding a table created quoted, its folded
-// namesake, and a view, a materialized view, a sequence and a trigger created
-// quoted, with an index and a foreign key over the quoted table.
+// namesake, and a view, a materialized view, a sequence, a trigger and roles
+// created quoted, with an index and a foreign key over the quoted table, a
+// role's folded namesake, a grant to the quoted role on the quoted table, and
+// a grant on a schema, whose name keeps its stored spelling.
 func storedRead() catalog.Database {
 	return catalog.Database{
 		StoredNames: true,
@@ -24,10 +26,17 @@ func storedRead() catalog.Database {
 			Name: "fk_orders", TableName: "ORDERS", ColumnName: "ID",
 			ForeignTable: new("orders"), ForeignColumn: new("ID"),
 		}},
-		Views:     []catalog.View{{Name: "v1", Schema: "APP"}},
-		MatViews:  []catalog.MaterializedView{{Name: "mv1", Schema: "APP"}},
-		Sequences: []catalog.Sequence{{Name: "s1", Schema: "APP"}},
-		Triggers:  []catalog.Trigger{{Name: "t1", Schema: "APP", Table: "orders"}},
+		Views:           []catalog.View{{Name: "v1", Schema: "APP"}},
+		MatViews:        []catalog.MaterializedView{{Name: "mv1", Schema: "APP"}},
+		Sequences:       []catalog.Sequence{{Name: "s1", Schema: "APP"}},
+		Triggers:        []catalog.Trigger{{Name: "t1", Schema: "APP", Table: "orders"}},
+		Roles:           []catalog.Role{{Name: "reader"}, {Name: "READER"}},
+		RolesOutOfScope: []catalog.Role{{Name: "writer"}},
+		RoleMemberships: []catalog.RoleMembership{{Role: "TEAM", Member: "reader"}},
+		Grants: []catalog.Grant{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "orders"},
+			{Role: "READER", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
+		},
 	}
 }
 
@@ -58,6 +67,15 @@ func TestSpell_StoredOracleRead(t *testing.T) {
 	c.Assert(got.Sequences[0].Name, qt.Equals, `"s1"`)
 	c.Assert(got.Triggers[0].Name, qt.Equals, `"t1"`)
 	c.Assert(got.Triggers[0].Table, qt.Equals, `"orders"`)
+	c.Assert(got.Roles[0].Name, qt.Equals, `"reader"`)
+	c.Assert(got.Roles[1].Name, qt.Equals, "READER")
+	c.Assert(got.RolesOutOfScope[0].Name, qt.Equals, `"writer"`)
+	c.Assert(got.RoleMemberships[0].Role, qt.Equals, "TEAM")
+	c.Assert(got.RoleMemberships[0].Member, qt.Equals, `"reader"`)
+	c.Assert(got.Grants[0].Role, qt.Equals, `"reader"`)
+	c.Assert(got.Grants[0].ObjectName, qt.Equals, `"orders"`)
+	c.Assert(got.Grants[1].Role, qt.Equals, "READER")
+	c.Assert(got.Grants[1].ObjectName, qt.Equals, "app")
 	c.Assert(catalogspelling.Spell(got, "oracle"), qt.DeepEquals, got)
 	// The caller's read is left as it was.
 	c.Assert(read, qt.DeepEquals, storedRead())

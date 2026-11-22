@@ -19,7 +19,7 @@ func compareMemberships(
 	held ...catalog.RoleMembership,
 ) *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
-	compare.RoleMemberships(&schemamodel.Database{Roles: roles}, &catalog.Database{RoleMemberships: held}, diff, caps)
+	compare.RoleMemberships(&schemamodel.Database{Roles: roles}, &catalog.Database{RoleMemberships: held}, diff, postgresSemantics(), caps)
 	return diff
 }
 
@@ -132,7 +132,7 @@ func TestRoleMemberships_AMembershipOfARoleTheReadRefusedIsUndecided(t *testing.
 	diff := &difftypes.SchemaDiff{}
 
 	compare.RoleMemberships(&schemamodel.Database{Roles: membershipRoles(true, schemamodel.RoleMembershipOptions{})},
-		database, diff, capability.Postgres16())
+		database, diff, postgresSemantics(), capability.Postgres16())
 
 	c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
 	c.Assert(diff.RoleMembershipsModified, qt.HasLen, 0)
@@ -148,7 +148,7 @@ func TestRoleMemberships_EachEndOfAnUndecidedRoleDecidesAlone(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			compare.RoleMemberships(&schemamodel.Database{Roles: membershipRoles(true, schemamodel.RoleMembershipOptions{})},
-				database, diff, capability.Postgres16())
+				database, diff, postgresSemantics(), capability.Postgres16())
 
 			c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
 		})

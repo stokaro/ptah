@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -19,7 +20,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &catalog.Database{Roles: make([]catalog.Role, 0)}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -37,7 +38,7 @@ func TestRolesComparison(t *testing.T) {
 		database := &catalog.Database{Roles: make([]catalog.Role, 0)}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 2)
 		c.Assert(diff.RolesAdded.Names(), qt.Contains, "app_user")
@@ -57,7 +58,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		// Roles should not be automatically removed for safety
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
@@ -79,7 +80,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -108,7 +109,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 1)
 		c.Assert(diff.RolesAdded[0].Name, qt.Equals, "new_role")
@@ -139,7 +140,7 @@ func TestRolesComparison(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		// Check added roles are sorted
 		c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"a_role", "z_role"})
@@ -174,7 +175,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -194,7 +195,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"brand_new_user"})
 	})
@@ -212,7 +213,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 1)
@@ -236,7 +237,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 0)
@@ -254,7 +255,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesModified, qt.HasLen, 0)
@@ -279,7 +280,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		}
 		diff := &difftypes.SchemaDiff{}
 
-		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+		compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 		c.Assert(diff.RolesAdded, qt.HasLen, 0)
 		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
@@ -324,9 +325,9 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 	}
 
 	scopedDiff := &difftypes.SchemaDiff{}
-	compare.Roles(desired, scoped, scopedDiff, compare.CoverageOf(desired, scoped))
+	compare.Roles(desired, scoped, scopedDiff, identifier.Semantics{}, compare.CoverageOf(desired, scoped))
 	describedDiff := &difftypes.SchemaDiff{}
-	compare.Roles(desired, described, describedDiff, compare.CoverageOf(desired, described))
+	compare.Roles(desired, described, describedDiff, identifier.Semantics{}, compare.CoverageOf(desired, described))
 
 	c.Assert(scopedDiff.RolesAdded.Names(), qt.DeepEquals, []string{"nowhere_at_all"})
 	c.Assert(scopedDiff.RolesModified, qt.HasLen, 1)
@@ -375,7 +376,7 @@ func TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+	compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.RolesAdded.Names(), qt.DeepEquals, []string{"pg_monitor", "postgres"},
 		qt.Commentf("reserved names are in neither database list, so they read as absent"))

@@ -64,7 +64,7 @@ func ObjectComments(
 		changes = append(changes, schemaComments(desired, database, semantics)...)
 	}
 	if caps.Has(capability.RoleComments) {
-		changes = append(changes, roleComments(desired, database)...)
+		changes = append(changes, roleComments(desired, database, semantics)...)
 	}
 	sort.SliceStable(changes, func(i, j int) bool {
 		if changes[i].Kind != changes[j].Kind {
@@ -131,11 +131,11 @@ func schemaComments(
 // role is matched the way [Roles] matches it, against every role the reader
 // manages whether or not its description named the role, so the two never
 // disagree about which roles exist.
-func roleComments(desired *schemamodel.Database, database *catalog.Database) []difftypes.ObjectCommentChange {
-	reported := managedRoles(database)
+func roleComments(desired *schemamodel.Database, database *catalog.Database, semantics identifier.Semantics) []difftypes.ObjectCommentChange {
+	reported := managedRoles(database, semantics)
 	var changes []difftypes.ObjectCommentChange
 	for _, role := range desired.Roles {
-		current, exists := reported[role.Name]
+		current, exists := reported[roleKey(role.Name, semantics)]
 		if !exists {
 			continue
 		}

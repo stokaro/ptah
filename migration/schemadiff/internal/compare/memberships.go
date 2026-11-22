@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 )
 
@@ -40,61 +41,67 @@ import (
 // reports options. A declaration that states no option means the default:
 // admin false, set true, and inherit as the member role's own attribute. See
 // [difftypes.RoleMembershipChange].
+//
+// Both roles of a membership are matched by the name the server stores, as
+// [Roles] matches a role, so a bare `reader` member of `team` is the
+// membership of READER in TEAM where the server folds unquoted names to upper
+// case. A planned addition names the roles as declared, and a removal as read.
 func RoleMemberships(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
 	caps capability.Capabilities,
 ) {
 	if !caps.Has(capability.RoleMembership) || desired == nil || database == nil {
 		return
 	}
-	managed, owners, declared := declaredMemberships(desired)
-	held := make(map[difftypes.RoleMembershipRef]catalog.RoleMembership, len(database.RoleMemberships))
+	managed, owners, declared := declaredMemberships(desired, semantics)
+	held := make(map[membershipKey]catalog.RoleMembership, len(database.RoleMemberships))
 	for _, membership := range database.RoleMemberships {
-		key := difftypes.RoleMembershipRef{Role: membership.Role, Member: membership.Member}
+		key := newMembershipKey(membership.Role, membership.Member, semantics)
 		if previous, seen := held[key]; seen {
 			membership = mergeHeldMemberships(previous, membership)
 		}
 		held[key] = membership
 	}
 	for key, want := range declared {
-		if !desired.NotDescribed.Describes(coverage.RoleMembership, key.Member) {
+		if !desired.NotDescribed.Describes(coverage.RoleMembership, want.ref.Member) {
 			continue
 		}
 		live, found := held[key]
 		if !found {
 			// A role the read refused to describe may not exist, and a GRANT
 			// planned beside the undecided CREATE would name it first.
-			if !database.NotDescribed.Describes(coverage.Role, key.Member) ||
-				!database.NotDescribed.Describes(coverage.Role, key.Role) {
+			if !database.NotDescribed.Describes(coverage.Role, want.ref.Member) ||
+				!database.NotDescribed.Describes(coverage.Role, want.ref.Role) {
 				continue
 			}
-			added := key
+			added := want.ref
 			added.Options = want.options.Clone()
 			diff.RoleMembershipsAdded = append(diff.RoleMembershipsAdded, added)
 			continue
 		}
-		if change, differs := compareMembershipOptions(key, want, live, caps); differs {
+		if change, differs := compareMembershipOptions(want.ref, want, live, caps); differs {
 			diff.RoleMembershipsModified = append(diff.RoleMembershipsModified, change)
 			continue
 		}
 		diff.Matched.RoleMemberships++
 	}
 	for key, live := range held {
-		if !desired.NotDescribed.Describes(coverage.RoleMembership, key.Member) ||
-			!database.NotDescribed.Describes(coverage.RoleMembership, key.Member) {
+		if !desired.NotDescribed.Describes(coverage.RoleMembership, live.Member) ||
+			!database.NotDescribed.Describes(coverage.RoleMembership, live.Member) {
 			continue
 		}
-		if _, isDeclared := declared[key]; isDeclared || !managed[key.Role] || !managed[key.Member] {
+		if _, isDeclared := declared[key]; isDeclared || !managed[key.role] || !managed[key.member] {
 			continue
 		}
-		if !owners[key.Member] {
+		if !owners[key.member] {
 			diff.UnmanagedRoleMemberships = append(diff.UnmanagedRoleMemberships,
-				difftypes.RoleMembershipRef{Role: key.Role, Member: key.Member})
+				difftypes.RoleMembershipRef{Role: live.Role, Member: live.Member})
 			continue
 		}
-		removed := key
+		removed := difftypes.RoleMembershipRef{Role: live.Role, Member: live.Member}
 		removed.Options = heldMembershipOptions(live, caps)
 		diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, removed)
 	}
@@ -110,8 +117,18 @@ func RoleMemberships(
 // the member's own inherit attribute, which is the default for the inherit
 // option.
 type declaredMembership struct {
+	// ref names the two roles as the declaration spells them.
+	ref            difftypes.RoleMembershipRef
 	options        schemamodel.RoleMembershipOptions
 	memberInherits bool
+}
+
+// membershipKey is a membership matched by the names the server stores for
+// its two roles; see [roleKey].
+type membershipKey struct{ role, member string }
+
+func newMembershipKey(role, member string, semantics identifier.Semantics) membershipKey {
+	return membershipKey{role: roleKey(role, semantics), member: roleKey(member, semantics)}
 }
 
 // mergeHeldMemberships folds a second row for one membership into the first.
@@ -195,18 +212,18 @@ func compareMemberships(a, b difftypes.RoleMembershipRef) int {
 }
 
 // declaredMemberships collects the roles the schema declares, the ones among
-// them that own their memberships, and each membership they state, keyed by
-// group and member.
-func declaredMemberships(desired *schemamodel.Database) (
+// them that own their memberships, and each membership they state, each keyed
+// by the names the server stores.
+func declaredMemberships(desired *schemamodel.Database, semantics identifier.Semantics) (
 	managed, owners map[string]bool,
-	declared map[difftypes.RoleMembershipRef]declaredMembership,
+	declared map[membershipKey]declaredMembership,
 ) {
 	managed = make(map[string]bool, len(desired.Roles))
 	owners = make(map[string]bool, len(desired.Roles))
-	declared = make(map[difftypes.RoleMembershipRef]declaredMembership)
+	declared = make(map[membershipKey]declaredMembership)
 	for _, role := range desired.Roles {
-		managed[role.Name] = true
-		owners[role.Name] = role.OwnsMemberships()
+		managed[roleKey(role.Name, semantics)] = true
+		owners[roleKey(role.Name, semantics)] = role.OwnsMemberships()
 		for _, group := range role.MemberOf {
 			spelled := group
 			if group = strings.TrimSpace(group); group != "" {
@@ -214,7 +231,8 @@ func declaredMemberships(desired *schemamodel.Database) (
 				if !stated {
 					options = role.MemberOptions[group]
 				}
-				declared[difftypes.RoleMembershipRef{Role: group, Member: role.Name}] = declaredMembership{
+				declared[newMembershipKey(group, role.Name, semantics)] = declaredMembership{
+					ref:     difftypes.RoleMembershipRef{Role: group, Member: role.Name},
 					options: options, memberInherits: role.Inherit,
 				}
 			}
