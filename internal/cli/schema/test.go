@@ -342,7 +342,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 			return nil, fmt.Errorf("load desired schema from %s: %w",
 				strings.Join(opts.schemaFiles, ", "), err)
 		}
-		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
+		return scopeTestAuthoredSchema(ctx, opts, database, selection)
 	}
 	if source := strings.TrimSpace(opts.sourceDBURL); source != "" {
 		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{}, nil)
@@ -371,7 +371,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", dburldisplay.Format(opts.rootDir), parseErr)
 		}
-		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), parsed, selection, "")
+		return scopeTestAuthoredSchema(ctx, opts, parsed, selection)
 	}
 	if err := noteRootDirShape(diag, testSchemaFileFlag, opts.rootDir); err != nil {
 		return nil, err
@@ -380,7 +380,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
-	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, "")
+	return scopeTestAuthoredSchema(ctx, opts, database, selection)
 }
 
 // noteRootDirShape reports that --root-dir named something that is not a
@@ -401,17 +401,52 @@ func noteRootDirShape(diag io.Writer, flag, source string) error {
 	return nil
 }
 
+// scopeTestAuthoredSchema restricts a desired schema parsed from Go annotations
+// or a schema file. An object the source leaves unqualified is created in the
+// throwaway database's default schema, so it belongs to that schema for the
+// selection, as an introspected object does. Without the default,
+// `CREATE TABLE t` in a schema file matches no selection, and `--schema main`
+// on the SQLite default refuses a run whose every table lives in `main`.
+func scopeTestAuthoredSchema(
+	ctx context.Context, opts testOptions,
+	database *schemamodel.Database,
+	selection []string,
+) (*schemamodel.Database, error) {
+	if len(selection) == 0 || database == nil {
+		return database, nil
+	}
+	defaultSchema, err := testDefaultSchema(ctx, opts.dbURL)
+	if err != nil {
+		return nil, err
+	}
+	return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), database, selection, defaultSchema)
+}
+
+// testDefaultSchema names the schema the throwaway database at dbURL creates an
+// unqualified object in. An empty URL selects the ephemeral SQLite default. A
+// dialect whose descriptor declares no default schema answers "", and an
+// unqualified object then matches no selection.
+func testDefaultSchema(ctx context.Context, dbURL string) (string, error) {
+	dialect := platform.SQLite
+	if strings.TrimSpace(dbURL) != "" {
+		var err error
+		dialect, err = providerurl.Dialect(ctx, dbURL)
+		if err != nil {
+			return "", err
+		}
+	}
+	return identifier.ForDialect(dialect).DefaultSchema, nil
+}
+
 // scopeTestDesiredSchema restricts database to the selected schemas through the
 // same allow-list every other schema-scoped verb uses.
 //
-// defaultSchema names the schema that unqualified objects belong to. Objects
-// parsed from Go annotations or a schema file carry their own schema name and
-// pass "", but a live introspection leaves the default schema's objects
-// unqualified, so matching them against `--schema main` (or `public`, or `dbo`)
+// defaultSchema names the schema that unqualified objects belong to. Matching
+// an unqualified object against `--schema main` (or `public`, or `dbo`)
 // requires naming that default -- the same pairing internal/atlasmigrate/diff.go
-// makes for `migrate diff`. Without it every selection over a database source
-// would filter everything out and report the zero-match refusal below, turning
-// a supported combination into a refusal.
+// makes for `migrate diff`. Without it every selection over such a source
+// would filter those objects out and report the zero-match refusal below,
+// turning a supported combination into a refusal.
 //
 // A selection that keeps no tables out of a schema that had some is refused. The
 // alternative is provisioning an empty database and letting every case fail on a

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -86,7 +87,7 @@ func registerAtlasSchemaPlanTransitionFlags(flags *pflag.FlagSet, opts *atlasSch
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema state URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for planning")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
-	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used", atlascompatpolicy.Full())
 	// Declared for CLI-surface parity and rejected loudly: see
 	// rejectUnimplementedAtlasSchemaPlanFlags. --auto-approve is one exception
 	// — a locally saved plan file is approved by operator review, so there is
