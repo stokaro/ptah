@@ -259,6 +259,12 @@ empty value as no selection and plans those `DROP` statements, and reads
 `-s '""'` as a schema with an empty name, which selects nothing. To read every
 schema, leave the flag out.
 
+`PTAH_SCHEMA` sets the flag and takes the same grammar, so `PTAH_SCHEMA='""'`
+is refused. A variable that is set but empty, `PTAH_SCHEMA=`, counts as unset,
+as every non-boolean `PTAH_*` variable does, and reads every schema. A CI
+variable that may be empty, such as `${{ vars.SCHEMA }}` in GitHub Actions,
+belongs on the flag, `--schema "$SCHEMA"`, where an empty value is refused.
+
 `migrate checkpoint` and `schema test` pass their schema names on to a native
 command as one comma-separated list. They read `--schema` with the same
 grammar, and refuse a name that holds a comma, such as `-s '"a,b"'`, rather

@@ -162,6 +162,22 @@ func TestAtlasConfiguredSchemaEmptyValue_FailurePath(t *testing.T) {
 	}
 }
 
+// TestAtlasConfiguredSchemaEmptyValueNamesTheFile_FailurePath pins that the
+// refusal names the project file that declares the env, not atlas.hcl: a run
+// whose --config points elsewhere is told which file to fix.
+func TestAtlasConfiguredSchemaEmptyValueNamesTheFile_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	root := writeSchemaValueFixture(c)
+	c.Assert(os.Mkdir(filepath.Join(root, "cfgdir"), 0o700), qt.IsNil)
+	body := fmt.Sprintf("env \"local\" {\n  url = %q\n  schemas = [%q]\n}\n", "sqlite://dev.db", "")
+	c.Assert(os.WriteFile(filepath.Join(root, "cfgdir", "custom.hcl"), []byte(body), 0o600), qt.IsNil)
+
+	out, err := runSchemaValueCommand(c, root, []string{"schema", "inspect", "-c", "file://cfgdir/custom.hcl", "--env", "local"})
+
+	c.Assert(err, qt.ErrorMatches, `.*custom\.hcl: env "local": schemas value "": every field is empty, so the value names no schema`)
+	c.Assert(out, qt.Equals, "")
+}
+
 // TestAtlasSchemaEnvironmentEmptyValue_FailurePath is the environment half:
 // PTAH_SCHEMA sets the flag, so a value naming no schema is refused there too.
 func TestAtlasSchemaEnvironmentEmptyValue_FailurePath(t *testing.T) {
