@@ -24,8 +24,9 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 ClickHouse support is capability-limited. The preset models enums as inline
 `Enum8`/`Enum16` column types: a column typed with a declared enum, or typed
 `ENUM` with its values, is written as `Enum8('draft' = 1, 'live' = 2)`, numbered
-from 1 in declaration order, and as `Enum16` past 127 values. Foreign keys and
-enforced `CHECK` constraints are outside the preset. Roles and grants are managed declaratively, within the
+from 1 in declaration order, and as `Enum16` past 127 values. Foreign keys are
+outside the preset; `CHECK` constraints are created and enforced, within the limits
+[CHECK constraints](#check-constraints) states. Roles and grants are managed declaratively, within the
 boundaries [Roles and grants](#roles-and-grants) states.
 Review generated SQL and the
 [capability gates](../../reference/capabilities/) before adopting a workflow
@@ -428,10 +429,16 @@ rows when its engine merges rows or it has a `TTL`, so that half is left out for
 such a table. Either way the table is as it was.
 
 The new table keeps what no declaration can state, and Ptah reads from the table:
-the codec of each column it keeps, and every projection. They are added to the new
-table before the rows, and a check that the new table reports the same codecs and
-projections as the table stops the plan before the copy otherwise. The plan names
-them in a comment.
+the codec of each column it keeps, every projection, and every `ASSUME` constraint.
+They are added to the new table before the rows, and a check that the new table
+reports the same codecs and projections as the table stops the plan before the copy
+otherwise. The plan names them in a comment.
+
+The new table holds the declared `CHECK` constraints, and the copy checks every row
+against them. A row that breaks one stops the plan before the swap with code 469,
+and the table is as it was: a constraint `ALTER TABLE ... ADD CONSTRAINT` added later
+than the row leaves the row in place, and a rebuild does not. Drop
+`ptah_rebuild_<table>`, fix or remove the row, and run the plan again.
 
 A codec fits the type it was chosen for, so the codec of a column whose type changes
 is left behind, and the plan names it beside the declared changes, as in
@@ -446,7 +453,8 @@ unnamed `CHECK` keeps the name it has on the table. A rebuild that would lose
 something is refused before anything is created:
 
 - a column with a column `TTL`, `STATISTICS` or `SETTINGS`, which Ptah does not carry;
-- a projection that uses a column the declaration drops.
+- a projection that uses a column the declaration drops;
+- an `ASSUME` constraint that uses a column the declaration drops.
 
 The columns follow the declaration:
 
@@ -541,6 +549,111 @@ The dev-database rehearsal of `ptah-compat` lets the guards read `system.databas
 and `system.tables`, since a `SELECT` changes no database, and lets the plan stop and
 start the merges of one table in the dev database, the only `SYSTEM` statements a
 replay accepts.
+
+## CHECK constraints
+
+ClickHouse checks each row an `INSERT` writes against the `CHECK` constraints of the
+table, and refuses a row that breaks one with code 469. Ptah creates the `CHECK`
+constraints a schema declares: the `check` of a column, the checks list of a table,
+and a table constraint. On a table that exists, a change is planned as
+`ALTER TABLE ... DROP CONSTRAINT` and `ALTER TABLE ... ADD CONSTRAINT`.
+
+ClickHouse refuses a `CHECK` without a name, so Ptah names each table `CHECK` that
+the schema leaves unnamed. On a table that exists, an unnamed `CHECK` takes the name
+of the `CHECK` the table holds with the same condition, so a reordered checks list,
+or a named `CHECK` added beside the unnamed ones, renames none of them. Each one
+left is `<table>_check`, then `<table>_check1` and on, past the names already taken.
+The unnamed `CHECK` of a column is `<table>_<column>_check`. A render, a plan and a
+comparison give the same name, so the next plan finds the constraint that the apply
+created:
+
+```go
+//ptah:schema:table name="t"
+//ptah:schema:constraint type="CHECK" table="t" check="v > 0"
+type T struct {
+	//ptah:schema:field name="id" type="UInt64" primary="true"
+	ID uint64
+	//ptah:schema:field name="v" type="Int32" not_null="true"
+	V int32
+}
+```
+
+```sql
+CREATE TABLE t (
+  id UInt64,
+  v Int32,
+  CONSTRAINT t_check CHECK (v > 0)
+) ENGINE = MergeTree ORDER BY (id);
+```
+
+The server keeps the constraints of a table only in its `CREATE TABLE` statement, so
+Ptah reads them from `system.tables.create_table_query`. The server writes the
+condition its own way, and each release line in its own. Measured on 24.10 and
+26.10, both write `CAST(v AS Int64) > 0` and `v::Int64 > 0` as
+`CAST(v, 'Int64') > 0`, and 24.10 writes `equals(v, v)` as `v = v`. So against a
+connected server, Ptah asks the server to format the declared condition and the one
+it holds with `formatQuerySingleLineOrNull`, and a `CHECK` whose two conditions
+format alike is unchanged. A declared condition the server cannot parse formats to
+NULL and is another `CHECK`, which the server then refuses with its own message. The server keeps the case of a name, and a `CHECK` over a column
+`V` is another `CHECK` from one over `v`.
+
+A comparison with no server, such as one of two schema files, compares the text, by
+the grouping the operators' precedence gives: there `v > 0 AND v <> 5` and
+`(v > 0) AND (v != 5)` are one condition, and `CAST(v AS Int64) > 0` and
+`CAST(v, 'Int64') > 0` are two. A server without `formatQuerySingleLineOrNull` is
+compared the same way, and the run warns, before the plan, that each `CHECK` it
+pairs is compared as written.
+
+A `CHECK` the table holds and no schema declares is dropped, as any object the
+schema leaves out is. `--exclude t.hand` leaves the `CHECK` named `hand` on table `t`
+out of the plan.
+
+`ALTER TABLE ... ADD CONSTRAINT` checks only the rows written after it, not the rows
+the table holds, measured on 24.10 and 26.10. So the plan counts the rows the table
+holds that the `CHECK` refuses, before each `ADD` and again after it, and says so in
+a comment:
+
+```sql
+-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan t for held rows the CHECK refuses
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+```
+
+A row the condition answers NULL for is counted, since an `INSERT` of it is refused
+with code 469 too. A held row the `CHECK` refuses stops the apply with code 395 and a
+message that names the constraint. The count before the `ADD` stops the apply while
+the constraint is absent, so a retried apply plans the `ADD` again and stops again
+until the rows are deleted or corrected. The count after the `ADD` finds a row
+written between the two counts. It stops the apply with the constraint on the table,
+since ClickHouse has no transaction to undo the `ADD`, and the next plan finds the
+constraint and plans nothing, so delete or correct that row, or drop the constraint.
+A row written after the `ADD` is the constraint's to refuse.
+
+A plan drops a changed `CHECK` before it counts the rows for the new condition, so a
+held row the new condition refuses leaves the table with neither condition until the
+rows are corrected.
+
+The counts read the whole table twice for each `CHECK` the plan adds, so on a large
+table they cost what two of those `SELECT` statements cost. To find the rows before
+you apply, run the same filter:
+
+```sql
+SELECT count() FROM t WHERE NOT ifNull((v > 1), 0)
+```
+
+`WHERE NOT (v > 1)` misses a row the condition answers NULL for, because `NOT` of
+NULL is NULL.
+
+The server refuses to drop a column that a `CHECK` reads, and to add a `CHECK` over
+a column the table does not have, both with code 47. A plan therefore drops `CHECK`
+constraints before its column changes and adds them after. `ADD COLUMN` has no
+`CHECK`, so a column added with a `check` takes its constraint from an
+`ADD CONSTRAINT` of its own.
+
+ClickHouse also has `ASSUME`, a constraint the query optimizer reads and no row is
+checked against. No schema source declares one. Ptah reads it, and a table rebuild
+carries it onto the new table; see [Creating a table again](#creating-a-table-again).
 
 ## Data-skipping indexes
 

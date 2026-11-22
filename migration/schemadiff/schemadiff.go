@@ -81,7 +81,7 @@ func CompareReportingUndecidedAdditions(
 	opts *config.CompareOptions,
 	runtime schemapreparation.Runtime,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
-	return compareReportingUndecidedAdditions(ctx, desired, database, opts, capability.Capabilities{}, 0, runtime)
+	return compareReportingUndecidedAdditions(ctx, desired, database, opts, capability.Capabilities{}, 0, runtime, nil)
 }
 
 // compareReportingUndecidedAdditions is [CompareReportingUndecidedAdditions]
@@ -102,6 +102,7 @@ func compareReportingUndecidedAdditions(
 	caps capability.Capabilities,
 	defaultIntSize int,
 	runtime schemapreparation.Runtime,
+	session schemaext.ProbeSession,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, Diagnostics{}, err
@@ -121,7 +122,7 @@ func compareReportingUndecidedAdditions(
 	var rules schemacomparison.Rules
 	var authored *schemamodel.Database
 	if opts.Dialect != "" {
-		inputs, err := targetComparisonInputs(ctx, desired, database, opts, selected, caps, runtime)
+		inputs, err := targetComparisonInputs(ctx, desired, database, opts, selected, caps, runtime, session)
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
@@ -276,7 +277,7 @@ func compareReportingUndecidedAdditions(
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	// A target that decides CHECK equivalence answers for the CHECKs of the
 	// desired state compared here, which is the one its lowering produced.
-	opts, err = withTargetCheckDecisions(ctx, opts, rules.Checks, desired, database, caps, identifierSemantics)
+	opts, err = withTargetCheckDecisions(ctx, opts, rules.Checks, session, desired, database, caps, identifierSemantics)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -595,7 +596,7 @@ func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime
 	if err != nil {
 		return err
 	}
-	scoped = schemaprep.AssignDefaultForeignKeyNames(scoped, info.Dialect)
+	scoped = schemaprep.AssignDefaultConstraintNames(scoped, info.Dialect)
 	if err := identifiervalidation.ValidateTarget(
 		scoped,
 		info.Dialect,
@@ -694,7 +695,8 @@ func grantObjectNames(runtime schemapreparation.Runtime) compare.GrantObjects {
 }
 
 // targetComparisonInputs prepares the [targetInputs] of a comparison for
-// selected.
+// selected. session is the connection's probe session, nil on a comparison
+// with no connection.
 func targetComparisonInputs(
 	ctx context.Context,
 	desired *schemamodel.Database,
@@ -703,6 +705,7 @@ func targetComparisonInputs(
 	selected schemaext.TargetSelection,
 	caps capability.Capabilities,
 	runtime schemapreparation.Runtime,
+	session schemaext.ProbeSession,
 ) (targetInputs, error) {
 	// The declared scope resolves first, so every later step -- coverage,
 	// identifier validation, each per-kind comparison -- sees the desired
@@ -723,17 +726,20 @@ func targetComparisonInputs(
 	if err != nil {
 		return targetInputs{}, err
 	}
-	desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
+	rules, err := runtime.ComparisonRules(selected.Name())
+	if err != nil {
+		return targetInputs{}, err
+	}
+	desired, err = heldCheckNames(ctx, desired, database, opts.Dialect, loweringSemantics(opts), caps, rules.Checks, session)
+	if err != nil {
+		return targetInputs{}, err
+	}
 	// The target rewrites what its reader reports in another shape, such
 	// as a UNIQUE constraint YDB holds as a unique index.
 	desired, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
 		Target: selected.Name(), Desired: desired, Current: database, Capabilities: caps,
 		Semantics: loweringSemantics(opts),
 	})
-	if err != nil {
-		return targetInputs{}, err
-	}
-	rules, err := runtime.ComparisonRules(selected.Name())
 	if err != nil {
 		return targetInputs{}, err
 	}

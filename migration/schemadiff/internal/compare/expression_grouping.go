@@ -2,13 +2,12 @@ package compare
 
 import (
 	"ptah.run/internal/dialectlexer"
-	"ptah.run/internal/normalize"
 	"ptah.run/internal/precedence"
 )
 
 // checkExpressionsAlike reports whether a declared CHECK condition and the one
 // a catalog reports for it are one condition on dialect: equal once
-// [normalizeCheckExpression] folds both, or grouped alike by the dialect's
+// [normalizeCheckCondition] folds both, or grouped alike by the dialect's
 // operator precedence ([expressionsGroupAlike]).
 //
 // Every comparison that decides whether two CHECKs are the same asks this one
@@ -17,9 +16,15 @@ import (
 // accepted a spelling the comparison then rejects would plan the constraint
 // again on every run.
 func checkExpressionsAlike(declared, reported, dialect string) bool {
-	quoting := normalize.QuotingOf(dialect)
-	return normalizeCheckExpression(declared, quoting) == normalizeCheckExpression(reported, quoting) ||
+	return normalizeCheckCondition(declared, dialect) == normalizeCheckCondition(reported, dialect) ||
 		expressionsGroupAlike(declared, reported, dialect)
+}
+
+// CheckConditionsAlike reports whether a declared CHECK condition and one a
+// database reports are one condition on dialect, as the comparison reads two
+// CHECKs no target decides.
+func CheckConditionsAlike(declared, reported, dialect string) bool {
+	return checkExpressionsAlike(declared, reported, dialect)
 }
 
 // expressionsGroupAlike reports whether two expressions are the same

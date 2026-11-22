@@ -72,7 +72,8 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: featureplan.DropTable, Current: removal.Current})
 		names[subject.Key()] = removal.Name
 	}
-	common, steps, err := commonColumns(builder, phases.columns)
+	captured := capturedTables(request.Tables)
+	common, steps, err := commonColumns(builder, captured, phases.columns)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +92,7 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	}
 	rebuildSteps := rebuildStepIDs(&common, &steps, builder, phases.rebuilds)
 	middle = append(middle, rebuildSteps...)
-	indexSteps, err := commonIndexes(builder, request.Tables, phases.indexes, &common)
+	indexSteps, err := commonIndexes(builder, captured, phases.indexes, &common)
 	if err != nil {
 		return nil, err
 	}
@@ -197,14 +198,19 @@ func featureSteps(contributions []plangraph.Contribution[[]ast.Node], standalone
 	return tableBound, detached
 }
 
-// commonIndexes adds one step per common index operation, naming the index it
-// creates or drops. Parent binds a step to a captured table; an index on a
-// table the request does not capture keeps its effects without a parent.
-func commonIndexes(builder objectidentity.Builder, tables []featureplan.Table, nodes []ast.Node, common *plangraph.Contribution[[]ast.Node]) ([]featureplan.CommonStep, error) {
+// capturedTables are the keys of the tables a request captures.
+func capturedTables(tables []featureplan.Table) map[objectidentity.Key]bool {
 	captured := make(map[objectidentity.Key]bool, len(tables))
 	for _, table := range tables {
 		captured[table.Subject.Key()] = true
 	}
+	return captured
+}
+
+// commonIndexes adds one step per common index operation, naming the index it
+// creates or drops. Parent binds a step to a captured table; an index on a
+// table the request does not capture keeps its effects without a parent.
+func commonIndexes(builder objectidentity.Builder, captured map[objectidentity.Key]bool, nodes []ast.Node, common *plangraph.Contribution[[]ast.Node]) ([]featureplan.CommonStep, error) {
 	var steps []featureplan.CommonStep
 	for i, node := range nodes {
 		var table, name string
@@ -236,7 +242,14 @@ func commonIndexes(builder objectidentity.Builder, tables []featureplan.Table, n
 	return steps, nil
 }
 
-func commonColumns(builder objectidentity.Builder, nodes []ast.Node) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep, error) {
+// commonColumns adds one step per ALTER TABLE of the columns phase, in plan
+// order: a column change, a comment, or a CHECK constraint change.
+//
+// Parent binds a step to a captured table, as it does for an index. A table
+// whose only change is its comment or a CHECK constraint has no column or
+// feature change, so the request does not capture it, and its steps keep their
+// effects without a parent; the runtime refuses a parent it has not captured.
+func commonColumns(builder objectidentity.Builder, captured map[objectidentity.Key]bool, nodes []ast.Node) (plangraph.Contribution[[]ast.Node], []featureplan.CommonStep, error) {
 	common := plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/common/clickhouse"}
 	var steps []featureplan.CommonStep
 	for i, node := range nodes {
@@ -244,7 +257,11 @@ func commonColumns(builder objectidentity.Builder, nodes []ast.Node) (plangraph.
 		if !ok || len(alter.Operations) != 1 {
 			return common, nil, fmt.Errorf("%w: expected one common column operation", schemaext.ErrInvalidValue)
 		}
-		step := featureplan.CommonStep{ID: plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("column/%d", i)}, Parent: builder.Table(alter.Name), Transaction: plangraph.TransactionForbidden}
+		table := builder.Table(alter.Name)
+		step := featureplan.CommonStep{ID: plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("column/%d", i)}, Transaction: plangraph.TransactionForbidden}
+		if captured[table.Key()] {
+			step.Parent = table
+		}
 		var name string
 		var action plangraph.Action
 		switch operation := alter.Operations[0].(type) {
@@ -256,13 +273,17 @@ func commonColumns(builder objectidentity.Builder, nodes []ast.Node) (plangraph.
 			name, action = operation.ColumnName, plangraph.Drop
 		case *ast.SetCommentOperation:
 			name, action = operation.Column, plangraph.Alter
+		case *ast.AddConstraintOperation, *ast.DropConstraintOperation:
+			// A CHECK alters the table; its name is no column's.
+			action = plangraph.Alter
 		default:
 			return common, nil, fmt.Errorf("%w: unexpected common column operation %T", schemaext.ErrInvalidValue, operation)
 		}
-		step.Effects = []plangraph.Effect{{Subject: step.Parent, Action: plangraph.Read}, {Subject: builder.Column(alter.Name, name), Action: action}}
+		step.Effects = []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: builder.Column(alter.Name, name), Action: action}}
 		if name == "" {
-			// A table's own comment alters the table, not a column of it.
-			step.Effects = []plangraph.Effect{{Subject: step.Parent, Action: plangraph.Alter}}
+			// A table's own comment and its CHECK constraints alter the
+			// table, not a column of it.
+			step.Effects = []plangraph.Effect{{Subject: table, Action: plangraph.Alter}}
 		}
 		steps = append(steps, step)
 		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{ID: step.ID, Payload: []ast.Node{node}, Effects: slices.Clone(step.Effects), Transaction: step.Transaction})

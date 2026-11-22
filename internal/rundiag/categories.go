@@ -67,6 +67,21 @@ var (
 		},
 	}
 
+	// UnformattedChecks is a CHECK a table holds that is compared with its
+	// declaration as written, because the server has no function that formats
+	// a condition the way it stores one: ClickHouse formats both sides with
+	// formatQuerySingleLineOrNull, and a release without it answers the call
+	// with an unknown function. A CHECK the server stores rewritten then reads
+	// as changed and is replaced on each apply. Its records carry the CHECK as
+	// the "check" attribute.
+	UnformattedChecks = &Category{
+		Name: "unformatted-check",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d CHECK constraints are compared as written, not in the form the server stores: "+
+				"the server has no formatQuerySingleLineOrNull function", len(records))
+		},
+	}
+
 	// UnprobedDeclarations is a declaration a probe would spell that is
 	// compared as written instead, because its text could reach past the
 	// place the probe statement writes it in: it leaves a string, quoted name

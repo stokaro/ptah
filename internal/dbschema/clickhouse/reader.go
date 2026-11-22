@@ -80,19 +80,19 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-// ReadSchemaContext returns tables, columns, data-skipping indexes, plain
-// views and materialized views for the configured database, plus roles and
-// grants when the target carries [capability.RoleManagement], and the row
-// policies on its tables, as the ClickHouse owner's objects, when it carries
-// [capability.RowLevelSecurity]. Constraints, functions, and other shapes with
-// no direct equivalent in Ptah's ClickHouse model remain empty.
+// ReadSchemaContext returns tables, columns, CHECK constraints, data-skipping
+// indexes, plain views and materialized views for the configured database,
+// plus roles and grants when the target carries [capability.RoleManagement],
+// and the row policies on its tables, as the ClickHouse owner's objects, when
+// it carries [capability.RowLevelSecurity]. Functions and other shapes with no
+// direct equivalent in Ptah's ClickHouse model remain empty.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	dbName, err := r.resolveDatabaseName(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	tables, err := r.readTables(ctx, dbName)
+	tables, constraints, err := r.readTables(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read tables: %w", err)
 	}
@@ -112,10 +112,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	// read as tables no declaration has, and `migrations generate` planned a
 	// DROP for both once a migration had been applied (stokaro/ptah#4029).
 	schema := revisiontable.Without(&catalog.Database{
-		Tables:   tables,
-		Indexes:  indexes,
-		Views:    views,
-		MatViews: matViews,
+		Tables:      tables,
+		Constraints: constraints,
+		Indexes:     indexes,
+		Views:       views,
+		MatViews:    matViews,
 	}, revisiontable.NativeNames())
 	schema.FeatureCoverage, err = observedCoverage(schema.Tables, indexKnowledge, viewLimits)
 	if err != nil {
@@ -275,10 +276,12 @@ func (r *Reader) resolveDatabaseName(ctx context.Context) (string, error) {
 	return name, nil
 }
 
-func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table, error) {
+// readTables reads the tables of dbName, and the CHECK constraints their
+// CREATE TABLE statements list.
+func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table, []catalog.Constraint, error) {
 	columnsByTable, err := r.readColumnsByTable(ctx, dbName)
 	if err != nil {
-		return nil, fmt.Errorf("clickhouse: read columns: %w", err)
+		return nil, nil, fmt.Errorf("clickhouse: read columns: %w", err)
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
@@ -299,11 +302,12 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 		ORDER BY name
 	`, dbName, dbName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
 	var tables []catalog.Table
+	var constraints []catalog.Constraint
 	for rows.Next() {
 		var name, comment, sortingKey, primaryKey string
 		var engineFull, partitionKey, samplingKey, createQuery string
@@ -311,23 +315,25 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 			&name, &comment, &sortingKey, &primaryKey,
 			&engineFull, &partitionKey, &samplingKey, &createQuery,
 		); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		t := catalog.Table{Name: name, Type: "TABLE", Comment: comment}
 		t.Columns = columnsByTable[name]
 		t.Facets, err = observedTableSettings(engineFull, sortingKey, primaryKey, partitionKey, samplingKey)
 		if err != nil {
-			return nil, fmt.Errorf("table %q: %w", name, err)
+			return nil, nil, fmt.Errorf("table %q: %w", name, err)
 		}
-		if err := withTableElements(&t, createQuery); err != nil {
-			return nil, fmt.Errorf("table %q: %w", name, err)
+		checks, err := withTableElements(&t, createQuery)
+		if err != nil {
+			return nil, nil, fmt.Errorf("table %q: %w", name, err)
 		}
 		tables = append(tables, t)
+		constraints = append(constraints, checks...)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return tables, nil
+	return tables, constraints, nil
 }
 
 func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, error) {

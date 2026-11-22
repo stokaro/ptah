@@ -226,3 +226,44 @@ func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestKeyword_ClickHouse reads the words ClickHouse's operator table holds as
+// keywords, operators and literals, in any case, and every other word as a
+// name: a column, a function or a type.
+func TestKeyword_ClickHouse(t *testing.T) {
+	tests := []struct {
+		word string
+		want bool
+	}{
+		{word: "AND", want: true},
+		{word: "and", want: true},
+		{word: "Or", want: true},
+		{word: "NOT", want: true},
+		{word: "is", want: true},
+		{word: "ILIKE", want: true},
+		{word: "in", want: true},
+		{word: "between", want: true},
+		{word: "NULL", want: true},
+		{word: "true", want: true},
+		{word: "v", want: false},
+		{word: "V", want: false},
+		{word: "length", want: false},
+		{word: "Int64", want: false},
+		{word: "toInt64", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.word, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(precedence.Keyword(precedence.ClickHouseOperators, test.word), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestKeyword_AnUnknownSchemeReadsEveryWordAsAName holds a scheme no table
+// declares to no keyword at all.
+func TestKeyword_AnUnknownSchemeReadsEveryWordAsAName(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(precedence.Keyword("no-such-scheme", "AND"), qt.IsFalse)
+}

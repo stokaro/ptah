@@ -154,7 +154,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	})
 	reader := NewClickHouseReader(db.SQL, "default")
 
-	tables, err := reader.readTables(t.Context(), "default")
+	tables, _, err := reader.readTables(t.Context(), "default")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 2)
@@ -183,7 +183,7 @@ func TestReaderReadTablesRefusesACreateTableItCannotRead(t *testing.T) {
 	))
 	reader := NewClickHouseReader(db.SQL, "default")
 
-	tables, err := reader.readTables(t.Context(), "default")
+	tables, _, err := reader.readTables(t.Context(), "default")
 
 	c.Assert(err, qt.ErrorMatches, `.*table "t": cannot read the elements of the CREATE TABLE the server reports: the element list does not close`)
 	c.Assert(tables, qt.IsNil)
@@ -236,7 +236,7 @@ func TestReaderReadTablesCarriesTheSortingKey(t *testing.T) {
 			db := dbtest.Open(t, keyedTableServer(test.sortingKey, test.primaryKey, test.keyColumns))
 			reader := NewClickHouseReader(db.SQL, "default")
 
-			tables, err := reader.readTables(t.Context(), "default")
+			tables, _, err := reader.readTables(t.Context(), "default")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tables, qt.HasLen, 1)

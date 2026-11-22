@@ -84,6 +84,12 @@ const (
 	// the column, and one written on the table `CONSTRAINT_<n>`, the first
 	// number the table's names leave free: MariaDB's naming.
 	CheckNamingColumnOrConstraint CheckNaming = "column-or-constraint"
+	// CheckNamingRequired is a server that refuses a CHECK without a name, so
+	// Ptah names each table CHECK a schema file leaves unnamed the way it
+	// names an entry of a table's checks list: `<table>_check`, then
+	// `<table>_check1` and on, past the names the table holds. ClickHouse
+	// answers `Code: 62 ... SYNTAX_ERROR` to an unnamed one.
+	CheckNamingRequired CheckNaming = "required"
 )
 
 // CodePointRange is the code points from First to Last, both included.
@@ -351,7 +357,7 @@ type TableOption struct {
 
 // CheckNamings returns every declared value of [CheckNaming].
 func CheckNamings() []CheckNaming {
-	return []CheckNaming{CheckNamingTableNumbered, CheckNamingColumnOrConstraint}
+	return []CheckNaming{CheckNamingTableNumbered, CheckNamingColumnOrConstraint, CheckNamingRequired}
 }
 
 // validateFunctionAliases refuses a function alias that is not two different

@@ -16,7 +16,6 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/internal/convert/goschematodb"
-	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -108,7 +107,7 @@ func CompareWithDatabaseInfo(
 	opts *config.CompareOptions,
 	runtime TargetRuntime,
 ) (*difftypes.SchemaDiff, error) {
-	return completeComparison(compareWithDatabaseInfoReportingUndecidedAdditions(ctx, desired, database, info, opts, runtime))
+	return completeComparison(compareWithDatabaseInfoReportingUndecidedAdditions(ctx, desired, database, info, opts, runtime, nil))
 }
 
 // comparisonSemantics normalizes the identifier semantics a comparison's
@@ -131,6 +130,11 @@ func comparisonSemantics(desired *schemamodel.Database, database *catalog.Databa
 	return semantics, nil
 }
 
+// compareWithDatabaseInfoReportingUndecidedAdditions is the comparison every
+// entry point with caller-supplied server metadata runs. session is the
+// connection's probe session, through which a target asks its server about
+// the CHECKs the comparison pairs, and nil on a comparison with no
+// connection.
 func compareWithDatabaseInfoReportingUndecidedAdditions(
 	ctx context.Context,
 	desired *schemamodel.Database,
@@ -138,6 +142,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	info catalog.ServerInfo,
 	opts *config.CompareOptions,
 	runtime TargetRuntime,
+	session schemaext.ProbeSession,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, Diagnostics{}, err
@@ -185,7 +190,15 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateComparison(info.Dialect, desired, database, virtualPolicy); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	desired = schemaprep.AssignDefaultForeignKeyNames(desired, info.Dialect)
+	rules, err := runtime.ComparisonRules(info.Dialect)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	desired, err = heldCheckNames(ctx, desired, database, info.Dialect, info.IdentifierSemantics.Normalize(info.Dialect),
+		info.Capabilities, rules.Checks, session)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	semantics, err := comparisonSemantics(desired, database, info)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -207,7 +220,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 			return nil, Diagnostics{}, err
 		}
 	}
-	diff, undecided, err := compareReportingUndecidedAdditions(ctx, desired, database, merged, info.Capabilities, info.DefaultIntSize, runtime)
+	diff, undecided, err := compareReportingUndecidedAdditions(ctx, desired, database, merged, info.Capabilities, info.DefaultIntSize, runtime, session)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}

@@ -233,6 +233,7 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 		return tableRebuild{}, err
 	}
 	create := modelast.FromTableWithConstraints(declared.Table, declared.Fields, declared.Enums, platform.ClickHouse, declared.Constraints)
+	withDeclaredChecks(create, declared.Constraints)
 	nameChecks(create, table.TableName)
 	if err := followSortingKey(create, table.Current.Table.Facets); err != nil {
 		return tableRebuild{}, err
@@ -255,7 +256,7 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 	}
 	current, copyTable := quoteTable(table.TableName), quoteTable(copyName)
 
-	nodes := rebuildComments(diff, table, copyName, reasons, columns, carried, merges)
+	nodes := rebuildComments(diff, table, copyName, reasons, columns, carried, merges, checkNames(create))
 	nodes = append(nodes, ast.NewRawSQL(rebuildGuard(table.TableName, projectionMode)))
 	if merges.copyRemovesRows() {
 		nodes = append(nodes, ast.NewRawSQL(fmt.Sprintf("SYSTEM START MERGES %s;", copyTable)))
@@ -395,7 +396,7 @@ func copiedColumns(table *difftypes.TableDiff, create *ast.CreateTableNode) (reb
 // its CREATE TABLE: a comment or a skipping index it does not have, and a
 // column change. What it keeps that no declaration states is named too.
 func rebuildComments(diff *difftypes.SchemaDiff, table *difftypes.TableDiff, copyName string, reasons []string,
-	columns rebuildColumns, carried carriedStorage, merges rebuildMergePolicy,
+	columns rebuildColumns, carried carriedStorage, merges rebuildMergePolicy, checks []string,
 ) []ast.Node {
 	nodes := []ast.Node{
 		ast.NewComment(fmt.Sprintf("ClickHouse table rebuild of %s: %s", table.TableName, strings.Join(reasons, "; "))),
@@ -414,6 +415,10 @@ func rebuildComments(diff *difftypes.SchemaDiff, table *difftypes.TableDiff, cop
 			"they start again before the swap. SYSTEM STOP MERGES needs the SYSTEM MERGES privilege on %s; "+
 			"the SYSTEM START MERGES before CREATE TABLE checks it while %s does not exist, so a user without it is refused before anything is created.",
 			copyName, merges.copyRemoval, copyName, copyName)))
+	}
+	if len(checks) > 0 {
+		nodes = append(nodes, ast.NewComment(fmt.Sprintf("Each row copied into %s is checked against its CHECK constraints, %s, "+
+			"so a row that breaks one stops the plan before the swap, with code 469.", copyName, strings.Join(checks, ", "))))
 	}
 	if len(columns.added) > 0 {
 		nodes = append(nodes, ast.NewComment("Columns the table gains take their defaults: "+strings.Join(columns.added, ", ")))
@@ -437,7 +442,8 @@ func rebuildComments(diff *difftypes.SchemaDiff, table *difftypes.TableDiff, cop
 
 // declaredChanges names the changes of the table the rebuild makes that the
 // statements it replaces would have shown: the table comment, each column's
-// change, and each skipping index the declaration does not have.
+// change, each CHECK constraint the declaration adds, changes or does not have,
+// and each skipping index the declaration does not have.
 func declaredChanges(diff *difftypes.SchemaDiff, table *difftypes.TableDiff) []string {
 	var changes []string
 	if change := table.CommentChange; change != nil {
@@ -466,7 +472,62 @@ func declaredChanges(diff *difftypes.SchemaDiff, table *difftypes.TableDiff) []s
 	if len(indexes) > 0 {
 		changes = append(changes, "the skipping indexes it does not have are "+strings.Join(indexes, ", "))
 	}
-	return changes
+	return append(changes, checkTransitions(diff, builder, key)...)
+}
+
+// checkTransitions names the CHECK constraints of the table with key that the
+// comparison adds, changes and removes. A changed CHECK is a removal and an
+// addition of one name.
+func checkTransitions(diff *difftypes.SchemaDiff, builder objectidentity.Builder, key objectidentity.Key) []string {
+	var added, removed []string
+	for _, addition := range diff.ConstraintsAdded {
+		if isCheck(addition.Type) && builder.Table(addition.TableName).Key() == key {
+			added = append(added, addition.Name)
+		}
+	}
+	for _, removal := range diff.ConstraintsRemoved {
+		if isCheck(removal.Type) && builder.Table(removal.TableName).Key() == key {
+			removed = append(removed, removal.Name)
+		}
+	}
+	var changed []string
+	for _, name := range added {
+		if slices.Contains(removed, name) {
+			changed = append(changed, name)
+		}
+	}
+	added = slices.DeleteFunc(added, func(name string) bool { return slices.Contains(changed, name) })
+	removed = slices.DeleteFunc(removed, func(name string) bool { return slices.Contains(changed, name) })
+	var transitions []string
+	for _, part := range []struct {
+		what  string
+		names []string
+	}{
+		{"the CHECK constraints it adds are ", added},
+		{"the CHECK constraints whose condition changes are ", changed},
+		{"the CHECK constraints it does not have are ", removed},
+	} {
+		if len(part.names) > 0 {
+			transitions = append(transitions, part.what+strings.Join(part.names, ", "))
+		}
+	}
+	return transitions
+}
+
+// checkNames are the names of the CHECK constraints a CREATE TABLE writes.
+func checkNames(create *ast.CreateTableNode) []string {
+	var names []string
+	for _, column := range create.Columns {
+		if column.Check != "" {
+			names = append(names, chcolumn.CheckName(column.CheckName, create.Name, column.Name))
+		}
+	}
+	for _, constraint := range create.Constraints {
+		if constraint.Type == ast.CheckConstraint {
+			names = append(names, chcolumn.CheckName(constraint.Name, create.Name, ""))
+		}
+	}
+	return names
 }
 
 func commentTransition(change *difftypes.CommentChange) string {

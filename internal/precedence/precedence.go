@@ -79,6 +79,20 @@ func Canonical(expression, scheme string, lexing lexer.Options) (string, bool) {
 	return op.text, true
 }
 
+// Keyword reports whether scheme reads word, in any case, as a keyword, an
+// operator word or a literal rather than as a name or a function name. An
+// unknown scheme reads every word as a name.
+func Keyword(scheme, word string) bool {
+	table, known := schemes[scheme]
+	if !known {
+		return false
+	}
+	upper := strings.ToUpper(word)
+	_, binary := table.binary[upper]
+	_, prefix := table.prefixWords[upper]
+	return table.keywords[upper] || table.literals[upper] || binary || prefix
+}
+
 // atomPrecedence is the precedence of a literal, a name, a function call and a
 // parenthesized group, which no operator splits.
 const atomPrecedence = 100

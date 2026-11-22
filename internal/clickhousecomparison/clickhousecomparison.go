@@ -1,8 +1,9 @@
 // Package clickhousecomparison holds the rules ClickHouse gives the shared
 // schema comparison ([schemacomparison.Rules]): how a data-skipping index's
-// definition and a computed column's expression read on ClickHouse. The
-// built-in runtime registers them on its ClickHouse target, so the shared
-// comparison holds no ClickHouse knowledge of its own.
+// definition and a computed column's expression read on ClickHouse, and the
+// server that decides whether two CHECKs are one. The built-in runtime
+// registers them on its ClickHouse target, so the shared comparison holds no
+// ClickHouse knowledge of its own.
 package clickhousecomparison
 
 import (
@@ -15,14 +16,16 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chprobe"
 	"ptah.run/internal/chindexkey"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/precedence"
 )
 
-// Rules returns ClickHouse's comparison rules.
+// Rules returns ClickHouse's comparison rules. A CHECK is decided by the
+// server, which formats both conditions ([chprobe.CheckService]).
 func Rules() schemacomparison.Rules {
-	return schemacomparison.Rules{IndexDefinitions: IndexDefinitions{}, GeneratedExpressions: GeneratedExpressions{}}
+	return schemacomparison.Rules{IndexDefinitions: IndexDefinitions{}, GeneratedExpressions: GeneratedExpressions{}, Checks: chprobe.CheckService{}}
 }
 
 // GeneratedExpressions reads the expression of a MATERIALIZED, ALIAS or

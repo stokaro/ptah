@@ -371,8 +371,23 @@ func TestAlterTable_Operations(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE events ADD COLUMN source String;")
 	c.Assert(out, qt.Contains, "ALTER TABLE events DROP COLUMN payload;")
 	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN source String;")
-	c.Assert(out, qt.Contains, "ALTER TABLE events ADD CONSTRAINT src_set CHECK (source <> '');")
+	c.Assert(out, qt.Contains, "-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan events for held rows the CHECK refuses\n"+
+		"SELECT throwIf(count() > 0, 'src_set is broken by rows events holds') FROM events WHERE NOT ifNull((source <> ''), 0);\n"+
+		"ALTER TABLE events ADD CONSTRAINT src_set CHECK (source <> '');\n"+
+		"SELECT throwIf(count() > 0, 'src_set is broken by rows events holds') FROM events WHERE NOT ifNull((source <> ''), 0);")
 	c.Assert(out, qt.Contains, "ALTER TABLE events DROP CONSTRAINT src_set;")
+}
+
+func TestAlterTable_RefusesAnUnnamedCheck(t *testing.T) {
+	c := qt.New(t)
+	err := renderErr(&ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{Type: ast.CheckConstraint, Expression: "source <> ''"}},
+		},
+	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*ALTER TABLE events ADD CONSTRAINT needs a name for its CHECK \(source <> ''\); ClickHouse refuses a constraint without one`)
 }
 
 func TestAlterTable_NonCheckConstraintEmitsNotSupportedComment(t *testing.T) {

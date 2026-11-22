@@ -20,6 +20,8 @@ func clickHouse() descriptor.Dialect {
 			ColumnNames:    "exact",
 		},
 		Placeholder: descriptor.PlaceholderQuestion,
+		// A CHECK needs a name, so Ptah gives an unnamed one its own.
+		CheckNaming: descriptor.CheckNamingRequired,
 
 		// ClickHouse has no ALTER TABLE for a change of engine, PARTITION BY,
 		// PRIMARY KEY or an ORDER BY that MODIFY ORDER BY cannot make, so the

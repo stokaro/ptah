@@ -1,7 +1,8 @@
 // Package chprobe asks a connected ClickHouse server to spell the filters of
-// declared row policies the way it stores them, so a comparison holds the same
-// spelling on both sides. A probe is a read-only query run inside the session
-// the host gives it; it creates nothing.
+// declared row policies and the conditions of CHECK constraints the way it
+// stores them, so a comparison holds the same spelling on both sides. A probe
+// is a read-only query run inside the session the host gives it; it creates
+// nothing.
 package chprobe
 
 import (

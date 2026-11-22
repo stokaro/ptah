@@ -1760,7 +1760,7 @@ func walkCommonDatabase(
 	}
 
 	// Normalize once so every conversion path consumes the same names.
-	assigned := schemaprep.AssignDefaultForeignKeyNames(&database, targetPlatform)
+	assigned := schemaprep.AssignDefaultConstraintNames(&database, targetPlatform)
 	database = *schemaprep.QualifyDeclaredUserTypes(assigned, targetPlatform)
 	allFields := database.Fields
 
