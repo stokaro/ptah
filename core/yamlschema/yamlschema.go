@@ -48,7 +48,8 @@
 // on_async_replication, on_transfer or on_streaming_query, each spelled as
 // on_table is, or on_resource_pool, which takes the pool's name alone. A revokes entry says the role must not hold the privileges,
 // and a privilege both granted and revoked to one role on one object is
-// refused.
+// refused. A grant beside a revoke of ALL on the same object is accepted and
+// means the role keeps that grant and nothing else.
 //
 // A default_privileges key is a label rather than a default name, because a
 // default privilege has no name. The role whose new objects it covers, the

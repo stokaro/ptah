@@ -32,7 +32,8 @@ type revokeAllServer struct {
 	url  string
 	role string
 	// catalog runs heldQuery, which lists the role's privileges on t1 one row
-	// each, with heldArgs.
+	// each, with heldArgs. Where a role can hold a grant option, a row also
+	// says whether the role may grant the privilege.
 	catalog   *sql.DB
 	heldQuery string
 	heldArgs  []any
@@ -65,17 +66,23 @@ func (s revokeAllServer) privileges(c *qt.C) []string {
 	return held
 }
 
-// revokesEverything applies desired, which revokes ALL on t1 from the role, and
-// asserts what the role holds afterwards, that the member is refused each
-// statement with an error matching denied, and that the next plan is empty.
-func (s revokeAllServer) revokesEverything(c *qt.C, desired string, want, refused []string, denied string) {
+// converges applies desired, which revokes ALL on t1 from the role, and
+// asserts what the role holds afterwards, that the member runs each allowed
+// statement, that it is refused each refused one with an error matching
+// denied, and that the next plan is empty. {role} in a statement stands for
+// the role.
+func (s revokeAllServer) converges(c *qt.C, desired string, want, allowed, refused []string, denied string) {
 	c.Helper()
 	applied := s.apply(c, desired, "--auto-approve")
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(s.privileges(c), qt.DeepEquals, want)
+	for _, statement := range allowed {
+		_, err := s.member.ExecContext(c.Context(), strings.ReplaceAll(statement, "{role}", s.role))
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
 	for _, statement := range refused {
-		_, err := s.member.ExecContext(c.Context(), statement)
+		_, err := s.member.ExecContext(c.Context(), strings.ReplaceAll(statement, "{role}", s.role))
 		c.Assert(err, qt.ErrorMatches, denied, qt.Commentf("%s", statement))
 	}
 
@@ -149,7 +156,7 @@ func newSQLServerRevokeAllServer(c *qt.C, held string) revokeAllServer {
 		url:     databaseURL,
 		role:    role,
 		catalog: db,
-		heldQuery: `SELECT p.permission_name
+		heldQuery: `SELECT CONCAT(p.permission_name, ' ', p.state)
 			FROM sys.database_permissions p
 			JOIN sys.database_principals d ON d.principal_id = p.grantee_principal_id
 			WHERE d.name = @p1 AND p.class = 1 AND p.major_id = OBJECT_ID('dbo.t1') AND p.state IN ('G', 'W')
@@ -193,7 +200,7 @@ func TestSchemaApplySQLServerRevokeAllE2E(t *testing.T) {
 			c := qt.New(t)
 			server := newSQLServerRevokeAllServer(c, test.held)
 
-			server.revokesEverything(c, test.declared, nil,
+			server.converges(c, test.declared, nil, nil,
 				[]string{"SELECT id FROM dbo.t1", "ALTER TABLE dbo.t1 ADD extra INT", "DROP TABLE dbo.t1"},
 				`(?s).*(permission was denied|do not have permission).*`)
 		})
@@ -234,12 +241,13 @@ func newClickHouseRevokeAllServer(c *qt.C, held string) revokeAllServer {
 	databaseURL, err := atlasurl.WithDatabaseName(address, role)
 	c.Assert(err, qt.IsNil)
 	return revokeAllServer{
-		url:       databaseURL,
-		role:      role,
-		catalog:   admin,
-		heldQuery: "SELECT access_type FROM system.grants WHERE role_name = ? AND database = ? ORDER BY access_type",
-		heldArgs:  []any{role, role},
-		member:    openRevokeAllMember(c, "clickhouse", databaseURL, url.UserPassword(user, "ptah_member_pw")),
+		url:     databaseURL,
+		role:    role,
+		catalog: admin,
+		heldQuery: "SELECT concat(access_type, ' ', toString(grant_option)) FROM system.grants " +
+			"WHERE role_name = ? AND database = ? ORDER BY access_type",
+		heldArgs: []any{role, role},
+		member:   openRevokeAllMember(c, "clickhouse", databaseURL, url.UserPassword(user, "ptah_member_pw")),
 	}
 }
 
@@ -262,7 +270,7 @@ func TestSchemaApplyClickHouseRevokeAllE2E(t *testing.T) {
 			c := qt.New(t)
 			server := newClickHouseRevokeAllServer(c, test.held)
 
-			server.revokesEverything(c, declared, nil,
+			server.converges(c, declared, nil, nil,
 				[]string{"SELECT id FROM t1", "ALTER TABLE t1 UPDATE name = 'b' WHERE id = 1", "TRUNCATE TABLE t1", "DROP TABLE t1"},
 				`(?s).*code: 497, .*Not enough privileges.*`)
 		})
@@ -290,12 +298,13 @@ func newCockroachRevokeAllServer(c *qt.C, held string) revokeAllServer {
 		"INSERT INTO t1 VALUES (1, 'a')",
 		held)
 	return revokeAllServer{
-		url:       fixture.targetURL,
-		role:      fixture.role,
-		catalog:   db,
-		heldQuery: "SELECT privilege_type FROM [SHOW GRANTS ON TABLE t1] WHERE grantee = $1 ORDER BY privilege_type",
-		heldArgs:  []any{fixture.role},
-		member:    openRevokeAllMember(c, "pgx", driverURL, url.User(user)),
+		url:     fixture.targetURL,
+		role:    fixture.role,
+		catalog: db,
+		heldQuery: "SELECT privilege_type || ' ' || is_grantable::STRING FROM [SHOW GRANTS ON TABLE t1] " +
+			"WHERE grantee = $1 ORDER BY privilege_type",
+		heldArgs: []any{fixture.role},
+		member:   openRevokeAllMember(c, "pgx", driverURL, url.User(user)),
 	}
 }
 
@@ -319,7 +328,7 @@ func TestSchemaApplyCockroachDBRevokeAllE2E(t *testing.T) {
 			c := qt.New(t)
 			server := newCockroachRevokeAllServer(c, test.held)
 
-			server.revokesEverything(c, declared, nil,
+			server.converges(c, declared, nil, nil,
 				[]string{"SELECT id FROM t1", "ALTER TABLE t1 CONFIGURE ZONE USING gc.ttlseconds = 600", "DROP TABLE t1"},
 				`(?s).*does not have .*privilege.*`)
 		})
@@ -405,7 +414,7 @@ func TestSchemaApplyOracleRevokeAllE2E(t *testing.T) {
 			c := qt.New(t)
 			server, account := newOracleRevokeAllServer(c, test.held)
 
-			server.revokesEverything(c, declared, nil,
+			server.converges(c, declared, nil, nil,
 				[]string{"SELECT id FROM " + account + ".t1", "ALTER TABLE " + account + ".t1 ADD (extra NUMBER)"},
 				`(?s).*ORA-(00942|41900|01031).*`)
 		})

@@ -811,7 +811,10 @@ func managedDataDefinitionIdentity(data ManagedData) string {
 // A declarative source has no statement order, so neither declaration can win
 // the way a later statement of a SQL script does, and keeping either one would
 // drop the other without a word. A grant spelling ALL contradicts a revoke of
-// any privilege on its object. Targets are compared by [Grant.TargetKey] after
+// any privilege on its object. A revoke of ALL does not contradict a grant of
+// one privilege on the same object: the pair says the role holds that
+// privilege and nothing else there, which is what REVOKE ALL followed by the
+// GRANT leaves in a SQL script. Targets are compared by [Grant.TargetKey] after
 // the table names are resolved, which [Merge] does before it calls this.
 func ValidateRevokedGrants(db *Database) error {
 	if db == nil {

@@ -74,6 +74,15 @@ func TestValidateRevokedGrants_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			// The pair says the role keeps SELECT on t and nothing else, which
+			// is what REVOKE ALL followed by GRANT SELECT leaves in a script.
+			name: "a privilege granted beside a revoke of ALL",
+			db: &schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+		},
+		{
 			name: "disjoint dialect scopes",
 			db: &schemamodel.Database{
 				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"SELECT"}, OnTable: "t", Dialects: []string{"postgres"}}},

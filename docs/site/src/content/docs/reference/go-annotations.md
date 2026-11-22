@@ -1064,7 +1064,9 @@ type AccessControl struct{}
 Ptah plans the `REVOKE` whenever the database holds the privilege, and in the
 same plan that creates the object, since the privilege arrives with it. The
 same privilege declared both granted and revoked to one role on one object is
-refused: annotations have no order, so neither declaration could win.
+refused: annotations have no order, so neither declaration could win. A grant
+of a privilege beside a revoke of `ALL` on the same object is accepted: the
+role keeps that privilege and nothing else.
 
 ### `//ptah:schema:defaultprivilege`
 
