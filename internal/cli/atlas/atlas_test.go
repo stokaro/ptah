@@ -2601,14 +2601,22 @@ func TestAtlasDiffPolicy_CarriesConcurrentIndexDrop(t *testing.T) {
 	}
 }
 
-// A labeled diff block's policy reaches the planning policy for its dialect,
-// merged over the unlabeled block's, so a plan for that dialect reads both.
+// The values each labeled diff block sets reach the planning policy by the name
+// the project file gives them and by where it writes them, and a value a block
+// does not set is absent, so a plan reads the unlabeled block's in its place.
 func TestAtlasDiffPolicy_CarriesTheLabeledPolicy(t *testing.T) {
 	c := qt.New(t)
 	var cfg projectconfig.Config
 	cfg.Diff.Skip.DropColumn = projectconfig.ConfigBool{Value: true, Set: true}
 	cfg.Diff.Dialects = map[string]projectconfig.DialectDiffConfig{
-		"sqlite": {Skip: projectconfig.DiffSkipConfig{DropTable: projectconfig.ConfigBool{Value: true, Set: true}}, Blocks: []string{"skip"}},
+		"sqlite": {
+			TopLevel: projectconfig.DialectDiffValues{Skip: projectconfig.DiffSkipConfig{DropTable: projectconfig.ConfigBool{Value: true, Set: true}}},
+			Env: projectconfig.DialectDiffValues{
+				Skip:            projectconfig.DiffSkipConfig{DropIndex: projectconfig.ConfigBool{Set: true}},
+				ConcurrentIndex: projectconfig.DiffConcurrentIndexConfig{Create: projectconfig.ConfigBool{Value: true, Set: true}},
+			},
+			Blocks: []string{"concurrent_index", "skip"},
+		},
 	}
 
 	got, err := atlasDiffPolicy(cfg)
@@ -2617,7 +2625,12 @@ func TestAtlasDiffPolicy_CarriesTheLabeledPolicy(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, atlasschema.DiffPolicy{
 		SkipChangeKinds: []planext.ChangeKind{planext.DropColumn},
 		Dialects: map[string]atlasschema.DialectDiffPolicy{
-			"sqlite": {SkipChangeKinds: []planext.ChangeKind{planext.DropTable, planext.DropColumn}, Blocks: []string{"skip"}},
+			"sqlite": {
+				TopLevel: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): true},
+				Env: atlasschema.DiffSettings{
+					atlasschema.SkipSetting(planext.DropIndex): false, atlasschema.ConcurrentIndexCreateSetting: true,
+				},
+			},
 		},
 	})
 }

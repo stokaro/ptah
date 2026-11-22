@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
@@ -1651,8 +1652,8 @@ func readAtlasSchemaList(values []string) ([]string, error) {
 }
 
 // atlasDiffPolicy is the diff policy of the project file: the unlabeled diff
-// blocks, and for each dialect a labeled block names, the policy a plan for
-// that dialect follows, which the plan picks once it knows its dialect.
+// blocks, and for each dialect a labeled block names, the values the labeled
+// blocks set, which the plan reads once it knows its dialect.
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 	policy := atlasschema.DiffPolicy{
 		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
@@ -1662,17 +1663,33 @@ func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 		TableRebuildDialects:          cfg.Diff.TableRebuildDialects(),
 	}
 	for _, dialect := range cfg.Diff.PolicyDialects() {
-		labeled := cfg.Diff.ForDialect(dialect)
+		labeled := cfg.Diff.Dialects[dialect]
 		if policy.Dialects == nil {
 			policy.Dialects = make(map[string]atlasschema.DialectDiffPolicy)
 		}
 		policy.Dialects[dialect] = atlasschema.DialectDiffPolicy{
-			SkipChangeKinds:               labeled.SkipChangeKinds(),
-			ConcurrentIndexCreate:         labeled.ConcurrentIndexCreate(),
-			ConcurrentIndexDrop:           labeled.ConcurrentIndexDrop(),
-			ConcurrentIndexCreateDisabled: labeled.ConcurrentIndexCreateDisabled(),
-			Blocks:                        cfg.Diff.Dialects[dialect].Blocks,
+			TopLevel: atlasDiffSettings(labeled.TopLevel),
+			Env:      atlasDiffSettings(labeled.Env),
 		}
 	}
 	return policy, nil
+}
+
+// atlasDiffSettings returns the values one labeled diff block sets, by the
+// name the project file gives each.
+func atlasDiffSettings(values projectconfig.DialectDiffValues) atlasschema.DiffSettings {
+	settings := make(atlasschema.DiffSettings)
+	for setting, value := range map[atlasschema.DiffSetting]projectconfig.ConfigBool{
+		atlasschema.SkipSetting(planext.DropTable):  values.Skip.DropTable,
+		atlasschema.SkipSetting(planext.DropColumn): values.Skip.DropColumn,
+		atlasschema.SkipSetting(planext.DropIndex):  values.Skip.DropIndex,
+		atlasschema.SkipSetting(planext.DropEnum):   values.Skip.DropEnum,
+		atlasschema.ConcurrentIndexCreateSetting:    values.ConcurrentIndex.Create,
+		atlasschema.ConcurrentIndexDropSetting:      values.ConcurrentIndex.Drop,
+	} {
+		if value.Set {
+			settings[setting] = value.Value
+		}
+	}
+	return settings
 }

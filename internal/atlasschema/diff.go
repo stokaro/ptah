@@ -627,12 +627,8 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (comparedDiff, error) {
-	policy, err := opts.Policy.ForDialect(dialect)
-	if err != nil {
-		return comparedDiff{}, err
-	}
-	opts.Policy = policy
-	fromState, toState, err = scopedDiffSides(ctx, conn, opts.Runtime, fromState, toState, dialect, sides, opts.DevURL)
+	opts.Policy = opts.Policy.ForDialect(dialect)
+	fromState, toState, err := scopedDiffSides(ctx, conn, opts.Runtime, fromState, toState, dialect, sides, opts.DevURL)
 	if err != nil {
 		return comparedDiff{}, err
 	}
@@ -746,6 +742,9 @@ func diffResolvedStates(
 		return comparedDiff{}, err
 	}
 
+	if err := opts.Policy.ReviewOtherDialects(opts.Diagnostics, compared, dialect, capabilities); err != nil {
+		return comparedDiff{}, err
+	}
 	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, dialect)
 	if !diff.HasChanges() {
 		ReportOmitted(opts.Diagnostics, omitted)

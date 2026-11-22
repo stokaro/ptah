@@ -205,11 +205,22 @@ env "local" {
 }
 ```
 
-A plan for another dialect than a policy block's label names is refused before
-anything is planned, with `the diff "postgres" block of the project file holds
-a skip block, which Ptah applies only to a plan for postgres, and this plan is
-for "sqlite"`. Move the block into an unlabeled `diff` block to apply it to
-every dialect.
+A plan for another dialect than the label names does not read the block. Where
+the block would change that plan, the plan is refused before anything is
+applied. A value changes the plan when no nearer block sets it, it differs from
+the value the plan follows, and the plan holds a change of the kind it governs:
+a removal for a `skip` value, an index build or drop for a `concurrent_index`
+value on a dialect that builds indexes concurrently. The refusal names the
+value and the change, as in `the diff "postgres" block of the project file sets
+drop_table = true in its skip block, which Ptah applies only to a plan for
+postgres. This plan is for "sqlite" and holds a change that value decides:
+drop_table of "old"`. Move the value into an unlabeled `diff` block to apply it
+to every dialect.
+
+Any other plan goes ahead, and the error stream says that the block is not
+applied to it. The env is nearer the run than the top level, so an env's
+unlabeled block, and its block for the plan's own dialect, decide a value a
+top-level labeled block also sets.
 
 The community binary reads a labeled `diff` block as an unlabeled one, its
 label ignored, and of two `diff` blocks in one env applies only the first one
@@ -220,8 +231,9 @@ cases, both recorded under
 - With `diff "sqlite" { skip { drop_table = true } }` first and
   `diff { skip { drop_column = true } }` second, the community binary keeps the
   table and drops the column. Ptah applies both blocks and keeps both.
-- With `diff "postgres" { skip { drop_table = true } }`, the community binary
-  leaves the `DROP TABLE` out of the SQLite plan. Ptah refuses the plan.
+- With `diff "postgres" { skip { drop_table = true } }` and a plan that drops a
+  table, the community binary leaves the `DROP TABLE` out of the SQLite plan.
+  Ptah refuses the plan.
 
 The community binary has no ClickHouse driver (`unknown driver "clickhouse"`)
 and applies no `allow_recreate`, and an env that references the block with

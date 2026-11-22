@@ -870,13 +870,27 @@ type DiffConfig struct {
 	Dialects map[string]DialectDiffConfig
 }
 
-// DialectDiffConfig holds the policy blocks of one labeled diff block.
+// DialectDiffConfig holds the policy blocks of the labeled diff blocks for one
+// dialect, by where the project file writes them. A plan for the dialect reads
+// both levels, the env's values over the top level's. A plan for another
+// dialect reads them apart: a value the top level sets is decided by a nearer
+// block when the env's labeled block for the plan's own dialect sets it too.
 type DialectDiffConfig struct {
-	Skip            DiffSkipConfig
-	ConcurrentIndex DiffConcurrentIndexConfig
-	// Blocks names the policy blocks the labeled block holds, in
+	// TopLevel holds the values the top-level labeled block sets, less those
+	// the env's unlabeled diff block sets, which is nearer the run.
+	TopLevel DialectDiffValues
+	// Env holds the values the env's labeled block sets.
+	Env DialectDiffValues
+	// Blocks names the policy blocks the labeled blocks hold, in
 	// alphabetical order, whether or not they set anything.
 	Blocks []string
+}
+
+// DialectDiffValues holds the skip and concurrent_index values one labeled
+// diff block sets.
+type DialectDiffValues struct {
+	Skip            DiffSkipConfig
+	ConcurrentIndex DiffConcurrentIndexConfig
 }
 
 // DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
@@ -969,9 +983,9 @@ func (c DiffConfig) TableRebuildAllowed(dialect string) bool {
 }
 
 // ForDialect returns the policy a plan for the dialect reads: the skip and
-// concurrent_index values of the dialect's labeled diff block in place of the
-// unlabeled block's, where the labeled block sets them. The result holds no
-// labeled block.
+// concurrent_index values of the dialect's labeled diff blocks in place of the
+// unlabeled block's, where a labeled block sets them, the env's over the top
+// level's. The result holds no labeled block.
 func (c DiffConfig) ForDialect(dialect string) DiffConfig {
 	result := c
 	result.Dialects = nil
@@ -979,8 +993,11 @@ func (c DiffConfig) ForDialect(dialect string) DiffConfig {
 	if !found {
 		return result
 	}
-	result.Skip = mergeSkip(c.Skip, labeled.Skip)
-	result.ConcurrentIndex = mergeConcurrentIndex(c.ConcurrentIndex, labeled.ConcurrentIndex)
+	values := DialectDiffValues{Skip: c.Skip, ConcurrentIndex: c.ConcurrentIndex}.
+		mergedWith(labeled.TopLevel).
+		mergedWith(labeled.Env)
+	result.Skip = values.Skip
+	result.ConcurrentIndex = values.ConcurrentIndex
 	return result
 }
 
@@ -1720,35 +1737,55 @@ func mergeConcurrentIndex(base, override DiffConcurrentIndexConfig) DiffConcurre
 // unlabeled block sets replaces a top-level labeled block's value too, and a
 // value the env's labeled block sets replaces both. For each value the order
 // is: the env's labeled block, the env's unlabeled block, the top-level
-// labeled block, the top-level unlabeled block.
+// labeled block, the top-level unlabeled block. Each level is kept apart; see
+// [DialectDiffConfig].
 func mergeDialectDiffs(base map[string]DialectDiffConfig, override DiffConfig) map[string]DialectDiffConfig {
 	if len(base) == 0 && len(override.Dialects) == 0 {
 		return nil
 	}
+	nearer := DialectDiffValues{Skip: override.Skip, ConcurrentIndex: override.ConcurrentIndex}
 	result := make(map[string]DialectDiffConfig, len(base)+len(override.Dialects))
 	for dialect, labeled := range base {
-		labeled.Skip = DiffSkipConfig{
-			DropTable:  shadowedBool(labeled.Skip.DropTable, override.Skip.DropTable),
-			DropColumn: shadowedBool(labeled.Skip.DropColumn, override.Skip.DropColumn),
-			DropIndex:  shadowedBool(labeled.Skip.DropIndex, override.Skip.DropIndex),
-			DropEnum:   shadowedBool(labeled.Skip.DropEnum, override.Skip.DropEnum),
-			DropSchema: shadowedBool(labeled.Skip.DropSchema, override.Skip.DropSchema),
+		result[dialect] = DialectDiffConfig{
+			TopLevel: labeled.TopLevel.shadowedBy(nearer),
+			Env:      labeled.Env.shadowedBy(nearer),
+			Blocks:   slices.Clone(labeled.Blocks),
 		}
-		labeled.ConcurrentIndex = DiffConcurrentIndexConfig{
-			Create: shadowedBool(labeled.ConcurrentIndex.Create, override.ConcurrentIndex.Create),
-			Drop:   shadowedBool(labeled.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop),
-		}
-		labeled.Blocks = slices.Clone(labeled.Blocks)
-		result[dialect] = labeled
 	}
 	for dialect, labeled := range override.Dialects {
 		merged := result[dialect]
-		merged.Skip = mergeSkip(merged.Skip, labeled.Skip)
-		merged.ConcurrentIndex = mergeConcurrentIndex(merged.ConcurrentIndex, labeled.ConcurrentIndex)
+		merged.TopLevel = merged.TopLevel.mergedWith(labeled.TopLevel)
+		merged.Env = merged.Env.mergedWith(labeled.Env)
 		merged.Blocks = slices.Compact(slices.Sorted(slices.Values(slices.Concat(merged.Blocks, labeled.Blocks))))
 		result[dialect] = merged
 	}
 	return result
+}
+
+// mergedWith returns v with each value override sets in place of v's.
+func (v DialectDiffValues) mergedWith(override DialectDiffValues) DialectDiffValues {
+	return DialectDiffValues{
+		Skip:            mergeSkip(v.Skip, override.Skip),
+		ConcurrentIndex: mergeConcurrentIndex(v.ConcurrentIndex, override.ConcurrentIndex),
+	}
+}
+
+// shadowedBy returns v without the values nearer sets: a value a nearer block
+// sets hides the farther block's.
+func (v DialectDiffValues) shadowedBy(nearer DialectDiffValues) DialectDiffValues {
+	return DialectDiffValues{
+		Skip: DiffSkipConfig{
+			DropTable:  shadowedBool(v.Skip.DropTable, nearer.Skip.DropTable),
+			DropColumn: shadowedBool(v.Skip.DropColumn, nearer.Skip.DropColumn),
+			DropIndex:  shadowedBool(v.Skip.DropIndex, nearer.Skip.DropIndex),
+			DropEnum:   shadowedBool(v.Skip.DropEnum, nearer.Skip.DropEnum),
+			DropSchema: shadowedBool(v.Skip.DropSchema, nearer.Skip.DropSchema),
+		},
+		ConcurrentIndex: DiffConcurrentIndexConfig{
+			Create: shadowedBool(v.ConcurrentIndex.Create, nearer.ConcurrentIndex.Create),
+			Drop:   shadowedBool(v.ConcurrentIndex.Drop, nearer.ConcurrentIndex.Drop),
+		},
+	}
 }
 
 // shadowedBool is value, unset where nearer is set: a value a nearer block

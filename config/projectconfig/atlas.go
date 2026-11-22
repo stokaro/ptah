@@ -1056,7 +1056,7 @@ func (p atlasParser) parseEnvBlock(block *hclsyntax.Block, seen map[string]struc
 		return p.parseCheck(block, cfg)
 	case "diff":
 		if len(block.Labels) > 0 {
-			return p.parseDialectDiff(block, cfg)
+			return p.parseDialectDiff(block, cfg, envDiffBlock)
 		}
 		return p.parseDiff(block, cfg)
 	case "format":
@@ -2015,12 +2015,21 @@ func (p atlasParser) parseDialectDiffs(blocks []*hclsyntax.Block, cfg *Config) e
 			}
 			seen[dialect] = struct{}{}
 		}
-		if err := p.parseDialectDiff(block, cfg); err != nil {
+		if err := p.parseDialectDiff(block, cfg, topLevelDiffBlock); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// diffBlockLevel says where a project file writes a labeled diff block: an
+// env is nearer the run than the top level.
+type diffBlockLevel int
+
+const (
+	topLevelDiffBlock diffBlockLevel = iota
+	envDiffBlock
+)
 
 // parseDialectDiff reads a `diff "<dialect>" { ... }` block, at the top level
 // or in an env, for the dialect its label names: allow_recreate, whether a
@@ -2040,12 +2049,12 @@ func (p atlasParser) parseDialectDiffs(blocks []*hclsyntax.Block, cfg *Config) e
 // DROP TABLE of a SQLite plan, at the top level and in an env, and so does the
 // label "foo"; and of a labeled block and an unlabeled one, the one written
 // first is applied and the other dropped, in either order. Ptah applies both,
-// and refuses a plan for another dialect than a policy block's label names
-// ([ptah.run/internal/atlasschema.DiffPolicy.ForDialect]), rather than plan the
-// drop the user asked to leave out. Any other attribute but allow_recreate,
-// and any other nested block, takes the tolerance path and is reported as
-// having no effect.
-func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error {
+// and refuses a plan for another dialect that a policy block's label would
+// change ([ptah.run/internal/atlasschema.DiffPolicy.ReviewOtherDialects]),
+// rather than plan the drop the user asked to leave out. Any other attribute
+// but allow_recreate, and any other nested block, takes the tolerance path and
+// is reported as having no effect.
+func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config, level diffBlockLevel) error {
 	if len(block.Labels) != 1 {
 		return unsupportedBlock(block)
 	}
@@ -2107,7 +2116,12 @@ func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error
 	if cfg.Diff.Dialects == nil {
 		cfg.Diff.Dialects = make(map[string]DialectDiffConfig)
 	}
-	cfg.Diff.Dialects[dialect] = DialectDiffConfig{Skip: read.Diff.Skip, ConcurrentIndex: read.Diff.ConcurrentIndex, Blocks: blocks}
+	values := DialectDiffValues{Skip: read.Diff.Skip, ConcurrentIndex: read.Diff.ConcurrentIndex}
+	labeled := DialectDiffConfig{TopLevel: values, Blocks: blocks}
+	if level == envDiffBlock {
+		labeled = DialectDiffConfig{Env: values, Blocks: blocks}
+	}
+	cfg.Diff.Dialects[dialect] = labeled
 	return nil
 }
 

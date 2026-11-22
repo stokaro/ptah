@@ -325,6 +325,63 @@ func TestParseAtlas_DialectDiffPolicyPrecedence(t *testing.T) {
 	}
 }
 
+// A labeled block's values are kept by where the project file writes them, and
+// a top-level value the env's unlabeled block sets too is left out, since the
+// env is nearer the run. A plan for another dialect reads the two levels apart.
+func TestParseAtlas_DialectDiffPolicyLevels(t *testing.T) {
+	set := func(value bool) projectconfig.ConfigBool { return projectconfig.ConfigBool{Value: value, Set: true} }
+	labeled := func(indent, value string) string {
+		return indent + "diff \"postgres\" {\n" + indent + "  skip {\n" + indent + "    drop_table = " + value + "\n" + indent + "  }\n" + indent + "}\n"
+	}
+	tests := []struct {
+		name   string
+		blocks string
+		env    string
+		want   projectconfig.DialectDiffConfig
+	}{
+		{
+			name:   "a top-level block",
+			blocks: labeled("", "true"),
+			want: projectconfig.DialectDiffConfig{
+				TopLevel: projectconfig.DialectDiffValues{Skip: projectconfig.DiffSkipConfig{DropTable: set(true)}}, Blocks: []string{"skip"},
+			},
+		},
+		{
+			name: "an env block",
+			env:  labeled("  ", "true"),
+			want: projectconfig.DialectDiffConfig{
+				Env: projectconfig.DialectDiffValues{Skip: projectconfig.DiffSkipConfig{DropTable: set(true)}}, Blocks: []string{"skip"},
+			},
+		},
+		{
+			name:   "both",
+			blocks: labeled("", "true"),
+			env:    labeled("  ", "false"),
+			want: projectconfig.DialectDiffConfig{
+				TopLevel: projectconfig.DialectDiffValues{Skip: projectconfig.DiffSkipConfig{DropTable: set(true)}},
+				Env:      projectconfig.DialectDiffValues{Skip: projectconfig.DiffSkipConfig{DropTable: set(false)}},
+				Blocks:   []string{"skip"},
+			},
+		},
+		{
+			name:   "a top-level block under the env's unlabeled block",
+			blocks: labeled("", "true"),
+			env:    "  diff {\n    skip {\n      drop_table = false\n    }\n  }\n",
+			want:   projectconfig.DialectDiffConfig{Blocks: []string{"skip"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := dialectDiffProject(c, test.blocks, test.env, projectconfig.AtlasLoadOptions{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.Diff.Dialects, qt.DeepEquals, map[string]projectconfig.DialectDiffConfig{"postgres": test.want})
+		})
+	}
+}
+
 // The community binary plans no table rebuild, so a strict policy reads every
 // labeled diff block as ignored, at the top level and in an env, the label no
 // dialect rebuilds for included.

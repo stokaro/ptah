@@ -42,7 +42,8 @@ func TestSchemaDiffUsesALabeledAtlasProjectDiffSkip(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "")
 }
 
-// A skip labeled with another dialect is refused rather than ignored.
+// A skip labeled with another dialect is refused, rather than ignored, where
+// the diff holds a change of its kind.
 func TestSchemaDiffRefusesADiffSkipLabeledForAnotherDialect(t *testing.T) {
 	c := qt.New(t)
 	from := dialectSkipDiffProject(c, "  diff \"postgres\" {\n    skip {\n      drop_table = true\n    }\n  }\n")
@@ -50,5 +51,21 @@ func TestSchemaDiffRefusesADiffSkipLabeledForAnotherDialect(t *testing.T) {
 	stdout, _, err := atlastest.RunCompatStreams(c, "schema", "diff", "--env", "local", "--from", from)
 
 	c.Assert(err, qt.ErrorIs, atlasschema.ErrDiffPolicyForAnotherDialect)
+	c.Assert(err, qt.ErrorMatches, `(?s).*sets drop_table = true in its skip block.*holds a change that value decides: drop_table of "old_users"\..*`)
 	c.Assert(stdout, qt.Equals, "")
+}
+
+// A skip labeled with another dialect, of a kind the diff holds no change of,
+// is reported, and the diff is written as without it.
+func TestSchemaDiffReportsADiffSkipLabeledForAnotherDialectThatChangesNothing(t *testing.T) {
+	c := qt.New(t)
+	from := dialectSkipDiffProject(c, "  diff \"postgres\" {\n    skip {\n      drop_column = true\n    }\n  }\n")
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "schema", "diff", "--env", "local", "--from", from)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	c.Assert(stdout, qt.Equals, "-- Create \"kept\" table\nCREATE TABLE \"kept\" (\"id\" integer NULL, PRIMARY KEY (\"id\"));\n"+
+		"-- Drop \"old_users\" table\nDROP TABLE \"old_users\";\n")
+	c.Assert(stderr, qt.Equals, `the diff "postgres" block of the project file is not applied to this plan for "sqlite": `+
+		"Ptah applies it only to a plan for postgres, and it changes nothing in this one\n")
 }

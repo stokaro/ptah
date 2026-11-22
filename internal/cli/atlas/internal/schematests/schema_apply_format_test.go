@@ -551,10 +551,10 @@ func TestSchemaApplyUsesALabeledAtlasProjectDiffSkip(t *testing.T) {
 	}
 }
 
-// A skip labeled with another dialect than the plan's is refused before
-// anything is planned. The community binary v1.4.0 ignores the label and
-// applies the block, measured on SQLite, so planning the drop would drop what
-// the user asked to leave out.
+// A skip labeled with another dialect than the plan's is refused where the
+// plan holds a change of its kind. The community binary v1.4.0 ignores the
+// label and applies the block, measured on SQLite, so planning the drop would
+// drop what the user asked to leave out.
 func TestSchemaApplyRefusesAnAtlasProjectDiffSkipLabeledForAnotherDialect(t *testing.T) {
 	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
@@ -563,8 +563,8 @@ func TestSchemaApplyRefusesAnAtlasProjectDiffSkipLabeledForAnotherDialect(t *tes
 	stdout, _, err := atlastest.RunCompatStreams(c, "schema", "apply", "--env", "local", "--auto-approve")
 
 	c.Assert(err, qt.ErrorIs, atlasschema.ErrDiffPolicyForAnotherDialect)
-	c.Assert(err, qt.ErrorMatches, `(?s).*the diff "postgres" block of the project file holds a skip block, which Ptah applies only to a plan for postgres, `+
-		`and this plan is for "sqlite"\..*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*the diff "postgres" block of the project file sets drop_column = true in its skip block, `+
+		`which Ptah applies only to a plan for postgres\. This plan is for "sqlite" and holds a change that value decides: drop_column of "t\.b"\..*`)
 	c.Assert(stdout, qt.Not(qt.Contains), "DROP")
 	c.Assert(atlastest.SqliteQueryInt(c, dbPath, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'b'"), qt.Equals, 1)
 	c.Assert(atlastest.SqliteIndexCount(c, dbPath, "t_a"), qt.Equals, 1)

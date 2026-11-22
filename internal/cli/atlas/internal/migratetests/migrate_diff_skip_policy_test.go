@@ -93,16 +93,32 @@ func TestMigrateDiffUsesALabeledAtlasProjectDiffSkip(t *testing.T) {
 }
 
 // A skip labeled with another dialect than the dev database's is refused, and
-// no file is written: the community binary ignores the label and applies the
-// skip, so writing the rebuild would drop what the block asks to keep.
+// no file is written, where the diff holds a change of its kind: the community
+// binary ignores the label and applies the skip, so writing the rebuild would
+// drop what the block asks to keep.
 func TestMigrateDiffRefusesADiffSkipLabeledForAnotherDialect(t *testing.T) {
 	c := qt.New(t)
 	migrations := skipPolicyMigrateProject(c, "  diff \"mysql\" {\n    skip {\n      drop_column = true\n    }\n  }\n")
 
 	_, _, err := atlastest.RunCompatStreams(c, "migrate", "diff", "--env", "local", "next")
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*the diff "mysql" block of the project file holds a skip block, which Ptah applies only to a plan for mysql, and this plan is for "sqlite"\..*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*the diff "mysql" block of the project file sets drop_column = true in its skip block, which Ptah applies only to a plan for mysql\. `+
+		`This plan is for "sqlite" and holds a change that value decides: drop_column of "t\.b"\..*`)
 	matches, globErr := filepath.Glob(filepath.Join(migrations, "*_next.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 0)
+}
+
+// A skip labeled with another dialect, of a kind the diff holds no change of,
+// is reported, and the file is written as without it.
+func TestMigrateDiffReportsADiffSkipLabeledForAnotherDialectThatChangesNothing(t *testing.T) {
+	c := qt.New(t)
+	migrations := skipPolicyMigrateProject(c, "  diff \"mysql\" {\n    skip {\n      drop_enum = true\n    }\n  }\n")
+
+	_, stderr, err := atlastest.RunCompatStreams(c, "migrate", "diff", "--env", "local", "next")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	c.Assert(newMigration(c, migrations), qt.Contains, `DROP TABLE "t"`)
+	c.Assert(stderr, qt.Contains, `the diff "mysql" block of the project file is not applied to this plan for "sqlite": `+
+		"Ptah applies it only to a plan for mysql, and it changes nothing in this one\n")
 }

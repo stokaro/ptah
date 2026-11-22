@@ -321,8 +321,9 @@ no rebuild, so strict mode refuses the variable:
 The community binary reads a labeled `diff` block as an unlabeled one and applies
 no `allow_recreate` in it, and strict mode reads the block as an ignored
 construct, which it refuses. A `skip` or `concurrent_index` block in a labeled block applies
-to a plan for that dialect, and a plan for another dialect is refused; the
-measured differences from the community binary are under
+to a plan for that dialect, and a plan for another dialect is refused where a
+value in it would change the plan; the measured differences from the community
+binary are under
 [A diff policy block under a dialect label](./site/src/content/docs/atlas/retained-divergences.md#a-diff-policy-block-under-a-dialect-label).
 
 A `docker://ydb` dev URL is checked before its dialect, so strict mode answers

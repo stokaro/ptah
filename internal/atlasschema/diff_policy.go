@@ -12,6 +12,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -64,10 +65,11 @@ type DiffPolicy struct {
 	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
 
-	// Dialects holds, by dialect, the policy a plan for a dialect that a
-	// labeled `diff "<dialect>"` block of an Atlas project file names follows
-	// in place of SkipChangeKinds and the concurrent index fields above.
-	// [DiffPolicy.ForDialect] picks the one for a plan.
+	// Dialects holds, by dialect, the values the labeled `diff "<dialect>"`
+	// blocks of an Atlas project file set. A plan for the dialect follows them
+	// in place of SkipChangeKinds and the concurrent index fields above
+	// ([DiffPolicy.ForDialect]), and a plan for another dialect is refused
+	// where they would change it ([DiffPolicy.ReviewOtherDialects]).
 	Dialects map[string]DialectDiffPolicy
 
 	// RotateSecrets names the secrets, as the operator wrote them, the plan
@@ -78,59 +80,201 @@ type DiffPolicy struct {
 	RotateSecrets []string
 }
 
-// DialectDiffPolicy is the policy a labeled diff block gives a plan for its
-// dialect, merged over the unlabeled block's.
+// DialectDiffPolicy is what the labeled diff blocks for one dialect set, by
+// where the project file writes them. A value the top-level block sets and the
+// env's unlabeled diff block sets too is left out of TopLevel, since the env is
+// nearer the run.
 type DialectDiffPolicy struct {
-	SkipChangeKinds               []planext.ChangeKind
-	ConcurrentIndexCreate         bool
-	ConcurrentIndexDrop           bool
-	ConcurrentIndexCreateDisabled bool
-	// Blocks names the policy blocks the labeled block holds, for the refusal
-	// of a plan for another dialect.
-	Blocks []string
+	// TopLevel holds the values the top-level labeled block sets.
+	TopLevel DiffSettings
+	// Env holds the values the env's labeled block sets.
+	Env DiffSettings
 }
 
-// ErrDiffPolicyForAnotherDialect is the refusal of a plan for a dialect other
-// than a policy block's label names.
+// DiffSetting names one value of a diff policy block as an Atlas project file
+// spells it: the block, "skip" or "concurrent_index", and the attribute in it.
+type DiffSetting struct {
+	Block string
+	Name  string
+}
+
+// The concurrent_index values a labeled diff block can set. A skip value is
+// named by [SkipSetting].
+var (
+	ConcurrentIndexCreateSetting = DiffSetting{Block: "concurrent_index", Name: "create"}
+	ConcurrentIndexDropSetting   = DiffSetting{Block: "concurrent_index", Name: "drop"}
+)
+
+// SkipSetting names the skip value of a change kind: `drop_table` in the skip
+// block for [planext.DropTable].
+func SkipSetting(kind planext.ChangeKind) DiffSetting {
+	return DiffSetting{Block: "skip", Name: string(kind)}
+}
+
+// DiffSettings holds the values one diff block sets. A setting it does not
+// hold is one the block leaves to another.
+type DiffSettings map[DiffSetting]bool
+
+// ErrDiffPolicyForAnotherDialect is the refusal of a plan that a labeled diff
+// block for another dialect would change.
 var ErrDiffPolicyForAnotherDialect = errors.New("a labeled diff block holds a policy for another dialect")
 
-// ForDialect returns the policy a plan for the dialect follows: the one its
-// labeled diff block gives, where there is one. The result holds no labeled
-// policy, so asking again changes nothing.
+// ForDialect returns the policy a plan for the dialect follows: the values its
+// labeled diff blocks set in place of the unlabeled block's, the env's over the
+// top level's. The labeled blocks stay in the result, for
+// [DiffPolicy.ReviewOtherDialects], and asking again changes nothing.
+func (p DiffPolicy) ForDialect(dialect string) DiffPolicy {
+	labeled, found := p.Dialects[dialect]
+	if !found {
+		return p
+	}
+	skipped := diffpolicy.NewSkipSet(p.SkipChangeKinds...)
+	var kinds []planext.ChangeKind
+	for _, kind := range diffpolicy.AllChangeKinds() {
+		if labeled.decides(SkipSetting(kind), skipped.Has(kind)) {
+			kinds = append(kinds, kind)
+		}
+	}
+	p.SkipChangeKinds = kinds
+	if create, set := labeled.value(ConcurrentIndexCreateSetting); set {
+		p.ConcurrentIndexCreate = create
+		p.ConcurrentIndexCreateDisabled = !create
+	}
+	p.ConcurrentIndexDrop = labeled.decides(ConcurrentIndexDropSetting, p.ConcurrentIndexDrop)
+	return p
+}
+
+// value returns the value the labeled blocks set for setting, the env's over
+// the top level's, and whether either sets it.
+func (d DialectDiffPolicy) value(setting DiffSetting) (value, set bool) {
+	if value, set = d.Env[setting]; set {
+		return value, true
+	}
+	value, set = d.TopLevel[setting]
+	return value, set
+}
+
+// decides returns the value the labeled blocks set for setting, or otherwise
+// the value the plan follows without them.
+func (d DialectDiffPolicy) decides(setting DiffSetting, otherwise bool) bool {
+	if value, set := d.value(setting); set {
+		return value
+	}
+	return otherwise
+}
+
+// ReviewOtherDialects decides what the labeled diff blocks for other dialects
+// do to a plan for dialect, whose comparison is compared.
 //
-// It refuses, with [ErrDiffPolicyForAnotherDialect], a policy with a labeled
-// block for another dialect. The community binary ignores the label and
-// applies the block to a plan for any dialect, measured on v1.4.0, so a skip
-// that names another dialect is one the user may expect here; refusing keeps
-// the plan from dropping what the block asks to leave out.
-func (p DiffPolicy) ForDialect(dialect string) (DiffPolicy, error) {
+// Ptah applies a labeled block only to a plan for the dialect its label names.
+// The community binary ignores the label and applies the block to a plan for
+// any dialect, measured on v1.4.0. So a block for another dialect is refused,
+// with [ErrDiffPolicyForAnotherDialect], where it would change this plan: it
+// sets a value that no nearer block decides, the value differs from the one
+// the plan follows, and compared holds a change of the kind the value governs.
+// A skip value governs the removals of its kind. A concurrent_index value
+// governs the index additions, or removals, of a dialect whose grammar builds
+// them concurrently, whatever the desired description declares. Every other
+// block for another dialect is reported on diagnostics, since it changes
+// nothing in this plan.
+//
+// A value the env's labeled block for dialect sets is decided by that block
+// when the other block is written at the top level; the env is nearer the run.
+// capabilities is the target's set; an empty one reads the dialect's default.
+func (p DiffPolicy) ReviewOtherDialects(
+	diagnostics io.Writer,
+	compared *difftypes.SchemaDiff,
+	dialect string,
+	capabilities capability.Capabilities,
+) error {
+	resolved := p.ForDialect(dialect)
+	nearest := p.Dialects[dialect].Env
+	if capabilities.Len() == 0 {
+		capabilities = capability.ForDialect(dialect)
+	}
 	for _, other := range slices.Sorted(maps.Keys(p.Dialects)) {
 		if other == dialect {
 			continue
 		}
-		return DiffPolicy{}, fmt.Errorf("%w: the diff %q block of the project file holds %s, which Ptah applies only to a plan for %s, "+
-			"and this plan is for %q. The community binary ignores the label and applies the block to every dialect. "+
-			"Move the block into an unlabeled diff block to apply it to every dialect, or into the env of the %s database",
-			ErrDiffPolicyForAnotherDialect, other, policyBlockList(p.Dialects[other].Blocks), other, dialect, other)
+		labeled := p.Dialects[other]
+		for _, setting := range labeled.undecided(nearest) {
+			value, _ := labeled.value(setting)
+			if followed, set := resolved.followed(setting); set && followed == value {
+				continue
+			}
+			change, found := governedChange(setting, compared, dialect, capabilities)
+			if !found {
+				continue
+			}
+			return fmt.Errorf("%w: the diff %q block of the project file sets %s = %t in its %s block, which Ptah applies only to a plan for %s. "+
+				"This plan is for %q and holds a change that value decides: %s. "+
+				"The community binary ignores the label and applies the block to every dialect. "+
+				"Move the value into an unlabeled diff block to apply it to every dialect, or into the env of the %s database",
+				ErrDiffPolicyForAnotherDialect, other, setting.Name, value, setting.Block, other, dialect, change, other)
+		}
+		if diagnostics != nil {
+			_, _ = fmt.Fprintf(diagnostics, "the diff %q block of the project file is not applied to this plan for %q: "+
+				"Ptah applies it only to a plan for %s, and it changes nothing in this one\n", other, dialect, other)
+		}
 	}
-	if labeled, found := p.Dialects[dialect]; found {
-		p.SkipChangeKinds = labeled.SkipChangeKinds
-		p.ConcurrentIndexCreate = labeled.ConcurrentIndexCreate
-		p.ConcurrentIndexDrop = labeled.ConcurrentIndexDrop
-		p.ConcurrentIndexCreateDisabled = labeled.ConcurrentIndexCreateDisabled
-	}
-	p.Dialects = nil
-	return p, nil
+	return nil
 }
 
-// policyBlockList names the blocks for a refusal: "a skip block", "a
-// concurrent_index block and a skip block".
-func policyBlockList(blocks []string) string {
-	named := make([]string, len(blocks))
-	for i, block := range blocks {
-		named[i] = "a " + block + " block"
+// undecided returns, in a stable order, the settings the labeled blocks set
+// that no nearer block decides for a plan whose own env block sets nearest.
+func (d DialectDiffPolicy) undecided(nearest DiffSettings) []DiffSetting {
+	var settings []DiffSetting
+	for setting := range d.Env {
+		settings = append(settings, setting)
 	}
-	return strings.Join(named, " and ")
+	for setting := range d.TopLevel {
+		_, env := d.Env[setting]
+		_, nearer := nearest[setting]
+		if !env && !nearer {
+			settings = append(settings, setting)
+		}
+	}
+	slices.SortFunc(settings, func(a, b DiffSetting) int {
+		return strings.Compare(a.Block+"."+a.Name, b.Block+"."+b.Name)
+	})
+	return settings
+}
+
+// followed returns the value a resolved policy follows for setting, so a block
+// that sets the same value changes nothing. A concurrent_index create value is
+// unset where the policy neither builds every index concurrently nor turns
+// concurrent builds off: either value a block sets changes the plan then.
+func (p DiffPolicy) followed(setting DiffSetting) (value, set bool) {
+	switch setting {
+	case ConcurrentIndexCreateSetting:
+		return p.ConcurrentIndexCreate, p.ConcurrentIndexCreate || p.ConcurrentIndexCreateDisabled
+	case ConcurrentIndexDropSetting:
+		return p.ConcurrentIndexDrop, true
+	}
+	return slices.Contains(p.SkipChangeKinds, planext.ChangeKind(setting.Name)), true
+}
+
+// governedChange names the first change of compared that setting governs on
+// a plan for dialect, and reports whether there is one.
+func governedChange(setting DiffSetting, compared *difftypes.SchemaDiff, dialect string, capabilities capability.Capabilities) (string, bool) {
+	described, _ := platform.Lookup(dialect)
+	switch setting {
+	case ConcurrentIndexCreateSetting:
+		if !described.ConcurrentIndexes || !capabilities.Has(capability.CreateIndexConcurrently) || len(compared.IndexesAdded) == 0 {
+			return "", false
+		}
+		return fmt.Sprintf("index %q is added", compared.IndexesAdded[0].Index.Name), true
+	case ConcurrentIndexDropSetting:
+		if !described.ConcurrentIndexes || !capabilities.Has(capability.DropIndexConcurrently) || len(compared.IndexesRemoved) == 0 {
+			return "", false
+		}
+		return fmt.Sprintf("index %q is removed", compared.IndexesRemoved[0].Name), true
+	}
+	_, omitted := diffpolicy.ApplyForDialect(compared, diffpolicy.NewSkipSet(planext.ChangeKind(setting.Name)), dialect)
+	if len(omitted) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%s of %q", setting.Name, omitted[0].Object), true
 }
 
 // AllowsTableRebuild reports whether a plan for the dialect creates a table
