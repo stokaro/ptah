@@ -445,8 +445,8 @@ func atlasProjectLoadOptions(
 		// The community binary reads no docker block; the default surface
 		// starts the one a selected env references (stokaro/ptah#4041).
 		IgnoreDockerBlocks: policy.IsStrictCE(),
-		// The community binary reads a diff block with a label and applies
-		// nothing in it.
+		// The community binary plans no table rebuild, so it applies no
+		// allow_recreate under any label.
 		IgnoreDialectDiffBlocks: policy.IsStrictCE(),
 		// So a refusal about a for_each env names the command the operator
 		// ran (stokaro/ptah#1696). Empty where no command is in scope, which

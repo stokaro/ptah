@@ -856,7 +856,8 @@ type DiffConfig struct {
 	// a PostgreSQL constraint added NOT VALID and validated separately.
 	OnlineAlter ConfigBool
 	// AllowRecreate holds the `diff "<dialect>" { allow_recreate = ... }`
-	// blocks of an Atlas project file, by the dialect's name. A dialect set to
+	// blocks of an Atlas project file, top-level and env, by the dialect's
+	// name; an env's block merges over the top-level one. A dialect set to
 	// true has its plans create a table again, and keep its rows, where the
 	// engine has no ALTER TABLE for the change. Each value is a tri-state so an
 	// explicit false can override an inherited true.

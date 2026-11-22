@@ -460,8 +460,9 @@ disagrees with its captured identity`), whatever the request.
 `ptah migrations generate --allow-table-rebuild` writes the down direction the same
 way: the reverse of a rebuild is a rebuild back to the previous definition.
 
-On `ptah-compat`, the same change is asked for with a `diff "clickhouse"` block in the
-top level of `atlas.hcl`, or with `PTAH_ALLOW_TABLE_REBUILD=1`:
+On `ptah-compat`, the same change is asked for with a `diff "clickhouse"` block in
+`atlas.hcl`, or with `PTAH_ALLOW_TABLE_REBUILD=1`. The block may sit at the top level
+or in an env, and an env's block merges over the top-level one:
 
 ```hcl
 diff "clickhouse" {
@@ -470,9 +471,11 @@ diff "clickhouse" {
 ```
 
 The block is the Atlas spelling and Ptah reads it per dialect: a label of a dialect
-that has no table rebuild is refused. Atlas Community Edition has no ClickHouse
-driver, and accepts the block and applies nothing from it. The strict policy
-(`PTAH_ATLAS_STRICT_COMPAT=1`) therefore refuses the block as an ignored construct.
+that has no table rebuild is refused. The
+[project configuration page](../../atlas/project-config/) says how the env block, the
+top-level block and the variable combine. Atlas Community Edition has no ClickHouse
+driver and plans no rebuild. The strict policy (`PTAH_ATLAS_STRICT_COMPAT=1`) therefore
+refuses the block as an ignored construct, and refuses the variable.
 The dev-database rehearsal of `ptah-compat` lets the guards read `system.databases`
 and `system.tables`, since a `SELECT` changes no database.
 

@@ -120,7 +120,7 @@ The supported attributes map to Ptah settings as follows:
 | `diff.skip.drop_schema` | Accepted and type-checked; Ptah's planner emits no schema drop for it to suppress |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 | `diff.concurrent_index.drop` | PostgreSQL concurrent index removal for standalone index drops, capability-gated |
-| `diff "clickhouse" { allow_recreate }` | A top-level block. `true` lets a ClickHouse plan create a table again, keeping its rows, where the server has no `ALTER TABLE` for the change; the same request as `PTAH_ALLOW_TABLE_REBUILD=1` for that dialect. Strict compatibility refuses the block as an ignored construct |
+| `diff "clickhouse" { allow_recreate }` | At the top level or in an env, which merges over it. `true` lets a ClickHouse plan create a table again, keeping its rows, where the server has no `ALTER TABLE` for the change, as `PTAH_ALLOW_TABLE_REBUILD=1` does. A nested `skip` or `concurrent_index` is refused. Strict compatibility refuses the block |
 | `env.migration.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 | `env.schema.repo.name` | Accepted and type-checked; no local behavior, matching the community binary |
 

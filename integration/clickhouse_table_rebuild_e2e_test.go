@@ -754,29 +754,45 @@ func TestClickHouseTableRebuild_PlanIsMarkedDestructive(t *testing.T) {
 	c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"t"})
 }
 
-// ptah-compat reads `diff "clickhouse" { allow_recreate = true }`, or the
-// variable, and refuses without either. Atlas Community Edition has no
-// ClickHouse driver, and under its strict policy the block is an ignored
-// construct, which that policy refuses.
+// ptah-compat reads `diff "clickhouse" { allow_recreate = true }` at the top
+// level or in the env, or the variable, and refuses without any. The env block
+// merges over the top-level one, and the variable asks on its own: set, it
+// allows a rebuild a block set to false refuses, and set to false it withdraws
+// nothing a block asked for. Atlas Community Edition has no ClickHouse driver,
+// and under its strict policy each block is an ignored construct and the
+// variable a capability it lacks, so that policy refuses all three.
 func TestClickHouseTableRebuild_CompatSurface(t *testing.T) {
 	const declaration = "CREATE TABLE `t` (`id` UInt64, `name` String, `ver` UInt32, `d` Date) ENGINE = ReplacingMergeTree ORDER BY id;\n"
 	const block = "diff \"clickhouse\" {\n  allow_recreate = true\n}\n"
+	const refusal = "diff \"clickhouse\" {\n  allow_recreate = false\n}\n"
+	const refused = "Ptah creates the table again and keeps its rows when asked with PTAH_ALLOW_TABLE_REBUILD=1"
 	tests := []struct {
 		name       string
 		project    string
+		envBody    string
 		env        []string
 		wantExit   int
 		wantStderr string
 		wantEngine string
 	}{
 		{name: "the block allows it", project: block, wantExit: 0, wantEngine: "ReplacingMergeTree"},
+		{name: "the env block allows it", envBody: block, wantExit: 0, wantEngine: "ReplacingMergeTree"},
 		{name: "the variable allows it", env: []string{"PTAH_ALLOW_TABLE_REBUILD=1"}, wantExit: 0, wantEngine: "ReplacingMergeTree"},
-		{name: "a block set to false refuses", project: "diff \"clickhouse\" {\n  allow_recreate = false\n}\n", wantExit: 1,
-			wantStderr: "Ptah creates the table again and keeps its rows when asked with PTAH_ALLOW_TABLE_REBUILD=1", wantEngine: "MergeTree"},
-		{name: "no request refuses", wantExit: 1,
-			wantStderr: "Ptah creates the table again and keeps its rows when asked with PTAH_ALLOW_TABLE_REBUILD=1", wantEngine: "MergeTree"},
+		{name: "the env block allows it over a top-level refusal", project: refusal, envBody: block, wantExit: 0, wantEngine: "ReplacingMergeTree"},
+		{name: "the variable allows it over a block set to false", project: refusal, envBody: refusal,
+			env: []string{"PTAH_ALLOW_TABLE_REBUILD=1"}, wantExit: 0, wantEngine: "ReplacingMergeTree"},
+		{name: "a variable set to false leaves the block's request", project: block,
+			env: []string{"PTAH_ALLOW_TABLE_REBUILD=0"}, wantExit: 0, wantEngine: "ReplacingMergeTree"},
+		{name: "a block set to false refuses", project: refusal, wantExit: 1, wantStderr: refused, wantEngine: "MergeTree"},
+		{name: "the env block refuses over a top-level request", project: block, envBody: refusal, wantExit: 1,
+			wantStderr: refused, wantEngine: "MergeTree"},
+		{name: "no request refuses", wantExit: 1, wantStderr: refused, wantEngine: "MergeTree"},
 		{name: "strict compatibility refuses the block", project: block, env: []string{"PTAH_ATLAS_STRICT_COMPAT=1"}, wantExit: 1,
 			wantStderr: `strict compatibility refuses ignored atlas.hcl block "diff"`, wantEngine: "MergeTree"},
+		{name: "strict compatibility refuses the env block", envBody: block, env: []string{"PTAH_ATLAS_STRICT_COMPAT=1"}, wantExit: 1,
+			wantStderr: `strict compatibility refuses ignored atlas.hcl block "diff"`, wantEngine: "MergeTree"},
+		{name: "strict compatibility refuses the variable", env: []string{"PTAH_ATLAS_STRICT_COMPAT=1", "PTAH_ALLOW_TABLE_REBUILD=1"}, wantExit: 1,
+			wantStderr: "PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD", wantEngine: "MergeTree"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -786,7 +802,8 @@ func TestClickHouseTableRebuild_CompatSurface(t *testing.T) {
 			rebuildExec(c, conn, rebuildCreate, rebuildFixtureRows)
 			dir := c.TempDir()
 			c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(declaration), 0o600), qt.IsNil)
-			project := test.project + "env \"local\" {\n  url = \"" + url + "\"\n  src = \"file://schema.sql\"\n  dev = \"" + devURL + "\"\n}\n"
+			project := test.project + "env \"local\" {\n  url = \"" + url + "\"\n  src = \"file://schema.sql\"\n  dev = \"" + devURL + "\"\n" +
+				test.envBody + "}\n"
 			c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
 
 			applied := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: append(environmentWithoutPtahVariables(), test.env...)},
