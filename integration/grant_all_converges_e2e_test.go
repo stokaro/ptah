@@ -3,13 +3,17 @@
 package integration_test
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/platform"
 )
 
 // grantAllTable is what GRANT ALL on a table grants on each engine, one
@@ -28,20 +32,52 @@ var grantAllTable = map[string][]string{
 	},
 }
 
-// grantAllDatabaseCount is how many privileges GRANT ALL on a database grants
-// on each engine: MariaDB 11.8 adds DELETE HISTORY and SHOW CREATE ROUTINE to
-// MySQL's list.
-var grantAllDatabaseCount = map[string]int{"MySQL": 18, "MariaDB": 20}
-
-// databasePrivileges is how many privileges the server holds for the role on
-// the whole database.
-func (r columnGrantRun) databasePrivileges(c *qt.C) int {
+// grantAllOnDatabase is what GRANT ALL on a database grants on the server
+// admin reaches, in order, as the descriptor of dialect states it: every
+// privilege ALL requires there, and each optional one the server's own
+// privilege list names. MariaDB 11.4 and later grant SHOW CREATE ROUTINE,
+// and 10.11 has no such privilege.
+func grantAllOnDatabase(c *qt.C, admin *sql.DB, dialect string) []string {
 	c.Helper()
-	var held int
-	c.Assert(r.scratch.admin.QueryRowContext(c.Context(), `
-		SELECT COUNT(*) FROM information_schema.SCHEMA_PRIVILEGES
-		WHERE TABLE_SCHEMA = ? AND SUBSTRING_INDEX(GRANTEE, '@', 1) = CONCAT('''', ?, '''')`,
-		r.database, r.role).Scan(&held), qt.IsNil)
+	described, found := platform.Lookup(dialect)
+	c.Assert(found, qt.IsTrue, qt.Commentf("dialect %q", dialect))
+	rows, err := admin.QueryContext(c.Context(), "SHOW PRIVILEGES")
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	known := make(map[string]bool)
+	for rows.Next() {
+		var privilege, context, comment string
+		c.Assert(rows.Scan(&privilege, &context, &comment), qt.IsNil)
+		known[strings.ToUpper(privilege)] = true
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+
+	required := described.AllPrivileges.Required("SCHEMA")
+	want := slices.DeleteFunc(described.AllPrivileges.All("SCHEMA"), func(privilege string) bool {
+		return !slices.Contains(required, privilege) && !known[privilege]
+	})
+	slices.Sort(want)
+	return want
+}
+
+// databasePrivileges is what the server holds for the role on the whole
+// database, in order.
+func (r columnGrantRun) databasePrivileges(c *qt.C) []string {
+	c.Helper()
+	rows, err := r.scratch.admin.QueryContext(c.Context(), `
+		SELECT PRIVILEGE_TYPE FROM information_schema.SCHEMA_PRIVILEGES
+		WHERE TABLE_SCHEMA = ? AND SUBSTRING_INDEX(GRANTEE, '@', 1) = CONCAT('''', ?, '''')
+		ORDER BY PRIVILEGE_TYPE`,
+		r.database, r.role)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var held []string
+	for rows.Next() {
+		var privilege string
+		c.Assert(rows.Scan(&privilege), qt.IsNil)
+		held = append(held, privilege)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
 	return held
 }
 
@@ -110,7 +146,7 @@ func TestSchemaApplyMySQLFamilyGrantAllOnDatabaseConvergesE2E(t *testing.T) {
 					applied := run.apply(c, test.declared, "--auto-approve", "--schema-file", grants)
 
 					c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-					c.Assert(run.databasePrivileges(c), qt.Equals, grantAllDatabaseCount[engine.name])
+					c.Assert(run.databasePrivileges(c), qt.DeepEquals, grantAllOnDatabase(c, run.scratch.admin, strings.ToLower(engine.name)))
 				}
 				again := run.apply(c, test.declared, "--dry-run", "--schema-file", grants)
 
@@ -143,7 +179,7 @@ func TestSchemaApplySQLServerGrantAllConvergesE2E(t *testing.T) {
 				applied := server.apply(c, test.declared, "--auto-approve")
 
 				c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-				c.Assert(server.privileges(c), qt.DeepEquals, []string{"DELETE", "INSERT", "REFERENCES", "SELECT", "UPDATE"})
+				c.Assert(server.privileges(c), qt.DeepEquals, []string{"DELETE G", "INSERT G", "REFERENCES G", "SELECT G", "UPDATE G"})
 			}
 			again := server.apply(c, test.declared, "--dry-run")
 
