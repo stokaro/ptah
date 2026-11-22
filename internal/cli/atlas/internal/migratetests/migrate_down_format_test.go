@@ -153,6 +153,8 @@ func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "down",
+		// The whole history, so both migrations are planned.
+		"--to-version", "0",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
 		"--dry-run",
@@ -187,6 +189,8 @@ func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "down",
+		// The whole history, so both migrations are planned.
+		"--to-version", "0",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
 		"--dry-run",
@@ -299,6 +303,8 @@ func TestCompatCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "down",
+		// The whole history, so both migrations are planned.
+		"--to-version", "0",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
 		"--dry-run",
@@ -565,6 +571,8 @@ func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testi
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "down",
+		// The whole history, so both migrations are planned.
+		"--to-version", "0",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
 		"--format", "{{ json . }}",
@@ -607,6 +615,8 @@ func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "down",
+		// The whole history, so both migrations are planned.
+		"--to-version", "0",
 		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
 		"--env", "local",
 		"--dry-run",
@@ -663,9 +673,14 @@ func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {
 			want: `invalid --to-version "banana": .*`,
 		},
 		{
-			name: "positional_rejected",
+			name: "non_numeric_amount_rejected",
 			args: []string{"--format", "{{ json . }}", "stray"},
-			want: `atlas migrate down accepts no arguments, got \["stray"\]`,
+			want: `invalid amount argument "stray" \(invalid syntax\)\. Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name: "second_amount_rejected",
+			args: []string{"--format", "{{ json . }}", "1", "2"},
+			want: `accepts at most 1 arg\(s\), received 2`,
 		},
 		{
 			name: "native_only_flag_rejected",
@@ -766,6 +781,8 @@ func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "down",
+		// The whole history, so both migrations are planned.
+		"--to-version", "0",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
 		"--dry-run",

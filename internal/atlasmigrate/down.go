@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/rollbacklimit"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -21,8 +22,12 @@ type DownOptions struct {
 	// Dir is the resolved migration directory path used for diagnostics.
 	Dir string
 	// FS is the already captured migration filesystem to roll back.
-	FS                   fs.FS
-	TargetVersion        int64
+	FS            fs.FS
+	TargetVersion int64
+	// Limit, when above 0, reverts the last Limit applied migrations, and the
+	// version the rollback stops at is read from the history; see
+	// [rollbacklimit.Target]. It is refused beside a TargetVersion above 0.
+	Limit                uint64
 	DryRun               bool
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
@@ -121,6 +126,9 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	applied, err := mig.GetAppliedMigrations(ctx)
 	if err != nil {
 		return DownPlan{}, fmt.Errorf("error getting applied migrations: %w", err)
+	}
+	if opts.Limit > 0 {
+		opts.TargetVersion = rollbacklimit.Target(applied, opts.Limit)
 	}
 	return DownPlan{
 		Status:          status,
@@ -224,7 +232,57 @@ func validateDownOptions(conn *dbschema.DatabaseConnection, opts DownOptions) er
 	if opts.TargetVersion < 0 {
 		return errors.New("migrate down target version must be greater than or equal to zero")
 	}
+	if opts.Limit > 0 && opts.TargetVersion > 0 {
+		return errors.New("migrate down takes a target version or a limit, not both")
+	}
 	return nil
+}
+
+// DownStop is what one `migrate down` invocation says about where the
+// rollback stops: the amount argument, --to-version and --to-tag.
+type DownStop struct {
+	// Amount is the amount argument, 0 when none was given.
+	Amount uint64
+	// ToVersion is the --to-version value, and ToVersionGiven reports that
+	// the flag or its variable gave one, an empty value included.
+	ToVersion      string
+	ToVersionGiven bool
+	// ToTag is the --to-tag value, and ToTagGiven reports that the flag or
+	// its variable gave one, an empty value included.
+	ToTag      string
+	ToTagGiven bool
+}
+
+// Limit returns how many applied migrations the rollback reverts, counting
+// back from the last one: the amount when one was given, 1 when nothing names
+// where to stop, and 0 when --to-version or --to-tag names the stop instead.
+// The default of 1 is the documented one, which reverts the last applied
+// file: https://atlasgo.io/versioned/down.
+//
+// It refuses two of the three together, since each names where to stop and
+// preferring one would roll back to a version the operator did not choose,
+// and a version or tag that is empty or blank, which names no stop and would
+// otherwise read as absent.
+func (s DownStop) Limit() (uint64, error) {
+	if s.ToVersionGiven && strings.TrimSpace(s.ToVersion) == "" {
+		return 0, errors.New("--to-version is empty: give it a version, or leave it out to revert the last applied migration")
+	}
+	if s.ToTagGiven && strings.TrimSpace(s.ToTag) == "" {
+		return 0, errors.New("--to-tag is empty: give it a tag, or leave it out to revert the last applied migration")
+	}
+	if s.ToVersionGiven && s.ToTagGiven {
+		return 0, errors.New("--to-version and --to-tag both name where to stop; pass one")
+	}
+	if s.Amount > 0 && s.ToVersionGiven {
+		return 0, errors.New("the amount argument and --to-version both name where to stop; pass one")
+	}
+	if s.Amount > 0 && s.ToTagGiven {
+		return 0, errors.New("the amount argument and --to-tag both name where to stop; pass one")
+	}
+	if s.ToVersionGiven || s.ToTagGiven {
+		return 0, nil
+	}
+	return max(s.Amount, 1), nil
 }
 
 // plannedDownVersions selects the applied versions above the target, newest

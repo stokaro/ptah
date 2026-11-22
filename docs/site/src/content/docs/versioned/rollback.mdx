@@ -109,6 +109,14 @@ Database is now at version: 1785255953
 Rollback always takes an explicit `--target`: the version the database should
 end up at. Everything applied above it is rolled back, newest first.
 
+To count instead of naming a version, pass `--limit N`: the last N applied
+migrations are rolled back, and a limit larger than the history rolls back
+every applied migration. `--limit` is refused beside `--target` or `--to-tag`,
+since each names where the rollback stops. `ptah-compat migrate down` counts
+the same way: with no amount, version or tag it rolls back the last applied
+migration, and `ptah-compat migrate down 2` rolls back up to two, as the
+[Atlas documentation](https://atlasgo.io/versioned/down) describes.
+
 Check where the database is first:
 
 ```console

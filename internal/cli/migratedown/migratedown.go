@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/lintext"
@@ -40,6 +41,7 @@ import (
 	"ptah.run/internal/onlineddl"
 	"ptah.run/internal/preflight"
 	"ptah.run/internal/repaircommand"
+	"ptah.run/internal/rollbacklimit"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
@@ -50,6 +52,7 @@ const (
 	migrationsFlag           = "migrations-dir"
 	targetFlag               = "target"
 	toTagFlag                = "to-tag"
+	limitFlag                = "limit"
 	skipChecksFlag           = "skip-checks"
 	planFlag                 = "plan"
 	shadowDBFlag             = "shadow-db"
@@ -78,6 +81,7 @@ type options struct {
 	target               string
 	shadowDB             string
 	toTag                string
+	limit                uint64
 	skipChecks           bool
 	plan                 bool
 	dirFormat            string
@@ -177,6 +181,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Ephemeral shadow database URL where the rollback plan is replayed and verified before touching the target")
 	flags.StringVar(&opts.toTag, toTagFlag, "",
 		"Migration tag to roll back to, resolved against the tags recorded by `migrations tag`")
+	flags.Uint64Var(&opts.limit, limitFlag, 0,
+		"Roll back only the last N applied migrations (0 sets no limit); exclusive with --"+targetFlag+" and --"+toTagFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false,
 		"Skip the pre-migration checks embedded in the down migrations being rolled back")
 	flags.BoolVar(&opts.plan, planFlag, false,
@@ -430,8 +436,8 @@ var errJSONNeedsConfirmation = fmt.Errorf("--%s needs --%s or --%s: a run that p
 	jsonFlag, confirmFlag, dryRunFlag)
 
 func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
-	if opts.jsonOutput && !opts.skipConfirm && !opts.dryRun {
-		return errJSONNeedsConfirmation
+	if err := refuseFlagCombinations(cmd.Flags(), opts); err != nil {
+		return err
 	}
 	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
 		return err
@@ -606,22 +612,20 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		cmd.SetContext(ctx)
 		defer cmd.SetContext(outer)
 
-		// A tag names a directory state; resolving it before the target line
-		// means the line reports the version the rollback will actually stop at
-		// rather than the numeric default the tag replaced.
-		if resolvedOpts.toTag != "" {
-			if targetVersion, err = resolveDownTag(cmd, emit, downTagResolution{
-				toTag:            resolvedOpts.toTag,
-				conn:             conn,
-				migrationsFS:     migrationsFS,
-				dirFormat:        dirFormat,
-				migrationsSchema: migrationsSchema,
-				migrationsTable:  migrationsTable,
-				migrationsEngine: opts.migrationsEngine,
-				revisionFormat:   revisionFormat,
-			}); err != nil {
-				return err
-			}
+		// Resolved before the target line, so the line reports the version
+		// the rollback stops at rather than the numeric default a tag or a
+		// limit replaced.
+		if targetVersion, err = resolveStop(cmd, emit, mig, opts.limit, targetVersion, downTagResolution{
+			toTag:            resolvedOpts.toTag,
+			conn:             conn,
+			migrationsFS:     migrationsFS,
+			dirFormat:        dirFormat,
+			migrationsSchema: migrationsSchema,
+			migrationsTable:  migrationsTable,
+			migrationsEngine: opts.migrationsEngine,
+			revisionFormat:   revisionFormat,
+		}); err != nil {
+			return err
 		}
 		emit.Printf("Target version: %s\n", mig.VersionLabel(targetVersion))
 		emit.Println()
@@ -979,6 +983,83 @@ func refuseMalformedTarget(value string) error {
 		return fmt.Errorf("invalid target version %q: the target is empty", value)
 	}
 	return nil
+}
+
+// refuseFlagCombinations refuses, before anything is read or connected, the
+// flag combinations the command cannot run with: --json without --confirm or
+// --dry-run, see [errJSONNeedsConfirmation], and --limit beside a flag that
+// names where the rollback stops, see [limitBesideStop].
+func refuseFlagCombinations(flags *pflag.FlagSet, opts *options) error {
+	if opts.jsonOutput && !opts.skipConfirm && !opts.dryRun {
+		return errJSONNeedsConfirmation
+	}
+	for _, stop := range []string{targetFlag, toTagFlag} {
+		if err := limitBesideStop(flags, opts, stop); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// limitBesideStop settles --limit against stop, --target or --to-tag. Each
+// names where the rollback stops and none outranks the other, so the two are
+// refused together, as `migrations up` refuses --limit beside --to-version. A
+// flag typed on the command line decides the run and withdraws the other's
+// environment value, as [cmdflags.ExclusiveValues] does; two values from the
+// environment alone are refused naming both variables.
+//
+// A limit of 0 sets no limit and an empty --to-tag names no tag, so neither
+// takes part. A --target takes part whatever its value once it is given: 0, its
+// default, is the version the whole history rolls back to, so it is a stop
+// rather than the absence of one, which is why this does not read the flag's
+// default as no value the way [cmdflags.ExclusiveValues] does.
+func limitBesideStop(flags *pflag.FlagSet, opts *options, stop string) error {
+	stopGiven := flags.Changed(stop)
+	if stop == toTagFlag {
+		stopGiven = opts.toTag != ""
+	}
+	if opts.limit == 0 || !stopGiven {
+		return nil
+	}
+	limitTyped := cmdflags.SetOnCommandLine(flags, limitFlag)
+	stopTyped := cmdflags.SetOnCommandLine(flags, stop)
+	switch {
+	case limitTyped && stopTyped:
+		return fmt.Errorf("--%s and --%s both name where to stop; pass one", limitFlag, stop)
+	case limitTyped:
+		return cmdflags.WithdrawEnvValue(flags, stop)
+	case stopTyped:
+		return cmdflags.WithdrawEnvValue(flags, limitFlag)
+	}
+	limitEnv, _ := cmdflags.AppliedEnvName(flags, limitFlag)
+	stopEnv, _ := cmdflags.AppliedEnvName(flags, stop)
+	return fmt.Errorf("%s and %s both name where to stop; unset one", limitEnv, stopEnv)
+}
+
+// resolveStop returns the version the rollback stops at: the one --to-tag
+// names, or with --limit the one below the last limit applied migrations, read
+// from the history the run's migration lock holds still. With neither it is
+// target, the --target value. A tag names a directory state, so it is
+// resolved under the lock too.
+func resolveStop(
+	cmd *cobra.Command,
+	emit cliobs.Emitter,
+	mig *migrator.Migrator,
+	limit uint64,
+	target int64,
+	tag downTagResolution,
+) (int64, error) {
+	if tag.toTag != "" {
+		return resolveDownTag(cmd, emit, tag)
+	}
+	if limit == 0 {
+		return target, nil
+	}
+	applied, err := mig.GetAppliedMigrations(cmd.Context())
+	if err != nil {
+		return 0, fmt.Errorf("error getting applied migrations: %w", err)
+	}
+	return rollbacklimit.Target(applied, limit), nil
 }
 
 // emitMigrateDownSummary says how the rollback ended.

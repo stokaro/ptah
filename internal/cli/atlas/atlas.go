@@ -27,7 +27,6 @@ import (
 	"ptah.run/internal/cli/internal/licensetext"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/migratecheckpoint"
-	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/cli/migrateedit"
 	"ptah.run/internal/cli/migratels"
 	"ptah.run/internal/cli/migraterebase"
@@ -67,6 +66,12 @@ type atlasVerb struct {
 	// behavior change for existing callers, and each verb's own measurement is
 	// what says whether the mirrored one refuses.
 	requireDirScheme bool
+	// finishNativeArgs completes the native arguments once every Atlas value,
+	// variable and positional is mapped: a default the Atlas contract implies
+	// when nothing named the value, or a refusal of a combination the
+	// contract does not allow, returned as the command's error unchanged. Nil
+	// forwards them as mapped.
+	finishNativeArgs func(native []string) ([]string, error)
 	// writesDir marks a verb that can CREATE the migration directory it was
 	// pointed at. New uses this marker for its command-line scheme gate; diff
 	// owns the same gate separately, as do the read-only hash, validate, status
@@ -92,6 +97,11 @@ type atlasPositionalArg struct {
 	// silently keep the last and drop the rest, which is the failure the
 	// refusal exists to prevent.
 	repeatable bool
+	// mapAll, when set, maps every value given for the positional, none
+	// included, to native arguments in place of the rules above, and its
+	// refusal is the command's error unchanged, for an argument the Atlas
+	// contract refuses in words of its own.
+	mapAll func(values []string) ([]string, error)
 }
 
 const (
@@ -739,10 +749,24 @@ func newAtlasUnsupportedCommand(verb atlasUnsupportedVerb) *cobra.Command {
 
 func atlasMigrateDownVerb() atlasVerb {
 	return atlasVerb{
-		use:     "down",
-		short:   "Roll back migrations",
-		native:  "migrations down",
-		factory: migratedown.NewMigrateDownCommand,
+		use:        "down",
+		displayUse: "down [flags] [amount]",
+		short:      "Roll back migrations",
+		native:     "migrations down",
+		factory:    atlasMigrateDownTarget,
+		// The amount argument counts back from the last applied migration,
+		// `migrate down 2` reverting up to two, and with neither an amount nor
+		// a version or tag the documented default reverts the last applied
+		// file: https://atlasgo.io/versioned/down. The native rollback counts
+		// with --limit, and [atlasMigrateDownStop] forwards a limit of 1 where
+		// nothing names where to stop.
+		positionals: []atlasPositionalArg{{
+			name:       "amount",
+			nativeName: atlasMigrateDownLimitFlag,
+			mapAll:     atlasMigrateDownAmount,
+		}},
+		positionalOptional: true,
+		finishNativeArgs:   atlasMigrateDownStop,
 		// An Atlas-surface verb defaults to the Atlas revision-table layout, like
 		// `migrate set` above: without this prefix the native --revision-format
 		// default of "ptah" silently no-ops against the atlas_schema_revisions
@@ -794,7 +818,10 @@ func atlasMigrateDownVerb() atlasVerb {
 			// verifies the pre-planned rollback on the same throwaway database
 			// before touching the target (native --shadow-db).
 			atlasargs.NativeString("dev-url", "", "Dev database URL the rollback plan is verified on before applying it", "shadow-db"),
-			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
+			// The native name's variable, PTAH_TARGET, is read here as a value
+			// of --to-version, so the adapter sees every version it is given
+			// before it decides whether the run counts back instead.
+			atlasMigrateDownToVersionFlag(),
 			// --to-tag resolves against the tags `ptah migrations tag` records
 			// in the database, not against a hosted registry. The waiver this
 			// replaces said migration tags require one; they do not, and the
@@ -1556,7 +1583,13 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
 			return nil, nil, err
 		}
+		positionalArgs := args
 		args, nativeTail, err := mapAtlasPositionalArgs(group, verb, args)
+		if _, refused := errors.AsType[*atlasPositionalRefusal](err); refused {
+			if unknown := atlasUnknownFlag(cmd, verb, positionalArgs); unknown != nil {
+				return nil, nil, unknown
+			}
+		}
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1578,6 +1611,11 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
 		mapped = append(mapped, project.nativeArgs...)
 		mapped = append(mapped, nativeTail...)
+		if verb.finishNativeArgs != nil {
+			if mapped, err = verb.finishNativeArgs(mapped); err != nil {
+				return nil, nil, err
+			}
+		}
 		return mapped, project.context, nil
 	}
 }
@@ -1783,6 +1821,36 @@ func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) err
 // flag name is never re-mapped when it collides with an Atlas flag name of the
 // same verb (for example the native test-case --dir versus the Atlas
 // migration-directory --dir).
+// atlasPositionalRefusal is a refusal of the positional arguments that an
+// [atlasPositionalArg.mapAll] returned. An unknown flag is reported in its
+// place, see [atlasUnknownFlag].
+type atlasPositionalRefusal struct {
+	err error
+}
+
+func (r *atlasPositionalRefusal) Error() string { return r.err.Error() }
+
+func (r *atlasPositionalRefusal) Unwrap() error { return r.err }
+
+// atlasUnknownFlag returns pflag's refusal of the first flag in args that
+// neither cmd nor the native command verb forwards to declares, and nil when
+// every flag is declared. The value after an unknown flag reads as a
+// positional argument, so a positional refusal waits for this answer: cobra
+// names the unknown flag before it checks the arguments, and `--lock-nam
+// probe` is refused as the flag it misspells rather than as an amount of
+// "probe". The flags are read and never written; see [cmdflags.ParseOnly].
+func atlasUnknownFlag(cmd *cobra.Command, verb atlasVerb, args []string) error {
+	sets := []*pflag.FlagSet{cmd.LocalFlags(), cmd.InheritedFlags()}
+	if verb.factory != nil {
+		sets = append(sets, verb.factory().LocalFlags())
+	}
+	err := cmdflags.ParseOnly(sets...).Parse(args)
+	if _, unknown := errors.AsType[*pflag.NotExistError](err); unknown {
+		return err
+	}
+	return nil
+}
+
 func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remaining, nativeTail []string, err error) {
 	if len(verb.positionals) == 0 {
 		return args, nil, nil
@@ -1792,6 +1860,13 @@ func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remain
 	}
 	withoutPositionals, positionals := splitAtlasPositionals(atlasPositionalValueFlags(verb), args)
 	positional := verb.positionals[0]
+	if positional.mapAll != nil {
+		tail, err := positional.mapAll(positionals)
+		if err != nil {
+			return withoutPositionals, nil, &atlasPositionalRefusal{err: err}
+		}
+		return withoutPositionals, tail, nil
+	}
 	switch len(positionals) {
 	case 0:
 		if verb.positionalOptional {

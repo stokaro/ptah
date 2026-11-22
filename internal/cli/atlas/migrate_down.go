@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/envbool"
@@ -93,6 +94,8 @@ type atlasMigrateDownFormatOptions struct {
 	toTag      string
 	skipChecks bool
 	plan       bool
+	// amount is the amount argument, 0 when none was given.
+	amount uint64
 
 	flagSet *pflag.FlagSet
 	// rawDir preserves the pre-resolution --dir value for the report's Env.Dir.
@@ -157,6 +160,18 @@ func runAtlasMigrateDownFormat(
 	}
 	if opts.dir == "" {
 		return fmt.Errorf("migrations directory is required")
+	}
+	limit, err := atlasmigrate.DownStop{
+		Amount: opts.amount,
+		// The environment fallback fills a value without marking the flag
+		// changed, so a value is what says a variable gave one.
+		ToVersion:      opts.toVersion,
+		ToVersionGiven: opts.flagSet.Changed("to-version") || opts.toVersion != "",
+		ToTag:          opts.toTag,
+		ToTagGiven:     opts.flagSet.Changed("to-tag") || opts.toTag != "",
+	}.Limit()
+	if err != nil {
+		return err
 	}
 	targetVersion, err := parseAtlasMigrateDownTarget(opts.toVersion)
 	if err != nil {
@@ -242,6 +257,7 @@ func runAtlasMigrateDownFormat(
 		Dir:                  dir,
 		FS:                   source.FileSystem,
 		TargetVersion:        targetVersion,
+		Limit:                limit,
 		DryRun:               opts.dryRun,
 		RevisionsSchema:      revisiontable.Schema(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout: migrationLockTimeout,
@@ -251,6 +267,9 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
+	// A run that counts back stops at the version the plan read from the
+	// history, which the dev replay and the report name.
+	targetVersion = plan.TargetVersion
 
 	// A rollback with nothing to replay still opens the dev database it was
 	// given, so a --dev-url nothing answers on fails here and not on the next
@@ -369,9 +388,11 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 	if err := flagSet.Parse(args); err != nil {
 		return nil, fmt.Errorf("atlas migrate down: %w", err)
 	}
-	if flagSet.NArg() > 0 {
-		return nil, fmt.Errorf("atlas migrate down accepts no arguments, got %q", flagSet.Args())
+	amount, err := atlasmigrate.ParseDownAmount(flagSet.Args())
+	if err != nil {
+		return nil, err
 	}
+	opts.amount = amount
 	if err := applyAtlasMigrateDownEnvFallback(flagSet); err != nil {
 		return nil, err
 	}
@@ -572,9 +593,8 @@ func atlasDownEffective(
 func parseAtlasMigrateDownTarget(value string) (int64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		// The forward path maps a missing --to-version to the native --target
-		// default of 0, rolling back everything; the format path keeps the same
-		// semantics so both outputs describe the same operation.
+		// No version: the run counts back from the last applied migration
+		// instead, by the limit [atlasmigrate.DownStop.Limit] returns.
 		return 0, nil
 	}
 	target, err := strconv.ParseInt(value, 10, 64)
@@ -619,4 +639,74 @@ func resolveAtlasDownFormatTag(
 		WithMigrationsEngine(migrationsEngineFromEnv()).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	return resolver.ResolveMigrationTag(ctx, opts.toTag)
+}
+
+// atlasMigrateDownLimitFlag is the native rollback flag the amount argument and
+// the documented default forward to.
+const atlasMigrateDownLimitFlag = "limit"
+
+// atlasMigrateDownTarget is the native rollback `migrate down` forwards to,
+// with PTAH_LIMIT unbound. The adapter decides how many migrations a run that
+// counts back reverts, from the amount argument or the documented default, so
+// the target must not read a value of its own in its place.
+func atlasMigrateDownTarget() *cobra.Command {
+	cmd := migratedown.NewMigrateDownCommand()
+	if err := cmdflags.DisableEnvBinding(cmd.Flags(), atlasMigrateDownLimitFlag); err != nil {
+		panic(err)
+	}
+	return cmd
+}
+
+// atlasMigrateDownToVersionFlag is --to-version, which reads the native
+// flag's variable PTAH_TARGET as a value of its own when PTAH_TO_VERSION is
+// absent or empty. The adapter then sees every version the run is given
+// before [atlasMigrateDownStop] decides whether the run counts back instead.
+func atlasMigrateDownToVersionFlag() atlasargs.Flag {
+	flag := atlasargs.NativeString("to-version", "", "Target version to roll back to", "target")
+	flag.NativeEnv = true
+	return flag
+}
+
+// atlasMigrateDownAmount maps the amount argument to the native --limit. No
+// argument forwards nothing, and [atlasMigrateDownStop] decides the default.
+func atlasMigrateDownAmount(values []string) ([]string, error) {
+	amount, err := atlasmigrate.ParseDownAmount(values)
+	if err != nil {
+		return nil, err
+	}
+	if amount == 0 {
+		return nil, nil
+	}
+	return []string{"--" + atlasMigrateDownLimitFlag, strconv.FormatUint(amount, 10)}, nil
+}
+
+// atlasMigrateDownStop decides where a forwarded rollback stops, from the
+// native arguments every Atlas value mapped to. With no amount, version or
+// tag it forwards a limit of 1, the documented default; see
+// [atlasmigrate.DownStop.Limit], which the --format path reads too.
+func atlasMigrateDownStop(native []string) ([]string, error) {
+	limitValue, limitGiven := atlasNativeArgValue(native, atlasMigrateDownLimitFlag)
+	toVersion, toVersionGiven := atlasNativeArgValue(native, "target")
+	toTag, toTagGiven := atlasNativeArgValue(native, "to-tag")
+	stop := atlasmigrate.DownStop{
+		ToVersion:      toVersion,
+		ToVersionGiven: toVersionGiven,
+		ToTag:          toTag,
+		ToTagGiven:     toTagGiven,
+	}
+	if limitGiven {
+		amount, err := strconv.ParseUint(limitValue, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("atlas migrate down: forwarded limit %q: %w", limitValue, err)
+		}
+		stop.Amount = amount
+	}
+	limit, err := stop.Limit()
+	if err != nil {
+		return nil, err
+	}
+	if limit == 0 || limitGiven {
+		return native, nil
+	}
+	return append(native, "--"+atlasMigrateDownLimitFlag, strconv.FormatUint(limit, 10)), nil
 }

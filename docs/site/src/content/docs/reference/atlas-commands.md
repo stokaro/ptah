@@ -812,6 +812,18 @@ Native twin:
 
 Forwards to `ptah migrations down` with mapped Atlas flags.
 
+With no amount, `--to-version` or `--to-tag`, it reverts the last applied
+migration, as the [Atlas documentation](https://atlasgo.io/versioned/down)
+describes. The optional amount argument counts back from the last applied
+migration: `ptah-compat migrate down 2` reverts two, and an amount larger than
+the history reverts every applied migration. The amount is read the way
+`migrate apply` reads its own, so `0`, a negative number and a non-number are
+refused in the same words, with `revert` in place of `apply`. It forwards as
+the native `--limit`. An amount beside `--to-version` or `--to-tag` is refused,
+and so is a `--to-version` or `--to-tag` that is empty, since it names no stop.
+The community binary has no `migrate down`, so the documentation is the
+reference for this behavior.
+
 | Flag | Behavior |
 | --- | --- |
 | `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |
