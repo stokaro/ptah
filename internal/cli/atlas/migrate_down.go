@@ -163,12 +163,12 @@ func runAtlasMigrateDownFormat(
 	}
 	limit, err := atlasmigrate.DownStop{
 		Amount: opts.amount,
-		// The environment fallback fills a value without marking the flag
-		// changed, so a value is what says a variable gave one.
+		// The environment fallback marks the flag changed when its variable
+		// gives a value, and reads an empty variable as absent.
 		ToVersion:      opts.toVersion,
-		ToVersionGiven: opts.flagSet.Changed("to-version") || opts.toVersion != "",
+		ToVersionGiven: opts.flagSet.Changed("to-version"),
 		ToTag:          opts.toTag,
-		ToTagGiven:     opts.flagSet.Changed("to-tag") || opts.toTag != "",
+		ToTagGiven:     opts.flagSet.Changed("to-tag"),
 	}.Limit()
 	if err != nil {
 		return err
@@ -646,25 +646,21 @@ func resolveAtlasDownFormatTag(
 const atlasMigrateDownLimitFlag = "limit"
 
 // atlasMigrateDownTarget is the native rollback `migrate down` forwards to,
-// with PTAH_LIMIT unbound. The adapter decides how many migrations a run that
-// counts back reverts, from the amount argument or the documented default, so
-// the target must not read a value of its own in its place.
+// with PTAH_LIMIT and PTAH_TARGET unbound. The adapter decides where every
+// forwarded run stops, from the amount argument, --to-version and its
+// PTAH_TO_VERSION, --to-tag, or the documented default, and forwards that
+// stop typed. A variable the target read itself would be a second decision:
+// a malformed PTAH_LIMIT would refuse a run the adapter had settled, and a
+// PTAH_TARGET the --format path does not read would make the two paths stop
+// at different versions.
 func atlasMigrateDownTarget() *cobra.Command {
 	cmd := migratedown.NewMigrateDownCommand()
-	if err := cmdflags.DisableEnvBinding(cmd.Flags(), atlasMigrateDownLimitFlag); err != nil {
-		panic(err)
+	for _, name := range []string{atlasMigrateDownLimitFlag, "target"} {
+		if err := cmdflags.DisableEnvBinding(cmd.Flags(), name); err != nil {
+			panic(err)
+		}
 	}
 	return cmd
-}
-
-// atlasMigrateDownToVersionFlag is --to-version, which reads the native
-// flag's variable PTAH_TARGET as a value of its own when PTAH_TO_VERSION is
-// absent or empty. The adapter then sees every version the run is given
-// before [atlasMigrateDownStop] decides whether the run counts back instead.
-func atlasMigrateDownToVersionFlag() atlasargs.Flag {
-	flag := atlasargs.NativeString("to-version", "", "Target version to roll back to", "target")
-	flag.NativeEnv = true
-	return flag
 }
 
 // atlasMigrateDownAmount maps the amount argument to the native --limit. No

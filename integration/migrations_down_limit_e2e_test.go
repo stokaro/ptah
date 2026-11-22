@@ -21,7 +21,8 @@ const limitHistoryFormat = "{{ .Current }}->{{ .Target }}"
 
 // `ptah-compat migrate down` with no amount reverts the last applied migration,
 // and `migrate down 2` reverts up to two, as https://atlasgo.io/versioned/down
-// documents; an amount above the history reverts what is applied. Each row
+// documents; an amount above the history reverts what is applied. The native
+// variables PTAH_TARGET and PTAH_LIMIT are not read on this surface. Each row
 // applies versions 1, 2 and 3, which create a, b and c, and reads back which
 // tables and revision rows are left.
 func TestAtlasMigrateDownAmountE2E_HappyPath(t *testing.T) {
@@ -68,8 +69,36 @@ func TestAtlasMigrateDownAmountE2E_HappyPath(t *testing.T) {
 			wantRevisions: []string{"1"},
 		},
 		{
-			name:          "PTAH_TARGET names the stop",
+			// PTAH_TO_VERSION is this surface's variable. PTAH_TARGET belongs
+			// to the native command the run forwards to, which does not read it.
+			name:          "PTAH_TARGET is not read",
 			env:           []string{"PTAH_TARGET=1"},
+			wantStdout:    "Target version: 2\n",
+			wantTables:    []string{"a", "b"},
+			wantRevisions: []string{"1", "2"},
+		},
+		{
+			name:          "PTAH_TARGET is not read beside an amount",
+			args:          []string{"1"},
+			env:           []string{"PTAH_TARGET=1"},
+			wantStdout:    "Target version: 2\n",
+			wantTables:    []string{"a", "b"},
+			wantRevisions: []string{"1", "2"},
+		},
+		{
+			name:          "the report does not read PTAH_TARGET",
+			args:          []string{"--format", limitHistoryFormat},
+			env:           []string{"PTAH_TARGET=1"},
+			wantStdout:    "3->2",
+			wantTables:    []string{"a", "b"},
+			wantRevisions: []string{"1", "2"},
+		},
+		{
+			// The adapter decides the count, so the native command does not
+			// read PTAH_LIMIT, and a value it would refuse has no effect.
+			name:          "a malformed PTAH_LIMIT is not read",
+			args:          []string{"--to-version", "1"},
+			env:           []string{"PTAH_LIMIT=abc"},
 			wantStdout:    "Target version: 1\n",
 			wantTables:    []string{"a"},
 			wantRevisions: []string{"1"},
@@ -107,9 +136,32 @@ func TestAtlasMigrateDownAmountE2E_HappyPath(t *testing.T) {
 	}
 }
 
+// TestAtlasMigrateDownAmountE2E_PTAHTargetIsNotReadBesideATag forwards --to-tag
+// with PTAH_TARGET set. The native command refuses a --target its variable set
+// beside a typed --to-tag, so this is the run on which PTAH_TARGET would
+// change the outcome. The native command the run forwards to does not read the
+// variable, and the tag decides.
+func TestAtlasMigrateDownAmountE2E_PTAHTargetIsNotReadBesideATag(t *testing.T) {
+	c := qt.New(t)
+	dir, targetURL := appliedLimitHistory(c)
+	tagged := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
+		"migrations", "tag", "v1", "--db-url", targetURL, "--version", "2", "--revision-format", "atlas")
+	c.Assert(tagged.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", tagged.Stdout, tagged.Stderr))
+	opts := clirun.Options{Dir: dir, Env: append(environmentWithoutPtahVariables(), "PTAH_TARGET=1")}
+
+	got := clirun.Run(c, clirun.Compat, opts,
+		"migrate", "down", "--url", targetURL, "--dir", "file://migrations", "--to-tag", "v1")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stdout, qt.Contains, "Target version: 2\n")
+	c.Assert(limitHistoryTables(c, targetURL), qt.DeepEquals, []string{"a", "b"})
+	c.Assert(limitHistoryRevisions(c, targetURL), qt.DeepEquals, []string{"1", "2"})
+}
+
 // An amount that is not a positive integer, an amount beside a version or a
-// tag, and a version or tag that names nothing are refused before anything is
-// reverted, on the forwarded run and on the --format run alike.
+// tag, a version or tag that names nothing, and the native --limit are refused
+// before anything is reverted, on the forwarded run and on the --format run
+// alike.
 func TestAtlasMigrateDownAmountE2E_FailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -150,6 +202,21 @@ func TestAtlasMigrateDownAmountE2E_FailurePath(t *testing.T) {
 			name:       "an empty tag",
 			args:       []string{"--to-tag", ""},
 			wantStderr: "Error: --to-tag is empty: give it a tag, or leave it out to revert the last applied migration\n",
+		},
+		{
+			name:       "the native limit",
+			args:       []string{"--limit", "2"},
+			wantStderr: "Error: atlas migrate down does not accept native Ptah flag --limit\n",
+		},
+		{
+			name:       "the native limit beside an amount",
+			args:       []string{"2", "--limit", "1"},
+			wantStderr: "Error: atlas migrate down does not accept native Ptah flag --limit\n",
+		},
+		{
+			name:       "the report with the native limit",
+			args:       []string{"--limit", "2", "--format", limitHistoryFormat},
+			wantStderr: "Error: atlas migrate down does not accept native Ptah flag --limit\n",
 		},
 		{
 			name:       "the report with zero",

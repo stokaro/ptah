@@ -808,8 +808,10 @@ func atlasMigrateDownVerb() atlasVerb {
 		quietNarration: true,
 		// The community binary has none of these flags. The lock name in
 		// particular would be read and then ignored, since a forwarded run
-		// takes the default lock.
-		nativeOnlyFlags:     []string{"confirm", "dir-format", "migration-lock-name"},
+		// takes the default lock. --limit is the native count the amount
+		// argument forwards to: typed beside it, one of the two would be
+		// dropped, and the --format path refuses it as unknown.
+		nativeOnlyFlags:     []string{"confirm", "dir-format", "migration-lock-name", atlasMigrateDownLimitFlag},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
@@ -821,7 +823,7 @@ func atlasMigrateDownVerb() atlasVerb {
 			// The native name's variable, PTAH_TARGET, is read here as a value
 			// of --to-version, so the adapter sees every version it is given
 			// before it decides whether the run counts back instead.
-			atlasMigrateDownToVersionFlag(),
+			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
 			// --to-tag resolves against the tags `ptah migrations tag` records
 			// in the database, not against a hosted registry. The waiver this
 			// replaces said migration tags require one; they do not, and the

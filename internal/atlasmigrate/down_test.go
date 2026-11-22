@@ -388,6 +388,63 @@ func TestPrepareDownExecute_LimitCountsBackFromTheLastApplied(t *testing.T) {
 
 // TestParseDownAmount_HappyPath reads the amount argument as `migrate apply`
 // reads its own, so the two verbs take the same spellings.
+// TestPrepareDownExecute_FailurePathRefusesAHistoryThatChanged applies a third
+// migration between PrepareDown and Execute, as a `migrate apply` running
+// beside the rollback does. PrepareDown reads the history without the
+// migration lock and plans to revert version 2 down to version 1. Under the
+// lock versions 3 and 2 stand above version 1, and the rollback would revert
+// both while it reports 2, so Execute refuses and reverts nothing. The two
+// calls are made one after the other, which orders the race with no timing.
+func TestPrepareDownExecute_FailurePathRefusesAHistoryThatChanged(t *testing.T) {
+	tests := []struct {
+		name          string
+		limit         uint64
+		targetVersion int64
+	}{
+		{name: "counting back", limit: 1},
+		{name: "to a version", targetVersion: 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := context.Background()
+			migrationsDir, conn := prepareDownFixture(c, "ALTER TABLE down_users DROP COLUMN email;")
+			defer dbschema.CloseAndWarn(conn)
+			writeAtlasApplyMigrationFile(c, migrationsDir, "3_add_name.sql", "ALTER TABLE down_users ADD COLUMN name TEXT;")
+			writeAtlasApplyMigrationFile(c, migrationsDir, "3_add_name.down.sql", "ALTER TABLE down_users DROP COLUMN name;")
+			plan, err := atlasmigrate.PrepareDown(ctx, conn, atlasmigrate.DownOptions{
+				Dir:           migrationsDir,
+				FS:            os.DirFS(migrationsDir),
+				Limit:         test.limit,
+				TargetVersion: test.targetVersion,
+			})
+			c.Assert(err, qt.IsNil)
+			c.Assert(plan.PlannedVersions, qt.DeepEquals, []int64{2})
+			apply, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+				Dir:       migrationsDir,
+				FS:        os.DirFS(migrationsDir),
+				ExecOrder: migrator.ExecOrderLinear,
+				TxMode:    migrator.MigrationTxModeFile,
+			})
+			c.Assert(err, qt.IsNil)
+			_, err = apply.Execute(ctx)
+			c.Assert(err, qt.IsNil)
+
+			result, err := plan.Execute(ctx)
+
+			c.Assert(err, qt.ErrorIs, atlasmigrate.ErrDownHistoryChanged)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(
+				"error rolling back migrations: the applied history changed after the rollback was planned: "+
+					"it reverts [2], and the migrations applied above version 1 are now [3 2]; "+
+					"nothing was rolled back, run migrate down again"))
+			c.Assert(result.Reverted, qt.IsFalse)
+			c.Assert(result.RevertedVersions, qt.HasLen, 0)
+			c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1", "2", "3"})
+		})
+	}
+}
+
 func TestParseDownAmount_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string

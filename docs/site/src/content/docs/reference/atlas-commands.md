@@ -821,6 +821,8 @@ the history reverts every applied migration. The amount is read the way
 refused in the same words, with `revert` in place of `apply`. It forwards as
 the native `--limit`. An amount beside `--to-version` or `--to-tag` is refused,
 and so is a `--to-version` or `--to-tag` that is empty, since it names no stop.
+The native `--limit` typed here is refused, and the native `PTAH_TARGET` and
+`PTAH_LIMIT` are not read: `PTAH_TO_VERSION` names the version on this surface.
 The community binary has no `migrate down`, so the documentation is the
 reference for this behavior.
 
@@ -856,9 +858,10 @@ ptah migrations tag release-v1 --db-url "$DATABASE_URL" --version 20260801000001
 ptah-compat migrate down --url "$DATABASE_URL" --dir file://migrations --to-tag release-v1
 ```
 
-A tag nobody recorded is refused rather than resolved to zero, because the
-rollback target defaults to `0` and a discarded tag would revert the whole
-history where the operator asked for something bounded. Passing `--to-version`
+A tag nobody recorded is refused rather than resolved to zero. Version 0
+reverts the whole history, where the operator asked to stop at a tag, and
+reading the tag as absent would revert only the last applied migration, which
+the operator did not ask for either. Passing `--to-version`
 as well is refused too: both name where to stop, and picking one silently would
 roll back to a version nobody chose.
 

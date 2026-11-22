@@ -149,9 +149,21 @@ func (p DownPlan) Noop() bool {
 	return len(p.PlannedVersions) == 0
 }
 
+// ErrDownHistoryChanged reports a rollback whose applied history changed
+// between [PrepareDown] and [DownPlan.Execute]. Nothing is reverted.
+var ErrDownHistoryChanged = errors.New("the applied history changed after the rollback was planned")
+
 // Execute rolls back the planned migrations. Dry-run and no-op plans return
 // metadata without modifying schema state. On failure the returned result
 // still carries the reverted prefix so callers can render a partial report.
+//
+// PrepareDown reads the history without the migration lock, so Execute reads
+// it again under the lock and refuses, with [ErrDownHistoryChanged] and before
+// anything is reverted, when the migrations above the target are no longer
+// PlannedVersions. A run that counts back would otherwise revert a migration
+// applied in between, beside the ones it reports, and a run to a version would
+// revert migrations its plan did not show. This is the check native
+// `migrations down` makes when it takes the lock again after its prompt.
 func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 	result := DownResult{
 		Status:          p.Status,
@@ -164,6 +176,9 @@ func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 	}
 	executionStarted := false
 	err := p.mig.MigrateDownToWithPreflight(ctx, p.opts.TargetVersion, func(_ context.Context, plan migrator.MigrationPlan) error {
+		if err := p.refuseChangedHistory(plan.Versions); err != nil {
+			return err
+		}
 		executionStarted = len(plan.Versions) > 0
 		return nil
 	})
@@ -190,6 +205,24 @@ func (p DownPlan) Execute(ctx context.Context) (DownResult, error) {
 	}
 	result.FinalStatus = finalStatus
 	return result, nil
+}
+
+// refuseChangedHistory returns [ErrDownHistoryChanged] when locked, the
+// versions the migrator reverts under the lock, are not PlannedVersions.
+func (p DownPlan) refuseChangedHistory(locked []int64) error {
+	planned := newestFirst(p.PlannedVersions)
+	now := newestFirst(locked)
+	if slices.Equal(planned, now) {
+		return nil
+	}
+	return fmt.Errorf("%w: it reverts %v, and the migrations applied above version %s are now %v; "+
+		"nothing was rolled back, run migrate down again", ErrDownHistoryChanged,
+		p.mig.VersionLabels(planned), p.mig.VersionLabel(p.TargetVersion), p.mig.VersionLabels(now))
+}
+
+// newestFirst returns a copy of versions in revert order.
+func newestFirst(versions []int64) []int64 {
+	return slices.SortedFunc(slices.Values(versions), func(a, b int64) int { return cmp.Compare(b, a) })
 }
 
 // revertedVersionsAfterError re-reads the revision state so a partial failure
@@ -243,12 +276,13 @@ func validateDownOptions(conn *dbschema.DatabaseConnection, opts DownOptions) er
 type DownStop struct {
 	// Amount is the amount argument, 0 when none was given.
 	Amount uint64
-	// ToVersion is the --to-version value, and ToVersionGiven reports that
-	// the flag or its variable gave one, an empty value included.
+	// ToVersion is the --to-version value. ToVersionGiven reports that the
+	// flag was typed, an empty value included, or that PTAH_TO_VERSION gave a
+	// value. An empty PTAH_TO_VERSION reads as absent, and so names no stop.
 	ToVersion      string
 	ToVersionGiven bool
-	// ToTag is the --to-tag value, and ToTagGiven reports that the flag or
-	// its variable gave one, an empty value included.
+	// ToTag is the --to-tag value, and ToTagGiven reports the same for --to-tag
+	// and PTAH_TO_TAG.
 	ToTag      string
 	ToTagGiven bool
 }

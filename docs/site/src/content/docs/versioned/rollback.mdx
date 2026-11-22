@@ -106,8 +106,10 @@ Database is now at version: 1785255953
 
 ## Roll back to a target version
 
-Rollback always takes an explicit `--target`: the version the database should
-end up at. Everything applied above it is rolled back, newest first.
+`--target` names the version the database should end up at. Everything
+applied above it is rolled back, newest first. Name the stop on every run:
+`ptah migrations down` with no `--target`, `--to-tag` or `--limit` rolls back
+to version 0, which reverts every applied migration.
 
 To count instead of naming a version, pass `--limit N`: the last N applied
 migrations are rolled back, and a limit larger than the history rolls back
@@ -296,8 +298,8 @@ rollback verification failed: shadow database must be distinct from target datab
   below it. A pending one is handled as the item above says.
 - `--target 0` rolls back everything, returning the database to an empty
   application schema.
-- Rolling back "one step" means targeting the version below the current one —
-  read it from `ptah migrations status`.
+- To roll back one step, pass `--limit 1`. It reverts the last applied
+  migration, and no version has to be read first.
 
 ## The down-file contract
 
