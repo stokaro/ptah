@@ -251,3 +251,84 @@ func TestDiffPolicy_AllowsTableRebuild(t *testing.T) {
 		})
 	}
 }
+
+func TestDiffPolicy_ForDialect_HappyPath(t *testing.T) {
+	labeled := atlasschema.DialectDiffPolicy{
+		SkipChangeKinds: []planext.ChangeKind{planext.DropTable}, ConcurrentIndexDrop: true, Blocks: []string{"concurrent_index", "skip"},
+	}
+	unlabeled := atlasschema.DiffPolicy{
+		SkipChangeKinds: []planext.ChangeKind{planext.DropColumn}, ConcurrentIndexCreate: true, TableRebuildDialects: []string{platform.SQLite},
+	}
+	tests := []struct {
+		name    string
+		policy  atlasschema.DiffPolicy
+		dialect string
+		want    atlasschema.DiffPolicy
+	}{
+		{
+			name:    "the labeled block's policy for its dialect",
+			policy:  withDialects(unlabeled, map[string]atlasschema.DialectDiffPolicy{platform.SQLite: labeled}),
+			dialect: platform.SQLite,
+			want: atlasschema.DiffPolicy{
+				SkipChangeKinds: []planext.ChangeKind{planext.DropTable}, ConcurrentIndexDrop: true, TableRebuildDialects: []string{platform.SQLite},
+			},
+		},
+		{name: "the unlabeled policy where no block is labeled", policy: unlabeled, dialect: platform.SQLite, want: unlabeled},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := test.policy.ForDialect(test.dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+			again, err := got.ForDialect(test.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(again, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A policy block labeled for another dialect is refused, since the community
+// binary applies it to every dialect, even beside a block for the plan's own.
+func TestDiffPolicy_ForDialect_FailurePath(t *testing.T) {
+	skip := atlasschema.DialectDiffPolicy{SkipChangeKinds: []planext.ChangeKind{planext.DropTable}, Blocks: []string{"skip"}}
+	both := atlasschema.DialectDiffPolicy{Blocks: []string{"concurrent_index", "skip"}}
+	tests := []struct {
+		name     string
+		dialects map[string]atlasschema.DialectDiffPolicy
+		wantErr  string
+	}{
+		{
+			name:     "a block for another dialect",
+			dialects: map[string]atlasschema.DialectDiffPolicy{platform.Postgres: skip},
+			wantErr: `a labeled diff block holds a policy for another dialect: the diff "postgres" block of the project file holds a skip block, ` +
+				`which Ptah applies only to a plan for postgres, and this plan is for "sqlite"\. ` +
+				`The community binary ignores the label and applies the block to every dialect\. ` +
+				`Move the block into an unlabeled diff block to apply it to every dialect, or into the env of the postgres database`,
+		},
+		{
+			name:     "a block for the plan's dialect and one for another",
+			dialects: map[string]atlasschema.DialectDiffPolicy{platform.SQLite: skip, platform.ClickHouse: both},
+			wantErr:  `.*the diff "clickhouse" block of the project file holds a concurrent_index block and a skip block, .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			policy := withDialects(atlasschema.DiffPolicy{}, test.dialects)
+
+			got, err := policy.ForDialect(platform.SQLite)
+
+			c.Assert(err, qt.ErrorIs, atlasschema.ErrDiffPolicyForAnotherDialect)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.DeepEquals, atlasschema.DiffPolicy{})
+		})
+	}
+}
+
+func withDialects(policy atlasschema.DiffPolicy, dialects map[string]atlasschema.DialectDiffPolicy) atlasschema.DiffPolicy {
+	policy.Dialects = dialects
+	return policy
+}

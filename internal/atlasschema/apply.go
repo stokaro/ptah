@@ -638,6 +638,9 @@ func computeApplyPlan(
 	}
 	info := conn.Info()
 	info.Capabilities = opts.renderCapabilities(info)
+	if opts.Policy, err = opts.Policy.ForDialect(info.Dialect); err != nil {
+		return applyComputation{}, err
+	}
 	// The comparison is told what the diff policy will do to its answer; see
 	// [DiffPolicy.CompareOptions].
 	compareOpts := opts.Policy.CompareOptions()

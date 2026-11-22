@@ -77,3 +77,32 @@ func TestMigrateDiffWithoutAtlasProjectDiffSkipRebuildsTheTable(t *testing.T) {
 	c.Assert(newMigration(c, migrations), qt.Contains, `DROP TABLE "t"`)
 	c.Assert(stderr, qt.Not(qt.Contains), "SKIP:")
 }
+
+// A skip in a diff block labeled with the dev database's dialect writes the
+// same file as the unlabeled block above.
+func TestMigrateDiffUsesALabeledAtlasProjectDiffSkip(t *testing.T) {
+	c := qt.New(t)
+	migrations := skipPolicyMigrateProject(c, "  diff \"sqlite\" {\n    skip {\n      drop_index = true\n      drop_column = true\n    }\n  }\n")
+
+	_, stderr, err := atlastest.RunCompatStreams(c, "migrate", "diff", "--env", "local", "next")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	c.Assert(newMigration(c, migrations), qt.Equals, "-- Add column \"c\" to table: \"t\"\nALTER TABLE \"t\" ADD COLUMN \"c\" text NULL;\n")
+	c.Assert(stderr, qt.Contains, "SKIP: DROP COLUMN of t.b omitted by diff policy (skip: drop_column)\n"+
+		"SKIP: DROP INDEX of t.t_a omitted by diff policy (skip: drop_index)\n")
+}
+
+// A skip labeled with another dialect than the dev database's is refused, and
+// no file is written: the community binary ignores the label and applies the
+// skip, so writing the rebuild would drop what the block asks to keep.
+func TestMigrateDiffRefusesADiffSkipLabeledForAnotherDialect(t *testing.T) {
+	c := qt.New(t)
+	migrations := skipPolicyMigrateProject(c, "  diff \"mysql\" {\n    skip {\n      drop_column = true\n    }\n  }\n")
+
+	_, _, err := atlastest.RunCompatStreams(c, "migrate", "diff", "--env", "local", "next")
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*the diff "mysql" block of the project file holds a skip block, which Ptah applies only to a plan for mysql, and this plan is for "sqlite"\..*`)
+	matches, globErr := filepath.Glob(filepath.Join(migrations, "*_next.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 0)
+}

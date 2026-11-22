@@ -19,6 +19,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
@@ -2598,6 +2599,27 @@ func TestAtlasDiffPolicy_CarriesConcurrentIndexDrop(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// A labeled diff block's policy reaches the planning policy for its dialect,
+// merged over the unlabeled block's, so a plan for that dialect reads both.
+func TestAtlasDiffPolicy_CarriesTheLabeledPolicy(t *testing.T) {
+	c := qt.New(t)
+	var cfg projectconfig.Config
+	cfg.Diff.Skip.DropColumn = projectconfig.ConfigBool{Value: true, Set: true}
+	cfg.Diff.Dialects = map[string]projectconfig.DialectDiffConfig{
+		"sqlite": {Skip: projectconfig.DiffSkipConfig{DropTable: projectconfig.ConfigBool{Value: true, Set: true}}, Blocks: []string{"skip"}},
+	}
+
+	got, err := atlasDiffPolicy(cfg)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, atlasschema.DiffPolicy{
+		SkipChangeKinds: []planext.ChangeKind{planext.DropColumn},
+		Dialects: map[string]atlasschema.DialectDiffPolicy{
+			"sqlite": {SkipChangeKinds: []planext.ChangeKind{planext.DropTable, planext.DropColumn}, Blocks: []string{"skip"}},
+		},
+	})
 }
 
 func TestCompatCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {

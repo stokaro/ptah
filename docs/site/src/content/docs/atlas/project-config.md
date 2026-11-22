@@ -147,7 +147,7 @@ env "local" {
 | `diff.skip.drop_index` | Omits standalone index drops and their comment cleanup from the same commands. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
-| `diff "clickhouse" { allow_recreate }` | A top-level block, or one in an env. `true` lets a ClickHouse plan create a table again, and keep its rows, where the server has no `ALTER TABLE` for the change; see [Creating a table again](../../databases/clickhouse/#creating-a-table-again). A label of a dialect with no table rebuild is refused. |
+| `diff "<dialect>"` | A top-level block, or one in an env, for the dialect its label names. `allow_recreate = true` lets a ClickHouse plan create a table again, and keep its rows, where the server has no `ALTER TABLE` for the change; see [Creating a table again](../../databases/clickhouse/#creating-a-table-again). Its `skip` and `concurrent_index` apply to a plan for that dialect, as the section below says. |
 | `check "migrate_apply".drift.on_error` | Whether `migrate apply` stops on drift (`FAIL`, the default) or reports it and applies (`CONTINUE`). |
 | `check "migrate_apply".drift.exclude` | Resource exclusion filters for the drift check; they replace `env.exclude` for it. |
 
@@ -178,17 +178,50 @@ the top-level value. A block set to `false` asks for nothing, and it does not
 withdraw `PTAH_ALLOW_TABLE_REBUILD=1`, which asks for every dialect on its own;
 the variable set to `0` withdraws no block's request either. Two blocks for one
 dialect in one scope are refused, its aliases included (`diff "clickhouse"`
-beside `diff "ch"`). Any other attribute, and any nested block but `skip` and
-`concurrent_index`, is reported as having no effect.
+beside `diff "ch"`). A label that names no dialect is refused, and so is
+`allow_recreate` under the label of a dialect with no table rebuild. Any other
+attribute, and any nested block but `skip` and `concurrent_index`, is reported
+as having no effect.
 
-A `skip` or `concurrent_index` block in a labeled `diff` block is refused:
-write it in the unlabeled `diff` block. Measured on the community binaries
-v1.3.0 and v1.4.0 with an SQLite URL, the community binary reads a
-labeled `diff` block as an unlabeled one, its label ignored:
-`diff "clickhouse" { skip { drop_table = true } }` and `diff "foo" { ... }`
-both leave the `DROP TABLE` out of a plan, at the top level and in an env, and
-of two `diff` blocks in one env the first one written holds. Reporting such a
-block as having no effect would plan the drop the user asked to leave out.
+A `skip` or `concurrent_index` block in a labeled `diff` block applies to a
+plan for the dialect the label names, whatever the dialect. For each value, the
+nearest block that sets it wins: the env's labeled block, then the env's
+unlabeled block, then the top-level labeled block, then the top-level unlabeled
+block. Here a SQLite plan leaves out both the column drops and the index drops:
+
+```hcl
+env "local" {
+  url = "sqlite://app.db"
+  diff {
+    skip {
+      drop_column = true
+    }
+  }
+  diff "sqlite" {
+    skip {
+      drop_index = true
+    }
+  }
+}
+```
+
+A plan for another dialect than a policy block's label names is refused before
+anything is planned, with `the diff "postgres" block of the project file holds
+a skip block, which Ptah applies only to a plan for postgres, and this plan is
+for "sqlite"`. Move the block into an unlabeled `diff` block to apply it to
+every dialect.
+
+The community binary reads a labeled `diff` block as an unlabeled one, its
+label ignored, and of two `diff` blocks in one env applies only the first one
+written. Measured on v1.4.0 with a SQLite URL, Ptah differs from it in two
+cases, both recorded under
+[Compatibility differences](../retained-divergences/#a-diff-policy-block-under-a-dialect-label):
+
+- With `diff "sqlite" { skip { drop_table = true } }` first and
+  `diff { skip { drop_column = true } }` second, the community binary keeps the
+  table and drops the column. Ptah applies both blocks and keeps both.
+- With `diff "postgres" { skip { drop_table = true } }`, the community binary
+  leaves the `DROP TABLE` out of the SQLite plan. Ptah refuses the plan.
 
 The community binary has no ClickHouse driver (`unknown driver "clickhouse"`)
 and applies no `allow_recreate`, and an env that references the block with

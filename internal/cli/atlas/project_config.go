@@ -1650,12 +1650,29 @@ func readAtlasSchemaList(values []string) ([]string, error) {
 	return schemas, nil
 }
 
+// atlasDiffPolicy is the diff policy of the project file: the unlabeled diff
+// blocks, and for each dialect a labeled block names, the policy a plan for
+// that dialect follows, which the plan picks once it knows its dialect.
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
-	return atlasschema.DiffPolicy{
+	policy := atlasschema.DiffPolicy{
 		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
 		TableRebuildDialects:          cfg.Diff.TableRebuildDialects(),
-	}, nil
+	}
+	for _, dialect := range cfg.Diff.PolicyDialects() {
+		labeled := cfg.Diff.ForDialect(dialect)
+		if policy.Dialects == nil {
+			policy.Dialects = make(map[string]atlasschema.DialectDiffPolicy)
+		}
+		policy.Dialects[dialect] = atlasschema.DialectDiffPolicy{
+			SkipChangeKinds:               labeled.SkipChangeKinds(),
+			ConcurrentIndexCreate:         labeled.ConcurrentIndexCreate(),
+			ConcurrentIndexDrop:           labeled.ConcurrentIndexDrop(),
+			ConcurrentIndexCreateDisabled: labeled.ConcurrentIndexCreateDisabled(),
+			Blocks:                        cfg.Diff.Dialects[dialect].Blocks,
+		}
+	}
+	return policy, nil
 }

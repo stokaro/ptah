@@ -1990,11 +1990,11 @@ func (p atlasParser) parseDiff(block *hclsyntax.Block, cfg *Config) error {
 	return p.parseContainerBlock("diff", block, cfg, p.diffPolicyBlocks())
 }
 
-// diffPolicyBlocks returns the parsers of the blocks an unlabeled diff block
-// holds. [atlasParser.parseDialectDiff] refuses the same names in a labeled
-// block, so the two must read one list: a name added here and not refused
-// there would be reported as having no effect in the labeled spelling, where
-// the community binary applies it.
+// diffPolicyBlocks returns the parsers of the policy blocks a diff block
+// holds. [atlasParser.parseDialectDiff] reads the same names in a labeled
+// block, so the two must read one list: a name added here and not read there
+// would be reported as having no effect in the labeled spelling, where the
+// community binary applies it.
 func (p atlasParser) diffPolicyBlocks() map[string]atlasNestedParser {
 	return map[string]atlasNestedParser{
 		"skip":             p.parseDiffSkip,
@@ -2022,24 +2022,29 @@ func (p atlasParser) parseDialectDiffs(blocks []*hclsyntax.Block, cfg *Config) e
 	return nil
 }
 
-// parseDialectDiff reads a `diff "<dialect>" { allow_recreate = ... }` block,
-// at the top level or in an env: whether a plan for that dialect creates a
-// table again, and keeps its rows, where the engine has no ALTER TABLE for the
-// change. An env's block merges over the top-level one for its dialect.
+// parseDialectDiff reads a `diff "<dialect>" { ... }` block, at the top level
+// or in an env, for the dialect its label names: allow_recreate, whether a
+// plan for that dialect creates a table again, and keeps its rows, where the
+// engine has no ALTER TABLE for the change; and the skip and concurrent_index
+// blocks, which a plan for that dialect reads over the unlabeled block's. An
+// env's block merges over the top-level one for its dialect.
 //
 // Atlas Community Edition plans no table rebuild, so a strict policy reads the
-// block as ignored. The default refuses a label no dialect plans a rebuild
-// for, rather than accept a request it cannot meet.
+// block as ignored. The default refuses a label that names no dialect, and
+// allow_recreate for a dialect Ptah plans no rebuild for, rather than accept a
+// request it cannot meet.
 //
 // The community binary reads a labeled diff block as an unlabeled one, its
-// label ignored, and applies the skip block in it to every dialect. Measured
-// on v1.3.0 and v1.4.0: `diff "clickhouse" { skip { drop_table = true } }`
-// leaves out the DROP TABLE of a SQLite plan, at the top level and in an env,
-// and so does the label "foo". Ptah reads a diff policy from the unlabeled
-// block only, so a block it reads there is refused here rather than reported
-// as having no effect, which would plan the drop the user asked to leave
-// out. Any other attribute but allow_recreate, and any other nested block,
-// takes the tolerance path and is reported as having no effect.
+// label ignored, and keeps the first diff block it meets. Measured on v1.3.0
+// and v1.4.0: `diff "postgres" { skip { drop_table = true } }` leaves out the
+// DROP TABLE of a SQLite plan, at the top level and in an env, and so does the
+// label "foo"; and of a labeled block and an unlabeled one, the one written
+// first is applied and the other dropped, in either order. Ptah applies both,
+// and refuses a plan for another dialect than a policy block's label names
+// ([ptah.run/internal/atlasschema.DiffPolicy.ForDialect]), rather than plan the
+// drop the user asked to leave out. Any other attribute but allow_recreate,
+// and any other nested block, takes the tolerance path and is reported as
+// having no effect.
 func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error {
 	if len(block.Labels) != 1 {
 		return unsupportedBlock(block)
@@ -2052,7 +2057,8 @@ func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error
 		return nil
 	}
 	dialect := platform.NormalizeDialect(block.Labels[0])
-	if described, found := platform.Lookup(dialect); !found || !described.TableRebuild {
+	described, found := platform.Lookup(dialect)
+	if !found {
 		return unsupportedBlock(block)
 	}
 	for _, name := range sortedAttributeNames(block.Body.Attributes) {
@@ -2063,6 +2069,9 @@ func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error
 			}
 			continue
 		}
+		if !described.TableRebuild {
+			return fmt.Errorf("%w: Ptah plans no table rebuild for %s", unsupportedAttr(name, attr), dialect)
+		}
 		value, err := p.configBoolAttr(name, attr)
 		if err != nil {
 			return err
@@ -2072,17 +2081,33 @@ func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config) error
 		}
 		cfg.Diff.AllowRecreate[dialect] = value
 	}
+	var read Config
+	var blocks []string
 	policy := p.diffPolicyBlocks()
 	for _, child := range block.Body.Blocks {
-		if _, read := policy[child.Type]; read {
-			return fmt.Errorf("%w: Ptah reads a %s block only in an unlabeled diff block, "+
-				"and the community binary reads a labeled diff block as an unlabeled one; move it there",
-				unsupportedBlock(child), child.Type)
+		parse, known := policy[child.Type]
+		if !known {
+			if err := p.tolerateUnknownBlock("diff", child); err != nil {
+				return err
+			}
+			continue
 		}
-		if err := p.tolerateUnknownBlock("diff", child); err != nil {
+		if slices.Contains(blocks, child.Type) {
+			return unsupportedBlock(child)
+		}
+		blocks = append(blocks, child.Type)
+		if err := parse(child, &read); err != nil {
 			return err
 		}
 	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	slices.Sort(blocks)
+	if cfg.Diff.Dialects == nil {
+		cfg.Diff.Dialects = make(map[string]DialectDiffConfig)
+	}
+	cfg.Diff.Dialects[dialect] = DialectDiffConfig{Skip: read.Diff.Skip, ConcurrentIndex: read.Diff.ConcurrentIndex, Blocks: blocks}
 	return nil
 }
 

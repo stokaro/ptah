@@ -1,9 +1,12 @@
 package atlasschema
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -61,12 +64,73 @@ type DiffPolicy struct {
 	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
 
+	// Dialects holds, by dialect, the policy a plan for a dialect that a
+	// labeled `diff "<dialect>"` block of an Atlas project file names follows
+	// in place of SkipChangeKinds and the concurrent index fields above.
+	// [DiffPolicy.ForDialect] picks the one for a plan.
+	Dialects map[string]DialectDiffPolicy
+
 	// RotateSecrets names the secrets, as the operator wrote them, the plan
 	// gives the value their declared variable holds now. A comparison cannot
 	// find a changed value, which the server never returns, so this is the
 	// only way one is planned. The native commands set it from
 	// --rotate-secret.
 	RotateSecrets []string
+}
+
+// DialectDiffPolicy is the policy a labeled diff block gives a plan for its
+// dialect, merged over the unlabeled block's.
+type DialectDiffPolicy struct {
+	SkipChangeKinds               []planext.ChangeKind
+	ConcurrentIndexCreate         bool
+	ConcurrentIndexDrop           bool
+	ConcurrentIndexCreateDisabled bool
+	// Blocks names the policy blocks the labeled block holds, for the refusal
+	// of a plan for another dialect.
+	Blocks []string
+}
+
+// ErrDiffPolicyForAnotherDialect is the refusal of a plan for a dialect other
+// than a policy block's label names.
+var ErrDiffPolicyForAnotherDialect = errors.New("a labeled diff block holds a policy for another dialect")
+
+// ForDialect returns the policy a plan for the dialect follows: the one its
+// labeled diff block gives, where there is one. The result holds no labeled
+// policy, so asking again changes nothing.
+//
+// It refuses, with [ErrDiffPolicyForAnotherDialect], a policy with a labeled
+// block for another dialect. The community binary ignores the label and
+// applies the block to a plan for any dialect, measured on v1.4.0, so a skip
+// that names another dialect is one the user may expect here; refusing keeps
+// the plan from dropping what the block asks to leave out.
+func (p DiffPolicy) ForDialect(dialect string) (DiffPolicy, error) {
+	for _, other := range slices.Sorted(maps.Keys(p.Dialects)) {
+		if other == dialect {
+			continue
+		}
+		return DiffPolicy{}, fmt.Errorf("%w: the diff %q block of the project file holds %s, which Ptah applies only to a plan for %s, "+
+			"and this plan is for %q. The community binary ignores the label and applies the block to every dialect. "+
+			"Move the block into an unlabeled diff block to apply it to every dialect, or into the env of the %s database",
+			ErrDiffPolicyForAnotherDialect, other, policyBlockList(p.Dialects[other].Blocks), other, dialect, other)
+	}
+	if labeled, found := p.Dialects[dialect]; found {
+		p.SkipChangeKinds = labeled.SkipChangeKinds
+		p.ConcurrentIndexCreate = labeled.ConcurrentIndexCreate
+		p.ConcurrentIndexDrop = labeled.ConcurrentIndexDrop
+		p.ConcurrentIndexCreateDisabled = labeled.ConcurrentIndexCreateDisabled
+	}
+	p.Dialects = nil
+	return p, nil
+}
+
+// policyBlockList names the blocks for a refusal: "a skip block", "a
+// concurrent_index block and a skip block".
+func policyBlockList(blocks []string) string {
+	named := make([]string, len(blocks))
+	for i, block := range blocks {
+		named[i] = "a " + block + " block"
+	}
+	return strings.Join(named, " and ")
 }
 
 // AllowsTableRebuild reports whether a plan for the dialect creates a table

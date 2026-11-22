@@ -152,7 +152,7 @@ func TestParseAtlas_DialectDiffBlock_FailurePath(t *testing.T) {
 		{
 			name:    "a dialect with no table rebuild",
 			blocks:  "diff \"mysql\" {\n  allow_recreate = true\n}\n",
-			wantErr: `unsupported atlas.hcl construct "diff" at .*atlas.hcl:1`,
+			wantErr: `unsupported atlas.hcl construct "allow_recreate" at .*atlas.hcl:2: Ptah plans no table rebuild for mysql`,
 		},
 		{
 			name:    "an unknown dialect",
@@ -175,19 +175,19 @@ func TestParseAtlas_DialectDiffBlock_FailurePath(t *testing.T) {
 			wantErr: `duplicate diff "ch" at .*atlas.hcl:4`,
 		},
 		{
-			name:    "a skip block",
-			blocks:  "diff \"clickhouse\" {\n  skip {\n    drop_table = true\n  }\n}\n",
-			wantErr: `unsupported atlas.hcl construct "skip" at .*atlas.hcl:2: Ptah reads a skip block only in an unlabeled diff block, .*; move it there`,
+			name:    "a skip block written twice",
+			blocks:  "diff \"clickhouse\" {\n  skip {\n    drop_table = true\n  }\n  skip {\n    drop_column = true\n  }\n}\n",
+			wantErr: `unsupported atlas.hcl construct "skip" at .*atlas.hcl:5`,
 		},
 		{
-			name:    "a concurrent_index block",
-			blocks:  "diff \"clickhouse\" {\n  allow_recreate = true\n  concurrent_index {\n    create = true\n  }\n}\n",
-			wantErr: `unsupported atlas.hcl construct "concurrent_index" at .*atlas.hcl:3: Ptah reads a concurrent_index block only in an unlabeled diff block, .*`,
+			name:    "a skip value that is not a bool",
+			blocks:  "diff \"sqlite\" {\n  skip {\n    drop_table = \"yes\"\n  }\n}\n",
+			wantErr: `(?s).*drop_table.*`,
 		},
 		{
 			name:    "an env block for a dialect with no table rebuild",
 			env:     "  diff \"mysql\" {\n    allow_recreate = true\n  }\n",
-			wantErr: `unsupported atlas.hcl construct "diff" at .*atlas.hcl:4`,
+			wantErr: `unsupported atlas.hcl construct "allow_recreate" at .*atlas.hcl:5: Ptah plans no table rebuild for mysql`,
 		},
 		{
 			name:    "an env block with two labels",
@@ -210,9 +210,9 @@ func TestParseAtlas_DialectDiffBlock_FailurePath(t *testing.T) {
 			wantErr: `duplicate diff "ch" at .*atlas.hcl:7`,
 		},
 		{
-			name:    "a skip block in an env block",
-			env:     "  diff \"clickhouse\" {\n    skip {\n      drop_table = true\n    }\n  }\n",
-			wantErr: `unsupported atlas.hcl construct "skip" at .*atlas.hcl:5: Ptah reads a skip block only in an unlabeled diff block, .*`,
+			name:    "a skip block written twice in an env block",
+			env:     "  diff \"sqlite\" {\n    skip {\n    }\n    skip {\n    }\n  }\n",
+			wantErr: `unsupported atlas.hcl construct "skip" at .*atlas.hcl:7`,
 		},
 	}
 	for _, test := range tests {
@@ -224,6 +224,103 @@ func TestParseAtlas_DialectDiffBlock_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(cfg.Diff.AllowRecreate, qt.IsNil)
 			c.Assert(cfg.Diff.Skip.DropTable.Set, qt.IsFalse)
+			c.Assert(cfg.Diff.Dialects, qt.IsNil)
+		})
+	}
+}
+
+// A labeled diff block's skip and concurrent_index blocks are read for the
+// dialect its label names, at the top level and in an env, whether or not
+// Ptah rebuilds tables on that dialect. The unlabeled policy stays as it is,
+// and a plan for another dialect does not read them.
+func TestParseAtlas_DialectDiffPolicyBlocks_HappyPath(t *testing.T) {
+	tests := []struct {
+		name           string
+		blocks         string
+		env            string
+		dialect        string
+		wantBlocks     []string
+		wantDropTable  bool
+		wantDropColumn bool
+		wantCreate     bool
+	}{
+		{
+			name:          "a skip block",
+			blocks:        "diff \"clickhouse\" {\n  allow_recreate = true\n  skip {\n    drop_table = true\n  }\n}\n",
+			dialect:       "clickhouse",
+			wantBlocks:    []string{"skip"},
+			wantDropTable: true,
+		},
+		{
+			name:       "a concurrent_index block for a dialect with no table rebuild",
+			blocks:     "diff \"postgres\" {\n  concurrent_index {\n    create = true\n  }\n}\n",
+			dialect:    "postgres",
+			wantBlocks: []string{"concurrent_index"},
+			wantCreate: true,
+		},
+		{
+			name:           "both, in an env, under the dialect's alias",
+			env:            "  diff \"ch\" {\n    skip {\n      drop_column = true\n    }\n    concurrent_index {\n    }\n  }\n",
+			dialect:        "clickhouse",
+			wantBlocks:     []string{"concurrent_index", "skip"},
+			wantDropColumn: true,
+		},
+		{
+			name:       "a skip block that sets nothing",
+			blocks:     "diff \"sqlite\" {\n  skip {\n  }\n}\n",
+			dialect:    "sqlite",
+			wantBlocks: []string{"skip"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := dialectDiffProject(c, test.blocks, test.env, projectconfig.AtlasLoadOptions{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.Diff.PolicyDialects(), qt.DeepEquals, []string{test.dialect})
+			c.Assert(cfg.Diff.Dialects[test.dialect].Blocks, qt.DeepEquals, test.wantBlocks)
+			labeled := cfg.Diff.ForDialect(test.dialect)
+			c.Assert(labeled.Skip.DropTable.Value, qt.Equals, test.wantDropTable)
+			c.Assert(labeled.Skip.DropColumn.Value, qt.Equals, test.wantDropColumn)
+			c.Assert(labeled.ConcurrentIndex.Create.Value, qt.Equals, test.wantCreate)
+			c.Assert(labeled.Dialects, qt.IsNil)
+			c.Assert(cfg.Diff.Skip, qt.Equals, projectconfig.DiffSkipConfig{})
+			c.Assert(cfg.Diff.ForDialect("mysql").Skip, qt.Equals, projectconfig.DiffSkipConfig{})
+			c.Assert(cfg.IgnoredConstructs, qt.HasLen, 0)
+		})
+	}
+}
+
+// For each value a plan for a dialect reads, the env's labeled block wins over
+// the env's unlabeled block, which wins over the top-level labeled block, which
+// wins over the top-level unlabeled block.
+func TestParseAtlas_DialectDiffPolicyPrecedence(t *testing.T) {
+	skip := func(indent, label, value string) string {
+		return indent + "diff " + label + "{\n" + indent + "  skip {\n" + indent + "    drop_table = " + value + "\n" + indent + "  }\n" + indent + "}\n"
+	}
+	tests := []struct {
+		name   string
+		blocks string
+		env    string
+		want   bool
+	}{
+		{name: "the top-level labeled block over the unlabeled one", blocks: skip("", "", "true") + skip("", "\"sqlite\" ", "false"), want: false},
+		{name: "the unlabeled block where the labeled one sets nothing", blocks: skip("", "", "true") + "diff \"sqlite\" {\n  skip {\n  }\n}\n", want: true},
+		{name: "the env's unlabeled block over the top-level labeled one", blocks: skip("", "\"sqlite\" ", "true"), env: skip("  ", "", "false"), want: false},
+		{name: "the env's labeled block over the env's unlabeled one", env: skip("  ", "", "true") + skip("  ", "\"sqlite\" ", "false"), want: false},
+		{name: "the env's labeled block over the top-level labeled one", blocks: skip("", "\"sqlite\" ", "false"), env: skip("  ", "\"sqlite\" ", "true"), want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := dialectDiffProject(c, test.blocks, test.env, projectconfig.AtlasLoadOptions{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.Diff.ForDialect("sqlite").Skip.DropTable.Value, qt.Equals, test.want)
+			c.Assert(cfg.Diff.PolicyDialects(), qt.DeepEquals, []string{"sqlite"})
 		})
 	}
 }
@@ -241,6 +338,7 @@ func TestParseAtlas_IgnoreDialectDiffBlocksAnswersAsCommunityEdition(t *testing.
 		{name: "a dialect with no table rebuild", blocks: "diff \"mysql\" {\n  allow_recreate = true\n}\n"},
 		{name: "a rebuild dialect in an env", env: "  diff \"clickhouse\" {\n    allow_recreate = true\n  }\n"},
 		{name: "a dialect with no table rebuild in an env", env: "  diff \"mysql\" {\n    allow_recreate = true\n  }\n"},
+		{name: "a policy block", blocks: "diff \"sqlite\" {\n  skip {\n    drop_table = true\n  }\n}\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -250,6 +348,7 @@ func TestParseAtlas_IgnoreDialectDiffBlocksAnswersAsCommunityEdition(t *testing.
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(cfg.Diff.TableRebuildDialects(), qt.HasLen, 0)
+			c.Assert(cfg.Diff.PolicyDialects(), qt.HasLen, 0)
 			c.Assert(cfg.IgnoredConstructs, qt.HasLen, 1)
 			c.Assert(cfg.IgnoredConstructs[0].Kind, qt.Equals, "block")
 			c.Assert(cfg.IgnoredConstructs[0].Name, qt.Equals, "diff")

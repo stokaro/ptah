@@ -316,10 +316,14 @@ asks for a table rebuild, the variable twin of the native
 `diff "clickhouse" { allow_recreate = true }` block in `atlas.hcl`, at the top
 level or in an env, asks for it on ClickHouse alone. The community binary plans
 no rebuild, so strict mode refuses the variable:
-`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`. The
-community binary reads a labeled `diff` block as an unlabeled one and applies no
-`allow_recreate` in it, and strict mode reads the block as an ignored construct,
-which it refuses.
+`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
+
+The community binary reads a labeled `diff` block as an unlabeled one and applies
+no `allow_recreate` in it, and strict mode reads the block as an ignored
+construct, which it refuses. A `skip` or `concurrent_index` block in a labeled block applies
+to a plan for that dialect, and a plan for another dialect is refused; the
+measured differences from the community binary are under
+[A diff policy block under a dialect label](./site/src/content/docs/atlas/retained-divergences.md#a-diff-policy-block-under-a-dialect-label).
 
 A `docker://ydb` dev URL is checked before its dialect, so strict mode answers
 it as the pinned binary answers an image it does not start, not as it answers a

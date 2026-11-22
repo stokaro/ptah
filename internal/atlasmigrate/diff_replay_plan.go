@@ -105,6 +105,9 @@ func (p replayedDiffPlanner) plan(
 			if err != nil {
 				return err
 			}
+			if opts.Policy, err = opts.Policy.ForDialect(replayConn.Info().Dialect); err != nil {
+				return err
+			}
 			compared, err := compareReplayedState(
 				ctx, replayConn, p.runtime, p.schemas, p.naming, desired, baseline, p.selection,
 				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,

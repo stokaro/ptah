@@ -135,6 +135,7 @@ own measurement conditions.
 | [Recorded revision `error` text on a failed migration](#recorded-revision-error-text-on-a-failed-migration) | records the SQLite driver's own wording | records its own driver's wording for the same condition |
 | [Pre-migration checks in a dry run](#pre-migration-checks-in-a-dry-run) | exits `1` where the guard's verdict is knowable and negative | implements no check semantics, so a dry run exits `0` for every checked directory |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | reads `file()` only from the directory holding that `atlas.hcl` | reads an absolute, parent-traversal, or link-escaping path |
+| [A diff policy block under a dialect label](#a-diff-policy-block-under-a-dialect-label) | applies a labeled block's `skip` beside the unlabeled block's to a plan for that dialect, and refuses a plan for another | applies only the first `diff` block of an env, whatever its label |
 | [A migration that would be recorded over an invalid index](#a-migration-that-would-be-recorded-over-an-invalid-index) | refuses while `pg_index` reports the index unusable, and names `REINDEX` | applies the migration and records it over the unusable index |
 | [`schema inspect --include`](#schema-inspect---include) | positively selects top-level resources through the apply and diff engine | does not register the flag: `Error: unknown flag: --include` |
 | [Exclude field selectors](#exclude-field-selectors) | honors the suffixes it can carry out and refuses the rest | accepts every such suffix and honors none of them |
@@ -848,6 +849,43 @@ scenarios in the conformance repository, so the day a community build starts
 confining `file()` the gate goes red and this divergence can be retired.
 
 **Tracking.** [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042)
+
+## A diff policy block under a dialect label
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat` reads the `skip` and `concurrent_index`
+blocks of a `diff "<dialect>"` block for a plan for the dialect the label names,
+over the values of the unlabeled `diff` block, and applies both blocks. A plan
+for another dialect than a policy block's label names is refused before
+anything is planned; the refusal names the block and the plan's dialect, and
+says to move the block into an unlabeled `diff` block.
+
+Measured on v1.3.0 and v1.4.0 with a SQLite URL, the community binary reads a
+labeled `diff` block as an unlabeled one, its label ignored, and of two `diff`
+blocks in one env applies only the first one written. On v1.4.0, with `schema
+apply --dry-run`:
+
+- `diff "sqlite" { skip { drop_table = true } }` first and
+  `diff { skip { drop_column = true } }` second: the table stays and the column
+  is dropped. In the other order the table is dropped and the column stays.
+- `diff "postgres" { skip { drop_table = true } }`: the `DROP TABLE` is left out
+  of the SQLite plan.
+
+In the first case the community binary drops a block the author wrote without a
+word, and the plan removes what that block asks to keep. In the second the
+label says the block is for PostgreSQL. Applying it to SQLite would act on a
+block its author scoped to another engine, and ignoring it would plan the drop
+the block asks to leave out, so Ptah refuses and exits `1` where the community
+binary exits `0`. `PTAH_ATLAS_STRICT_COMPAT=1` reads every labeled `diff` block
+as an ignored construct and refuses it.
+
+`TestSchemaApplyUsesALabeledAtlasProjectDiffSkip` and
+`TestSchemaApplyRefusesAnAtlasProjectDiffSkipLabeledForAnotherDialect` in
+`internal/cli/atlas/internal/schematests` pin the Ptah half on `schema apply`,
+beside the same pair for `schema diff` and for `migrate diff`.
+
+**Tracking.** [`stokaro/ptah#6336`](https://github.com/stokaro/ptah/issues/6336)
 
 ## A migration that would be recorded over an invalid index
 
