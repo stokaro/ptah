@@ -12,6 +12,7 @@ func (t Table) Clone() Table {
 		t.Columns[i] = t.Columns[i].Clone()
 	}
 	t.Parents = slices.Clone(t.Parents)
+	t.Projections = slices.Clone(t.Projections)
 	return t
 }
 
@@ -23,6 +24,7 @@ func (c Column) Clone() Column {
 	c.NumericScale = cloneScalar(c.NumericScale)
 	c.DatetimePrecision = cloneScalar(c.DatetimePrecision)
 	c.GeneratedExpression = cloneScalar(c.GeneratedExpression)
+	c.StorageClauses = slices.Clone(c.StorageClauses)
 	return c
 }
 

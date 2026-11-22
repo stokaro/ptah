@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
@@ -445,8 +446,8 @@ func atlasProjectLoadOptions(
 		// The community binary reads no docker block; the default surface
 		// starts the one a selected env references (stokaro/ptah#4041).
 		IgnoreDockerBlocks: policy.IsStrictCE(),
-		// The community binary reads a diff block with a label and applies
-		// nothing in it.
+		// The community binary plans no table rebuild, so it applies no
+		// allow_recreate under any label.
 		IgnoreDialectDiffBlocks: policy.IsStrictCE(),
 		// So a refusal about a for_each env names the command the operator
 		// ran (stokaro/ptah#1696). Empty where no command is in scope, which
@@ -1650,12 +1651,45 @@ func readAtlasSchemaList(values []string) ([]string, error) {
 	return schemas, nil
 }
 
+// atlasDiffPolicy is the diff policy of the project file: the unlabeled diff
+// blocks, and for each dialect a labeled block names, the values the labeled
+// blocks set, which the plan reads once it knows its dialect.
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
-	return atlasschema.DiffPolicy{
+	policy := atlasschema.DiffPolicy{
 		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
 		TableRebuildDialects:          cfg.Diff.TableRebuildDialects(),
-	}, nil
+	}
+	for _, dialect := range cfg.Diff.PolicyDialects() {
+		labeled := cfg.Diff.Dialects[dialect]
+		if policy.Dialects == nil {
+			policy.Dialects = make(map[string]atlasschema.DialectDiffPolicy)
+		}
+		policy.Dialects[dialect] = atlasschema.DialectDiffPolicy{
+			TopLevel: atlasDiffSettings(labeled.TopLevel),
+			Env:      atlasDiffSettings(labeled.Env),
+		}
+	}
+	return policy, nil
+}
+
+// atlasDiffSettings returns the values one labeled diff block sets, by the
+// name the project file gives each.
+func atlasDiffSettings(values projectconfig.DialectDiffValues) atlasschema.DiffSettings {
+	settings := make(atlasschema.DiffSettings)
+	for setting, value := range map[atlasschema.DiffSetting]projectconfig.ConfigBool{
+		atlasschema.SkipSetting(planext.DropTable):  values.Skip.DropTable,
+		atlasschema.SkipSetting(planext.DropColumn): values.Skip.DropColumn,
+		atlasschema.SkipSetting(planext.DropIndex):  values.Skip.DropIndex,
+		atlasschema.SkipSetting(planext.DropEnum):   values.Skip.DropEnum,
+		atlasschema.ConcurrentIndexCreateSetting:    values.ConcurrentIndex.Create,
+		atlasschema.ConcurrentIndexDropSetting:      values.ConcurrentIndex.Drop,
+	} {
+		if value.Set {
+			settings[setting] = value.Value
+		}
+	}
+	return settings
 }

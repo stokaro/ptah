@@ -105,6 +105,7 @@ func (p replayedDiffPlanner) plan(
 			if err != nil {
 				return err
 			}
+			opts.Policy = opts.Policy.ForDialect(replayConn.Info().Dialect)
 			compared, err := compareReplayedState(
 				ctx, replayConn, p.runtime, p.schemas, p.naming, desired, baseline, p.selection,
 				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
@@ -113,6 +114,9 @@ func (p replayedDiffPlanner) plan(
 				return err
 			}
 			current, selected, diff := compared.current, compared.desired, compared.diff
+			if err := opts.Policy.ReviewOtherDialects(opts.Diagnostics, diff, replayConn.Info().Dialect, replayConn.Info().Capabilities); err != nil {
+				return err
+			}
 			// The file carries no comment for a change the policy left out:
 			// the pinned community binary writes the same file without the
 			// change and without a word about it, and the file is what

@@ -119,7 +119,9 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	columnRows := make([][]driver.Value, 0, 100)
 	for i := range 50 {
 		tableName := fmt.Sprintf("table_%02d", i)
-		tableRows = append(tableRows, []driver.Value{tableName, "", "(id)", "(id)", "MergeTree", "", ""})
+		tableRows = append(tableRows, []driver.Value{tableName, "", "(id)", "(id)", "MergeTree", "", "",
+			"CREATE TABLE default." + tableName + " (`id` UInt64, `payload` Nullable(String)) ENGINE = MergeTree ORDER BY id",
+		})
 		columnRows = append(columnRows,
 			[]driver.Value{tableName, "id", "UInt64", "", "", uint64(1), "", uint8(1)},
 			[]driver.Value{tableName, "payload", "Nullable(String)", "", "", uint64(2), "", uint8(0)},
@@ -128,6 +130,8 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	columnRows[3][3] = "DEFAULT"
 	columnRows[3][4] = "0"
 	columnRows[3][6] = `c\d`
+	tableRows[1][7] = "CREATE TABLE default.table_01 (`id` UInt64, `payload` Nullable(String) DEFAULT 0 COMMENT 'c\\\\d' CODEC(ZSTD(3)), " +
+		"PROJECTION p (SELECT * ORDER BY payload)) ENGINE = MergeTree ORDER BY id"
 
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
@@ -141,7 +145,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 			}, nil
 		case strings.Contains(query, "FROM system.tables"):
 			return dbtest.QueryResult{
-				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key"},
+				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key", "create_table_query"},
 				Rows:    tableRows,
 			}, nil
 		default:
@@ -161,6 +165,28 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(tables[1].Columns[1].ColumnDefault, qt.IsNotNil)
 	c.Assert(*tables[1].Columns[1].ColumnDefault, qt.Equals, "0")
 	c.Assert(tables[1].Columns[1].Comment, qt.Equals, `c\d`)
+	c.Assert(tables[0].Projections, qt.IsNil)
+	c.Assert(tables[0].Columns[1].StorageClauses, qt.IsNil)
+	c.Assert(tables[1].Projections, qt.DeepEquals, []catalog.Projection{{Name: "p", Definition: "(SELECT * ORDER BY payload)"}})
+	c.Assert(tables[1].Columns[0].StorageClauses, qt.IsNil)
+	c.Assert(tables[1].Columns[1].StorageClauses, qt.DeepEquals, []string{"CODEC(ZSTD(3))"})
+}
+
+// A table whose CREATE TABLE the reader cannot split into elements fails the
+// read, naming the table, rather than reading as a table with no projections
+// and no codecs, which a rebuild would then drop.
+func TestReaderReadTablesRefusesACreateTableItCannotRead(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, catalogServer(
+		[][]driver.Value{{"t", "id", "UInt64", "", "", uint64(1), "", uint8(1)}},
+		[][]driver.Value{{"t", "", "id", "id", "MergeTree", "", "", "CREATE TABLE default.t (`id` UInt64"}},
+	))
+	reader := NewClickHouseReader(db.SQL, "default")
+
+	tables, err := reader.readTables(t.Context(), "default")
+
+	c.Assert(err, qt.ErrorMatches, `.*table "t": cannot read the elements of the CREATE TABLE the server reports: the element list does not close`)
+	c.Assert(tables, qt.IsNil)
 }
 
 // Key clauses preserve catalog spelling even when the engine considers them
@@ -226,6 +252,29 @@ func TestReaderReadTablesCarriesTheSortingKey(t *testing.T) {
 	}
 }
 
+// catalogServer answers the two catalog reads with the given rows of
+// system.columns and system.tables. It is a function rather than a closure in
+// the test body so the switch that routes the two queries lives outside the
+// assertion, which is where AGENTS.md wants it.
+func catalogServer(columnRows, tableRows [][]driver.Value) func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "FROM system.columns"):
+			return dbtest.QueryResult{
+				Columns: []string{"table", "name", "type", "default_kind", "default_expression", "position", "comment", "is_in_primary_key"},
+				Rows:    columnRows,
+			}, nil
+		case strings.Contains(query, "FROM system.tables"):
+			return dbtest.QueryResult{
+				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key", "create_table_query"},
+				Rows:    tableRows,
+			}, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
+	}
+}
+
 // keyedTableServer answers the two catalog reads with one table carrying the
 // given key. It is a function rather than a closure in the test body so the
 // switch that routes the two queries lives outside the assertion, which is
@@ -248,8 +297,10 @@ func keyedTableServer(
 			}, nil
 		case strings.Contains(query, "FROM system.tables"):
 			return dbtest.QueryResult{
-				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key"},
-				Rows:    [][]driver.Value{{"t", "", sortingKey, primaryKey, "MergeTree", "", ""}},
+				Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key", "create_table_query"},
+				Rows: [][]driver.Value{{"t", "", sortingKey, primaryKey, "MergeTree", "", "",
+					"CREATE TABLE default.t (`a` UInt64, `b` UInt64) ENGINE = MergeTree ORDER BY a",
+				}},
 			}, nil
 		default:
 			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)

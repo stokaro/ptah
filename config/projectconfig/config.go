@@ -856,11 +856,41 @@ type DiffConfig struct {
 	// a PostgreSQL constraint added NOT VALID and validated separately.
 	OnlineAlter ConfigBool
 	// AllowRecreate holds the `diff "<dialect>" { allow_recreate = ... }`
-	// blocks of an Atlas project file, by the dialect's name. A dialect set to
+	// blocks of an Atlas project file, top-level and env, by the dialect's
+	// name; an env's block merges over the top-level one. A dialect set to
 	// true has its plans create a table again, and keep its rows, where the
 	// engine has no ALTER TABLE for the change. Each value is a tri-state so an
 	// explicit false can override an inherited true.
 	AllowRecreate map[string]ConfigBool
+	// Dialects holds the skip and concurrent_index blocks of the labeled
+	// `diff "<dialect>"` blocks of an Atlas project file, by the dialect's
+	// name, as [ptah.run/core/platform.NormalizeDialect] spells it. A plan for
+	// that dialect reads them over the unlabeled block's; see
+	// [DiffConfig.ForDialect].
+	Dialects map[string]DialectDiffConfig
+}
+
+// DialectDiffConfig holds the policy blocks of the labeled diff blocks for one
+// dialect, by where the project file writes them. A plan for the dialect reads
+// both levels, the env's values over the top level's. A plan for another
+// dialect reads them apart: a value the top level sets is decided by a nearer
+// block when the env's labeled block for the plan's own dialect sets it too.
+type DialectDiffConfig struct {
+	// TopLevel holds the values the top-level labeled block sets, less those
+	// the env's unlabeled diff block sets, which is nearer the run.
+	TopLevel DialectDiffValues
+	// Env holds the values the env's labeled block sets.
+	Env DialectDiffValues
+	// Blocks names the policy blocks the labeled blocks hold, in
+	// alphabetical order, whether or not they set anything.
+	Blocks []string
+}
+
+// DialectDiffValues holds the skip and concurrent_index values one labeled
+// diff block sets.
+type DialectDiffValues struct {
+	Skip            DiffSkipConfig
+	ConcurrentIndex DiffConcurrentIndexConfig
 }
 
 // DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
@@ -950,6 +980,38 @@ func (c DiffConfig) OnlineAlterRequested() bool {
 // name is the dialect's, as [ptah.run/core/platform.NormalizeDialect] spells it.
 func (c DiffConfig) TableRebuildAllowed(dialect string) bool {
 	return c.AllowRecreate[dialect].Value
+}
+
+// ForDialect returns the policy a plan for the dialect reads: the skip and
+// concurrent_index values of the dialect's labeled diff blocks in place of the
+// unlabeled block's, where a labeled block sets them, the env's over the top
+// level's. The result holds no labeled block.
+func (c DiffConfig) ForDialect(dialect string) DiffConfig {
+	result := c
+	result.Dialects = nil
+	labeled, found := c.Dialects[dialect]
+	if !found {
+		return result
+	}
+	values := DialectDiffValues{Skip: c.Skip, ConcurrentIndex: c.ConcurrentIndex}.
+		mergedWith(labeled.TopLevel).
+		mergedWith(labeled.Env)
+	result.Skip = values.Skip
+	result.ConcurrentIndex = values.ConcurrentIndex
+	return result
+}
+
+// PolicyDialects returns the dialects whose labeled diff block holds a skip or
+// a concurrent_index block, in alphabetical order.
+func (c DiffConfig) PolicyDialects() []string {
+	var dialects []string
+	for dialect, labeled := range c.Dialects {
+		if len(labeled.Blocks) > 0 {
+			dialects = append(dialects, dialect)
+		}
+	}
+	slices.Sort(dialects)
+	return dialects
 }
 
 // TableRebuildDialects returns the dialects the policy lets create a table
@@ -1637,14 +1699,10 @@ func clonePointer[T any](value *T) *T {
 
 func mergeDiff(base, override DiffConfig) DiffConfig {
 	result := base
-	result.Skip.DropTable = mergeBool(result.Skip.DropTable, override.Skip.DropTable)
-	result.Skip.DropColumn = mergeBool(result.Skip.DropColumn, override.Skip.DropColumn)
-	result.Skip.DropIndex = mergeBool(result.Skip.DropIndex, override.Skip.DropIndex)
-	result.Skip.DropEnum = mergeBool(result.Skip.DropEnum, override.Skip.DropEnum)
-	result.Skip.DropSchema = mergeBool(result.Skip.DropSchema, override.Skip.DropSchema)
-	result.ConcurrentIndex.Create = mergeBool(result.ConcurrentIndex.Create, override.ConcurrentIndex.Create)
-	result.ConcurrentIndex.Drop = mergeBool(result.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop)
+	result.Skip = mergeSkip(base.Skip, override.Skip)
+	result.ConcurrentIndex = mergeConcurrentIndex(base.ConcurrentIndex, override.ConcurrentIndex)
 	result.OnlineAlter = mergeBool(result.OnlineAlter, override.OnlineAlter)
+	result.Dialects = mergeDialectDiffs(base.Dialects, override)
 	if len(override.AllowRecreate) > 0 {
 		result.AllowRecreate = maps.Clone(base.AllowRecreate)
 		if result.AllowRecreate == nil {
@@ -1655,6 +1713,88 @@ func mergeDiff(base, override DiffConfig) DiffConfig {
 		}
 	}
 	return result
+}
+
+func mergeSkip(base, override DiffSkipConfig) DiffSkipConfig {
+	return DiffSkipConfig{
+		DropTable:  mergeBool(base.DropTable, override.DropTable),
+		DropColumn: mergeBool(base.DropColumn, override.DropColumn),
+		DropIndex:  mergeBool(base.DropIndex, override.DropIndex),
+		DropEnum:   mergeBool(base.DropEnum, override.DropEnum),
+		DropSchema: mergeBool(base.DropSchema, override.DropSchema),
+	}
+}
+
+func mergeConcurrentIndex(base, override DiffConcurrentIndexConfig) DiffConcurrentIndexConfig {
+	return DiffConcurrentIndexConfig{
+		Create: mergeBool(base.Create, override.Create),
+		Drop:   mergeBool(base.Drop, override.Drop),
+	}
+}
+
+// mergeDialectDiffs merges an env's diff blocks over the top-level labeled
+// ones. The env is nearer the run than the top level, so a value the env's
+// unlabeled block sets replaces a top-level labeled block's value too, and a
+// value the env's labeled block sets replaces both. For each value the order
+// is: the env's labeled block, the env's unlabeled block, the top-level
+// labeled block, the top-level unlabeled block. Each level is kept apart; see
+// [DialectDiffConfig].
+func mergeDialectDiffs(base map[string]DialectDiffConfig, override DiffConfig) map[string]DialectDiffConfig {
+	if len(base) == 0 && len(override.Dialects) == 0 {
+		return nil
+	}
+	nearer := DialectDiffValues{Skip: override.Skip, ConcurrentIndex: override.ConcurrentIndex}
+	result := make(map[string]DialectDiffConfig, len(base)+len(override.Dialects))
+	for dialect, labeled := range base {
+		result[dialect] = DialectDiffConfig{
+			TopLevel: labeled.TopLevel.shadowedBy(nearer),
+			Env:      labeled.Env.shadowedBy(nearer),
+			Blocks:   slices.Clone(labeled.Blocks),
+		}
+	}
+	for dialect, labeled := range override.Dialects {
+		merged := result[dialect]
+		merged.TopLevel = merged.TopLevel.mergedWith(labeled.TopLevel)
+		merged.Env = merged.Env.mergedWith(labeled.Env)
+		merged.Blocks = slices.Compact(slices.Sorted(slices.Values(slices.Concat(merged.Blocks, labeled.Blocks))))
+		result[dialect] = merged
+	}
+	return result
+}
+
+// mergedWith returns v with each value override sets in place of v's.
+func (v DialectDiffValues) mergedWith(override DialectDiffValues) DialectDiffValues {
+	return DialectDiffValues{
+		Skip:            mergeSkip(v.Skip, override.Skip),
+		ConcurrentIndex: mergeConcurrentIndex(v.ConcurrentIndex, override.ConcurrentIndex),
+	}
+}
+
+// shadowedBy returns v without the values nearer sets: a value a nearer block
+// sets hides the farther block's.
+func (v DialectDiffValues) shadowedBy(nearer DialectDiffValues) DialectDiffValues {
+	return DialectDiffValues{
+		Skip: DiffSkipConfig{
+			DropTable:  shadowedBool(v.Skip.DropTable, nearer.Skip.DropTable),
+			DropColumn: shadowedBool(v.Skip.DropColumn, nearer.Skip.DropColumn),
+			DropIndex:  shadowedBool(v.Skip.DropIndex, nearer.Skip.DropIndex),
+			DropEnum:   shadowedBool(v.Skip.DropEnum, nearer.Skip.DropEnum),
+			DropSchema: shadowedBool(v.Skip.DropSchema, nearer.Skip.DropSchema),
+		},
+		ConcurrentIndex: DiffConcurrentIndexConfig{
+			Create: shadowedBool(v.ConcurrentIndex.Create, nearer.ConcurrentIndex.Create),
+			Drop:   shadowedBool(v.ConcurrentIndex.Drop, nearer.ConcurrentIndex.Drop),
+		},
+	}
+}
+
+// shadowedBool is value, unset where nearer is set: a value a nearer block
+// sets hides the farther block's.
+func shadowedBool(value, nearer ConfigBool) ConfigBool {
+	if nearer.Set {
+		return ConfigBool{}
+	}
+	return value
 }
 
 func mergeBool(base, override ConfigBool) ConfigBool {

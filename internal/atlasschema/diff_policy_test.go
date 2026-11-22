@@ -9,6 +9,8 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/diffpolicy"
 )
@@ -250,4 +252,232 @@ func TestDiffPolicy_AllowsTableRebuild(t *testing.T) {
 			c.Assert(test.policy.AllowsTableRebuild(test.dialect), qt.Equals, test.want)
 		})
 	}
+}
+
+func TestDiffPolicy_ForDialect_HappyPath(t *testing.T) {
+	unlabeled := atlasschema.DiffPolicy{
+		SkipChangeKinds: []planext.ChangeKind{planext.DropColumn}, ConcurrentIndexCreate: true, TableRebuildDialects: []string{platform.SQLite},
+	}
+	topLevel := atlasschema.DialectDiffPolicy{TopLevel: atlasschema.DiffSettings{
+		atlasschema.SkipSetting(planext.DropTable): true, atlasschema.ConcurrentIndexDropSetting: true,
+	}}
+	overridden := atlasschema.DialectDiffPolicy{
+		TopLevel: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): true},
+		Env: atlasschema.DiffSettings{
+			atlasschema.SkipSetting(planext.DropTable): false, atlasschema.SkipSetting(planext.DropColumn): false,
+			atlasschema.ConcurrentIndexCreateSetting: false,
+		},
+	}
+	tests := []struct {
+		name    string
+		policy  atlasschema.DiffPolicy
+		dialect string
+		want    atlasschema.DiffPolicy
+	}{
+		{
+			name:    "the labeled block's values over the unlabeled block's",
+			policy:  withDialects(unlabeled, map[string]atlasschema.DialectDiffPolicy{platform.SQLite: topLevel}),
+			dialect: platform.SQLite,
+			want: withDialects(atlasschema.DiffPolicy{
+				SkipChangeKinds: []planext.ChangeKind{planext.DropTable, planext.DropColumn}, ConcurrentIndexCreate: true, ConcurrentIndexDrop: true,
+				TableRebuildDialects: []string{platform.SQLite},
+			}, map[string]atlasschema.DialectDiffPolicy{platform.SQLite: topLevel}),
+		},
+		{
+			name:    "the env's values over the top level's",
+			policy:  withDialects(unlabeled, map[string]atlasschema.DialectDiffPolicy{platform.SQLite: overridden}),
+			dialect: platform.SQLite,
+			want: withDialects(atlasschema.DiffPolicy{
+				ConcurrentIndexCreateDisabled: true, TableRebuildDialects: []string{platform.SQLite},
+			}, map[string]atlasschema.DialectDiffPolicy{platform.SQLite: overridden}),
+		},
+		{
+			name:    "the unlabeled policy where no block names the dialect",
+			policy:  withDialects(unlabeled, map[string]atlasschema.DialectDiffPolicy{platform.Postgres: topLevel}),
+			dialect: platform.SQLite,
+			want:    withDialects(unlabeled, map[string]atlasschema.DialectDiffPolicy{platform.Postgres: topLevel}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := test.policy.ForDialect(test.dialect)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(got.ForDialect(test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// tableDropped is a comparison that removes the table "old" and nothing else.
+func tableDropped() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "old"}}}
+}
+
+// indexAdded is a comparison that adds the index "t_a" and nothing else.
+func indexAdded() *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{TableName: "t", Index: schemamodel.Index{Name: "t_a", Fields: []string{"a"}}}}}
+}
+
+// indexRemoved is a comparison that removes the index "t_a" and nothing else.
+func indexRemoved() *difftypes.SchemaDiff {
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "t_a", TableName: "t"}})
+	return diff
+}
+
+// A labeled block for another dialect that would change nothing in the plan is
+// reported, and the plan goes on: the plan holds no change, a nearer block
+// decides the value, the plan already follows the value, the plan holds no
+// change of the kind, or the dialect has no grammar for the value.
+func TestDiffPolicy_ReviewOtherDialects_HappyPath(t *testing.T) {
+	dropTable := atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): true}
+	notice := `the diff "postgres" block of the project file is not applied to this plan for "sqlite": ` +
+		"Ptah applies it only to a plan for postgres, and it changes nothing in this one\n"
+	tests := []struct {
+		name       string
+		policy     atlasschema.DiffPolicy
+		dialect    string
+		compared   *difftypes.SchemaDiff
+		wantNotice string
+	}{
+		{
+			name:       "a plan with no change",
+			policy:     withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{platform.Postgres: {TopLevel: dropTable}}),
+			dialect:    platform.SQLite,
+			compared:   &difftypes.SchemaDiff{},
+			wantNotice: notice,
+		},
+		{
+			name: "the env's block for the plan's dialect decides the value",
+			policy: withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{
+				platform.Postgres: {TopLevel: dropTable},
+				platform.SQLite:   {Env: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): false}},
+			}),
+			dialect:    platform.SQLite,
+			compared:   tableDropped(),
+			wantNotice: notice,
+		},
+		{
+			name:       "the plan follows the value already",
+			policy:     withDialects(skipping(planext.DropTable), map[string]atlasschema.DialectDiffPolicy{platform.Postgres: {TopLevel: dropTable}}),
+			dialect:    platform.SQLite,
+			compared:   tableDropped(),
+			wantNotice: notice,
+		},
+		{
+			name:       "a plan with no change of the kind",
+			policy:     withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{platform.Postgres: {TopLevel: dropTable}}),
+			dialect:    platform.SQLite,
+			compared:   &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsRemoved: difftypes.ColumnChanges{{Name: "b"}}}}},
+			wantNotice: notice,
+		},
+		{
+			name: "a concurrent_index value for a dialect with no concurrent grammar",
+			policy: withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{
+				platform.Postgres: {TopLevel: atlasschema.DiffSettings{atlasschema.ConcurrentIndexCreateSetting: true}},
+			}),
+			dialect:    platform.SQLite,
+			compared:   indexAdded(),
+			wantNotice: notice,
+		},
+		{
+			name:     "a block for the plan's own dialect",
+			policy:   withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{platform.SQLite: {TopLevel: dropTable}}),
+			dialect:  platform.SQLite,
+			compared: tableDropped(),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var diagnostics bytes.Buffer
+
+			err := test.policy.ReviewOtherDialects(&diagnostics, test.compared, test.dialect, capability.Capabilities{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diagnostics.String(), qt.Equals, test.wantNotice)
+		})
+	}
+}
+
+// A labeled block for another dialect that would change the plan is refused:
+// the community binary applies it to every dialect, so its result differs.
+func TestDiffPolicy_ReviewOtherDialects_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		policy   atlasschema.DiffPolicy
+		dialect  string
+		compared *difftypes.SchemaDiff
+		wantErr  string
+	}{
+		{
+			name: "a skip value over a change of its kind",
+			policy: withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{
+				platform.Postgres: {TopLevel: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): true}},
+			}),
+			dialect:  platform.SQLite,
+			compared: tableDropped(),
+			wantErr: `a labeled diff block holds a policy for another dialect: the diff "postgres" block of the project file sets drop_table = true ` +
+				`in its skip block, which Ptah applies only to a plan for postgres\. ` +
+				`This plan is for "sqlite" and holds a change that value decides: drop_table of "old"\. ` +
+				`The community binary ignores the label and applies the block to every dialect\. ` +
+				`Move the value into an unlabeled diff block to apply it to every dialect, or into the env of the postgres database`,
+		},
+		{
+			name: "a skip value that keeps what the plan leaves out",
+			policy: withDialects(skipping(planext.DropTable), map[string]atlasschema.DialectDiffPolicy{
+				platform.Postgres: {TopLevel: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): false}},
+			}),
+			dialect:  platform.SQLite,
+			compared: tableDropped(),
+			wantErr:  `.*sets drop_table = false in its skip block.*`,
+		},
+		{
+			name: "an env block for another dialect beside the env block for the plan's",
+			policy: withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{
+				platform.Postgres: {Env: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): true}},
+				platform.SQLite:   {Env: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): false}},
+			}),
+			dialect:  platform.SQLite,
+			compared: tableDropped(),
+			wantErr:  `.*the diff "postgres" block of the project file sets drop_table = true.*`,
+		},
+		{
+			name: "a concurrent_index create value over an index addition",
+			policy: withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{
+				platform.SQLite: {TopLevel: atlasschema.DiffSettings{atlasschema.ConcurrentIndexCreateSetting: true}},
+			}),
+			dialect:  platform.Postgres,
+			compared: indexAdded(),
+			wantErr:  `.*sets create = true in its concurrent_index block.* holds a change that value decides: index "t_a" is added\..*`,
+		},
+		{
+			name: "a concurrent_index drop value over an index removal",
+			policy: withDialects(atlasschema.DiffPolicy{}, map[string]atlasschema.DialectDiffPolicy{
+				platform.SQLite: {TopLevel: atlasschema.DiffSettings{atlasschema.ConcurrentIndexDropSetting: true}},
+			}),
+			dialect:  platform.Postgres,
+			compared: indexRemoved(),
+			wantErr:  `.*sets drop = true in its concurrent_index block.* holds a change that value decides: index "t_a" is removed\..*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var diagnostics bytes.Buffer
+
+			err := test.policy.ReviewOtherDialects(&diagnostics, test.compared, test.dialect, capability.Capabilities{})
+
+			c.Assert(err, qt.ErrorIs, atlasschema.ErrDiffPolicyForAnotherDialect)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(diagnostics.String(), qt.Equals, "")
+		})
+	}
+}
+
+func withDialects(policy atlasschema.DiffPolicy, dialects map[string]atlasschema.DialectDiffPolicy) atlasschema.DiffPolicy {
+	policy.Dialects = dialects
+	return policy
 }

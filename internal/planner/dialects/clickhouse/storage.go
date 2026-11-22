@@ -27,9 +27,9 @@ import (
 // recreated in after.
 //
 // rebuilds are the tables the plan creates again. Each is one step, after the
-// materialized-view drops and ahead of every feature step, because a table
-// that is dropped and created again is not there for an operation that names
-// it in between.
+// materialized-view drops and ahead of every feature step, because the new
+// table takes the table's name only when the step swaps the two, so an
+// operation that names the table in between would change the old one.
 type storagePhases struct {
 	before, drops, columns, after, indexes, last []ast.Node
 	rebuilds                                     tableRebuilds
@@ -52,8 +52,8 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 		if phases.rebuilds.has(builder, table.TableName) {
 			// The new table is made from the declaration, so the changes of
 			// the table's own storage and skipping indexes have nothing left
-			// to change. A row policy change is still planned: ClickHouse
-			// keeps the policy while the table is created again.
+			// to change. A row policy change is still planned: a policy
+			// names the table, so it holds for the new one after the swap.
 			action, changes = featureplan.RebuildTable, withoutRebuiltChanges(changes)
 		}
 		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: action, Desired: table.Desired, Current: table.Current})
@@ -114,8 +114,8 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	for _, id := range middle {
 		common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: drops, After: id}, plangraph.Dependency{Before: id, After: last})
 	}
-	// A rebuilt table is gone between its DROP TABLE and its CREATE TABLE, so
-	// no feature step runs before the rebuild has finished.
+	// A rebuilt table is the old one until EXCHANGE TABLES swaps in the new
+	// one, so no feature step runs before the rebuild has finished.
 	for _, rebuild := range rebuildSteps {
 		for _, contribution := range features.Contributions {
 			for _, step := range contribution.Steps {

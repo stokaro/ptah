@@ -305,8 +305,11 @@ proven to stay inside the disposable realm:
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.
 - ClickHouse remote, distributed, replicated, and unknown table engines,
-  external dictionary sources, and `FREEZE`/`UNFREEZE`. Tables and standalone
-  materialized views must select an explicitly allowlisted engine.
+  external dictionary sources, `FREEZE`/`UNFREEZE`, and `SYSTEM` statements but
+  `SYSTEM STOP MERGES` and `SYSTEM START MERGES` of one table in the dev
+  database, which a [table rebuild](../../databases/clickhouse/#creating-a-table-again)
+  runs. Tables and standalone materialized views must select an explicitly
+  allowlisted engine.
 - SQLite `ATTACH`, `DETACH`, temporary views and triggers, any statement that names
   the `temp` schema, and non-restorable pragmas.
 - YDB, through its provider's replay guard, writes whose target is an absolute

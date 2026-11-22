@@ -21,9 +21,9 @@ import (
 func settingsReaderQuery(engine string) dbtest.QueryHandler {
 	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		if strings.Contains(query, "engine LIKE '%MergeTree'") {
-			return dbtest.QueryResult{Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key"}, Rows: [][]driver.Value{
-				{"events", "", "id", "", engine, "", ""},
-				{"schema_migrations", "", "id", "id", "MergeTree ORDER BY id", "", ""},
+			return dbtest.QueryResult{Columns: []string{"name", "comment", "sorting_key", "primary_key", "engine_full", "partition_key", "sampling_key", "create_table_query"}, Rows: [][]driver.Value{
+				{"events", "", "id", "", engine, "", "", "CREATE TABLE default.events (`id` UInt64) ENGINE = " + engine},
+				{"schema_migrations", "", "id", "id", "MergeTree ORDER BY id", "", "", "CREATE TABLE default.schema_migrations (`id` UInt64) ENGINE = MergeTree ORDER BY id"},
 			}}, nil
 		}
 		return clickHouseViewReaderQuery(query, args)

@@ -147,26 +147,99 @@ env "local" {
 | `diff.skip.drop_index` | Omits standalone index drops and their comment cleanup from the same commands. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
-| `diff "clickhouse" { allow_recreate }` | A top-level block. `true` lets a ClickHouse plan create a table again, and keep its rows, where the server has no `ALTER TABLE` for the change; see [Creating a table again](../../databases/clickhouse/#creating-a-table-again). A label of a dialect with no table rebuild is refused. |
+| `diff "<dialect>"` | A top-level block, or one in an env, for the dialect its label names. `allow_recreate = true` lets a ClickHouse plan create a table again, and keep its rows, where the server has no `ALTER TABLE` for the change; see [Creating a table again](../../databases/clickhouse/#creating-a-table-again). Its `skip` and `concurrent_index` apply to a plan for that dialect, as the section below says. |
 | `check "migrate_apply".drift.on_error` | Whether `migrate apply` stops on drift (`FAIL`, the default) or reports it and applies (`CONTINUE`). |
 | `check "migrate_apply".drift.exclude` | Resource exclusion filters for the drift check; they replace `env.exclude` for it. |
 
 ### `diff "<dialect>"`
 
-`allow_recreate` in a top-level `diff "clickhouse"` block asks for the same plan
-as `PTAH_ALLOW_TABLE_REBUILD=1`, scoped to ClickHouse: a change of the engine,
+`allow_recreate` in a `diff "clickhouse"` block asks for the same plan as
+`PTAH_ALLOW_TABLE_REBUILD=1`, scoped to ClickHouse: a change of the engine,
 `PARTITION BY` or `PRIMARY KEY`, or of an `ORDER BY` that `MODIFY ORDER BY`
 cannot make, is planned as the table created again with its rows kept, instead
-of refused. A block set to `false` asks for nothing. Any other attribute or
-nested block in it is reported as having no effect, and an env-level `diff
-"clickhouse"` block is refused.
+of refused. The block may sit at the top level, in an env, or both:
 
-Measured on the pinned community binary v1.4.0, which has no ClickHouse driver
-(`unknown driver "clickhouse"`): it accepts a top-level or env-level `diff`
-block under any label and applies nothing from it, and an env that references
-the block with `diff = diff.clickhouse` fails with `incorrect type ref`. The
-strict policy, `PTAH_ATLAS_STRICT_COMPAT=1`, reads the block as ignored and
-therefore refuses it, as it refuses every ignored construct.
+```hcl
+diff "clickhouse" {
+  allow_recreate = true
+}
+
+env "prod" {
+  url = getenv("CLICKHOUSE_URL")
+  diff "clickhouse" {
+    allow_recreate = false
+  }
+}
+```
+
+The env block merges over the top-level one, so `prod` above refuses the
+rebuild and every other env asks for it. An env block that sets nothing keeps
+the top-level value. A block set to `false` asks for nothing, and it does not
+withdraw `PTAH_ALLOW_TABLE_REBUILD=1`, which asks for every dialect on its own;
+the variable set to `0` withdraws no block's request either. Two blocks for one
+dialect in one scope are refused, its aliases included (`diff "clickhouse"`
+beside `diff "ch"`). A label that names no dialect is refused, and so is
+`allow_recreate` under the label of a dialect with no table rebuild. Any other
+attribute, and any nested block but `skip` and `concurrent_index`, is reported
+as having no effect.
+
+A `skip` or `concurrent_index` block in a labeled `diff` block applies to a
+plan for the dialect the label names, whatever the dialect. For each value, the
+nearest block that sets it wins: the env's labeled block, then the env's
+unlabeled block, then the top-level labeled block, then the top-level unlabeled
+block. Here a SQLite plan leaves out both the column drops and the index drops:
+
+```hcl
+env "local" {
+  url = "sqlite://app.db"
+  diff {
+    skip {
+      drop_column = true
+    }
+  }
+  diff "sqlite" {
+    skip {
+      drop_index = true
+    }
+  }
+}
+```
+
+A plan for another dialect than the label names does not read the block. Where
+the block would change that plan, the plan is refused before anything is
+applied. A value changes the plan when no nearer block sets it, it differs from
+the value the plan follows, and the plan holds a change of the kind it governs:
+a removal for a `skip` value, an index build or drop for a `concurrent_index`
+value on a dialect that builds indexes concurrently. The refusal names the
+value and the change, as in `the diff "postgres" block of the project file sets
+drop_table = true in its skip block, which Ptah applies only to a plan for
+postgres. This plan is for "sqlite" and holds a change that value decides:
+drop_table of "old"`. Move the value into an unlabeled `diff` block to apply it
+to every dialect.
+
+Any other plan goes ahead, and the error stream says that the block is not
+applied to it. The env is nearer the run than the top level, so an env's
+unlabeled block, and its block for the plan's own dialect, decide a value a
+top-level labeled block also sets.
+
+The community binary reads a labeled `diff` block as an unlabeled one, its
+label ignored, and of two `diff` blocks in one env applies only the first one
+written. Measured on v1.4.0 with a SQLite URL, Ptah differs from it in two
+cases, both recorded under
+[Compatibility differences](../retained-divergences/#a-diff-policy-block-under-a-dialect-label):
+
+- With `diff "sqlite" { skip { drop_table = true } }` first and
+  `diff { skip { drop_column = true } }` second, the community binary keeps the
+  table and drops the column. Ptah applies both blocks and keeps both.
+- With `diff "postgres" { skip { drop_table = true } }` and a plan that drops a
+  table, the community binary leaves the `DROP TABLE` out of the SQLite plan.
+  Ptah refuses the plan.
+
+The community binary has no ClickHouse driver (`unknown driver "clickhouse"`)
+and applies no `allow_recreate`, and an env that references the block with
+`diff = diff.clickhouse` fails with `incorrect type ref`. The strict policy,
+`PTAH_ATLAS_STRICT_COMPAT=1`, reads the block as ignored, at the top level and
+in an env, and therefore refuses it, as it refuses every ignored construct.
 
 ### `diff.skip`
 

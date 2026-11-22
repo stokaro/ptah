@@ -19,6 +19,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
@@ -2598,6 +2599,40 @@ func TestAtlasDiffPolicy_CarriesConcurrentIndexDrop(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// The values each labeled diff block sets reach the planning policy by the name
+// the project file gives them and by where it writes them, and a value a block
+// does not set is absent, so a plan reads the unlabeled block's in its place.
+func TestAtlasDiffPolicy_CarriesTheLabeledPolicy(t *testing.T) {
+	c := qt.New(t)
+	var cfg projectconfig.Config
+	cfg.Diff.Skip.DropColumn = projectconfig.ConfigBool{Value: true, Set: true}
+	cfg.Diff.Dialects = map[string]projectconfig.DialectDiffConfig{
+		"sqlite": {
+			TopLevel: projectconfig.DialectDiffValues{Skip: projectconfig.DiffSkipConfig{DropTable: projectconfig.ConfigBool{Value: true, Set: true}}},
+			Env: projectconfig.DialectDiffValues{
+				Skip:            projectconfig.DiffSkipConfig{DropIndex: projectconfig.ConfigBool{Set: true}},
+				ConcurrentIndex: projectconfig.DiffConcurrentIndexConfig{Create: projectconfig.ConfigBool{Value: true, Set: true}},
+			},
+			Blocks: []string{"concurrent_index", "skip"},
+		},
+	}
+
+	got, err := atlasDiffPolicy(cfg)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, atlasschema.DiffPolicy{
+		SkipChangeKinds: []planext.ChangeKind{planext.DropColumn},
+		Dialects: map[string]atlasschema.DialectDiffPolicy{
+			"sqlite": {
+				TopLevel: atlasschema.DiffSettings{atlasschema.SkipSetting(planext.DropTable): true},
+				Env: atlasschema.DiffSettings{
+					atlasschema.SkipSetting(planext.DropIndex): false, atlasschema.ConcurrentIndexCreateSetting: true,
+				},
+			},
+		},
+	})
 }
 
 func TestCompatCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {

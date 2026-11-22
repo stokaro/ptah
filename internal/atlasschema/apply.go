@@ -638,6 +638,7 @@ func computeApplyPlan(
 	}
 	info := conn.Info()
 	info.Capabilities = opts.renderCapabilities(info)
+	opts.Policy = opts.Policy.ForDialect(info.Dialect)
 	// The comparison is told what the diff policy will do to its answer; see
 	// [DiffPolicy.CompareOptions].
 	compareOpts := opts.Policy.CompareOptions()
@@ -658,6 +659,9 @@ func computeApplyPlan(
 	// empty plan says nothing about it.
 	unmodelednote.Report(ctx, opts.Diagnostics, "the database", current)
 	computation.undecided = undecided
+	if err := opts.Policy.ReviewOtherDialects(opts.Diagnostics, compared, info.Dialect, info.Capabilities); err != nil {
+		return applyComputation{}, err
+	}
 	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
 	if err := reviewApplyDiff(info, desired, diff, omitted, opts, placed); err != nil {
 		return applyComputation{}, err

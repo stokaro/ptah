@@ -124,6 +124,14 @@ func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
 			name:      "nested freeze column",
 			statement: "ALTER TABLE ptah_dev.events ADD COLUMN metadata Tuple(freeze String)",
 		},
+		{
+			name:      "stop merges of a table",
+			statement: "SYSTEM STOP MERGES `ptah_rebuild_events`;",
+		},
+		{
+			name:      "start merges of a qualified local table",
+			statement: "SYSTEM START MERGES ptah_dev.`ptah_rebuild_events`",
+		},
 	}
 
 	for _, test := range tests {
@@ -204,6 +212,31 @@ func TestValidateClickHouseReplayStatement_GlobalFailurePath(t *testing.T) {
 			name:      "temporary view",
 			statement: "CREATE TEMPORARY VIEW events_view AS SELECT 1",
 			wantErr:   `clickhouse migration replay rejects TEMP object .*`,
+		},
+		{
+			name:      "stop merges of every table",
+			statement: "SYSTEM STOP MERGES",
+			wantErr:   `clickhouse migration replay rejects SYSTEM .*`,
+		},
+		{
+			name:      "stop merges on a volume",
+			statement: "SYSTEM STOP MERGES ON VOLUME hot",
+			wantErr:   `clickhouse migration replay rejects SYSTEM .*`,
+		},
+		{
+			name:      "start merges on a cluster",
+			statement: "SYSTEM START MERGES ON CLUSTER production events",
+			wantErr:   `clickhouse migration replay rejects SYSTEM .*`,
+		},
+		{
+			name:      "stop merges of a table in another database",
+			statement: "SYSTEM STOP MERGES production.events",
+			wantErr:   `clickhouse migration replay rejects SYSTEM .*`,
+		},
+		{
+			name:      "another system statement",
+			statement: "SYSTEM DROP DNS CACHE",
+			wantErr:   `clickhouse migration replay rejects SYSTEM .*`,
 		},
 	}
 

@@ -1,7 +1,6 @@
 package projectconfig
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 
@@ -30,6 +29,11 @@ type atlasBlockStructure struct {
 	// here is not a malformed block -- it is the other spelling
 	// (stokaro/ptah#1706).
 	tolerateOtherLabelArity bool
+	// labeled is the structure of the same name written with the label count
+	// it states, where that spelling is another block: `diff "clickhouse" {
+	// allow_recreate = true }` beside the unlabeled `diff { skip { ... } }`.
+	// Nil means the name takes only the label count above.
+	labeled *atlasBlockStructure
 }
 
 // checkBlockArityAndUniqueness answers the two block-level shape questions:
@@ -65,14 +69,7 @@ func (p atlasParser) checkBlockArityAndUniqueness(
 	key := block.Type + "\x00" + strings.Join(block.Labels, "\x00")
 	if _, duplicate := seen[key]; duplicate {
 		if len(block.Labels) > 0 {
-			// A labeled block is addressed BY its label, so the useful
-			// message names it: two `rule "design/no-varchar"` blocks are a
-			// collision between two definitions, not an unsupported
-			// construct, and "unsupported" sends the reader looking for a
-			// spelling mistake that is not there.
-			return false, fmt.Errorf("duplicate %s %q at %s:%d",
-				block.Type, strings.Join(block.Labels, " "),
-				block.TypeRange.Filename, block.TypeRange.Start.Line)
+			return false, duplicateLabeledBlock(block)
 		}
 		return false, unsupportedBlock(block)
 	}
@@ -110,32 +107,23 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 				},
 			},
 			"diff": {
+				// `diff "clickhouse" { allow_recreate = true }` in an env
+				// merges over the top-level block of the same dialect.
+				// [atlasParser.parseDialectDiff] reads it in both places, and
+				// reads the policy blocks the unlabeled spelling reads.
+				labeled: &atlasBlockStructure{
+					labels: 1,
+					body: atlasBodyStructure{
+						attributes:             []string{"allow_recreate"},
+						allowUnknownAttributes: true,
+						allowUnknownBlocks:     true,
+						blocks:                 atlasDiffPolicyStructures(),
+					},
+				},
 				body: atlasBodyStructure{
 					allowUnknownAttributes: true,
 					allowUnknownBlocks:     true,
-					blocks: map[string]atlasBlockStructure{
-						"concurrent_index": {
-							body: atlasBodyStructure{
-								attributes:             []string{"create", "drop"},
-								allowUnknownAttributes: true,
-							},
-						},
-						"skip": {
-							body: atlasBodyStructure{
-								// The names [atlasParser.parseDiffSkip] decodes.
-								// One list, because an env-scoped diff block and
-								// a top-level one must recognize the same set:
-								// they did not, and drop_column set inside an
-								// env was reported as having no effect while the
-								// identical top-level block acted on it
-								// (stokaro/ptah#3111).
-								attributes: []string{
-									"drop_schema", "drop_table", "drop_column", "drop_index",
-								},
-								allowUnknownAttributes: true,
-							},
-						},
-					},
+					blocks:                 atlasDiffPolicyStructures(),
 				},
 			},
 			"format": {
@@ -828,6 +816,9 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 			}
 			continue
 		}
+		if labeled := blockStructure.labeled; labeled != nil && len(block.Labels) == labeled.labels {
+			blockStructure = *labeled
+		}
 		handled, err := p.checkBlockArityAndUniqueness(scope, block, blockStructure, structure, seen)
 		if err != nil {
 			return err
@@ -840,4 +831,31 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 		}
 	}
 	return nil
+}
+
+// atlasDiffPolicyStructures returns the structure of the policy blocks a diff
+// block holds, labeled or not: [atlasParser.diffPolicyBlocks] reads the same
+// names in both spellings.
+func atlasDiffPolicyStructures() map[string]atlasBlockStructure {
+	return map[string]atlasBlockStructure{
+		"concurrent_index": {
+			body: atlasBodyStructure{
+				attributes:             []string{"create", "drop"},
+				allowUnknownAttributes: true,
+			},
+		},
+		"skip": {
+			body: atlasBodyStructure{
+				// The names [atlasParser.parseDiffSkip] decodes. One
+				// list, because an env-scoped diff block and a top-level
+				// one must recognize the same set: with two, drop_column
+				// set inside an env reads as having no effect while the
+				// identical top-level block acts on it (stokaro/ptah#3111).
+				attributes: []string{
+					"drop_schema", "drop_table", "drop_column", "drop_index",
+				},
+				allowUnknownAttributes: true,
+			},
+		},
+	}
 }

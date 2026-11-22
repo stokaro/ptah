@@ -1,6 +1,7 @@
 // Package chcolumn spells a declared column for ClickHouse: the type it maps
 // to, whether that type is wrapped in Nullable, the DEFAULT or computed clause,
-// and the column definition CREATE TABLE and ADD COLUMN take.
+// and the column definition CREATE TABLE and ADD COLUMN take. It also quotes
+// and unquotes a ClickHouse identifier and names an unnamed CHECK constraint.
 //
 // The ClickHouse renderer writes every column through it, and the ClickHouse
 // storage owner writes the columns it adds in the same ALTER TABLE as a new

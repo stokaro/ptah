@@ -6,10 +6,14 @@ import (
 )
 
 // atlasTableRebuildEnvVar asks the verbs of this surface that plan a schema
-// change to plan a change the target cannot make in place as a table rebuild:
-// on YDB, a primary key change, a column type change and SET NOT NULL. Native
-// commands ask with --allow-table-rebuild; this surface takes no flag the
-// pinned binary lacks, so it reads a variable instead.
+// change to plan a change the target cannot make in place as a table rebuild,
+// on every dialect: on YDB, a primary key change, a column type change and SET
+// NOT NULL; on ClickHouse, a change of the engine, PARTITION BY or PRIMARY KEY,
+// of a setting the server fixes at creation, or of an ORDER BY that MODIFY
+// ORDER BY cannot make. A `diff "<dialect>" { allow_recreate = true }` block of
+// atlas.hcl asks for one dialect. Native commands ask with
+// --allow-table-rebuild; this surface takes no flag the pinned binary lacks,
+// so it reads a variable instead.
 const atlasTableRebuildEnvVar = "PTAH_ALLOW_TABLE_REBUILD"
 
 // atlasTableRebuildRequest is how this surface asks for a rebuild, as the
@@ -23,9 +27,11 @@ const atlasTableRebuildRequest = atlasTableRebuildEnvVar + "=1"
 var atlasTableRebuild = envbool.New(atlasTableRebuildEnvVar, false, envbool.Gated)
 
 // atlasTableRebuildRequested reports whether the operator asked for table
-// rebuilds. Unset and a valid false keep them refused; an empty or unparsable
-// value is a configuration error. Each verb that plans resolves it before its
-// first early return, so a malformed value fails every run of that verb.
+// rebuilds on every dialect with the variable. Unset and a valid false leave
+// the decision to atlas.hcl, whose allow_recreate asks for one dialect; an
+// empty or unparsable value is a configuration error. Each verb that plans
+// resolves it before its first early return, so a malformed value fails every
+// run of that verb.
 func atlasTableRebuildRequested() (bool, error) {
 	return atlasTableRebuild.Resolve()
 }

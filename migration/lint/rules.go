@@ -284,6 +284,10 @@ func tableDroppedRule() Rule {
 				if rebuilds.Drops[i] {
 					continue
 				}
+				if a, b, ok := exchangedTables(stmt.Words, stmt.sourceWords); ok {
+					exchangeCreated(created, a, b)
+					continue
+				}
 				if ref, isReplace := replacedTableRef(stmt.Words, stmt.sourceWords); isReplace {
 					if ref.Normalized != "" && lintkit.RefersToCreated(created, ref.Normalized) {
 						continue
@@ -303,6 +307,44 @@ func tableDroppedRule() Rule {
 			}
 			return append(findings, tableRenamedFindings(file)...)
 		},
+	}
+}
+
+// exchangedTables reads ClickHouse's EXCHANGE TABLES a AND b, which swaps the
+// names of two tables in one step.
+func exchangedTables(w, sourceWords []string) (a, b string, ok bool) {
+	if !lintkit.HasWordPrefix(w, "EXCHANGE", "TABLES") {
+		return "", "", false
+	}
+	first, next := lintkit.TableRefAt(w, sourceWords, 2)
+	if first.Normalized == "" || next >= len(w) || w[next] != "AND" {
+		return "", "", false
+	}
+	second, _ := lintkit.TableRefAt(w, sourceWords, next+1)
+	if second.Normalized == "" {
+		return "", "", false
+	}
+	return first.Normalized, second.Normalized, true
+}
+
+// exchangeCreated swaps whether the file created the tables named a and b, as
+// EXCHANGE TABLES swaps the tables the names hold. A ClickHouse rebuild creates
+// its copy, fills it and swaps it in, so the DROP TABLE that ends it names the
+// old table and its rows: without the swap that drop reads as the drop of a
+// table the file created, which loses nothing, and the rule stays silent.
+func exchangeCreated(created map[string]bool, a, b string) {
+	createdA, createdB := lintkit.RefersToCreated(created, a), lintkit.RefersToCreated(created, b)
+	for name := range created {
+		named := map[string]bool{name: true}
+		if lintkit.RefersToCreated(named, a) || lintkit.RefersToCreated(named, b) {
+			delete(created, name)
+		}
+	}
+	if createdB {
+		created[a] = true
+	}
+	if createdA {
+		created[b] = true
 	}
 }
 

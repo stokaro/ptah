@@ -651,7 +651,7 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 		if col.Check == "" {
 			continue
 		}
-		lines = append(lines, checkConstraintLine(checkConstraintName(col.CheckName, node.Name, col.Name), col.Check))
+		lines = append(lines, checkConstraintLine(chcolumn.CheckName(col.CheckName, node.Name, col.Name), col.Check))
 	}
 	for _, c := range node.Constraints {
 		if err := r.refuseUnrepresentableConstraint(c); err != nil {
@@ -660,7 +660,7 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 		if c.Type != ast.CheckConstraint || c.Expression == "" {
 			continue
 		}
-		lines = append(lines, checkConstraintLine(checkConstraintName(c.Name, node.Name, ""), c.Expression))
+		lines = append(lines, checkConstraintLine(chcolumn.CheckName(c.Name, node.Name, ""), c.Expression))
 	}
 	return lines, nil
 }
@@ -715,23 +715,6 @@ func (r *Renderer) refuseUnrepresentableConstraint(c *ast.ConstraintNode) error 
 // fallback here produces DDL the server will not accept.
 func checkConstraintLine(name, expression string) string {
 	return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", name, expression)
-}
-
-// checkConstraintName returns the declared constraint name, or a deterministic
-// one built from the table and column when the author did not name it. It is
-// deterministic so re-rendering the same schema produces the same DDL.
-func checkConstraintName(declared, tableName, columnName string) string {
-	if declared != "" {
-		return declared
-	}
-	base := tableName
-	if ref, ok := tableref.Parse(tableName); ok {
-		base = ref.Name
-	}
-	if columnName != "" {
-		return base + "_" + columnName + "_check"
-	}
-	return base + "_check"
 }
 
 // writeEngineClause emits the trailing ENGINE/PARTITION BY/... clause for a
