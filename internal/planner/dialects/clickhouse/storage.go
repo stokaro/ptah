@@ -30,6 +30,13 @@ import (
 // materialized-view drops and ahead of every feature step, because the new
 // table takes the table's name only when the step swaps the two, so an
 // operation that names the table in between would change the old one.
+//
+// A feature step that changes an object detached from its table -- a row
+// policy ClickHouse kept when the table was dropped, which the comparison
+// plans apart from any table -- runs while no table of the name exists: ahead
+// of before, so a table the plan creates under the name never exists with the
+// state the server kept, and after last where the plan drops the table, so a
+// rollback restores the state only once the table and its rows are gone.
 type storagePhases struct {
 	before, drops, columns, after, indexes, last []ast.Node
 	rebuilds                                     tableRebuilds
@@ -94,11 +101,8 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	if err != nil {
 		return nil, err
 	}
-	for _, contribution := range features.Contributions {
-		for _, step := range contribution.Steps {
-			middle = append(middle, step.ID)
-		}
-	}
+	tableBound, detached := featureSteps(features.Contributions, diff.FeatureChanges)
+	middle = append(middle, tableBound...)
 	// These surrounding phases retain their order. Their footprints remain
 	// unknown until each object family contributes its own graph metadata;
 	// the one known so far is the replacement of a materialized view, whose
@@ -114,13 +118,23 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	for _, id := range middle {
 		common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: drops, After: id}, plangraph.Dependency{Before: id, After: last})
 	}
+	removed := make(map[objectidentity.Key]bool, len(diff.TablesRemoved))
+	for _, removal := range diff.TablesRemoved {
+		removed[builder.Table(removal.Name).Key()] = true
+	}
+	for _, step := range detached {
+		if slices.ContainsFunc(step.reads, func(table objectidentity.Key) bool { return removed[table] }) {
+			common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: final, After: step.id})
+			continue
+		}
+		common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: step.id, After: first})
+	}
 	// A rebuilt table is the old one until EXCHANGE TABLES swaps in the new
-	// one, so no feature step runs before the rebuild has finished.
+	// one, so no feature step that names a table runs before the rebuild has
+	// finished. A detached object's table is not one the plan rebuilds.
 	for _, rebuild := range rebuildSteps {
-		for _, contribution := range features.Contributions {
-			for _, step := range contribution.Steps {
-				common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: rebuild, After: step.ID})
-			}
+		for _, id := range tableBound {
+			common.Dependencies = append(common.Dependencies, plangraph.Dependency{Before: rebuild, After: id})
 		}
 	}
 	// Index operations keep their sequence after the other objects: a
@@ -140,6 +154,47 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 		nodes = append(nodes, step.Payload...)
 	}
 	return nodes, nil
+}
+
+// detachedStep is a feature step that changes an object detached from its
+// table, with the tables the step reads: the table the object names.
+type detachedStep struct {
+	id    plangraph.StepID
+	reads []objectidentity.Key
+}
+
+// featureSteps splits the steps of the feature contributions into the ones
+// that run among the table steps and the detached ones: a step that creates,
+// alters or drops the subject of one of standalone, the changes planned apart
+// from any table, while the subject names one. Such an object is one the
+// server kept when its table was dropped (see
+// [ptah.run/engine.ObjectComparison.OutlivesParent]); a change to a standalone
+// object names no table.
+func featureSteps(contributions []plangraph.Contribution[[]ast.Node], standalone []schemaext.ChangeRecord) (tableBound []plangraph.StepID, detached []detachedStep) {
+	subjects := make(map[objectidentity.Key]bool)
+	for _, change := range standalone {
+		if !change.Subject.Parent.Empty() {
+			subjects[change.Subject.Key()] = true
+		}
+	}
+	for _, contribution := range contributions {
+		for _, step := range contribution.Steps {
+			if slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
+				return effect.Action != plangraph.Read && subjects[effect.Subject.Key()]
+			}) {
+				found := detachedStep{id: step.ID}
+				for _, effect := range step.Effects {
+					if effect.Action == plangraph.Read {
+						found.reads = append(found.reads, effect.Subject.Key())
+					}
+				}
+				detached = append(detached, found)
+				continue
+			}
+			tableBound = append(tableBound, step.ID)
+		}
+	}
+	return tableBound, detached
 }
 
 // commonIndexes adds one step per common index operation, naming the index it

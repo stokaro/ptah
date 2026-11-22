@@ -18,6 +18,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/chpolicyexport"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/defaultprivnote"
@@ -253,6 +254,15 @@ func renderInspectSchema(
 		return InspectResult{}, err
 	}
 	if err := validateInspectSchema(ctx, schema, info.Dialect, opts); err != nil {
+		return InspectResult{}, err
+	}
+	// From the whole read, before selection: a ClickHouse row policy is
+	// matched to its table by name, and a table a selector leaves out is not
+	// a table the database dropped. A policy whose table is gone has nothing
+	// a document can declare it with; the warning names the statement that
+	// drops it.
+	schema, err = chpolicyexport.Without(ctx, opts.Diagnostics, schema)
+	if err != nil {
 		return InspectResult{}, err
 	}
 	schema, excludeReport, err := scopeInspectSchema(ctx, schema, info, opts)

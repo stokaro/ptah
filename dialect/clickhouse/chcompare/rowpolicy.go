@@ -25,6 +25,16 @@ import (
 // server stores where a live comparison attached it, and otherwise by tokens,
 // so spacing never reads as a change. A policy whose table the plan creates or
 // removes belongs to that table's transition, and is not compared here.
+//
+// ClickHouse binds a policy to a table name and keeps it when the table is
+// dropped, so a read may report a policy below a table it does not hold. Such
+// a detached policy is compared here, whatever the plan does to a table of
+// the name: one the declaration leaves out is dropped, and a declared one is
+// altered to the declaration even where both agree, because the plan cannot
+// create a policy the server already holds (code 493,
+// ACCESS_ENTITY_ALREADY_EXISTS). A policy the read records as one it cannot
+// describe, on a relation it does not hold as a table, is kept and reported
+// as undecided.
 type RowPolicyService struct{}
 
 type rowPolicyPair struct {
@@ -69,7 +79,14 @@ func (RowPolicyService) CompareObjects(ctx context.Context, request schemaext.Ob
 		if err := ctx.Err(); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
 		}
-		if parent, found := parents[rekeyTable(request.Identifiers, chschema.RowPolicyTable(pairRowPolicyRef(pair))).Key()]; found && (!parent.Desired || !parent.Current) {
+		parent, found := parents[rekeyTable(request.Identifiers, chschema.RowPolicyTable(pairRowPolicyRef(pair))).Key()]
+		if pair.current != nil && (!found || !parent.Current) {
+			if err := compareDetachedRowPolicy(request, pair, &result); err != nil {
+				return schemaext.ObjectComparisonResult{}, err
+			}
+			continue
+		}
+		if found && (!parent.Desired || !parent.Current) {
 			continue
 		}
 		record, err := compareRowPolicy(request, pair, &result)
@@ -80,6 +97,7 @@ func (RowPolicyService) CompareObjects(ctx context.Context, request schemaext.Ob
 			adopted = append(adopted, *record)
 		}
 	}
+	reportUndescribedDetached(request, parents, &result)
 	result.Desired.Coverage, err = rowPolicyCoverage(request, adopted)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -132,6 +150,59 @@ func compareRowPolicy(request schemaext.ObjectComparisonRequest, pair rowPolicyP
 	}
 	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.desiredRef, Value: chdiff.NewRowPolicy(pair.current, pair.desired)})
 	return nil, nil
+}
+
+// compareDetachedRowPolicy compares a policy the current side holds below a
+// table it does not hold; see [RowPolicyService]. The server applies such a
+// policy to the next table created under the name, so it is never left in
+// place unseen: one the declaration does not state is dropped, and a declared
+// one is altered in place to the declaration. A description that cannot
+// state row policies has not asked for the drop, and the policy cannot be
+// kept as declared beside a table the declaration does not hold, so it is
+// reported as undecided.
+func compareDetachedRowPolicy(request schemaext.ObjectComparisonRequest, pair rowPolicyPair, result *schemaext.ObjectComparisonResult) error {
+	table := pair.currentRef.Parent.Source
+	if pair.desired == nil {
+		if knowledge := request.Desired.Coverage.Lookup(chschema.RowPolicyKind, pair.currentRef); unknownKnowledge(knowledge) {
+			undecidedRowPolicy(result, pair.currentRef, fmt.Sprintf("the database holds this policy for table %q, which it does not hold, and applies it to a table "+
+				"created under that name; the desired source does not describe row policies, so the plan neither drops nor keeps it", table))
+			return nil
+		}
+		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.currentRef, Value: chdiff.NewRowPolicy(pair.current, nil)})
+		result.Counts[0].Removed++
+		return nil
+	}
+	if rowPolicyLimited(request.Desired.Coverage, pair.desiredRef) {
+		undecidedRowPolicy(result, pair.desiredRef, "the desired source cannot describe the complete row policy")
+		return nil
+	}
+	if pair.desiredRef.Key() != pair.currentRef.Key() {
+		return fmt.Errorf("%w: declared row policy %s and the policy %s the database holds for a table it does not hold spell one policy two ways",
+			schemaext.ErrInvalidValue, pair.desiredRef, pair.currentRef)
+	}
+	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.desiredRef, Value: chdiff.NewRowPolicy(pair.current, pair.desired)})
+	result.Counts[0].Matched++
+	return nil
+}
+
+// reportUndescribedDetached reports as undecided each policy the read could
+// not describe below a table the current side does not hold, such as one on
+// a view: the comparison keeps it, and saying nothing would hide a filter
+// that still applies. A plan that drops the view for good drops the policy
+// with it, ahead of the view, so a table the plan creates under the name
+// never meets the view's policy, and a declared policy of the same name is
+// created with that table; the comparison then leaves the policy out of the
+// undecided ones (see ptah.run/internal/droppedviews).
+func reportUndescribedDetached(request schemaext.ObjectComparisonRequest, parents map[objectidentity.Key]schemaext.ParentState, result *schemaext.ObjectComparisonResult) {
+	for _, record := range request.Current.Coverage.SubjectRecords() {
+		if record.Kind != chschema.RowPolicyKind || !unknownKnowledge(record.Knowledge) || chschema.ValidateRowPolicyRef(record.Subject) != nil {
+			continue
+		}
+		if parent, found := parents[rekeyTable(request.Identifiers, chschema.RowPolicyTable(record.Subject)).Key()]; found && parent.Current {
+			continue
+		}
+		undecidedRowPolicy(result, record.Subject, record.Knowledge.Reason)
+	}
 }
 
 func rowPolicyPairs(ctx context.Context, request schemaext.ObjectComparisonRequest) ([]rowPolicyPair, error) {

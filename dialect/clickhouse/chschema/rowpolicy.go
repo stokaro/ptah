@@ -251,9 +251,9 @@ func RowPolicyTable(ref objectidentity.ID) objectidentity.ID {
 // A policy written ON db.* applies to every table of the database, and the
 // server reports it with an empty table. It is a different variant from a
 // table policy, and this model does not hold it: such a reference is refused
-// by name rather than taken for a policy on some table, and a reader records
-// the database's policies as not described instead of listing the tables it
-// happened to see.
+// by name rather than taken for a policy on some table. A reader records one
+// it finds as a policy it cannot describe, under the table name `*`, so a
+// comparison keeps and reports it.
 func ValidateRowPolicyRef(ref objectidentity.ID) error {
 	if ref.Kind != objectidentity.Kind(RowPolicyKind) || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Signature.IsZero() {
 		return fmt.Errorf("%w: a ClickHouse row policy reference has kind %q and no catalog or signature", schemaext.ErrInvalidValue, RowPolicyKind)

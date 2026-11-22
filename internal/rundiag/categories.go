@@ -196,6 +196,15 @@ var (
 	// "reason" attribute.
 	RenderOmissions = &Category{Name: "render-omission", Each: true}
 
+	// LeftOutRowPolicies is a ClickHouse row policy a schema written from a read
+	// leaves out: one the server kept when its table was dropped, which no
+	// source can declare without the table, or one the read could not
+	// describe, such as a policy written ON db.*. Each is a warning of its
+	// own, since each names its own policy and what applying the written
+	// schema does to it. Its records carry the policy as the "object"
+	// attribute.
+	LeftOutRowPolicies = &Category{Name: "left-out-row-policy", Each: true}
+
 	// UndecidedObjects is an object a comparison could not decide, so it plans
 	// no change for it: a declared object of a kind the current side does not
 	// describe, or a provider's object it could not compare. Its records carry

@@ -760,7 +760,13 @@ type SchemaDiff struct {
 	// Report JSON omits these captures; it is not a durable plan codec.
 	TablePreparation *schemapreparation.Capture `json:"-"`
 
-	// FeatureChanges holds changes to standalone feature objects. Table-owned changes stay with their table.
+	// FeatureChanges holds changes to standalone feature objects. Table-owned
+	// changes stay with their table, except a change to an object the current
+	// side holds below a table it does not hold, of a kind whose registration
+	// says the target keeps it when the table is dropped (see
+	// [ptah.run/engine.ObjectComparison.OutlivesParent]): it is planned here,
+	// and a [TableCreation] of that table leaves the object out of
+	// [TableCreation.OwnedObjects].
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 	// SkippedFeatures are the objects the comparison left out because the
 	// target does not serve their model and their owner answers
@@ -2828,7 +2834,10 @@ type TableCreation struct {
 	// OwnedObjects captures the named feature children declared on this table.
 	// The PostgreSQL-family planner hands them to their owners, which create
 	// them in steps of their own (a create-table parent request); a target
-	// whose CREATE TABLE writes its children carries them with the table.
+	// whose CREATE TABLE writes its children carries them with the table. A
+	// declared child the database already holds, kept from a table of the
+	// same name that was dropped, is left out: its change in
+	// [SchemaDiff.FeatureChanges] alters it.
 	OwnedObjects schemaext.Objects
 	// FeatureCoverage preserves the source claims used to capture the children.
 	FeatureCoverage schemaext.Coverage

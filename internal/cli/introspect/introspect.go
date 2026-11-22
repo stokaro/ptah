@@ -13,6 +13,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
+	"ptah.run/internal/chpolicyexport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -107,6 +108,13 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}
+	// A ClickHouse row policy whose table is gone, or that the read could not
+	// describe, has no directive to declare it; each warning says so.
+	dbSchema, err = chpolicyexport.Without(cmd.Context(), cmd.ErrOrStderr(), dbSchema)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	chpolicyexport.ReportUndescribed(cmd.Context(), cmd.ErrOrStderr(), dbSchema.FeatureCoverage)
 	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

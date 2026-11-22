@@ -34,7 +34,6 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/clickhouserbac"
-	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/definer"
 	"ptah.run/internal/devclean"
@@ -1648,7 +1647,7 @@ func scopeDiffState(
 	// independently selectable identity survives conversion.
 	if emptySelection(databaseErr) {
 		var err error
-		desired, err = dbschematogo.ConvertDBSchemaToGoSchema(ctx, filteredDatabase, dialect, runtime)
+		desired, err = atlassource.DesiredFromRead(ctx, filteredDatabase, dialect, runtime)
 		if err != nil {
 			return scopedDiffState{err: err}
 		}
