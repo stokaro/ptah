@@ -23,7 +23,20 @@ type AllPrivileges struct {
 	// out has no list, so a role holds ALL on it only where the catalog
 	// reports ALL.
 	Kinds map[string]AllPrivilegeList `json:"kinds,omitempty"`
+	// RoutinesByName reports that the engine grants on a function or a
+	// procedure with the statement it grants on a table, GRANT ... ON name
+	// with no object kind, and that a catalog read reports the grant under
+	// TABLE. What ALL grants under a TABLE grant then depends on what the
+	// object is: a procedure takes the PROCEDURE list, a function the read
+	// reports as returning a table ([ptah.run/catalog.Function.ReturnsTable])
+	// keeps the TABLE list, and every other function takes the FUNCTION list.
+	// A descriptor that sets it states both routine lists.
+	RoutinesByName bool `json:"routines_by_name,omitempty"`
 }
+
+// routineKinds are the lists a descriptor that sets
+// [AllPrivileges.RoutinesByName] states.
+var routineKinds = []string{"FUNCTION", "PROCEDURE"}
 
 // AllPrivilegeList is what ALL grants on one kind of object.
 type AllPrivilegeList struct {
@@ -56,9 +69,15 @@ func (a AllPrivileges) Required(objectType string) []string {
 
 // validateAllPrivileges refuses a list a comparison could not match against a
 // catalog read: a kind or a privilege not in upper case, an empty list, a
-// privilege named twice, ALL itself, and an optional privilege the list does
-// not name.
+// privilege named twice, ALL itself, an optional privilege the list does not
+// name, and a routine list left out where a grant names a routine as it names
+// a table. Without that list a declared ALL on a routine would never be held.
 func (d Dialect) validateAllPrivileges() error {
+	for _, kind := range routineKinds {
+		if _, stated := d.AllPrivileges.Kinds[kind]; d.AllPrivileges.RoutinesByName && !stated {
+			return fmt.Errorf("%w: dialect %q: ALL privileges on routines by name state no %s list", ErrInvalidDescriptor, d.Name, kind)
+		}
+	}
 	for kind, list := range d.AllPrivileges.Kinds {
 		if !upperWords(kind) {
 			return fmt.Errorf("%w: dialect %q: ALL privilege kind %q must be upper-case words", ErrInvalidDescriptor, d.Name, kind)

@@ -538,15 +538,24 @@ func oracleKeywords() []string {
 // TABLE, and ALL grants ALTER on a table and MERGE VIEW on a view, so neither
 // is required. Granted to a user, ALL also grants INDEX and REFERENCES, and
 // ASSERTION REFERENCES on 23, which a role does not receive.
+//
+// A grant on a function or a procedure is the same statement, and the reader
+// reads it under TABLE as well. ALL grants DEBUG and EXECUTE on either,
+// measured on 21.3 and 23.26.3.
 func oracleAllPrivileges() descriptor.AllPrivileges {
-	return descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
-		"TABLE": {
-			Privileges: []string{
-				"ALTER", "DEBUG", "DELETE", "FLASHBACK", "INSERT", "MERGE VIEW",
-				"ON COMMIT REFRESH", "QUERY REWRITE", "READ", "SELECT", "UPDATE",
+	return descriptor.AllPrivileges{
+		Kinds: map[string]descriptor.AllPrivilegeList{
+			"TABLE": {
+				Privileges: []string{
+					"ALTER", "DEBUG", "DELETE", "FLASHBACK", "INSERT", "MERGE VIEW",
+					"ON COMMIT REFRESH", "QUERY REWRITE", "READ", "SELECT", "UPDATE",
+				},
+				Optional: []string{"ALTER", "MERGE VIEW"},
 			},
-			Optional: []string{"ALTER", "MERGE VIEW"},
+			"SEQUENCE":  {Privileges: []string{"ALTER", "SELECT"}},
+			"PROCEDURE": {Privileges: []string{"DEBUG", "EXECUTE"}},
+			"FUNCTION":  {Privileges: []string{"DEBUG", "EXECUTE"}},
 		},
-		"SEQUENCE": {Privileges: []string{"ALTER", "SELECT"}},
-	}}
+		RoutinesByName: true,
+	}
 }

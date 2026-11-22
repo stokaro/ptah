@@ -217,6 +217,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		if fn.Name == "" {
 			continue
 		}
+		replaced := p.replacesRoutine(fnDiff)
 		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
 		node := modelast.FromFunction(fn)
 		// The two halves of a replacement travel together or not at all.
@@ -231,7 +232,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		// The CREATE node is still emitted, and that is deliberate: it renders
 		// the skip comment, so the plan says which function was left alone
 		// instead of silently omitting it. Nothing executable is produced.
-		if !p.runsRoutineLanguage(fn.Language) {
+		if !replaced {
 			node.SetComment(fmt.Sprintf(
 				"Function %s differs (%s) but its language is not one this target runs; "+
 					"left unchanged, and NOT dropped", fn.Name, changes))
@@ -311,6 +312,15 @@ func routineWord(fn schemamodel.Function) string {
 // DROP is emitted and the renderer decides whether the CREATE is. When they
 // disagreed on the MySQL family, an apply executed the drop, created nothing,
 // and reported success.
+// replacesRoutine reports whether the plan replaces a changed routine by DROP
+// and CREATE: the change names the routine it declares, in a language this
+// target runs. [Planner.planFunctions] emits the two statements exactly then,
+// and [Planner.droppedObjects] reads the same answer for the grants the DROP
+// takes, so the two cannot disagree about a routine.
+func (p *Planner) replacesRoutine(change difftypes.FunctionDiff) bool {
+	return change.Desired.Name != "" && p.runsRoutineLanguage(change.Desired.Language)
+}
+
 func (p *Planner) runsRoutineLanguage(language string) bool {
 	if p.dialect == platform.Oracle {
 		return oracleroutine.RunsLanguage(language)

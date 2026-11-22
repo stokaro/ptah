@@ -1107,6 +1107,11 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 // grantObjectTypeFor maps a permission's class onto the object type the shared
 // grant shape names.
 //
+// OBJECT_OR_COLUMN is every schema object, a procedure and a function as well
+// as a table and a view, and it becomes TABLE: `GRANT EXECUTE ON dbo.p` names
+// the object with no kind, so the declaration carries it OnTable. The
+// comparison takes what ALL grants on it from the routine the catalog reads.
+//
 // A class this reader does not model becomes the class name itself rather than
 // a guess: naming an unmodeled target is what lets a comparison decline it,
 // where defaulting to TABLE would compare a database-level permission against a

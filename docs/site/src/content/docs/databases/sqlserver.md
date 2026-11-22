@@ -612,9 +612,10 @@ event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
 ## Granting and revoking every permission
 
 `GRANT ALL ON t TO r` grants `DELETE`, `INSERT`, `REFERENCES`, `SELECT` and
-`UPDATE` on a table or a view, and a role holding these five holds a declared
-`ALL` on either. A role the schema creates loses `CONTROL` and every other
-permission beside them.
+`UPDATE` on a table, a view or a table-valued function, `EXECUTE` on a
+procedure, and `EXECUTE` and `REFERENCES` on a scalar function. A role holding
+the list for its object holds a declared `ALL`, and a role the schema creates
+loses every other permission, `CONTROL` included.
 
 `REVOKE ALL ON t FROM r` takes every permission the role holds on `t` and its
 columns. SQL Server's own `REVOKE ALL` leaves `ALTER`, `CONTROL` and

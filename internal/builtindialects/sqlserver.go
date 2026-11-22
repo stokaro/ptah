@@ -47,9 +47,20 @@ func sqlServer() descriptor.Dialect {
 		// 2025. It leaves out ALTER, CONTROL, TAKE OWNERSHIP and VIEW
 		// DEFINITION, so a role holding one of them beside a declared ALL
 		// holds more than the declaration grants.
-		AllPrivileges: descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
-			"TABLE": {Privileges: []string{"DELETE", "INSERT", "REFERENCES", "SELECT", "UPDATE"}},
-		}},
+		//
+		// A grant on a procedure or a function is the same statement, and
+		// the reader reads it under TABLE as well. ALL grants EXECUTE on a
+		// procedure, EXECUTE and REFERENCES on a scalar function, and the
+		// table's list on a table-valued function: measured on 2019, 2022 and
+		// 2025.
+		AllPrivileges: descriptor.AllPrivileges{
+			Kinds: map[string]descriptor.AllPrivilegeList{
+				"TABLE":     {Privileges: []string{"DELETE", "INSERT", "REFERENCES", "SELECT", "UPDATE"}},
+				"PROCEDURE": {Privileges: []string{"EXECUTE"}},
+				"FUNCTION":  {Privileges: []string{"EXECUTE", "REFERENCES"}},
+			},
+			RoutinesByName: true,
+		},
 
 		// @@VERSION names the build and the servicing branch it is on, GDR
 		// or CU, and a security fix ships as one build per branch, so a

@@ -1456,6 +1456,16 @@ type Function struct {
 	Settings []string `json:"settings,omitempty"`
 	Body     string   `json:"body"`    // Function body/implementation
 	Comment  string   `json:"comment"` // Function comment/description
+
+	// ReturnsTable reports a function whose result is a table, as the reader
+	// establishes it from the catalog's object type rather than from
+	// [Function.Returns]: a SQL Server inline or multi-statement table-valued
+	// function. SQL Server grants on such a function the privileges of a
+	// table. A reader that does not establish it leaves it false, and Returns
+	// alone does not imply it: Oracle reports `table` as the return type of a
+	// function returning a nested-table collection, which takes the privileges
+	// of a function.
+	ReturnsTable bool `json:"returns_table,omitempty"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

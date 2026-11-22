@@ -27,15 +27,37 @@ func withList(kind string, list descriptor.AllPrivilegeList) descriptor.Dialect 
 	return described
 }
 
+// byName returns listed granting on a routine by its name, with a list for
+// each of kinds.
+func byName(kinds ...string) descriptor.Dialect {
+	described := listed()
+	described.AllPrivileges.RoutinesByName = true
+	for _, kind := range kinds {
+		described.AllPrivileges.Kinds[kind] = descriptor.AllPrivilegeList{Privileges: []string{"EXECUTE"}}
+	}
+	return described
+}
+
 func TestNewRegistry_AllPrivileges_HappyPath(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name      string
+		described descriptor.Dialect
+	}{
+		{name: "lists", described: listed()},
+		{name: "routines by name, with both routine lists", described: byName("FUNCTION", "PROCEDURE")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	registry, err := descriptor.NewRegistry(listed())
+			registry, err := descriptor.NewRegistry(test.described)
 
-	c.Assert(err, qt.IsNil)
-	described, found := registry.Lookup("alpha")
-	c.Assert(found, qt.IsTrue)
-	c.Assert(described, qt.DeepEquals, listed())
+			c.Assert(err, qt.IsNil)
+			described, found := registry.Lookup("alpha")
+			c.Assert(found, qt.IsTrue)
+			c.Assert(described, qt.DeepEquals, test.described)
+		})
+	}
 }
 
 func TestAllPrivileges_HappyPath(t *testing.T) {
@@ -117,6 +139,16 @@ func TestNewRegistry_AllPrivileges_FailurePath(t *testing.T) {
 			name:    "an optional privilege the list does not name",
 			edit:    withList("VIEW", descriptor.AllPrivilegeList{Privileges: []string{"SELECT"}, Optional: []string{"MERGE VIEW"}}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": optional ALL privilege "MERGE VIEW" is not one ALL grants on VIEW`,
+		},
+		{
+			name:    "routines by name without a function list",
+			edit:    byName("PROCEDURE"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": ALL privileges on routines by name state no FUNCTION list`,
+		},
+		{
+			name:    "routines by name without a procedure list",
+			edit:    byName("FUNCTION"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": ALL privileges on routines by name state no PROCEDURE list`,
 		},
 	}
 	for _, test := range tests {
