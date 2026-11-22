@@ -336,7 +336,7 @@ func assessGuide(content []byte, covered []string, evidence kbEvidence) (guideAs
 				addMonth(fixes, [2]string{article.Line, article.Branch}, article.Month)
 			}
 		}
-		named := slices.Clone(result.ranges[cve])
+		guideRanges := slices.Clone(result.ranges[cve])
 		for _, line := range covered {
 			asked := lines[line]
 			if !asked {
@@ -361,7 +361,7 @@ func assessGuide(content []byte, covered []string, evidence kbEvidence) (guideAs
 					continue
 				}
 				usedGaps[key] = true
-				ranges, err := gapRanges(gap, lines[line], fixes[[2]string{line, otherBranch(branch)}], named)
+				ranges, err := gapRanges(gap, lines[line], fixes[[2]string{line, otherBranch(branch)}], guideRanges)
 				if err != nil {
 					return guideAssessment{}, err
 				}

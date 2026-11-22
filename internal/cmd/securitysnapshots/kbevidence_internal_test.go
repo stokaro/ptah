@@ -305,6 +305,26 @@ func TestAssessGuide_FirstBuildAfterAFixPublishedLater(t *testing.T) {
 	c.Assert(got.ranges["CVE-2026-50010"], qt.DeepEquals, []vulnerability.VersionRange{{Line: "16.0", Branch: "gdr", From: "16.0", Fixed: "16.0.1200.5"}})
 }
 
+// TestAssessGuide_FirstBuildBeforeAListedFixIsRefused reads an advisory
+// the guide names on the GDR branch in September and publishes in November,
+// whose November GDR article lists it too. A CU branch whose first build
+// shipped between the two cannot be said to carry the November fix.
+func TestAssessGuide_FirstBuildBeforeAListedFixIsRefused(t *testing.T) {
+	c := qt.New(t)
+	entry := gdr2022("CVE-2026-50010", guideFix{KB: "5100001", Build: "16.0.1200.5"})
+	entry.Month = "2026-Nov"
+	evidence := kbEvidence{
+		Articles: []kbArticle{kbArticles[0], kbArticles[2]},
+		Rows:     []kbRow{{CVE: "CVE-2026-50010", KB: "5100003", Lists: true}},
+		Gaps:     []kbGap{{CVE: "CVE-2026-50010", Line: "16.0", Branch: "cu", Since: &kbFirstBuild{KB: "5100010", Build: "16.0.4250.1", Released: "2026-09-20"}}},
+	}
+
+	got, err := assessGuide(kbGuide(c, entry), []string{"16.0"}, evidence)
+
+	c.Assert(err, qt.ErrorMatches, `the reviewed KB gap CVE-2026-50010 on 16.0 cu says the branch's first build, 16.0.4250.1 of 2026-09-20, carries the fix, and it shipped no later than the 2026-Nov release that fixes the gdr branch`)
+	c.Assert(got.ranges, qt.IsNil)
+}
+
 // TestAssessGuide_UnlistedLineKeepsTheGuidesAnswer answers the 2019
 // questions of an advisory the guide names on 2022 only: nothing is pinned
 // for 2019, which reads unaffected on a covered line.
