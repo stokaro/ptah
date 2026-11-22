@@ -1034,6 +1034,14 @@ before adopting them:
 - Ptah generates `DROP VIEW`. `DROP MATERIALIZED VIEW` is a syntax error on
   ClickHouse. A SQL schema file may also use `DROP TABLE` to remove a view or
   materialized view. Either form removes its inner storage table.
+- Tables, views and materialized views share one namespace, and ClickHouse
+  refuses to create one while another holds its name: `Table <database>.<name>
+  already exists` (code 57). When a declaration gives the name of a relation
+  to one of another kind, the plan drops the old relation before it creates
+  the new one. A view or materialized view is dropped ahead of the
+  `CREATE TABLE`, after its row policies, which ClickHouse would otherwise
+  apply to the new table. A table is dropped ahead of the view, after the
+  plan's other changes to it, and its rows go with it.
 - `POPULATE` is never emitted, so a materialized view starts empty and fills
   from inserts into its source rather than from the rows already there.
   `POPULATE` is a one-shot argument that leaves no trace in the catalog, so
@@ -1473,7 +1481,9 @@ plan does not create it on the target.
 
 A plan that drops a view or materialized view drops the policies on it first,
 so the next relation created under the name does not inherit them, and the
-comparison does not report them. A view that another view or materialized view
+comparison does not report them. That includes a table the declaration
+creates under the name, since the plan drops the view ahead of the
+`CREATE TABLE`. A view that another view or materialized view
 replaces under the same name keeps its policies.
 
 ## The revision table's storage engine

@@ -28,6 +28,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -90,11 +91,14 @@ func (p *Planner) capabilities() capability.Capabilities {
 // be created before any subsequent ALTER references them:
 //
 //  1. Diagnostics for the extensions and sequences ClickHouse cannot host.
-//  2. CREATE TABLE for every newly-added table.
+//  2. CREATE TABLE for every newly-added table, after DROP for a view or
+//     materialized view that gives its name to one.
 //  3. ALTER TABLE for every per-table column add/modify/drop.
-//  4. CREATE ROLE; CREATE, CREATE OR REPLACE, or DROP for plain views; REVOKE
-//     and GRANT; plus diagnostics for functions, materialized views, RLS and
-//     triggers that Ptah's ClickHouse model cannot express.
+//  4. DROP TABLE for a removed table that gives its name to a view or
+//     materialized view; CREATE ROLE; CREATE, CREATE OR REPLACE, or DROP for
+//     plain views; REVOKE and GRANT; plus diagnostics for functions,
+//     materialized views, RLS and triggers that Ptah's ClickHouse model
+//     cannot express.
 //  5. ADD INDEX for new data-skipping indexes.
 //  6. DROP INDEX for removed indexes.
 //  7. DROP TABLE for removed tables.
@@ -154,14 +158,16 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	handovers := p.planNameHandovers(diff)
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
+	result = append(result, handovers.beforeTables...)
 	result = p.addNewTables(result, diff)
 	before := result
 	columns, err := p.modifyExistingTables(nil, diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
-	after, replacementDrops, err := planObjectsAfterTables(nil, diff, p.capabilities())
+	after, replacementDrops, err := planObjectsAfterTables(slices.Clone(handovers.beforeViews), diff, p.capabilities(), handovers)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +176,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	indexes = p.removeIndexes(indexes, diff, rebuilds)
-	last := p.removeTables(nil, diff)
+	last := p.removeTables(nil, diff, handovers)
 
 	nodes, err := p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, rebuilds: rebuilds, after: after, indexes: indexes, last: last})
 	if err != nil {
@@ -343,15 +349,24 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *difftypes.SchemaDiff, r
 	return result
 }
 
-func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, handovers nameHandovers) []ast.Node {
 	for _, name := range diff.TablesRemoved.Names() {
-		drop := ast.NewDropTable(name).SetIfExists()
-		if p.statements != planext.StatementStyleExact {
-			drop.SetComment("WARNING: dropping table will delete all data")
+		if slices.Contains(handovers.tables, name) {
+			continue
 		}
-		result = append(result, drop)
+		result = append(result, p.dropTable(name))
 	}
 	return result
+}
+
+// dropTable drops the table name, warning that its data goes with it unless
+// the plan writes the exact statement style.
+func (p *Planner) dropTable(name string) ast.Node {
+	drop := ast.NewDropTable(name).SetIfExists()
+	if p.statements != planext.StatementStyleExact {
+		drop.SetComment("WARNING: dropping table will delete all data")
+	}
+	return drop
 }
 
 func previousColumnNullable(change string) bool {
