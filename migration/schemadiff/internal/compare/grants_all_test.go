@@ -201,6 +201,39 @@ func TestGrants_All(t *testing.T) {
 			wantRemoved: []plannedGrant{{Role: "app", Privilege: "ALL", ObjectType: "TABLE", ObjectName: "t"}},
 		},
 		{
+			name: "a revoked ALL on a created table that holds privileges is revoked once per privilege",
+			desired: schemamodel.Database{
+				Tables:        []schemamodel.Table{{Name: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+			database:    tableRows("app", false, "SELECT"),
+			wantRemoved: []plannedGrant{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "public.t"}},
+		},
+		{
+			name: "a revoked ALL on a created table that holds a column privilege is revoked once",
+			desired: schemamodel.Database{
+				Tables:        []schemamodel.Table{{Name: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+			database: []catalog.Grant{
+				{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "public", ObjectName: "t", Column: "a"},
+			},
+			wantRemoved: []plannedGrant{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "public.t"}},
+		},
+		{
+			name: "a revoked ALL on a created table is planned beside the removal of another role's privilege",
+			desired: schemamodel.Database{
+				Roles:         []schemamodel.Role{{Name: "other"}},
+				Tables:        []schemamodel.Table{{Name: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"ALL"}, OnTable: "t"}},
+			},
+			database: tableRows("other", false, "SELECT"),
+			wantRemoved: []plannedGrant{
+				{Role: "other", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "public.t"},
+				{Role: "app", Privilege: "ALL", ObjectType: "TABLE", ObjectName: "t"},
+			},
+		},
+		{
 			name: "some table privileges revoked on a created table are written out",
 			desired: schemamodel.Database{
 				Tables:        []schemamodel.Table{{Name: "t"}},

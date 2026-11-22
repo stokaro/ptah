@@ -126,6 +126,14 @@ func TestValidateRevokedGrants_FailurePath(t *testing.T) {
 			wantErr: `TRUNCATE on TABLE t is both granted to and revoked from "app"; declare one or the other`,
 		},
 		{
+			name: "a grant of ALL PRIVILEGES contradicts a revoke of any privilege",
+			db: &schemamodel.Database{
+				Grants:        []schemamodel.Grant{{Role: "app", Privileges: []string{"all privileges"}, OnTable: "t"}},
+				RevokedGrants: []schemamodel.Grant{{Role: "app", Privileges: []string{"truncate"}, OnTable: "t"}},
+			},
+			wantErr: `TRUNCATE on TABLE t is both granted to and revoked from "app"; declare one or the other`,
+		},
+		{
 			name: "the same routine spelled as a function and a routine",
 			db: &schemamodel.Database{
 				Grants: []schemamodel.Grant{{

@@ -21,10 +21,7 @@ owns:
 
 Ptah supports SQL Server and Azure SQL as a deliberately conservative portable
 subset under the canonical dialect name `sqlserver` (the aliases `mssql`,
-`sql-server`, `sql_server`, and `tsql` normalize to it). This page covers the
-connection URL, what the subset includes, and the two behaviors that most
-often surprise SQL Server users: collation-aware identifier comparison and
-filtered-index predicate spelling.
+`sql-server`, `sql_server`, and `tsql` normalize to it).
 Commands that introspect this behavior require a live SQL Server database URL.
 
 ## Connecting
@@ -44,7 +41,7 @@ URL reaches the driver, and it defaults to `dbo`:
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
 ```
 
-`--migrations-schema` still takes precedence for migration metadata placement.
+`--migrations-schema` takes precedence for migration metadata.
 
 ## Supported surface
 
@@ -110,10 +107,9 @@ records what it was given and never rewrites it, because the part count is what
 tells SQL Server where to resolve the name, and adding a qualifier would turn a
 remote reference into a local one.
 
-**Ptah manages the alias and never the target.** A synonym pointing outside this
-database is a supported declaration rather than an error — SQL Server does not
-require the target to exist either — so nothing tries to create or drop the
-object it points at. A plan creates the alias after the tables, views and
+**Ptah manages the alias and never the target.** SQL Server does not require
+the target to exist, so nothing creates or drops the object a synonym points
+at. A plan creates the alias after the tables, views and
 routines it creates, and drops it before any of them is dropped. A target
 behind a linked server with no database part, `srv..dbo.orders`, keeps its
 empty part.
@@ -122,23 +118,20 @@ A changed target is planned as a drop and a create in that order, because T-SQL
 has no `ALTER SYNONYM` and `CREATE SYNONYM` refuses a name that already exists.
 
 Targets are compared with the server's own bracket quoting normalized away, so a
-declared `dbo.orders` and a stored `[dbo].[orders]` are the same target rather
-than a difference reported on every run.
+declared `dbo.orders` and a stored `[dbo].[orders]` are the same target.
 
 A synonym belongs to the synonym owner and is bound to SQL Server and Oracle,
 the two targets that have one. A schema rendered or planned for any other
 target leaves it out. Two declarations of one synonym are refused.
 
 Go export preserves the alias, schema, target spelling, and comment, including
-schemas that declare only synonyms. The annotation binds each alias to SQL
-Server and Oracle. An explicit scope that names a different set is refused.
+schemas that declare only synonyms. An explicit scope that names a different set is refused.
 
 ## Extended properties
 
 Go export preserves database, schema, table, and column properties, including
 empty string values and declaration comments. The `value` attribute is required;
-`value=""` is valid. Export refuses `MS_Description` as an extended property
-because Ptah represents it as the object's comment. Synonym and property export
+`value=""` is valid. Synonym and property export
 refuse incomplete namespace or object coverage so an unread object cannot
 become a planned removal through the exported file.
 
@@ -175,9 +168,8 @@ type DeploymentTierProperty struct{}
 EXEC sp_addextendedproperty @name = N'deployment_tier', @value = N'production';
 ```
 
-A database-scoped property passes no level, and that is not an omission: an
-empty `@level0name` would be a property on a schema called `""`, which the
-procedure also accepts and which belongs to nothing. It is in no schema either,
+A database-scoped property passes no level: an empty `@level0name` would name
+a schema called `""`. It is in no schema either,
 so `--schema` neither selects nor removes it — the same rule an extension
 follows, where placement is not ownership.
 
@@ -194,36 +186,27 @@ leaves its properties out. Properties are
 emitted after every object one can hang off, and dropped before the objects
 they belong to.
 
-`MS_Description` is refused by name. Ptah already models it as the object's
-comment — the reader turns it into one and the renderer writes it as one — and
-accepting it here as well would give one live value two owners, each planning
-against it without seeing the other.
+`MS_Description` is refused by name. Ptah models it as the object's comment,
+and a second owner of one value would plan against the first.
 
 **A value Ptah cannot write back is reported and left alone.**
 `sp_addextendedproperty` takes a `sql_variant`, so a property may hold an `int`
-or a `date` as well as a string, and Ptah writes values as `N''` literals.
-Re-emitting a non-string value through one would change its stored type, and
-`CONVERT(NVARCHAR, value)` on a date answers a locale-dependent rendering
-rather than the value. Such a property appears in a read with its base type and
+or a `date` as well as a string, and Ptah writes values as `N''` literals,
+which would change a non-string value's stored type. Such a property appears in a read with its base type and
 no value, and a comparison plans nothing for it in either direction.
 
-One kind of property is outside this scope and is not read at all: one on an
-object other than a table — a view, a procedure, an index — which takes a
-different `@level1type` than the one Ptah writes.
+A property on an object other than a table, such as a view, a procedure or an
+index, is not read.
 
-Realm cleanup still refuses a database whose database- or schema-scoped
-properties it would leave behind. That guard predates this support and is
-unchanged: adding cleanup for them is a destructive change with its own
-measurement.
+Realm cleanup refuses a database whose database- or schema-scoped properties
+it would leave behind.
 
 An extended property belongs to the SQL Server owner. A declaration is bound
 to SQL Server, so a schema rendered or planned for another target leaves the
 property out. Two declarations of one property are refused.
 
 The owner compares, plans and reverses extended properties, and the HCL that
-`schema inspect` writes carries them, as it does synonyms. A plan adds or
-changes a property once the table or column it is on exists, and drops it
-before that object is dropped.
+`schema inspect` writes carries them, as it does synonyms.
 
 ```hcl
 synonym "current_orders" {
@@ -275,7 +258,7 @@ CREATE TABLE [app].[widget] (
 );
 ```
 
-The guarded form is not a style choice. SQL Server has no
+The guard is needed: SQL Server has no
 `CREATE SCHEMA IF NOT EXISTS`, repeating the statement answers `Msg 2714: There
 is already an object named 'app' in the database`, and `CREATE SCHEMA` must be
 the first statement of its batch — which is what the `EXEC` is for.
@@ -305,17 +288,15 @@ A table's `comment` and a column's take the same shape, written right after
 `CREATE TABLE`. `ptah db read` writes them that way as well, and a schema file
 reads them back, so a description keeps them.
 
-**MySQL, MariaDB, ClickHouse and Oracle do not do this**, and that is a
-difference in what a schema IS rather than a gap. A schema there is a database —
-or, on Oracle, a user — so creating one is `CREATE DATABASE` or `CREATE USER`,
-an administrative act outside what a schema migration owns.
+**MySQL, MariaDB, ClickHouse and Oracle do not do this.** A schema there is a
+database, or on Oracle a user, and creating one is an administrative act outside
+what a schema migration owns.
 
 ## Identifier collation
 
 SQL Server compares object identifiers and routine execution principals using catalog collation rules — case,
 accent, locale, kana, and width sensitivity all depend on the target catalog.
-Ptah does not reproduce those rules locally; the live catalog is the source of
-truth. When comparing against a live database, Ptah asks SQL Server to resolve
+When comparing against a live database, Ptah asks SQL Server to resolve
 candidate identifier equivalence under `COLLATE CATALOG_DEFAULT` and carries
 that resolved snapshot through comparison, planning, checkpoint generation,
 and shadow verification (shadow execution is rejected when the shadow catalog
@@ -349,9 +330,8 @@ as `([status]=(1))` — and Ptah normalizes bracket quoting, parenthesized
 numeric literals, case, and whitespace before deciding whether an index
 changed. Rewrites beyond that spelling (such as the `N'...'` prefix on Unicode
 string literals) are not reconstructed, so those predicates compare as changed
-on every run. If a filtered index keeps reporting drift after it was applied,
-read the stored spelling with `ptah db read` and use it in the annotation; the
-rendered SQL always preserves your annotation text verbatim.
+on every run. If a filtered index keeps reporting drift, write the spelling
+`ptah db read` prints in the annotation.
 
 ## Primary keys nobody named
 
@@ -521,9 +501,7 @@ list states how it runs, and `sys.sql_modules` reports each option back:
 | `RECOMPILE` | `is_recompiled` 1 | kept |
 
 Parameter declarations accept the optional `AS`: `@amount AS DECIMAL(10, 2)`
-and `@amount DECIMAL(10,2)` compare as the same parameter. The SQL Server
-owner normalizes the list before comparison and routine-option matching.
-Parameter names, order, and type dimensions remain significant.
+and `@amount DECIMAL(10,2)` compare as the same parameter. Parameter names, order, and type dimensions remain significant.
 
 The options Ptah keeps are read from a SQL schema file and from a connected
 database, compared, and planned. A routine whose options change is replaced
@@ -636,6 +614,8 @@ event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
 `REVOKE ALL ON t FROM r` takes every permission the role holds on `t` and its
 columns. SQL Server's own `REVOKE ALL` leaves `ALTER`, `CONTROL` and
 `VIEW DEFINITION`, through which a member still reads and drops the table.
+Ownership of `t` or its schema, a permission on the schema such as `CONTROL`,
+and a role such as `db_datareader` still reach `t`.
 
 ## Permissions on columns
 
@@ -648,12 +628,15 @@ A table permission replaces the column rows of the same permission, and a
 column revoke under one withholds the column, so a plan runs every revoke
 before any grant. A table permission with a column row of another state under
 it, such as a `REVOKE SELECT (secret)`, reads as the permission on each other
-column.
+column. It also covers a column added later: measured on SQL Server 2025, a
+member reads that column until the next plan revokes it, and nothing revokes it
+from a role the schema does not create.
 
 A grantable permission loses its option first, with `REVOKE GRANT OPTION FOR
 ... CASCADE`, because the server refuses the revoke otherwise (`Msg 4611`).
 `CASCADE` also revokes the permission from every principal the role granted it
-to. Column names compare under the database's
+to, for every permission held with the option, `CONTROL` and `ALTER` included.
+Column names compare under the database's
 [collation](#identifier-collation). Measured on SQL Server 2019, 2022 and 2025.
 
 ## Limitations
@@ -679,8 +662,7 @@ to. Column names compare under the database's
   procedures, of one name with different parameters is refused before any
   statement is planned. Ptah writes `CREATE OR ALTER`, and measured on SQL
   Server 2022 the second replaces the first without an error.
-- Linked servers are not managed, and this is a decision rather than a gap.
-  A linked server belongs to the whole instance and every database on it
+- Linked servers are not managed. A linked server belongs to the whole instance and every database on it
   shares it, so a schema for one database cannot own it or drop it without
   changing the others. It also opens a path to another server, which is why
   a replay against a dev database refuses `sp_addlinkedserver`. Its remote
@@ -703,12 +685,10 @@ to. Column names compare under the database's
 - Dev-database cleanup rejects database replication, replicated tables, and
   unsupported database-scoped artifacts before its first DDL statement.
 - A column declared both `PRIMARY KEY` and `UNIQUE` is refused rather than
-  rendered. SQL Server rejects `a INT PRIMARY KEY UNIQUE` outright, where the
-  other engines fold it, so there is no rendering of that column this server
-  accepts and emitting the key alone would discard what the author wrote. Write
-  the key alone, or write `a INT UNIQUE, PRIMARY KEY (a)`, which is a different
-  statement this server does accept and which Ptah renders as the primary key
-  plus the unique constraint it produces.
+  rendered. SQL Server rejects `a INT PRIMARY KEY UNIQUE`, and emitting the key
+  alone would discard what the author wrote. Write the key alone, or write
+  `a INT UNIQUE, PRIMARY KEY (a)`, which Ptah renders as the key and a unique
+  constraint.
 
 ## Next steps
 
