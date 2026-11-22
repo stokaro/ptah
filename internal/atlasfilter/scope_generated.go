@@ -152,7 +152,7 @@ func keepEnumObjects[T any](
 }
 
 func enumIdentity(schema, name string) (resolvedSchema, resolvedName string) {
-	if strings.TrimSpace(schema) != "" {
+	if schema != "" {
 		return schema, name
 	}
 	return splitQualified(name)
@@ -197,7 +197,7 @@ func (s *scopeSelection) generatedGrantSelected(
 		if len(s.selectors) == 0 {
 			return true
 		}
-		_, named := s.allowed[strings.TrimSpace(grant.OnSchema)]
+		_, named := s.allowed[grant.OnSchema]
 		return named
 	default:
 		return false

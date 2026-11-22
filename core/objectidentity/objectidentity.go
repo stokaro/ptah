@@ -327,13 +327,14 @@ func (b Builder) Table(qualified string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
 		Kind:   KindTable,
-		Schema: b.schemaPart(schema),
+		Schema: b.schemaPart(strings.TrimSpace(schema)),
 		Name:   b.namePart(name, b.semantics.TableIdentityKey),
 	}
 }
 
 // TableParts builds a table identity from components the caller already has,
-// trimming each and defaulting an absent schema.
+// trimming the name and defaulting an absent schema. A schema that is named
+// keeps its bytes, because a schema name may begin or end with a space.
 //
 // It exists beside [Builder.Table] because a caller holding the two components
 // separately must not have them rejoined and re-split: a name containing a dot
@@ -341,7 +342,7 @@ func (b Builder) Table(qualified string) ID {
 func (b Builder) TableParts(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
-		Schema: b.schemaPart(strings.TrimSpace(schema)),
+		Schema: b.schemaPart(schema),
 		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
@@ -351,7 +352,7 @@ func (b Builder) TableParts(schema, name string) ID {
 // SQLite is why: a quoted leading or trailing space is part of a SQLite table
 // name, so trimming one there merges two distinct tables. Every other caller
 // wants [Builder.TableParts], whose trimming absorbs the incidental whitespace
-// a schema file or a catalog row carries around a name.
+// a schema file carries around a table name.
 func (b Builder) TablePartsVerbatim(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
@@ -421,7 +422,7 @@ func (b Builder) Domain(qualified string) ID {
 func (b Builder) SchemaScopedParts(kind Kind, schema, name string) ID {
 	return ID{
 		Kind:   kind,
-		Schema: b.schemaPart(strings.TrimSpace(schema)),
+		Schema: b.schemaPart(schema),
 		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
@@ -729,14 +730,17 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
 		Kind:      kind,
-		Schema:    b.schemaPart(schema),
+		Schema:    b.schemaPart(strings.TrimSpace(schema)),
 		Name:      b.namePart(name, b.semantics.TableIdentityKey),
 		Signature: signatureParts(signature),
 	}
 }
 
 // schemaPart folds a schema name, defaulting an unqualified one to the target's
-// default schema so `users` and `public.users` are one table.
+// default schema so `users` and `public.users` are one table. A schema that is
+// named keeps its bytes: a schema name may begin or end with a space, and
+// ` a` is not the schema `a`. A caller splitting one qualified string trims
+// the part it split off, where a space is only the spelling around it.
 func (b Builder) schemaPart(schema string) Part {
 	if strings.TrimSpace(schema) == "" {
 		if b.semantics.DefaultSchema == "" {
@@ -746,7 +750,8 @@ func (b Builder) schemaPart(schema string) Part {
 		part.Defaulted = true
 		return part
 	}
-	return b.namePart(schema, b.semantics.TableIdentityKey)
+	_, quoted := unquote(schema)
+	return Part{Source: schema, Normalized: b.semantics.TableIdentityKey(schema), Quoted: quoted}
 }
 
 // unquote removes one layer of double quotes and reports whether there was one.

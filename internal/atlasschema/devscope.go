@@ -354,7 +354,7 @@ func unquoteSchemaName(token lexer.Token) string {
 // written, and a statement that calls it fails there as it would on any
 // server without that database. state is not modified.
 func RebindDatabase(state *catalog.Database, source, destination catalog.ServerInfo) *catalog.Database {
-	from, to := strings.TrimSpace(source.Schema), strings.TrimSpace(destination.Schema)
+	from, to := source.Schema, destination.Schema
 	if state == nil || !schemaScopeNamesDatabase(destination.Dialect) || from == "" || to == "" || from == to {
 		return state
 	}

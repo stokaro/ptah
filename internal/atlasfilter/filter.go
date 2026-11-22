@@ -506,7 +506,7 @@ type depthScope struct {
 }
 
 func resolvedDepthScope(schema string) depthScope {
-	return depthScope{schema: strings.TrimSpace(schema), resolved: true}
+	return depthScope{schema: schema, resolved: true}
 }
 
 func parsePatterns(values []string, scope depthScope, words vocabulary) ([]resourcePattern, error) {
@@ -992,7 +992,7 @@ func newExclusionState(patterns []resourcePattern, defaultSchema string, words v
 	return &exclusionState{
 		vocabulary:             words,
 		patterns:               patterns,
-		defaultSchema:          strings.TrimSpace(defaultSchema),
+		defaultSchema:          defaultSchema,
 		matched:                matched,
 		excludedTables:         make(map[tableIdentity]struct{}),
 		excludedColumns:        make(map[columnIdentity]struct{}),
@@ -1019,7 +1019,7 @@ func (s *exclusionState) unmatchedSelectors() []string {
 // schema of its own lives in the default schema, so it is the same object the
 // schema-qualified spelling names.
 func (s *exclusionState) effectiveSchema(schema string) string {
-	if strings.TrimSpace(schema) != "" {
+	if schema != "" {
 		return schema
 	}
 	return s.defaultSchema

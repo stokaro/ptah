@@ -3,6 +3,8 @@ package atlas_test
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"testing"
@@ -13,86 +15,61 @@ import (
 	"ptah.run/internal/cli/atlas"
 )
 
-// strictSchemaVerbs are the verbs the strict tree keeps that read -s/--schema.
-var strictSchemaVerbs = []struct {
-	name string
-	args []string
-}{
-	{name: "schema inspect", args: []string{"schema", "inspect", "-u", "sqlite://dev.db"}},
-	{name: "schema apply", args: []string{"schema", "apply", "-u", "sqlite://dev.db", "--to", "file://schema.sql"}},
-	{name: "schema diff", args: []string{"schema", "diff", "--from", "sqlite://dev.db", "--to", "file://schema.sql"}},
-	{name: "migrate diff", args: []string{"migrate", "diff", "--to", "file://schema.sql", "--dev-url", "sqlite://file?mode=memory"}},
+// spacedSchemaValues are -s/--schema values holding a name with white space
+// around it, none of which names the schema `main` on the strict tree.
+var spacedSchemaValues = []string{" main", "main ", "\tmain"}
+
+// writeMainSchemaDocument writes schema.hcl to root, a document declaring the
+// schema `main` and a table in it.
+func writeMainSchemaDocument(c *qt.C, root string) {
+	c.Helper()
+	body := "schema \"main\" {}\ntable \"t\" {\n  schema = schema.main\n  column \"id\" {\n    type = integer\n  }\n}\n"
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.hcl"), []byte(body), 0o600), qt.IsNil)
 }
 
-// spacedSchemaValues are -s/--schema values holding a name with white space
-// around it, each with the name the refusal reports.
-var spacedSchemaValues = []struct {
-	value string
-	name  string
-}{
-	{value: " main", name: " main"},
-	{value: "main ", name: "main "},
-	{value: "main, other", name: " other"},
-	{value: "\tmain", name: "\tmain"},
-}
+// mainDocumentInspect is `schema inspect` of the document
+// [writeMainSchemaDocument] writes.
+var mainDocumentInspect = []string{"schema", "inspect", "-u", "file://schema.hcl", "--dev-url", "sqlite://file?mode=memory"}
 
 // TestAtlasStrictSchemaNameWithSpace_FailurePath pins the strict reading of a
 // name with white space around it. The community binary keeps the space, so
-// ` main` is a schema of its own and `main, other` names ` other`; Ptah trims
-// every schema name below the flag and would select the schema without the
-// space, which is another one. So the strict tree refuses the value rather than
-// read it as a different schema.
+// ` main` is a schema of its own, and a document declaring `main` declares a
+// schema the run did not request. The strict tree keeps the space too and
+// refuses the document in that binary's words, from the flag and from an
+// `env { schemas }` element alike.
 func TestAtlasStrictSchemaNameWithSpace_FailurePath(t *testing.T) {
-	for _, verb := range strictSchemaVerbs {
-		for _, value := range spacedSchemaValues {
-			t.Run(verb.name+" "+fmt.Sprintf("%q", value.value), func(t *testing.T) {
-				c := qt.New(t)
-				root := writeSchemaValueFixture(c)
-
-				out, err := runStrictSchemaValueCommand(c, root, slices.Concat(verb.args, []string{"--schema", value.value}))
-
-				c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(fmt.Sprintf(
-					`invalid argument %q for "-s, --schema" flag: schema %q begins or ends with white space, which the community binary keeps and Ptah cannot select`,
-					value.value, value.name)))
-				c.Assert(out, qt.Equals, "")
-			})
-		}
-	}
-}
-
-// TestAtlasStrictConfiguredSchemaNameWithSpace_FailurePath is the project-file
-// half: an `env { schemas }` element takes the flag's grammar, and the refusal,
-// being Ptah's own, names the file and the env.
-func TestAtlasStrictConfiguredSchemaNameWithSpace_FailurePath(t *testing.T) {
-	verbs := []struct {
-		name string
-		args []string
-	}{
-		{name: "schema inspect", args: []string{"schema", "inspect", "-c", "file://atlas.hcl", "--env", "local"}},
-		{name: "schema apply", args: []string{"schema", "apply", "-c", "file://atlas.hcl", "--env", "local", "--to", "file://schema.sql"}},
-		{name: "schema diff", args: []string{"schema", "diff", "-c", "file://atlas.hcl", "--env", "local", "--from", "sqlite://dev.db", "--to", "file://schema.sql"}},
-		{name: "migrate diff", args: []string{"migrate", "diff", "-c", "file://atlas.hcl", "--env", "local", "--to", "file://schema.sql"}},
-	}
-
-	for _, verb := range verbs {
-		t.Run(verb.name, func(t *testing.T) {
+	for _, value := range spacedSchemaValues {
+		t.Run(fmt.Sprintf("flag %q", value), func(t *testing.T) {
 			c := qt.New(t)
-			root := writeSchemaValueFixture(c)
-			writeSchemaValueProjectWith(c, root, " main")
+			root := c.TempDir()
+			writeMainSchemaDocument(c, root)
 
-			out, err := runStrictSchemaValueCommand(c, root, verb.args)
+			out, err := runStrictSchemaValueCommand(c, root, slices.Concat(mainDocumentInspect, []string{"--schema", value}))
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(
-				`atlas.hcl: env "local": schemas value " main": schema " main" begins or ends with white space, which the community binary keeps and Ptah cannot select`))
+				`schema "main" from paths ["schema.hcl"] is not requested (all schemas in HCL must be requested)`))
+			c.Assert(out, qt.Equals, "")
+		})
+		t.Run(fmt.Sprintf("project file %q", value), func(t *testing.T) {
+			c := qt.New(t)
+			root := c.TempDir()
+			writeMainSchemaDocument(c, root)
+			writeSchemaValueProjectWith(c, root, value)
+
+			out, err := runStrictSchemaValueCommand(c, root, slices.Concat(mainDocumentInspect, []string{"-c", "file://atlas.hcl", "--env", "local"}))
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(
+				`schema "main" from paths ["schema.hcl"] is not requested (all schemas in HCL must be requested)`))
 			c.Assert(out, qt.Equals, "")
 		})
 	}
 }
 
-// TestAtlasSchemaNameWithSpace_HappyPath pins what the strict reading leaves
-// alone. The default tree trims a name, so ` main` is `main` there. The strict
-// tree accepts a name with no white space around it, and a field that is blank
-// beside a name, which selects nothing on either binary.
+// TestAtlasSchemaNameWithSpace_HappyPath is the inverse. The default tree trims
+// a name, so ` main` is `main` there and the document is described. The strict
+// tree describes it for a name with no white space around it, a quoted name,
+// and a field that is blank beside a name, which selects nothing on either
+// binary.
 func TestAtlasSchemaNameWithSpace_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -100,6 +77,7 @@ func TestAtlasSchemaNameWithSpace_HappyPath(t *testing.T) {
 		value  string
 	}{
 		{name: "default tree, leading space", policy: atlascompatpolicy.Full(), value: " main"},
+		{name: "default tree, trailing space", policy: atlascompatpolicy.Full(), value: "main "},
 		{name: "default tree, a list with a space", policy: atlascompatpolicy.Full(), value: "main, other"},
 		{name: "strict tree, a plain name", policy: atlascompatpolicy.StrictCE(), value: "main"},
 		{name: "strict tree, a blank field beside a name", policy: atlascompatpolicy.StrictCE(), value: "main, "},
@@ -109,11 +87,14 @@ func TestAtlasSchemaNameWithSpace_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			root := writeSchemaValueFixture(c)
+			root := c.TempDir()
+			writeMainSchemaDocument(c, root)
 
-			_, err := runSchemaValueCommandWithPolicy(c, root, test.policy, []string{"schema", "inspect", "-u", "sqlite://dev.db", "--schema", test.value})
+			out, err := runSchemaValueCommandWithPolicy(c, root, test.policy, slices.Concat(mainDocumentInspect, []string{"--schema", test.value}))
 
 			c.Assert(err, qt.IsNil)
+			c.Assert(out, qt.Contains, "schema \"main\" {\n}")
+			c.Assert(out, qt.Contains, "schema = schema.main")
 		})
 	}
 }

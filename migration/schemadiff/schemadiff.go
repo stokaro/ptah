@@ -557,7 +557,7 @@ func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *ca
 		held[schema.Name] = true
 	}
 	for _, table := range database.Tables {
-		held[strings.TrimSpace(table.Schema)] = true
+		held[table.Schema] = true
 	}
 	for _, reference := range foreignkeyscope.References(*desired) {
 		schema, outside := foreignkeyscope.Outside(*desired, dialect, reference.Table)

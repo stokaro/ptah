@@ -16,13 +16,14 @@ import (
 
 // TestUniqueNames pins that each value is one name: a comma belongs to the name,
 // because splitting a command-line value is the grammar of the flag that read
-// it. Surrounding spaces are trimmed, so " auth" repeats "auth".
+// it, and so does a space around it, so " auth" is a schema of its own. A
+// name of white space alone names no schema.
 func TestUniqueNames(t *testing.T) {
 	c := qt.New(t)
 
-	got := schemascope.UniqueNames([]string{"auth", "a,b", "auth", "", " auth", "  ", "metrics"})
+	got := schemascope.UniqueNames([]string{"auth", "a,b", "auth", "", " auth", "  ", "metrics", " auth"})
 
-	c.Assert(got, qt.DeepEquals, []string{"auth", "a,b", "metrics"})
+	c.Assert(got, qt.DeepEquals, []string{"auth", "a,b", " auth", "metrics"})
 }
 
 // declaredExtensions gives db the extensions as the owner's declarations,

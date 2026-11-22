@@ -63,7 +63,7 @@ func Outside(database schemamodel.Database, dialect, reference string) (schema s
 		}
 	}
 	for _, table := range database.Tables {
-		if cmp.Or(strings.TrimSpace(table.Schema), unqualified) == ref.Schema {
+		if cmp.Or(table.Schema, unqualified) == ref.Schema {
 			return "", false
 		}
 	}

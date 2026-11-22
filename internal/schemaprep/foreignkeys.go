@@ -188,7 +188,7 @@ func foreignKeyNameAllocationScope(table schemamodel.Table, targetPlatform strin
 	case descriptor.NamespaceDatabase:
 		return "database"
 	case descriptor.NamespaceSchema:
-		schema := strings.TrimSpace(table.Schema)
+		schema := table.Schema
 		if schema == "" {
 			schema = identifier.ForDialect(targetPlatform).DefaultSchema
 		}

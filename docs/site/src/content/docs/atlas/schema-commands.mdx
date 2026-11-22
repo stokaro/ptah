@@ -249,31 +249,20 @@ Atlas CE keeps the space, so ` two` names no schema there and only `one` is
 described.
 
 `PTAH_ATLAS_STRICT_COMPAT=1` reads the value as Atlas CE does and keeps the
-space, so ` two` is a schema of its own. Ptah cannot select a schema whose name
-begins or ends with white space: the readers and filters below the flag trim
-every schema name
-([stokaro/ptah#6487](https://github.com/stokaro/ptah/issues/6487)). So under
-strict mode such a name is refused before the run starts, rather than read as
-the schema without the space:
-`invalid argument "one, two" for "-s, --schema" flag: schema " two" begins or ends with white space, which the community binary keeps and Ptah cannot select`.
-Measured on Atlas CE v1.4.0, with `schema inspect`:
+space, so ` two` is a schema of its own, and a run naming it describes that
+schema or nothing. Measured on Atlas CE v1.4.0, with `schema inspect`:
 
 | Run | Atlas CE | Ptah, strict mode |
 | --- | --- | --- |
-| `-s ' main'`, a document declaring `schema "main"` | refused: `schema "main" from paths ["main.hcl"] is not requested` | refused |
-| `-s ' a'`, a document declaring `schema " a"` | describes ` a` | refused |
-| `-s ' a'`, a PostgreSQL database holding `a` and ` a` | describes ` a` | refused |
-| `-s ' main'`, a SQLite database | describes `main`, as for any `-s` value | refused |
+| `-s ' main'`, a document declaring `schema "main"` | refused: `schema "main" from paths ["main.hcl"] is not requested` | refused, in the same words |
+| `-s ' a'`, a document declaring `schema " a"` | describes ` a` | describes ` a` |
+| `-s ' a'`, a PostgreSQL database holding `a` and ` a` | describes ` a` | describes ` a` |
+| `-s ' main'`, a SQLite database | describes `main`, as for any `-s` value | describes `main` |
 
-The second and third rows are stricter than Atlas CE on purpose, because they
-name a schema Ptah cannot carry. Without the refusal, strict mode would trim the
-name: the database run describes `a`, which is another schema, and the document
-run is refused with `schema " a" from paths ["sa.hcl"] is not requested`. The
-last row is stricter for another reason. Atlas CE does not read `-s` on a SQLite
-URL at all, so `-s other`, `-s ' x'` and `-s 'main '` all describe `main` there,
-and Ptah refuses the value before it reads the URL. A field that is blank
-beside a name, as in `-s 'main, '`, is accepted: it selects nothing on either
-binary.
+Atlas CE does not read `-s` on a SQLite URL at all, so `-s other`, `-s ' x'`
+and `-s 'main '` all describe `main` there, and they do in strict mode too. A
+field that is blank beside a name, as in `-s 'main, '`, is accepted: it selects
+nothing on either binary.
 
 A value that names no schema is refused before the run starts:
 `every field is empty, so the value names no schema`. That is the empty value,

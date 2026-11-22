@@ -50,12 +50,14 @@ func (r *Reader) SetSchemas(schemas []string) {
 	r.scoped = len(schemas) > 0
 }
 
+// normalizeSchemas is schemas without blank names and repeats, in first-seen
+// order, or fallback when nothing is left. A name keeps its bytes: ` a` is a
+// schema of its own, not another spelling of `a`.
 func normalizeSchemas(schemas []string, fallback string) []string {
 	seen := make(map[string]struct{}, len(schemas)+1)
 	out := make([]string, 0, len(schemas)+1)
 	for _, schema := range schemas {
-		schema = strings.TrimSpace(schema)
-		if schema == "" {
+		if strings.TrimSpace(schema) == "" {
 			continue
 		}
 		if _, ok := seen[schema]; ok {

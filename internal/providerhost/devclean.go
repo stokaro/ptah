@@ -72,7 +72,7 @@ func (s *session) DropAllTables(ctx context.Context) error {
 // the session's schema, or the whole realm when the session names none. One
 // function answers both, so the list and the cleanup cannot read two scopes.
 func (s *session) cleanupSchemas() []string {
-	if schema := strings.TrimSpace(s.info.Schema); schema != "" {
+	if schema := s.info.Schema; schema != "" {
 		return []string{schema}
 	}
 	return nil

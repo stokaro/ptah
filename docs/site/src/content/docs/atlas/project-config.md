@@ -343,11 +343,9 @@ schema that holds a comma, such as
 `schemas = ["\"a,b\""]`, is refused with a message that names the file and the
 env.
 
-Under `PTAH_ATLAS_STRICT_COMPAT=1`, an element naming a schema that begins or
-ends with white space, such as `schemas = [" one"]` or
-`schemas = ["one, two"]`, is refused with a message that names the file and
-the env. Atlas CE keeps the space, and Ptah cannot select such a schema
-([stokaro/ptah#6487](https://github.com/stokaro/ptah/issues/6487)); see
+Under `PTAH_ATLAS_STRICT_COMPAT=1`, an element keeps the white space around a
+name, as Atlas CE keeps it: `schemas = [" one"]` names the schema ` one`, and
+`schemas = ["one, two"]` names `one` and ` two`. See
 [schema commands](../schema-commands/) for the `--schema` reading.
 
 Restricting the universe means Ptah describes less than it did before the

@@ -531,12 +531,12 @@ func (p *Planner) addSchemaPreconditions(
 	}
 	for _, name := range names {
 		if ref, ok := tableref.Parse(name); ok && ref.Qualified {
-			add(strings.TrimSpace(ref.Schema))
+			add(ref.Schema)
 		}
 	}
 	// A schema the comparison adds is created whether or not an object names it.
 	for _, schema := range diff.SchemasAdded {
-		add(strings.TrimSpace(schema.Name))
+		add(schema.Name)
 	}
 	for _, schema := range p.placedSchemas(diff) {
 		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) {

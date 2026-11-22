@@ -119,6 +119,19 @@ func TestIdentity_DefectFixtures(t *testing.T) {
 			left:  builder.PrimaryKeyParts("public", "orders"),
 			right: builder.TableParts("public", "orders"),
 		},
+		{
+			// stokaro/ptah#6487: a schema name may begin with a space, and
+			// ` a` is a schema of its own. A trimmed schema paired a table of
+			// one with the table of the same name in the other.
+			name:  "one table name in schemas a and space a",
+			left:  builder.TableParts(" a", "t"),
+			right: builder.TableParts("a", "t"),
+		},
+		{
+			name:  "one sequence name in schemas a and a space",
+			left:  builder.SchemaScopedParts(objectidentity.KindSequence, "a ", "s"),
+			right: builder.SchemaScopedParts(objectidentity.KindSequence, "a", "s"),
+		},
 	}
 
 	for _, test := range tests {

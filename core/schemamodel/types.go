@@ -959,7 +959,6 @@ func IsValidSequenceType(asType string) bool {
 // canonical form; unrecognized types are left as-is for the parser to reject.
 func (s *Sequence) Canonicalize() {
 	s.Name = strings.TrimSpace(s.Name)
-	s.Schema = strings.TrimSpace(s.Schema)
 	s.AsType = strings.ToLower(strings.TrimSpace(s.AsType))
 	if canonical, ok := sequenceTypeAliases[s.AsType]; ok {
 		s.AsType = canonical

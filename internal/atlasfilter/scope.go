@@ -275,9 +275,9 @@ func parseResourceIncludeSelectors(values []string, words vocabulary) ([]resourc
 }
 
 func resourceExcluded(patterns []resourcePattern, resource Resource, defaultSchema string) bool {
-	schema := strings.TrimSpace(resource.Schema)
+	schema := resource.Schema
 	if schema == "" {
-		schema = strings.TrimSpace(defaultSchema)
+		schema = defaultSchema
 	}
 	objectNames := qualifiedNameCandidates(schema, resource.Name)
 	for _, pattern := range patterns {
@@ -748,7 +748,7 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 	return &scopeSelection{
 		allowed:          allowed,
 		selectors:        selectors,
-		def:              strings.TrimSpace(scope.DefaultSchema),
+		def:              scope.DefaultSchema,
 		extensionSupport: scope.ExtensionSupport,
 		bindings:         scope.Bindings,
 		requirements:     scope.Requirements,
@@ -757,7 +757,7 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 }
 
 func (s *scopeSelection) effectiveSchema(schema string) string {
-	if strings.TrimSpace(schema) != "" {
+	if schema != "" {
 		return schema
 	}
 	return s.def

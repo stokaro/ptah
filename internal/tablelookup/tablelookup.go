@@ -55,9 +55,8 @@ func ResolveReference(tables []schemamodel.Table, current schemamodel.Table, ref
 		return schemamodel.QualifyTableName(ref.Schema, ref.Name)
 	}
 
-	currentSchema := strings.TrimSpace(current.Schema)
 	for _, table := range tables {
-		if strings.TrimSpace(table.Schema) == currentSchema && table.Name == ref.Name {
+		if table.Schema == current.Schema && table.Name == ref.Name {
 			return table.QualifiedName()
 		}
 	}

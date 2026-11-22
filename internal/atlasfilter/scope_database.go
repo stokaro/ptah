@@ -136,7 +136,7 @@ func (s *scopeSelection) databaseGrantSelected(
 		if len(s.selectors) == 0 {
 			return true
 		}
-		_, named := s.allowed[strings.TrimSpace(grant.ObjectName)]
+		_, named := s.allowed[grant.ObjectName]
 		return named
 	case strings.EqualFold(grant.ObjectType, "SEQUENCE"):
 		return databaseSequenceNameKept(out.Sequences, grant.Schema, grant.ObjectName) ||
