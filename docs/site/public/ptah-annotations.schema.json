@@ -71,6 +71,102 @@
       ],
       "type": "object"
     },
+    "ptah.schema.async_replication": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "commit_interval": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "connection_string": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "consistency_level": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "password_secret_name": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "password_secret_path": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "token_secret_name": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "token_secret_path": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "user": {
+              "description": "Attribute of ptah:schema:async_replication, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:async_replication"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.async_replication.item": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "replication": {
+              "description": "Attribute of ptah:schema:async_replication:item, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:async_replication:item, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Attribute of ptah:schema:async_replication:item, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Attribute of ptah:schema:async_replication:item, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:async_replication:item"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.changefeed": {
       "additionalProperties": false,
       "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
@@ -423,6 +519,54 @@
         },
         "directive": {
           "const": "ptah:schema:continuousaggregate"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.coordinationnode": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "attach_consistency_mode": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "rate_limiter_counters_mode": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "read_consistency_mode": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "self_check_period": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "session_grace_period": {
+              "description": "Attribute of ptah:schema:coordinationnode, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:coordinationnode"
         }
       },
       "required": [
@@ -789,6 +933,94 @@
         },
         "directive": {
           "const": "ptah:schema:extension"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.externaldatasource": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "auth_method": {
+              "description": "Attribute of ptah:schema:externaldatasource, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "location": {
+              "description": "Attribute of ptah:schema:externaldatasource, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:externaldatasource, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "options": {
+              "description": "Attribute of ptah:schema:externaldatasource, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:externaldatasource, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "source_type": {
+              "description": "Attribute of ptah:schema:externaldatasource, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:externaldatasource"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.externaltable": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "description": "Attribute of ptah:schema:externaltable, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "data_source": {
+              "description": "Attribute of ptah:schema:externaltable, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "location": {
+              "description": "Attribute of ptah:schema:externaltable, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:externaltable, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "options": {
+              "description": "Attribute of ptah:schema:externaltable, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:externaltable, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:externaltable"
         }
       },
       "required": [
@@ -1659,6 +1891,94 @@
       ],
       "type": "object"
     },
+    "ptah.schema.resourcepool": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "concurrent_query_limit": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "database_load_cpu_threshold": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "query_cpu_limit_percent_per_node": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "query_memory_limit_percent_per_node": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "queue_size": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "resource_weight": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "total_cpu_limit_percent_per_node": {
+              "description": "Attribute of ptah:schema:resourcepool, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:resourcepool"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.resourcepool.classifier": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "member_name": {
+              "description": "Attribute of ptah:schema:resourcepool:classifier, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:resourcepool:classifier, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "rank": {
+              "description": "Attribute of ptah:schema:resourcepool:classifier, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "resource_pool": {
+              "description": "Attribute of ptah:schema:resourcepool:classifier, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:resourcepool:classifier"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.revoke": {
       "additionalProperties": false,
       "description": "Declares privileges a role does not hold, including ones it holds without a grant: PUBLIC's EXECUTE on a new function, or what ALTER DEFAULT PRIVILEGES gave a role on a new table.",
@@ -2075,6 +2395,42 @@
       ],
       "type": "object"
     },
+    "ptah.schema.secret": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "Attribute of ptah:schema:secret, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:secret, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "value": {
+              "description": "Attribute of ptah:schema:secret, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "value_env": {
+              "description": "Attribute of ptah:schema:secret, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:secret"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.sequence": {
       "additionalProperties": false,
       "description": "Declares a standalone PostgreSQL sequence.",
@@ -2152,6 +2508,50 @@
         },
         "directive": {
           "const": "ptah:schema:sequence"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.streamingquery": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_state_reset": {
+              "description": "Attribute of ptah:schema:streamingquery, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:streamingquery, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "resource_pool": {
+              "description": "Attribute of ptah:schema:streamingquery, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "run": {
+              "description": "Attribute of ptah:schema:streamingquery, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:streamingquery, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Attribute of ptah:schema:streamingquery, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:streamingquery"
         }
       },
       "required": [
@@ -2363,6 +2763,198 @@
         },
         "directive": {
           "const": "ptah:schema:table"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.topic": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "auto_partitioning_down_utilization_percent": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "auto_partitioning_stabilization_window": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "auto_partitioning_strategy": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "auto_partitioning_up_utilization_percent": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "max_active_partitions": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "min_active_partitions": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "partition_write_burst_bytes": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "partition_write_speed_bytes_per_second": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "retention_period": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "supported_codecs": {
+              "description": "Attribute of ptah:schema:topic, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:topic"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.topic.consumer": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "availability_period": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "important": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "read_from": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "supported_codecs": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "topic": {
+              "description": "Attribute of ptah:schema:topic:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:topic:consumer"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "ptah.schema.transfer": {
+      "additionalProperties": false,
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "batch_size_bytes": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "connection_string": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "consumer": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "flush_interval": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "password_secret_name": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "password_secret_path": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "token_secret_name": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "token_secret_path": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "user": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "using": {
+              "description": "Attribute of ptah:schema:transfer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:transfer"
         }
       },
       "required": [
@@ -2605,6 +3197,12 @@
       "$ref": "#/$defs/ptah.schema.synonym"
     },
     {
+      "$ref": "#/$defs/ptah.schema.async_replication"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.async_replication.item"
+    },
+    {
       "$ref": "#/$defs/ptah.schema.changefeed"
     },
     {
@@ -2612,6 +3210,36 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.columnfamily"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.coordinationnode"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.externaldatasource"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.externaltable"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.resourcepool"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.resourcepool.classifier"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.secret"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.streamingquery"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.topic"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.topic.consumer"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.transfer"
     }
   ],
   "title": "Ptah Go Annotation Directives"
