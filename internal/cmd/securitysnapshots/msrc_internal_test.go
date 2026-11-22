@@ -263,9 +263,13 @@ var guideAnswers = []kbRow{
 	{CVE: "CVE-2026-40002", KB: "5000002"},
 }
 
-// guideGaps answers the one gap guideRows leaves: CVE-2026-40002 on the CU
-// branch of 15.0, which no November article updates.
-var guideGaps = []kbGap{{CVE: "CVE-2026-40002", Line: "15.0", Branch: "cu"}}
+// guideGaps answers the gaps guideRows leaves on 15.0's CU branch, which no
+// November article updates: CVE-2026-40002, which the guide names on 15.0's
+// GDR branch, and CVE-2026-40001, which it names on 16.0 alone.
+var guideGaps = []kbGap{
+	{CVE: "CVE-2026-40002", Line: "15.0", Branch: "cu", Since: &kbFirstBuild{KB: "5000005", Build: "15.0.4440.1", Released: "2026-11-20"}},
+	{CVE: "CVE-2026-40001", Line: "15.0", Branch: "cu", Unlisted: true},
+}
 
 // writeKBEvidence writes the reviewed KB record where the check reads it.
 func writeKBEvidence(c *qt.C, articles []kbArticle, rows []kbRow) {
@@ -367,6 +371,57 @@ func TestCheckVersioned_GuideOnlySnapshotIsRefused(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 }
 
+// TestCheckVersioned_SnapshotRangeTheGuideDoesNotGiveIsRefused reads an
+// unchanged guide against a snapshot that sets a fixed build too high or pins
+// a range nothing names: either reads a server wrong.
+func TestCheckVersioned_SnapshotRangeTheGuideDoesNotGiveIsRefused(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		ranges []vulnerability.VersionRange
+		want   string
+	}{
+		{name: "fixed build too high", ranges: []vulnerability.VersionRange{{Line: "15.0", Branch: "gdr", From: "15.0", Fixed: "15.0.2135.6"}},
+			want: `CVE-2026-40002 carries the fixed builds 15.0 gdr 15.0.2135.6, and the guide with the reviewed KB articles gives 15.0 gdr 15.0.2135.5`},
+		{name: "range nothing names", ranges: []vulnerability.VersionRange{
+			{Line: "15.0", Branch: "gdr", From: "15.0", Fixed: "15.0.2135.5"}, {Line: "16.0", Branch: "gdr", From: "16.0", Fixed: "16.0.1140.6"},
+		}, want: `CVE-2026-40002 carries the fixed builds 15.0 gdr 15.0.2135.5, 16.0 gdr 16.0.1140.6, and the guide with the reviewed KB articles gives 15.0 gdr 15.0.2135.5`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			writeKBEvidence(c, guideArticles, guideAnswers)
+			now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+			current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+			current.Advisories[1].Ranges = test.ranges
+			pages := guidePages(c, guideRows("nonce-2"))
+			pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+			err := checkVersioned(current, servedPages(pages), now)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			_, err = os.Stat(filepath.Join("internal", "vulnerability", "sqlserver.json"))
+			c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
+// TestCheckVersioned_UnusedAnswerIsRefused reads an unchanged guide against a
+// record that also answers a row no question reads: an article the guide
+// names for the advisory. A stale answer would hide that the guide moved.
+func TestCheckVersioned_UnusedAnswerIsRefused(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeKBEvidence(c, guideArticles, append(slices.Clone(guideAnswers), kbRow{CVE: "CVE-2026-40001", KB: "5000001", Lists: true}))
+	now := time.Date(2026, 12, 9, 7, 23, 0, 0, time.UTC)
+	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
+	pages := guidePages(c, guideRows("nonce-2"))
+	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
+
+	err := checkVersioned(current, servedPages(pages), now)
+
+	c.Assert(err, qt.ErrorMatches, `internal/vulnerability/sqlserver-kb.json answers what the guide no longer asks: row CVE-2026-40001 in KB5000001`)
+}
+
 // TestCheckVersioned_UnansweredRowIsRefused reads an unchanged guide against
 // a record that answers one row too few.
 func TestCheckVersioned_UnansweredRowIsRefused(t *testing.T) {
@@ -394,9 +449,9 @@ func TestCheckVersioned_ReviewListsWhatTheRecordDoesNotCover(t *testing.T) {
 	current := guideSnapshot(c, guideRows("nonce-1"), now.Add(-24*time.Hour), time.Date(2026, 12, 8, 0, 0, 0, 0, time.UTC))
 	rows := append(guideRows("nonce-2"),
 		map[string]any{"id": "row-6", "cveNumber": "CVE-2026-49998", "product": "Microsoft SQL Server 2022 for x64-based Systems (GDR)",
-			"kbArticles": []map[string]any{{"articleName": "5000001", "fixedBuildNumber": "16.0.1140.6"}}},
+			"releaseNumber": "2026-Nov", "kbArticles": []map[string]any{{"articleName": "5000001", "fixedBuildNumber": "16.0.1140.6"}}},
 		map[string]any{"id": "row-7", "cveNumber": "CVE-2026-49997", "product": "Microsoft SQL Server 2022 for x64-based Systems (CU 20)",
-			"kbArticles": []map[string]any{{"articleName": "5000007", "fixedBuildNumber": "16.0.4210.2"}}})
+			"releaseNumber": "2026-Nov", "kbArticles": []map[string]any{{"articleName": "5000007", "fixedBuildNumber": "16.0.4210.2"}}})
 	pages := guidePages(c, rows)
 	pages[cvrfIndexURL] = cvrfIndex(c, "2026-Nov", "2026-Dec")
 
@@ -409,6 +464,7 @@ func TestCheckVersioned_ReviewListsWhatTheRecordDoesNotCover(t *testing.T) {
 	c.Assert(pending.AddedIDs, qt.DeepEquals, []string{"CVE-2026-49997", "CVE-2026-49998"})
 	c.Assert(pending.UnrecordedKBArticles, qt.DeepEquals, []string{"https://support.microsoft.com/help/5000007"})
 	c.Assert(pending.UnansweredKBRows, qt.DeepEquals, []kbQuestion{
+		{CVE: "CVE-2026-49998", Line: "15.0", Branch: "cu", Months: []string{"2026-Nov"}, URL: "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-49998"},
 		{CVE: "CVE-2026-49998", Line: "15.0", Branch: "gdr", Months: []string{"2026-Nov"}, KB: "5000004", URL: "https://support.microsoft.com/help/5000004"},
 		{CVE: "CVE-2026-49998", Line: "16.0", Branch: "cu", Months: []string{"2026-Nov"}, KB: "5000002", URL: "https://support.microsoft.com/help/5000002"},
 	})
