@@ -4741,12 +4741,18 @@ one transaction on one throwaway physical session, rolls the transaction back
 whatever the callback does, and then discards the session. It exists for
 callers that must create something on the server only to read back how the
 server stored it -- Ptah's own expression probes are the canonical consumer --
-and it is the supported way to do that without leaving state behind. A
-connection already pinned to a session reports `ran` false with a nil error
-and never runs the callback: the rollback would discard the session owner's
-work. A provider session reports the same, whatever engine name it serves,
-because it exposes no `database/sql` transaction to roll back. Callers that
-need the transaction must check `ran` as well as the error.
+and it is the supported way to do that without leaving state behind.
+
+A connection already pinned to a session runs the callback on that session only
+where the driver reports the session outside any transaction, as pgx and the SQL
+Server driver do; elsewhere it reports `ran` false with a nil error and never runs
+the callback, because the rollback would discard the session owner's work. On
+ClickHouse, whose driver keeps no transaction and closes the connection a
+rollback ends, the callback runs on a throwaway session of its own, pinned or
+not, and must change nothing, since the rollback undoes nothing on the server. A
+provider session reports `ran` false, whatever engine name it serves, because it
+exposes no `database/sql` transaction to roll back. Callers that need the
+transaction must check `ran` as well as the error.
 
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers

@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/clickhouse/chprobe"
 	"ptah.run/internal/clickhousecomparison"
 )
 
@@ -57,13 +58,14 @@ func TestIndexDefinitions_DefinitionChanged(t *testing.T) {
 	}
 }
 
-// TestRules pins the rules ClickHouse registers: whole index definitions and
-// computed column expressions, and nothing it leaves to the shared
-// comparison.
+// TestRules pins the rules ClickHouse registers: whole index definitions,
+// computed column expressions and the server's decision on a CHECK, and
+// nothing it leaves to the shared comparison.
 func TestRules(t *testing.T) {
 	c := qt.New(t)
 	rules := clickhousecomparison.Rules()
 	c.Assert(rules.IndexDefinitions, qt.Equals, clickhousecomparison.IndexDefinitions{})
+	c.Assert(rules.Checks, qt.Equals, schemacomparison.Checks(chprobe.CheckService{}))
 	c.Assert(rules.Indexes, qt.IsNil)
 	c.Assert(rules.IndexPredicates, qt.IsNil)
 	c.Assert(rules.ForeignKeyIndexes, qt.IsNil)

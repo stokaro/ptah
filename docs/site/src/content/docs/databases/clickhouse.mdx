@@ -559,10 +559,13 @@ and a table constraint. On a table that exists, a change is planned as
 `ALTER TABLE ... DROP CONSTRAINT` and `ALTER TABLE ... ADD CONSTRAINT`.
 
 ClickHouse refuses a `CHECK` without a name, so Ptah names each table `CHECK` that
-the schema leaves unnamed: `<table>_check`, then `<table>_check1` and on, past the
-names the table uses already. The unnamed `CHECK` of a column is
-`<table>_<column>_check`. A render, a plan and a comparison give the same name, so
-the next plan finds the constraint that the apply created:
+the schema leaves unnamed. On a table that exists, an unnamed `CHECK` takes the name
+of the `CHECK` the table holds with the same condition, so a reordered checks list,
+or a named `CHECK` added beside the unnamed ones, renames none of them. Each one
+left is `<table>_check`, then `<table>_check1` and on, past the names already taken.
+The unnamed `CHECK` of a column is `<table>_<column>_check`. A render, a plan and a
+comparison give the same name, so the next plan finds the constraint that the apply
+created:
 
 ```go
 //ptah:schema:table name="t"
@@ -585,13 +588,62 @@ CREATE TABLE t (
 
 The server keeps the constraints of a table only in its `CREATE TABLE` statement, so
 Ptah reads them from `system.tables.create_table_query`. The server writes the
-expression its own way, `v > 0 AND v <> 5` as `(v > 0) AND (v != 5)`, and the
-comparison reads the two as one condition.
+condition its own way, and each release line in its own. Measured on 24.10 and
+26.10, both write `CAST(v AS Int64) > 0` and `v::Int64 > 0` as
+`CAST(v, 'Int64') > 0`, and 24.10 writes `equals(v, v)` as `v = v`. So against a
+connected server, Ptah asks the server to format the declared condition and the one
+it holds with `formatQuerySingleLineOrNull`, and a `CHECK` whose two conditions
+format alike is unchanged. A declared condition the server cannot parse formats to
+NULL and is another `CHECK`, which the server then refuses with its own message. The server keeps the case of a name, and a `CHECK` over a column
+`V` is another `CHECK` from one over `v`.
+
+A comparison with no server, such as one of two schema files, compares the text, by
+the grouping the operators' precedence gives: there `v > 0 AND v <> 5` and
+`(v > 0) AND (v != 5)` are one condition, and `CAST(v AS Int64) > 0` and
+`CAST(v, 'Int64') > 0` are two. A server without `formatQuerySingleLineOrNull` is
+compared the same way, and the run warns, before the plan, that each `CHECK` it
+pairs is compared as written.
+
+A `CHECK` the table holds and no schema declares is dropped, as any object the
+schema leaves out is. `--exclude t.hand` leaves the `CHECK` named `hand` on table `t`
+out of the plan.
 
 `ALTER TABLE ... ADD CONSTRAINT` checks only the rows written after it, not the rows
-the table holds, measured on 24.10 and 26.10. The plan says so in a comment before
-each one. Query the table for the rows that break a new constraint before you apply
-it.
+the table holds, measured on 24.10 and 26.10. So the plan counts the rows the table
+holds that the `CHECK` refuses, before each `ADD` and again after it, and says so in
+a comment:
+
+```sql
+-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan t for held rows the CHECK refuses
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+```
+
+A row the condition answers NULL for is counted, since an `INSERT` of it is refused
+with code 469 too. A held row the `CHECK` refuses stops the apply with code 395 and a
+message that names the constraint. The count before the `ADD` stops the apply while
+the constraint is absent, so a retried apply plans the `ADD` again and stops again
+until the rows are deleted or corrected. The count after the `ADD` finds a row
+written between the two counts. It stops the apply with the constraint on the table,
+since ClickHouse has no transaction to undo the `ADD`, and the next plan finds the
+constraint and plans nothing, so delete or correct that row, or drop the constraint.
+A row written after the `ADD` is the constraint's to refuse.
+
+A plan drops a changed `CHECK` before it counts the rows for the new condition, so a
+held row the new condition refuses leaves the table with neither condition until the
+rows are corrected.
+
+The counts read the whole table twice for each `CHECK` the plan adds, so on a large
+table they cost what two of those `SELECT` statements cost. To find the rows before
+you apply, run the same filter:
+
+```sql
+SELECT count() FROM t WHERE NOT ifNull((v > 1), 0)
+```
+
+`WHERE NOT (v > 1)` misses a row the condition answers NULL for, because `NOT` of
+NULL is NULL.
 
 The server refuses to drop a column that a `CHECK` reads, and to add a `CHECK` over
 a column the table does not have, both with code 47. A plan therefore drops `CHECK`

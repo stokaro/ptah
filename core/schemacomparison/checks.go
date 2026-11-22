@@ -6,6 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 )
 
 // Checks decides whether a declared CHECK and the CHECK a table holds under
@@ -16,9 +17,12 @@ import (
 type Checks interface {
 	// EquivalentChecks answers each pair of request, in order: whether the
 	// declared expression and the held CHECK are one constraint on the
-	// target. The answer has one entry for each pair. A failure decides
-	// nothing, and the comparison fails with it. It must not modify the
-	// request.
+	// target. The answer has one entry for each pair. A nil answer with no
+	// error decides nothing, and the comparison compares the pairs as it
+	// compares the CHECKs of a target that registers no Checks: a service
+	// that asks the server answers so when the request carries no Session.
+	// A failure decides nothing, and the comparison fails with it. It must
+	// not modify the request.
 	EquivalentChecks(ctx context.Context, request ChecksRequest) ([]bool, error)
 }
 
@@ -35,6 +39,10 @@ type ChecksRequest struct {
 	Current *catalog.Database
 	// Pairs are the CHECKs to decide, each held CHECK named once.
 	Pairs []CheckPair
+	// Session runs queries on the connected target, in a transaction that is
+	// always rolled back. It is nil on a comparison with no connection, such
+	// as one of two schema descriptions.
+	Session schemaext.ProbeSession
 }
 
 // CheckPair is a declared CHECK expression and the CHECK a table holds under

@@ -4,7 +4,9 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/precedence"
 )
 
 // The tables below hold what each descriptor of the process registry states
@@ -43,7 +45,33 @@ var (
 	nextValueClause = descriptortable.New(func(described descriptor.Dialect) []string {
 		return strings.Fields(described.Grammar.Columns.NextValueClause)
 	})
+	checkWordFolds = descriptortable.New(checkWordFold)
 )
+
+// checkWordFoldOf returns the words the CHECK comparison lowers on dialect, as
+// a test, or nil where it lowers every letter; see [checkWordFold].
+func checkWordFoldOf(dialect string) func(word string) bool {
+	return checkWordFolds.Get(dialect)
+}
+
+// checkWordFold is nil, which lowers every letter of a CHECK condition, unless
+// the dialect's names keep the case they are written in: its column names
+// compare exactly, an unquoted name is recorded as written, and no lookup
+// reaches a name in another case. There, a column `V` is another column from
+// `v`, so only the words the dialect's operator precedence reads as keywords
+// or literals are lowered ([precedence.Keyword]). Measured on ClickHouse 24.10
+// and 26.10, the server prints `and`, `is null` and `like` in upper case and
+// keeps `V`, `Length` and `toInt64` as written. A dialect that states no
+// precedence cannot tell a keyword from a name, and lowers every letter.
+func checkWordFold(described descriptor.Dialect) func(word string) bool {
+	keepsCase := described.Identifiers.ColumnNames == string(identifier.ComparisonExact) &&
+		described.Names.Unquoted == "" && described.Names.Lookup == ""
+	scheme := described.Comparison.OperatorPrecedence
+	if !keepsCase || scheme == "" {
+		return nil
+	}
+	return func(word string) bool { return precedence.Keyword(scheme, word) }
+}
 
 // comparisonOf returns what dialect's descriptor states about comparing a
 // declaration with its catalog, folding the spelling as

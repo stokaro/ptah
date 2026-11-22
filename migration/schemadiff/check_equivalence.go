@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -28,10 +29,15 @@ import (
 // to the texts, reads Spanner's `kind = ANY (ARRAY['a'::text, 'b'::text])`
 // against `kind IN ('a', 'b', 'c')` as a rewrite it cannot judge, and plans
 // nothing for a changed list of values.
+//
+// session is the connection's probe session, and nil on a comparison with no
+// connection; a target that asks its server then decides nothing, and the
+// CHECKs are compared by their texts.
 func withTargetCheckDecisions(
 	ctx context.Context,
 	opts *config.CompareOptions,
 	service schemacomparison.Checks,
+	session schemaext.ProbeSession,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	caps capability.Capabilities,
@@ -40,7 +46,7 @@ func withTargetCheckDecisions(
 	if service == nil {
 		return opts, nil
 	}
-	checks, err := decideCheckEquivalence(ctx, service, desired, database, opts.Dialect, caps, semantics)
+	checks, err := decideCheckEquivalence(ctx, service, session, desired, database, opts.Dialect, caps, semantics)
 	if err != nil || len(checks) == 0 {
 		return opts, err
 	}
@@ -53,10 +59,12 @@ func withTargetCheckDecisions(
 // about every CHECK the comparison compares that the database also holds, and
 // records each answer: the held CHECK where the target calls the two one
 // constraint, and the declaration marked as differing where it does not. The
-// comparison then compares no CHECK of the target by its text.
+// comparison then compares no CHECK of the target by its text, unless the
+// target answers nil, which records nothing.
 func decideCheckEquivalence(
 	ctx context.Context,
 	service schemacomparison.Checks,
+	session schemaext.ProbeSession,
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	target string,
@@ -72,7 +80,7 @@ func decideCheckEquivalence(
 			held[exprkey.CheckParts(semantics, constraint.Schema, constraint.TableName, constraint.Name)] = constraint
 		}
 	}
-	request := schemacomparison.ChecksRequest{Target: target, Identifiers: semantics, Capabilities: caps, Current: database}
+	request := schemacomparison.ChecksRequest{Target: target, Identifiers: semantics, Capabilities: caps, Current: database, Session: session}
 	var keys []string
 	for _, constraint := range compare.ComparedCheckConstraints(desired, database, target, semantics) {
 		key := exprkey.Check(semantics, constraint.Table, constraint.Name)
@@ -89,6 +97,9 @@ func decideCheckEquivalence(
 	answers, err := service.EquivalentChecks(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	if answers == nil {
+		return nil, nil
 	}
 	if len(answers) != len(request.Pairs) {
 		return nil, fmt.Errorf("compare schemas: the target answered %d of %d CHECK comparisons", len(answers), len(request.Pairs))

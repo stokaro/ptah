@@ -46,6 +46,14 @@ import (
 // standard_conforming_strings on, the reading declared text is checked under,
 // and a body that turned it off fails the same way.
 //
+// ClickHouse's database/sql driver keeps no transaction: its rollback undoes
+// nothing on the server and closes the connection it ran on. So on ClickHouse
+// body runs on a session of its own and that session is discarded, on a pinned
+// connection as on any other: the pinned session holds no transaction a
+// rollback could protect, and a rollback on it would close it under its owner.
+// A body there must change nothing, and the ClickHouse probes only ask the
+// server to format text.
+//
 // A connection a [NativeConnector] opened reports ran false with a nil error
 // too, and never runs body. It carries the provider's session and no *sql.DB,
 // so there is no database/sql transaction the host could roll back, and the
@@ -72,7 +80,7 @@ func (dc *DatabaseConnection) WithRolledBackTransaction(
 	if dc == nil || dc.db == nil {
 		return false, fmt.Errorf("%s: database connection is nil", label)
 	}
-	if dc.pinned {
+	if dc.pinned && dc.engine().Transactional() {
 		if !dc.pinnedSessionOutsideTransaction(ctx) {
 			return false, nil
 		}

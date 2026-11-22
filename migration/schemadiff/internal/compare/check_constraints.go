@@ -3,6 +3,7 @@ package compare
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/normalize"
@@ -27,11 +28,25 @@ func normalizeCheckExpression(expr string, quoting normalize.Quoting) string {
 	return canonicalizeCheckSetMembership(normalizer.normalize())
 }
 
+// normalizeCheckCondition is [normalizeCheckExpression] for the CHECK
+// comparison on dialect, which keeps the case of a name where the dialect's
+// names keep theirs ([checkWordFoldOf]).
+func normalizeCheckCondition(expr, dialect string) string {
+	quoting := normalize.QuotingOf(dialect)
+	expr = trimBalancedCheckParens(strings.TrimSpace(expr), quoting)
+
+	normalizer := checkExpressionNormalizer{expr: expr, quoting: quoting, foldWord: checkWordFoldOf(dialect)}
+	return canonicalizeCheckSetMembership(normalizer.normalize())
+}
+
 type checkExpressionNormalizer struct {
 	expr    string
 	quoting normalize.Quoting
 	builder strings.Builder
 	pos     int
+	// foldWord, when set, is the one word test: a word it accepts is lowered
+	// and every other word keeps its case. Nil lowers every letter.
+	foldWord func(word string) bool
 }
 
 func (n *checkExpressionNormalizer) normalize() string {
@@ -49,10 +64,44 @@ func (n *checkExpressionNormalizer) writeNext() {
 	if unicode.IsSpace(rune(ch)) || ch == '`' {
 		return
 	}
-	if ch >= 'A' && ch <= 'Z' {
+	if n.writeWord() {
+		return
+	}
+	if n.foldWord == nil && ch >= 'A' && ch <= 'Z' {
 		ch += 'a' - 'A'
 	}
 	n.builder.WriteByte(ch)
+}
+
+// writeWord writes the word that starts at pos, lowered where foldWord
+// accepts it and as written where it does not, and leaves pos on its last
+// byte. It writes nothing when foldWord is nil or no word starts at pos.
+func (n *checkExpressionNormalizer) writeWord() bool {
+	if n.foldWord == nil || !isCheckWordStart(n.expr[n.pos]) || (n.pos > 0 && isCheckWordByte(n.expr[n.pos-1])) {
+		return false
+	}
+	end := n.pos
+	for end < len(n.expr) && isCheckWordByte(n.expr[end]) {
+		end++
+	}
+	word := n.expr[n.pos:end]
+	if n.foldWord(word) {
+		word = strings.ToLower(word)
+	}
+	n.builder.WriteString(word)
+	n.pos = end - 1
+	return true
+}
+
+// isCheckWordStart reports a byte a name or a keyword may start with: an
+// ASCII letter, an underscore, or a byte of a multi-byte character.
+func isCheckWordStart(ch byte) bool {
+	return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_' || ch >= utf8.RuneSelf
+}
+
+// isCheckWordByte reports a byte of a name or a keyword after its first.
+func isCheckWordByte(ch byte) bool {
+	return isCheckWordStart(ch) || ch >= '0' && ch <= '9'
 }
 
 // backslashStrings reads a string literal with backslash escapes, as the

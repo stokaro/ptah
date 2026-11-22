@@ -122,10 +122,14 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	opts = withResolvedExpressions(opts, resolved)
 
 	diff, diagnostics, err := compareWithDatabaseInfoReportingUndecidedAdditions(
-		ctx, desired, database, info, opts, runtime,
+		ctx, desired, database, info, opts, runtime, conn,
 	)
 	if err == nil {
 		warnUnspelledColumns(ctx, resolved.unspelledColumns, desired, diff, info.Dialect)
+		// The plan this comparison feeds may replace a CHECK only because
+		// its conditions were compared as written, so the warning precedes
+		// it.
+		rundiag.Settle(ctx, rundiag.UnformattedChecks)
 	}
 	return diff, diagnostics, err
 }

@@ -786,8 +786,20 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			}
 			// Measured on 24.10 and 26.10: the statement succeeds over rows
 			// that break the CHECK, and only an INSERT after it is refused.
-			r.w.WriteLinef("-- CLICKHOUSE: ADD CONSTRAINT checks the rows written after it, not the rows %s holds", node.Name)
+			// So a SELECT counts the rows the table holds that the CHECK
+			// refuses, a NULL result among them, as an INSERT refuses one
+			// with code 469, and stops the plan with code 395 naming the
+			// constraint. It runs before the ADD, so a refused row leaves the
+			// constraint absent and a retried apply plans it and stops again,
+			// and after it, for a row written between the two; a row written
+			// after the ADD is the constraint's to refuse.
+			scan := fmt.Sprintf("SELECT throwIf(count() > 0, %s) FROM %s WHERE NOT ifNull((%s), 0);",
+				chcolumn.StringLiteral(fmt.Sprintf("%s is broken by rows %s holds", op.Constraint.Name, node.Name)), node.Name,
+				strings.TrimSpace(op.Constraint.Expression))
+			r.w.WriteLinef("-- CLICKHOUSE: ADD CONSTRAINT checks only the rows written after it; the SELECTs before and after it each scan %s for held rows the CHECK refuses", node.Name)
+			r.w.WriteLine(scan)
 			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s CHECK %s;", node.Name, op.Constraint.Name, parenList(op.Constraint.Expression))
+			r.w.WriteLine(scan)
 		case *ast.DropConstraintOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s;", node.Name, op.ConstraintName)
 		case *ast.RenameColumnOperation:

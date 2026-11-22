@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemacomparison"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
@@ -206,4 +207,48 @@ func TestCompareWithDatabaseAsksTheTargetAboutChecks_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, refused)
 	c.Assert(err, qt.ErrorMatches, `compare schemas: the target cannot read this CHECK`)
 	c.Assert(diff, qt.IsNil)
+}
+
+// silentChecks records each request and decides nothing, as a target that
+// asks a server does on a comparison with no connection.
+type silentChecks struct {
+	requests []schemacomparison.ChecksRequest
+}
+
+func (s *silentChecks) EquivalentChecks(_ context.Context, request schemacomparison.ChecksRequest) ([]bool, error) {
+	s.requests = append(s.requests, request)
+	return nil, nil
+}
+
+// A target that decides nothing leaves each CHECK to the comparison of the
+// two texts, which keeps a held CHECK of the declared condition and replaces
+// one of another. The request carries the connection's probe session, which a
+// target that asks its server runs in.
+func TestCompareWithDatabaseComparesTheTextWhenTheTargetDecidesNothing(t *testing.T) {
+	tests := []struct {
+		name        string
+		held        string
+		wantRemoved []string
+		wantAdded   []string
+	}{
+		{name: "the held condition is the declared one", held: "(score >= 0)", wantRemoved: []string{"items_id_check"}},
+		{name: "the held condition is another", held: "(score >= 1)", wantRemoved: []string{"items_id_check", "items_score_check"},
+			wantAdded: []string{"items_score_check: score >= 0"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			checks := &silentChecks{}
+			desired, current := checkSchemas()
+			current.Constraints[0].CheckClause = new(test.held)
+
+			diff, err := checkComparison(c, checks, desired, current)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(checks.requests, qt.HasLen, 1)
+			c.Assert(checks.requests[0].Session, qt.Equals, schemaext.ProbeSession(probeComparisonSession{dialect: "sqlite"}))
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemoved)
+			c.Assert(addedChecks(diff), qt.DeepEquals, test.wantAdded)
+		})
+	}
 }
