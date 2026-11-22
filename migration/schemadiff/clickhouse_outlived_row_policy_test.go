@@ -1,6 +1,7 @@
 package schemadiff_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -194,6 +195,56 @@ func TestClickHouseViewDropTakesItsRowPolicies(t *testing.T) {
 			c.Assert(statementHeads(statements, "CREATE "), qt.DeepEquals, test.creates)
 		})
 	}
+}
+
+// TestClickHouseViewDropLeavesOtherRowPolicies drops the view v and only the
+// policy on it: the policy on the view w the declaration keeps, and the one
+// written ON the database, stay on the server, and the comparison reports both
+// as undecided.
+func TestClickHouseViewDropLeavesOtherRowPolicies(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	semantics := identifier.ForDialect("clickhouse")
+	record := func(table, name string) schemaext.SubjectCoverage {
+		return schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", table, name),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the read does not describe it"}}
+	}
+	current := &catalog.Database{
+		Views: []catalog.View{{Name: "v", Body: "SELECT 1 AS id"}, {Name: "w", Body: "SELECT 2 AS id"}},
+		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete},
+			[]schemaext.SubjectCoverage{record("v", "on_view"), record("w", "on_w"), record("*", "wide")})),
+	}
+	source := viewPolicySource([]schemamodel.View{{Name: "w", Body: "SELECT 2 AS id"}})
+
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), source, current,
+		&config.CompareOptions{Dialect: "clickhouse", IdentifierSemantics: &semantics}, runtime)
+
+	c.Assert(err, qt.IsNil)
+	undecided := make([]string, 0, len(diagnostics.Features))
+	for _, change := range diagnostics.Features {
+		undecided = append(undecided, change.Subject.Parent.Source+"."+change.Subject.Name.Source)
+	}
+	slices.Sort(undecided)
+	c.Assert(undecided, qt.DeepEquals, []string{"*.wide", "w.on_w"})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(statementHeads(statements, "DROP "), qt.DeepEquals, []string{"DROP ROW POLICY `on_view` ON `v`", "DROP VIEW IF EXISTS `v`"})
+}
+
+// TestClickHouseViewDropReportsAKindBoundToItsTable drops the view v through a
+// runtime that says no kind outlives its table. The comparison leaves out of
+// its report only the objects a target keeps past their relation, which its
+// planner drops with the relation; for any other kind the report stays.
+func TestClickHouseViewDropReportsAKindBoundToItsTable(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForDialect("clickhouse")
+
+	_, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), viewPolicySource(nil), viewPolicyDatabase(),
+		&config.CompareOptions{Dialect: "clickhouse", IdentifierSemantics: &semantics}, tableBoundRuntime{must.Must(builtin.New())})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnostics.Features, qt.HasLen, 1)
+	c.Assert(diagnostics.Features[0].Subject.Key(), qt.Equals, chschema.RowPolicyRef("", "v", "on_view").Key())
 }
 
 // TestClickHouseKeptViewKeepsItsRowPolicies keeps the policy on a view the
