@@ -22,6 +22,15 @@ const (
 	// with "no such table" before it can refuse anything. The ESCAPE clause is
 	// there for the reason sqliteCleanTables gives.
 	sqliteSeedTables = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"
+	// oracleSeedTables is the same list on Oracle, which has no
+	// information_schema either: without it a fenced seed run fails with
+	// ORA-00942 before it can refuse anything. It reads the session's current
+	// schema, the one the connection reports, and leaves out what the schema
+	// reader leaves out: a table in the recycle bin, and the container table of
+	// a materialized view.
+	oracleSeedTables = "SELECT t.table_name FROM all_tables t" +
+		" WHERE t.owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') AND t.dropped = 'NO'" +
+		" AND NOT EXISTS (SELECT 1 FROM all_mviews m WHERE m.owner = t.owner AND m.container_name = t.table_name)"
 	// sqlServerCleanTables reads sys.tables. A replay and a rehearsal each empty
 	// every user schema of a SQL Server dev database, so the probe reads them
 	// all and returns the first table in byte order. is_ms_shipped leaves the

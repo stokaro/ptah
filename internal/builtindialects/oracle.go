@@ -130,6 +130,7 @@ EXCEPTION
         END IF;
 END;`,
 			Transactional: true,
+			TablesQuery:   oracleSeedTables,
 		},
 		// How an identifier is written, and how a column's own key is named.
 		Quoting: descriptor.Quoting{Style: descriptor.QuoteDouble, Bare: descriptor.BareEverywhere, Keywords: oracleKeywords()},

@@ -157,8 +157,14 @@ error: refusing to seed protected environment "prod" without --allow-prod
 
 The command exits with code 2 (see [Exit codes](../../reference/exit-codes/)).
 Adjust the protected set with repeatable `--protected-env` flags, and add
-repeatable `--protected-table` flags to require `--allow-prod` whenever a seed
-file targets a named existing table.
+repeatable `--protected-table` flags to require `--allow-prod` whenever a named
+table exists in the target, whatever the seed files write. An entry names the
+table alone or qualified by the connection's schema, such as `public.accounts`,
+and matches either spelling case-insensitively:
+
+```text
+error: error applying seeds: refusing to seed target database because protected tables exist: public.accounts; pass --allow-prod to override
+```
 
 ## Edit an applied seed
 

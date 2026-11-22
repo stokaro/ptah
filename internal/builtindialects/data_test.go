@@ -69,8 +69,12 @@ func TestDescriptors_DataAgreesWithTheRetiredSwitches(t *testing.T) {
 				TimestampPrefix: "TIMESTAMP ", TimestampOffset: true, ByOwner: true,
 			},
 			managedData: descriptor.ManagedData{IdentityRefusesInsert: descriptor.IdentityInsertGeneratedAlways},
-			seeds:       descriptor.Seeds{Transactional: true},
-			savepoint:   descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
+			seeds: descriptor.Seeds{
+				Transactional: true,
+				TablesQuery: "SELECT t.table_name FROM all_tables t WHERE t.owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') " +
+					"AND t.dropped = 'NO' AND NOT EXISTS (SELECT 1 FROM all_mviews m WHERE m.owner = t.owner AND m.container_name = t.table_name)",
+			},
+			savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
 		},
 	}
 

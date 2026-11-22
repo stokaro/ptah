@@ -548,12 +548,16 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 		return err
 	}
 
+	// The tables are listed from the connection's schema, so a qualified
+	// entry such as main.extra names one of them by that schema. Asked with no
+	// schema, the entry would match only a table named "main.extra".
+	schema := conn.Info().Schema
 	var matches []string
 	for _, table := range existing {
 		// The target's own tables, so the question is whether one of them is
 		// fenced rather than whether a change touches it; the entry grammar is
 		// shared and the question is not.
-		if entry, fenced := protected.Entry("", table); fenced {
+		if entry, fenced := protected.Entry(schema, table); fenced {
 			matches = append(matches, entry)
 		}
 	}
