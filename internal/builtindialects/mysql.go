@@ -64,6 +64,10 @@ func mysql() descriptor.Dialect {
 		// the GRANT used; see platform.ColumnPrivilegeIsBySpelling. MariaDB
 		// serves either, so its descriptor leaves this out.
 		ColumnPrivilegeBySpelling: true,
+		// What GRANT ALL grants on a table and on a database, one row each in
+		// information_schema: measured on MySQL 8.0.46, 8.4.13, 9.7.4 and
+		// 26.10.0, which grant the same lists.
+		AllPrivileges: mysqlAllPrivileges(),
 
 		// How a connection reaches the server.
 		Driver: "mysql",
@@ -545,6 +549,21 @@ var mysqlCheckNameFolds = []descriptor.CodePointRange{
 	{First: 0x400, Last: 0x42F}, {First: 0x531, Last: 0x556}, {First: 0x1F00, Last: 0x1FFF},
 	{First: 0x2126, Last: 0x212B}, {First: 0x2160, Last: 0x216F}, {First: 0x24B6, Last: 0x24CF},
 	{First: 0xFF21, Last: 0xFF3A},
+}
+
+// mysqlAllPrivileges is what GRANT ALL grants on a MySQL table and database,
+// as information_schema.TABLE_PRIVILEGES and SCHEMA_PRIVILEGES report it.
+// MariaDB grants these and more, so its descriptor starts from them.
+func mysqlAllPrivileges() descriptor.AllPrivileges {
+	table := []string{
+		"ALTER", "CREATE", "CREATE VIEW", "DELETE", "DROP", "INDEX",
+		"INSERT", "REFERENCES", "SELECT", "SHOW VIEW", "TRIGGER", "UPDATE",
+	}
+	return descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
+		"TABLE": {Privileges: table},
+		"SCHEMA": {Privileges: append(append([]string(nil), table...),
+			"ALTER ROUTINE", "CREATE ROUTINE", "CREATE TEMPORARY TABLES", "EVENT", "EXECUTE", "LOCK TABLES")},
+	}}
 }
 
 // mysqlFamilyQuery is how the query builder spells what MySQL and MariaDB
