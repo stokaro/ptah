@@ -257,7 +257,9 @@ cause, and the run would otherwise read every schema, so `schema apply` would
 plan a `DROP` for each one the desired schema leaves out. Atlas CE reads the
 empty value as no selection and plans those `DROP` statements, and reads
 `-s '""'` as a schema with an empty name, which selects nothing. To read every
-schema, leave the flag out.
+schema, leave the flag out. The
+[compatibility difference](../retained-divergences/#an-empty---schema-value)
+records the measurement.
 
 `PTAH_SCHEMA` sets the flag and takes the same grammar, so `PTAH_SCHEMA='""'`
 is refused. A variable that is set but empty, `PTAH_SCHEMA=`, counts as unset,

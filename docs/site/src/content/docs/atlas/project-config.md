@@ -245,6 +245,8 @@ Ptah refuses it on purpose, for the reason the
 [schema commands](../schema-commands/) page gives for `--schema`: an empty
 variable would otherwise select every schema, and `schema apply` would plan a
 `DROP` for each one the desired schema leaves out.
+The [compatibility difference](../retained-divergences/#an-empty---schema-value)
+records the measurement.
 
 `--schema` outranks the attribute outright and does not intersect with it: with
 `schemas = ["one"]` in the file, `--schema two` describes `two` alone.
