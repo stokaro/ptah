@@ -123,10 +123,12 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 	}
 
 	var output strings.Builder
+	var names nameScan
 	for pos := 0; pos < len(input); {
 		if directiveLineAt(input, pos) {
 			return output.String(), pos
 		}
+		names.visit(input, pos)
 		switch {
 		case rewrite && allowCommentDelimiter && isCommentDelimiterAt(input, pos, delimiter):
 			writeDelimiterReplacement(&output, replacement)
@@ -145,12 +147,7 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 			pos += len(delimiter)
 			written.add(outputStart+output.Len(), inputStart+pos)
 		case rules.DollarQuotes && input[pos] == '$':
-			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, inputStart, rules.DollarTags, tags); ok {
-				pos = nextPos
-				continue
-			}
-			output.WriteByte(input[pos])
-			pos++
+			pos = writeDollarSign(&output, input, pos, inputStart, rules.DollarTags, tags, &names)
 		default:
 			output.WriteByte(input[pos])
 			pos++
@@ -349,12 +346,39 @@ func writeBracketedName(output *strings.Builder, input string, pos int) int {
 	return pos
 }
 
+// nameScan is where the last name a scan met ends. A dollar sign before that
+// stands inside the name and opens no body ([lexer.NameStart]). The scan still
+// steps through a name byte by byte, since a delimiter is matched wherever it
+// is written.
+type nameScan struct {
+	end int
+}
+
+// visit records the name that begins at input[pos], where one begins outside
+// the last name.
+func (n *nameScan) visit(input string, pos int) {
+	if pos >= n.end && lexer.NameStart(input[pos]) {
+		n.end = lexer.NameEnd(input, pos)
+	}
+}
+
+// writeDollarSign copies the dollar sign at pos, with the body it opens where
+// it stands outside a name, and returns the offset after what it copied. A
+// sign that opens no body begins a name when the bytes after it continue one.
+func writeDollarSign(output *strings.Builder, input string, pos, base int, rule lexer.DollarTagRule, tags *lexer.DollarQuotes, names *nameScan) int {
+	if pos >= names.end {
+		if nextPos, ok := writeDollarQuotedSQL(output, input, pos, base, rule, tags); ok {
+			return nextPos
+		}
+		names.end = lexer.NameEnd(input, pos+1)
+	}
+	output.WriteByte(input[pos])
+	return pos + 1
+}
+
 // writeDollarQuotedSQL copies a dollar-quoted body that opens at pos, when
 // tags says the tag closes later in the text.
 func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, rule lexer.DollarTagRule, tags *lexer.DollarQuotes) (int, bool) {
-	if lexer.DollarInName(input, pos) {
-		return pos, false
-	}
 	length, ok := rule.OpeningTag(input[pos:])
 	if !ok {
 		return pos, false

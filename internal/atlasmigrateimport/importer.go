@@ -2396,29 +2396,45 @@ func (s *sqlLiteralState) update(line string) {
 			}
 			continue
 		}
-		if strings.HasPrefix(line[i:], "--") {
+		next, ok := s.open(line, i)
+		if !ok {
 			return
 		}
-		if strings.HasPrefix(line[i:], "/*") {
-			s.inBlockComment = true
-			i++
-			continue
-		}
-		if line[i] == '\'' {
-			s.inSingleQuote = true
-			continue
-		}
-		// The import knows no dialect, so a tag opens a body where either
-		// family reads one: the heredoc rule's tags hold every tag the
-		// PostgreSQL rule allows, a tag outside ASCII included, and `$1abc$`
-		// too. A body nothing closes keeps its blank lines to the end of the
-		// file, as PostgreSQL reads it, so no blank line inside a body is
-		// dropped.
-		if length, ok := lexer.HeredocDollarTags.OpeningTag(line[i:]); ok {
-			s.dollarQuote = line[i : i+length]
-			i += length - 1
-		}
+		i = next
 	}
+}
+
+// open reads what opens at line[i], outside every literal, and returns the
+// index of the last byte it read. It reports false at a line comment, which
+// runs to the end of the line.
+func (s *sqlLiteralState) open(line string, i int) (int, bool) {
+	switch {
+	case strings.HasPrefix(line[i:], "--"):
+		return i, false
+	case strings.HasPrefix(line[i:], "/*"):
+		s.inBlockComment = true
+		return i + 1, true
+	case line[i] == '\'':
+		s.inSingleQuote = true
+		return i, true
+	case lexer.NameStart(line[i]):
+		// A name is read whole, so a dollar sign inside it, as in a$$b or
+		// x$b$, opens no body: PostgreSQL 19 and ClickHouse 26.10 read it as
+		// part of the name.
+		return lexer.NameEnd(line, i) - 1, true
+	}
+	// The import knows no dialect, so a tag opens a body where either family
+	// reads one: the heredoc rule's tags hold every tag the PostgreSQL rule
+	// allows, a tag outside ASCII included, and `$1abc$` too. A body nothing
+	// closes keeps its blank lines to the end of the file, as PostgreSQL reads
+	// it, so no blank line inside a body is dropped. Where no tag opens, the tag
+	// stopped at a byte that ends any name, so the bytes after the sign need no
+	// reading of their own.
+	if length, ok := lexer.HeredocDollarTags.OpeningTag(line[i:]); ok {
+		s.dollarQuote = line[i : i+length]
+		return i + length - 1, true
+	}
+	return i, true
 }
 
 func sanitizeName(name string) string {

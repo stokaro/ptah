@@ -167,9 +167,11 @@ The server stores the default as `'x; y'`. A tag holds ASCII letters, digits,
 underscores and characters outside ASCII, and may begin with a digit, so `$1abc$`
 opens a heredoc here, where PostgreSQL reads `$1` as a parameter. A tag that is
 never closed opens nothing: `CREATE TABLE t (id UInt8, $ab$ UInt8)` names a column
-`$ab$`, and the statement ends at its semicolon. `ptah migrations lint` and
-`ptah sql lint` split a file the same way, and a name inside a heredoc does not
-decide the order a schema's views are created in.
+`$ab$`, and the statement ends at its semicolon. A dollar sign inside a name
+opens nothing, so `x$b$` is one name, while `1$a$x$a$` is the number 1 and a
+heredoc. `ptah migrations lint` and `ptah sql lint` split a file the same way,
+and a name inside a heredoc does not decide the order a schema's views are
+created in.
 
 ClickHouse 24.10 also reads a tag that holds any other character but a dollar
 sign, so it reads `$a-b$x; y$a-b$` as one heredoc. Ptah does not, and splits that

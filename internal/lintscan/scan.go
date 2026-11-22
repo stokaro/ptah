@@ -225,9 +225,14 @@ func nextPunctToken(input string, i int, mode Mode, quotes *lexer.DollarQuotes, 
 		return tokComment, end, execDepth
 	case c == '*' && execDepth > 0 && i+1 < n && input[i+1] == '/':
 		return tokComment, i + 2, execDepth - 1
-	case c == '$' && mode.dollarQuotes && !lexer.DollarInName(input, i):
+	case c == '$' && mode.dollarQuotes:
 		if end, ok := quotes.End(i); ok {
 			return tokString, end, execDepth
+		}
+		// A sign that opens no string begins a name when the bytes after it
+		// continue one, as the migrator's lexer reads `$1$b$x$b$`.
+		if end := lexer.NameEnd(input, i+1); end > i+1 {
+			return tokWord, end, execDepth
 		}
 		return tokOp, i + 1, execDepth
 	default:
@@ -252,8 +257,17 @@ func whitespaceEnd(input string, i int) int {
 	return i
 }
 
+// wordEnd is where the bare word that starts at input[i] ends. A word that
+// starts with a digit runs through letters too, so 1abc is one word. A dollar
+// sign continues a word only after a byte that begins a name
+// ([lexer.NameStart]), so `a$b$` and `1a$b$` are words whole, and a dollar
+// sign right after the digits of `1$a$` can open a string, as the migrator's
+// lexer reads them.
 func wordEnd(input string, i int) int {
 	for i < len(input) && isWordByte(input[i]) {
+		if lexer.NameStart(input[i]) {
+			return lexer.NameEnd(input, i)
+		}
 		i++
 	}
 	return i

@@ -1,10 +1,13 @@
 package liquibaserun_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/liquibaserun"
 )
 
@@ -317,6 +320,19 @@ func TestRollbackSQL_HappyPath(t *testing.T) {
 			changeset: "SELECT 1;\n/* liquibase rollback\nDO $body$ BEGIN NULL; END $body$;\nDROP TABLE t;\n*/",
 			sql:       "DO $body$ BEGIN NULL; END $body$;DROP TABLE t;",
 		},
+		{
+			// PostgreSQL 19 and ClickHouse 26.10 read a$b$ as a name.
+			name:      "a dollar sign inside a name",
+			changeset: "SELECT 1;\n/* liquibase rollback\nSELECT 1 AS a$b$\n  FROM t;\n*/",
+			sql:       "SELECT 1 AS a$b$  FROM t;",
+		},
+		{
+			// ClickHouse 26.10 opens no heredoc at a tag nothing closes, and
+			// PostgreSQL reads $1 as a parameter.
+			name:      "a heredoc tag nothing closes",
+			changeset: "SELECT 1;\n/* liquibase rollback\nSELECT 1 AS $1ab$\n  FROM t;\n*/",
+			sql:       "SELECT 1 AS $1ab$  FROM t;",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -410,6 +426,13 @@ func TestRollbackSQL_FailurePath(t *testing.T) {
 			message:   `has a rollback .* so "SELECT \$1abc\$x" and " y\$1abc\$;" run as .*`,
 		},
 		{
+			// MySQL reads no dollar-quoted string, so $a$ is a name there and
+			// the line break stands inside the string after it.
+			name:      "a MySQL string after a dollar-quote tag loses its line break",
+			changeset: "SELECT 1;\n/* liquibase rollback\nSELECT $a$ FROM t; SELECT '$a$ \nx';\n*/",
+			message:   `has a rollback .* so "SELECT \$a\$ FROM t; SELECT '\$a\$ " and "x';" run as .*`,
+		},
+		{
 			name:      "a changeset reference",
 			changeset: "SELECT 1;\n--rollback changesetId:1 changesetAuthor:s",
 			message: `has a rollback that names changesetId, which Liquibase reads as a reference to another ` +
@@ -426,6 +449,81 @@ func TestRollbackSQL_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.message)
 			c.Assert(sql, qt.Equals, "")
+		})
+	}
+}
+
+// lexerReadsAString reports whether the migrator's lexer for dialect reads the
+// byte at offset of text as part of a string.
+func lexerReadsAString(text, dialect string, offset int) bool {
+	var tokens []lexer.Token
+	scan := lexer.NewLexerWithOptions(text, dialectlexer.Options(dialect))
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		tokens = append(tokens, token)
+	}
+	return slices.ContainsFunc(tokens, func(token lexer.Token) bool {
+		return token.Type == lexer.TokenString && token.Start <= offset && offset < token.End
+	})
+}
+
+// rollbackOfTwoLines is a changeset whose rollback block holds first and second
+// on lines of their own.
+func rollbackOfTwoLines(first, second string) string {
+	return "SELECT 1;\n/* liquibase rollback\n" + first + "\n" + second + "\n*/"
+}
+
+// TestRollbackSQL_ReadsADollarSignAsTheLexerDoes_HappyPath joins two lines
+// where the migrator's lexer reads the line break between them as code: a
+// dollar sign inside a name, as in a1$b$ or _1$b$, opens nothing, and
+// ClickHouse 26.10 reads $1$b$x, where nothing closes $1$, as one name.
+func TestRollbackSQL_ReadsADollarSignAsTheLexerDoes_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name, dialect, first, second string
+	}{
+		{name: "a digit inside a name", dialect: "postgres", first: "SELECT 1 AS a1$b$", second: "  FROM t;"},
+		{name: "a name that begins with an underscore", dialect: "postgres", first: "SELECT 1 AS _1$b$", second: "  FROM t;"},
+		{name: "a ClickHouse digit inside a name", dialect: "clickhouse", first: "SELECT 1 AS a1$b$", second: "  FROM t;"},
+		{
+			name: "a ClickHouse name that begins at a dollar sign", dialect: "clickhouse",
+			first: "SELECT 1 AS $1$b$x", second: "  FROM t; SELECT '$b$';",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			changeset := readChangeset(c, rollbackOfTwoLines(test.first, test.second))
+
+			sql, err := changeset.Rollback.SQL()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, test.first+test.second)
+			c.Assert(lexerReadsAString(test.first+"\n"+test.second, test.dialect, len(test.first)), qt.IsFalse)
+		})
+	}
+}
+
+// TestRollbackSQL_ReadsADollarSignAsTheLexerDoes_FailurePath refuses to join
+// two lines where the migrator's lexer reads the line break between them
+// inside a string: a dollar sign right after a number or a closing tag can
+// open one. PostgreSQL 19 reads 1$a$ as the number 1 and a string, ClickHouse
+// 26.10 and 24.10 read a heredoc there, and ClickHouse 26.10 reads
+// $a$p$a$$b$q$b$ as two heredocs.
+func TestRollbackSQL_ReadsADollarSignAsTheLexerDoes_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name, dialect, first, second string
+	}{
+		{name: "a PostgreSQL string after a number", dialect: "postgres", first: "SELECT 1$a$x", second: " y$a$;"},
+		{name: "a ClickHouse heredoc after a number", dialect: "clickhouse", first: "SELECT 1$a$x", second: " y$a$;"},
+		{name: "a ClickHouse heredoc after another", dialect: "clickhouse", first: "SELECT $a$p$a$$b$q", second: " r$b$;"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			changeset := readChangeset(c, rollbackOfTwoLines(test.first, test.second))
+
+			sql, err := changeset.Rollback.SQL()
+
+			c.Assert(err, qt.ErrorMatches, `has a rollback Liquibase does not run as written: .*`)
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(lexerReadsAString(test.first+"\n"+test.second, test.dialect, len(test.first)), qt.IsTrue)
 		})
 	}
 }

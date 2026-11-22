@@ -150,21 +150,26 @@ func javaTrim(text string) string {
 }
 
 // sqlReading is one way a dialect reads quoted strings: with or without
-// backslash escapes, and with the dollar-quote tags of one rule.
+// backslash escapes, and with or without dollar-quoted strings, whose tags
+// follow one rule.
 type sqlReading struct {
 	backslashEscapes bool
+	dollarQuotes     bool
 	dollarTags       lexer.DollarTagRule
 }
 
 // sqlReadings are the readings of quoted strings the dialects differ by. A
 // backslash escapes in the MySQL family's strings and not in PostgreSQL's, and
 // ClickHouse reads `$1abc$` as a heredoc tag where PostgreSQL reads the
-// parameter $1.
+// parameter $1. The MySQL family reads no dollar-quoted string at all: `$a$`
+// is a name there, so a quote after it opens a string where the other
+// readings are inside a dollar-quoted one.
 var sqlReadings = []sqlReading{
-	{backslashEscapes: false, dollarTags: lexer.PostgreSQLDollarTags},
-	{backslashEscapes: true, dollarTags: lexer.PostgreSQLDollarTags},
-	{backslashEscapes: false, dollarTags: lexer.HeredocDollarTags},
-	{backslashEscapes: true, dollarTags: lexer.HeredocDollarTags},
+	{backslashEscapes: false, dollarQuotes: true, dollarTags: lexer.PostgreSQLDollarTags},
+	{backslashEscapes: true, dollarQuotes: true, dollarTags: lexer.PostgreSQLDollarTags},
+	{backslashEscapes: false, dollarQuotes: true, dollarTags: lexer.HeredocDollarTags},
+	{backslashEscapes: true, dollarQuotes: true, dollarTags: lexer.HeredocDollarTags},
+	{backslashEscapes: true, dollarQuotes: false},
 }
 
 // joinChangesSQL reports whether the line break the author wrote at offset at,
@@ -264,19 +269,23 @@ func sqlContextAt(text string, at int, reading sqlReading) sqlContext {
 				context, index = atTopLevel, index+len(closer)-1
 			}
 		default:
-			context, closer, index = sqlOpening(text, index, quotes)
+			context, closer, index = sqlOpening(text, index, reading, quotes)
 		}
 	}
 	return context
 }
 
 // sqlOpening reads what opens at text[index] when it stands at the top level:
-// a comment, a quoted string or name, a dollar-quoted body quotes opens, or
-// nothing. It returns the context from there on, the text that closes a quoted
-// one, and the index of the opening's last byte.
-func sqlOpening(text string, index int, quotes *lexer.DollarQuotes) (sqlContext, string, int) {
+// a comment, a quoted string or name, a dollar-quoted body quotes opens where
+// reading has them, a bare name, or nothing. It returns the context from there
+// on, the text that closes a quoted one, and the index of the opening's last
+// byte. A bare name is read whole, so a dollar sign inside one, as in `a$b$`,
+// opens nothing ([lexer.NameStart]).
+func sqlOpening(text string, index int, reading sqlReading, quotes *lexer.DollarQuotes) (sqlContext, string, int) {
 	rest := text[index:]
 	switch {
+	case lexer.NameStart(rest[0]):
+		return atTopLevel, "", lexer.NameEnd(text, index) - 1
 	case strings.HasPrefix(rest, "--"):
 		return inLineComment, "", index + 1
 	case strings.HasPrefix(rest, "/*"):
@@ -285,10 +294,13 @@ func sqlOpening(text string, index int, quotes *lexer.DollarQuotes) (sqlContext,
 		return inQuoted, rest[:1], index
 	case rest[0] == '[':
 		return inQuoted, "]", index
-	case rest[0] == '$' && !lexer.DollarInName(text, index):
+	case rest[0] == '$' && reading.dollarQuotes:
 		if length, ok := quotes.Opening(index); ok {
 			return inQuoted, rest[:length], index + length - 1
 		}
+		// A sign that opens no string begins a name when the bytes after it
+		// continue one, as the lexer reads `$1$b$x$b$`.
+		return atTopLevel, "", lexer.NameEnd(text, index+1) - 1
 	}
 	return atTopLevel, "", index
 }

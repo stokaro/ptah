@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clientdelimiter"
+	"ptah.run/internal/lexer"
 )
 
 // A line that reads like a directive inside a literal or a block comment is
@@ -149,6 +150,33 @@ func TestNormalizeFor_DirectiveOutsideALiteral_StillHonored(t *testing.T) {
 			rules:  clientdelimiter.Rules{EscapeStrings: true, DollarQuotes: true},
 			script: "DELIMITER $$\nSELECT $a$x$$y$a$$$\nSELECT 2$$\n",
 			want:   "SELECT $a$x$$y$a$;\nSELECT 2;\n",
+		},
+		{
+			// PostgreSQL 19 reads 1$a$ as the number 1 and a string.
+			name:   "a dollar-quoted body opens after a number",
+			rules:  clientdelimiter.Rules{EscapeStrings: true, DollarQuotes: true},
+			script: "DELIMITER ~~\nSELECT 1$a$~~$a$~~\nSELECT 2~~\n",
+			want:   "SELECT 1$a$~~$a$;\nSELECT 2;\n",
+		},
+		{
+			// ClickHouse 26.10 reads $a$p$a$$b$q$b$ as two heredocs.
+			name:   "a heredoc opens after another",
+			rules:  clientdelimiter.Rules{BackslashEscapes: true, DollarQuotes: true, DollarTags: lexer.HeredocDollarTags},
+			script: "DELIMITER ~~\nSELECT $a$p$a$$b$~~$b$~~\nSELECT 2~~\n",
+			want:   "SELECT $a$p$a$$b$~~$b$;\nSELECT 2;\n",
+		},
+		{
+			// ClickHouse 26.10 reads $1$b$, which nothing closes, as one name.
+			name:   "a name that begins at a dollar sign opens no heredoc",
+			rules:  clientdelimiter.Rules{BackslashEscapes: true, DollarQuotes: true, DollarTags: lexer.HeredocDollarTags},
+			script: "DELIMITER ~~\nSELECT 1 AS $1$b$~~\nSELECT '$b$'~~\n",
+			want:   "SELECT 1 AS $1$b$;\nSELECT '$b$';\n",
+		},
+		{
+			name:   "a digit inside a PostgreSQL name opens no quote",
+			rules:  clientdelimiter.Rules{EscapeStrings: true, DollarQuotes: true},
+			script: "DELIMITER ~~\nSELECT a1$b$~~\nSELECT '$b$'~~\n",
+			want:   "SELECT a1$b$;\nSELECT '$b$';\n",
 		},
 		{
 			name:   "a MySQL delimiter inside what looks like a heredoc is rewritten",

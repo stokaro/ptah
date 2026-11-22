@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lintscan"
 )
 
@@ -92,6 +93,48 @@ func TestSplit_FollowsTheDialect(t *testing.T) {
 				texts = append(texts, statement.SQL)
 			}
 			c.Assert(texts, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestSplit_ReadsADollarSignAsTheMigratorDoes splits each text as the
+// migrator's splitter does. A dollar sign inside a name, as in a1$b$ or
+// _1$b$, opens nothing, and one right after a number or a closing tag can
+// open a string: PostgreSQL 19 and CockroachDB v26.4.1 read 1$a$ as the number
+// 1 and a string, ClickHouse 26.10 and 24.10 read a heredoc there, and
+// ClickHouse 26.10 reads $a$p$a$$b$q$b$ as two heredocs.
+func TestSplit_ReadsADollarSignAsTheMigratorDoes(t *testing.T) {
+	for _, test := range []struct {
+		name, dialect, sql string
+		want               []string
+	}{
+		{"a PostgreSQL string after a number", "postgres", "SELECT 1$a$, 2 AS c; SELECT 3 AS d $a$; DROP TABLE t;",
+			[]string{"SELECT 1$a$, 2 AS c; SELECT 3 AS d $a$", "DROP TABLE t"}},
+		{"a CockroachDB string after a number", "cockroachdb", "SELECT 1$a$, 2 AS c; SELECT 3 AS d $a$; DROP TABLE t;",
+			[]string{"SELECT 1$a$, 2 AS c; SELECT 3 AS d $a$", "DROP TABLE t"}},
+		{"a ClickHouse heredoc after a number", "clickhouse", "SELECT 1$a$x; y$a$; DROP TABLE t;",
+			[]string{"SELECT 1$a$x; y$a$", "DROP TABLE t"}},
+		{"a ClickHouse heredoc after another", "clickhouse", "SELECT $a$p;$a$$b$q;$b$; DROP TABLE t;",
+			[]string{"SELECT $a$p;$a$$b$q;$b$", "DROP TABLE t"}},
+		{"a ClickHouse heredoc that holds a statement", "clickhouse", "SELECT 1$a$; DROP TABLE t; SELECT $a$x$a$;",
+			[]string{"SELECT 1$a$; DROP TABLE t; SELECT $a$x$a$"}},
+		{"a ClickHouse name that begins at a sign", "clickhouse", "SELECT 1 AS $1$b$; DROP TABLE t; SELECT $b$;",
+			[]string{"SELECT 1 AS $1$b$", "DROP TABLE t", "SELECT $b$"}},
+		{"a digit inside a name", "postgres", "SELECT 1 AS a1$b$; DROP TABLE t; SELECT '$b$';",
+			[]string{"SELECT 1 AS a1$b$", "DROP TABLE t", "SELECT '$b$'"}},
+		{"a name that begins with an underscore", "postgres", "SELECT 1 AS _1$b$; DROP TABLE t; SELECT '$b$';",
+			[]string{"SELECT 1 AS _1$b$", "DROP TABLE t", "SELECT '$b$'"}},
+		{"a ClickHouse digit inside a name", "clickhouse", "SELECT 1 AS a1$b$; DROP TABLE t; SELECT '$b$';",
+			[]string{"SELECT 1 AS a1$b$", "DROP TABLE t", "SELECT '$b$'"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var texts []string
+			for _, statement := range lintscan.Split(test.sql, lintscan.ForDialect(test.dialect)) {
+				texts = append(texts, statement.SQL)
+			}
+			c.Assert(texts, qt.DeepEquals, test.want)
+			c.Assert(sqlutil.SplitSQLStatementsForDialect(test.sql, test.dialect), qt.DeepEquals, test.want)
 		})
 	}
 }

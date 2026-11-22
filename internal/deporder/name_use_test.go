@@ -1,11 +1,15 @@
 package deporder_test
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
 // name is a use of a name that stands nowhere in particular.
@@ -209,6 +213,81 @@ func TestCodeNameUses_ReadsTheDialectsDollarTags(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(deporder.CodeNameUses(test.body, test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// lexerReadsAString reports whether the migrator's lexer for dialect reads the
+// byte at offset of text as part of a string.
+func lexerReadsAString(text, dialect string, offset int) bool {
+	var tokens []lexer.Token
+	scan := lexer.NewLexerWithOptions(text, dialectlexer.Options(dialect))
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		tokens = append(tokens, token)
+	}
+	return slices.ContainsFunc(tokens, func(token lexer.Token) bool {
+		return token.Type == lexer.TokenString && token.Start <= offset && offset < token.End
+	})
+}
+
+// TestCodeNameUses_ReadsADollarSignAsTheLexerDoes reads the names of a body
+// where the migrator's lexer reads code. A dollar sign inside a name, as in
+// a1$b$ or _1$b$, opens nothing, and one right after a number or a closing tag
+// can open a string: PostgreSQL 19 reads 1$a$ as the number 1 and a string,
+// ClickHouse 26.10 and 24.10 read a heredoc there, and ClickHouse 26.10 reads
+// $a$p$a$$b$q$b$ as two heredocs. ClickHouse 26.10 reads $1$b$, which nothing
+// closes, as one name.
+func TestCodeNameUses_ReadsADollarSignAsTheLexerDoes(t *testing.T) {
+	tests := []struct {
+		name, dialect, body string
+		want                []deporder.NameUse
+	}{
+		{
+			name:    "a PostgreSQL string after a number",
+			dialect: "postgres",
+			body:    "SELECT 1$a$ FROM app.t $a$ AS label",
+			want:    []deporder.NameUse{name("select"), name("as"), name("label")},
+		},
+		{
+			name:    "a ClickHouse heredoc after a number",
+			dialect: "clickhouse",
+			body:    "SELECT 1$a$ FROM app.t $a$ AS label",
+			want:    []deporder.NameUse{name("select"), name("as"), name("label")},
+		},
+		{
+			name:    "a ClickHouse heredoc after another",
+			dialect: "clickhouse",
+			body:    "SELECT $a$p$a$$b$ FROM app.t $b$ AS label",
+			want:    []deporder.NameUse{name("select"), name("as"), name("label")},
+		},
+		{
+			name:    "a digit inside a name",
+			dialect: "postgres",
+			body:    "SELECT a1$b$ FROM app.t -- $b$",
+			want:    []deporder.NameUse{name("select"), name("a1$b$"), name("from"), relation("app", "t")},
+		},
+		{
+			name:    "a name that begins with an underscore",
+			dialect: "postgres",
+			body:    "SELECT _1$b$ FROM app.t -- $b$",
+			want:    []deporder.NameUse{name("select"), name("_1$b$"), name("from"), relation("app", "t")},
+		},
+		{
+			name:    "a ClickHouse name that begins at a sign",
+			dialect: "clickhouse",
+			body:    "SELECT $1$b$ FROM app.t $b$ AS label",
+			want:    []deporder.NameUse{name("select"), name("from"), relation("app", "t"), name("as"), name("label")},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := deporder.CodeNameUses(test.body, test.dialect)
+			c.Assert(got, qt.DeepEquals, test.want)
+			usesTable := slices.ContainsFunc(got, func(use deporder.NameUse) bool {
+				return slices.Equal(use.Parts, []string{"app", "t"})
+			})
+			c.Assert(lexerReadsAString(test.body, test.dialect, strings.Index(test.body, "app.t")), qt.Equals, !usesTable)
 		})
 	}
 }

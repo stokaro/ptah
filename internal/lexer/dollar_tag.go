@@ -26,9 +26,11 @@ const (
 	PostgreSQLDollarTags DollarTagRule = iota
 	// HeredocDollarTags is the rule of a ClickHouse heredoc. A tag holds ASCII
 	// letters, digits, underscores and any byte above 0x7F, a digit in any
-	// position: ClickHouse 26.10 reads `$1abc$` as a heredoc. A tag that no
-	// closing tag follows opens nothing, so `SELECT 1 AS $ab$` names a column
-	// and the statement ends at the next semicolon.
+	// position: ClickHouse 26.10 reads `$1abc$` as a heredoc. A character
+	// outside ASCII is a tag character as ClickHouse 24.10 reads one; 26.10
+	// refuses such a tag with code 62, a syntax error. A tag that no closing
+	// tag follows opens nothing, so `SELECT 1 AS $ab$` names a column and the
+	// statement ends at the next semicolon.
 	HeredocDollarTags
 )
 
@@ -75,7 +77,7 @@ func NewDollarQuotes(rule DollarTagRule, text string) *DollarQuotes {
 // [HeredocDollarTags] the same tag must also start again at or after the end
 // of this one, since ClickHouse reads a tag nothing closes as part of a name.
 // Whether the dollar sign starts a token is the caller's question; see
-// [DollarInName].
+// [NameStart].
 func (q *DollarQuotes) Opening(pos int) (int, bool) {
 	length, ok := q.rule.OpeningTag(q.text[pos:])
 	if !ok || q.rule != HeredocDollarTags {
@@ -123,21 +125,42 @@ func (q *DollarQuotes) Closes(tag string, from int) bool {
 	return found && at >= from
 }
 
-// DollarInName reports whether the dollar sign at text[pos] stands inside a
-// name, right after an ASCII letter, a digit, an underscore, a byte above 0x7F
-// or another dollar sign, where it opens no dollar-quoted string. PostgreSQL
-// 19 and ClickHouse 26.10 both read `SELECT 1 AS a$b$, 2 AS c` as two
-// columns, the first named a$b$, and end the statement at the next semicolon.
-func DollarInName(text string, pos int) bool {
-	if pos == 0 {
-		return false
+// NameStart reports whether b, read where no token is open, begins a name: an
+// ASCII letter, an underscore or a byte above 0x7F. The name runs to
+// [NameEnd], and a dollar sign inside it opens no dollar-quoted string:
+// PostgreSQL 19 and ClickHouse 26.10 both read `SELECT 1 AS a$b$, 2 AS c` as
+// two columns, the first named a$b$, and so read `a1$b$` and `_1$b$`.
+//
+// A digit begins a number rather than a name, so a dollar sign right after one
+// can open a string: PostgreSQL 19 and CockroachDB v26.4.1 read
+// `SELECT 1$a$x$a$` as the number 1 and the string $a$x$a$, and ClickHouse
+// 26.10 and 24.10 read a heredoc there. So can a dollar sign right after a
+// closing tag: ClickHouse 26.10 reads `$a$p$a$$b$q$b$` as two heredocs.
+//
+// A dollar sign that opens no string begins a name when a name byte, a digit
+// or another dollar sign follows it, and that name runs to [NameEnd] from the
+// byte after the sign: ClickHouse 26.10 reads `$1$b$x$b$`, where nothing closes
+// `$1$`, as one name. This is how the lexer reads a text, and a reader that
+// walks a text byte by byte follows it by skipping each name whole.
+func NameStart(b byte) bool {
+	return b == '_' || 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z' || b >= utf8.RuneSelf
+}
+
+// NameEnd returns the offset of the first byte at or after pos that does not
+// continue a name: an ASCII letter, a digit, an underscore, a dollar sign or a
+// byte above 0x7F continues one. It returns pos where text[pos] continues
+// none, and len(text) where the name runs to the end. See [NameStart] for
+// where a name begins.
+func NameEnd(text string, pos int) int {
+	for pos < len(text) {
+		switch b := text[pos]; {
+		case NameStart(b), b == '$', '0' <= b && b <= '9':
+			pos++
+		default:
+			return pos
+		}
 	}
-	switch b := text[pos-1]; {
-	case b == '_', b == '$', '0' <= b && b <= '9', 'a' <= b && b <= 'z', 'A' <= b && b <= 'Z', b >= utf8.RuneSelf:
-		return true
-	default:
-		return false
-	}
+	return pos
 }
 
 // allows reports whether b may stand in a tag, first saying it would be the

@@ -1263,11 +1263,20 @@ func sqlMasksForDialect(body, dialect string) sqlMasks {
 				masks.code[i] = true
 				masks.quotedIdentifier[i] = true
 			}
-		case body[i] == '$' && !lexer.DollarInName(body, i):
+		case lexer.NameStart(body[i]):
+			// A name runs whole, so a dollar sign inside it, as in a$b$,
+			// opens no string.
+			for end := lexer.NameEnd(body, i); i < end; i++ {
+				masks.code[i] = true
+			}
+		case body[i] == '$':
 			end, ok := quotes.End(i)
 			if !ok {
-				masks.code[i] = true
-				i++
+				// The sign is code, and it begins a name when the bytes after
+				// it continue one, as the lexer reads $1$b$x$b$.
+				for end := lexer.NameEnd(body, i+1); i < end; i++ {
+					masks.code[i] = true
+				}
 				continue
 			}
 			i = end

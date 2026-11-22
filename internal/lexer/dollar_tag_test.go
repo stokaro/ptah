@@ -145,28 +145,51 @@ func TestDollarQuotes_Closes(t *testing.T) {
 	}
 }
 
-// TestDollarInName reads whether a dollar sign stands inside a name, where it
-// opens no dollar-quoted string: after a name byte or another dollar sign, and
-// not at the start of the text or after a blank or punctuation.
-func TestDollarInName(t *testing.T) {
+// TestNameEnd reads where a name ends: after its letters, digits,
+// underscores, dollar signs and bytes above 0x7F, so `a$b$` and `a1$b$` are
+// names whole.
+func TestNameEnd(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		text string
 		pos  int
-		want bool
+		want int
 	}{
-		{name: "after a letter", text: "a$b$", pos: 1, want: true},
-		{name: "after a digit", text: "1$", pos: 1, want: true},
-		{name: "after an underscore", text: "_$", pos: 1, want: true},
-		{name: "after a character outside ASCII", text: "é$", pos: 2, want: true},
-		{name: "after a dollar sign", text: "$$", pos: 1, want: true},
-		{name: "at the start", text: "$a$", pos: 0, want: false},
-		{name: "after a blank", text: " $a$", pos: 1, want: false},
-		{name: "after a parenthesis", text: "($a$", pos: 1, want: false},
+		{name: "a dollar sign inside a name", text: "a$b$, c", pos: 0, want: 4},
+		{name: "a digit before a dollar sign", text: "a1$b$ c", pos: 0, want: 5},
+		{name: "an underscore first", text: "_1$b$ c", pos: 0, want: 5},
+		{name: "a character outside ASCII", text: "\u00e9$b$;", pos: 0, want: 5},
+		{name: "two dollar signs", text: "a$$b (", pos: 0, want: 4},
+		{name: "to the end of the text", text: "x$b$", pos: 0, want: 4},
+		{name: "the bytes after a dollar sign", text: "$1$b$x$b$;", pos: 1, want: 9},
+		{name: "nothing continues a name", text: "($a$", pos: 0, want: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lexer.DollarInName(test.text, test.pos), qt.Equals, test.want)
+			c.Assert(lexer.NameEnd(test.text, test.pos), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestNameStart reads which bytes begin a name. A digit begins a number and a
+// dollar sign may open a string, so neither begins one.
+func TestNameStart(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		b    byte
+		want bool
+	}{
+		{name: "a lowercase letter", b: 'a', want: true},
+		{name: "an uppercase letter", b: 'Z', want: true},
+		{name: "an underscore", b: '_', want: true},
+		{name: "a byte above 0x7F", b: 0xc3, want: true},
+		{name: "a digit", b: '1', want: false},
+		{name: "a dollar sign", b: '$', want: false},
+		{name: "a parenthesis", b: '(', want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(lexer.NameStart(test.b), qt.Equals, test.want)
 		})
 	}
 }
