@@ -241,8 +241,8 @@ Lint the whole directory to assess every extension it installs.
 
 The run assesses the dev database's server, so run it at the release the
 migration will meet. PostgreSQL is the only engine assessed. The official
-`postgres` images, on Debian and on Alpine, carry an upstream build and give an
-assessed result. A server built from a distribution's own package, such as
+`postgres` images, on Debian and on Alpine, carry an upstream build, so a
+release line the advisory data covers gets an assessed result. A server built from a distribution's own package, such as
 Ubuntu's, may carry a backported fix, so the assessment reads it as a vendor
 build and each install there is reported as unassessed. Without a dev database
 neither rule reports, and the notice above names both. A default run that
