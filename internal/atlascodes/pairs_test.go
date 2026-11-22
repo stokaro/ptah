@@ -121,7 +121,7 @@ func TestRuleFor_PinnedPairs(t *testing.T) {
 			t.Run(fmt.Sprintf("%s on %q", pair.rule, dialect), func(t *testing.T) {
 				c := qt.New(t)
 				got := atlascodes.RuleFor(pair.rule, dialect)
-				c.Assert(got, qt.DeepEquals, atlascodes.Rule{Analyzer: pair.analyzer, Code: pair.code})
+				c.Assert(got, qt.DeepEquals, atlascodes.Rule{Analyzer: pair.analyzer, Code: pair.code, Check: true})
 			})
 		}
 	}

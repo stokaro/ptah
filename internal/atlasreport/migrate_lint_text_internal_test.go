@@ -703,7 +703,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			analysis := analyzeMigrationsWithBaseline(t, tc.files, tc.latest, tc.baseline, tc.dialect)
 			var out bytes.Buffer
 
-			err := writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
+			err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Equals, tc.want)
@@ -739,7 +739,7 @@ func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err = writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
+	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals,
@@ -772,7 +772,7 @@ func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err = writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
+	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals,
@@ -832,7 +832,7 @@ func TestMigrateLintProseIsAtlasCompatible(t *testing.T) {
 	}, 1)
 	var out bytes.Buffer
 
-	err := writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
+	err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
 	c.Assert(err, qt.IsNil)
 	rendered := out.String()
 
@@ -845,22 +845,20 @@ func TestMigrateLintProseIsAtlasCompatible(t *testing.T) {
 }
 
 // TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules pins what the
-// compatibility surface does with a rule that has no measured Atlas identity:
-// it keeps Ptah's own sentence, keeps the native rule code visible in the
-// `[CODE]` label form, and invents no analyzer link. Being wordier and clearly
-// labeled is a smaller divergence than printing a URL for an analyzer that
-// never emitted the finding.
+// compatibility surface does with a rule that has no Atlas check: it keeps
+// Ptah's own sentence, keeps the rule name visible in the `[name]` label form,
+// and invents no analyzer link. Being wordier and clearly labeled is a smaller
+// divergence than printing a URL for an analyzer that never emitted the
+// finding.
 //
-// TRUNCATE is the fixture because DS108 has no Atlas counterpart. The property
-// arrived here from internal/cli/atlas, where it was pinned on a rename.
-// Renames have a measured Atlas identity (stokaro/ptah#1074), and the renderer
-// can analyze TRUNCATE without a dev-database replay, which no SQLite-backed
-// command test can.
+// TRUNCATE is the fixture because destructive/truncate-table has no Atlas
+// counterpart, and the renderer can analyze TRUNCATE without a dev-database
+// replay, which no SQLite-backed command test can.
 //
-// Reverting #1074 keeps this green -- it is a non-interference control for the
-// fallback path. The inverse mutant that kills it is setting atlas: true on the
-// unmapped branch of compatibilityDiagnostic, which drops the `[DS108]` label
-// and appends an analyzer link for copy that was never measured.
+// It is a non-interference control for the fallback path. The inverse mutant
+// that kills it is setting check: true on the unmapped branch of
+// compatibilityDiagnostic, which drops the `[destructive/truncate-table]`
+// label and appends an analyzer link that names no Atlas check.
 func TestWriteMigrateLintText_KeepsNativeProseForUnmappedRules(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeMigrations(t, map[string]string{

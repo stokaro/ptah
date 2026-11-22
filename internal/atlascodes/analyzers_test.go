@@ -15,13 +15,13 @@ func TestRuleFor(t *testing.T) {
 		dialect string
 		want    atlascodes.Rule
 	}{
-		{name: "table drop", rule: "destructive/drop-table", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerDestructive, Code: "DS102"}},
-		{name: "column drop", rule: "destructive/drop-column", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerDestructive, Code: "DS103"}},
-		{name: "data dependent", rule: "data-dependent/add-not-null-column", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerDataDependent, Code: "MF103"}},
-		{name: "an Atlas check under the ptah analyzer", rule: "locking/drop-index", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "PG102"}},
-		{name: "one name, PostgreSQL's check", rule: "rewrite/alter-column-type", dialect: "postgres", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "PG301"}},
-		{name: "one name, MySQL's check", rule: "rewrite/alter-column-type", dialect: "mysql", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "MY130"}},
-		{name: "one name, MariaDB's check", rule: "rewrite/alter-column-type", dialect: "mariadb", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "MY130"}},
+		{name: "table drop", rule: "destructive/drop-table", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerDestructive, Code: "DS102", Check: true}},
+		{name: "column drop", rule: "destructive/drop-column", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerDestructive, Code: "DS103", Check: true}},
+		{name: "data dependent", rule: "data-dependent/add-not-null-column", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerDataDependent, Code: "MF103", Check: true}},
+		{name: "an Atlas check under the ptah analyzer", rule: "locking/drop-index", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "PG102", Check: true}},
+		{name: "one name, PostgreSQL's check", rule: "rewrite/alter-column-type", dialect: "postgres", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "PG301", Check: true}},
+		{name: "one name, MySQL's check", rule: "rewrite/alter-column-type", dialect: "mysql", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "MY130", Check: true}},
+		{name: "one name, MariaDB's check", rule: "rewrite/alter-column-type", dialect: "mariadb", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "MY130", Check: true}},
 		{name: "a rule with no Atlas check keeps its name", rule: "data-dependent/alter-column-type", want: atlascodes.Rule{Analyzer: atlascodes.AnalyzerPtah, Code: "data-dependent/alter-column-type"}},
 	}
 	for _, row := range rows {

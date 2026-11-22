@@ -18,16 +18,12 @@ import (
 )
 
 type MigrateLintOptions struct {
-	// AtlasCodes prints each rule under its Atlas check code, in the community
-	// binary's report shape, instead of under its Ptah name. Only the strict
-	// compatibility policy sets it.
-	AtlasCodes bool
-	Driver     string
-	URL        string
-	Dir        string
-	Analysis   *migrationlint.Analysis
-	Integrity  MigrateLintIntegrity
-	Error      string
+	Driver    string
+	URL       string
+	Dir       string
+	Analysis  *migrationlint.Analysis
+	Integrity MigrateLintIntegrity
+	Error     string
 	// ReplayFailure is the file a failed dev-database replay stopped at, nil
 	// when the replay did not stop inside a migration. When set, the report
 	// carries that one file and the failed replay step in place of the
@@ -301,7 +297,7 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 		return result, nil
 	}
 	files, total := migrateLintFiles(*opts.Analysis, names, opts.Sources, opts.fileOrder)
-	files = attachMigrateLintFindings(files, sourcedFindings(*opts.Analysis, opts.Sources), compatView{dialect: opts.Analysis.Target().Dialect, codes: opts.AtlasCodes})
+	files = attachMigrateLintFindings(files, sourcedFindings(*opts.Analysis, opts.Sources), opts.Analysis.Target().Dialect)
 	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
 	if opts.Error == "" {
@@ -490,20 +486,20 @@ func migrateLintVersionRank(file migrationlint.File, maxVersion int64) int64 {
 func attachMigrateLintFindings(
 	files []MigrateLintFile,
 	findings []migrationlint.Finding,
-	view compatView,
+	dialect string,
 ) []MigrateLintFile {
 	owned := make([][]migrationlint.Finding, len(files))
 	for _, finding := range findings {
 		for i := range files {
 			if sameMigrateLintFile(files[i].sourcePath, finding.File) {
-				files[i].Findings = append(files[i].Findings, atlasMigrateLintFinding(finding, view))
+				files[i].Findings = append(files[i].Findings, atlasMigrateLintFinding(finding, dialect))
 				owned[i] = append(owned[i], finding)
 			}
 		}
 	}
 	for i := range files {
-		files[i].Reports = migrateLintReports(files[i].Text, owned[i], view)
-		files[i].Error = migrateLintAnalyzerError(owned[i], view)
+		files[i].Reports = migrateLintReports(files[i].Text, owned[i], dialect)
+		files[i].Error = migrateLintAnalyzerError(owned[i], dialect)
 	}
 	return files
 }
@@ -518,10 +514,10 @@ func attachMigrateLintFindings(
 // template reads them in `.Files[].Error` and in the Result of the file's step.
 // Measured on a `DROP TABLE` migration, both read `destructive changes
 // detected` and the run exits 1.
-func migrateLintAnalyzerError(findings []migrationlint.Finding, view compatView) string {
+func migrateLintAnalyzerError(findings []migrationlint.Finding, dialect string) string {
 	diags := make([]migrateLintTextDiag, 0, len(findings))
 	for _, finding := range findings {
-		diags = append(diags, compatibilityDiagnostic(finding, view))
+		diags = append(diags, compatibilityDiagnostic(finding, dialect))
 	}
 	var errs []string
 	for _, group := range groupDiagnostics(diags) {
@@ -542,13 +538,13 @@ func migrateLintAnalyzerError(findings []migrationlint.Finding, view compatView)
 // [groupDiagnostics] -- so the two renderings of a run cannot disagree about
 // which analyzer raised what. A finding whose Atlas wording has not been
 // measured keeps Ptah's own sentence, exactly as the text report keeps it.
-func migrateLintReports(text string, findings []migrationlint.Finding, view compatView) []MigrateLintReport {
+func migrateLintReports(text string, findings []migrationlint.Finding, dialect string) []MigrateLintReport {
 	if len(findings) == 0 {
 		return nil
 	}
 	diags := make([]migrateLintTextDiag, 0, len(findings))
 	for _, finding := range findings {
-		diags = append(diags, compatibilityDiagnostic(finding, view))
+		diags = append(diags, compatibilityDiagnostic(finding, dialect))
 	}
 	offsets := lineByteOffsets(text)
 	groups := groupDiagnostics(diags)
@@ -608,10 +604,11 @@ func sameMigrateLintFile(sourcePath, findingPath string) bool {
 }
 
 // atlasMigrateLintFinding is a finding as the compatibility surface reports
-// it: the rule keeps its Ptah name, and under the strict policy the name is
-// replaced by the Atlas check code of the rule on the run's dialect.
-func atlasMigrateLintFinding(finding migrationlint.Finding, view compatView) migrationlint.Finding {
-	finding.Rule = view.label(finding, atlascodes.RuleFor(finding.Rule, view.dialect))
+// it: the rule is named by its Atlas check code on the run's dialect, the
+// code the file's Reports carry for the same finding, and by its Ptah name
+// when Atlas has no check for it.
+func atlasMigrateLintFinding(finding migrationlint.Finding, dialect string) migrationlint.Finding {
+	finding.Rule = atlascodes.RuleFor(finding.Rule, dialect).Code
 	return finding
 }
 

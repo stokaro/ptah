@@ -1121,7 +1121,7 @@ env "ci" {
 	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
 	c.Assert(report.Files, qt.HasLen, 1)
 	c.Assert(report.Files[0].Findings, qt.HasLen, 1)
-	c.Assert(report.Files[0].Findings[0].Rule, qt.Equals, "destructive/drop-column")
+	c.Assert(report.Files[0].Findings[0].Rule, qt.Equals, "DS103")
 	c.Assert(report.Files[0].Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 

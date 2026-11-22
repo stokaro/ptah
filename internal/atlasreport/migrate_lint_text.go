@@ -43,7 +43,7 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 	if opts.ReplayFailure != nil {
 		return writeMigrateLintTextReplayFailure(w, opts, *opts.ReplayFailure, now)
 	}
-	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources, opts.fileOrder, opts.AtlasCodes)
+	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources, opts.fileOrder)
 	if model.analyzedCount == 0 {
 		// No analyzed versions means there is no report to render.
 		return nil
@@ -128,17 +128,7 @@ func writeMigrateLintTextFixes(w io.Writer, fixes []migrateLintTextFix) error {
 }
 
 func writeMigrateLintTextDiagnostic(w io.Writer, diag migrateLintTextDiag) error {
-	if !diag.atlas || diag.anchor == "" {
-		return writeWrapped(
-			w,
-			"      -- ",
-			"         ",
-			fmt.Sprintf("L%d [%s]: %s", diag.line, diag.code, diag.message),
-		)
-	}
-	content := fmt.Sprintf("L%d: %s", diag.line, diag.message)
-	content += " " + atlasAnalyzerDocsURL + diag.anchor
-	return writeWrappedAt(w, "      -- ", "         ", content, diag.messageWidth)
+	return writeWrappedAt(w, "      -- ", "         ", diag.content(), diag.messageWidth)
 }
 
 func writeMigrateLintTextSummary(w io.Writer, model migrateLintText, elapsed string) error {
@@ -164,13 +154,9 @@ func writeMigrateLintTextSummary(w io.Writer, model migrateLintText, elapsed str
 	return err
 }
 
-// writeWrapped renders text word-wrapped to [lintWrapWidth] content
-// columns, prefixing the first line with firstPrefix and every continuation
-// line with contPrefix.
-func writeWrapped(w io.Writer, firstPrefix, contPrefix, text string) error {
-	return writeWrappedAt(w, firstPrefix, contPrefix, text, lintWrapWidth)
-}
-
+// writeWrappedAt renders text word-wrapped to width content columns,
+// prefixing the first line with firstPrefix and every continuation line with
+// contPrefix.
 func writeWrappedAt(w io.Writer, firstPrefix, contPrefix, text string, width int) error {
 	return writePrefixedLines(w, firstPrefix, contPrefix, wrapContent(text, width))
 }
@@ -229,42 +215,20 @@ type migrateLintTextGroup struct {
 	diags []migrateLintTextDiag
 }
 
-// compatView is how one compatibility report names the rules: the dialect of
-// the run, which picks the Atlas code of a rule shared by several engines, and
-// whether the strict policy prints Atlas codes in place of Ptah names.
-type compatView struct {
-	dialect string
-	codes   bool
-}
-
-// label is what the report prints for a finding's rule.
-func (v compatView) label(finding migrationlint.Finding, rule atlascodes.Rule) string {
-	if v.codes {
-		return rule.Code
-	}
-	return finding.Rule
-}
-
-// anchor is the Atlas check code a documentation link ends in, and is empty
-// when the report prints names.
-func (v compatView) anchor(finding migrationlint.Finding, rule atlascodes.Rule) string {
-	if v.codes {
-		return rule.Code
-	}
-	return ""
-}
-
 type migrateLintTextDiag struct {
 	line int
-	// code is what the report prints for the rule: its name, or its Atlas
-	// check code under the strict policy.
+	// code is what the report prints for the rule: its Atlas check code, or
+	// its Ptah name when Atlas has no check for it.
 	code string
-	// anchor is the Atlas check code the documentation link ends in. It is
-	// empty unless the run prints Atlas codes.
-	anchor       string
+	// check reports that code is an Atlas check code, which the line prints
+	// the way the community binary does: as the fragment of the analyzer
+	// documentation link after the message. A Ptah name has no entry there,
+	// so a rule Atlas has no check for prints its name in brackets after the
+	// line number instead, the shape that names the rule without pointing at
+	// a page that does not describe it.
+	check        bool
 	message      string
 	messageWidth int
-	atlas        bool
 	// fix is the Atlas-shaped suggested fix, printed under its own header.
 	// Empty for analyzers where Atlas prints none.
 	fix      migrateLintTextFix
@@ -277,6 +241,14 @@ type migrateLintTextFix struct {
 	width int
 }
 
+// content is the diagnostic's line before the report wraps and indents it.
+func (d migrateLintTextDiag) content() string {
+	if !d.check {
+		return fmt.Sprintf("L%d [%s]: %s", d.line, d.code, d.message)
+	}
+	return fmt.Sprintf("L%d: %s %s%s", d.line, d.message, atlasAnalyzerDocsURL, d.code)
+}
+
 // buildMigrateLintText derives the intermediate text-report model from the lint
 // analysis. It reuses the analysis's Selected flag and [File.Changes] count; it
 // never re-parses SQL.
@@ -285,10 +257,9 @@ func buildMigrateLintText(
 	revisionVersions map[int64]string,
 	sources map[int64]MigrateLintSource,
 	order func([]migrationlint.File) func(a, b migrationlint.File) int,
-	atlasCodes bool,
 ) migrateLintText {
 	upFiles := sortedUpFiles(analysis.Files(), order)
-	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources), compatView{dialect: analysis.Target().Dialect, codes: atlasCodes})
+	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources), analysis.Target().Dialect)
 
 	firstSelected := -1
 	var model migrateLintText
@@ -351,26 +322,32 @@ func sortedUpFiles(
 }
 
 // diagnosticsByFile maps findings into compatibility diagnostics keyed
-// by the cleaned reporting path of the file that owns them.
-func diagnosticsByFile(findings []migrationlint.Finding, view compatView) map[string][]migrateLintTextDiag {
+// by the cleaned reporting path of the file that owns them. dialect is the
+// run's, which picks the Atlas code of a rule shared by several engines.
+func diagnosticsByFile(findings []migrationlint.Finding, dialect string) map[string][]migrateLintTextDiag {
 	byFile := make(map[string][]migrateLintTextDiag)
 	for _, finding := range findings {
 		key := path.Clean(finding.File)
-		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding, view))
+		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding, dialect))
 	}
 	return byFile
 }
 
 // compatibilityDiagnostic maps a structured native finding to the measured
 // Atlas analyzer code, wording, and suggested-fix shape used by ptah-compat.
-func compatibilityDiagnostic(finding migrationlint.Finding, view compatView) migrateLintTextDiag {
-	rule := atlascodes.RuleFor(finding.Rule, view.dialect)
+//
+// Both compatibility policies name a rule by its Atlas check code on the
+// run's dialect, as the community binary does, and a rule Atlas has no check
+// for by its Ptah name. The policies differ in which rules run, not in how a
+// finding is printed.
+func compatibilityDiagnostic(finding migrationlint.Finding, dialect string) migrateLintTextDiag {
+	rule := atlascodes.RuleFor(finding.Rule, dialect)
 	diagnostic, mapped := atlasDiagnosticText(rule.Code, finding)
 	if !mapped {
 		return migrateLintTextDiag{
 			line:         finding.Line,
-			code:         view.label(finding, rule),
-			anchor:       view.anchor(finding, rule),
+			code:         rule.Code,
+			check:        rule.Check,
 			message:      finding.Message,
 			messageWidth: lintWrapWidth,
 			group:        analyzerGroupLabel(rule.Analyzer),
@@ -379,11 +356,10 @@ func compatibilityDiagnostic(finding migrationlint.Finding, view compatView) mig
 	}
 	return migrateLintTextDiag{
 		line:         finding.Line,
-		code:         view.label(finding, rule),
-		anchor:       view.anchor(finding, rule),
+		code:         rule.Code,
+		check:        rule.Check,
 		message:      diagnostic.message,
 		messageWidth: diagnostic.messageWidth,
-		atlas:        true,
 		fix:          migrateLintTextFix{text: diagnostic.fix, width: diagnostic.fixWidth},
 		group:        analyzerGroupLabel(rule.Analyzer),
 		severity:     finding.Severity,

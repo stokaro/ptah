@@ -93,7 +93,7 @@ func TestSchemaApplySkipLint(t *testing.T) {
 			policy:  destructiveLintPolicy,
 			extra:   []string{"--config", "file://atlas.hcl"},
 			wantErr: true,
-			want:    "destructive/drop-table",
+			want:    "DS102",
 		},
 		{
 			name:    "skip-lint applies the same plan",
@@ -101,7 +101,7 @@ func TestSchemaApplySkipLint(t *testing.T) {
 			extra:   []string{"--config", "file://atlas.hcl", "--skip-lint"},
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
-			absent:  "destructive/drop-table",
+			absent:  "DS102",
 		},
 		{
 			name:    "warning policy does not block",
@@ -109,21 +109,21 @@ func TestSchemaApplySkipLint(t *testing.T) {
 			extra:   []string{"--config", "file://atlas.hcl"},
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
-			absent:  "destructive/drop-table",
+			absent:  "DS102",
 		},
 		{
 			name:    "an error policy no flag names is not read",
 			policy:  destructiveLintPolicy,
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
-			absent:  "destructive/drop-table",
+			absent:  "DS102",
 		},
 		{
 			name:    "no policy is no lint pass",
 			policy:  "",
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
-			absent:  "destructive/drop-table",
+			absent:  "DS102",
 		},
 		{
 			name:    "skip-lint without a policy changes nothing",
@@ -131,7 +131,7 @@ func TestSchemaApplySkipLint(t *testing.T) {
 			extra:   []string{"--skip-lint"},
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
-			absent:  "destructive/drop-table",
+			absent:  "DS102",
 		},
 	}
 	for _, test := range tests {

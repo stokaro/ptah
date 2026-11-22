@@ -97,7 +97,7 @@ func TestMigrateLintSources_TextLine(t *testing.T) {
 			analysis := analyzeTemplateData(c, convertedDrop(), migrationlint.Options{Dialect: "sqlite"}, 2)
 			var out bytes.Buffer
 
-			err := atlasreport.WriteMigrateLintText(&out, atlasreport.MigrateLintOptions{AtlasCodes: true, Analysis: &analysis, Sources: test.sources})
+			err := atlasreport.WriteMigrateLintText(&out, atlasreport.MigrateLintOptions{Analysis: &analysis, Sources: test.sources})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Contains, test.want)

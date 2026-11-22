@@ -74,7 +74,7 @@ func TestMigrateLintGolangMigrateTransactionBlockLive(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 	c.Assert(out, qt.Contains, "-- analyzing version 20240827000000 -- no diagnostics found")
 	c.Assert(out, qt.Contains, "-- 1 version ok")
-	c.Assert(out, qt.Not(qt.Contains), "transaction/explicit-transaction")
+	c.Assert(out, qt.Not(qt.Contains), "TX201")
 }
 
 func TestMigrateLintAtlasTransactionBlockLive(t *testing.T) {
@@ -88,6 +88,6 @@ func TestMigrateLintAtlasTransactionBlockLive(t *testing.T) {
 	out, err := runLayoutLint(c, "file://"+dir, devURL)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
-	c.Assert(out, qt.Contains, "[transaction/explicit-transaction]")
+	c.Assert(out, qt.Contains, "remove the transaction control https://atlasgo.io/lint/analyzers#TX201")
 	c.Assert(out, qt.Contains, "-- 1 version with warnings")
 }
