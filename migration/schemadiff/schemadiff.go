@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/foreignkeyscope"
+	"ptah.run/internal/grantcover"
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/pgreservedrole"
@@ -266,6 +267,9 @@ func compareReportingUndecidedAdditions(
 		DesiredComplete:   opts.DesiredGrantsComplete,
 		DesiredRead:       opts.DesiredReadGrants,
 		ColumnsBySpelling: platform.ColumnPrivilegeIsBySpelling(opts.Dialect),
+		// A revoke on a table the plan creates fails on a target where a
+		// REVOKE on a table takes only a grant on that table.
+		TableRevokesTakeOnlyTableGrants: platform.TableRevokeTakesOnlyTableGrants(opts.Dialect),
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
@@ -484,6 +488,13 @@ func validateDeclaredBeforeComparison(
 	// nothing to plan and report convergence. Refuse instead, here, where
 	// an error can still travel.
 	if err := clickhouserbac.ValidateLive(info.Dialect, desired, database); err != nil {
+		return err
+	}
+	// So does a declared revoke on a table that a grant on the table's
+	// database, on every table or to PUBLIC keeps, where a REVOKE on a table
+	// takes only a grant on that table: the plan would find nothing under the
+	// table's name to take, or fail on a table it creates.
+	if err := grantcover.Validate(info.Dialect, desired, database); err != nil {
 		return err
 	}
 	if err := pgsystemschema.ValidateDeclaredPostgresSystemSchemas(

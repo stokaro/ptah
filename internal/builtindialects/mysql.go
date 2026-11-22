@@ -55,6 +55,11 @@ func mysql() descriptor.Dialect {
 		},
 		IdentifierLimit:      descriptor.IdentifierLimit{Max: 64, Unit: "characters"},
 		GrantOptionPerObject: true,
+		// A REVOKE on a table takes only a grant on the table, and one of a
+		// privilege the role holds there through no grant fails with Error
+		// 1147: measured on 8.4.13, also under a grant on the database or on
+		// *.*.
+		TableRevokeTakesOnlyTableGrants: true,
 		// A column privilege held through a role serves only the spelling
 		// the GRANT used; see platform.ColumnPrivilegeIsBySpelling. MariaDB
 		// serves either, so its descriptor leaves this out.
@@ -63,16 +68,7 @@ func mysql() descriptor.Dialect {
 		// How a connection reaches the server.
 		Driver: "mysql",
 
-		// No release of the family has a FULL OUTER JOIN, and OFFSET is
-		// accepted only after a LIMIT: the largest BIGINT UNSIGNED is the
-		// documented "every row from the offset on". ON DUPLICATE KEY UPDATE
-		// fires for every unique key on the table, so it cannot be scoped to
-		// the columns a caller names.
-		Query: descriptor.Query{
-			UnsupportedJoins: []descriptor.Join{descriptor.JoinFull},
-			OffsetOnlyLimit:  "18446744073709551615",
-			Upsert:           descriptor.UpsertOnDuplicateKey,
-		},
+		Query:   mysqlFamilyQuery(),
 		Scripts: descriptor.Scripts{ClientDelimiters: true},
 
 		// The grammars the planner asks for non-blocking DDL in.
@@ -549,4 +545,18 @@ var mysqlCheckNameFolds = []descriptor.CodePointRange{
 	{First: 0x400, Last: 0x42F}, {First: 0x531, Last: 0x556}, {First: 0x1F00, Last: 0x1FFF},
 	{First: 0x2126, Last: 0x212B}, {First: 0x2160, Last: 0x216F}, {First: 0x24B6, Last: 0x24CF},
 	{First: 0xFF21, Last: 0xFF3A},
+}
+
+// mysqlFamilyQuery is how the query builder spells what MySQL and MariaDB
+// spell differently from other engines. No release of the family has a FULL
+// OUTER JOIN, and OFFSET is accepted only after a LIMIT: the largest BIGINT
+// UNSIGNED is the documented "every row from the offset on". ON DUPLICATE KEY
+// UPDATE fires for every unique key on the table, so it cannot be scoped to
+// the columns a caller names.
+func mysqlFamilyQuery() descriptor.Query {
+	return descriptor.Query{
+		UnsupportedJoins: []descriptor.Join{descriptor.JoinFull},
+		OffsetOnlyLimit:  "18446744073709551615",
+		Upsert:           descriptor.UpsertOnDuplicateKey,
+	}
 }

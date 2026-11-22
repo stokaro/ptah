@@ -107,6 +107,13 @@ type Database struct {
 	// read it and found none.
 	WideAccess []WideAccess `json:"-"`
 
+	// WideGrants are the table privileges a role holds on every table through
+	// a grant wider than the database the read describes, such as MySQL's
+	// `GRANT SELECT ON *.*` or Oracle's SELECT ANY TABLE. A REVOKE on one
+	// table takes none of them. Nil means the reader does not establish them,
+	// and an empty non-nil slice means it read them and found none.
+	WideGrants []WideGrant `json:"-"`
+
 	// RolesOutOfScope lists roles that exist on the server but that this
 	// description deliberately does not define, because nothing in the
 	// schemas being read refers to them.
@@ -1661,6 +1668,20 @@ type RoleMembership struct {
 	// PostgreSQL 16 and later. Nil means the server did not report an option.
 	InheritOption *bool `json:"inherit_option,omitempty"`
 	SetOption     *bool `json:"set_option,omitempty"`
+}
+
+// WideGrant is one table privilege a role holds on every table through one
+// grant wider than the database a read describes.
+type WideGrant struct {
+	// Role is the grantee, as the read reports it. PUBLIC gives the
+	// privilege to every role.
+	Role string `json:"role"`
+	// Privilege is the table privilege the grant gives, as a GRANT on a table
+	// names it: SELECT for both `GRANT SELECT ON *.*` and SELECT ANY TABLE.
+	Privilege string `json:"privilege"`
+	// Grant is what the server grants, in the words a REVOKE of it uses:
+	// "SELECT ON *.*" or "SELECT ANY TABLE".
+	Grant string `json:"grant"`
 }
 
 // WideAccess is a role's access to every relation of a database that no grant

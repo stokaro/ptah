@@ -646,6 +646,23 @@ leaves the object `INVALID`: `USER_TRIGGERS` still reports such a trigger
 `ENABLED`, and `USER_PROCEDURES` omits the routine. Ptah keeps that
 semicolon on every statement it sends.
 
+## Revokes on a table
+
+A `REVOKE` on a table takes only an object privilege granted on that table,
+and Oracle refuses a revoke of one the role does not hold there with
+`ORA-01927`. A declared `REVOKE SELECT ON t3 FROM READER` on a table the plan
+creates therefore has no statement, which would fail after the `CREATE TABLE`
+has run.
+
+A system privilege held by the role or by `PUBLIC` gives the privilege on every
+table, and a revoke on one table cannot take it away. Ptah reads `SELECT`,
+`READ`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` and `FLASHBACK ANY TABLE` from
+`DBA_SYS_PRIVS`, refuses a declared revoke on a table that one of them keeps,
+and names it: revoke `SELECT ANY TABLE` instead, or grant the privilege on each
+table that needs it. An account that may not read `DBA_SYS_PRIVS` gets the
+revoke planned as declared, and the server answers for the role. Measured on
+23.26.3.
+
 ## Versioned migrations
 
 `ptah migrations up`, `down` and `status` run against Oracle, with either

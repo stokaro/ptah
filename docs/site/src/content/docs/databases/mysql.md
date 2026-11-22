@@ -1468,6 +1468,23 @@ adds a column; `REVOKE` on a name nothing holds succeeds. A revoke placed after
 them leaves the role the new object while the statements before it run, and
 for good when one of them fails.
 
+A `REVOKE` on a table takes only a privilege granted on that table, and the
+server refuses a revoke of a privilege the role does not hold there with ERROR
+1147. A declared revoke on a table the plan creates therefore has a statement
+only where the read reports a privilege under the table's name, which a
+dropped table of that name leaves behind.
+
+A grant on the table's database (``GRANT SELECT ON d2.* TO `r` ``), on every
+database (`ON *.*`), or on MariaDB to `PUBLIC`, gives the role the privilege on
+the table as well, and a revoke on the table cannot take it away. The server
+answers that revoke with ERROR 1147, and a plan that left it out would read as
+synced while a member of the role keeps reading the table. So Ptah refuses a
+declared revoke on a table, existing or created, that such a grant keeps, and
+names the grant: revoke it where it was granted, or grant the privilege on
+each table that needs it. A database grant the plan removes keeps nothing:
+one the schema revokes under `revokes:` with `on_schema`, and an undeclared one
+held by a role the schema declares. Measured on 8.4.13, 10.11.19 and 11.8.9.
+
 A kept column privilege that a revoke on its table takes comes back right
 after the revokes where its column exists, and after the `CREATE TABLE`,
 `CREATE VIEW`, `CREATE OR REPLACE VIEW` or `ADD COLUMN` that brings the column

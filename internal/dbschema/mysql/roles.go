@@ -279,7 +279,142 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, da
 		wide = nil
 	}
 	schema.WideAccess = wide
+
+	everywhere, err := r.readWideGrants(ctx)
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return fmt.Errorf("failed to read global privileges: %w", err)
+		}
+		// Left nil: a declared revoke on a table is then planned, and the
+		// server says whether the role held the privilege on it.
+		everywhere = nil
+	}
+	schema.WideGrants = everywhere
 	return r.readConnectedRole(ctx, schema)
+}
+
+// globalTablePrivileges pairs each privilege column of mysql.user with the
+// privilege a GRANT on a table names the same way. Held globally, each covers
+// every table, and a REVOKE on one table cannot take it: measured on MySQL
+// 8.4.13 and MariaDB 10.11.19 and 11.8.9, after `GRANT SELECT ON *.* TO r`,
+// `REVOKE SELECT ON d.t FROM r` fails with Error 1147 and r keeps reading t.
+// A column marked optional exists on one flavor only: Delete_history_priv is
+// MariaDB's. Every other column exists on each supported server.
+var globalTablePrivileges = []struct {
+	column, privilege string
+	optional          bool
+}{
+	{column: "Select_priv", privilege: "SELECT"}, {column: "Insert_priv", privilege: "INSERT"},
+	{column: "Update_priv", privilege: "UPDATE"}, {column: "Delete_priv", privilege: "DELETE"},
+	{column: "Create_priv", privilege: "CREATE"}, {column: "Drop_priv", privilege: "DROP"},
+	{column: "References_priv", privilege: "REFERENCES"}, {column: "Index_priv", privilege: "INDEX"},
+	{column: "Alter_priv", privilege: "ALTER"}, {column: "Create_view_priv", privilege: "CREATE VIEW"},
+	{column: "Show_view_priv", privilege: "SHOW VIEW"}, {column: "Trigger_priv", privilege: "TRIGGER"},
+	{column: "Delete_history_priv", privilege: "DELETE HISTORY", optional: true},
+}
+
+// readWideGrants reads the table privileges each role holds on every
+// database, the `GRANT SELECT ON *.*` kind, one row per privilege.
+//
+// The columns of mysql.user are read rather than
+// information_schema.USER_PRIVILEGES, which on MariaDB lists no role.
+// Measured on MariaDB 10.11.19 and 11.8.9, a role holding `SELECT ON *.*` has
+// no row there and Select_priv = 'Y' in mysql.user. PUBLIC is a role on
+// MariaDB, so a grant to it is read as well. Delete_history_priv, which MySQL
+// lacks, is left out where the server has none. Where any other column is
+// missing the account sees only part of mysql.user, and the read returns nil:
+// it does not establish the grants on every database.
+func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, error) {
+	predicate, err := r.rolePredicate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	present, err := r.userColumns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var columns []string
+	var privileges []string
+	for _, held := range globalTablePrivileges {
+		switch {
+		case present[strings.ToLower(held.column)]:
+			columns = append(columns, held.column)
+			privileges = append(privileges, held.privilege)
+		case !held.optional:
+			// information_schema lists only the columns the account may read,
+			// so a missing one says the account sees part of mysql.user. A
+			// read of the rest cannot say no role holds the privilege
+			// everywhere.
+			return nil, nil
+		}
+	}
+	rows, err := r.db.QueryContext(ctx, wideGrantQuery(predicate, columns))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	everywhere := make([]catalog.WideGrant, 0)
+	for rows.Next() {
+		var role string
+		held := make([]bool, len(columns))
+		targets := []any{&role}
+		for index := range held {
+			targets = append(targets, &held[index])
+		}
+		if err := rows.Scan(targets...); err != nil {
+			return nil, err
+		}
+		for index, privilege := range privileges {
+			if held[index] {
+				everywhere = append(everywhere, catalog.WideGrant{Role: role, Privilege: privilege, Grant: privilege + " ON *.*"})
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return everywhere, nil
+}
+
+// wideGrantQuery projects, for each role holding one of the columns, the role
+// and whether it holds each column, in order. The columns are names from
+// [globalTablePrivileges], never input.
+func wideGrantQuery(rolePredicate string, columns []string) string {
+	held := make([]string, len(columns))
+	for index, column := range columns {
+		held[index] = column + " = 'Y'"
+	}
+	return `
+		SELECT user, ` + strings.Join(held, ", ") + `
+		FROM mysql.user
+		WHERE ` + rolePredicate + `
+			  AND user NOT LIKE 'mysql.%'
+			  AND (` + strings.Join(held, " OR ") + `)
+		ORDER BY user`
+}
+
+// userColumns is the set of the columns mysql.user has, in lower case.
+func (r *Reader) userColumns(ctx context.Context) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = 'mysql' AND table_name = 'user'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	present := make(map[string]bool)
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			return nil, err
+		}
+		present[strings.ToLower(column)] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return present, nil
 }
 
 // readWideAccess reads the privileges each role holds on every database, the
