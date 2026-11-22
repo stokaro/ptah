@@ -78,6 +78,7 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 		_, later := p.columnGrantsGivenBack(diff)
 		result = append(result, later...)
 	}
+	result = append(result, p.grantsGivenBack(diff)...)
 	_, added := p.grantsAdded(diff)
 	result = p.grantPrivileges(result, diff, added)
 	spellings := newColumnSpellings(diff, p.targetDialect())

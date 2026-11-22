@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -83,6 +84,139 @@ func TestSchemaApplySQLServerGrantAllOnARoutineE2E(t *testing.T) {
 			defer func() { c.Assert(conn.Close(), qt.IsNil) }()
 			_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = 'rt_member'; "+test.call+"; REVERT;")
 			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// A body change to a SQL Server routine with a declared grant drops the
+// routine, creates it again and grants back every permission a role held on
+// it: the declared role holds what it held before, and rt_auditor, a role the
+// schema does not manage, keeps its permission and the grant option on it.
+// The next plan is empty, and a member of the declared role runs the new body.
+func TestSchemaApplySQLServerKeepsTheGrantsOnAReplacedRoutineE2E(t *testing.T) {
+	tests := []struct {
+		name    string
+		before  string
+		after   string
+		grant   string
+		want    []string
+		auditor string
+		call    string
+	}{
+		{
+			name:    "ALL on a procedure",
+			before:  "CREATE PROCEDURE dbo.rt AS BEGIN SELECT 1 AS one; END;\nGO\n",
+			after:   "CREATE PROCEDURE dbo.rt AS BEGIN SELECT 2 AS one; END;\nGO\n",
+			grant:   "GRANT ALL ON dbo.rt TO rt_runner;\n",
+			want:    []string{"EXECUTE GRANT"},
+			auditor: "EXECUTE",
+			call:    "EXEC dbo.rt",
+		},
+		{
+			name:    "ALL on a scalar function",
+			before:  "CREATE FUNCTION dbo.rt() RETURNS INT AS BEGIN RETURN 1; END;\nGO\n",
+			after:   "CREATE FUNCTION dbo.rt() RETURNS INT AS BEGIN RETURN 2; END;\nGO\n",
+			grant:   "GRANT ALL ON dbo.rt TO rt_runner;\n",
+			want:    []string{"EXECUTE GRANT", "REFERENCES GRANT"},
+			auditor: "EXECUTE",
+			call:    "SELECT dbo.rt()",
+		},
+		{
+			name:    "ALL on a table-valued function",
+			before:  "CREATE FUNCTION dbo.rt() RETURNS TABLE AS RETURN (SELECT 1 AS one);\nGO\n",
+			after:   "CREATE FUNCTION dbo.rt() RETURNS TABLE AS RETURN (SELECT 2 AS one);\nGO\n",
+			grant:   "GRANT ALL ON dbo.rt TO rt_runner;\n",
+			want:    []string{"DELETE GRANT", "INSERT GRANT", "REFERENCES GRANT", "SELECT GRANT", "UPDATE GRANT"},
+			auditor: "SELECT",
+			call:    "SELECT one FROM dbo.rt()",
+		},
+		{
+			name:    "EXECUTE on a procedure",
+			before:  "CREATE PROCEDURE dbo.rt AS BEGIN SELECT 1 AS one; END;\nGO\n",
+			after:   "CREATE PROCEDURE dbo.rt AS BEGIN SELECT 2 AS one; END;\nGO\n",
+			grant:   "GRANT EXECUTE ON dbo.rt TO rt_runner;\n",
+			want:    []string{"EXECUTE GRANT"},
+			auditor: "EXECUTE",
+			call:    "EXEC dbo.rt",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, db := declaredSQLServerDatabase(c)
+			grants := "CREATE ROLE rt_runner;\n" + test.grant
+			created := runPtahIn(c, "schema", "apply", "--db-url", target,
+				"--schema-file", writeDeclaredSchemaFile(c, "before.sql", test.before+grants), "--auto-approve")
+			c.Assert(created.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", created.Stdout, created.Stderr))
+			declaredSQLServerExec(c, db, "CREATE ROLE rt_auditor", "GRANT "+test.auditor+" ON dbo.rt TO rt_auditor WITH GRANT OPTION")
+			after := writeDeclaredSchemaFile(c, "after.sql", test.after+grants)
+
+			replaced := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", after, "--auto-approve")
+			settled := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", after, "--dry-run")
+
+			c.Assert(replaced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replaced.Stdout, replaced.Stderr))
+			c.Assert(replaced.Stdout, qt.Contains, "CREATE OR ALTER ")
+			c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
+			c.Assert(settled.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "rt_runner"), qt.DeepEquals, test.want)
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "rt_auditor"), qt.DeepEquals, []string{test.auditor + " GRANT_WITH_GRANT_OPTION"})
+			declaredSQLServerExec(c, db, "CREATE USER rt_member WITHOUT LOGIN", "ALTER ROLE rt_runner ADD MEMBER rt_member")
+			conn, err := db.Conn(c.Context())
+			c.Assert(err, qt.IsNil)
+			defer func() { c.Assert(conn.Close(), qt.IsNil) }()
+			_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = 'rt_member'; "+test.call+"; REVERT;")
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// A plan that replaces a SQL Server routine for a new body and, in the same
+// plan, revokes a permission or a grant option on it leaves the revoke in
+// effect: the REVOKE runs before the DROP, and the permissions given back
+// after the CREATE leave out what it took. The role keeps the rest, and the
+// next plan is empty.
+func TestSchemaApplySQLServerKeepsARevokeOnAReplacedRoutineE2E(t *testing.T) {
+	tests := []struct {
+		name   string
+		before string
+		after  string
+		want   []string
+	}{
+		{
+			name:   "a permission",
+			before: "GRANT EXECUTE ON dbo.rt TO rt_runner;\nGRANT REFERENCES ON dbo.rt TO rt_runner;\n",
+			after:  "GRANT EXECUTE ON dbo.rt TO rt_runner;\n",
+			want:   []string{"EXECUTE GRANT"},
+		},
+		{
+			name:   "a grant option",
+			before: "GRANT EXECUTE ON dbo.rt TO rt_runner WITH GRANT OPTION;\n",
+			after:  "GRANT EXECUTE ON dbo.rt TO rt_runner;\n",
+			want:   []string{"EXECUTE GRANT"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, db := declaredSQLServerDatabase(c)
+			routine := "CREATE FUNCTION dbo.rt() RETURNS INT AS BEGIN RETURN %d; END;\nGO\nCREATE ROLE rt_runner;\n"
+			created := runPtahIn(c, "schema", "apply", "--db-url", target,
+				"--schema-file", writeDeclaredSchemaFile(c, "before.sql", fmt.Sprintf(routine, 1)+test.before), "--auto-approve")
+			c.Assert(created.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", created.Stdout, created.Stderr))
+			after := writeDeclaredSchemaFile(c, "after.sql", fmt.Sprintf(routine, 2)+test.after)
+
+			replaced := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", after, "--auto-approve")
+			settled := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", after, "--dry-run")
+
+			c.Assert(replaced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replaced.Stdout, replaced.Stderr))
+			c.Assert(replaced.Stdout, qt.Contains, "REVOKE ")
+			c.Assert(replaced.Stdout, qt.Contains, "CREATE OR ALTER FUNCTION")
+			c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
+			c.Assert(settled.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "rt_runner"), qt.DeepEquals, test.want)
+			var two int
+			c.Assert(db.QueryRowContext(c.Context(), "SELECT dbo.rt()").Scan(&two), qt.IsNil)
+			c.Assert(two, qt.Equals, 2)
 		})
 	}
 }

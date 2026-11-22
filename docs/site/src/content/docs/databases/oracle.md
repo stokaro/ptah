@@ -667,6 +667,14 @@ it, and neither does one that replaces a changed routine with `DROP` and
 after it answers `ORA-00942` once the `DROP` has committed. Measured on
 23.26.3.
 
+The `CREATE` of a replaced routine brings back no privilege, so the plan grants
+back, after it, every privilege the read found on the routine and does not
+revoke, a privilege of a grantee the schema does not manage included. A
+privilege a grantee holds `WITH GRANT OPTION` stops the plan instead, since
+Ptah writes no grant option on Oracle (`ORA-01926` refuses one to a role).
+Revoke the option, or change the routine by hand with `CREATE OR REPLACE`,
+which keeps it.
+
 A system privilege held by the role or by `PUBLIC` gives the privilege on every
 table, and a revoke on one table cannot take it away. Ptah reads `SELECT`,
 `READ`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` and `FLASHBACK ANY TABLE` from

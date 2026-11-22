@@ -48,9 +48,9 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
 - T-SQL rendering with bracket-quoted identifiers and schema-qualified names
   such as `dbo.users`.
 - `IDENTITY(start,increment)` for auto-increment columns and
-  `NVARCHAR`/`NVARCHAR(MAX)` string mapping. A column's identity is compared;
-  a change to it is refused by name, because `ALTER COLUMN` has no `IDENTITY`.
-  Create the column, or the table, again with the identity it should have.
+  `NVARCHAR`/`NVARCHAR(MAX)` string mapping. A change to a column's identity
+  is refused by name, because `ALTER COLUMN` has no `IDENTITY`; create the
+  column again instead.
   `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `IDENTITY(1,1)`, unless the field gives its own SQL Server
   type. A table takes one identity column (`Msg 2744`), so a serial column
@@ -59,7 +59,7 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   them. An identity column is `NOT NULL` whether or not the file says so, and
   `NULL` on one is refused, as the server refuses it (`Msg 8147`).
 - Core table DDL: primary keys, unique constraints, foreign keys, `CHECK`
-  constraints, and indexes with ordered ascending or descending key columns.
+  constraints, and indexes with ascending or descending key columns.
 - Filtered indexes (see below).
 - Views and triggers rendered from raw SQL definitions. A SQL schema file
   declares a trigger in T-SQL's own order (see [Triggers](#triggers)).
@@ -69,10 +69,9 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   rendered, introspected from `sys.extended_properties`, and diffed (see
   below).
 - Schemas the declared objects live in, created before them (see below).
-- Scalar functions and procedures, with the principal they run as and the
-  other options of their header (see below).
-- Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
-  related catalog views.
+- Scalar functions and procedures, with the options of their header (see
+  below).
+- Introspection from the `sys` catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
   and migration-run serialization through a session application lock.
 - Transactional dev-database cleanup across supported user schemas, with a
@@ -509,12 +508,12 @@ with the declared `WITH` list, and the rollback writes the options it held. A
 SQL schema file states every option a routine has, so a routine declared there
 without `SCHEMABINDING` loses it. A Go annotation and an Atlas HCL block have
 no way to state these options, so a routine declared there keeps the ones it
-has. A plan that would replace such a routine, for example for a new body, is
-refused, because the replacement would drop them.
+has. A plan that would replace such a routine is refused, because the
+replacement would drop them.
 
 `EXECUTE AS SELF` is refused when a SQL schema file is read. It means the
-account that runs the `CREATE`, which can be a different user each time the
-schema is applied. Write `EXECUTE AS 'name'` with that user instead.
+account that runs the `CREATE`, which can differ each time the schema is
+applied. Write `EXECUTE AS 'name'` with that user instead.
 
 Every other option is refused by name, because Ptah cannot write it and compare
 it back: `ENCRYPTION`, `NATIVE_COMPILATION`, `INLINE` and `FOR REPLICATION`
@@ -522,11 +521,15 @@ among them. A SQL schema file that writes one is refused when it is read, and
 a database that holds a routine created with `ENCRYPTION`,
 `NATIVE_COMPILATION` or an explicit `INLINE` setting is refused when it is
 read, naming the routine. This includes `INLINE = OFF` on a function that
-cannot be inlined. `CALLED ON NULL INPUT` is the default and is accepted.
+cannot be inlined. `CALLED ON NULL INPUT`, the default, is accepted.
 
 T-SQL has no volatility clause. SQL Server judges a function deterministic
 from its body and `SCHEMABINDING`, and no declaration states that verdict, so
 the reader reports every routine `VOLATILE`.
+
+A routine replaced for a new body is dropped first, and the plan grants back
+what each role held on it. A `DENY` on it is lost, as is a grant to `public`
+or a database user. Measured on SQL Server 2025.
 
 ## Scripts and batches
 
@@ -665,9 +668,9 @@ Column names compare under the database's
 - Automatic column removal is rejected, because dependent constraints,
   defaults, and indexes must be dropped in the correct order first.
 - Routines have no overloads. A schema that declares two functions, or two
-  procedures, of one name with different parameters is refused before any
-  statement is planned. Ptah writes `CREATE OR ALTER`, and measured on SQL
-  Server 2022 the second replaces the first without an error.
+  procedures, of one name is refused before any statement is planned: under
+  `CREATE OR ALTER` the second replaces the first without an error, measured
+  on SQL Server 2022.
 - Linked servers are not managed. A linked server belongs to the whole instance and every database on it
   shares it, so a schema for one database cannot own it or drop it without
   changing the others. It also opens a path to another server, which is why

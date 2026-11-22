@@ -60,6 +60,14 @@ func (p *Planner) revokesFirst() bool {
 	}
 }
 
+// writesGrantOption reports whether the renderer writes WITH GRANT OPTION.
+// Oracle's does not: Oracle refuses one to a role with ORA-01926, measured on
+// 23.26.2, and a grant carries no mark of whether its grantee is a role or a
+// user. [Planner.refuseALostGrantOption] reads it.
+func (p *Planner) writesGrantOption() bool {
+	return p.targetDialect() != platform.Oracle
+}
+
 // revokesGrantOptionFirst reports whether a revoke of a privilege the role
 // holds WITH GRANT OPTION takes the option away before the privilege. SQL
 // Server needs it: measured on SQL Server 2019, 2022 and 2025, `REVOKE SELECT

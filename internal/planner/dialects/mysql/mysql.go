@@ -1987,6 +1987,11 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 		return err
 	}
 	// A nil diff is refused as invalid further on, where every planner refuses it.
+	if diff != nil {
+		if err := p.refuseALostGrantOption(diff); err != nil {
+			return err
+		}
+	}
 	if diff != nil && p.capabilities().Has(capability.RoleManagement) && p.grantOptionCoversTheObject() {
 		spellings := newColumnSpellings(diff, p.targetDialect())
 		if err := spellings.refuseTwoSpellings(diff, p.targetDialect()); err != nil {

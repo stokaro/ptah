@@ -302,6 +302,18 @@ func routineWord(fn schemamodel.Function) string {
 	return "function"
 }
 
+// replacesRoutine reports whether the plan replaces a changed routine by DROP
+// and CREATE: the target hosts routines, and the change names the routine it
+// declares, in a language this target runs. [Planner.planFunctions] emits the
+// two statements exactly then, and [Planner.replacedRoutines] reads the same
+// answer for the privileges the DROP takes, so the statements and the grants
+// cannot disagree about a routine.
+func (p *Planner) replacesRoutine(change difftypes.FunctionDiff) bool {
+	return p.capabilities().Has(capability.Functions) &&
+		change.Desired.Name != "" &&
+		p.runsRoutineLanguage(change.Desired.Language)
+}
+
 // runsRoutineLanguage reports whether a routine declared in this language
 // becomes real DDL on the dialect this planner renders for.
 //
@@ -312,15 +324,6 @@ func routineWord(fn schemamodel.Function) string {
 // DROP is emitted and the renderer decides whether the CREATE is. When they
 // disagreed on the MySQL family, an apply executed the drop, created nothing,
 // and reported success.
-// replacesRoutine reports whether the plan replaces a changed routine by DROP
-// and CREATE: the change names the routine it declares, in a language this
-// target runs. [Planner.planFunctions] emits the two statements exactly then,
-// and [Planner.droppedObjects] reads the same answer for the grants the DROP
-// takes, so the two cannot disagree about a routine.
-func (p *Planner) replacesRoutine(change difftypes.FunctionDiff) bool {
-	return change.Desired.Name != "" && p.runsRoutineLanguage(change.Desired.Language)
-}
-
 func (p *Planner) runsRoutineLanguage(language string) bool {
 	if p.dialect == platform.Oracle {
 		return oracleroutine.RunsLanguage(language)
