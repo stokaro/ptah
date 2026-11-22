@@ -2683,12 +2683,23 @@ names the form:
 - a statement whose privileges name different column lists, such as
   `GRANT SELECT (a), UPDATE (a, b) ON t`: write one statement per list;
 - a column `REVOKE` of a privilege the file grants on the whole table, which
-  covers every column and which a column revoke does not take away;
+  covers every column and which a column revoke does not take away. The table
+  is matched as in the grant-option case below;
 - `ON ALL TABLES IN SCHEMA`, which applies to whatever objects exist when it
   runs;
 - `REVOKE ... CASCADE`, `REVOKE ... GRANTED BY` and a list of grantees;
 - `REVOKE GRANT OPTION FOR`, on an object or in `ALTER DEFAULT PRIVILEGES`, on
   a privilege the same file does not grant;
+- `REVOKE GRANT OPTION FOR` on a whole table when the file grants one of its
+  privileges on columns of that table `WITH GRANT OPTION`. With `ALL`, any
+  privilege counts, and a column grant of `ALL` counts for any privilege. A
+  bare table name and a qualified one with the same name, such as `t` and
+  `public.t`, count as one table, since the schema a bare name resolves to is
+  not known while the file is read. If they are different tables, qualify
+  both, as the message says. Ptah cannot model how each server clears the
+  option on the column grant, so declare the column grant without
+  `WITH GRANT OPTION`. Where the file grants that privilege on columns only,
+  revoking the option on those columns before the table `REVOKE` works too;
 - a `REVOKE` of one privilege after `GRANT ALL` on a table, because the members
   of a table's `ALL` depend on the server version. Name the privileges in the
   `GRANT` instead.

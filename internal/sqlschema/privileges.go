@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/privilegefold"
+	"ptah.run/internal/tableref"
 )
 
 // expandGrantedAll replaces ALL in a GRANT with the privileges it names on a
@@ -137,7 +138,11 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 	for _, privilege := range node.Privileges {
 		privileges = append(privileges, strings.ToUpper(strings.TrimSpace(privilege)))
 	}
-	if err := refuseColumnRevokeUnderTableGrant(database, revoked, privileges); err != nil {
+	statement := "REVOKE"
+	if node.GrantOptionFor {
+		statement = "REVOKE GRANT OPTION FOR"
+	}
+	if err := refuseColumnRevokeUnderTableGrant(database, revoked, statement, privileges); err != nil {
 		return err
 	}
 	revokesAll := slices.Contains(privileges, allPrivileges)
@@ -148,6 +153,9 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 				"name the privileges in the GRANT", target, revoked.Role)
 	}
 	if node.GrantOptionFor {
+		if err := refuseOptionKeptOnColumns(database.Grants, revoked, privileges); err != nil {
+			return err
+		}
 		if revokesAll {
 			privileges = heldPrivileges(database.Grants, revoked.Role, target)
 		}
@@ -156,6 +164,98 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 	revoked.Privileges = privileges
 	privilegefold.Merge(database, &schemamodel.Database{RevokedGrants: []schemamodel.Grant{revoked}})
 	return nil
+}
+
+// refuseOptionKeptOnColumns refuses a REVOKE GRANT OPTION FOR on a whole table
+// when an earlier GRANT in this file gives the role one of the privileges it
+// names on columns of that table WITH GRANT OPTION. A revoke of ALL names every
+// privilege, and a column grant of ALL carries every privilege a revoke names.
+// The option is cleared on the table grants alone, so the column grant would
+// keep it: a member could still grant the column privilege onward, and the
+// next plan would read as synced.
+//
+// The servers' own statement reaches the column grants too: measured on
+// PostgreSQL 18, MySQL 8.4 and SQL Server 2025, a table-level revoke takes the
+// option from them. This reader cannot fold the option exactly as each server
+// does, a table ALL whose members depend on the server version among the
+// cases, so it refuses rather than guess, and the declaration says which grant
+// loses the option.
+//
+// The table is matched by [mayNameOneTable], so a bare name and a qualified one
+// with the same relation name count as one table.
+func refuseOptionKeptOnColumns(grants []schemamodel.Grant, revoked schemamodel.Grant, privileges []string) error {
+	table := strings.TrimSpace(revoked.OnTable)
+	if table == "" || revoked.TargetKey() != "TABLE "+table {
+		return nil
+	}
+	revokesAll := slices.Contains(privileges, allPrivileges)
+	for _, grant := range grants {
+		if grant.Role != revoked.Role || !grant.WithOption || len(grant.Columns) == 0 || !mayNameOneTable(grant.OnTable, table) {
+			continue
+		}
+		for _, privilege := range grant.Privileges {
+			if !revokesAll && privilege != allPrivileges && !slices.Contains(privileges, privilege) {
+				continue
+			}
+			return fmt.Errorf(
+				"REVOKE GRANT OPTION FOR %s ON %s FROM %s takes the option from grants on the whole table, and an "+
+					"earlier GRANT %s (%s) ON %s gives it on columns, which keep it; %s%s",
+				strings.Join(privileges, ", "), revoked.TargetKey(), revoked.Role,
+				privilege, strings.Join(grant.Columns, ", "), grant.OnTable,
+				optionKeptOnColumnsRemedy(grants, grant, privilege), qualifyBoth(table, grant.OnTable))
+		}
+	}
+	return nil
+}
+
+// optionKeptOnColumnsRemedy is what the refusal of [refuseOptionKeptOnColumns]
+// asks for. Declaring the column grant without WITH GRANT OPTION always works.
+// Revoking the option on the columns works only before the table REVOKE, which
+// is refused while the column grant keeps the option, and only where the role
+// holds no grant of the privilege on the whole table: such a grant covers every
+// column, and [refuseColumnRevokeUnderTableGrant] refuses the column revoke.
+func optionKeptOnColumnsRemedy(grants []schemamodel.Grant, column schemamodel.Grant, privilege string) string {
+	const plain = "declare that GRANT without WITH GRANT OPTION"
+	if _, held := privilegefold.TableGrantOf(grants, column.Role, privilege, oneTableWith(column.OnTable)); held {
+		return plain
+	}
+	return plain + ", or revoke the option on those columns before this REVOKE"
+}
+
+// mayNameOneTable reports whether two table references in one file may name
+// the same table. A bare name and a qualified name with the same relation name
+// may: the schema the bare one resolves to is the server's search path, which
+// this reader does not know. Two qualified names are one table only when they
+// are equal. A caller that refuses on a match over-refuses rather than miss
+// one.
+func mayNameOneTable(a, b string) bool {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
+	if a == b {
+		return true
+	}
+	left, leftOK := tableref.Parse(a)
+	right, rightOK := tableref.Parse(b)
+	return leftOK && rightOK && left.Name == right.Name && (!left.Qualified || !right.Qualified)
+}
+
+// oneTableWith is [mayNameOneTable] against table, in the form
+// [privilegefold.TableGrantOf] asks for.
+func oneTableWith(table string) func(string) bool {
+	return func(other string) bool { return mayNameOneTable(table, other) }
+}
+
+// qualifyBoth is the advice a refusal over two spellings [mayNameOneTable]
+// matched adds when one is qualified and the other is not: the reader cannot
+// tell whether the bare one resolves to the qualified table, and qualifying
+// both says which. Spellings that name one table, or two qualified ones, need
+// no advice.
+func qualifyBoth(a, b string) string {
+	left, leftOK := tableref.Parse(strings.TrimSpace(a))
+	right, rightOK := tableref.Parse(strings.TrimSpace(b))
+	if !leftOK || !rightOK || left.Qualified == right.Qualified {
+		return ""
+	}
+	return fmt.Sprintf("; if %s and %s are different tables, qualify both", strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 // heldPrivileges is every privilege an earlier grant in this file gives role on
@@ -211,13 +311,23 @@ func revokeGrantOption(database *schemamodel.Database, role, target string, priv
 // an earlier statement grants on the whole table. The table privilege covers
 // every column and a column revoke does not take it away -- measured on
 // PostgreSQL 18, has_column_privilege still answers true after GRANT UPDATE ON
-// t and REVOKE UPDATE (a) ON t -- so the statement would change nothing.
-func refuseColumnRevokeUnderTableGrant(database *schemamodel.Database, revoked schemamodel.Grant, privileges []string) error {
+// t and REVOKE UPDATE (a) ON t -- so the statement would change nothing. The
+// option a table grant gives covers every column the same way. statement is
+// how the refusal spells the revoke, `REVOKE` or `REVOKE GRANT OPTION FOR`.
+// The table is matched by [mayNameOneTable], as the grant-option refusal
+// matches it.
+func refuseColumnRevokeUnderTableGrant(
+	database *schemamodel.Database,
+	revoked schemamodel.Grant,
+	statement string,
+	privileges []string,
+) error {
 	if len(revoked.Columns) == 0 {
 		return nil
 	}
 	for _, privilege := range privileges {
-		if !privilegefold.HeldOnTable(database.Grants, revoked.Role, revoked.OnTable, privilege) {
+		table, held := privilegefold.TableGrantOf(database.Grants, revoked.Role, privilege, oneTableWith(revoked.OnTable))
+		if !held {
 			continue
 		}
 		granted := "a GRANT of " + privilege
@@ -225,9 +335,10 @@ func refuseColumnRevokeUnderTableGrant(database *schemamodel.Database, revoked s
 			granted = "a GRANT"
 		}
 		return fmt.Errorf(
-			"REVOKE %s (%s) ON %s FROM %s follows %s on the whole table, which covers every column, "+
-				"so revoking it on columns takes nothing away; grant it on the columns that keep it instead",
-			privilege, strings.Join(revoked.Columns, ", "), revoked.OnTable, revoked.Role, granted)
+			"%s %s (%s) ON %s FROM %s follows %s on the whole table, which covers every column, "+
+				"so revoking it on columns takes nothing away; grant it on the columns that keep it instead%s",
+			statement, privilege, strings.Join(revoked.Columns, ", "), revoked.OnTable, revoked.Role, granted,
+			qualifyBoth(revoked.OnTable, table.OnTable))
 	}
 	return nil
 }
