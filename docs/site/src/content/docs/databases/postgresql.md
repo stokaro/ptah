@@ -2690,9 +2690,13 @@ names the form:
 - `REVOKE GRANT OPTION FOR`, on an object or in `ALTER DEFAULT PRIVILEGES`, on
   a privilege the same file does not grant;
 - `REVOKE GRANT OPTION FOR` on a whole table when the file grants one of its
-  privileges, or with `ALL` any privilege, on columns of that table
-  `WITH GRANT OPTION`. The column grant would keep the option, so declare it
-  without `WITH GRANT OPTION`, or revoke the option on those columns;
+  privileges on columns of that table `WITH GRANT OPTION`. With `ALL`, any
+  privilege counts, and a column grant of `ALL` counts for any privilege. A
+  bare table name and a qualified one with the same name, such as `t` and
+  `public.t`, count as one table. Ptah cannot model how each server clears the
+  option on the column grant, so declare the column grant without
+  `WITH GRANT OPTION`. Where the file grants that privilege on columns only,
+  revoking the option on those columns before the table `REVOKE` works too;
 - a `REVOKE` of one privilege after `GRANT ALL` on a table, because the members
   of a table's `ALL` depend on the server version. Name the privileges in the
   `GRANT` instead.

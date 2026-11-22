@@ -131,6 +131,33 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 			wantGrants: []privilege{{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}}},
 		},
 		{
+			name: "GRANT OPTION FOR ALL after the option is revoked on the columns",
+			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR UPDATE (name) ON t FROM r;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantGrants: []privilege{
+				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+			},
+		},
+		{
+			name: "GRANT OPTION FOR ALL beside a column grant on a table in another schema",
+			sql: "GRANT SELECT ON a.t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON b.t TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON a.t FROM r;",
+			wantGrants: []privilege{
+				{Role: "r", Target: "TABLE b.t (name)", Privileges: []string{"UPDATE"}, WithOption: true},
+				{Role: "r", Target: "TABLE a.t", Privileges: []string{"SELECT"}},
+			},
+		},
+		{
+			name: "GRANT OPTION FOR ALL beside a column grant on a quoted table of another case",
+			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON \"T\" TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantGrants: []privilege{
+				{Role: "r", Target: "TABLE T (name)", Privileges: []string{"UPDATE"}, WithOption: true},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+			},
+		},
+		{
 			name: "GRANT OPTION FOR ALL beside another role's column grant",
 			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO other WITH GRANT OPTION;\n" +
 				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
@@ -210,13 +237,55 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
 				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
 			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t FROM r takes the option from grants on the whole table, and an ` +
-				`earlier GRANT UPDATE \(name\) ON t gives it on columns, which keep it; .*`,
+				`earlier GRANT UPDATE \(name\) ON t gives it on columns, which keep it; declare that GRANT without ` +
+				`WITH GRANT OPTION, or revoke the option on those columns before this REVOKE`,
 		},
 		{
 			name: "GRANT OPTION FOR a privilege a column grant also carries",
 			sql: "GRANT UPDATE ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
 				"REVOKE GRANT OPTION FOR UPDATE ON t FROM r;",
-			wantErr: `REVOKE GRANT OPTION FOR UPDATE ON TABLE t FROM r takes the option from grants on the whole table, .*`,
+			wantErr: `REVOKE GRANT OPTION FOR UPDATE ON TABLE t FROM r takes the option from grants on the whole table, and an ` +
+				`earlier GRANT UPDATE \(name\) ON t gives it on columns, which keep it; declare that GRANT without ` +
+				`WITH GRANT OPTION`,
+		},
+		{
+			name: "GRANT OPTION FOR ALL on a qualified table whose bare name carries the option on columns",
+			sql: "GRANT SELECT ON public.t6 TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t6 TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON public.t6 FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE public.t6 FROM r takes the option from grants on the whole table, ` +
+				`and an earlier GRANT UPDATE \(name\) ON t6 gives it on columns, which keep it; .*`,
+		},
+		{
+			name: "GRANT OPTION FOR ALL on a bare table whose qualified name carries the option on columns",
+			sql: "GRANT SELECT ON t6 TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON public.t6 TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON t6 FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t6 FROM r takes the option from grants on the whole table, ` +
+				`and an earlier GRANT UPDATE \(name\) ON public.t6 gives it on columns, which keep it; .*`,
+		},
+		{
+			name: "GRANT OPTION FOR ALL on a table whose columns carry the option under a quoted name",
+			sql: "GRANT SELECT ON t6 TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON \"t6\" TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON t6 FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t6 FROM r takes the option from grants on the whole table, .*`,
+		},
+		{
+			name: "GRANT OPTION FOR ALL on a table whose columns carry the option under another case",
+			sql: "GRANT SELECT ON t6 TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON T6 TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR ALL ON t6 FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t6 FROM r takes the option from grants on the whole table, .*`,
+		},
+		{
+			name: "GRANT OPTION FOR a privilege a column grant of ALL carries",
+			sql: "GRANT UPDATE ON t3 TO r WITH GRANT OPTION;\nGRANT ALL (name) ON t3 TO r WITH GRANT OPTION;\n" +
+				"REVOKE GRANT OPTION FOR UPDATE ON t3 FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR UPDATE ON TABLE t3 FROM r takes the option from grants on the whole table, ` +
+				`and an earlier GRANT ALL \(name\) ON t3 gives it on columns, which keep it; declare that GRANT without ` +
+				`WITH GRANT OPTION`,
+		},
+		{
+			name:    "GRANT OPTION FOR on columns after a grant on the whole table",
+			sql:     "GRANT UPDATE ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR UPDATE (name) ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR UPDATE \(name\) ON t FROM r follows a GRANT of UPDATE on the whole table, .*`,
 		},
 	}
 
