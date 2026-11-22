@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+
+	"ptah.run/internal/cli/internal/cmdflags"
+	"ptah.run/internal/envbinding"
 )
 
 const (
@@ -45,6 +48,11 @@ func RegisterConnectTimeoutFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, ConnectTimeoutFlagName, DefaultConnectTimeout.String(), "Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.")
 }
 
+// ConnectionDefaultSchemas is what leaving out the flag [RegisterSchemasFlag]
+// registers does, in the words the refusal of an empty variable gives. A verb
+// that forwards to one of those verbs without --schemas reads the same.
+const ConnectionDefaultSchemas = "read the connection default schema, and on YDB every directory"
+
 // RegisterSchemasFlag registers a comma-separated schema allow-list flag for a
 // verb whose empty value leaves the read at the schema the connection landed
 // in.
@@ -53,6 +61,20 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 		"Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
 			"or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.",
 	)
+	RefuseEmptySchemasEnv(flags, SchemasFlagName, ConnectionDefaultSchemas)
+}
+
+// RefuseEmptySchemasEnv makes the variable of the schema-selecting flag name
+// refuse a value that names no schema: the empty value, and one whose
+// comma-separated fields are all blank; see [cmdflags.RefuseEmptyEnv]. A
+// pipeline variable nobody filled reaches the flag as such a value, and read as
+// no selection it would select the schemas omitted describes rather than the
+// ones the operator meant, on a verb that may plan a DROP for every schema it
+// reads.
+func RefuseEmptySchemasEnv(flags *pflag.FlagSet, name, omitted string) {
+	if err := cmdflags.RefuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted, List: true}); err != nil {
+		panic(err) // the caller registers the flag first and names what leaving it out does
+	}
 }
 
 // RegisterURLScopedSchemasFlag registers the same flag for the verbs whose
@@ -76,7 +98,12 @@ func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 		"the databases of a MySQL or MariaDB URL that names none, or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
 		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory.")
+	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
+
+// urlDecidesSchemas is what leaving a URL-scoped --schemas out does, as the
+// refusal of its empty variable says it.
+const urlDecidesSchemas = "let the URL decide which schemas are read"
 
 // RegisterURLScopedDatabaseSchemasFlag is [RegisterURLScopedSchemasFlag] for
 // a verb that reads one database and refuses a MySQL or MariaDB URL that
@@ -88,6 +115,7 @@ func RegisterURLScopedDatabaseSchemasFlag(flags *pflag.FlagSet, target *string) 
 		"or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
 		"and a YDB URL across every directory.")
+	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
 
 // RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.

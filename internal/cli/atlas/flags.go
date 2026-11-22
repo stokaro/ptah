@@ -9,6 +9,9 @@ import (
 
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/internal/cmdflags"
+	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/envbinding"
 	"ptah.run/internal/schemascope"
 )
 
@@ -59,6 +62,9 @@ func registerAtlasSchemaFlag(flags *pflag.FlagSet, target *[]string, usage strin
 	slice, _ := flag.Value.(pflag.SliceValue) // a string slice flag's value is one
 	flag.Value = atlasSchemaValue{Value: flag.Value, slice: slice, strict: policy.IsStrictCE()}
 	flag.DefValue = ""
+	if err := cmdflags.RefuseEmptyEnv(flags, atlasSchemaFlagName, atlasEmptySchemaRule); err != nil {
+		panic(err) // registered above
+	}
 }
 
 // schemaValueError is a refusal of a -s/--schema value that is Ptah's own
@@ -71,6 +77,12 @@ type schemaValueError struct {
 
 // Error returns the reason.
 func (e *schemaValueError) Error() string { return e.reason }
+
+// atlasEmptySchemaRule is what PTAH_SCHEMA refuses: a value that names no
+// schema once it is split on commas and trimmed, as an empty -s value is
+// refused. Read as unset, it would select every schema, and `schema apply`
+// would plan a DROP for each one the desired schema leaves out.
+var atlasEmptySchemaRule = envbinding.EmptyRule{Omitted: "select every schema", List: true}
 
 // errEmptySchemaValue is the reason a -s/--schema value with no schema name in
 // any of its fields is refused.
@@ -152,6 +164,18 @@ func (v atlasSchemaValue) GetSlice() []string { return v.slice.GetSlice() }
 func atlasForwardedSchemaFlag(flag atlasargs.Flag) atlasargs.Flag {
 	flag.MapValue = forwardAtlasSchemaValue
 	flag.NativeEnv = flag.NativeName != ""
+	flag.EmptyEnv = atlasEmptySchemaRule
+	return flag
+}
+
+// atlasCheckpointSchemaFlag is the -s/--schema of `migrate checkpoint`. Left
+// out, it forwards no --schemas, and the native checkpoint reads what its
+// --schemas reads when empty: the connection default schema rather than every
+// schema. The refusal of a variable naming no schema says that instead of what
+// [atlasEmptySchemaRule] says.
+func atlasCheckpointSchemaFlag() atlasargs.Flag {
+	flag := atlasForwardedSchemaFlag(atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas"))
+	flag.EmptyEnv = envbinding.EmptyRule{Omitted: dbcli.ConnectionDefaultSchemas, List: true}
 	return flag
 }
 

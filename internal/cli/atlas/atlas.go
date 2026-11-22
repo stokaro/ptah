@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/cli/migrationstest"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/cmdforward"
+	"ptah.run/internal/envbinding"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/rundiag"
 )
@@ -466,7 +467,7 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 				//
 				// --lock-name is deliberately absent: the named-lock family is
 				// one feature across five verbs and lands as its own change.
-				atlasForwardedSchemaFlag(atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas")),
+				atlasCheckpointSchemaFlag(),
 				atlasargs.String("qualifier", "", "Qualify tables with a custom qualifier when working on a single schema"),
 				atlasargs.NativeString(
 					"lock-timeout",
@@ -1506,6 +1507,14 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 			cmd.Flags().UintP(flag.Name, flag.Shorthand, 0, flag.Usage)
 		case atlasargs.StringArrayFlag:
 			registerAtlasRepeatedFlag(cmd.Flags(), flag)
+		}
+		// The adapter reads the variable itself, through atlasargs.Map. The
+		// declaration is repeated on the flag so that every reader of the tree
+		// sees the variable refuse an empty value, as it does.
+		if flag.EmptyEnv != (envbinding.EmptyRule{}) {
+			if err := cmdflags.RefuseEmptyEnv(cmd.Flags(), flag.Name, flag.EmptyEnv); err != nil {
+				panic(err)
+			}
 		}
 		if flag.NativeName != "" {
 			if err := cmdflags.AddForwardedEnvBinding(

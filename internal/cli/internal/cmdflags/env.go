@@ -62,6 +62,19 @@ func DisableEnvBinding(flags *pflag.FlagSet, name string) error {
 	return nil
 }
 
+// RefuseEmptyEnv makes the flag's environment variable refuse what rule
+// refuses: the empty value, which every other non-boolean variable reads as
+// unset, and for a list a value that names nothing; see [envbinding.EmptyRule].
+// It returns an error for a flag the set does not hold, and for a rule that
+// names no [envbinding.EmptyRule.Omitted], which would refuse nothing.
+func RefuseEmptyEnv(flags *pflag.FlagSet, name string, rule envbinding.EmptyRule) error {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return fmt.Errorf("flag %q does not exist", name)
+	}
+	return envbinding.RefuseEmpty(flag, rule)
+}
+
 // InstallEnvBinding installs Ptah's environment variable binding on the command
 // tree. Environment variables follow PTAH_<FLAG_NAME>, with '-' and '.'
 // normalized to '_'. Explicit CLI flags still win over environment values.
@@ -162,7 +175,14 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		// where stokaro/ptah#1334 makes it a configuration error: for a string or
 		// a uint an empty environment value is a plausible way to spell "no
 		// value", while `PTAH_DRY_RUN=` is a boolean with nothing in it and there
-		// is no reading of it that is not a mistake.
+		// is no reading of it that is not a mistake. A flag declared with
+		// [RefuseEmptyEnv] is the other exception: read as unset, its empty
+		// variable would select more than any value does.
+		if rule, refused := envbinding.EmptyRefused(flag); refused {
+			if applyErr = rule.Check(envName, flag.Name, value); applyErr != nil {
+				return
+			}
+		}
 		if value == "" && flag.Value.Type() != "bool" {
 			return
 		}

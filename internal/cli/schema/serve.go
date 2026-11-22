@@ -100,6 +100,7 @@ the comparison and out of the page, as it leaves them out of ` + "`schema diff`"
 	flags.DurationVar(&opts.refresh, serveRefreshFlag, 30*time.Second, "How often the page reloads itself; 0 disables")
 	flags.StringVar(&opts.title, serveTitleFlag, "", "Title for the page")
 	flags.StringVar(&opts.schemasRaw, dbcli.SchemasFlagName, "", "Comma-separated schemas to read")
+	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName, "use the project's schemas, else let the URL decide")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }

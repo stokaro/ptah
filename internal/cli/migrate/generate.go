@@ -123,6 +123,7 @@ select nothing are refused.`,
 			"Empty uses the project's schemas, else lets the URL decide: a URL pinning search_path is read at that schema, "+
 			"one pinning none across every schema, and a YDB URL across every directory.",
 	)
+	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName, "use the project's schemas, else let the URL decide")
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
 	flags.StringArray(generateExcludeFlag, nil, "Schema objects to exclude from the generated migration (Atlas-style selectors)")

@@ -136,6 +136,7 @@ nothing else. It also reads only what Ptah models, so a clean report means
 	flags.StringVar(&opts.schemas, securitySchemaFlag, "",
 		"Comma-separated schemas to analyze: PostgreSQL-family schemas, or YDB directories relative to the "+
 			"database root. Empty uses the connection default, and on YDB every directory.")
+	dbcli.RefuseEmptySchemasEnv(flags, securitySchemaFlag, dbcli.ConnectionDefaultSchemas)
 	flags.StringVar(&opts.format, securityFormatFlag, "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, securityFailOnFlag, securityFailOnError,
 		"Failure threshold controlling the exit code: error, any or none")

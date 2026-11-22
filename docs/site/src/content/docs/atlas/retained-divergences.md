@@ -272,9 +272,10 @@ printed (stokaro/ptah#1623).
 **Type.** Deliberate divergence
 
 **Current boundary.** `ptah-compat` refuses a `--schema` value that names no
-schema before the run starts, and an `atlas.hcl` `schemas` element that names
-none. The pinned community binary reads the empty value as no selection, so the
-run covers every schema in the database.
+schema before the run starts, an `atlas.hcl` `schemas` element that names
+none, and a `PTAH_SCHEMA` that names no schema, such as `PTAH_SCHEMA=` or
+`PTAH_SCHEMA=' , '`. The pinned community binary reads the empty value as no
+selection, so the run covers every schema in the database.
 
 Measured with `schema apply --dry-run` against a PostgreSQL 18 database that
 holds tables in the schemas `one`, `two` and `public`. The desired schema
@@ -289,6 +290,8 @@ plan:
 | `-s '""'` | 0 | refused, same wording |
 | `env { schemas = [""] }` | 2 | refused: `atlas.hcl: env "local": schemas value "": every field is empty, so the value names no schema` |
 | `env { schemas = ["\"\""] }` | 0 | refused, same wording |
+| `PTAH_SCHEMA=` | 2, the binary reads no such variable | refused: `PTAH_SCHEMA is set but empty: give it a value, or unset it and leave --schema out to select every schema` |
+| `PTAH_SCHEMA=' , '` | 2, the binary reads no such variable | refused: `PTAH_SCHEMA is set to " , ", which names nothing: give it a value, ...` |
 
 The binary reads `-s '""'` as one schema with an empty name, which selects
 nothing. Ptah refuses it with the empty value, because no schema has that name.
@@ -309,10 +312,11 @@ The refusal holds in both policy profiles, `PTAH_ATLAS_STRICT_COMPAT=1`
 included, and no variable turns it off, for the reason
 [A trailing positional argument](#a-trailing-positional-argument) gives: a
 variable that restored the acceptance would default to the permissive side.
-`PTAH_SCHEMA=`, set but empty, counts as unset, as every non-boolean `PTAH_*`
-variable does, and selects every schema; the
-[schema commands](../schema-commands/) page says how to pass a CI variable that
-may be empty.
+`PTAH_SCHEMA=`, set but empty, is refused for the same reason, and so is a value
+whose comma-separated fields are all blank, such as `' '` or `' , '`. Every
+other non-boolean `PTAH_*` variable reads an empty value as unset, but for this
+one unset selects every schema, and a CI variable nobody filled is the usual way
+the empty value arrives. To select every schema, unset the variable.
 
 ## An edited already-applied migration file
 
