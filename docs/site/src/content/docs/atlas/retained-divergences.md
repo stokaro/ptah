@@ -313,10 +313,17 @@ included, and no variable turns it off, for the reason
 [A trailing positional argument](#a-trailing-positional-argument) gives: a
 variable that restored the acceptance would default to the permissive side.
 `PTAH_SCHEMA=`, set but empty, is refused for the same reason, and so is a value
-whose comma-separated fields are all blank, such as `' '` or `' , '`. Every
-other non-boolean `PTAH_*` variable reads an empty value as unset, but for this
-one unset selects every schema, and a CI variable nobody filled is the usual way
-the empty value arrives. To select every schema, unset the variable.
+whose comma-separated fields are all blank, such as `' '` or `' , '`. For this
+variable unset selects every schema, and a CI variable nobody filled is the usual
+way the empty value arrives. To select every schema, unset the variable.
+
+The variables that narrow a write and the variables that name the migration history
+refuse an empty value too: `PTAH_EXCLUDE` and `PTAH_INCLUDE` on `schema apply`
+and `schema clean`, `PTAH_TO_VERSION` on `migrate apply`, and
+`PTAH_REVISIONS_SCHEMA` on every verb that reads it.
+[Configuration](../../reference/configuration/#variables-that-narrow-a-write)
+lists them; every other non-boolean `PTAH_*` variable reads an empty value as
+unset.
 
 ## An edited already-applied migration file
 

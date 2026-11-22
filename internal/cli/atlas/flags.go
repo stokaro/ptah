@@ -168,6 +168,17 @@ func atlasForwardedSchemaFlag(flag atlasargs.Flag) atlasargs.Flag {
 	return flag
 }
 
+// atlasDownStopFlag is a `migrate down` flag that names where the rollback
+// stops, --to-version or --to-tag, mapped onto the native nativeName. Its
+// variable refuses an empty or blank value, as PTAH_TO_VERSION does on
+// `migrate apply`: read as unset, it reverts the last applied migration, which
+// is not the stop the pipeline meant to set.
+func atlasDownStopFlag(name, usage, nativeName string) atlasargs.Flag {
+	flag := atlasargs.NativeString(name, "", usage, nativeName)
+	flag.EmptyEnv = envbinding.EmptyRule{Omitted: "revert the last applied migration"}
+	return flag
+}
+
 // atlasRevisionsSchemaFlag is the --revisions-schema of a verb that forwards
 // to a native command, mapped onto the native --migrations-schema. Its
 // variable refuses an empty value, as on the verbs that read the revision

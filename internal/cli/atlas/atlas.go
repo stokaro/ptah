@@ -35,7 +35,6 @@ import (
 	"ptah.run/internal/cli/migrationstest"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/cmdforward"
-	"ptah.run/internal/envbinding"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/rundiag"
 )
@@ -823,12 +822,12 @@ func atlasMigrateDownVerb() atlasVerb {
 			// The native name's variable, PTAH_TARGET, is read here as a value
 			// of --to-version, so the adapter sees every version it is given
 			// before it decides whether the run counts back instead.
-			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
+			atlasDownStopFlag("to-version", "Target version to roll back to", "target"),
 			// --to-tag resolves against the tags `ptah migrations tag` records
 			// in the database, not against a hosted registry. The waiver this
 			// replaces said migration tags require one; they do not, and the
 			// tag namespace added for stokaro/ptah#1621 is where these resolve.
-			atlasargs.NativeString("to-tag", "", "Target migration tag to roll back to", "to-tag"),
+			atlasDownStopFlag("to-tag", "Target migration tag to roll back to", "to-tag"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
 			// --format is implemented by newAtlasMigrateDownCommand, which
 			// intercepts it before the arg mapper runs. The Unsupported marker
@@ -1535,7 +1534,7 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 		// The adapter reads the variable itself, through atlasargs.Map. The
 		// declaration is repeated on the flag so that every reader of the tree
 		// sees the variable refuse an empty value, as it does.
-		if flag.EmptyEnv != (envbinding.EmptyRule{}) {
+		if flag.EmptyEnv.Omitted != "" {
 			if err := cmdflags.RefuseEmptyEnv(cmd.Flags(), flag.Name, flag.EmptyEnv); err != nil {
 				panic(err)
 			}

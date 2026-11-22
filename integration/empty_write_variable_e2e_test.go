@@ -441,6 +441,7 @@ func TestSeedProtectedTableE2E_HappyPath(t *testing.T) {
 		// query of the SQLite descriptor it asks information_schema, which
 		// SQLite does not have, and the run fails before it seeds.
 		{name: "PTAH_PROTECTED_TABLE names a table the database does not hold", env: []string{"PTAH_PROTECTED_TABLE=audit"}},
+		{name: "PTAH_PROTECTED_TABLE names a table of another schema", env: []string{"PTAH_PROTECTED_TABLE=other.extra"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -479,6 +480,14 @@ func TestSeedProtectedTableE2E_FailurePath(t *testing.T) {
 			name: "PTAH_PROTECTED_TABLE names a table the database holds",
 			env:  []string{"PTAH_PROTECTED_TABLE=extra"},
 			wantStderr: "error: error applying seeds: refusing to seed target database because protected tables exist: extra; " +
+				"pass --allow-prod to override\n",
+		},
+		// The fence asks about each table in the schema it lists them from,
+		// SQLite's main, so a qualified entry names the table too.
+		{
+			name: "PTAH_PROTECTED_TABLE names a table the database holds by its schema",
+			env:  []string{"PTAH_PROTECTED_TABLE=Main.Extra"},
+			wantStderr: "error: error applying seeds: refusing to seed target database because protected tables exist: Main.Extra; " +
 				"pass --allow-prod to override\n",
 		},
 	}
@@ -547,6 +556,19 @@ func TestMigrationsUpStopVariablesE2E_HappyPath(t *testing.T) {
 			args: []string{"--to-version", "1"},
 			want: []string{"a"},
 		},
+		{name: "PTAH_LIMIT unset beside a typed --to-version", args: []string{"--to-version", "2"}, want: []string{"a", "b"}},
+		{
+			name: "an empty PTAH_LIMIT beside a typed --to-version",
+			env:  []string{"PTAH_LIMIT="},
+			args: []string{"--to-version", "2"},
+			want: []string{"a", "b"},
+		},
+		{
+			name: "a blank PTAH_TO_VERSION beside a typed --limit",
+			env:  []string{"PTAH_TO_VERSION= "},
+			args: []string{"--limit", "1"},
+			want: []string{"a"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -588,6 +610,12 @@ func TestMigrationsUpStopVariablesE2E_FailurePath(t *testing.T) {
 			wantStderr: "error: PTAH_TO_VERSION is set but empty: give it a value, or unset it and leave --to-version out to " +
 				"apply every pending migration\n",
 		},
+		{
+			name: "empty PTAH_LIMIT beside PTAH_TO_VERSION",
+			env:  []string{"PTAH_TO_VERSION=2", "PTAH_LIMIT="},
+			wantStderr: "error: PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to " +
+				"apply every pending migration\n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -627,6 +655,25 @@ func TestMigrationsDownStopVariablesE2E_HappyPath(t *testing.T) {
 		{
 			name: "a typed --limit over an empty PTAH_LIMIT",
 			env:  []string{"PTAH_LIMIT="},
+			args: []string{"--limit", "1"},
+			want: []string{"a", "b"},
+		},
+		{
+			name: "an empty PTAH_TARGET beside a typed --limit",
+			env:  []string{"PTAH_TARGET="},
+			args: []string{"--limit", "1"},
+			want: []string{"a", "b"},
+		},
+		{name: "PTAH_LIMIT unset beside a typed --target", args: []string{"--target", "1"}, want: []string{"a"}},
+		{
+			name: "an empty PTAH_LIMIT beside a typed --target",
+			env:  []string{"PTAH_LIMIT="},
+			args: []string{"--target", "1"},
+			want: []string{"a"},
+		},
+		{
+			name: "an empty PTAH_TO_TAG beside a typed --limit",
+			env:  []string{"PTAH_TO_TAG="},
 			args: []string{"--limit", "1"},
 			want: []string{"a", "b"},
 		},
@@ -673,18 +720,29 @@ func TestMigrationsDownStopVariablesE2E_FailurePath(t *testing.T) {
 				"--target out to stop at --to-tag or --limit\n",
 		},
 		{
-			name: "empty PTAH_TARGET beside a typed --limit",
-			env:  []string{"PTAH_TARGET="},
-			args: []string{"--limit", "1"},
+			name: "empty PTAH_TARGET beside PTAH_LIMIT",
+			env:  []string{"PTAH_LIMIT=1", "PTAH_TARGET="},
 			wantStderr: "error: PTAH_TARGET is set but empty: give it a value, or unset it and leave --target out to " +
 				"stop at --to-tag or --limit\n",
 		},
 		{
-			name: "empty PTAH_LIMIT",
-			env:  []string{"PTAH_LIMIT="},
-			args: []string{"--target", "1"},
+			name: "empty PTAH_LIMIT beside PTAH_TARGET of 0",
+			env:  []string{"PTAH_TARGET=0", "PTAH_LIMIT="},
 			wantStderr: "error: PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to " +
 				"stop at --target or --to-tag\n",
+		},
+		{
+			name: "empty PTAH_TO_TAG beside PTAH_TARGET of 0",
+			env:  []string{"PTAH_TARGET=0", "PTAH_TO_TAG="},
+			wantStderr: "error: PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to " +
+				"stop at --target or --limit\n",
+		},
+		{
+			name: "PTAH_LIMIT of 0",
+			env:  []string{"PTAH_LIMIT=0"},
+			wantStderr: `error: PTAH_LIMIT=0 names no stop: name where the rollback stops: pass --target <version> ` +
+				`(--target 0 rolls back every applied migration), --to-tag <tag> or --limit <n>; "ptah migrations status" ` +
+				"lists the applied versions\n",
 		},
 	}
 	for _, tc := range tests {
@@ -743,19 +801,86 @@ func TestCompatMigrateApplyStopVariableE2E_FailurePath(t *testing.T) {
 	c.Assert(limitHistoryTables(c, targetURL), qt.DeepEquals, make([]string, 0))
 }
 
-// TestCompatMigrateDownStopVariablesE2E_HappyPath runs `ptah-compat migrate
-// down` with an empty PTAH_TARGET or PTAH_LIMIT. The native command it
-// forwards to refuses either, but the forward types every stop and reads
-// neither variable, so the run reverts the last applied migration.
-func TestCompatMigrateDownStopVariablesE2E_HappyPath(t *testing.T) {
+// TestCompatMigrateDownStopVariablesE2E_FailurePath refuses an empty or blank
+// PTAH_TO_VERSION or PTAH_TO_TAG on `ptah-compat migrate down`, as `migrate
+// apply` refuses PTAH_TO_VERSION, on the forwarded and the --format path. Read
+// as unset, the variable reverts the last applied migration, which is not the
+// stop the pipeline meant to set.
+func TestCompatMigrateDownStopVariablesE2E_FailurePath(t *testing.T) {
 	t.Parallel()
-	for _, variable := range []string{"PTAH_TARGET=", "PTAH_LIMIT=", "PTAH_TO_VERSION="} {
-		t.Run(variable, func(t *testing.T) {
+	const omitted = "out to revert the last applied migration\n"
+	tests := []struct {
+		name       string
+		variable   string
+		args       []string
+		wantStderr string
+	}{
+		{
+			name:       "empty PTAH_TO_VERSION",
+			variable:   "PTAH_TO_VERSION=",
+			wantStderr: "Error: PTAH_TO_VERSION is set but empty: give it a value, or unset it and leave --to-version " + omitted,
+		},
+		{
+			name:       "blank PTAH_TO_VERSION",
+			variable:   "PTAH_TO_VERSION= ",
+			wantStderr: `Error: PTAH_TO_VERSION is set to " ", which names nothing: give it a value, or unset it and leave --to-version ` + omitted,
+		},
+		{
+			name:       "empty PTAH_TO_TAG",
+			variable:   "PTAH_TO_TAG=",
+			wantStderr: "Error: PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag " + omitted,
+		},
+		{
+			name:       "blank PTAH_TO_VERSION with --format",
+			variable:   "PTAH_TO_VERSION= ",
+			args:       []string{"--format", compatDownFormat},
+			wantStderr: `Error: PTAH_TO_VERSION is set to " ", which names nothing: give it a value, or unset it and leave --to-version ` + omitted,
+		},
+		{
+			name:       "empty PTAH_TO_TAG with --format",
+			variable:   "PTAH_TO_TAG=",
+			args:       []string{"--format", compatDownFormat},
+			wantStderr: "Error: PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag " + omitted,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			dir, targetURL := appliedLimitHistory(c)
 
-			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: withVariables(variable)},
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: withVariables(tc.variable)},
+				append([]string{"migrate", "down", "--url", targetURL, "--dir", "file://migrations"}, tc.args...)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Equals, tc.wantStderr)
+			c.Assert(limitHistoryTables(c, targetURL), qt.DeepEquals, []string{"a", "b", "c"})
+		})
+	}
+}
+
+// TestCompatMigrateDownStopVariablesE2E_HappyPath runs `ptah-compat migrate
+// down` with PTAH_TO_VERSION unset, and with an empty PTAH_TARGET or
+// PTAH_LIMIT. The native command it forwards to refuses either, but the
+// forward types every stop and reads neither variable, so each run reverts the
+// last applied migration.
+func TestCompatMigrateDownStopVariablesE2E_HappyPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		env  []string
+	}{
+		{name: "PTAH_TO_VERSION unset"},
+		{name: "empty PTAH_TARGET", env: []string{"PTAH_TARGET="}},
+		{name: "empty PTAH_LIMIT", env: []string{"PTAH_LIMIT="}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			dir, targetURL := appliedLimitHistory(c)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: withVariables(tc.env...)},
 				"migrate", "down", "--url", targetURL, "--dir", "file://migrations")
 
 			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))

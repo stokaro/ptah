@@ -127,3 +127,79 @@ func TestRefuseEmptyEnv_HappyPath(t *testing.T) {
 		c.Assert(label, qt.Equals, "")
 	})
 }
+
+// stopCommand is a command whose --target and --limit each name where a run
+// stops, and whose --target variable refuses an empty value unless --limit is
+// typed beside it.
+func stopCommand(c *qt.C, target, limit *string) *cobra.Command {
+	cmd := &cobra.Command{Use: "ptah"}
+	cmd.Flags().StringVar(target, "target", "", "Version to stop at")
+	cmd.Flags().StringVar(limit, "limit", "", "Number of migrations to revert")
+	rule := envbinding.EmptyRule{Omitted: "stop at --limit", Unless: []string{"limit"}}
+	c.Assert(cmdflags.RefuseEmptyEnv(cmd.Flags(), "target", rule), qt.IsNil)
+	return cmd
+}
+
+// TestRefuseEmptyEnvUnlessTyped_HappyPath reads an empty or blank PTAH_TARGET
+// as unset beside a typed --limit, which decides the stop whatever the variable
+// says, the way an unset PTAH_TARGET is read.
+func TestRefuseEmptyEnvUnlessTyped_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		env  [][2]string
+	}{
+		{name: "unset"},
+		{name: "empty", env: [][2]string{{"PTAH_TARGET", ""}}},
+		{name: "blank", env: [][2]string{{"PTAH_TARGET", "\t"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			unsetEnv(c, "PTAH_TARGET")
+			unsetEnv(c, "PTAH_LIMIT")
+			for _, variable := range test.env {
+				c.Setenv(variable[0], variable[1])
+			}
+			var target, limit string
+			cmd := stopCommand(c, &target, &limit)
+			c.Assert(cmd.Flags().Parse([]string{"--limit", "1"}), qt.IsNil)
+
+			err := cmdflags.InitializeEnv("PTAH", cmd)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(target, qt.Equals, "")
+			c.Assert(cmd.Flags().Changed("target"), qt.IsFalse)
+			c.Assert(limit, qt.Equals, "1")
+		})
+	}
+}
+
+// TestRefuseEmptyEnvUnlessTyped_FailurePath refuses an empty PTAH_TARGET when
+// --limit is not typed: with nothing beside it, and beside a PTAH_LIMIT, which
+// a variable sets rather than the command line.
+func TestRefuseEmptyEnvUnlessTyped_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		env  [][2]string
+	}{
+		{name: "no limit"},
+		{name: "a limit from PTAH_LIMIT", env: [][2]string{{"PTAH_LIMIT", "1"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			unsetEnv(c, "PTAH_LIMIT")
+			c.Setenv("PTAH_TARGET", "")
+			for _, variable := range test.env {
+				c.Setenv(variable[0], variable[1])
+			}
+			var target, limit string
+
+			err := cmdflags.InitializeEnv("PTAH", stopCommand(c, &target, &limit))
+
+			c.Assert(err, qt.ErrorIs, envbinding.ErrEmptyValue)
+			c.Assert(err, qt.ErrorMatches, `PTAH_TARGET is set but empty: give it a value, or unset it and leave --target out to stop at --limit`)
+			c.Assert(target, qt.Equals, "")
+		})
+	}
+}

@@ -100,10 +100,21 @@ func RefuseEmptyListEnv(flags *pflag.FlagSet, name, omitted string) {
 }
 
 // RefuseEmptyValueEnv is [RefuseEmptyListEnv] for a flag that takes one value:
-// its variable refuses the empty value and a value of only spaces. An empty
+// its variable refuses the empty value and a value of only white space. An empty
 // PTAH_TO_VERSION read as unset applies every pending migration.
 func RefuseEmptyValueEnv(flags *pflag.FlagSet, name, omitted string) {
 	refuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted})
+}
+
+// RefuseEmptyStopEnv is [RefuseEmptyValueEnv] for a flag that names where a
+// run stops, beside the flags unless names, which name the stop too. A value
+// typed for one of them decides the stop, so beside it the variable's empty
+// value cannot widen the run and is read as unset; see
+// [envbinding.EmptyRule.Unless]. Without one typed, a stop another variable
+// sets would decide in its place: an empty PTAH_LIMIT beside PTAH_TARGET=0
+// rolls the whole history back, so the empty value is refused.
+func RefuseEmptyStopEnv(flags *pflag.FlagSet, name, omitted string, unless ...string) {
+	refuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted, Unless: unless})
 }
 
 func refuseEmptyEnv(flags *pflag.FlagSet, name string, rule envbinding.EmptyRule) {
@@ -170,7 +181,7 @@ const (
 
 // RefuseEmptyHistoryEnv makes the variable of the flag name, which says where
 // the history of applied migrations is, refuse the empty value and a value of
-// only spaces; omitted is what leaving the flag out does. Read as unset, such a
+// only white space; omitted is what leaving the flag out does. Read as unset, such a
 // value names the default history instead of the one the operator meant. Over a
 // history recorded under another table, an empty PTAH_MIGRATIONS_TABLE finds
 // nothing applied: `migrations up` runs every migration again, and

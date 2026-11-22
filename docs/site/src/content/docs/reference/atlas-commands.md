@@ -828,7 +828,8 @@ reference for this behavior.
 
 `PTAH_MIGRATIONS_TABLE` is not read either: the revision table is
 `atlas_schema_revisions`, as on `migrate apply` and `migrate status`. An empty
-or blank `PTAH_REVISIONS_SCHEMA` is refused, as on every verb that reads it.
+or blank `PTAH_TO_VERSION`, `PTAH_TO_TAG` or `PTAH_REVISIONS_SCHEMA` is
+refused, as `migrate apply` refuses `PTAH_TO_VERSION`.
 
 | Flag | Behavior |
 | --- | --- |

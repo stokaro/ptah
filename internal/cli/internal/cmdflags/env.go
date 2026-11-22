@@ -177,9 +177,13 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		// value", while `PTAH_DRY_RUN=` is a boolean with nothing in it and there
 		// is no reading of it that is not a mistake. A flag declared with
 		// [RefuseEmptyEnv] is the other exception: read as unset, its empty
-		// variable would select more than any value does.
+		// variable would select more than any value does, unless a flag of
+		// [envbinding.EmptyRule.Unless] typed beside it decides the run.
 		if rule, refused := envbinding.EmptyRefused(flag); refused {
-			if applyErr = rule.Check(envName, flag.Name, value); applyErr != nil {
+			if err := rule.Check(envName, flag.Name, value); err != nil {
+				if !slices.ContainsFunc(rule.Unless, func(name string) bool { return SetOnCommandLine(flags, name) }) {
+					applyErr = err
+				}
 				return
 			}
 		}

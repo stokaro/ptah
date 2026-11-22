@@ -14,7 +14,13 @@ import (
 var listRule = envbinding.EmptyRule{Omitted: "select every schema", List: true}
 
 func TestRefuseEmpty_HappyPath(t *testing.T) {
-	for _, rule := range []envbinding.EmptyRule{listRule, {Omitted: "use the default"}} {
+	rules := []envbinding.EmptyRule{
+		listRule,
+		{Omitted: "use the default"},
+		{Omitted: "stop at --limit", Unless: []string{"limit", "to-tag"}},
+		{Omitted: "select every schema", List: true, Unless: []string{"schema"}},
+	}
+	for _, rule := range rules {
 		t.Run(rule.Omitted, func(t *testing.T) {
 			c := qt.New(t)
 			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -26,7 +32,7 @@ func TestRefuseEmpty_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(refused, qt.IsTrue)
-			c.Assert(got, qt.Equals, rule)
+			c.Assert(got, qt.DeepEquals, rule)
 		})
 	}
 }
@@ -45,7 +51,7 @@ func TestRefuseEmpty_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `--schemas: the rule names nothing that leaving the flag out does, so it would refuse nothing`)
 	c.Assert(refused, qt.IsFalse)
-	c.Assert(rule, qt.Equals, envbinding.EmptyRule{})
+	c.Assert(rule, qt.DeepEquals, envbinding.EmptyRule{})
 }
 
 // TestEmptyRefused_UndeclaredFlag is the control: a flag nobody declared, and
@@ -57,11 +63,11 @@ func TestEmptyRefused_UndeclaredFlag(t *testing.T) {
 
 	rule, refused := envbinding.EmptyRefused(flags.Lookup("schemas"))
 	c.Assert(refused, qt.IsFalse)
-	c.Assert(rule, qt.Equals, envbinding.EmptyRule{})
+	c.Assert(rule, qt.DeepEquals, envbinding.EmptyRule{})
 
 	rule, refused = envbinding.EmptyRefused(nil)
 	c.Assert(refused, qt.IsFalse)
-	c.Assert(rule, qt.Equals, envbinding.EmptyRule{})
+	c.Assert(rule, qt.DeepEquals, envbinding.EmptyRule{})
 }
 
 func TestEmptyRuleCheck_FailurePath(t *testing.T) {
