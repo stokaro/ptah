@@ -28,20 +28,27 @@ const (
 // grammar in [effectiveAtlasSchemas], and the packages below this one split a
 // name no further.
 //
-// A value whose every field is empty once trimmed, such as `""`, `,` or `" "`,
-// is refused too. The community binary reads it as a schema with an empty name
-// and selects nothing. Below this layer [schemascope.UniqueNames] drops a blank
+// A value that names no schema is refused too: the empty value, as in
+// `--schema=`, and a value whose every field is empty once trimmed, such as
+// `""`, `,` or `" "`. Below this layer [schemascope.UniqueNames] drops a blank
 // name, so the selection would be empty, and an empty selection is the whole
 // realm: `schema apply` would plan a DROP for every schema the desired schema
-// leaves out. An empty template variable written as `"\"${schema}\""` is the
-// usual source of such a value, so refusing it is deliberate. An empty value,
-// `--schema=`, has no field at all and still selects nothing, as on the
-// community binary.
+// leaves out. `--schema "$SCHEMA"` with an empty variable, or the quoted
+// `"\"${schema}\""`, is the usual source of such a value, so refusing it is
+// deliberate and stricter than the community binary. That binary reads the
+// empty value as no selection and plans those DROPs too, and reads `""` as a
+// schema with an empty name, which selects nothing.
+//
+// The default text is emptied after the wrap. pflag decides whether to print
+// `(default [])` from the concrete type of the value, and the wrapper is not
+// the string slice it recognizes. Nothing parses the text back: every reset of
+// the flag replaces the names through [pflag.SliceValue].
 func registerAtlasSchemaFlag(flags *pflag.FlagSet, target *[]string, usage string) {
 	flags.StringSliceVarP(target, atlasSchemaFlagName, atlasSchemaFlagShorthand, nil, usage)
 	flag := flags.Lookup(atlasSchemaFlagName)
 	slice, _ := flag.Value.(pflag.SliceValue) // a string slice flag's value is one
 	flag.Value = atlasSchemaValue{Value: flag.Value, slice: slice}
+	flag.DefValue = ""
 }
 
 // errEmptySchemaValue is the reason a -s/--schema value with no schema name in
@@ -58,16 +65,17 @@ type atlasSchemaValue struct {
 	slice pflag.SliceValue
 }
 
-// Set refuses a value whose fields are all blank and otherwise stores it as the
-// string slice does. The fields are read with encoding/csv, the reader the
-// string slice uses, so a value it cannot read is left to it and refused in its
-// words.
+// Set refuses an empty value and a value whose fields are all blank, and
+// otherwise stores it as the string slice does. The fields are read with
+// encoding/csv, the reader the string slice uses, so a value it cannot read is
+// left to it and refused in its words.
 func (v atlasSchemaValue) Set(raw string) error {
-	if raw != "" {
-		fields, err := csv.NewReader(strings.NewReader(raw)).Read()
-		if err == nil && len(schemascope.UniqueNames(fields)) == 0 {
-			return errEmptySchemaValue
-		}
+	if raw == "" {
+		return errEmptySchemaValue
+	}
+	fields, err := csv.NewReader(strings.NewReader(raw)).Read()
+	if err == nil && len(schemascope.UniqueNames(fields)) == 0 {
+		return errEmptySchemaValue
 	}
 	return v.Value.Set(raw)
 }
@@ -87,8 +95,14 @@ func (v atlasSchemaValue) GetSlice() []string { return v.slice.GetSlice() }
 // refused in the same words, and a value that names no schema is refused. The
 // native flag takes the names as one comma-separated list, so a name that holds
 // a comma cannot reach it and is refused rather than split into two names.
+//
+// A native flag with another name has its own variable, PTAH_SCHEMAS beside
+// PTAH_SCHEMA on `migrate checkpoint`. The flag reads it as a value of its own
+// through [atlasargs.Flag.NativeEnv], and [atlasNativeEnvTarget] keeps the
+// target from reading it again, so that variable takes the same grammar.
 func atlasForwardedSchemaFlag(flag atlasargs.Flag) atlasargs.Flag {
 	flag.MapValue = forwardAtlasSchemaValue
+	flag.NativeEnv = flag.NativeName != ""
 	return flag
 }
 

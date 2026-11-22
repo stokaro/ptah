@@ -56,6 +56,12 @@ type Flag struct {
 	UnsupportedReason string
 	MapValue          func(string) (string, error)
 	EnvDisabled       bool
+	// NativeEnv, on a flag with a NativeName, reads the native flag's PTAH_*
+	// variable as a value of this flag when the flag's own variable is absent
+	// or empty, so that value goes through MapValue like any other. Without it
+	// the forwarded target reads the variable itself and skips MapValue. The
+	// caller disables that binding on the target, so the value is read once.
+	NativeEnv bool
 	// ForwardEach, on a [StringArrayFlag], forwards every occurrence as its
 	// own native --flag=value, in the order given, for a native flag that is
 	// itself repeatable. Joined, such a flag reads `a,b` as one value: two
@@ -507,7 +513,8 @@ func nativeEnvironmentPresent(flag Flag) bool {
 // withEnvArgs fills unset flags from their PTAH_<FLAG> environment twins,
 // including unsupported ones: setting PTAH_TO_TAG is a request for --to-tag,
 // and the loud refusal is the correct answer to a request Ptah cannot honor.
-// It puts the added arguments before args, as [withDefaultArgs] does.
+// It puts the added arguments before args, as [withDefaultArgs] does. A flag
+// marked [Flag.NativeEnv] falls back to its native flag's variable.
 //
 // Only a flag marked EnvDisabled opts out. No flag on this surface carries the
 // mark today: the one that did was `migrate down --skip-checks`, a waiver whose
@@ -532,6 +539,11 @@ func withEnvArgs(flags []Flag, args []string) ([]string, error) {
 			continue
 		}
 		value, ok := os.LookupEnv(envName("PTAH", flag.Name))
+		if flag.NativeEnv && flag.NativeName != "" && value == "" {
+			if native, present := os.LookupEnv(envName("PTAH", flag.NativeName)); present {
+				value, ok = native, true
+			}
+		}
 		if !ok {
 			continue
 		}

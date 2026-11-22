@@ -1601,17 +1601,37 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 //	schemas = ["\"one\""]   -> one
 //	schemas = ["a,b"]       -> schemas a and b
 //	schemas = ["a\"b"]      -> refused: invalid argument "a\"b" for "-s, --schema" flag
+//	schemas = [""]          -> refused: atlas.hcl: env "local": schemas value "": ...
 //
-// One divergence is deliberate. The pinned binary keeps the space in
+// Two divergences are deliberate. The pinned binary keeps the space in
 // `schemas = [" one"]` and `--schema "one, two"`, so ` one` and ` two` name no
 // schema and are dropped without a word: the first describes nothing, the
 // second describes `one` alone. [schemascope.UniqueNames] trims a schema name,
-// so Ptah describes `one`, and `one` and `two`.
+// so Ptah describes `one`, and `one` and `two`. And an element that names no
+// schema, `""` or `"\"\""`, is refused as the flag refuses it; see
+// [registerAtlasSchemaFlag]. That refusal is Ptah's own, so it names the file
+// and the env the element came from rather than a flag nobody typed. The
+// refusal of `a"b` names the flag, in the pinned binary's words.
 func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) ([]string, error) {
 	if !projectListStandsIn(cmd, atlasSchemaFlagName, cfg.Schemas) {
 		return flagValues, nil
 	}
-	return readAtlasSchemaList(cfg.Schemas)
+	schemas, err := readAtlasSchemaList(cfg.Schemas)
+	if invalid, ok := errors.AsType[*pflag.InvalidValueError](err); ok && errors.Is(err, errEmptySchemaValue) {
+		return nil, fmt.Errorf("%s: env %q: schemas value %q: %w", atlasEnvOrigin(cfg), cfg.EnvName, invalid.GetValue(), errEmptySchemaValue)
+	}
+	return schemas, err
+}
+
+// atlasEnvOrigin names the project file that declares the selected env, as the
+// run spelled its path, or atlas.hcl when the load recorded none.
+func atlasEnvOrigin(cfg projectconfig.Config) string {
+	for _, env := range cfg.DeclaredEnvs {
+		if env.Name == cfg.EnvName && env.File != "" {
+			return env.File
+		}
+	}
+	return projectconfig.AtlasFileName
 }
 
 // readAtlasSchemaList reads a project file's schema list through the flag
