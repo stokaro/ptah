@@ -229,11 +229,9 @@ type Lexer struct {
 	opts  Options
 	// own reads the text when opts.Scanner is set, and is nil otherwise.
 	own TokenReader
-	// lastTags holds the last offset each dollar-quote tag starts at, built
-	// over the whole input the first time a heredoc tag needs a closer. One
-	// search of the rest of the input per tag would read a text holding
-	// thousands of tags that never close in quadratic time.
-	lastTags map[string]int
+	// quotes reads the dollar-quoted strings of the input under
+	// opts.DollarTags.
+	quotes DollarQuotes
 }
 
 type stringBackslashMode uint8
@@ -262,6 +260,7 @@ func NewLexerWithOptions(input string, opts Options) *Lexer {
 		start: 0,
 		opts:  opts,
 	}
+	l.quotes = DollarQuotes{rule: opts.DollarTags, text: input}
 	if opts.Scanner != nil {
 		l.own = opts.Scanner.Scan(input, 0, true)
 	}
@@ -276,6 +275,7 @@ func NewLexerWithOptions(input string, opts Options) *Lexer {
 // that only the head of a text may carry.
 func (l *Lexer) Range(start, end int) *Lexer {
 	ranged := &Lexer{input: l.input[:end], pos: start, start: start, opts: l.opts}
+	ranged.quotes = DollarQuotes{rule: l.opts.DollarTags, text: ranged.input}
 	if l.opts.Scanner != nil {
 		ranged.own = l.opts.Scanner.Scan(ranged.input, start, false)
 	}
@@ -930,28 +930,9 @@ func (l *Lexer) isDollarQuotedString() bool {
 }
 
 // openingDollarTag reports the length of the tag that opens a dollar-quoted
-// string at the current position. On [HeredocDollarTags] a tag opens a
-// heredoc only where the same tag starts again after it, since ClickHouse
-// reads a tag that is never closed as part of a name; on
-// [PostgreSQLDollarTags] it opens a string that runs to the end of the input.
+// string at the current position, as [DollarQuotes.Opening] reads it.
 func (l *Lexer) openingDollarTag() (int, bool) {
-	rest := l.input[l.pos:]
-	length, ok := l.opts.DollarTags.OpeningTag(rest)
-	if !ok || l.opts.DollarTags != HeredocDollarTags {
-		return length, ok
-	}
-	if l.lastTags == nil {
-		l.lastTags = make(map[string]int)
-		for pos := range len(l.input) {
-			if tag, found := l.opts.DollarTags.OpeningTag(l.input[pos:]); found {
-				l.lastTags[l.input[pos:pos+tag]] = pos
-			}
-		}
-	}
-	if l.lastTags[rest[:length]] < l.pos+length {
-		return 0, false
-	}
-	return length, true
+	return l.quotes.Opening(l.pos)
 }
 
 // scanDollarQuotedString scans a PostgreSQL dollar-quoted string literal

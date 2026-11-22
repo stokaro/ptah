@@ -397,6 +397,19 @@ func TestRollbackSQL_FailurePath(t *testing.T) {
 			message:   `has a rollback .* so "DO \$\$ BEGIN" and "  NULL; END \$\$;" run as .*`,
 		},
 		{
+			// PostgreSQL 19 reads a tag outside ASCII.
+			name:      "a body whose tag is outside ASCII loses its line break",
+			changeset: "SELECT 1;\n/* liquibase rollback\nDO $\u00e9$ BEGIN\n  NULL; END $\u00e9$;\n*/",
+			message:   "has a rollback .* so \"DO \\$\u00e9\\$ BEGIN\" and \"  NULL; END \\$\u00e9\\$;\" run as .*",
+		},
+		{
+			// ClickHouse 26.10 reads $1abc$ as a heredoc tag, where PostgreSQL
+			// reads the parameter $1.
+			name:      "a heredoc whose tag starts with a digit loses its line break",
+			changeset: "SELECT 1;\n/* liquibase rollback\nSELECT $1abc$x\n y$1abc$;\n*/",
+			message:   `has a rollback .* so "SELECT \$1abc\$x" and " y\$1abc\$;" run as .*`,
+		},
+		{
 			name:      "a changeset reference",
 			changeset: "SELECT 1;\n--rollback changesetId:1 changesetAuthor:s",
 			message: `has a rollback that names changesetId, which Liquibase reads as a reference to another ` +

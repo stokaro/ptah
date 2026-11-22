@@ -175,6 +175,15 @@ $$;
 `,
 		},
 		{
+			// PostgreSQL 19 reads a tag outside ASCII, and stores the blank
+			// line inside the body.
+			name:   "goose body whose tag is outside ASCII",
+			format: "goose",
+			sql: "-- +goose Up\n-- +goose StatementBegin\nCREATE FUNCTION f() RETURNS void AS $\u00e9$\nBEGIN\n\nEND\n" +
+				"$\u00e9$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION f;\n",
+			want: "CREATE FUNCTION f() RETURNS void AS $\u00e9$\nBEGIN\n\nEND\n$\u00e9$ LANGUAGE plpgsql;\n",
+		},
+		{
 			name:   "dbmate",
 			format: "dbmate",
 			sql: `-- migrate:up

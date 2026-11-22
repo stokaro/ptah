@@ -47,6 +47,9 @@ func TestSplit_Comments(t *testing.T) {
 // body keeps its semicolons on PostgreSQL, and an E'...' string keeps an
 // escaped quote on the engines whose descriptor states escape strings, while
 // elsewhere, and in a standard string, a backslash is an ordinary character.
+// A dollar-quote tag follows the migrator's lexer: ClickHouse 26.10 reads
+// `$1abc$` as a heredoc tag and a tag nothing closes as part of a name, and
+// PostgreSQL 19 and ClickHouse 26.10 both read `a$b$` as a name.
 func TestSplit_FollowsTheDialect(t *testing.T) {
 	for _, test := range []struct {
 		name, dialect, sql string
@@ -56,6 +59,16 @@ func TestSplit_FollowsTheDialect(t *testing.T) {
 		{"a hash elsewhere", "", "SELECT a #> b; DROP TABLE t;", []string{"SELECT a #> b", "DROP TABLE t"}},
 		{"a PostgreSQL dollar-quoted body", "postgres", "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql; DROP TABLE t;",
 			[]string{"CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql", "DROP TABLE t"}},
+		{"a ClickHouse heredoc whose tag starts with a digit", "clickhouse", "SELECT $1abc$x; y$1abc$; DROP TABLE t;",
+			[]string{"SELECT $1abc$x; y$1abc$", "DROP TABLE t"}},
+		{"a ClickHouse tag nothing closes", "clickhouse", "SELECT 1 AS $ab$; DROP TABLE t;",
+			[]string{"SELECT 1 AS $ab$", "DROP TABLE t"}},
+		{"a PostgreSQL tag nothing closes", "postgres", "SELECT 1 AS $ab$; DROP TABLE t;",
+			[]string{"SELECT 1 AS $ab$; DROP TABLE t;"}},
+		{"a dollar sign inside a PostgreSQL name", "postgres", "SELECT 1 AS a$b$; DROP TABLE t; -- $b$",
+			[]string{"SELECT 1 AS a$b$", "DROP TABLE t"}},
+		{"a dollar sign inside a name with no dialect", "", "SELECT 1 AS a$b$; DROP TABLE t; -- $b$",
+			[]string{"SELECT 1 AS a$b$", "DROP TABLE t"}},
 		{"a PostgreSQL escape string", "postgres", `INSERT INTO t VALUES (E'a\';COMMIT;'); DROP TABLE t;`,
 			[]string{`INSERT INTO t VALUES (E'a\';COMMIT;')`, "DROP TABLE t"}},
 		{"a lowercase CockroachDB escape string", "cockroachdb", `SELECT e'\'';DROP TABLE t;`,

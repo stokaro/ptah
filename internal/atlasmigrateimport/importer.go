@@ -31,6 +31,7 @@ import (
 
 	"ptah.run/atlascompat"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/liquibaserun"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationsnapshot"
@@ -2407,31 +2408,17 @@ func (s *sqlLiteralState) update(line string) {
 			s.inSingleQuote = true
 			continue
 		}
-		if tag, ok := dollarQuoteTag(line[i:]); ok {
-			s.dollarQuote = tag
-			i += len(tag) - 1
+		// The import knows no dialect, so a tag opens a body where either
+		// family reads one: the heredoc rule's tags hold every tag the
+		// PostgreSQL rule allows, a tag outside ASCII included, and `$1abc$`
+		// too. A body nothing closes keeps its blank lines to the end of the
+		// file, as PostgreSQL reads it, so no blank line inside a body is
+		// dropped.
+		if length, ok := lexer.HeredocDollarTags.OpeningTag(line[i:]); ok {
+			s.dollarQuote = line[i : i+length]
+			i += length - 1
 		}
 	}
-}
-
-func dollarQuoteTag(s string) (string, bool) {
-	if !strings.HasPrefix(s, "$") {
-		return "", false
-	}
-	end := strings.Index(s[1:], "$")
-	if end < 0 {
-		return "", false
-	}
-	tag := s[:end+2]
-	if tag == "$$" {
-		return tag, true
-	}
-	for _, r := range tag[1 : len(tag)-1] {
-		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
-			return "", false
-		}
-	}
-	return tag, true
 }
 
 func sanitizeName(name string) string {

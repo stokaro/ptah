@@ -168,3 +168,47 @@ func TestCodeNameUses_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(deporder.CodeNameUses(" \n\t", "postgres"), qt.IsNil)
 }
+
+// TestCodeNameUses_ReadsTheDialectsDollarTags reads the names of a body with
+// the dollar-quote tags of its dialect, the tags the migrator's lexer reads.
+// PostgreSQL 19 reads a tag outside ASCII, such as the euro sign, and reads
+// `a$b$` as one name. ClickHouse 26.10 reads `$1abc$` as a heredoc tag, and a
+// tag nothing closes as part of a name, which a name read here does not start
+// with, and the code goes on after it.
+func TestCodeNameUses_ReadsTheDialectsDollarTags(t *testing.T) {
+	tests := []struct {
+		name, dialect, body string
+		want                []deporder.NameUse
+	}{
+		{
+			name:    "a PostgreSQL tag outside ASCII",
+			dialect: "postgres",
+			body:    "SELECT $€$ FROM app.b $€$ AS label",
+			want:    []deporder.NameUse{name("select"), name("as"), name("label")},
+		},
+		{
+			name:    "a dollar sign inside a PostgreSQL name",
+			dialect: "postgres",
+			body:    "SELECT a$b$ FROM app.t -- $b$",
+			want:    []deporder.NameUse{name("select"), name("a$b$"), name("from"), relation("app", "t")},
+		},
+		{
+			name:    "a ClickHouse tag that starts with a digit",
+			dialect: "clickhouse",
+			body:    "SELECT $1abc$ FROM app.b $1abc$ AS label",
+			want:    []deporder.NameUse{name("select"), name("as"), name("label")},
+		},
+		{
+			name:    "a ClickHouse tag nothing closes",
+			dialect: "clickhouse",
+			body:    "SELECT 1 AS $ab$ FROM app.t",
+			want:    []deporder.NameUse{name("select"), name("as"), name("from"), relation("app", "t")},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(deporder.CodeNameUses(test.body, test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}
