@@ -2556,6 +2556,10 @@ PostgreSQL that is what `ALL` names. On CockroachDB it also takes `DROP`,
 grant the catalog reports as one `ALL` row. A grant after the revoke in a SQL
 file is what the role keeps, and it keeps the grant option only where that
 grant says `WITH GRANT OPTION`.
+Ptah revokes the grant option without `CASCADE`. When the role has already
+granted the privilege to another role, the server refuses the revoke with
+SQLSTATE 2BP01 and the migration stops; revoke the dependent grant first.
+Measured on PostgreSQL 18.
 
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in
 statement order, and the later statement about one privilege of one role on
