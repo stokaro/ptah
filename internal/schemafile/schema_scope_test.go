@@ -333,7 +333,8 @@ func TestLoadPath_RequestedSchemas_HappyPath(t *testing.T) {
 		requested        []string
 	}{
 		{name: "a block it names", file: "schema.hcl", body: "schema \"app\" {\n}\n", requested: []string{"app"}},
-		{name: "one name among several in one value", file: "schema.hcl", body: "schema \"app\" {\n}\n", requested: []string{"public, app"}},
+		{name: "a name holding a comma", file: "schema.hcl", body: "schema \"a,b\" {\n}\n", requested: []string{"a,b"}},
+		{name: "a name with spaces around it", file: "schema.hcl", body: "schema \"app\" {\n}\n", requested: []string{" app "}},
 		{name: "no selection", file: "schema.hcl", body: "schema \"app\" {\n}\n"},
 		{name: "a SQL document", file: "schema.sql", body: "CREATE SCHEMA app;\n", requested: []string{"public"}},
 	}
@@ -367,6 +368,7 @@ func TestLoadPath_RequestedSchemas_FailurePath(t *testing.T) {
 		{name: "the only block", body: "schema \"app\" {\n}\n", requested: []string{"public"}, wantSchema: "app"},
 		{name: "one block of two", body: "schema \"public\" {\n}\nschema \"app\" {\n}\n", requested: []string{"public"}, wantSchema: "app"},
 		{name: "another spelling", body: "schema \"public\" {\n}\n", requested: []string{"PUBLIC"}, wantSchema: "public"},
+		{name: "one name holding a comma is not its parts", body: "schema \"a\" {\n}\nschema \"b\" {\n}\n", requested: []string{"a,b"}, wantSchema: "a"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

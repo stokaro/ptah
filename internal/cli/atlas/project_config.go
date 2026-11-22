@@ -1603,10 +1603,10 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 //	schemas = ["a\"b"]      -> refused: invalid argument "a\"b" for "-s, --schema" flag
 //
 // One divergence is deliberate. The pinned binary keeps the space in
-// `schemas = [" one"]` and `--schema "one, two"` and then describes nothing, so
-// the schemas the author named are dropped without a word.
-// [schemascope.UniqueNames] trims a schema name, so Ptah describes `one` and
-// `two`.
+// `schemas = [" one"]` and `--schema "one, two"`, so ` one` and ` two` name no
+// schema and are dropped without a word: the first describes nothing, the
+// second describes `one` alone. [schemascope.UniqueNames] trims a schema name,
+// so Ptah describes `one`, and `one` and `two`.
 func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) ([]string, error) {
 	if !projectListStandsIn(cmd, atlasSchemaFlagName, cfg.Schemas) {
 		return flagValues, nil

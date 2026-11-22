@@ -466,7 +466,7 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 				//
 				// --lock-name is deliberately absent: the named-lock family is
 				// one feature across five verbs and lands as its own change.
-				atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas"),
+				atlasForwardedSchemaFlag(atlasargs.NativeStringArray("schema", "s", "Schema names the checkpoint covers", "schemas")),
 				atlasargs.String("qualifier", "", "Qualify tables with a custom qualifier when working on a single schema"),
 				atlasargs.NativeString(
 					"lock-timeout",
@@ -1182,7 +1182,7 @@ func atlasSchemaTestVerb() atlasVerb {
 			atlasSchemaTestSourceFlag(),
 			atlasTestDevURLFlag(),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
-			atlasargs.String(atlasSchemaFlagName, atlasSchemaFlagShorthand, "Restrict the desired schema to these schema names"),
+			atlasForwardedSchemaFlag(atlasargs.String(atlasSchemaFlagName, atlasSchemaFlagShorthand, "Restrict the desired schema to these schema names")),
 			atlasTestReportFlag(),
 			atlasTestSeedDirFlag(),
 		},

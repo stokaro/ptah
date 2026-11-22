@@ -245,7 +245,21 @@ Atlas CE does. `-s one,two` names two schemas, `-s '"a,b"'` names the one schema
 `-s 'a"b'`, is refused before the run starts:
 `invalid argument "a\"b" for "-s, --schema" flag: parse error on line 1, column 2: bare " in non-quoted-field`.
 Spaces around a name are trimmed, so `-s "one, two"` names `one` and `two`.
-Atlas CE keeps the spaces and then describes nothing.
+Atlas CE keeps the space, so ` two` names no schema there and only `one` is
+described.
+
+A value whose every field is empty, such as `-s '""'`, `-s ','` or
+`-s '" "'`, is refused: `every field is empty, so the value names no schema`.
+Atlas CE reads it as a schema with an empty name and selects nothing. Ptah
+refuses it on purpose, because an empty template variable is the usual cause
+and the run would otherwise read every schema, so `schema apply` would plan a
+`DROP` for each one the desired state leaves out. `-s ''` has no field at all
+and selects nothing, as on Atlas CE.
+
+`migrate checkpoint` and `schema test` pass their schema names on to a native
+command as one comma-separated list. They read `--schema` with the same
+grammar, and refuse a name that holds a comma, such as `-s '"a,b"'`, rather
+than split it into two names.
 
 A MySQL or MariaDB URL that names no database is the whole server, as the
 community binary reads it
