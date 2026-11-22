@@ -78,7 +78,7 @@ func TestAtlasConfiguredSchemaValueGrammar_FailurePath(t *testing.T) {
 // TestAtlasSchemaEmptyValue_FailurePath pins that a --schema value whose every
 // field is empty is refused on every verb that reads the flag. Read as no name,
 // it would leave the run with no selection, which is the whole realm, and
-// `schema apply` would plan a DROP for every schema the desired state leaves
+// `schema apply` would plan a DROP for every schema the desired schema leaves
 // out; the pinned binary selects nothing for it.
 func TestAtlasSchemaEmptyValue_FailurePath(t *testing.T) {
 	verbs := []struct {

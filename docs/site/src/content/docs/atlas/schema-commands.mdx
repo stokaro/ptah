@@ -253,7 +253,7 @@ A value whose every field is empty, such as `-s '""'`, `-s ','` or
 Atlas CE reads it as a schema with an empty name and selects nothing. Ptah
 refuses it on purpose, because an empty template variable is the usual cause
 and the run would otherwise read every schema, so `schema apply` would plan a
-`DROP` for each one the desired state leaves out. `-s ''` has no field at all
+`DROP` for each one the desired schema leaves out. `-s ''` has no field at all
 and selects nothing, as on Atlas CE.
 
 `migrate checkpoint` and `schema test` pass their schema names on to a native
@@ -1736,7 +1736,7 @@ error: apply --schema/--include to desired schema: the --schema/--include select
 add the missing objects to the selection or exclude the dependent objects
 ```
 
-An `--include` selection that matches neither the target nor the desired state
+An `--include` selection that matches neither the target nor the desired schema
 refuses the apply, because there is nothing to apply and a synced-schema
 message would claim success for work that did not happen. A `--schemas`
 selection that narrows to nothing is not an error. Malformed selectors fail

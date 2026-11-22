@@ -32,7 +32,7 @@ const (
 // is refused too. The community binary reads it as a schema with an empty name
 // and selects nothing. Below this layer [schemascope.UniqueNames] drops a blank
 // name, so the selection would be empty, and an empty selection is the whole
-// realm: `schema apply` would plan a DROP for every schema the desired state
+// realm: `schema apply` would plan a DROP for every schema the desired schema
 // leaves out. An empty template variable written as `"\"${schema}\""` is the
 // usual source of such a value, so refusing it is deliberate. An empty value,
 // `--schema=`, has no field at all and still selects nothing, as on the
