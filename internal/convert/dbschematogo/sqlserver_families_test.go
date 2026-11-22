@@ -114,6 +114,7 @@ var unconvertedFamilies = map[string]string{
 	"ObjectOwners":              "ownership is read for diagnostics; no declaration carries it",
 	"RoleMemberships":           "read for the role graph rather than as a declarable object",
 	"WideAccess":                "read for the security analysis's reach rules rather than as a declarable object",
+	"WideGrants":                "read to refuse a table revoke a wider grant keeps, rather than as a declarable object",
 	"RolesOutOfScope":           "a report about what the read did not cover, not an object",
 	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
 	"UnreadTables":              "tables the read found and does not describe, which no declaration names",

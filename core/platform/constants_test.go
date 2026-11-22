@@ -107,6 +107,21 @@ func TestIsPostgresFamily(t *testing.T) {
 	}
 }
 
+// Measured on MySQL 8.4.13, MariaDB 11.8.9 and Oracle 23.26.3: a REVOKE on a
+// table takes only a grant on the table, and fails where there is none.
+func TestTableRevokeTakesOnlyTableGrants(t *testing.T) {
+	c := qt.New(t)
+
+	for _, dialect := range []string{"mysql", "mariadb", "maria", "oracle"} {
+		c.Assert(platform.TableRevokeTakesOnlyTableGrants(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
+	}
+	for _, dialect := range []string{
+		"postgres", "cockroachdb", "yugabytedb", "clickhouse", "sqlite", "sqlserver", "bogus",
+	} {
+		c.Assert(platform.TableRevokeTakesOnlyTableGrants(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
+	}
+}
+
 // Measured on MySQL 8.4.11 and 26.7.0 and MariaDB 11.8.9 and 12.3.3: the grant
 // option belongs to the grantee at the object, not to the privilege.
 func TestGrantOptionIsPerObject(t *testing.T) {

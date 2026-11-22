@@ -162,6 +162,14 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// A grant on every table belongs to a role too, with a name no
+			// other row uses.
+			field: "WideGrants", present: "auditor_global_role", absent: "nosuch_global_role",
+			seed: func(s *catalog.Database) {
+				s.WideGrants = append(s.WideGrants, catalog.WideGrant{Role: "auditor_global_role", Privilege: "SELECT", Grant: "SELECT ON *.*"})
+			},
+		},
+		{
 			// The role-qualified target names the grant and nothing else; the
 			// bare object name would be answered by the table instead.
 			field: "Grants", present: "app_role.users", absent: "app_role.nosuch_table",

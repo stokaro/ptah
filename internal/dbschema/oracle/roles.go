@@ -254,5 +254,56 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 
 	schema.Roles = roles
 	schema.Grants = grants
+
+	everywhere, err := r.readWideGrants(ctx)
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return fmt.Errorf("failed to read system privileges: %w", err)
+		}
+		// Left nil: a declared revoke on a table is then planned, and the
+		// server says whether the role held the privilege on it.
+		everywhere = nil
+	}
+	schema.WideGrants = everywhere
 	return nil
+}
+
+// wideGrantQuery reads the system privileges that give a role or PUBLIC an
+// object privilege on every table. Measured on 23.26.3: after
+// `GRANT SELECT ANY TABLE TO r`, the owner's `REVOKE SELECT ON t FROM r` fails
+// with ORA-01927 and a member of r keeps reading t. Each privilege listed is
+// the object privilege of the same name followed by ANY TABLE. The rows are
+// read only for the roles [roleQuery] reads, and for PUBLIC.
+const wideGrantQuery = `
+SELECT p.grantee, p.privilege
+FROM dba_sys_privs p
+WHERE p.privilege IN ('SELECT ANY TABLE', 'READ ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE',
+                      'DELETE ANY TABLE', 'ALTER ANY TABLE', 'FLASHBACK ANY TABLE')
+  AND (p.grantee = 'PUBLIC' OR p.grantee IN (SELECT r.role FROM dba_roles r WHERE r.oracle_maintained = 'N'))
+ORDER BY p.grantee, p.privilege`
+
+// readWideGrants reads the table privileges a role or PUBLIC holds on every
+// table through a system privilege, one row each.
+func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, error) {
+	rows, err := r.db.QueryContext(ctx, wideGrantQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	everywhere := make([]catalog.WideGrant, 0)
+	for rows.Next() {
+		var grantee, privilege string
+		if err := rows.Scan(&grantee, &privilege); err != nil {
+			return nil, err
+		}
+		everywhere = append(everywhere, catalog.WideGrant{
+			Role:      grantee,
+			Privilege: strings.TrimSuffix(privilege, " ANY TABLE"),
+			Grant:     privilege,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return everywhere, nil
 }

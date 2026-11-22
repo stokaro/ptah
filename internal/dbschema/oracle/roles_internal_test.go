@@ -109,6 +109,28 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 			Schema: "APP", ObjectName: "TITLES", GrantedBy: "APP",
 		},
 	})
+	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{
+		{Role: "APP_READER", Privilege: "SELECT", Grant: "SELECT ANY TABLE"},
+		{Role: "PUBLIC", Privilege: "READ", Grant: "READ ANY TABLE"},
+	})
+	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
+}
+
+// TestReadRolesInto_LeavesWideGrantsUnreadWhereSystemPrivilegesAreRefused
+// keeps the roles and grants of an account that may read DBA_ROLES and not
+// DBA_SYS_PRIVS, and says nothing about the grants on every table: nil, not
+// an empty list, so a revoke on a table the plan creates is still planned.
+func TestReadRolesInto_LeavesWideGrantsUnreadWhereSystemPrivilegesAreRefused(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, refusingSystemPrivilegeCatalog)
+	reader := NewOracleReader(db.SQL, "APP")
+
+	schema := &catalog.Database{}
+	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
+
+	c.Assert(schema.Roles, qt.HasLen, 7)
+	c.Assert(schema.Grants, qt.HasLen, 2)
+	c.Assert(schema.WideGrants, qt.IsNil)
 	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
 }
 
@@ -129,6 +151,7 @@ func TestReadRolesInto_RecordsWhatARefusedAccountDidNotLookAt(t *testing.T) {
 
 	c.Assert(schema.Roles, qt.HasLen, 0)
 	c.Assert(schema.Grants, qt.HasLen, 0)
+	c.Assert(schema.WideGrants, qt.IsNil)
 	c.Assert(schema.NotDescribed.Describes(coverage.Role, "APP_READER"), qt.IsFalse)
 	// The record says WHY it did not look, and the reason is the strongest one
 	// available: Ptah watched this server refuse the catalog rather than
@@ -156,32 +179,46 @@ func TestReadRolesInto_SurfacesAFaultRatherThanDescribingAroundIt(t *testing.T) 
 
 // answeringRoleCatalog is a server that shows both catalogs.
 func answeringRoleCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return roleCatalogAnswer(query, nil)
+	return roleCatalogAnswer(query, nil, nil)
+}
+
+// refusingSystemPrivilegeCatalog shows the roles and the object grants, and
+// answers DBA_SYS_PRIVS with ORA-00942, as for an account granted DBA_ROLES
+// alone.
+func refusingSystemPrivilegeCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+	return roleCatalogAnswer(query, nil, network.NewOracleError(errViewNotVisible))
 }
 
 // refusingRoleCatalog is the ordinary account: DBA_ROLES answers ORA-00942
 // while ALL_TAB_PRIVS keeps working, which is the exact pair measured on
 // 23.26.2.0.0.
 func refusingRoleCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return roleCatalogAnswer(query, network.NewOracleError(errViewNotVisible))
+	return roleCatalogAnswer(query, network.NewOracleError(errViewNotVisible), network.NewOracleError(errViewNotVisible))
 }
 
 // faultingRoleCatalog answers the role read with a fault rather than a
 // refusal.
 func faultingRoleCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return roleCatalogAnswer(query, network.NewOracleError(3113))
+	return roleCatalogAnswer(query, network.NewOracleError(3113), nil)
 }
 
 // roleCatalogAnswer answers each catalog with the projection its query asks
-// for, and hands roleErr back for the role read alone.
+// for, and hands roleErr back for the role read and sysErr for the read of
+// system privileges.
 //
 // Answering per projection rather than per call is what makes a blanking
 // mutant fail here: a query that stopped selecting AUTHENTICATION_TYPE would
 // scan two columns into one and report an error, where a fake keyed on the
-// call order would hand it the same rows and pass.
-func roleCatalogAnswer(query string, roleErr error) (dbtest.QueryResult, error) {
+// call order would hand it the same rows and pass. DBA_SYS_PRIVS is matched
+// first, because its query names DBA_ROLES in a subquery.
+func roleCatalogAnswer(query string, roleErr, sysErr error) (dbtest.QueryResult, error) {
 	folded := strings.ToLower(query)
 	switch {
+	case strings.Contains(folded, "from dba_sys_privs"):
+		return dbtest.QueryResult{
+			Columns: []string{"GRANTEE", "PRIVILEGE"},
+			Rows:    [][]driver.Value{{"APP_READER", "SELECT ANY TABLE"}, {"PUBLIC", "READ ANY TABLE"}},
+		}, sysErr
 	case strings.Contains(folded, "from dba_roles"):
 		return roleRows(), roleErr
 	case strings.Contains(folded, "from all_tab_privs"):

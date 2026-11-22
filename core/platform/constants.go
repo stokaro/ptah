@@ -71,6 +71,24 @@ func GrantOptionIsPerObject(dialect string) bool {
 	return found && target.GrantOptionPerObject
 }
 
+// TableRevokeTakesOnlyTableGrants reports whether a REVOKE on a table, on
+// this target, takes only a privilege granted on that table and fails where
+// the grantee holds the privilege nowhere on the table. The answer is the
+// descriptor's TableRevokeTakesOnlyTableGrants; see [Lookup]. A spelling no
+// descriptor claims answers false.
+//
+// Measured on MySQL 8.4.13, MariaDB 10.11.19 and 11.8.9 and Oracle 23.26.3. A
+// REVOKE of a privilege the grantee holds nowhere on the table fails, with
+// Error 1147 on MySQL and MariaDB and ORA-01927 on Oracle. It fails the same
+// way where `GRANT SELECT ON d.*`, `GRANT SELECT ON *.*`, a MariaDB grant to
+// PUBLIC or SELECT ANY TABLE gives the grantee the privilege, and a member of
+// the grantee keeps reading the table. PostgreSQL answers false: a REVOKE of a
+// privilege nobody holds succeeds there.
+func TableRevokeTakesOnlyTableGrants(dialect string) bool {
+	target, found := described(dialect)
+	return found && target.TableRevokeTakesOnlyTableGrants
+}
+
 // ColumnPrivilegeIsBySpelling reports whether a privilege on a column, held
 // through a role, serves only a statement that spells the column the way the
 // GRANT did. The answer is the descriptor's ColumnPrivilegeBySpelling; see

@@ -49,6 +49,10 @@ func oracle() descriptor.Dialect {
 		// characters (130 bytes) answer ORA-00972, so the limit counts bytes
 		// and the server refuses a longer name rather than cutting it.
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "bytes"},
+		// A REVOKE on a table takes only a grant on the table, and one of a
+		// privilege the role holds there through no grant fails with
+		// ORA-01927: measured on 23.26.3, also under SELECT ANY TABLE.
+		TableRevokeTakesOnlyTableGrants: true,
 
 		// An Oracle banner carries two numbers, and the first is not the
 		// version: "Oracle AI Database 26ai Free Release 23.26.2.0.0". The

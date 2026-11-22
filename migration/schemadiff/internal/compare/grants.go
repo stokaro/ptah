@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/grantcover"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
 )
@@ -143,6 +144,10 @@ type GrantOptions struct {
 	// spelling, where the target compares column names without case
 	// elsewhere; see [ptah.run/core/platform.ColumnPrivilegeIsBySpelling].
 	ColumnsBySpelling bool
+	// TableRevokesTakeOnlyTableGrants says a REVOKE on a table takes only a
+	// grant on that table and fails where the grantee holds none there; see
+	// [ptah.run/core/platform.TableRevokeTakesOnlyTableGrants].
+	TableRevokesTakeOnlyTableGrants bool
 }
 
 // GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
@@ -220,7 +225,9 @@ func GrantsWithOptions(
 			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
 		}
 	}
-	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, diff, semantics)
+	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals,
+		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database},
+		diff, semantics)
 
 	sortGrantRefs(diff.GrantsAdded)
 	sortGrantRefs(diff.GrantsRemoved)
@@ -586,6 +593,12 @@ func revokedGrantIdentities(
 // privilege arrives. planned holds the removals already decided, which this
 // does not repeat.
 //
+// Where a REVOKE on a table takes only a grant on that table, as on MySQL,
+// MariaDB and Oracle, a revoke on a table the plan creates is left out when
+// nothing else keeps the privilege; see [createdGrants.needsRevoke]. A
+// privilege the read reports under the table's name, which MySQL keeps after
+// DROP TABLE, is among the planned removals and is revoked there.
+//
 // A grantee whose revoked privileges on one created object cover everything
 // ALL names there gets one REVOKE ALL instead of one statement each. Spelled
 // out, the list would name MAINTAIN, and PostgreSQL 16 refuses the word
@@ -595,6 +608,7 @@ func revokeOnCreatedTargets(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	planned map[grantIdentity]difftypes.GrantRef,
+	created createdGrants,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
@@ -609,7 +623,7 @@ func revokeOnCreatedTargets(
 			if removalCovers(planned, newGrantIdentity(ref, semantics)) {
 				continue
 			}
-			if !revokedTargetCreated(ref, desired, database, semantics) {
+			if !created.needsRevoke(ref) || !revokedTargetCreated(ref, desired, database, semantics) {
 				continue
 			}
 			key := target{ref.Role, ref.ObjectType, ref.ObjectName, ref.Arguments, ref.Column}
@@ -629,6 +643,33 @@ func revokeOnCreatedTargets(
 		}
 		diff.GrantsRemoved = append(diff.GrantsRemoved, refs...)
 	}
+}
+
+// createdGrants says which declared revokes on objects a plan creates have a
+// privilege to take.
+type createdGrants struct {
+	tablesTakeOnlyTableGrants bool
+	desired                   *schemamodel.Database
+	database                  *catalog.Database
+}
+
+// needsRevoke reports whether a declared revoke on an object the plan creates
+// has to be planned.
+//
+// Where a REVOKE on a table takes only a grant on that table, a table the plan
+// creates holds no grant on itself before a GRANT in the plan gives it one,
+// and the server refuses a revoke of a privilege the grantee does not hold
+// there: Error 1147 on MySQL and MariaDB, ORA-01927 on Oracle. Such a revoke
+// is left out. It is planned when a grant on the table's database, on every
+// table or to PUBLIC keeps the privilege, or when the read does not say
+// whether one does. The server then answers for the role, where a revoke left
+// out would leave the privilege in place with a plan that reads as synced.
+func (g createdGrants) needsRevoke(ref difftypes.GrantRef) bool {
+	if !g.tablesTakeOnlyTableGrants || ref.ObjectType != "TABLE" {
+		return true
+	}
+	covers, known := grantcover.Find(g.desired, g.database, ref.Role, []string{ref.Privilege}, ref.ObjectName)
+	return !known || len(covers) > 0
 }
 
 // removalCovers reports whether the removals already planned take what the
