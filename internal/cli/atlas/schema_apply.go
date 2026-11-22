@@ -1323,7 +1323,7 @@ func lintAtlasSchemaApplyPlan(ctx context.Context, opts atlasSchemaApplyOptions,
 	}
 	return fmt.Errorf(
 		"the planned changes are refused by the atlas.hcl lint policy:%s\nreview the plan, or rerun with --skip-lint to apply it anyway",
-		atlasschema.FormatPlanLintFindings(findings))
+		atlasschema.FormatPlanLintFindings(findings, dialect))
 }
 
 func atlasSchemaApplyLintOptions(opts atlasSchemaApplyOptions, dialect string) atlasschema.PlanLintOptions {

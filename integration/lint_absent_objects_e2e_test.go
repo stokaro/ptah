@@ -34,9 +34,10 @@ type absentObjectRow struct {
 	strictTotal    string
 	fullExit       int
 	fullTotal      string
-	// codes are the rule names the default surface reports; strictCodes are the
-	// Atlas check codes the strict policy prints for them, none for a rule the
-	// Atlas table does not map. The table maps no identity for
+	// codes are the rules the default surface reports, each under its Atlas
+	// check code where the Atlas table maps one and under its Ptah name where
+	// it does not; strictCodes are the codes the strict policy prints, which
+	// runs only the rules the table maps. The table maps no identity for
 	// destructive/drop-object, so a strict run reports no drop of a trigger or a
 	// type, as the community binary does.
 	codes       []string
@@ -186,7 +187,7 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present column",
 		files:         absentObjectFiles(postgresCountBase, "ALTER TABLE users DROP COLUMN IF EXISTS name;\n"),
 		communityExit: 1, communityTotal: "1", strictExit: 1, strictTotal: "1", fullExit: 1, fullTotal: "1",
-		codes: []string{"destructive/drop-column"}, strictCodes: []string{"DS103"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-column", "rollout/drop-column"},
+		codes: []string{"DS103"}, strictCodes: []string{"DS103"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-column", "rollout/drop-column"},
 	},
 	{
 		name:          "an enum label added",
@@ -261,13 +262,16 @@ var mysqlAbsentObjectRows = []absentObjectRow{
 	},
 }
 
-// compatRuleCode matches a rule the default `migrate lint` text report names,
-// as in `-- L1 [destructive/drop-object]: ...`.
-var compatRuleCode = regexp.MustCompile(`-- L\d+ \[([a-z][a-z0-9/-]*)\]`)
+// compatRuleCode matches a rule the default `migrate lint` text report names:
+// an Atlas check code in the analyzer link, as in `-- L1: Dropping ...
+// analyzers#DS102`, or the Ptah name of a rule with no Atlas check, as in
+// `-- L1 [destructive/drop-object]: ...`.
+var compatRuleCode = regexp.MustCompile(`(?:-- L\d+ \[|analyzers#)([^\]\s:]+)`)
 
 // strictRuleCode matches an Atlas check code in the strict policy's report, as
-// in `-- L1: Dropping ... analyzers#DS102` or `-- L1 [DS102]: ...`.
-var strictRuleCode = regexp.MustCompile(`(?:-- L\d+ \[|analyzers#)([A-Z]+\d+P?)\b`)
+// in `-- L1: Dropping ... analyzers#DS102`. The strict policy runs only rules
+// that report an Atlas check, so no line of its report carries a Ptah name.
+var strictRuleCode = regexp.MustCompile(`analyzers#([A-Z]+\d+P?)\b`)
 
 // nativeRuleCode matches a rule a `ptah migrations lint` report names, as in
 // `migrations/2_head.sql:1 [error] destructive/drop-object: ...`.
@@ -525,7 +529,7 @@ func TestMigrateLintMySQLQualifiedDropBesideAViewE2E(t *testing.T) {
 			changeCountArgs(devURL, "1")...)
 
 		c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-		c.Assert(ruleCodes(compatRuleCode, got.Stdout), qt.DeepEquals, []string{"destructive/drop-table"})
+		c.Assert(ruleCodes(compatRuleCode, got.Stdout), qt.DeepEquals, []string{"DS102"})
 		c.Assert(summaryCount(got.Stdout), qt.Equals, "-- 1 schema change")
 	})
 	t.Run("ptah migrations lint", func(t *testing.T) {

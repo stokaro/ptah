@@ -141,7 +141,7 @@ func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Equals, "-- Planned Changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n", qt.Commentf("%s", stderr))
 	c.Assert(stderr, qt.Contains, "Error: the planned changes are refused by the atlas.hcl lint policy:\n")
-	c.Assert(stderr, qt.Contains, "\n  - destructive/drop-table error: ")
+	c.Assert(stderr, qt.Contains, "\n  - DS102 error: ")
 	c.Assert(stderr, qt.Contains, "\n  - destructive/drop-object error: ")
 	f.assertStopped(c)
 }
@@ -180,7 +180,8 @@ func TestCompatMigrateLintReplaysOnTheProvidersDevDatabase(t *testing.T) {
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
 	c.Assert(stderr, qt.Equals, "")
 	c.Assert(out, qt.Contains, "  -- analyzing version 20240102000000\n")
-	c.Assert(out, qt.Contains, " [destructive/drop-table]: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, "-- L1: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, " https://atlasgo.io/lint/analyzers#DS102\n")
 	c.Assert(out, qt.Contains, " [design/fx101]: DROP TABLE removes every row\n")
 	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
 	f.assertStopped(c)
@@ -249,7 +250,8 @@ func TestCompatSchemaPlanLintsAPlanOfTheProvidersDatabase(t *testing.T) {
 	out, stderr, code = f.run(f.withManifest(), append([]string{"schema", "plan", "lint", "--file", "file://" + filepath.ToSlash(plan)}, transition...)...)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Contains, "Analyzing planned statements (1 in total):\n")
-	c.Assert(out, qt.Contains, " [destructive/drop-table]: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, "-- L1: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, " https://atlasgo.io/lint/analyzers#DS102\n")
 	c.Assert(out, qt.Contains, " [design/fx101]: DROP TABLE removes every row\n")
 	f.assertStopped(c)
 

@@ -21,20 +21,23 @@ func TestMigrateLintNamesAnEarlierPartitionedParentLive(t *testing.T) {
 		name    string
 		first   string
 		want    string
+		code    string
 		wantNot string
 	}{
 		{
 			name: "the parent is partitioned",
 			first: "CREATE TABLE measurements (id bigint NOT NULL, taken_on date NOT NULL, value int) PARTITION BY RANGE (taken_on);\n" +
 				"CREATE TABLE measurements_2025 PARTITION OF measurements FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');\n",
-			want:    "[locking/partitioned-index]: building this index takes a SHARE lock on measurements and on every one of its partitions",
-			wantNot: "[locking/create-index]",
+			want:    "L1: building this index takes a SHARE lock on measurements and on every one of its partitions",
+			code:    "https://atlasgo.io/lint/analyzers#PG108",
+			wantNot: "analyzers#PG101",
 		},
 		{
 			name:    "control: the same table left ordinary",
 			first:   "CREATE TABLE measurements (id bigint NOT NULL, taken_on date NOT NULL, value int);\n",
-			want:    "[locking/create-index]: CREATE INDEX without CONCURRENTLY blocks writes",
-			wantNot: "[locking/partitioned-index]",
+			want:    "L1: CREATE INDEX without CONCURRENTLY blocks writes",
+			code:    "https://atlasgo.io/lint/analyzers#PG101",
+			wantNot: "analyzers#PG108",
 		},
 	}
 	for _, test := range tests {
@@ -53,6 +56,7 @@ func TestMigrateLintNamesAnEarlierPartitionedParentLive(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 			c.Assert(words, qt.Contains, test.want)
+			c.Assert(words, qt.Contains, test.code)
 			c.Assert(words, qt.Not(qt.Contains), test.wantNot)
 		})
 	}

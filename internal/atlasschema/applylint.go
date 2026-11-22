@@ -109,12 +109,15 @@ func lintPlanDisabledNames(rules []lint.Rule, enabled []string) []string {
 	return disabled
 }
 
-// FormatPlanLintFindings renders blocking findings for a refusal message.
-func FormatPlanLintFindings(findings []lint.Finding) string {
+// FormatPlanLintFindings renders blocking findings for a refusal message. A
+// finding is named the way every other ptah-compat lint report names it: by
+// the Atlas check code its rule reports on dialect, and by its Ptah rule name
+// when Atlas has no check for it.
+func FormatPlanLintFindings(findings []lint.Finding, dialect string) string {
 	var out strings.Builder
 	for _, finding := range findings {
 		out.WriteString("\n  - ")
-		out.WriteString(finding.Rule)
+		out.WriteString(atlascodes.RuleFor(finding.Rule, dialect).Code)
 		out.WriteString(" ")
 		out.WriteString(string(finding.Severity))
 		out.WriteString(": ")

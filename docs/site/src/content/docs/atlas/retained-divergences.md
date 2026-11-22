@@ -1785,14 +1785,14 @@ has the rules.
 
 **Current boundary.** A migration that carries `-- atlas:txmode none` and holds
 its own `BEGIN` and `COMMIT` is refused by `ptah-compat migrate apply`, and
-`ptah-compat migrate lint` reports it as `transaction/explicit-transaction`,
-Atlas check code `TX201` under strict compatibility. Without a transaction, Ptah
+`ptah-compat migrate lint` reports it as Atlas check `TX201`, the code of the
+Ptah rule `transaction/explicit-transaction`. Without a transaction, Ptah
 records the progress of each statement in the revision table. A `BEGIN` in the
 file would put that record outside the file's transaction, so the migrator
 refuses any statement that controls transaction state, on every engine and in
 the up and the down half. The pinned community binary runs the file as
 written and lints it clean. The lint rule reads the same statements the
-migrator refuses, so a directory that lints without a `transaction/explicit-transaction` finding is not
+migrator refuses, so a directory that lints without a `TX201` finding is not
 one the migrator stops at for this reason.
 
 Measured on 2026-11-14 over SQLite, with `1.sql` holding
@@ -1809,7 +1809,7 @@ COMMIT;
 
 | Run | Binary | `ptah-compat` |
 | --- | --- | --- |
-| `migrate lint --dev-url 'sqlite://dev?mode=memory' --latest 1` | `1 version ok`, no diagnostics, exit `0` | `L3 [transaction/explicit-transaction]` as a warning, `1 version with warnings`, exit `0` |
+| `migrate lint --dev-url 'sqlite://dev?mode=memory' --latest 1` | `1 version ok`, no diagnostics, exit `0` | `L3` with the `analyzers#TX201` link as a warning, `1 version with warnings`, exit `0` |
 | `migrate apply --url sqlite://t.db` | applies both files, exit `0` | refuses the run before it applies migration `1`, with `migration 2 cannot run up statement 1 without a transaction because "BEGIN" controls transaction state`, and records no revision, exit `1` |
 
 The same file without the directive runs inside the transaction each migrator

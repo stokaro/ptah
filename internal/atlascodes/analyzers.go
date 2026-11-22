@@ -42,6 +42,10 @@ type Rule struct {
 	// Code is the Atlas check code, or the Ptah rule name for a rule Atlas
 	// has no check for.
 	Code string
+	// Check reports that Code is an Atlas check code. It is false for a rule
+	// Atlas has no check for, whose Code is the Ptah rule name: the analyzer
+	// documentation has no entry for it to link to.
+	Check bool
 }
 
 // Identity is the Atlas check one Ptah rule reports, on the engines it is
@@ -170,7 +174,7 @@ func (i Identity) appliesTo(dialect string) bool {
 func RuleFor(name, dialect string) Rule {
 	for _, identity := range identities {
 		if identity.Name == name && identity.appliesTo(dialect) {
-			return Rule{Analyzer: identity.Analyzer, Code: identity.Code}
+			return Rule{Analyzer: identity.Analyzer, Code: identity.Code, Check: true}
 		}
 	}
 	return Rule{Analyzer: AnalyzerPtah, Code: name}

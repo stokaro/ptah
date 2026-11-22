@@ -77,7 +77,7 @@ func TestCompatCommand_MigrateLintDefaultTextDestructive(t *testing.T) {
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "DROP TABLE users;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -104,7 +104,7 @@ func TestCompatCommand_MigrateLintDefaultTextDropColumn(t *testing.T) {
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE \"Users\" (id int PRIMARY KEY, \"Legacy\" text);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE \"Users\" DROP COLUMN \"Legacy\";\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -131,7 +131,7 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsDropColumnAtMeasuredBoundary(t
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, c1234567890123456 text);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users DROP COLUMN c1234567890123456;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -160,7 +160,7 @@ func TestCompatCommand_MigrateLintDefaultTextNormalizesTypeAndIdentifiers(t *tes
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE \"Users\" (id int);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE \"Users\" ADD COLUMN \"Display Name\" VARCHAR(255) NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -186,7 +186,7 @@ func TestCompatCommand_MigrateLintDefaultTextCollectsFixesAfterEveryAnalyzerGrou
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int PRIMARY KEY, legacy text);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users DROP COLUMN legacy;\nALTER TABLE users ADD COLUMN name TEXT NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -209,18 +209,25 @@ func TestCompatCommand_MigrateLintDefaultTextCollectsFixesAfterEveryAnalyzerGrou
 			"  -- 2 diagnostics\n")
 }
 
-func TestCompatCommand_MigrateLintDefaultTextLabelsUnmeasuredTypeCopy(t *testing.T) {
+// TestCompatCommand_MigrateLintDefaultTextLinksUnmeasuredTypeCopy covers an
+// MF103 finding whose Atlas sentence Ptah does not reproduce: the community
+// binary quotes the column type as the file spells it, CHARACTER VARYING(255)
+// here, and Ptah has measured that wording for none but a few types. The line
+// keeps Ptah's own sentence and still ends in the analyzer link, the place a
+// reader of the community binary's report finds the check code.
+func TestCompatCommand_MigrateLintDefaultTextLinksUnmeasuredTypeCopy(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "unmeasured-type.db")
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users ADD COLUMN label CHARACTER VARYING(255) NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "L1 [MF103]:")
-	c.Assert(stdout, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers#MF103")
+	c.Assert(stdout, qt.Contains, "      -- L1: adding NOT NULL column label without a DEFAULT fails or blocks on populated tables;\n")
+	c.Assert(stdout, qt.Contains, "         https://atlasgo.io/lint/analyzers#MF103\n")
+	c.Assert(stdout, qt.Not(qt.Contains), "[MF103]")
 }
 
 func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(t *testing.T) {
@@ -230,7 +237,7 @@ func TestCompatCommand_MigrateLintDefaultTextWrapsAnalyzerURLAtMeasuredBoundary(
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE abcdefghijklmnopqrs (id int);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "DROP TABLE abcdefghijklmnopqrs;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1, qt.Commentf("%v", err))
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -355,7 +362,7 @@ func TestCompatCommand_MigrateLintDefaultTextClassifiesRenames(t *testing.T) {
 			writeAtlasLintFile(c, dir, "1.sql", test.base)
 			writeAtlasLintFile(c, dir, "2.sql", test.rename)
 
-			stdout, stderr, err := runAtlasMigrateLintStrict(
+			stdout, stderr, err := runAtlasMigrateLint(
 				c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, test.exitCode)
@@ -372,7 +379,7 @@ func TestCompatCommand_MigrateLintDefaultTextDataDependentWarning(t *testing.T) 
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -403,7 +410,7 @@ func TestCompatCommand_MigrateLintDefaultTextAddNotNullFixture(t *testing.T) {
 	writeAtlasLintFile(c, dir, "1.sql", "CREATE TABLE users (id int);\n\n/* Adding a not-null column without default to a table created in this file should not report. */\nALTER TABLE users ADD COLUMN c1 int NOT NULL;\n")
 	writeAtlasLintFile(c, dir, "2.sql", "ALTER TABLE users ADD COLUMN c2 int NOT NULL;\n\nALTER TABLE users ADD COLUMN c3 int NOT NULL DEFAULT 1;\n")
 
-	stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "2")
+	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://"+dir, "--dev-url", devDB, "--latest", "2")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -534,12 +541,4 @@ func TestCompatCommand_MigrateLintToleratesUnreadableTxMode(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
 	c.Assert(stdout, qt.Contains, "analyzing version 2")
 	c.Assert(stdout, qt.Not(qt.Contains), "unknown txmode")
-}
-
-// runAtlasMigrateLintStrict runs the verb under the strict compatibility
-// policy, which prints Atlas check codes in the community binary's report
-// shape and runs only the rules the Atlas table maps.
-func runAtlasMigrateLintStrict(c *qt.C, args ...string) (stdout, stderr string, err error) {
-	c.Helper()
-	return runAtlasMigrateLintUnder(atlascompatpolicy.StrictCE(), args...)
 }

@@ -2066,18 +2066,21 @@ ptah-compat migrate lint \
 
 ### Rule names and Atlas codes
 
-The default `ptah-compat` surface names each finding by its Ptah rule name. The
-text report prints `L1 [destructive/drop-table]: Dropping table "users"`, and a
-`--format` template reads the name in `Code` and `Findings[].rule`. Every rule
-runs, so a rule Atlas has no check for is reported too.
-
-`PTAH_ATLAS_STRICT_COMPAT=1` selects the community binary's vocabulary. The
-report prints the Atlas check code of each rule in the binary's own line shape,
-`L1: Dropping table "users" https://atlasgo.io/lint/analyzers#DS102`, and the
-run executes only the rules the Atlas table maps. The generated
+`ptah-compat` names each finding the way the community binary does. A rule that
+reports an Atlas check prints that check's code in the binary's own line shape,
+`L1: Dropping table "users" https://atlasgo.io/lint/analyzers#DS102`, and a
+`--format` template reads the same code in `Code` and `Findings[].rule`. Where
+Ptah has not measured Atlas's sentence for a check, the line carries Ptah's own
+message with the same link. The generated
 [Lint rules](../../reference/lint-rules/#atlas-check-codes) page lists the
-mapping. The codes quoted in the rest of this page are the ones strict mode
-prints; the default surface prints the name of the same rule.
+mapping.
+
+A rule Atlas has no check for has no code to print, so it keeps its Ptah rule
+name: `L1 [destructive/truncate-table]: TRUNCATE deletes all rows from the
+table; ...`, with no analyzer link, and the name in `Code`. The default surface
+runs every rule, so these findings are reported too.
+`PTAH_ATLAS_STRICT_COMPAT=1` runs only the rules the Atlas table maps, and
+prints each finding it reports the same way.
 
 Both flags in that example are required, and they are **two separate
 requirements** with two separate refusals, each matching the pinned Atlas

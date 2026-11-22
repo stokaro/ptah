@@ -58,7 +58,7 @@ func TestMigrateLintNamesTheHypertableRemedyLive(t *testing.T) {
 			words := strings.Join(strings.Fields(out), " ")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
-			c.Assert(words, qt.Contains, "[locking/create-index]: ")
+			c.Assert(words, qt.Contains, " https://atlasgo.io/lint/analyzers#PG101")
 			c.Assert(words, qt.Contains, test.want)
 			c.Assert(words, qt.Not(qt.Contains), test.wantNot)
 		})

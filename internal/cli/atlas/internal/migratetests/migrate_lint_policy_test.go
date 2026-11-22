@@ -24,14 +24,16 @@ func lintDroppedTable(c *qt.C, policy atlascompatpolicy.Policy, comment string) 
 	return redactAtlasLintDurations(stdout), exitcode.Code(err, 0)
 }
 
-func TestMigrateLint_DefaultPolicyPrintsTheRuleName(t *testing.T) {
+// TestMigrateLint_DefaultPolicyPrintsTheAtlasCode holds the default policy to
+// the community binary's line for a rule that reports an Atlas check.
+func TestMigrateLint_DefaultPolicyPrintsTheAtlasCode(t *testing.T) {
 	c := qt.New(t)
 
 	stdout, code := lintDroppedTable(c, atlascompatpolicy.Full(), "")
 
 	c.Assert(code, qt.Equals, 1)
-	c.Assert(stdout, qt.Contains, `L1 [destructive/drop-table]: Dropping table "users"`)
-	c.Assert(stdout, qt.Not(qt.Contains), "DS102")
+	c.Assert(stdout, qt.Contains, `L1: Dropping table "users" https://atlasgo.io/lint/analyzers#DS102`)
+	c.Assert(stdout, qt.Not(qt.Contains), "destructive/drop-table")
 }
 
 // TestMigrateLint_StrictPolicyPrintsTheAtlasCodeAndKeepsTheFinding is the

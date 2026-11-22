@@ -84,9 +84,9 @@ func TestMigrateLintTransactionControlE2E_CompatReportsAndApplyRefuses(t *testin
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- diagnostics detected:\n"+
-			"      -- L3 [transaction/explicit-transaction]: the migrator refuses transaction control in a\n"+
-			"         migration that runs without a transaction and commits each statement on its own, so the\n"+
-			"         apply stops at this BEGIN; remove the transaction control\n"+
+			"      -- L3: the migrator refuses transaction control in a migration that runs without a\n"+
+			"         transaction and commits each statement on its own, so the apply stops at this BEGIN;\n"+
+			"         remove the transaction control https://atlasgo.io/lint/analyzers#TX201\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
@@ -109,7 +109,7 @@ func TestMigrateLintTransactionControlE2E_CompatErrorSeverityFailsTheRun(t *test
 	lint := compatLintTransactionControl(c, root, "--env", "ci")
 
 	c.Assert(lint.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", lint.Stdout, lint.Stderr))
-	c.Assert(lint.Stdout, qt.Contains, "[transaction/explicit-transaction]")
+	c.Assert(lint.Stdout, qt.Contains, " https://atlasgo.io/lint/analyzers#TX201\n")
 	c.Assert(lint.Stdout, qt.Contains, "1 version with errors")
 }
 
@@ -157,7 +157,7 @@ func TestMigrateLintTransactionControlE2E_AFileWithoutControlIsClean(t *testing.
 	apply := compatApplyTransactionControl(c, root)
 
 	c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
-	c.Assert(compat.Stdout, qt.Not(qt.Contains), "transaction/explicit-transaction")
+	c.Assert(compat.Stdout, qt.Not(qt.Contains), "TX201")
 	c.Assert(native.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", native.Stdout, native.Stderr))
 	c.Assert(native.Stdout, qt.Not(qt.Contains), "transaction/explicit-transaction")
 	c.Assert(apply.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", apply.Stdout, apply.Stderr))

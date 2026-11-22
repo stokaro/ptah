@@ -106,7 +106,7 @@ func TestCompatMigrateLint_GolangMigrateTransactionMixIsReported(t *testing.T) {
 	stdout, stderr, err := runTransactionLint(c, root, "--env", "ci")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "[transaction/mixed-statements]")
+	c.Assert(stdout, qt.Contains, " https://atlasgo.io/lint/analyzers#TX101\n")
 }
 
 func TestCompatMigrateLint_AtlasTransactionBlockIsReported(t *testing.T) {
@@ -120,5 +120,5 @@ func TestCompatMigrateLint_AtlasTransactionBlockIsReported(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "-- analyzing version 20240827000000")
-	c.Assert(stdout, qt.Contains, "[transaction/explicit-transaction]")
+	c.Assert(stdout, qt.Contains, " https://atlasgo.io/lint/analyzers#TX201\n")
 }

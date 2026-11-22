@@ -141,14 +141,15 @@ func TestCompatCommand_MigrateLintCondropSeverity(t *testing.T) {
 				[]byte(atlasCondropProjectConfig), 0o600), qt.IsNil)
 			t.Chdir(dir)
 
-			stdout, _, err := runAtlasMigrateLintStrict(c, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
+			stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, tt.code)
 			// The report body is identical in all four rows -- the diagnostic
 			// is found either way -- so the summary line is the only byte-level
 			// evidence of the severity, and asserting the whole report would
 			// hide which half of it actually moved.
-			c.Assert(stdout, qt.Contains, "-- L1 [CD101]: dropping a foreign key removes referential-integrity enforcement")
+			c.Assert(stdout, qt.Contains, "-- L1: dropping a foreign key removes referential-integrity enforcement")
+			c.Assert(stdout, qt.Contains, " https://atlasgo.io/lint/analyzers#CD101\n")
 			c.Assert(stdout, qt.Contains, tt.summary)
 		})
 	}
