@@ -663,6 +663,15 @@ table that needs it. An account that may not read `DBA_SYS_PRIVS` gets the
 revoke planned as declared, and the server answers for the role. Measured on
 23.26.3.
 
+## Grants of ALL
+
+A declared `GRANT ALL ON t1 TO READER` is held once the role holds what
+Oracle's `ALL` grants a role on a table: `ALTER`, `DEBUG`, `DELETE`,
+`FLASHBACK`, `INSERT`, `ON COMMIT REFRESH`, `QUERY REWRITE`, `READ`, `SELECT`
+and `UPDATE`. On a view `MERGE VIEW` takes the place of `ALTER`, and on a
+sequence `ALL` grants `ALTER` and `SELECT`. A role the schema creates keeps
+each of them. Measured on 21.3 and 23.26.
+
 ## Versioned migrations
 
 `ptah migrations up`, `down` and `status` run against Oracle, with either

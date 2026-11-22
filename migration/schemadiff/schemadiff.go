@@ -270,6 +270,7 @@ func compareReportingUndecidedAdditions(
 		// A revoke on a table the plan creates fails on a target where a
 		// REVOKE on a table takes only a grant on that table.
 		TableRevokesTakeOnlyTableGrants: platform.TableRevokeTakesOnlyTableGrants(opts.Dialect),
+		AllPrivileges:                   targetAllPrivileges(opts.Dialect),
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
@@ -672,6 +673,14 @@ type desiredSpeller interface {
 // *ptah.run/engine.Runtime is one.
 type selectionRuntime interface {
 	Selections() selectext.Set
+}
+
+// targetAllPrivileges is what the privilege keyword ALL grants on each object
+// kind of dialect, as its descriptor states it. A dialect no descriptor claims,
+// such as the empty one of a comparison of two files, states no list.
+func targetAllPrivileges(dialect string) descriptor.AllPrivileges {
+	target, _ := platform.Lookup(dialect)
+	return target.AllPrivileges
 }
 
 // grantObjectNames reads the owner's object a grant names through the

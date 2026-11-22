@@ -609,7 +609,11 @@ What SQL Server itself refuses is refused as well: `IF NOT EXISTS`,
 event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
 `Msg 195`.
 
-## Revoking every permission
+## Granting and revoking every permission
+
+`GRANT ALL ON t TO r` grants `DELETE`, `INSERT`, `REFERENCES`, `SELECT` and
+`UPDATE`, and a role holding these five holds a declared `ALL`. A role the
+schema creates loses `CONTROL` and every other permission beside them.
 
 `REVOKE ALL ON t FROM r` takes every permission the role holds on `t` and its
 columns. SQL Server's own `REVOKE ALL` leaves `ALTER`, `CONTROL` and

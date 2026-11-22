@@ -99,6 +99,9 @@ type Dialect struct {
 	// everywhere else. A comparison of column privileges then compares the
 	// column by its spelling, and a plan names it as the declaration does.
 	ColumnPrivilegeBySpelling bool `json:"column_privilege_by_spelling,omitempty"`
+	// AllPrivileges states what the privilege keyword ALL grants on each
+	// kind of object, as a catalog read reports it.
+	AllPrivileges AllPrivileges `json:"all_privileges,omitzero"`
 
 	// Driver is the database/sql driver a connection to the dialect opens,
 	// such as "pgx". A connection may take another driver where the URL asks
@@ -570,6 +573,7 @@ func (d Dialect) validate() error {
 		d.validateMigration,
 		d.validateCleanup,
 		d.validateRevisionTable,
+		d.validateAllPrivileges,
 	}
 	for _, check := range checks {
 		if err := check(); err != nil {

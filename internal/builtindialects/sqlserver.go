@@ -42,6 +42,14 @@ func sqlServer() descriptor.Dialect {
 			},
 		},
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "characters"},
+		// What GRANT ALL grants on a table or a view, one row each in
+		// sys.database_permissions: measured on SQL Server 2019, 2022 and
+		// 2025. It leaves out ALTER, CONTROL, TAKE OWNERSHIP and VIEW
+		// DEFINITION, so a role holding one of them beside a declared ALL
+		// holds more than the declaration grants.
+		AllPrivileges: descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
+			"TABLE": {Privileges: []string{"DELETE", "INSERT", "REFERENCES", "SELECT", "UPDATE"}},
+		}},
 
 		// @@VERSION names the build and the servicing branch it is on, GDR
 		// or CU, and a security fix ships as one build per branch, so a

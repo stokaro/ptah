@@ -52,6 +52,7 @@ func mariaDB() descriptor.Dialect {
 		// 1147: measured on 10.11.19 and 11.8.9, also under a grant on the
 		// database, on *.* or to PUBLIC.
 		TableRevokeTakesOnlyTableGrants: true,
+		AllPrivileges:                   mariaDBAllPrivileges(),
 
 		// How a connection reaches the server.
 		Driver: "mysql",
@@ -368,4 +369,19 @@ func mariaDBCharsetDefaults() map[string]string {
 		"utf16le": "utf16le_general_ci", "utf32": "utf32_uca1400_ai_ci",
 		"utf8mb3": "utf8mb3_uca1400_ai_ci", "utf8mb4": "utf8mb4_uca1400_ai_ci",
 	}
+}
+
+// mariaDBAllPrivileges is what GRANT ALL grants on a MariaDB table and
+// database: MySQL's lists and DELETE HISTORY, measured on MariaDB 10.11.19,
+// 11.4.13, 11.8.9 and 12.3.3. A database grant gains SHOW CREATE ROUTINE on
+// 11.4 and later, and 10.11 has none.
+func mariaDBAllPrivileges() descriptor.AllPrivileges {
+	mysql := mysqlAllPrivileges()
+	return descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
+		"TABLE": {Privileges: append(mysql.Kinds["TABLE"].Privileges, "DELETE HISTORY")},
+		"SCHEMA": {
+			Privileges: append(mysql.Kinds["SCHEMA"].Privileges, "DELETE HISTORY", "SHOW CREATE ROUTINE"),
+			Optional:   []string{"SHOW CREATE ROUTINE"},
+		},
+	}}
 }

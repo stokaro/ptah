@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -148,6 +149,10 @@ type GrantOptions struct {
 	// grant on that table and fails where the grantee holds none there; see
 	// [ptah.run/core/platform.TableRevokeTakesOnlyTableGrants].
 	TableRevokesTakeOnlyTableGrants bool
+	// AllPrivileges is what the privilege keyword ALL grants on each object
+	// kind of the target; see [ptah.run/core/platform/descriptor.AllPrivileges].
+	// The zero value takes the PostgreSQL lists.
+	AllPrivileges descriptor.AllPrivileges
 }
 
 // GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
@@ -159,6 +164,7 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
+	lists := allPrivilegeLists{target: options.AllPrivileges}
 	// target is how the server compares names. A declared revoke is matched by
 	// it, because it asserts the privilege absent under every spelling the
 	// server takes for the column.
@@ -209,23 +215,23 @@ func GrantsWithOptions(
 		database: database, sequences: sequences, semantics: semantics, target: target,
 		managedRoles: managedRoles, generatedRoles: generatedGrantRoles,
 		revoked: revokedGrants, respellings: respellings, removable: removable,
-		coverage: removalCoverage(desired, semantics), objects: objects,
+		coverage: removalCoverage(desired, semantics), objects: objects, lists: lists,
 	}
 	databaseGrantMapForAdditions, databaseGrantMapForRemovals := read.maps()
 
-	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, revokedGrants, diff)
+	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, revokedGrants, lists, diff)
 	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
 	if options.DesiredRead == nil {
-		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, sequences, semantics)
+		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, lists, sequences, semantics)
 	}
 	sequences.nameAsDatabase(diff.GrantsAdded, semantics)
 	sequences.nameAsDatabase(diff.GrantOptionsAdded, semantics)
 	for key, ref := range databaseGrantMapForRemovals {
-		if !declaredGrant(key, generatedGrantMap) {
+		if !lists.declared(key, generatedGrantMap) {
 			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
 		}
 	}
-	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals,
+	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, lists,
 		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database},
 		diff, semantics)
 
@@ -252,6 +258,7 @@ type grantRead struct {
 	removable   func(difftypes.GrantRef) bool
 	coverage    Coverage
 	objects     OwnedObjects
+	lists       allPrivilegeLists
 }
 
 func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.GrantRef) {
@@ -331,7 +338,7 @@ func (read grantRead) removes(grant catalog.Grant, ref difftypes.GrantRef, targe
 	if read.revoked.covers(targetKey) {
 		return true
 	}
-	return ref.Column != "" && declaredGrant(targetKey, read.respellings)
+	return ref.Column != "" && read.lists.declared(targetKey, read.respellings)
 }
 
 // publicExecuteByDefault reports whether the grant ref is PUBLIC's EXECUTE on a
@@ -396,6 +403,7 @@ func unmanagedOwnerPrivileges(
 	database *catalog.Database,
 	declared map[grantIdentity]difftypes.GrantRef,
 	revoked revokedIdentities,
+	lists allPrivilegeLists,
 	sequences columnSequences,
 	semantics identifier.Semantics,
 ) []difftypes.OwnerPrivilegeDeviation {
@@ -408,7 +416,7 @@ func unmanagedOwnerPrivileges(
 		}
 		ref := grantRefFromDatabase(grant)
 		key := sequences.databaseKey(newGrantIdentity(ref, semantics))
-		if declaredGrant(key, declared) || revoked.covers(key) || !declaresGrantObject(desired, ref, semantics) {
+		if lists.declared(key, declared) || revoked.covers(key) || !declaresGrantObject(desired, ref, semantics) {
 			continue
 		}
 		at := object{objectType: strings.ToUpper(ref.ObjectType), name: ref.ObjectName, owner: ref.Role}
@@ -466,10 +474,11 @@ func planGrantAdditions(
 	declared, database map[grantIdentity]difftypes.GrantRef,
 	managedRoles map[string]bool,
 	revoked revokedIdentities,
+	lists allPrivilegeLists,
 	diff *difftypes.SchemaDiff,
 ) {
 	for key, ref := range declared {
-		held, exists := heldPrivileges(key, database)
+		held, exists := lists.held(key, database)
 		if !exists {
 			diff.GrantsAdded = append(diff.GrantsAdded, ref)
 			continue
@@ -498,35 +507,64 @@ func (key grantIdentity) withPrivilege(privilege string) grantIdentity {
 	return key
 }
 
-// heldPrivileges answers whether the database holds the privilege key names,
-// and with which rows.
+// allPrivilegeLists says what the privilege keyword ALL grants on each object
+// kind of the target: the target's own lists, or the PostgreSQL lists where it
+// states none. A held ALL, a declared ALL and a revoke written as ALL read the
+// one answer, so the plan that grants ALL is the plan the next run reads as
+// held.
+type allPrivilegeLists struct{ target descriptor.AllPrivileges }
+
+// all returns every privilege ALL grants on objectType on the newest release.
+func (al allPrivilegeLists) all(objectType string) []string {
+	if len(al.target.Kinds) == 0 {
+		return pgprivilege.All(objectType)
+	}
+	return al.target.All(objectType)
+}
+
+// required returns the privileges ALL grants on every object of objectType on
+// every supported release.
+func (al allPrivilegeLists) required(objectType string) []string {
+	if len(al.target.Kinds) == 0 {
+		return pgprivilege.Portable(objectType)
+	}
+	return al.target.Required(objectType)
+}
+
+// held answers whether the database holds the privilege key names, and with
+// which rows.
 //
 // A privilege other than ALL is held when its own row is there. ALL is held
 // when a row says ALL -- a file compared with a file carries the keyword as it
-// was written -- or when the database reports every privilege ALL names on the
+// was written -- or when the database reports every privilege ALL grants on the
 // object kind, one row each, which is how a catalog read reports GRANT ALL.
-// Without this a declared ALL matched no row, so it was planned again on every
-// run (stokaro/ptah#3579).
+// Without this a declared ALL matches no row and is planned again on every
+// run. The list is the target's: written as PostgreSQL's table list, it asks
+// MySQL 8.4.13 for TRUNCATE, which MySQL has no privilege for, and SQL Server
+// 2025 for TRUNCATE and TRIGGER, which its ALL does not grant.
 //
-// For a table the rows asked for are [pgprivilege.Portable]: MAINTAIN, which
-// PostgreSQL 17 added, is not required. The catalog read carries no server
-// version, so a comparison cannot tell a PostgreSQL 16 server, which has no
-// MAINTAIN to report, from a PostgreSQL 17 one where MAINTAIN was revoked on
-// its own. Requiring it would plan GRANT ALL on every run against every
-// PostgreSQL 16 server; not requiring it misses that one revoke.
-func heldPrivileges(key grantIdentity, database map[grantIdentity]difftypes.GrantRef) ([]difftypes.GrantRef, bool) {
+// The rows asked for are the required ones. On a PostgreSQL table MAINTAIN,
+// which PostgreSQL 17 added, is not required. The catalog read carries no
+// server version, so a comparison cannot tell a PostgreSQL 16 server, which
+// has no MAINTAIN to report, from a PostgreSQL 17 one where MAINTAIN was
+// revoked on its own. Requiring it would plan GRANT ALL on every run against
+// every PostgreSQL 16 server; not requiring it misses that one revoke. An
+// Oracle table read the same way leaves out ALTER, which ALL does not grant on
+// a view, and MERGE VIEW, which it grants on nothing else, since the read
+// reports a view as TABLE.
+func (al allPrivilegeLists) held(key grantIdentity, database map[grantIdentity]difftypes.GrantRef) ([]difftypes.GrantRef, bool) {
 	if ref, exists := database[key]; exists {
 		return []difftypes.GrantRef{ref}, true
 	}
 	if key.privilege != allPrivilege {
 		return nil, false
 	}
-	portable := pgprivilege.Portable(key.objectType)
-	if len(portable) == 0 {
+	required := al.required(key.objectType)
+	if len(required) == 0 {
 		return nil, false
 	}
-	held := make([]difftypes.GrantRef, 0, len(portable))
-	for _, privilege := range portable {
+	held := make([]difftypes.GrantRef, 0, len(required))
+	for _, privilege := range required {
 		ref, exists := database[key.withPrivilege(privilege)]
 		if !exists {
 			return nil, false
@@ -536,16 +574,19 @@ func heldPrivileges(key grantIdentity, database map[grantIdentity]difftypes.Gran
 	return held, true
 }
 
-// declaredGrant answers whether the desired schema grants the privilege key
-// names: by its own name, or by an ALL on the same object that names it.
-func declaredGrant(key grantIdentity, declared map[grantIdentity]difftypes.GrantRef) bool {
+// declared answers whether the desired schema grants the privilege key names:
+// by its own name, or by an ALL on the same object that grants it. Without
+// the target's list a MySQL role the schema manages loses ALTER, DROP and the
+// other privileges PostgreSQL's ALL does not name, and the next run grants ALL
+// again.
+func (al allPrivilegeLists) declared(key grantIdentity, declared map[grantIdentity]difftypes.GrantRef) bool {
 	if _, exists := declared[key]; exists {
 		return true
 	}
 	if _, exists := declared[key.withPrivilege(allPrivilege)]; !exists {
 		return false
 	}
-	return slices.Contains(pgprivilege.All(key.objectType), key.privilege)
+	return slices.Contains(al.all(key.objectType), key.privilege)
 }
 
 // revokedIdentities keys every privilege the desired schema revokes, a revoked
@@ -608,6 +649,7 @@ func revokeOnCreatedTargets(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	planned map[grantIdentity]difftypes.GrantRef,
+	lists allPrivilegeLists,
 	created createdGrants,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
@@ -635,7 +677,7 @@ func revokeOnCreatedTargets(
 	}
 	for _, key := range order {
 		refs := revoked[key]
-		if coversAll(refs) {
+		if lists.coversAll(refs) {
 			all := refs[0]
 			all.Privilege = allPrivilege
 			diff.GrantsRemoved = append(diff.GrantsRemoved, all)
@@ -698,9 +740,10 @@ func removalCovers(planned map[grantIdentity]difftypes.GrantRef, key grantIdenti
 
 // coversAll reports whether refs, all about one grantee and one object, have
 // to be spelled ALL: they name it, or they name every privilege it names on a
-// kind whose list depends on the server version. Where the list is the same on
-// every release the privileges are written out as declared.
-func coversAll(refs []difftypes.GrantRef) bool {
+// kind where ALL does not grant some of them everywhere. Where the list is the
+// same on every release and every object the privileges are written out as
+// declared.
+func (al allPrivilegeLists) coversAll(refs []difftypes.GrantRef) bool {
 	named := make(map[string]bool, len(refs))
 	for _, ref := range refs {
 		named[ref.Privilege] = true
@@ -708,8 +751,8 @@ func coversAll(refs []difftypes.GrantRef) bool {
 	if named[allPrivilege] {
 		return true
 	}
-	all := pgprivilege.All(refs[0].ObjectType)
-	if len(all) == len(pgprivilege.Portable(refs[0].ObjectType)) {
+	all := al.all(refs[0].ObjectType)
+	if len(all) == len(al.required(refs[0].ObjectType)) {
 		return false
 	}
 	return !slices.ContainsFunc(all, func(privilege string) bool { return !named[privilege] })

@@ -1445,6 +1445,16 @@ column at a time. `SELECT`, `INSERT`, `UPDATE` and `REFERENCES` take a column
 list; any other privilege with one is refused by name before anything runs,
 because the server answers it with a syntax error.
 
+A declared `GRANT ALL ON t1` is held once the role holds every privilege the
+server's `ALL` grants on a table: `ALTER`, `CREATE`, `CREATE VIEW`, `DELETE`,
+`DROP`, `INDEX`, `INSERT`, `REFERENCES`, `SELECT`, `SHOW VIEW`, `TRIGGER` and
+`UPDATE`, and `DELETE HISTORY` on MariaDB. `ALL` on a database adds `ALTER
+ROUTINE`, `CREATE ROUTINE`, `CREATE TEMPORARY TABLES`, `EVENT`, `EXECUTE` and
+`LOCK TABLES`. MariaDB 11.4 and later also grant `SHOW CREATE ROUTINE` there,
+which a role is not required to hold, since 10.11 has none. A role the schema
+creates keeps every one of them. Measured on MySQL 8.0, 8.4, 9.7 and 26.10 and
+on MariaDB 10.11, 11.4, 11.8 and 12.3.
+
 A declared `REVOKE ALL ON t1` takes every privilege the role holds on `t1` and
 on its columns, whatever the server calls it: `ALTER`, `CREATE`, `DROP`,
 `INDEX`, `CREATE VIEW` and `SHOW VIEW`, and `DELETE HISTORY` on MariaDB, as well

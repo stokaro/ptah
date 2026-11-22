@@ -53,6 +53,7 @@ func oracle() descriptor.Dialect {
 		// privilege the role holds there through no grant fails with
 		// ORA-01927: measured on 23.26.3, also under SELECT ANY TABLE.
 		TableRevokeTakesOnlyTableGrants: true,
+		AllPrivileges:                   oracleAllPrivileges(),
 
 		// An Oracle banner carries two numbers, and the first is not the
 		// version: "Oracle AI Database 26ai Free Release 23.26.2.0.0". The
@@ -530,4 +531,22 @@ func oracleKeywords() []string {
 		"sysdate", "table", "then", "to", "trigger", "uid", "union", "unique", "update", "user",
 		"validate", "values", "varchar", "varchar2", "view", "whenever", "where", "with",
 	}
+}
+
+// oracleAllPrivileges is what GRANT ALL grants to a role, one row each in
+// ALL_TAB_PRIVS, measured on 21.3 and 23.26.3. The reader reads a view as a
+// TABLE, and ALL grants ALTER on a table and MERGE VIEW on a view, so neither
+// is required. Granted to a user, ALL also grants INDEX and REFERENCES, and
+// ASSERTION REFERENCES on 23, which a role does not receive.
+func oracleAllPrivileges() descriptor.AllPrivileges {
+	return descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
+		"TABLE": {
+			Privileges: []string{
+				"ALTER", "DEBUG", "DELETE", "FLASHBACK", "INSERT", "MERGE VIEW",
+				"ON COMMIT REFRESH", "QUERY REWRITE", "READ", "SELECT", "UPDATE",
+			},
+			Optional: []string{"ALTER", "MERGE VIEW"},
+		},
+		"SEQUENCE": {Privileges: []string{"ALTER", "SELECT"}},
+	}}
 }
