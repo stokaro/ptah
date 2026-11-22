@@ -1224,14 +1224,15 @@ type SchemaDiff struct {
 
 	// CurrentGrants is the read's grants: every privilege the read of the
 	// database this plan runs against reported, carried once for the whole
-	// diff and off the wire, for any planner whose table recreate drops them.
+	// diff and off the wire, for any planner that drops an object the schema
+	// keeps and creates it again.
 	//
 	// A comparison plans only the grants that differ, so no entry above
-	// carries the ones that agree. A plan that recreates a table needs them
-	// where the table's permissions live in the table's own access list, which
-	// the rebuild drops with the old table while the new one has none. This is
-	// how a planner gives them back. The YDB planner is the one that reads it
-	// today.
+	// carries the ones that agree. A plan that recreates an object needs them:
+	// a table whose permissions live in its own access list, a rebuilt view,
+	// or a routine replaced by DROP and CREATE. The drop takes the privileges
+	// with the old object while the new one has none, and this is how a
+	// planner gives them back.
 	//
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`

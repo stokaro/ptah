@@ -1460,11 +1460,13 @@ type Function struct {
 	// ReturnsTable reports a function whose result is a table, as the reader
 	// establishes it from the catalog's object type rather than from
 	// [Function.Returns]: a SQL Server inline or multi-statement table-valued
-	// function. SQL Server grants on such a function the privileges of a
-	// table. A reader that does not establish it leaves it false, and Returns
-	// alone does not imply it: Oracle reports `table` as the return type of a
-	// function returning a nested-table collection, which takes the privileges
-	// of a function.
+	// function, which SQL Server grants the privileges of a table on. Only the
+	// SQL Server reader sets it. Every other reader leaves it false, a
+	// PostgreSQL function declared RETURNS TABLE (...) included, and so does a
+	// function converted from a declaration rather than read from a database.
+	// Returns alone does not imply it: Oracle reports `table` as the return
+	// type of a function returning a nested-table collection, which takes the
+	// privileges of a function.
 	ReturnsTable bool `json:"returns_table,omitempty"`
 }
 
