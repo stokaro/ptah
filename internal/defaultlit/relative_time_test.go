@@ -33,6 +33,10 @@ func TestRelativeTimeLiteral_Matches(t *testing.T) {
 		{name: "a Unicode escape string", value: `U&'\006Eow'`},
 		{name: "a dollar-quoted string", value: "$$now$$"},
 		{name: "a tagged dollar-quoted string", value: "$a$today$a$"},
+		// PostgreSQL 19 reads a tag outside ASCII, and stores DEFAULT $é$now$é$
+		// on a timestamptz as the moment the table was created, as it does
+		// DEFAULT 'now'.
+		{name: "a dollar-quoted string whose tag is outside ASCII", value: "$\u00e9$now$\u00e9$"},
 		{name: "a function-style cast", value: "date('today')"},
 		{name: "a collation inside a cast", value: `('now' COLLATE "C")::date`},
 		{name: "a time beside the word", value: "'tomorrow 10:00'"},
@@ -67,6 +71,8 @@ func TestRelativeTimeLiteral_DoesNotMatch(t *testing.T) {
 		{name: "a function-style text cast", value: "text('now')::date", literals: relativeTimeLiterals},
 		{name: "a typed text literal inside an expression", value: "text 'now' || ''", literals: relativeTimeLiterals},
 		{name: "a dollar-quoted text cast", value: "$$now$$::text::date", literals: relativeTimeLiterals},
+		// $1abc$ is the parameter $1 and a name on PostgreSQL, not a tag.
+		{name: "a tag that starts with a digit", value: "$1abc$now$1abc$", literals: relativeTimeLiterals},
 		{name: "text first", value: "('now'::text)::date", literals: relativeTimeLiterals},
 		{name: "varchar first", value: "'now'::character varying(10)::timestamptz", literals: relativeTimeLiterals},
 		{name: "quoted text first", value: `'now'::"pg_catalog"."text"::timestamp`, literals: relativeTimeLiterals},

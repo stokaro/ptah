@@ -82,7 +82,7 @@ func Normalize(input string) (string, Origins) {
 // inside a quoted literal, a dollar-quoted body or a block comment is text
 // that happens to look like one, and stays where it was written.
 func NormalizeFor(input string, rules Rules) (string, Origins) {
-	tags := &dollarTags{input: input, rule: rules.DollarTags}
+	tags := lexer.NewDollarQuotes(rules.DollarTags, input)
 	delimiter := ";"
 	allowCommentDelimiter := false
 	var output strings.Builder
@@ -115,7 +115,7 @@ func NormalizeFor(input string, rules Rules) (string, Origins) {
 //
 // The scan runs under the default delimiter too, which rewrites nothing: it
 // is how a directive line is told from the text of a literal.
-func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rules Rules, tags *dollarTags, written *Origins, inputStart, outputStart int) (string, int) {
+func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rules Rules, tags *lexer.DollarQuotes, written *Origins, inputStart, outputStart int) (string, int) {
 	rewrite := delimiter != "" && delimiter != ";"
 	replacement := ";"
 	if strings.ContainsAny(delimiter, "\r\n") {
@@ -123,10 +123,12 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 	}
 
 	var output strings.Builder
+	var names nameScan
 	for pos := 0; pos < len(input); {
 		if directiveLineAt(input, pos) {
 			return output.String(), pos
 		}
+		names.visit(input, pos)
 		switch {
 		case rewrite && allowCommentDelimiter && isCommentDelimiterAt(input, pos, delimiter):
 			writeDelimiterReplacement(&output, replacement)
@@ -145,12 +147,7 @@ func rewriteStatements(input, delimiter string, allowCommentDelimiter bool, rule
 			pos += len(delimiter)
 			written.add(outputStart+output.Len(), inputStart+pos)
 		case rules.DollarQuotes && input[pos] == '$':
-			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos, inputStart, rules.DollarTags, tags); ok {
-				pos = nextPos
-				continue
-			}
-			output.WriteByte(input[pos])
-			pos++
+			pos = writeDollarSign(&output, input, pos, inputStart, rules.DollarTags, tags, &names)
 		default:
 			output.WriteByte(input[pos])
 			pos++
@@ -349,42 +346,39 @@ func writeBracketedName(output *strings.Builder, input string, pos int) int {
 	return pos
 }
 
-// dollarTags tells whether a $tag$ token starts anywhere after a given offset
-// of the whole script, so a tag with no closer is told apart from one with a
-// closer in constant time. Searching the rest of the text for every unclosed
-// opener would read a script with thousands of `$t1$`, `$t2$` forms in
-// quadratic time. The index is built once, on the first dollar sign, over the
-// whole script, so a script with many directives is not indexed again.
-type dollarTags struct {
-	input string
-	rule  lexer.DollarTagRule
-	last  map[string]int
+// nameScan is where the last name a scan met ends. A dollar sign before that
+// stands inside the name and opens no body ([lexer.NameStart]). The scan still
+// steps through a name byte by byte, since a delimiter is matched wherever it
+// is written.
+type nameScan struct {
+	end int
 }
 
-// closesAfter reports whether tag starts at an offset past after.
-func (d *dollarTags) closesAfter(tag string, after int) bool {
-	if d.last == nil {
-		d.last = make(map[string]int)
-		for pos := 0; pos < len(d.input); pos++ {
-			if d.input[pos] != '$' {
-				continue
-			}
-			if length, ok := d.rule.OpeningTag(d.input[pos:]); ok {
-				d.last[d.input[pos:pos+length]] = pos
-			}
-		}
+// visit records the name that begins at input[pos], where one begins outside
+// the last name.
+func (n *nameScan) visit(input string, pos int) {
+	if pos >= n.end && lexer.NameStart(input[pos]) {
+		n.end = lexer.NameEnd(input, pos)
 	}
-	return d.last[tag] > after
+}
+
+// writeDollarSign copies the dollar sign at pos, with the body it opens where
+// it stands outside a name, and returns the offset after what it copied. A
+// sign that opens no body begins a name when the bytes after it continue one.
+func writeDollarSign(output *strings.Builder, input string, pos, base int, rule lexer.DollarTagRule, tags *lexer.DollarQuotes, names *nameScan) int {
+	if pos >= names.end {
+		if nextPos, ok := writeDollarQuotedSQL(output, input, pos, base, rule, tags); ok {
+			return nextPos
+		}
+		names.end = lexer.NameEnd(input, pos+1)
+	}
+	output.WriteByte(input[pos])
+	return pos + 1
 }
 
 // writeDollarQuotedSQL copies a dollar-quoted body that opens at pos, when
 // tags says the tag closes later in the text.
-func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, rule lexer.DollarTagRule, tags *dollarTags) (int, bool) {
-	// A dollar sign that follows a name character is part of that name, as in
-	// `a$b$`: PostgreSQL opens a quote only at the start of a token.
-	if pos > 0 && (isWordByte(input[pos-1]) || input[pos-1] == '$') {
-		return pos, false
-	}
+func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, rule lexer.DollarTagRule, tags *lexer.DollarQuotes) (int, bool) {
 	length, ok := rule.OpeningTag(input[pos:])
 	if !ok {
 		return pos, false
@@ -392,7 +386,7 @@ func writeDollarQuotedSQL(output *strings.Builder, input string, pos, base int, 
 	tagEnd := pos + length - 1
 
 	tag := input[pos : tagEnd+1]
-	if !tags.closesAfter(tag, base+tagEnd) {
+	if !tags.Closes(tag, base+tagEnd+1) {
 		return pos, false
 	}
 	closeStart := strings.Index(input[tagEnd+1:], tag)

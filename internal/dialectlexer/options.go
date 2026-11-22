@@ -81,10 +81,6 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 	if scanner := builtin.Lookup(lexical.Lexer).Scanner; scanner != nil {
 		return lexer.Options{Scanner: scanner}
 	}
-	tags := lexer.PostgreSQLDollarTags
-	if lexical.HeredocDollarTags {
-		tags = lexer.HeredocDollarTags
-	}
 	return lexer.Options{
 		StandardStrings:                true,
 		BackslashEscapes:               lexical.BackslashEscapes,
@@ -97,8 +93,20 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 		LineComments:                   slices.Clone(lexical.LineComments),
 		DisableHashComments:            lexical.HashNames,
 		NestedBlockComments:            lexical.NestedComments,
-		DollarTags:                     tags,
+		DollarTags:                     DollarTags(lexical),
 	}
+}
+
+// DollarTags is the [lexer.DollarTagRule] lexical states: the ClickHouse
+// heredoc rule where it states heredoc tags, and the PostgreSQL rule
+// otherwise, the zero descriptor of a text no dialect names included. Every
+// reader of dollar-quoted strings takes its rule from here, so the lexer and
+// the readers that keep a scanner of their own read one tag set per dialect.
+func DollarTags(lexical descriptor.Lexical) lexer.DollarTagRule {
+	if lexical.HeredocDollarTags {
+		return lexer.HeredocDollarTags
+	}
+	return lexer.PostgreSQLDollarTags
 }
 
 // executableComments is the lexer's spelling of a descriptor's executable
