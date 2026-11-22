@@ -188,10 +188,17 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	// the comparator expects of an authored side, so a rollback of one table
 	// planned a rebuild of all of them. Two database sources avoid the
 	// conversion entirely, and this path already knows how to compare them.
+	//
+	// The dev side is read on the connection the replay ran on. A dev database
+	// that lives in its connection's one session, an in-memory SQLite
+	// database, is empty on any other connection: opened again by its URL, it
+	// holds none of the replayed tables, and the plan drops every table the
+	// target holds.
 	diff, err := atlasschema.Diff(ctx, atlasschema.DiffOptions{
 		Runtime:  opts.Runtime,
 		FromURLs: []string{opts.TargetConnection.Info().URL},
-		ToURLs:   []string{opts.DevDatabaseURL},
+		ToURLs:   []string{devConn.Info().URL},
+		Held:     []*dbschema.DatabaseConnection{devConn},
 		// Both sides are databases, so no third database is needed to
 		// materialize either one.
 		Exclude:                opts.Exclude,

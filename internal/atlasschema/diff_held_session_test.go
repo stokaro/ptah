@@ -1,0 +1,107 @@
+package atlasschema_test
+
+import (
+	"path/filepath"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
+
+	"ptah.run/dbschema"
+	"ptah.run/engine/builtin"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlasurl"
+)
+
+// heldDatabase opens the SQLite database at url and runs the statements in
+// it. A private in-memory database lives in the returned connection's one
+// session.
+func heldDatabase(c *qt.C, url, statements string) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	_, err = conn.ExecContext(c.Context(), statements)
+	c.Assert(err, qt.IsNil)
+	return conn
+}
+
+// TestDiffHeldSession compares two private in-memory SQLite databases: --from
+// holds a, b and c, and --to holds a and b. A side whose connection the caller
+// holds is read on it. A side the caller does not hold is opened again by its
+// URL, which reaches a new, empty database, and the plan drops every table:
+// that row is the reason Held exists, and the control that the first row's
+// answer came from the held connection.
+func TestDiffHeldSession(t *testing.T) {
+	const fromURL, toURL = "sqlite://from?mode=memory", "sqlite://to?mode=memory"
+	tests := []struct {
+		name string
+		held []string
+		want []string
+	}{
+		{
+			name: "both sides held",
+			held: []string{fromURL, toURL},
+			want: []string{`DROP TABLE "c"`},
+		},
+		{
+			name: "the side that is not held is empty",
+			held: []string{fromURL},
+			want: []string{`DROP TABLE "a"`, `DROP TABLE "b"`, `DROP TABLE "c"`},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			from := heldDatabase(c, fromURL,
+				"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY); "+
+					"CREATE TABLE c (id INTEGER PRIMARY KEY);")
+			to := heldDatabase(c, toURL,
+				"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY);")
+			opened := map[string]*dbschema.DatabaseConnection{fromURL: from, toURL: to}
+			held := make([]*dbschema.DatabaseConnection, 0, len(test.held))
+			for _, url := range test.held {
+				held = append(held, opened[url])
+			}
+
+			report, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
+				Runtime:  must.Must(builtin.New()),
+				FromURLs: []string{fromURL},
+				ToURLs:   []string{toURL},
+				Held:     held,
+			})
+
+			c.Assert(err, qt.IsNil)
+			statements := make([]string, 0, len(report.Changes))
+			for _, change := range report.Changes {
+				statements = append(statements, change.Cmd)
+			}
+			c.Assert(statements, qt.ContentEquals, test.want)
+		})
+	}
+}
+
+// TestDiffHeldSession_FileIsOpenedAgain holds a connection to a database file
+// and closes it before the comparison. A database a URL reaches from any
+// connection is opened again by that URL, so the comparison never reads the
+// held connection: had it done so, it would fail on the closed pool.
+func TestDiffHeldSession_FileIsOpenedAgain(t *testing.T) {
+	c := qt.New(t)
+	fromURL := atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "from.db"))
+	from := heldDatabase(c, fromURL, "CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY);")
+	const toURL = "sqlite://to?mode=memory"
+	to := heldDatabase(c, toURL, "CREATE TABLE a (id INTEGER PRIMARY KEY);")
+	c.Assert(from.Close(), qt.IsNil)
+
+	report, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
+		Runtime:  must.Must(builtin.New()),
+		FromURLs: []string{fromURL},
+		ToURLs:   []string{toURL},
+		Held:     []*dbschema.DatabaseConnection{from, to},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Changes, qt.HasLen, 1)
+	c.Assert(report.Changes[0].Cmd, qt.Equals, `DROP TABLE "b"`)
+}

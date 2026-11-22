@@ -184,6 +184,14 @@ type ResolveOptions struct {
 	// schema path before it is parsed or a dev database is opened. Nil accepts
 	// every source format supported by schemafile.
 	ValidateLocalSchemaSource func(string) error
+	// Held are connections the caller already holds. A database source whose
+	// URL is the one a held connection was opened with, and whose database
+	// lives in that connection's one session
+	// ([dbschema.DatabaseConnection.SingleSession]), is read on that connection
+	// and left open: opened again by its URL, a private in-memory database is
+	// a new, empty one, and a comparison with it plans to drop everything the
+	// other side holds. Every other source is opened from its URL, held or not.
+	Held []*dbschema.DatabaseConnection
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -514,15 +522,11 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 	if err := s.ensureDialect(opts); err != nil {
 		return err
 	}
-	connect := dbschema.ConnectToDatabase
-	if opts.ServerScope {
-		connect = dbschema.ConnectToServer
-	}
-	conn, err := connectWith(ctx, s.Sources[0].Raw, opts.ConnectTimeout, connect)
+	conn, release, err := s.connectDatabase(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("connect to %s database: %w", s.Flag, err)
 	}
-	defer dbschema.CloseAndWarn(conn)
+	defer release()
 	if err := s.ensureServerDialect(conn, opts); err != nil {
 		return err
 	}
@@ -560,6 +564,41 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 		IdentifierSemantics: new(conn.Info().IdentifierSemantics.Clone()),
 		Address:             conn.Info().URL,
 	}, conn)
+}
+
+// connectDatabase returns the connection a database source is read on, and
+// what releases it: a held connection serving the source's URL
+// ([heldSession]), which stays open, or a connection opened from the URL,
+// which is closed.
+func (s Set) connectDatabase(ctx context.Context, opts ResolveOptions) (*dbschema.DatabaseConnection, func(), error) {
+	if held := heldSession(opts.Held, s.Sources[0].Raw); held != nil {
+		return held, func() {}, nil
+	}
+	connect := dbschema.ConnectToDatabase
+	if opts.ServerScope {
+		connect = dbschema.ConnectToServer
+	}
+	conn, err := connectWith(ctx, s.Sources[0].Raw, opts.ConnectTimeout, connect)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn, func() { dbschema.CloseAndWarn(conn) }, nil
+}
+
+// heldSession returns the connection in held that a source naming rawURL must
+// be read on, or nil when the URL can be opened again. That is a connection
+// opened with exactly rawURL whose database lives in its one session
+// ([dbschema.DatabaseConnection.SingleSession]). A database a URL reaches
+// from any connection is opened again, so the read gets a fresh session and
+// the scope its own connection resolves, as it does without a held
+// connection.
+func heldSession(held []*dbschema.DatabaseConnection, rawURL string) *dbschema.DatabaseConnection {
+	for _, conn := range held {
+		if conn != nil && conn.SingleSession() && conn.Info().URL == rawURL {
+			return conn
+		}
+	}
+	return nil
 }
 
 // ensureDialect rejects database sources whose URL scheme cannot name a
