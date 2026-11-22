@@ -361,9 +361,12 @@ the two with `EXCHANGE TABLES`. The table stays as it is until the swap:
 
 ```sql
 SELECT throwIf((SELECT count() FROM system.databases WHERE name = currentDatabase() AND engine = 'Atomic') = 0, '...'), throwIf((SELECT count() FROM `events`) != (SELECT ifNull(sum(total_rows), 0) FROM system.tables WHERE database = currentDatabase() AND name = 'events'), '...') SETTINGS apply_deleted_mask = 0;
-CREATE TABLE ptah_rebuild_events (id UInt64, name String) ENGINE = ReplacingMergeTree ORDER BY id;
+CREATE TABLE `ptah_rebuild_events` (id UInt64, name String) ENGINE = ReplacingMergeTree ORDER BY (id) PRIMARY KEY (id) SETTINGS index_granularity = 8192;
+SELECT throwIf((SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns WHERE ... table = 'ptah_rebuild_events' ...) != (... table = 'events' ...), '...'), throwIf((SELECT arraySort(groupArray((name, query))) FROM system.projections WHERE ... table = 'ptah_rebuild_events') != (... table = 'events'), '...');
+SYSTEM STOP MERGES `ptah_rebuild_events`;
 INSERT INTO `ptah_rebuild_events` (`id`, `name`) SELECT `id`, `name` FROM `events` SETTINGS max_partitions_per_insert_block = 0, optimize_on_insert = 0, insert_deduplicate = 0;
-SELECT throwIf((SELECT count() FROM `ptah_rebuild_events`) != (SELECT count() FROM `events`), '...');
+WITH (SELECT count() FROM `ptah_rebuild_events`) AS copied, (SELECT count() FROM `events`) AS source SELECT throwIf(copied < source, '...'), throwIf(copied > source, '...');
+SYSTEM START MERGES `ptah_rebuild_events`;
 EXCHANGE TABLES `events` AND `ptah_rebuild_events`;
 DROP TABLE `ptah_rebuild_events` SYNC;
 ```
@@ -382,17 +385,47 @@ could not keep the rows:
   no policy filters. `apply_deleted_mask = 0` makes `count()` include the rows a
   lightweight `DELETE` hides, which `total_rows` still counts. The copy leaves those
   rows out.
+- The table has projections, the new engine merges rows (`ReplacingMergeTree` and
+  every other `MergeTree` engine but `MergeTree` itself), and neither the declared
+  `SETTINGS` nor the server's default set `deduplicate_merge_projection_mode` to
+  `drop` or `rebuild`. ClickHouse refuses a projection on such a table otherwise.
 
-The copy writes the rows as they are. `optimize_on_insert = 0` stops a
-`ReplacingMergeTree` or `CollapsingMergeTree` copy from merging the rows of a block
-as it writes them, `insert_deduplicate = 0` stops a deduplication window from
-dropping a block, and `max_partitions_per_insert_block = 0` lifts the limit of 100
-partitions in one block. The statement after the copy fails when the copy holds
-another number of rows than the table. A row was then written to the table while it
-was copied, or a limit in the user's settings cut the copy short, and the table is
-as it was. A declared `TTL` drops expired rows as they are written, so the counts
-can differ for that reason alone, and a table that declares one is not counted.
-Rows the declared `TTL` has already expired are not in the new table.
+The copy writes the rows as they are, through three settings of the `INSERT`:
+
+- `optimize_on_insert = 0` stops a `ReplacingMergeTree` or `CollapsingMergeTree`
+  copy from merging the rows of a block as it writes them;
+- `insert_deduplicate = 0` stops a deduplication window from dropping a block;
+- `max_partitions_per_insert_block = 0` lifts the limit of 100 partitions in one
+  block.
+
+When the new engine merges rows, or the new table has a `TTL`, a background merge
+would remove rows from the copy before they are counted:
+3,000,000 rows over 100,000 keys, written in blocks of 50,000 into a
+`ReplacingMergeTree` copy, came down to between 100,000 and 278,147 rows, measured on
+24.10 and 26.10. So the plan stops the merges of the copy with `SYSTEM STOP MERGES`
+around the copy and the count, and starts them again before the swap. That needs
+the `SYSTEM MERGES` privilege on the copy. The rows a declared `TTL` has expired are
+then counted, and the merges of the new table remove them after the swap.
+
+The statement after the copy fails when the copy holds fewer rows than the table: a
+row was written to the table while it was copied, or a limit in the user's settings
+cut the copy short. It fails when the copy holds more rows, too, since rows deleted
+from the table during the copy would come back; the table's own merges can remove
+rows when its engine merges rows or it has a `TTL`, so that half is left out for
+such a table. Either way the table is as it was.
+
+The new table keeps what no declaration can state, and Ptah reads from the table:
+the codec of each column it keeps, and every projection. They are added to the new
+table before the rows, and a check that the new table reports the same codecs and
+projections as the table stops the plan before the copy otherwise. The plan names
+them in a comment. What the declaration states follows the declaration, as it does
+on the `ALTER TABLE` path: a table or column comment the declaration leaves out is
+not on the new table, and the plan names each comment and index that changes. An
+unnamed `CHECK` keeps the name it has on the table. A rebuild that would lose
+something is refused before anything is created:
+
+- a column with a column `TTL`, `STATISTICS` or `SETTINGS`, which Ptah does not carry;
+- a projection that uses a column the declaration drops.
 
 The columns follow the declaration:
 
@@ -400,10 +433,16 @@ The columns follow the declaration:
   and its data is gone from the rebuilt table. A rename without a rename hint is a
   drop and an add, so the column that takes the new name starts with its default; the
   plan names the dropped columns in a comment.
-- A column whose type or nullability changes is copied through `accurateCast`, which
-  fails on a value the new type cannot hold (`300` into `UInt8`, a `NULL` into a
-  column that no longer allows it). A plain `INSERT ... SELECT` would wrap the number
-  around and turn the `NULL` into zero. A failure there leaves the table as it was.
+- A column whose type or nullability changes is copied through `accurateCast`. It
+  fails on a number the new type cannot hold (`300` into `UInt8`, `1.5` into an
+  integer), on a `NULL` into a column that no longer allows it, on a string that does
+  not parse as the new type, and on a string too long for a `FixedString`. A plain
+  `INSERT ... SELECT` would wrap the number around and turn the `NULL` into zero;
+  `ALTER TABLE ... MODIFY COLUMN` wraps the number around too. A failure there leaves
+  the table as it was. The rest
+  converts as `MODIFY COLUMN` converts it, without an error: a `Decimal` loses the
+  digits past its new scale, a `DateTime` loses its time of day as a `Date`, and a
+  date string out of range, such as `'2024-13-45'`, becomes `1970-01-01`.
 - Computed columns (`MATERIALIZED`, `ALIAS`, `EPHEMERAL`) are not copied.
 - The declared skipping indexes are created on the new table before the rows are
   written, so the rows are indexed. A row policy and a grant name the table, so they
@@ -413,8 +452,7 @@ The columns follow the declaration:
   the new `ORDER BY` is refused.
 
 The steps are not atomic. A row written to the table between the count and the swap
-is lost, and so is a row written during the copy of a table with a `TTL`. The plan
-says so in a comment and marks the plan destructive. `migrations lint` reports the
+is lost. The plan says so in a comment and marks the plan destructive. `migrations lint` reports the
 last `DROP TABLE` as `destructive/drop-table`, since after the swap it drops the old
 table and its rows, and the report is meant to stand. Stop writers before applying
 it.
@@ -445,7 +483,9 @@ reads both tables while the copy exists.
 
 Ptah rebuilds only a table whose engine, as it is and as declared, keeps the rows on
 this server: a `MergeTree` engine that is not replicated or shared, `Memory`, `Log`,
-`TinyLog` and `StripeLog`. Any other engine is refused whatever the request says,
+`StripeLog`, and `TinyLog` as the new engine. A `TinyLog` table is refused by name
+when the plan is made: it reports no `total_rows`, so nothing would prove that the
+copy holds every row. Any other engine is refused whatever the request says,
 because the copy would read the rows from elsewhere (`Kafka`, `Distributed`), write
 them elsewhere (`MySQL`, `URL`) or drop them (`Null`).
 
@@ -470,14 +510,16 @@ diff "clickhouse" {
 }
 ```
 
-The block is the Atlas spelling and Ptah reads it per dialect: a label of a dialect
-that has no table rebuild is refused. The
+The block is the Atlas spelling and Ptah reads it per dialect: `allow_recreate` under
+the label of a dialect that has no table rebuild is refused. The
 [project configuration page](../../atlas/project-config/) says how the env block, the
 top-level block and the variable combine. Atlas Community Edition has no ClickHouse
 driver and plans no rebuild. The strict policy (`PTAH_ATLAS_STRICT_COMPAT=1`) therefore
 refuses the block as an ignored construct, and refuses the variable.
 The dev-database rehearsal of `ptah-compat` lets the guards read `system.databases`
-and `system.tables`, since a `SELECT` changes no database.
+and `system.tables`, since a `SELECT` changes no database, and lets the plan stop and
+start the merges of one table in the dev database, the only `SYSTEM` statements a
+replay accepts.
 
 ## Data-skipping indexes
 

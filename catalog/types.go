@@ -391,6 +391,22 @@ type Table struct {
 	// apply to its owner as well. It is independent of RLSEnabled, which
 	// leaves the owner exempt (stokaro/ptah#3121).
 	RLSForced bool `json:"rls_forced,omitempty"`
+	// Projections are the projections of a ClickHouse table, in the order the
+	// server's CREATE TABLE lists them. No declaration states one and no
+	// comparison reads them: a table rebuild carries them into the new table.
+	// A reader for another engine leaves it empty.
+	Projections []Projection `json:"projections,omitempty"`
+}
+
+// Projection is one projection of a ClickHouse table. Name is the projection's
+// name, unquoted. Definition is what follows the name in the server's CREATE
+// TABLE, verbatim: `(SELECT * ORDER BY name)`, with `WITH SETTINGS (...)` after
+// it where the projection has settings, or `INDEX name TYPE basic` for an index
+// projection. ALTER TABLE ... ADD PROJECTION takes the name and the definition
+// as they are.
+type Projection struct {
+	Name       string `json:"name"`
+	Definition string `json:"definition"`
 }
 
 // RawType is the type spelling a comparator holds a desired schema against.
@@ -600,6 +616,14 @@ type Column struct {
 	// reader reads it. It is empty for a column nobody commented, which is why
 	// it is omitted from the encoding rather than written as "".
 	Comment string `json:"comment,omitempty"`
+	// StorageClauses are the clauses of a ClickHouse column's definition that
+	// say how the server stores the column and that no declaration states --
+	// CODEC, STATISTICS, TTL and SETTINGS -- each with its keyword, as the
+	// server's CREATE TABLE spells it and in its order. No comparison reads
+	// them: a table rebuild carries the codec into the new table and refuses a
+	// column with any of the others. A reader for another engine leaves it
+	// empty.
+	StorageClauses []string `json:"storage_clauses,omitempty"`
 	// NotNullConstraintName is the name the target keeps for this column's NOT
 	// NULL, where it keeps one as an addressable catalog object.
 	//

@@ -279,7 +279,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT name, comment, sorting_key, primary_key,
-		       engine_full, partition_key, sampling_key
+		       engine_full, partition_key, sampling_key, create_table_query
 		FROM system.tables
 		WHERE database = ?
 		  AND is_temporary = 0
@@ -302,10 +302,10 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	var tables []catalog.Table
 	for rows.Next() {
 		var name, comment, sortingKey, primaryKey string
-		var engineFull, partitionKey, samplingKey string
+		var engineFull, partitionKey, samplingKey, createQuery string
 		if err := rows.Scan(
 			&name, &comment, &sortingKey, &primaryKey,
-			&engineFull, &partitionKey, &samplingKey,
+			&engineFull, &partitionKey, &samplingKey, &createQuery,
 		); err != nil {
 			return nil, err
 		}
@@ -313,6 +313,9 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 		t.Columns = columnsByTable[name]
 		t.Facets, err = observedTableSettings(engineFull, sortingKey, primaryKey, partitionKey, samplingKey)
 		if err != nil {
+			return nil, fmt.Errorf("table %q: %w", name, err)
+		}
+		if err := withTableElements(&t, createQuery); err != nil {
 			return nil, fmt.Errorf("table %q: %w", name, err)
 		}
 		tables = append(tables, t)

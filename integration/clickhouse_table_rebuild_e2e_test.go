@@ -8,12 +8,14 @@ import (
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
 )
@@ -199,8 +201,8 @@ func TestClickHouseTableRebuild_HappyPath(t *testing.T) {
 			wantDefinition: [4]string{"MergeTree", "", "name,id", "name,id"},
 		},
 		{
-			// The copy is not counted against the table, since a TTL drops
-			// expired rows as they are written. None of these has expired.
+			// The merges of the copy stop while it is counted, so none of
+			// its rows merges away before the count.
 			name:           "the engine changes and the table declares a TTL",
 			create:         rebuildCreate,
 			properties:     "        engine: ReplacingMergeTree(ver)\n        order_by: id\n        ttl: d + toIntervalYear(100)\n",
@@ -428,7 +430,7 @@ func TestClickHouseTableRebuild_ACopyThatDiffersStopsBeforeTheSwap(t *testing.T)
 	applied := rebuildApply(c, filtered.String(), rebuildEvents, "--allow-table-rebuild")
 
 	c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stderr, qt.Contains, "code: 395, message: cannot create t again: the copy ptah_rebuild_t holds another number of rows than t")
+	c.Assert(applied.Stderr, qt.Contains, "code: 395, message: cannot create t again: the copy ptah_rebuild_t holds fewer rows than t")
 	c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "MergeTree")
 	c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, rebuildFixtureRowsRead)
 	c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"ptah_rebuild_t", "t"})
@@ -543,7 +545,7 @@ func TestClickHouseTableRebuild_DependentsUseTheNewTable(t *testing.T) {
 		{
 			name: "a dictionary that loads from the table",
 			dependents: []string{"CREATE DICTIONARY dict (id UInt64, name String) PRIMARY KEY id " +
-				"SOURCE(CLICKHOUSE(TABLE 't' DB '{db}' USER 'ptah_user' PASSWORD 'ptah_password')) LAYOUT(FLAT()) LIFETIME(0)"},
+				"SOURCE(CLICKHOUSE(TABLE 't' DB '{db}' USER {user} PASSWORD {password})) LAYOUT(FLAT()) LIFETIME(0)"},
 			after: []string{"INSERT INTO t VALUES (4, 'd', 4, '2024-03-01')", "SYSTEM RELOAD DICTIONARY {db}.dict"},
 			probe: "SELECT dictGet('{db}.dict', 'name', toUInt64(4))",
 			want:  "d",
@@ -603,7 +605,7 @@ func TestClickHouseTableRebuild_ReadersReadTheNewTable(t *testing.T) {
 		},
 		{
 			name:      "a view that reads the table through a table function",
-			reader:    "CREATE VIEW v AS SELECT * FROM remote('127.0.0.1', currentDatabase(), t, 'ptah_user', 'ptah_password')",
+			reader:    "CREATE VIEW v AS SELECT * FROM remote('127.0.0.1', currentDatabase(), t, {user}, {password})",
 			extraArgs: []string{"--exclude", "v"},
 			probe:     "SELECT toString(count()) FROM v",
 			wantCount: "3",
@@ -619,7 +621,8 @@ func TestClickHouseTableRebuild_ReadersReadTheNewTable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			url, conn := rebuildScratch(c)
-			rebuildExec(c, conn, rebuildCreate, rebuildFixtureRows, test.reader)
+			rebuildExec(c, conn, rebuildCreate, rebuildFixtureRows)
+			rebuildExec(c, conn, rebuildInDatabase(c, conn, []string{test.reader})...)
 
 			applied := rebuildApply(c, url, rebuildEvents, append([]string{"--allow-table-rebuild"}, test.extraArgs...)...)
 
@@ -633,13 +636,20 @@ func TestClickHouseTableRebuild_ReadersReadTheNewTable(t *testing.T) {
 }
 
 // rebuildInDatabase writes the scratch database's name where a statement says
-// {db}, for a definition that takes the name as a string.
+// {db}, for a definition that takes the name as a string, and the user and the
+// password the tests connect with, as string literals, where it says {user} and
+// {password}: a dictionary or a remote() query connects again on its own.
 func rebuildInDatabase(c *qt.C, conn *dbschema.DatabaseConnection, statements []string) []string {
 	c.Helper()
 	database := rebuildCount(c, conn, "SELECT currentDatabase()")
+	target, err := neturl.Parse(dbtarget.URL(c, dbtarget.ClickHouse))
+	c.Assert(err, qt.IsNil)
+	password, _ := target.User.Password()
+	fill := strings.NewReplacer("{db}", database,
+		"{user}", chcolumn.StringLiteral(target.User.Username()), "{password}", chcolumn.StringLiteral(password))
 	written := make([]string, len(statements))
 	for i, statement := range statements {
-		written[i] = strings.ReplaceAll(statement, "{db}", database)
+		written[i] = fill.Replace(statement)
 	}
 	return written
 }
@@ -703,6 +713,222 @@ func TestClickHouseTableRebuild_LeavesDeletedRowsOut(t *testing.T) {
 	rebuildSynced(c, url, rebuildEvents)
 }
 
+// rebuildStorageColumns declare the columns of rebuildStorageCreate, with and
+// without their comments.
+const (
+	rebuildStorageColumns = "    columns:\n      id: {type: UInt64, not_null: true}\n      name: {type: String, not_null: true, comment: the name}\n" +
+		"      ver: {type: UInt32, not_null: true}\n      d: {type: Date, not_null: true}\n"
+	rebuildStorageCreate = "CREATE TABLE t (id UInt64, name String COMMENT 'the name' CODEC(ZSTD(3)), ver UInt32, d Date, " +
+		"PROJECTION p_by_name (SELECT * ORDER BY name)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1024 COMMENT 'tbl comment'"
+	rebuildStorageProperties = "        engine: ReplacingMergeTree(ver)\n        order_by: id\n" +
+		"        settings: index_granularity = 1024, deduplicate_merge_projection_mode = 'rebuild'\n"
+)
+
+// No declaration states a column codec or a projection, so the new table takes
+// both from the table, and the plan names them. A comment is declared, so it
+// follows the declaration, as it does on the ALTER TABLE path, and the plan
+// names what changes.
+func TestClickHouseTableRebuild_KeepsWhatNoDeclarationStates(t *testing.T) {
+	tests := []struct {
+		name             string
+		declaration      string
+		wantColumn       string
+		wantTableComment string
+		wantPlan         string
+	}{
+		{
+			name: "the declaration states the comments",
+			declaration: "tables:\n  t:\n    comment: tbl comment\n    platform:\n      clickhouse:\n" + rebuildStorageProperties +
+				rebuildStorageColumns,
+			wantColumn:       "CODEC(ZSTD(3)) the name",
+			wantTableComment: "tbl comment",
+			wantPlan:         "-- The new table keeps what no declaration states and t has: the codecs of columns name CODEC(ZSTD(3)); the projections p_by_name",
+		},
+		{
+			name: "the declaration leaves the comments out",
+			declaration: "tables:\n  t:\n    platform:\n      clickhouse:\n" + rebuildStorageProperties +
+				strings.Replace(rebuildStorageColumns, ", comment: the name", "", 1),
+			wantColumn:       "CODEC(ZSTD(3)) ",
+			wantTableComment: "",
+			wantPlan:         "-- The new table takes what the declaration states, which changes: the table comment 'tbl comment' -> none; column name: comment 'the name' -> none",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, conn := rebuildScratch(c)
+			rebuildExec(c, conn, rebuildStorageCreate, rebuildFixtureRows)
+
+			applied := rebuildApply(c, url, test.declaration, "--allow-table-rebuild")
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stdout, qt.Contains, test.wantPlan)
+			c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "ReplacingMergeTree")
+			c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, rebuildFixtureRowsRead)
+			c.Assert(rebuildCount(c, conn,
+				"SELECT compression_codec || ' ' || comment FROM system.columns WHERE database = currentDatabase() AND table = 't' AND name = 'name'",
+			), qt.Equals, test.wantColumn)
+			c.Assert(rebuildCount(c, conn, "SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 't'"), qt.Equals, test.wantTableComment)
+			c.Assert(rebuildCount(c, conn,
+				"SELECT arrayStringConcat(groupArray(name || ' ' || query), ', ') FROM system.projections WHERE database = currentDatabase() AND table = 't'",
+			), qt.Equals, "p_by_name SELECT * ORDER BY name")
+			rebuildSynced(c, url, test.declaration)
+		})
+	}
+}
+
+// A rebuild that would lose something no declaration states, or could not
+// prove that the copy holds every row, is refused, and the table is untouched.
+func TestClickHouseTableRebuild_RefusesWhatTheNewTableWouldLose(t *testing.T) {
+	tests := []struct {
+		name        string
+		create      string
+		declaration string
+		wantStderr  string
+	}{
+		{
+			name:        "a column TTL",
+			create:      "CREATE TABLE t (id UInt64, name String, ver UInt32, d Date TTL d + INTERVAL 100 YEAR) ENGINE = MergeTree ORDER BY id",
+			declaration: rebuildEvents,
+			wantStderr: "cannot create table t again: column d has TTL, which no declaration states and Ptah does not carry into the new table, " +
+				"so the new table would lose it: TTL d + toIntervalYear(100).",
+		},
+		{
+			name:   "a projection over a column the declaration drops",
+			create: "CREATE TABLE t (id UInt64, name String, ver UInt32, d Date, PROJECTION p_by_d (SELECT d, count() GROUP BY d)) ENGINE = MergeTree ORDER BY id",
+			declaration: "tables:\n  t:\n    platform:\n      clickhouse:\n        engine: MergeTree\n        order_by: id\n        partition_by: id % 4\n" +
+				"    columns:\n      id: {type: UInt64, not_null: true}\n      name: {type: String, not_null: true}\n      ver: {type: UInt32, not_null: true}\n",
+			wantStderr: "cannot create table t again: its projection p_by_d uses column d, which the declaration drops, so the new table cannot have the projection.",
+		},
+		{
+			// The guard reads the server's default before anything is
+			// created.
+			name:        "projections on an engine that merges rows, without deduplicate_merge_projection_mode",
+			create:      rebuildStorageCreate,
+			declaration: "tables:\n  t:\n    comment: tbl comment\n    platform:\n      clickhouse:\n        engine: ReplacingMergeTree(ver)\n        order_by: id\n        settings: index_granularity = 1024\n" + rebuildStorageColumns,
+			wantStderr: "code: 395, message: cannot create t again: t has projections, and ClickHouse keeps a projection on a ReplacingMergeTree table " +
+				"only when deduplicate_merge_projection_mode is drop or rebuild, which neither the declaration nor the server sets.",
+		},
+		{
+			name:        "a TinyLog table, which reports no row count",
+			create:      "CREATE TABLE t (id UInt64, name String, ver UInt32, d Date) ENGINE = TinyLog",
+			declaration: rebuildDeclaration("        engine: MergeTree\n        order_by: id\n"),
+			wantStderr:  "Ptah does not create table t again, because its engine TinyLog reports no row count in system.tables.",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url, conn := rebuildScratch(c)
+			rebuildExec(c, conn, test.create, rebuildFixtureRows)
+			before := rebuildCount(c, conn, "SELECT create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't'")
+
+			applied := rebuildApply(c, url, test.declaration, "--allow-table-rebuild")
+
+			c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stderr, qt.Contains, test.wantStderr)
+			c.Assert(rebuildCount(c, conn, "SELECT create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't'"), qt.Equals, before)
+			c.Assert(rebuildRows(c, conn, "name"), qt.DeepEquals, rebuildFixtureRowsRead)
+			c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"t"})
+		})
+	}
+}
+
+// The copy's merges stop while it is filled and counted. Without the stop, a
+// ReplacingMergeTree copy written in blocks of 10,000 merges 600,000 rows over
+// 1,000 keys down to about 200,000 before the count, measured on 24.10 and
+// 26.10, and the count refuses the plan for a reason the user cannot act on.
+func TestClickHouseTableRebuild_StopsTheMergesOfTheCopy(t *testing.T) {
+	c := qt.New(t)
+	url, conn := rebuildScratch(c)
+	rebuildExec(c, conn,
+		"CREATE TABLE t (k UInt64, ver UInt32, payload String) ENGINE = MergeTree ORDER BY k",
+		"INSERT INTO t SELECT number % 1000, number, 'x' FROM numbers(600000)")
+	declaration := "tables:\n  t:\n    platform:\n      clickhouse:\n        engine: ReplacingMergeTree(ver)\n        order_by: k\n" +
+		"    columns:\n      k: {type: UInt64, not_null: true}\n      ver: {type: UInt32, not_null: true}\n      payload: {type: String, not_null: true}\n"
+	small, err := neturl.Parse(url)
+	c.Assert(err, qt.IsNil)
+	query := small.Query()
+	query.Set("max_insert_block_size", "10000")
+	query.Set("min_insert_block_size_rows", "10000")
+	query.Set("min_insert_block_size_bytes", "0")
+	small.RawQuery = query.Encode()
+
+	applied := rebuildApply(c, small.String(), declaration, "--allow-table-rebuild")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "ReplacingMergeTree")
+	rebuildExec(c, conn, "OPTIMIZE TABLE t FINAL")
+	c.Assert(rebuildCount(c, conn, "SELECT toString(count()) FROM t"), qt.Equals, "1000")
+	rebuildSynced(c, url, declaration)
+}
+
+// A declared TTL removes expired rows when parts merge, and the copy's merges
+// stop, so the copy is counted with every row, expired or not. The merges of
+// the new table remove the expired rows after the swap, as the declaration asks.
+func TestClickHouseTableRebuild_CountsACopyWithATTL(t *testing.T) {
+	c := qt.New(t)
+	url, conn := rebuildScratch(c)
+	rebuildExec(c, conn,
+		"CREATE TABLE t (id UInt64, name String, ver UInt32, d Date) ENGINE = MergeTree ORDER BY id",
+		"INSERT INTO t SELECT number, toString(number), 1, if(number % 2 = 0, today() - 10, today()) FROM numbers(1000)")
+	declaration := rebuildDeclaration("        engine: MergeTree\n        order_by: id\n        partition_by: intDiv(id, 100)\n        ttl: d + toIntervalDay(1)\n")
+
+	applied := rebuildApply(c, url, declaration, "--allow-table-rebuild")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stdout, qt.Contains, "because its TTL removes expired rows when parts merge")
+	c.Assert(applied.Stdout, qt.Contains, "throwIf(copied > source, ")
+	c.Assert(rebuildDefinition(c, conn)[1], qt.Equals, "intDiv(id, 100)")
+	rebuildExec(c, conn, "OPTIMIZE TABLE t FINAL")
+	c.Assert(rebuildCount(c, conn, "SELECT toString(count()) FROM t"), qt.Equals, "500")
+	rebuildSynced(c, url, declaration)
+}
+
+// A table name ClickHouse reads an escape in is quoted in every statement of
+// the rebuild, the new table's name included.
+func TestClickHouseTableRebuild_QuotesTheTableName(t *testing.T) {
+	for _, name := range []string{`sl\x`, "we'ird"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			url, conn := rebuildScratch(c)
+			quoted := chcolumn.QuoteIdentifier(name)
+			rebuildExec(c, conn,
+				"CREATE TABLE "+quoted+" (id UInt64, name String, ver UInt32, d Date) ENGINE = MergeTree ORDER BY id",
+				"INSERT INTO "+quoted+" VALUES (1, 'a', 1, '2024-01-05'), (2, 'b', 2, '2024-02-05')")
+			declaration := strings.Replace(rebuildEvents, "\n  t:\n", "\n  "+strconv.Quote(name)+":\n", 1)
+
+			applied := rebuildApply(c, url, declaration, "--allow-table-rebuild")
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(rebuildCount(c, conn,
+				"SELECT engine || ' ' || toString(total_rows) FROM system.tables WHERE database = currentDatabase() AND name = "+chcolumn.StringLiteral(name),
+			), qt.Equals, "ReplacingMergeTree 2")
+			c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{name})
+			rebuildSynced(c, url, declaration)
+		})
+	}
+}
+
+// An unnamed CHECK takes its name from the table, and keeps it through a
+// rebuild, rather than taking the name of the copy it is created on.
+func TestClickHouseTableRebuild_KeepsTheNameOfAnUnnamedCheck(t *testing.T) {
+	c := qt.New(t)
+	url, conn := rebuildScratch(c)
+	rebuildExec(c, conn,
+		"CREATE TABLE t (id UInt64, name String, ver UInt32, d Date, CONSTRAINT t_ver_check CHECK ver > 0) ENGINE = MergeTree ORDER BY id",
+		rebuildFixtureRows)
+	declaration := strings.Replace(rebuildEvents, "ver: {type: UInt32, not_null: true}", "ver: {type: UInt32, not_null: true, check: ver > 0}", 1)
+
+	applied := rebuildApply(c, url, declaration, "--allow-table-rebuild")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(rebuildCount(c, conn,
+		"SELECT extract(create_table_query, 'CONSTRAINT ([^ ]+) CHECK') FROM system.tables WHERE database = currentDatabase() AND name = 't'",
+	), qt.Equals, "t_ver_check")
+	rebuildSynced(c, url, declaration)
+}
+
 // A replicated table is not rebuilt, whatever the request says, and the plan
 // says what is unsafe.
 func TestClickHouseTableRebuild_RefusesAReplicatedEngine(t *testing.T) {
@@ -745,11 +971,11 @@ func TestClickHouseTableRebuild_PlanIsMarkedDestructive(t *testing.T) {
 	}
 	c.Assert(json.Unmarshal([]byte(planned.Stdout), &document), qt.IsNil)
 	c.Assert(document.Plan.Destructive, qt.IsTrue)
-	c.Assert(document.Plan.Statements, qt.HasLen, 6)
+	c.Assert(document.Plan.Statements, qt.HasLen, 9)
 	c.Assert(document.Plan.Statements[0].SQL, qt.Contains, "WARNING: the steps are not atomic, and rows written to the table while they run are lost")
-	c.Assert(document.Plan.Statements[4].SQL, qt.Equals, "EXCHANGE TABLES `t` AND `ptah_rebuild_t`")
-	c.Assert(document.Plan.Statements[5].Severity, qt.Equals, "destructive")
-	c.Assert(document.Plan.Statements[5].SQL, qt.Equals, "DROP TABLE `ptah_rebuild_t` SYNC")
+	c.Assert(document.Plan.Statements[7].SQL, qt.Equals, "EXCHANGE TABLES `t` AND `ptah_rebuild_t`")
+	c.Assert(document.Plan.Statements[8].Severity, qt.Equals, "destructive")
+	c.Assert(document.Plan.Statements[8].SQL, qt.Equals, "DROP TABLE `ptah_rebuild_t` SYNC")
 	c.Assert(rebuildDefinition(c, conn)[0], qt.Equals, "MergeTree")
 	c.Assert(rebuildTables(c, conn), qt.DeepEquals, []string{"t"})
 }

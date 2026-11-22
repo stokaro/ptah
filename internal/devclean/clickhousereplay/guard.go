@@ -23,7 +23,8 @@ import (
 //
 // It keeps every refusal that protects the run: USE, SET ROLE and SET DEFAULT
 // ROLE, which change the replay's session; SYSTEM and a global SET, which act
-// on the server; ALTER of a database, user or role, a quota and a settings
+// on the server, but for the STOP MERGES and START MERGES of one table in the
+// dev database ([confinedClickHouseMergeControl]); ALTER of a database, user or role, a quota and a settings
 // profile, which can change the database or the limits and settings the run's
 // own user runs with; a workload and a resource, which schedule the server;
 // ATTACH, DETACH, UNDROP and RESTORE, which move tables in and out of what the

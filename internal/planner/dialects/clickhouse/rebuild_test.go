@@ -37,6 +37,9 @@ type rebuildFixture struct {
 	heldTables  []string
 	// table is the name of the table, events when empty.
 	table string
+	// projections and comment are what the table holds beside its columns.
+	projections []catalog.Projection
+	comment     string
 }
 
 func (f *rebuildFixture) name() string {
@@ -71,6 +74,7 @@ func (f *rebuildFixture) plan(c *qt.C, opts planext.Options) ([]string, error) {
 	}
 	current := &catalog.Database{FeatureCoverage: observedStorageCoverage(), Tables: []catalog.Table{{
 		Name: f.name(), Facets: must.Must(schemaext.NewFacets(f.before)), Columns: f.current,
+		Projections: f.projections, Comment: f.comment,
 	}}}
 	for _, name := range f.extraTables {
 		source.Tables = append(source.Tables, schemamodel.Table{Name: name, StructName: "Extra"})
@@ -117,20 +121,37 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements, qt.HasLen, 6)
+		c.Assert(statements, qt.HasLen, 9)
 		c.Assert(statements[0], qt.Matches, "(?s)^-- ClickHouse table rebuild of events.*")
-		c.Assert(statements[1], qt.Contains, "CREATE TABLE ptah_rebuild_events (")
+		c.Assert(statements[1], qt.Contains, "CREATE TABLE `ptah_rebuild_events` (")
 		c.Assert(statements[1], qt.Contains, "ENGINE = ReplacingMergeTree(ver) ORDER BY (id)")
 		c.Assert(statements[2:], qt.DeepEquals, []string{
+			"SELECT throwIf((SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns " +
+				"WHERE database = currentDatabase() AND table = 'ptah_rebuild_events' AND name IN ('id', 'name', 'ver')) != " +
+				"(SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns " +
+				"WHERE database = currentDatabase() AND table = 'events' AND name IN ('id', 'name', 'ver')), " +
+				"'cannot create events again: the copy ptah_rebuild_events does not have the codec events has for every column the two share. " +
+				"events is as it was. Drop ptah_rebuild_events and run the plan again'), " +
+				"throwIf((SELECT arraySort(groupArray((name, query))) FROM system.projections WHERE database = currentDatabase() AND table = 'ptah_rebuild_events') != " +
+				"(SELECT arraySort(groupArray((name, query))) FROM system.projections WHERE database = currentDatabase() AND table = 'events'), " +
+				"'cannot create events again: the copy ptah_rebuild_events does not have the projections events has. " +
+				"events is as it was. Drop ptah_rebuild_events and run the plan again')",
+			"SYSTEM STOP MERGES `ptah_rebuild_events`",
 			"INSERT INTO `ptah_rebuild_events` (`id`, `name`, `ver`) SELECT `id`, `name`, `ver` FROM `events` " +
 				"SETTINGS max_partitions_per_insert_block = 0, optimize_on_insert = 0, insert_deduplicate = 0",
-			"SELECT throwIf((SELECT count() FROM `ptah_rebuild_events`) != (SELECT count() FROM `events`), " +
-				"'cannot create events again: the copy ptah_rebuild_events holds another number of rows than events, " +
+			"WITH (SELECT count() FROM `ptah_rebuild_events`) AS copied, (SELECT count() FROM `events`) AS source SELECT " +
+				"throwIf(copied < source, 'cannot create events again: the copy ptah_rebuild_events holds fewer rows than events, " +
 				"so a row was written to events while it was copied, or a limit in the user''s settings cut the copy short. " +
+				"events is as it was. Drop ptah_rebuild_events, stop writes to the table, and run the plan again'), " +
+				"throwIf(copied > source, 'cannot create events again: the copy ptah_rebuild_events holds more rows than events, " +
+				"so rows were deleted from events while it was copied, and the new table would bring them back. " +
 				"events is as it was. Drop ptah_rebuild_events, stop writes to the table, and run the plan again')",
+			"SYSTEM START MERGES `ptah_rebuild_events`",
 			"EXCHANGE TABLES `events` AND `ptah_rebuild_events`",
 			"DROP TABLE `ptah_rebuild_events` SYNC",
 		})
+		c.Assert(statements[0], qt.Contains, "Merges of ptah_rebuild_events stop while it is filled and counted, because its engine ReplacingMergeTree merges rows when parts merge; "+
+			"they start again before the swap. SYSTEM STOP MERGES needs the SYSTEM MERGES privilege.")
 	})
 
 	t.Run("the plan says what each stop leaves, in every statement style", func(t *testing.T) {
@@ -154,21 +175,155 @@ func TestRebuild_HappyPath(t *testing.T) {
 		c.Assert(statements[0], qt.Contains, "Materialized views, dictionaries, Buffer tables, row policies and grants find events by name")
 	})
 
-	t.Run("a declared TTL leaves the copy uncounted, and the plan says why", func(t *testing.T) {
+	t.Run("a declared TTL stops the merges of the copy, which is then counted", func(t *testing.T) {
 		c := qt.New(t)
 		f := newRebuildFixture()
-		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.after.PartitionBy.Value = "intDiv(id, 1000)"
 		f.after.TTL.Value = "toDateTime(id) + INTERVAL 1 DAY"
 
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements, qt.HasLen, 5)
-		c.Assert(statements[0], qt.Contains, "The declaration gives the table a TTL, which drops expired rows as they are written, "+
-			"so the copy is not counted against events, and a row written to events while it is copied is lost with the old table.")
 		c.Assert(statements[1], qt.Contains, "TTL toDateTime(id) + INTERVAL 1 DAY")
-		c.Assert(statements[3], qt.Equals, "EXCHANGE TABLES `events` AND `ptah_rebuild_events`")
+		c.Assert(statements, qt.Contains, "SYSTEM STOP MERGES `ptah_rebuild_events`")
+		c.Assert(statements, qt.Contains, "SYSTEM START MERGES `ptah_rebuild_events`")
+		c.Assert(statements[0], qt.Contains, "because its TTL removes expired rows when parts merge")
+		c.Assert(strings.Join(statements, "\n"), qt.Contains, "throwIf(copied > source, ")
 	})
+
+	t.Run("a MergeTree copy without a TTL merges no row away, and its merges run", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.PartitionBy.Value = "intDiv(id, 1000)"
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		joined := strings.Join(statements, "\n")
+		c.Assert(joined, qt.Not(qt.Contains), "MERGES")
+		c.Assert(joined, qt.Contains, "throwIf(copied < source, ")
+		c.Assert(joined, qt.Contains, "throwIf(copied > source, ")
+	})
+
+	t.Run("a table whose own merges remove rows is not refused for a copy that holds more", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.before.Engine = "ReplacingMergeTree(ver)"
+		f.after = f.before.Desired()
+		f.after.PartitionBy.Value = "intDiv(id, 1000)"
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		joined := strings.Join(statements, "\n")
+		c.Assert(joined, qt.Contains, "throwIf(copied < source, ")
+		c.Assert(joined, qt.Not(qt.Contains), "throwIf(copied > source, ")
+	})
+
+	t.Run("codecs and projections are carried onto the copy before its rows", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.PartitionBy.Value = "intDiv(id, 1000)"
+		f.current[1].StorageClauses = []string{"CODEC(ZSTD(3))"}
+		f.projections = []catalog.Projection{
+			{Name: "p_by_name", Definition: "(SELECT * ORDER BY name)"},
+			{Name: "p q", Definition: "INDEX name TYPE basic"},
+		}
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		at := func(prefix string) int {
+			return slices.IndexFunc(statements, func(s string) bool { return strings.HasPrefix(s, prefix) })
+		}
+		create := at("CREATE TABLE `ptah_rebuild_events` (")
+		codec := at("ALTER TABLE `ptah_rebuild_events` MODIFY COLUMN `name` CODEC(ZSTD(3))")
+		projection := at("ALTER TABLE `ptah_rebuild_events` ADD PROJECTION `p_by_name` (SELECT * ORDER BY name)")
+		index := at("ALTER TABLE `ptah_rebuild_events` ADD PROJECTION `p q` INDEX name TYPE basic")
+		check := at("SELECT throwIf((SELECT arraySort(groupArray((name, compression_codec)))")
+		copied := at("INSERT INTO `ptah_rebuild_events`")
+		order := []int{create, codec, projection, index, check, copied}
+		c.Assert(slices.IsSorted(order) && create >= 0, qt.IsTrue, qt.Commentf("%v %q", order, statements))
+		c.Assert(statements[0], qt.Contains, "The new table keeps what no declaration states and events has: "+
+			"the codecs of columns name CODEC(ZSTD(3)); the projections p_by_name, p q")
+		c.Assert(statements[0], qt.Not(qt.Contains), "merge_tree_settings")
+	})
+
+	t.Run("projections on an engine that merges rows ask for deduplicate_merge_projection_mode", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.projections = []catalog.Projection{{Name: "p_by_name", Definition: "(SELECT * ORDER BY name)"}}
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(statements[0], qt.Contains, "throwIf((SELECT value FROM system.merge_tree_settings WHERE name = 'deduplicate_merge_projection_mode') NOT IN ('drop', 'rebuild'), "+
+			"'cannot create events again: events has projections, and ClickHouse keeps a projection on a ReplacingMergeTree table only when "+
+			"deduplicate_merge_projection_mode is drop or rebuild, which neither the declaration nor the server sets. "+
+			"Set it in the table''s declared SETTINGS, or drop the projections first') SETTINGS apply_deleted_mask = 0")
+	})
+
+	t.Run("a declared deduplicate_merge_projection_mode leaves the decision to the server", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.after.Settings.Value = "index_granularity = 8192, deduplicate_merge_projection_mode = 'rebuild'"
+		f.projections = []catalog.Projection{{Name: "p_by_name", Definition: "(SELECT * ORDER BY name)"}}
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(statements[0], qt.Not(qt.Contains), "merge_tree_settings")
+		c.Assert(statements, qt.Contains, "ALTER TABLE `ptah_rebuild_events` ADD PROJECTION `p_by_name` (SELECT * ORDER BY name)")
+	})
+
+	t.Run("the plan names the comments the new table does not have", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.comment = "tbl comment"
+		f.current[1].Comment = "it's the name"
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(statements[0], qt.Contains, "The new table takes what the declaration states, which changes: "+
+			"the table comment 'tbl comment' -> none; column name: comment 'it''s the name' -> none")
+	})
+
+	t.Run("an unnamed check keeps the name it has on the table", func(t *testing.T) {
+		c := qt.New(t)
+		f := newRebuildFixture()
+		f.after.Engine.Value = "ReplacingMergeTree(ver)"
+		f.fields[2].Check = "ver > 0"
+
+		statements, err := f.plan(c, allowRebuild())
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(statements[1], qt.Contains, "CONSTRAINT events_ver_check CHECK")
+		c.Assert(statements[1], qt.Not(qt.Contains), "ptah_rebuild_events_ver_check")
+	})
+
+	for _, test := range []struct {
+		table, guard, create string
+	}{
+		{table: `sl\x`, guard: "(SELECT count() FROM `sl\\\\x`) != ", create: "CREATE TABLE `ptah_rebuild_sl\\\\x` ("},
+		{table: "we'ird", guard: "'cannot create we''ird again: EXCHANGE TABLES", create: "CREATE TABLE `ptah_rebuild_we'ird` ("},
+	} {
+		t.Run("a table named "+test.table+" is quoted in every statement", func(t *testing.T) {
+			c := qt.New(t)
+			f := newRebuildFixture()
+			f.table = test.table
+			f.after.Engine.Value = "ReplacingMergeTree(ver)"
+
+			statements, err := f.plan(c, allowRebuild())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements[0], qt.Contains, test.guard)
+			c.Assert(statements[1], qt.Contains, test.create)
+		})
+	}
 
 	t.Run("a column the table gains takes its default and a column it loses is not copied", func(t *testing.T) {
 		c := qt.New(t)
@@ -212,7 +367,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements[2], qt.Equals,
+		c.Assert(statements, qt.Contains,
 			"INSERT INTO `ptah_rebuild_events` (`id`, `name`, `ver`) SELECT `id`, `name`, accurateCast(`ver`, 'UInt16') FROM `events` "+
 				"SETTINGS max_partitions_per_insert_block = 0, optimize_on_insert = 0, insert_deduplicate = 0")
 	})
@@ -240,7 +395,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		at := func(match func(string) bool) int { return slices.IndexFunc(statements, match) }
-		create := at(func(s string) bool { return strings.HasPrefix(s, "CREATE TABLE ptah_rebuild_events") })
+		create := at(func(s string) bool { return strings.HasPrefix(s, "CREATE TABLE `ptah_rebuild_events`") })
 		index := at(func(s string) bool {
 			return strings.HasPrefix(s, "ALTER TABLE `ptah_rebuild_events` ADD INDEX `name_idx`")
 		})
@@ -384,6 +539,73 @@ func TestRebuild_FailurePath(t *testing.T) {
 	})
 }
 
+// A rebuild that would lose something no declaration states, or cannot prove
+// it copies every row, is refused when asked, before anything is created.
+func TestRebuild_RefusesWhatTheNewTableWouldLose(t *testing.T) {
+	tests := []struct {
+		name    string
+		change  func(*rebuildFixture)
+		wantErr string
+	}{
+		{
+			name: "a column TTL",
+			change: func(f *rebuildFixture) {
+				f.current[1].StorageClauses = []string{"CODEC(ZSTD(1))", "TTL toDateTime(id) + toIntervalDay(1)"}
+			},
+			wantErr: `unsupported feature: cannot create table events again: column name has TTL, which no declaration states and Ptah does not carry into the new table, ` +
+				`so the new table would lose it: TTL toDateTime\(id\) \+ toIntervalDay\(1\)\. Remove it from the column first, or create the table again by hand`,
+		},
+		{
+			name:    "column statistics",
+			change:  func(f *rebuildFixture) { f.current[2].StorageClauses = []string{"STATISTICS(tdigest)"} },
+			wantErr: `unsupported feature: cannot create table events again: column ver has STATISTICS, .*: STATISTICS\(tdigest\)\. .*`,
+		},
+		{
+			name: "column settings",
+			change: func(f *rebuildFixture) {
+				f.current[1].StorageClauses = []string{"SETTINGS (max_compress_block_size = 1048576)"}
+			},
+			wantErr: `unsupported feature: cannot create table events again: column name has SETTINGS, .*: SETTINGS \(max_compress_block_size = 1048576\)\. .*`,
+		},
+		{
+			name: "a projection over a column the declaration drops",
+			change: func(f *rebuildFixture) {
+				f.fields = f.fields[:1]
+				f.fields = append(f.fields, schemamodel.Field{Name: "ver", StructName: "Event", Type: "UInt32"})
+				f.projections = []catalog.Projection{{Name: "p_by_name", Definition: "(SELECT name, count() GROUP BY name)"}}
+			},
+			wantErr: `unsupported feature: cannot create table events again: its projection p_by_name uses column name, which the declaration drops, ` +
+				`so the new table cannot have the projection\. Drop the projection first, or keep the column`,
+		},
+		{
+			name: "a TinyLog table, which reports no row count",
+			change: func(f *rebuildFixture) {
+				f.before = &chschema.ObservedTable{Engine: "TinyLog"}
+				f.after = f.before.Desired()
+				f.after.Engine.Value = "MergeTree"
+				f.after.OrderBy.Value = "id"
+			},
+			wantErr: `unsupported feature: .*ClickHouse has no ALTER TABLE that changes a table's ENGINE; Ptah does not create table events again, ` +
+				`because its engine TinyLog reports no row count in system\.tables\. The rebuild compares that count with the rows the user running the plan reads, ` +
+				`so a row policy cannot hide rows from the copy unnoticed, and without it nothing proves the copy holds every row\. Create the table again by hand\.`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newRebuildFixture()
+			f.after.Engine.Value = "ReplacingMergeTree(ver)"
+			test.change(f)
+
+			statements, err := f.plan(c, allowRebuild())
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `(?s)`+test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
 // The reverse of a rebuild is a rebuild, planned from the table the database
 // holds, so a migration with a down direction is made with the request and
 // refused without it.
@@ -517,7 +739,7 @@ func TestRebuild_EngineThatKeepsTheRowsElsewhere(t *testing.T) {
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(err, qt.ErrorMatches, `(?s).*Ptah does not create table events again, because its engine `+test.engine+
 					` does not keep the table's rows on this server\. The copy would read rows from somewhere else, write them somewhere else, or drop them\. `+
-					`Ptah copies rows only between engines that store them here: a MergeTree engine that is not replicated or shared, Memory, Log, TinyLog and StripeLog\. `+
+					`Ptah copies rows only between engines that store them here: a MergeTree engine that is not replicated or shared, Memory, Log, StripeLog, and TinyLog as the new engine\. `+
 					`Create the table again by hand\.`)
 				c.Assert(statements, qt.IsNil)
 			})
