@@ -630,6 +630,26 @@ func (s Semantics) quotedName(value string) (string, bool) {
 	return strings.ReplaceAll(value[1:len(value)-1], `""`, `"`), true
 }
 
+// StoredName returns the name the target stores an object under when a
+// statement names it as value, so two spellings of one object give one
+// answer. On Oracle reader and READER both give READER, and "reader" gives
+// reader. A double-quoted value gives the name inside its quotes, and a plain
+// identifier gives the name [Semantics.UnquotedFold] folds it to. Any other
+// value, and every value on a target that states no fold, comes back as
+// written.
+func (s Semantics) StoredName(value string) string {
+	if s.UnquotedFold == "" {
+		return value
+	}
+	if name, quoted := s.quotedName(value); quoted {
+		return name
+	}
+	if !plainIdentifier(value, s.BareChars) {
+		return value
+	}
+	return s.UnquotedFold.Apply(value)
+}
+
 // caseSensitive reports whether name, written quoted, is a name no unquoted
 // spelling reaches: a plain identifier the target's fold would change. A name
 // that is not plain has no unquoted spelling at all, and one already in the

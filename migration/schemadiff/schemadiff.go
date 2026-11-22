@@ -251,7 +251,7 @@ func compareReportingUndecidedAdditions(
 	compare.RLSEnabledTablesWithSemantics(desired, database, diff, identifierSemantics, opts.Dialect)
 
 	// Compare roles (PostgreSQL-specific feature)
-	compare.Roles(desired, database, diff, cov)
+	compare.Roles(desired, database, diff, identifierSemantics, cov)
 
 	// Compare the membership of each role in another, where a planner plans
 	// one.

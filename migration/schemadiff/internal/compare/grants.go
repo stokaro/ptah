@@ -173,7 +173,7 @@ func GrantsWithOptions(
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
 	for _, grant := range desired.Grants {
-		generatedGrantRoles[grant.Role] = true
+		generatedGrantRoles[roleKey(grant.Role, semantics)] = true
 		for _, ref := range grantRefsFromGenerated(grant) {
 			generatedGrantMap[sequences.desiredKey(newGrantIdentity(ref, semantics))] = ref
 			if respellings != nil && ref.Column != "" {
@@ -190,13 +190,13 @@ func GrantsWithOptions(
 
 	managedRoles := make(map[string]bool)
 	for _, role := range desired.Roles {
-		managedRoles[role.Name] = true
+		managedRoles[roleKey(role.Name, semantics)] = true
 	}
 
-	removable := func(ref difftypes.GrantRef) bool { return managedRoles[ref.Role] }
+	removable := func(ref difftypes.GrantRef) bool { return managedRoles[roleKey(ref.Role, semantics)] }
 	if options.DesiredComplete {
 		removable = func(ref difftypes.GrantRef) bool {
-			return managedRoles[ref.Role] || !publicExecuteByDefault(ref)
+			return managedRoles[roleKey(ref.Role, semantics)] || !publicExecuteByDefault(ref)
 		}
 	}
 
@@ -275,7 +275,7 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 		ref := grantRefFromDatabase(grant)
 		key := read.sequences.databaseKey(newGrantIdentity(ref, read.semantics))
 		targetKey := read.sequences.databaseKey(newGrantIdentity(ref, read.target))
-		if read.managedRoles[ref.Role] || read.generatedRoles[ref.Role] {
+		if read.managedRoles[key.role] || read.generatedRoles[key.role] {
 			previous, exists := additions[key]
 			if !exists || (ref.WithOption && !previous.WithOption) ||
 				(ref.WithOption == previous.WithOption && preferForeignGrantor(previous, ref, read.database.ConnectedRole, read.database.ConnectedRoleSuperuser)) {
@@ -471,7 +471,7 @@ func planGrantAdditions(
 		if ref.WithOption && slices.ContainsFunc(held, func(held difftypes.GrantRef) bool { return !held.WithOption }) {
 			diff.GrantOptionsAdded = append(diff.GrantOptionsAdded, ref)
 		}
-		if ref.WithOption || (!managedRoles[ref.Role] && !revoked.covers(key)) {
+		if ref.WithOption || (!managedRoles[key.role] && !revoked.covers(key)) {
 			continue
 		}
 		for _, databaseRef := range held {
@@ -811,7 +811,7 @@ func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) gr
 		arguments = routineargs.InputTypes(ref.Arguments)
 	}
 	return grantIdentity{
-		role:       strings.TrimSpace(ref.Role),
+		role:       roleKey(ref.Role, semantics),
 		privilege:  strings.ToUpper(strings.TrimSpace(ref.Privilege)),
 		objectType: objectType,
 		object:     object,

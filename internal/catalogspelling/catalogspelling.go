@@ -14,6 +14,7 @@ package catalogspelling
 
 import (
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
@@ -21,8 +22,9 @@ import (
 )
 
 // Spell returns read with every table, column, index, constraint, view,
-// materialized view, sequence and trigger name, and every column a key or an
-// index lists, written as [sqlident.CatalogName] writes it for dialect.
+// materialized view, sequence, trigger and role name, the role and the object
+// of every grant, and every column a key or an index lists, written as
+// [sqlident.CatalogName] writes it for dialect.
 //
 // It changes nothing unless read.StoredNames is set and dialect's identifier
 // semantics state an UnquotedFold. The result has StoredNames cleared, since
@@ -105,6 +107,35 @@ func Spell(read catalog.Database, dialect string) catalog.Database {
 	for index := range read.Triggers {
 		read.Triggers[index].Name = spell(read.Triggers[index].Name)
 		read.Triggers[index].Table = spell(read.Triggers[index].Table)
+	}
+	return spellPrivileges(read, spell)
+}
+
+// spellPrivileges returns read with every role name, and the role and the
+// object of every grant, spelled by spell.
+//
+// A role created quoted as "reader" is stored as reader, which a bare
+// reader, stored as READER, does not reach. Spelled, a grant to it keys
+// apart from a grant to READER, and a REVOKE planned from the read names
+// the role and the object it was read from: unspelled, a grant on a table
+// created as "orders" is revoked from PTAH.orders, which Oracle resolves
+// to ORDERS and refuses with ORA-00942.
+func spellPrivileges(read catalog.Database, spell func(string) string) catalog.Database {
+	read.Roles = slices.Clone(read.Roles)
+	for index := range read.Roles {
+		read.Roles[index].Name = spell(read.Roles[index].Name)
+	}
+	read.RolesOutOfScope = slices.Clone(read.RolesOutOfScope)
+	for index := range read.RolesOutOfScope {
+		read.RolesOutOfScope[index].Name = spell(read.RolesOutOfScope[index].Name)
+	}
+	read.Grants = slices.Clone(read.Grants)
+	for index := range read.Grants {
+		grant := &read.Grants[index]
+		grant.Role = spell(grant.Role)
+		if !strings.EqualFold(grant.ObjectType, "SCHEMA") {
+			grant.ObjectName = spell(grant.ObjectName)
+		}
 	}
 	return read
 }

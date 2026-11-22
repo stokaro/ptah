@@ -196,7 +196,7 @@ func TestRoles_CountsTheDeclaredRolesTheDatabaseHolds(t *testing.T) {
 	database := &catalog.Database{Roles: []catalog.Role{{Name: "app", Login: true}, {Name: "dba"}}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+	compare.Roles(desired, database, diff, identifier.Semantics{}, compare.CoverageOf(desired, database))
 
 	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Roles: 1})
 	c.Assert(diff.RolesAdded, qt.HasLen, 1)

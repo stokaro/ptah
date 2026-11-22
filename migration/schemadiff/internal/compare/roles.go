@@ -3,10 +3,12 @@ package compare
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 )
 
@@ -106,15 +108,17 @@ func Roles(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
 	cov Coverage,
 ) {
-	// Build lookup maps for role comparison
+	// Build lookup maps for role comparison, keyed by the name the target
+	// stores each role under; see [roleKey].
 	generatedRoleMap := make(map[string]schemamodel.Role)
 	for _, role := range desired.Roles {
-		generatedRoleMap[role.Name] = role
+		generatedRoleMap[roleKey(role.Name, semantics)] = role
 	}
 
-	databaseRoleMap := managedRoles(database)
+	databaseRoleMap := managedRoles(database, semantics)
 
 	// Find added roles
 	for roleName := range generatedRoleMap {
@@ -180,18 +184,30 @@ func Roles(
 // hand-assembled one, a merged one, a future reader whose scoping rule
 // overlaps -- and without it the later list would silently overwrite the
 // attributes the description was read from.
-func managedRoles(database *catalog.Database) map[string]catalog.Role {
+func managedRoles(database *catalog.Database, semantics identifier.Semantics) map[string]catalog.Role {
 	roles := make(map[string]catalog.Role, len(database.Roles)+len(database.RolesOutOfScope))
 	for _, role := range database.Roles {
-		roles[role.Name] = role
+		roles[roleKey(role.Name, semantics)] = role
 	}
 	for _, role := range database.RolesOutOfScope {
-		if _, described := roles[role.Name]; described {
+		key := roleKey(role.Name, semantics)
+		if _, described := roles[key]; described {
 			continue
 		}
-		roles[role.Name] = role
+		roles[key] = role
 	}
 	return roles
+}
+
+// roleKey is the name a role is matched by: the name the target stores it
+// under, which both sides of a comparison agree on. On Oracle an unquoted
+// reader is stored as READER, so a declared reader is the role READER the
+// catalog reports. Compared as written, the role is planned as a CREATE ROLE
+// on every run after the first, which Oracle refuses with ORA-01921, and every
+// grant to it is planned again. A quoted "reader" is stored as reader and
+// stays a different role.
+func roleKey(name string, semantics identifier.Semantics) string {
+	return semantics.StoredName(strings.TrimSpace(name))
 }
 
 // RoleDefinitions compares individual role definitions and returns detailed differences.
