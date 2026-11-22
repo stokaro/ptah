@@ -1432,6 +1432,28 @@ Every schema source describes every row policy, so applying the written schema
 back drops the policy, and so does applying the desired side to a database that
 holds a policy of the name.
 
+This holds when both sides hold the policy, by design: the plan brings the
+server to what a schema can declare. `ptah schema diff --from <url> --to <url>`
+on one database prints `DROP ROW POLICY p ON gone`. So does a comparison of two
+environments that both hold the policy. `ptah schema drift` against a schema
+written from the database reports the drop as a destructive
+`ptah.run/clickhouse/row-policy-change` finding.
+
+A plan that drops such a policy cannot be rehearsed on a dev database. The dev
+database would have to hold the policy first, and a row policy outlives the dev
+database, so `ptah schema apply --dev-url` refuses the statement before any
+statement runs, measured on 24.10 and 26.10:
+
+```text
+error: statement 1 cannot be rehearsed on the dev database: clickhouse migration replay rejects DROP ROW because its effects cannot be confined to the disposable database realm; if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1
+```
+
+`PTAH_TRUST_REPLAY_SQL=1` does not get past it. The rehearsal then runs the
+drop, and the dev database refuses it with code 523, because no schema can
+declare the policy, so the rehearsal never writes it there. In both cases
+nothing reaches the target. Drop the policy on the target with the statement
+the warning names, then apply.
+
 A policy written `ON db.*` applies to every table of a database, and Ptah does
 not model it. Nor does Ptah read a view, a materialized view, a dictionary, a
 `Null` or `Distributed` table, or its own bookkeeping tables as tables. A policy
