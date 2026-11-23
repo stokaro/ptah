@@ -1279,7 +1279,8 @@ type ServerInfo struct {
 	// under lower_case_table_names. A MySQL or MariaDB connection reads the
 	// setting and records [NameFoldingFolds] or [NameFoldingExact]. On a
 	// server that folds names, a comparison matches a name the schema spells
-	// in another case to the server's spelling of it.
+	// in another case to the server's spelling of it, and refuses two names
+	// the schema declares that the server reads as one.
 	//
 	// The zero value is [NameFoldingUnknown], and a ServerInfo built without a
 	// connection holds it. A MySQL-family comparison with folding unknown

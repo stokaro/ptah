@@ -241,7 +241,8 @@ func TestRespellReadNames_KeepsWhatItCannotRespell(t *testing.T) {
 
 // A name that matches two spellings is refused, naming both, rather than
 // respelled to either: a server that folds names cannot hold them. So is a
-// document that declares two tables such a server reads as one.
+// document that declares two databases, or two relations of one database, that
+// such a server reads as one, whether the read found the name or not.
 func TestRespellReadNames_FailurePath(t *testing.T) {
 	t.Run("two databases the read found", func(t *testing.T) {
 		c := qt.New(t)
@@ -266,6 +267,96 @@ func TestRespellReadNames_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `table "items" matches "Items" and "items", names that differ only in case, .*`)
 		c.Assert(got, qt.IsNil)
 	})
+	tests := []struct {
+		name     string
+		database *schemamodel.Database
+		read     schemaprep.ReadNames
+		want     schemaprep.AmbiguousNameError
+	}{
+		{
+			name:     "two tables the read did not find",
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "items"}, {Name: "Parts"}, {Name: "parts"}}},
+			read:     schemaprep.ReadNames{Session: "fa", Relations: []schemaprep.ReadRelation{{Name: "items"}}},
+			want:     schemaprep.AmbiguousNameError{Kind: "table", Name: "Parts", Matches: []string{"Parts", "parts"}},
+		},
+		{
+			name:     "two tables of a whole server, their databases in two cases",
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "parts", Schema: "GB"}, {Name: "gb.parts"}}},
+			read:     schemaprep.ReadNames{Databases: []string{"fa"}},
+			want:     schemaprep.AmbiguousNameError{Kind: "table", Name: "GB.parts", Matches: []string{"GB.parts", "gb.parts"}},
+		},
+		{
+			name: "a table and a view",
+			database: &schemamodel.Database{
+				Tables: []schemamodel.Table{{Name: "item_ids"}},
+				Views:  []schemamodel.View{{Name: "Item_Ids", Body: "SELECT id FROM items"}},
+			},
+			read: schemaprep.ReadNames{Session: "fa"},
+			want: schemaprep.AmbiguousNameError{Kind: "table", Name: "item_ids", Matches: []string{"item_ids", "Item_Ids"}},
+		},
+		{
+			name:     "two databases the read did not find",
+			database: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "fa"}, {Name: "GB"}, {Name: "gb"}}},
+			read:     schemaprep.ReadNames{Databases: []string{"fa"}},
+			want:     schemaprep.AmbiguousNameError{Kind: "database", Name: "GB", Matches: []string{"GB", "gb"}},
+		},
+		{
+			name:     "two databases the read found as one",
+			database: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "FA"}, {Name: "fa"}}},
+			read:     schemaprep.ReadNames{Databases: []string{"fa"}},
+			want:     schemaprep.AmbiguousNameError{Kind: "database", Name: "fa", Matches: []string{"FA", "fa"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := schemaprep.RespellReadNames(test.database, test.read, catalog.NameFoldingFolds)
+
+			var ambiguous *schemaprep.AmbiguousNameError
+			c.Assert(err, qt.ErrorAs, &ambiguous)
+			c.Assert(*ambiguous, qt.DeepEquals, test.want)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}
+
+// The same name declared twice in one spelling, and one name declared in two
+// databases, are no pair a server that folds names reads as one.
+func TestRespellReadNames_KeepsDeclarationsThatAreNoPair(t *testing.T) {
+	tests := []struct {
+		name     string
+		database *schemamodel.Database
+		read     schemaprep.ReadNames
+	}{
+		{
+			name:     "one table written with and without the session's database",
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "parts"}, {Name: "fa.parts"}}},
+			read:     schemaprep.ReadNames{Session: "fa"},
+		},
+		{
+			name:     "one name in two databases",
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "parts", Schema: "fa"}, {Name: "Parts", Schema: "fb"}}},
+			read:     schemaprep.ReadNames{Databases: []string{"fa", "fb"}},
+		},
+		{
+			name:     "one database declared twice",
+			database: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "gb"}, {Name: "gb"}}},
+			read:     schemaprep.ReadNames{Databases: []string{"fa"}},
+		},
+	}
+	for _, folding := range []catalog.NameFolding{catalog.NameFoldingFolds, catalog.NameFoldingUnknown} {
+		for _, test := range tests {
+			t.Run(string(folding)+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				got, err := schemaprep.RespellReadNames(test.database, test.read, folding)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(got, qt.DeepEquals, test.database)
+			})
+		}
+	}
 }
 
 // Where no connection read how the server compares names, a database or table
@@ -295,6 +386,17 @@ func TestRespellReadNames_UnknownFolding(t *testing.T) {
 			},
 			read: schemaprep.ReadNames{Session: "fa"},
 			want: schemaprep.UnknownFoldingError{Kind: "table", Written: "Items", Found: "items"},
+		},
+		{
+			name:     "two tables the document declares",
+			database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "Parts"}, {Name: "parts"}}},
+			read:     schemaprep.ReadNames{Session: "fa"},
+			want:     schemaprep.UnknownFoldingError{Kind: "table", Written: "parts", Found: "Parts"},
+		},
+		{
+			name:     "two databases the document declares",
+			database: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "GB"}, {Name: "gb"}}},
+			want:     schemaprep.UnknownFoldingError{Kind: "database", Written: "gb", Found: "GB"},
 		},
 	}
 	for _, test := range tests {

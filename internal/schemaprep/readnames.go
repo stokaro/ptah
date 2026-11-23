@@ -70,12 +70,15 @@ type ReadRelation struct {
 // A server that folds names holds no two databases or tables of one database
 // that differ only in case. Where a name matches more than one, the step
 // refuses with an [*AmbiguousNameError] rather than pick one, and so it does
-// where the document declares two tables the server reads as one.
+// where the document declares two databases, or two tables, views or sequences
+// of one database, that the server reads as one: planned, the second CREATE
+// fails on the object the first made.
 //
 // On a server whose folding no connection read, [catalog.NameFoldingUnknown],
 // nothing is respelled. A name that would be is refused with an
-// [*UnknownFoldingError]: whether the two spellings name one object decides
-// the plan, and the server's setting answers it.
+// [*UnknownFoldingError], and so are two declarations that differ only in
+// case: whether the two spellings name one object decides the plan, and the
+// server's setting answers it.
 //
 // What is respelled: the databases the document declares; the database and
 // the name of a table, a sequence, an enum and a declared row; the qualified
@@ -88,6 +91,7 @@ func RespellReadNames(database *schemamodel.Database, read ReadNames, folding ca
 	}
 	r := newReadRespeller(read, folding)
 	respelled := r.declarations(database)
+	r.declaredDatabases(database, &respelled)
 	relation := r.qualifiedBy(r.declaredRelations(database, &respelled))
 	respelled.ManagedData = mapSlice(database.ManagedData, func(data schemamodel.ManagedData) schemamodel.ManagedData {
 		data.Schema = r.database(data.Schema)
@@ -202,6 +206,19 @@ func (r *readRespeller) declaredAt(schema, written string) (in, name string) {
 	return r.in(schema), strings.TrimSpace(written)
 }
 
+// writtenAt is the database in and the name a declared relation is written
+// with, nothing respelled: the session's database for a name written with
+// none.
+func (r *readRespeller) writtenAt(schema, written string) (in, name string) {
+	if ref, ok := tableref.Parse(written); ok && ref.Qualified {
+		return ref.Schema, ref.Name
+	}
+	if trimmed := strings.TrimSpace(schema); trimmed != "" {
+		return trimmed, strings.TrimSpace(written)
+	}
+	return r.session, strings.TrimSpace(written)
+}
+
 // routine respells the database of a routine written as `name` or
 // `name(arguments)`.
 func (r *readRespeller) routine(reference string) string {
@@ -257,35 +274,113 @@ func (r *readRespeller) declarations(database *schemamodel.Database) schemamodel
 }
 
 // declaredRelations is the relations a reference may name: those the read
-// found and those respelled declares, by database. Two tables of database
-// that respelling made one are refused.
+// found and those respelled declares, by database. Two tables, views or
+// sequences of one database that database spells in two ways a server that
+// folds names reads as one are refused; such a server keeps the three kinds
+// in one namespace.
 func (r *readRespeller) declaredRelations(database, respelled *schemamodel.Database) map[string][]string {
 	relations := make(map[string][]string, len(r.found))
 	for in, names := range r.found {
 		relations[in] = slices.Clone(names)
 	}
-	spellings := make(map[string][]string, len(respelled.Tables))
-	for i, table := range respelled.Tables {
-		in, name := r.declaredAt(table.Schema, table.Name)
-		key := in + "\x00" + name
-		spellings[key] = distinctNames(append(spellings[key], database.Tables[i].Name))
-		relations[in] = distinctNames(append(relations[in], name))
+	declared := &declaredSpellings{kind: "table"}
+	declare := func(schema, name, writtenSchema, written string) {
+		in, respelledName := r.declaredAt(schema, name)
+		relations[in] = distinctNames(append(relations[in], respelledName))
+		writtenIn, writtenName := r.writtenAt(writtenSchema, written)
+		declared.add(declaredSpelling{in: writtenIn, name: writtenName, respelledIn: in, respelled: respelledName})
 	}
-	for _, table := range respelled.Tables {
-		in, name := r.declaredAt(table.Schema, table.Name)
-		if names := spellings[in+"\x00"+name]; len(names) > 1 {
-			r.match.fail(&AmbiguousNameError{Kind: "table", Name: name, Matches: names})
+	for i, table := range respelled.Tables {
+		declare(table.Schema, table.Name, database.Tables[i].Schema, database.Tables[i].Name)
+	}
+	for i, view := range respelled.Views {
+		declare("", view.Name, "", database.Views[i].Name)
+	}
+	for i, sequence := range respelled.Sequences {
+		declare(sequence.Schema, sequence.Name, database.Sequences[i].Schema, database.Sequences[i].Name)
+	}
+	declared.refuse(r.match)
+	return relations
+}
+
+// declaredDatabases refuses two databases database declares that a server
+// that folds names reads as one.
+func (r *readRespeller) declaredDatabases(database, respelled *schemamodel.Database) {
+	declared := &declaredSpellings{kind: "database"}
+	for i, schema := range respelled.Schemas {
+		declared.add(declaredSpelling{name: strings.TrimSpace(database.Schemas[i].Name), respelled: strings.TrimSpace(schema.Name)})
+	}
+	declared.refuse(r.match)
+}
+
+// declaredSpelling is one name a document declares: the database it is in and
+// the name, as written and once respelled. A database declares no database.
+type declaredSpelling struct {
+	in, name               string
+	respelledIn, respelled string
+}
+
+// declaredSpellings groups the names a document declares of one kind by the
+// name a server that folds names reads them as, lower-cased, to find two
+// spellings of one name.
+type declaredSpellings struct {
+	kind   string
+	keys   []string
+	groups map[string][]declaredSpelling
+}
+
+// add records spelling, once for each way it is written.
+func (d *declaredSpellings) add(spelling declaredSpelling) {
+	if spelling.name == "" {
+		return
+	}
+	key := strings.ToLower(spelling.in) + "\x00" + strings.ToLower(spelling.name)
+	if d.groups == nil {
+		d.groups = make(map[string][]declaredSpelling)
+	}
+	group := d.groups[key]
+	if len(group) == 0 {
+		d.keys = append(d.keys, key)
+	}
+	if !slices.ContainsFunc(group, func(kept declaredSpelling) bool {
+		return kept.in == spelling.in && kept.name == spelling.name
+	}) {
+		d.groups[key] = append(group, spelling)
+	}
+}
+
+// refuse records in match a refusal for each name written in more than one
+// way: an [*UnknownFoldingError] where the folding is unknown, which names the
+// first two spellings, and an [*AmbiguousNameError] naming every spelling
+// otherwise.
+func (d *declaredSpellings) refuse(match *nameMatch) {
+	for _, key := range d.keys {
+		group := d.groups[key]
+		if len(group) < 2 {
+			continue
+		}
+		written := make([]string, len(group))
+		for i, spelling := range group {
+			written[i] = shownIn(group, spelling.in, spelling.name)
+		}
+		if match.unknown {
+			match.fail(&UnknownFoldingError{Kind: d.kind, Written: written[1], Found: written[0]})
+			continue
+		}
+		first := group[0]
+		match.fail(&AmbiguousNameError{Kind: d.kind, Name: shownIn(group, first.respelledIn, first.respelled), Matches: written})
+	}
+}
+
+// shownIn is name in database in as a refusal names it: alone where every
+// spelling of group is written in one database, and qualified otherwise.
+func shownIn(group []declaredSpelling, in, name string) string {
+	for _, other := range group[1:] {
+		if other.in != group[0].in {
+			return tableref.Canonical(in, name)
 		}
 	}
-	for _, view := range respelled.Views {
-		in, name := r.declaredAt("", view.Name)
-		relations[in] = distinctNames(append(relations[in], name))
-	}
-	for _, sequence := range respelled.Sequences {
-		in, name := r.declaredAt(sequence.Schema, sequence.Name)
-		relations[in] = distinctNames(append(relations[in], name))
-	}
-	return relations
+	return name
 }
 
 // nameMatch matches the names of a document against the spellings a read

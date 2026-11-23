@@ -132,7 +132,7 @@ func unchanged(name string) string { return name }
 // names, the dependency maps and the self-referencing foreign keys.
 //
 // It is the one list of reference sites [PlaceUnqualified] and
-// [RespellReadDatabases] read, so a site added for one is a site the other
+// [RespellReadNames] read, so a site added for one is a site the other
 // maps too.
 func placeReferences(placed *schemamodel.Database, by referenceMaps) {
 	placed.Fields = mapSlice(placed.Fields, func(field schemamodel.Field) schemamodel.Field {

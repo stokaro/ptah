@@ -1588,6 +1588,11 @@ empty. On a URL that names no database, a name is matched the same way against
 every database the server holds: `CREATE DATABASE FA` beside `fa` declares
 `fa`, and the plan drops nothing.
 
+Such a server reads two spellings that differ only in case as one name. A file
+that declares two databases in two cases, or two tables, views or sequences of
+one database, is refused before anything is planned, and the error names both
+spellings. Planned, the second CREATE would fail on the object the first made.
+
 On a server started with `lower_case_table_names=0`, `FA` is another database
 and `Items` another table. A table in `FA` is refused as outside the URL's
 database, and a revoke on `FA.items` leaves the grant on `fa.items`.

@@ -476,3 +476,98 @@ func TestSchemaApplyMySQLFamilyFoldedTableNameE2E_CreatesAForeignKeyToADeclaredT
 		})
 	}
 }
+
+// Two tables the document declares in two cases are one table on a server that
+// folds names, and the server holds neither. The apply refuses before any
+// statement, naming both spellings, and creates neither: planned, the second
+// CREATE TABLE fails on the table the first made.
+func TestSchemaApplyMySQLFamilyFoldedTableNameE2E_RefusesTwoTablesInTwoCases(t *testing.T) {
+	for _, engine := range foldedServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newFoldedRun(c, engine.server)
+			declared := foldedRunSchema + "CREATE TABLE Parts (id INT PRIMARY KEY);\nCREATE TABLE parts (id INT PRIMARY KEY);\n"
+
+			applied := run.apply(c, declared, "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stderr, qt.Contains, `table "Parts" matches "Parts" and "parts", names that differ only in case`)
+			c.Assert(applied.Stdout, qt.Not(qt.Contains), "CREATE TABLE")
+			var tables int
+			c.Assert(run.scratch.admin.QueryRowContext(c.Context(), `
+				SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND LOWER(TABLE_NAME) = 'parts'`, run.database,
+			).Scan(&tables), qt.IsNil)
+			c.Assert(tables, qt.Equals, 0)
+		})
+	}
+}
+
+// A view the document declares in another case than the server stores it is
+// that view on a server that folds names. The apply creates and drops
+// nothing, and the server keeps the view.
+func TestSchemaApplyMySQLFamilyFoldedTableNameE2E_KeepsADeclaredView(t *testing.T) {
+	for _, engine := range foldedServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newFoldedRun(c, engine.server)
+			declared := "CREATE TABLE items (id INT PRIMARY KEY, name VARCHAR(50) NOT NULL);\n" +
+				"CREATE VIEW Item_Ids AS SELECT id FROM items;\nCREATE ROLE %[1]s;\nGRANT SELECT ON items TO %[1]s;\n"
+
+			applied := run.apply(c, declared, "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+			var views string
+			c.Assert(run.scratch.admin.QueryRowContext(c.Context(), `
+				SELECT COALESCE(GROUP_CONCAT(TABLE_NAME ORDER BY TABLE_NAME), '') FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ?`,
+				run.database,
+			).Scan(&views), qt.IsNil)
+			c.Assert(views, qt.Equals, "item_ids")
+		})
+	}
+}
+
+// Two databases the document declares in two cases are one database on a whole
+// server that folds names, and the server holds neither. The apply refuses
+// before any statement, naming both spellings, and creates neither.
+func TestSchemaApplyMySQLFamilyFoldedServerE2E_RefusesTwoDatabasesInTwoCases(t *testing.T) {
+	for _, engine := range foldedServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			account := newMySQLServerAccount(c, engine.server, []string{"kept", "gb"}, []string{"kept"})
+			gb := account.names["gb"]
+			upper := strings.ToUpper(gb)
+			declared := "CREATE DATABASE " + account.names["kept"] + ";\nCREATE DATABASE " + upper + ";\nCREATE DATABASE " + gb + ";\n"
+
+			applied := applyServerSchema(c, account.url, declared, "--auto-approve")
+
+			c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stderr, qt.Contains,
+				fmt.Sprintf("database %q matches %q and %q, names that differ only in case", upper, upper, gb))
+			c.Assert(applied.Stdout, qt.Not(qt.Contains), "CREATE SCHEMA")
+			c.Assert(account.exists(c, "gb"), qt.IsFalse)
+			c.Assert(account.exists(c, "kept"), qt.IsTrue)
+		})
+	}
+}
+
+// On a whole server that keeps names apart by case, two databases the
+// document declares in two cases are two databases, and the plan creates
+// both.
+func TestSchemaApplyMySQLServerDatabaseNameByItsBytesE2E_PlansTwoDatabases(t *testing.T) {
+	c := qt.New(t)
+	account := newMySQLServerAccount(c, dbtarget.MySQLAdmin, []string{"kept", "gb"}, []string{"kept"})
+	var folding int
+	c.Assert(account.admin.QueryRowContext(c.Context(), "SELECT @@lower_case_table_names").Scan(&folding), qt.IsNil)
+	c.Assert(folding, qt.Equals, 0)
+	gb := account.names["gb"]
+	upper := strings.ToUpper(gb)
+	declared := "CREATE DATABASE " + account.names["kept"] + ";\nCREATE DATABASE " + upper + ";\nCREATE DATABASE " + gb + ";\n"
+
+	planned := applyServerSchema(c, account.url, declared, "--dry-run")
+
+	c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+	c.Assert(planned.Stdout, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+upper+"`;")
+	c.Assert(planned.Stdout, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+gb+"`;")
+	c.Assert(planned.Stdout, qt.Not(qt.Contains), "DROP DATABASE")
+}

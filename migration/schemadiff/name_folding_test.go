@@ -116,3 +116,65 @@ func TestCompareWithDialect_NameFolding_Controls(t *testing.T) {
 		})
 	}
 }
+
+// On a server that folds names, a view the document spells in another case is
+// the view the read found, and nothing is created or dropped. On a server that
+// keeps names apart by case it is another view.
+func TestCompareWithDatabaseInfo_NameFolding_Views(t *testing.T) {
+	tests := []struct {
+		name        string
+		folding     catalog.NameFolding
+		wantAdded   []string
+		wantRemoved []string
+	}{
+		{name: "a server that folds names", folding: catalog.NameFoldingFolds},
+		{name: "a server that keeps names apart", folding: catalog.NameFoldingExact, wantAdded: []string{"Item_Ids"}, wantRemoved: []string{"item_ids"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := declaredMySQLTable("items")
+			declared.Views = []schemamodel.View{{Name: "Item_Ids", Body: "SELECT note FROM items"}}
+			held := heldMySQLTable("items")
+			held.Views = []catalog.View{{Name: "item_ids", Body: "SELECT note FROM items"}}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, held, mysqlServer(test.folding), nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.ViewsAdded.Names(), qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.ViewsRemoved.Names(), qt.DeepEquals, test.wantRemoved)
+		})
+	}
+}
+
+// On a whole server that folds names, a database the document spells in
+// another case is the database the server holds, and nothing is created or
+// dropped. On a server that keeps names apart by case it is another database.
+func TestCompareWithDatabaseInfo_NameFolding_Databases(t *testing.T) {
+	tests := []struct {
+		name        string
+		folding     catalog.NameFolding
+		wantAdded   []schemamodel.Schema
+		wantRemoved []string
+	}{
+		{name: "a server that folds names", folding: catalog.NameFoldingFolds},
+		{
+			name: "a server that keeps names apart", folding: catalog.NameFoldingExact,
+			wantAdded: []schemamodel.Schema{{Name: "FA"}}, wantRemoved: []string{"fa"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "FA"}}}
+			held := &catalog.Database{Schemas: []catalog.Schema{{Name: "fa"}}}
+			server := catalog.ServerInfo{Dialect: "mysql", WholeServer: true, NameFolding: test.folding}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, held, server, nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.SchemasAdded, qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.SchemasRemoved, qt.DeepEquals, test.wantRemoved)
+		})
+	}
+}

@@ -2168,7 +2168,9 @@ On MySQL and MariaDB, a diff between two schema files does not know whether
 the server it is meant for folds names, which `lower_case_table_names` decides.
 A database or table name on one side that matches a name on the other only
 without regard to case is refused, and so is a reference that spells a
-declared table in another case. This is stricter than Atlas on purpose.
+declared table in another case. So are two databases, or two tables of one
+database, that one side declares in two cases. This is stricter than Atlas on
+purpose.
 Measured with Atlas v1.4.0 against a dev database started with
 `lower_case_table_names=0`:
 
@@ -2178,8 +2180,8 @@ Measured with Atlas v1.4.0 against a dev database started with
   `CREATE DATABASE FA`.
 
 Against a dev database started with 1, both diffs are empty. Applied to a
-server that folds names, the first plan drops the table and the second the
-database. Ptah refuses both, whichever dev database it is given:
+server that folds names, the second plan drops the database; the first stops
+at its CREATE. Ptah refuses both, whichever dev database it is given:
 
 ```text
 Error: table "Items" and "items" differ only in case, and whether they name one table depends on the server's lower_case_table_names, which this comparison does not know; compare against a database connection, which reads the setting, or spell both names the same way
