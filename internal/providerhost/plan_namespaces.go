@@ -57,10 +57,11 @@ func (p commonPlanner) namespaceSteps(diff *difftypes.SchemaDiff) (creations, re
 	}
 	held[semantics.TableIdentityKey(semantics.DefaultSchema)] = true
 	needed := make([]string, 0, len(diff.SchemasAdded))
+	// A schema keeps its bytes, since ` a` and `a` are two schemas; only a
+	// blank name needs nothing.
 	need := func(schema string) {
-		schema = strings.TrimSpace(schema)
 		key := semantics.TableIdentityKey(schema)
-		if schema == "" || held[key] {
+		if strings.TrimSpace(schema) == "" || held[key] {
 			return
 		}
 		held[key] = true
@@ -197,7 +198,6 @@ type heldSchemas struct {
 }
 
 func (h heldSchemas) hold(schema string) {
-	schema = strings.TrimSpace(schema)
 	h.keys[h.semantics.TableIdentityKey(schema)] = true
 	for h.separator != "" {
 		cut := strings.LastIndex(schema, h.separator)
@@ -210,7 +210,7 @@ func (h heldSchemas) hold(schema string) {
 }
 
 func (h heldSchemas) holds(schema string) bool {
-	return h.keys[h.semantics.TableIdentityKey(strings.TrimSpace(schema))]
+	return h.keys[h.semantics.TableIdentityKey(schema)]
 }
 
 // declaration holds the schema of each table, view, materialized view,
@@ -296,11 +296,11 @@ func (t *target) declaredNamespaceCreations(source *schemamodel.Database) ([]ast
 	}
 	slices.Sort(named)
 	for _, schema := range slices.Compact(named) {
-		schema = strings.TrimSpace(schema)
-		if !created[schema] {
-			created[schema] = true
-			nodes = append(nodes, &ast.CreateSchemaNode{Name: schema})
+		if strings.TrimSpace(schema) == "" || created[schema] {
+			continue
 		}
+		created[schema] = true
+		nodes = append(nodes, &ast.CreateSchemaNode{Name: schema})
 	}
 	return nodes, nil
 }

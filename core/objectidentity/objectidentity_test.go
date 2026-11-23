@@ -119,6 +119,19 @@ func TestIdentity_DefectFixtures(t *testing.T) {
 			left:  builder.PrimaryKeyParts("public", "orders"),
 			right: builder.TableParts("public", "orders"),
 		},
+		{
+			// stokaro/ptah#6487: a schema name may begin with a space, and
+			// ` a` is a schema of its own. A trimmed schema paired a table of
+			// one with the table of the same name in the other.
+			name:  "one table name in schemas a and space a",
+			left:  builder.TableParts(" a", "t"),
+			right: builder.TableParts("a", "t"),
+		},
+		{
+			name:  "one sequence name in schemas a and a space",
+			left:  builder.SchemaScopedParts(objectidentity.KindSequence, "a ", "s"),
+			right: builder.SchemaScopedParts(objectidentity.KindSequence, "a", "s"),
+		},
 	}
 
 	for _, test := range tests {
@@ -181,6 +194,18 @@ func TestIdentity_EqualityHoldsWhereItShould(t *testing.T) {
 			name:  "a wrapped list and the bare one ending in a type modifier",
 			left:  builder.Function("public.f", "(varchar(20))"),
 			right: builder.Function("public.f", "varchar(20)"),
+		},
+		{
+			// The space around the dot of a qualified name is not part of
+			// either component, for a table and for a domain alike.
+			name:  "a table spelled with a space before the dot",
+			left:  builder.Table("public .users"),
+			right: builder.Table("public.users"),
+		},
+		{
+			name:  "a domain spelled with a space before the dot",
+			left:  builder.Domain("public .email"),
+			right: builder.Domain("public.email"),
 		},
 		{
 			// A primary key carries no name of its own, so the key a
@@ -393,4 +418,22 @@ func TestIdentity_PathWritesTheSignature(t *testing.T) {
 
 	c.Assert(id.Path(), qt.Equals, "app.pkg.f(integer)")
 	c.Assert(id.String(), qt.Equals, "example.org/routine app.pkg.f(integer)")
+}
+
+// The default schema is the one the connection resolved, so a table named
+// without a schema is in that schema byte for byte: in a session whose current
+// schema is " a", an unqualified t is " a".t and not a.t. Trimmed, the catalog's
+// unqualified t paired with no declared table, and the plan created " a".t
+// beside a DROP of the live one.
+func TestTableParts_DefaultsToTheCurrentSchemaAsItIs(t *testing.T) {
+	semantics := postgresSemantics()
+	semantics.DefaultSchema = " a"
+	builder := objectidentity.NewBuilder(semantics)
+	c := qt.New(t)
+
+	unqualified := builder.TableParts("", "t")
+
+	c.Assert(unqualified.Equal(builder.TableParts(" a", "t")), qt.IsTrue)
+	c.Assert(unqualified.Equal(builder.TableParts("a", "t")), qt.IsFalse)
+	c.Assert(unqualified.Schema.Defaulted, qt.IsTrue)
 }

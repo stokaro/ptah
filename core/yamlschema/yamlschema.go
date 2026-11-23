@@ -634,7 +634,10 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
-		tableName := valueOrDefault(table.Name, tableKey)
+		// A table's name is trimmed as a schema is, so it reads as the Go tag
+		// reader reads one; the names of the objects it holds keep their bytes.
+		tableName := strings.TrimSpace(valueOrDefault(table.Name, tableKey))
+		schema := schemaName(table.Schema)
 
 		scalars, sections, err := ownedKeys(owners, yamlext.EntryTable, fmt.Sprintf("table %q", tableKey), table.Owned)
 		if err != nil {
@@ -647,7 +650,7 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 		declared := schemamodel.Table{
 			StructName: structName,
 			Name:       tableName,
-			Schema:     string(table.Schema),
+			Schema:     schema,
 			APIName:    string(table.APIName),
 			APINames: schemamodel.TargetNames{
 				OpenAPI:  string(table.OpenAPIName),
@@ -668,7 +671,7 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 			return err
 		}
 		db.Tables = append(db.Tables, declared)
-		owned := yamlext.Table{Key: tableKey, Schema: string(table.Schema), Name: tableName, Struct: structName}
+		owned := yamlext.Table{Key: tableKey, Schema: schema, Name: tableName, Struct: structName}
 		if err := addTableSections(db, owners, data, owned, sections); err != nil {
 			return err
 		}
@@ -1567,7 +1570,7 @@ func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
 		Role:       string(spec.Role),
 		Privileges: privileges,
 		OnTable:    string(spec.OnTable),
-		OnSchema:   string(spec.OnSchema),
+		OnSchema:   schemaName(spec.OnSchema),
 		OnSequence: string(spec.OnSequence),
 		OnDatabase: spec.OnDatabase,
 		Comment:    string(spec.Comment),
@@ -1621,6 +1624,20 @@ func valueOrDefault(value stringScalar, fallback string) string {
 		return string(value)
 	}
 	return fallback
+}
+
+// schemaName is a field that names a schema, with the space around it
+// removed. A document is text an author typed, and every layer below keeps a
+// schema name's bytes, because PostgreSQL holds "app " and "app" as two
+// schemas: read with its space, a table entry with schema "app " beside a live
+// app.orders planned CREATE TABLE "app "."orders" and DROP TABLE
+// "app"."orders".
+//
+// An object's name keeps its bytes. The catalog holds " note" and "note" as two
+// columns, so a column, an index or a constraint named with a space names the
+// live object of that name, and trimming it planned a DROP of that object.
+func schemaName(value stringScalar) string {
+	return strings.TrimSpace(string(value))
 }
 
 func cleanStrings(values stringList) []string {

@@ -457,11 +457,13 @@ func (o Options) rowRoots() []string {
 // that do not (for example SQLite) ignore it and read their configured schema,
 // which is already the default schema.
 func schemaScope(managedSchema, defaultSchema string) []string {
-	if s := strings.TrimSpace(managedSchema); s != "" {
-		return []string{s}
+	// A schema keeps its bytes: " a" and "a" are two schemas, and the reader
+	// narrowed to the trimmed one reads the rows of another.
+	if strings.TrimSpace(managedSchema) != "" {
+		return []string{managedSchema}
 	}
-	if s := strings.TrimSpace(defaultSchema); s != "" {
-		return []string{s}
+	if strings.TrimSpace(defaultSchema) != "" {
+		return []string{defaultSchema}
 	}
 	return nil
 }

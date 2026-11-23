@@ -279,8 +279,14 @@ func acquireMigrationLock(
 // one the revision table is configured into, so that every account recording
 // in that table takes one lock, and the session's current schema, where an
 // unconfigured revision table lives, when none is configured.
+//
+// The schema keeps its bytes, as [metadataTableSchemaName] keeps them, so the
+// lock and the revision table name one schema.
 func (m *Migrator) migrationLockSchema() string {
-	return strings.TrimSpace(m.migrationsSchema)
+	if strings.TrimSpace(m.migrationsSchema) == "" {
+		return ""
+	}
+	return m.migrationsSchema
 }
 
 // refuseForeignLockTable holds the table the migration lock keeps, on an

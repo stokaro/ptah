@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/descriptor"
@@ -118,7 +117,7 @@ func withConnectedSchemaRow(
 // dbschema resolves all of those into ServerInfo.Schema at connect time, so this
 // only has to refuse an empty one rather than re-derive it.
 func connectedSchemaName(info catalog.ServerInfo) string {
-	return strings.TrimSpace(info.Schema)
+	return info.Schema
 }
 
 // inspectSchemaAttributes fills in the attributes of a schema row the reader

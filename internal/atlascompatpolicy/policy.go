@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/ptahdirective"
+	"ptah.run/internal/schemaselection"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -419,14 +420,25 @@ func (p Policy) ValidateProjectConfig(config projectconfig.Config) error {
 			drift.Origin(),
 		)
 	}
-	for _, rawURL := range append(
-		[]string{config.DatabaseURL, config.DevURL},
-		config.SchemaSources...,
-	) {
-		if err := p.ValidateURL(rawURL); err != nil {
+	env := "the project file"
+	if config.EnvName != "" {
+		env = fmt.Sprintf("env %q", config.EnvName)
+	}
+	sources := []struct{ label, rawURL string }{
+		{label: "the url of " + env, rawURL: config.DatabaseURL},
+		{label: "the dev url of " + env, rawURL: config.DevURL},
+	}
+	for _, rawURL := range config.SchemaSources {
+		sources = append(sources, struct{ label, rawURL string }{label: "a schema src of " + env, rawURL: rawURL})
+	}
+	for _, source := range sources {
+		if err := p.ValidateURL(source.rawURL); err != nil {
 			return err
 		}
-		if err := p.ValidateLocalSchemaSource(rawURL); err != nil {
+		if err := p.ValidateSearchPath(source.label, source.rawURL); err != nil {
+			return err
+		}
+		if err := p.ValidateLocalSchemaSource(source.rawURL); err != nil {
 			return err
 		}
 	}
@@ -518,6 +530,35 @@ func (p Policy) ValidateURL(rawURL string) error {
 		return strictUnknownDriver(parsed.Scheme)
 	}
 	return p.ValidateDialect(parsed.Scheme)
+}
+
+// ValidateSearchPath refuses, under strict mode, a PostgreSQL-family URL whose
+// search_path the pinned community binary and the server read as different
+// schemas; see [schemaselection.LiteralReadingDiffers]. source names where the
+// URL came from, such as `--url` or `the url of env "local"`, so the message
+// says which value to change. The full surface reads the server's grammar and
+// accepts every value.
+//
+// The refusal is stricter than the binary, deliberately. Measured on v1.4.0
+// against PostgreSQL 18, the binary selects " a" for `search_path=%20a`, "a "
+// for `a%20` and "A" for `A`, each of which the server reads as `a`, and reads
+// `a,b` as the one schema a,b, which the server reads as two. Following the
+// binary would make a schema with white space or a capital letter the current
+// one, where every reader of a connection takes its name from the server;
+// following the server would select a schema the binary does not.
+func (p Policy) ValidateSearchPath(source, rawURL string) error {
+	if !p.strictCE {
+		return nil
+	}
+	value, differs := schemaselection.LiteralReadingDiffers(rawURL)
+	if !differs {
+		return nil
+	}
+	return fmt.Errorf("Atlas Community Edition strict compatibility refuses search_path=%s in %s: "+
+		"the community binary reads the value as one schema name, byte for byte, and the server's "+
+		"search_path grammar reads another; name a schema other than $user, in lower case, at most 63 "+
+		"bytes, without white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT "+
+		"to read the value as the server does", value, source)
 }
 
 // noAtlasDriver reports whether name is an engine no Atlas edition has a

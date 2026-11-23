@@ -348,6 +348,8 @@ func atlasCompatibilityPolicy(cmd *cobra.Command) atlascompatpolicy.Policy {
 	return atlascompatpolicy.Full()
 }
 
+// validateAtlasStrictCompatURLFlags refuses a URL flag value strict mode does
+// not accept, before any command reads the flag or connects.
 func validateAtlasStrictCompatURLFlags(cmd *cobra.Command, policy atlascompatpolicy.Policy) error {
 	for _, name := range []string{"url", "dev-url", "from", "to"} {
 		flag := cmd.Flags().Lookup(name)
@@ -360,6 +362,9 @@ func validateAtlasStrictCompatURLFlags(cmd *cobra.Command, policy atlascompatpol
 		}
 		for _, value := range values {
 			if err := policy.ValidateURL(value); err != nil {
+				return err
+			}
+			if err := policy.ValidateSearchPath("--"+name, value); err != nil {
 				return err
 			}
 		}

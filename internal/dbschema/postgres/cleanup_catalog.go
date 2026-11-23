@@ -33,10 +33,10 @@ type postgresCleanupCatalog struct{}
 // Objects lists the sequences, foreign tables, procedures, aggregates,
 // window functions and collations of schema, which the writer's cleanup
 // drops and the schema reader does not describe, and the default privileges
-// the cleanup revokes. The empty schema is public.
+// the cleanup revokes. A blank schema is public, and any other keeps its
+// bytes.
 func (postgresCleanupCatalog) Objects(ctx context.Context, q dbreset.Querier, schema string) ([]dbreset.CleanupObject, error) {
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
+	if strings.TrimSpace(schema) == "" {
 		schema = "public"
 	}
 	rows, err := q.QueryContext(ctx, `
@@ -233,10 +233,10 @@ func cleanupDefaultPrivileges(ctx context.Context, q dbreset.Querier, schema str
 // ViewDepths answers, for each view and materialized view of schema, the
 // longest chain of views of the schema it reads through, through pg_rewrite
 // and pg_depend, and an empty list, not nil, for a schema with no view: the
-// engine orders views. The empty schema is public.
+// engine orders views. A blank schema is public, and any other keeps its
+// bytes.
 func (postgresCleanupCatalog) ViewDepths(ctx context.Context, q dbreset.Querier, schema string) ([]dbreset.ViewDepth, error) {
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
+	if strings.TrimSpace(schema) == "" {
 		schema = "public"
 	}
 	rows, err := q.QueryContext(ctx, `

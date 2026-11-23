@@ -822,6 +822,42 @@ func TestObjectsIn_HappyPath(t *testing.T) {
 	}
 }
 
+// TestObjectsIn_KeepsTheSpaceAroundASchema lists the objects of a state whose
+// default schema is " a" by that schema only: " a" and "a" are two schemas, so
+// asking for "a" finds neither the table a read left unqualified nor the one it
+// qualified with " a", and asking for " a" finds both.
+func TestObjectsIn_KeepsTheSpaceAroundASchema(t *testing.T) {
+	spaced := devseed.Options{Dialect: "postgres", DefaultSchema: " a", SearchPath: []string{" a"}}
+	state := &catalog.Database{
+		Schemas: schemas("a", " a"),
+		Tables:  []catalog.Table{table("", "t_space"), table(" a", "shared"), table("a", "t_plain")},
+	}
+	tests := []struct {
+		name    string
+		schemas []string
+		want    []devseed.Object
+	}{
+		{
+			name:    "the schema with the space",
+			schemas: []string{" a"},
+			want:    []devseed.Object{{Kind: "table", Schema: " a", Name: "shared"}, {Kind: "table", Name: "t_space"}},
+		},
+		{
+			name:    "the schema without it",
+			schemas: []string{"a"},
+			want:    []devseed.Object{{Kind: "table", Schema: "a", Name: "t_plain"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := devseed.ObjectsIn(state, test.schemas, spaced)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestObjectsIn_FailurePath is a state that is not there.
 func TestObjectsIn_FailurePath(t *testing.T) {
 	c := qt.New(t)

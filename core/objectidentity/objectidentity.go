@@ -327,13 +327,14 @@ func (b Builder) Table(qualified string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
 		Kind:   KindTable,
-		Schema: b.schemaPart(schema),
+		Schema: b.schemaPart(strings.TrimSpace(schema)),
 		Name:   b.namePart(name, b.semantics.TableIdentityKey),
 	}
 }
 
 // TableParts builds a table identity from components the caller already has,
-// trimming each and defaulting an absent schema.
+// trimming the name and defaulting an absent schema. A schema that is named
+// keeps its bytes, because a schema name may begin or end with a space.
 //
 // It exists beside [Builder.Table] because a caller holding the two components
 // separately must not have them rejoined and re-split: a name containing a dot
@@ -341,7 +342,7 @@ func (b Builder) Table(qualified string) ID {
 func (b Builder) TableParts(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
-		Schema: b.schemaPart(strings.TrimSpace(schema)),
+		Schema: b.schemaPart(schema),
 		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
@@ -351,7 +352,7 @@ func (b Builder) TableParts(schema, name string) ID {
 // SQLite is why: a quoted leading or trailing space is part of a SQLite table
 // name, so trimming one there merges two distinct tables. Every other caller
 // wants [Builder.TableParts], whose trimming absorbs the incidental whitespace
-// a schema file or a catalog row carries around a name.
+// a schema file carries around a table name.
 func (b Builder) TablePartsVerbatim(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
@@ -404,9 +405,12 @@ func (b Builder) ColumnParts(schema, table, column string) ID {
 // The schema is part of it because stokaro/ptah#1302 is what happens when it is
 // not: a domain compared without schema identity read as absent, and the
 // comparator planned a destructive drop for an object that existed.
+//
+// The schema split off a qualified name is trimmed, as [Builder.Table] trims
+// it, so `public .email` is `public.email`.
 func (b Builder) Domain(qualified string) ID {
 	schema, name := splitQualified(qualified)
-	return b.SchemaScopedParts(KindDomain, schema, name)
+	return b.SchemaScopedParts(KindDomain, strings.TrimSpace(schema), name)
 }
 
 // SchemaScopedParts builds the identity of an object whose name is unique
@@ -421,7 +425,7 @@ func (b Builder) Domain(qualified string) ID {
 func (b Builder) SchemaScopedParts(kind Kind, schema, name string) ID {
 	return ID{
 		Kind:   kind,
-		Schema: b.schemaPart(strings.TrimSpace(schema)),
+		Schema: b.schemaPart(schema),
 		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
@@ -729,24 +733,31 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
 		Kind:      kind,
-		Schema:    b.schemaPart(schema),
+		Schema:    b.schemaPart(strings.TrimSpace(schema)),
 		Name:      b.namePart(name, b.semantics.TableIdentityKey),
 		Signature: signatureParts(signature),
 	}
 }
 
 // schemaPart folds a schema name, defaulting an unqualified one to the target's
-// default schema so `users` and `public.users` are one table.
+// default schema so `users` and `public.users` are one table. A schema that is
+// named keeps its bytes: a schema name may begin or end with a space, and
+// ` a` is not the schema `a`. A caller splitting one qualified string trims
+// the part it split off, where a space is only the spelling around it.
 func (b Builder) schemaPart(schema string) Part {
-	if strings.TrimSpace(schema) == "" {
-		if b.semantics.DefaultSchema == "" {
+	defaulted := strings.TrimSpace(schema) == ""
+	if defaulted {
+		// The default schema is the one the connection resolved, so it keeps
+		// its bytes as a named one does: trimmed, a table the catalog reports
+		// unqualified in the current schema " a" keyed as a.t, and the plan
+		// created " a".t beside a DROP of the live one.
+		schema = b.semantics.DefaultSchema
+		if strings.TrimSpace(schema) == "" {
 			return Part{}
 		}
-		part := b.namePart(b.semantics.DefaultSchema, b.semantics.TableIdentityKey)
-		part.Defaulted = true
-		return part
 	}
-	return b.namePart(schema, b.semantics.TableIdentityKey)
+	_, quoted := unquote(schema)
+	return Part{Source: schema, Normalized: b.semantics.TableIdentityKey(schema), Quoted: quoted, Defaulted: defaulted}
 }
 
 // unquote removes one layer of double quotes and reports whether there was one.

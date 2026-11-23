@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"strings"
 
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
@@ -218,7 +217,7 @@ func KeptDefaultPrivileges(conn *dbschema.DatabaseConnection) dbreset.DefaultPri
 	if RealmScoped(conn) {
 		return keptDefaultPrivileges("")
 	}
-	return keptDefaultPrivileges(strings.TrimSpace(conn.Info().Schema))
+	return keptDefaultPrivileges(conn.Info().Schema)
 }
 
 // keptDefaultPrivileges is [KeptDefaultPrivileges] for a URL that pinned
@@ -255,7 +254,7 @@ func RealmScoped(conn *dbschema.DatabaseConnection) bool {
 		return false
 	}
 	info := conn.Info()
-	return realmScoped(info.Dialect, info.URL, strings.TrimSpace(info.Schema))
+	return realmScoped(info.Dialect, info.URL, info.Schema)
 }
 
 // ResetsEverySchema reports whether a reset of conn's dev database empties every

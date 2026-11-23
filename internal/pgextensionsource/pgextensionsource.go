@@ -103,7 +103,10 @@ func decodeYAML(decode func(target any) error, _ yamlext.Tables) ([]yamlext.Cont
 		if name == "" {
 			name = key
 		}
-		object, err := Declare(name, pgextension.DesiredExtension{Schema: string(entry.Schema), Version: string(entry.Version),
+		// The schema is trimmed where the document is read, as every schema a
+		// YAML schema document names is: it keeps its bytes below, and "app "
+		// is another schema than app.
+		object, err := Declare(name, pgextension.DesiredExtension{Schema: strings.TrimSpace(string(entry.Schema)), Version: string(entry.Version),
 			Comment: string(entry.Comment), IfNotExists: entry.IfNotExists})
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", Key, key, err)

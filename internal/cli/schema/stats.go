@@ -73,7 +73,7 @@ reading several databases can tell them apart without a job per database.`,
 		"Database URL to read (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.schemas, statsSchemaFlag, "",
 		"Comma-separated schemas to count: PostgreSQL-family and SQL Server schemas, or YDB directories relative "+
-			"to the database root. Empty uses the connection default, and on YDB every directory.")
+			"to the database root. Empty uses the connection default, and on YDB every directory. "+dbcli.SchemasQuoting)
 	dbcli.RefuseEmptySchemasEnv(flags, statsSchemaFlag, dbcli.ConnectionDefaultSchemas)
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
@@ -87,13 +87,17 @@ func runSchemaStats(cmd *cobra.Command, opts schemaStatsOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", statsDBURLFlag, err))
 	}
 	defer func() { _ = conn.Close() }()
 
-	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas))
+	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}

@@ -99,7 +99,7 @@ the comparison and out of the page, as it leaves them out of ` + "`schema diff`"
 	flags.StringVar(&opts.addr, serveAddrFlag, "127.0.0.1:7070", "Address to listen on")
 	flags.DurationVar(&opts.refresh, serveRefreshFlag, 30*time.Second, "How often the page reloads itself; 0 disables")
 	flags.StringVar(&opts.title, serveTitleFlag, "", "Title for the page")
-	flags.StringVar(&opts.schemasRaw, dbcli.SchemasFlagName, "", "Comma-separated schemas to read")
+	flags.StringVar(&opts.schemasRaw, dbcli.SchemasFlagName, "", "Comma-separated schemas to read. "+dbcli.SchemasQuoting)
 	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName, "use the project's schemas, else let the URL decide")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
@@ -115,8 +115,10 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	if dbURL == "" {
 		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(projectCfg, errors.New("database URL is required")))
 	}
-	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()))
+	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemasRaw, projectCfg.SchemasValue())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL))
 	if err != nil {
@@ -134,7 +136,7 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 		DatabaseURL: dbURL,
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
-		Schemas:     dbcli.ParseSchemas(schemasValue),
+		Schemas:     schemas,
 		Exclude:     exclude,
 		Title:       opts.title,
 		Refresh:     opts.refresh,

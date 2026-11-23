@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -414,7 +415,14 @@ func (c yamlSettings) projectConfig() (Config, error) {
 		cfg.presence.mark(fieldExternalSchemaEnv)
 	}
 	if c.Schemas != nil {
-		cfg.Schemas = slices.Clone(*c.Schemas)
+		// A name is trimmed where ptah.yaml is read, since the file is text an
+		// author typed and every layer below keeps a schema name's bytes: read
+		// with its space, "app " selects a schema other than app. An atlas.hcl
+		// list keeps its bytes, as the community binary reads it.
+		cfg.Schemas = make([]string, 0, len(*c.Schemas))
+		for _, schema := range *c.Schemas {
+			cfg.Schemas = append(cfg.Schemas, strings.TrimSpace(schema))
+		}
 		cfg.presence.mark(fieldSchemas)
 	}
 	if c.Exclude != nil {

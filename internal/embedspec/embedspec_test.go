@@ -1,6 +1,7 @@
 package embedspec_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -273,4 +274,36 @@ func indexOf(document, fragment string) int {
 		}
 	}
 	return -1
+}
+
+// A schema is text an author typed, so the space around it is removed where
+// the document is read: the generation keeps a schema's bytes, and "public "
+// would name another schema than public. The identity is the one the same
+// document without the space has. A table keeps its bytes, as a table the
+// catalog holds does.
+func TestParse_TrimsTheSchemasItNames(t *testing.T) {
+	c := qt.New(t)
+	spaced := strings.ReplaceAll(complete, "  schema: public\n", "  schema: \" public \"\n")
+	c.Assert(spaced, qt.Not(qt.Equals), complete)
+	want, err := embedspec.Parse([]byte(complete), "spec.yaml")
+	c.Assert(err, qt.IsNil)
+
+	got, err := embedspec.Parse([]byte(spaced), "spec.yaml")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Spec.Source.Schema, qt.Equals, "public")
+	c.Assert(got.Spec.Target.Schema, qt.Equals, "public")
+	c.Assert(got.Spec.Identity().Digest, qt.Equals, want.Spec.Identity().Digest)
+}
+
+func TestParse_KeepsTheTableItNames(t *testing.T) {
+	c := qt.New(t)
+	spaced := strings.ReplaceAll(complete, "  table: articles\n", "  table: \"articles \"\n")
+	c.Assert(spaced, qt.Not(qt.Equals), complete)
+
+	got, err := embedspec.Parse([]byte(spaced), "spec.yaml")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Spec.Source.Table, qt.Equals, "articles ")
+	c.Assert(got.Spec.Target.Table, qt.Equals, "articles ")
 }

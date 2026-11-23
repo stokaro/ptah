@@ -75,6 +75,9 @@ func yamlObject(entry yamlDeclaration) (schemaext.Object, error) {
 			return schemaext.Object{}, fmt.Errorf("dialects: %w", err)
 		}
 	}
-	return Declare(pgdefaultprivilege.Identity{Grantor: string(entry.ForRole), Schema: string(entry.Schema), ObjectType: string(entry.ObjectType), Grantee: string(entry.Grantee)},
+	// The schema is trimmed where the document is read, as every schema a YAML
+	// schema document names is: it keeps its bytes below, and "app " is another
+	// schema than app.
+	return Declare(pgdefaultprivilege.Identity{Grantor: string(entry.ForRole), Schema: strings.TrimSpace(string(entry.Schema)), ObjectType: string(entry.ObjectType), Grantee: string(entry.Grantee)},
 		entry.Privileges, entry.Grantable, entry.Revoked, string(entry.Comment), targets)
 }

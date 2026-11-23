@@ -338,7 +338,12 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 // scopeTestDesiredSchema so the selection cannot apply to some sources and be
 // silently ignored on others.
 func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*schemamodel.Database, error) {
-	selection := dbcli.ParseSchemas(strings.Join(opts.schemas, ","))
+	// Each --schema value is a line of the --schemas grammar, so joining them
+	// with a comma reads every value as written.
+	selection, err := dbcli.ParseSchemas(strings.Join(opts.schemas, ","))
+	if err != nil {
+		return nil, err
+	}
 	if len(opts.schemaFiles) > 0 {
 		database, err := loadTestSchemaFiles(ctx, opts, opts.schemaFiles)
 		if err != nil {

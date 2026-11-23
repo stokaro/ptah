@@ -183,6 +183,10 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.migrationLockTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -220,7 +224,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		MigrationsFS:         migrationsFS,
 		Dialect:              opts.dialect,
 		DataTables:           opts.dataTables,
-		Schemas:              dbcli.ParseSchemas(opts.schemas),
+		Schemas:              schemas,
 		ProviderOptions:      []migrator.FSProviderOption{migrator.WithMigrationDirFormat(dirFormat)},
 		ConnectTimeout:       connectTimeout,
 		MigrationLockTimeout: migrationLockTimeout,

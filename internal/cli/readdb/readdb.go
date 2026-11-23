@@ -74,6 +74,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return err
+	}
 
 	// Connect to the database
 	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
@@ -98,7 +102,6 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintf(stderr, "Connected to %s database successfully!\n", conn.Info().Dialect)
 
 	// Read the schema
-	schemas := dbcli.ParseSchemas(opts.schemas)
 	schema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading schema: %w", err)

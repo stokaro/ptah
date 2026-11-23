@@ -45,7 +45,7 @@ func (dc *DatabaseConnection) ResolveNamesAs(ctx context.Context, like catalog.S
 	if dc.factoriesFor == nil {
 		return nil, errors.New("database connection does not support session rebinding")
 	}
-	schema := strings.TrimSpace(like.Schema)
+	schema := like.Schema
 	if schema == "" {
 		return nil, errors.New("moving name resolution requires a schema to resolve names in")
 	}

@@ -76,6 +76,22 @@ func TestNamespaceStepsCreateWhatThePlanNeeds_HappyPath(t *testing.T) {
 	c.Assert(removals, qt.HasLen, 0)
 }
 
+// A schema whose name begins with a space is not the schema of the bare name,
+// so a plan creates it beside the one the read holds.
+func TestNamespaceStepsCreateASpacedSchema_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	rules := ownedIndexRules()
+	diff := &difftypes.SchemaDiff{IdentifierSemantics: &rules,
+		HeldSchemas: []string{"main", "app"},
+		TablesAdded: difftypes.TableChanges{{Name: `" app".t`, Table: schemamodel.Table{Name: "t", Schema: " app"}}},
+	}
+
+	creations, removals := namespacePlanner().namespaceSteps(diff)
+
+	c.Assert(createdNames(creations), qt.DeepEquals, [][2]string{{" app", ""}})
+	c.Assert(removals, qt.HasLen, 0)
+}
+
 // A rollback removes the schema its forward plan created, last.
 func TestNamespaceStepsRemoveWhatARollbackRemoves_HappyPath(t *testing.T) {
 	c := qt.New(t)

@@ -197,6 +197,10 @@ type lineageDocument struct {
 // database at all, which is what made integration coverage of it structurally
 // impossible before (stokaro/ptah#1270, criterion 8).
 func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to database: %w", err))
@@ -206,7 +210,7 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	// The analysis follows columns through views and routine bodies, so it does
 	// not answer for triggers or constraints.
 	live, err := dbschema.ReadSchemaWithSchemasContext(
-		readscope.Without(cmd.Context(), readscope.Triggers, readscope.Constraints, readscope.Events), conn, dbcli.ParseSchemas(opts.schemas),
+		readscope.Without(cmd.Context(), readscope.Triggers, readscope.Constraints, readscope.Events), conn, schemas,
 	)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))

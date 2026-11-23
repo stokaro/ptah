@@ -73,3 +73,25 @@ func TestGrant_CanonicalizeAllPrivileges(t *testing.T) {
 
 	c.Assert(grant.Privileges, qt.DeepEquals, []string{"ALL", "SELECT"})
 }
+
+// TestGrant_CanonicalizeKeepsTheSchemaBytes pins that a grant on ` app` stays
+// a grant on ` app`, which is another schema than `app`, and that a blank
+// schema is cleared.
+func TestGrant_CanonicalizeKeepsTheSchemaBytes(t *testing.T) {
+	for _, test := range []struct {
+		name, schema, want string
+	}{
+		{name: "a leading space", schema: " app", want: " app"},
+		{name: "a trailing space", schema: "app ", want: "app "},
+		{name: "a blank schema", schema: "  ", want: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			grant := schemamodel.Grant{Role: "app", Privileges: []string{"usage"}, OnSchema: test.schema}
+
+			grant.Canonicalize()
+
+			c.Assert(grant.OnSchema, qt.Equals, test.want)
+		})
+	}
+}

@@ -86,6 +86,26 @@ func TestMetadataTableSchemaName_SQLServerHonorsConnectionSchema(t *testing.T) {
 			expected:         "audit",
 		},
 		{
+			name:             "sqlserver url schema with a space keeps it",
+			dialect:          platform.SQLServer,
+			connectionSchema: " tenant_a",
+			expected:         " tenant_a",
+		},
+		{
+			name:             "a schema a scoped session configures keeps its space",
+			dialect:          platform.Postgres,
+			connectionSchema: " a",
+			configuredSchema: " a",
+			expected:         " a",
+		},
+		{
+			name:             "a blank configured schema is no schema",
+			dialect:          platform.SQLServer,
+			connectionSchema: "tenant_a",
+			configuredSchema: " ",
+			expected:         "tenant_a",
+		},
+		{
 			name:             "non sqlserver connection schema does not qualify table",
 			dialect:          platform.Postgres,
 			connectionSchema: "public",

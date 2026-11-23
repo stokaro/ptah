@@ -12,17 +12,17 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-// UniqueNames returns the schema names in values in first-seen order, trimmed
-// of surrounding spaces, without repeats and without blank names. Each value is
-// one schema name: the grammar that turns a command-line value into names
-// belongs to the surface that declares the flag, so a comma is part of the name
-// it appears in.
+// UniqueNames returns the schema names in values in first-seen order, without
+// repeats and without blank names, a blank name being empty or white space
+// alone. Each other value is one schema name, byte for byte: the grammar that
+// turns a command-line value into names belongs to the surface that declares
+// the flag, so a comma is part of the name it appears in, and so is a space
+// around it. ` a` and `a` are two schemas.
 func UniqueNames(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	var schemas []string
-	for _, value := range values {
-		schema := strings.TrimSpace(value)
-		if schema == "" {
+	for _, schema := range values {
+		if strings.TrimSpace(schema) == "" {
 			continue
 		}
 		if _, ok := seen[schema]; ok {
@@ -254,16 +254,18 @@ func schemaSet(values []string) map[string]struct{} {
 }
 
 func schemaAllowed(allowed map[string]struct{}, schema string) bool {
-	_, ok := allowed[strings.TrimSpace(schema)]
+	_, ok := allowed[schema]
 	return ok
 }
 
+// effectiveSchema is the schema an object of schema belongs to: schema, or
+// defaultSchema for an object that names none. Neither is trimmed, because
+// a schema name may begin or end with a space.
 func effectiveSchema(schema, defaultSchema string) string {
-	schema = strings.TrimSpace(schema)
 	if schema != "" {
 		return schema
 	}
-	return strings.TrimSpace(defaultSchema)
+	return defaultSchema
 }
 
 func keep[T any](items []T, shouldKeep func(T) bool) []T {

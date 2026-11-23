@@ -61,7 +61,12 @@ const resolveRelationSQL = `
 func ResolveRelation(
 	ctx context.Context, db relationReader, schema, table string,
 ) (relation embedbackend.Relation, found bool, err error) {
-	authored := embedbackend.Relation{Schema: strings.TrimSpace(schema), Table: strings.TrimSpace(table)}
+	// A schema keeps its bytes, since ` a` and `a` are two schemas, and a
+	// blank one is none.
+	if strings.TrimSpace(schema) == "" {
+		schema = ""
+	}
+	authored := embedbackend.Relation{Schema: schema, Table: strings.TrimSpace(table)}
 	if authored.Table == "" {
 		return authored, false, nil
 	}

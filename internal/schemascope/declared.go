@@ -36,8 +36,8 @@ func DeclaredSchemaNames(desired *schemamodel.Database) ([]string, error) {
 	}
 	var names []string
 	add := func(name string) {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			names = append(names, trimmed)
+		if strings.TrimSpace(name) != "" {
+			names = append(names, name)
 		}
 	}
 	for _, schema := range desired.Schemas {

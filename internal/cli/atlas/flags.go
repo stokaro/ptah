@@ -1,7 +1,6 @@
 package atlas
 
 import (
-	"encoding/csv"
 	"fmt"
 	"strings"
 
@@ -12,7 +11,6 @@ import (
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/envbinding"
-	"ptah.run/internal/schemascope"
 )
 
 const (
@@ -33,24 +31,23 @@ const (
 //
 // A value that names no schema is refused too: the empty value, as in
 // `--schema=`, and a value whose every field is empty once trimmed, such as
-// `""`, `,` or `" "`. Below this layer [schemascope.UniqueNames] drops a blank
-// name, so the selection would be empty, and an empty selection is the whole
-// realm: `schema apply` would plan a DROP for every schema the desired schema
-// leaves out. `--schema "$SCHEMA"` with an empty variable, or the quoted
-// `"\"${schema}\""`, is the usual source of such a value, so refusing it is
-// deliberate and stricter than the community binary. That binary reads the
-// empty value as no selection and plans those DROPs too, and reads `""` as a
-// schema with an empty name, which selects nothing.
+// `""`, `,` or `" "`. Such a value adds no name, so the selection would be
+// empty, and an empty selection is the whole realm: `schema apply` would plan
+// a DROP for every schema the desired schema leaves out. `--schema "$SCHEMA"`
+// with an empty variable, or the quoted `"\"${schema}\""`, is the usual
+// source of such a value, so refusing it is deliberate and stricter than the
+// community binary. That binary reads the empty value as no selection and
+// plans those DROPs too, and reads `""` as a schema with an empty name, which
+// selects nothing.
 //
-// A name keeps the spaces around it here, and [schemascope.UniqueNames] trims
-// them below, so the default surface reads `--schema "one, two"` as `one` and
-// `two`. That is deliberate. The community binary keeps the space: ` two` is a
-// schema of its own, and a run naming it describes that schema or nothing.
-// Ptah cannot select such a schema, because the readers and filters below
-// trim every schema name (stokaro/ptah#6487). So under the strict policy a
-// name that begins or ends with white space is refused rather than read as
-// the schema without the space, which is another schema. A field that is blank
-// beside a name is not refused: on either binary it selects nothing.
+// The default surface trims the space around each name here, so it reads
+// `--schema "one, two"` as `one` and `two`. That is deliberate. Below this
+// layer a schema name keeps its bytes, so the trim is this flag's and no
+// other's. The community binary keeps the space: ` two` is a schema of its
+// own, and a run naming it describes that schema or nothing. The strict policy
+// reads the value as that binary does and keeps the space, so `-s ' a'`
+// selects the schema ` a`. A field that is blank beside a name is dropped, not
+// refused: on either binary it selects nothing.
 //
 // The default text is emptied after the wrap. pflag decides whether to print
 // `(default [])` from the concrete type of the value, and the wrapper is not
@@ -88,14 +85,6 @@ var atlasEmptySchemaRule = envbinding.EmptyRule{Omitted: "select every schema", 
 // any of its fields is refused.
 var errEmptySchemaValue = &schemaValueError{reason: "every field is empty, so the value names no schema"}
 
-// spacedSchemaNameError is the strict policy's refusal of a schema name that
-// begins or ends with white space; see [registerAtlasSchemaFlag].
-func spacedSchemaNameError(name string) error {
-	return &schemaValueError{reason: fmt.Sprintf(
-		"schema %q begins or ends with white space, which the community binary keeps and Ptah cannot select", name,
-	)}
-}
-
 // commaSchemaNameError is the refusal of a name that holds a comma on a verb
 // that passes its names on as one comma-separated list; see
 // [atlasForwardedSchemaFlag].
@@ -113,32 +102,47 @@ func commaSchemaNameError(name string) error {
 type atlasSchemaValue struct {
 	pflag.Value
 	slice pflag.SliceValue
-	// strict refuses a name that begins or ends with white space.
+	// strict keeps the white space around a name, as the community binary
+	// does.
 	strict bool
 }
 
-// Set refuses an empty value, a value whose fields are all blank and, under
-// the strict policy, a name with white space around it, and otherwise stores
-// the value as the string slice does. The fields are read with encoding/csv,
-// the reader the string slice uses, so a value it cannot read is left to it and
-// refused in its words.
+// Set refuses an empty value and a value whose fields are all blank, and
+// otherwise adds the value's names without its blank fields. A quoted field
+// keeps its bytes, so `" a"` names ` a`, as the community binary reads it. A
+// bare field is trimmed on the default surface and kept as written under the
+// strict policy, which is the binary's reading. The fields are read with
+// encoding/csv, the reader the string slice uses, without skipping the space
+// before a field: the binary refuses `a, " a"`, and so does this flag. A value
+// the reader cannot read is left to the string slice and refused in its words.
 func (v atlasSchemaValue) Set(raw string) error {
 	if raw == "" {
 		return errEmptySchemaValue
 	}
-	fields, err := csv.NewReader(strings.NewReader(raw)).Read()
+	fields, err := dbcli.ReadSchemaFields(raw, false)
 	if err != nil {
 		return v.Value.Set(raw)
 	}
-	if len(schemascope.UniqueNames(fields)) == 0 {
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if strings.TrimSpace(field.Text) == "" {
+			continue
+		}
+		name := field.Text
+		if !field.Quoted && !v.strict {
+			name = strings.TrimSpace(name)
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
 		return errEmptySchemaValue
 	}
-	for _, field := range fields {
-		if trimmed := strings.TrimSpace(field); v.strict && trimmed != "" && trimmed != field {
-			return spacedSchemaNameError(field)
+	for _, name := range names {
+		if err := v.slice.Append(name); err != nil {
+			return err
 		}
 	}
-	return v.Value.Set(raw)
+	return nil
 }
 
 // Append adds one schema name as the string slice does.
@@ -203,7 +207,8 @@ func atlasCheckpointSchemaFlag() atlasargs.Flag {
 }
 
 // forwardAtlasSchemaValue reads one -s/--schema value and returns its names in
-// the comma-separated form the native flag reads.
+// the comma-separated form the native flag reads, a name holding a quote
+// written as a quoted field; see [dbcli.JoinSchemas].
 func forwardAtlasSchemaValue(value string) (string, error) {
 	names, err := readAtlasSchemaList([]string{value}, atlascompatpolicy.Full())
 	if err != nil {
@@ -214,5 +219,5 @@ func forwardAtlasSchemaValue(value string) (string, error) {
 			return "", commaSchemaNameError(name)
 		}
 	}
-	return strings.Join(names, ","), nil
+	return dbcli.JoinSchemas(names), nil
 }

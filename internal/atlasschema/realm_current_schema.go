@@ -140,8 +140,8 @@ func resolveDevNaming(ctx context.Context, dialect, devURL string) (desiredNamin
 // recordedNaming is the naming a saved plan recorded, placed, and false when
 // the plan recorded none or a run over target places no name.
 func recordedNaming(target catalog.ServerInfo, placedSchema string) (desiredNaming, bool) {
-	placedSchema = strings.TrimSpace(placedSchema)
-	if placedSchema == "" || !placesUnqualifiedNames(target) {
+	// The plan recorded the name the session resolved, with its bytes.
+	if strings.TrimSpace(placedSchema) == "" || !placesUnqualifiedNames(target) {
 		return desiredNaming{}, false
 	}
 	return desiredNaming{resolved: true, schema: placedSchema}, true

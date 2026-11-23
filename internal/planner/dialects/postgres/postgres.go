@@ -531,12 +531,12 @@ func (p *Planner) addSchemaPreconditions(
 	}
 	for _, name := range names {
 		if ref, ok := tableref.Parse(name); ok && ref.Qualified {
-			add(strings.TrimSpace(ref.Schema))
+			add(ref.Schema)
 		}
 	}
 	// A schema the comparison adds is created whether or not an object names it.
 	for _, schema := range diff.SchemasAdded {
-		add(strings.TrimSpace(schema.Name))
+		add(schema.Name)
 	}
 	for _, schema := range p.placedSchemas(diff) {
 		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) {
@@ -580,12 +580,13 @@ func (p *Planner) addSchemaPreconditions(
 //
 // A comparison without a connection carries no identifier semantics, and its
 // default schema is the dialect's guess rather than a schema anything
-// resolved, so it keeps the precondition.
+// resolved, so it keeps the precondition. The connected schema keeps its
+// bytes: on a connection to " a", a table in a is not in the connected schema.
 func connectedSchema(diff *difftypes.SchemaDiff, dialect string) string {
 	if diff == nil || diff.IdentifierSemantics == nil {
 		return ""
 	}
-	return strings.TrimSpace(diff.EffectiveIdentifierSemantics(dialect).DefaultSchema)
+	return diff.EffectiveIdentifierSemantics(dialect).DefaultSchema
 }
 
 // dropRemovedSchemas ends the plan with a DROP SCHEMA for each schema a rollback

@@ -3292,7 +3292,7 @@ func foreignKeyNameScope(dialect string, table schemamodel.Table, name string) (
 	case platform.MySQL, platform.MariaDB:
 		return "database constraint namespace", strings.ToLower(name)
 	case platform.SQLServer:
-		schema := strings.TrimSpace(table.Schema)
+		schema := table.Schema
 		if schema == "" {
 			schema = identifier.ForDialect(dialect).DefaultSchema
 		}

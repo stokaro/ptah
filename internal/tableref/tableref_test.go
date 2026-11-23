@@ -21,6 +21,11 @@ func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
 		{name: "literal dot in schema", schema: "tenant.archive", table: "data", want: `"tenant.archive".data`},
 		{name: "embedded quote", table: `user"events`, want: `"user""events"`},
 		{name: "legacy mixed case", schema: "ExtensionStore", table: "uuid-ossp", want: "ExtensionStore.uuid-ossp"},
+		{name: "leading space in schema", schema: " a", table: "t", want: `" a".t`},
+		{name: "trailing space in schema", schema: "a ", table: "t", want: `"a ".t`},
+		{name: "leading space in table", schema: "a", table: " t", want: `a." t"`},
+		{name: "unqualified table with spaces", table: " t ", want: `" t "`},
+		{name: "a blank schema is none", schema: " ", table: "t", want: `t`},
 	}
 
 	for _, tt := range tests {
@@ -29,6 +34,32 @@ func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
 			got := tableref.Canonical(tt.schema, tt.table)
 
 			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestCanonical_ReadsBackThroughParse pins that Parse reads what Canonical
+// writes as the same two names, so ` a` and `a` stay two schemas after a name
+// is written as a key and read back.
+func TestCanonical_ReadsBackThroughParse(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		table  string
+	}{
+		{name: "plain", schema: "a", table: "t"},
+		{name: "leading space in schema", schema: " a", table: "t"},
+		{name: "spaces around both", schema: " a ", table: " t "},
+		{name: "dot and space", schema: " a.b", table: "t"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := tableref.Parse(tableref.Canonical(tt.schema, tt.table))
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.DeepEquals, tableref.Ref{Schema: tt.schema, Name: tt.table, Qualified: true})
 		})
 	}
 }

@@ -785,8 +785,10 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 		return err
 	}
 
+	// The name of this directive names a schema, so it is trimmed as each of
+	// [schemaAttributes] is.
 	s.schemas = append(s.schemas, schemamodel.Schema{
-		Name:    kv["name"],
+		Name:    strings.TrimSpace(kv["name"]),
 		Comment: kv["comment"],
 	})
 	return nil
@@ -956,10 +958,14 @@ func (s *schemaParseState) annotationContext(
 // attributes splits comment into its attributes. A bare word naming an
 // attribute that takes a value is refused here, where the word is still
 // visible: in the map it would be either missing or a value nobody wrote.
+//
+// The value of each of [schemaAttributes] is trimmed here, so every directive
+// reads it trimmed.
 func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, error) {
 	kv, err := s.kv.ParseKeyValueComment(comment.Text)
 	var bare *parseutils.BareValueError
 	if !errors.As(err, &bare) {
+		trimSchemaAttributes(kv)
 		return kv, err
 	}
 	ctx := s.annotationContext(comment, "//"+bare.Directive, "")
@@ -976,6 +982,37 @@ func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, 
 		Attribute: bare.Attribute,
 		Err:       ptaherr.ErrInvalidAttributeValue,
 		Message:   fmt.Sprintf("%s at %s:%d", bare.Error(), ctx.file, ctx.line),
+	}
+}
+
+// schemaAttributes are the attributes whose value names a schema: the schema
+// an object is in and the schema a grant is on. A tag is text an author typed,
+// so the space around such a value is removed where the tag is read. Every
+// layer below keeps a schema name's bytes, because PostgreSQL holds " app" and
+// "app" as two schemas, so a value read with its space names another schema: a
+// sequence tagged schema="app " beside a live app.counter plans a CREATE
+// SEQUENCE in "app " and a DROP SEQUENCE of "app"."counter".
+//
+// An object's own name is not in the list. A column, an index or a constraint
+// keeps the bytes its tag writes, because the catalog holds " note" and "note"
+// as two columns: trimmed, field name=" note" beside a live " note" planned an
+// ADD of "note" and a DROP of " note", and the apply lost the column's values.
+// A table's name is trimmed by [annotation.QualifiedName], and a view's,
+// function's or procedure's by [qualifiedObjectName] where the tag names a
+// schema.
+//
+// The list is one declaration for every directive, rather than a trim at each
+// read of a value, so a directive added later reads the value the others read.
+var schemaAttributes = []string{"schema", "on_schema"}
+
+// trimSchemaAttributes removes the space around the value of every attribute
+// of [schemaAttributes] that kv holds. A value of white space alone becomes
+// empty, which each directive reads as the attribute left out.
+func trimSchemaAttributes(kv map[string]string) {
+	for _, key := range schemaAttributes {
+		if value, ok := kv[key]; ok {
+			kv[key] = strings.TrimSpace(value)
+		}
 	}
 }
 
@@ -1581,16 +1618,22 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment)
 // quote-aware, and what the comparator keys on. Writing anything else would
 // give the two frontends two spellings of one declaration.
 //
-// A declaration naming no schema keeps its name byte for byte. Canonical would
+// A declaration naming no schema keeps its name unquoted. Canonical would
 // otherwise quote a name containing a dot or a quote character, and re-spelling
 // names that already work is not what adding an optional attribute may do
 // (stokaro/ptah#1270).
+//
+// The schema arrives trimmed, as [schemaAttributes] says, and a qualified name
+// is trimmed here. Canonical keeps the bytes it is given, so an untrimmed
+// name="v_users " beside schema="app" would name a view other than the live
+// app.v_users, and the plan would drop the one and create the other. A name
+// with no schema keeps its bytes, as a column's does.
 func qualifiedObjectName(kv map[string]string) string {
-	schema := strings.TrimSpace(kv["schema"])
+	schema := kv["schema"]
 	if schema == "" {
 		return kv["name"]
 	}
-	return tableref.Canonical(schema, kv["name"])
+	return tableref.Canonical(schema, strings.TrimSpace(kv["name"]))
 }
 
 func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structName string) error {

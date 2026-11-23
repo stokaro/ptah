@@ -784,7 +784,6 @@ func canonicalRoleDefinition(role Role) Role {
 
 func canonicalManagedDataDefinition(data ManagedData) ManagedData {
 	data.StructName = ""
-	data.Schema = strings.TrimSpace(data.Schema)
 	data.Table = strings.TrimSpace(data.Table)
 	data.SourceDir = strings.TrimSpace(data.SourceDir)
 	data.File = strings.TrimSpace(data.File)
@@ -794,7 +793,7 @@ func canonicalManagedDataDefinition(data ManagedData) ManagedData {
 
 func managedDataSourceIdentity(data ManagedData) string {
 	return strings.Join([]string{
-		strings.TrimSpace(data.Schema),
+		data.Schema,
 		strings.TrimSpace(data.Table),
 		strings.TrimSpace(data.SourceDir),
 		strings.TrimSpace(data.File),

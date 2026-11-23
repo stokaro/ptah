@@ -108,9 +108,10 @@ type atlasSchemaCleanTableIdentity struct {
 }
 
 func atlasSchemaCleanTableKey(schema, name, defaultSchema string) atlasSchemaCleanTableIdentity {
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
-		schema = strings.TrimSpace(defaultSchema)
+	// A schema keeps its bytes, the default one included: " a" and "a" are
+	// two schemas.
+	if strings.TrimSpace(schema) == "" {
+		schema = defaultSchema
 	}
 	return atlasSchemaCleanTableIdentity{schema: schema, name: name}
 }

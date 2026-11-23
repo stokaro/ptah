@@ -959,7 +959,6 @@ func IsValidSequenceType(asType string) bool {
 // canonical form; unrecognized types are left as-is for the parser to reject.
 func (s *Sequence) Canonicalize() {
 	s.Name = strings.TrimSpace(s.Name)
-	s.Schema = strings.TrimSpace(s.Schema)
 	s.AsType = strings.ToLower(strings.TrimSpace(s.AsType))
 	if canonical, ok := sequenceTypeAliases[s.AsType]; ok {
 		s.AsType = canonical
@@ -1712,7 +1711,12 @@ func (g *Grant) Canonicalize() {
 	g.Privileges = privileges
 	g.Role = strings.TrimSpace(g.Role)
 	g.OnTable = strings.TrimSpace(g.OnTable)
-	g.OnSchema = strings.TrimSpace(g.OnSchema)
+	// A schema keeps its bytes, since ` a` and `a` are two schemas, and only
+	// a blank one is cleared. A source that reads a name from text, an
+	// annotation or YAML, trims it there.
+	if strings.TrimSpace(g.OnSchema) == "" {
+		g.OnSchema = ""
+	}
 	g.OnSequence = strings.TrimSpace(g.OnSequence)
 	g.OnRoutine = strings.TrimSpace(g.OnRoutine)
 	g.RoutineArguments = strings.TrimSpace(g.RoutineArguments)
@@ -1750,7 +1754,7 @@ func (g Grant) TargetKey() string {
 	case strings.TrimSpace(g.OnObject) != "":
 		return strings.Join(strings.Fields(strings.ToUpper(g.ObjectKind)), " ") + " " + strings.TrimSpace(g.OnObject)
 	case strings.TrimSpace(g.OnSchema) != "":
-		return "SCHEMA " + strings.TrimSpace(g.OnSchema)
+		return "SCHEMA " + g.OnSchema
 	case strings.TrimSpace(g.OnSequence) != "":
 		return "SEQUENCE " + strings.TrimSpace(g.OnSequence)
 	case strings.TrimSpace(g.OnRoutine) != "":

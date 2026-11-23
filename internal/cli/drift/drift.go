@@ -226,12 +226,6 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		opts.dbURL,
 		projectCfg.StringValue(projectconfig.StringDatabaseURL),
 	)
-	schemasValue := dbcli.EffectiveString(
-		cmd,
-		dbcli.SchemasFlagName,
-		opts.schemasRaw,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
-	)
 
 	if dbURL == "" {
 		return fail(cmd, opts.format, dbcli.MissingProjectValue(projectCfg, errors.New("database URL is required")))
@@ -245,7 +239,10 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return fail(cmd, opts.format, err)
 	}
-	schemas := dbcli.ParseSchemas(schemasValue)
+	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemasRaw, projectCfg.SchemasValue())
+	if err != nil {
+		return fail(cmd, opts.format, err)
+	}
 
 	declaredVars, err := dbcli.DeclaredVars(cmd)
 	if err != nil {

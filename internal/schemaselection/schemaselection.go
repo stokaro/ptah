@@ -19,6 +19,7 @@
 package schemaselection
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -88,7 +89,7 @@ func FromURL(rawURL string) Selection {
 		return Selection{}
 	}
 	dialect, err := atlasurl.DialectFromURL(rawURL)
-	if err != nil || schemasOf(dialect).Selection != descriptor.SchemaSelectionSearchPath {
+	if err != nil || !SelectsThroughSearchPath(dialect) {
 		return Selection{}
 	}
 	parsed, err := atlasurl.Parse(rawURL)
@@ -96,6 +97,12 @@ func FromURL(rawURL string) Selection {
 		return Selection{}
 	}
 	return fromQuery(parsed.Query())
+}
+
+// SelectsThroughSearchPath reports whether a URL of dialect selects its schema
+// with the search_path query parameter, which [FromURL] reads.
+func SelectsThroughSearchPath(dialect string) bool {
+	return schemasOf(dialect).Selection == descriptor.SchemaSelectionSearchPath
 }
 
 // FromParsedURL is [FromURL] for a URL a caller has already parsed and whose
@@ -111,11 +118,104 @@ func FromParsedURL(parsed *url.URL) Selection {
 func fromQuery(query url.Values) Selection {
 	raw := strings.TrimSpace(query.Get(searchPathParam))
 	selection := Selection{Raw: raw}
+	// One quoted identifier is one schema name, whatever it holds: the server
+	// reads `"a,b"` as the schema a,b and `" a"` as " a".
+	if name, ok := unquoteIdentifier(raw); ok {
+		selection.Scope = name
+		return selection
+	}
 	if raw == "" || strings.Contains(raw, ",") {
 		return selection
 	}
 	selection.Scope = raw
 	return selection
+}
+
+// LiteralReadingDiffers reports the first search_path value of rawURL, as the
+// URL writes it, that the pinned community binary and the server read as
+// different schemas. The binary reads the value as one schema name, byte for
+// byte. The server reads it as a search_path list: it trims an unquoted name,
+// folds it to lower case, truncates it to 63 bytes, splits on a comma and reads
+// a double quote as quoting. The two agree on a name that holds none of those,
+// so a value differs when it holds the ASCII white space the server trims, a
+// double quote, a comma or an upper-case letter, or is longer than 63 bytes.
+// A plus sign differs too: the binary's driver decodes it as a space and
+// Ptah's sends it as itself. So does `$user`, which the server reads as the
+// schema named after the session's user and the binary as a schema of that
+// name, refusing it with `schema "$user" was not found` where there is none.
+//
+// Measured on v1.4.0 against PostgreSQL 18, the binary selects " a" for
+// `search_path=%20a`, "a " for `a%20` and "A" for `A`, and reads `a,b` as the
+// one schema a,b, where the server reads `a` for the first three and two
+// schemas for the last.
+//
+// A URL of a dialect that does not select through the parameter, a docker URL,
+// whose search_path also names a schema the dev container's baseline creates,
+// an empty value and a URL that does not parse report nothing.
+func LiteralReadingDiffers(rawURL string) (string, bool) {
+	if atlasurl.IsDockerURL(rawURL) {
+		return "", false
+	}
+	dialect, err := atlasurl.DialectFromURL(rawURL)
+	if err != nil || !SelectsThroughSearchPath(dialect) {
+		return "", false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", false
+	}
+	for part := range strings.SplitSeq(parsed.RawQuery, "&") {
+		key, value, _ := strings.Cut(part, "=")
+		if name, err := url.QueryUnescape(key); err != nil || name != searchPathParam {
+			continue
+		}
+		if literalReadingDiffers(value) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// maxIdentifierBytes is the length the server truncates an identifier to,
+// NAMEDATALEN less one.
+const maxIdentifierBytes = 63
+
+// literalReadingDiffers is [LiteralReadingDiffers] for one value as the URL
+// writes it. The driver decodes a percent escape and keeps a plus sign, as
+// libpq does.
+func literalReadingDiffers(raw string) bool {
+	if strings.Contains(raw, "+") {
+		return true
+	}
+	decoded, err := url.PathUnescape(raw)
+	if err != nil || decoded == "" {
+		return false
+	}
+	if len(decoded) > maxIdentifierBytes || decoded == "$user" {
+		return true
+	}
+	return strings.ContainsFunc(decoded, func(r rune) bool {
+		return strings.ContainsRune(" \t\n\r\v\f", r) || r == '"' || r == ',' || ('A' <= r && r <= 'Z')
+	})
+}
+
+// unquoteIdentifier reads value as one PostgreSQL quoted identifier, and
+// reports whether it is one. A value of two quoted names, such as `"a","b"`,
+// is not: its inner quote stands alone.
+func unquoteIdentifier(value string) (string, bool) {
+	inner, ok := strings.CutPrefix(value, `"`)
+	if !ok {
+		return "", false
+	}
+	inner, ok = strings.CutSuffix(inner, `"`)
+	if !ok || inner == "" {
+		return "", false
+	}
+	name := strings.ReplaceAll(inner, `""`, `"`)
+	if strings.Count(inner, `"`) != 2*strings.Count(name, `"`) {
+		return "", false
+	}
+	return name, true
 }
 
 // Realm reports whether a connection left the run at realm scope — describing
@@ -315,8 +415,10 @@ func (s Selection) noUsableSchema() error {
 		return errors.New("the search_path of the connecting role resolves to no schema: " +
 			"each schema on it does not exist in this database or holds no USAGE privilege for the role")
 	}
+	// The schema the URL names, rather than its spelling: a quoted name is
+	// quoted by %q again.
 	return fmt.Errorf("database URL selects schema %q, which does not exist in this database "+
-		"or holds no USAGE privilege for the connecting role", s.Raw)
+		"or holds no USAGE privilege for the connecting role", cmp.Or(s.Scope, s.Raw))
 }
 
 // ResolveCarried answers the same question for a connection that could not SEND

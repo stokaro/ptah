@@ -14,11 +14,19 @@ type Ref struct {
 	Qualified bool
 }
 
-// Canonical formats schema and name without losing literal identifier dots.
+// Canonical formats schema and name so that [Parse] reads back the same
+// names. A part is written as it is unless a bare one would read back as
+// something else: a part that holds a dot, a quote, a backtick or a bracket, or
+// that begins or ends with white space, is double-quoted, each double quote
+// inside doubled.
+//
+// Both parts keep their bytes, so `" a".t` and `a.t` name tables of two
+// schemas, and a blank schema writes the name alone. `Canonical("", part)`
+// quotes one part, and callers quote a schema with it, so the name is not
+// trimmed either: a caller that holds text an author typed trims it where it
+// reads it.
 func Canonical(schema, name string) string {
-	schema = strings.TrimSpace(schema)
-	name = strings.TrimSpace(name)
-	if schema == "" {
+	if strings.TrimSpace(schema) == "" {
 		return canonicalPart(name)
 	}
 	return canonicalPart(schema) + "." + canonicalPart(name)
@@ -116,7 +124,7 @@ func columnPart(value string) string {
 }
 
 func canonicalPart(value string) string {
-	if !strings.ContainsAny(value, ".\"`[]") {
+	if value == strings.TrimSpace(value) && !strings.ContainsAny(value, ".\"`[]") {
 		return value
 	}
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`

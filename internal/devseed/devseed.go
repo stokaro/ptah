@@ -496,20 +496,32 @@ func languageName(token lexer.Token, options lexer.Options) string {
 	return strings.Trim(token.Value, `"`)
 }
 
-// key identifies an object by its schema and name, both folded.
+// key identifies an object by its schema, folded with [foldSchema], and its
+// name, folded with [fold].
 type key struct {
 	schema, name string
 }
 
 func fold(name string) string { return strings.ToLower(strings.TrimSpace(name)) }
 
+// foldSchema folds a schema name to lower case and keeps the space around it,
+// because " a" and "a" are two schemas: trimmed, the objects of the current
+// schema " a" keyed into a dev database's "a", and the seed refused the run
+// because "a" was there before it. A blank name is no schema.
+func foldSchema(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return ""
+	}
+	return strings.ToLower(name)
+}
+
 // effective is the schema an object is in: its own, or the default schema
 // for one a read left unqualified.
 func effective(schema string, opts Options) string {
 	if strings.TrimSpace(schema) == "" {
-		return fold(opts.DefaultSchema)
+		return foldSchema(opts.DefaultSchema)
 	}
-	return fold(schema)
+	return foldSchema(schema)
 }
 
 // names is what the statements name: each qualified pair of parts as a
@@ -562,12 +574,12 @@ func readNames(texts []code, opts Options) names {
 		found.addRelations(body)
 	}
 	for _, schema := range opts.SearchPath {
-		if folded := fold(schema); folded != "" && folded != "$user" {
+		if folded := foldSchema(schema); folded != "" && folded != "$user" {
 			found.searchPath = append(found.searchPath, folded)
 		}
 	}
-	if len(found.searchPath) == 0 && fold(opts.DefaultSchema) != "" {
-		found.searchPath = []string{fold(opts.DefaultSchema)}
+	if len(found.searchPath) == 0 && foldSchema(opts.DefaultSchema) != "" {
+		found.searchPath = []string{foldSchema(opts.DefaultSchema)}
 	}
 	return found
 }
@@ -592,7 +604,7 @@ func (n names) addRelations(text string) {
 			n.relations[fold(relation.Name)] = true
 			continue
 		}
-		k := key{schema: fold(relation.Schema), name: fold(relation.Name)}
+		k := key{schema: foldSchema(relation.Schema), name: fold(relation.Name)}
 		n.qualifiedRelations[k] = true
 		n.schemas[k.schema] = true
 	}
@@ -794,7 +806,7 @@ func ObjectsIn(state *catalog.Database, schemas []string, opts Options) ([]Objec
 	}
 	in := make(map[string]bool, len(schemas))
 	for _, schema := range schemas {
-		in[fold(schema)] = true
+		in[foldSchema(schema)] = true
 	}
 	features, err := featureObjectsOf(state, opts)
 	if err != nil {
@@ -864,7 +876,7 @@ func featureObjectsOf(state *catalog.Database, opts Options) ([]candidate, error
 			kind = kind[slash+1:]
 		}
 		if installation, ok := object.Value.(schemaext.SchemaInstallation); ok {
-			if schema := fold(installation.InstalledSchema()); schema != "" {
+			if schema := foldSchema(installation.InstalledSchema()); schema != "" {
 				out = append(out, candidate{
 					object:    Object{Kind: kind, Name: ref.Name.Source},
 					key:       key{schema: schema, name: fold(ref.Name.Source)},
@@ -1005,18 +1017,18 @@ func takeFrom[T any](held, read []T, take func(T) bool) []T {
 func withSchemas(held, read []catalog.Schema, more []candidate, opts Options) ([]catalog.Schema, []Object) {
 	wanted := make(map[string]bool)
 	for _, c := range more {
-		if c.key.schema != "" && c.key.schema != fold(opts.DefaultSchema) {
+		if c.key.schema != "" && c.key.schema != foldSchema(opts.DefaultSchema) {
 			wanted[c.key.schema] = true
 		}
 	}
 	have := make(map[string]bool)
 	for _, schema := range held {
-		have[fold(schema.Name)] = true
+		have[foldSchema(schema.Name)] = true
 	}
 	out := slices.Clone(held)
 	var added []Object
 	for _, schema := range read {
-		if folded := fold(schema.Name); wanted[folded] && !have[folded] {
+		if folded := foldSchema(schema.Name); wanted[folded] && !have[folded] {
 			out = append(out, schema)
 			added = append(added, Object{Kind: "schema", Name: schema.Name})
 			have[folded] = true

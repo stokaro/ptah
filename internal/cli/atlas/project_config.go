@@ -1622,11 +1622,12 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 // Two divergences are deliberate. The pinned binary keeps the space in
 // `schemas = [" one"]` and `--schema "one, two"`, so ` one` and ` two` name no
 // schema and are dropped without a word: the first describes nothing, the
-// second describes `one` alone. [schemascope.UniqueNames] trims a schema name,
-// so Ptah describes `one`, and `one` and `two`; under the strict policy both
-// lists are refused, because Ptah cannot select the schema the pinned binary
-// reads. And an element that names no schema, `""` or `"\"\""`, is refused as
-// the flag refuses it; see [registerAtlasSchemaFlag]. Those refusals are Ptah's
+// second describes `one` alone. The default surface trims a bare name in the
+// flag's grammar, so Ptah describes `one`, and `one` and `two`; a quoted name
+// keeps its bytes there, as on the pinned binary, and the strict policy keeps
+// the space of a bare one too and describes what the pinned binary describes.
+// And an element that names no schema, `""` or `"\"\""`, is refused as the flag
+// refuses it; see [registerAtlasSchemaFlag]. Those refusals are Ptah's
 // own, so they name the file and the env the element came from rather than a
 // flag nobody typed. The refusal of `a"b` names the flag, in the pinned
 // binary's words.

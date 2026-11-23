@@ -119,6 +119,18 @@ func TestPlaceUnqualified_HappyPath(t *testing.T) {
 	c.Assert(database, qt.DeepEquals, unplacedDatabase())
 }
 
+// TestPlaceUnqualified_KeepsTheBytesOfTheSchema pins that a name is placed in
+// the schema the session resolved, ` app`, and not in `app`.
+func TestPlaceUnqualified_KeepsTheBytesOfTheSchema(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "notes"}}}
+
+	placed, err := schemaprep.PlaceUnqualified(database, " app", platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed.Tables, qt.DeepEquals, []schemamodel.Table{{Name: "notes", Schema: " app"}})
+}
+
 // TestPlaceUnqualified_FeatureObjects pins the identity of a feature object
 // whose schema the source left to the default: it names the schema, no longer
 // defaulted, so the comparison binds it nowhere else, and a column of its type

@@ -123,8 +123,9 @@ func SnapshotWithinWriterScope(
 	if schema == nil || !cleanupOf(dialect).SchemaScoped {
 		return schema
 	}
-	writerSchema = strings.TrimSpace(writerSchema)
-	if writerSchema == "" {
+	// The names keep their bytes, so an extension installed in `a` is not one
+	// installed in the writer's ` a`.
+	if strings.TrimSpace(writerSchema) == "" {
 		writerSchema = defaultSchemaOf(dialect)
 	}
 	owned := *schema
@@ -134,7 +135,7 @@ func SnapshotWithinWriterScope(
 	owned.FeatureObjects = schema.FeatureObjects.Select(func(ref objectidentity.ID) bool {
 		object, _, err := schema.FeatureObjects.Get(ref)
 		installed, ok := object.Value.(schemaext.SchemaInstallation)
-		return err != nil || !ok || strings.TrimSpace(installed.InstalledSchema()) == writerSchema
+		return err != nil || !ok || installed.InstalledSchema() == writerSchema
 	})
 	return &owned
 }
@@ -1105,20 +1106,24 @@ func objectTypes() []string {
 	}
 }
 
+// runtimeObjectSchemas is the scope the catalog is read for: schemas, or the
+// connection's schema without them. Each name keeps its bytes, since ` a` and
+// `a` are two schemas, and reading the catalog of the trimmed name lists, and
+// a scoped clean drops, the objects of a schema the run did not select. Only
+// a blank name is left out.
 func runtimeObjectSchemas(conn *dbschema.DatabaseConnection, schemas []string) []string {
 	if len(schemas) == 0 {
-		return []string{strings.TrimSpace(conn.Info().Schema)}
+		return []string{conn.Info().Schema}
 	}
 	result := make([]string, 0, len(schemas))
 	for _, schema := range schemas {
-		schema = strings.TrimSpace(schema)
-		if schema == "" || slices.Contains(result, schema) {
+		if strings.TrimSpace(schema) == "" || slices.Contains(result, schema) {
 			continue
 		}
 		result = append(result, schema)
 	}
 	if len(result) == 0 {
-		return []string{strings.TrimSpace(conn.Info().Schema)}
+		return []string{conn.Info().Schema}
 	}
 	return result
 }
@@ -1131,8 +1136,8 @@ func inspectViewDepths(
 	conn *dbschema.DatabaseConnection,
 	objects []Object,
 ) (map[executionObjectIdentity]int, error) {
-	schema := strings.TrimSpace(conn.Info().Schema)
-	if schema == "" {
+	schema := conn.Info().Schema
+	if strings.TrimSpace(schema) == "" {
 		schema = defaultSchemaOf(conn.Info().Dialect)
 	}
 	return catalogViewDepths(ctx, cleanupCatalogOf(conn), conn, schema, objects)
@@ -1159,8 +1164,8 @@ func catalogViewDepths(
 	}
 	executionDepths := make(map[executionObjectIdentity]int)
 	for i := range objects {
-		objectSchema := strings.TrimSpace(objects[i].Schema)
-		if objectSchema == "" {
+		objectSchema := objects[i].Schema
+		if strings.TrimSpace(objectSchema) == "" {
 			objectSchema = schema
 		}
 		depth := depths[viewIdentity{
@@ -1223,7 +1228,7 @@ func inspectRevisionTables(ctx context.Context, conn *dbschema.DatabaseConnectio
 		return inspectRevisionTablesByName(ctx, conn)
 	}
 	names := revisiontable.DefaultNames()
-	query, args := revisionTableProbe(dialect, strings.TrimSpace(conn.Info().Schema), names)
+	query, args := revisionTableProbe(dialect, conn.Info().Schema, names)
 	if query == "" {
 		// A dialect marked as covered above but given no probe below. Reporting
 		// nothing restores the old under-report rather than running some other
@@ -1301,7 +1306,7 @@ func revisionTableProbe(dialect, schema string, names []string) (string, []any) 
 	if probe == "" {
 		return "", nil
 	}
-	if schema == "" {
+	if strings.TrimSpace(schema) == "" {
 		schema = defaultSchemaOf(dialect)
 	}
 	args := append([]any{schema}, namesAsArgs(names)...)

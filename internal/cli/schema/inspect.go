@@ -196,12 +196,16 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
 		Runtime:             runtime,
 		URLs:                sourceURLs,
 		URLFlag:             inspectSourceFlag(opts),
 		DevURL:              opts.devURL,
-		Schemas:             dbcli.ParseSchemas(opts.schemas),
+		Schemas:             schemas,
 		Include:             opts.include,
 		Exclude:             exclude,
 		ExcludeSources:      excludeSources,

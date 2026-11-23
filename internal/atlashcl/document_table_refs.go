@@ -1,8 +1,6 @@
 package atlashcl
 
 import (
-	"strings"
-
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
@@ -178,7 +176,7 @@ func resolveDocumentTableName(tables []schemamodel.Table, owner schemamodel.Tabl
 		return name
 	}
 	resolved, ok := tableref.Parse(tablelookup.ResolveReference(tables, owner, name))
-	if !ok || !resolved.Qualified || resolved.Schema == strings.TrimSpace(owner.Schema) {
+	if !ok || !resolved.Qualified || resolved.Schema == owner.Schema {
 		return name
 	}
 	return tableref.Canonical(resolved.Schema, resolved.Name)

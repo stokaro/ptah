@@ -107,19 +107,19 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 214 capabilities below:
+Across the 216 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 197 |
-| Ptah supports it with a stated limitation | 5 |
+| Ptah supports it with a stated limitation | 7 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 59 |
 | Ptah has it and neither Atlas edition does | 29 |
-| Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 13 |
+| Atlas CE has it and Ptah does not, or only in part | 2 |
+| An Atlas column is ❔ — not established by this page's evidence | 15 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
@@ -184,6 +184,8 @@ seven of them as open capabilities regardless.
 | `schema diff --export` | ✅ | ❌ | ✅ | An `exporter` block declares a Go template and an env's `exporter` attribute selects it; `--export` renders through it, on both `schema diff` and `schema inspect`. |
 | `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. A selection matching nothing renders nothing, exits 0, and says so on stderr. |
 | `schema inspect --output` | ✅ | ❌ | ✅ | `-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document. |
+| A `--schema` / -s name with white space around it | 🟡 | ✅ | ❔ | Atlas CE keeps the space, so `-s ' a'` selects ` a`. The default surface trims a bare name and selects `a`, a deliberate divergence; a quoted name keeps its bytes. Strict mode keeps the space. |
+| A PostgreSQL URL `search_path` the community binary reads as one schema name | 🟡 | ✅ | ❔ | Atlas CE selects the schema the value spells, so `%20a` selects ` a`. The default reads the server's grammar and selects `a`. Strict mode refuses the value before connecting, on purpose. |
 | An include selector matching neither diff side fails closed | ✅ | ❌ | ❌ | Compat and native retain `--include`; no-match exits nonzero. Qualified PostgreSQL extension creates preserve installation schema; moves fail before SQL. |
 | Apply advisory lock, `--lock-timeout`, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Locks: PostgreSQL, YugabyteDB 2025.1+, MySQL, MariaDB, SQL Server, Oracle, providers. YugabyteDB 2024.x refuses. Compat runs others unlocked; native rejects typed timeout. Name/skip are Pro. |
 | Compat inspect block superset opt-in | ✅ | ❌ | ❌ | Compat inspect omits unreferenced extension, sequence and policy blocks; an env variable restores them. |

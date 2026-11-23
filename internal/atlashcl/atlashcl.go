@@ -740,7 +740,6 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 }
 
 func hclTableStructName(schema, name string) string {
-	schema = strings.TrimSpace(schema)
 	switch strings.ToLower(schema) {
 	case "", "main", "public":
 		return tableref.Canonical("", name)
@@ -2236,11 +2235,11 @@ func (p *parser) checkTableQualifier(block *hclsyntax.Block, labels tableLabels)
 	if attr == nil {
 		return nil
 	}
-	qualifier := strings.TrimSpace(p.optionalString(attr))
-	if qualifier == "" {
+	qualifier := p.optionalString(attr)
+	if strings.TrimSpace(qualifier) == "" {
 		return p.blockError(block, "table %q qualifier names nothing", labels.name)
 	}
-	if qualifier == strings.TrimSpace(labels.schema) {
+	if qualifier == labels.schema {
 		return nil
 	}
 	return p.blockError(block,

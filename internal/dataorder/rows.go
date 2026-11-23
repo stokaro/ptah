@@ -2,7 +2,6 @@ package dataorder
 
 import (
 	"slices"
-	"strings"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
@@ -39,7 +38,7 @@ func SelfReferences(db *schemamodel.Database, table schemamodel.Table) []string 
 		if !ok || reference.Name != table.Name {
 			continue
 		}
-		if reference.Qualified && strings.TrimSpace(reference.Schema) != strings.TrimSpace(table.Schema) {
+		if reference.Qualified && reference.Schema != table.Schema {
 			continue
 		}
 		columns = append(columns, field.Name)

@@ -293,12 +293,8 @@ func (o Options) checkRequestedSchemas(blocks []atlashcl.SchemaBlock, paths []st
 	if !o.RefuseUnrequestedSchemas || len(o.RequestedSchemas) == 0 {
 		return nil
 	}
-	requested := make([]string, 0, len(o.RequestedSchemas))
-	for _, schema := range o.RequestedSchemas {
-		requested = append(requested, strings.TrimSpace(schema))
-	}
 	for _, block := range blocks {
-		if !slices.Contains(requested, block.Name) {
+		if !slices.Contains(o.RequestedSchemas, block.Name) {
 			return fmt.Errorf("schema %q from paths %q is not requested (all schemas in HCL must be requested)", block.Name, paths)
 		}
 	}

@@ -176,12 +176,15 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 // The name is a parameter rather than something derived from the dialect
 // because it is not derivable: a PostgreSQL connection's search_path can name
 // any schema, and the caller is the only one that knows which one was read.
+// It keeps its bytes, because a schema name may begin or end with a space:
+// trimmed, a table read from " a" rendered as schema.a beside an empty
+// schema " a" block.
 //
 // [Render] is deliberately left alone. Its callers parsed HCL to get here, so
 // their IR already carries whatever the author wrote, and synthesizing a
 // schema there would invent one the author did not declare.
 func RenderInspected(db *schemamodel.Database, defaultSchema string, opts Options) (Result, error) {
-	return render(db, opts, strings.TrimSpace(defaultSchema), true, false)
+	return render(db, opts, defaultSchema, true, false)
 }
 
 // RenderInspectedForAtlasCLI renders an inspected schema for the
@@ -200,7 +203,7 @@ func RenderInspected(db *schemamodel.Database, defaultSchema string, opts Option
 // The capability is not deleted by the default. Setting
 // [KeepAtlasRefusedBlocksEnvVar] restores every block on this same surface.
 func RenderInspectedForAtlasCLI(db *schemamodel.Database, defaultSchema string, opts Options) (Result, error) {
-	return render(db, opts, strings.TrimSpace(defaultSchema), true, true)
+	return render(db, opts, defaultSchema, true, true)
 }
 
 func render(db *schemamodel.Database, opts Options, defaultSchema string, inspected, omitAtlasRefusedBlocks bool) (Result, error) {

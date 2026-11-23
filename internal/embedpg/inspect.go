@@ -268,7 +268,7 @@ func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
 // in the other direction is the one with no recovery, because it reads one
 // table's columns off another.
 func oneRelation(spec embedgen.Spec) bool {
-	return strings.TrimSpace(spec.Source.Schema) == strings.TrimSpace(spec.Target.Schema) &&
+	return spec.Source.Schema == spec.Target.Schema &&
 		spec.Source.Table == spec.Target.Table
 }
 

@@ -353,7 +353,12 @@ func removedTableName(schema, name, dialect string) string {
 	if comparisonOf(dialect).VerbatimTableNames {
 		return tableref.CanonicalExact(schema, name)
 	}
-	schema = sqlident.CatalogName(dialect, strings.TrimSpace(schema))
+	// The schema is the catalog's, so it keeps its bytes: trimmed, the DROP of
+	// a table in `a ` names the table of the same name in `a`.
+	if strings.TrimSpace(schema) == "" {
+		schema = ""
+	}
+	schema = sqlident.CatalogName(dialect, schema)
 	name = strings.TrimSpace(name)
 	if !spelledQuoted(schema) && !spelledQuoted(name) {
 		return catalog.QualifyTableName(schema, name)

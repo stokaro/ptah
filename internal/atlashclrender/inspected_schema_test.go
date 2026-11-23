@@ -2,6 +2,7 @@ package atlashclrender_test
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -855,5 +856,34 @@ func inspectedTable(schema string) *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: schema}},
 		Fields: []schemamodel.Field{{StructName: "T", Name: "id", Type: "integer"}},
+	}
+}
+
+// A current schema whose name begins or ends with a space keeps it, on both
+// surfaces, because " a" and "a" are two schemas. Trimmed, a table read from
+// the current schema " a" rendered as `schema = schema.a` beside an empty
+// `schema " a"` block, and the document applied back moved the table.
+func TestRenderInspectedKeepsTheSpaceAroundTheCurrentSchema(t *testing.T) {
+	renders := []struct {
+		name   string
+		render func(*schemamodel.Database, string, atlashclrender.Options) (atlashclrender.Result, error)
+	}{
+		{name: "native", render: atlashclrender.RenderInspected},
+		{name: "compatibility", render: atlashclrender.RenderInspectedForAtlasCLI},
+	}
+	for _, render := range renders {
+		for _, defaultSchema := range []string{" a", "a ", "\ta"} {
+			t.Run(render.name+"/"+strconv.Quote(defaultSchema), func(t *testing.T) {
+				t.Parallel()
+				c := qt.New(t)
+
+				result, err := render.render(inspectedTable(""), defaultSchema, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(string(result.Data), qt.Contains, "schema "+strconv.Quote(defaultSchema)+" {\n}\n")
+				c.Assert(string(result.Data), qt.Contains, "  schema = schema["+strconv.Quote(defaultSchema)+"]\n")
+				c.Assert(string(result.Data), qt.Not(qt.Contains), "schema = schema.a\n")
+			})
+		}
 	}
 }

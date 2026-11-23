@@ -109,9 +109,11 @@ func LiveTable(current *catalog.Database, schema, table string, names identifier
 		}
 	}
 
-	if declared := strings.TrimSpace(schema); declared != "" {
+	// The declared schema keeps its bytes, as the introspected one does: a
+	// declaration in ` a` is not one in `a`.
+	if strings.TrimSpace(schema) != "" {
 		for _, candidate := range candidates {
-			if inDeclaredSchema(*candidate, declared, names) {
+			if inDeclaredSchema(*candidate, schema, names) {
 				return candidate
 			}
 		}
@@ -133,7 +135,7 @@ func LiveTable(current *catalog.Database, schema, table string, names identifier
 // named. A blank introspected schema is the default schema the reader left out,
 // so it answers the declaration that names that default and no other.
 func inDeclaredSchema(candidate catalog.Table, declared string, names identifier.Semantics) bool {
-	introspected := strings.TrimSpace(candidate.Schema)
+	introspected := candidate.Schema
 	if introspected == "" {
 		return names.TableIdentityKey(declared) == names.TableIdentityKey(names.DefaultSchema)
 	}
@@ -143,7 +145,7 @@ func inDeclaredSchema(candidate catalog.Table, declared string, names identifier
 // inDefaultSchema answers whether candidate sits in the connection's default
 // schema, blank included for the reader that leaves it out.
 func inDefaultSchema(candidate catalog.Table, names identifier.Semantics) bool {
-	introspected := strings.TrimSpace(candidate.Schema)
+	introspected := candidate.Schema
 	return introspected == "" ||
 		names.TableIdentityKey(introspected) == names.TableIdentityKey(names.DefaultSchema)
 }

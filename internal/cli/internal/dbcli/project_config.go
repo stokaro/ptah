@@ -354,12 +354,14 @@ func ChecksUnusedDevURL(cmd *cobra.Command, flagName string) bool {
 	return flagChanged(cmd, flagName)
 }
 
-// JoinSchemasValue converts a presence-aware schema list to its CLI form.
-func JoinSchemasValue(value projectconfig.Value[[]string]) projectconfig.Value[string] {
-	return projectconfig.Value[string]{
-		Value:   JoinSchemas(value.Value),
-		Present: value.Present,
-	}
+// EffectiveSchemas is the schema list a command reads: the --schemas value
+// when the flag or its variable set it, else the project's list, parsed by
+// [ParseSchemas]. The project's names go through [JoinSchemas], so a name with
+// spaces around it or a comma in it reaches the command as the project wrote
+// it. A malformed --schemas value is the error.
+func EffectiveSchemas(cmd *cobra.Command, flagValue string, project projectconfig.Value[[]string]) ([]string, error) {
+	joined := projectconfig.Value[string]{Value: JoinSchemas(project.Value), Present: project.Present}
+	return ParseSchemas(EffectiveString(cmd, SchemasFlagName, flagValue, joined))
 }
 
 // ResolveExternalSchemaCommands resolves the external-command schema source for

@@ -42,6 +42,20 @@ func TestTargetObjects_OwnTableHappyPath(t *testing.T) {
 	c.Assert(objects.TableComment, qt.Equals, embedgen.TableComment(spec.Identity().Digest))
 }
 
+// TestTargetObjects_OwnTableInASpacedSchema pins that a relation in ` public`
+// is not the source relation in `public`, so the own-table layout accepts it:
+// the two schemas are two, and the SQL names each with its bytes.
+func TestTargetObjects_OwnTableInASpacedSchema(t *testing.T) {
+	c := qt.New(t)
+	spec := ownTableSpec()
+	spec.Target.Schema, spec.Target.Table = " "+spec.Source.Schema, spec.Source.Table
+
+	objects, err := spec.TargetObjects()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects.OwnsTable, qt.IsTrue)
+}
+
 // TestTargetObjects_SourceColumnsDerivesNoTable is the control the assertion
 // above needs: the three fields are set BECAUSE the layout owns a table, not
 // unconditionally. Without it, a derivation that ignored the layout would

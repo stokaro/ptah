@@ -3,6 +3,7 @@ package schemaselection_test
 import (
 	"database/sql/driver"
 	"errors"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -82,6 +83,31 @@ func TestFromURLScope(t *testing.T) {
 			name:   "surrounding whitespace is trimmed off the schema name",
 			rawURL: "postgres://localhost/dev?search_path=%20app%20",
 			want:   "app",
+		},
+		{
+			name:   "one quoted identifier is one schema name, a comma included",
+			rawURL: "postgres://localhost/dev?search_path=%22a%2Cb%22",
+			want:   "a,b",
+		},
+		{
+			name:   "a quoted name keeps its space",
+			rawURL: "postgres://localhost/dev?search_path=%22%20a%22",
+			want:   " a",
+		},
+		{
+			name:   "a quoted name keeps its case",
+			rawURL: "postgres://localhost/dev?search_path=%22A%22",
+			want:   "A",
+		},
+		{
+			name:   "a doubled quote inside a quoted name is one quote",
+			rawURL: "postgres://localhost/dev?search_path=%22a%22%22b%22",
+			want:   `a"b`,
+		},
+		{
+			name:   "two quoted names are a list, which scopes nothing",
+			rawURL: "postgres://localhost/dev?search_path=%22a%22,%22b%22",
+			want:   "",
 		},
 		{
 			name:   "MySQL scopes nothing even with a search_path parameter",
@@ -195,6 +221,12 @@ func TestResolveAsksTheServer(t *testing.T) {
 			rawURL:  "postgres://localhost/dev?search_path=nosuchschema",
 			current: nil,
 			wantErr: `database URL selects schema "nosuchschema", which does not exist in this database or holds no USAGE privilege for the connecting role`,
+		},
+		{
+			name:    "a quoted value is refused naming the schema it quotes",
+			rawURL:  "postgres://localhost/dev?search_path=%22a%2Cb%22",
+			current: nil,
+			wantErr: `database URL selects schema "a,b", which does not exist in this database or holds no USAGE privilege for the connecting role`,
 		},
 		{
 			name:    "a URL that names no schema is refused without quoting one",
@@ -341,4 +373,72 @@ func errString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// A value the pinned community binary reads as one schema name, byte for byte,
+// and the server's search_path grammar reads as another is reported as the URL
+// writes it, so strict mode can refuse it and say which value to change.
+func TestLiteralReadingDiffers_ReportsTheValue(t *testing.T) {
+	for _, test := range []struct {
+		name, rawURL, want string
+	}{
+		{name: "a leading space", rawURL: "postgres://h/db?search_path=%20a", want: "%20a"},
+		{name: "a trailing space", rawURL: "postgres://h/db?search_path=a%20", want: "a%20"},
+		{name: "a space inside", rawURL: "postgres://h/db?search_path=a%20b", want: "a%20b"},
+		{name: "a tab", rawURL: "postgres://h/db?search_path=%09a", want: "%09a"},
+		{name: "a form feed", rawURL: "postgres://h/db?search_path=a%0C", want: "a%0C"},
+		{name: "the session user's schema", rawURL: "postgres://h/db?search_path=$user", want: "$user"},
+		{name: "the session user's schema, escaped", rawURL: "postgres://h/db?search_path=%24user", want: "%24user"},
+		{name: "a plus sign, which the binary reads as a space", rawURL: "postgres://h/db?search_path=a+b", want: "a+b"},
+		{name: "a capital letter", rawURL: "postgres://h/db?search_path=A", want: "A"},
+		{name: "a capital letter after a lower-case one", rawURL: "postgres://h/db?search_path=aB", want: "aB"},
+		{name: "a comma", rawURL: "postgres://h/db?search_path=a,b", want: "a,b"},
+		{name: "an escaped comma", rawURL: "postgres://h/db?search_path=a%2Cb", want: "a%2Cb"},
+		{name: "a quoted name", rawURL: "postgres://h/db?search_path=%22a%22", want: "%22a%22"},
+		{name: "a quoted name with a space", rawURL: "postgres://h/db?search_path=%22%20a%22", want: "%22%20a%22"},
+		{name: "a name the server truncates", rawURL: "postgres://h/db?search_path=" + strings.Repeat("a", 64), want: strings.Repeat("a", 64)},
+		{name: "the second value", rawURL: "postgres://h/db?search_path=a&search_path=B", want: "B"},
+		{name: "beside other parameters", rawURL: "postgres://u@h/db?sslmode=disable&search_path=A&application_name=x", want: "A"},
+		{name: "the postgresql scheme", rawURL: "postgresql://h/db?search_path=A", want: "A"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			got, differs := schemaselection.LiteralReadingDiffers(test.rawURL)
+
+			c.Assert(differs, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// The controls: a name the two readings agree on, and a URL that selects no
+// schema through a search_path, report nothing.
+func TestLiteralReadingDiffers_AcceptsAPlainName(t *testing.T) {
+	for _, test := range []struct{ name, rawURL string }{
+		{name: "a lower-case name", rawURL: "postgres://h/db?search_path=app"},
+		{name: "digits, an underscore and a dollar sign", rawURL: "postgres://h/db?search_path=app_2%24"},
+		{name: "a name of 63 bytes", rawURL: "postgres://h/db?search_path=" + strings.Repeat("a", 63)},
+		{name: "a no-break space, which the server keeps", rawURL: "postgres://h/db?search_path=%C2%A0a"},
+		{name: "a name that only begins with $user", rawURL: "postgres://h/db?search_path=$users"},
+		{name: "a plus sign escaped, which both read as a plus", rawURL: "postgres://h/db?search_path=a%2Bb"},
+		{name: "no query", rawURL: "postgres://u@h/db"},
+		{name: "no search_path", rawURL: "postgres://h/db?sslmode=disable"},
+		{name: "an empty search_path", rawURL: "postgres://h/db?search_path="},
+		{name: "MySQL", rawURL: "mysql://h/db?search_path=A"},
+		{name: "a docker URL", rawURL: "docker://postgres/16/dev?search_path=A"},
+		{name: "a file URL", rawURL: "file://schema.sql"},
+		{name: "not a URL", rawURL: "%zz"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			got, differs := schemaselection.LiteralReadingDiffers(test.rawURL)
+
+			c.Assert(differs, qt.IsFalse)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
 }

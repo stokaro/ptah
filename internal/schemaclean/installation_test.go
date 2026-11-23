@@ -54,12 +54,14 @@ func installationObject(kind schemaext.Kind, name string, value schemaext.Value)
 }
 
 // installationSnapshot holds an object of the invented owner installed in
-// the writer's schema, one installed in another schema, and a control value
-// that names no installation schema.
+// the writer's schema, one installed in another schema, one installed in
+// ` app`, which is another schema too, and a control value that names no
+// installation schema.
 func installationSnapshot() *catalog.Database {
 	return &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(
-		installationObject(installedKind, "inside", &installedValue{Schema: " app "}),
+		installationObject(installedKind, "inside", &installedValue{Schema: "app"}),
 		installationObject(installedKind, "outside", &installedValue{Schema: "other"}),
+		installationObject(installedKind, "spaced", &installedValue{Schema: " app"}),
 		installationObject(plainKind, "plain", &plainValue{Schema: "other"}),
 	))}
 }
@@ -76,7 +78,7 @@ func TestSnapshotWithinWriterScopeKeepsWhatIsInstalledInTheWritersSchema(t *test
 	}{
 		{dialect: "postgres", want: []string{"inside", "plain"}},
 		{dialect: "yugabytedb", want: []string{"inside", "plain"}},
-		{dialect: "mysql", want: []string{"inside", "outside", "plain"}},
+		{dialect: "mysql", want: []string{"inside", "outside", "spaced", "plain"}},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -90,7 +92,7 @@ func TestSnapshotWithinWriterScopeKeepsWhatIsInstalledInTheWritersSchema(t *test
 				names = append(names, ref.Name.Source)
 			}
 			c.Assert(names, qt.DeepEquals, test.want)
-			c.Assert(schema.FeatureObjects.Len(), qt.Equals, 3)
+			c.Assert(schema.FeatureObjects.Len(), qt.Equals, 4)
 		})
 	}
 }

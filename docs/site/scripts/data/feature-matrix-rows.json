@@ -685,6 +685,24 @@
   },
   {
     "area": "Direct schema workflow",
+    "feature": "A `--schema` / -s name with white space around it",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "unknown",
+    "note": "Atlas CE keeps the space, so `-s ' a'` selects ` a`. The default surface trims a bare name and selects `a`, a deliberate divergence; a quoted name keeps its bytes. Strict mode keeps the space.",
+    "evidence": "Measured on Atlas CE v1.4.0 against PostgreSQL 18, with schemas `a` and ` a` each holding one table: `atlas schema inspect -s ' a'` and `-s '\" a\"'` both describe the table of ` a`, and `-s 'a, \" a\"'` is refused with `bare \" in non-quoted-field`. `ptah-compat schema inspect -s ' a'` describes the table of `a`, `-s '\" a\"'` describes the table of ` a`, `-s 'a, \" a\"'` is refused in the same words, and under PTAH_ATLAS_STRICT_COMPAT=1 `-s ' a'` describes the table of ` a`. The trim of a bare field sits in the flag's grammar only (internal/cli/atlas/flags.go, atlasSchemaValue.Set); every package below it keeps a schema name's bytes. It is kept so that `-s 'one, two'` reads as `one` and `two`. internal/cli/atlas/schema_value_strict_space_test.go; integration/postgres_spaced_schema_name_e2e_test.go TestSpacedSchemaNameInspectE2E; docs/site/src/content/docs/atlas/schema-commands.mdx"
+  },
+  {
+    "area": "Direct schema workflow",
+    "feature": "A PostgreSQL URL `search_path` the community binary reads as one schema name",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "unknown",
+    "note": "Atlas CE selects the schema the value spells, so `%20a` selects ` a`. The default reads the server's grammar and selects `a`. Strict mode refuses the value before connecting, on purpose.",
+    "evidence": "Measured on Atlas CE v1.4.0 against PostgreSQL 18, on a database holding the schemas `a`, ` a`, `a `, `A` and `a,b`: through `-u` and an env `url`, `search_path=%20a`, `a%20`, `A` and `a,b` select ` a`, `a `, `A` and `a,b`; through `--to`, the first three select the same schemas and `a,b` is refused with `missing scheme`; `a%20b` and `a+b` are refused by the server as `invalid value for parameter \"search_path\": \"a b\"`. `search_path=$user` selects a schema named `$user`, and without one the run is refused with `schema \"$user\" was not found`, where the server reads the session user's schema. On a `--dev-url` holding `a`, `%20a`, `a%20` and `A` print an empty document, exit 0, and leave the replayed table in `a`. `ptah-compat` reads the server's grammar: `%20a`, `a%20` and `A` select `a`, and `search_path=%22%20a%22` selects ` a`. Under PTAH_ATLAS_STRICT_COMPAT=1 each of those values is refused before connecting, naming the flag or the env attribute. internal/schemaselection LiteralReadingDiffers; internal/atlascompatpolicy ValidateSearchPath and search_path_test.go; integration/postgres_strict_search_path_e2e_test.go; integration/postgres_spaced_current_schema_e2e_test.go; docs/site/src/content/docs/atlas/strict-ce-mode.md"
+  },
+  {
+    "area": "Direct schema workflow",
     "feature": "`--include` resource selectors",
     "ptah": "yes",
     "atlas_oss": "no",
