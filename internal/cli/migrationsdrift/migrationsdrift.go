@@ -28,6 +28,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -66,6 +67,8 @@ const (
 	jsonFlag                 = "json"
 	plainHTTPFlag            = "plain-http"
 	migrationLockTimeoutFlag = migratelock.TimeoutFlag
+	// envPrefix is the prefix of the variables the root binds to the flags.
+	envPrefix = "PTAH"
 )
 
 // errDrifted is the exit status of a database that differs from its history.
@@ -121,7 +124,9 @@ It is the comparison 'ptah migrations up --check-drift' makes before it applies.
 An atlas.hcl env with for_each names several targets. The report runs over
 each in the order the env expands, names each before its report, goes on past
 a target that drifted or failed, and exits with the most serious status of any
-target; --json prints one document that lists them.
+target; --json prints one document that lists them. Each target is the
+database its instance's url names, so --db-url, which would replace every one
+of them, is refused over such an env.
 
 Exit status: 0 when the database matches its history, 1 when it differs, and 2
 when the comparison could not be made or decided.`,
@@ -259,6 +264,9 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 	if err != nil {
 		return err
 	}
+	if err := refuseOneDatabaseForEveryTarget(cmd, configs); err != nil {
+		return err
+	}
 
 	// Warnings and errors only: every Info record the migrator writes narrates
 	// an apply, and with writes suppressed an empty database reads as "[DRY
@@ -289,6 +297,29 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		return err
 	}
 	return result.status
+}
+
+// refuseOneDatabaseForEveryTarget refuses a run over the targets of an env
+// when --db-url is set, by the flag or by the variable bound to it. Each
+// target is the database its instance's url names, and a set --db-url
+// replaces every one of those urls, so the run would read that one database
+// once per target and report it as each of them, drifted and unreachable
+// tenants included. A single env takes --db-url as it always does.
+func refuseOneDatabaseForEveryTarget(cmd *cobra.Command, configs []projectconfig.Config) error {
+	flag := cmd.Flags().Lookup(dbURLFlag)
+	if !collection(configs) || flag == nil || !flag.Changed {
+		return nil
+	}
+	setBy := "--" + dbURLFlag
+	if variable, bound := cmdflags.EnvBindingName(envPrefix, flag); bound {
+		setBy += " or " + variable
+	}
+	noun := "targets"
+	if len(configs) == 1 {
+		noun = "target"
+	}
+	return fmt.Errorf("%s sets one database for every target, and env %q names %d %s with a url each; "+
+		"leave both unset to report each target", setBy, configs[0].EnvName, len(configs), noun)
 }
 
 // collection reports whether configs are the targets of an env that names

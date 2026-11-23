@@ -228,6 +228,12 @@ env {
 ptah migrations drift --config atlas.hcl --env tenants --migrations-dir ./migrations
 ```
 
+Each target is the database its instance's `url` names. `--db-url` and
+`PTAH_DB_URL` would replace every one of those URLs with one database, so the
+run refuses either one over such an env, before it opens anything. Leave both
+unset to report each target. An env without `for_each` takes `--db-url` over
+its `url`.
+
 A target that drifted, one whose comparison could not decide, and one the run
 could not open are each reported, and the run goes on to the next. The text
 report names each target before its report, with the password and the secret
@@ -256,6 +262,41 @@ With `--json` the run prints one document with the `env` it selected and a
 - `url`: the target database, with its password and secret parameters hidden;
 - `exit_code`: the status a run over that target alone exits with;
 - `report`: the document that run prints, or `error`, the reason it made none.
+
+The run of the text example above prints:
+
+```json
+{
+  "contract_version": 1,
+  "command": "migrations drift",
+  "env": "tenants",
+  "targets": [
+    {
+      "instance": 1,
+      "url": "postgres://db1.example/app",
+      "exit_code": 0,
+      "report": {
+        "contract_version": 1,
+        "command": "migrations drift",
+        "dialect": "postgres",
+        "revision_table": "\"schema_migrations\"",
+        "current_version": "3",
+        "check": { "outcome": "clean", "replayed": [1, 2, 3], "replayed_keys": ["1", "2", "3"] }
+      }
+    },
+    {
+      "instance": 2,
+      "url": "postgres://db2.example/app",
+      "exit_code": 2,
+      "error": { "message": "error connecting to database: failed to ping database: ..." }
+    }
+  ]
+}
+```
+
+`contract_version` 1 covers both documents. A report over the targets of an
+env carries `targets` and no `check`, and a report over one database carries
+`check`.
 
 A `for_each` env whose `name` selects one instance prints this shape too, so a
 script reads the same document however many targets the env holds.
