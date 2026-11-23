@@ -197,11 +197,40 @@ func (m *Migrator) refuseMySQLTemporaryMetadataShadow(ctx context.Context) error
 	return nil
 }
 
+// TransactionalTargetError reports that a MySQL or MariaDB database holds
+// something a migration in transaction mode file cannot run beside, because
+// Ptah cannot tie its effect to the migration's transaction: a session
+// sql_mode that changes how statements parse, a default storage engine or a
+// table that is not InnoDB, a view, a triggered table or a routine a statement
+// names, or an account the catalog hides triggers from. The migrator returns
+// it, possibly wrapped, before the migration's first statement, so the
+// migration has not run. A migration in transaction mode none is not asked
+// for any of it.
+//
+// A failure to read the session or the catalog is not this error: it is
+// returned as it is, and says nothing about what the database holds.
+type TransactionalTargetError struct {
+	reason string
+}
+
+// Error returns the reason the database refuses transaction mode file.
+func (e *TransactionalTargetError) Error() string {
+	return e.reason
+}
+
+// transactionalTargetRefusal is a [TransactionalTargetError] with the reason
+// format and args print.
+func transactionalTargetRefusal(format string, args ...any) error {
+	return &TransactionalTargetError{reason: fmt.Sprintf(format, args...)}
+}
+
 // requireTransactionalTarget asks, before migration's first statement, what
 // the transaction witness needs of the database it runs on: the session's
 // storage engines ([Migrator.requireTransactionalTargetEngines]) and the
 // catalog of every database the statements name
 // ([Migrator.requireTransactionalTargetIsolation]). Neither changes anything.
+// What the database holds is refused with a [TransactionalTargetError], and a
+// failure to read it is returned as it is.
 func (m *Migrator) requireTransactionalTarget(ctx context.Context, migration *Migration) error {
 	if err := m.requireTransactionalTargetEngines(ctx); err != nil {
 		return err
@@ -218,7 +247,7 @@ func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error 
 		return fmt.Errorf("failed to inspect MySQL-family session sql_mode: %w", err)
 	}
 	if mode, parserChanging := mysqlParserChangingSQLMode(sqlMode); parserChanging {
-		return fmt.Errorf(
+		return transactionalTargetRefusal(
 			"tx-mode file cannot validate MySQL-family statement boundaries while session sql_mode contains parser-changing mode %s; use tx-mode none",
 			mode,
 		)
@@ -228,7 +257,7 @@ func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error 
 		return fmt.Errorf("failed to inspect MySQL-family default storage engine: %w", err)
 	}
 	if !strings.EqualFold(defaultEngine, "InnoDB") {
-		return fmt.Errorf(
+		return transactionalTargetRefusal(
 			"tx-mode file requires InnoDB on MySQL-family databases; default storage engine is %s",
 			defaultEngine,
 		)
@@ -256,7 +285,7 @@ LIMIT 1`, schema).Scan(&table, &engine)
 	if err != nil {
 		return fmt.Errorf("failed to inspect MySQL-family target table storage engines: %w", err)
 	}
-	return fmt.Errorf(
+	return transactionalTargetRefusal(
 		"tx-mode file requires InnoDB target tables on MySQL-family databases; table %s.%s uses %s",
 		schema,
 		table,
@@ -311,7 +340,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 		if relation, referenced := mysqlReferencedQualifiedCatalogName(
 			tokens, catalog.qualifiedUnsafeRelations,
 		); referenced {
-			return fmt.Errorf(
+			return transactionalTargetRefusal(
 				"migration %d cannot run tx-mode file statement %d because relation %s has indirect behavior "+
 					"that Ptah cannot tie to the transaction witness; use direct InnoDB tables or tx-mode none",
 				m.versionText(migration.Version),
@@ -320,7 +349,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			)
 		}
 		if routine, invoked := mysqlInvokedQualifiedRoutine(tokens, catalog.qualifiedRoutines); invoked {
-			return fmt.Errorf(
+			return transactionalTargetRefusal(
 				"migration %d cannot run tx-mode file statement %d because routine %s can execute SQL outside "+
 					"Ptah's transaction witness; use direct SQL or tx-mode none",
 				m.versionText(migration.Version),
@@ -329,7 +358,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			)
 		}
 		if relation, referenced := mysqlReferencedCatalogName(tokens, catalog.unsafeRelations); referenced {
-			return fmt.Errorf(
+			return transactionalTargetRefusal(
 				"migration %d cannot run tx-mode file statement %d because relation %s has indirect behavior "+
 					"that Ptah cannot tie to the transaction witness; use direct InnoDB tables or tx-mode none",
 				m.versionText(migration.Version),
@@ -338,7 +367,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			)
 		}
 		if routine, invoked := mysqlInvokedRoutine(tokens, catalog.routines); invoked {
-			return fmt.Errorf(
+			return transactionalTargetRefusal(
 				"migration %d cannot run tx-mode file statement %d because routine %s can execute SQL outside "+
 					"Ptah's transaction witness; use direct SQL or tx-mode none",
 				m.versionText(migration.Version),
@@ -467,7 +496,7 @@ func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, sch
 		return fmt.Errorf("failed to prove MySQL-family trigger catalog visibility: %w", err)
 	}
 	if !grants.OnDatabase(schema).Holds("TRIGGER") {
-		return errors.New(
+		return transactionalTargetRefusal(
 			"tx-mode file requires the TRIGGER privilege at database or global scope on MySQL " +
 				"so Ptah can prove that target tables have no hidden indirect writers",
 		)

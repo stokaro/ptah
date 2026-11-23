@@ -3,16 +3,20 @@
 package integration_test
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/dbtarget"
 )
 
 // A replay of applied history runs each file in a transaction of its own,
@@ -36,7 +40,12 @@ import (
 //     --tx-mode none applies it. No check before the run can see the use,
 //     which is a cast of an expression.
 //   - procedureCommit: migration 2 calls a procedure that commits, which
-//     PostgreSQL refuses in a transaction block (SQLSTATE 2D000).
+//     PostgreSQL refuses in a transaction block (SQLSTATE 2D000). CockroachDB
+//     refuses it with the same code.
+//   - sequence: migration 2 inserts a row, whose serial id is 1, and then adds
+//     an enum value and uses it, so only --tx-mode none applies it. Migration
+//     3 refers to row 1. The rollback of the first attempt keeps the sequence
+//     value it took, so the second attempt inserts row 2.
 
 var (
 	historyReplaySetLocal = map[string]string{
@@ -80,6 +89,15 @@ var (
 		"0000000002_call.up.sql":   historyReplayProcedureCommitUp,
 		"0000000002_call.down.sql": "DELETE FROM p;\n",
 	})
+	historyReplaySequence = map[string]string{
+		"0000000001_items.up.sql":   "CREATE TYPE mood AS ENUM ('sad');\nCREATE TABLE items (id serial PRIMARY KEY, v mood);\n",
+		"0000000001_items.down.sql": "DROP TABLE items;\nDROP TYPE mood;\n",
+		"0000000002_happy.up.sql": "INSERT INTO items (v) VALUES ('sad');\nALTER TYPE mood ADD VALUE 'happy';\n" +
+			"INSERT INTO items (v) VALUES (('hap' || 'py')::mood);\n",
+		"0000000002_happy.down.sql": "DELETE FROM items;\n",
+		"0000000003_refs.up.sql":    "CREATE TABLE refs (item_id int NOT NULL REFERENCES items (id));\nINSERT INTO refs VALUES (1);\n",
+		"0000000003_refs.down.sql":  "DROP TABLE refs;\n",
+	}
 )
 
 // historyReplayWith is a copy of files with the files of next added.
@@ -108,14 +126,27 @@ type postgresHistory struct {
 	root, dir, target, shadow string
 }
 
-// newPostgresHistory applies files to a new target with applyArgs, runs each
-// statement of outOfBand on it, and adds the pending migration.
+// newPostgresHistory applies files to a new PostgreSQL target with applyArgs,
+// runs each statement of outOfBand on it, and adds the pending migration.
 func newPostgresHistory(c *qt.C, files map[string]string, applyArgs []string, outOfBand ...string) postgresHistory {
+	c.Helper()
+	return newEngineHistory(c, dbtarget.PostgreSQL, files, applyArgs, outOfBand...)
+}
+
+// newEngineHistory is [newPostgresHistory] on engine, a PostgreSQL-family
+// server, whose target and shadow are new databases on it.
+func newEngineHistory(
+	c *qt.C,
+	engine dbtarget.Engine,
+	files map[string]string,
+	applyArgs []string,
+	outOfBand ...string,
+) postgresHistory {
 	c.Helper()
 	h := postgresHistory{
 		root:   c.TempDir(),
-		target: newEmptyReadScopeDatabase(c, "replay_target"),
-		shadow: newEmptyReadScopeDatabase(c, "replay_shadow"),
+		target: newHistoryReplayDatabase(c, engine, "target"),
+		shadow: newHistoryReplayDatabase(c, engine, "shadow"),
 	}
 	h.dir = filepath.Join(h.root, "migrations")
 	c.Assert(os.MkdirAll(h.dir, 0o750), qt.IsNil)
@@ -136,6 +167,20 @@ func newPostgresHistory(c *qt.C, files map[string]string, applyArgs []string, ou
 		c.Assert(os.WriteFile(filepath.Join(h.dir, name), []byte(body), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	}
 	return h
+}
+
+// newHistoryReplayDatabase creates a database on engine, dropped when the test
+// ends, and returns its URL.
+func newHistoryReplayDatabase(c *qt.C, engine dbtarget.Engine, role string) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, engine)
+	admin, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
+	name := fmt.Sprintf("ptah_replay_%s_%d", role, time.Now().UnixNano())
+	createE2EDatabase(c, c.Context(), admin, name)
+	c.Cleanup(func() { dropE2EDatabase(c, context.Background(), admin, name) })
+	return replaceDatabaseName(c, adminURL, name)
 }
 
 // run runs ptah in the history's root, in an environment that carries no
@@ -423,6 +468,74 @@ func TestHistoryReplayPostgresE2E_PendingFileKeepsItsRefusal(t *testing.T) {
 			c.Assert(got.Stderr, qt.Contains, test.wantErr)
 			c.Assert(h.pendingApplied(c), qt.Equals, 1)
 			c.Assert(h.count(c, test.changed), qt.Equals, 0)
+		})
+	}
+}
+
+// TestHistoryReplayPostgresFamilyE2E_FailurePathTheReplayCannotRunTwice
+// replays histories whose refused file a second attempt cannot reproduce, and
+// the replay fails with the server's error rather than reporting drift; the
+// pending migration does not run. On PostgreSQL the rollback of the first
+// attempt keeps the serial value it took, so migration 3 refers to a row the
+// replay does not hold. CockroachDB does not roll schema changes back with a
+// transaction, so the refused file is not run a second time.
+func TestHistoryReplayPostgresFamilyE2E_FailurePathTheReplayCannotRunTwice(t *testing.T) {
+	tests := []struct {
+		name    string
+		engine  dbtarget.Engine
+		files   map[string]string
+		command postgresHistoryCommand
+		// wantFailed names the migration whose replay fails, and wantErr the
+		// server's code. A retry logs the first attempt's error too, so the
+		// failure is matched with the replay's own prefix.
+		wantFailed string
+		wantErr    string
+	}{
+		{
+			name:       "a serial value the rollback keeps, reported",
+			engine:     dbtarget.PostgreSQL,
+			files:      historyReplaySequence,
+			command:    historyReplayDrift(),
+			wantFailed: "replay the applied migrations: failed to apply migration 3",
+			wantErr:    "(SQLSTATE 23503)",
+		},
+		{
+			name:       "a serial value the rollback keeps, checked by an up run",
+			engine:     dbtarget.PostgreSQL,
+			files:      historyReplaySequence,
+			command:    historyReplayUp(),
+			wantFailed: "replay the applied migrations: failed to apply migration 3",
+			wantErr:    "(SQLSTATE 23503)",
+		},
+		{
+			name:       "a procedure that commits on CockroachDB, reported",
+			engine:     dbtarget.CockroachDB,
+			files:      historyReplayProcedureCommit,
+			command:    historyReplayDrift(),
+			wantFailed: "replay the applied migrations: failed to apply migration 2",
+			wantErr:    "(SQLSTATE 2D000)",
+		},
+		{
+			name:       "a procedure that commits on CockroachDB, checked by an up run",
+			engine:     dbtarget.CockroachDB,
+			files:      historyReplayProcedureCommit,
+			command:    historyReplayUp(),
+			wantFailed: "replay the applied migrations: failed to apply migration 2",
+			wantErr:    "(SQLSTATE 2D000)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			h := newEngineHistory(c, test.engine, test.files, []string{"--tx-mode", "none"})
+
+			got := h.run(c, test.command.env, test.command.args(h)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout+got.Stderr, qt.Contains, test.wantFailed)
+			c.Assert(got.Stdout+got.Stderr, qt.Contains, test.wantErr)
+			c.Assert(h.pendingApplied(c), qt.Equals, 0)
 		})
 	}
 }

@@ -162,8 +162,7 @@ reads none of them.
   `--tx-mode none` applied it.
 - Every other file replays in a transaction of its own.
 
-A transaction refuses a file in one of these ways, and none of them leaves any
-of the file applied:
+A transaction refuses a file in one of these ways:
 
 - Before the file runs, Ptah finds a statement that cannot run in a
   transaction, such as PostgreSQL `CREATE INDEX CONCURRENTLY` or SQLite
@@ -174,8 +173,17 @@ of the file applied:
 - PostgreSQL refuses a statement for running in a transaction, with SQLSTATE
   `25001`, `2D000` or `55P04`: a `CALL` of a procedure that runs `COMMIT`, or
   an enum value used in the transaction that added it. The transaction rolls
-  back, and the replay runs the file again without one. A pending file that
-  PostgreSQL refuses this way stays refused.
+  back, and the replay runs the file again without one. Sequence values and
+  session state a rollback does not undo, such as a prepared statement or an
+  advisory lock, stay, so a file that depends on them may not replay: a row
+  the first attempt inserted takes a new `serial` value the second time, and a
+  later foreign key to the first value fails. A pending file that PostgreSQL
+  refuses this way stays refused.
+
+CockroachDB and YugabyteDB do not roll schema changes back with a transaction,
+so the replay does not run a refused file a second time, and the report fails
+with the server's refusal. Such a file replays only if it carried
+`-- atlas:txmode none` when it was applied.
 
 A file that a transaction accepts but changes is the other class, and the
 replay cannot reproduce it from the file. Applied with `--tx-mode none`, it
@@ -196,8 +204,10 @@ ptah migrations drift --db-url "$DATABASE_URL" --migrations-dir ./migrations --s
 ```
 
 `ptah migrations up --check-drift` takes the same selector as
-`--drift-exclude public.t2`. A file applied with `--tx-mode all` shared one
-transaction with the rest of its run, and replays in a transaction of its own.
+`--drift-exclude public.t2`. A run with the selector does not compare the
+table at all, so it does not report a later change made to `public.t2` by hand
+either. A file applied with `--tx-mode all` shared one transaction with the
+rest of its run, and replays in a transaction of its own.
 
 ## When the report cannot decide
 

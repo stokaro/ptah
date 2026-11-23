@@ -858,9 +858,8 @@ func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 // in, so the replay decides the mode of each file from the file alone.
 //
 // A file runs in a transaction of its own, as under [MigrationTxModeFile],
-// unless a run in that mode refuses the file in a way that leaves nothing of
-// it applied. It ran without a transaction, since it ran at all, and it
-// replays without one. The refusals are:
+// unless a run in that mode refuses the file. It ran without a transaction,
+// since it ran at all, and it replays without one. The refusals are:
 //   - a statement the engine refuses inside a transaction, found before any
 //     file runs, such as CREATE INDEX CONCURRENTLY beside another statement on
 //     PostgreSQL, or, on MySQL and MariaDB, a statement the transaction
@@ -870,8 +869,12 @@ func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 //   - on PostgreSQL, the server's refusal of a statement inside the file's
 //     transaction for being in one (SQLSTATE 25001, 2D000 or 55P04), such as a
 //     CALL of a procedure that commits or an enum value used in the
-//     transaction that added it. The transaction rolled back, so the file
-//     runs once more without one.
+//     transaction that added it. The transaction rolls back, and the file
+//     runs once more without one, on the same session. Sequence values and
+//     session state a rollback does not undo, such as a prepared statement or
+//     an advisory lock, stay, so a file that depends on them may not replay.
+//     A target whose rollback does not undo schema changes, such as
+//     CockroachDB, returns the refusal, and the file does not run again.
 //
 // A file whose txmode directive names a mode runs in that mode. Down
 // migrations run as they do without the rule.
@@ -3217,7 +3220,10 @@ func (m *Migrator) applyUpMigrationObserved(
 	txMode = own.mode
 	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
 		if err := m.requireTransactionalTarget(ctx, migration); err != nil {
-			if !m.replaysWithoutATransaction(migration, true) {
+			// Only a refusal of what the database holds says how the file
+			// ran. A failure to read the catalog says nothing about it.
+			var refusal *TransactionalTargetError
+			if !m.replaysWithoutATransaction(migration, errors.As(err, &refusal)) {
 				return false, err
 			}
 			m.logger.Info("Replaying migration without a transaction, as tx-mode file refuses it",
