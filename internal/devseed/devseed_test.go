@@ -588,10 +588,11 @@ func TestClosure_FoldsAQuotedMixedCaseName(t *testing.T) {
 // sequence's name, and a sequence in public the selection leaves out.
 func sequenceTarget() *catalog.Database {
 	return &catalog.Database{
-		Schemas: schemas("public", "rebase", "Re Base", "util"),
+		Schemas: schemas("public", "rebase", "Re Base", "util", "a", " a"),
 		Tables:  []catalog.Table{table("", "tasks", column("id", "integer")), table("rebase", "t", column("id", "integer"))},
 		Sequences: []catalog.Sequence{
 			{Schema: "rebase", Name: "ids"}, {Schema: "Re Base", Name: "Ids"}, {Schema: "util", Name: "tickets"}, {Schema: "public", Name: "counter"},
+			{Schema: "a", Name: "seq_x"}, {Schema: " a", Name: "seq_x"},
 		},
 		Functions: []catalog.Function{function("rebase", "ids", "SELECT NULL::uuid")},
 	}
@@ -612,8 +613,10 @@ func tasks(defaults ...string) *catalog.Database {
 // string constant PostgreSQL reads as a regclass as it reads the statement.
 // The relation is added with its schema, and a function of the same name is
 // not: a regclass names a relation. A bare name is found along the search
-// path. The render here writes no column default, so a default's sequence is
-// found on the column, as the real render can write the column as serial.
+// path, whose schemas keep their bytes: " a" and "a" are two schemas, and the
+// target holds a sequence seq_x in each. The render here writes no column
+// default, so a default's sequence is found on the column, as the real render
+// can write the column as serial.
 func TestClosure_ReadsTheRelationsARegclassConstantNames(t *testing.T) {
 	rebaseIDs := []devseed.Object{{Kind: "sequence", Schema: "rebase", Name: "ids"}, {Kind: "schema", Name: "rebase"}}
 	tests := []struct {
@@ -664,6 +667,13 @@ func TestClosure_ReadsTheRelationsARegclassConstantNames(t *testing.T) {
 			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('tickets')`},
 			opts:     devseed.Options{Dialect: "postgres", DefaultSchema: "public", SearchPath: []string{"util", "public"}},
 			want:     []devseed.Object{{Kind: "sequence", Schema: "util", Name: "tickets"}, {Kind: "schema", Name: "util"}},
+		},
+		{
+			name:     "a bare name along a search path whose schema begins with a space",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('seq_x')`},
+			opts:     devseed.Options{Dialect: "postgres", DefaultSchema: "public", SearchPath: []string{" a"}},
+			want:     []devseed.Object{{Kind: "sequence", Schema: " a", Name: "seq_x"}, {Kind: "schema", Name: " a"}},
 		},
 		{
 			name:     "a planned view that casts a table's name",

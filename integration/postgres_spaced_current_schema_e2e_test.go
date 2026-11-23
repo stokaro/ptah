@@ -296,11 +296,13 @@ table "t_space" {
 // TestSpacedCurrentSchemaSeedsADevDatabaseThatHoldsTheSchemaWithoutTheSpaceE2E
 // rehearses a plan on each surface through a dev database that holds both `a`
 // and ` a`, with ` a` the current schema of the target and of the dev URL.
-// The rehearsal copies the target's objects of ` a` into the dev database's
-// ` a`, plans the new column and leaves the dev database empty. With the
-// current schema trimmed, the seed placed those objects in `a`, which the dev
-// database held before the run, and refused it: `the dev database held schema
-// "a" before the run`.
+// The target holds a table and a sequence of the same names in each. The
+// rehearsal copies the target's objects of ` a` into the dev database's ` a`,
+// plans the new column and leaves the dev database empty. With the current
+// schema trimmed, the seed places those objects in `a`; with the search path
+// trimmed, it copies the objects of `a`. Either way the dev database held `a`
+// before the run, and the seed refuses it: `the dev database held schema "a"
+// before the run`.
 func TestSpacedCurrentSchemaSeedsADevDatabaseThatHoldsTheSchemaWithoutTheSpaceE2E(t *testing.T) {
 	for _, surface := range spacedCurrentSchemaSurfaces {
 		t.Run(surface.name, func(t *testing.T) {
@@ -308,7 +310,7 @@ func TestSpacedCurrentSchemaSeedsADevDatabaseThatHoldsTheSchemaWithoutTheSpaceE2
 			target := newEmptyReadScopeDatabase(c, "spaced_seed_target")
 			for _, statement := range []string{
 				`CREATE SCHEMA " a"`, `CREATE TABLE " a".t_space (id integer)`, `CREATE TABLE " a".shared (id integer)`,
-				`CREATE SEQUENCE " a".seq_x`,
+				`CREATE SEQUENCE " a".seq_x`, "CREATE SCHEMA a", "CREATE TABLE a.shared (id integer)", "CREATE SEQUENCE a.seq_x",
 			} {
 				execPostgresFamilySQL(c, c.Context(), target, statement)
 			}
@@ -324,7 +326,7 @@ func TestSpacedCurrentSchemaSeedsADevDatabaseThatHoldsTheSchemaWithoutTheSpaceE2
 			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 			c.Assert(applied.Stdout, qt.Contains, `ALTER TABLE " a"."t_space" ADD COLUMN "n" bigint`)
 			c.Assert(spacedCurrentSchemaTables(c, dev), qt.Equals, "")
-			c.Assert(spacedCurrentSchemaTables(c, target), qt.Equals, "[ a].shared, [ a].t_space")
+			c.Assert(spacedCurrentSchemaTables(c, target), qt.Equals, "[ a].shared, [ a].t_space, [a].shared")
 		})
 	}
 }
