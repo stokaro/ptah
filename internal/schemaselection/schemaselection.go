@@ -19,6 +19,7 @@
 package schemaselection
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -117,11 +118,87 @@ func FromParsedURL(parsed *url.URL) Selection {
 func fromQuery(query url.Values) Selection {
 	raw := strings.TrimSpace(query.Get(searchPathParam))
 	selection := Selection{Raw: raw}
+	// One quoted identifier is one schema name, whatever it holds: the server
+	// reads `"a,b"` as the schema a,b and `" a"` as " a".
+	if name, ok := unquoteIdentifier(raw); ok {
+		selection.Scope = name
+		return selection
+	}
 	if raw == "" || strings.Contains(raw, ",") {
 		return selection
 	}
 	selection.Scope = raw
 	return selection
+}
+
+// Literal returns rawURL with each search_path value written as one quoted
+// identifier, so the server reads the value as one schema name, byte for byte:
+// a space around it, a comma and a capital letter stay part of the name. That
+// is how the pinned community binary reads the parameter. Measured on v1.4.0
+// against PostgreSQL 18, `search_path=%20a` selects " a", `a%20` selects "a ",
+// `A` selects "A", and `a,b` is refused as `schema "a,b" was not found`, where
+// the server's own grammar reads a list of names, trims an unquoted one and
+// folds it to lower case.
+//
+// [FromURL] reads the quoted value back as the name, so the scope is the bytes
+// the URL wrote. An empty value, a URL that names no search_path, one of a
+// dialect that does not select through it, and one that does not parse are
+// returned unchanged, and so is a docker URL, whose search_path also names a
+// schema the dev container's baseline creates. The other parameters keep their
+// bytes.
+func Literal(rawURL string) string {
+	if atlasurl.IsDockerURL(rawURL) {
+		return rawURL
+	}
+	dialect, err := atlasurl.DialectFromURL(rawURL)
+	if err != nil || !SelectsThroughSearchPath(dialect) {
+		return rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.RawQuery == "" {
+		return rawURL
+	}
+	parts := strings.Split(parsed.RawQuery, "&")
+	for i, part := range parts {
+		key, value, _ := strings.Cut(part, "=")
+		name, err := url.QueryUnescape(key)
+		if err != nil || name != searchPathParam {
+			continue
+		}
+		decoded, err := url.QueryUnescape(value)
+		if err != nil || decoded == "" {
+			continue
+		}
+		// A space is written %20: the driver decodes a query the way libpq
+		// does, and reads a plus sign as itself.
+		parts[i] = key + "=" + strings.ReplaceAll(url.QueryEscape(quoteIdentifier(decoded)), "+", "%20")
+	}
+	parsed.RawQuery = strings.Join(parts, "&")
+	return parsed.String()
+}
+
+// quoteIdentifier writes name as one PostgreSQL quoted identifier.
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// unquoteIdentifier reads value as one PostgreSQL quoted identifier, the form
+// [quoteIdentifier] writes, and reports whether it is one. A value of two
+// quoted names, such as `"a","b"`, is not: its inner quote stands alone.
+func unquoteIdentifier(value string) (string, bool) {
+	inner, ok := strings.CutPrefix(value, `"`)
+	if !ok {
+		return "", false
+	}
+	inner, ok = strings.CutSuffix(inner, `"`)
+	if !ok || inner == "" {
+		return "", false
+	}
+	name := strings.ReplaceAll(inner, `""`, `"`)
+	if strings.Count(inner, `"`) != 2*strings.Count(name, `"`) {
+		return "", false
+	}
+	return name, true
 }
 
 // Realm reports whether a connection left the run at realm scope — describing
@@ -321,8 +398,10 @@ func (s Selection) noUsableSchema() error {
 		return errors.New("the search_path of the connecting role resolves to no schema: " +
 			"each schema on it does not exist in this database or holds no USAGE privilege for the role")
 	}
+	// The schema the URL names, rather than its spelling: a quoted name is
+	// quoted by %q again.
 	return fmt.Errorf("database URL selects schema %q, which does not exist in this database "+
-		"or holds no USAGE privilege for the connecting role", s.Raw)
+		"or holds no USAGE privilege for the connecting role", cmp.Or(s.Scope, s.Raw))
 }
 
 // ResolveCarried answers the same question for a connection that could not SEND

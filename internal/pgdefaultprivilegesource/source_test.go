@@ -75,3 +75,16 @@ func TestSources_RefuseInvalidDeclarations(t *testing.T) {
 		})
 	}
 }
+
+// A schema is text an author typed, so both readers remove the space around it:
+// the schema keeps its bytes below, and "app " is another schema than app.
+func TestSources_TrimTheSchemaTheyRead(t *testing.T) {
+	c := qt.New(t)
+	fromGo := must.Must(goschema.ParseSource(goOwners, "privileges.go", goSource(annotationPrefix+` schema="app " privileges="SELECT"`)))
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte(yamlPrefix+"    schema: \" app \"\n    privileges: SELECT\n")))
+	for _, db := range []schemamodel.Database{fromGo, *fromYAML} {
+		objects := must.Must(db.FeatureObjects.All())
+		c.Assert(objects, qt.HasLen, 1)
+		c.Assert(must.Must(pgdefaultprivilege.IdentityOf(objects[0].Ref)).Schema, qt.Equals, "app")
+	}
+}

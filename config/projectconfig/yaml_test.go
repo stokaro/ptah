@@ -291,6 +291,19 @@ env:
 	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, make([]string, 0))
 }
 
+// A ptah.yaml schema name is text an author typed, so the space around it is
+// removed where the file is read: every layer below keeps a schema's bytes,
+// and "app " selects another schema than app.
+func TestParsePtahProjectConfigTrimsTheSchemaNames(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte("schemas: [\"app \", \" tenant\", \"\\tlog\"]\n")
+
+	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Schemas, qt.DeepEquals, []string{"app", "tenant", "log"})
+}
+
 // TestParsePtahProjectConfigSelectsNoEnvWithoutAName holds the rule of
 // stokaro/ptah#5999 for ptah.yaml: a lone env is not a default, and neither is
 // one of several. Only a name selects an env.

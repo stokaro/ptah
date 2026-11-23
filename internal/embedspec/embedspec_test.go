@@ -1,6 +1,7 @@
 package embedspec_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -273,4 +274,27 @@ func indexOf(document, fragment string) int {
 		}
 	}
 	return -1
+}
+
+// A relation is text an author typed, so the space around a schema or a table
+// is removed where the document is read: the generation keeps a schema's
+// bytes, and "public " would name another schema than public. The identity is
+// the one the same document without the space has.
+func TestParse_TrimsTheRelationsItNames(t *testing.T) {
+	c := qt.New(t)
+	spaced := strings.ReplaceAll(strings.ReplaceAll(complete,
+		"  schema: public\n", "  schema: \" public \"\n"),
+		"  table: articles\n", "  table: \"articles \"\n")
+	c.Assert(spaced, qt.Not(qt.Equals), complete)
+	want, err := embedspec.Parse([]byte(complete), "spec.yaml")
+	c.Assert(err, qt.IsNil)
+
+	got, err := embedspec.Parse([]byte(spaced), "spec.yaml")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Spec.Source.Schema, qt.Equals, "public")
+	c.Assert(got.Spec.Source.Table, qt.Equals, "articles")
+	c.Assert(got.Spec.Target.Schema, qt.Equals, "public")
+	c.Assert(got.Spec.Target.Table, qt.Equals, "articles")
+	c.Assert(got.Spec.Identity().Digest, qt.Equals, want.Spec.Identity().Digest)
 }

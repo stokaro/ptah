@@ -261,16 +261,50 @@ func RegisterRevisionTableFormatFlag(flags *pflag.FlagSet, target *string) {
 	RefuseEmptyHistoryEnv(flags, RevisionTableFormatFlagName, OmittedRevisionFormat)
 }
 
+// SchemaField is one field of a schema list as [ReadSchemaFields] reads it.
+type SchemaField struct {
+	// Text is the field as encoding/csv reads it: a quoted field without its
+	// quotes, with `""` read as one quote.
+	Text string
+	// Quoted reports a field written between double quotes.
+	Quoted bool
+}
+
+// ReadSchemaFields reads raw as one line of comma-separated fields in the
+// grammar of encoding/csv and says which fields were quoted, so a reader can
+// keep a quoted field's bytes and trim a bare one. With trimLeadingSpace the
+// white space before a field is skipped, so `a, " a"` reads a quoted second
+// field; without it, the reader refuses that spelling as `bare " in
+// non-quoted-field`, as the compatibility surface's flag must. A value
+// encoding/csv cannot read is refused with its error.
+func ReadSchemaFields(raw string, trimLeadingSpace bool) ([]SchemaField, error) {
+	reader := csv.NewReader(strings.NewReader(raw))
+	reader.TrimLeadingSpace = trimLeadingSpace
+	texts, err := reader.Read()
+	if err != nil {
+		return nil, err
+	}
+	fields := make([]SchemaField, 0, len(texts))
+	for i, text := range texts {
+		// FieldPos names the byte a field begins at, the opening quote of a
+		// quoted one, after any white space the reader skipped. An empty last
+		// field begins past the end.
+		_, column := reader.FieldPos(i)
+		fields = append(fields, SchemaField{Text: text, Quoted: column <= len(raw) && raw[column-1] == '"'})
+	}
+	return fields, nil
+}
+
 // ParseSchemas parses a schema allow-list: one line of comma-separated fields
-// in the grammar of encoding/csv, which the compatibility -s/--schema flag
-// reads too. A bare field is trimmed of white space and left out when blank,
-// so `a, b` names `a` and `b`. A double-quoted field keeps its bytes, and `""`
-// inside it is one quote, so `" a"` names the schema ` a`, which is not `a`.
-// A quoted field that names no schema, such as `""` or `" "`, is refused: the
-// quotes say a name was meant, and an empty selection reads the connection
-// default or the whole database. A bare quote, text after a closing quote and
-// a line break are refused too. A repeated name is left out, and the order is
-// the order of first appearance.
+// in the grammar of encoding/csv, read by [ReadSchemaFields] with the white
+// space before each field skipped. A bare field is trimmed of white space and
+// left out when blank, so `a, b` names `a` and `b`. A double-quoted field keeps
+// its bytes, and `""` inside it is one quote, so `a, " a"` names the schemas `a`
+// and ` a`, and `"Sales"` names Sales. A quoted field that names no schema,
+// such as `""` or `" "`, is refused: the quotes say a name was meant, and an
+// empty selection reads the connection default or the whole database. A bare
+// quote, text after a closing quote and a line break are refused too. A
+// repeated name is left out, and the order is the order of first appearance.
 func ParseSchemas(raw string) ([]string, error) {
 	if raw == "" {
 		return nil, nil
@@ -278,25 +312,22 @@ func ParseSchemas(raw string) ([]string, error) {
 	if strings.ContainsAny(raw, "\r\n") {
 		return nil, fmt.Errorf("invalid schema list %q: a schema list is one line", raw)
 	}
-	reader := csv.NewReader(strings.NewReader(raw))
-	fields, err := reader.Read()
+	fields, err := ReadSchemaFields(raw, true)
 	if err != nil {
 		return nil, fmt.Errorf("invalid schema list %q: %w", raw, err)
 	}
 	schemas := make([]string, 0, len(fields))
-	for i, field := range fields {
-		// FieldPos names the byte a field begins at, the opening quote of a
-		// quoted one. An empty last field begins past the end.
-		_, column := reader.FieldPos(i)
-		if column <= len(raw) && raw[column-1] == '"' {
-			if strings.TrimSpace(field) == "" {
-				return nil, fmt.Errorf("invalid schema list %q: the quoted field %q names no schema", raw, field)
+	for _, field := range fields {
+		name := field.Text
+		if field.Quoted {
+			if strings.TrimSpace(name) == "" {
+				return nil, fmt.Errorf("invalid schema list %q: the quoted field %q names no schema", raw, name)
 			}
-		} else if field = strings.TrimSpace(field); field == "" {
+		} else if name = strings.TrimSpace(name); name == "" {
 			continue
 		}
-		if !slices.Contains(schemas, field) {
-			schemas = append(schemas, field)
+		if !slices.Contains(schemas, name) {
+			schemas = append(schemas, name)
 		}
 	}
 	return schemas, nil

@@ -52,8 +52,10 @@ warns on standard error once for each one, as
 shows.
 
 Each name in `--schemas` is trimmed of white space unless it is written as a
-double-quoted field, so `--schemas '" a",b'` names the schemas ` a` and `b`. A
-quoted field that names no schema, such as `""`, is refused.
+double-quoted field, so `--schemas '" a",b'` names the schemas ` a` and `b`.
+White space before the opening quote is skipped, so `--schemas 'a, " a"'` names
+`a` and ` a`, and a quoted name loses only its quotes: `--schemas '"Sales"'`
+names `Sales`. A quoted field that names no schema, such as `""`, is refused.
 
 A URL that pins no `search_path` can still resolve to a schema other than
 `public`. With the default search path `"$user", public`, a role named `app`

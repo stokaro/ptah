@@ -160,8 +160,9 @@ func TestSpacedSchemaNameApplyE2E(t *testing.T) {
 // database holding `a.t_plain` and ` a`.t_space, and the document the issue
 // reports. Each run describes the schema it names, and only that one:
 // PTAH_ATLAS_STRICT_COMPAT=1 reads `-s ' a'` as Atlas CE v1.4.0 does, as the
-// schema ` a`, and the default surface trims the value, as its flag grammar
-// says, and describes `a`.
+// schema ` a`, and the default surface trims a bare field, as its flag grammar
+// says, and describes `a`. A quoted field keeps its bytes on both, so
+// `-s '" a"'` describes ` a` there too, as the pinned binary does.
 func TestSpacedSchemaNameInspectE2E(t *testing.T) {
 	tests := []struct {
 		name string
@@ -204,6 +205,14 @@ func TestSpacedSchemaNameInspectE2E(t *testing.T) {
 			env:  []string{"PTAH_ATLAS_STRICT_COMPAT=1"},
 			args: func(database, _, _ string) []string {
 				return []string{"schema", "inspect", "-u", database, "-s", " a", "--format", "{{ sql . }}"}
+			},
+			present: []string{`CREATE TABLE " a"."t_space" ("id" integer NULL);`},
+			absent:  []string{"t_plain"},
+		},
+		{
+			name: `the default surface, -s '" a"'`,
+			args: func(database, _, _ string) []string {
+				return []string{"schema", "inspect", "-u", database, "-s", `" a"`, "--format", "{{ sql . }}"}
 			},
 			present: []string{`CREATE TABLE " a"."t_space" ("id" integer NULL);`},
 			absent:  []string{"t_plain"},

@@ -99,6 +99,24 @@ func TestAtlasSchemaNameWithSpace_HappyPath(t *testing.T) {
 	}
 }
 
+// The white space before a quoted field is not skipped on either tree: the
+// community binary refuses `main, " main"` in the reader's words, and so does
+// this flag.
+func TestAtlasSchemaSpaceBeforeAQuote_FailurePath(t *testing.T) {
+	for _, policy := range []atlascompatpolicy.Policy{atlascompatpolicy.Full(), atlascompatpolicy.StrictCE()} {
+		t.Run(fmt.Sprintf("strict %t", policy.IsStrictCE()), func(t *testing.T) {
+			c := qt.New(t)
+			root := c.TempDir()
+			writeMainSchemaDocument(c, root)
+
+			out, err := runSchemaValueCommandWithPolicy(c, root, policy, slices.Concat(mainDocumentInspect, []string{"--schema", `main, " main"`}))
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`invalid argument "main, \" main\"" for "-s, --schema" flag: parse error on line 1, column 7: bare " in non-quoted-field`))
+			c.Assert(out, qt.Equals, "")
+		})
+	}
+}
+
 // runStrictSchemaValueCommand runs the strict compatibility tree in root and
 // returns what it wrote to stdout.
 func runStrictSchemaValueCommand(c *qt.C, root string, args []string) (string, error) {

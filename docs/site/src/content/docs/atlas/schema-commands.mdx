@@ -244,9 +244,12 @@ Atlas CE does. `-s one,two` names two schemas, `-s '"a,b"'` names the one schema
 `a,b`, and `-s '"one"'` names `one`. A value that is not a valid line, such as
 `-s 'a"b'`, is refused before the run starts:
 `invalid argument "a\"b" for "-s, --schema" flag: parse error on line 1, column 2: bare " in non-quoted-field`.
-Spaces around a name are trimmed, so `-s "one, two"` names `one` and `two`.
-Atlas CE keeps the space, so ` two` names no schema there and only `one` is
-described.
+Spaces around a bare name are trimmed, so `-s "one, two"` names `one` and
+`two`. Atlas CE keeps the space, so ` two` names no schema there and only `one`
+is described. A double-quoted name keeps its bytes, as on Atlas CE, so
+`-s '" a"'` names the schema ` a`. A space before the opening quote is refused
+on both binaries, as `-s 'one, " a"'` shows:
+`parse error on line 1, column 6: bare " in non-quoted-field`.
 
 `PTAH_ATLAS_STRICT_COMPAT=1` reads the value as Atlas CE does and keeps the
 space, so ` two` is a schema of its own, and a run naming it describes that

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -519,41 +518,47 @@ func (p Policy) ValidateURL(rawURL string) error {
 	if noAtlasDriver(parsed.Scheme) {
 		return strictUnknownDriver(parsed.Scheme)
 	}
-	if err := validateStrictSearchPath(rawURL, parsed); err != nil {
-		return err
-	}
 	return p.ValidateDialect(parsed.Scheme)
 }
 
-// validateStrictSearchPath refuses a search_path that begins or ends with
-// white space or holds a double quote.
+// SearchPathURL is rawURL as a run under p connects with it.
 //
-// The community binary reads the value as one schema name, byte for byte,
-// while Ptah reads the schema the server's own search_path grammar selects.
-// The two part where the value is not a bare name. Measured on v1.4.0 against
-// PostgreSQL 18, `search_path=%20a` selects ` a`, which the server reads as
-// `a`, and `"a"`, `" a"` and `a%20` select a schema of that literal name,
-// which none of them is, so the binary refuses them. Ptah's reading selects
-// `a` for the first and `a` or ` a` for the rest, a schema the binary does not
-// select. The refusal is stricter than the binary on the first spelling,
-// deliberately: a run in this mode must not select a schema the binary does
-// not.
-func validateStrictSearchPath(rawURL string, parsed *url.URL) error {
-	values, present := parsed.Query()["search_path"]
-	if !present {
-		return nil
+// Strict mode reads a search_path value as one literal schema name, as the
+// pinned community binary does, so the value travels to the server as one
+// quoted identifier; see [schemaselection.Literal]. Measured on v1.4.0 against
+// PostgreSQL 18, the binary selects " a" for `search_path=%20a`, "a " for
+// `a%20` and "A" for `A`, and refuses `a,b` as `schema "a,b" was not found`;
+// the server's own grammar reads `a` for the first three and two schemas for
+// the last. The full surface keeps the server's grammar and returns rawURL
+// unchanged.
+//
+// The rewrite is not idempotent, because a quoted value is itself a literal
+// name to the binary: `search_path=%22a%22` names the schema `"a"`, quotes
+// included. A caller rewrites each URL once, where it is read.
+func (p Policy) SearchPathURL(rawURL string) string {
+	if !p.strictCE {
+		return rawURL
 	}
-	dialect, err := atlasurl.DialectFromURL(rawURL)
-	if err != nil || !schemaselection.SelectsThroughSearchPath(dialect) {
-		return nil
+	return schemaselection.Literal(rawURL)
+}
+
+// SearchPathProjectConfig is config with [Policy.SearchPathURL] applied to the
+// database, dev and desired-state URLs an env sets. The source list is copied,
+// so the instances of one env do not share it.
+func (p Policy) SearchPathProjectConfig(config projectconfig.Config) projectconfig.Config {
+	if !p.strictCE {
+		return config
 	}
-	for _, value := range values {
-		if value != strings.TrimSpace(value) || strings.Contains(value, `"`) {
-			return fmt.Errorf("Atlas Community Edition strict compatibility does not support a search_path "+
-				"that begins or ends with white space or holds a double quote: %q", value)
+	config.DatabaseURL = p.SearchPathURL(config.DatabaseURL)
+	config.DevURL = p.SearchPathURL(config.DevURL)
+	if config.SchemaSources != nil {
+		sources := make([]string, 0, len(config.SchemaSources))
+		for _, source := range config.SchemaSources {
+			sources = append(sources, p.SearchPathURL(source))
 		}
+		config.SchemaSources = sources
 	}
-	return nil
+	return config
 }
 
 // noAtlasDriver reports whether name is an engine no Atlas edition has a

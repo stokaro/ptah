@@ -1,7 +1,6 @@
 package atlas
 
 import (
-	"encoding/csv"
 	"fmt"
 	"strings"
 
@@ -109,26 +108,29 @@ type atlasSchemaValue struct {
 }
 
 // Set refuses an empty value and a value whose fields are all blank, and
-// otherwise adds the value's names without its blank fields: each trimmed on
-// the default surface, and as written under the strict policy. The fields are
-// read with encoding/csv, the reader the string slice uses, so a value it
-// cannot read is left to it and refused in its words.
+// otherwise adds the value's names without its blank fields. A quoted field
+// keeps its bytes, so `" a"` names ` a`, as the community binary reads it. A
+// bare field is trimmed on the default surface and kept as written under the
+// strict policy, which is the binary's reading. The fields are read with
+// encoding/csv, the reader the string slice uses, without skipping the space
+// before a field: the binary refuses `a, " a"`, and so does this flag. A value
+// the reader cannot read is left to the string slice and refused in its words.
 func (v atlasSchemaValue) Set(raw string) error {
 	if raw == "" {
 		return errEmptySchemaValue
 	}
-	fields, err := csv.NewReader(strings.NewReader(raw)).Read()
+	fields, err := dbcli.ReadSchemaFields(raw, false)
 	if err != nil {
 		return v.Value.Set(raw)
 	}
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
-		name := strings.TrimSpace(field)
-		if name == "" {
+		if strings.TrimSpace(field.Text) == "" {
 			continue
 		}
-		if v.strict {
-			name = field
+		name := field.Text
+		if !field.Quoted && !v.strict {
+			name = strings.TrimSpace(name)
 		}
 		names = append(names, name)
 	}

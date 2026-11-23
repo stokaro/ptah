@@ -90,18 +90,35 @@ surface verifies the server against the named bundle, as
 [MySQL and MariaDB](../../databases/mysql/#tls-with-a-private-certificate-authority)
 describes.
 
-A PostgreSQL-family URL whose `search_path` begins or ends with white space or
-holds a double quote is refused with `Atlas Community Edition strict
-compatibility does not support a search_path that begins or ends with white
-space or holds a double quote`. The pinned binary reads the value as one schema
-name, byte for byte, and Ptah reads the schema the server's own `search_path`
-grammar selects, so the two select different schemas. Measured against
-PostgreSQL 18, the pinned binary reads `search_path=%20a` as the schema ` a`,
-where the server's grammar selects `a`, and refuses `%22a%22`, `%22%20a%22` and
-`a%20` because no schema of that literal name exists. The refusal of the first
-spelling is stricter than the pinned binary, deliberately: a strict run must
-not select a schema that binary does not. The default surface reads each
-spelling the server's way.
+Strict mode reads a PostgreSQL `search_path` as the pinned binary does: the
+whole value is one schema name, byte for byte. A space around it, a capital
+letter and a comma stay part of the name. Ptah sends the value to the server as
+one quoted identifier, so the session lands in the schema the value names and
+Ptah reads that schema. The rewrite applies to `-u`, `--to`, `--dev-url` and
+the URLs an `atlas.hcl` env sets. Measured on Atlas CE v1.4.0 against
+PostgreSQL 18, through `-u`, `--to` and an env `url`:
+
+| `search_path` | Atlas CE | Ptah, strict mode | Ptah, default |
+| --- | --- | --- | --- |
+| `%20a` | ` a` | ` a` | `a` |
+| `a%20` | `a ` | `a ` | `a` |
+| `A` | `A` | `A` | `a` |
+| `a,b` | refused, exit 1 | refused, exit 1 | every schema |
+
+On `-u`, Atlas CE refuses `a,b` as `postgres: schema "a,b" was not found`, and
+strict mode refuses it as
+`database URL selects schema "a,b", which does not exist in this database or holds no USAGE privilege for the connecting role`.
+The default surface reads the value with the server's own grammar, which trims
+an unquoted name, folds it to lower case and reads a comma as a list. A list
+scopes nothing, so a run reads every schema. A `docker://` dev URL keeps its
+`search_path` as written, because the dev container's baseline reads it too.
+
+One difference is deliberate. On a `--dev-url`, Atlas CE replays the document
+where the server's grammar puts it and reads the literal schema back. A document
+inspected through `search_path=%20a` comes out empty, exit 0, and its tables
+stay behind in the dev database's schema `a`. Strict mode replays the document
+in the schema it reads, so the document's tables appear and the dev database is
+left empty.
 
 ## Content strict mode refuses
 

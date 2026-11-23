@@ -27,6 +27,9 @@ func TestParseSchemas_HappyPath(t *testing.T) {
 		{name: "a quoted comma", raw: `"a,b",c`, want: []string{"a,b", "c"}},
 		{name: "a doubled quote is one quote", raw: `"a""b"`, want: []string{`a"b`}},
 		{name: "a repeat is left out", raw: "b,a,b", want: []string{"b", "a"}},
+		{name: "a quoted field after a space", raw: `a, " a"`, want: []string{"a", " a"}},
+		{name: "a quoted field after a tab", raw: "a,\t\"a \"", want: []string{"a", "a "}},
+		{name: "a quoted name loses its quotes", raw: `"Sales"`, want: []string{"Sales"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -47,7 +50,6 @@ func TestParseSchemas_FailurePath(t *testing.T) {
 		name, raw, wantErr string
 	}{
 		{name: "a bare quote", raw: `a"b`, wantErr: `invalid schema list "a\\"b": parse error on line 1, column 2: bare " in non-quoted-field`},
-		{name: "a space before a quote", raw: `a, " b"`, wantErr: `invalid schema list "a, \\" b\\"": parse error on line 1, column 4: bare " in non-quoted-field`},
 		{name: "text after a closing quote", raw: `"a"b`, wantErr: `invalid schema list "\\"a\\"b": parse error on line 1, column 3: extraneous or missing " in quoted-field`},
 		{name: "an unclosed quote", raw: `"a`, wantErr: `invalid schema list "\\"a": parse error on line 1, column 3: extraneous or missing " in quoted-field`},
 		{name: "a line break", raw: "a\nb", wantErr: `invalid schema list "a\\nb": a schema list is one line`},

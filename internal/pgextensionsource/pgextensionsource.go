@@ -99,11 +99,14 @@ func decodeYAML(decode func(target any) error, _ yamlext.Tables) ([]yamlext.Cont
 	contributions := make([]yamlext.Contribution, 0, len(entries))
 	for _, key := range slices.Sorted(maps.Keys(entries)) {
 		entry := entries[key]
-		name := string(entry.Name)
+		// The name and the schema are trimmed where the document is read, as
+		// every name a YAML schema document holds is: a schema keeps its bytes
+		// below, and "app " is another schema than app.
+		name := strings.TrimSpace(string(entry.Name))
 		if name == "" {
-			name = key
+			name = strings.TrimSpace(key)
 		}
-		object, err := Declare(name, pgextension.DesiredExtension{Schema: string(entry.Schema), Version: string(entry.Version),
+		object, err := Declare(name, pgextension.DesiredExtension{Schema: strings.TrimSpace(string(entry.Schema)), Version: string(entry.Version),
 			Comment: string(entry.Comment), IfNotExists: entry.IfNotExists})
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", Key, key, err)
