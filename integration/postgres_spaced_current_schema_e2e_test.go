@@ -252,6 +252,52 @@ func TestSpacedCurrentSchemaMigratesE2E(t *testing.T) {
 	c.Assert(again.Stdout, qt.Contains, "No migration files to execute")
 }
 
+// spacedCurrentSchemaDataSource declares rows for events, which it names
+// without a schema, so the table resolves to the current schema.
+const spacedCurrentSchemaDataSource = `package entities
+
+//ptah:schema:data table="events" key="id" file="rows.yaml"
+//ptah:schema:table name="events"
+type Event struct {
+	//ptah:schema:field name="id" type="INT" primary="true"
+	ID int
+	//ptah:schema:field name="at" type="TEXT"
+	At string
+}
+`
+
+// TestSpacedCurrentSchemaMigrationsDataReadsTheCurrentSchemaE2E generates a
+// data migration through a URL whose current schema is ` a`, for rows declared
+// on events, which ` a` and `a` both hold with different columns. The live row
+// in ` a` already matches, so nothing is written. With the current schema
+// trimmed, the column read is scoped to `a` and the run refuses with `managed
+// table "events" does not have declared column(s) "at"`.
+func TestSpacedCurrentSchemaMigrationsDataReadsTheCurrentSchemaE2E(t *testing.T) {
+	c := qt.New(t)
+	database := newEmptyReadScopeDatabase(c, "spaced_current_data")
+	for _, statement := range []string{
+		"CREATE SCHEMA a", `CREATE SCHEMA " a"`,
+		`CREATE TABLE " a".events (id integer PRIMARY KEY, at text)`, `INSERT INTO " a".events VALUES (1, 'x')`,
+		"CREATE TABLE a.events (id integer PRIMARY KEY, note text)", "INSERT INTO a.events VALUES (1, 'y')",
+	} {
+		execPostgresFamilySQL(c, c.Context(), database, statement)
+	}
+	dir := c.TempDir()
+	c.Assert(os.Mkdir(filepath.Join(dir, "entities"), 0o750), qt.IsNil)
+	c.Assert(os.Mkdir(filepath.Join(dir, "out"), 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "entities", "schema.go"), []byte(spacedCurrentSchemaDataSource), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "entities", "rows.yaml"), []byte("- id: 1\n  at: \"x\"\n"), 0o600), qt.IsNil)
+
+	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+		"migrations", "data", "--db-url", spacedCurrentSchemaURL(database), "--root-dir", "entities", "--migrations-dir", "out")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stdout, qt.Equals, "no data changes\n")
+	written, err := os.ReadDir(filepath.Join(dir, "out"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
 // newSpacedCurrentSchemaMigrateDatabase creates a database holding the table
 // a.t_plain and the empty schema ` a`, and returns its URL.
 func newSpacedCurrentSchemaMigrateDatabase(c *qt.C, role string) string {
