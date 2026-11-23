@@ -95,12 +95,28 @@ func (r EmptyRule) Check(envName, flagName, value string) error {
 	if r.Omitted == "" || !r.namesNothing(value) {
 		return nil
 	}
-	state := "set but empty"
-	if value != "" {
-		state = fmt.Sprintf("set to %q, which names nothing", value)
-	}
 	return &emptyValueError{text: fmt.Sprintf("%s is %s: give it a value, or unset it and leave --%s out to %s",
-		envName, state, flagName, r.Omitted)}
+		envName, emptyState(value), flagName, r.Omitted)}
+}
+
+// CheckVariable is [EmptyRule.Check] for a variable a command reads without a
+// flag, such as one the compatibility surface reads where the community binary
+// registers no flag. The refusal names the variable, says what unsetting it
+// does, and wraps [ErrEmptyValue].
+func (r EmptyRule) CheckVariable(envName, value string) error {
+	if r.Omitted == "" || !r.namesNothing(value) {
+		return nil
+	}
+	return &emptyValueError{text: fmt.Sprintf("%s is %s: give it a value, or unset it to %s",
+		envName, emptyState(value), r.Omitted)}
+}
+
+// emptyState is how a refusal describes value, a value that names nothing.
+func emptyState(value string) string {
+	if value == "" {
+		return "set but empty"
+	}
+	return fmt.Sprintf("set to %q, which names nothing", value)
 }
 
 // emptyValueError is the refusal [EmptyRule.Check] returns. Its text names the

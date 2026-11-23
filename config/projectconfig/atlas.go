@@ -848,7 +848,7 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 			break
 		}
 		collected.globalDiff = append(collected.globalDiff, block)
-	case "env":
+	case atlasEnvBlockType:
 		env, err := atlasEnvBlockFromHCL(block)
 		if err != nil {
 			return err

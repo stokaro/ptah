@@ -156,6 +156,9 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := dbcli.RefuseEmptyProjectEnv(cmd.Flags(), config); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if config.EnvName == "" && len(config.DeclaredEnvs) > 0 {
 		// No env applies to a run that names none, so the analysis would cover
 		// the top-level settings alone. A project whose settings live in its env

@@ -5,7 +5,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/pflag"
+
 	"ptah.run/config/projectconfig"
+	"ptah.run/internal/cli/internal/cmdflags"
+	"ptah.run/internal/envbinding"
 )
 
 // MissingProjectValue completes the refusal of a command that lacks a value a
@@ -25,6 +29,40 @@ func MissingProjectValue(config projectconfig.Config, err error) error {
 	}
 	return fmt.Errorf("%w: no --%s given; %s", err, EnvFlagName, DescribeDeclaredEnvs(config.DeclaredEnvs))
 }
+
+// RefuseEmptyProjectEnv refuses an empty PTAH_ENV beside a project file that
+// declares envs; config is the project config the run loaded, which an empty
+// variable leaves with no env selected. The binding reads the empty value as
+// unset, so none of the envs applies, and a run meant for one of them reads
+// what the files say outside every env. An env that names its revision table
+// is the costly case: `migrations up` reads the default table, finds nothing
+// applied and runs every migration again. Where no file declares an env, the
+// empty value selects what any value would, and nil is returned. A typed
+// --env decides the run however the variable is set.
+func RefuseEmptyProjectEnv(flags *pflag.FlagSet, config projectconfig.Config) error {
+	envName, empty := cmdflags.EmptyEnvName(flags, EnvFlagName)
+	if !empty || len(config.DeclaredEnvs) == 0 {
+		return nil
+	}
+	return EmptyProjectEnvError(envName, config.DeclaredEnvs)
+}
+
+// EmptyProjectEnvError is the refusal of an empty envName, the variable that
+// selects a project env, beside files that declare the envs declared. It wraps
+// [envbinding.ErrEmptyValue], as the refusal of every other empty variable
+// does.
+func EmptyProjectEnvError(envName string, declared []projectconfig.DeclaredEnv) error {
+	return &emptyProjectEnvError{text: fmt.Sprintf(
+		"%s is set but empty, and %s: name the env to read, or unset it and leave --%s out to select no env",
+		envName, DescribeDeclaredEnvs(declared), EnvFlagName)}
+}
+
+// emptyProjectEnvError is the refusal [EmptyProjectEnvError] returns.
+type emptyProjectEnvError struct{ text string }
+
+func (e *emptyProjectEnvError) Error() string { return e.text }
+
+func (e *emptyProjectEnvError) Unwrap() error { return envbinding.ErrEmptyValue }
 
 // DescribeDeclaredEnvs names the envs of each file, in the order the files
 // were loaded: `ptah.yaml declares envs "dev" and "prod"; atlas.hcl declares

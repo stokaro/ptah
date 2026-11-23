@@ -159,3 +159,58 @@ func TestEmptyRuleCheck_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestEmptyRuleCheckVariable_FailurePath is the refusal of a variable no flag
+// reads: it names the variable and says what unsetting it does, without
+// naming a flag to leave out.
+func TestEmptyRuleCheckVariable_FailurePath(t *testing.T) {
+	rule := envbinding.EmptyRule{Omitted: "use the dialect's default engine"}
+	tests := []struct {
+		name    string
+		value   string
+		wantErr string
+	}{
+		{
+			name:    "empty",
+			wantErr: `PTAH_MIGRATIONS_ENGINE is set but empty: give it a value, or unset it to use the dialect's default engine`,
+		},
+		{
+			name:    "spaces",
+			value:   "  ",
+			wantErr: `PTAH_MIGRATIONS_ENGINE is set to "  ", which names nothing: give it a value, or unset it to use the dialect's default engine`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := rule.CheckVariable("PTAH_MIGRATIONS_ENGINE", test.value)
+
+			c.Assert(err, qt.ErrorIs, envbinding.ErrEmptyValue)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+		})
+	}
+}
+
+// TestEmptyRuleCheckVariable_HappyPath passes a value that names something,
+// and every value under the zero rule.
+func TestEmptyRuleCheckVariable_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		rule  envbinding.EmptyRule
+		value string
+	}{
+		{name: "a value", rule: envbinding.EmptyRule{Omitted: "use the default"}, value: "MergeTree"},
+		{name: "a value in spaces", rule: envbinding.EmptyRule{Omitted: "use the default"}, value: " MergeTree "},
+		{name: "the zero rule", value: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.rule.CheckVariable("PTAH_MIGRATIONS_ENGINE", test.value), qt.IsNil)
+		})
+	}
+}

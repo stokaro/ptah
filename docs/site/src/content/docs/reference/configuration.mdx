@@ -36,8 +36,10 @@ environment twin, including when that environment value is malformed. An empty
 value remains unset, except for a
 [boolean](#boolean-environment-variables), the
 [schema-selecting variables](#schema-selecting-variables), the
-[variables that narrow a write](#variables-that-narrow-a-write) and the
-[variables that name the migration history](#variables-that-name-the-migration-history).
+[variables that narrow a write](#variables-that-narrow-a-write), the
+[variables that name the migration history](#variables-that-name-the-migration-history)
+and the
+[variables that choose a lock, an engine or an env](#variables-that-choose-a-lock-an-engine-or-an-env).
 
 `exclude` is the one key the table does not order: `--exclude` and
 `PTAH_EXCLUDE` add to the project list rather than replace it, as
@@ -143,6 +145,14 @@ or blank value, which names the default history: over a history in
 `--migrations-table mine`, `migrations up` runs every migration again.
 `ptah migrations lint` reads no history and reads an empty
 `PTAH_REVISION_FORMAT` as unset.
+
+## Variables that choose a lock, an engine or an env
+
+An empty or blank `PTAH_MIGRATION_LOCK_NAME`, `PTAH_LOCK_NAME` or
+`PTAH_MIGRATIONS_ENGINE` is refused: read as unset, it takes the default lock,
+which does not exclude a runner holding the named one, or creates the revision
+table with the default engine. An empty `PTAH_ENV` is refused beside a project
+file that declares an environment, where it would apply none.
 
 ## Boolean environment variables
 

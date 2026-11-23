@@ -18,6 +18,9 @@ import (
 const (
 	forwardedEnvAnnotation = "ptah.env.forwarded"
 	appliedEnvAnnotation   = "ptah.env.applied"
+	// emptyEnvAnnotation records the variable of a flag whose value the
+	// binding read as unset because it was empty; see [EmptyEnvName].
+	emptyEnvAnnotation = "ptah.env.empty"
 )
 
 // AddForwardedEnvBinding records an environment variable that reaches the
@@ -188,6 +191,7 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 			}
 		}
 		if value == "" && flag.Value.Type() != "bool" {
+			markEnvEmpty(flag, envName)
 			return
 		}
 		applyErr = setEnvValue(flags, flag, envName, value)
@@ -242,6 +246,16 @@ func markEnvApplied(flag *pflag.Flag, envName string) {
 
 func clearEnvApplied(flag *pflag.Flag) {
 	delete(flag.Annotations, appliedEnvAnnotation)
+	delete(flag.Annotations, emptyEnvAnnotation)
+}
+
+// markEnvEmpty records that the flag's variable was set to the empty value,
+// which the binding reads as unset.
+func markEnvEmpty(flag *pflag.Flag, envName string) {
+	if flag.Annotations == nil {
+		flag.Annotations = make(map[string][]string)
+	}
+	flag.Annotations[emptyEnvAnnotation] = []string{envName}
 }
 
 func envApplied(flag *pflag.Flag) bool {
@@ -288,6 +302,27 @@ func AppliedEnvName(flags *pflag.FlagSet, name string) (string, bool) {
 		return "", false
 	}
 	return appliedEnvName(flag)
+}
+
+// EmptyEnvName returns the variable of the named flag when it was set to the
+// empty value, which the binding reads as unset, and false when the variable
+// was unset or carried a value, when the flag was typed on the command line,
+// and for a flag this set does not have.
+//
+// Unset is the answer for most flags, and the binding gives it. A command asks
+// here where the empty value matters once it knows more than the binding does:
+// an empty PTAH_ENV selects no env, which is what the operator meant only when
+// no project file declares one.
+func EmptyEnvName(flags *pflag.FlagSet, name string) (string, bool) {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return "", false
+	}
+	values := flag.Annotations[emptyEnvAnnotation]
+	if len(values) == 0 || values[0] == "" {
+		return "", false
+	}
+	return values[0], true
 }
 
 // MutuallyExclusiveOnCommandLine returns cobra's own flag-group diagnostic when

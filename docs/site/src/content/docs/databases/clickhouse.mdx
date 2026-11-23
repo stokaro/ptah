@@ -1674,7 +1674,9 @@ $ ptah migrations up --db-url 'clickhouse://…' \
 compatibility surface — `ptah-compat` registers no flag for it, because the
 community binary has none and the conformance `cli-surface` tier asserts flag
 parity against it. `ptah-compat migrate apply`, `status` and `down` read the
-variable; the native verbs take either.
+variable; the native verbs take either. An empty or blank value is refused
+before the run connects: read as unset, it would create the table with
+`MergeTree`.
 
 Whichever command creates the table decides its engine, so both of these hold:
 

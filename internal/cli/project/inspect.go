@@ -109,6 +109,9 @@ func runInspect(cmd *cobra.Command, opts inspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := dbcli.RefuseEmptyProjectEnv(cmd.Flags(), config); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	report := reportFor(config)
 	if opts.format == inspectFormatJSON {

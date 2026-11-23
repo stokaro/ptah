@@ -315,8 +315,9 @@ ptah migrations up \
 Leaving the setting out keeps `ptah_migrate`, so a pipeline that sets nothing
 keeps serializing on that name. A name is an explicit request for the lock. An empty or
 whitespace-only value is refused before the run connects, and the message names
-the spelling that carried it. An empty `PTAH_MIGRATION_LOCK_NAME` is the one
-exception: as for most string variables, it reads as unset. A name given on a
+the spelling that carried it, `PTAH_MIGRATION_LOCK_NAME` included: read as
+unset, an empty variable would take `ptah_migrate`, which a runner holding the
+named lock does not hold. A name given on a
 dialect that has no session advisory lock is refused as a lock timeout is, with
 the same message and the same dialects.
 

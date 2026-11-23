@@ -208,6 +208,9 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
+	if err := RefuseEmptyProjectEnv(cmd.Flags(), config); err != nil {
+		return projectconfig.Config{}, err
+	}
 	if err := ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), config); err != nil {
 		return projectconfig.Config{}, err
 	}
@@ -233,6 +236,11 @@ func LoadProjectConfigs(cmd *cobra.Command, ptahConfigPath string) ([]projectcon
 	}
 	configs, err := projectconfig.LoadCollection(opts)
 	if err != nil {
+		return nil, err
+	}
+	// Every instance carries the envs the files declare, so the first one
+	// answers for the run.
+	if err := RefuseEmptyProjectEnv(cmd.Flags(), configs[0]); err != nil {
 		return nil, err
 	}
 	// Every instance carries the file's ignored names, so one report covers

@@ -43,7 +43,8 @@ func TestAtlasMigrateSetMigrationsEngine_FailurePath(t *testing.T) {
 func TestAtlasMigrateSetMigrationsEngine_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dir, url := setEngineFixture(c)
-	t.Setenv("PTAH_MIGRATIONS_ENGINE", "")
+	t.Setenv("PTAH_MIGRATIONS_ENGINE", "MergeTree")
+	c.Assert(os.Unsetenv("PTAH_MIGRATIONS_ENGINE"), qt.IsNil)
 
 	_, stderr, code := runCompat(c, "migrate", "set", "1", "--url", url, "--dir", dir)
 

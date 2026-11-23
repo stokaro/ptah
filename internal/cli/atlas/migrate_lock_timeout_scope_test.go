@@ -106,8 +106,9 @@ func TestNativeMigrateDownRefusesMigrationLockTimeoutOnUnlockedDialect(t *testin
 // command through the adapter, and Atlas registers no lock-name flag on that
 // verb, so the forwarded run keeps the default name `migrate apply` takes. A
 // PTAH_MIGRATION_LOCK_NAME exported for native commands must not move it onto
-// another lock than the apply it has to serialize with, and must not make it
-// refuse on a dialect that cannot lock.
+// another lock than the apply it has to serialize with, must not make it
+// refuse on a dialect that cannot lock, and must not be refused when it is
+// empty, as the native commands refuse it.
 
 func TestCompatMigrateDownIgnoresMigrationLockNameSetting(t *testing.T) {
 	tests := []struct {
@@ -116,6 +117,7 @@ func TestCompatMigrateDownIgnoresMigrationLockNameSetting(t *testing.T) {
 	}{
 		{name: "a name on a dialect that cannot lock", value: "svc_a"},
 		{name: "a whitespace-only value", value: "   "},
+		{name: "an empty value", value: ""},
 	}
 
 	for _, test := range tests {

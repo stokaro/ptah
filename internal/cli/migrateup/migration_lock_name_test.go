@@ -16,13 +16,14 @@ import (
 // refused before the target is opened, in whichever spelling carried them.
 
 // lockNameCase is one run of `migrations up` against a SQLite file that a
-// refusal must leave uncreated. Every row sets the same three inputs, so a row
-// that leaves one blank asks nothing through it: an empty PTAH_* variable is
-// unset, and a config file without the key carries none.
+// refusal must leave uncreated. A row that leaves an input out asks nothing
+// through it: with no env value PTAH_MIGRATION_LOCK_NAME is unset, and a config
+// file without the key carries none.
 type lockNameCase struct {
-	name   string
-	flag   []string
-	env    string
+	name string
+	flag []string
+	// env holds the value PTAH_MIGRATION_LOCK_NAME is set to, when it is set.
+	env    []string
 	config string
 }
 
@@ -40,7 +41,11 @@ func (l lockNameCase) run(t *testing.T) lockNameRun {
 	dbPath := filepath.Join(work, "target.db")
 	configPath := filepath.Join(work, "ptah.yaml")
 	c.Assert(os.WriteFile(configPath, []byte("migration:\n"+l.config), 0o600), qt.IsNil)
-	t.Setenv("PTAH_MIGRATION_LOCK_NAME", l.env)
+	t.Setenv("PTAH_MIGRATION_LOCK_NAME", "unset")
+	c.Assert(os.Unsetenv("PTAH_MIGRATION_LOCK_NAME"), qt.IsNil)
+	for _, value := range l.env {
+		t.Setenv("PTAH_MIGRATION_LOCK_NAME", value)
+	}
 	t.Setenv("PTAH_MIGRATION_LOCK_TIMEOUT", "")
 
 	args := append([]string{
@@ -66,8 +71,12 @@ func TestMigrateUpRefusesBlankMigrationLockName_FailurePath(t *testing.T) {
 			wantErr:      `--migration-lock-name must name the migration lock: .*`,
 		},
 		{
-			lockNameCase: lockNameCase{name: "environment whitespace", env: "  "},
-			wantErr:      `PTAH_MIGRATION_LOCK_NAME must name the migration lock: .*`,
+			lockNameCase: lockNameCase{name: "environment empty", env: []string{""}},
+			wantErr:      `PTAH_MIGRATION_LOCK_NAME is set but empty: give it a value, or unset it and leave --migration-lock-name out to .*`,
+		},
+		{
+			lockNameCase: lockNameCase{name: "environment whitespace", env: []string{"  "}},
+			wantErr:      `PTAH_MIGRATION_LOCK_NAME is set to "  ", which names nothing: give it a value, or unset it .*`,
 		},
 		{
 			lockNameCase: lockNameCase{name: "config empty", config: "  migration_lock_name: \"\"\n"},
@@ -102,7 +111,7 @@ func TestMigrateUpRefusesMigrationLockNameOnUnlockedDialect_FailurePath(t *testi
 			wantSpelling: "--migration-lock-name",
 		},
 		{
-			lockNameCase: lockNameCase{name: "environment", env: "svc_a"},
+			lockNameCase: lockNameCase{name: "environment", env: []string{"svc_a"}},
 			wantSpelling: "PTAH_MIGRATION_LOCK_NAME",
 		},
 		{
@@ -125,8 +134,7 @@ func TestMigrateUpRefusesMigrationLockNameOnUnlockedDialect_FailurePath(t *testi
 }
 
 // TestMigrateUpWithoutMigrationLockNameStillApplies is the control: a dialect
-// that cannot lock keeps applying when nobody chose a name, and an empty
-// PTAH_MIGRATION_LOCK_NAME is no choice.
+// that cannot lock keeps applying when nobody chose a name.
 func TestMigrateUpWithoutMigrationLockNameStillApplies_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
