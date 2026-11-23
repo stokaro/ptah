@@ -117,14 +117,13 @@ func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, s
 //
 // Each privilege it names leaves every earlier grant of it to the same grantee
 // on the same object and joins the revoked set. REVOKE GRANT OPTION FOR keeps
-// the privilege and takes only the right to pass it on, which the model can say
-// only about a grant this file made: it has no spelling for "held, but without
-// the option" on its own, so that form is refused when no earlier GRANT here
-// carries the privilege. On a server with no statement for it, such as Oracle,
-// the form is refused wherever it stands: the GRANT it follows would be kept
-// without the option, which is the declaration the message asks for, and the
-// option a grantee holds on the server would stay held while the plan reads
-// as synced.
+// the privilege and takes only the right to pass it on, which the model records
+// on the grant ([schemamodel.Grant.GrantOptionRevoked]). The record needs a
+// grant to sit on, so that form is refused when no earlier GRANT here carries
+// the privilege, and the refusal asks for that GRANT. On a server with no
+// statement for it, such as Oracle, the form is refused wherever it stands:
+// the GRANT it follows would be kept without the option, and the option a
+// grantee holds on the server would stay held while the plan reads as synced.
 //
 // A REVOKE ALL is kept as ALL, the absence of every privilege on the object,
 // on every kind of object and for every source platform. Spelled as a list,
@@ -305,7 +304,14 @@ func heldPrivileges(grants []schemamodel.Grant, role, target string) []string {
 }
 
 // revokeGrantOption clears WITH GRANT OPTION from privileges an earlier GRANT
-// in this file made, splitting a grant whose other privileges keep it.
+// in this file made, splitting a grant whose other privileges keep it, and
+// records that the schema takes the option
+// ([schemamodel.Grant.GrantOptionRevoked]). The record is what makes the
+// statement reach a role the schema does not manage: a grant without the
+// option alone leaves such a role's option held, and the next plan reads as
+// synced while the role can still grant the privilege onward. It is kept on a
+// grant made without the option too, since the statement asks the same of
+// the database whatever the file granted.
 func revokeGrantOption(database *schemamodel.Database, role, target string, privileges []string) error {
 	for _, privilege := range privileges {
 		privilege = strings.ToUpper(strings.TrimSpace(privilege))
@@ -315,16 +321,12 @@ func revokeGrantOption(database *schemamodel.Database, role, target string, priv
 		if index < 0 {
 			return fmt.Errorf(
 				"REVOKE GRANT OPTION FOR %s ON %s FROM %s names a grant this schema does not make: "+
-					"the schema can say a privilege is held or not held, not that it is held without the option; "+
-					"declare the GRANT without WITH GRANT OPTION instead", privilege, target, role)
+					"declare `GRANT %s ON %s TO %s;` before this REVOKE", privilege, target, role, privilege, target, role)
 		}
-		grant := database.Grants[index]
-		if !grant.WithOption {
-			continue
-		}
-		plain := grant
+		plain := database.Grants[index]
 		plain.Privileges = []string{privilege}
 		plain.WithOption = false
+		plain.GrantOptionRevoked = true
 		database.Grants = privilegefold.Without(database.Grants, role, target, privilege)
 		database.Grants = append(database.Grants, plain)
 	}

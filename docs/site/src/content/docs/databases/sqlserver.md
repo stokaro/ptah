@@ -653,6 +653,20 @@ to, for every permission held with the option, `CONTROL` and `ALTER` included.
 Column names compare under the database's
 [collation](#identifier-collation). Measured on SQL Server 2019, 2022 and 2025.
 
+So a plan refuses to revoke a grant option, or a grantable permission, where
+the grantee has granted the permission onward and the schema does not revoke
+that grant. The server keeps a row for each grantor, and the refusal names each
+principal holding a row the grantee granted:
+
+```text
+sqlserver: cannot revoke the grant option for SELECT on dbo.t1 from "r": SQL Server revokes it with CASCADE, which also takes the SELECT that "r" granted to "r_v", and the schema does not revoke those grants; revoke them first, or declare their REVOKE in the schema
+```
+
+This holds for a `REVOKE GRANT OPTION FOR` in a SQL schema file and for a role
+the schema creates that it declares without the option. A grant `r_v` holds
+from another grantor stays, and with no onward grant `CASCADE` takes nothing
+more. Measured on SQL Server 2025.
+
 ## Limitations
 
 - No PostgreSQL-style extensions and no materialized views.

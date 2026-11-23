@@ -176,6 +176,7 @@ func corpus() []Fixture {
 		{Name: "grant-database", Schema: grantDatabaseFixture()},
 		{Name: "grant-object", Schema: grantObjectFixture()},
 		{Name: "grant-table", Schema: grantTableFixture()},
+		{Name: "grant-option-revoked", Schema: grantOptionRevokedFixture()},
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
 		{Name: "grant-routine", Schema: grantRoutineFixture()},
@@ -1569,6 +1570,16 @@ func grantTableFixture() schemamodel.Database {
 		StructName: "G", Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "t",
 		WithOption: true, GrantedBy: "postgres", Comment: "read",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// grantOptionRevokedFixture declares a grant whose option the schema takes,
+// to a role it does not manage, which is the role the declaration reaches.
+func grantOptionRevokedFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Grants = []schemamodel.Grant{{
+		StructName: "G", Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "t", GrantOptionRevoked: true,
 	}}
 	return db
 }

@@ -45,6 +45,11 @@ import (
 // whatever it misses held. A later grant of one privilege leaves the revoked
 // ALL in place, so the two together say the grantee holds that privilege and
 // nothing else on the object.
+//
+// A grant WITH GRANT OPTION gives back the option an earlier REVOKE GRANT
+// OPTION FOR took ([schemamodel.Grant.GrantOptionRevoked]): the record leaves
+// the privileges it names. Kept beside the later grant, it would ask a
+// comparison to take an option the script ends up granting.
 func Merge(dst, src *schemamodel.Database) {
 	for _, declared := range src.RevokedGrants {
 		if len(declared.Privileges) == 0 {
@@ -89,7 +94,31 @@ func mergeGrant(dst *schemamodel.Database, grant schemamodel.Grant) {
 		return revoked.Role == grant.Role && sameTarget &&
 			(all || slices.Contains(grant.Privileges, revokedPrivilege(revoked)))
 	})
+	if grant.WithOption {
+		dst.Grants = withoutRevokedOptions(dst.Grants, grant)
+	}
 	dst.Grants = append(dst.Grants, grant)
+}
+
+// withoutRevokedOptions takes the privileges grant names, or every privilege
+// for ALL, out of each grant to the same grantee on the same object that
+// records a revoked option, dropping one left with no privilege.
+func withoutRevokedOptions(grants []schemamodel.Grant, grant schemamodel.Grant) []schemamodel.Grant {
+	target := grant.TargetKey()
+	all := slices.Contains(grant.Privileges, allPrivileges)
+	kept := make([]schemamodel.Grant, 0, len(grants))
+	for _, held := range grants {
+		if held.GrantOptionRevoked && held.Role == grant.Role && held.TargetKey() == target {
+			held.Privileges = slices.DeleteFunc(slices.Clone(held.Privileges), func(name string) bool {
+				return all || slices.Contains(grant.Privileges, name)
+			})
+			if len(held.Privileges) == 0 {
+				continue
+			}
+		}
+		kept = append(kept, held)
+	}
+	return kept
 }
 
 // tableWide reports whether a grant is about a whole table rather than some

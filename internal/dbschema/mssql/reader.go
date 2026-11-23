@@ -1059,10 +1059,17 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // permission on the whole object, a declaration of the whole object would
 // compare equal while a member cannot read c, and `ptah db read` would print
 // a grant that gives c back on replay.
+//
+// Each row names its grantor, and the server keeps a row per grantor: measured
+// on SQL Server 2025, a user granted SELECT by dbo and again by q2, who holds
+// it WITH GRANT OPTION, has two rows, and `REVOKE GRANT OPTION FOR SELECT ...
+// FROM q2 CASCADE` takes the second. The grantor is what lets a plan see which
+// grants such a revoke takes with it.
 func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	query := `
 		WITH permission AS (
-			SELECT pe.grantee_principal_id, pe.class, pe.class_desc, pe.major_id, pe.minor_id, pe.permission_name, pe.state_desc,
+			SELECT pe.grantee_principal_id, pe.grantor_principal_id, pe.class, pe.class_desc, pe.major_id, pe.minor_id,
+				   pe.permission_name, pe.state_desc,
 				   CASE WHEN pe.class = 1 AND pe.minor_id = 0 AND pe.state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND EXISTS (
 					   SELECT 1 FROM sys.database_permissions AS col
 					   WHERE col.class = 1 AND col.major_id = pe.major_id AND col.minor_id <> 0
@@ -1070,11 +1077,12 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 				   ) THEN 1 ELSE 0 END AS per_column
 			FROM sys.database_permissions AS pe
 		), effective AS (
-			SELECT grantee_principal_id, class, class_desc, major_id, minor_id, permission_name, state_desc
+			SELECT grantee_principal_id, grantor_principal_id, class, class_desc, major_id, minor_id, permission_name, state_desc
 			FROM permission
 			WHERE per_column = 0
 			UNION ALL
-			SELECT p.grantee_principal_id, p.class, p.class_desc, p.major_id, c.column_id, p.permission_name, p.state_desc
+			SELECT p.grantee_principal_id, p.grantor_principal_id, p.class, p.class_desc, p.major_id, c.column_id,
+				   p.permission_name, p.state_desc
 			FROM permission AS p
 			JOIN sys.columns AS c ON c.object_id = p.major_id
 			WHERE p.per_column = 1 AND NOT EXISTS (
@@ -1085,9 +1093,11 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		)
 		SELECT grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
 			   COALESCE(s.name, ''), COALESCE(OBJECT_NAME(pe.major_id), SCHEMA_NAME(pe.major_id), ''),
-			   CASE WHEN pe.class = 1 AND pe.minor_id <> 0 THEN COALESCE(COL_NAME(pe.major_id, pe.minor_id), '') ELSE '' END
+			   CASE WHEN pe.class = 1 AND pe.minor_id <> 0 THEN COALESCE(COL_NAME(pe.major_id, pe.minor_id), '') ELSE '' END,
+			   COALESCE(grantor.name, '')
 		FROM effective AS pe
 		JOIN sys.database_principals AS grantee ON grantee.principal_id = pe.grantee_principal_id
+		LEFT JOIN sys.database_principals AS grantor ON grantor.principal_id = pe.grantor_principal_id
 		LEFT JOIN sys.objects AS o ON o.object_id = pe.major_id AND pe.class = 1
 		LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 		WHERE grantee.is_fixed_role = 0 AND (
@@ -1095,7 +1105,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 			OR (pe.class = 1 AND o.is_ms_shipped = 0)
 			OR pe.class = 3
 		)
-		ORDER BY grantee.name, pe.permission_name, pe.class, pe.major_id, pe.minor_id`
+		ORDER BY grantee.name, pe.permission_name, pe.class, pe.major_id, pe.minor_id, grantor.name`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -1107,7 +1117,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		var grant catalog.Grant
 		var state, class string
 		if err := rows.Scan(&grant.Role, &grant.Privilege, &state, &class,
-			&grant.Schema, &grant.ObjectName, &grant.Column); err != nil {
+			&grant.Schema, &grant.ObjectName, &grant.Column, &grant.GrantedBy); err != nil {
 			return nil, err
 		}
 		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))

@@ -92,8 +92,12 @@ const (
 		"only once a server has normalized them"
 	exemptOracleDomainSpelling = "Oracle stores its own spelling of a domain's CHECK and DEFAULT and no probe asks the " +
 		"server how it spells a declaration's, so a comparison leaves both create-only"
-	exemptIfNotExists = "IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it"
-	exemptCustomSQL   = "statements the author appends verbatim; no catalog describes them, so a comparison has " +
+	exemptIfNotExists        = "IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it"
+	exemptGrantOptionRevoked = "a declared REVOKE GRANT OPTION FOR says the schema takes an option, and no catalog " +
+		"records who took one: a privilege held without the option converts the same with the flag and without it, " +
+		"so the comparison it changes is with a database that holds the option, which " +
+		"compare.TestGrants_TakesAGrantOptionTheSchemaRevokes measures"
+	exemptCustomSQL = "statements the author appends verbatim; no catalog describes them, so a comparison has " +
 		"nothing to hold them against"
 	exemptRoleSelection = "removing the selection either changes nothing, on a target the role is selected for, or puts " +
 		"on the converted side a role the declaration does not name, and the comparison never removes such a role " +
@@ -414,6 +418,7 @@ var roundTripGaps = []Unreached{
 func RoundTripExemptions() []Unreached { return slices.Clone(roundTripExemptions) }
 
 var roundTripExemptions = []Unreached{
+	{Field: "schemamodel.Grant.GrantOptionRevoked", Reason: exemptGrantOptionRevoked},
 	{Field: "pgtable.PartitionMember.Bound", Dialects: []string{"postgres", "yugabytedb"}, Reason: "a changed bound is compared once a connected server normalizes it; without one the owner leaves the change undecided"},
 	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"clickhouse", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
 	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},

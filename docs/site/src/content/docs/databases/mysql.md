@@ -1471,6 +1471,17 @@ that a revoke on its table already takes, since the server refuses a revoke of
 a privilege nothing holds, and takes away the grant option a revoked privilege
 leaves behind where the role keeps no privilege with it.
 
+A `REVOKE GRANT OPTION FOR SELECT ON t1` in a SQL schema file takes the option
+from a role the schema does not create too, and on these servers that is the
+option of every privilege the role holds on `t1`. Where the role holds another
+privilege on `t1` with the option, or a privilege on one of its columns, and
+the schema takes the option for that one as well, the plan takes it in one
+`REVOKE GRANT OPTION ON t1`. Where the schema keeps it grantable, the plan is
+refused and names it, as in ``cannot revoke the grant option for SELECT on
+app.t1 from "r": the server keeps the grant option at the whole object, not at
+one privilege, so the revoke also takes it from INSERT, which the schema keeps
+grantable``. Measured on MySQL 8.4.13 and MariaDB 11.8.
+
 The server keeps a table or column privilege after `DROP TABLE` and `DROP
 COLUMN`, and the privilege applies again to a table or column created under
 the same name. So a plan runs every revoke first, before it creates a table or

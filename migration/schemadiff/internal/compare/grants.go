@@ -198,6 +198,7 @@ func GrantsWithOptions(
 	// (Name) too: a member of the role reads the column spelled `Name` while
 	// the privilege stands.
 	revokedGrants := revokedGrantIdentities(desired, sequences, target)
+	revokedOptions := revokedGrantOptionIdentities(desired, sequences, semantics)
 
 	managedRoles := make(map[string]bool)
 	for _, role := range desired.Roles {
@@ -219,7 +220,8 @@ func GrantsWithOptions(
 	}
 	databaseGrantMapForAdditions, databaseGrantMapForRemovals := read.maps()
 
-	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, revokedGrants, lists, diff)
+	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles,
+		takenOptions{revoked: revokedGrants, options: revokedOptions}, lists, diff)
 	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
 	if options.DesiredRead == nil {
 		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, lists, sequences, semantics)
@@ -473,7 +475,7 @@ func declaresGrantObject(desired *schemamodel.Database, ref difftypes.GrantRef, 
 func planGrantAdditions(
 	declared, database map[grantIdentity]difftypes.GrantRef,
 	managedRoles map[string]bool,
-	revoked revokedIdentities,
+	taken takenOptions,
 	lists allPrivilegeLists,
 	diff *difftypes.SchemaDiff,
 ) {
@@ -487,15 +489,40 @@ func planGrantAdditions(
 		if ref.WithOption && slices.ContainsFunc(held, func(held difftypes.GrantRef) bool { return !held.WithOption }) {
 			diff.GrantOptionsAdded = append(diff.GrantOptionsAdded, ref)
 		}
-		if ref.WithOption || (!managedRoles[key.role] && !revoked.covers(key)) {
+		if ref.WithOption || (!managedRoles[key.role] && !taken.covers(key)) {
 			continue
 		}
-		for _, databaseRef := range held {
+		for _, databaseRef := range lists.optionRows(key, held, database) {
 			if databaseRef.WithOption {
 				diff.GrantOptionsRevoked = append(diff.GrantOptionsRevoked, databaseRef)
 			}
 		}
 	}
+}
+
+// optionRows is the rows whose grant option a declaration of key without the
+// option takes: held, and for ALL also the row of each privilege ALL grants on
+// the newest release that [allPrivilegeLists.held] does not require. ALL held
+// without the option means every privilege it grants is held so, and the
+// privileges held does not require are still granted by it where the server
+// has them: on PostgreSQL 17, MAINTAIN. Without them a REVOKE GRANT OPTION FOR
+// ALL leaves MAINTAIN grantable, and the next plan reads as synced.
+func (al allPrivilegeLists) optionRows(
+	key grantIdentity,
+	held []difftypes.GrantRef,
+	database map[grantIdentity]difftypes.GrantRef,
+) []difftypes.GrantRef {
+	if key.privilege != allPrivilege {
+		return held
+	}
+	rows := slices.Clone(held)
+	for _, privilege := range al.all(al.kind(key)) {
+		ref, exists := database[key.withPrivilege(privilege)]
+		if exists && !slices.ContainsFunc(rows, func(row difftypes.GrantRef) bool { return row.Privilege == privilege }) {
+			rows = append(rows, ref)
+		}
+	}
+	return rows
 }
 
 // allPrivilege is the keyword that names every privilege of an object kind.
@@ -661,6 +688,42 @@ type revokedIdentities map[grantIdentity]bool
 func (r revokedIdentities) covers(key grantIdentity) bool {
 	table := key.onWholeObject()
 	return r[key] || r[table] || r[key.withPrivilege(allPrivilege)] || r[table.withPrivilege(allPrivilege)]
+}
+
+// takenOptions says where the desired schema takes a grant option the
+// database holds from a role it does not manage: where it revokes the
+// privilege, and where it revokes the option alone
+// ([schemamodel.Grant.GrantOptionRevoked]). For a managed role every option the
+// schema does not declare is taken anyway.
+type takenOptions struct {
+	revoked revokedIdentities
+	options map[grantIdentity]bool
+}
+
+// covers reports whether the desired schema takes the option on the privilege
+// key names.
+func (t takenOptions) covers(key grantIdentity) bool {
+	return t.revoked.covers(key) || t.options[key]
+}
+
+// revokedGrantOptionIdentities keys every privilege whose grant option the
+// desired schema revokes alone, keyed as the declared grant is, so the key
+// reads back what that grant is compared with.
+func revokedGrantOptionIdentities(
+	desired *schemamodel.Database,
+	sequences columnSequences,
+	semantics identifier.Semantics,
+) map[grantIdentity]bool {
+	revoked := make(map[grantIdentity]bool)
+	for _, grant := range desired.Grants {
+		if !grant.GrantOptionRevoked {
+			continue
+		}
+		for _, ref := range grantRefsFromGenerated(grant) {
+			revoked[sequences.desiredKey(newGrantIdentity(ref, semantics))] = true
+		}
+	}
+	return revoked
 }
 
 // revokedGrantIdentities keys every privilege the desired schema revokes.

@@ -15,10 +15,11 @@ import (
 // and on which object, with the target spelled by [schemamodel.Grant.TargetKey]
 // so a routine's argument types are part of it.
 type privilege struct {
-	Role       string
-	Target     string
-	Privileges []string
-	WithOption bool
+	Role          string
+	Target        string
+	Privileges    []string
+	WithOption    bool
+	OptionRevoked bool
 }
 
 func privileges(grants []schemamodel.Grant) []privilege {
@@ -29,6 +30,7 @@ func privileges(grants []schemamodel.Grant) []privilege {
 	for _, grant := range grants {
 		out = append(out, privilege{
 			Role: grant.Role, Target: grant.TargetKey(), Privileges: grant.Privileges, WithOption: grant.WithOption,
+			OptionRevoked: grant.GrantOptionRevoked,
 		})
 	}
 	return out
@@ -100,21 +102,41 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 			name: "GRANT OPTION FOR ALL clears the option on what the file granted",
 			sql:  "GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
 			wantGrants: []privilege{
-				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"INSERT"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"INSERT"}, OptionRevoked: true},
 			},
 		},
 		{
 			name:       "GRANT OPTION FOR clears the option and keeps the privilege",
 			sql:        "GRANT SELECT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR SELECT ON t FROM r;",
-			wantGrants: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}}},
+			wantGrants: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true}},
+		},
+		{
+			name:       "GRANT OPTION FOR a privilege granted without it",
+			sql:        "GRANT SELECT ON t TO r;\nREVOKE GRANT OPTION FOR SELECT ON t FROM r;",
+			wantGrants: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true}},
+		},
+		{
+			name: "a GRANT WITH GRANT OPTION after GRANT OPTION FOR",
+			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR SELECT ON t FROM r;\n" +
+				"GRANT SELECT ON t TO r WITH GRANT OPTION;",
+			wantGrants: []privilege{{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, WithOption: true}},
+		},
+		{
+			name: "a GRANT WITH GRANT OPTION after GRANT OPTION FOR of two privileges",
+			sql: "GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR SELECT, INSERT ON t FROM r;\n" +
+				"GRANT SELECT ON t TO r WITH GRANT OPTION;",
+			wantGrants: []privilege{
+				{Role: "r", Target: "TABLE t", Privileges: []string{"INSERT"}, OptionRevoked: true},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, WithOption: true},
+			},
 		},
 		{
 			name: "GRANT OPTION FOR ALL beside a column grant without the option",
 			sql:  "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
 			wantGrants: []privilege{
 				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true},
 			},
 		},
 		{
@@ -123,21 +145,21 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 				"REVOKE GRANT OPTION FOR SELECT ON t FROM r;",
 			wantGrants: []privilege{
 				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}, WithOption: true},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true},
 			},
 		},
 		{
 			name:       "GRANT OPTION FOR on the columns that carry it",
 			sql:        "GRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR UPDATE (name) ON t FROM r;",
-			wantGrants: []privilege{{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}}},
+			wantGrants: []privilege{{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}, OptionRevoked: true}},
 		},
 		{
 			name: "GRANT OPTION FOR ALL after the option is revoked on the columns",
 			sql: "GRANT SELECT ON t TO r WITH GRANT OPTION;\nGRANT UPDATE (name) ON t TO r WITH GRANT OPTION;\n" +
 				"REVOKE GRANT OPTION FOR UPDATE (name) ON t FROM r;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
 			wantGrants: []privilege{
-				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+				{Role: "r", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}, OptionRevoked: true},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true},
 			},
 		},
 		{
@@ -146,7 +168,7 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 				"REVOKE GRANT OPTION FOR ALL ON a.t FROM r;",
 			wantGrants: []privilege{
 				{Role: "r", Target: "TABLE b.t (name)", Privileges: []string{"UPDATE"}, WithOption: true},
-				{Role: "r", Target: "TABLE a.t", Privileges: []string{"SELECT"}},
+				{Role: "r", Target: "TABLE a.t", Privileges: []string{"SELECT"}, OptionRevoked: true},
 			},
 		},
 		{
@@ -155,7 +177,7 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
 			wantGrants: []privilege{
 				{Role: "r", Target: "TABLE T (name)", Privileges: []string{"UPDATE"}, WithOption: true},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true},
 			},
 		},
 		{
@@ -164,7 +186,7 @@ func TestRead_GrantAndRevoke_HappyPath(t *testing.T) {
 				"REVOKE GRANT OPTION FOR ALL ON t FROM r;",
 			wantGrants: []privilege{
 				{Role: "other", Target: "TABLE t (name)", Privileges: []string{"UPDATE"}, WithOption: true},
-				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}},
+				{Role: "r", Target: "TABLE t", Privileges: []string{"SELECT"}, OptionRevoked: true},
 			},
 		},
 		{
@@ -209,14 +231,16 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "GRANT OPTION FOR with no grant in the file",
-			sql:     "REVOKE GRANT OPTION FOR SELECT ON t FROM r;",
-			wantErr: `REVOKE GRANT OPTION FOR SELECT ON TABLE t FROM r names a grant this schema does not make: .*`,
+			name: "GRANT OPTION FOR with no grant in the file",
+			sql:  "REVOKE GRANT OPTION FOR SELECT ON t FROM r;",
+			wantErr: "REVOKE GRANT OPTION FOR SELECT ON TABLE t FROM r names a grant this schema does not make: " +
+				"declare `GRANT SELECT ON TABLE t TO r;` before this REVOKE",
 		},
 		{
-			name:    "GRANT OPTION FOR ALL with no grant in the file",
-			sql:     "REVOKE GRANT OPTION FOR ALL ON t FROM r;",
-			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t FROM r names a grant this schema does not make: .*`,
+			name: "GRANT OPTION FOR ALL with no grant in the file",
+			sql:  "REVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantErr: "REVOKE GRANT OPTION FOR ALL ON TABLE t FROM r names a grant this schema does not make: " +
+				"declare `GRANT ALL ON TABLE t TO r;` before this REVOKE",
 		},
 		{
 			name:    "REVOKE ALL on a column after a grant on the whole table",

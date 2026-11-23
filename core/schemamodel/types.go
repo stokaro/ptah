@@ -1682,6 +1682,14 @@ type Grant struct {
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
+
+	// GrantOptionRevoked reports that the schema takes the grant option on
+	// these privileges, as a REVOKE GRANT OPTION FOR after the GRANT declares
+	// it: the role holds the privileges without the option. A comparison takes
+	// an option the database holds even from a role the schema does not
+	// manage, which a GRANT without WITH GRANT OPTION alone does not ask for.
+	// WithOption is false where it is set.
+	GrantOptionRevoked bool `json:",omitempty"`
 }
 
 // Canonicalize fills in normalized privilege and object names used by renderers
