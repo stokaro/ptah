@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // Set is the protected entries a caller declared, ready to be asked about a
@@ -26,8 +27,10 @@ import (
 // The zero value is a set that protects nothing, so a caller that declared no
 // entries needs no branch of its own.
 type Set struct {
-	// entries maps the lower-cased entry to the spelling the caller wrote,
-	// because a refusal reads better in the words the author used.
+	// entries maps each key of an entry to the spelling the caller wrote,
+	// because a refusal reads better in the words the author used. The keys
+	// are lower-cased: the entry as written, and the entry read as a table
+	// reference and written back in [tableref.Canonical] form.
 	entries map[string]string
 }
 
@@ -37,14 +40,23 @@ type Set struct {
 // and a list read out of a file both produce them, and an entry of "" would
 // otherwise fence the table whose name is empty, which is every table with no
 // schema.
+//
+// An entry is read as a table reference too, as [tableref.Parse] reads one, so
+// a quoted or bracketed part names what the bare part does: `public."extra"`,
+// `"public".extra` and `public.extra` fence the same table, and
+// `"tenant.one".extra` fences extra in the schema tenant.one. The entry as
+// written is kept beside it, so `a.b` fences a table named a.b as well.
 func New(entries []string) Set {
 	if len(entries) == 0 {
 		return Set{}
 	}
-	set := Set{entries: make(map[string]string, len(entries))}
+	set := Set{entries: make(map[string]string, 2*len(entries))}
 	for _, entry := range entries {
 		if entry = strings.TrimSpace(entry); entry != "" {
 			set.entries[strings.ToLower(entry)] = entry
+			if ref, ok := tableref.Parse(entry); ok {
+				set.entries[strings.ToLower(tableref.Canonical(ref.Schema, ref.Name))] = entry
+			}
 		}
 	}
 	if len(set.entries) == 0 {
@@ -70,9 +82,10 @@ func (s Set) Entry(schema, table string) (string, bool) {
 	if s.Empty() {
 		return "", false
 	}
-	if entry, ok := s.entries[strings.ToLower(table)]; ok {
-		return entry, true
+	for _, key := range []string{table, tableref.Canonical("", table), schemamodel.QualifyTableName(schema, table)} {
+		if entry, ok := s.entries[strings.ToLower(key)]; ok {
+			return entry, true
+		}
 	}
-	entry, ok := s.entries[strings.ToLower(schemamodel.QualifyTableName(schema, table))]
-	return entry, ok
+	return "", false
 }

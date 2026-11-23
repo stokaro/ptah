@@ -19,6 +19,9 @@ func TestApplyProtectedTables_HappyPath(t *testing.T) {
 		{name: "a table the target does not hold", entries: []string{"audit"}},
 		{name: "the same table by the connection's schema", entries: []string{"main.audit"}},
 		{name: "the connection's schema in another case", entries: []string{" Main.audit "}},
+		{name: "the connection's schema, quoted", entries: []string{`"main".audit`}},
+		{name: "the connection's schema, in backticks", entries: []string{"`main`.audit"}},
+		{name: "the connection's schema, in brackets", entries: []string{"[main].audit"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -50,6 +53,21 @@ func TestApplyProtectedTables_FailurePath(t *testing.T) {
 			wantErr: `refusing to seed target database because protected tables exist: countries; pass --allow-prod to override`,
 		},
 		{
+			name:    "a table the target holds, quoted",
+			entries: []string{`main."countries"`},
+			wantErr: `refusing to seed target database because protected tables exist: main."countries"; pass --allow-prod to override`,
+		},
+		{
+			name:    "a table the target holds, quoted throughout",
+			entries: []string{`"main"."countries"`},
+			wantErr: `refusing to seed target database because protected tables exist: "main"."countries"; pass --allow-prod to override`,
+		},
+		{
+			name:    "a table the target holds, in backticks",
+			entries: []string{"`countries`"},
+			wantErr: "refusing to seed target database because protected tables exist: `countries`; pass --allow-prod to override",
+		},
+		{
 			name:    "a table of another schema",
 			entries: []string{"other.countries"},
 			wantErr: `refusing to seed target database: the protected table entry "other.countries" names a schema ` +
@@ -62,6 +80,26 @@ func TestApplyProtectedTables_FailurePath(t *testing.T) {
 			wantErr: `refusing to seed target database: the protected table entries "other.countries", "app2.extra" name ` +
 				`a schema other than "main", and the fence checks the tables of "main" alone; name the table without ` +
 				`a schema, or qualified by "main"`,
+		},
+		{
+			// Quoted, the schema is main.x, which is not the connection's.
+			name:    "a quoted schema whose name begins with the connection's",
+			entries: []string{`"main.x".countries`},
+			wantErr: `refusing to seed target database: the protected table entry "\\"main.x\\".countries" names a schema ` +
+				`other than "main", and the fence checks the tables of "main" alone; name the table without a schema, ` +
+				`or qualified by "main"`,
+		},
+		{
+			name:    "a name of three parts",
+			entries: []string{"db.main.countries"},
+			wantErr: `refusing to seed target database: the protected table entry "db.main.countries" is not a table ` +
+				`name, bare or qualified by one schema; quote a name that holds a dot`,
+		},
+		{
+			name:    "an unclosed quote",
+			entries: []string{`"main.countries`},
+			wantErr: `refusing to seed target database: the protected table entry "\\"main.countries" is not a table ` +
+				`name, bare or qualified by one schema; quote a name that holds a dot`,
 		},
 	}
 	for _, test := range tests {

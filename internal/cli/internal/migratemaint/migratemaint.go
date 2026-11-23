@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"slices"
 	"strconv"
@@ -113,6 +114,14 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
+	// The guard reads the applied history and writes nothing. With the writer
+	// in dry-run mode the migrator inspects the revision table instead of
+	// creating it, and an absent table reads as nothing applied. Without it, a
+	// guard over a database with no history leaves an empty revision table
+	// behind, and a SELECT-only account is refused with the server's CREATE
+	// denial.
+	restore := dbcli.SuppressSchemaWrites(conn)
+	defer restore()
 
 	mig, err := migrator.NewFSMigrator(
 		conn,
@@ -125,7 +134,8 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 	}
 	mig = mig.WithMigrationsTable(o.MigrationsSchema, o.MigrationsTable).
 		WithMigrationsEngine(o.MigrationsEngine).
-		WithRevisionTableFormat(revisionFormat)
+		WithRevisionTableFormat(revisionFormat).
+		WithLogger(slog.New(dbcli.WarnFloor(slog.Default().Handler())))
 
 	applied, err := mig.GetAppliedMigrations(ctx)
 	if err != nil {

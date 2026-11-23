@@ -137,7 +137,8 @@ generates them:
   update, or delete — unless `--allow-prod` is also set, mirroring the
   protected-target posture of `ptah seed`. An entry matches a managed table by
   its bare name (`regions`) or its schema-qualified name (`reference.regions`),
-  so either spelling protects a table declared with `schema="..."`.
+  so either spelling protects a table declared with `schema="..."`. A part may
+  be quoted as SQL quotes it: `"reference".regions` is the same entry.
 
 Both gates run before any SQL is emitted, so they apply to `--dry-run` too:
 combine `--allow-destructive --dry-run` to preview a destructive change without

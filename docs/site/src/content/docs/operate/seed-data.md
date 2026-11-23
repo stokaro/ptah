@@ -160,7 +160,9 @@ Adjust the protected set with repeatable `--protected-env` flags, and add
 repeatable `--protected-table` flags to require `--allow-prod` whenever a named
 table exists in the target, whatever the seed files write. An entry names the
 table alone or qualified by the connection's schema, such as `public.accounts`,
-and matches either spelling case-insensitively:
+and matches either spelling case-insensitively. A part may be quoted as SQL
+quotes it, so `"public".accounts` and `public."accounts"` name the same table,
+and a part whose name holds a dot is quoted: `"tenant.one".accounts`:
 
 ```text
 error: error applying seeds: refusing to seed target database because protected tables exist: public.accounts; pass --allow-prod to override
@@ -168,8 +170,8 @@ error: error applying seeds: refusing to seed target database because protected 
 
 The fence checks the tables of the connection's schema only. An entry
 qualified by another schema could never match one, so it is refused before
-any seed runs. To fence a table of another schema, seed a connection to that
-schema:
+any seed runs, and so is an entry of three parts. To fence a table of another
+schema, seed a connection to that schema:
 
 ```text
 error: error applying seeds: refusing to seed target database: the protected table entry "app2.extra" names a schema other than "public", and the fence checks the tables of "public" alone; name the table without a schema, or qualified by "public"

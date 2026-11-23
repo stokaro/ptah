@@ -41,6 +41,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/tableref"
 )
 
 const (
@@ -570,19 +571,35 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 
 // refuseOtherSchemaEntries refuses a protected entry qualified by a schema
 // other than schema, the connection's, which is the one schema the fence lists
-// tables from. Such an entry can never fence a table, and accepting it would
-// seed a target that holds the table it names: `app2.extra` beside a
-// connection to public would seed although app2.extra exists. An entry that matched
-// a table by its bare name, such as a table named with a dot, has already
-// refused the run.
+// tables from, and an entry that names no table at all. Neither can ever fence
+// a table, and accepting one would seed a target that holds the table it
+// means: `app2.extra` beside a connection to public would seed although
+// app2.extra exists. An entry is read as [tableref.Parse] reads it, the way
+// [protectedtable.New] does, so `"public".extra` and `"tenant.one".extra`
+// name the schema inside their quotes. An entry that matched a table by its
+// bare name, such as a table named with a dot, has already refused the run.
 func refuseOtherSchemaEntries(entries []string, schema string) error {
-	var other []string
+	var other, unread []string
 	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
-		qualifier, _, qualified := strings.Cut(entry, ".")
-		if qualified && !strings.EqualFold(strings.TrimSpace(qualifier), schema) {
+		if entry == "" {
+			continue
+		}
+		ref, ok := tableref.Parse(entry)
+		switch {
+		case !ok:
+			unread = append(unread, strconv.Quote(entry))
+		case ref.Qualified && !strings.EqualFold(strings.TrimSpace(ref.Schema), schema):
 			other = append(other, strconv.Quote(entry))
 		}
+	}
+	if len(unread) > 0 {
+		subject := "the protected table entry " + unread[0] + " is"
+		if len(unread) > 1 {
+			subject = "the protected table entries " + strings.Join(unread, ", ") + " are"
+		}
+		return fmt.Errorf("refusing to seed target database: %s not a table name, bare or qualified by one schema; "+
+			"quote a name that holds a dot", subject)
 	}
 	if len(other) == 0 {
 		return nil

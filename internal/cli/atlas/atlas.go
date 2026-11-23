@@ -37,6 +37,7 @@ import (
 	"ptah.run/internal/cmdforward"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/rundiag"
+	"ptah.run/migration/migrator"
 )
 
 type atlasVerb struct {
@@ -983,6 +984,7 @@ func atlasMigrateEditVerb() atlasVerb {
 			nativeName: "version",
 			mapValue:   atlasMigrateVersionValue,
 		}},
+		prefixArgs:      atlasMigrateMaintPrefixArgs(),
 		nativeOnlyFlags: append(atlasMigrateMaintNativeOnlyFlags(), "down-file", "editor", "up-file"),
 		flags:           atlasMigrateMaintFlags(),
 	}
@@ -1006,6 +1008,7 @@ func atlasMigrateRebaseVerb() atlasVerb {
 			mapValue:   atlasMigrateVersionValue,
 			variadic:   true,
 		}},
+		prefixArgs:      atlasMigrateMaintPrefixArgs(),
 		nativeOnlyFlags: atlasMigrateMaintNativeOnlyFlags(),
 		flags:           atlasMigrateMaintFlags(),
 	}
@@ -1026,6 +1029,7 @@ func atlasMigrateRmVerb() atlasVerb {
 			nativeName: "version",
 			mapValue:   atlasMigrateVersionValue,
 		}},
+		prefixArgs:      atlasMigrateMaintPrefixArgs(),
 		nativeOnlyFlags: atlasMigrateMaintNativeOnlyFlags(),
 		flags:           atlasMigrateMaintFlags(),
 	}
@@ -1117,6 +1121,17 @@ func atlasMigrateMaintFlags() []atlasargs.Flag {
 	}
 }
 
+// atlasMigrateMaintPrefixArgs are the native flags every forwarded edit,
+// rebase and rm starts with. Their guard refuses a version the database has
+// applied, and it reads the applied history in the revision table `migrate
+// apply` writes: Atlas's atlas_schema_revisions, where Atlas keeps it. Left to
+// the native default, the guard reads Ptah's schema_migrations, which a
+// history applied through this surface never wrote, finds nothing applied and
+// removes, moves or rewrites the file of an applied migration.
+func atlasMigrateMaintPrefixArgs() []string {
+	return []string{"--" + dbcli.RevisionTableFormatFlagName, string(migrator.RevisionTableFormatAtlas)}
+}
+
 // atlasMigrateMaintNativeOnlyFlags lists the native maintenance flags the
 // Atlas-shaped edit/rebase/rm verbs do not accept; use the native
 // `ptah migrations edit|rebase|rm` commands for them.
@@ -1129,7 +1144,7 @@ func atlasMigrateMaintNativeOnlyFlags() []string {
 		"migrations-dir",
 		"migrations-schema",
 		"migrations-table",
-		"revision-table-format",
+		dbcli.RevisionTableFormatFlagName,
 		"version",
 	}
 }
@@ -1455,9 +1470,11 @@ var atlasNativeHistoryFlags = []string{
 
 // atlasNativeHistoryOffTarget returns factory with the environment binding
 // disabled on every flag of [atlasNativeHistoryFlags] the target has. A
-// forwarded verb reads Atlas's atlas_schema_revisions, which only this
-// surface's own flags place, through --revisions-schema and the layout the
-// adapter forwards. `migrate apply` and `migrate status` read no
+// forwarded verb that reads applied history reads Atlas's
+// atlas_schema_revisions: the adapter forwards the Atlas layout to `migrate
+// down`, `edit`, `rebase` and `rm`, and the table sits where only this
+// surface's own flags place it, through --revisions-schema where the verb
+// takes one. `migrate apply` and `migrate status` read no
 // PTAH_MIGRATIONS_SCHEMA, PTAH_MIGRATIONS_TABLE or PTAH_REVISION_FORMAT, so a
 // target left to read one would act on a history those verbs never see:
 // `migrate down` under PTAH_MIGRATIONS_SCHEMA=other reverts nothing and creates
