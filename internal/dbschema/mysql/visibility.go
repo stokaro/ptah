@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -43,7 +44,12 @@ var (
 type sessionAccount struct {
 	name    string
 	mariaDB bool
-	grants  mysqlgrants.Grants
+	// activeRole reports that the session runs with a role active on MySQL,
+	// where the CREATE after a DROP writes the account's own row on the
+	// routine back only without one ([sessionAccount.isCreator]). It is false
+	// on MariaDB, which writes the row back either way.
+	activeRole bool
+	grants     mysqlgrants.Grants
 }
 
 // readSessionAccount asks the server who the session is and what it holds.
@@ -57,6 +63,13 @@ func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error)
 		return sessionAccount{}, fmt.Errorf("failed to read the connecting account: %w", err)
 	}
 	account.mariaDB = capability.BannerPlatform(version) == platform.MariaDB
+	if !account.mariaDB && hasRoles(version) {
+		var current string
+		if err := r.db.QueryRowContext(ctx, "SELECT CURRENT_ROLE()").Scan(&current); err != nil {
+			return sessionAccount{}, fmt.Errorf("failed to read the session's active roles: %w", err)
+		}
+		account.activeRole = current != "NONE"
+	}
 
 	// MariaDB prints a role's rows under the role's name.
 	grants, err := mysqlgrants.Read(ctx, r.db, !account.mariaDB)
@@ -65,6 +78,14 @@ func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error)
 	}
 	account.grants = grants
 	return account, nil
+}
+
+// hasRoles reports whether a MySQL server of version has roles, and so
+// CURRENT_ROLE(): they arrived in 8.0. A version that does not parse is asked.
+func hasRoles(version string) bool {
+	major, _, _ := strings.Cut(version, ".")
+	number, err := strconv.Atoi(major)
+	return err != nil || number >= 8
 }
 
 // missingPrivilege is one line of a refusal: what the account cannot see, in the

@@ -359,6 +359,81 @@ func TestSchemaApplyMySQLFamilyLeavesTheRowTheCreateGrantsLiveE2E(t *testing.T) 
 	}
 }
 
+// createdByAnAccountWithARole is [createdByAnAccount] for an account holding
+// privileges on the database without the grant option, and extra, whose
+// default role holds EXECUTE on the database and is active in every session
+// the account opens. The role is dropped when the test ends.
+func createdByAnAccountWithARole(
+	c *qt.C, ctx context.Context, engine dbtarget.Engine, privileges string, extra ...string,
+) (url, schema string, db *sql.DB, account string) {
+	c.Helper()
+	admin, schema, db := languageDatabase(c, ctx, engine)
+	account = routineAccount(c, ctx, db, engine, schema, privileges, "", extra...)
+	role := fmt.Sprintf("rt_g_%d", time.Now().UnixNano()%1_000_000_000)
+	c.Cleanup(func() {
+		_, err := db.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(err, qt.IsNil)
+	})
+	defaultRole := map[dbtarget.Engine]string{
+		dbtarget.MySQLAdmin:   "SET DEFAULT ROLE " + role + " TO '" + account + "'@'%'",
+		dbtarget.MariaDBAdmin: "SET DEFAULT ROLE " + role + " FOR '" + account + "'@'%'",
+	}
+	for _, statement := range []string{
+		"CREATE ROLE " + role,
+		"GRANT EXECUTE ON `" + schema + "`.* TO " + role,
+		"GRANT " + role + " TO '" + account + "'@'%'",
+		defaultRole[engine],
+	} {
+		_, err := db.ExecContext(ctx, statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
+	url = replaceMySQLCredentials(c, admin, account, "Rt-pass-9")
+	created, err := runPtahNativeWithError("schema", "apply", "--db-url", url,
+		"--schema-file", routinePrivilegeDocument(c, schema, "SELECT 1"), "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", created))
+	return url, schema, db, account
+}
+
+// On MySQL the CREATE after a DROP writes no row back for the account from a
+// session with a role active, so an account without the grant option would
+// lose EXECUTE and ALTER ROUTINE on the routine it replaces, and the next body
+// change would fail at the DROP with ERROR 1370. The plan is refused instead:
+// the body and the account's row stay.
+func TestSchemaApplyMySQLRefusesToReplaceARoutineFromASessionWithARoleLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	url, schema, db, account := createdByAnAccountWithARole(c, ctx, dbtarget.MySQLAdmin, "SELECT, CREATE, CREATE ROUTINE",
+		"SELECT ON mysql.procs_priv")
+	c.Assert(routinePrivilegesOn(c, db, schema), qt.DeepEquals, []string{account + "@% PROCEDURE rt Execute,Alter Routine"})
+
+	refused, err := runPtahNativeWithError("schema", "apply", "--db-url", url,
+		"--schema-file", routinePrivilegeDocument(c, schema, "SELECT 2"), "--auto-approve")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(refused, qt.Contains, "cannot replace procedure "+schema+".rt: the DROP that replaces it takes EXECUTE, ALTER ROUTINE on it from `"+account+"`@`%`")
+	c.Assert(routineBody(c, db), qt.Equals, "SELECT 1")
+	c.Assert(routinePrivilegesOn(c, db, schema), qt.DeepEquals, []string{account + "@% PROCEDURE rt Execute,Alter Routine"})
+}
+
+// The control for a session with a role active: MariaDB writes the account's
+// row back with the CREATE after the DROP, so the plan leaves the row out and
+// replaces the routine, and the account holds the row after it.
+func TestSchemaApplyMariaDBLeavesTheRowTheCreateGrantsToASessionWithARoleLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	url, schema, db, account := createdByAnAccountWithARole(c, ctx, dbtarget.MariaDBAdmin, "SELECT, CREATE, CREATE ROUTINE",
+		"SELECT ON mysql.procs_priv")
+
+	replaced, err := runPtahNativeWithError("schema", "apply", "--db-url", url,
+		"--schema-file", routinePrivilegeDocument(c, schema, "SELECT 2"), "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", replaced))
+	c.Assert(routineBody(c, db), qt.Equals, "SELECT 2")
+	c.Assert(routinePrivilegesOn(c, db, schema), qt.DeepEquals, []string{account + "@% PROCEDURE rt Execute,Alter Routine"})
+}
+
 // The GRANTs that give the privileges back run as the applying account. One
 // without the grant option on the database cannot run them, and a server
 // answers ERROR 1370 after the DROP and the CREATE have run, so the plan is

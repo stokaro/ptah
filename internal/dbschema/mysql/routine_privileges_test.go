@@ -79,6 +79,55 @@ func TestReader_ReadsThePrivilegesOnRoutines_HappyPath(t *testing.T) {
 	}
 }
 
+// currentRole answers the reader's question about the session's active roles
+// with value, and hands every other question to next.
+func currentRole(value string, next dbtest.QueryHandler) dbtest.QueryHandler {
+	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		if strings.TrimSpace(query) != "SELECT CURRENT_ROLE()" {
+			return next(query, args)
+		}
+		return dbtest.QueryResult{Columns: []string{"CURRENT_ROLE()"}, Rows: [][]driver.Value{{value}}}, nil
+	}
+}
+
+// On MySQL the CREATE after a DROP writes the account's own row on the routine
+// back only from a session with no role active, so with a role active the read
+// keeps the row and records whether the account may grant it again. MariaDB
+// writes the row back with a role active, and the read leaves it out there.
+// The account holds SELECT, CREATE and CREATE ROUTINE on the database, which
+// carry no grant option.
+func TestReader_KeepsTheAccountsOwnRowOnRoutinesWithARoleActive(t *testing.T) {
+	rows := [][]driver.Value{{"app", "%", "p", "PROCEDURE", "Execute,Alter Routine"}}
+	grants := []string{"GRANT USAGE ON *.* TO `app`@`%`", "GRANT SELECT, CREATE, CREATE ROUTINE ON `shop`.* TO `app`@`%`"}
+	tests := []struct {
+		name    string
+		version string
+		role    string
+		want    []catalog.RoutineGrant
+	}{
+		{
+			name: "MySQL with a role active", version: dbtest.MySQLVersion, role: "`rg`@`%`",
+			want: []catalog.RoutineGrant{
+				{User: "app", Host: "%", Schema: "shop", Name: "p", Type: "PROCEDURE", Privileges: []string{"EXECUTE", "ALTER ROUTINE"}},
+			},
+		},
+		{name: "MySQL with no role active", version: dbtest.MySQLVersion, role: "NONE"},
+		{name: "MariaDB with a role active", version: dbtest.MariaDBVersion, role: "rg"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, currentRole(test.role, dbtest.MySQLSession(test.version, grants,
+				procsPriv(rows, nil, visibleCatalog{selected: "shop"}.answer))))
+
+			got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.RoutinePrivileges, qt.DeepEquals, catalog.RoutinePrivileges{Grants: test.want})
+		})
+	}
+}
+
 // An account without the grant option on the database may not grant a row
 // again: ALL PRIVILEGES on the database carries no grant option, and the grant
 // option on another database does not count.

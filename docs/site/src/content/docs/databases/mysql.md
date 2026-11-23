@@ -1580,7 +1580,12 @@ its database only where the schema names one.
 Two rows are not granted again. The `CREATE` gives its account `EXECUTE` and
 `ALTER ROUTINE` on the routine when the account cannot already run and change
 it, so the applying account's own row of exactly those two privileges, without
-the grant option, comes back with the `CREATE`. With
+the grant option, comes back with the `CREATE`. On MySQL it comes back only
+when the session has no role active: after the `DROP`, a `CREATE` from a
+session with an active role writes no row, whatever the role holds, measured
+on 8.4.13. So on MySQL a session with an active role, such as a default role,
+keeps that row, and the plan grants it back or is refused as below. MariaDB
+11.8 writes the row back either way. With
 `automatic_sp_privileges=0` the `DROP` keeps every row and the `CREATE` adds
 none, so the read reports no rows, a plan grants nothing back, and
 `mysql.procs_priv` is not read.

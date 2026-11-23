@@ -21,7 +21,7 @@ var MySQLAllGrants = []string{"GRANT ALL PRIVILEGES ON *.* TO `root`@`%` WITH GR
 // other question to next. The character set facts are MySQL 8.4's: utf8mb4 and
 // latin1 with their default collations, the default_collation_for_utf8mb4 a
 // fresh session holds, and utf8 naming utf8mb3. automatic_sp_privileges is on,
-// the server default.
+// the server default, and no role is active.
 func MySQLSession(version string, grants []string, next QueryHandler) QueryHandler {
 	return func(query string, args []driver.NamedValue) (QueryResult, error) {
 		switch {
@@ -30,6 +30,8 @@ func MySQLSession(version string, grants []string, next QueryHandler) QueryHandl
 				Columns: []string{"CURRENT_USER()", "VERSION()"},
 				Rows:    [][]driver.Value{{"app@%", version}},
 			}, nil
+		case strings.TrimSpace(query) == "SELECT CURRENT_ROLE()":
+			return QueryResult{Columns: []string{"CURRENT_ROLE()"}, Rows: [][]driver.Value{{"NONE"}}}, nil
 		case strings.TrimSpace(query) == "SHOW GRANTS":
 			rows := make([][]driver.Value, 0, len(grants))
 			for _, grant := range grants {
