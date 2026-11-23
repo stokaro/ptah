@@ -258,6 +258,9 @@ type Migrator struct {
 	// atlasStringLinearity decides linearity over an Atlas directory on the
 	// revision strings; see [Migrator.WithAtlasStringLinearity].
 	atlasStringLinearity bool
+	// replaysHistory selects the transaction mode of each up file by the rule
+	// of [Migrator.WithAppliedHistoryReplay] rather than by txMode.
+	replaysHistory bool
 	// recordedAtlasIdentities are the versions the Atlas revision table
 	// records that are not numbers and that no file of the directory carries,
 	// such as v1 once v1_x.sql is removed, in text order. Initialize reads
@@ -840,10 +843,54 @@ func (m *Migrator) WithAtlasStringLinearity() *Migrator {
 
 // WithTransactionMode returns a copy of the migrator that wraps pending up
 // migrations in transactions according to mode. An empty mode selects the
-// default, [MigrationTxModeFile].
+// default, [MigrationTxModeFile]. It replaces the rule
+// [Migrator.WithAppliedHistoryReplay] selects.
 func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 	tmp := *m
 	tmp.txMode = normalizeMigrationTxMode(mode)
+	tmp.replaysHistory = false
+	return &tmp
+}
+
+// WithAppliedHistoryReplay returns a copy of the migrator that runs its up
+// migrations as a replay of files that already ran on another database. The
+// revision table records that a file ran and not the transaction mode it ran
+// in, so the replay decides the mode of each file from the file alone.
+//
+// A file runs in a transaction of its own, as under [MigrationTxModeFile],
+// unless a run in that mode refuses the file. It ran without a transaction,
+// since it ran at all, and it replays without one. The refusals are:
+//   - a statement the engine refuses inside a transaction, found before any
+//     file runs, such as CREATE INDEX CONCURRENTLY beside another statement on
+//     PostgreSQL, or, on MySQL and MariaDB, a statement the transaction
+//     witness cannot follow, such as a view definition;
+//   - on MySQL and MariaDB, a database the witness cannot follow, found before
+//     the file's first statement, such as one holding a MyISAM table;
+//   - on PostgreSQL, the server's refusal of a statement inside the file's
+//     transaction for being in one (SQLSTATE 25001, 2D000 or 55P04), such as a
+//     CALL of a procedure that commits or an enum value used in the
+//     transaction that added it. The transaction rolls back, and the file
+//     runs once more without one, on the same session. Sequence values and
+//     session state a rollback does not undo, such as a prepared statement or
+//     an advisory lock, stay, so a file that depends on them may not replay.
+//     A target whose rollback does not undo schema changes, such as
+//     CockroachDB, returns the refusal, and the file does not run again.
+//
+// A file whose txmode directive names a mode runs in that mode. Down
+// migrations run as they do without the rule.
+//
+// A file that a run in [MigrationTxModeNone] applied, and whose effect a
+// transaction changes without refusing it, replays in a transaction and so not
+// as it ran: on PostgreSQL a SET LOCAL does nothing outside a transaction and
+// takes effect inside one. Such a file replays as it ran only if it carried a
+// directive when it was applied.
+//
+// The copy's transaction mode is [MigrationTxModeFile]. A
+// [Migrator.WithTransactionMode] after it replaces the rule.
+func (m *Migrator) WithAppliedHistoryReplay() *Migrator {
+	tmp := *m
+	tmp.txMode = MigrationTxModeFile
+	tmp.replaysHistory = true
 	return &tmp
 }
 
@@ -2810,6 +2857,11 @@ func (m *Migrator) applyUpMigrationsInRun(ctx context.Context, migrations []*Mig
 		}
 		m.logMigrationEvent(ctx, "up", migration, MigrationLogStarted, nil)
 		deferred, err := m.applyUpMigrationObserved(ctx, migration, txMode, i == 0)
+		if err != nil && m.replaysWithoutATransaction(migration, m.refusedInItsTransaction(migration, txMode, err)) {
+			m.logger.Info("Replaying migration again without a transaction, as the server refused it in one",
+				"version", m.logVersion(migration.Version), "reason", err.Error())
+			deferred, err = m.applyUpMigrationObserved(ctx, migration, MigrationTxModeNone, i == 0)
+		}
 		if err != nil {
 			m.logMigrationEvent(ctx, "up", migration, MigrationLogFailed, err)
 			return nil, err
@@ -3167,11 +3219,16 @@ func (m *Migrator) applyUpMigrationObserved(
 	}
 	txMode = own.mode
 	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
-		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
-			return false, err
-		}
-		if err := m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionUp); err != nil {
-			return false, err
+		if err := m.requireTransactionalTarget(ctx, migration); err != nil {
+			// Only a refusal of what the database holds says how the file
+			// ran. A failure to read the catalog says nothing about it.
+			var refusal *TransactionalTargetError
+			if !m.replaysWithoutATransaction(migration, errors.As(err, &refusal)) {
+				return false, err
+			}
+			m.logger.Info("Replaying migration without a transaction, as tx-mode file refuses it",
+				"version", m.logVersion(migration.Version), "reason", err.Error())
+			txMode, own = MigrationTxModeNone, ownTransactionRun{mode: MigrationTxModeNone}
 		}
 	}
 	plan, err := m.planUpRetry(ctx, migration)

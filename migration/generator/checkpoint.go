@@ -456,7 +456,8 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	}
 
 	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
-		WithMigrationLockTimeout(opts.MigrationLockTimeout)
+		WithMigrationLockTimeout(opts.MigrationLockTimeout).
+		WithAppliedHistoryReplay()
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

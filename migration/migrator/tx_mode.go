@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path"
 
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/servercode"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -100,7 +102,77 @@ func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMo
 	if err != nil {
 		return "", err
 	}
+	if m.replaysWithoutATransaction(migration, m.fileModeRefusesBeforeTheRun(migration)) {
+		return MigrationTxModeNone, nil
+	}
 	return m.effectiveTxMode(mode), nil
+}
+
+// replaysWithoutATransaction is the rule a replay under
+// [Migrator.WithAppliedHistoryReplay] chooses an up file's mode by. It reports
+// whether migration replays without a transaction, given refused, whether
+// tx-mode file refused the file. A file with no txmode directive that a run
+// without a transaction accepts ran without one, since it ran at all, and
+// replays without one. A file whose directive names a mode replays in it, a
+// file both modes refuse keeps tx-mode file and its refusal, and a run that
+// replays nothing keeps its mode for every file.
+//
+// Three refusals count:
+//   - the checks a run asks of every file before the first of them runs
+//     ([Migrator.fileModeRefusesBeforeTheRun]);
+//   - on MySQL and MariaDB, the checks of the database's state the
+//     transaction witness asks before the file's first statement, such as a
+//     table that is not InnoDB ([Migrator.requireTransactionalTarget]);
+//   - a server's refusal of a statement inside the file's one transaction on
+//     a target whose rollback undoes schema changes
+//     ([Migrator.refusedInItsTransaction]). The transaction rolls back, and
+//     the replay runs the file again without one. Sequence values and session
+//     state a rollback does not undo, such as a prepared statement or an
+//     advisory lock, stay, so a file that depends on them may not replay.
+func (m *Migrator) replaysWithoutATransaction(migration *Migration, refused bool) bool {
+	return refused && m.replaysHistory &&
+		migration.parsedUpTxModeForDialect(m.connectionDialect()).Mode == migrationfile.FileTxModeUnspecified &&
+		m.refuseBodyForItsMode(migration, MigrationDirectionUp, ownTransactionRun{mode: MigrationTxModeNone}) == nil
+}
+
+// fileModeRefusesBeforeTheRun reports whether a run in tx-mode file refuses
+// migration's up body for being in a transaction, by the checks a run asks of
+// every file before the first of them runs: [Migrator.refuseBodyForItsMode]
+// and [Migrator.refuseWhatATransactionRefuses].
+//
+// A file that runs without a transaction in tx-mode file anyway, because the
+// target runs each query on its own or the file runs alone outside one (see
+// [Migrator.ownTransactionMode]), is not refused.
+func (m *Migrator) fileModeRefusesBeforeTheRun(migration *Migration) bool {
+	if m.effectiveTxMode(MigrationTxModeFile) != MigrationTxModeFile {
+		return false
+	}
+	own, err := m.ownTransactionMode(migration, MigrationTxModeFile, MigrationDirectionUp)
+	if err != nil || own.mode != MigrationTxModeFile {
+		return false
+	}
+	return m.refuseBodyForItsMode(migration, MigrationDirectionUp, own) != nil ||
+		m.refuseWhatATransactionRefuses(migration, MigrationDirectionUp, own) != nil
+}
+
+// refusedInItsTransaction reports whether err is a server's refusal of a
+// statement of migration's up body because it ran inside a transaction
+// ([servercode.RefusedInATransaction]), in a run that sent the whole body in
+// one transaction to a target that rolls schema changes back with it
+// (capability.TransactionalDDL). The rollback undoes the file's schema
+// changes and rows, so the file can run again without a transaction; what a
+// rollback does not undo stays, as [Migrator.replaysWithoutATransaction]
+// says. A target whose rollback leaves schema changes in place, such as
+// CockroachDB, is never asked to run the file twice. A refusal the static
+// checks cannot see is one of these: a COMMIT inside a procedure the file
+// calls, or an enum value the file adds and then uses.
+func (m *Migrator) refusedInItsTransaction(migration *Migration, txMode MigrationTxMode, err error) bool {
+	if txMode != MigrationTxModeFile || !servercode.RefusedInATransaction(err) ||
+		!m.conn.Info().Capabilities.Has(capability.TransactionalDDL) {
+		return false
+	}
+	own, ownErr := m.ownTransactionMode(migration, txMode, MigrationDirectionUp)
+	return ownErr == nil && own.mode == MigrationTxModeFile && own.blocks.Empty()
 }
 
 func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTxMode, error) {

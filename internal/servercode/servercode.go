@@ -79,3 +79,22 @@ func UniqueViolation(err error) bool {
 	}
 	return oracleErrorNumber(err) == 1 || sqliteUniqueViolation(err)
 }
+
+// RefusedInATransaction reports whether a PostgreSQL-protocol server refused a
+// statement because it ran inside a transaction block: SQLSTATE 25001
+// (active_sql_transaction), such as CREATE INDEX CONCURRENTLY or VACUUM in a
+// transaction; 2D000 (invalid_transaction_termination), such as a COMMIT in a
+// procedure a transaction calls; and 55P04 (unsafe_new_enum_value_usage), an
+// enum value used in the transaction that added it. It is false for every
+// other error, including one from another protocol and one no server answered.
+func RefusedInATransaction(err error) bool {
+	serverErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return false
+	}
+	switch serverErr.Code {
+	case "25001", "2D000", "55P04":
+		return true
+	}
+	return false
+}

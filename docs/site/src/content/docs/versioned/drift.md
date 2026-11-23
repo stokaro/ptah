@@ -148,6 +148,67 @@ A run that could not start prints the failure document instead, with an
 `error` object and no `check`; see
 [Why a command failed](../../reference/exit-codes/#why-a-command-failed).
 
+## How each applied migration replays
+
+The revision table does not record the transaction mode a migration ran in, so
+the replay decides it for each file and takes no mode from the run.
+`ptah migrations up --tx-mode`, `PTAH_TX_MODE` and the project's
+`migration.tx_mode` name the mode pending migrations run in, and the replay
+reads none of them.
+
+- A file whose `-- atlas:txmode` or `-- +ptah no_transaction` directive names
+  a mode replays in that mode.
+- A file that a transaction refuses replays without one. It ran, so only
+  `--tx-mode none` applied it.
+- Every other file replays in a transaction of its own.
+
+A transaction refuses a file in one of these ways:
+
+- Before the file runs, Ptah finds a statement that cannot run in a
+  transaction, such as PostgreSQL `CREATE INDEX CONCURRENTLY` or SQLite
+  `VACUUM`, or on MySQL and MariaDB a statement Ptah cannot verify inside one.
+- Before the file's first statement, on MySQL and MariaDB, Ptah finds a table
+  it cannot verify a transaction over, such as a `MyISAM` table an earlier
+  migration created.
+- PostgreSQL refuses a statement for running in a transaction, with SQLSTATE
+  `25001`, `2D000` or `55P04`: a `CALL` of a procedure that runs `COMMIT`, or
+  an enum value used in the transaction that added it. The transaction rolls
+  back, and the replay runs the file again without one. Sequence values and
+  session state a rollback does not undo, such as a prepared statement or an
+  advisory lock, stay, so a file that depends on them may not replay: a row
+  the first attempt inserted takes a new `serial` value the second time, and a
+  later foreign key to the first value fails. A pending file that PostgreSQL
+  refuses this way stays refused.
+
+CockroachDB and YugabyteDB do not roll schema changes back with a transaction,
+so the replay does not run a refused file a second time, and the report fails
+with the server's refusal. Such a file replays only if it carried
+`-- atlas:txmode none` when it was applied.
+
+A file that a transaction accepts but changes is the other class, and the
+replay cannot reproduce it from the file. Applied with `--tx-mode none`, it
+behaved as it did only because no transaction surrounded it, and it replays in
+a transaction. PostgreSQL ignores `SET LOCAL` outside a transaction, so
+`SET LOCAL search_path TO s2; CREATE TABLE t2 (id int);` creates `public.t2`
+under `--tx-mode none` and `s2.t2` in a transaction, and the report finds an
+extra table `t2` that is not drift.
+
+Give such a file `-- atlas:txmode none` before it is applied, and the apply and
+the replay both run it without a transaction. A file that is already applied
+cannot take the directive: the edit changes its checksum, and the report and
+`ptah migrations up --check-drift` refuse the history. Leave the object it
+created out of the comparison instead:
+
+```console
+ptah migrations drift --db-url "$DATABASE_URL" --migrations-dir ./migrations --shadow-db "$SHADOW_URL" --exclude public.t2
+```
+
+`ptah migrations up --check-drift` takes the same selector as
+`--drift-exclude public.t2`. A run with the selector does not compare the
+table at all, so it does not report a later change made to `public.t2` by hand
+either. A file applied with `--tx-mode all` shared one transaction with the
+rest of its run, and replays in a transaction of its own.
+
 ## When the report cannot decide
 
 A comparison that cannot decide is never reported as a match. The report names

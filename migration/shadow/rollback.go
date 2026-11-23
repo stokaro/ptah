@@ -115,7 +115,7 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
-	mig = shadowdb.ReplayMigrator(mig.WithSkipChecks(opts.SkipChecks))
+	mig = shadowdb.ReplayMigrator(mig.WithSkipChecks(opts.SkipChecks).WithAppliedHistoryReplay())
 
 	// DropAllTables leaves the revision table behind, because it is metadata
 	// rather than part of the schema under test. Rows left in it name versions

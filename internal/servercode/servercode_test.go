@@ -106,3 +106,32 @@ func TestUniqueViolation(t *testing.T) {
 		})
 	}
 }
+
+// TestRefusedInATransaction reads the three SQLSTATEs a PostgreSQL-protocol
+// server refuses a statement with for running inside a transaction block, and
+// nothing else: a MySQL-protocol error carrying 25001 is from an engine whose
+// rollback does not undo a schema change.
+func TestRefusedInATransaction(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "PostgreSQL active_sql_transaction", err: &pgconn.PgError{Code: "25001"}, want: true},
+		{name: "PostgreSQL invalid_transaction_termination", err: &pgconn.PgError{Code: "2D000"}, want: true},
+		{name: "PostgreSQL unsafe_new_enum_value_usage", err: &pgconn.PgError{Code: "55P04"}, want: true},
+		{name: "a wrapped refusal", err: fmt.Errorf("failed to apply migration: %w", &pgconn.PgError{Code: "25001"}), want: true},
+		{name: "PostgreSQL in_failed_sql_transaction", err: &pgconn.PgError{Code: "25P02"}},
+		{name: "PostgreSQL no_active_sql_transaction", err: &pgconn.PgError{Code: "25P01"}},
+		{name: "PostgreSQL syntax error", err: &pgconn.PgError{Code: "42601"}},
+		{name: "MySQL with the SQLSTATE 25001", err: &mysqldriver.MySQLError{Number: 1568, SQLState: [5]byte{'2', '5', '0', '0', '1'}}},
+		{name: "an error no server wrote", err: errors.New("CREATE INDEX CONCURRENTLY cannot run inside a transaction block")},
+		{name: "no error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(servercode.RefusedInATransaction(test.err), qt.Equals, test.want)
+		})
+	}
+}

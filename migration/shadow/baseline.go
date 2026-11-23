@@ -137,7 +137,8 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 		)
 	}
 
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)))
+	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
+		WithAppliedHistoryReplay())
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

@@ -263,7 +263,11 @@ Add `--shadow-db` to replay and verify the rollback plan on a disposable
 **shadow database** before the target is touched: the shadow database is
 dropped clean, migrated up to the target's current version, and migrated down
 to the requested target. A failing or missing down migration aborts with the
-target untouched.
+target untouched. Each up migration replays as
+[the drift report replays it](../drift/#how-each-applied-migration-replays),
+and each down file runs as on the target. `ptah migrations down` takes no
+`--tx-mode`, so on MySQL and MariaDB a history holding a `MyISAM` table rolls
+back only where its down files carry `-- atlas:txmode none`.
 
 ```bash illustration
 ptah migrations down \

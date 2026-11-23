@@ -297,7 +297,9 @@ type Candidate struct {
 // The shadow database is refused if it holds a table, or anything else the
 // reset would drop where the dialect can say, since the verification resets it
 // and would lose what it holds. Otherwise it is dropped clean, the prior
-// history is replayed into it, and the candidates are applied on top. The
+// history is replayed into it, and the candidates are applied on top. Each
+// prior file replays as [migrator.Migrator.WithAppliedHistoryReplay] runs it,
+// and the candidates run as `migrations up` runs a pending file. The
 // result is re-introspected and compared with the desired schema, so what is
 // checked is what a server did
 // rather than what the SQL was expected to mean. The candidates are then rolled
@@ -384,9 +386,11 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		)
 	}
 
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...)))
+	provider := migrator.NewRegisteredMigrationProvider(migrations...)
+	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, provider))
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
-	if err := mig.MigrateUp(ctx); err != nil {
+	previousVersion := latestMigrationVersion(prior)
+	if err := replayVerified(ctx, conn, provider, mig, previousVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return newVerificationError("replay", "replay_error", description, err)
 		}
@@ -396,7 +400,6 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		return err
 	}
 
-	previousVersion := latestMigrationVersion(prior)
 	if err := mig.MigrateDownTo(ctx, previousVersion); err != nil {
 		return newVerificationError("round-trip-down", "round_trip_down_error", "round-trip down", err)
 	}
@@ -404,6 +407,28 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		return newVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
 	}
 	return assertSchemaMatches(ctx, conn, opts, exclusion, inclusion)
+}
+
+// replayVerified replays the prior migrations up to previousVersion as files
+// that already ran, by [migrator.Migrator.WithAppliedHistoryReplay], and then
+// applies the candidates with mig, as `migrations up` applies a pending file.
+// A prior file a run in tx-mode file refuses in a transaction ran without one,
+// and a candidate has not run anywhere, so only the prior files are read for
+// how they ran.
+func replayVerified(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	provider migrator.MigrationProvider,
+	mig *migrator.Migrator,
+	previousVersion int64,
+) error {
+	if previousVersion > 0 {
+		history := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, provider).WithAppliedHistoryReplay())
+		if err := history.MigrateTo(ctx, previousVersion); err != nil {
+			return err
+		}
+	}
+	return mig.MigrateUp(ctx)
 }
 
 func identifierSemanticsAgree(
