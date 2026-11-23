@@ -53,6 +53,11 @@ func oracle() descriptor.Dialect {
 		// privilege the role holds there through no grant fails with
 		// ORA-01927: measured on 23.26.3, also under SELECT ANY TABLE.
 		TableRevokeTakesOnlyTableGrants: true,
+		// Oracle has no statement that takes only the grant option: `REVOKE
+		// GRANT OPTION FOR SELECT ON t FROM u` answers ORA-00990, and `REVOKE
+		// SELECT ON t FROM u` also takes SELECT from a user u granted it to.
+		// Measured on 23.26.3 and 21.3.
+		GrantOptionRevokedWithPrivilege: true,
 		AllPrivileges:                   oracleAllPrivileges(),
 
 		// An Oracle banner carries two numbers, and the first is not the

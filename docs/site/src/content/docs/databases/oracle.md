@@ -672,8 +672,8 @@ back, after it, every privilege the read found on the routine and does not
 revoke, a privilege of a grantee the schema does not manage included. A
 privilege a grantee holds `WITH GRANT OPTION` stops the plan instead, since
 Ptah writes no grant option on Oracle (`ORA-01926` refuses one to a role).
-Revoke the option, or change the routine by hand with `CREATE OR REPLACE`,
-which keeps it.
+Revoke the privilege and grant it again without the option, or change the
+routine by hand with `CREATE OR REPLACE`, which keeps it.
 
 A system privilege held by the role or by `PUBLIC` gives the privilege on every
 table, and a revoke on one table cannot take it away. Ptah reads `SELECT`,
@@ -693,6 +693,30 @@ What the account may read decides what Ptah can refuse:
 - One that may read it and not `DBA_SCHEMA_PRIVS` still gets the refusal for a
   privilege on every table. Its revoke on a table the plan creates is planned
   when nothing it read covers the table, and the server answers for the role.
+
+## The grant option
+
+Oracle has no statement that takes the grant option and leaves the privilege.
+`REVOKE GRANT OPTION FOR SELECT ON t1 FROM app_user` answers `ORA-00990`, and
+`REVOKE SELECT ON t1 FROM app_user` takes `SELECT` from `app_user` and from
+every user `app_user` granted it to. Measured on 21.3 and 23.26.3.
+
+So Ptah refuses both ways of asking for it, before any statement runs:
+
+- A declared `REVOKE GRANT OPTION FOR`, wherever it stands in the file, is
+  refused by name when the file is read. Declare the `GRANT` without
+  `WITH GRANT OPTION`.
+- A plan that would keep a privilege and take only its option is refused. A
+  user holding `SELECT WITH GRANT OPTION` on `t1` meets this when the schema
+  declares `REVOKE ALL ON t1 FROM app_user` and then `GRANT SELECT ON t1 TO
+  app_user`:
+
+  ```text
+  oracle: cannot take the grant option on SELECT ON APP.T1 from "APP_USER" and leave the privilege: Oracle has no statement for it, and a REVOKE also takes the privilege from everyone "APP_USER" granted it to; revoke the privilege and grant it again by hand
+  ```
+
+In both cases, to take an option a grantee holds, revoke the privilege and
+grant it again by hand, after checking who the grantee granted it to.
 
 ## Grants of ALL
 

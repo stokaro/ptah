@@ -888,7 +888,21 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 }
 
 // renderRevokePrivilege mirrors the grant, with the same two shapes.
+//
+// A revoke of the grant option alone is refused, because Oracle has no
+// statement for it: measured on 23.26.3 and 21.3, `REVOKE GRANT OPTION FOR
+// SELECT ON t FROM u` answers ORA-00990, and `REVOKE SELECT ON t FROM u` takes
+// SELECT from u and from every user u granted it to. Rendered as the plain
+// REVOKE, a plan that keeps the privilege and takes only the option would take
+// the privilege instead, and the next plan would grant it again to u alone.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if node.GrantOptionFor {
+		return unsupportedFeaturef(
+			"cannot take the grant option on %s%s from %q and leave the privilege: Oracle has no statement for it, "+
+				"and a REVOKE also takes the privilege from everyone %q granted it to; revoke the privilege and "+
+				"grant it again by hand",
+			strings.Join(node.Privileges, ", "), oracleGrantTarget(node.ObjectName), node.Role, node.Role)
+	}
 	if err := grantrefusal.Path("oracle", "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
