@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"ptah.run/internal/dbreset"
@@ -81,86 +80,4 @@ func relationKindName(kind string) string {
 	default:
 		return "object"
 	}
-}
-
-// externalRelationDependentsQuery asks which views and materialized views read
-// a relation of the schemas named, wherever the dependent lives, through the
-// pg_rewrite rule that stores its definition. The caller keeps the pairs whose
-// relation the cleanup drops and whose dependent it does not.
-const externalRelationDependentsQuery = `
-	SELECT DISTINCT source_ns.nspname, source.relname, dependent_ns.nspname, dependent.relname, dependent.relkind
-	FROM pg_depend d
-	JOIN pg_rewrite r ON r.oid = d.objid
-	JOIN pg_class dependent ON dependent.oid = r.ev_class
-	JOIN pg_namespace dependent_ns ON dependent_ns.oid = dependent.relnamespace
-	JOIN pg_class source ON source.oid = d.refobjid
-	JOIN pg_namespace source_ns ON source_ns.oid = source.relnamespace
-	WHERE dependent.oid <> source.oid
-	  AND source_ns.nspname IN (%s)
-	ORDER BY 1, 2, 3, 4`
-
-// cleanupRelationKinds are the object kinds of a cleanup that a view can read.
-var cleanupRelationKinds = []string{"table", "view", "materialized view", "foreign table", "sequence"}
-
-// refuseExternalCleanupDependents refuses the cleanup of objects, before it
-// drops any, when a view or materialized view outside objects reads a relation
-// in them. It runs where the server commits each drop as it runs, so a refusal
-// that came at that relation's drop would keep every drop before it: a
-// dependent the cleanup leaves behind is reported here, while nothing is
-// dropped yet, as the rollback reports it on a server that holds the drops in
-// one transaction. Other dependencies, such as a routine body in another
-// schema, the catalog does not report; the server refuses those at the drop.
-func refuseExternalCleanupDependents(ctx context.Context, q cleanupConn, objects []postgresCleanupObject) error {
-	type relation struct{ schema, name string }
-	dropped := make(map[relation]string)
-	var schemas []string
-	for _, object := range objects {
-		if object.Qualifier != "" || !slices.Contains(cleanupRelationKinds, object.Kind) {
-			continue
-		}
-		dropped[relation{object.Schema, object.Name}] = object.Kind
-		if !slices.Contains(schemas, object.Schema) {
-			schemas = append(schemas, object.Schema)
-		}
-	}
-	if len(schemas) == 0 {
-		return nil
-	}
-	placeholders := make([]string, 0, len(schemas))
-	args := make([]any, 0, len(schemas))
-	for i, schema := range schemas {
-		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
-		args = append(args, schema)
-	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(externalRelationDependentsQuery, strings.Join(placeholders, ", ")), args...)
-	if err != nil {
-		return fmt.Errorf("failed to read the views that depend on the cleanup's relations: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var blocked []string
-	for rows.Next() {
-		var source, dependent relation
-		var kind string
-		if err := rows.Scan(&source.schema, &source.name, &dependent.schema, &dependent.name, &kind); err != nil {
-			return fmt.Errorf("failed to read the views that depend on the cleanup's relations: %w", err)
-		}
-		sourceKind, drops := dropped[source]
-		if _, alsoDropped := dropped[dependent]; !drops || alsoDropped {
-			continue
-		}
-		blocked = append(blocked, fmt.Sprintf("%s %q.%q reads %s %q.%q",
-			relationKindName(kind), dependent.schema, dependent.name, sourceKind, source.schema, source.name))
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("failed to read the views that depend on the cleanup's relations: %w", err)
-	}
-	if len(blocked) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"a view the cleanup does not drop reads a relation it drops: %s; the server commits each drop as it "+
-			"runs, so the cleanup refuses before it drops anything",
-		strings.Join(blocked, "; "),
-	)
 }

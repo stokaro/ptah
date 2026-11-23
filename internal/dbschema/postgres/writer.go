@@ -411,10 +411,10 @@ type postgresCleanupCapabilities struct {
 	//
 	// A savepoint cannot carry the retry: the first DROP commits the
 	// transaction and takes the savepoint with it (SQLSTATE 3B001). Nothing
-	// rolls back either, so before the first drop the cleanup refuses a view
-	// outside its list that reads a relation in it, which is the dependent the
-	// catalog does report, and a failure that still comes partway names the
-	// drops that ran before it. `SET LOCAL` cannot turn the setting on for the
+	// rolls back either, so before the first drop the cleanup refuses an
+	// object outside its list that depends on one in it
+	// ([refuseOutsideCleanupDependents]), and a failure that still comes
+	// partway names the drops that ran before it. `SET LOCAL` cannot turn the setting on for the
 	// cleanup alone: the transaction it belongs to ends at the first DROP,
 	// and with the session's setting off the cleanup's COMMIT then fails with
 	// 25P01, after every drop has run.
@@ -590,10 +590,14 @@ func (c postgresCleanupCapabilities) dropObjects(
 	objects []postgresCleanupObject,
 ) error {
 	if c.runsEachDDLAlone {
-		if err := refuseExternalCleanupDependents(ctx, tx, objects); err != nil {
+		if err := refuseOutsideCleanupDependents(ctx, tx, objects); err != nil {
 			return err
 		}
-		return dropCleanupObjectsRetrying(ctx, tx, objects)
+		indexTables, err := cleanupIndexTables(ctx, tx, objects)
+		if err != nil {
+			return err
+		}
+		return dropCleanupObjectsRetrying(ctx, tx, objects, indexTables)
 	}
 	if c.retryFailedDDL {
 		// The retry loop drops each object inside a SAVEPOINT, so it needs a
@@ -607,7 +611,7 @@ func (c postgresCleanupCapabilities) dropObjects(
 		return dropCleanupObjects(ctx, sqlTx, objects)
 	}
 	if c.retryFailedDDLWithoutTransaction {
-		return dropCleanupObjectsRetrying(ctx, tx, objects)
+		return dropCleanupObjectsRetrying(ctx, tx, objects, nil)
 	}
 	err := dropCleanupObjectsOnce(ctx, tx, objects)
 	if err != nil && c.autocommitBeforeDDLOff {
@@ -1839,18 +1843,30 @@ func dropCleanupObjects(
 // gone (stokaro/ptah#1901).
 //
 // Each drop the server accepts stays committed, so the error that ends the
-// cleanup names every drop that ran before it.
+// cleanup names every drop that ran before it. indexTables names the table of
+// each index the cleanup lists, where the caller read it: an index whose table
+// the cleanup has dropped went with that table, so its drop, which IF EXISTS
+// would accept and which would drop nothing, is not sent and not named.
 func dropCleanupObjectsRetrying(
 	ctx context.Context,
 	conn cleanupConn,
 	objects []postgresCleanupObject,
+	indexTables map[cleanupKey]cleanupKey,
 ) error {
 	var dropped []postgresCleanupObject
+	droppedTables := make(map[cleanupKey]bool)
 	err := retryCleanupObjects(ctx, objects, func(object postgresCleanupObject) (dropErr, controlErr error) {
+		key := cleanupKey{relationFamily, object.Schema, object.Name}
+		if table, ok := indexTables[key]; ok && object.Kind == "index" && droppedTables[table] {
+			return nil, nil
+		}
 		if _, err := conn.ExecContext(ctx, object.Statement); err != nil {
 			return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, object.Statement), nil
 		}
 		dropped = append(dropped, object)
+		if object.Kind == "table" && object.Qualifier == "" {
+			droppedTables[key] = true
+		}
 		return nil, nil
 	})
 	if err != nil {
@@ -1860,6 +1876,58 @@ func dropCleanupObjectsRetrying(
 		))
 	}
 	return nil
+}
+
+// cleanupIndexTablesQuery asks which table each index of the schemas named
+// belongs to.
+const cleanupIndexTablesQuery = `
+	SELECT n.nspname, i.relname, t.relname
+	FROM pg_index x
+	JOIN pg_class i ON i.oid = x.indexrelid
+	JOIN pg_class t ON t.oid = x.indrelid
+	JOIN pg_namespace n ON n.oid = t.relnamespace
+	WHERE n.nspname IN (%s)`
+
+// cleanupIndexTables reads, through q, the table of each index among objects,
+// keyed and valued as relations. It answers nil when objects list no index.
+func cleanupIndexTables(
+	ctx context.Context,
+	q cleanupConn,
+	objects []postgresCleanupObject,
+) (map[cleanupKey]cleanupKey, error) {
+	var schemas []string
+	for _, object := range objects {
+		if object.Kind == "index" && !slices.Contains(schemas, object.Schema) {
+			schemas = append(schemas, object.Schema)
+		}
+	}
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, 0, len(schemas))
+	args := make([]any, 0, len(schemas))
+	for i, schema := range schemas {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, schema)
+	}
+	rows, err := q.QueryContext(ctx, fmt.Sprintf(cleanupIndexTablesQuery, strings.Join(placeholders, ", ")), args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the tables of the cleanup's indexes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	tables := make(map[cleanupKey]cleanupKey)
+	for rows.Next() {
+		var schema, index, table string
+		if err := rows.Scan(&schema, &index, &table); err != nil {
+			return nil, fmt.Errorf("failed to read the tables of the cleanup's indexes: %w", err)
+		}
+		tables[cleanupKey{relationFamily, schema, index}] = cleanupKey{relationFamily, schema, table}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read the tables of the cleanup's indexes: %w", err)
+	}
+	return tables, nil
 }
 
 // droppedCleanupObjects names the objects of dropped in the order they were

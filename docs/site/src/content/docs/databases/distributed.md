@@ -197,10 +197,22 @@ round drops nothing.
 The retry relies on `autocommit_before_ddl`, which is on by default from v25:
 each drop then commits in a transaction of its own, and a refused one fails
 alone. Nothing rolls back, so before the first drop Ptah refuses the cleanup
-when a view outside it reads a table, view or sequence it drops, and names
-the view. A dependency the catalog does not report, such as a function in
-another schema, still stops the cleanup partway, and the error then lists
-every object dropped before the failure.
+when an object outside it depends on one it drops, and names each
+dependency:
+
+- a view that reads a table, view or sequence;
+- a foreign key that references a table;
+- a function that calls a function, or a trigger that runs one;
+- a column, or a routine's arguments or result, of a type or of a table's
+  row type;
+- a column default, a computed column, an `ON UPDATE` expression or a check
+  constraint that names a sequence, function or type;
+- a routine body that names a table, view, sequence or type.
+
+CockroachDB records the last two only as text, so Ptah matches the names in
+that text, and refuses a body that names an object even inside a string. A
+dependency neither shows still stops the cleanup partway, and the error then
+lists every object a statement dropped before the failure.
 
 Ptah reads the setting from the session. Where it is off, as on v24.3 by
 default, or where the server has no such setting, as on v23.2, the drops share

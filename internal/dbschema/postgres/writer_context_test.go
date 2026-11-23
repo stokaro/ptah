@@ -522,7 +522,7 @@ func TestWriterDropDatabaseRealm_CockroachPreservesPublicSchemaContainer(t *test
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 14)
+	c.Assert(db.QueryCount(), qt.Equals, 15)
 	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -1364,8 +1364,10 @@ func (q *postgresRealmQuery) query(
 	switch {
 	case strings.Contains(query, autocommitBeforeDDLMarker):
 		return autocommitBeforeDDLResult("on"), nil
-	case strings.Contains(query, externalRelationDependentsMarker):
-		return externalRelationDependentsResult(nil), nil
+	case strings.Contains(query, outsideTextDependentsMarker):
+		return outsideTextDependentsResult(nil), nil
+	case strings.Contains(query, outsideStructuredDependentsMarker):
+		return outsideStructuredDependentsResult(nil), nil
 	case strings.Contains(query, "NOT pg_has_role(n.nspowner, 'USAGE')"):
 		return dbtest.QueryResult{
 			Columns: []string{"nspname", "owner", "grantable"},
@@ -1505,8 +1507,10 @@ func postgresCleanupCatalogQuery(
 		return postgresVersionResult(version), nil
 	case strings.Contains(query, autocommitBeforeDDLMarker):
 		return autocommitBeforeDDLResult("on"), nil
-	case strings.Contains(query, externalRelationDependentsMarker):
-		return externalRelationDependentsResult(nil), nil
+	case strings.Contains(query, outsideTextDependentsMarker):
+		return outsideTextDependentsResult(nil), nil
+	case strings.Contains(query, outsideStructuredDependentsMarker):
+		return outsideStructuredDependentsResult(nil), nil
 	case strings.Contains(query, "SELECT COUNT(*)") && strings.Contains(query, "FROM pg_extension"):
 		return noPostgresSchemaOwnedExtensions(), nil
 	case strings.Contains(query, "FROM pg_inherits"):
@@ -1537,15 +1541,36 @@ func autocommitBeforeDDLResult(setting string) dbtest.QueryResult {
 	return dbtest.QueryResult{Columns: []string{"coalesce"}, Rows: [][]driver.Value{{setting}}}
 }
 
-// externalRelationDependentsMarker is what the read of the views that depend
-// on a cleanup's relations selects, and no other statement does.
-const externalRelationDependentsMarker = "dependent_ns.nspname"
+// outsideStructuredDependentsMarker is what the CockroachDB cleanup's read of
+// the catalog rows that record a dependency on its objects selects, and no
+// other statement does.
+const outsideStructuredDependentsMarker = "'signature type'"
 
-// externalRelationDependentsResult answers that read, one row per pair: the
-// relation's schema and name, then the dependent's schema, name and relkind.
-func externalRelationDependentsResult(rows [][]driver.Value) dbtest.QueryResult {
+// outsideStructuredDependentsResult answers that read, one row per
+// dependency: how it is recorded, the source's family, schema and name, the
+// dependent's family, schema, name and kind, and the constraint, trigger or
+// column that carries it.
+func outsideStructuredDependentsResult(rows [][]driver.Value) dbtest.QueryResult {
 	return dbtest.QueryResult{
-		Columns: []string{"source_schema", "source_name", "dependent_schema", "dependent_name", "relkind"},
+		Columns: []string{
+			"how", "source_family", "source_schema", "source_name",
+			"dependent_family", "dependent_schema", "dependent_name", "dependent_kind", "carrier",
+		},
+		Rows: rows,
+	}
+}
+
+// outsideTextDependentsMarker is what the CockroachDB cleanup's read of the
+// column defaults and routine bodies it matches as text selects, and no other
+// statement does.
+const outsideTextDependentsMarker = "FROM pg_attrdef ad"
+
+// outsideTextDependentsResult answers that read: a default or a body with the
+// schema, name and kind of the object that holds it, the column of a default,
+// and the text; or a sequence or a type with its OID, or the database name.
+func outsideTextDependentsResult(rows [][]driver.Value) dbtest.QueryResult {
+	return dbtest.QueryResult{
+		Columns: []string{"what", "schema", "name", "kind", "column", "text"},
 		Rows:    rows,
 	}
 }
