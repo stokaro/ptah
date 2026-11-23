@@ -2408,6 +2408,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		WideAccess:      slices.Clone(schema.WideAccess),
 		WideGrants:      slices.Clone(schema.WideGrants),
 		ObjectOwners:    cloneObjectOwners(schema.ObjectOwners),
+		// The DROP that replaces a routine takes every privilege on it, an
+		// excluded role's too, so a filter keeps all of them.
+		RoutinePrivileges: schema.RoutinePrivileges.Clone(),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is

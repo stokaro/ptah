@@ -1565,8 +1565,29 @@ A revoke of another privilege on the column, and two revokes, are accepted
 under any spelling, because a revoke takes the privilege under every spelling.
 
 A privilege on a function or procedure is refused by name when a plan grants
-it, and the read does not report routine privileges, so a comparison cannot see
-an `EXECUTE` granted or revoked outside the schema.
+it, and the comparison does not read routine privileges, so it cannot see an
+`EXECUTE` granted or revoked outside the schema.
+
+A routine whose body changes is replaced with `DROP` and `CREATE`. Under the
+default `automatic_sp_privileges` the `DROP` deletes every privilege on the
+routine, whoever holds it, measured on MySQL 8.4 and MariaDB 11.8. So the read
+takes the rows of `mysql.procs_priv` for the routines of the databases it
+describes, and a plan that replaces a routine grants each of them again after
+the `CREATE`: to a user with its host, to a role, and with the grant option
+where it was held. With `automatic_sp_privileges` off the `DROP` keeps them,
+and the grants change nothing.
+
+Reading `mysql.procs_priv` needs `SELECT` on it. Where the server refuses that
+read, a plan that would replace a routine is refused before anything runs,
+because nothing says what the `DROP` would take:
+
+```text
+cannot replace procedure app.rt: the account may not read mysql.procs_priv, so nothing says who holds privileges on the routine, and the DROP that replaces it takes them all; grant the account SELECT on mysql.procs_priv
+```
+
+A plan that replaces no routine does not need the privilege. A versioned
+migration grants back what the database it was planned against holds, which is
+not always what the database it later runs on holds.
 
 A database name is matched exactly. On a server started with
 `lower_case_table_names=0`, the Linux default, `app` and `APP` are two

@@ -320,6 +320,9 @@ func compareReportingUndecidedAdditions(
 	diff.CurrentDatabasePath = database.DatabasePath
 	diff.CurrentGrants = compare.CurrentGrants(database)
 	diff.CurrentPartialRevokes = compare.CurrentPartialRevokes(database)
+	// And what it found granted on routines, which the comparison does not
+	// read, for a plan that replaces a routine whose DROP takes them.
+	diff.CurrentRoutinePrivileges = database.RoutinePrivileges.Clone()
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.

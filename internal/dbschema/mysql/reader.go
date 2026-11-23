@@ -195,6 +195,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 			return nil, err
 		}
 	}
+	// The privileges on routines are read whatever the preset says about
+	// roles: the DROP that replaces a routine takes a user's as well.
+	if err := r.readRoutinePrivilegesInto(ctx, account, schema, []string{selected.String}); err != nil {
+		return nil, err
+	}
 	return schema, nil
 }
 
@@ -294,6 +299,9 @@ func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catal
 		if err := r.readRolesInto(ctx, server, names); err != nil {
 			return nil, err
 		}
+	}
+	if err := r.readRoutinePrivilegesInto(ctx, account, server, names); err != nil {
+		return nil, err
 	}
 	return server, nil
 }

@@ -71,6 +71,23 @@ func TestExcludeDatabase_KeepsAPartialWideGrantRead(t *testing.T) {
 	c.Assert(got.WideGrantsPartial, qt.IsTrue)
 }
 
+// TestExcludeDatabase_KeepsThePrivilegesOnRoutines keeps what the read found
+// granted on routines, and the mark of a read refused them. Dropped, a plan
+// that replaces a routine the filter keeps grants nothing back after the
+// DROP took every privilege on it.
+func TestExcludeDatabase_KeepsThePrivilegesOnRoutines(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.RoutinePrivileges = catalog.RoutinePrivileges{Refused: true, Grants: []catalog.RoutineGrant{
+		{User: "svc", Host: "%", Schema: "auth", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
+	}}
+
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.RoutinePrivileges, qt.DeepEquals, schema.RoutinePrivileges)
+}
+
 // TestExcludeDatabase_KeepsTheDatabaseTheReadDescribes keeps the database a
 // read of one database names. Dropped, a table named without its database is
 // in no known database, and a grant on any database covers it, so a revoke
