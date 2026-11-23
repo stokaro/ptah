@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1001,6 +1002,8 @@ type mysqlCleanupRecorder struct {
 	viewDropErr                error
 	unopenableViews            []string
 	unopenableViewErr          *mysqldriver.MySQLError
+	nonTransactional           []string
+	readsBothKinds             []string
 	lockErr                    error
 	otherMetadataLockWaiters   int
 	enableErr                  error
@@ -1217,7 +1220,34 @@ func (rec *mysqlCleanupRecorder) lockError(statement string) error {
 				"or definer/invoker of view lack rights to use them",
 		}
 	}
+	if rec.locksBothKinds(statement) {
+		return &mysqldriver.MySQLError{
+			Number: 1785,
+			Message: "Statement violates GTID consistency: Updates to non-transactional tables can only be done " +
+				"in either autocommitted statements or single-statement transactions, and never in the same " +
+				"statement as updates to transactional tables.",
+		}
+	}
 	return rec.lockErr
+}
+
+// locksBothKinds reports whether a LOCK TABLES statement is one a MySQL server
+// that enforces GTID consistency refuses: it names a view in readsBothKinds,
+// or a table in nonTransactional beside a name that is not.
+func (rec *mysqlCleanupRecorder) locksBothKinds(statement string) bool {
+	var nonTransactional, transactional int
+	for target := range strings.SplitSeq(strings.TrimPrefix(statement, "LOCK TABLES "), ", ") {
+		name := strings.Trim(strings.TrimSuffix(strings.TrimPrefix(target, "`test`."), " WRITE"), "`")
+		switch {
+		case slices.Contains(rec.readsBothKinds, name):
+			return true
+		case slices.Contains(rec.nonTransactional, name):
+			nonTransactional++
+		default:
+			transactional++
+		}
+	}
+	return nonTransactional > 0 && transactional > 0
 }
 
 func (rec *mysqlCleanupRecorder) recordViewDropStart(statement string) {

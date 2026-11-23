@@ -1748,6 +1748,15 @@ or trigger because its body can reference the cleanup realm without a catalog
 dependency. Grant these privileges only to credentials used with a dedicated
 disposable dev database.
 
+The cleanup runs its checks and its drops under a `LOCK TABLES ... WRITE` over
+the views and tables it drops, so no other session can come to read one of them
+in between. A MySQL server that enforces GTID consistency, as MySQL 26.10 does
+by default, refuses one such lock over a transactional table, such as InnoDB,
+and a non-transactional one, such as MyISAM (error 1785). There the cleanup
+locks, checks and drops each kind on its own, with the views that read it. A
+view that reads both kinds cannot be locked on such a server, so the cleanup
+refuses it by name before it drops a table.
+
 When MariaDB runs with `event_scheduler=DISABLED`, `db drop-all --dry-run`
 reads event names from `mysql.event` if `information_schema.EVENTS` refuses the
 query. Existing events remain in the plan. MariaDB also refuses `DROP EVENT`
