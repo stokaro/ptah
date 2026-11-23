@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -148,6 +149,68 @@ func TestSchemaApplyMySQLFamilyFoldedDatabaseNameE2E_AddsAGrant(t *testing.T) {
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 		})
 	}
+}
+
+// A grant on the database that the schema declares under the URL's spelling
+// keeps a declared revoke on one of its tables: the server folds the name, so
+// the grant is on the database the session selected. The apply refuses the
+// revoke and changes nothing, whether the revoke names the table alone or with
+// the database as the server stores it. Measured on MySQL 26.10.0 and MariaDB
+// 12.3.3 with the database compared by its bytes: the apply exits 0 with
+// GRANT SELECT on the database under the URL's spelling and REVOKE SELECT on
+// items, and the role keeps SELECT on items through the database grant. The
+// table named with its database fails that way on master too.
+func TestSchemaApplyMySQLFamilyFoldedDatabaseNameE2E_RefusesARevokeUnderADeclaredGrant(t *testing.T) {
+	tests := []struct {
+		name  string
+		table string // <db> is the database as the server stores it
+	}{
+		{name: "the table alone", table: "items"},
+		{name: "the table with its database", table: "<db>.items"},
+	}
+	for _, engine := range foldedServerEngines {
+		for _, test := range tests {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				run := newFoldedRun(c, engine.server)
+				spelled := strings.ToUpper(run.database)
+				table := strings.ReplaceAll(test.table, "<db>", run.database)
+				grants := filepath.Join(c.TempDir(), "grants.yaml")
+				c.Assert(os.WriteFile(grants, fmt.Appendf(nil,
+					"grants:\n  everything:\n    role: %s\n    privileges: [SELECT]\n    on_schema: %s\n", run.role, spelled), 0o600), qt.IsNil)
+
+				applied := run.apply(c, foldedRunHistory+"CREATE ROLE %[1]s;\nREVOKE SELECT ON "+table+" FROM %[1]s;\n",
+					"--auto-approve", "--schema-file", grants)
+
+				c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				c.Assert(applied.Stderr, qt.Matches, fmt.Sprintf(
+					`(?s).*the schema grants SELECT ON %s\.\* to role "%s", which covers table %s, so a revoke on the table cannot take it.*`,
+					spelled, run.role, regexp.QuoteMeta(table)))
+				c.Assert(run.tablePrivileges(c), qt.DeepEquals, []string{"items SELECT"})
+				c.Assert(run.databasePrivileges(c), qt.IsNil)
+			})
+		}
+	}
+}
+
+// databasePrivileges is what the server holds for the role on the whole
+// database, one privilege each, in order.
+func (r foldedRun) databasePrivileges(c *qt.C) []string {
+	c.Helper()
+	rows, err := r.scratch.admin.QueryContext(c.Context(), `
+		SELECT PRIVILEGE_TYPE FROM information_schema.SCHEMA_PRIVILEGES
+		WHERE TABLE_SCHEMA = ? AND SUBSTRING_INDEX(GRANTEE, '@', 1) = CONCAT('''', ?, '''')
+		ORDER BY PRIVILEGE_TYPE`, r.database, r.role)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var held []string
+	for rows.Next() {
+		var privilege string
+		c.Assert(rows.Scan(&privilege), qt.IsNil)
+		held = append(held, privilege)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return held
 }
 
 // `migrations drift` replays the history in a shadow database and compares it

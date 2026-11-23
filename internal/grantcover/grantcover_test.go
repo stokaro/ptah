@@ -29,6 +29,14 @@ func readHolding(grants []catalog.Grant, wide ...catalog.WideGrant) *catalog.Dat
 	return &catalog.Database{Grants: grants, WideGrants: append(make([]catalog.WideGrant, 0, len(wide)), wide...)}
 }
 
+// selecting is a read of the one database d2, as a MySQL-family connection
+// that selected it makes, holding grants.
+func selecting(grants ...catalog.Grant) *catalog.Database {
+	read := readHolding(grants)
+	read.CurrentDatabase = "d2"
+	return read
+}
+
 // databaseGrant is privilege granted to role on the whole of database d2.
 func databaseGrant(role, privilege string) catalog.Grant {
 	return catalog.Grant{Role: role, Privilege: privilege, ObjectType: "SCHEMA", ObjectName: "d2"}
@@ -68,8 +76,62 @@ func TestFind_HappyPath(t *testing.T) {
 			want: []grantcover.Cover{{Grantee: "r2", Grant: "ALTER ON *.*"}, {Grantee: "PUBLIC", Grant: "SELECT ANY TABLE"}},
 		},
 		{
+			name: "a grant on every table of the schema, to the role and to PUBLIC", privileges: []string{"SELECT", "INSERT"}, table: "t3",
+			current: readHolding(nil,
+				catalog.WideGrant{Role: "r2", Privilege: "INSERT", Grant: "INSERT ANY TABLE ON SCHEMA APP", Schema: "APP"},
+				catalog.WideGrant{Role: "PUBLIC", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"},
+			),
+			want: []grantcover.Cover{
+				{Grantee: "r2", Grant: "INSERT ANY TABLE ON SCHEMA APP"},
+				{Grantee: "PUBLIC", Grant: "SELECT ANY TABLE ON SCHEMA APP"},
+			},
+		},
+		{
+			name: "a grant on every table of the schema a qualified table names", privileges: []string{"SELECT"}, table: "app.t3",
+			current: readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"}),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ANY TABLE ON SCHEMA APP"}},
+		},
+		{
+			name: "a grant on every table of another schema", privileges: []string{"SELECT"}, table: "OTHER.t3",
+			current: readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"}),
+		},
+		{
 			name: "a grant on another database", privileges: []string{"SELECT"}, table: "d9.t3",
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+		},
+		{
+			name: "a grant on the database a read of one database names", privileges: []string{"SELECT"}, table: "t3",
+			current: selecting(databaseGrant("r2", "SELECT")),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name:       "a grant on a database that differs in case from the one a qualified table names, in a read that names no database",
+			privileges: []string{"SELECT"}, table: "D2.t3",
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+		},
+		{
+			name:       "a grant on the database a read of one database names, for a table that names it in another case",
+			privileges: []string{"SELECT"}, table: "D2.t3",
+			current: selecting(databaseGrant("r2", "SELECT")),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "a grant on the database the schema declares on another database", desired: declares("r2", "d9", "SELECT"),
+			privileges: []string{"SELECT"}, table: "d2.t3",
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "a grant on the database the schema declares to another role", desired: declares("r7", "d2", "SELECT"),
+			privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "a grant on the database the schema declares of another privilege", desired: declares("r2", "d2", "INSERT"),
+			privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
 		},
 		{
 			name: "a grant of another privilege", privileges: []string{"INSERT"}, table: "t3",
@@ -118,7 +180,7 @@ func TestFind_HappyPath(t *testing.T) {
 			},
 			privileges: []string{"SELECT"}, table: "t3",
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
-			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*", AlsoDeclared: true}},
 		},
 	}
 	for _, test := range tests {
@@ -172,20 +234,20 @@ func TestFind_HappyPathDeclared(t *testing.T) {
 		{
 			name: "held already, which the read reports", desired: declares("r2", "d2", "SELECT"), privileges: []string{"SELECT"}, table: "t3",
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
-			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*", AlsoDeclared: true}},
 		},
 		{
 			name: "to PUBLIC, held already under the spelling the read reports", desired: declares("public", "d2", "SELECT"),
 			privileges: []string{"SELECT"}, table: "t3",
 			current: readHolding([]catalog.Grant{databaseGrant("PUBLIC", "SELECT")}),
-			want:    []grantcover.Cover{{Grantee: "PUBLIC", Grant: "SELECT ON d2.*"}},
+			want:    []grantcover.Cover{{Grantee: "PUBLIC", Grant: "SELECT ON d2.*", AlsoDeclared: true}},
 		},
 		{
 			name: "ALL, of which the read reports one privilege", desired: declares("r2", "d2", "ALL PRIVILEGES"),
 			privileges: []string{"ALL"}, table: "t3", all: listsOf("mariadb"),
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
 			want: []grantcover.Cover{
-				{Grantee: "r2", Grant: "SELECT ON d2.*"},
+				{Grantee: "r2", Grant: "SELECT ON d2.*", AlsoDeclared: true},
 				{Grantee: "r2", Grant: "ALL ON d2.*", Declared: true},
 			},
 		},
@@ -193,11 +255,30 @@ func TestFind_HappyPathDeclared(t *testing.T) {
 			name: "ALL, of which the read reports every privilege the revoke names", desired: declares("r2", "d2", "ALL"),
 			privileges: []string{"SELECT"}, table: "t3",
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
-			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*", AlsoDeclared: true}},
+		},
+		{
+			name: "on the database a read of one database names", desired: declares("r2", "d2", "SELECT"),
+			privileges: []string{"SELECT"}, table: "t3", current: selecting(),
+			want: []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*", Declared: true}},
+		},
+		{
+			name: "on the database a read of one database names, spelled in another case", desired: declares("r2", "D2", "SELECT"),
+			privileges: []string{"SELECT"}, table: "t3", current: selecting(),
+			want: []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON D2.*", Declared: true}},
 		},
 		{
 			name: "on another database", desired: declares("r2", "d9", "SELECT"), privileges: []string{"SELECT"}, table: "d2.t3",
 			current: readHolding(nil),
+		},
+		{
+			name:    "on the database a read of one database names, spelled in another case, for a table that names it",
+			desired: declares("r2", "D2", "SELECT"), privileges: []string{"SELECT"}, table: "d2.t3", current: selecting(),
+			want: []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON D2.*", Declared: true}},
+		},
+		{
+			name: "on another database than a read of one database names", desired: declares("r2", "d9", "SELECT"),
+			privileges: []string{"SELECT"}, table: "t3", current: selecting(),
 		},
 		{
 			name: "to another role", desired: declares("r7", "d2", "SELECT"), privileges: []string{"SELECT"}, table: "t3",
@@ -288,6 +369,19 @@ func TestFind_NotKnown(t *testing.T) {
 	c.Assert(covers, qt.DeepEquals, []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}})
 }
 
+// TestFind_PartlyKnown reports the system privilege of a read that was refused
+// the privileges granted on a schema, and says it does not know the rest.
+func TestFind_PartlyKnown(t *testing.T) {
+	c := qt.New(t)
+	current := readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"})
+	current.WideGrantsPartial = true
+
+	covers, known := grantcover.Find(nil, current, "r2", []string{"SELECT"}, "t3", descriptor.AllPrivileges{})
+
+	c.Assert(known, qt.IsFalse)
+	c.Assert(covers, qt.DeepEquals, []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ANY TABLE"}})
+}
+
 // TestValidate_FailurePath refuses a revoke a wider grant keeps, naming the
 // grant and where to revoke it.
 func TestValidate_FailurePath(t *testing.T) {
@@ -327,6 +421,21 @@ func TestValidate_FailurePath(t *testing.T) {
 			want: `role "r2" holds SELECT ANY TABLE, which covers table t3, so a revoke on the table cannot take it: ` +
 				`revoke SELECT ANY TABLE from "r2" instead, or grant the privilege on each table that needs it`,
 		},
+		{
+			name: "a system privilege, in a read refused the privileges on a schema", dialect: "oracle",
+			current: &catalog.Database{
+				WideGrants:        []catalog.WideGrant{{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}},
+				WideGrantsPartial: true,
+			},
+			want: `role "r2" holds SELECT ANY TABLE, which covers table t3, so a revoke on the table cannot take it: ` +
+				`revoke SELECT ANY TABLE from "r2" instead, or grant the privilege on each table that needs it`,
+		},
+		{
+			name: "a system privilege on the schema", dialect: "oracle",
+			current: readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"}),
+			want: `role "r2" holds SELECT ANY TABLE ON SCHEMA APP, which covers table t3, so a revoke on the table cannot take it: ` +
+				`revoke SELECT ANY TABLE ON SCHEMA APP from "r2" instead, or grant the privilege on each table that needs it`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -364,6 +473,18 @@ func TestValidate_FailurePathDeclared(t *testing.T) {
 			current: readHolding(nil),
 			want: `the schema grants SELECT ON d2\.\* to PUBLIC, which gives role "r2" the privilege on table t3, so a revoke on the table cannot take it: ` +
 				`grant the privilege on each table that needs it instead of on the database`,
+		},
+		{
+			name: "a held grant the schema declares too", desired: withRevoke(declares("r2", "d2", "ALL"), "SELECT"),
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want: `role "r2" holds SELECT ON d2\.\*, which the schema grants too and which covers table t3, so a revoke on the table cannot take it: ` +
+				`grant the privilege on each table that needs it instead of on the database`,
+		},
+		{
+			name: "a grant to PUBLIC the schema declares too", desired: withRevoke(declares("PUBLIC", "d2", "SELECT"), "SELECT"),
+			current: readHolding([]catalog.Grant{databaseGrant("PUBLIC", "SELECT")}),
+			want: `PUBLIC holds SELECT ON d2\.\*, which the schema grants too and which gives role "r2" the privilege on table t3, ` +
+				`so a revoke on the table cannot take it: grant the privilege on each table that needs it instead of on the database`,
 		},
 		{
 			name: "a revoke of ALL under a grant of a table privilege and one no table carries", desired: revokes("t3", "ALL"),

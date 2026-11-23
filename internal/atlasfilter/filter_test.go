@@ -53,6 +53,39 @@ func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
 	c.Assert(got.RolesOutOfScopeReason, qt.Equals, "another tenant owns them")
 }
 
+// TestExcludeDatabase_KeepsAPartialWideGrantRead keeps the mark of a
+// read refused some of the grants wider than a table. Dropped, the filtered
+// description says it knows every such grant, and a revoke on a table the plan
+// creates is left out although a grant on the table's schema may keep the
+// privilege.
+func TestExcludeDatabase_KeepsAPartialWideGrantRead(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.WideGrants = []catalog.WideGrant{{Role: "auditor", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}}
+	schema.WideGrantsPartial = true
+
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.WideGrants, qt.DeepEquals, schema.WideGrants)
+	c.Assert(got.WideGrantsPartial, qt.IsTrue)
+}
+
+// TestExcludeDatabase_KeepsTheDatabaseTheReadDescribes keeps the database a
+// read of one database names. Dropped, a table named without its database is
+// in no known database, and a grant on any database covers it, so a revoke
+// beside a grant on another database is refused.
+func TestExcludeDatabase_KeepsTheDatabaseTheReadDescribes(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.CurrentDatabase = "app"
+
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.CurrentDatabase, qt.Equals, "app")
+}
+
 // TestExcludeDatabase_HoldsOutOfScopeEveryViewAndTriggerItLeavesOut leaves out
 // a whole table and a view. The table's columns are not held out of scope: a
 // table out of scope is not changed, so nothing carries them. Its trigger and

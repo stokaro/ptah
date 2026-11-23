@@ -29,6 +29,14 @@ func oraclePlan() plan {
 		acceptance(capability.CatalogVectorInfo, nil,
 			"SELECT vector_info FROM all_tab_cols WHERE ROWNUM = 0",
 		),
+		// DBA_SCHEMA_PRIVS comes with the privilege granted on a schema, and
+		// so does USER_SCHEMA_PRIVS, which every account may read where the
+		// first view needs a catalog role. 23.26.3.0.0 accepts both, and 21.3
+		// answers ORA-00942 for both, as SYSTEM too: the split the reader's
+		// gate turns on.
+		acceptance(capability.CatalogSchemaPrivileges, nil,
+			"SELECT privilege FROM user_schema_privs WHERE ROWNUM = 0",
+		),
 		acceptance(capability.DropConstraintGeneric,
 			[]string{"CREATE TABLE dcg (n NUMBER(10), CONSTRAINT dcg_ck CHECK (n > 0))"},
 			"ALTER TABLE dcg DROP CONSTRAINT dcg_ck",

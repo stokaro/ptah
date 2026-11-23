@@ -94,6 +94,10 @@ func TestOracleResolution(t *testing.T) {
 // catalog_vector_info is the second, and it is a catalog shape rather than an
 // object: ALL_TAB_COLS.VECTOR_INFO exists on 23.26.3.0.0 and is absent from
 // 21.3, where a reader that projected it would fail the whole column read.
+//
+// catalog_schema_privileges is a catalog shape too: DBA_SCHEMA_PRIVS exists on
+// 23.26.3.0.0 and is absent from 21.3, where the server answers ORA-00942, the
+// code it also answers an account the view is refused to.
 func TestOraclePresets_DifferOnlyInTheGuardsAndDomains(t *testing.T) {
 	c := qt.New(t)
 
@@ -111,6 +115,7 @@ func TestOraclePresets_DifferOnlyInTheGuardsAndDomains(t *testing.T) {
 		names = append(names, string(key))
 	}
 	c.Assert(names, qt.ContentEquals, []string{
+		string(capability.CatalogSchemaPrivileges),
 		string(capability.CatalogVectorInfo),
 		string(capability.DomainTypes),
 		string(capability.DropIndexIfExists),

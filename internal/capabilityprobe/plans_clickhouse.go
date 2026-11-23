@@ -284,7 +284,7 @@ func clickHousePlan() plan {
 		acceptanceNote(capability.RenameTable, []string{t.table("rnt", "n Int64", "n")}, renameTableStatement,
 			"ClickHouse renames a table through RENAME TABLE, a different statement from the ALTER clause this key names"),
 	}
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+	return plan{experiments: experiments, undecided: withoutOracleCatalog(map[capability.Capability]string{
 		capability.AlterTableAlgorithmLock: "the key names the MySQL-family ALGORITHM and LOCK clauses; " +
 			"this server's ALTER TABLE takes neither and its mutations are asynchronous by design, so " +
 			"a refusal would answer a different question",
@@ -294,9 +294,6 @@ func clickHousePlan() plan {
 		capability.AddConstraintNotValid: "the key names PostgreSQL's NOT VALID constraint and the " +
 			"statement that validates it; this server has neither spelling, so a refusal would answer " +
 			"a different question",
-		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
-			"relation, and the reader the key gates runs only against Oracle, so neither " +
-			"having nor lacking it here would decide the key",
 		capability.SchemaComments: "ClickHouse comments a database in CREATE DATABASE and has no COMMENT ON SCHEMA to accept or refuse, so there is " +
 			"no statement to send. Its renderer emits none either (stokaro/ptah#2651)",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
@@ -338,7 +335,7 @@ func clickHousePlan() plan {
 		capability.TransactionalDDL:          "the key names whether a failed migration rolls back as a unit; ClickHouse commits DDL as it runs, which is the engine rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it; " +
 			"ClickHouse has no SHOW_ROUTINE privilege for it to find",
-	}}
+	})}
 }
 
 // clickHouseRowPolicy decides RowLevelSecurity by asking the question this

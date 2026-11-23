@@ -257,17 +257,23 @@ func oracleRoleByName(c *qt.C, roles []catalog.Role, name string) catalog.Role {
 	return catalog.Role{}
 }
 
-// oracleURLAs re-points an Oracle URL at another account.
+// oracleAccountPassword is the password of every account createOracleUser
+// makes. These accounts exist for the length of one test on a container that
+// exists for the length of one CI job, so the password is a constant rather
+// than something the workflow threads through. It is not the account name: the
+// CLI takes the password out of what it prints, and a password equal to the
+// name prints every schema the account owns as ***.
 //
-// The password is the account name, which createOracleUser also uses: these
-// accounts exist for the length of one test on a container that exists for the
-// length of one CI job, and a password nobody has to thread through the
-// workflow is one fewer thing to keep in step.
+// #nosec G101 -- the password of an account the test creates and drops on a test server.
+const oracleAccountPassword = "Ptah_account_pw_1"
+
+// oracleURLAs re-points an Oracle URL at another account, one createOracleUser
+// made.
 func oracleURLAs(c *qt.C, address, account string) string {
 	c.Helper()
 	parsed, err := url.Parse(address)
 	c.Assert(err, qt.IsNil)
-	parsed.User = url.UserPassword(account, account)
+	parsed.User = url.UserPassword(account, oracleAccountPassword)
 	return parsed.String()
 }
 
@@ -275,7 +281,7 @@ func oracleURLAs(c *qt.C, address, account string) string {
 // nothing else.
 func createOracleUser(ctx context.Context, c *qt.C, admin *dbschema.DatabaseConnection, account string) {
 	c.Helper()
-	execOracle(ctx, c, admin, "CREATE USER "+account+" IDENTIFIED BY "+account)
+	execOracle(ctx, c, admin, "CREATE USER "+account+` IDENTIFIED BY "`+oracleAccountPassword+`"`)
 	execOracle(ctx, c, admin, "GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW TO "+account)
 	execOracle(ctx, c, admin, "ALTER USER "+account+" QUOTA UNLIMITED ON USERS")
 }

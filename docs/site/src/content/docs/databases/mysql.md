@@ -1494,12 +1494,21 @@ names the grant: revoke it where it was granted, or grant the privilege on
 each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
 A database grant the schema declares under `grants:` with `on_schema` keeps
-the privilege too, before the server holds it, because the plan grants it. A
-database grant the plan removes keeps nothing: one the schema revokes under
+the privilege too, before the server holds it, because the plan grants it.
+Where the role holds a database grant the schema also declares, the refusal
+does not advise revoking it, because the plan would grant it again. A grant on
+another database keeps nothing on the table: a table named without its
+database is in the database the connection selected. On a server that keeps
+names apart by case, a database whose name differs only in case still counts,
+so such a revoke is refused. Measured on 8.4.13, 26.10.0, 10.11.19, 11.8.9 and
+12.3.3.
+
+A database grant the plan removes keeps nothing: one the schema revokes under
 `revokes:` with `on_schema`, and an undeclared one held by a role the schema
 declares. A revoke of `ALL` on a table names what `ALL` grants on a table, so a
 database grant of a privilege no table carries, such as `EXECUTE` or
-`LOCK TABLES`, keeps nothing it names.
+`LOCK TABLES`, keeps nothing it names. Measured on 8.4.13, 26.10.0, 10.11.19,
+11.8.9 and 12.3.3.
 
 A kept column privilege that a revoke on its table takes comes back right
 after the revokes where its column exists, and after the `CREATE TABLE`,

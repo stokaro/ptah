@@ -483,7 +483,7 @@ func postgresFamilyPlan(dialect string) plan {
 // separate from postgresFamilyPlan because it is a different kind of statement
 // -- what the probe declines to measure, rather than what it measures.
 func postgresFamilyUndecided() map[capability.Capability]string {
-	return map[capability.Capability]string{
+	return withoutOracleCatalog(map[capability.Capability]string{
 		// The probe connects as ONE account and cannot ask whether a privilege
 		// EXISTS without being able to grant it: a server that refuses
 		// `GRANT SHOW_ROUTINE` because the privilege is unknown and one that
@@ -491,9 +491,6 @@ func postgresFamilyUndecided() map[capability.Capability]string {
 		// acceptance test, and this harness reads acceptance rather than error
 		// text. The threshold is MySQL 8.0.20 and the ladder carries it
 		// (stokaro/ptah#916 item 3).
-		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
-			"relation, and the reader the key gates runs only against Oracle, so neither " +
-			"having nor lacking it here would decide the key",
 		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
 			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
 		capability.MigrationLockTimeout: "the key names a runtime policy the migrator applies around a migration; " +
@@ -518,7 +515,7 @@ func postgresFamilyUndecided() map[capability.Capability]string {
 		capability.ContinuousAggregates: "the key names TimescaleDB continuous aggregates, for the same " +
 			"reason: a PostgreSQL image without the extension refuses CREATE MATERIALIZED VIEW WITH " +
 			"(timescaledb.continuous) for the extension's absence",
-	}
+	})
 }
 
 // mysqlFamilyPlan is the statement table for MySQL and MariaDB.
@@ -759,10 +756,7 @@ func mysqlFamilyPlan(dialect string) plan {
 // mysqlFamilyUndecided is each key the MySQL-family plan declares rather than
 // asks, with the reason no statement this server takes would decide it.
 func mysqlFamilyUndecided() map[capability.Capability]string {
-	return map[capability.Capability]string{
-		capability.CatalogVectorInfo: "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; this server has no such " +
-			"relation, and the reader the key gates runs only against Oracle, so neither having nor " +
-			"lacking it here would decide the key",
+	return withoutOracleCatalog(map[capability.Capability]string{
 		capability.SchemaComments: "MySQL and MariaDB carry a comment on the table and on the column and " +
 			"have no COMMENT ON SCHEMA to accept or refuse, so there is no statement to send. Their " +
 			"renderer emits none either (stokaro/ptah#2651)",
@@ -838,7 +832,7 @@ func mysqlFamilyUndecided() map[capability.Capability]string {
 			"would answer a different question",
 		capability.ContinuousAggregates: "the key names a TimescaleDB object for the same reason; this " +
 			"server has no such statement and no MySQL-family code path emits one",
-	}
+	})
 }
 
 // catalogTriggerDefinitions decides CatalogTriggerDefinitions by asking for
@@ -1031,6 +1025,20 @@ func instantColumnPosition(setup string) experiment {
 // [capability.InstantAddColumnAnyPosition] undecidable rather than asking it.
 const noColumnPositionReason = "the key names an instant MySQL-family column placed before existing ones; " +
 	"this server has no column position, so a refusal would answer a different question"
+
+// oracleCatalogReason is why a key that gates a read of an Oracle catalog
+// relation is undecidable on any other engine.
+const oracleCatalogReason = "this server has no such relation, and the reader the key gates runs " +
+	"only against Oracle, so neither having nor lacking it here would decide the key"
+
+// withoutOracleCatalog adds the keys that gate a read of an Oracle catalog
+// relation to an engine's undecided keys, each with [oracleCatalogReason], and
+// returns them.
+func withoutOracleCatalog(undecided map[capability.Capability]string) map[capability.Capability]string {
+	undecided[capability.CatalogVectorInfo] = "ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column; " + oracleCatalogReason
+	undecided[capability.CatalogSchemaPrivileges] = "DBA_SCHEMA_PRIVS is an Oracle catalog view; " + oracleCatalogReason
+	return undecided
+}
 
 // withoutColumnPosition adds the [noColumnPositionReason] declaration to an
 // engine's undecided keys and returns them.

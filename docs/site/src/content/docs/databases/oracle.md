@@ -680,9 +680,19 @@ table, and a revoke on one table cannot take it away. Ptah reads `SELECT`,
 `READ`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` and `FLASHBACK ANY TABLE` from
 `DBA_SYS_PRIVS`, refuses a declared revoke on a table that one of them keeps,
 and names it: revoke `SELECT ANY TABLE` instead, or grant the privilege on each
-table that needs it. An account that may not read `DBA_SYS_PRIVS` gets the
-revoke planned as declared, and the server answers for the role. Measured on
-23.26.3.
+table that needs it. On Oracle 23 the same privileges granted on the schema,
+as `GRANT SELECT ANY TABLE ON SCHEMA app TO r`, give the privilege on every
+table of the schema. Ptah reads them from `DBA_SCHEMA_PRIVS` for the schema it
+reads, and names `SELECT ANY TABLE ON SCHEMA APP` the same way. Oracle 21 has
+no such privilege, and Ptah does not ask. Measured on 23.26.3 and 21.3.
+
+What the account may read decides what Ptah can refuse:
+
+- An account that may not read `DBA_SYS_PRIVS` gets the revoke planned as
+  declared, and the server answers for the role.
+- One that may read it and not `DBA_SCHEMA_PRIVS` still gets the refusal for a
+  privilege on every table. Its revoke on a table the plan creates is planned
+  when nothing it read covers the table, and the server answers for the role.
 
 ## Grants of ALL
 
