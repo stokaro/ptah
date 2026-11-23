@@ -374,7 +374,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat).
-		WithLogger(slog.New(warnFloor{runtime.Logger().Handler()})).
+		WithLogger(slog.New(dbcli.WarnFloor(runtime.Logger().Handler()))).
 		WithObserver(runtime.Observer())
 
 	// Get migration status
@@ -666,29 +666,4 @@ func dirtyRepeatables(records []migrator.RepeatableRecord) []migrator.Repeatable
 		}
 	}
 	return dirty
-}
-
-// warnFloor passes the migrator's warnings and errors to the command's handler
-// and drops its Info records. A status is a read, and every Info record the
-// migrator writes narrates an apply: with the writer in dry-run mode, an empty
-// database reads as `[DRY RUN] Would initialize migrations metadata`, which is
-// not what a status does, on a stream a pending status leaves empty.
-type warnFloor struct {
-	slog.Handler
-}
-
-// Enabled reports whether level is Warn or above and the wrapped handler takes
-// it.
-func (h warnFloor) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= slog.LevelWarn && h.Handler.Enabled(ctx, level)
-}
-
-// WithAttrs keeps the floor on the handler the attributes return.
-func (h warnFloor) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return warnFloor{h.Handler.WithAttrs(attrs)}
-}
-
-// WithGroup keeps the floor on the handler the group returns.
-func (h warnFloor) WithGroup(name string) slog.Handler {
-	return warnFloor{h.Handler.WithGroup(name)}
 }

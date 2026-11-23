@@ -40,10 +40,14 @@ const (
 	installedAnnotation = "ptah.env.installed"
 	// emptyRefusedAnnotation marks a flag whose variable may not be set to a
 	// value that names nothing. It holds the [EmptyRule]: what leaving the flag
-	// out does, then listValue when the value is a comma-separated list.
+	// out does, then listValue when the value is a comma-separated list, then
+	// unlessPrefix and a flag name for each of [EmptyRule.Unless].
 	emptyRefusedAnnotation = "ptah.env.empty-refused"
 	// listValue is the second element of emptyRefusedAnnotation for a list.
 	listValue = "list"
+	// unlessPrefix marks an element of emptyRefusedAnnotation that names a
+	// flag of [EmptyRule.Unless].
+	unlessPrefix = "unless="
 )
 
 // ErrEmptyValue reports a variable whose value names nothing on a flag that
@@ -51,8 +55,9 @@ const (
 var ErrEmptyValue = errors.New("names nothing")
 
 // EmptyRule is what a flag's variable refuses: a value that names nothing.
-// For a single value that is the empty value and a value of only spaces; for
-// a list it is a value with no field left once it is split and trimmed.
+// For a single value that is the empty value and a value of only white space,
+// such as spaces or a tab; for a list it is a value with no field left once it
+// is split and trimmed.
 //
 // Every other non-boolean variable reads an empty value as unset. For a flag
 // that selects something, unset can select more than any value does, so an
@@ -68,6 +73,18 @@ type EmptyRule struct {
 	// Without it the value is read whole, and "" and " " are refused while ","
 	// is passed on to the flag.
 	List bool
+	// Unless names the flags whose value, typed on the command line, decides
+	// the run whatever the variable says. While one of them is typed with a
+	// value other than its default, a value that names nothing cannot widen
+	// the run, and the binding reads it as unset instead of refusing it: an
+	// empty PTAH_TARGET beside a typed --limit 1 leaves the stop to --limit. A
+	// typed default, such as --limit 0 or --to-tag '', selects what leaving
+	// the flag out does, and so does a value of only white space; beside one
+	// of those, or with none typed, a stop another variable sets would decide
+	// the run in its place, so the value is refused. The binding in
+	// internal/cli/internal/cmdflags applies it; [EmptyRule.Check] does not
+	// read it.
+	Unless []string
 }
 
 // Check returns the refusal of value, the value of envName, which --flagName
@@ -125,6 +142,9 @@ func RefuseEmpty(flag *pflag.Flag, rule EmptyRule) error {
 	if rule.List {
 		values = append(values, listValue)
 	}
+	for _, name := range rule.Unless {
+		values = append(values, unlessPrefix+name)
+	}
 	flag.Annotations[emptyRefusedAnnotation] = values
 	return nil
 }
@@ -139,7 +159,15 @@ func EmptyRefused(flag *pflag.Flag) (EmptyRule, bool) {
 	if !refused || len(values) == 0 {
 		return EmptyRule{}, false
 	}
-	return EmptyRule{Omitted: values[0], List: len(values) > 1 && values[1] == listValue}, true
+	rule := EmptyRule{Omitted: values[0]}
+	for _, value := range values[1:] {
+		if name, ok := strings.CutPrefix(value, unlessPrefix); ok {
+			rule.Unless = append(rule.Unless, name)
+			continue
+		}
+		rule.List = rule.List || value == listValue
+	}
+	return rule, true
 }
 
 // Name returns the environment variable a flag of this name binds to under

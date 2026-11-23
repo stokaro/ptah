@@ -826,6 +826,14 @@ The native `--limit` typed here is refused, and the native `PTAH_TARGET` and
 The community binary has no `migrate down`, so the documentation is the
 reference for this behavior.
 
+`PTAH_MIGRATIONS_TABLE`, `PTAH_MIGRATIONS_SCHEMA` and `PTAH_REVISION_FORMAT`
+are not read either: the revision table is `atlas_schema_revisions` in the
+schema `--revisions-schema` names, as on `migrate apply` and `migrate status`.
+`migrate edit`, `migrate rebase`, `migrate rm` and `migrate test` do not read
+these three variables. An empty
+or blank `PTAH_TO_VERSION`, `PTAH_TO_TAG` or `PTAH_REVISIONS_SCHEMA` is
+refused, as `migrate apply` refuses `PTAH_TO_VERSION`.
+
 | Flag | Behavior |
 | --- | --- |
 | `--dev-url` | Replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`). |

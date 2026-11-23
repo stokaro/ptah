@@ -46,6 +46,56 @@ func TestSetFencesTheTableAnEntryNames(t *testing.T) {
 			table:   "regions",
 			want:    "regions",
 		},
+		{name: "a quoted bare name", entries: []string{`"regions"`}, table: "regions", want: `"regions"`},
+		{
+			name:    "a quoted table name",
+			entries: []string{`reference."regions"`},
+			schema:  "reference",
+			table:   "regions",
+			want:    `reference."regions"`,
+		},
+		{
+			name:    "a quoted schema name",
+			entries: []string{`"reference".regions`},
+			schema:  "reference",
+			table:   "regions",
+			want:    `"reference".regions`,
+		},
+		{
+			name:    "backticks",
+			entries: []string{"`reference`.`regions`"},
+			schema:  "reference",
+			table:   "regions",
+			want:    "`reference`.`regions`",
+		},
+		{
+			name:    "brackets",
+			entries: []string{"[reference].[regions]"},
+			schema:  "reference",
+			table:   "regions",
+			want:    "[reference].[regions]",
+		},
+		{
+			name:    "a schema whose name holds a dot",
+			entries: []string{`"tenant.one".regions`},
+			schema:  "tenant.one",
+			table:   "regions",
+			want:    `"tenant.one".regions`,
+		},
+		{
+			name:    "a table whose name holds a dot, unquoted",
+			entries: []string{"a.b"},
+			schema:  "reference",
+			table:   "a.b",
+			want:    "a.b",
+		},
+		{
+			name:    "a table whose name holds a dot, quoted",
+			entries: []string{`"a.b"`},
+			schema:  "reference",
+			table:   "a.b",
+			want:    `"a.b"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -81,6 +131,20 @@ func TestSetLeavesEveryOtherTableAlone(t *testing.T) {
 		{
 			name:    "a prefix of the name",
 			entries: []string{"region"},
+			table:   "regions",
+		},
+		{
+			// Quoted, the dot is part of the name: the entry names the table
+			// tenant.regions, not regions in the schema tenant.
+			name:    "a quoted name holding a dot",
+			entries: []string{`"tenant.regions"`},
+			schema:  "tenant",
+			table:   "regions",
+		},
+		{
+			name:    "a quoted schema of another name",
+			entries: []string{`"tenant".regions`},
+			schema:  "tenant.one",
 			table:   "regions",
 		},
 		{name: "no entries at all", entries: nil, table: "regions"},

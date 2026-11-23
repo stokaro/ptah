@@ -322,8 +322,11 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Apply pending migrations up to and including this version; a version the directory does not "+
 			"carry, or one the database has already passed, is refused (empty applies all)",
 	)
-	dbcli.RefuseEmptyValueEnv(flags, limitFlag, applyEveryPending)
-	dbcli.RefuseEmptyValueEnv(flags, toVersionFlag, applyEveryPending)
+	// Read as unset, an empty variable applies every pending migration. A stop
+	// typed beside it decides the run, so there the empty value is unset; a
+	// typed --limit 0 or --to-version '' names no stop.
+	dbcli.RefuseEmptyStopEnv(flags, limitFlag, applyEveryPending, toVersionFlag)
+	dbcli.RefuseEmptyStopEnv(flags, toVersionFlag, applyEveryPending, limitFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration assertion checks (+ptah check directives and Atlas txtar checks.sql)")
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")

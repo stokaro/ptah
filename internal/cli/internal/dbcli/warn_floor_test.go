@@ -1,9 +1,4 @@
-package migratestatus
-
-// White-box testing required: warnFloor is unexported, and no status read makes
-// the migrator warn, so the half of the floor that passes a warning through
-// cannot be observed by running the command. Without this test, a floor that
-// dropped every record would pass TestMigrateStatus_ReadsWithoutWriting.
+package dbcli_test
 
 import (
 	"bytes"
@@ -12,11 +7,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/cli/internal/dbcli"
 )
 
 // TestWarnFloor passes a record at Warn and above to the wrapped handler and
 // drops one below, on the logger itself and on one derived with attributes or
-// a group.
+// a group. No read through a command makes the migrator warn, so the half of
+// the floor that passes a warning through is observed here: a floor that
+// dropped every record would pass every command test.
 func TestWarnFloor(t *testing.T) {
 	rows := []struct {
 		name   string
@@ -37,7 +36,7 @@ func TestWarnFloor(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			var out bytes.Buffer
-			floor := slog.New(warnFloor{slog.NewTextHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug})})
+			floor := slog.New(dbcli.WarnFloor(slog.NewTextHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug})))
 			derived := map[string]*slog.Logger{
 				"":      floor,
 				"attrs": floor.With("k", "v"),

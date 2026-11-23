@@ -190,9 +190,12 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.Uint64Var(&opts.limit, limitFlag, 0,
 		"Roll back only the last N applied migrations (0 sets no limit); exclusive with --"+targetFlag+" and --"+toTagFlag)
 	// Read as unset, an empty variable leaves the stop to whatever else names
-	// one, and a PTAH_TARGET=0 beside it rolls the whole history back.
-	dbcli.RefuseEmptyValueEnv(flags, targetFlag, "stop at --"+toTagFlag+" or --"+limitFlag)
-	dbcli.RefuseEmptyValueEnv(flags, limitFlag, "stop at --"+targetFlag+" or --"+toTagFlag)
+	// one, and a PTAH_TARGET=0 beside it rolls the whole history back. A stop
+	// typed beside it decides the run, so there the empty value is unset; a
+	// typed --limit 0, --target '' or --to-tag '' names no stop.
+	dbcli.RefuseEmptyStopEnv(flags, targetFlag, "stop at --"+toTagFlag+" or --"+limitFlag, limitFlag, toTagFlag)
+	dbcli.RefuseEmptyStopEnv(flags, limitFlag, "stop at --"+targetFlag+" or --"+toTagFlag, targetFlag, toTagFlag)
+	dbcli.RefuseEmptyStopEnv(flags, toTagFlag, "stop at --"+targetFlag+" or --"+limitFlag, targetFlag, limitFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false,
 		"Skip the pre-migration checks embedded in the down migrations being rolled back")
 	flags.BoolVar(&opts.plan, planFlag, false,
@@ -1012,10 +1015,18 @@ func requireStop(flags *pflag.FlagSet, opts *options, target string) error {
 	if flags.Changed(targetFlag) {
 		return refuseMalformedTarget(target)
 	}
-	if opts.toTag == "" && opts.limit == 0 {
-		return errNoStop
+	if opts.toTag != "" || opts.limit > 0 {
+		return nil
 	}
-	return nil
+	// A --limit of 0 is a value, so it is not refused as empty, but it sets no
+	// limit; the refusal names where the 0 came from.
+	if env, fromEnv := cmdflags.AppliedEnvName(flags, limitFlag); fromEnv {
+		return fmt.Errorf("%s=0 names no stop: %w", env, errNoStop)
+	}
+	if cmdflags.SetOnCommandLine(flags, limitFlag) {
+		return fmt.Errorf("--%s 0 names no stop: %w", limitFlag, errNoStop)
+	}
+	return errNoStop
 }
 
 // typedTargetVersion resolves --target against the directory mig read. With

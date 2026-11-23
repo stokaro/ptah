@@ -116,9 +116,10 @@ The refusal says how to name one:
 error: name where the rollback stops: pass --target <version> (--target 0 rolls back every applied migration), --to-tag <tag> or --limit <n>; "ptah migrations status" lists the applied versions
 ```
 
-An empty or blank `PTAH_TARGET` or `PTAH_LIMIT` is refused as well, even
-beside a typed stop; see
+An empty or blank `PTAH_TARGET`, `PTAH_LIMIT` or `PTAH_TO_TAG` is refused as
+well, unless a stop is typed beside it, which decides the rollback; see
 [variables that narrow a write](../../reference/configuration/#variables-that-narrow-a-write).
+`PTAH_LIMIT=0` sets no limit, and alone it is refused as naming no stop.
 
 To count instead of naming a version, pass `--limit N`: the last N applied
 migrations are rolled back, and a limit larger than the history rolls back

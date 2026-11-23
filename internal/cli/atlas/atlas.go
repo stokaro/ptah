@@ -35,9 +35,9 @@ import (
 	"ptah.run/internal/cli/migrationstest"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/cmdforward"
-	"ptah.run/internal/envbinding"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/rundiag"
+	"ptah.run/migration/migrator"
 )
 
 type atlasVerb struct {
@@ -823,12 +823,12 @@ func atlasMigrateDownVerb() atlasVerb {
 			// The native name's variable, PTAH_TARGET, is read here as a value
 			// of --to-version, so the adapter sees every version it is given
 			// before it decides whether the run counts back instead.
-			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
+			atlasDownStopFlag("to-version", "Target version to roll back to", "target"),
 			// --to-tag resolves against the tags `ptah migrations tag` records
 			// in the database, not against a hosted registry. The waiver this
 			// replaces said migration tags require one; they do not, and the
 			// tag namespace added for stokaro/ptah#1621 is where these resolve.
-			atlasargs.NativeString("to-tag", "", "Target migration tag to roll back to", "to-tag"),
+			atlasDownStopFlag("to-tag", "Target migration tag to roll back to", "to-tag"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
 			// --format is implemented by newAtlasMigrateDownCommand, which
 			// intercepts it before the arg mapper runs. The Unsupported marker
@@ -836,7 +836,7 @@ func atlasMigrateDownVerb() atlasVerb {
 			// mapper it still fails loudly instead of leaking to the native
 			// command as an unknown flag.
 			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
-			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
+			atlasRevisionsSchemaFlag("Schema for the revision table"),
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
 			// --skip-checks bypasses the pre-migration checks the down bodies
 			// being rolled back carry.
@@ -887,12 +887,7 @@ func atlasMigrateTestVerb() atlasVerb {
 			// in"), the same spelling it carries on apply, status and set. It
 			// maps onto the native --migrations-schema, which places the
 			// revision table a migrate_to step writes.
-			atlasargs.NativeString(
-				"revisions-schema",
-				"",
-				"Schema the revision table written by a migrate_to step resides in",
-				"migrations-schema",
-			),
+			atlasRevisionsSchemaFlag("Schema the revision table written by a migrate_to step resides in"),
 		},
 	}
 }
@@ -989,6 +984,7 @@ func atlasMigrateEditVerb() atlasVerb {
 			nativeName: "version",
 			mapValue:   atlasMigrateVersionValue,
 		}},
+		prefixArgs:      atlasMigrateMaintPrefixArgs(),
 		nativeOnlyFlags: append(atlasMigrateMaintNativeOnlyFlags(), "down-file", "editor", "up-file"),
 		flags:           atlasMigrateMaintFlags(),
 	}
@@ -1012,6 +1008,7 @@ func atlasMigrateRebaseVerb() atlasVerb {
 			mapValue:   atlasMigrateVersionValue,
 			variadic:   true,
 		}},
+		prefixArgs:      atlasMigrateMaintPrefixArgs(),
 		nativeOnlyFlags: atlasMigrateMaintNativeOnlyFlags(),
 		flags:           atlasMigrateMaintFlags(),
 	}
@@ -1032,6 +1029,7 @@ func atlasMigrateRmVerb() atlasVerb {
 			nativeName: "version",
 			mapValue:   atlasMigrateVersionValue,
 		}},
+		prefixArgs:      atlasMigrateMaintPrefixArgs(),
 		nativeOnlyFlags: atlasMigrateMaintNativeOnlyFlags(),
 		flags:           atlasMigrateMaintFlags(),
 	}
@@ -1123,6 +1121,17 @@ func atlasMigrateMaintFlags() []atlasargs.Flag {
 	}
 }
 
+// atlasMigrateMaintPrefixArgs are the native flags every forwarded edit,
+// rebase and rm starts with. Their guard refuses a version the database has
+// applied, and it reads the applied history in the revision table `migrate
+// apply` writes: Atlas's atlas_schema_revisions, where Atlas keeps it. Left to
+// the native default, the guard reads Ptah's schema_migrations, which a
+// history applied through this surface never wrote, finds nothing applied and
+// removes, moves or rewrites the file of an applied migration.
+func atlasMigrateMaintPrefixArgs() []string {
+	return []string{"--" + dbcli.RevisionTableFormatFlagName, string(migrator.RevisionTableFormatAtlas)}
+}
+
 // atlasMigrateMaintNativeOnlyFlags lists the native maintenance flags the
 // Atlas-shaped edit/rebase/rm verbs do not accept; use the native
 // `ptah migrations edit|rebase|rm` commands for them.
@@ -1135,7 +1144,7 @@ func atlasMigrateMaintNativeOnlyFlags() []string {
 		"migrations-dir",
 		"migrations-schema",
 		"migrations-table",
-		"revision-table-format",
+		dbcli.RevisionTableFormatFlagName,
 		"version",
 	}
 }
@@ -1389,7 +1398,7 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 			atlasAdapterUse(verb),
 			verb.short,
 			verb.native,
-			atlasNativeEnvTarget(verb.factory, verb.flags),
+			atlasNativeHistoryOffTarget(atlasNativeEnvTarget(verb.factory, verb.flags)),
 			mapper,
 			verb.prefixArgs...,
 		)
@@ -1443,6 +1452,41 @@ func atlasNativeEnvTarget(factory func() *cobra.Command, flags []atlasargs.Flag)
 	return func() *cobra.Command {
 		target := factory()
 		for _, name := range names {
+			if err := cmdflags.DisableEnvBinding(target.Flags(), name); err != nil {
+				panic(err)
+			}
+		}
+		return target
+	}
+}
+
+// atlasNativeHistoryFlags are the native flags that say where the history of
+// applied migrations is: the revision table, its schema and its layout.
+var atlasNativeHistoryFlags = []string{
+	dbcli.MigrationsSchemaFlagName,
+	dbcli.MigrationsTableFlagName,
+	dbcli.RevisionTableFormatFlagName,
+}
+
+// atlasNativeHistoryOffTarget returns factory with the environment binding
+// disabled on every flag of [atlasNativeHistoryFlags] the target has. A
+// forwarded verb that reads applied history reads Atlas's
+// atlas_schema_revisions: the adapter forwards the Atlas layout to `migrate
+// down`, `edit`, `rebase` and `rm`, and the table sits where only this
+// surface's own flags place it, through --revisions-schema where the verb
+// takes one. `migrate apply` and `migrate status` read no
+// PTAH_MIGRATIONS_SCHEMA, PTAH_MIGRATIONS_TABLE or PTAH_REVISION_FORMAT, so a
+// target left to read one would act on a history those verbs never see:
+// `migrate down` under PTAH_MIGRATIONS_SCHEMA=other reverts nothing and creates
+// other.atlas_schema_revisions. A value the adapter forwards is typed, so it
+// still reaches the target.
+func atlasNativeHistoryOffTarget(factory func() *cobra.Command) func() *cobra.Command {
+	return func() *cobra.Command {
+		target := factory()
+		for _, name := range atlasNativeHistoryFlags {
+			if target.Flags().Lookup(name) == nil {
+				continue
+			}
 			if err := cmdflags.DisableEnvBinding(target.Flags(), name); err != nil {
 				panic(err)
 			}
@@ -1540,7 +1584,7 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 		// The adapter reads the variable itself, through atlasargs.Map. The
 		// declaration is repeated on the flag so that every reader of the tree
 		// sees the variable refuse an empty value, as it does.
-		if flag.EmptyEnv != (envbinding.EmptyRule{}) {
+		if flag.EmptyEnv.Omitted != "" {
 			if err := cmdflags.RefuseEmptyEnv(cmd.Flags(), flag.Name, flag.EmptyEnv); err != nil {
 				panic(err)
 			}

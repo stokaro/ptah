@@ -26,7 +26,9 @@ change after it was written. This page shows the four maintenance verbs —
 
 The rule all four enforce: **applied history is immutable**. With `--db-url`
 set, each verb checks the revision table and refuses to touch a migration
-the database has already run, unless you override with `--force`.
+the database has already run, unless you override with `--force`. The check
+reads the table and creates none: a database with no history has nothing
+applied.
 
 Prerequisites: a migration directory sealed with `ptah migrations hash`. The
 examples use a directory where version `1` is applied and versions `2` and
@@ -538,7 +540,9 @@ table in the metadata schema a way to stop every migration.
 
 In the `ptah-compat` drop-in binary, `migrate edit`, `migrate rebase`, and
 `migrate rm` forward to these native commands for drop-in Atlas familiarity,
-with `--dir` mapping to the migrations directory. Its `migrate set` is the
+with `--dir` mapping to the migrations directory. Given a database through
+`PTAH_DB_URL`, each checks the history its `migrate apply` writes, Atlas's
+`atlas_schema_revisions`, and refuses an applied version. Its `migrate set` is the
 Atlas spelling of `ptah migrations set` with Atlas revision bookkeeping
 preselected. Squashing history is its own verb pair — see
 [Checkpoints](../checkpoints/).

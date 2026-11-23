@@ -278,7 +278,8 @@ type DownStop struct {
 	Amount uint64
 	// ToVersion is the --to-version value. ToVersionGiven reports that the
 	// flag was typed, an empty value included, or that PTAH_TO_VERSION gave a
-	// value. An empty PTAH_TO_VERSION reads as absent, and so names no stop.
+	// value. The command refuses an empty or blank PTAH_TO_VERSION before it
+	// builds a DownStop, so an empty value here was typed.
 	ToVersion      string
 	ToVersionGiven bool
 	// ToTag is the --to-tag value, and ToTagGiven reports the same for --to-tag

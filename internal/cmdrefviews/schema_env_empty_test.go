@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/cmdforward"
 	"ptah.run/internal/cmdrefviews"
 	"ptah.run/internal/envbinding"
 )
@@ -87,6 +88,7 @@ var writeVariableRefusals = []string{
 	"ptah migrations data --protected-table",
 	"ptah migrations down --limit",
 	"ptah migrations down --target",
+	"ptah migrations down --to-tag",
 	"ptah migrations generate --exclude",
 	"ptah migrations generate --include",
 	"ptah migrations up --limit",
@@ -96,6 +98,8 @@ var writeVariableRefusals = []string{
 	"ptah schema apply --protected-table",
 	"ptah seed --protected-table",
 	"ptah-compat migrate apply --to-version",
+	"ptah-compat migrate down --to-tag",
+	"ptah-compat migrate down --to-version",
 	"ptah-compat schema apply --exclude",
 	"ptah-compat schema apply --include",
 	"ptah-compat schema clean --exclude",
@@ -103,7 +107,7 @@ var writeVariableRefusals = []string{
 }
 
 // emptyRefusingBindings walks tree and returns every bound flag outside
-// schemaVariables that declares an empty rule.
+// schemaVariables and historyVariables that declares an empty rule.
 func emptyRefusingBindings(tree *cobra.Command) []boundFlag {
 	var found []boundFlag
 	var walk func(cmd *cobra.Command)
@@ -111,7 +115,7 @@ func emptyRefusingBindings(tree *cobra.Command) []boundFlag {
 		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
 			variable, bound := envbinding.Of("PTAH", flag)
 			_, refused := envbinding.EmptyRefused(flag)
-			if bound && refused && !slices.Contains(schemaVariables, variable) {
+			if bound && refused && !slices.Contains(schemaVariables, variable) && !slices.Contains(historyVariables, variable) {
 				found = append(found, boundFlag{command: cmd.CommandPath(), variable: variable, flag: flag})
 			}
 		})
@@ -143,4 +147,118 @@ func TestWriteVariableRefusalsAreTheDeclaredOnes(t *testing.T) {
 	}
 	slices.Sort(found)
 	c.Assert(found, qt.DeepEquals, writeVariableRefusals)
+}
+
+// historyVariables are the variables that say where the history of applied
+// migrations is: the revision table, its schema and its layout. Read as unset,
+// an empty one names the default history instead of the one the operator
+// meant, and a run over it finds nothing applied.
+var historyVariables = []string{
+	"PTAH_MIGRATIONS_SCHEMA",
+	"PTAH_MIGRATIONS_TABLE",
+	"PTAH_REVISIONS_SCHEMA",
+	"PTAH_REVISION_FORMAT",
+}
+
+// historyVariablesReadAsUnset are the bindings of historyVariables that keep
+// reading an empty value as unset, by command path and flag name. `migrations
+// lint` reads no history: the format only decides whether a version that is
+// not a number is reported, and its default, ptah, reports it.
+var historyVariablesReadAsUnset = []string{
+	"ptah migrations lint --revision-format",
+}
+
+// minHistoryVariableBindings is a floor on the bindings the walk finds, so a
+// walk that stopped matching cannot pass by finding nothing. The native tree
+// binds the variables on 41 flags that refuse, and the compatibility tree
+// PTAH_REVISIONS_SCHEMA on 5.
+const minHistoryVariableBindings = 46
+
+// historyVariableBindings walks tree and returns every flag bound to one of
+// historyVariables, split into those whose variable refuses an empty value and
+// the command paths and flag names of those that read it as unset.
+func historyVariableBindings(tree *cobra.Command) (refusing []boundFlag, readAsUnset []string) {
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+			variable, bound := envbinding.Of("PTAH", flag)
+			if !bound || !slices.Contains(historyVariables, variable) {
+				return
+			}
+			if _, refused := envbinding.EmptyRefused(flag); refused {
+				refusing = append(refusing, boundFlag{command: cmd.CommandPath(), variable: variable, flag: flag})
+				return
+			}
+			readAsUnset = append(readAsUnset, cmd.CommandPath()+" --"+flag.Name)
+		})
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(tree)
+	return refusing, readAsUnset
+}
+
+// minForwardedHistoryTargets is a floor on the forwarded targets that carry a
+// flag of historyVariables, so a walk that stopped building targets cannot
+// pass by finding no binding on them. `migrate down`, `edit`, `rebase`, `rm`
+// and `test` forward to native verbs that carry one.
+const minForwardedHistoryTargets = 5
+
+// forwardedHistoryBindings builds the native target of every forwarding
+// command in tree and returns the bindings of historyVariables still on, by
+// forwarding command path and flag name, and the number of targets that carry
+// one of the flags at all.
+func forwardedHistoryBindings(tree *cobra.Command) (bound []string, carrying int) {
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if cmdforward.Target(cmd) != "" {
+			target := cmdforward.Build(cmd)
+			carries := false
+			target.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+				carries = carries || slices.Contains(historyFlagNames, flag.Name)
+				if variable, on := envbinding.Of("PTAH", flag); on && slices.Contains(historyVariables, variable) {
+					bound = append(bound, cmd.CommandPath()+" -> --"+flag.Name)
+				}
+			})
+			if carries {
+				carrying++
+			}
+		}
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(tree)
+	return bound, carrying
+}
+
+// historyFlagNames are the native flags that read historyVariables.
+var historyFlagNames = []string{"migrations-schema", "migrations-table", "revision-format"}
+
+// TestEveryHistoryVariableRefusesAnEmptyValue holds every binding of
+// historyVariables on both binaries to the refusal, except the ones
+// historyVariablesReadAsUnset names, so a flag added without it fails. Each
+// rule is asked to refuse the empty value too, so a declaration that refuses
+// nothing does not pass for one in effect. The native target of a forwarding
+// compatibility verb carries no binding of them: the verb reads Atlas's
+// revision table, which only its own flags place.
+func TestEveryHistoryVariableRefusesAnEmptyValue(t *testing.T) {
+	c := qt.New(t)
+	nativeRefusing, nativeUnset := historyVariableBindings(root.NewRootCommand())
+	compat := cmdrefviews.Compat(atlascompatpolicy.Full())
+	compatRefusing, compatUnset := historyVariableBindings(compat)
+	refusing := slices.Concat(nativeRefusing, compatRefusing)
+	forwarded, carrying := forwardedHistoryBindings(compat)
+
+	c.Assert(len(refusing) >= minHistoryVariableBindings, qt.IsTrue, qt.Commentf("found %d bindings", len(refusing)))
+	c.Assert(slices.Concat(nativeUnset, compatUnset), qt.DeepEquals, historyVariablesReadAsUnset)
+	c.Assert(carrying >= minForwardedHistoryTargets, qt.IsTrue, qt.Commentf("found %d forwarded targets", carrying))
+	c.Assert(forwarded, qt.DeepEquals, []string(nil))
+	for _, binding := range refusing {
+		rule, _ := envbinding.EmptyRefused(binding.flag)
+		comment := qt.Commentf("%s --%s reads %s", binding.command, binding.flag.Name, binding.variable)
+		c.Check(rule.Check(binding.variable, binding.flag.Name, ""), qt.ErrorIs, envbinding.ErrEmptyValue, comment)
+		c.Check(rule.Check(binding.variable, binding.flag.Name, " "), qt.ErrorIs, envbinding.ErrEmptyValue, comment)
+	}
 }

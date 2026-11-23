@@ -56,6 +56,7 @@ given version applied, without executing migration SQL.`,
 	flags.StringVar(&opts.dir, "dir", opts.dir, "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", opts.dirFormat, "Migration directory format")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the revision table")
+	dbcli.RefuseEmptyHistoryEnv(flags, "revisions-schema", dbcli.OmittedRevisionsSchema)
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 	return cmd
 }

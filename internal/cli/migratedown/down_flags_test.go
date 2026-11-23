@@ -411,35 +411,87 @@ var (
 	parentAndRevisionTables = []string{"parent", "schema_migrations", "schema_migrations_log"}
 )
 
+// noStopRefusal is the refusal of a rollback that names no stop, as a pattern.
+const noStopRefusal = `name where the rollback stops: pass --target <version> \(--target 0 rolls back every applied ` +
+	`migration\), --to-tag <tag> or --limit <n>; "ptah migrations status" lists the applied versions`
+
 // TestMigrateDownRequiresAStop_FailurePath refuses a rollback that names no
 // stop. A default of version 0 would roll back every applied migration on a
-// run that asked for none in particular, so there is no default. The runs go
-// through the root command, which installs the PTAH_* binding.
+// run that asked for none in particular, so there is no default. A preview, a
+// derived plan and a JSON document are refused the same way. An empty stop
+// variable is refused unless a stop is typed beside it: beside a stop another
+// variable sets, read as unset, it would let that stop decide, and
+// PTAH_TARGET=0 rolls the whole history back. The runs go through the root
+// command, which installs the PTAH_* binding.
 func TestMigrateDownRequiresAStop_FailurePath(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		env  []string
+		name    string
+		args    []string
+		env     [][2]string
+		wantErr string
 	}{
-		{name: "no stop"},
-		{name: "an empty --to-tag", args: []string{"--to-tag", ""}},
-		{name: "a --limit of 0, which sets no limit", args: []string{"--limit", "0"}},
-		{name: "an empty PTAH_TO_TAG", env: []string{"PTAH_TO_TAG", ""}},
+		{name: "no stop", wantErr: noStopRefusal},
+		{name: "a preview", args: []string{"--dry-run"}, wantErr: noStopRefusal},
+		{name: "a JSON document", args: []string{"--json"}, wantErr: noStopRefusal},
+		{name: "a derived plan", args: []string{"--plan"}, wantErr: noStopRefusal},
+		{name: "an empty --to-tag", args: []string{"--to-tag", ""}, wantErr: noStopRefusal},
+		{name: "a --limit of 0, which sets no limit", args: []string{"--limit", "0"}, wantErr: "--limit 0 names no stop: " + noStopRefusal},
+		{name: "PTAH_LIMIT of 0", env: [][2]string{{"PTAH_LIMIT", "0"}}, wantErr: "PTAH_LIMIT=0 names no stop: " + noStopRefusal},
+		{
+			name:    "an empty PTAH_TO_TAG",
+			env:     [][2]string{{"PTAH_TO_TAG", ""}},
+			wantErr: "PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to stop at --target or --limit",
+		},
+		{
+			name:    "an empty PTAH_TO_TAG beside PTAH_TARGET of 0",
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_TO_TAG", ""}},
+			wantErr: "PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to stop at --target or --limit",
+		},
+		{
+			name:    "an empty PTAH_LIMIT beside PTAH_TARGET of 0",
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_LIMIT", ""}},
+			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to stop at --target or --to-tag",
+		},
+		// A typed default names no stop, so beside it the stop PTAH_TARGET
+		// sets would decide.
+		{
+			name:    "an empty PTAH_TO_TAG beside PTAH_TARGET of 0 and a typed --limit 0",
+			args:    []string{"--limit", "0"},
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_TO_TAG", ""}},
+			wantErr: "PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to stop at --target or --limit",
+		},
+		{
+			name:    "an empty PTAH_LIMIT beside PTAH_TARGET of 0 and a typed empty --to-tag",
+			args:    []string{"--to-tag", ""},
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_LIMIT", ""}},
+			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to stop at --target or --to-tag",
+		},
+		{
+			name:    "an empty PTAH_LIMIT beside PTAH_TARGET of 0 and a typed blank --to-tag",
+			args:    []string{"--to-tag", " "},
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_LIMIT", ""}},
+			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to stop at --target or --to-tag",
+		},
+		{
+			name: "a blank PTAH_TARGET beside PTAH_LIMIT",
+			env:  [][2]string{{"PTAH_LIMIT", "1"}, {"PTAH_TARGET", "\t"}},
+			wantErr: `PTAH_TARGET is set to "\\t", which names nothing: give it a value, or unset it and leave --target out ` +
+				`to stop at --to-tag or --limit`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir, dbPath := twoMigrationDir(c, childDownSQL)
 			before := tableCensus(c, dbPath)
-			for i := 0; i < len(tc.env); i += 2 {
-				t.Setenv(tc.env[i], tc.env[i+1])
+			for _, variable := range tc.env {
+				t.Setenv(variable[0], variable[1])
 			}
 
 			_, err := runDownThroughRoot(slices.Concat([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", dir, "--confirm"},
 				tc.args)...)
 
-			c.Assert(err, qt.ErrorMatches, `name where the rollback stops: pass --target <version> \(--target 0 rolls back `+
-				`every applied migration\), --to-tag <tag> or --limit <n>; "ptah migrations status" lists the applied versions`)
+			c.Assert(err, qt.ErrorMatches, tc.wantErr)
 			c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
 		})
 	}
@@ -451,20 +503,25 @@ func TestMigrateDownRequiresAStop_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
-		env  []string
+		env  [][2]string
 		want []string
 	}{
 		{name: "a typed --target of 0", args: []string{"--target", "0"}, want: revisionTablesOnly},
 		{name: "a typed --limit", args: []string{"--limit", "1"}, want: parentAndRevisionTables},
-		{name: "PTAH_TARGET", env: []string{"PTAH_TARGET", "1"}, want: parentAndRevisionTables},
-		{name: "PTAH_LIMIT", env: []string{"PTAH_LIMIT", "2"}, want: revisionTablesOnly},
+		{name: "PTAH_TARGET", env: [][2]string{{"PTAH_TARGET", "1"}}, want: parentAndRevisionTables},
+		{name: "PTAH_LIMIT", env: [][2]string{{"PTAH_LIMIT", "2"}}, want: revisionTablesOnly},
+		{name: "an empty PTAH_TARGET beside a typed --limit", args: []string{"--limit", "1"}, env: [][2]string{{"PTAH_TARGET", ""}}, want: parentAndRevisionTables},
+		{name: "an empty PTAH_TO_TAG beside a typed --limit", args: []string{"--limit", "1"}, env: [][2]string{{"PTAH_TO_TAG", ""}}, want: parentAndRevisionTables},
+		{name: "an empty PTAH_LIMIT beside a typed --target", args: []string{"--target", "1"}, env: [][2]string{{"PTAH_LIMIT", ""}}, want: parentAndRevisionTables},
+		{name: "a blank PTAH_LIMIT beside a typed --target", args: []string{"--target", "1"}, env: [][2]string{{"PTAH_LIMIT", " "}}, want: parentAndRevisionTables},
+		{name: "an empty PTAH_TO_TAG beside a typed --target of 0", args: []string{"--target", "0"}, env: [][2]string{{"PTAH_TO_TAG", ""}}, want: revisionTablesOnly},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir, dbPath := twoMigrationDir(c, childDownSQL)
-			for i := 0; i < len(tc.env); i += 2 {
-				t.Setenv(tc.env[i], tc.env[i+1])
+			for _, variable := range tc.env {
+				t.Setenv(variable[0], variable[1])
 			}
 
 			out, err := runDownThroughRoot(slices.Concat([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", dir, "--confirm"},
