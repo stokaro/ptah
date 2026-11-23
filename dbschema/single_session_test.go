@@ -47,3 +47,12 @@ func TestDatabaseConnectionSingleSession_File(t *testing.T) {
 
 	c.Assert(conn.SingleSession(), qt.IsFalse)
 }
+
+// TestDatabaseConnectionSingleSession_Nil reads a nil connection as one that
+// holds no database of its own, so a list of held connections may carry one.
+func TestDatabaseConnectionSingleSession_Nil(t *testing.T) {
+	c := qt.New(t)
+	var conn *dbschema.DatabaseConnection
+
+	c.Assert(conn.SingleSession(), qt.IsFalse)
+}

@@ -105,3 +105,28 @@ func TestDiffHeldSession_FileIsOpenedAgain(t *testing.T) {
 	c.Assert(report.Changes, qt.HasLen, 1)
 	c.Assert(report.Changes[0].Cmd, qt.Equals, `DROP TABLE "b"`)
 }
+
+// TestDiffHeldSession_LeavesTheConnectionOpen reads both held databases back
+// after the comparison. A held connection is the caller's: closed by the
+// comparison, the query fails on the closed pool, and an in-memory database
+// is gone with its session.
+func TestDiffHeldSession_LeavesTheConnectionOpen(t *testing.T) {
+	c := qt.New(t)
+	const fromURL, toURL = "sqlite://from?mode=memory", "sqlite://to?mode=memory"
+	from := heldDatabase(c, fromURL, "CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY);")
+	to := heldDatabase(c, toURL, "CREATE TABLE a (id INTEGER PRIMARY KEY);")
+
+	_, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
+		Runtime:  must.Must(builtin.New()),
+		FromURLs: []string{fromURL},
+		ToURLs:   []string{toURL},
+		Held:     []*dbschema.DatabaseConnection{from, to},
+	})
+
+	c.Assert(err, qt.IsNil)
+	for conn, want := range map[*dbschema.DatabaseConnection]int{from: 2, to: 1} {
+		var tables int
+		c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables), qt.IsNil)
+		c.Assert(tables, qt.Equals, want)
+	}
+}

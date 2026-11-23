@@ -343,8 +343,10 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 // The connection is the source database's own for [KindDatabase], and the
 // session the migration directory was replayed on for [KindMigrationDir],
 // with the replayed schema still in place. Every other kind has no server
-// behind it, and the connection is nil. It must not escape the call: it is
-// closed, and a replayed dev database is cleaned, when the call returns.
+// behind it, and the connection is nil. It must not escape the call. A
+// connection the resolution opened is closed, and a replayed dev database is
+// cleaned, when the call returns. A connection taken from
+// [ResolveOptions.Held] stays open after the call, and its caller closes it.
 type HoldFunc func(state State, conn *dbschema.DatabaseConnection) error
 
 // ResolveHolding resolves the set as [Set.Resolve] does, validation

@@ -64,3 +64,32 @@ func TestPlanDynamicRollbackInMemory_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestPlanDynamicRollbackInMemoryTarget_HappyPath plans the same rollback for
+// a target that lives in its connection's one session, as an embedder that
+// holds an in-memory database has, with a dev database file. The comparison
+// reads the target on the connection it is given; opened again by its URL, the
+// target is a new, empty database, and the plan creates a and b instead of
+// dropping c.
+func TestPlanDynamicRollbackInMemoryTarget_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://target?mode=memory")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+	_, err = target.ExecContext(c.Context(),
+		"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY); "+
+			"CREATE TABLE c (id INTEGER PRIMARY KEY);")
+	c.Assert(err, qt.IsNil)
+
+	statements, err := shadow.PlanDynamicRollback(c.Context(), shadow.DynamicRollbackOptions{
+		Runtime:          builtintest.Runtime(),
+		TargetConnection: target,
+		DevDatabaseURL:   atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "dev.db")),
+		FS:               memoryRollbackHistory,
+		TargetVersion:    2,
+		ProviderOptions:  []migrator.FSProviderOption{migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas)},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{`DROP TABLE "c"`})
+}

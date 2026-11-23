@@ -42,8 +42,10 @@ be percent-encoded without changing the selected file.
 
 Ptah adds `_pragma=foreign_keys(1)` unless the URL already supplies a
 `foreign_keys` pragma, so declared foreign keys are enforced by default.
-SQLite connections are limited to one open connection, which keeps in-memory
-databases and connection-local `PRAGMA` state predictable.
+An in-memory database, `sqlite://:memory:` or a URL with `mode=memory`, is
+held on one open connection, because a second connection to a private
+in-memory database opens a new, empty one. A database file is read through a
+pool of connections, and the pragmas the URL names apply to each of them.
 
 ## What renders natively
 

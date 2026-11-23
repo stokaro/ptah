@@ -486,12 +486,22 @@ func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 
 // SingleSession reports whether the database lives in this connection's one
 // session, as an in-memory SQLite database does: `sqlite://:memory:`, or a URL
-// with `mode=memory`. Opening the same URL again does not reach it unless the
-// URL also says `cache=shared`: each open of a private in-memory database is a
-// new, empty database. A caller that needs this database read somewhere else
-// hands over this connection, not its URL. It is false for a database stored
-// on disk or on a server.
+// with `mode=memory`. Opening the same URL again does not reach a private
+// in-memory database: each open of one is a new, empty database. A caller that
+// needs this database read somewhere else hands over this connection, not its
+// URL.
+//
+// It is true with `cache=shared` too. A second open of that URL reaches the
+// database, but the database exists only while a connection to it is open, so
+// the connection keeps its one session rather than closing it after use.
+//
+// It is false for a SQLite database stored in a file, for a libsql URL, for a
+// connection an executable provider serves, for every other engine, and for a
+// nil connection.
 func (dc *DatabaseConnection) SingleSession() bool {
+	if dc == nil {
+		return false
+	}
 	return dc.singleSession
 }
 
