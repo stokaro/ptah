@@ -1155,6 +1155,22 @@ func TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart(t *testing.T
 	c.Assert(column.CurrentSequenceRestart, qt.Equals, "100")
 }
 
+// A rollback replaces a routine of the same database the forward plan read,
+// so it carries what the read found granted on routines, and gives it back
+// after its own CREATE.
+func TestReverseSchemaDiff_ARolledBackRoutineKeepsThePrivilegesOnIt(t *testing.T) {
+	c := qt.New(t)
+	held := catalog.RoutinePrivileges{Grants: []catalog.RoutineGrant{
+		{User: "svc", Host: "%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
+	}}
+
+	reversed := reverseForTest(t,
+		&difftypes.SchemaDiff{CurrentRoutinePrivileges: held}, &schemamodel.Database{}, &catalog.Database{}, "mysql",
+	)
+
+	c.Assert(reversed.CurrentRoutinePrivileges, qt.DeepEquals, held)
+}
+
 // TestReverseSchemaDiff_ARolledBackRebuildPutsBackThePriorDependents is the
 // rollback's half of stokaro/ptah#4976. A rebuild puts back the indexes and
 // triggers of the objects it drops and creates again, and in a rollback those

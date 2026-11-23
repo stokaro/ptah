@@ -1252,6 +1252,17 @@ type SchemaDiff struct {
 	// A reversal runs against the same database and carries the same rows.
 	CurrentPartialRevokes []GrantRef `json:"-"`
 
+	// CurrentRoutinePrivileges is what the read of the database this plan
+	// runs against found granted on routines, to every account, carried once
+	// for the whole diff and off the wire. The MySQL family reads it from
+	// mysql.procs_priv, whose rows for a routine DROP PROCEDURE and DROP
+	// FUNCTION delete; a plan that replaces a routine grants them again after
+	// the CREATE, and refuses the replacement where the read was refused.
+	//
+	// A reversal runs against the same database and carries the same
+	// privileges.
+	CurrentRoutinePrivileges catalog.RoutinePrivileges `json:"-"`
+
 	// Features is every named feature object on each side, changed or not,
 	// carried once for the whole diff and off the wire. A planner reads it
 	// where a rule about one object depends on objects the change set does

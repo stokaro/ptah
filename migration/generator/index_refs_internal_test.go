@@ -181,6 +181,20 @@ func TestCloneSchemaDiff_ClonesTheGrantsAndPartialRevokesTheReadReported(t *test
 	c.Assert(diff.CurrentPartialRevokes[0].Role, qt.Equals, "r_d")
 }
 
+// A clone owns the privileges the read found on routines as well, down to
+// the list of each grantee's privileges.
+func TestCloneSchemaDiff_ClonesThePrivilegesOnRoutinesTheReadReported(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{CurrentRoutinePrivileges: catalog.RoutinePrivileges{Grants: []catalog.RoutineGrant{
+		{User: "svc", Host: "%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
+	}}}
+
+	got := cloneSchemaDiff(diff)
+	got.CurrentRoutinePrivileges.Grants[0].Privileges[0] = "changed"
+
+	c.Assert(diff.CurrentRoutinePrivileges.Grants[0].Privileges, qt.DeepEquals, []string{"EXECUTE"})
+}
+
 func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 	c := qt.New(t)
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").

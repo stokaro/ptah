@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
@@ -110,10 +111,10 @@ type heldGrant struct {
 // Only a target that grants on a routine by its name
 // ([descriptor.AllPrivileges.RoutinesByName]) has privileges to give back:
 // SQL Server and Oracle, whose reads report one under TABLE, the way such a
-// GRANT names it. A MySQL or MariaDB read reports no privilege on a routine,
-// and a table privilege there cannot be a routine's, since a routine is
-// granted on with ON FUNCTION or ON PROCEDURE. A target without
-// [capability.RoleManagement] plans no grant at all.
+// GRANT names it. A table privilege on MySQL or MariaDB cannot be a
+// routine's, since a routine is granted on with ON FUNCTION or ON PROCEDURE;
+// [Planner.routinePrivilegesGivenBack] gives back what the read found there.
+// A target without [capability.RoleManagement] plans no grant at all.
 func (p *Planner) heldOnReplacedRoutines(diff *difftypes.SchemaDiff) []heldGrant {
 	if !p.capabilities().Has(capability.RoleManagement) || !routinesByName.Get(p.targetDialect()) {
 		return nil
@@ -146,10 +147,11 @@ func (p *Planner) heldOnReplacedRoutines(diff *difftypes.SchemaDiff) []heldGrant
 
 // grantsGivenBack is the GRANT, after the CREATE, of each privilege
 // [Planner.heldOnReplacedRoutines] reports, followed by the DENY of each one
-// [Planner.deniesGivenBack] reports. The grants the plan adds are written
-// after these, as on any other object, so a declared GRANT of a privilege
-// the grantee was denied replaces the DENY, as it does on a routine the plan
-// keeps.
+// [Planner.deniesGivenBack] reports and the GRANT of each one
+// [Planner.routinePrivilegesGivenBack] reports. The grants the plan adds are
+// written after these, as on any other object, so a declared GRANT of a
+// privilege the grantee was denied replaces the DENY, as it does on a routine
+// the plan keeps.
 func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	held := p.heldOnReplacedRoutines(diff)
 	nodes := make([]ast.Node, 0, len(held))
@@ -162,7 +164,124 @@ func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error
 	if err != nil {
 		return nil, err
 	}
-	return append(nodes, denies...), nil
+	privileges, err := p.routinePrivilegesGivenBack(diff)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Concat(nodes, denies, privileges), nil
+}
+
+// routinePrivilegesGivenBack is the GRANT, after the CREATE, of what each
+// account held on a MySQL or MariaDB routine the plan replaces by DROP and
+// CREATE, as the read found it in mysql.procs_priv
+// ([difftypes.SchemaDiff.CurrentRoutinePrivileges]).
+//
+// Under the default automatic_sp_privileges the DROP deletes every row of
+// mysql.procs_priv for the routine, measured on MySQL 8.4.13 and MariaDB
+// 11.8.9, and the comparison reads none of them, so without these a body
+// change leaves every grantee without EXECUTE on the routine and the next
+// plan reports the schema synced. With automatic_sp_privileges off the DROP
+// keeps the rows, and the GRANT changes nothing. Ptah models no privilege on
+// a routine on these engines, so the plan revokes none and every row comes
+// back, to a user or a role alike: a user is named with its host, a MariaDB
+// role by its name alone ([catalog.RoutineGrant.Role]).
+//
+// A routine name compares without case on these engines, and a row spells the
+// name as the GRANT that wrote it did, so the name is compared without case
+// and the GRANT names the routine as the CREATE does. A routine named without
+// its database is in the one database the read describes. A privilege name
+// is written as the server spells it, and one that is not a run of words is
+// refused rather than written into the statement.
+func (p *Planner) routinePrivilegesGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if !p.isMySQLFamily() || len(diff.CurrentRoutinePrivileges.Grants) == 0 {
+		return nil, nil
+	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	var nodes []ast.Node
+	for _, routine := range p.replacedRoutineList(diff) {
+		ref, parsed := tableref.Parse(routine.Name)
+		if !parsed {
+			ref = tableref.Ref{Name: routine.Name}
+		}
+		for _, grant := range diff.CurrentRoutinePrivileges.Grants {
+			if !grantsOn(semantics, grant, routine, ref) {
+				continue
+			}
+			statement, err := p.routineGrantStatement(grant, routine, ref.Name)
+			if err != nil {
+				return nil, err
+			}
+			nodes = append(nodes, ast.NewRawSQL(statement))
+		}
+	}
+	return nodes, nil
+}
+
+// replacedRoutineList is each routine diff replaces by DROP and CREATE
+// ([Planner.replacesRoutine]), in the order the diff changes them.
+func (p *Planner) replacedRoutineList(diff *difftypes.SchemaDiff) []schemamodel.Function {
+	var replaced []schemamodel.Function
+	for _, change := range diff.FunctionsModified {
+		if p.replacesRoutine(change) {
+			replaced = append(replaced, change.Desired)
+		}
+	}
+	return replaced
+}
+
+// grantsOn reports whether grant is a privilege on routine, whose name ref
+// parses.
+func grantsOn(semantics identifier.Semantics, grant catalog.RoutineGrant, routine schemamodel.Function, ref tableref.Ref) bool {
+	if !strings.EqualFold(grant.Type, routineWord(routine)) || !strings.EqualFold(grant.Name, ref.Name) {
+		return false
+	}
+	return !ref.Qualified || semantics.TableIdentityKey(ref.Schema) == semantics.TableIdentityKey(grant.Schema)
+}
+
+// routineGrantStatement spells the GRANT that gives grant back on routine,
+// named name in the database the read found the row in.
+func (p *Planner) routineGrantStatement(grant catalog.RoutineGrant, routine schemamodel.Function, name string) (string, error) {
+	privileges := "USAGE"
+	if len(grant.Privileges) > 0 {
+		privileges = strings.Join(grant.Privileges, ", ")
+	}
+	if !permissionName.MatchString(strings.ReplaceAll(privileges, ", ", " ")) {
+		return "", fmt.Errorf("%w: %s: cannot grant %q on %s %s to %q again after the routine is replaced: "+
+			"the catalog names a privilege Ptah does not write", ptaherr.ErrUnsupportedFeature, p.targetDialect(),
+			privileges, routineWord(routine), routine.Name, grant.User)
+	}
+	dialect := p.targetDialect()
+	grantee := sqlident.Quote(dialect, grant.User)
+	if !grant.Role {
+		grantee += "@" + sqlident.Quote(dialect, grant.Host)
+	}
+	statement := fmt.Sprintf("GRANT %s ON %s %s.%s TO %s", privileges, strings.ToUpper(routineWord(routine)),
+		sqlident.Quote(dialect, grant.Schema), sqlident.Quote(dialect, name), grantee)
+	if grant.WithOption {
+		statement += " WITH GRANT OPTION"
+	}
+	return statement, nil
+}
+
+// refuseUnreadRoutinePrivileges refuses a plan that replaces a MySQL or
+// MariaDB routine by DROP and CREATE where the server refused the read of
+// mysql.procs_priv ([catalog.RoutinePrivileges.Refused]). The DROP takes
+// every privilege on the routine, and nothing says which there were, so the
+// apply would take them without a word.
+func (p *Planner) refuseUnreadRoutinePrivileges(diff *difftypes.SchemaDiff) error {
+	if !p.isMySQLFamily() || !diff.CurrentRoutinePrivileges.Refused {
+		return nil
+	}
+	replaced := p.replacedRoutineList(diff)
+	if len(replaced) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: %s: cannot replace %s %s: the account may not read mysql.procs_priv, so nothing says who "+
+			"holds privileges on the routine, and the DROP that replaces it takes them all; grant the "+
+			"account SELECT on mysql.procs_priv",
+		ptaherr.ErrUnsupportedFeature, p.targetDialect(), routineWord(replaced[0]), replaced[0].Name,
+	)
 }
 
 // deniesGivenBack is the DENY, after the CREATE, of each privilege the read

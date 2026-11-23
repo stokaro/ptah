@@ -1991,6 +1991,9 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 		if err := p.refuseALostGrantOption(diff); err != nil {
 			return err
 		}
+		if err := p.refuseUnreadRoutinePrivileges(diff); err != nil {
+			return err
+		}
 	}
 	if diff != nil && p.capabilities().Has(capability.RoleManagement) && p.grantOptionCoversTheObject() {
 		spellings := newColumnSpellings(diff, p.targetDialect())
@@ -2351,11 +2354,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 // harmlessRawStatement reports a raw statement that removes no object: the
 // LOCK TABLES and UNLOCK TABLES a trigger swap writes around the swap, and the
-// DENY a replaced routine gets back ([Planner.deniesGivenBack]).
+// DENY and GRANT a replaced routine gets back ([Planner.deniesGivenBack],
+// [Planner.routinePrivilegesGivenBack]).
 func harmlessRawStatement(raw *ast.RawSQLNode) bool {
 	statement := strings.TrimSpace(raw.SQL)
 	return strings.HasPrefix(statement, "LOCK TABLES") || strings.HasPrefix(statement, "UNLOCK TABLES") ||
-		strings.HasPrefix(statement, "DENY ")
+		strings.HasPrefix(statement, "DENY ") || strings.HasPrefix(statement, "GRANT ")
 }
 
 // rejectUniqueIncludeConstraints refuses a covering UNIQUE this plan would have

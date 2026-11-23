@@ -17,6 +17,7 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/coverage"
@@ -125,6 +126,12 @@ type Database struct {
 	// one schema. Each grant WideGrants holds is held, and a grant missing
 	// from it may be held too.
 	WideGrantsPartial bool `json:"-"`
+
+	// RoutinePrivileges are the privileges granted on the routines of the
+	// databases the read describes, to every account, where a reader reads
+	// them for a plan that replaces a routine. The comparison does not read
+	// them. See [RoutinePrivileges].
+	RoutinePrivileges RoutinePrivileges `json:"-"`
 
 	// RolesOutOfScope lists roles that exist on the server but that this
 	// description deliberately does not define, because nothing in the
@@ -1790,6 +1797,70 @@ type WideGrant struct {
 	// an Oracle `GRANT SELECT ANY TABLE ON SCHEMA app` names, in the read's
 	// spelling. It is empty when the grant covers every table.
 	Schema string `json:"schema,omitempty"`
+}
+
+// RoutinePrivileges is what a read found granted on routines, kept for a plan
+// that replaces a routine by DROP and CREATE.
+//
+// On MySQL and MariaDB with the default automatic_sp_privileges, DROP
+// PROCEDURE and DROP FUNCTION delete every row of mysql.procs_priv for the
+// routine, whoever the grantee is, and the CREATE brings none back. A plan
+// that replaces a routine for a new body grants these again after the CREATE.
+// They are what the server holds, not what a declaration grants, so they
+// cover accounts a schema does not manage, and nothing compares them.
+//
+// The zero value gives nothing back and refuses nothing. It is what a read
+// that found no such privilege reports, and what a description that did not
+// come from a live read, or from a reader with no such catalog, holds.
+type RoutinePrivileges struct {
+	// Grants is one entry per account and routine, in the order the read
+	// reported them.
+	Grants []RoutineGrant `json:"grants,omitempty"`
+	// Refused reports that the server refused the read, so the privileges on
+	// a routine are not known. A plan that would replace a routine refuses
+	// rather than take privileges nobody can see.
+	Refused bool `json:"refused,omitempty"`
+}
+
+// Clone returns a copy of r that shares no slice with it.
+func (r RoutinePrivileges) Clone() RoutinePrivileges {
+	clone := RoutinePrivileges{Refused: r.Refused}
+	if r.Grants == nil {
+		return clone
+	}
+	clone.Grants = make([]RoutineGrant, len(r.Grants))
+	for i, grant := range r.Grants {
+		grant.Privileges = slices.Clone(grant.Privileges)
+		clone.Grants[i] = grant
+	}
+	return clone
+}
+
+// RoutineGrant is the privileges one account holds on one stored routine, as
+// the MySQL family records them in mysql.procs_priv.
+type RoutineGrant struct {
+	// User and Host name the account, as `'user'@'host'` names it in a GRANT.
+	User string `json:"user"`
+	Host string `json:"host"`
+	// Role reports a MariaDB role. MariaDB records a role with an empty Host
+	// and refuses a GRANT that names it with one, so a GRANT names it by User
+	// alone. A MySQL role is an account like any other and keeps its Host.
+	Role bool `json:"role,omitempty"`
+	// Schema is the database that holds the routine, spelled as the read
+	// spells the database it describes.
+	Schema string `json:"schema"`
+	// Name is the routine's name, as the GRANT that wrote the row spelled it.
+	// A routine name is compared without case on every MySQL and MariaDB
+	// server, so it may differ in case from the routine's own.
+	Name string `json:"name"`
+	// Type is FUNCTION or PROCEDURE.
+	Type string `json:"type"`
+	// Privileges are the privileges held, in upper case: EXECUTE, ALTER
+	// ROUTINE, or both. Empty when the account holds only the grant option.
+	Privileges []string `json:"privileges,omitempty"`
+	// WithOption reports that the account may grant what it holds on the
+	// routine.
+	WithOption bool `json:"with_option,omitempty"`
 }
 
 // WideAccess is a role's access to every relation of a database that no grant

@@ -35,6 +35,7 @@ var notChanges = map[string]string{
 	"DeclaredTableDependencies":    "a planner input off the wire: the table dependency graph",
 	"CurrentGrants":                "a planner input off the wire: every grant the read reported, changed or not",
 	"CurrentPartialRevokes":        "a planner input off the wire: every DENY or partial revoke the read reported, which a routine replacement writes again",
+	"CurrentRoutinePrivileges":     "a planner input off the wire: every privilege the read found on a routine, which a routine replacement grants again",
 	"CurrentOwners":                "a planner input off the wire: the owner of every view the read reported, which a view rebuild gives back",
 	"DeclaredIndexes":              "a planner input off the wire: every index the declaration holds, which a view rebuild puts back",
 	"DeclaredTriggers":             "a planner input off the wire: every trigger the declaration holds, which a view rebuild puts back",
