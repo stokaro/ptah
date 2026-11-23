@@ -866,24 +866,70 @@ func (w *Writer) dropProtectedViews(
 		resultErr = errors.Join(resultErr, closeCleanupConnection(monitorConn, "metadata-lock monitor"))
 	}()
 
-	if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, slices.Concat(views, tables))); err != nil {
-		if !isUnopenableViewError(err) {
-			return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
-		}
+	const lockTarget = "views and tables"
+	groups, err := lockCleanupGroups(ctx, lockConn, schema, views, tables, lockTarget)
+	if isUnopenableViewError(err) {
 		views, err = w.dropUnopenableViews(ctx, lockConn, schema, views)
 		if err != nil || len(views) == 0 {
 			return err
 		}
-		if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, slices.Concat(views, tables))); err != nil {
-			return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
+		groups, err = lockCleanupGroups(ctx, lockConn, schema, views, tables, lockTarget)
+	}
+	if err != nil {
+		return err
+	}
+	connections := viewDropConnections{drop: dropConn, monitor: monitorConn}
+	for i, group := range groups {
+		groupViews := slices.DeleteFunc(slices.Clone(group), func(name string) bool {
+			return !slices.Contains(views, name)
+		})
+		if i > 0 {
+			// Group 0 holds the first view and is locked already. A later
+			// group of tables alone has nothing to drop here, and the table
+			// step locks its tables again.
+			if len(groupViews) == 0 {
+				continue
+			}
+			if err := lockCleanupTargets(ctx, lockConn, schema, group, lockTarget); err != nil {
+				return err
+			}
+		}
+		if err := w.handOffViewDrop(ctx, lockConn, connections, schema, groupViews); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// viewDropConnections are the connections [Writer.handOffViewDrop] runs the
+// DROP VIEW on and watches it from, beside the one holding the lock.
+type viewDropConnections struct {
+	drop    *sql.Conn
+	monitor *sql.Conn
+}
+
+// handOffViewDrop drops views while lockConn holds the WRITE lock over them
+// and releases the lock: the checks run under the lock, and the DROP VIEW is
+// queued on connections.drop for the lock lockConn holds before that lock is
+// released, so no other session opens a view between the checks and its drop.
+// With no views it only releases the lock.
+func (w *Writer) handOffViewDrop(
+	ctx context.Context,
+	lockConn *sql.Conn,
+	connections viewDropConnections,
+	schema string,
+	views []string,
+) (resultErr error) {
 	locked := true
 	defer func() {
 		if locked {
 			resultErr = errors.Join(resultErr, releaseTableLocks(ctx, lockConn))
 		}
 	}()
+	if len(views) == 0 {
+		return nil
+	}
+	dropConn, monitorConn := connections.drop, connections.monitor
 
 	if err := rejectExternalForeignKeys(ctx, lockConn, schema); err != nil {
 		return err
@@ -992,7 +1038,9 @@ func (w *Writer) dropUnopenableViews(
 	for _, view := range views {
 		_, err := conn.ExecContext(ctx, buildLockTablesSQL(schema, []string{view}))
 		switch {
-		case err == nil:
+		case err == nil, isMixedEngineLockError(err):
+			// A view the server refuses to lock for reading both kinds of
+			// table opens; [lockCleanupGroups] decides what happens to it.
 			lockable = append(lockable, view)
 		case isUnopenableViewError(err):
 			unopenable = append(unopenable, view)
@@ -1113,15 +1161,37 @@ func (w *Writer) dropProtectedObjects(
 	conn *sql.Conn,
 	schema string,
 	names []string,
-) (resultErr error) {
+) error {
 	if len(names) == 0 {
 		return nil
 	}
 
-	lockSQL := buildLockTablesSQL(schema, names)
-	if _, err := conn.ExecContext(ctx, lockSQL); err != nil {
-		return fmt.Errorf("mysql: lock cleanup tables: %w", err)
+	const lockTarget = "tables"
+	groups, err := lockCleanupGroups(ctx, conn, schema, nil, names, lockTarget)
+	if err != nil {
+		return err
 	}
+	for i, group := range groups {
+		if i > 0 {
+			if err := lockCleanupTargets(ctx, conn, schema, group, lockTarget); err != nil {
+				return err
+			}
+		}
+		if err := dropLockedTables(ctx, conn, schema, w.dialect, group); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dropLockedTables drops names while conn holds the WRITE lock over them, after
+// the checks that the lock keeps true until the drop, and releases the lock.
+func dropLockedTables(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema, dialect string,
+	names []string,
+) (resultErr error) {
 	defer func() {
 		resultErr = errors.Join(resultErr, releaseTableLocks(ctx, conn))
 	}()
@@ -1129,7 +1199,7 @@ func (w *Writer) dropProtectedObjects(
 	if err := rejectExternalForeignKeys(ctx, conn, schema); err != nil {
 		return err
 	}
-	if err := rejectExternalViews(ctx, conn, schema, w.dialect); err != nil {
+	if err := rejectExternalViews(ctx, conn, schema, dialect); err != nil {
 		return err
 	}
 	if err := rejectExternalStoredPrograms(ctx, conn, schema); err != nil {
@@ -1147,6 +1217,145 @@ func buildLockTablesSQL(schema string, names []string) string {
 		locks = append(locks, quoteQualifiedIdent(schema, name)+" WRITE")
 	}
 	return "LOCK TABLES " + strings.Join(locks, ", ")
+}
+
+// erGTIDUnsafeNonTransactionalTable answers, on a MySQL server that enforces
+// GTID consistency, a WRITE lock over a transactional and a non-transactional
+// table in one statement. MariaDB has no such rule.
+const erGTIDUnsafeNonTransactionalTable = 1785
+
+// isMixedEngineLockError reports whether err is how the server refuses a
+// WRITE lock over both kinds of table.
+func isMixedEngineLockError(err error) bool {
+	serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err)
+	return ok && serverErr.Number == erGTIDUnsafeNonTransactionalTable
+}
+
+// lockCleanupTargets takes the WRITE lock over names on conn. what names them
+// in the error.
+func lockCleanupTargets(ctx context.Context, conn *sql.Conn, schema string, names []string, what string) error {
+	if _, err := conn.ExecContext(ctx, buildLockTablesSQL(schema, names)); err != nil {
+		return fmt.Errorf("mysql: lock cleanup %s: %w", what, err)
+	}
+	return nil
+}
+
+// lockCleanupGroups splits views and tables, in that order, into the groups a
+// cleanup step locks, checks and drops one after another, and returns them with
+// the first group locked on conn. what names the objects in an error.
+//
+// One group holding every name is what every server locks but a MySQL server
+// that enforces GTID consistency, the default on MySQL 26.10. It refuses a
+// WRITE lock over a transactional and a non-transactional table in one
+// statement (error 1785), and it counts the base tables that a locked view
+// brings in. Measured with gtid_mode and enforce_gtid_consistency on, on MySQL
+// 26.10.0 and 8.4.13, `LOCK TABLES m WRITE, i WRITE` over a MyISAM and an
+// InnoDB table is refused, and each table locks alone; with both off, 8.4.13
+// locks them together. A READ lock on the MyISAM table is accepted, but it
+// cannot protect the drop: DROP TABLE under LOCK TABLES needs a WRITE lock,
+// and a READ lock lets another session open the table and create a view over
+// it.
+//
+// On such a server the names are split by asking the server, one name at a
+// time, as [Writer.dropUnopenableViews] asks: a name joins the first group the
+// server locks with it, or it starts a group of its own. The caller locks each
+// group and runs the checks before it drops the group's objects, so every drop
+// still runs under a WRITE lock taken before the checks. A view that reads
+// both kinds of table cannot be WRITE-locked on such a server at all, and
+// neither can a table with a trigger that writes a table of the other kind,
+// because the lock takes in the tables its triggers use. The cleanup refuses
+// such an object instead of dropping it unprotected.
+func lockCleanupGroups(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema string,
+	views, tables []string,
+	what string,
+) ([][]string, error) {
+	names := slices.Concat(views, tables)
+	err := lockCleanupTargets(ctx, conn, schema, names, what)
+	if !isMixedEngineLockError(err) {
+		if err != nil {
+			return nil, err
+		}
+		return [][]string{names}, nil
+	}
+
+	var groups [][]string
+	for _, name := range names {
+		placed, err := placeInCleanupLockGroup(ctx, conn, schema, groups, name)
+		if err != nil {
+			return nil, errors.Join(err, releaseTableLocks(ctx, conn))
+		}
+		if placed >= 0 {
+			groups[placed] = append(groups[placed], name)
+			continue
+		}
+		alone, err := tryCleanupLock(ctx, conn, schema, []string{name})
+		if err != nil {
+			return nil, errors.Join(err, releaseTableLocks(ctx, conn))
+		}
+		if !alone {
+			return nil, errors.Join(fmt.Errorf(
+				"mysql: refusing to clean database %q: the server enforces GTID consistency, so it refuses one "+
+					"WRITE lock over a transactional and a non-transactional table, and %s",
+				schema,
+				unlockableCleanupObject(schema, name, views),
+			), releaseTableLocks(ctx, conn))
+		}
+		groups = append(groups, []string{name})
+	}
+	if err := lockCleanupTargets(ctx, conn, schema, groups[0], what); err != nil {
+		return nil, errors.Join(err, releaseTableLocks(ctx, conn))
+	}
+	return groups, nil
+}
+
+// unlockableCleanupObject names the object the server does not WRITE-lock even
+// alone, and says what the missing lock leaves open. name is a view when views
+// holds it, and a table otherwise.
+func unlockableCleanupObject(schema, name string, views []string) string {
+	quoted := quoteQualifiedIdent(schema, name)
+	if slices.Contains(views, name) {
+		return "view " + quoted + " reads both; without that lock another session can read the view while it is dropped"
+	}
+	return "table " + quoted + ", or a trigger on it, uses both kinds of table; without that lock another " +
+		"session can open the table between the checks and its drop"
+}
+
+// placeInCleanupLockGroup returns the index of the first group the server
+// WRITE-locks together with name, or -1 when none does.
+func placeInCleanupLockGroup(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema string,
+	groups [][]string,
+	name string,
+) (int, error) {
+	for i, group := range groups {
+		locked, err := tryCleanupLock(ctx, conn, schema, append(slices.Clone(group), name))
+		if err != nil {
+			return -1, err
+		}
+		if locked {
+			return i, nil
+		}
+	}
+	return -1, nil
+}
+
+// tryCleanupLock reports whether the server takes one WRITE lock over names.
+// A refusal for mixing both kinds of table is an answer, not an error.
+func tryCleanupLock(ctx context.Context, conn *sql.Conn, schema string, names []string) (bool, error) {
+	err := lockCleanupTargets(ctx, conn, schema, names, "objects")
+	switch {
+	case err == nil:
+		return true, nil
+	case isMixedEngineLockError(err):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func buildDropObjectsSQL(schema, kind string, names []string) string {

@@ -232,128 +232,65 @@ const (
 	myisamDriftAppliedVersions = "SELECT COUNT(*) FROM schema_migrations"
 )
 
-// myisamCleanupRefusal is how a MySQL server that enforces GTID consistency
-// stops a check of the MyISAM history: after the replay, it refuses the one
-// WRITE lock the cleanup of the shadow takes over the MyISAM table and the
-// InnoDB revision table (stokaro/ptah#6576).
-const myisamCleanupRefusal = `empty the database after the replay: mysql: lock cleanup tables: Error 1785 .*`
-
-// myisamDriftEngines are the engines the MyISAM history runs on, and what each
-// answers once the history has replayed. MariaDB empties the shadow and the
-// check decides. MySQL 26.10, which CI runs, enforces GTID consistency by
-// default, so the check cannot finish there, and nothing pending runs.
-var myisamDriftEngines = []struct {
-	engine mysqlViewDriftEngine
-	// exitCode is the exit status of `migrations drift`, of `migrations up
-	// --check-drift --tx-mode none` and of `migrations down --shadow-db`.
-	exitCode int
-	outcome  migrator.DriftOutcome
-	// message is the pattern of the check's message, and downStdout and
-	// downStderr the patterns of what `migrations down --shadow-db` writes.
-	message    string
-	downStdout string
-	downStderr string
-	// noteColumns is the count of note columns after `migrations up`, which
-	// is 1 when migration 3 ran, and zTables the count of tables z after the
-	// rollback, 0 when it ran.
-	noteColumns int
-	zTables     int
-	// pendingStderr is the pattern of what a run in the default mode writes,
-	// which refuses migration 3 in both cases.
-	pendingStderr string
-}{
-	{
-		engine:        mysqlViewDriftEngines[1],
-		exitCode:      0,
-		outcome:       migrator.DriftClean,
-		message:       ``,
-		downStdout:    `(?s).*Rollback plan verified on shadow database.*`,
-		downStderr:    `(?s).*`,
-		noteColumns:   1,
-		zTables:       0,
-		pendingStderr: `(?s).*tx-mode file requires InnoDB target tables.*`,
-	},
-	{
-		// stokaro/ptah#6576: the cleanup after the replay fails with error 1785.
-		engine:   mysqlViewDriftEngines[0],
-		exitCode: 2,
-		outcome:  migrator.DriftUnable,
-		message:  myisamCleanupRefusal,
-		// The plan is printed and nothing after it: no rehearsal, no rollback.
-		downStdout:    `(?s)=== MIGRATE DOWN ===\n.*Migrations to roll back: 1\s*`,
-		downStderr:    `(?s).*` + myisamCleanupRefusal,
-		noteColumns:   0,
-		zTables:       1,
-		pendingStderr: `(?s).*` + myisamCleanupRefusal,
-	},
-}
-
 // A history holding a MyISAM table replays: migration 2, which tx-mode file
 // refuses for the table migration 1 made, replays without a transaction, with
-// no mode stated. On MariaDB the report and the check are clean, the check's
-// run applies migration 3 under --tx-mode none, and the rollback rehearsal
-// replays the history before it rolls migration 2 back on the target. On MySQL
-// the cleanup after the replay fails, and each command stops before it
-// changes the target.
+// no mode stated. The report and the check are clean, the check's run applies
+// migration 3 under --tx-mode none, and the rollback rehearsal replays the
+// history before it rolls migration 2 back on the target.
 func TestMySQLDriftCheckTxModeE2E_MyISAMHistory(t *testing.T) {
-	for _, test := range myisamDriftEngines {
-		t.Run(test.engine.name+"/migrations drift", func(t *testing.T) {
+	for _, engine := range mysqlViewDriftEngines {
+		t.Run(engine.name+"/migrations drift", func(t *testing.T) {
 			c := qt.New(t)
-			dir, target, shadow := myisamDriftHistory(c, test.engine)
+			dir, target, shadow := myisamDriftHistory(c, engine)
 
 			result, check := txModeDriftReport(c, "--db-url", target, "--migrations-dir", dir, "--shadow-db", shadow)
 
-			c.Assert(result.ExitCode, qt.Equals, test.exitCode, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
-			c.Assert(check.Outcome, qt.Equals, test.outcome, qt.Commentf("%+v", check))
-			c.Assert(check.Message, qt.Matches, test.message)
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
+			c.Assert(check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", check))
 			c.Assert(check.Replayed, qt.DeepEquals, []int64{1, 2})
 			c.Assert(myisamDriftCount(c, target, myisamDriftNoteColumns), qt.Equals, 0)
 		})
-		t.Run(test.engine.name+"/migrations up --check-drift --tx-mode none", func(t *testing.T) {
+		t.Run(engine.name+"/migrations up --check-drift --tx-mode none", func(t *testing.T) {
 			c := qt.New(t)
-			dir, target, shadow := myisamDriftHistory(c, test.engine)
+			dir, target, shadow := myisamDriftHistory(c, engine)
 
 			result, check := txModeDriftUp(c, "--db-url", target, "--migrations-dir", dir,
 				"--check-drift", "--shadow-db", shadow, "--tx-mode", "none")
 
-			c.Assert(result.ExitCode, qt.Equals, test.exitCode, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
-			c.Assert(check.Outcome, qt.Equals, test.outcome, qt.Commentf("%+v", check))
-			c.Assert(check.Message, qt.Matches, test.message)
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
+			c.Assert(check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", check))
 			c.Assert(check.Replayed, qt.DeepEquals, []int64{1, 2})
-			c.Assert(myisamDriftCount(c, target, myisamDriftNoteColumns), qt.Equals, test.noteColumns)
+			c.Assert(myisamDriftCount(c, target, myisamDriftNoteColumns), qt.Equals, 1)
 		})
-		t.Run(test.engine.name+"/migrations down --shadow-db", func(t *testing.T) {
+		t.Run(engine.name+"/migrations down --shadow-db", func(t *testing.T) {
 			c := qt.New(t)
-			dir, target, shadow := myisamDriftHistory(c, test.engine)
+			dir, target, shadow := myisamDriftHistory(c, engine)
 
 			result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, "migrations", "down", "--db-url", target,
 				"--migrations-dir", dir, "--shadow-db", shadow, "--target", "1", "--confirm")
 
-			c.Assert(result.ExitCode, qt.Equals, test.exitCode, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
-			c.Assert(result.Stdout, qt.Matches, test.downStdout)
-			c.Assert(result.Stderr, qt.Matches, test.downStderr)
-			c.Assert(myisamDriftCount(c, target, myisamDriftZTables), qt.Equals, test.zTables)
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
+			c.Assert(result.Stdout, qt.Contains, "Rollback plan verified on shadow database")
+			c.Assert(myisamDriftCount(c, target, myisamDriftZTables), qt.Equals, 0)
 		})
 	}
 }
 
 // The rule is the replay's alone: migration 3 is pending, and a run in the
-// default mode refuses it, leaving the target at version 2 with no note
-// column. On MariaDB the refusal is the file's, after a clean check; on MySQL
-// the check stops at the cleanup after the replay and the run applies nothing.
+// default mode refuses it for the MyISAM table after a clean check, leaving
+// the target at version 2.
 func TestMySQLDriftCheckTxModeE2E_MyISAMHistoryPendingFile(t *testing.T) {
-	for _, test := range myisamDriftEngines {
-		t.Run(test.engine.name, func(t *testing.T) {
+	for _, engine := range mysqlViewDriftEngines {
+		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir, target, shadow := myisamDriftHistory(c, test.engine)
+			dir, target, shadow := myisamDriftHistory(c, engine)
 
 			result, check := txModeDriftUp(c, "--db-url", target, "--migrations-dir", dir, "--check-drift", "--shadow-db", shadow)
 
 			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
-			c.Assert(check.Outcome, qt.Equals, test.outcome, qt.Commentf("%+v", check))
-			c.Assert(check.Message, qt.Matches, test.message)
+			c.Assert(check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", check))
 			c.Assert(check.Replayed, qt.DeepEquals, []int64{1, 2})
-			c.Assert(result.Stderr, qt.Matches, test.pendingStderr)
+			c.Assert(result.Stderr, qt.Contains, "tx-mode file requires InnoDB target tables")
 			c.Assert(myisamDriftCount(c, target, myisamDriftNoteColumns), qt.Equals, 0)
 			c.Assert(myisamDriftCount(c, target, myisamDriftAppliedVersions), qt.Equals, 2)
 		})
