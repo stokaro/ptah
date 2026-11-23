@@ -328,9 +328,11 @@ func reverseSchemaDiffWithPrior(
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
 	reversed.CurrentOutOfScope = diff.CurrentOutOfScope
 	// The same database's path and grants: a rollback names an object by the
-	// same absolute path, and a table it rebuilds held the same grants.
+	// same absolute path, and an object it recreates held the same grants and
+	// partial revokes.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
+	reversed.CurrentPartialRevokes = diff.CurrentPartialRevokes
 	// The same database's owners, as the forward change leaves them.
 	reversed.CurrentOwners = ownersAfter(diff, semantics)
 	reversed.DeclaredViewLikes = withReversedOwners(reversed.DeclaredViewLikes,

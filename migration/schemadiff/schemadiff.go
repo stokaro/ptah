@@ -301,10 +301,11 @@ func compareReportingUndecidedAdditions(
 	// it.
 	diff.CurrentOutOfScope = database.OutOfScope
 	// Where the read happened, for the statements YDB takes only with an
-	// absolute path, and every grant it reported, for a plan that recreates a
-	// table and must give the table its grants back.
+	// absolute path, and every grant and partial revoke it reported, for a
+	// plan that recreates an object and must give it its grants back.
 	diff.CurrentDatabasePath = database.DatabasePath
 	diff.CurrentGrants = compare.CurrentGrants(database)
+	diff.CurrentPartialRevokes = compare.CurrentPartialRevokes(database)
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.

@@ -2,17 +2,21 @@ package mysql
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/tableref"
 )
 
 // droppedObjects keys the tables, views, materialized views, sequences and
@@ -92,10 +96,11 @@ type heldGrant struct {
 //
 // They are what the read reported, not what the declaration grants: the
 // comparison leaves alone a privilege of a grantee the schema does not manage,
-// and the drop takes it all the same. So they are only as wide as the read.
-// Oracle's reports every grantee. SQL Server's reports the roles other than
-// public and the fixed roles, and no DENY, so on SQL Server a DENY on the
-// routine, a grant to public and a grant to a database user are lost.
+// and the drop takes it all the same. So they are only as wide as the read,
+// which on Oracle and SQL Server reports every grantee of a privilege on the
+// schema's objects: a role, a user and PUBLIC. A SQL Server DENY on the
+// routine is not a privilege held, and [Planner.deniesGivenBack] writes it
+// again.
 //
 // They are exact for a plan applied to the database it read. A versioned
 // migration is planned against the database its directory replays onto, so
@@ -140,9 +145,12 @@ func (p *Planner) heldOnReplacedRoutines(diff *difftypes.SchemaDiff) []heldGrant
 }
 
 // grantsGivenBack is the GRANT, after the CREATE, of each privilege
-// [Planner.heldOnReplacedRoutines] reports. The grants the plan adds are
-// written after these, as on any other object.
-func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) []ast.Node {
+// [Planner.heldOnReplacedRoutines] reports, followed by the DENY of each one
+// [Planner.deniesGivenBack] reports. The grants the plan adds are written
+// after these, as on any other object, so a declared GRANT of a privilege
+// the grantee was denied replaces the DENY, as it does on a routine the plan
+// keeps.
+func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	held := p.heldOnReplacedRoutines(diff)
 	nodes := make([]ast.Node, 0, len(held))
 	for _, given := range held {
@@ -150,8 +158,74 @@ func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) []ast.Node {
 		nodes = append(nodes, ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetWithOption(grant.WithOption))
 	}
-	return nodes
+	denies, err := p.deniesGivenBack(diff)
+	if err != nil {
+		return nil, err
+	}
+	return append(nodes, denies...), nil
 }
+
+// deniesGivenBack is the DENY, after the CREATE, of each privilege the read
+// reported denied on a routine the plan replaces by DROP and CREATE, to
+// whichever grantee it was denied to.
+//
+// The DROP takes a DENY with the routine, measured on SQL Server 2025, and the
+// comparison plans none, because Ptah declares no DENY. Without these a body
+// change widens access in silence: a role granted EXECUTE on the schema and
+// denied it on the routine runs the routine after the apply, and the next plan
+// reports the schema synced.
+//
+// Only a target whose partial revoke on an object is a DENY
+// ([Planner.deniesOnObjects]) has one to write. A plan the comparison runs
+// revokes no DENY: a REVOKE of a privilege the grantee is denied is a
+// declared absence, which the DENY keeps. A privilege name is written as the
+// catalog spells it, and one that is not a run of words is refused rather
+// than written into the statement.
+func (p *Planner) deniesGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if !p.deniesOnObjects() || !p.capabilities().Has(capability.RoleManagement) || len(diff.CurrentPartialRevokes) == 0 {
+		return nil, nil
+	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	replaced := p.replacedRoutines(diff, semantics)
+	var nodes []ast.Node
+	for _, denied := range diff.CurrentPartialRevokes {
+		_, onReplaced := replaced[semantics.QualifiedTableIdentityKey(denied.ObjectName)]
+		if !strings.EqualFold(denied.ObjectType, "TABLE") || denied.Column != "" || !onReplaced {
+			continue
+		}
+		statement, err := denyStatement(denied)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, ast.NewRawSQL(statement))
+	}
+	return nodes, nil
+}
+
+// denyStatement spells denied as T-SQL. The object is named as the read
+// qualifies it, each part bracketed, which is how the renderer names the
+// object of the GRANT beside it.
+func denyStatement(denied difftypes.GrantRef) (string, error) {
+	if !permissionName.MatchString(denied.Privilege) {
+		return "", fmt.Errorf("%w: sqlserver: cannot deny %q on %s to %q again after the routine is replaced: "+
+			"the catalog names a permission Ptah does not write", ptaherr.ErrUnsupportedFeature,
+			denied.Privilege, denied.ObjectName, denied.Role)
+	}
+	ref, ok := tableref.Parse(denied.ObjectName)
+	if !ok {
+		return "", fmt.Errorf("%w: sqlserver: cannot deny %s to %q again after the routine is replaced: "+
+			"%q is not an object name", ptaherr.ErrInvalidSchemaDiff, denied.Privilege, denied.Role, denied.ObjectName)
+	}
+	object := sqlident.Quote(platform.SQLServer, ref.Name)
+	if ref.Qualified {
+		object = sqlident.Quote(platform.SQLServer, ref.Schema) + "." + object
+	}
+	return fmt.Sprintf("DENY %s ON %s TO %s", denied.Privilege, object, sqlident.Quote(platform.SQLServer, denied.Role)), nil
+}
+
+// permissionName is the shape of a permission sys.database_permissions
+// names: upper-case words, such as EXECUTE or VIEW DEFINITION.
+var permissionName = regexp.MustCompile(`^[A-Z]+( [A-Z]+)*$`)
 
 // refuseALostGrantOption refuses a plan that replaces a routine on which a
 // grantee holds a privilege WITH GRANT OPTION, where the target's renderer

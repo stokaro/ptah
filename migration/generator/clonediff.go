@@ -56,6 +56,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.RoleMembershipsRemoved = slices.Clone(diff.RoleMembershipsRemoved)
 	clone.RoleMembershipsModified = slices.Clone(diff.RoleMembershipsModified)
 	clone.CurrentGrants = slices.Clone(diff.CurrentGrants)
+	clone.CurrentPartialRevokes = slices.Clone(diff.CurrentPartialRevokes)
 	clone.CurrentOwners = slices.Clone(diff.CurrentOwners)
 	clone.DeclaredIndexes = slices.Clone(diff.DeclaredIndexes)
 	clone.DeclaredTriggers = slices.Clone(diff.DeclaredTriggers)

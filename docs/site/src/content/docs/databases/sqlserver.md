@@ -100,11 +100,9 @@ type CurrentOrdersSynonym struct{}
 CREATE SYNONYM [app].[current_orders] FOR [sales].[orders];
 ```
 
-The target is written with as many parts as it needs. Two parts name an object
-in this database; three name another database; four name a linked server. Ptah
-records what it was given and never rewrites it, because the part count is what
-tells SQL Server where to resolve the name, and adding a qualifier would turn a
-remote reference into a local one.
+Two parts name an object in this database, three another database, and four a
+linked server. Ptah keeps the target as written, because the part count tells
+SQL Server where to resolve the name.
 
 **Ptah manages the alias and never the target.** SQL Server does not require
 the target to exist, so nothing creates or drops the object a synonym points
@@ -169,8 +167,7 @@ EXEC sp_addextendedproperty @name = N'deployment_tier', @value = N'production';
 
 A database-scoped property passes no level: an empty `@level0name` would name
 a schema called `""`. It is in no schema either,
-so `--schema` neither selects nor removes it — the same rule an extension
-follows, where placement is not ownership.
+so `--schema` neither selects nor removes it.
 
 `--include` and `--exclude` name a property as `name[type=extended_property]`,
 qualified by its schema, or by its name alone for a property on the database.
@@ -238,8 +235,7 @@ ptah schema inspect --db-url "$SQLSERVER_URL" --format sql > out.sql
 ptah schema apply --db-url "$SQLSERVER_URL" --to file://out.sql
 ```
 
-Neither format claims the two objects, so the comparison withholds those
-removals. HCL and a Go schema — `//ptah:schema:synonym` and
+HCL and a Go schema — `//ptah:schema:synonym` and
 `//ptah:schema:extendedproperty` — can both declare the two objects and claim
 them, so silence in either is a request to remove.
 
@@ -257,10 +253,9 @@ CREATE TABLE [app].[widget] (
 );
 ```
 
-The guard is needed: SQL Server has no
-`CREATE SCHEMA IF NOT EXISTS`, repeating the statement answers `Msg 2714: There
-is already an object named 'app' in the database`, and `CREATE SCHEMA` must be
-the first statement of its batch — which is what the `EXEC` is for.
+SQL Server has no `CREATE SCHEMA IF NOT EXISTS`, a repeated `CREATE SCHEMA`
+fails with `Msg 2714`, and `CREATE SCHEMA` must open its batch, which the `EXEC`
+does.
 
 The schemas come from the objects being added and from the `schema` blocks a
 document declares, so a migration that adds nothing emits no schema statement and
@@ -287,9 +282,8 @@ A table's `comment` and a column's take the same shape, written right after
 `CREATE TABLE`. `ptah db read` writes them that way as well, and a schema file
 reads them back, so a description keeps them.
 
-**MySQL, MariaDB, ClickHouse and Oracle do not do this.** A schema there is a
-database, or on Oracle a user, and creating one is an administrative act outside
-what a schema migration owns.
+**MySQL, MariaDB, ClickHouse and Oracle do not do this:** a schema there is a
+database, or on Oracle a user, which a migration does not create.
 
 ## Identifier collation
 
@@ -305,10 +299,9 @@ An offline, dialect-only comparison cannot know the target collation, so it
 confirms only exact-spelling identity. When it checks table, column, or index
 names for conflicts, it treats two ASCII names that differ after ASCII case
 folding as distinct, because no SQL Server collation makes them equal. Names that differ only in ASCII case, or
-where either name has a non-ASCII character, may be one name under some
-collation. Planning treats them as potential conflicts and rejects the
-ambiguity instead of guessing. This makes offline SQL Server planning
-intentionally stricter than live planning. Embedders choose between the live-aware and offline
+that hold a non-ASCII character, may be one name under some collation, so
+planning rejects them as a possible conflict instead of guessing. This makes
+offline SQL Server planning intentionally stricter than live planning. Embedders choose between the live-aware and offline
 comparison APIs — see [Public Go API](../../extend/public-api/).
 
 ## Filtered indexes
@@ -518,18 +511,17 @@ applied. Write `EXECUTE AS 'name'` with that user instead.
 Every other option is refused by name, because Ptah cannot write it and compare
 it back: `ENCRYPTION`, `NATIVE_COMPILATION`, `INLINE` and `FOR REPLICATION`
 among them. A SQL schema file that writes one is refused when it is read, and
-a database that holds a routine created with `ENCRYPTION`,
-`NATIVE_COMPILATION` or an explicit `INLINE` setting is refused when it is
-read, naming the routine. This includes `INLINE = OFF` on a function that
-cannot be inlined. `CALLED ON NULL INPUT`, the default, is accepted.
+so is a database holding a routine created with `ENCRYPTION`,
+`NATIVE_COMPILATION` or an explicit `INLINE` setting, `INLINE = OFF` included;
+the refusal names the routine. `CALLED ON NULL INPUT`, the default, is accepted.
 
 T-SQL has no volatility clause. SQL Server judges a function deterministic
 from its body and `SCHEMABINDING`, and no declaration states that verdict, so
 the reader reports every routine `VOLATILE`.
 
 A routine replaced for a new body is dropped first, and the plan grants back
-what each role held on it. A `DENY` on it is lost, as is a grant to `public`
-or a database user. Measured on SQL Server 2025.
+what each grantee held on it and denies again what was denied. Measured on SQL
+Server 2025.
 
 ## Scripts and batches
 
@@ -591,8 +583,8 @@ describes one on a table.
 
 The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
 line, at the `END` that closes a `BEGIN ... END` body, or at the end of the
-file. A body of several statements that is not a `BEGIN ... END` block
-therefore needs a `GO` line after it when anything follows it in the file.
+file. A body of several statements outside a `BEGIN ... END` block needs a
+`GO` line after it when anything follows it.
 
 A header clause that Ptah does not model is refused by name rather than
 dropped, because a trigger read without the clause would compare equal to one
@@ -625,6 +617,19 @@ columns. SQL Server's own `REVOKE ALL` leaves `ALTER`, `CONTROL` and
 `VIEW DEFINITION`, through which a member still reads and drops the table.
 Ownership of `t` or its schema, a permission on the schema such as `CONTROL`,
 and a role such as `db_datareader` still reach `t`.
+
+Permissions of users, application roles and `public` on the schema's objects
+are read, as a role's are. Measured on SQL Server 2025:
+
+- `ptah db read` and `ptah schema inspect --format sql` write their grants, but
+  do not create the user or the application role, and write no `DENY`.
+  A principal granted a permission on a schema and denied it on one object
+  reads as holding it there too, as a role does.
+- `ptah schema security` reports them: a grant to `public` raises the warning
+  `PRV03`, and a grant on a routine raises `PRV01`, so `--fail-on any` can
+  fail on a database it passed.
+- `ptah schema diff` between two databases reads `--to` as complete, so it
+  revokes a grant of a user or of `public` that `--to` lacks.
 
 ## Permissions on columns
 
@@ -671,8 +676,8 @@ Column names compare under the database's
   procedures, of one name is refused before any statement is planned: under
   `CREATE OR ALTER` the second replaces the first without an error, measured
   on SQL Server 2022.
-- Linked servers are not managed. A linked server belongs to the whole instance and every database on it
-  shares it, so a schema for one database cannot own it or drop it without
+- Linked servers are not managed. A linked server belongs to the whole
+  instance, so a schema for one database cannot own or drop it without
   changing the others. It also opens a path to another server, which is why
   a replay against a dev database refuses `sp_addlinkedserver`. Its remote
   login holds a password the server never returns, so a plan could not tell a
@@ -682,9 +687,8 @@ Column names compare under the database's
   the block as ignored. Define the linked server where the instance is
   provisioned. A synonym may still name an object behind one (see
   [Synonyms](#synonyms)).
-- A synonym's target is recorded and resolved by the server, not validated by
-  Ptah: a synonym naming an object that does not exist is created successfully
-  and fails when something uses it, which is SQL Server's own behavior.
+- Ptah does not validate a synonym's target: SQL Server creates a synonym
+  naming a missing object, and the synonym fails when something uses it.
 - View and trigger introspection records the persisted definition text without
   normalizing it into drift-safe definitions.
 - Index planning preserves key order, direction, filtered predicates, and

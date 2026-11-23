@@ -70,15 +70,19 @@ func (p *Planner) planRoleMemberships(result []ast.Node, diff *difftypes.SchemaD
 // [Planner.planRevokesFirst]). The ones on a column the plan creates come back
 // here, first, after the tables, views and columns. A column is named as
 // [columnSpellings] says.
-func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if !p.capabilities().Has(capability.RoleManagement) {
-		return result
+		return result, nil
 	}
 	if p.revokesFirst() {
 		_, later := p.columnGrantsGivenBack(diff)
 		result = append(result, later...)
 	}
-	result = append(result, p.grantsGivenBack(diff)...)
+	givenBack, err := p.grantsGivenBack(diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, givenBack...)
 	_, added := p.grantsAdded(diff)
 	result = p.grantPrivileges(result, diff, added)
 	spellings := newColumnSpellings(diff, p.targetDialect())
@@ -88,7 +92,7 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) []as
 			SetColumns(spellings.columns(grant)).
 			SetWithOption(true))
 	}
-	return result
+	return result, nil
 }
 
 // planRevokesFirst emits the REVOKE statements at the start of the plan on

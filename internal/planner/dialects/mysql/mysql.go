@@ -2285,7 +2285,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.addForeignKeyConstraintsForNewTables(result, diff)
 
 	// 5.7. Grant privileges once the objects they name exist.
-	result = p.planGrants(result, diff)
+	result, err = p.planGrants(result, diff)
+	if err != nil {
+		return nil, err
+	}
 
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
@@ -2340,17 +2343,19 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.changeSchemaComments(result, diff)
 	result = p.dropRemovedSchemas(result, diff)
 	if !p.describes() {
-		guards.Settle(result, guards.Options{HarmlessRaw: harmlessSessionStatement})
+		guards.Settle(result, guards.Options{HarmlessRaw: harmlessRawStatement})
 	}
 	warnLeftOutIdentityStarts(ctx, diff)
 	return result, nil
 }
 
-// harmlessSessionStatement reports the raw statement a trigger swap writes
-// around the swap, which removes no object.
-func harmlessSessionStatement(raw *ast.RawSQLNode) bool {
+// harmlessRawStatement reports a raw statement that removes no object: the
+// LOCK TABLES and UNLOCK TABLES a trigger swap writes around the swap, and the
+// DENY a replaced routine gets back ([Planner.deniesGivenBack]).
+func harmlessRawStatement(raw *ast.RawSQLNode) bool {
 	statement := strings.TrimSpace(raw.SQL)
-	return strings.HasPrefix(statement, "LOCK TABLES") || strings.HasPrefix(statement, "UNLOCK TABLES")
+	return strings.HasPrefix(statement, "LOCK TABLES") || strings.HasPrefix(statement, "UNLOCK TABLES") ||
+		strings.HasPrefix(statement, "DENY ")
 }
 
 // rejectUniqueIncludeConstraints refuses a covering UNIQUE this plan would have

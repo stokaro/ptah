@@ -4,6 +4,7 @@ package dbschema_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -292,4 +293,81 @@ func grantsHeldBy(grants []catalog.Grant, role string) (held, withOption map[str
 		withOption[grant.Privilege] = grant.WithOption
 	}
 	return held, withOption
+}
+
+// TestSQLServerLiveReaderReadsUsersAndPublicOnTheSchemasObjects pins the
+// grantees the reader reports beyond the roles: a database user and public, on
+// the schema's own objects. A plan that drops an object and creates it again
+// gives back only what was read, so a grant to either, and a DENY to either,
+// that the read missed would be lost to the drop.
+//
+// What a user or public holds that no statement of the schema's wrote stays
+// out: the CONNECT that CREATE USER grants, and public's grants on the
+// system objects and on the database, which every database carries.
+func TestSQLServerLiveReaderReadsUsersAndPublicOnTheSchemasObjects(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	suffix := time.Now().UnixNano()
+	user := fmt.Sprintf("ptah_grantee_user_%d", suffix)
+	table := fmt.Sprintf("ptah_gt_%d", suffix)
+	quotedUser := quoteSQLServerIdentifier(user)
+	quotedTable := "[dbo]." + quoteSQLServerIdentifier(table)
+	defer func() {
+		_, _ = conn.ExecContext(ctx, "REVOKE VIEW DEFINITION ON SCHEMA::[dbo] FROM "+quotedUser)
+		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quotedTable)
+		_, _ = conn.ExecContext(ctx, "DROP USER IF EXISTS "+quotedUser)
+	}()
+
+	for _, statement := range []string{
+		"CREATE USER " + quotedUser + " WITHOUT LOGIN",
+		"CREATE TABLE " + quotedTable + " ([id] INT PRIMARY KEY)",
+		"GRANT SELECT ON " + quotedTable + " TO " + quotedUser,
+		"DENY DELETE ON " + quotedTable + " TO " + quotedUser,
+		"GRANT INSERT ON " + quotedTable + " TO [public]",
+		"DENY UPDATE ON " + quotedTable + " TO [public]",
+		"GRANT VIEW DEFINITION ON SCHEMA::[dbo] TO " + quotedUser,
+	} {
+		_, execErr := conn.ExecContext(ctx, statement)
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"dbo"})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(grantsOn(live.Grants, user, table), qt.DeepEquals, []string{"DELETE DENY", "SELECT GRANT"})
+	c.Assert(grantsOn(live.Grants, user, "dbo"), qt.DeepEquals, []string{"VIEW DEFINITION GRANT"})
+	c.Assert(grantsOn(live.Grants, "public", table), qt.DeepEquals, []string{"INSERT GRANT", "UPDATE DENY"})
+	c.Assert(grantsBeyond(live.Grants, user, table, "dbo"), qt.DeepEquals, make([]string, 0))
+	c.Assert(grantsBeyond(live.Grants, "public", table), qt.DeepEquals, make([]string, 0))
+}
+
+// grantsOn lists what grantee holds on the table named table, each as
+// "PRIVILEGE STATE", where the state is DENY for a partial revoke.
+func grantsOn(grants []catalog.Grant, grantee, table string) []string {
+	held := make([]string, 0)
+	for _, grant := range grants {
+		state := map[bool]string{false: "GRANT", true: "DENY"}[grant.IsPartialRevoke]
+		if grant.Role == grantee && grant.ObjectName == table {
+			held = append(held, grant.Privilege+" "+state)
+		}
+	}
+	return held
+}
+
+// grantsBeyond lists what grantee holds anywhere but on the objects named
+// names, each as "OBJECT_TYPE SCHEMA.OBJECT PRIVILEGE".
+func grantsBeyond(grants []catalog.Grant, grantee string, names ...string) []string {
+	beyond := make([]string, 0)
+	for _, grant := range grants {
+		if grant.Role == grantee && !slices.Contains(names, grant.ObjectName) {
+			beyond = append(beyond, grant.ObjectType+" "+grant.Schema+"."+grant.ObjectName+" "+grant.Privilege)
+		}
+	}
+	return beyond
 }

@@ -1237,6 +1237,21 @@ type SchemaDiff struct {
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`
 
+	// CurrentPartialRevokes is the read's rows that take a privilege away
+	// rather than hold one, carried beside [SchemaDiff.CurrentGrants] and off
+	// the wire: a SQL Server DENY, the REVOKE row SQL Server keeps for a
+	// column revoked under a grant on its whole table, a ClickHouse partial
+	// revoke. A privilege an object's owner revoked from itself is not one.
+	//
+	// A comparison plans none of them, because Ptah declares no such row. A
+	// plan that drops an object the schema keeps and creates it again takes
+	// them with the old object all the same, and this is how a planner writes
+	// them again: the SQL Server plan denies again, after the CREATE, what was
+	// denied on a routine it replaces.
+	//
+	// A reversal runs against the same database and carries the same rows.
+	CurrentPartialRevokes []GrantRef `json:"-"`
+
 	// Features is every named feature object on each side, changed or not,
 	// carried once for the whole diff and off the wire. A planner reads it
 	// where a rule about one object depends on objects the change set does
