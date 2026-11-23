@@ -238,14 +238,13 @@ func TestRedeclaration_PoliciesStayStrict(t *testing.T) {
 	})
 }
 
-// A name and a schema are text an author typed, so both readers remove the
-// space around them: a schema keeps its bytes below, and "ext " is another
-// schema than ext.
-func TestReaders_TrimTheNameAndTheSchemaTheyRead(t *testing.T) {
+// A schema is text an author typed, so both readers remove the space around
+// it: a schema keeps its bytes below, and "ext " is another schema than ext.
+func TestReaders_TrimTheSchemaTheyRead(t *testing.T) {
 	c := qt.New(t)
 
-	fromGo := parseGo(c, "extensions.go", `//ptah:schema:extension name="pg_trgm " schema="ext "`)
-	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte("extensions:\n  trigrams:\n    name: \" pg_trgm \"\n    schema: \" ext\"\n")))
+	fromGo := parseGo(c, "extensions.go", `//ptah:schema:extension name="pg_trgm" schema="ext "`)
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte("extensions:\n  trigrams:\n    name: pg_trgm\n    schema: \" ext\"\n")))
 
 	c.Assert(extension(c, fromGo, "pg_trgm").Schema, qt.Equals, "ext")
 	c.Assert(extension(c, fromYAML, "pg_trgm").Schema, qt.Equals, "ext")

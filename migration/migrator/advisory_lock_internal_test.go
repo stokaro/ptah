@@ -184,3 +184,14 @@ func TestMigrationLockSchema(t *testing.T) {
 		})
 	}
 }
+
+// A session scoped to its connection configures the connection's own schema,
+// which keeps its bytes: the lock is kept beside the revision table in " a",
+// not in a.
+func TestMigrationLockSchema_KeepsAScopedSessionsSchema(t *testing.T) {
+	c := qt.New(t)
+	m := NewMigrator(nil, nil)
+	m.migrationsSchema = " a"
+
+	c.Assert(m.migrationLockSchema(), qt.Equals, " a")
+}

@@ -113,14 +113,15 @@ func (d Document) spec(path string) (embedgen.Spec, error) {
 		return embedgen.Spec{}, err
 	}
 
-	// The relations are trimmed where the document is read: the generation
-	// keeps a schema's bytes below, so "docs " would name another schema than
-	// docs, and the identity hashes the names it is given.
+	// A schema is trimmed where the document is read: the generation keeps a
+	// schema's bytes below, so "docs " would name another schema than docs, and
+	// the identity hashes the names it is given. A table keeps its bytes, as a
+	// table the catalog holds does.
 	return embedgen.Spec{
 		Name:        d.Name,
 		Description: d.Description,
 		Source: embedgen.Source{
-			Schema: strings.TrimSpace(d.Source.Schema), Table: strings.TrimSpace(d.Source.Table), Filter: d.Source.Filter,
+			Schema: strings.TrimSpace(d.Source.Schema), Table: d.Source.Table, Filter: d.Source.Filter,
 			KeyFields: d.Source.KeyFields, InputFields: d.Source.InputFields,
 			VersionStrategy: versionStrategy, VersionField: d.Source.VersionField,
 		},
@@ -140,7 +141,7 @@ func (d Document) spec(path string) (embedgen.Spec, error) {
 			Normalization:      normalization, Pooling: d.Model.Pooling,
 		},
 		Target: embedgen.Target{
-			Schema: strings.TrimSpace(d.Target.Schema), Table: strings.TrimSpace(d.Target.Table), Column: d.Target.Column,
+			Schema: strings.TrimSpace(d.Target.Schema), Table: d.Target.Table, Column: d.Target.Column,
 			Representation: d.Target.Representation, Metric: metric,
 			IndexMethod: d.Target.IndexMethod, IndexOptions: d.indexOptions(),
 			Layout: layout,

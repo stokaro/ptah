@@ -580,12 +580,13 @@ func (p *Planner) addSchemaPreconditions(
 //
 // A comparison without a connection carries no identifier semantics, and its
 // default schema is the dialect's guess rather than a schema anything
-// resolved, so it keeps the precondition.
+// resolved, so it keeps the precondition. The connected schema keeps its
+// bytes: on a connection to " a", a table in a is not in the connected schema.
 func connectedSchema(diff *difftypes.SchemaDiff, dialect string) string {
 	if diff == nil || diff.IdentifierSemantics == nil {
 		return ""
 	}
-	return strings.TrimSpace(diff.EffectiveIdentifierSemantics(dialect).DefaultSchema)
+	return diff.EffectiveIdentifierSemantics(dialect).DefaultSchema
 }
 
 // dropRemovedSchemas ends the plan with a DROP SCHEMA for each schema a rollback

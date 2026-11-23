@@ -349,9 +349,7 @@ func atlasCompatibilityPolicy(cmd *cobra.Command) atlascompatpolicy.Policy {
 }
 
 // validateAtlasStrictCompatURLFlags refuses a URL flag value strict mode does
-// not accept, and rewrites each accepted one to the URL the run connects with,
-// [atlascompatpolicy.Policy.SearchPathURL]. The flags are rewritten here, once,
-// before any command reads them, so every reader of a flag sees the same URL.
+// not accept, before any command reads the flag or connects.
 func validateAtlasStrictCompatURLFlags(cmd *cobra.Command, policy atlascompatpolicy.Policy) error {
 	for _, name := range []string{"url", "dev-url", "from", "to"} {
 		flag := cmd.Flags().Lookup(name)
@@ -362,30 +360,16 @@ func validateAtlasStrictCompatURLFlags(cmd *cobra.Command, policy atlascompatpol
 		if err != nil {
 			return fmt.Errorf("read --%s for strict compatibility: %w", name, err)
 		}
-		literal := make([]string, 0, len(values))
 		for _, value := range values {
 			if err := policy.ValidateURL(value); err != nil {
 				return err
 			}
-			literal = append(literal, policy.SearchPathURL(value))
-		}
-		if slices.Equal(literal, values) {
-			continue
-		}
-		if err := replaceAtlasFlagValues(flag, literal); err != nil {
-			return fmt.Errorf("rewrite --%s for strict compatibility: %w", name, err)
+			if err := policy.ValidateSearchPath("--"+name, value); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
-}
-
-// replaceAtlasFlagValues sets flag to values: the whole list of a list flag,
-// or the one value of a string flag.
-func replaceAtlasFlagValues(flag *pflag.Flag, values []string) error {
-	if list, ok := flag.Value.(pflag.SliceValue); ok {
-		return list.Replace(values)
-	}
-	return flag.Value.Set(values[0])
 }
 
 func atlasFlagStringValues(cmd *cobra.Command, name, valueType string) ([]string, error) {

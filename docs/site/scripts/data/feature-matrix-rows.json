@@ -694,6 +694,15 @@
   },
   {
     "area": "Direct schema workflow",
+    "feature": "A PostgreSQL URL `search_path` the community binary reads as one schema name",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "unknown",
+    "note": "Atlas CE selects the schema the value spells, so `%20a` selects ` a`. The default reads the server's grammar and selects `a`. Strict mode refuses the value before connecting, on purpose.",
+    "evidence": "Measured on Atlas CE v1.4.0 against PostgreSQL 18, on a database holding the schemas `a`, ` a`, `a `, `A` and `a,b`: through `-u` and an env `url`, `search_path=%20a`, `a%20`, `A` and `a,b` select ` a`, `a `, `A` and `a,b`; through `--to`, the first three select the same schemas and `a,b` is refused with `missing scheme`; `a%20b` and `a+b` are refused by the server as `invalid value for parameter \"search_path\": \"a b\"`. On a `--dev-url` holding `a`, `%20a`, `a%20` and `A` print an empty document, exit 0, and leave the replayed table in `a`. `ptah-compat` reads the server's grammar: `%20a`, `a%20` and `A` select `a`, and `search_path=%22%20a%22` selects ` a`. Under PTAH_ATLAS_STRICT_COMPAT=1 each of those values is refused before connecting, naming the flag or the env attribute. internal/schemaselection LiteralReadingDiffers; internal/atlascompatpolicy ValidateSearchPath and search_path_test.go; integration/postgres_strict_search_path_e2e_test.go; integration/postgres_spaced_current_schema_e2e_test.go; docs/site/src/content/docs/atlas/strict-ce-mode.md"
+  },
+  {
+    "area": "Direct schema workflow",
     "feature": "`--include` resource selectors",
     "ptah": "yes",
     "atlas_oss": "no",

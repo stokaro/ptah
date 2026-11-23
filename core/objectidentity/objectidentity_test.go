@@ -419,3 +419,21 @@ func TestIdentity_PathWritesTheSignature(t *testing.T) {
 	c.Assert(id.Path(), qt.Equals, "app.pkg.f(integer)")
 	c.Assert(id.String(), qt.Equals, "example.org/routine app.pkg.f(integer)")
 }
+
+// The default schema is the one the connection resolved, so a table named
+// without a schema is in that schema byte for byte: in a session whose current
+// schema is " a", an unqualified t is " a".t and not a.t. Trimmed, the catalog's
+// unqualified t paired with no declared table, and the plan created " a".t
+// beside a DROP of the live one.
+func TestTableParts_DefaultsToTheCurrentSchemaAsItIs(t *testing.T) {
+	semantics := postgresSemantics()
+	semantics.DefaultSchema = " a"
+	builder := objectidentity.NewBuilder(semantics)
+	c := qt.New(t)
+
+	unqualified := builder.TableParts("", "t")
+
+	c.Assert(unqualified.Equal(builder.TableParts(" a", "t")), qt.IsTrue)
+	c.Assert(unqualified.Equal(builder.TableParts("a", "t")), qt.IsFalse)
+	c.Assert(unqualified.Schema.Defaulted, qt.IsTrue)
+}

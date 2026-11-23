@@ -90,35 +90,59 @@ surface verifies the server against the named bundle, as
 [MySQL and MariaDB](../../databases/mysql/#tls-with-a-private-certificate-authority)
 describes.
 
-Strict mode reads a PostgreSQL `search_path` as the pinned binary does: the
-whole value is one schema name, byte for byte. A space around it, a capital
-letter and a comma stay part of the name. Ptah sends the value to the server as
-one quoted identifier, so the session lands in the schema the value names and
-Ptah reads that schema. The rewrite applies to `-u`, `--to`, `--dev-url` and
-the URLs an `atlas.hcl` env sets. Measured on Atlas CE v1.4.0 against
-PostgreSQL 18, through `-u`, `--to` and an env `url`:
+Strict mode refuses a PostgreSQL `search_path` that the pinned binary and the
+server read as different schemas. The pinned binary reads the whole value as
+one schema name, byte for byte, so a space around it, a capital letter and a
+comma stay part of the name. The server, and Ptah with it, reads the value with
+the `search_path` grammar, which trims an unquoted name, folds it to lower case
+and reads a comma as a list. The refusal covers a value that holds white
+space, a double quote, a comma, a plus sign or an upper-case letter, or is
+longer than 63 bytes, in `-u`, `--to`, `--dev-url` and the URLs an `atlas.hcl`
+env sets. It arrives before Ptah connects and names the source:
 
-| `search_path` | Atlas CE | Ptah, strict mode | Ptah, default |
-| --- | --- | --- | --- |
-| `%20a` | ` a` | ` a` | `a` |
-| `a%20` | `a ` | `a ` | `a` |
-| `A` | `A` | `A` | `a` |
-| `a,b` | refused, exit 1 | refused, exit 1 | every schema |
+```text
+Error: Atlas Community Edition strict compatibility refuses search_path=A in --url: the community binary reads the value as one schema name, byte for byte, and the server's search_path grammar reads another; name a schema in lower case, at most 63 bytes, without white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT to read the value as the server does
+```
 
-On `-u`, Atlas CE refuses `a,b` as `postgres: schema "a,b" was not found`, and
-strict mode refuses it as
-`database URL selects schema "a,b", which does not exist in this database or holds no USAGE privilege for the connecting role`.
-The default surface reads the value with the server's own grammar, which trims
-an unquoted name, folds it to lower case and reads a comma as a list. A list
-scopes nothing, so a run reads every schema. A `docker://` dev URL keeps its
-`search_path` as written, because the dev container's baseline reads it too.
+A lower-case name passes, and a `docker://` dev URL is not checked, because its
+`search_path` names the schema the dev container's baseline creates.
 
-One difference is deliberate. On a `--dev-url`, Atlas CE replays the document
-where the server's grammar puts it and reads the literal schema back. A document
-inspected through `search_path=%20a` comes out empty, exit 0, and its tables
-stay behind in the dev database's schema `a`. Strict mode replays the document
-in the schema it reads, so the document's tables appear and the dev database is
-left empty.
+The refusal is stricter than Atlas CE on purpose. Following the pinned binary
+would make a schema with white space or a capital letter the current schema of
+a connection whose readers take that name from the server, and following the
+server would select a schema the pinned binary does not. Measured on Atlas CE
+v1.4.0 against PostgreSQL 18, on a database holding the schemas `a`, ` a`,
+`a `, `A` and `a,b`, each with one table:
+
+| `search_path` | Atlas CE, `-u` and an env `url` | Atlas CE, `--to` | Ptah, strict mode | Ptah, default |
+| --- | --- | --- | --- | --- |
+| `%20a` | selects ` a` | selects ` a` | refused | selects `a` |
+| `a%20` | selects `a ` | selects `a ` | refused | selects `a` |
+| `A` | selects `A` | selects `A` | refused | selects `a` |
+| `a,b` | selects `a,b` | refused: `missing scheme` | refused | reads every schema |
+
+On `--to`, Atlas CE splits the flag's value on the comma, so `a,b` leaves a URL
+fragment without a scheme. Through `-u` and an env `url`, it selects `a,b` only
+because the database holds a schema of that name; without one it refuses the
+run with `postgres: schema "a,b" was not found`. A value the server refuses,
+such as `a%20b`, fails on Atlas CE as
+`invalid value for parameter "search_path": "a b"`. Atlas CE reads `a+b` as
+`a b` and fails the same way.
+
+On a `--dev-url`, Atlas CE replays a document where the server's grammar puts
+it and reads the literal schema back. Measured on a dev database that also
+holds `a`, a document inspected through `search_path=%20a`, `a%20` or `A`
+comes out empty, exit 0, and its tables stay behind in the dev database's
+schema `a`. `migrate apply` through `search_path=%20a` creates
+`atlas_schema_revisions` in `a` and then fails to read it from ` a`, with
+`relation " a.atlas_schema_revisions" does not exist`. Strict mode refuses the
+URL and replays and applies nothing.
+
+The default surface reads the value with the server's grammar. A list scopes
+nothing, so a run reads every schema. To select a schema whose name holds white
+space, an upper-case letter or a comma, write it as one quoted identifier:
+`search_path=%22%20a%22` selects ` a`, and a document inspected through it
+applies back with no changes.
 
 ## Content strict mode refuses
 

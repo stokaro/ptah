@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
+	"ptah.run/internal/tableref"
 )
 
 func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
@@ -158,6 +159,9 @@ func TestPlanner_SchemaPreconditionsSkipTheConnectedSchema(t *testing.T) {
 		{name: "another schema on a connection to public", dialect: "postgres", semantics: connectedTo("postgres", "public"), schema: "app", wantsPre: true},
 		{name: "public on a connection to app", dialect: "postgres", semantics: connectedTo("postgres", "app"), schema: "public", wantsPre: true},
 		{name: "public without a connection", dialect: "postgres", schema: "public", wantsPre: true},
+		{name: "PostgreSQL connected to a schema with a space", dialect: "postgres", semantics: connectedTo("postgres", " a"), schema: " a"},
+		{name: "a on a connection to a schema with a space", dialect: "postgres", semantics: connectedTo("postgres", " a"), schema: "a", wantsPre: true},
+		{name: "a schema with a space on a connection to a", dialect: "postgres", semantics: connectedTo("postgres", "a"), schema: " a", wantsPre: true},
 	}
 
 	for _, test := range tests {
@@ -171,7 +175,7 @@ func TestPlanner_SchemaPreconditionsSkipTheConnectedSchema(t *testing.T) {
 				SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 			}
 			diff := &difftypes.SchemaDiff{
-				TablesAdded:         difftypes.TableCreationsFor(desired, identifier.ForDialect(test.dialect), test.schema+".users"),
+				TablesAdded:         difftypes.TableCreationsFor(desired, identifier.ForDialect(test.dialect), tableref.Canonical(test.schema, "users")),
 				IdentifierSemantics: test.semantics,
 			}
 

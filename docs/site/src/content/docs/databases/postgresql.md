@@ -57,6 +57,13 @@ White space before the opening quote is skipped, so `--schemas 'a, " a"'` names
 `a` and ` a`, and a quoted name loses only its quotes: `--schemas '"Sales"'`
 names `Sales`. A quoted field that names no schema, such as `""`, is refused.
 
+A URL's `search_path` is read with the server's grammar, so
+`search_path=%20a` and `search_path=A` both select `a`. To select a schema
+whose name holds white space, an upper-case letter or a comma, write it as one
+quoted identifier: `search_path=%22%20a%22` selects ` a`. `ptah schema inspect`
+then describes the tables of ` a` in that schema, and `ptah schema apply` pairs
+them with the declared ones.
+
 A URL that pins no `search_path` can still resolve to a schema other than
 `public`. With the default search path `"$user", public`, a role named `app`
 resolves to `app` in a database that holds a schema `app`, and to `public` in

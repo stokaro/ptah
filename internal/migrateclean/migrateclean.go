@@ -175,7 +175,7 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, governs fun
 	if !governs(dialect) {
 		return Scope{}, nil
 	}
-	scope := Scope{Dialect: dialect, Schema: strings.TrimSpace(conn.Info().Schema)}
+	scope := Scope{Dialect: dialect, Schema: conn.Info().Schema}
 	if realmScoped(dialect, conn.Info().URL, scope.Schema) {
 		return inspectRealm(ctx, conn, scope)
 	}

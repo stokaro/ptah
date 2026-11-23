@@ -1467,15 +1467,22 @@ func (m *Migrator) metadataTableSchemaName() string {
 	return metadataTableSchemaName(m.connectionDialect(), m.connectionSchemaName(), m.migrationsSchema)
 }
 
+// metadataTableSchemaName is the schema the metadata tables live in. Each
+// schema keeps its bytes, because a schema name may begin or end with a space.
+// [Migrator.WithMigrationsTable] trims the schema a caller configures, and a
+// session scoped to the connection configures the connection's own schema:
+// trimmed here, a run whose current schema is " a" created
+// " a".atlas_schema_revisions and then read "a".atlas_schema_revisions, and
+// the apply failed with 42P01.
 func metadataTableSchemaName(dialect, connectionSchema, configuredSchema string) string {
-	if schema := strings.TrimSpace(configuredSchema); schema != "" {
-		return schema
+	if strings.TrimSpace(configuredSchema) != "" {
+		return configuredSchema
 	}
 	if !revisionTableFor(dialect).QualifiedByDefault {
 		return ""
 	}
-	if schema := strings.TrimSpace(connectionSchema); schema != "" {
-		return schema
+	if strings.TrimSpace(connectionSchema) != "" {
+		return connectionSchema
 	}
 	return defaultSchemaFor(dialect)
 }

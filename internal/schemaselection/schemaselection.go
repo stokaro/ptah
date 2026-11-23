@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -131,60 +132,74 @@ func fromQuery(query url.Values) Selection {
 	return selection
 }
 
-// Literal returns rawURL with each search_path value written as one quoted
-// identifier, so the server reads the value as one schema name, byte for byte:
-// a space around it, a comma and a capital letter stay part of the name. That
-// is how the pinned community binary reads the parameter. Measured on v1.4.0
-// against PostgreSQL 18, `search_path=%20a` selects " a", `a%20` selects "a ",
-// `A` selects "A", and `a,b` is refused as `schema "a,b" was not found`, where
-// the server's own grammar reads a list of names, trims an unquoted one and
-// folds it to lower case.
+// LiteralReadingDiffers reports the first search_path value of rawURL, as the
+// URL writes it, that the pinned community binary and the server read as
+// different schemas. The binary reads the value as one schema name, byte for
+// byte. The server reads it as a search_path list: it trims an unquoted name,
+// folds it to lower case, truncates it to 63 bytes, splits on a comma and reads
+// a double quote as quoting. The two agree on a name that holds none of those,
+// so a value differs when it holds white space, a double quote, a comma or an
+// upper-case letter, or is longer than 63 bytes. A plus sign differs too: the
+// binary's driver decodes it as a space and Ptah's sends it as itself.
 //
-// [FromURL] reads the quoted value back as the name, so the scope is the bytes
-// the URL wrote. An empty value, a URL that names no search_path, one of a
-// dialect that does not select through it, and one that does not parse are
-// returned unchanged, and so is a docker URL, whose search_path also names a
-// schema the dev container's baseline creates. The other parameters keep their
-// bytes.
-func Literal(rawURL string) string {
+// Measured on v1.4.0 against PostgreSQL 18, the binary selects " a" for
+// `search_path=%20a`, "a " for `a%20` and "A" for `A`, and reads `a,b` as the
+// one schema a,b, where the server reads `a` for the first three and two
+// schemas for the last.
+//
+// A URL of a dialect that does not select through the parameter, a docker URL,
+// whose search_path also names a schema the dev container's baseline creates,
+// an empty value and a URL that does not parse report nothing.
+func LiteralReadingDiffers(rawURL string) (string, bool) {
 	if atlasurl.IsDockerURL(rawURL) {
-		return rawURL
+		return "", false
 	}
 	dialect, err := atlasurl.DialectFromURL(rawURL)
 	if err != nil || !SelectsThroughSearchPath(dialect) {
-		return rawURL
+		return "", false
 	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.RawQuery == "" {
-		return rawURL
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", false
 	}
-	parts := strings.Split(parsed.RawQuery, "&")
-	for i, part := range parts {
+	for part := range strings.SplitSeq(parsed.RawQuery, "&") {
 		key, value, _ := strings.Cut(part, "=")
-		name, err := url.QueryUnescape(key)
-		if err != nil || name != searchPathParam {
+		if name, err := url.QueryUnescape(key); err != nil || name != searchPathParam {
 			continue
 		}
-		decoded, err := url.QueryUnescape(value)
-		if err != nil || decoded == "" {
-			continue
+		if literalReadingDiffers(value) {
+			return value, true
 		}
-		// A space is written %20: the driver decodes a query the way libpq
-		// does, and reads a plus sign as itself.
-		parts[i] = key + "=" + strings.ReplaceAll(url.QueryEscape(quoteIdentifier(decoded)), "+", "%20")
 	}
-	parsed.RawQuery = strings.Join(parts, "&")
-	return parsed.String()
+	return "", false
 }
 
-// quoteIdentifier writes name as one PostgreSQL quoted identifier.
-func quoteIdentifier(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+// maxIdentifierBytes is the length the server truncates an identifier to,
+// NAMEDATALEN less one.
+const maxIdentifierBytes = 63
+
+// literalReadingDiffers is [LiteralReadingDiffers] for one value as the URL
+// writes it. The driver decodes a percent escape and keeps a plus sign, as
+// libpq does.
+func literalReadingDiffers(raw string) bool {
+	if strings.Contains(raw, "+") {
+		return true
+	}
+	decoded, err := url.PathUnescape(raw)
+	if err != nil || decoded == "" {
+		return false
+	}
+	if len(decoded) > maxIdentifierBytes {
+		return true
+	}
+	return strings.ContainsFunc(decoded, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '"' || r == ',' || ('A' <= r && r <= 'Z')
+	})
 }
 
-// unquoteIdentifier reads value as one PostgreSQL quoted identifier, the form
-// [quoteIdentifier] writes, and reports whether it is one. A value of two
-// quoted names, such as `"a","b"`, is not: its inner quote stands alone.
+// unquoteIdentifier reads value as one PostgreSQL quoted identifier, and
+// reports whether it is one. A value of two quoted names, such as `"a","b"`,
+// is not: its inner quote stands alone.
 func unquoteIdentifier(value string) (string, bool) {
 	inner, ok := strings.CutPrefix(value, `"`)
 	if !ok {

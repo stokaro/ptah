@@ -614,7 +614,7 @@ func (d document) toDatabase(ctx context.Context, owners yamlext.Set, data []byt
 func (d document) addEnums(db *schemamodel.Database) {
 	for _, name := range sortedKeys(d.Enums) {
 		db.Enums = append(db.Enums, schemamodel.Enum{
-			Name:    strings.TrimSpace(name),
+			Name:    name,
 			Values:  cleanStrings(d.Enums[name].Values),
 			Comment: strings.TrimSpace(string(d.Enums[name].Comment)),
 		})
@@ -634,8 +634,10 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
-		tableName := identifierOrDefault(table.Name, tableKey)
-		schema := identifier(table.Schema)
+		// A table's name is trimmed as a schema is, so it reads as the Go tag
+		// reader reads one; the names of the objects it holds keep their bytes.
+		tableName := strings.TrimSpace(valueOrDefault(table.Name, tableKey))
+		schema := schemaName(table.Schema)
 
 		scalars, sections, err := ownedKeys(owners, yamlext.EntryTable, fmt.Sprintf("table %q", tableKey), table.Owned)
 		if err != nil {
@@ -745,7 +747,7 @@ func checkColumnKeys(owners yamlext.Set, data []byte, tableKey, group string, co
 
 func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database) (schemamodel.Field, error) {
 	fieldName := valueOrDefault(spec.FieldName, key)
-	columnName := identifierOrDefault(spec.Name, key)
+	columnName := valueOrDefault(spec.Name, key)
 	fieldType := string(spec.Type)
 	enumValues := cleanStrings(spec.Enum)
 	if len(enumValues) > 0 && (fieldType == "" || fieldType == "ENUM") {
@@ -908,7 +910,7 @@ func ownedIndex(owners yamlext.Set, key, structName string, spec indexSpec) (boo
 	if len(cleanStrings(spec.Fields)) == 0 && len(cleanStrings(spec.Columns)) == 0 {
 		return true, fmt.Errorf("index %q requires fields", key)
 	}
-	if structName == "" && identifier(spec.TableName) == "" {
+	if structName == "" && string(spec.TableName) == "" {
 		return true, fmt.Errorf("top-level index %q requires table", key)
 	}
 	if len(cleanStrings(spec.Include)) != len(spec.Include) {
@@ -948,7 +950,7 @@ func buildIndex(owners yamlext.Set, key, structName string, spec indexSpec) (sch
 	if len(fields) == 0 {
 		return schemamodel.Index{}, fmt.Errorf("index %q requires fields", key)
 	}
-	if structName == "" && identifier(spec.TableName) == "" {
+	if structName == "" && string(spec.TableName) == "" {
 		return schemamodel.Index{}, fmt.Errorf("top-level index %q requires table", key)
 	}
 	var include []string
@@ -981,7 +983,7 @@ func buildIndex(owners yamlext.Set, key, structName string, spec indexSpec) (sch
 	return schemamodel.Index{
 		Facets:         facets,
 		StructName:     structName,
-		Name:           identifierOrDefault(spec.Name, key),
+		Name:           valueOrDefault(spec.Name, key),
 		Fields:         fields,
 		IncludeColumns: include,
 		Unique:         spec.Unique,
@@ -989,7 +991,7 @@ func buildIndex(owners yamlext.Set, key, structName string, spec indexSpec) (sch
 		Type:           string(spec.Type),
 		Condition:      firstNonEmpty(string(spec.Where), string(spec.Condition)),
 		Operator:       string(spec.Operator),
-		TableName:      identifier(spec.TableName),
+		TableName:      string(spec.TableName),
 		Overrides:      mergePlatform(spec.Platform, nil),
 		StorageParams:  options,
 	}, nil
@@ -1018,7 +1020,7 @@ func (d document) addConstraints(db *schemamodel.Database) error {
 }
 
 func buildConstraint(key, structName, tableName string, spec constraintSpec) (schemamodel.Constraint, error) {
-	constraintTable := identifier(spec.Table)
+	constraintTable := string(spec.Table)
 	if constraintTable == "" && structName == "" {
 		constraintTable = tableName
 	}
@@ -1030,7 +1032,7 @@ func buildConstraint(key, structName, tableName string, spec constraintSpec) (sc
 
 	constraint := schemamodel.Constraint{
 		StructName:      structName,
-		Name:            identifierOrDefault(spec.Name, key),
+		Name:            valueOrDefault(spec.Name, key),
 		Type:            constraintType,
 		Table:           constraintTable,
 		UsingMethod:     string(spec.UsingMethod),
@@ -1165,7 +1167,7 @@ func (d document) addFunctions(db *schemamodel.Database, owners yamlext.Set) err
 
 		fn := schemamodel.Function{
 			StructName: string(spec.StructName),
-			Name:       identifierOrDefault(spec.Name, key),
+			Name:       valueOrDefault(spec.Name, key),
 			Parameters: parameters,
 			Returns:    string(spec.Returns),
 			Language:   string(spec.Language),
@@ -1217,7 +1219,7 @@ func (d document) addViews(db *schemamodel.Database) error {
 		}
 		db.Views = append(db.Views, schemamodel.View{
 			StructName: string(spec.StructName),
-			Name:       identifierOrDefault(spec.Name, key),
+			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
 			WithCheck:  withCheck,
 			LocalCheck: localCheck,
@@ -1238,7 +1240,7 @@ func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.
 			return fmt.Errorf("materialized view %q requires body", key)
 		}
 		if spec.RefreshStrategy.Kind != 0 {
-			return matviewrefresh.Refuse(identifierOrDefault(spec.Name, key))
+			return matviewrefresh.Refuse(valueOrDefault(spec.Name, key))
 		}
 		attributes, _, err := ownedKeys(owners, yamlext.EntryMaterializedView, fmt.Sprintf("materialized view %q", key), spec.Owned)
 		if err != nil {
@@ -1259,7 +1261,7 @@ func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.
 		db.MaterializedViews = append(db.MaterializedViews, schemamodel.MaterializedView{
 			Facets:     facets,
 			StructName: string(spec.StructName),
-			Name:       identifierOrDefault(spec.Name, key),
+			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
 			Comment:    string(spec.Comment),
 			Options:    options,
@@ -1272,7 +1274,7 @@ func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.
 func (d document) addTriggers(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Triggers) {
 		spec := d.Triggers[key]
-		if identifier(spec.Table) == "" {
+		if string(spec.Table) == "" {
 			return fmt.Errorf("trigger %q requires table", key)
 		}
 		if string(spec.Timing) == "" {
@@ -1286,8 +1288,8 @@ func (d document) addTriggers(db *schemamodel.Database) error {
 		}
 		trigger := schemamodel.Trigger{
 			StructName: string(spec.StructName),
-			Name:       identifierOrDefault(spec.Name, key),
-			Table:      identifier(spec.Table),
+			Name:       valueOrDefault(spec.Name, key),
+			Table:      string(spec.Table),
 			Timing:     string(spec.Timing),
 			Event:      string(spec.Event),
 			ForEach:    string(spec.ForEach),
@@ -1328,7 +1330,7 @@ func (d document) addRLS(db *schemamodel.Database, owners yamlext.Set) error {
 			spec := group.specs[key]
 			origin := fmt.Sprintf("%s.%s", group.name, key)
 			attributes := presentAttributes(map[string]string{"struct_name": string(spec.StructName),
-				"table": identifierOrDefault(spec.Table, key), "comment": string(spec.Comment)})
+				"table": valueOrDefault(spec.Table, key), "comment": string(spec.Comment)})
 			entry, owned, err := routeRowSecurity(owners, rlsEnabledTablesKey, origin, spec.Dialects, attributes)
 			if err != nil {
 				return err
@@ -1342,7 +1344,7 @@ func (d document) addRLS(db *schemamodel.Database, owners yamlext.Set) error {
 					"leave clickhouse out of the enablement's dialects", origin, ptaherr.ErrInvalidAttributeValue)
 			}
 			db.RLSEnabledTables = append(db.RLSEnabledTables, schemamodel.RLSEnabledTable{StructName: string(spec.StructName),
-				Table: identifierOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: entry.Targets})
+				Table: valueOrDefault(spec.Table, key), Comment: string(spec.Comment), Dialects: entry.Targets})
 		}
 	}
 	for _, key := range sortedKeys(d.RLSPolicies) {
@@ -1352,8 +1354,8 @@ func (d document) addRLS(db *schemamodel.Database, owners yamlext.Set) error {
 		if err != nil {
 			return err
 		}
-		attributes := presentAttributes(map[string]string{"struct_name": string(spec.StructName), "name": identifierOrDefault(spec.Name, key),
-			"table": identifier(spec.Table), "for": string(spec.PolicyFor), "to": string(spec.ToRoles), "as": string(spec.As),
+		attributes := presentAttributes(map[string]string{"struct_name": string(spec.StructName), "name": valueOrDefault(spec.Name, key),
+			"table": string(spec.Table), "for": string(spec.PolicyFor), "to": string(spec.ToRoles), "as": string(spec.As),
 			"using": string(spec.UsingExpression), "with_check": string(spec.WithCheckExpression), "comment": string(spec.Comment)})
 		entry, owned, err := routeRowSecurity(owners, rlsPoliciesKey, origin, spec.Dialects, attributes)
 		if err != nil {
@@ -1368,7 +1370,7 @@ func (d document) addRLS(db *schemamodel.Database, owners yamlext.Set) error {
 				"row_policies instead", origin, ptaherr.ErrInvalidAttributeValue)
 		}
 		db.RLSPolicies = append(db.RLSPolicies, schemamodel.RLSPolicy{
-			StructName: string(spec.StructName), Name: identifierOrDefault(spec.Name, key), Table: identifier(spec.Table),
+			StructName: string(spec.StructName), Name: valueOrDefault(spec.Name, key), Table: string(spec.Table),
 			PolicyFor: string(spec.PolicyFor), ToRoles: string(spec.ToRoles), UsingExpression: string(spec.UsingExpression),
 			WithCheckExpression: string(spec.WithCheckExpression), Comment: string(spec.Comment), Restrictive: restrictive,
 			Dialects: entry.Targets,
@@ -1496,7 +1498,7 @@ func (d document) addRoles(db *schemamodel.Database, owners yamlext.Set) error {
 		}
 		db.Roles = append(db.Roles, schemamodel.Role{
 			StructName:     string(spec.StructName),
-			Name:           identifierOrDefault(spec.Name, key),
+			Name:           valueOrDefault(spec.Name, key),
 			Login:          spec.Login,
 			Password:       string(spec.Password),
 			Superuser:      spec.Superuser,
@@ -1568,7 +1570,7 @@ func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
 		Role:       string(spec.Role),
 		Privileges: privileges,
 		OnTable:    string(spec.OnTable),
-		OnSchema:   strings.TrimSpace(string(spec.OnSchema)),
+		OnSchema:   schemaName(spec.OnSchema),
 		OnSequence: string(spec.OnSequence),
 		OnDatabase: spec.OnDatabase,
 		Comment:    string(spec.Comment),
@@ -1624,23 +1626,18 @@ func valueOrDefault(value stringScalar, fallback string) string {
 	return fallback
 }
 
-// identifier is a field that names a schema, an object or the table an object
-// belongs to, with the space around it removed. A document is text an author
-// typed, and every layer below keeps a name's bytes, because PostgreSQL holds
-// "app " and "app" as two schemas: read with its space, a table entry with
-// schema "app " beside a live app.orders planned CREATE TABLE "app "."orders"
-// and DROP TABLE "app"."orders".
-func identifier(value stringScalar) string {
+// schemaName is a field that names a schema, with the space around it
+// removed. A document is text an author typed, and every layer below keeps a
+// schema name's bytes, because PostgreSQL holds "app " and "app" as two
+// schemas: read with its space, a table entry with schema "app " beside a live
+// app.orders planned CREATE TABLE "app "."orders" and DROP TABLE
+// "app"."orders".
+//
+// An object's name keeps its bytes. The catalog holds " note" and "note" as two
+// columns, so a column, an index or a constraint named with a space names the
+// live object of that name, and trimming it planned a DROP of that object.
+func schemaName(value stringScalar) string {
 	return strings.TrimSpace(string(value))
-}
-
-// identifierOrDefault is [identifier], or the entry's key trimmed when the
-// field is left out or holds white space alone.
-func identifierOrDefault(value stringScalar, key string) string {
-	if name := identifier(value); name != "" {
-		return name
-	}
-	return strings.TrimSpace(key)
 }
 
 func cleanStrings(values stringList) []string {

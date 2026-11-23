@@ -745,16 +745,19 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 // ` a` is not the schema `a`. A caller splitting one qualified string trims
 // the part it split off, where a space is only the spelling around it.
 func (b Builder) schemaPart(schema string) Part {
-	if strings.TrimSpace(schema) == "" {
-		if b.semantics.DefaultSchema == "" {
+	defaulted := strings.TrimSpace(schema) == ""
+	if defaulted {
+		// The default schema is the one the connection resolved, so it keeps
+		// its bytes as a named one does: trimmed, a table the catalog reports
+		// unqualified in the current schema " a" keyed as a.t, and the plan
+		// created " a".t beside a DROP of the live one.
+		schema = b.semantics.DefaultSchema
+		if strings.TrimSpace(schema) == "" {
 			return Part{}
 		}
-		part := b.namePart(b.semantics.DefaultSchema, b.semantics.TableIdentityKey)
-		part.Defaulted = true
-		return part
 	}
 	_, quoted := unquote(schema)
-	return Part{Source: schema, Normalized: b.semantics.TableIdentityKey(schema), Quoted: quoted}
+	return Part{Source: schema, Normalized: b.semantics.TableIdentityKey(schema), Quoted: quoted, Defaulted: defaulted}
 }
 
 // unquote removes one layer of double quotes and reports whether there was one.

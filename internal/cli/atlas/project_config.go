@@ -385,8 +385,7 @@ func openAtlasProjectWithPolicy(
 	}
 	root := source.root
 	source.root = nil
-	// Once, where the file is read: see [atlascompatpolicy.Policy.SearchPathURL].
-	return newAtlasProject(policy.SearchPathProjectConfig(cfg), root), true, nil
+	return newAtlasProject(cfg, root), true, nil
 }
 
 func openAtlasProjectsWithPolicy(
@@ -411,7 +410,7 @@ func openAtlasProjectsWithPolicy(
 	}
 	projects := make([]atlasProject, 0, len(configs))
 	for _, cfg := range configs {
-		projects = append(projects, newAtlasProject(policy.SearchPathProjectConfig(cfg), source.root))
+		projects = append(projects, newAtlasProject(cfg, source.root))
 	}
 	root := source.root
 	source.root = nil
@@ -1627,8 +1626,7 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 // flag's grammar, so Ptah describes `one`, and `one` and `two`; a quoted name
 // keeps its bytes there, as on the pinned binary, and the strict policy keeps
 // the space of a bare one too and describes what the pinned binary describes.
-// And
-// an element that names no schema, `""` or `"\"\""`, is refused as the flag
+// And an element that names no schema, `""` or `"\"\""`, is refused as the flag
 // refuses it; see [registerAtlasSchemaFlag]. Those refusals are Ptah's
 // own, so they name the file and the env the element came from rather than a
 // flag nobody typed. The refusal of `a"b` names the flag, in the pinned
