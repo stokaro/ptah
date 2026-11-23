@@ -197,6 +197,18 @@ func (m *Migrator) refuseMySQLTemporaryMetadataShadow(ctx context.Context) error
 	return nil
 }
 
+// requireTransactionalTarget asks, before migration's first statement, what
+// the transaction witness needs of the database it runs on: the session's
+// storage engines ([Migrator.requireTransactionalTargetEngines]) and the
+// catalog of every database the statements name
+// ([Migrator.requireTransactionalTargetIsolation]). Neither changes anything.
+func (m *Migrator) requireTransactionalTarget(ctx context.Context, migration *Migration) error {
+	if err := m.requireTransactionalTargetEngines(ctx); err != nil {
+		return err
+	}
+	return m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionUp)
+}
+
 func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error {
 	if !implicitCommitDialect(m.connectionDialect()) {
 		return nil

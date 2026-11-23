@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,6 +31,12 @@ import (
 //     a transaction the first row fails the check.
 //   - concurrently: CREATE INDEX CONCURRENTLY beside a CREATE TABLE, which
 //     only --tx-mode none applies.
+//   - enumValue: migration 2 adds an enum value and then uses it, which
+//     PostgreSQL refuses in one transaction (SQLSTATE 55P04), so only
+//     --tx-mode none applies it. No check before the run can see the use,
+//     which is a cast of an expression.
+//   - procedureCommit: migration 2 calls a procedure that commits, which
+//     PostgreSQL refuses in a transaction block (SQLSTATE 2D000).
 
 var (
 	historyReplaySetLocal = map[string]string{
@@ -56,6 +63,36 @@ var (
 		"0000000001_items.up.sql":   "CREATE TABLE items (id int PRIMARY KEY, name text);\nCREATE INDEX CONCURRENTLY items_name ON items (name);\n",
 		"0000000001_items.down.sql": "DROP TABLE items;\n",
 	}
+	historyReplayEnumType = map[string]string{
+		"0000000001_mood.up.sql":   "CREATE TYPE mood AS ENUM ('sad');\nCREATE TABLE m (v mood);\n",
+		"0000000001_mood.down.sql": "DROP TABLE m;\nDROP TYPE mood;\n",
+	}
+	historyReplayEnumValue = historyReplayWith(historyReplayEnumType, map[string]string{
+		"0000000002_happy.up.sql":   historyReplayEnumValueUp,
+		"0000000002_happy.down.sql": "DELETE FROM m;\n",
+	})
+	historyReplayProcedure = map[string]string{
+		"0000000001_pc.up.sql": "CREATE TABLE p (id int);\n" +
+			"CREATE PROCEDURE pc() LANGUAGE plpgsql AS $$ BEGIN INSERT INTO p VALUES (1); COMMIT; END $$;\n",
+		"0000000001_pc.down.sql": "DROP PROCEDURE pc();\nDROP TABLE p;\n",
+	}
+	historyReplayProcedureCommit = historyReplayWith(historyReplayProcedure, map[string]string{
+		"0000000002_call.up.sql":   historyReplayProcedureCommitUp,
+		"0000000002_call.down.sql": "DELETE FROM p;\n",
+	})
+)
+
+// historyReplayWith is a copy of files with the files of next added.
+func historyReplayWith(files, next map[string]string) map[string]string {
+	merged := maps.Clone(files)
+	maps.Copy(merged, next)
+	return merged
+}
+
+// The migrations a transaction refuses only when the server runs them.
+const (
+	historyReplayEnumValueUp       = "ALTER TYPE mood ADD VALUE 'happy';\nINSERT INTO m VALUES (('hap' || 'py')::mood);\n"
+	historyReplayProcedureCommitUp = "CALL pc();\n"
 )
 
 // historyReplayPending is the pending migration each history is given, after
@@ -112,12 +149,17 @@ func (h postgresHistory) run(c *qt.C, env []string, args ...string) clirun.Resul
 // the pending migration creates.
 func (h postgresHistory) pendingApplied(c *qt.C) int {
 	c.Helper()
+	return h.count(c, "SELECT count(*) FROM information_schema.tables WHERE table_name = 'pending_note'")
+}
+
+// count runs query, a count, on the target.
+func (h postgresHistory) count(c *qt.C, query string) int {
+	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), h.target)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	var count int
-	c.Assert(conn.QueryRowContext(c.Context(),
-		"SELECT count(*) FROM information_schema.tables WHERE table_name = 'pending_note'").Scan(&count), qt.IsNil)
+	c.Assert(conn.QueryRowContext(c.Context(), query).Scan(&count), qt.IsNil)
 	return count
 }
 
@@ -137,6 +179,16 @@ func historyReplayUp(runArgs ...string) postgresHistoryCommand {
 	}}
 }
 
+// historyReplayRollback is the rollback rehearsal of `migrations down
+// --shadow-db`, which replays the history before it rolls migration 2 back on
+// the target.
+func historyReplayRollback() postgresHistoryCommand {
+	return postgresHistoryCommand{args: func(h postgresHistory) []string {
+		return []string{"migrations", "down", "--db-url", h.target, "--migrations-dir", h.dir,
+			"--shadow-db", h.shadow, "--target", "1", "--confirm"}
+	}}
+}
+
 func historyReplayDrift(env ...string) postgresHistoryCommand {
 	return postgresHistoryCommand{
 		args: func(h postgresHistory) []string {
@@ -144,6 +196,14 @@ func historyReplayDrift(env ...string) postgresHistoryCommand {
 		},
 		env: env,
 	}
+}
+
+// historyReplayDriftExcluding is the report of `migrations drift` with
+// selector left out of the comparison.
+func historyReplayDriftExcluding(selector string) postgresHistoryCommand {
+	return postgresHistoryCommand{args: func(h postgresHistory) []string {
+		return append(historyReplayDrift().args(h), "--exclude", selector)
+	}}
 }
 
 // TestHistoryReplayPostgresE2E_HappyPath replays histories whose files a
@@ -174,6 +234,19 @@ func TestHistoryReplayPostgresE2E_HappyPath(t *testing.T) {
 			command: historyReplayDrift(),
 		},
 		{
+			name:      "SET LOCAL applied under none, reported with its table left out",
+			files:     historyReplaySetLocal,
+			applyArgs: []string{"--tx-mode", "none"},
+			command:   historyReplayDriftExcluding("public.t2"),
+		},
+		{
+			name:        "SET LOCAL applied under none, checked by an up run with its table left out",
+			files:       historyReplaySetLocal,
+			applyArgs:   []string{"--tx-mode", "none"},
+			command:     historyReplayUp("--drift-exclude", "public.t2"),
+			wantPending: 1,
+		},
+		{
 			name:        "a deferred foreign key, checked by an up run under none",
 			files:       historyReplayDeferred,
 			command:     historyReplayUp("--tx-mode", "none"),
@@ -192,6 +265,44 @@ func TestHistoryReplayPostgresE2E_HappyPath(t *testing.T) {
 			applyArgs: []string{"--tx-mode", "none"},
 			command:   historyReplayDrift(),
 		},
+		{
+			name:        "an enum value added and used, checked by an up run",
+			files:       historyReplayEnumValue,
+			applyArgs:   []string{"--tx-mode", "none"},
+			command:     historyReplayUp(),
+			wantPending: 1,
+		},
+		{
+			name:      "an enum value added and used, reported",
+			files:     historyReplayEnumValue,
+			applyArgs: []string{"--tx-mode", "none"},
+			command:   historyReplayDrift(),
+		},
+		{
+			name:      "an enum value added and used, rehearsed before a rollback",
+			files:     historyReplayEnumValue,
+			applyArgs: []string{"--tx-mode", "none"},
+			command:   historyReplayRollback(),
+		},
+		{
+			name:        "a procedure that commits, checked by an up run",
+			files:       historyReplayProcedureCommit,
+			applyArgs:   []string{"--tx-mode", "none"},
+			command:     historyReplayUp(),
+			wantPending: 1,
+		},
+		{
+			name:      "a procedure that commits, reported",
+			files:     historyReplayProcedureCommit,
+			applyArgs: []string{"--tx-mode", "none"},
+			command:   historyReplayDrift(),
+		},
+		{
+			name:      "a procedure that commits, rehearsed before a rollback",
+			files:     historyReplayProcedureCommit,
+			applyArgs: []string{"--tx-mode", "none"},
+			command:   historyReplayRollback(),
+		},
 	}
 
 	for _, test := range tests {
@@ -207,23 +318,41 @@ func TestHistoryReplayPostgresE2E_HappyPath(t *testing.T) {
 	}
 }
 
-// TestHistoryReplayPostgresE2E_FailurePath adds public.t2 by hand to a target
-// whose t2 a SET LOCAL put in s2. The replay puts t2 in s2 too, so public.t2
-// is drift, whatever mode the run applies in, and the pending migration does
-// not run.
+// TestHistoryReplayPostgresE2E_FailurePath finds public.t2 in a target the
+// replay puts t2 in s2 for, so public.t2 is drift and the pending migration
+// does not run. A table added by hand to a target whose t2 a SET LOCAL put in
+// s2 is drift whatever mode the run applies in. A history applied under
+// --tx-mode none put t2 in public, as SET LOCAL did nothing outside a
+// transaction, and the replay cannot tell that from the file.
 func TestHistoryReplayPostgresE2E_FailurePath(t *testing.T) {
+	const byHand = "CREATE TABLE public.t2 (id int PRIMARY KEY)"
 	tests := []struct {
-		name    string
-		command postgresHistoryCommand
+		name      string
+		applyArgs []string
+		outOfBand []string
+		command   postgresHistoryCommand
 	}{
-		{name: "checked by an up run under none", command: historyReplayUp("--tx-mode", "none")},
-		{name: "reported with PTAH_TX_MODE=none", command: historyReplayDrift("PTAH_TX_MODE=none")},
+		{
+			name:      "added by hand, checked by an up run under none",
+			outOfBand: []string{byHand},
+			command:   historyReplayUp("--tx-mode", "none"),
+		},
+		{
+			name:      "added by hand, reported with PTAH_TX_MODE=none",
+			outOfBand: []string{byHand},
+			command:   historyReplayDrift("PTAH_TX_MODE=none"),
+		},
+		{
+			name:      "applied under none, reported",
+			applyArgs: []string{"--tx-mode", "none"},
+			command:   historyReplayDrift(),
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			h := newPostgresHistory(c, historyReplaySetLocal, nil, "CREATE TABLE public.t2 (id int PRIMARY KEY)")
+			h := newPostgresHistory(c, historyReplaySetLocal, test.applyArgs, test.outOfBand...)
 
 			got := h.run(c, test.command.env, test.command.args(h)...)
 
@@ -246,4 +375,54 @@ func TestHistoryReplayPostgresCheckpointE2E_HappyPath(t *testing.T) {
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stdout, qt.Contains, "items_name")
 	c.Assert(got.Stdout, qt.Contains, "pending_note")
+}
+
+// TestHistoryReplayPostgresE2E_PendingFileKeepsItsRefusal applies migration 1
+// of a history and leaves the file a transaction refuses pending, after the
+// pending note. The drift check replays migration 1 and is clean, and the run
+// applies the note and then sends the file in a transaction of its own, as
+// the run's mode says. The server refuses it, and nothing of it is applied:
+// running a refused file again without a transaction is the replay's rule
+// alone.
+func TestHistoryReplayPostgresE2E_PendingFileKeepsItsRefusal(t *testing.T) {
+	tests := []struct {
+		name    string
+		applied map[string]string
+		pending string
+		wantErr string
+		// changed counts what the pending file changes when it runs.
+		changed string
+	}{
+		{
+			name:    "an enum value added and used",
+			applied: historyReplayEnumType,
+			pending: historyReplayEnumValueUp,
+			wantErr: "(SQLSTATE 55P04)",
+			changed: "SELECT count(*) FROM pg_enum WHERE enumlabel = 'happy'",
+		},
+		{
+			name:    "a procedure that commits",
+			applied: historyReplayProcedure,
+			pending: historyReplayProcedureCommitUp,
+			wantErr: "(SQLSTATE 2D000)",
+			changed: "SELECT count(*) FROM p",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			h := newPostgresHistory(c, test.applied, []string{"--tx-mode", "none"})
+			c.Assert(os.WriteFile(filepath.Join(h.dir, "0000000003_refused.up.sql"), []byte(test.pending), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(h.dir, "0000000003_refused.down.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+
+			got := h.run(c, nil, historyReplayUp().args(h)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, "failed to apply migration 3")
+			c.Assert(got.Stderr, qt.Contains, test.wantErr)
+			c.Assert(h.pendingApplied(c), qt.Equals, 1)
+			c.Assert(h.count(c, test.changed), qt.Equals, 0)
+		})
+	}
 }

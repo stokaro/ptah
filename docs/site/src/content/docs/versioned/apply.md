@@ -402,13 +402,14 @@ migrations, under the names this run is configured with, are left out of the
 comparison.
 
 The replay takes no transaction mode from this run. Each applied migration
-replays in a transaction of its own, unless its directive names a mode or
-`--tx-mode file` refuses it before it starts, and then it replays without one;
+replays in a transaction of its own, unless its directive names a mode or a
+transaction refuses it, and then it replays without one;
 [How each applied migration replays](../drift/#how-each-applied-migration-replays)
 gives the rule. A file applied with `--tx-mode none` that a transaction accepts
 but changes, such as one whose `SET LOCAL` did nothing outside a transaction,
-cannot be checked faithfully. Give it `-- atlas:txmode none`, and the replay
-runs it as it ran.
+replays differently. Give such a file `-- atlas:txmode none` before it is
+applied. Once it is applied, the directive changes its checksum and the check
+refuses the history, so leave what the file created out with `--drift-exclude`.
 
 Run it against the database this page migrated, with a shadow database that
 does not exist yet:

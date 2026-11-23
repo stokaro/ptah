@@ -37,8 +37,5 @@ func FileModeRefusal(ctx context.Context, conn *dbschema.DatabaseConnection, bod
 	if err := m.validateTransactionalProgressSQL(migration, MigrationDirectionUp); err != nil {
 		return err
 	}
-	if err := m.requireTransactionalTargetEngines(ctx); err != nil {
-		return err
-	}
-	return m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionUp)
+	return m.requireTransactionalTarget(ctx, migration)
 }

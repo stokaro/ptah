@@ -40,8 +40,9 @@
 // so each replay of a history decides it for every file, by
 // [ptah.run/migration/migrator.Migrator.WithAppliedHistoryReplay], and takes no
 // mode from the caller. A file whose directive names a mode replays in it, a
-// file that a run in tx-mode file refuses before it starts replays without a
-// transaction, and every other file replays in a transaction of its own. The
+// file that a run in tx-mode file refuses without applying any of it replays
+// without a transaction, and every other file replays in a transaction of its
+// own. The
 // candidates [VerifyMigration] applies have run nowhere, so they run as
 // `migrations up` runs a pending file.
 //

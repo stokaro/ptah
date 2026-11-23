@@ -858,19 +858,29 @@ func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 // in, so the replay decides the mode of each file from the file alone.
 //
 // A file runs in a transaction of its own, as under [MigrationTxModeFile],
-// unless a run in that mode refuses the file for being in a transaction
-// before any of its statements runs. Such a file holds a statement the engine
-// refuses inside a transaction, such as CREATE INDEX CONCURRENTLY beside
-// another statement on PostgreSQL, or, on MySQL and MariaDB, a statement the
-// transaction witness cannot follow, such as a view definition. It ran
-// without a transaction, since it ran at all, and it replays without one. A
-// file whose txmode directive names a mode runs in that mode. Down migrations
-// run as they do without the rule.
+// unless a run in that mode refuses the file in a way that leaves nothing of
+// it applied. It ran without a transaction, since it ran at all, and it
+// replays without one. The refusals are:
+//   - a statement the engine refuses inside a transaction, found before any
+//     file runs, such as CREATE INDEX CONCURRENTLY beside another statement on
+//     PostgreSQL, or, on MySQL and MariaDB, a statement the transaction
+//     witness cannot follow, such as a view definition;
+//   - on MySQL and MariaDB, a database the witness cannot follow, found before
+//     the file's first statement, such as one holding a MyISAM table;
+//   - on PostgreSQL, the server's refusal of a statement inside the file's
+//     transaction for being in one (SQLSTATE 25001, 2D000 or 55P04), such as a
+//     CALL of a procedure that commits or an enum value used in the
+//     transaction that added it. The transaction rolled back, so the file
+//     runs once more without one.
+//
+// A file whose txmode directive names a mode runs in that mode. Down
+// migrations run as they do without the rule.
 //
 // A file that a run in [MigrationTxModeNone] applied, and whose effect a
-// transaction changes, replays in a transaction and so not as it ran: on
-// PostgreSQL a SET LOCAL does nothing outside a transaction and takes effect
-// inside one. Such a file needs a directive to replay as it ran.
+// transaction changes without refusing it, replays in a transaction and so not
+// as it ran: on PostgreSQL a SET LOCAL does nothing outside a transaction and
+// takes effect inside one. Such a file replays as it ran only if it carried a
+// directive when it was applied.
 //
 // The copy's transaction mode is [MigrationTxModeFile]. A
 // [Migrator.WithTransactionMode] after it replaces the rule.
@@ -2844,6 +2854,11 @@ func (m *Migrator) applyUpMigrationsInRun(ctx context.Context, migrations []*Mig
 		}
 		m.logMigrationEvent(ctx, "up", migration, MigrationLogStarted, nil)
 		deferred, err := m.applyUpMigrationObserved(ctx, migration, txMode, i == 0)
+		if err != nil && m.replaysWithoutATransaction(migration, m.refusedInItsTransaction(migration, txMode, err)) {
+			m.logger.Info("Replaying migration again without a transaction, as the server refused it in one",
+				"version", m.logVersion(migration.Version), "reason", err.Error())
+			deferred, err = m.applyUpMigrationObserved(ctx, migration, MigrationTxModeNone, i == 0)
+		}
 		if err != nil {
 			m.logMigrationEvent(ctx, "up", migration, MigrationLogFailed, err)
 			return nil, err
@@ -3201,11 +3216,13 @@ func (m *Migrator) applyUpMigrationObserved(
 	}
 	txMode = own.mode
 	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
-		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
-			return false, err
-		}
-		if err := m.requireTransactionalTargetIsolation(ctx, migration, MigrationDirectionUp); err != nil {
-			return false, err
+		if err := m.requireTransactionalTarget(ctx, migration); err != nil {
+			if !m.replaysWithoutATransaction(migration, true) {
+				return false, err
+			}
+			m.logger.Info("Replaying migration without a transaction, as tx-mode file refuses it",
+				"version", m.logVersion(migration.Version), "reason", err.Error())
+			txMode, own = MigrationTxModeNone, ownTransactionRun{mode: MigrationTxModeNone}
 		}
 	}
 	plan, err := m.planUpRetry(ctx, migration)
