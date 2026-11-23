@@ -72,6 +72,15 @@ type Config struct {
 	exporters map[string]string
 	// EnvName is the selected project env name, when the source had one.
 	EnvName string
+	// EnvInstance is the position, from 1, of this config in the for_each
+	// expansion of the atlas.hcl env block it came from, counted over every
+	// element the block's for_each iterates whether or not its name was
+	// selected. It is 0 when the env block has no for_each, when no env was
+	// selected, and for a ptah.yaml env. A caller that runs once per instance
+	// of a collection reads it to name the instance; a non-zero value says
+	// the config is one instance of a collection, even when the collection
+	// selected only one.
+	EnvInstance int
 	// DeclaredEnvs lists the env blocks the loaded files declare, whether or
 	// not one was selected. A load selects an env only by name, so a caller
 	// that lacks a value and selected none reads this to say which envs could
@@ -1073,6 +1082,9 @@ func Merge(base, override Config) Config {
 	result.exporters = mergeExporters(base.exporters, override.exporters)
 	if override.ExporterName != "" {
 		result.ExporterName = override.ExporterName
+	}
+	if override.EnvInstance != 0 {
+		result.EnvInstance = override.EnvInstance
 	}
 	result.migrationDirectories = cloneMigrationDirectories(base.migrationDirectories)
 	if len(override.migrationDirectories) > 0 {

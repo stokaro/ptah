@@ -189,19 +189,70 @@ func splitExplicitConfigPath(path string) (ptahPath, atlasPath string) {
 // can pass an internal atlas.hcl path and variable overrides through hidden
 // flags. A project-config snapshot supplied by an adapter takes precedence and
 // avoids reopening project files during the forwarded execution.
+//
+// It binds the migration directory the config names to cmd's context, as
+// [WithProjectMigrationDirectory] does, so a caller reads cmd.Context() after
+// the load. An env that expands to several instances is refused; a command
+// that runs once per instance loads them with [LoadProjectConfigs].
 func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig.Config, error) {
 	if config, ok := projectConfigFromContext(cmd.Context()); ok {
 		config = cloneProjectConfig(config)
-		bindProjectMigrationDirectory(cmd, config)
+		cmd.SetContext(WithProjectMigrationDirectory(cmd.Context(), config))
 		return config, nil
 	}
-	envName, err := stringFlag(cmd, EnvFlagName)
+	opts, err := projectLoadOptions(cmd, ptahConfigPath)
 	if err != nil {
 		return projectconfig.Config{}, err
+	}
+	config, err := projectconfig.Load(opts)
+	if err != nil {
+		return projectconfig.Config{}, err
+	}
+	if err := ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), config); err != nil {
+		return projectconfig.Config{}, err
+	}
+	cmd.SetContext(WithProjectMigrationDirectory(cmd.Context(), config))
+	return config, nil
+}
+
+// LoadProjectConfigs is [LoadProjectConfig] for a command that runs once per
+// instance of an env: it returns every config the selected env expands to, in
+// the order the expansion gives, where LoadProjectConfig refuses more than
+// one. The slice is never empty. An adapter's snapshot is one config.
+//
+// It binds no migration directory to cmd, because each instance may name its
+// own: the caller runs each instance under
+// [WithProjectMigrationDirectory](cmd.Context(), config).
+func LoadProjectConfigs(cmd *cobra.Command, ptahConfigPath string) ([]projectconfig.Config, error) {
+	if config, ok := projectConfigFromContext(cmd.Context()); ok {
+		return []projectconfig.Config{cloneProjectConfig(config)}, nil
+	}
+	opts, err := projectLoadOptions(cmd, ptahConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	configs, err := projectconfig.LoadCollection(opts)
+	if err != nil {
+		return nil, err
+	}
+	// Every instance carries the file's ignored names, so one report covers
+	// the run.
+	if err := ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), configs[0]); err != nil {
+		return nil, err
+	}
+	return configs, nil
+}
+
+// projectLoadOptions reads the project files and the env a command names off
+// its flags.
+func projectLoadOptions(cmd *cobra.Command, ptahConfigPath string) (projectconfig.LoadOptions, error) {
+	envName, err := stringFlag(cmd, EnvFlagName)
+	if err != nil {
+		return projectconfig.LoadOptions{}, err
 	}
 	atlasPath, err := stringFlag(cmd, AtlasProjectConfigFlagName)
 	if err != nil {
-		return projectconfig.Config{}, err
+		return projectconfig.LoadOptions{}, err
 	}
 	ptahConfigPath, explicitAtlasPath := splitExplicitConfigPath(ptahConfigPath)
 	if explicitAtlasPath != "" {
@@ -210,7 +261,7 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		// picking either silently would apply a config the caller did not ask
 		// for. Name both paths instead.
 		if atlasPath != "" && atlasPath != explicitAtlasPath {
-			return projectconfig.Config{}, fmt.Errorf(
+			return projectconfig.LoadOptions{}, fmt.Errorf(
 				"--%s names %s and the forwarded Atlas project config is %s; pass one Atlas project config",
 				ConfigFlagName, explicitAtlasPath, atlasPath)
 		}
@@ -218,9 +269,9 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	}
 	atlasVars, err := projectVars(cmd)
 	if err != nil {
-		return projectconfig.Config{}, err
+		return projectconfig.LoadOptions{}, err
 	}
-	config, err := projectconfig.Load(projectconfig.LoadOptions{
+	return projectconfig.LoadOptions{
 		Context:   cmd.Context(),
 		PtahPath:  ptahConfigPath,
 		AtlasPath: atlasPath,
@@ -229,27 +280,25 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		// So a refusal about a for_each env names the command the operator
 		// ran rather than an internal API (stokaro/ptah#1696).
 		Verb: cmd.CommandPath(),
-	})
-	if err != nil {
-		return projectconfig.Config{}, err
-	}
-	if err := ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), config); err != nil {
-		return projectconfig.Config{}, err
-	}
-	bindProjectMigrationDirectory(cmd, config)
-	return config, nil
+	}, nil
 }
 
-func bindProjectMigrationDirectory(cmd *cobra.Command, config projectconfig.Config) {
+// WithProjectMigrationDirectory returns ctx with the migration directory
+// config names bound to the filesystem the project file rendered for it, such
+// as an atlas.hcl data.template_dir, so a directory read under the returned
+// context opens that filesystem rather than a path on disk. It returns ctx as
+// it is when config names no directory, or one the project file did not
+// render.
+func WithProjectMigrationDirectory(ctx context.Context, config projectconfig.Config) context.Context {
 	dir := config.StringValue(projectconfig.StringMigrationDir)
 	if !dir.Present {
-		return
+		return ctx
 	}
 	fsys, ok := config.MigrationDirectoryFS(dir.Value)
 	if !ok {
-		return
+		return ctx
 	}
-	cmd.SetContext(migrationsource.WithVirtual(cmd.Context(), dir.Value, fsys, dir.Value))
+	return migrationsource.WithVirtual(ctx, dir.Value, fsys, dir.Value)
 }
 
 // ReportIgnoredAtlasConstructs raises a warning for every atlas.hcl name that

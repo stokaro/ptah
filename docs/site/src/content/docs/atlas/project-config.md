@@ -1383,8 +1383,12 @@ and set values.
 and stops at the first failure. A formatted run emits one document per attempted
 target with one newline between adjacent documents. Stages, a concurrency limit,
 a failure policy and a resumable record across many databases are the native
-[staged rollout](../../operate/staged-rollout/). Commands that require one
-project instance reject a multi-instance selection instead of choosing one.
+[staged rollout](../../operate/staged-rollout/). The native
+`ptah migrations drift` reports every selected target and goes on past one that
+drifted or failed; see
+[Report every target of an env](../../versioned/drift/#report-every-target-of-an-env).
+Commands that require one project instance reject a multi-instance selection
+instead of choosing one.
 
 ## Structural validation and ignored names
 

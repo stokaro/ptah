@@ -978,6 +978,7 @@ func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName stri
 			return nil, fmt.Errorf("schemahcl: evaluate env block instance %d: %w", instanceNumber, err)
 		}
 		if selected {
+			instance.EnvInstance = instanceNumber
 			configs = append(configs, instance)
 		}
 	}
