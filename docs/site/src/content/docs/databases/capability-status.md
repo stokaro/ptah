@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-11-20"
+lastVerified: "2026-11-23"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/44785250174"
+  - "https://github.com/stokaro/ptah/actions/runs/45288525058"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-11-20T17:38:38Z
-- Commit: `b866e41162499c1ef4d337b5a842b37b03b051aa`
-- Run: [44785250174](https://github.com/stokaro/ptah/actions/runs/44785250174)
-- Declared release lines: 35. Runnable cells: 31. Results received: 31.
-- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-11-23T23:24:24Z
+- Commit: `a2d952a6f8f48603dce844ed4ae682b958904c58`
+- Run: [45288525058](https://github.com/stokaro/ptah/actions/runs/45288525058)
+- Declared release lines: 35. Runnable cells: 30. Results received: 30.
+- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -61,7 +61,6 @@ over that run's cell results.
 | `sqlserver-16-0` | sqlserver | 16.0 | PASS |
 | `sqlserver-15-0` | sqlserver | 15.0 | PASS |
 | `oracle-23` | oracle | 23 | PASS |
-| `oracle-21` | oracle | 21 | PASS |
 | `cockroachdb-26-4` | cockroachdb | 26.4 | PASS |
 | `cockroachdb-26-3` | cockroachdb | 26.3 | PASS |
 | `cockroachdb-26-2` | cockroachdb | 26.2 | PASS |
@@ -77,3 +76,4 @@ over that run's cell results.
 - `mysql-26-7` (mysql 26.7) — upstream support ended on 2026-10-20 (endoflife.date/mysql)
 - `clickhouse-26-7` (clickhouse 26.7) — upstream support ended on 2026-10-24 (endoflife.date/clickhouse)
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
+- `oracle-21` (oracle 21) — an Oracle Innovation Release, not a long-term release, with no extended support (stokaro/ptah#6600)
