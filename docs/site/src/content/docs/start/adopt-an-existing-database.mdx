@@ -330,7 +330,10 @@ Without it, `baseline` prints
 `No --shadow-db provided; using weaker entity drift verification.` and can only
 compare the Go annotations selected by `--root-dir` with the target database.
 The shadow replay is the format-neutral proof that the migration directory
-reproduces the adopted schema.
+reproduces the adopted schema. It runs each migration in `--tx-mode`, `file` by
+default, and a file's own directive wins over it, so a directory that holds a
+statement which cannot run inside a transaction, such as `VACUUM`, and carries
+no directive for it is baselined with `--tx-mode none`.
 
 :::caution[A MySQL shadow needs global privileges]
 Ptah empties the shadow database before replaying into it, and on MySQL and

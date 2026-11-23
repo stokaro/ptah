@@ -301,6 +301,7 @@ func resetMigrateDownCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.
 		"verbose":                "false",
 		"confirm":                "false",
 		"exec-order":             "linear",
+		"tx-mode":                "file",
 		"migration-lock-timeout": "",
 		"lock-timeout":           "",
 		"statement-timeout":      "",

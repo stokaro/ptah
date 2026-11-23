@@ -149,6 +149,10 @@ func runAtlasMigrateDownFormat(
 		return err
 	}
 	defer closeAtlasProject(&loadedProject, &runErr)
+	txMode, err := atlasDownTxMode(loadedProject.StringValue(projectconfig.StringMigrationTxMode))
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(opts.format) == "" {
 		return fmt.Errorf("--format must not be empty")
 	}
@@ -307,6 +311,7 @@ func runAtlasMigrateDownFormat(
 			ProviderOptions:   providerOptions,
 			ConnectTimeout:    dbcli.DefaultConnectTimeout,
 			SkipChecks:        opts.skipChecks,
+			TxMode:            txMode,
 		})
 		if err != nil {
 			return err
@@ -361,6 +366,29 @@ func atlasDownRunnerFromEnv() (migrateflags.Runner, error) {
 		return migrateflags.RunnerPtah, nil
 	}
 	return migrateflags.ParseRunner(value)
+}
+
+// atlasDownTxMode is the transaction mode the formatted rollback's --dev-url
+// replay runs the applied history in: PTAH_TX_MODE, the environment twin of
+// the native --tx-mode flag, then the env's migration.tx_mode, then file.
+//
+// Without --format, `migrate down` forwards to native `migrations down`,
+// which reads the variable through its flag binding and the env's
+// migration.tx_mode through its project config, in that order. With --format
+// this command builds its own rehearsal, so it reads both itself, for the
+// reason [atlasDownRunnerFromEnv] reads PTAH_RUNNER. An empty variable is
+// unset, as the binding reads it. The compatibility surface takes no
+// --tx-mode flag on this verb, and a value that names no mode is refused
+// before the directory is read, with the refusal the forwarded rollback
+// prints.
+func atlasDownTxMode(project projectconfig.Value[string]) (migrator.MigrationTxMode, error) {
+	if value, ok := os.LookupEnv(cmdflags.EnvName(atlasNativeEnvPrefix, "tx-mode")); ok && value != "" {
+		return migrateflags.ParseMigrationTxMode(value)
+	}
+	if project.Present {
+		return migrateflags.ParseMigrationTxMode(project.Value)
+	}
+	return migrator.MigrationTxModeFile, nil
 }
 
 // parseAtlasMigrateDownFormatArgs parses the Atlas down flag surface for the

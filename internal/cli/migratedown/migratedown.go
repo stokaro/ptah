@@ -63,6 +63,7 @@ const (
 	confirmFlag              = "confirm"
 	jsonFlag                 = "json"
 	execOrderFlag            = "exec-order"
+	txModeFlag               = "tx-mode"
 	migrationLockTimeoutFlag = "migration-lock-timeout"
 	lockTimeoutFlag          = "lock-timeout"
 	statementTimeoutFlag     = "statement-timeout"
@@ -92,6 +93,7 @@ type options struct {
 	jsonOutput           bool
 	serverDetails        bool
 	execOrder            string
+	txMode               string
 	runner               string
 	migrationLockTimeout string
 	migrationLockName    string
@@ -215,6 +217,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	}
 	migraterun.RegisterServerDetailsFlag(flags, &opts.serverDetails)
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
+	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile),
+		"Transaction mode the applied migrations ran in, as migrations up --tx-mode applied them, "+
+			"which --shadow-db and --plan replay them in: file, all, or none")
 	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
@@ -264,6 +269,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
+	opts.txMode = effectiveString(txModeFlag, opts.txMode, projectconfig.StringMigrationTxMode)
 	// The runner decides how each down file runs, as it decides how
 	// `migrations up` runs each up file, and both take it from one place. It
 	// is parsed here, before the source is resolved, so a value that names no
@@ -353,6 +359,7 @@ type rollbackSettingValues struct {
 	lockTimeout          string
 	statementTimeout     string
 	execOrder            string
+	txMode               string
 	migrationLockTimeout string
 	connectTimeout       string
 	// runner is parsed already, with the project options, and decides the
@@ -362,8 +369,12 @@ type rollbackSettingValues struct {
 
 // parsedRollbackSettings is what those strings mean to the migrator.
 type parsedRollbackSettings struct {
-	timeouts             migrationfile.Timeouts
-	execOrder            migrator.ExecOrder
+	timeouts  migrationfile.Timeouts
+	execOrder migrator.ExecOrder
+	// txMode is the mode the applied history ran in, which the --shadow-db
+	// rehearsal and the --plan derivation replay it in. The rollback itself
+	// runs each down body as a rollback does, whatever it says.
+	txMode               migrator.MigrationTxMode
 	migrationLockTimeout time.Duration
 	connectTimeout       time.Duration
 	// providerOptions load the directory the way its runner runs it, the same
@@ -380,6 +391,10 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 		return parsedRollbackSettings{}, err
 	}
 	execOrder, err := migrateflags.ParseExecOrder(values.execOrder)
+	if err != nil {
+		return parsedRollbackSettings{}, err
+	}
+	txMode, err := migrateflags.ParseMigrationTxMode(values.txMode)
 	if err != nil {
 		return parsedRollbackSettings{}, err
 	}
@@ -400,6 +415,7 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 	return parsedRollbackSettings{
 		timeouts:             timeouts,
 		execOrder:            execOrder,
+		txMode:               txMode,
 		migrationLockTimeout: migrationLockTimeout,
 		connectTimeout:       connectTimeout,
 		providerOptions:      providerOptions,
@@ -561,6 +577,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		lockTimeout:          resolvedOpts.lockTimeout,
 		statementTimeout:     resolvedOpts.statementTimeout,
 		execOrder:            resolvedOpts.execOrder,
+		txMode:               resolvedOpts.txMode,
 		migrationLockTimeout: resolvedOpts.migrationLockTimeout,
 		connectTimeout:       resolvedOpts.connectTimeout,
 		runner:               resolvedOpts.resolvedRunner,
@@ -695,6 +712,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 			atlasEnv:         resolvedOpts.atlasEnv,
 			connectTimeout:   settings.connectTimeout,
 			skipChecks:       resolvedOpts.skipChecks,
+			txMode:           settings.txMode,
 			providerOptions:  settings.providerOptions,
 		}, emit); err != nil {
 			return err
@@ -702,8 +720,8 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 
 		inputs := rollbackInputs{
 			migrationsFS: migrationsFS, targetVersion: targetVersion, targetLabel: mig.VersionLabel(targetVersion),
-			dirFormat: dirFormat,
-			atlasEnv:  resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
+			dirFormat: dirFormat, txMode: settings.txMode,
+			atlasEnv: resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
 			migrationsTable: migrationsTable, providerOptions: settings.providerOptions,
 		}
 		derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
@@ -1351,6 +1369,9 @@ type shadowVerification struct {
 	atlasEnv         string
 	connectTimeout   time.Duration
 	skipChecks       bool
+	// txMode is the mode the applied history ran in; the replay up to the
+	// current version runs in it.
+	txMode migrator.MigrationTxMode
 	// providerOptions are the rollback's own, so the shadow database runs each
 	// file the way the target will.
 	providerOptions []migrator.FSProviderOption
@@ -1388,6 +1409,7 @@ func verifyRollbackOnShadow(
 		}, v.providerOptions...),
 		ConnectTimeout: v.connectTimeout,
 		SkipChecks:     v.skipChecks,
+		TxMode:         v.txMode,
 	})
 	if err != nil {
 		return err
@@ -1567,6 +1589,9 @@ type dynamicRollback struct {
 	// revisionsTable names the revision table this run was configured with,
 	// which the comparison leaves out.
 	revisionsTable string
+	// txMode is the mode the applied history ran in, which the replay that
+	// builds the target schema runs in.
+	txMode migrator.MigrationTxMode
 	// exclude is the project's exclude list: the objects the derived plan
 	// leaves alone, as `schema apply` leaves them. excludeSources names where
 	// each selector was written.
@@ -1628,6 +1653,7 @@ func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) 
 		}, r.providerOptions...),
 		ConnectTimeout: r.connectTimeout,
 		RevisionsTable: r.revisionsTable,
+		TxMode:         r.txMode,
 		Exclude:        r.exclude,
 		ExcludeSources: r.excludeSources,
 		// The derived plan executes, as the plan of `schema apply` does, so a
@@ -1738,6 +1764,9 @@ type rollbackInputs struct {
 	connectTimeout  time.Duration
 	migrationsTable string
 	providerOptions []migrator.FSProviderOption
+	// txMode is the mode the applied history ran in, which --plan replays it
+	// in.
+	txMode migrator.MigrationTxMode
 }
 
 func buildRollbackExecution(r rollbackRun, hook migrator.PreMigrationHook) rollbackExecution {
@@ -1771,6 +1800,7 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 		allowUnmatchedExclude: resolved.allowUnmatchedExclude,
 		providerOptions:       in.providerOptions,
 		revisionsTable:        in.migrationsTable,
+		txMode:                in.txMode,
 	}
 }
 

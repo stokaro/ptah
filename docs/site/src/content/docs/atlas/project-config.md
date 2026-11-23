@@ -129,7 +129,7 @@ env "local" {
 | `migration.revisions_schema` | Default revision metadata schema. |
 | `migration.lock_timeout` | Default migration lock timeout. |
 | `migration.exec_order` | Default migration execution order. |
-| `migration.tx_mode` | Default transaction mode for compatible apply paths. |
+| `migration.tx_mode` | Default transaction mode for compatible apply paths, and the mode `migrate down --dev-url` replays the applied history in. |
 | `lint.latest` | Latest-N migration lint selection. |
 | `lint.git.base` | Git base for migration lint selection. |
 | `lint.git.dir` | Git working directory for migration lint selection. |

@@ -95,7 +95,7 @@ The supported attributes map to Ptah settings as follows:
 | `migration.revisions_schema` | `--migrations-schema` default |
 | `migration.lock_timeout` | `--lock-timeout` default |
 | `migration.exec_order` | `--exec-order` default |
-| `migration.tx_mode` | `migrations up --tx-mode` and `migrations drift --tx-mode` default |
+| `migration.tx_mode` | `migrations up --tx-mode`, `migrations drift --tx-mode` and `migrations down --tx-mode` default |
 | `lint.latest` | `migrations lint --latest` default |
 | `lint.git.base` | `migrations lint --git-base` default |
 | `lint.git.dir` | `migrations lint --git-dir` default |

@@ -66,6 +66,10 @@ type BaselineVerifyOptions struct {
 	// ConnectTimeout bounds the shadow database connection attempt; zero or
 	// negative means no bound beyond the caller's context.
 	ConnectTimeout time.Duration
+	// TxMode is the transaction mode the target's history was applied in. The
+	// replay runs in the mode [shadowdb.HistoryTxMode] gives it; the empty
+	// value is file.
+	TxMode migrator.MigrationTxMode
 }
 
 // VerifyBaseline replays migrations up to Version on the shadow database
@@ -137,7 +141,8 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 		)
 	}
 
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)))
+	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
+		WithTransactionMode(shadowdb.HistoryTxMode(opts.TxMode)))
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
