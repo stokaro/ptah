@@ -5,6 +5,7 @@ package mysql_test
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"testing"
 	"time"
 
@@ -16,34 +17,23 @@ import (
 	"ptah.run/internal/sqlident"
 )
 
-// mixedEngineLiveView is a view of the database newMixedEngineLiveDatabase
-// creates. query is a format whose first operand is the MyISAM table audit and
-// whose second is the InnoDB table users.
-type mixedEngineLiveView struct {
-	name  string
-	query string
-}
-
-// newMixedEngineLiveDatabase creates a database on db holding a MyISAM table,
-// an InnoDB table and views, and drops it when the test ends. It returns the
-// database's name.
-func newMixedEngineLiveDatabase(c *qt.C, db *sql.DB, dialect string, views ...mixedEngineLiveView) string {
+// newMixedEngineLiveDatabase creates a database on db holding the MyISAM table
+// audit, the InnoDB table users and objects, and drops it when the test ends.
+// Each object is a CREATE statement in which %[1]s stands for the quoted name
+// of the database. It returns the database's name.
+func newMixedEngineLiveDatabase(c *qt.C, db *sql.DB, dialect string, objects ...string) string {
 	c.Helper()
 	target := fmt.Sprintf("ptah_mixed_engine_%d", time.Now().UnixNano())
 	createMySQLWriterLiveDatabase(c, db, target)
 	c.Cleanup(func() {
 		dropMySQLWriterLiveDatabase(c, db, target)
 	})
-	qualified := func(name string) string { return sqlident.Qualified(dialect, target, name) }
-	statements := []string{
-		"CREATE TABLE " + qualified("audit") + " (id BIGINT PRIMARY KEY) ENGINE=MyISAM",
-		"CREATE TABLE " + qualified("users") + " (id BIGINT PRIMARY KEY) ENGINE=InnoDB",
-	}
-	for _, view := range views {
-		statements = append(statements,
-			"CREATE VIEW "+qualified(view.name)+" AS "+fmt.Sprintf(view.query, qualified("audit"), qualified("users")))
-	}
+	statements := append([]string{
+		"CREATE TABLE %[1]s.`audit` (id BIGINT PRIMARY KEY) ENGINE=MyISAM",
+		"CREATE TABLE %[1]s.`users` (id BIGINT PRIMARY KEY) ENGINE=InnoDB",
+	}, objects...)
 	for _, statement := range statements {
+		statement = fmt.Sprintf(statement, sqlident.Quote(dialect, target))
 		_, err := db.ExecContext(c.Context(), statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 	}
@@ -67,7 +57,7 @@ func mixedEngineLiveObjects(c *qt.C, db *sql.DB, target string) int {
 // empties on every MySQL-family server. MySQL 26.10 enforces GTID consistency
 // by default and refuses one WRITE lock over both kinds of table, so the
 // cleanup locks, checks and drops each kind with the view that reads it.
-func TestWriterDropAllTables_LiveEmptiesADatabaseHoldingBothKindsOfTable(t *testing.T) {
+func TestWriterDropAllTables_LiveEmptiesADatabaseHoldingBothKindsOfTable_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		engine  dbtarget.Engine
@@ -85,8 +75,8 @@ func TestWriterDropAllTables_LiveEmptiesADatabaseHoldingBothKindsOfTable(t *test
 				c.Check(db.Close(), qt.IsNil)
 			})
 			target := newMixedEngineLiveDatabase(c, db, test.dialect,
-				mixedEngineLiveView{name: "reads_audit", query: "SELECT id FROM %[1]s"},
-				mixedEngineLiveView{name: "reads_users", query: "SELECT id FROM %[2]s"},
+				"CREATE VIEW %[1]s.`reads_audit` AS SELECT id FROM %[1]s.`audit`",
+				"CREATE VIEW %[1]s.`reads_users` AS SELECT id FROM %[1]s.`users`",
 			)
 			writer := mysql.NewMySQLWriter(db, target, test.dialect)
 
@@ -99,28 +89,59 @@ func TestWriterDropAllTables_LiveEmptiesADatabaseHoldingBothKindsOfTable(t *test
 }
 
 // A view that reads a MyISAM and an InnoDB table cannot be WRITE-locked on a
-// MySQL server that enforces GTID consistency, which is what keeps another
-// session from reading it between the checks and the drop. The cleanup refuses
-// it by name and drops nothing. The row needs such a server, as MySQL 26.10 is
-// by default, and says so before it relies on it.
-func TestWriterDropAllTables_LiveRefusesAViewOverBothKindsOfTable_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	db := openMySQLWriterLiveDatabase(c, dbtarget.MySQLAdmin)
-	c.Cleanup(func() {
-		c.Check(db.Close(), qt.IsNil)
-	})
-	var enforced string
-	c.Assert(db.QueryRowContext(c.Context(), "SELECT @@GLOBAL.enforce_gtid_consistency").Scan(&enforced), qt.IsNil)
-	c.Assert(enforced, qt.Equals, "ON")
-	target := newMixedEngineLiveDatabase(c, db, platform.MySQL,
-		mixedEngineLiveView{name: "reads_both", query: "SELECT a.id FROM %[1]s a JOIN %[2]s u ON u.id = a.id"},
-	)
-	writer := mysql.NewMySQLWriter(db, target, platform.MySQL)
+// MySQL server that enforces GTID consistency, and neither can an InnoDB table
+// whose trigger writes the MyISAM table, because the lock takes in the tables
+// its triggers use. That lock is what keeps another session away between the
+// checks and the drop, so the cleanup refuses the object by name before it
+// drops a table or a view a session can open; these databases hold nothing
+// else it drops first, so every object stays. The rows need such a server, as
+// MySQL 26.10 is by default, and say so before they rely on it.
+func TestWriterDropAllTables_LiveRefusesAnObjectNoLockCanProtect_FailurePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		objects     []string
+		wantErr     string
+		wantObjects int
+	}{
+		{
+			name:    "a view over both kinds",
+			objects: []string{"CREATE VIEW %[1]s.`reads_both` AS SELECT a.id FROM %[1]s.`audit` a JOIN %[1]s.`users` u ON u.id = a.id"},
+			wantErr: "view `%[1]s`.`reads_both` reads both; without that lock another session can read the view " +
+				"while it is dropped",
+			wantObjects: 3,
+		},
+		{
+			name: "a table whose trigger writes the other kind",
+			objects: []string{
+				"CREATE TABLE %[1]s.`logged_users` (id BIGINT PRIMARY KEY) ENGINE=InnoDB",
+				"CREATE TRIGGER %[1]s.`log_user` AFTER INSERT ON %[1]s.`logged_users` FOR EACH ROW " +
+					"INSERT INTO %[1]s.`audit` (id) VALUES (NEW.id)",
+			},
+			wantErr: "table `%[1]s`.`logged_users`, or a trigger on it, uses both kinds of table; without that lock " +
+				"another session can open the table between the checks and its drop",
+			wantObjects: 3,
+		},
+	}
 
-	err := writer.DropAllTables(c.Context())
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := openMySQLWriterLiveDatabase(c, dbtarget.MySQLAdmin)
+			c.Cleanup(func() {
+				c.Check(db.Close(), qt.IsNil)
+			})
+			var enforced string
+			c.Assert(db.QueryRowContext(c.Context(), "SELECT @@GLOBAL.enforce_gtid_consistency").Scan(&enforced), qt.IsNil)
+			c.Assert(enforced, qt.Equals, "ON")
+			target := newMixedEngineLiveDatabase(c, db, platform.MySQL, test.objects...)
+			writer := mysql.NewMySQLWriter(db, target, platform.MySQL)
 
-	c.Assert(err, qt.ErrorMatches, `mysql: refusing to clean database "`+target+`": the server enforces GTID consistency, `+
-		"so it refuses one WRITE lock over a transactional and a non-transactional table, and view `"+target+
-		"`.`reads_both` reads both; without that lock another session can read the view while it is dropped")
-	c.Assert(mixedEngineLiveObjects(c, db, target), qt.Equals, 3)
+			err := writer.DropAllTables(c.Context())
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`mysql: refusing to clean database "`+target+
+				`": the server enforces GTID consistency, so it refuses one WRITE lock over a transactional and a `+
+				`non-transactional table, and `+fmt.Sprintf(test.wantErr, target)))
+			c.Assert(mixedEngineLiveObjects(c, db, target), qt.Equals, test.wantObjects)
+		})
+	}
 }

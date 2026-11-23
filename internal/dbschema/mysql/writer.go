@@ -867,13 +867,13 @@ func (w *Writer) dropProtectedViews(
 	}()
 
 	const lockTarget = "views and tables"
-	groups, err := lockCleanupGroups(ctx, lockConn, schema, slices.Concat(views, tables), lockTarget)
+	groups, err := lockCleanupGroups(ctx, lockConn, schema, views, tables, lockTarget)
 	if isUnopenableViewError(err) {
 		views, err = w.dropUnopenableViews(ctx, lockConn, schema, views)
 		if err != nil || len(views) == 0 {
 			return err
 		}
-		groups, err = lockCleanupGroups(ctx, lockConn, schema, slices.Concat(views, tables), lockTarget)
+		groups, err = lockCleanupGroups(ctx, lockConn, schema, views, tables, lockTarget)
 	}
 	if err != nil {
 		return err
@@ -1167,7 +1167,7 @@ func (w *Writer) dropProtectedObjects(
 	}
 
 	const lockTarget = "tables"
-	groups, err := lockCleanupGroups(ctx, conn, schema, names, lockTarget)
+	groups, err := lockCleanupGroups(ctx, conn, schema, nil, names, lockTarget)
 	if err != nil {
 		return err
 	}
@@ -1240,9 +1240,9 @@ func lockCleanupTargets(ctx context.Context, conn *sql.Conn, schema string, name
 	return nil
 }
 
-// lockCleanupGroups splits names into the groups a cleanup step locks, checks
-// and drops one after another, and returns them with the first group locked on
-// conn. what names the objects in an error.
+// lockCleanupGroups splits views and tables, in that order, into the groups a
+// cleanup step locks, checks and drops one after another, and returns them with
+// the first group locked on conn. what names the objects in an error.
 //
 // One group holding every name is what every server locks but a MySQL server
 // that enforces GTID consistency, the default on MySQL 26.10. It refuses a
@@ -1261,15 +1261,18 @@ func lockCleanupTargets(ctx context.Context, conn *sql.Conn, schema string, name
 // server locks with it, or it starts a group of its own. The caller locks each
 // group and runs the checks before it drops the group's objects, so every drop
 // still runs under a WRITE lock taken before the checks. A view that reads
-// both kinds of table cannot be WRITE-locked on such a server at all, so the
-// cleanup refuses it instead of dropping it unprotected.
+// both kinds of table cannot be WRITE-locked on such a server at all, and
+// neither can a table with a trigger that writes a table of the other kind,
+// because the lock takes in the tables its triggers use. The cleanup refuses
+// such an object instead of dropping it unprotected.
 func lockCleanupGroups(
 	ctx context.Context,
 	conn *sql.Conn,
 	schema string,
-	names []string,
+	views, tables []string,
 	what string,
 ) ([][]string, error) {
+	names := slices.Concat(views, tables)
 	err := lockCleanupTargets(ctx, conn, schema, names, what)
 	if !isMixedEngineLockError(err) {
 		if err != nil {
@@ -1295,10 +1298,9 @@ func lockCleanupGroups(
 		if !alone {
 			return nil, errors.Join(fmt.Errorf(
 				"mysql: refusing to clean database %q: the server enforces GTID consistency, so it refuses one "+
-					"WRITE lock over a transactional and a non-transactional table, and view %s reads both; "+
-					"without that lock another session can read the view while it is dropped",
+					"WRITE lock over a transactional and a non-transactional table, and %s",
 				schema,
-				quoteQualifiedIdent(schema, name),
+				unlockableCleanupObject(schema, name, views),
 			), releaseTableLocks(ctx, conn))
 		}
 		groups = append(groups, []string{name})
@@ -1307,6 +1309,18 @@ func lockCleanupGroups(
 		return nil, errors.Join(err, releaseTableLocks(ctx, conn))
 	}
 	return groups, nil
+}
+
+// unlockableCleanupObject names the object the server does not WRITE-lock even
+// alone, and says what the missing lock leaves open. name is a view when views
+// holds it, and a table otherwise.
+func unlockableCleanupObject(schema, name string, views []string) string {
+	quoted := quoteQualifiedIdent(schema, name)
+	if slices.Contains(views, name) {
+		return "view " + quoted + " reads both; without that lock another session can read the view while it is dropped"
+	}
+	return "table " + quoted + ", or a trigger on it, uses both kinds of table; without that lock another " +
+		"session can open the table between the checks and its drop"
 }
 
 // placeInCleanupLockGroup returns the index of the first group the server

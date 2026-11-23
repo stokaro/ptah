@@ -1755,7 +1755,9 @@ by default, refuses one such lock over a transactional table, such as InnoDB,
 and a non-transactional one, such as MyISAM (error 1785). There the cleanup
 locks, checks and drops each kind on its own, with the views that read it. A
 view that reads both kinds cannot be locked on such a server, so the cleanup
-refuses it by name before it drops a table.
+refuses it by name before it drops a table. The same holds for a table with a
+trigger that writes a table of the other kind, because the lock takes in the
+tables its triggers use: the cleanup refuses that table by name.
 
 When MariaDB runs with `event_scheduler=DISABLED`, `db drop-all --dry-run`
 reads event names from `mysql.event` if `information_schema.EVENTS` refuses the
