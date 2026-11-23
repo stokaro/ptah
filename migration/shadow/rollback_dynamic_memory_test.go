@@ -69,7 +69,8 @@ func TestPlanDynamicRollbackInMemory_HappyPath(t *testing.T) {
 // a target that lives in its connection's one session, as an embedder that
 // holds an in-memory database has. The comparison reads the target on the
 // connection it is given; opened again by its URL, the target is a new, empty
-// database, and the plan creates a and b instead of dropping c.
+// database, and the plan creates a and b instead of dropping c. The plan is
+// then run on the target, which holds a and b.
 //
 // A dev database in memory is another database unless it is the target's
 // shared-cache name: a private one, under the target's own URL too, is
@@ -115,6 +116,8 @@ func TestPlanDynamicRollbackInMemoryTarget_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{`DROP TABLE "c"`})
+			runStatements(c, target, statements)
+			c.Assert(memoryRollbackTables(c, target), qt.DeepEquals, []string{"a", "b"})
 		})
 	}
 }
@@ -138,9 +141,33 @@ func TestPlanDynamicRollbackInMemoryTarget_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `dynamic rollback planning failed: dev database must be distinct from target database`)
 	c.Assert(statements, qt.IsNil)
-	var tables int
-	c.Assert(target.QueryRowContext(c.Context(), "SELECT count(*) FROM sqlite_master WHERE type = 'table'").Scan(&tables), qt.IsNil)
-	c.Assert(tables, qt.Equals, 3)
+	c.Assert(memoryRollbackTables(c, target), qt.DeepEquals, []string{"a", "b", "c"})
+}
+
+// runStatements runs statements on conn in order.
+func runStatements(c *qt.C, conn *dbschema.DatabaseConnection, statements []string) {
+	c.Helper()
+	for _, statement := range statements {
+		_, err := conn.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil)
+	}
+}
+
+// memoryRollbackTables reads the names of the tables conn holds, in byte
+// order.
+func memoryRollbackTables(c *qt.C, conn *dbschema.DatabaseConnection) []string {
+	c.Helper()
+	rows, err := conn.QueryContext(c.Context(), "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var tables []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		tables = append(tables, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return tables
 }
 
 // memoryRollbackTarget opens the in-memory database at url, closed when the

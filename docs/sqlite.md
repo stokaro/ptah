@@ -21,9 +21,16 @@ drive-letter colon out of the URL host and lets reserved filename characters
 be percent-encoded without changing the selected file.
 
 Ptah adds `_pragma=foreign_keys(1)` unless the URL already supplies a
-`foreign_keys` pragma. SQLite connections are limited to one open connection so
-in-memory databases and connection-local PRAGMA state behave predictably under
-`database/sql`.
+`foreign_keys` pragma. An in-memory database, `sqlite://:memory:` or a URL with
+`mode=memory`, is held on one open connection, because a second connection to
+a private in-memory database opens a new, empty one. A database file is read
+through a pool of connections, and the pragmas the URL names apply to each of
+them.
+
+Two in-memory databases are one database only when both URLs open one
+shared-cache name, such as `sqlite:file:memdb1?mode=memory&cache=shared` twice.
+Any other in-memory database is private to its connection, so two opens of
+`sqlite://dev?mode=memory` are two databases.
 
 ## Generated SQL
 

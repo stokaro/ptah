@@ -166,8 +166,9 @@ provider runs the cases in a dev realm in that database.
   DNS aliases and replicated members cannot be proven independent before
   destructive cleanup. Two SQLite databases in memory are one database only
   when both URLs open one shared-cache name, so an in-memory dev database
-  beside an in-memory target is accepted, under the target's URL too. Cleanup rejects system, template and metadata databases,
-  and a server's default database unless the run owns it.
+  beside an in-memory target is accepted, under the target's URL too. Cleanup
+  rejects system, template and metadata databases, and a server's default
+  database unless the run owns it.
 - **Migration-diff scope does not reduce the replay realm.** Repeated
   `--schema` values select which schemas `migrate diff` compares and emits. They do not
   limit which schemas a migration may create or which user schemas final
