@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/driftgate"
 	"ptah.run/internal/errorkind"
@@ -116,6 +117,11 @@ it. The exclusions are the project's exclude list, replaced by an atlas.hcl
 drift block's own list when it sets one, and --exclude.
 
 It is the comparison 'ptah migrations up --check-drift' makes before it applies.
+
+An atlas.hcl env with for_each names several targets. The report runs over
+each in the order the env expands, names each before its report, goes on past
+a target that drifted or failed, and exits with the most serious status of any
+target; --json prints one document that lists them.
 
 Exit status: 0 when the database matches its history, 1 when it differs, and 2
 when the comparison could not be made or decided.`,
@@ -245,17 +251,11 @@ func parseSettings(cmd *cobra.Command, opts options, projectCfg projectconfig.Co
 }
 
 func runDrift(cmd *cobra.Command, raw options, out *report) error {
-	ctx := cmd.Context()
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
 	}
-	projectCfg, err := dbcli.LoadProjectConfig(cmd, raw.configPath)
-	if err != nil {
-		return err
-	}
-	opts := resolveProjectOptions(cmd, raw, projectCfg)
-	set, err := parseSettings(cmd, opts, projectCfg)
+	configs, err := dbcli.LoadProjectConfigs(cmd, raw.configPath)
 	if err != nil {
 		return err
 	}
@@ -271,40 +271,97 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		return err
 	}
 	defer shutdownObservability(observability)
-	observability.ShareWithRun(ctx)
+	observability.ShareWithRun(cmd.Context())
+
+	run := driftRun{cmd: cmd, raw: raw, integrityPolicy: integrityPolicy, observability: observability}
+	if collection(configs) {
+		return run.targets(configs, out)
+	}
+	// The project binds a migration directory it rendered, such as a
+	// data.template_dir, to the context the target runs under, so the context
+	// is read after the load.
+	ctx := dbcli.WithProjectMigrationDirectory(cmd.Context(), configs[0])
+	result, err := run.target(ctx, configs[0])
+	if err != nil {
+		return err
+	}
+	if err := out.write(ctx, result.document, result.codecs); err != nil {
+		return err
+	}
+	return result.status
+}
+
+// collection reports whether configs are the targets of an env that names
+// several: more than one config, or an instance of a for_each env. One
+// instance is a collection too, so a script reading the report keeps the
+// shape it reads when the for_each shrinks to one element.
+func collection(configs []projectconfig.Config) bool {
+	return len(configs) > 1 || configs[0].EnvInstance > 0
+}
+
+// driftRun is what every target of one run shares.
+type driftRun struct {
+	cmd             *cobra.Command
+	raw             options
+	integrityPolicy migrationintegrity.Policy
+	observability   *cliobs.Runtime
+}
+
+// targetResult is the report a run over one target made.
+type targetResult struct {
+	// dbURL is the database the target names once the flags and the project
+	// resolve it. It is set when the run failed after resolving it, too.
+	dbURL    string
+	document Document
+	codecs   schemaext.Registry
+	// status is what the comparison found, as [exitStatus] gives it.
+	status error
+}
+
+// target runs the report over one project config, under ctx, the context
+// that config's migration directory is bound to. It returns an error when it
+// made no comparison, and the result names the target's database either way.
+func (r driftRun) target(ctx context.Context, projectCfg projectconfig.Config) (targetResult, error) {
+	cmd := r.cmd
+	opts := resolveProjectOptions(cmd, r.raw, projectCfg)
+	result := targetResult{dbURL: opts.dbURL}
+	set, err := parseSettings(cmd, opts, projectCfg)
+	if err != nil {
+		return result, err
+	}
 
 	source, err := migrationsource.Resolve(ctx, opts.migrationsDir, migrationsource.Options{
 		DirFormat: set.dirFormat,
 		PlainHTTP: opts.plainHTTP,
 	})
 	if err != nil {
-		return err
+		return result, err
 	}
 	set.dirFormat = source.DirFormat
 	// The replay executes the directory's SQL on the shadow database, so the
 	// directory passes the integrity gate every verb that executes it passes.
 	// Its notices go to standard error, where they cannot corrupt the report.
-	notices := cliobs.NewEmitter(cmd.ErrOrStderr(), observability)
-	if err := migrationsource.Verify(ctx, cmd.ErrOrStderr(), notices, observability, source, set.dirFormat, integrityPolicy,
+	notices := cliobs.NewEmitter(cmd.ErrOrStderr(), r.observability)
+	if err := migrationsource.Verify(ctx, cmd.ErrOrStderr(), notices, r.observability, source, set.dirFormat, r.integrityPolicy,
 		migrationsource.VerifyOptions{}); err != nil {
-		return err
+		return result, err
 	}
 
 	runtime, err := engineruntime.Resolve(ctx, engineruntime.DatabaseURL(opts.dbURL))
 	if err != nil {
-		return err
+		return result, err
 	}
 	// The exclusions `migrations up --check-drift` makes, an atlas.hcl drift
 	// block's included, so the report and the check leave out the same objects.
 	exclude, excludeSources, err := dbcli.EffectiveDriftExclude(cmd, excludeFlag, opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
-		return err
+		return result, err
 	}
 	// Before the migration lock, so the lock is not held while a container
 	// starts.
 	shadowURL, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer releaseShadow()
 
@@ -312,11 +369,11 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
-		return fmt.Errorf("error connecting to database: %w", errorkind.TargetConnection(err))
+		return result, fmt.Errorf("error connecting to database: %w", errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
 	if err := set.lockRequests.DecideSession(conn); err != nil {
-		return err
+		return result, err
 	}
 
 	mig, err := migrator.NewFSMigrator(
@@ -327,15 +384,15 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		migrator.WithRepeatableMigrations(),
 	)
 	if err != nil {
-		return fmt.Errorf("error registering migrations: %w", err)
+		return result, fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(set.revisionFormat).
 		WithMigrationLockTimeout(set.migrationLockTimeout).
 		WithMigrationLockName(set.lockName.Value).
-		WithLogger(observability.Logger()).
-		WithObserver(observability.Observer())
+		WithLogger(r.observability.Logger()).
+		WithObserver(r.observability.Observer())
 
 	metadataTables := revisiontable.Configured(string(set.revisionFormat), opts.migrationsTable)
 	check := driftgate.New(driftgate.Options{
@@ -378,17 +435,16 @@ func runDrift(cmd *cobra.Command, raw options, out *report) error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return result, err
 	}
 
-	document := newDocument(mig, conn, status, found, other)
+	result.document = newDocument(mig, conn, status, found, other)
 	if found.Check.Outcome == migrator.DriftDrifted {
-		document.reconcile(ctx, cmd.ErrOrStderr(), runtime, conn.Info(), found.Diff)
+		result.document.reconcile(ctx, cmd.ErrOrStderr(), runtime, conn.Info(), found.Diff)
 	}
-	if err := out.write(ctx, document, runtime.Codecs()); err != nil {
-		return err
-	}
-	return exitStatus(found.Check, checkErr)
+	result.codecs = runtime.Codecs()
+	result.status = exitStatus(found.Check, checkErr)
+	return result, nil
 }
 
 // exitStatus is the run's answer once the report is written: nothing for a
@@ -404,6 +460,112 @@ func exitStatus(check migrator.DriftCheck, checkErr error) error {
 		return exitcode.New(1, errDrifted)
 	}
 	return exitcode.New(2, &UndecidedError{Check: check, Err: checkErr})
+}
+
+// TargetsDocument is what `migrations drift --json` prints for an env that
+// expands to targets, such as an atlas.hcl env with for_each: one entry per
+// target, in the order the env expands. A for_each env that selected one
+// target prints this shape too.
+type TargetsDocument struct {
+	ContractVersion int    `json:"contract_version"`
+	Command         string `json:"command"`
+	// Env is the env the run selected.
+	Env     string   `json:"env"`
+	Targets []Target `json:"targets"`
+}
+
+// Target is the report over one target of a [TargetsDocument].
+type Target struct {
+	// Instance is the target's position, from 1, in its env's for_each
+	// expansion, and 0 for an env block without for_each.
+	Instance int `json:"instance"`
+	// URL is the target database, with its password and secret parameters
+	// hidden. It is empty when the target names none.
+	URL string `json:"url"`
+	// ExitCode is the status a run over this target alone exits with: 0 for
+	// a match, 1 for drift, and 2 when the comparison could not be made or
+	// decided.
+	ExitCode int `json:"exit_code"`
+	// Report is the [Document] a run over this target alone prints. It is
+	// absent when the run made no comparison.
+	Report json.RawMessage `json:"report,omitempty"`
+	// Error is why the run made no comparison. It is absent when Report is
+	// present: a comparison that could not decide says why in its report.
+	Error *errorkind.Report `json:"error,omitempty"`
+}
+
+// targets runs the report over every target the env expands to, in order. A
+// target that drifted, could not be compared, or failed does not stop the
+// run: each is reported, and the run exits with the most serious status any
+// target had. Only the operator stopping the run stops it early.
+func (r driftRun) targets(configs []projectconfig.Config, out *report) error {
+	document := TargetsDocument{ContractVersion: ContractVersion, Command: Command, Env: configs[0].EnvName}
+	for _, projectCfg := range configs {
+		ctx := dbcli.WithProjectMigrationDirectory(r.cmd.Context(), projectCfg)
+		result, err := r.target(ctx, projectCfg)
+		if err != nil && r.cmd.Context().Err() != nil {
+			return err
+		}
+		entry := Target{Instance: projectCfg.EnvInstance, URL: dburldisplay.Format(result.dbURL)}
+		if err == nil {
+			entry.Report, err = out.encode(ctx, result.document, result.codecs)
+		}
+		if err == nil {
+			entry.ExitCode = exitcode.Code(result.status, 0)
+		} else {
+			// As the root redacts the error of a run over one target: a
+			// connection error can quote the address it failed to open.
+			err = dburldisplay.RedactRecordedError(ctx, err)
+			entry.ExitCode = exitcode.Code(err, 2)
+			entry.Error = errorkind.NewReport(err)
+		}
+		document.Targets = append(document.Targets, entry)
+		if writeErr := out.writeTarget(document.Env, entry, result.document); writeErr != nil {
+			return writeErr
+		}
+	}
+	if err := out.writeTargets(document); err != nil {
+		return err
+	}
+	return targetsStatus(document.Targets)
+}
+
+// targetsStatus is the run's answer once every target is reported: 2 when
+// any target could not be compared, else 1 when any drifted, else nothing.
+// The report has said which target did what, so the root prints nothing more.
+func targetsStatus(targets []Target) error {
+	count := tally(targets)
+	drifted, failed := count.drifted, count.failed
+	switch {
+	case failed > 0:
+		return exitcode.New(2, fmt.Errorf("%d of %d targets could not be compared with their applied history",
+			failed, len(targets)))
+	case drifted > 0:
+		return exitcode.New(1, fmt.Errorf("%d of %d targets differ from the schema their applied migrations produce",
+			drifted, len(targets)))
+	default:
+		return nil
+	}
+}
+
+// targetCount counts the targets of a run by their exit status.
+type targetCount struct {
+	clean, drifted, failed int
+}
+
+func tally(targets []Target) targetCount {
+	var count targetCount
+	for _, target := range targets {
+		switch target.ExitCode {
+		case 0:
+			count.clean++
+		case 1:
+			count.drifted++
+		default:
+			count.failed++
+		}
+	}
+	return count
 }
 
 // otherHistory is a revision table in the format the run did not select that
@@ -593,6 +755,71 @@ func (r *report) write(ctx context.Context, document Document, codecs schemaext.
 		return fmt.Errorf("write the JSON result: %w", err)
 	}
 	_, err = r.out.Write(append(encoded, '\n'))
+	return err
+}
+
+// encode is the JSON a target's document is reported with in a
+// [TargetsDocument], or nil for a text report, which needs none.
+func (r *report) encode(ctx context.Context, document Document, codecs schemaext.Registry) (json.RawMessage, error) {
+	if !r.json {
+		return nil, nil
+	}
+	encoded, err := featurejson.Marshal(ctx, codecs, schemaext.Desired, document)
+	if err != nil {
+		return nil, fmt.Errorf("write the JSON result: %w", err)
+	}
+	return encoded, nil
+}
+
+// writeTarget reports one target of a run over an env's targets as soon as
+// it is done, so a long run shows its progress: a heading naming the target,
+// then its report, or the error that kept it from making one. A JSON report
+// waits for [report.writeTargets].
+func (r *report) writeTarget(env string, target Target, document Document) error {
+	if r.json {
+		return nil
+	}
+	r.written = true
+	heading := fmt.Sprintf("Env %q", env)
+	if target.Instance > 0 {
+		heading = fmt.Sprintf("Instance %d of env %q", target.Instance, env)
+	}
+	if target.URL != "" {
+		heading += ": " + target.URL
+	}
+	if _, err := fmt.Fprintf(r.out, "%s\n", heading); err != nil {
+		return err
+	}
+	if target.Error != nil {
+		_, err := fmt.Fprintf(r.out, "Error: %s\n\n", target.Error.Message)
+		return err
+	}
+	if err := writeText(r.out, document); err != nil {
+		return err
+	}
+	_, err := io.WriteString(r.out, "\n")
+	return err
+}
+
+// writeTargets closes a run over an env's targets: the one JSON document, or
+// a line that counts the targets by what their reports found.
+func (r *report) writeTargets(document TargetsDocument) error {
+	r.written = true
+	if r.json {
+		encoded, err := json.MarshalIndent(document, "", "  ")
+		if err != nil {
+			return fmt.Errorf("write the JSON result: %w", err)
+		}
+		_, err = r.out.Write(append(encoded, '\n'))
+		return err
+	}
+	count := tally(document.Targets)
+	noun := "targets"
+	if len(document.Targets) == 1 {
+		noun = "target"
+	}
+	_, err := fmt.Fprintf(r.out, "Summary: %d %s: %d without drift, %d with drift, %d not compared.\n",
+		len(document.Targets), noun, count.clean, count.drifted, count.failed)
 	return err
 }
 

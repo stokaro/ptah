@@ -44,6 +44,9 @@ type driftEngine struct {
 	tables string
 	// nickname counts the columns named nickname that drift_users has.
 	nickname string
+	// databases counts the databases on the server named by its one
+	// argument.
+	databases string
 	// ptahTable and atlasTable are the default revision table of each format,
 	// quoted and qualified as the engine names it.
 	ptahTable, atlasTable string
@@ -56,6 +59,7 @@ var (
 		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema()",
 		nickname: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() " +
 			"AND table_name = 'drift_users' AND column_name = 'nickname'",
+		databases: "SELECT COUNT(*) FROM pg_database WHERE datname = '%s'",
 		// Atlas keeps its revision table in a schema of its own.
 		ptahTable: `"schema_migrations"`, atlasTable: `"atlas_schema_revisions"."atlas_schema_revisions"`,
 	}
@@ -65,6 +69,7 @@ var (
 		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()",
 		nickname: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() " +
 			"AND table_name = 'drift_users' AND column_name = 'nickname'",
+		databases: "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '%s'",
 		ptahTable: "`schema_migrations`", atlasTable: "`atlas_schema_revisions`",
 	}
 	driftEngines = []driftEngine{postgresDrift, mysqlDrift}

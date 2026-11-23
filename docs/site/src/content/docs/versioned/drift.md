@@ -209,6 +209,57 @@ table at all, so it does not report a later change made to `public.t2` by hand
 either. A file applied with `--tx-mode all` shared one transaction with the
 rest of its run, and replays in a transaction of its own.
 
+## Report every target of an env
+
+An `atlas.hcl` env with `for_each` names several databases. Select it with
+`--env`, and the report runs over each target in the order the env expands,
+one after the other, each under its own migration lock:
+
+```hcl
+env {
+  for_each = ["postgres://db1.example/app", "postgres://db2.example/app"]
+  name     = atlas.env
+  url      = each.value
+  dev      = "docker://postgres/17/dev"
+}
+```
+
+```console
+ptah migrations drift --config atlas.hcl --env tenants --migrations-dir ./migrations
+```
+
+A target that drifted, one whose comparison could not decide, and one the run
+could not open are each reported, and the run goes on to the next. The text
+report names each target before its report, with the password and the secret
+parameters of its URL hidden, prints `Error:` and the reason for a target that
+made no report, and closes with a count:
+
+```text
+Instance 1 of env "tenants": postgres://db1.example/app
+Dialect: postgres
+...
+No drift: the database matches the schema its 3 applied migrations produce.
+
+Instance 2 of env "tenants": postgres://db2.example/app
+Error: error connecting to database: failed to ping database: ...
+
+Summary: 2 targets: 1 without drift, 0 with drift, 1 not compared.
+```
+
+The run exits with the most serious status of any target: 2 when a target
+could not be compared, otherwise 1 when a target drifted, otherwise 0.
+
+With `--json` the run prints one document with the `env` it selected and a
+`targets` list. Each entry holds:
+
+- `instance`: the target's position, from 1, in the `for_each` expansion;
+- `url`: the target database, with its password and secret parameters hidden;
+- `exit_code`: the status a run over that target alone exits with;
+- `report`: the document that run prints, or `error`, the reason it made none.
+
+A `for_each` env whose `name` selects one instance prints this shape too, so a
+script reads the same document however many targets the env holds.
+
 ## When the report cannot decide
 
 A comparison that cannot decide is never reported as a match. The report names
@@ -278,6 +329,5 @@ create it, a DBA creates the table and grants `SELECT` and `INSERT`; see
 declared desired schema. `ptah migrations drift` asks whether it matches the
 history it claims to have run.
 
-The report runs against one database. A multi-target environment, and a
-`migrate drift` spelling in `ptah-compat`, are not covered yet
+A `migrate drift` spelling in `ptah-compat` is not covered yet
 (stokaro/ptah#6326).

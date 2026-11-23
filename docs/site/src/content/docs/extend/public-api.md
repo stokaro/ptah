@@ -552,7 +552,9 @@ bypass the gate.
 caller-provided `fs.FS`. Use it when project config and its `file()` or
 `fileset()` inputs must come from one anchored or immutable filesystem view.
 Use the collection-valued parse or load functions for an env `for_each` that
-selects several configs; singular functions reject that cardinality.
+selects several configs; singular functions reject that cardinality. Each
+config of a `for_each` env carries its position in the expansion, from 1, in
+`projectconfig.Config.EnvInstance`, which is 0 for an env without `for_each`.
 
 Set `projectconfig.AtlasLoadOptions.Context` or
 `projectconfig.LoadOptions.Context` to govern project data-source connections,
