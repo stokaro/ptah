@@ -45,7 +45,10 @@ Two questions determine the ordinary case:
 
 Two yes answers produce `certified`. An exercised line past upstream end of
 life becomes `legacy-tested`. A line that Ptah does not exercise is
-`best-effort`, regardless of the vendor's own support statement.
+`best-effort`, regardless of the vendor's own support statement. Ptah may also
+decide not to exercise a line the vendor still supports, for example a release
+kind with a short support window; the support matrix prints that reason the
+same way.
 
 An emulator is a deliberate exception. Exercising an emulator proves that the
 capability preset still matches that interface; it does not certify the managed

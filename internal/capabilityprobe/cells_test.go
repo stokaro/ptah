@@ -688,9 +688,10 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		// measuring it.
 		"postgres-14",
 		// Oracle 21 is here by a third route: not a lost recipe and not an
-		// end-of-life date, but a release kind. Ptah tests Oracle's long-term
-		// releases, and 21 is an Innovation Release with no extended support,
-		// so no job is spent on it (stokaro/ptah#6600). Oracle 23 is not on
+		// end-of-life date, but a release kind. Of Oracle Database's releases,
+		// Ptah tests only the long-term ones, and 21 is an Innovation Release
+		// with no extended support, so no job is spent on it
+		// (stokaro/ptah#6600). Oracle 23 is not on
 		// this list: the tagged integration contour and the probe both start
 		// its image.
 		"oracle-21",

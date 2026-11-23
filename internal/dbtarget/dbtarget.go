@@ -64,8 +64,9 @@ const (
 	SQLServer
 	CockroachDB
 	YugabyteDB
-	// Oracle is a live Oracle server, which gvenzl/oracle-free:slim and
-	// gvenzl/oracle-xe:21-slim both provide (stokaro/ptah#1875).
+	// Oracle is a live Oracle 23 server, which gvenzl/oracle-free:slim
+	// provides (stokaro/ptah#1875). The suite assumes 23: on 21 a share of
+	// its tests fail (stokaro/ptah#6600).
 	Oracle
 	// OracleDev is a second account on such a server, used as a DEV database
 	// and never as the target.

@@ -127,10 +127,12 @@ type Cell struct {
 	// It exists because "no container is declared for this line" and "the
 	// container is declared and deliberately not started" read identically
 	// once the Image is deleted, and they are opposite claims to a reader of
-	// the support matrix. Upstream end of life is the case it is for: the
-	// vendor stops patching a line, Ptah stops spending a probe job on it, and
-	// the line keeps working on a best-effort basis. What Ptah promises drops;
-	// nothing refuses a server.
+	// the support matrix. Upstream end of life is the usual case: the vendor
+	// stops patching a line, Ptah stops spending a probe job on it, and the
+	// line keeps working on a best-effort basis. A line the vendor still
+	// supports can also be declared best-effort by decision, for a release kind
+	// with a short support window, and the reason says so. Either way what
+	// Ptah promises drops; nothing refuses a server.
 	//
 	// A line with a reason here therefore declares [capability.BestEffort].
 	// The census in cells_test.go holds that in both directions, because a
@@ -586,12 +588,14 @@ var Cells = []Cell{
 
 	// Oracle resolves through a version ladder of one step. Both lines below
 	// were measured directly, statement by statement, against the images named
-	// here. Ptah tests Oracle's long-term releases: the 23 line starts its own
-	// server in the capability probe on every run of the tiered workflows, and
-	// the tagged integration contour runs the declaration-convergence round
-	// trip against the same image (stokaro/ptah#1875). The 21 line is an
-	// Innovation Release, so no job is spent on it and it declares best-effort;
-	// its preset stands on the measurement below.
+	// here. Of Oracle Database's releases, Ptah tests only the long-term ones.
+	// 23 is the one declared, and 19c is not declared yet (stokaro/ptah#6609).
+	// The 23 line starts its own server in the capability probe on every run of
+	// the tiered workflows, and the tagged integration contour runs the
+	// declaration-convergence round trip against the same image
+	// (stokaro/ptah#1875). The 21 line is an Innovation Release, so no job is
+	// spent on it and it declares best-effort; its preset stands on the
+	// measurement its note names.
 	{
 		Dialect: platform.Oracle, Line: "23",
 		Preset: capability.Oracle23, PresetName: "Oracle23",
@@ -620,9 +624,11 @@ var Cells = []Cell{
 		// header, ALL_PROCEDURES, ALL_ARGUMENTS and ALL_SOURCE answered
 		// identically on 21.3.0.0.0 and on 23.26.2.0.0.
 		Note: "an Innovation Release with no extended support, so it declares best-effort and no probe " +
-			"job is spent on it. The preset stands on the last live measurement, on 21.3.0.0.0: every " +
-			"IF [NOT] EXISTS guard refused -- ORA-00922, ORA-00969 and ORA-00933 -- while a bare CREATE " +
-			"TABLE in the same session was accepted, plus no BOOLEAN and no VECTOR type, both ORA-00902",
+			"job is spent on it. The preset stands on the last live measurement, taken on 21.3.0.0.0 by " +
+			"probe run 44785250174: 155 rows, 114 agreements, 0 disagreements, and the cell's floor of 114 " +
+			"met against Oracle21. Every IF [NOT] EXISTS guard is refused -- ORA-00922, ORA-00969 and " +
+			"ORA-00933 -- while a bare CREATE TABLE in the same session is accepted, and there is no " +
+			"BOOLEAN and no VECTOR type, both ORA-00902",
 	},
 
 	// CockroachDB resolves through a version ladder and both YugabyteDB lines
