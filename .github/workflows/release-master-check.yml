@@ -34,7 +34,7 @@ jobs:
           version: v2.20.3
           args: check
 
-      - uses: anchore/sbom-action/download-syft@v0.24.3
+      - uses: anchore/sbom-action/download-syft@v0.24.4
 
       # A snapshot takes its version from the nearest tag, whatever its name,
       # and provider-sdk/vX.Y.Z tags sit on master too. GoReleaser v2.20
