@@ -158,15 +158,20 @@ func TestWriterDropAllTables_ResolvesInternalDependencies(t *testing.T) {
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
 
-func TestWriterDropAllTables_CockroachUsesCatalogOrderWithoutSavepoints(t *testing.T) {
+// TestWriterDropAllTables_CockroachRetriesEachDropAlone drops on CockroachDB a
+// schema whose table a view reads, listed table first. Each drop runs in a
+// transaction of its own, so the refused table drop is sent again after the
+// view, with no savepoint around it.
+func TestWriterDropAllTables_CockroachRetriesEachDropAlone(t *testing.T) {
 	c := qt.New(t)
 	var execQueries []string
-	db := dbtest.OpenWithExec(t, cockroachOrderedDependencyQuery, func(
+	execHandler := new(postgresInternalDependencyExec)
+	db := dbtest.OpenWithExec(t, cockroachInternalDependencyQuery, func(
 		query string,
-		_ []driver.NamedValue,
+		args []driver.NamedValue,
 	) (driver.Result, error) {
 		execQueries = append(execQueries, query)
-		return driver.RowsAffected(0), nil
+		return execHandler.execute(query, args)
 	})
 	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
 
@@ -174,13 +179,11 @@ func TestWriterDropAllTables_CockroachUsesCatalogOrderWithoutSavepoints(t *testi
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(execQueries, qt.DeepEquals, []string{
-		`DROP VIEW IF EXISTS "public"."z_dependent_view" RESTRICT`,
-		`DROP VIEW IF EXISTS "public"."a_base_view" RESTRICT`,
+		`DROP TABLE IF EXISTS "public"."users" RESTRICT`,
+		`DROP VIEW IF EXISTS "public"."active_users" RESTRICT`,
 		`DROP TABLE IF EXISTS "public"."users" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 5)
-	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -1187,19 +1190,16 @@ func postgresInternalDependencyQuery(
 	})
 }
 
-func cockroachOrderedDependencyQuery(
+// cockroachInternalDependencyQuery is [postgresInternalDependencyQuery]
+// answered by CockroachDB.
+func cockroachInternalDependencyQuery(
 	query string,
 	_ []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
-	return postgresCleanupCatalogQuery(
-		query,
-		"CockroachDB CCL v26.2.4",
-		[][]driver.Value{
-			{"view", "public", "z_dependent_view", nil, `DROP VIEW IF EXISTS "public"."z_dependent_view" RESTRICT`},
-			{"view", "public", "a_base_view", nil, `DROP VIEW IF EXISTS "public"."a_base_view" RESTRICT`},
-			{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
-		},
-	)
+	return postgresCleanupCatalogQuery(query, "CockroachDB CCL v26.4.1", [][]driver.Value{
+		{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
+		{"view", "public", "active_users", nil, `DROP VIEW IF EXISTS "public"."active_users" RESTRICT`},
+	})
 }
 
 type postgresRealmQuery struct {

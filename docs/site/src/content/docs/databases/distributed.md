@@ -182,6 +182,23 @@ YugabyteDB runs each selected drop separately because its default setting does
 not roll schema changes back with the transaction. A refused plan leaves the
 earlier drops in place, and the error names them.
 
+## Dev and shadow database cleanup
+
+Ptah empties a dev or shadow database with `RESTRICT` drops, as when the drift
+check replays the applied migrations. CockroachDB records the tables, views,
+sequences and functions a routine body names, and refuses to drop one while
+the routine exists, but its catalog does not report these dependencies. No
+fixed order of the drops works: a function that a table default calls goes
+after that table, and before a table the function reads. So Ptah tries a
+refused drop again after the others, and stops only when a round drops
+nothing. A cleanup that fails partway keeps the drops that ran before the
+failure, and the error names the object that stopped it.
+
+The retry relies on `autocommit_before_ddl`, which is on by default from v25:
+each drop then runs in a transaction of its own, and a refused one fails
+alone. A session that turns the setting off keeps the drops in one
+transaction, and the first refused drop stops the cleanup.
+
 ## CockroachDB row-level TTL
 
 CockroachDB expires rows on a schedule the server runs, declared as table

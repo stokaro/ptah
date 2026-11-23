@@ -395,6 +395,30 @@ type postgresCleanupCapabilities struct {
 	inspectDatabaseArtifacts         bool
 	cleanupLargeObjects              bool
 	preservePublicSchema             bool
+	// runsEachDDLAlone reports that the server commits the open transaction
+	// ahead of a schema statement while autocommit_before_ddl is on, as
+	// CockroachDB does by default, so each drop of the cleanup runs in a
+	// transaction of its own and a refused one fails alone. The cleanup then
+	// retries a refused drop without a savepoint.
+	//
+	// CockroachDB records the tables, views, sequences and functions a
+	// routine body names, and a function a table default calls, and refuses
+	// a RESTRICT drop of one while something still names it (SQLSTATE
+	// 2BP01). Its catalog reports none of these dependencies, so no fixed
+	// order of the drops is right: a function that a table default calls
+	// goes after that table and before a table the function reads.
+	//
+	// A savepoint cannot carry the retry: the first DROP commits the
+	// transaction and takes the savepoint with it (SQLSTATE 3B001). The retry
+	// needs the setting on, which is the default on every declared line. With
+	// it off the drops stay in one transaction and the first failed statement
+	// aborts it: measured on v26.4.1, the cleanup of a function another one
+	// calls stops at that drop with 2BP01. `SET LOCAL` cannot turn it on for
+	// the cleanup alone. The transaction it belongs to ends at the first
+	// DROP, and with the session's setting off the cleanup's COMMIT then
+	// fails with 25P01, after every drop has run. A cleanup that fails
+	// partway keeps the drops that ran before the failure.
+	runsEachDDLAlone bool
 	// readsSchemaOwnership reports that the catalog answers whether the
 	// connecting role owns a schema, through pg_has_role, so a realm cleanup
 	// can empty in place a kept schema it may not drop; see
@@ -454,6 +478,7 @@ func inspectCleanupCapabilities(
 	switch {
 	case strings.Contains(version, "cockroachdb"):
 		return postgresCleanupCapabilities{
+			runsEachDDLAlone:      true,
 			preservePublicSchema:  true,
 			showDefaultPrivileges: true,
 			protectedDatabases:    protectedCockroachDatabases,
@@ -540,6 +565,7 @@ func (c postgresCleanupCapabilities) globalDefaultPrivilegeResets() globalDefaul
 
 func (c postgresCleanupCapabilities) withoutTransaction() postgresCleanupCapabilities {
 	c.retryFailedDDL = false
+	c.runsEachDDLAlone = false
 	c.retryFailedDDLWithoutTransaction = true
 	return c
 }
@@ -549,6 +575,9 @@ func (c postgresCleanupCapabilities) dropObjects(
 	tx cleanupConn,
 	objects []postgresCleanupObject,
 ) error {
+	if c.runsEachDDLAlone {
+		return dropCleanupObjectsRetrying(ctx, tx, objects)
+	}
 	if c.retryFailedDDL {
 		// The retry loop drops each object inside a SAVEPOINT, so it needs a
 		// real transaction. The capability is only ever set on the path that
