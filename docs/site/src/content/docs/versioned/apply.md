@@ -401,15 +401,14 @@ not drift. The revision table, its log and the record of repeatable
 migrations, under the names this run is configured with, are left out of the
 comparison.
 
-The replay runs each applied migration in this run's `--tx-mode`, the mode the
-pending migrations run in, and a file's own directive wins over it as it does
-for a pending file. The revision table does not record the mode a migration
-ran in, so a history applied with `--tx-mode none` is checked with
-`--tx-mode none`: in `file` the replay refuses a statement that cannot run
-inside a transaction, or that Ptah cannot verify there on MySQL and MariaDB.
-Under `all` each applied migration replays in a transaction of its own, as
-`file` replays it, because the revision table does not record which migrations
-one run applied together.
+The replay takes no transaction mode from this run. Each applied migration
+replays in a transaction of its own, unless its directive names a mode or
+`--tx-mode file` refuses it before it starts, and then it replays without one;
+[How each applied migration replays](../drift/#how-each-applied-migration-replays)
+gives the rule. A file applied with `--tx-mode none` that a transaction accepts
+but changes, such as one whose `SET LOCAL` did nothing outside a transaction,
+cannot be checked faithfully. Give it `-- atlas:txmode none`, and the replay
+runs it as it ran.
 
 Run it against the database this page migrated, with a shadow database that
 does not exist yet:

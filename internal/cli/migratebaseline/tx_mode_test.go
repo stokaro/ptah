@@ -11,9 +11,10 @@ import (
 	"ptah.run/internal/atlasurl"
 )
 
-// --shadow-db replays the history being baselined in --tx-mode, the mode it
-// was applied in. SQLite refuses VACUUM inside a transaction, so a history
-// whose migration 1 holds one was applied under none and replays only there.
+// --shadow-db replays the history being baselined as each file ran, with no
+// mode stated. SQLite refuses VACUUM inside a transaction, so a history whose
+// migration 1 holds one beside another statement ran without a transaction,
+// and replays without one.
 
 // vacuumBaselineTarget writes a history whose migration 1 holds a VACUUM, and a
 // SQLite target that holds its schema and no revision row. It returns the
@@ -36,36 +37,24 @@ func vacuumBaselineTarget(c *qt.C) (dir, dbURL string) {
 	return dir, dbURL
 }
 
-func TestMigrateBaselineShadowDB_HappyPathReplaysInTheTxMode(t *testing.T) {
+func TestMigrateBaselineShadowDB_HappyPathReplaysEachFileAsItRan(t *testing.T) {
+	c := qt.New(t)
+	dir, dbURL := vacuumBaselineTarget(c)
+
+	out, err := runBaseline("--db-url", dbURL, "--migrations-dir", dir,
+		"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "shadow.db")))
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+}
+
+// The replay takes no transaction mode, so --tx-mode is refused before the
+// directory is read.
+func TestMigrateBaselineShadowDB_FailurePathTakesNoTxMode(t *testing.T) {
 	c := qt.New(t)
 	dir, dbURL := vacuumBaselineTarget(c)
 
 	out, err := runBaseline("--db-url", dbURL, "--migrations-dir", dir,
 		"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "shadow.db")), "--tx-mode", "none")
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-}
-
-// Without --tx-mode the history replays a file to a transaction and the
-// VACUUM is refused; a value that names no mode is refused before the
-// directory is read.
-func TestMigrateBaselineShadowDB_FailurePathReplaysInTheTxMode(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		args    []string
-		wantErr string
-	}{
-		{name: "no mode", wantErr: `(?s).*0000000001_items\.up\.sql cannot run inside a transaction: line 2 VACUUM is refused inside a transaction block.*`},
-		{name: "a mode that does not exist", args: []string{"--tx-mode", "each"}, wantErr: `invalid tx-mode "each": expected file, all, or none`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir, dbURL := vacuumBaselineTarget(c)
-
-			out, err := runBaseline(append([]string{"--db-url", dbURL, "--migrations-dir", dir,
-				"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "shadow.db"))}, test.args...)...)
-
-			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
-		})
-	}
+	c.Assert(err, qt.ErrorMatches, `unknown flag: --tx-mode`, qt.Commentf("%s", out))
 }

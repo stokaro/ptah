@@ -26,10 +26,7 @@ cannot see a column added by hand or an index dropped during an incident.
 
 The command reads the revision table under the migration lock, replays the
 migrations it records as applied on a disposable shadow database, and compares
-the database with the schema the replay produced. The replay runs in
-`--tx-mode`, or the project's `migration.tx_mode`, which is `file` by default:
-give it the mode `ptah migrations up` applies the history in, because the
-revision table does not record it. The baseline is the applied
+the database with the schema the replay produced. The baseline is the applied
 history, not the directory, so a pending migration is listed and never read as
 drift. It is the comparison
 [`ptah migrations up --check-drift`](../apply/#check-the-schema-against-its-history)
@@ -151,6 +148,33 @@ A run that could not start prints the failure document instead, with an
 `error` object and no `check`; see
 [Why a command failed](../../reference/exit-codes/#why-a-command-failed).
 
+## How each applied migration replays
+
+The revision table does not record the transaction mode a migration ran in, so
+the replay decides it for each file and takes no mode from the run.
+`ptah migrations up --tx-mode`, `PTAH_TX_MODE` and the project's
+`migration.tx_mode` name the mode pending migrations run in, and the replay
+reads none of them.
+
+- A file whose `-- atlas:txmode` or `-- +ptah no_transaction` directive names
+  a mode replays in that mode.
+- A file that `--tx-mode file` refuses before it runs a statement replays
+  without a transaction. Such a file holds a statement that cannot run inside
+  one, such as PostgreSQL `CREATE INDEX CONCURRENTLY` or SQLite `VACUUM`, or
+  on MySQL and MariaDB a statement Ptah cannot verify inside one, so only
+  `--tx-mode none` applied it.
+- Every other file replays in a transaction of its own.
+
+One history cannot be checked faithfully: a file that a transaction accepts,
+applied with `--tx-mode none`, that behaved as it did only because no
+transaction surrounded it. It replays in a transaction and can produce another
+schema. PostgreSQL ignores `SET LOCAL` outside a transaction, so
+`SET LOCAL search_path TO s2; CREATE TABLE t2 (id int);` creates `public.t2`
+under `--tx-mode none` and `s2.t2` in a transaction. Give such a file
+`-- atlas:txmode none`, and the apply and the replay both run it without a
+transaction. A file applied with `--tx-mode all` shared one transaction with
+the rest of its run, and replays in a transaction of its own.
+
 ## When the report cannot decide
 
 A comparison that cannot decide is never reported as a match. The report names
@@ -165,9 +189,7 @@ the `stage` and `reason` it stopped at and exits with status 2, when:
   `ptah migrations up` accepts it, because the report replays versions in
   order and that order is not the one the database ran;
 - the shadow database cannot be used: it is the target under another name, it
-  is not empty, or the replay of the applied migrations fails on it. A history
-  applied with `--tx-mode none` fails in `file` where a migration holds a
-  statement that cannot run inside a transaction;
+  is not empty, or the replay of the applied migrations fails on it;
 - the database read cannot describe an object the applied migrations create,
   so whether the database holds it is unknown.
 

@@ -43,11 +43,6 @@ type RollbackVerifyOptions struct {
 	// checks waived and the verification replay with them on, so the flag and
 	// --dev-url could not be used together at all (stokaro/ptah#3114).
 	SkipChecks bool
-	// TxMode is the transaction mode the target's runs applied their
-	// migrations in. The replay up to CurrentVersion runs in the mode
-	// [shadowdb.HistoryTxMode] gives it; the empty value is file. The
-	// rollback itself runs each down body as the target's rollback does.
-	TxMode migrator.MigrationTxMode
 }
 
 // VerifyRollback replays a rollback plan on a disposable shadow
@@ -63,9 +58,7 @@ type RollbackVerifyOptions struct {
 //
 // The replay assumes a linear history: every migration at or below
 // CurrentVersion is applied during the up phase, so a target database with a
-// non-linear applied set is approximated by its full linear prefix. The up
-// phase is a replay of the applied history and runs in the transaction mode
-// [RollbackVerifyOptions.TxMode] states.
+// non-linear applied set is approximated by its full linear prefix.
 func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr error) {
 	if opts.ShadowDatabaseURL == "" {
 		return fmt.Errorf("rollback verification failed: a shadow database URL is required")
@@ -122,8 +115,7 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
-	mig = shadowdb.ReplayMigrator(mig.WithSkipChecks(opts.SkipChecks).
-		WithTransactionMode(shadowdb.HistoryTxMode(opts.TxMode)))
+	mig = shadowdb.ReplayMigrator(mig.WithSkipChecks(opts.SkipChecks).WithAppliedHistoryReplay())
 
 	// DropAllTables leaves the revision table behind, because it is metadata
 	// rather than part of the schema under test. Rows left in it name versions

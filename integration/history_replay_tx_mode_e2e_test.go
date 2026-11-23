@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -21,9 +22,9 @@ import (
 // --dev-url` each replay a target's applied history on a disposable database.
 // Migration 1 holds a VACUUM, which SQLite and PostgreSQL refuse inside a
 // transaction, beside a statement a transaction accepts, so it applies under
-// --tx-mode none, and each replay runs in the mode the caller states: the
-// native --tx-mode, or PTAH_TX_MODE on the compatibility surface. Without it
-// the replay runs a file to a transaction and the target is left as it was.
+// --tx-mode none, and each replay runs it without a transaction, with no mode
+// stated. PTAH_TX_MODE and the env's migration.tx_mode, which name the mode
+// pending files run in, change nothing.
 
 // historyReplayEngine is an engine the history replays on.
 type historyReplayEngine struct {
@@ -171,10 +172,6 @@ type historyReplaySurface struct {
 	program clirun.Target
 	// args is the command line, given the history.
 	args func(h historyReplay) []string
-	// mode states that the history ran under none: a flag on the native
-	// surface, a variable on the compatibility one.
-	modeArgs []string
-	modeEnv  []string
 	// stdout is what the run prints once it succeeds, and note the note
 	// columns the target then holds.
 	stdout string
@@ -190,9 +187,8 @@ var historyReplaySurfaces = []historyReplaySurface{
 			return []string{"migrations", "down", "--db-url", h.target, "--migrations-dir", h.dir,
 				"--shadow-db", h.shadow, "--target", "1", "--confirm"}
 		},
-		modeArgs: []string{"--tx-mode", "none"},
-		stdout:   "Rollback plan verified on shadow database",
-		note:     0,
+		stdout: "Rollback plan verified on shadow database",
+		note:   0,
 	},
 	{
 		name:    "ptah migrations down --plan",
@@ -202,9 +198,8 @@ var historyReplaySurfaces = []historyReplaySurface{
 			return []string{"migrations", "down", "--db-url", h.target, "--migrations-dir", h.dir,
 				"--shadow-db", h.shadow, "--plan", "--target", "1", "--confirm"}
 		},
-		modeArgs: []string{"--tx-mode", "none"},
-		stdout:   "Derived rollback plan:",
-		note:     0,
+		stdout: "Derived rollback plan:",
+		note:   0,
 	},
 	{
 		name:    "ptah migrations baseline --shadow-db",
@@ -214,9 +209,8 @@ var historyReplaySurfaces = []historyReplaySurface{
 			return []string{"migrations", "baseline", "--db-url", h.target, "--migrations-dir", h.dir,
 				"--shadow-db", h.shadow}
 		},
-		modeArgs: []string{"--tx-mode", "none"},
-		stdout:   "Baselined 2 migration(s) through version 2",
-		note:     1,
+		stdout: "Baselined 2 migration(s) through version 2",
+		note:   1,
 	},
 	{
 		name:    "ptah-compat migrate down --dev-url",
@@ -226,9 +220,8 @@ var historyReplaySurfaces = []historyReplaySurface{
 			return []string{"migrate", "down", "--url", h.target, "--dir", "file://migrations",
 				"--dev-url", h.shadow, "--to-version", "1"}
 		},
-		modeEnv: []string{"PTAH_TX_MODE=none"},
-		stdout:  "Rollback plan verified on shadow database",
-		note:    0,
+		stdout: "Rollback plan verified on shadow database",
+		note:   0,
 	},
 	{
 		name:    "ptah-compat migrate down --dev-url --format",
@@ -238,47 +231,29 @@ var historyReplaySurfaces = []historyReplaySurface{
 			return []string{"migrate", "down", "--url", h.target, "--dir", "file://migrations",
 				"--dev-url", h.shadow, "--to-version", "1", "--format", "{{ .Current }}->{{ .Target }}"}
 		},
-		modeEnv: []string{"PTAH_TX_MODE=none"},
-		stdout:  "2->1",
-		note:    0,
+		stdout: "2->1",
+		note:   0,
 	},
 }
 
-// TestHistoryReplayTxModeE2E_HappyPath states that the history ran under none:
-// each replay runs in it, and the command does what it was asked.
+// TestHistoryReplayTxModeE2E_HappyPath replays the history with no mode
+// stated, and with PTAH_TX_MODE naming file: each command does what it was
+// asked.
 func TestHistoryReplayTxModeE2E_HappyPath(t *testing.T) {
 	for _, surface := range historyReplaySurfaces {
 		for _, engine := range historyReplayEngines {
-			t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
-				c := qt.New(t)
-				h := surface.history(c, engine)
+			for _, env := range [][]string{nil, {"PTAH_TX_MODE=file"}} {
+				t.Run(surface.name+"/"+engine.name+"/"+strings.Join(env, " "), func(t *testing.T) {
+					c := qt.New(t)
+					h := surface.history(c, engine)
 
-				got := runHistoryReplay(c, surface.program, h, surface.modeEnv, append(surface.args(h), surface.modeArgs...)...)
+					got := runHistoryReplay(c, surface.program, h, env, surface.args(h)...)
 
-				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-				c.Assert(got.Stdout, qt.Contains, surface.stdout)
-				c.Assert(historyReplayNoteColumns(c, h), qt.Equals, surface.note)
-			})
-		}
-	}
-}
-
-// TestHistoryReplayTxModeE2E_FailurePath is the control: without the mode the
-// replay runs migration 1 in a transaction, the engine refuses its VACUUM,
-// and the target keeps version 2.
-func TestHistoryReplayTxModeE2E_FailurePath(t *testing.T) {
-	for _, surface := range historyReplaySurfaces {
-		for _, engine := range historyReplayEngines {
-			t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
-				c := qt.New(t)
-				h := surface.history(c, engine)
-
-				got := runHistoryReplay(c, surface.program, h, nil, surface.args(h)...)
-
-				c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-				c.Assert(got.Stderr, qt.Matches, `(?s).*cannot run inside a transaction.*`)
-				c.Assert(historyReplayNoteColumns(c, h), qt.Equals, 1)
-			})
+					c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+					c.Assert(got.Stdout, qt.Contains, surface.stdout)
+					c.Assert(historyReplayNoteColumns(c, h), qt.Equals, surface.note)
+				})
+			}
 		}
 	}
 }
@@ -308,15 +283,15 @@ var historyReplayProjectPaths = []struct {
 	{name: "--format", flags: []string{"--format", "{{ .Current }}->{{ .Target }}"}, stdout: "2->1"},
 }
 
-// The env's migration.tx_mode states the mode as PTAH_TX_MODE does, on both
-// paths, and the variable wins over it.
+// The env's migration.tx_mode names the mode pending files run in, and the
+// rollback's replay reads it on neither path.
 func TestHistoryReplayProjectTxModeE2E_HappyPath(t *testing.T) {
 	for _, rollback := range historyReplayProjectPaths {
 		for _, engine := range historyReplayEngines {
 			t.Run(rollback.name+"/"+engine.name, func(t *testing.T) {
 				c := qt.New(t)
 				h := compatHistoryReplay(c, engine)
-				historyReplayProject(c, h, "    tx_mode = \"none\"\n")
+				historyReplayProject(c, h, "    tx_mode = \"file\"\n")
 
 				got := runHistoryReplay(c, clirun.Compat, h, nil,
 					append([]string{"migrate", "down", "--env", "local", "--to-version", "1"}, rollback.flags...)...)
@@ -324,27 +299,6 @@ func TestHistoryReplayProjectTxModeE2E_HappyPath(t *testing.T) {
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 				c.Assert(got.Stdout, qt.Contains, rollback.stdout)
 				c.Assert(historyReplayNoteColumns(c, h), qt.Equals, 0)
-			})
-		}
-	}
-}
-
-// PTAH_TX_MODE wins over the env's migration.tx_mode, so a variable naming
-// file replays the history in a transaction whatever the project says.
-func TestHistoryReplayProjectTxModeE2E_FailurePath(t *testing.T) {
-	for _, rollback := range historyReplayProjectPaths {
-		for _, engine := range historyReplayEngines {
-			t.Run(rollback.name+"/"+engine.name, func(t *testing.T) {
-				c := qt.New(t)
-				h := compatHistoryReplay(c, engine)
-				historyReplayProject(c, h, "    tx_mode = \"none\"\n")
-
-				got := runHistoryReplay(c, clirun.Compat, h, []string{"PTAH_TX_MODE=file"},
-					append([]string{"migrate", "down", "--env", "local", "--to-version", "1"}, rollback.flags...)...)
-
-				c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-				c.Assert(got.Stderr, qt.Matches, `(?s).*cannot run inside a transaction.*`)
-				c.Assert(historyReplayNoteColumns(c, h), qt.Equals, 1)
 			})
 		}
 	}

@@ -45,7 +45,6 @@ const (
 	dirFormatFlag   = "dir-format"
 	atlasEnvFlag    = "atlas-env"
 	lockTimeoutFlag = "migration-lock-timeout"
-	txModeFlag      = "tx-mode"
 )
 
 type options struct {
@@ -58,7 +57,6 @@ type options struct {
 	rootDir             string
 	dirFormat           string
 	atlasEnv            string
-	txMode              string
 	lockTimeout         string
 	lockName            string
 	connectTimeout      string
@@ -100,8 +98,6 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities when --shadow-db is not set")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile),
-		"Transaction mode the baselined migrations were applied in, which --shadow-db replays them in: file, all, or none")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
 	migratelock.RegisterNameFlag(flags, &opts.lockName)
@@ -157,10 +153,6 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	}
 
 	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
-	if err != nil {
-		return err
-	}
-	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return err
 	}
@@ -273,7 +265,6 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		migrationsDir:  opts.migrationsDir,
 		migrationsFS:   migrationsFS,
 		providerOpts:   providerOpts,
-		txMode:         txMode,
 	}); err != nil {
 		return err
 	}
@@ -302,9 +293,6 @@ type baselineVerifyOptions struct {
 	migrationsDir  string
 	migrationsFS   fs.FS
 	providerOpts   []migrator.FSProviderOption
-	// txMode is the mode the baselined history was applied in, which the
-	// shadow replay runs it in.
-	txMode migrator.MigrationTxMode
 }
 
 func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
@@ -325,7 +313,6 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 			Schemas:           opts.schemas,
 			ProviderOptions:   opts.providerOpts,
 			ConnectTimeout:    opts.connectTimeout,
-			TxMode:            opts.txMode,
 		})
 		handler.kind = "shadow"
 		return handler.handle(err)

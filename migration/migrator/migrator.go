@@ -258,6 +258,9 @@ type Migrator struct {
 	// atlasStringLinearity decides linearity over an Atlas directory on the
 	// revision strings; see [Migrator.WithAtlasStringLinearity].
 	atlasStringLinearity bool
+	// replaysHistory selects the transaction mode of each up file by the rule
+	// of [Migrator.WithAppliedHistoryReplay] rather than by txMode.
+	replaysHistory bool
 	// recordedAtlasIdentities are the versions the Atlas revision table
 	// records that are not numbers and that no file of the directory carries,
 	// such as v1 once v1_x.sql is removed, in text order. Initialize reads
@@ -840,10 +843,41 @@ func (m *Migrator) WithAtlasStringLinearity() *Migrator {
 
 // WithTransactionMode returns a copy of the migrator that wraps pending up
 // migrations in transactions according to mode. An empty mode selects the
-// default, [MigrationTxModeFile].
+// default, [MigrationTxModeFile]. It replaces the rule
+// [Migrator.WithAppliedHistoryReplay] selects.
 func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 	tmp := *m
 	tmp.txMode = normalizeMigrationTxMode(mode)
+	tmp.replaysHistory = false
+	return &tmp
+}
+
+// WithAppliedHistoryReplay returns a copy of the migrator that runs its up
+// migrations as a replay of files that already ran on another database. The
+// revision table records that a file ran and not the transaction mode it ran
+// in, so the replay decides the mode of each file from the file alone.
+//
+// A file runs in a transaction of its own, as under [MigrationTxModeFile],
+// unless a run in that mode refuses the file for being in a transaction
+// before any of its statements runs. Such a file holds a statement the engine
+// refuses inside a transaction, such as CREATE INDEX CONCURRENTLY beside
+// another statement on PostgreSQL, or, on MySQL and MariaDB, a statement the
+// transaction witness cannot follow, such as a view definition. It ran
+// without a transaction, since it ran at all, and it replays without one. A
+// file whose txmode directive names a mode runs in that mode. Down migrations
+// run as they do without the rule.
+//
+// A file that a run in [MigrationTxModeNone] applied, and whose effect a
+// transaction changes, replays in a transaction and so not as it ran: on
+// PostgreSQL a SET LOCAL does nothing outside a transaction and takes effect
+// inside one. Such a file needs a directive to replay as it ran.
+//
+// The copy's transaction mode is [MigrationTxModeFile]. A
+// [Migrator.WithTransactionMode] after it replaces the rule.
+func (m *Migrator) WithAppliedHistoryReplay() *Migrator {
+	tmp := *m
+	tmp.txMode = MigrationTxModeFile
+	tmp.replaysHistory = true
 	return &tmp
 }
 

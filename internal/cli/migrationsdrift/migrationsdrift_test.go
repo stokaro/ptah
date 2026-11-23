@@ -579,14 +579,6 @@ func TestMigrationsDrift_FailurePathRefusesBeforeConnecting(t *testing.T) {
 			error: "database URL is required",
 		},
 		{
-			name: "a transaction mode that does not exist",
-			args: []string{
-				"--db-url", "sqlite://unused.db", "--migrations-dir", ".", "--shadow-db", "sqlite://shadow.db",
-				"--tx-mode", "every",
-			},
-			error: `invalid tx-mode "every": expected file, all, or none`,
-		},
-		{
 			name: "a lock timeout SQLite cannot honor",
 			args: []string{
 				"--db-url", "sqlite://unused.db", "--migrations-dir", ".", "--shadow-db", "sqlite://shadow.db",

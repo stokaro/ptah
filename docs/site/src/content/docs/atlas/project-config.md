@@ -129,7 +129,7 @@ env "local" {
 | `migration.revisions_schema` | Default revision metadata schema. |
 | `migration.lock_timeout` | Default migration lock timeout. |
 | `migration.exec_order` | Default migration execution order. |
-| `migration.tx_mode` | Default transaction mode for compatible apply paths, and the mode `migrate down --dev-url` replays the applied history in. |
+| `migration.tx_mode` | Default transaction mode for compatible apply paths. |
 | `lint.latest` | Latest-N migration lint selection. |
 | `lint.git.base` | Git base for migration lint selection. |
 | `lint.git.dir` | Git working directory for migration lint selection. |
@@ -500,8 +500,7 @@ The check is the one `ptah migrations up --check-drift` runs, and
 [Check the schema against its history](../../versioned/apply/#check-the-schema-against-its-history)
 describes what it compares and when it cannot decide. Under the migration lock,
 it replays the migrations the revision table records as applied on the env's
-`dev` database, in the `--tx-mode` the apply runs its pending files in, and
-compares that schema with the target's.
+`dev` database and compares that schema with the target's.
 
 | Setting | Behavior |
 | --- | --- |

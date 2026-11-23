@@ -57,11 +57,6 @@ func resolveDriftRequest(cmd *cobra.Command, opts options, projectCfg projectcon
 // check. A selector that matched nothing on either side is a warning on
 // standard error naming where it was written, as `schema drift` gives one, and
 // the check goes on.
-//
-// The replay runs the applied history in the run's --tx-mode, the mode the
-// pending migrations run in: the revision table does not record the mode a
-// migration ran in, and a history the run applied under `none` may hold a
-// statement `file` refuses.
 func prepareDriftCheck(
 	cmd *cobra.Command,
 	opts options,
@@ -98,7 +93,6 @@ func prepareDriftCheck(
 		Conn:           conn,
 		History:        mig,
 		MetadataTables: revisiontable.Configured(string(settings.revisionFormat), opts.migrationsTable),
-		TxMode:         settings.txMode,
 		OnDrift:        opts.driftOnDrift,
 	}), release, nil
 }

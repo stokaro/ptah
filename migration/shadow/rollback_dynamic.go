@@ -50,11 +50,6 @@ type DynamicRollbackOptions struct {
 	// dev database is migrated up to exactly this version, and the schema it
 	// then holds is what the plan drives the live database towards.
 	TargetVersion int64
-	// TxMode is the transaction mode the target's runs applied their
-	// migrations in. The replay up to TargetVersion replays applied history,
-	// so it runs in the mode [shadowdb.HistoryTxMode] gives it; the empty
-	// value is file.
-	TxMode migrator.MigrationTxMode
 	// ProviderOptions are passed to the migration provider (e.g. dir format).
 	ProviderOptions []migrator.FSProviderOption
 	// ConnectTimeout bounds the dev database connection attempt.
@@ -174,7 +169,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: register migrations: %w", err)
 	}
-	mig = shadowdb.ReplayMigrator(mig.WithTransactionMode(shadowdb.HistoryTxMode(opts.TxMode)))
+	mig = shadowdb.ReplayMigrator(mig.WithAppliedHistoryReplay())
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateTo(ctx, opts.TargetVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

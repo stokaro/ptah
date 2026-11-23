@@ -100,7 +100,38 @@ func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMo
 	if err != nil {
 		return "", err
 	}
+	if m.replaysHistory && fileMode.Mode == migrationfile.FileTxModeUnspecified && m.ranWithoutATransaction(migration) {
+		return MigrationTxModeNone, nil
+	}
 	return m.effectiveTxMode(mode), nil
+}
+
+// ranWithoutATransaction reports whether migration's up body, a file that ran
+// without naming a transaction mode, must have run without a transaction: a
+// run in tx-mode file refuses it for being in a transaction, and a run in
+// tx-mode none does not. The refusals are the ones a run asks of every file
+// before the first of them runs, [Migrator.refuseBodyForItsMode] and
+// [Migrator.refuseWhatATransactionRefuses], so a replay under
+// [Migrator.WithAppliedHistoryReplay] runs without a transaction exactly the
+// files a run in tx-mode file refuses in one. A file both modes refuse keeps
+// tx-mode file, whose refusal the replay then reports.
+//
+// A file that runs without a transaction in tx-mode file anyway, because the
+// target runs each query on its own or the file runs alone outside one (see
+// [Migrator.ownTransactionMode]), is not asked.
+func (m *Migrator) ranWithoutATransaction(migration *Migration) bool {
+	if m.effectiveTxMode(MigrationTxModeFile) != MigrationTxModeFile {
+		return false
+	}
+	own, err := m.ownTransactionMode(migration, MigrationTxModeFile, MigrationDirectionUp)
+	if err != nil || own.mode != MigrationTxModeFile {
+		return false
+	}
+	if m.refuseBodyForItsMode(migration, MigrationDirectionUp, own) == nil &&
+		m.refuseWhatATransactionRefuses(migration, MigrationDirectionUp, own) == nil {
+		return false
+	}
+	return m.refuseBodyForItsMode(migration, MigrationDirectionUp, ownTransactionRun{mode: MigrationTxModeNone}) == nil
 }
 
 func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTxMode, error) {

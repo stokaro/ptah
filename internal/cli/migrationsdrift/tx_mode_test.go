@@ -8,38 +8,38 @@ import (
 	"ptah.run/migration/migrator"
 )
 
-// The report replays the applied history in --tx-mode, as `migrations up
-// --check-drift` replays it in the run's. SQLite refuses VACUUM inside a
-// transaction, so migration 3 applies under none and its replay fails in a
-// transaction.
+// The report replays each applied file as it ran, as `migrations up
+// --check-drift` replays it, and takes no transaction mode. SQLite refuses
+// VACUUM inside a transaction, so migration 3 applies under none, and its
+// replay runs without a transaction.
 
 // vacuumTarget is a target whose migrations 1 to 3 were applied with
-// --tx-mode none, migration 3 holding a VACUUM beside another statement.
-func vacuumTarget(c *qt.C) target {
+// --tx-mode none, migration 3 holding a VACUUM beside another statement, with
+// each statement in outOfBand run on it afterwards.
+func vacuumTarget(c *qt.C, outOfBand ...string) target {
 	c.Helper()
 	tgt := emptyTarget(c)
 	tgt.write(c, "0000000003_notes.up.sql", "CREATE TABLE notes (id INTEGER PRIMARY KEY);\nVACUUM;\n")
 	tgt.write(c, "0000000003_notes.down.sql", "DROP TABLE notes;\n")
 	tgt.up(c, "3", "--tx-mode", "none")
+	tgt.exec(c, outOfBand...)
 	return tgt
 }
 
-// The flag wins over the project's migration.tx_mode, and the project's value
-// is the default without it.
-func TestMigrationsDrift_HappyPathReplaysInTheTxMode(t *testing.T) {
+// A project's migration.tx_mode, which `migrations up` reads, changes nothing.
+func TestMigrationsDrift_HappyPathReplaysEachFileAsItRan(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		project string
-		args    []string
 	}{
-		{name: "the flag", project: "migration:\n  tx_mode: file\n", args: []string{"--tx-mode", "none"}},
-		{name: "the project's migration.tx_mode", project: "migration:\n  tx_mode: none\n"},
+		{name: "no project mode", project: "migration: {}\n"},
+		{name: "the project's migration.tx_mode", project: "migration:\n  tx_mode: all\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			tgt := vacuumTarget(c)
 
-			got, stderr, code := tgt.document(c, append([]string{"--config", config(c, "ptah.yaml", test.project)}, test.args...)...)
+			got, stderr, code := tgt.document(c, "--config", config(c, "ptah.yaml", test.project))
 
 			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
 			c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", got.Check))
@@ -49,12 +49,27 @@ func TestMigrationsDrift_HappyPathReplaysInTheTxMode(t *testing.T) {
 	}
 }
 
-// Without --tx-mode the report replays as `migrations up` applies by default,
-// in a transaction per file, and a history applied under none fails there:
-// the mode is the one the caller states, not one the replay picks.
-func TestMigrationsDrift_FailurePathReplaysInTheTxMode(t *testing.T) {
-	c := qt.New(t)
-	tgt := vacuumTarget(c)
+// A table added by hand is drift, and the report has no flag to replay in
+// another mode.
+func TestMigrationsDrift_FailurePathReplaysEachFileAsItRan(t *testing.T) {
+	t.Run("a table added by hand", func(t *testing.T) {
+		c := qt.New(t)
+		tgt := vacuumTarget(c, "CREATE TABLE extra (id INTEGER PRIMARY KEY)")
 
-	tgt.assertCannotDecide(c, "replay", "replay_error")
+		got, stderr, code := tgt.document(c)
+
+		c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+		c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftDrifted, qt.Commentf("%+v", got.Check))
+		c.Assert(tables(c, tgt.shadowURL), qt.HasLen, 0)
+	})
+	t.Run("a transaction mode", func(t *testing.T) {
+		c := qt.New(t)
+		tgt := vacuumTarget(c)
+
+		stdout, stderr, code := tgt.drift(c, "--tx-mode", "none")
+
+		c.Assert(code, qt.Equals, 2)
+		c.Assert(stderr, qt.Contains, "unknown flag: --tx-mode")
+		c.Assert(stdout, qt.Equals, "")
+	})
 }

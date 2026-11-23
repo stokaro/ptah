@@ -21,13 +21,14 @@ import (
 // These tests replay, on the MySQL family, a history that `migrations up
 // --tx-mode none` applied. Migration 1 creates a view and carries no
 // directive, so a run in tx-mode file refuses it, and the drift check and the
-// drift report replay it in the mode the caller states. The shadow is on a
-// server of its own, as GET_LOCK names are server-wide.
+// drift report replay it without a transaction, with no mode stated. The
+// shadow is on a server of its own, as GET_LOCK names are server-wide.
 
-// txModeDriftHistory applies migration 1 to a new target with --tx-mode none
-// and adds migration 2, which is pending. It returns the directory, the
-// target and an empty shadow database on the engine's second server.
-func txModeDriftHistory(c *qt.C, engine mysqlViewDriftEngine) (dir, target, shadow string) {
+// txModeDriftHistory applies migration 1 to a new target with --tx-mode none,
+// runs each statement of outOfBand on it, and adds migration 2, which is
+// pending. It returns the directory, the target and an empty shadow database
+// on the engine's second server.
+func txModeDriftHistory(c *qt.C, engine mysqlViewDriftEngine, outOfBand ...string) (dir, target, shadow string) {
 	c.Helper()
 	suffix := time.Now().UnixNano()
 	target = mysqlViewDriftDatabase(c, engine.admin, fmt.Sprintf("ptah_txmode_drift_%d", suffix))
@@ -42,9 +43,22 @@ func txModeDriftHistory(c *qt.C, engine mysqlViewDriftEngine) (dir, target, shad
 	applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
 		"migrations", "up", "--db-url", target, "--migrations-dir", dir, "--tx-mode", "none")
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("%s", applied.Stderr))
+	for _, statement := range outOfBand {
+		txModeDriftExec(c, target, statement)
+	}
 	write("0000000002_add_note.up.sql", "ALTER TABLE items ADD COLUMN note varchar(20);\n")
 	write("0000000002_add_note.down.sql", "ALTER TABLE items DROP COLUMN note;\n")
 	return dir, target, shadow
+}
+
+// txModeDriftExec runs statement on the target outside any migration.
+func txModeDriftExec(c *qt.C, target, statement string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(c.Context(), statement)
+	c.Assert(err, qt.IsNil)
 }
 
 // txModeDriftNoteColumns counts the note columns the target's items table
@@ -86,28 +100,36 @@ func txModeDriftReport(c *qt.C, args ...string) (clirun.Result, migrator.DriftCh
 	return result, document.Check
 }
 
-// A history applied under none replays under none: the check is clean and
-// migration 2 runs, which the target's catalog shows, and the report agrees.
+// A history applied under none replays as it ran, whatever mode the run
+// applies its pending files in: the check is clean and migration 2 runs,
+// which the target's catalog shows, and the report agrees.
 func TestMySQLDriftCheckTxModeE2E_HappyPath(t *testing.T) {
 	for _, engine := range mysqlViewDriftEngines {
-		t.Run(engine.name+"/migrations up --check-drift", func(t *testing.T) {
-			c := qt.New(t)
-			dir, target, shadow := txModeDriftHistory(c, engine)
+		for _, mode := range []struct {
+			name string
+			args []string
+		}{
+			{name: "the default mode"},
+			{name: "none", args: []string{"--tx-mode", "none"}},
+		} {
+			t.Run(engine.name+"/migrations up --check-drift/"+mode.name, func(t *testing.T) {
+				c := qt.New(t)
+				dir, target, shadow := txModeDriftHistory(c, engine)
 
-			result, check := txModeDriftUp(c, "--db-url", target, "--migrations-dir", dir,
-				"--tx-mode", "none", "--check-drift", "--shadow-db", shadow)
+				result, check := txModeDriftUp(c, append([]string{"--db-url", target, "--migrations-dir", dir,
+					"--check-drift", "--shadow-db", shadow}, mode.args...)...)
 
-			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
-			c.Assert(check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", check))
-			c.Assert(check.Replayed, qt.DeepEquals, []int64{1})
-			c.Assert(txModeDriftNoteColumns(c, target), qt.Equals, 1)
-		})
+				c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
+				c.Assert(check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", check))
+				c.Assert(check.Replayed, qt.DeepEquals, []int64{1})
+				c.Assert(txModeDriftNoteColumns(c, target), qt.Equals, 1)
+			})
+		}
 		t.Run(engine.name+"/migrations drift", func(t *testing.T) {
 			c := qt.New(t)
 			dir, target, shadow := txModeDriftHistory(c, engine)
 
-			result, check := txModeDriftReport(c, "--db-url", target, "--migrations-dir", dir,
-				"--tx-mode", "none", "--shadow-db", shadow)
+			result, check := txModeDriftReport(c, "--db-url", target, "--migrations-dir", dir, "--shadow-db", shadow)
 
 			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
 			c.Assert(check.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%+v", check))
@@ -117,21 +139,21 @@ func TestMySQLDriftCheckTxModeE2E_HappyPath(t *testing.T) {
 	}
 }
 
-// The replay's mode is the one the caller states, not one the replay picks: a
-// report without --tx-mode replays in tx-mode file, where the view is refused.
+// A column added by hand is drift: the replay of the view runs, the report
+// names the column, and migration 2 does not run.
 func TestMySQLDriftCheckTxModeE2E_FailurePath(t *testing.T) {
 	for _, engine := range mysqlViewDriftEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir, target, shadow := txModeDriftHistory(c, engine)
+			dir, target, shadow := txModeDriftHistory(c, engine, "ALTER TABLE items ADD COLUMN extra int")
 
-			result, check := txModeDriftReport(c, "--db-url", target, "--migrations-dir", dir,
-				"--shadow-db", shadow)
+			result, check := txModeDriftUp(c, "--db-url", target, "--migrations-dir", dir,
+				"--tx-mode", "none", "--check-drift", "--shadow-db", shadow)
 
-			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
-			c.Assert(check.Outcome, qt.Equals, migrator.DriftUnable)
-			c.Assert(check.Stage, qt.Equals, "replay")
-			c.Assert(check.Message, qt.Contains, "migration 1 cannot run tx-mode file statement 2")
+			c.Assert(result.ExitCode, qt.Equals, 1, qt.Commentf("stderr:\n%s\nstdout:\n%s", result.Stderr, result.Stdout))
+			c.Assert(check.Outcome, qt.Equals, migrator.DriftDrifted, qt.Commentf("%+v", check))
+			c.Assert(check.Replayed, qt.DeepEquals, []int64{1})
+			c.Assert(txModeDriftNoteColumns(c, target), qt.Equals, 0)
 		})
 	}
 }

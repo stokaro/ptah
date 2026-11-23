@@ -14,9 +14,9 @@ import (
 )
 
 // --shadow-db rehearses a rollback on the history the target applied, and
-// replays that history in --tx-mode, the mode `migrations up --tx-mode`
-// applied it in. SQLite refuses VACUUM inside a transaction, so migration 1
-// applies under none and its replay fails in a transaction.
+// replays each applied file as it ran, with no mode stated. SQLite refuses
+// VACUUM inside a transaction, so migration 1 applies under none, and its
+// replay runs without a transaction.
 
 // vacuumRollbackTarget applies a history whose migration 1 holds a VACUUM to a
 // new SQLite target under none, and returns the directory, the target's URL
@@ -58,24 +58,26 @@ func rollBackVacuumTarget(c *qt.C, dir, dbURL string, args ...string) (string, e
 	return captureStdIO(c, "", cmd.Execute)
 }
 
-// The flag wins over the project's migration.tx_mode, and the project's value
-// is the default without it.
-func TestMigrateDownShadowDB_HappyPathReplaysInTheTxMode(t *testing.T) {
+// A project's migration.tx_mode, which `migrations up` reads, changes
+// nothing, and neither does PTAH_TX_MODE.
+func TestMigrateDownShadowDB_HappyPathReplaysEachFileAsItRan(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		project string
-		args    []string
+		env     string
 	}{
-		{name: "the flag", project: "migration:\n  tx_mode: file\n", args: []string{"--tx-mode", "none"}},
-		{name: "the project's migration.tx_mode", project: "migration:\n  tx_mode: none\n"},
+		{name: "no mode", project: "migration: {}\n"},
+		{name: "the project's migration.tx_mode", project: "migration:\n  tx_mode: file\n"},
+		{name: "PTAH_TX_MODE", project: "migration: {}\n", env: "all"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			c.Setenv("PTAH_TX_MODE", test.env)
 			dir, dbURL, mig := vacuumRollbackTarget(c)
 			config := filepath.Join(c.TempDir(), "ptah.yaml")
 			c.Assert(os.WriteFile(config, []byte(test.project), 0o600), qt.IsNil)
 
-			out, err := rollBackVacuumTarget(c, dir, dbURL, append([]string{"--config", config}, test.args...)...)
+			out, err := rollBackVacuumTarget(c, dir, dbURL, "--config", config)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			c.Assert(out, qt.Contains, "Rollback plan verified on shadow database")
@@ -86,36 +88,16 @@ func TestMigrateDownShadowDB_HappyPathReplaysInTheTxMode(t *testing.T) {
 	}
 }
 
-// Without --tx-mode the rehearsal replays the history as `migrations up`
-// applies by default, a file to a transaction, and the VACUUM is refused
-// before the target is touched. A value that names no mode is refused before
+// The rehearsal takes no transaction mode, so --tx-mode is refused before
 // the rollback starts.
-func TestMigrateDownShadowDB_FailurePathReplaysInTheTxMode(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		args    []string
-		wantErr string
-	}{
-		{
-			name:    "no mode",
-			wantErr: `(?s)rollback verification failed: replay migrations: 000001_items\.up\.sql cannot run inside a transaction: line 2 VACUUM is refused inside a transaction block.*`,
-		},
-		{
-			name:    "a mode that does not exist",
-			args:    []string{"--tx-mode", "each"},
-			wantErr: `invalid tx-mode "each": expected file, all, or none`,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir, dbURL, mig := vacuumRollbackTarget(c)
+func TestMigrateDownShadowDB_FailurePathTakesNoTxMode(t *testing.T) {
+	c := qt.New(t)
+	dir, dbURL, mig := vacuumRollbackTarget(c)
 
-			_, err := rollBackVacuumTarget(c, dir, dbURL, test.args...)
+	_, err := rollBackVacuumTarget(c, dir, dbURL, "--tx-mode", "none")
 
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			status, err := mig.GetMigrationStatus(c.Context())
-			c.Assert(err, qt.IsNil)
-			c.Assert(status.CurrentVersion, qt.Equals, int64(2))
-		})
-	}
+	c.Assert(err, qt.ErrorMatches, `unknown flag: --tx-mode`)
+	status, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(2))
 }

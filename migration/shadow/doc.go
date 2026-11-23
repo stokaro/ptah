@@ -34,6 +34,17 @@
 //     and derives the statements that take the live database back to it, without
 //     reading a down file at all.
 //
+// # How a history replays
+//
+// The revision table does not record the transaction mode a migration ran in,
+// so each replay of a history decides it for every file, by
+// [ptah.run/migration/migrator.Migrator.WithAppliedHistoryReplay], and takes no
+// mode from the caller. A file whose directive names a mode replays in it, a
+// file that a run in tx-mode file refuses before it starts replays without a
+// transaction, and every other file replays in a transaction of its own. The
+// candidates [VerifyMigration] applies have run nowhere, so they run as
+// `migrations up` runs a pending file.
+//
 // # Failures are structured
 //
 // A [VerifyMigration] or [VerifyBaseline] failure carries a

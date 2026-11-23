@@ -1830,9 +1830,7 @@ trigger, and is destructive.
   transaction. `migrations generate` writes such a file with
   `-- +ptah no_transaction` and `ptah-compat migrate diff` with
   `-- atlas:txmode none`, so it applies with the default `--tx-mode`. A file
-  written by hand needs one of them, or `--tx-mode none`. A drift check
-  replays such a history in the mode it is given: `migrations up --check-drift`
-  in the run's `--tx-mode`, and `migrations drift` in its own `--tx-mode`.
+  written by hand needs one of them, or `--tx-mode none`.
 - When MySQL refuses the new body of a trigger it replaces by name, the old
   trigger is already gone, the migration is recorded dirty, and the lock ends
   with the session. `migrations up --allow-dirty` takes the lock again before

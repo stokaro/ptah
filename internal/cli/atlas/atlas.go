@@ -810,10 +810,8 @@ func atlasMigrateDownVerb() atlasVerb {
 		// particular would be read and then ignored, since a forwarded run
 		// takes the default lock. --limit is the native count the amount
 		// argument forwards to: typed beside it, one of the two would be
-		// dropped, and the --format path refuses it as unknown. --tx-mode is
-		// the native statement of the mode the applied history ran in; this
-		// surface takes no new flag, and reads it from PTAH_TX_MODE.
-		nativeOnlyFlags:     []string{"confirm", "dir-format", "migration-lock-name", atlasMigrateDownLimitFlag, "tx-mode"},
+		// dropped, and the --format path refuses it as unknown.
+		nativeOnlyFlags:     []string{"confirm", "dir-format", "migration-lock-name", atlasMigrateDownLimitFlag},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),

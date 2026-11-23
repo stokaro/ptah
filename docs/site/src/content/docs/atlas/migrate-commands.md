@@ -399,17 +399,6 @@ The dev database must select a different live database or catalog from
 the actual dialects and selected database/catalog names before resetting the
 dev database. Equal live names fail closed across different endpoints.
 
-The replay on the dev database runs each applied migration in the mode
-`PTAH_TX_MODE` names, then the env's `migration.tx_mode`, and `file` when
-neither is set. A file's `-- atlas:txmode` directive wins over the mode. State
-the `--tx-mode` that `migrate apply` applied the directory with, because the
-revision table does not record the mode: in `file`, a migration that holds a
-statement which cannot run inside a transaction is refused on the dev database
-and the target is left as it was. The native rollback `migrate down` forwards
-to reads both, and `migrate down --format` reads them in the same order.
-`ptah-compat migrate down` takes no `--tx-mode` flag, and a value that names no
-mode is refused before the directory is read.
-
 Native `ptah migrations` commands read the same directory when `--dir-format
 atlas` is passed; the native lifecycle is documented under
 [Versioned migrations](../../versioned/overview/). If parsing fails, force
