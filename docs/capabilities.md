@@ -973,7 +973,6 @@ nightly, from the workflow's Run button, or when somebody comments
 | `sqlserver` | 16.0 (SQL Server 2022) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2022-latest` | no | yes |
 | `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2019-latest` | no | yes |
 | `oracle` | 23 | certified | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | yes |
-| `oracle` | 21 | certified | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | yes |
 | `cockroachdb` | 26.4 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:v26.4.1` | no | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:latest-v26.3` | yes | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
@@ -986,6 +985,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `mysql` | 26.7 | best-effort | `MySQL84` | version-ladder | `mysql:26.7` | yes | no: upstream support ended on 2026-10-20 (endoflife.date/mysql) |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | no: upstream support ended on 2026-10-24 (endoflife.date/clickhouse) |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |
+| `oracle` | 21 | best-effort | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | no: an Oracle Innovation Release, not a long-term release, with no extended support (stokaro/ptah#6600) |
 <!-- END GENERATED VERSION MATRIX -->
 
 Which versions are supported is the vendors' answer, not Ptah's, and the
