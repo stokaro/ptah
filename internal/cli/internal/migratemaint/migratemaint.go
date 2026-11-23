@@ -118,8 +118,8 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 	// in dry-run mode the migrator inspects the revision table instead of
 	// creating it, and an absent table reads as nothing applied. Without it, a
 	// guard over a database with no history leaves an empty revision table
-	// behind, and a SELECT-only account is refused with the server's CREATE
-	// denial.
+	// behind, and refuses an account that cannot create one. A SELECT-only
+	// account gets through the guard over a database with no history only.
 	restore := dbcli.SuppressSchemaWrites(conn)
 	defer restore()
 

@@ -170,8 +170,10 @@ error: error applying seeds: refusing to seed target database because protected 
 
 The fence checks the tables of the connection's schema only. An entry
 qualified by another schema could never match one, so it is refused before
-any seed runs, and so is an entry of three parts. To fence a table of another
-schema, seed a connection to that schema:
+any seed runs, and so is an entry of three parts. A quoted schema is compared
+with the connection's exactly, so `"App2".accounts` beside a connection to
+`app2` names another schema. To fence a table of another schema, seed a
+connection to that schema:
 
 ```text
 error: error applying seeds: refusing to seed target database: the protected table entry "app2.extra" names a schema other than "public", and the fence checks the tables of "public" alone; name the table without a schema, or qualified by "public"

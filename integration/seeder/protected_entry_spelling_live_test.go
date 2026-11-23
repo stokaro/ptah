@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -105,19 +106,31 @@ func spellingSeeded(c *qt.C, target, schema string) int {
 // run no table fenced.
 func TestApplyProtectedEntrySpellingsLive_HappyPath(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema string
-		entry  string
+		name       string
+		statements []string
+		schema     string
+		entry      string
 	}{
 		{name: "the schema public, quoted", schema: "public", entry: `"public".absent`},
 		{name: "a schema whose name holds a dot", schema: "tenant.one", entry: `"tenant.one".extra`},
 		{name: "a schema whose name has capitals", schema: "App2", entry: `"App2".extra`},
+		{
+			// Bare, App2 is app2 on PostgreSQL, which holds no extra; the table
+			// of its case twin "App2" is not the one the entry names.
+			name:       "a bare schema in another case",
+			statements: []string{"CREATE SCHEMA app2", `CREATE TABLE "App2".extra (id integer)`},
+			schema:     "app2",
+			entry:      "App2.extra",
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := newSpellingTarget(c)
+			for _, statement := range test.statements {
+				spellingExec(c, target.url, statement)
+			}
 			connection := target.searchPath(c, test.schema)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), connection)
 			c.Assert(err, qt.IsNil)
@@ -150,6 +163,54 @@ func TestApplyProtectedEntrySpellingsLive_FailurePath(t *testing.T) {
 				regexp.QuoteMeta(entry)+`; pass --allow-prod to override`)
 			c.Assert(result, qt.IsNil)
 			c.Assert(spellingSeeded(c, target.url, "public"), qt.Equals, 0)
+		})
+	}
+}
+
+// TestApplyProtectedEntryCaseTwinsLive_FailurePath refuses an entry whose
+// quoted schema differs from the connection's only in case. PostgreSQL reads a
+// quoted name exactly, so each entry names the case twin of the connection's
+// schema, which holds the table. Compared case-insensitively, the entry read
+// as the connection's own schema, the fence found no such table there, and the
+// run seeded.
+func TestApplyProtectedEntryCaseTwinsLive_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		statements []string
+		schema     string
+		entry      string
+	}{
+		{
+			name:       "a capitalized twin of the connection's schema",
+			statements: []string{"CREATE SCHEMA app2", `CREATE TABLE "App2".extra (id integer)`},
+			schema:     "app2",
+			entry:      `"App2".extra`,
+		},
+		{
+			name:       "a lower-case twin of the connection's schema",
+			statements: []string{`CREATE SCHEMA "Tw"`, "CREATE SCHEMA tw", "CREATE TABLE tw.extra (id integer)"},
+			schema:     "Tw",
+			entry:      `"tw".extra`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := newSpellingTarget(c)
+			for _, statement := range test.statements {
+				spellingExec(c, target.url, statement)
+			}
+			conn, err := dbschema.ConnectToDatabase(c.Context(), target.searchPath(c, test.schema))
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+
+			result, err := seeder.Apply(c.Context(), conn, spellingSeeds, seeder.Options{Env: "test", ProtectedTables: []string{test.entry}})
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`refusing to seed target database: the protected table entry `+
+				strconv.Quote(test.entry)+` names a schema other than "`+test.schema+`"`)+`.*`)
+			c.Assert(result, qt.IsNil)
+			c.Assert(spellingSeeded(c, target.url, test.schema), qt.Equals, 0)
 		})
 	}
 }

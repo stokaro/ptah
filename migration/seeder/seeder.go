@@ -576,8 +576,9 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 // means: `app2.extra` beside a connection to public would seed although
 // app2.extra exists. An entry is read as [tableref.Parse] reads it, the way
 // [protectedtable.New] does, so `"public".extra` and `"tenant.one".extra`
-// name the schema inside their quotes. An entry that matched a table by its
-// bare name, such as a table named with a dot, has already refused the run.
+// name the schema inside their quotes; see [sameSchema] for how the schema is
+// compared. An entry that matched a table by its bare name, such as a table
+// named with a dot, has already refused the run.
 func refuseOtherSchemaEntries(entries []string, schema string) error {
 	var other, unread []string
 	for _, entry := range entries {
@@ -589,7 +590,7 @@ func refuseOtherSchemaEntries(entries []string, schema string) error {
 		switch {
 		case !ok:
 			unread = append(unread, strconv.Quote(entry))
-		case ref.Qualified && !strings.EqualFold(strings.TrimSpace(ref.Schema), schema):
+		case ref.Qualified && !sameSchema(entry, ref.Schema, schema):
 			other = append(other, strconv.Quote(entry))
 		}
 	}
@@ -614,6 +615,24 @@ func refuseOtherSchemaEntries(entries []string, schema string) error {
 	}
 	return fmt.Errorf("refusing to seed target database: %s a schema other than %q, and the fence checks the "+
 		"tables of %q alone; name the table without a schema, or qualified by %q", subject, schema, schema, schema)
+}
+
+// sameSchema reports whether qualifier, the schema part of entry, names schema,
+// the connection's. A quoted part names its schema exactly, as SQL reads it:
+// on PostgreSQL `"App2".extra` names the schema App2, which a connection to
+// app2 does not read, and accepted case-insensitively it would seed although
+// App2.extra exists. A bare part is compared case-insensitively. That leaves
+// the bare spelling of a case twin accepted: `Tw.extra` beside a connection to
+// "Tw" names tw on PostgreSQL, which folds an unquoted name to lower case, and
+// telling the two apart needs the fold of the target's engine, which the
+// fence does not know.
+func sameSchema(entry, qualifier, schema string) bool {
+	qualifier = strings.TrimSpace(qualifier)
+	if qualifier == schema {
+		return true
+	}
+	quoted := strings.IndexAny(entry, "\"`[") == 0
+	return !quoted && strings.EqualFold(qualifier, schema)
 }
 
 // existingTables lists the base tables of the connection's schema, with the
