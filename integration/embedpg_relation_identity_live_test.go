@@ -111,6 +111,29 @@ func TestEmbedPGResolveRelationLive(t *testing.T) {
 		c.Assert(resolved.Schema, qt.Equals, "relident_two")
 	})
 
+	t.Run("a schema whose name begins with a space is another schema", func(t *testing.T) {
+		// ` relident_one` is not `relident_one`, so the spelling resolves to
+		// the table of the schema it names, not to the one of the trimmed name.
+		c := qt.New(t)
+		relationFixture(c, ctx, db, " relident_one")
+
+		resolved, found, err := embedpg.ResolveRelation(ctx, db, " relident_one", "relident")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(found, qt.IsTrue)
+		c.Assert(resolved.Schema, qt.Equals, " relident_one")
+
+		// The statements a generation runs name that schema too: two rows in
+		// it, none in the schema of the trimmed name.
+		_, err = db.ExecContext(ctx, `INSERT INTO " relident_one".relident VALUES (1), (2)`)
+		c.Assert(err, qt.IsNil)
+		count, err := embedpg.CountRows(ctx, db, embedgen.Spec{Source: embedgen.Source{
+			Schema: " relident_one", Table: "relident", KeyFields: []string{"id"}, InputFields: []string{"id"},
+		}})
+		c.Assert(err, qt.IsNil)
+		c.Assert(count, qt.Equals, int64(2))
+	})
+
 	t.Run("two schemas holding one table name stay distinct", func(t *testing.T) {
 		c := qt.New(t)
 

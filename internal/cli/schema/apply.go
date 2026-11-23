@@ -105,6 +105,8 @@ type schemaApplyOptions struct {
 	// again, bound to another database; see
 	// [atlasschema.ApplyRuntimeOptions.DesiredFor].
 	desiredFor func(context.Context, string) (*schemamodel.Database, error)
+	// schemaList is schemas parsed, before the run connects.
+	schemaList []string
 }
 
 // schemaApplyLockSession runs one apply with the lock held. The callback is
@@ -527,12 +529,10 @@ func applySchema(
 	// Resolved as `schema compare` resolves it, so a project that names its
 	// schemas in ptah.yaml has the comparison it previews applied, rather than
 	// a read of every schema that drops the tables of the ones it left out.
-	opts.schemas = dbcli.EffectiveString(
-		cmd,
-		dbcli.SchemasFlagName,
-		opts.schemas,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
-	)
+	opts.schemaList, err = dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
+	if err != nil {
+		return "", err
+	}
 
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return "", dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
@@ -707,7 +707,7 @@ func runSchemaApplyOnLockedSession(
 		DesiredFor:          opts.desiredFor,
 		Exclude:             opts.exclude,
 		ExcludeSources:      opts.excludeSources,
-		Schemas:             dbcli.ParseSchemas(opts.schemas),
+		Schemas:             opts.schemaList,
 		Include:             opts.include,
 		Policy:              policy,
 		ProtectedTables:     opts.protectedTables,

@@ -102,9 +102,12 @@ func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff, created []string) []str
 
 	seen := make(map[string]struct{}, len(qualified))
 	schemas := make([]string, 0, len(qualified))
+	// A schema keeps its bytes: ` b` is a schema of its own, and trimming it
+	// would plan the creation of `b`, leaving the table's schema missing (Msg
+	// 2760). Whether `a ` is `a` is the server's call, and the guarded creation
+	// asks it through SCHEMA_ID.
 	record := func(schema string) {
-		schema = strings.TrimSpace(schema)
-		if schema == "" {
+		if strings.TrimSpace(schema) == "" {
 			return
 		}
 		if _, known := seen[schema]; known {

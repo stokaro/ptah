@@ -146,6 +146,14 @@ func TestLiveTable_FailurePath(t *testing.T) {
 		c.Assert(managedrows.LiveTable(liveSettings(), "reference", "settings", postgresNames), qt.IsNil)
 	})
 
+	t.Run("a declared schema with a space is another schema", func(t *testing.T) {
+		// ` reference` and `reference` are two schemas, so the declaration in
+		// the first does not read the rows of the second.
+		c := qt.New(t)
+		live := &catalog.Database{Tables: []catalog.Table{{Name: "settings", Schema: "reference"}}}
+		c.Assert(managedrows.LiveTable(live, " reference", "settings", postgresNames), qt.IsNil)
+	})
+
 	t.Run("no catalog at all", func(t *testing.T) {
 		c := qt.New(t)
 		c.Assert(managedrows.LiveTable(nil, "", "settings", postgresNames), qt.IsNil)

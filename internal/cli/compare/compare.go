@@ -149,12 +149,6 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		opts.dbURL,
 		projectCfg.StringValue(projectconfig.StringDatabaseURL),
 	)
-	schemasValue := dbcli.EffectiveString(
-		cmd,
-		dbcli.SchemasFlagName,
-		opts.schemas,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
-	)
 
 	if dbURL == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
@@ -176,7 +170,10 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	requested := dbcli.ParseSchemas(schemasValue)
+	requested, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
+	if err != nil {
+		return err
+	}
 	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, excludeFlag, opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return err

@@ -45,8 +45,10 @@ import (
 // SQL text and keep the names they were written with, and so does the table of
 // a sequence's OWNED BY, which the comparison reads as the server prints it.
 func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform string) (*schemamodel.Database, error) {
-	schema = strings.TrimSpace(schema)
-	if database == nil || schema == "" {
+	// schema is the name the session resolved, so it keeps its bytes: a
+	// session on `a ` places a name in `a `, not in `a`. Only a blank one
+	// places nothing.
+	if database == nil || strings.TrimSpace(schema) == "" {
 		return database, nil
 	}
 	objects, err := placedFeatureObjects(database.FeatureObjects, schema, targetPlatform)

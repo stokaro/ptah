@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -34,6 +35,7 @@ import (
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/ptahdirective"
+	"ptah.run/internal/schemaselection"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -517,7 +519,41 @@ func (p Policy) ValidateURL(rawURL string) error {
 	if noAtlasDriver(parsed.Scheme) {
 		return strictUnknownDriver(parsed.Scheme)
 	}
+	if err := validateStrictSearchPath(rawURL, parsed); err != nil {
+		return err
+	}
 	return p.ValidateDialect(parsed.Scheme)
+}
+
+// validateStrictSearchPath refuses a search_path that begins or ends with
+// white space or holds a double quote.
+//
+// The community binary reads the value as one schema name, byte for byte,
+// while Ptah reads the schema the server's own search_path grammar selects.
+// The two part where the value is not a bare name. Measured on v1.4.0 against
+// PostgreSQL 18, `search_path=%20a` selects ` a`, which the server reads as
+// `a`, and `"a"`, `" a"` and `a%20` select a schema of that literal name,
+// which none of them is, so the binary refuses them. Ptah's reading selects
+// `a` for the first and `a` or ` a` for the rest, a schema the binary does not
+// select. The refusal is stricter than the binary on the first spelling,
+// deliberately: a run in this mode must not select a schema the binary does
+// not.
+func validateStrictSearchPath(rawURL string, parsed *url.URL) error {
+	values, present := parsed.Query()["search_path"]
+	if !present {
+		return nil
+	}
+	dialect, err := atlasurl.DialectFromURL(rawURL)
+	if err != nil || !schemaselection.SelectsThroughSearchPath(dialect) {
+		return nil
+	}
+	for _, value := range values {
+		if value != strings.TrimSpace(value) || strings.Contains(value, `"`) {
+			return fmt.Errorf("Atlas Community Edition strict compatibility does not support a search_path "+
+				"that begins or ends with white space or holds a double quote: %q", value)
+		}
+	}
+	return nil
 }
 
 // noAtlasDriver reports whether name is an engine no Atlas edition has a

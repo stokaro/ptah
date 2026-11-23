@@ -10,7 +10,9 @@ package dbcli
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,13 +55,18 @@ func RegisterConnectTimeoutFlag(flags *pflag.FlagSet, target *string) {
 // that forwards to one of those verbs without --schemas reads the same.
 const ConnectionDefaultSchemas = "read the connection default schema, and on YDB every directory"
 
+// SchemasQuoting is the sentence each schema-list flag's help ends with: the
+// grammar [ParseSchemas] reads.
+const SchemasQuoting = `Double-quote a name to keep the spaces around it or a comma in it, as in '" a",b'.`
+
 // RegisterSchemasFlag registers a comma-separated schema allow-list flag for a
 // verb whose empty value leaves the read at the schema the connection landed
 // in.
 func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, SchemasFlagName, "",
 		"Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
-			"or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory.",
+			"or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory. "+
+			SchemasQuoting,
 	)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, ConnectionDefaultSchemas)
 }
@@ -144,7 +151,8 @@ func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
 		"the databases of a MySQL or MariaDB URL that names none, or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
-		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory.")
+		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory. "+
+		SchemasQuoting)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
 
@@ -161,7 +169,8 @@ func RegisterURLScopedDatabaseSchemasFlag(flags *pflag.FlagSet, target *string) 
 	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
 		"or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
-		"and a YDB URL across every directory.")
+		"and a YDB URL across every directory. "+
+		SchemasQuoting)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
 
@@ -252,28 +261,59 @@ func RegisterRevisionTableFormatFlag(flags *pflag.FlagSet, target *string) {
 	RefuseEmptyHistoryEnv(flags, RevisionTableFormatFlagName, OmittedRevisionFormat)
 }
 
-// ParseSchemas parses a comma-separated schema allow-list.
-func ParseSchemas(raw string) []string {
-	parts := strings.Split(raw, ",")
-	schemas := make([]string, 0, len(parts))
-	seen := make(map[string]struct{}, len(parts))
-	for _, part := range parts {
-		schema := strings.TrimSpace(part)
-		if schema == "" {
-			continue
-		}
-		if _, ok := seen[schema]; ok {
-			continue
-		}
-		seen[schema] = struct{}{}
-		schemas = append(schemas, schema)
+// ParseSchemas parses a schema allow-list: one line of comma-separated fields
+// in the grammar of encoding/csv, which the compatibility -s/--schema flag
+// reads too. A bare field is trimmed of white space and left out when blank,
+// so `a, b` names `a` and `b`. A double-quoted field keeps its bytes, and `""`
+// inside it is one quote, so `" a"` names the schema ` a`, which is not `a`.
+// A quoted field that names no schema, such as `""` or `" "`, is refused: the
+// quotes say a name was meant, and an empty selection reads the connection
+// default or the whole database. A bare quote, text after a closing quote and
+// a line break are refused too. A repeated name is left out, and the order is
+// the order of first appearance.
+func ParseSchemas(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
 	}
-	return schemas
+	if strings.ContainsAny(raw, "\r\n") {
+		return nil, fmt.Errorf("invalid schema list %q: a schema list is one line", raw)
+	}
+	reader := csv.NewReader(strings.NewReader(raw))
+	fields, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("invalid schema list %q: %w", raw, err)
+	}
+	schemas := make([]string, 0, len(fields))
+	for i, field := range fields {
+		// FieldPos names the byte a field begins at, the opening quote of a
+		// quoted one. An empty last field begins past the end.
+		_, column := reader.FieldPos(i)
+		if column <= len(raw) && raw[column-1] == '"' {
+			if strings.TrimSpace(field) == "" {
+				return nil, fmt.Errorf("invalid schema list %q: the quoted field %q names no schema", raw, field)
+			}
+		} else if field = strings.TrimSpace(field); field == "" {
+			continue
+		}
+		if !slices.Contains(schemas, field) {
+			schemas = append(schemas, field)
+		}
+	}
+	return schemas, nil
 }
 
-// JoinSchemas formats a project-config schema list as the CLI flag value.
+// JoinSchemas formats a schema list as the value [ParseSchemas] reads back as
+// the same list. A name that holds a comma, a quote or a line break, or that
+// begins or ends with white space, is written as a quoted field.
 func JoinSchemas(schemas []string) string {
-	return strings.Join(schemas, ",")
+	fields := make([]string, 0, len(schemas))
+	for _, schema := range schemas {
+		if strings.ContainsAny(schema, ",\"\r\n") || schema != strings.TrimSpace(schema) {
+			schema = `"` + strings.ReplaceAll(schema, `"`, `""`) + `"`
+		}
+		fields = append(fields, schema)
+	}
+	return strings.Join(fields, ",")
 }
 
 // ParseConnectTimeout parses the raw string value returned by the

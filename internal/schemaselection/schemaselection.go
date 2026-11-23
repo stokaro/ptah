@@ -88,7 +88,7 @@ func FromURL(rawURL string) Selection {
 		return Selection{}
 	}
 	dialect, err := atlasurl.DialectFromURL(rawURL)
-	if err != nil || schemasOf(dialect).Selection != descriptor.SchemaSelectionSearchPath {
+	if err != nil || !SelectsThroughSearchPath(dialect) {
 		return Selection{}
 	}
 	parsed, err := atlasurl.Parse(rawURL)
@@ -96,6 +96,12 @@ func FromURL(rawURL string) Selection {
 		return Selection{}
 	}
 	return fromQuery(parsed.Query())
+}
+
+// SelectsThroughSearchPath reports whether a URL of dialect selects its schema
+// with the search_path query parameter, which [FromURL] reads.
+func SelectsThroughSearchPath(dialect string) bool {
+	return schemasOf(dialect).Selection == descriptor.SchemaSelectionSearchPath
 }
 
 // FromParsedURL is [FromURL] for a URL a caller has already parsed and whose

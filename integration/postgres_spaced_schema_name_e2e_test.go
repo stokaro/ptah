@@ -3,13 +3,17 @@
 package integration_test
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/dbtarget"
 )
 
 // A PostgreSQL schema name may begin or end with a space, so `a` and ` a` are
@@ -238,4 +242,88 @@ func TestSpacedSchemaNameInspectE2E(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSpacedSchemaNameGrantE2E applies a desired schema granting USAGE on
+// ` a` to a database holding `a` and ` a`. The grant reaches ` a` and no
+// privilege reaches `a`. Trimmed, the plan wrote `GRANT USAGE ON SCHEMA "a"`,
+// a privilege on a schema the desired schema does not name.
+func TestSpacedSchemaNameGrantE2E(t *testing.T) {
+	c := qt.New(t)
+	role := fmt.Sprintf("ptah_spaced_grant_%d", time.Now().UnixNano())
+	admin := openReadScopeDatabase(c, dbtarget.URL(c, dbtarget.PostgreSQL))
+	_, err := admin.ExecContext(c.Context(), "CREATE ROLE "+role)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		// Cleanups run last first, so the database holding the grant, created
+		// below, is dropped before the role.
+		_, err := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(err, qt.IsNil)
+	})
+	database := newSpacedSchemaDatabase(c, "spaced_grant")
+	execPostgresFamilySQL(c, c.Context(), database, `CREATE SCHEMA " a"`)
+	schemaFile := writeSpacedSchemaFile(c, "schema.sql",
+		"CREATE SCHEMA a;\nCREATE TABLE a.t (id integer);\nCREATE SCHEMA \" a\";\nGRANT USAGE ON SCHEMA \" a\" TO "+role+";\n")
+
+	applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+		"schema", "apply", "--db-url", database, "--schema-file", schemaFile, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	var privileges string
+	err = openReadScopeDatabase(c, database).QueryRowContext(c.Context(),
+		"SELECT '[a]=' || has_schema_privilege($1, 'a', 'USAGE') || ' [ a]=' || has_schema_privilege($1, ' a', 'USAGE')",
+		role).Scan(&privileges)
+	c.Assert(err, qt.IsNil)
+	c.Assert(privileges, qt.Equals, "[a]=false [ a]=true")
+}
+
+// TestSpacedSchemaNamePlacementE2E applies a desired schema that writes a table
+// without a schema, over a URL that pins no search_path, to a database whose
+// own search_path is `"a "`. The session resolves to `a `, so the table is
+// created there, and `a` stays empty. Trimmed, the plan wrote
+// `CREATE TABLE "a"."placed"`.
+func TestSpacedSchemaNamePlacementE2E(t *testing.T) {
+	c := qt.New(t)
+	database := newEmptyReadScopeDatabase(c, "spaced_placement")
+	execPostgresFamilySQL(c, c.Context(), database, "CREATE SCHEMA a")
+	execPostgresFamilySQL(c, c.Context(), database, `CREATE SCHEMA "a "`)
+	var name string
+	c.Assert(openReadScopeDatabase(c, database).QueryRowContext(c.Context(), "SELECT current_database()").Scan(&name), qt.IsNil)
+	// Identifier syntax: a string literal would be one list element, quotes
+	// included.
+	execPostgresFamilySQL(c, c.Context(), database, fmt.Sprintf(`ALTER DATABASE %q SET search_path = "a "`, name))
+	schemaFile := writeSpacedSchemaFile(c, "schema.sql", "CREATE TABLE placed (id integer);\n")
+
+	applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+		"schema", "apply", "--db-url", database, "--schema-file", schemaFile, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	var placed string
+	err := openReadScopeDatabase(c, database).QueryRowContext(c.Context(),
+		"SELECT string_agg('[' || table_schema || '].' || table_name, ', ') FROM information_schema.tables WHERE table_name = 'placed'",
+	).Scan(&placed)
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed, qt.Equals, "[a ].placed")
+}
+
+// TestSpacedSchemaNameRemovalE2E applies a desired schema that declares `a.t`
+// and the schema ` a` to a database holding a row in `a.t` and the table
+// ` a`.t. The removal drops ` a`.t, and `a.t` keeps its row. Trimmed, the plan
+// wrote `DROP TABLE "a"."t"` and destroyed the declared table.
+func TestSpacedSchemaNameRemovalE2E(t *testing.T) {
+	c := qt.New(t)
+	database := newSpacedSchemaDatabase(c, "spaced_removal")
+	execPostgresFamilySQL(c, c.Context(), database, "INSERT INTO a.t VALUES (1)")
+	execPostgresFamilySQL(c, c.Context(), database, `CREATE SCHEMA " a"`)
+	execPostgresFamilySQL(c, c.Context(), database, `CREATE TABLE " a".t (id integer)`)
+	schemaFile := writeSpacedSchemaFile(c, "schema.sql", "CREATE SCHEMA a;\nCREATE TABLE a.t (id integer);\nCREATE SCHEMA \" a\";\n")
+
+	applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+		"schema", "apply", "--db-url", database, "--schema-file", schemaFile, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(spacedSchemaTables(c, database), qt.Equals, "[a].t(id YES)")
+	var rows int
+	c.Assert(openReadScopeDatabase(c, database).QueryRowContext(c.Context(), "SELECT count(*) FROM a.t").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 1)
 }

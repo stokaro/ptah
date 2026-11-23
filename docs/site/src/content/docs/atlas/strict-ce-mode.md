@@ -90,6 +90,19 @@ surface verifies the server against the named bundle, as
 [MySQL and MariaDB](../../databases/mysql/#tls-with-a-private-certificate-authority)
 describes.
 
+A PostgreSQL-family URL whose `search_path` begins or ends with white space or
+holds a double quote is refused with `Atlas Community Edition strict
+compatibility does not support a search_path that begins or ends with white
+space or holds a double quote`. The pinned binary reads the value as one schema
+name, byte for byte, and Ptah reads the schema the server's own `search_path`
+grammar selects, so the two select different schemas. Measured against
+PostgreSQL 18, the pinned binary reads `search_path=%20a` as the schema ` a`,
+where the server's grammar selects `a`, and refuses `%22a%22`, `%22%20a%22` and
+`a%20` because no schema of that literal name exists. The refusal of the first
+spelling is stricter than the pinned binary, deliberately: a strict run must
+not select a schema that binary does not. The default surface reads each
+spelling the server's way.
+
 ## Content strict mode refuses
 
 Strict mode rejects content Atlas CE cannot represent safely instead of

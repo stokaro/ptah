@@ -135,7 +135,7 @@ nothing else. It also reads only what Ptah models, so a clean report means
 		"Database URL to analyze (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.schemas, securitySchemaFlag, "",
 		"Comma-separated schemas to analyze: PostgreSQL-family schemas, or YDB directories relative to the "+
-			"database root. Empty uses the connection default, and on YDB every directory.")
+			"database root. Empty uses the connection default, and on YDB every directory. "+dbcli.SchemasQuoting)
 	dbcli.RefuseEmptySchemasEnv(flags, securitySchemaFlag, dbcli.ConnectionDefaultSchemas)
 	flags.StringVar(&opts.format, securityFormatFlag, "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, securityFailOnFlag, securityFailOnError,
@@ -173,13 +173,17 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --%s: %w", securityDBURLFlag, err))
 	}
 	defer func() { _ = conn.Close() }()
-	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas))
+	live, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}

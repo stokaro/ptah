@@ -226,8 +226,17 @@ func TableComment(identity string) string {
 // and no comment of Ptah's on it, which is the refusal that needs the catalog
 // anyway.
 func sameRelation(schemaA, tableA, schemaB, tableB string) bool {
-	return strings.TrimSpace(schemaA) == strings.TrimSpace(schemaB) &&
+	return authoredSchema(schemaA) == authoredSchema(schemaB) &&
 		strings.TrimSpace(tableA) == strings.TrimSpace(tableB)
+}
+
+// authoredSchema is schema as the relation's SQL names it: its bytes, since
+// ` a` and `a` are two schemas, or none when it is blank.
+func authoredSchema(schema string) string {
+	if strings.TrimSpace(schema) == "" {
+		return ""
+	}
+	return schema
 }
 
 // qualifiedName renders an authored relation name for a diagnostic.

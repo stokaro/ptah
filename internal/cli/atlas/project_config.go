@@ -1624,8 +1624,9 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 // schema and are dropped without a word: the first describes nothing, the
 // second describes `one` alone. The default surface trims a schema name in
 // the flag's grammar, so Ptah describes `one`, and `one` and `two`; the strict
-// policy keeps the space and describes what the pinned binary describes. And an element that names no schema, `""` or `"\"\""`, is refused as
-// the flag refuses it; see [registerAtlasSchemaFlag]. Those refusals are Ptah's
+// policy keeps the space and describes what the pinned binary describes. And
+// an element that names no schema, `""` or `"\"\""`, is refused as the flag
+// refuses it; see [registerAtlasSchemaFlag]. Those refusals are Ptah's
 // own, so they name the file and the env the element came from rather than a
 // flag nobody typed. The refusal of `a"b` names the flag, in the pinned
 // binary's words.

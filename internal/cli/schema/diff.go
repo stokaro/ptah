@@ -179,6 +179,10 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
 		Runtime:             runtime,
@@ -189,7 +193,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		ServerVersion:       opts.serverVersion,
 		Exclude:             exclude,
 		ExcludeSources:      excludeSources,
-		Schemas:             dbcli.ParseSchemas(opts.schemas),
+		Schemas:             schemas,
 		Include:             opts.include,
 		Policy:              policy,
 		ConnectTimeout:      connectTimeout,

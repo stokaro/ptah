@@ -195,14 +195,6 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
 	)
-	// Resolved as `schema apply` resolves it; the plan file records the
-	// result.
-	opts.schemas = dbcli.EffectiveString(
-		cmd,
-		dbcli.SchemasFlagName,
-		opts.schemas,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
-	)
 	policy, err := nativeDiffPolicy(cmd, projectCfg)
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
@@ -236,6 +228,12 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 			opts.connectTimeout,
 			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
 		))
+	if err != nil {
+		return atlasschema.PlanEvidence{}, err
+	}
+	// Resolved as `schema apply` resolves it; the plan file records the
+	// result.
+	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
@@ -304,7 +302,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		Desired:          desired,
 		Exclude:          opts.exclude,
 		ExcludeSources:   opts.excludeSources,
-		Schemas:          dbcli.ParseSchemas(opts.schemas),
+		Schemas:          schemas,
 		Policy:           policy,
 		ProtectedTables:  opts.protectedTables,
 		Diagnostics:      cmd.ErrOrStderr(),

@@ -33,12 +33,13 @@ const (
 // A value that names no schema is refused too: the empty value, as in
 // `--schema=`, and a value whose every field is empty once trimmed, such as
 // `""`, `,` or `" "`. Such a value adds no name, so the selection would be
-// empty, and an empty selection is the whole realm: `schema apply` would plan a DROP for every schema the desired schema
-// leaves out. `--schema "$SCHEMA"` with an empty variable, or the quoted
-// `"\"${schema}\""`, is the usual source of such a value, so refusing it is
-// deliberate and stricter than the community binary. That binary reads the
-// empty value as no selection and plans those DROPs too, and reads `""` as a
-// schema with an empty name, which selects nothing.
+// empty, and an empty selection is the whole realm: `schema apply` would plan
+// a DROP for every schema the desired schema leaves out. `--schema "$SCHEMA"`
+// with an empty variable, or the quoted `"\"${schema}\""`, is the usual
+// source of such a value, so refusing it is deliberate and stricter than the
+// community binary. That binary reads the empty value as no selection and
+// plans those DROPs too, and reads `""` as a schema with an empty name, which
+// selects nothing.
 //
 // The default surface trims the space around each name here, so it reads
 // `--schema "one, two"` as `one` and `two`. That is deliberate. Below this
@@ -204,7 +205,8 @@ func atlasCheckpointSchemaFlag() atlasargs.Flag {
 }
 
 // forwardAtlasSchemaValue reads one -s/--schema value and returns its names in
-// the comma-separated form the native flag reads.
+// the comma-separated form the native flag reads, a name holding a quote
+// written as a quoted field; see [dbcli.JoinSchemas].
 func forwardAtlasSchemaValue(value string) (string, error) {
 	names, err := readAtlasSchemaList([]string{value}, atlascompatpolicy.Full())
 	if err != nil {
@@ -215,5 +217,5 @@ func forwardAtlasSchemaValue(value string) (string, error) {
 			return "", commaSchemaNameError(name)
 		}
 	}
-	return strings.Join(names, ","), nil
+	return dbcli.JoinSchemas(names), nil
 }

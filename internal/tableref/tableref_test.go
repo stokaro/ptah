@@ -25,6 +25,7 @@ func TestCanonical_PreservesStructuralIdentity(t *testing.T) {
 		{name: "trailing space in schema", schema: "a ", table: "t", want: `"a ".t`},
 		{name: "leading space in table", schema: "a", table: " t", want: `a." t"`},
 		{name: "unqualified table with spaces", table: " t ", want: `" t "`},
+		{name: "a blank schema is none", schema: " ", table: "t", want: `t`},
 	}
 
 	for _, tt := range tests {

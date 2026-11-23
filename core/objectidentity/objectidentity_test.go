@@ -196,6 +196,18 @@ func TestIdentity_EqualityHoldsWhereItShould(t *testing.T) {
 			right: builder.Function("public.f", "varchar(20)"),
 		},
 		{
+			// The space around the dot of a qualified name is not part of
+			// either component, for a table and for a domain alike.
+			name:  "a table spelled with a space before the dot",
+			left:  builder.Table("public .users"),
+			right: builder.Table("public.users"),
+		},
+		{
+			name:  "a domain spelled with a space before the dot",
+			left:  builder.Domain("public .email"),
+			right: builder.Domain("public.email"),
+		},
+		{
 			// A primary key carries no name of its own, so the key a
 			// declaration describes and the one a catalog reports under any
 			// name are one key: the table decides.

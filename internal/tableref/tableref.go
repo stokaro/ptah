@@ -15,13 +15,18 @@ type Ref struct {
 }
 
 // Canonical formats schema and name so that [Parse] reads back the same
-// names. A name is written as it is unless a bare one would read back as
-// something else: a name that holds a dot, a quote, a backtick or a bracket, or
+// names. A part is written as it is unless a bare one would read back as
+// something else: a part that holds a dot, a quote, a backtick or a bracket, or
 // that begins or ends with white space, is double-quoted, each double quote
-// inside doubled. The bytes of each name are kept, so `" a".t` and `a.t` name
-// tables of two schemas. An empty schema writes the name alone.
+// inside doubled.
+//
+// Both parts keep their bytes, so `" a".t` and `a.t` name tables of two
+// schemas, and a blank schema writes the name alone. `Canonical("", part)`
+// quotes one part, and callers quote a schema with it, so the name is not
+// trimmed either: a caller that holds text an author typed trims it where it
+// reads it.
 func Canonical(schema, name string) string {
-	if schema == "" {
+	if strings.TrimSpace(schema) == "" {
 		return canonicalPart(name)
 	}
 	return canonicalPart(schema) + "." + canonicalPart(name)

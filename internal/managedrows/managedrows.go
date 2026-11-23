@@ -109,9 +109,11 @@ func LiveTable(current *catalog.Database, schema, table string, names identifier
 		}
 	}
 
-	if declared := strings.TrimSpace(schema); declared != "" {
+	// The declared schema keeps its bytes, as the introspected one does: a
+	// declaration in ` a` is not one in `a`.
+	if strings.TrimSpace(schema) != "" {
 		for _, candidate := range candidates {
-			if inDeclaredSchema(*candidate, declared, names) {
+			if inDeclaredSchema(*candidate, schema, names) {
 				return candidate
 			}
 		}

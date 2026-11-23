@@ -20,6 +20,7 @@ func TestGrant_TargetKey(t *testing.T) {
 	}{
 		{name: "a table", grant: schemamodel.Grant{OnTable: "users"}, want: "TABLE users"},
 		{name: "a schema", grant: schemamodel.Grant{OnSchema: "app"}, want: "SCHEMA app"},
+		{name: "a schema whose name begins with a space", grant: schemamodel.Grant{OnSchema: " app"}, want: "SCHEMA  app"},
 		{name: "a sequence", grant: schemamodel.Grant{OnSequence: "app.order_seq"}, want: "SEQUENCE app.order_seq"},
 		{
 			name:  "a function, arguments folded for case and spacing",

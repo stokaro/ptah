@@ -95,6 +95,10 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemas, err := dbcli.ParseSchemas(opts.schemasRaw)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
@@ -104,7 +108,7 @@ func run(cmd *cobra.Command, opts options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, dbcli.ParseSchemas(opts.schemasRaw))
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}

@@ -55,6 +55,24 @@ func TestParseSource_ADeclaredSchemaReachesTheObjectName(t *testing.T) {
 			why:        "",
 		},
 		{
+			name:       "view, a name with a space after it",
+			annotation: `//ptah:schema:view name="v_users " schema="app" body="SELECT 1"`,
+			want:       "app.v_users",
+			why:        "the attribute is trimmed as a table's is, so it names the live app.v_users",
+		},
+		{
+			name:       "view, a schema with a space after it",
+			annotation: `//ptah:schema:view name="v" schema="app " body="SELECT 1"`,
+			want:       "app.v",
+			why:        "Canonical keeps the bytes of a schema, so the tag is trimmed where it is read",
+		},
+		{
+			name:       "function, a name with a space before it",
+			annotation: `//ptah:schema:function name=" fn" schema="app" body="BEGIN END;"`,
+			want:       "app.fn",
+			why:        "as above",
+		},
+		{
 			// The controls. Without them every row above would pass an
 			// implementation that qualified unconditionally, and an optional
 			// attribute that re-spells the declarations not using it is worse

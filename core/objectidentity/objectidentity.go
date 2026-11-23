@@ -405,9 +405,12 @@ func (b Builder) ColumnParts(schema, table, column string) ID {
 // The schema is part of it because stokaro/ptah#1302 is what happens when it is
 // not: a domain compared without schema identity read as absent, and the
 // comparator planned a destructive drop for an object that existed.
+//
+// The schema split off a qualified name is trimmed, as [Builder.Table] trims
+// it, so `public .email` is `public.email`.
 func (b Builder) Domain(qualified string) ID {
 	schema, name := splitQualified(qualified)
-	return b.SchemaScopedParts(KindDomain, schema, name)
+	return b.SchemaScopedParts(KindDomain, strings.TrimSpace(schema), name)
 }
 
 // SchemaScopedParts builds the identity of an object whose name is unique

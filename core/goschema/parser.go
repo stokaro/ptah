@@ -1585,12 +1585,18 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment)
 // otherwise quote a name containing a dot or a quote character, and re-spelling
 // names that already work is not what adding an optional attribute may do
 // (stokaro/ptah#1270).
+//
+// With a schema, both attributes are trimmed, as [annotation.QualifiedName]
+// trims a table's, since a tag is text an author typed. Canonical keeps the
+// bytes it is given, so an untrimmed `name="v_users "` would name a view other
+// than the live `app.v_users`, an untrimmed `schema="app "` a schema other than
+// `app`, and the plan would drop the one and create the other.
 func qualifiedObjectName(kv map[string]string) string {
 	schema := strings.TrimSpace(kv["schema"])
 	if schema == "" {
 		return kv["name"]
 	}
-	return tableref.Canonical(schema, kv["name"])
+	return tableref.Canonical(schema, strings.TrimSpace(kv["name"]))
 }
 
 func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structName string) error {
@@ -2155,7 +2161,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 		Role:       kv["role"],
 		Privileges: privileges,
 		OnTable:    kv["on_table"],
-		OnSchema:   kv["on_schema"],
+		OnSchema:   strings.TrimSpace(kv["on_schema"]),
 		OnSequence: kv["on_sequence"],
 		OnDatabase: kv["on_database"] == "true",
 		WithOption: kv["with_option"] == "true" || kv["grant_option"] == "true",
@@ -2214,7 +2220,7 @@ func (s *schemaParseState) parseRevokeComment(comment *ast.Comment, structName s
 		Role:       kv["role"],
 		Privileges: privileges,
 		OnTable:    kv["on_table"],
-		OnSchema:   kv["on_schema"],
+		OnSchema:   strings.TrimSpace(kv["on_schema"]),
 		OnSequence: kv["on_sequence"],
 		OnDatabase: kv["on_database"] == "true",
 		Comment:    kv["comment"],

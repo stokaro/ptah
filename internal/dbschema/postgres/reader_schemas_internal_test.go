@@ -35,6 +35,8 @@ func pgNamespaceFixture() map[string][][]driver.Value {
 	return map[string][][]driver.Value{
 		"public": {{"public", "standard public schema"}},
 		"extra":  {{"extra", ""}},
+		" a":     {{" a", ""}},
+		"a":      {{"a", ""}},
 	}
 }
 
@@ -98,6 +100,15 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			connected:   "public",
 			scope:       []string{"extra", "public"},
 			want:        []catalog.Schema{{Name: "extra"}, {Name: "public", Comment: "standard public schema"}},
+			wantQueries: 2,
+		},
+		{
+			// A name keeps its bytes: ` a` and `a` are two schemas, and a
+			// repeat or a blank name is left out.
+			name:        "scoped keeps the bytes of each name",
+			connected:   "public",
+			scope:       []string{" a", "a", " a", "  "},
+			want:        []catalog.Schema{{Name: " a"}, {Name: "a"}},
 			wantQueries: 2,
 		},
 		{

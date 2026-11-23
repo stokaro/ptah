@@ -122,7 +122,7 @@ select nothing are refused.`,
 	flags.String(dbcli.SchemasFlagName, "",
 		"Comma-separated schemas to introspect where the engine has them, or YDB directories relative to the database root. "+
 			"Empty uses the project's schemas, else lets the URL decide: a URL pinning search_path is read at that schema, "+
-			"one pinning none across every schema, and a YDB URL across every directory.",
+			"one pinning none across every schema, and a YDB URL across every directory. "+dbcli.SchemasQuoting,
 	)
 	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName, "use the project's schemas, else let the URL decide")
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
@@ -649,12 +649,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	schemasValue = dbcli.EffectiveString(
-		cmd,
-		dbcli.SchemasFlagName,
-		schemasValue,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
-	)
 	connectTimeoutValue = dbcli.EffectiveString(
 		cmd,
 		dbcli.ConnectTimeoutFlagName,
@@ -733,6 +727,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	schemas, err := dbcli.EffectiveSchemas(cmd, schemasValue, projectCfg.SchemasValue())
+	if err != nil {
+		return err
+	}
 
 	priorMigrations, dirFormat, err := captureGeneratePriorMigrations(
 		cmd.Context(),
@@ -762,7 +760,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		DatabaseURL:       targetURL,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
-		Schemas:           dbcli.ParseSchemas(schemasValue),
+		Schemas:           schemas,
 		RevisionTables:    revisionTables,
 		CheckDestructive:  checkDestructive,
 		AllowDestructive:  allowDestructive,

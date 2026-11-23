@@ -1567,7 +1567,7 @@ func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
 		Role:       string(spec.Role),
 		Privileges: privileges,
 		OnTable:    string(spec.OnTable),
-		OnSchema:   string(spec.OnSchema),
+		OnSchema:   strings.TrimSpace(string(spec.OnSchema)),
 		OnSequence: string(spec.OnSequence),
 		OnDatabase: spec.OnDatabase,
 		Comment:    string(spec.Comment),

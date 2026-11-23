@@ -45,6 +45,12 @@ func TestPlanner_CreatesADeclaredSchema(t *testing.T) {
 			want: `CREATE SCHEMA IF NOT EXISTS "app"`,
 		},
 		{
+			// A leading space makes another schema, so the name keeps it.
+			name: "a name with a leading space", dialect: "postgres",
+			diff: difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: " a"}}},
+			want: `CREATE SCHEMA IF NOT EXISTS " a"`,
+		},
+		{
 			name: "with its comment", dialect: "postgres",
 			diff: difftypes.SchemaDiff{
 				SchemasAdded:    []schemamodel.Schema{{Name: "app", Comment: "application"}},

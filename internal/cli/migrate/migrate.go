@@ -168,12 +168,6 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		opts.dbURL,
 		projectCfg.StringValue(projectconfig.StringDatabaseURL),
 	)
-	schemasValue := dbcli.EffectiveString(
-		cmd,
-		dbcli.SchemasFlagName,
-		opts.schemas,
-		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
-	)
 
 	if dbURL == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
@@ -203,6 +197,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
+	if err != nil {
+		return err
+	}
+	requested, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
 	if err != nil {
 		return err
 	}
@@ -255,7 +253,6 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if opts.attach && loadResult.OCI == nil {
 		return fmt.Errorf("--attach requires exactly one OCI --schema-file source")
 	}
-	requested := dbcli.ParseSchemas(schemasValue)
 	states, err := readPlanStates(cmd, conn, loadResult.Database, requested, bookkeeping, selection)
 	if err != nil {
 		return err
