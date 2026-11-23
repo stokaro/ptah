@@ -111,12 +111,20 @@ type Database struct {
 	// read it and found none.
 	WideAccess []WideAccess `json:"-"`
 
-	// WideGrants are the table privileges a role holds on every table through
-	// a grant wider than the database the read describes, such as MySQL's
-	// `GRANT SELECT ON *.*` or Oracle's SELECT ANY TABLE. A REVOKE on one
-	// table takes none of them. Nil means the reader does not establish them,
-	// and an empty non-nil slice means it read them and found none.
+	// WideGrants are the table privileges a role holds on every table, or on
+	// every table of one schema, through a grant that names no table, such as
+	// MySQL's `GRANT SELECT ON *.*`, Oracle's SELECT ANY TABLE, or Oracle's
+	// SELECT ANY TABLE ON SCHEMA. A REVOKE on one table takes none of them.
+	// Nil means the reader does not establish them, and an empty non-nil slice
+	// means it read them and found none.
 	WideGrants []WideGrant `json:"-"`
+
+	// WideGrantsPartial reports that the read was refused some of the grants
+	// WideGrants describes: an Oracle account that may read DBA_SYS_PRIVS and
+	// not DBA_SCHEMA_PRIVS reads the grants on every table and not those on
+	// one schema. Each grant WideGrants holds is held, and a grant missing
+	// from it may be held too.
+	WideGrantsPartial bool `json:"-"`
 
 	// RolesOutOfScope lists roles that exist on the server but that this
 	// description deliberately does not define, because nothing in the
@@ -290,6 +298,15 @@ type Database struct {
 	// serialized: the same database read by another account describes the
 	// same schema.
 	CurrentAccount string `json:"-"`
+
+	// CurrentDatabase is the database the reading connection selected, where
+	// the read describes that one database and its objects carry no schema,
+	// as the MySQL family's DATABASE() names it. An unqualified name in the
+	// read is in this database, and the grants the read reports are those on
+	// it. Empty from a read of a whole server, from a reader that does not
+	// record it, and from a description that did not come from a live read.
+	// Like CurrentAccount, it is never serialized.
+	CurrentDatabase string `json:"-"`
 
 	// ConnectedRole is the role the reading connection ran as, spelled the way
 	// [RoleMembership] spells a role, which on the MySQL family leaves out the
@@ -1735,8 +1752,12 @@ type WideGrant struct {
 	// names it: SELECT for both `GRANT SELECT ON *.*` and SELECT ANY TABLE.
 	Privilege string `json:"privilege"`
 	// Grant is what the server grants, in the words a REVOKE of it uses:
-	// "SELECT ON *.*" or "SELECT ANY TABLE".
+	// "SELECT ON *.*", "SELECT ANY TABLE" or "SELECT ANY TABLE ON SCHEMA APP".
 	Grant string `json:"grant"`
+	// Schema is the one schema whose tables the grant covers, as the schema
+	// an Oracle `GRANT SELECT ANY TABLE ON SCHEMA app` names, in the read's
+	// spelling. It is empty when the grant covers every table.
+	Schema string `json:"schema,omitempty"`
 }
 
 // WideAccess is a role's access to every relation of a database that no grant

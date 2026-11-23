@@ -203,10 +203,16 @@ func TestSchemaApplyMySQLFamilyRevokeUnderARemovedDatabaseGrantE2E(t *testing.T)
 // database, in order.
 func heldOnDatabase(c *qt.C, run columnGrantRun) []string {
 	c.Helper()
+	return heldOn(c, run, run.database)
+}
+
+// heldOn is what the run's role holds on the whole of database, in order.
+func heldOn(c *qt.C, run columnGrantRun, database string) []string {
+	c.Helper()
 	rows, err := run.scratch.admin.QueryContext(c.Context(), `
 		SELECT PRIVILEGE_TYPE FROM information_schema.SCHEMA_PRIVILEGES
 		WHERE TABLE_SCHEMA = ? AND SUBSTRING_INDEX(GRANTEE, '@', 1) = CONCAT('''', ?, '''')
-		ORDER BY PRIVILEGE_TYPE`, run.database, run.role)
+		ORDER BY PRIVILEGE_TYPE`, database, run.role)
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(rows.Close(), qt.IsNil) }()
 	var held []string
@@ -383,6 +389,36 @@ func TestSchemaApplyMySQLFamilyRevokeUnderADeclaredDatabaseGrantE2E(t *testing.T
 				c.Assert(tablesOf(c, run), qt.DeepEquals, test.tables)
 			})
 		}
+	}
+}
+
+// A declared grant on a database other than the one the connection selected
+// gives the role nothing on a table of the selected one, so a revoke on the
+// table is planned and takes the table's grant. Measured on MySQL 8.4.13 and
+// MariaDB 11.8.9 with an unqualified table matched against a grant on any
+// database: the apply refuses the revoke, naming the grant on the other
+// database, and the role keeps SELECT on t3.
+func TestSchemaApplyMySQLFamilyRevokeBesideAGrantOnAnotherDatabaseE2E(t *testing.T) {
+	const declared = "CREATE TABLE t1 (id INT PRIMARY KEY);\nCREATE TABLE t3 (id INT PRIMARY KEY);\nCREATE ROLE %[1]s;\nREVOKE SELECT ON t3 FROM %[1]s;\n"
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newColumnGrantRunFrom(c, engine.admin, "CREATE TABLE t1 (id INT PRIMARY KEY);\nCREATE TABLE t3 (id INT PRIMARY KEY);\n",
+				[]string{"GRANT SELECT ON `%[1]s`.t3 TO %[2]s"})
+			other := run.database + "_o"
+			createMySQLDatabase(c, c.Context(), run.scratch.admin, other)
+			c.Cleanup(func() { dropMySQLDatabase(c, context.Background(), run.scratch.admin, other) })
+			grants := filepath.Join(c.TempDir(), "grants.yaml")
+			c.Assert(os.WriteFile(grants, fmt.Appendf(nil,
+				"grants:\n  elsewhere:\n    role: %s\n    privileges: [SELECT]\n    on_schema: %s\n", run.role, other), 0o600), qt.IsNil)
+
+			applied := run.apply(c, declared, "--auto-approve", "--schema-file", grants)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(run.privileges(c), qt.IsNil)
+			c.Assert(heldOn(c, run, other), qt.DeepEquals, []string{"SELECT"})
+			c.Assert(heldOnDatabase(c, run), qt.IsNil)
+		})
 	}
 }
 

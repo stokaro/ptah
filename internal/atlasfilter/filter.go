@@ -2437,6 +2437,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// definer against this account, and a saved plan's fingerprint follows
 		// this role's memberships whatever the filter keeps.
 		CurrentAccount:         schema.CurrentAccount,
+		CurrentDatabase:        schema.CurrentDatabase,
 		ConnectedRole:          schema.ConnectedRole,
 		ConnectedRoleSuperuser: schema.ConnectedRoleSuperuser,
 		// The names a filter keeps are spelled as the read spelled them, so
@@ -2464,6 +2465,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// What an earlier selector took out of a kept table stays out of
 		// scope; see [outOfScopeParts].
 		OutOfScope: schema.OutOfScope,
+		// The grants a filter drops from WideGrants are an excluded role's,
+		// and the ones the read was refused stay unread.
+		WideGrantsPartial: schema.WideGrantsPartial,
 	}
 }
 

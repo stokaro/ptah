@@ -184,6 +184,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		return nil, err
 	}
 	schema.CharsetDefaultCollations, schema.CharsetAliases = defaults, aliases
+	schema.CurrentDatabase = selected.String
 	// Roles and their grants are read only where the preset claims them, the
 	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
 	// need a privilege reading a table does not, so an account without it must

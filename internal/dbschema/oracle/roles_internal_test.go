@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
@@ -121,8 +122,71 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{
 		{Role: "APP_READER", Privilege: "SELECT", Grant: "SELECT ANY TABLE"},
 		{Role: "PUBLIC", Privilege: "READ", Grant: "READ ANY TABLE"},
+		{Role: "APP_WRITER", Privilege: "INSERT", Grant: "INSERT ANY TABLE ON SCHEMA APP", Schema: "APP"},
+		{Role: "PUBLIC", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"},
 	})
+	c.Assert(schema.WideGrantsPartial, qt.IsFalse)
 	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
+}
+
+// TestReadRolesInto_AsksNoSchemaPrivilegeOnOracle21 reads the system
+// privileges on every table of an Oracle 21 server and does not ask for those
+// granted on a schema. The view of them does not exist there, and the server
+// answers ORA-00942, as this catalog does, which the reader would take for a
+// refusal and report the read partial.
+func TestReadRolesInto_AsksNoSchemaPrivilegeOnOracle21(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, catalogWithoutSchemaPrivileges)
+	reader := NewOracleReaderWithCapabilities(db.SQL, "APP", capability.Oracle21())
+
+	schema := &catalog.Database{}
+	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
+
+	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{
+		{Role: "APP_READER", Privilege: "SELECT", Grant: "SELECT ANY TABLE"},
+		{Role: "PUBLIC", Privilege: "READ", Grant: "READ ANY TABLE"},
+	})
+	c.Assert(schema.WideGrantsPartial, qt.IsFalse)
+}
+
+// TestReadRolesInto_KeepsTheSystemPrivilegesWhereSchemaPrivilegesAreRefused
+// keeps the system privileges on every table when the privileges granted on
+// the schema are refused, and reports the read partial: a revoke on a table
+// SELECT ANY TABLE covers is still refused, and one on a table the plan
+// creates is planned, so the server says whether the role held the privilege
+// on it.
+func TestReadRolesInto_KeepsTheSystemPrivilegesWhereSchemaPrivilegesAreRefused(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, catalogWithoutSchemaPrivileges)
+	reader := NewOracleReader(db.SQL, "APP")
+
+	schema := &catalog.Database{}
+	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
+
+	c.Assert(schema.Roles, qt.HasLen, 7)
+	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{
+		{Role: "APP_READER", Privilege: "SELECT", Grant: "SELECT ANY TABLE"},
+		{Role: "PUBLIC", Privilege: "READ", Grant: "READ ANY TABLE"},
+	})
+	c.Assert(schema.WideGrantsPartial, qt.IsTrue)
+	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
+}
+
+// TestReadRolesInto_SurfacesAFaultInTheSchemaPrivileges fails the read when
+// the privileges granted on the schema answer a fault rather than a refusal.
+func TestReadRolesInto_SurfacesAFaultInTheSchemaPrivileges(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		return roleCatalogAnswerWith(query, args, nil, nil, network.NewOracleError(3113))
+	})
+	reader := NewOracleReader(db.SQL, "APP")
+
+	schema := &catalog.Database{}
+	err := reader.readRolesInto(t.Context(), schema)
+
+	c.Assert(err, qt.ErrorMatches, `failed to read system privileges: .*`)
+	c.Assert(schema.WideGrants, qt.IsNil)
+	c.Assert(schema.WideGrantsPartial, qt.IsFalse)
 }
 
 // TestReadRolesInto_LeavesWideGrantsUnreadWhereSystemPrivilegesAreRefused
@@ -187,8 +251,15 @@ func TestReadRolesInto_SurfacesAFaultRatherThanDescribingAroundIt(t *testing.T) 
 }
 
 // answeringRoleCatalog is a server that shows both catalogs.
-func answeringRoleCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return roleCatalogAnswer(query, nil, nil)
+func answeringRoleCatalog(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+	return roleCatalogAnswerWith(query, args, nil, nil, nil)
+}
+
+// catalogWithoutSchemaPrivileges shows the roles, the object grants and the
+// system privileges, and answers DBA_SCHEMA_PRIVS with ORA-00942, as Oracle
+// 21 does to every account and Oracle 23 does to an account not granted it.
+func catalogWithoutSchemaPrivileges(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+	return roleCatalogAnswerWith(query, args, nil, nil, network.NewOracleError(errViewNotVisible))
 }
 
 // refusingSystemPrivilegeCatalog shows the roles and the object grants, and
@@ -222,8 +293,21 @@ func faultingRoleCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 // first, because its query names DBA_ROLES in a subquery. ALL_TAB_PRIVS
 // answers the rows of [grantRows] whose TYPE the query admits.
 func roleCatalogAnswer(query string, roleErr, sysErr error) (dbtest.QueryResult, error) {
+	return roleCatalogAnswerWith(query, nil, roleErr, sysErr, nil)
+}
+
+// roleCatalogAnswerWith is [roleCatalogAnswer] that also answers
+// DBA_SCHEMA_PRIVS, with schemaErr, and with rows only for the schema APP the
+// query is bound to, so a read that stops binding its schema loses them.
+func roleCatalogAnswerWith(query string, args []driver.NamedValue, roleErr, sysErr, schemaErr error) (dbtest.QueryResult, error) {
 	folded := strings.ToLower(query)
 	switch {
+	case strings.Contains(folded, "from dba_schema_privs"):
+		answer := dbtest.QueryResult{Columns: []string{"GRANTEE", "PRIVILEGE"}}
+		if len(args) == 1 && args[0].Value == "APP" {
+			answer.Rows = [][]driver.Value{{"APP_WRITER", "INSERT ANY TABLE"}, {"PUBLIC", "SELECT ANY TABLE"}}
+		}
+		return answer, schemaErr
 	case strings.Contains(folded, "from dba_sys_privs"):
 		return dbtest.QueryResult{
 			Columns: []string{"GRANTEE", "PRIVILEGE"},

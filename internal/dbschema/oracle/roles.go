@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform/capability"
 )
 
 // Oracle error numbers for a catalog this account may not read.
@@ -264,16 +265,17 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 	schema.Roles = roles
 	schema.Grants = grants
 
-	everywhere, err := r.readWideGrants(ctx)
+	everywhere, partial, err := r.readWideGrants(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read system privileges: %w", err)
 		}
 		// Left nil: a declared revoke on a table is then planned, and the
 		// server says whether the role held the privilege on it.
-		everywhere = nil
+		return nil
 	}
 	schema.WideGrants = everywhere
+	schema.WideGrantsPartial = partial
 	return nil
 }
 
@@ -291,28 +293,81 @@ WHERE p.privilege IN ('SELECT ANY TABLE', 'READ ANY TABLE', 'INSERT ANY TABLE', 
   AND (p.grantee = 'PUBLIC' OR p.grantee IN (SELECT r.role FROM dba_roles r WHERE r.oracle_maintained = 'N'))
 ORDER BY p.grantee, p.privilege`
 
+// schemaGrantQuery reads the system privileges that give a role or PUBLIC an
+// object privilege on every table of the schema the read describes. Measured
+// on 23.26.3: after `GRANT SELECT ANY TABLE ON SCHEMA app TO r`, the owner's
+// `REVOKE SELECT ON t FROM r` fails with ORA-01927 and a member of r keeps
+// reading t, as under SELECT ANY TABLE. DBA_SCHEMA_PRIVS reports the grant as
+// GRANTEE=R, PRIVILEGE=SELECT ANY TABLE, SCHEMA=APP. The privileges and the
+// grantees are the ones [wideGrantQuery] reads.
+const schemaGrantQuery = `
+SELECT p.grantee, p.privilege
+FROM dba_schema_privs p
+WHERE p.schema = :1
+  AND p.privilege IN ('SELECT ANY TABLE', 'READ ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE',
+                      'DELETE ANY TABLE', 'ALTER ANY TABLE', 'FLASHBACK ANY TABLE')
+  AND (p.grantee = 'PUBLIC' OR p.grantee IN (SELECT r.role FROM dba_roles r WHERE r.oracle_maintained = 'N'))
+ORDER BY p.grantee, p.privilege`
+
 // readWideGrants reads the table privileges a role or PUBLIC holds on every
-// table through a system privilege, one row each.
-func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, error) {
-	rows, err := r.db.QueryContext(ctx, wideGrantQuery)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+// table through a system privilege, one row each, and then those it holds on
+// every table of this schema through a system privilege granted on the
+// schema.
+//
+// The second read is asked only where the catalog has DBA_SCHEMA_PRIVS
+// ([capability.CatalogSchemaPrivileges]). Oracle 21 has no such view and
+// answers ORA-00942. That is also how Oracle 23 refuses an account that may
+// read DBA_SYS_PRIVS and not DBA_SCHEMA_PRIVS, measured on 23.26.3 with the
+// two views granted one by one as SYSDBA. A refused second read keeps what the
+// first found and reports the read partial: a revoke on a table that SELECT ANY TABLE
+// covers is still refused, and one on a table the plan creates is planned.
+func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, bool, error) {
 	everywhere := make([]catalog.WideGrant, 0)
-	for rows.Next() {
-		var grantee, privilege string
-		if err := rows.Scan(&grantee, &privilege); err != nil {
-			return nil, err
-		}
+	err := r.scanWideGrants(ctx, wideGrantQuery, nil, func(grantee, privilege string) {
 		everywhere = append(everywhere, catalog.WideGrant{
 			Role:      grantee,
 			Privilege: strings.TrimSuffix(privilege, " ANY TABLE"),
 			Grant:     privilege,
 		})
+	})
+	if err != nil {
+		return nil, false, err
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if !r.caps.Has(capability.CatalogSchemaPrivileges) {
+		return everywhere, false, nil
 	}
-	return everywhere, nil
+	var onSchema []catalog.WideGrant
+	err = r.scanWideGrants(ctx, schemaGrantQuery, []any{r.schema}, func(grantee, privilege string) {
+		onSchema = append(onSchema, catalog.WideGrant{
+			Role:      grantee,
+			Privilege: strings.TrimSuffix(privilege, " ANY TABLE"),
+			Grant:     privilege + " ON SCHEMA " + r.schema,
+			Schema:    r.schema,
+		})
+	})
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return nil, false, err
+		}
+		return everywhere, true, nil
+	}
+	return append(everywhere, onSchema...), false, nil
+}
+
+// scanWideGrants runs a query that answers a grantee and a system privilege
+// per row, and hands each row to add.
+func (r *Reader) scanWideGrants(ctx context.Context, query string, args []any, add func(grantee, privilege string)) error {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var grantee, privilege string
+		if err := rows.Scan(&grantee, &privilege); err != nil {
+			return err
+		}
+		add(grantee, privilege)
+	}
+	return rows.Err()
 }

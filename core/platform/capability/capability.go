@@ -373,6 +373,17 @@ const (
 	// business, and this key answers for the catalog Ptah reads.
 	CatalogVectorInfo Capability = "catalog_vector_info"
 
+	// CatalogSchemaPrivileges marks a catalog that reports a system privilege
+	// granted on one schema, such as Oracle's
+	// `GRANT SELECT ANY TABLE ON SCHEMA app TO r`, which gives r the privilege
+	// on every table of app.
+	//
+	// The reader of the grants that keep a table privilege reads the view only
+	// where this key holds. Measured, DBA_SCHEMA_PRIVS and USER_SCHEMA_PRIVS
+	// answer on Oracle Free 23.26.3.0.0 and do not exist on Oracle 21.3, where
+	// a query naming either fails with ORA-00942.
+	CatalogSchemaPrivileges Capability = "catalog_schema_privileges"
+
 	// CatalogDependencies marks that the catalog exposes pg_depend, the
 	// dependency table the user-defined-type read joins to tell a type an
 	// extension owns from one the user declared.
@@ -2118,6 +2129,9 @@ var registry = map[Capability]spec{
 	CatalogVectorInfo: {
 		doc: "the catalog reports a vector column's dimension, element format and storage form",
 	},
+	CatalogSchemaPrivileges: {
+		doc: "the catalog reports a system privilege granted on one schema (Oracle's DBA_SCHEMA_PRIVS)",
+	},
 	CatalogDefaultPrivileges: {
 		doc: "the catalog has pg_default_acl, the relation recording ALTER DEFAULT PRIVILEGES grants",
 	},
@@ -2765,6 +2779,7 @@ func buildMySQL84() Capabilities {
 		PostgresCatalogFunctions:        false,
 		CatalogRowStatistics:            false,
 		CatalogVectorInfo:               false,
+		CatalogSchemaPrivileges:         false,
 		CatalogDependencies:             false,
 		CatalogDefaultPrivileges:        false,
 		CatalogTriggerDefinitions:       false,
@@ -3086,6 +3101,7 @@ func buildMariaDB1011() Capabilities {
 		PostgresCatalogFunctions:        false,
 		CatalogRowStatistics:            false,
 		CatalogVectorInfo:               false,
+		CatalogSchemaPrivileges:         false,
 		CatalogDependencies:             false,
 		CatalogDefaultPrivileges:        false,
 		CatalogTriggerDefinitions:       false,
@@ -3348,6 +3364,7 @@ func buildPostgres16() Capabilities {
 		PostgresCatalogFunctions:        true,
 		CatalogRowStatistics:            true,
 		CatalogVectorInfo:               false,
+		CatalogSchemaPrivileges:         false,
 		CatalogDependencies:             true,
 		CatalogDefaultPrivileges:        true,
 		CatalogTriggerDefinitions:       true,
@@ -3727,6 +3744,7 @@ func buildClickHouse24() Capabilities {
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
+		CatalogSchemaPrivileges:  false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
 		// pg_get_triggerdef is a PostgreSQL catalog function (stokaro/ptah#3707).
@@ -3979,6 +3997,7 @@ func buildSQLite3() Capabilities {
 		PostgresCatalogFunctions:        false,
 		CatalogRowStatistics:            false,
 		CatalogVectorInfo:               false,
+		CatalogSchemaPrivileges:         false,
 		CatalogDependencies:             false,
 		CatalogDefaultPrivileges:        false,
 		CatalogTriggerDefinitions:       false,
@@ -4279,6 +4298,7 @@ func buildSQLServer2022() Capabilities {
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogVectorInfo:        false,
+		CatalogSchemaPrivileges:  false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
 		// pg_get_triggerdef is a PostgreSQL catalog function (stokaro/ptah#3707).
@@ -4938,7 +4958,12 @@ func buildOracle23() Capabilities {
 		// column declared VECTOR(1536, FLOAT32), and VECTOR(*,*,DENSE) for a
 		// bare VECTOR. Measured on 23.26.3.0.0; the column is absent from
 		// ALL_TAB_COLS on 21.3, which is what Oracle21 turns off.
-		CatalogVectorInfo:        true,
+		CatalogVectorInfo: true,
+		// DBA_SCHEMA_PRIVS reports `GRANT SELECT ANY TABLE ON SCHEMA app TO r`
+		// as GRANTEE=R, PRIVILEGE=SELECT ANY TABLE, SCHEMA=APP. Measured on
+		// 23.26.3.0.0; the view does not exist on 21.3, which is what Oracle21
+		// turns off.
+		CatalogSchemaPrivileges:  true,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
 		// pg_get_triggerdef is a PostgreSQL catalog function (stokaro/ptah#3707).
@@ -5165,7 +5190,10 @@ func buildOracle21() Capabilities {
 		// ALL_TAB_COLS has no VECTOR_INFO column on this line, and the type
 		// itself answers ORA-00902, so the reader projects a constant rather
 		// than a column the catalog does not carry.
-		With(CatalogVectorInfo, false)
+		With(CatalogVectorInfo, false).
+		// A privilege granted on a schema is new in Oracle 23, and
+		// DBA_SCHEMA_PRIVS answers ORA-00942 here, so the reader does not ask.
+		With(CatalogSchemaPrivileges, false)
 }
 
 // DefaultDialects returns the normalized names of the dialects for which

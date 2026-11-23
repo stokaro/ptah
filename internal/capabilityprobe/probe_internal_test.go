@@ -101,10 +101,11 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 // edit to a test, reviewed as the coverage reduction it is, rather than a
 // silent side effect of editing plans.go.
 //
-// CatalogVectorInfo is in every set but Oracle's, and the reason is the same
-// everywhere: ALL_TAB_COLS.VECTOR_INFO is an Oracle catalog column, and the
-// reader it gates runs only against Oracle, so a server that lacks it has
-// answered a different question. Oracle measures it, which is what makes the
+// CatalogVectorInfo and CatalogSchemaPrivileges are in every set but
+// Oracle's, and the reason is the same everywhere: ALL_TAB_COLS.VECTOR_INFO
+// and DBA_SCHEMA_PRIVS are Oracle catalog relations, and the reader each gates
+// runs only against Oracle, so a server that lacks them has answered a
+// different question. Oracle measures both, which is what makes the
 // declaration elsewhere a statement about scope rather than a coverage
 // reduction.
 //
@@ -126,6 +127,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// (stokaro/ptah#916).
 		want: []capability.Capability{
 			capability.BackupCollections,
+			capability.CatalogSchemaPrivileges,
 			capability.CatalogVectorInfo,
 			// CommentAttributes names YDB table attributes, which no engine
 			// here has; they keep comments in their own catalog.
@@ -184,6 +186,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
+			capability.CatalogSchemaPrivileges,
 			capability.CatalogTriggerDefinitions,
 			capability.CatalogVectorInfo,
 			capability.CommentAttributes,
@@ -242,6 +245,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
+			capability.CatalogSchemaPrivileges,
 			capability.CatalogTriggerDefinitions,
 			capability.CatalogVectorInfo,
 			capability.CommentAttributes,
@@ -304,6 +308,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			// question cannot be put to it (stokaro/ptah#1811).
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
+			capability.CatalogSchemaPrivileges,
 			capability.CatalogVectorInfo,
 			capability.CommentAttributes,
 			capability.CompositeTypes,
@@ -463,37 +468,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes twenty-six fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column is not a relation it carries, index_rename, the two serial sequence keys, the six access keys only YDB or the planner decides and coordination_nodes and the three workload keys and comment_attributes name what Ptah's planner plans rather than what the server does, no engine of the family has a spelling of a TTL unit, how Ptah's plan replaces a routine is the planner's choice, no_backslash_escapes is read off the session's sql_mode, and standard_string_size is read off Oracle's MAX_STRING_SIZE",
+		name: "postgres owes twenty-seven fewer: the probe cannot ask whether a privilege exists, none of the three runtime policies nor the transaction wrapper is a statement it can send, TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has, the Oracle vector catalog column and schema privilege view are not relations it carries, index_rename, the two serial sequence keys, the six access keys only YDB or the planner decides and coordination_nodes and the three workload keys and comment_attributes name what Ptah's planner plans rather than what the server does, no engine of the family has a spelling of a TTL unit, how Ptah's plan replaces a routine is the planner's choice, no_backslash_escapes is read off the session's sql_mode, and standard_string_size is read off Oracle's MAX_STRING_SIZE",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 26,
+		want: registered - 27,
 	}, {
-		name: "mysql owes fifty-five fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the six access keys only YDB or the planner decides, coordination_nodes, the three workload keys, comment_attributes, the twelve object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction, the routine replacement key, no_backslash_escapes and standard_string_size, which the connector reads off the session's sql_mode and Oracle's MAX_STRING_SIZE, name surfaces no MySQL path reads or no statement decides, and materialized_view_options has no materialized view to ask about",
+		name: "mysql owes fifty-six fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the six access keys only YDB or the planner decides, coordination_nodes, the three workload keys, comment_attributes, the twelve object-comment keys, the two TimescaleDB keys, the eight catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction, the routine replacement key, no_backslash_escapes and standard_string_size, which the connector reads off the session's sql_mode and Oracle's MAX_STRING_SIZE, name surfaces no MySQL path reads or no statement decides, and materialized_view_options has no materialized view to ask about",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 55,
+		want: registered - 56,
 	}, {
-		name: "mariadb owes fifty-five fewer: COMMENT ON SCHEMA and the twelve object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the six access keys only YDB or the planner decides and coordination_nodes and the three workload keys and comment_attributes and the routine replacement key name what Ptah's planner plans, no_backslash_escapes is read off the session's sql_mode, standard_string_size off Oracle's MAX_STRING_SIZE, sequences is asked now that Ptah renders, reads and plans one, and materialized_view_options has no materialized view to ask about",
+		name: "mariadb owes fifty-six fewer: COMMENT ON SCHEMA and the twelve object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column nor the schema privilege view is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the six access keys only YDB or the planner decides and coordination_nodes and the three workload keys and comment_attributes and the routine replacement key name what Ptah's planner plans, no_backslash_escapes is read off the session's sql_mode, standard_string_size off Oracle's MAX_STRING_SIZE, sequences is asked now that Ptah renders, reads and plans one, and materialized_view_options has no materialized view to ask about",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 55,
+		want: registered - 56,
 	}, {
-		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the twenty-six its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the twenty-seven its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 27,
+		want: registered - 28,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row and the domain comment row, whose prerequisites are absent",
 		cell: Cell{
@@ -502,7 +507,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 28,
+		want: registered - 29,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
