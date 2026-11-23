@@ -99,6 +99,12 @@ type Dialect struct {
 	// everywhere else. A comparison of column privileges then compares the
 	// column by its spelling, and a plan names it as the declaration does.
 	ColumnPrivilegeBySpelling bool `json:"column_privilege_by_spelling,omitempty"`
+	// NamesFoldBySetting reports that the engine compares database and table
+	// names by a setting each server is started with, so one server keeps
+	// names apart by case and another compares them without regard to case.
+	// A connection reads the setting; a comparison without one does not know
+	// it.
+	NamesFoldBySetting bool `json:"names_fold_by_setting,omitempty"`
 	// AllPrivileges states what the privilege keyword ALL grants on each
 	// kind of object, as a catalog read reports it.
 	AllPrivileges AllPrivileges `json:"all_privileges,omitzero"`

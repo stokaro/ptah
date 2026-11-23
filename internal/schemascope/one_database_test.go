@@ -8,14 +8,18 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/schemascope"
 )
 
 // TestRefuseOutsideDatabase_FailurePath refuses each kind of object a
-// document puts in a database other than the one the URL names.
+// document puts in a database other than the one the URL names. On a server
+// that keeps names apart by case, another case of the URL's database is another
+// database; on one that folds names, another name still is.
 func TestRefuseOutsideDatabase_FailurePath(t *testing.T) {
 	rows := []struct {
 		name    string
+		folds   bool
 		desired schemamodel.Database
 		wantErr string
 	}{
@@ -50,12 +54,28 @@ func TestRefuseOutsideDatabase_FailurePath(t *testing.T) {
 			desired: schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s", Schema: "other"}}},
 			wantErr: `sequence "other.s" is in database "other", .*`,
 		},
+		{
+			name:    "a table in the URL's database spelled in another case, on a server that keeps case apart",
+			desired: schemamodel.Database{Tables: []schemamodel.Table{{Name: "u", Schema: "APP"}}},
+			wantErr: `table "APP.u" is in database "APP", but the target URL is limited to database "app"; .*`,
+		},
+		{
+			name:    "a view in the URL's database spelled in another case, on a server that keeps case apart",
+			desired: schemamodel.Database{Views: []schemamodel.View{{Name: "App.v"}}},
+			wantErr: `view "App.v" is in database "App", .*`,
+		},
+		{
+			name:    "a table in another database, on a server that folds names",
+			folds:   true,
+			desired: schemamodel.Database{Tables: []schemamodel.Table{{Name: "u", Schema: "OTHER"}}},
+			wantErr: `table "OTHER.u" is in database "OTHER", but the target URL is limited to database "app"; .*`,
+		},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := schemascope.RefuseOutsideDatabase(platform.MariaDB, "app", "the target URL", &row.desired)
+			err := schemascope.RefuseOutsideDatabase(platform.MariaDB, "app", mysqlname.NamesOf(row.folds), "the target URL", &row.desired)
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 			c.Assert(err, qt.ErrorAs, new(*schemascope.OutsideDatabaseError))
@@ -64,14 +84,15 @@ func TestRefuseOutsideDatabase_FailurePath(t *testing.T) {
 }
 
 // TestRefuseOutsideDatabase_HappyPath is the control: a name left unqualified
-// or qualified with the URL's own database, a whole server, and another
-// dialect's schema are not refused.
+// or qualified with the URL's own database, any spelling of it on a server that
+// folds names, a whole server, and another dialect's schema are not refused.
 func TestRefuseOutsideDatabase_HappyPath(t *testing.T) {
 	inOther := schemamodel.Database{Tables: []schemamodel.Table{{Name: "u", Schema: "other"}}}
 	rows := []struct {
 		name    string
 		dialect string
 		limit   string
+		folds   bool
 		desired schemamodel.Database
 	}{
 		{name: "an unqualified table", dialect: platform.MySQL, limit: "app",
@@ -80,6 +101,16 @@ func TestRefuseOutsideDatabase_HappyPath(t *testing.T) {
 			desired: schemamodel.Database{
 				Schemas: []schemamodel.Schema{{Name: "app"}},
 				Tables:  []schemamodel.Table{{Name: "t", Schema: "app"}},
+			}},
+		{name: "every object in the URL's database spelled in another case, on a server that folds names",
+			dialect: platform.MySQL, limit: "app", folds: true,
+			desired: schemamodel.Database{
+				Schemas:   []schemamodel.Schema{{Name: "APP"}},
+				Tables:    []schemamodel.Table{{Name: "t", Schema: "App"}},
+				Sequences: []schemamodel.Sequence{{Name: "s", Schema: "aPP"}},
+				Views:     []schemamodel.View{{Name: "APP.v"}},
+				Functions: []schemamodel.Function{{Name: "APP.f"}},
+				Triggers:  []schemamodel.Trigger{{Name: "tr", Table: "APP.t"}},
 			}},
 		{name: "a whole server", dialect: platform.MySQL, limit: "", desired: inOther},
 		{name: "a PostgreSQL schema", dialect: platform.Postgres, limit: "public", desired: inOther},
@@ -93,7 +124,7 @@ func TestRefuseOutsideDatabase_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(schemascope.RefuseOutsideDatabase(row.dialect, row.limit, "the target URL", &row.desired), qt.IsNil)
+			c.Assert(schemascope.RefuseOutsideDatabase(row.dialect, row.limit, mysqlname.NamesOf(row.folds), "the target URL", &row.desired), qt.IsNil)
 		})
 	}
 }
@@ -122,7 +153,7 @@ func TestRefuseOutsideDatabase_ClickHouse(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := schemascope.RefuseOutsideDatabase(platform.ClickHouse, "app", "the target URL", &row.desired)
+			err := schemascope.RefuseOutsideDatabase(platform.ClickHouse, "app", mysqlname.Names{}, "the target URL", &row.desired)
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 		})
@@ -130,9 +161,11 @@ func TestRefuseOutsideDatabase_ClickHouse(t *testing.T) {
 }
 
 // TestRefuseOutsideTargetDatabase holds the connection's scope to the same rule.
-// A whole server reaches every database, and a connection names the rest.
+// A whole server reaches every database, and a connection names the rest. The
+// connection says whether its server folds database names.
 func TestRefuseOutsideTargetDatabase(t *testing.T) {
 	desired := &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "other"}}}
+	inAnotherCase := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "t", Schema: "APP"}}}
 
 	t.Run("one database", func(t *testing.T) {
 		c := qt.New(t)
@@ -147,5 +180,30 @@ func TestRefuseOutsideTargetDatabase(t *testing.T) {
 		err := schemascope.RefuseOutsideTargetDatabase(catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app", WholeServer: true}, desired)
 
 		c.Assert(err, qt.IsNil)
+	})
+	t.Run("another case on a server that folds names", func(t *testing.T) {
+		c := qt.New(t)
+
+		err := schemascope.RefuseOutsideTargetDatabase(
+			catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app", NameFolding: catalog.NameFoldingFolds}, inAnotherCase,
+		)
+
+		c.Assert(err, qt.IsNil)
+	})
+	t.Run("another case on a server that keeps case apart", func(t *testing.T) {
+		c := qt.New(t)
+
+		err := schemascope.RefuseOutsideTargetDatabase(
+			catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app", NameFolding: catalog.NameFoldingExact}, inAnotherCase,
+		)
+
+		c.Assert(err, qt.ErrorMatches, `table "APP.t" is in database "APP", but the target URL is limited to database "app"; .*`)
+	})
+	t.Run("another case where no connection read the folding", func(t *testing.T) {
+		c := qt.New(t)
+
+		err := schemascope.RefuseOutsideTargetDatabase(catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app"}, inAnotherCase)
+
+		c.Assert(err, qt.ErrorMatches, `table "APP.t" is in database "APP", but the target URL is limited to database "app"; .*`)
 	})
 }

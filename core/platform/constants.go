@@ -89,6 +89,19 @@ func TableRevokeTakesOnlyTableGrants(dialect string) bool {
 	return found && target.TableRevokeTakesOnlyTableGrants
 }
 
+// NamesFoldBySetting reports whether this target compares database and table
+// names by a setting each server is started with, rather than by one rule for
+// every server. The answer is the descriptor's NamesFoldBySetting; see
+// [Lookup]. A spelling no descriptor claims answers false.
+//
+// MySQL and MariaDB answer true: lower_case_table_names 0 keeps FA and fa
+// apart, and 1 and 2 read them as one database. Measured on MySQL 8.4.9 with
+// 0, and on MySQL 26.10.0 and MariaDB 12.3.3 with 1.
+func NamesFoldBySetting(dialect string) bool {
+	target, found := described(dialect)
+	return found && target.NamesFoldBySetting
+}
+
 // ColumnPrivilegeIsBySpelling reports whether a privilege on a column, held
 // through a role, serves only a statement that spells the column the way the
 // GRANT did. The answer is the descriptor's ColumnPrivilegeBySpelling; see

@@ -52,7 +52,10 @@ func mariaDB() descriptor.Dialect {
 		// 1147: measured on 10.11.19 and 11.8.9, also under a grant on the
 		// database, on *.* or to PUBLIC.
 		TableRevokeTakesOnlyTableGrants: true,
-		AllPrivileges:                   mariaDBAllPrivileges(),
+		// lower_case_table_names decides it per server; a connection reads
+		// it into catalog.ServerInfo.NameFolding.
+		NamesFoldBySetting: true,
+		AllPrivileges:      mariaDBAllPrivileges(),
 
 		// How a connection reaches the server.
 		Driver: "mysql",

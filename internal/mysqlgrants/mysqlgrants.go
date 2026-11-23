@@ -33,6 +33,8 @@ package mysqlgrants
 import (
 	"maps"
 	"strings"
+
+	"ptah.run/internal/mysqlname"
 )
 
 // Options are the server facts that decide how a row applies.
@@ -246,11 +248,11 @@ func (g Grants) matches(pattern, name string) bool {
 	return likeMatch(pattern, name)
 }
 
+// sameName reports whether a row's database or table name is name. One setting,
+// lower_case_table_names, decides how the server compares both, so a table name
+// takes the database name's rule.
 func (g Grants) sameName(a, b string) bool {
-	if g.options.FoldCase {
-		return strings.EqualFold(a, b)
-	}
-	return a == b
+	return mysqlname.NamesOf(g.options.FoldCase).Same(a, b)
 }
 
 // likeMatch is the server's comparison of a name with a privilege pattern: `%`

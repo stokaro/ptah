@@ -81,6 +81,20 @@ func CompareReportingUndecidedAdditions(
 	opts *config.CompareOptions,
 	runtime schemapreparation.Runtime,
 ) (*difftypes.SchemaDiff, Diagnostics, error) {
+	// No connection read how the server compares database and table names,
+	// so a name that matches another only without regard to case is refused
+	// rather than planned under either answer.
+	var dialect, session string
+	if opts != nil {
+		dialect = opts.Dialect
+		if opts.IdentifierSemantics != nil {
+			session = opts.IdentifierSemantics.DefaultSchema
+		}
+	}
+	desired, err := foldedNames(desired, database, dialect, session, catalog.NameFoldingUnknown)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	return compareReportingUndecidedAdditions(ctx, desired, database, opts, capability.Capabilities{}, 0, runtime, nil)
 }
 

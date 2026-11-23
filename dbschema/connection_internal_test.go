@@ -24,6 +24,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
@@ -625,13 +626,15 @@ func TestWireDialectDetection_AProviderOnlyEngineBannerIsRefused(t *testing.T) {
 // bannerDB is a server that answers the questions a PostgreSQL-wire or
 // MySQL-wire connection asks when it is described: the version banner, the
 // session's schema and search path, the database a MySQL-wire session
-// selected, and CockroachDB's integer width.
+// selected and whether that server folds names, and CockroachDB's integer
+// width.
 func bannerDB(c *qt.C, version string) *dbtest.DB {
 	answers := map[string]dbtest.QueryResult{
 		"SELECT version()":        {Columns: []string{"version"}, Rows: [][]driver.Value{{version}}},
 		"SELECT VERSION()":        {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{version}}},
 		"SELECT current_schema()": {Columns: []string{"current_schema"}, Rows: [][]driver.Value{{"public"}}},
 		"SELECT DATABASE()":       {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{"app"}}},
+		mysqlname.FoldsNamesQuery: {Columns: []string{"folds"}, Rows: [][]driver.Value{{int64(0)}}},
 		"SELECT s FROM unnest(current_schemas(false)) WITH ORDINALITY AS path(s, n) ORDER BY n": {
 			Columns: []string{"s"}, Rows: [][]driver.Value{{"public"}},
 		},
@@ -764,11 +767,12 @@ func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
 	}
 }
 
-// mysqlSessionAnswers is a MariaDB server whose session selected shop, as far
-// as getDatabaseInfo asks.
+// mysqlSessionAnswers is a MariaDB server whose session selected shop and
+// which keeps names apart by case, as far as getDatabaseInfo asks.
 var mysqlSessionAnswers = map[string]dbtest.QueryResult{
-	"SELECT VERSION()":  {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
-	"SELECT DATABASE()": {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{"shop"}}},
+	"SELECT VERSION()":        {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{"11.8.9-MariaDB-ubu2404"}}},
+	"SELECT DATABASE()":       {Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{"shop"}}},
+	mysqlname.FoldsNamesQuery: {Columns: []string{"folds"}, Rows: [][]driver.Value{{int64(0)}}},
 }
 
 // TestGetDatabaseInfo_ReadsTheDatabaseOfASocketURL checks that a socket URL
