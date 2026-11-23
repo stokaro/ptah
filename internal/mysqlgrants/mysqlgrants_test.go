@@ -549,3 +549,72 @@ func FuzzParse(f *testing.F) {
 		_ = grants.OnTable("fx", "t").Holds("SELECT")
 	})
 }
+
+// TestGrantable asks whether an account may grant EXECUTE and ALTER ROUTINE
+// on the routines of database fx onward. The grant option is what a row
+// prints WITH GRANT OPTION, at the database or above it; ALL PRIVILEGES does
+// not carry it.
+func TestGrantable(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		names []string
+		want  bool
+	}{
+		{
+			name:  "both privileges on the database with the grant option",
+			lines: []string{"GRANT EXECUTE, ALTER ROUTINE ON `fx`.* TO `a`@`%` WITH GRANT OPTION"},
+			names: []string{"EXECUTE", "ALTER ROUTINE"},
+			want:  true,
+		},
+		{
+			name:  "ALL PRIVILEGES on the database without the grant option",
+			lines: []string{"GRANT ALL PRIVILEGES ON `fx`.* TO `a`@`%`"},
+			names: []string{"EXECUTE"},
+			want:  false,
+		},
+		{
+			name:  "ALL PRIVILEGES on the database with the grant option",
+			lines: []string{"GRANT ALL PRIVILEGES ON `fx`.* TO `a`@`%` WITH GRANT OPTION"},
+			names: []string{"EXECUTE", "ALTER ROUTINE"},
+			want:  true,
+		},
+		{
+			name:  "the grant option on every database and the privilege on this one",
+			lines: []string{"GRANT USAGE ON *.* TO `a`@`%` WITH GRANT OPTION", "GRANT EXECUTE ON `fx`.* TO `a`@`%`"},
+			names: []string{"EXECUTE"},
+			want:  true,
+		},
+		{
+			name:  "one privilege of two",
+			lines: []string{"GRANT EXECUTE ON `fx`.* TO `a`@`%` WITH GRANT OPTION"},
+			names: []string{"EXECUTE", "ALTER ROUTINE"},
+			want:  false,
+		},
+		{
+			name:  "the grant option alone",
+			lines: []string{"GRANT SELECT ON `fx`.* TO `a`@`%` WITH GRANT OPTION"},
+			want:  true,
+		},
+		{
+			name:  "the grant option on another database",
+			lines: []string{"GRANT EXECUTE ON `fy`.* TO `a`@`%` WITH GRANT OPTION", "GRANT EXECUTE ON `fx`.* TO `a`@`%`"},
+			names: []string{"EXECUTE"},
+			want:  false,
+		},
+		{
+			name:  "a routine-level row, which the DROP of the routine takes",
+			lines: []string{"GRANT EXECUTE, ALTER ROUTINE ON PROCEDURE `fx`.`p` TO `a`@`%` WITH GRANT OPTION"},
+			names: []string{"EXECUTE"},
+			want:  false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			grants := mysqlgrants.Parse(test.lines, mysqlgrants.Options{})
+
+			c.Assert(grants.OnDatabase("fx").Grantable(test.names...), qt.Equals, test.want)
+		})
+	}
+}

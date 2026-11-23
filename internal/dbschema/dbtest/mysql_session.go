@@ -20,7 +20,8 @@ var MySQLAllGrants = []string{"GRANT ALL PRIVILEGES ON *.* TO `root`@`%` WITH GR
 // session, as an account holding grants on a server of version, and hands every
 // other question to next. The character set facts are MySQL 8.4's: utf8mb4 and
 // latin1 with their default collations, the default_collation_for_utf8mb4 a
-// fresh session holds, and utf8 naming utf8mb3.
+// fresh session holds, and utf8 naming utf8mb3. automatic_sp_privileges is on,
+// the server default.
 func MySQLSession(version string, grants []string, next QueryHandler) QueryHandler {
 	return func(query string, args []driver.NamedValue) (QueryResult, error) {
 		switch {
@@ -49,6 +50,8 @@ func MySQLSession(version string, grants []string, next QueryHandler) QueryHandl
 			}, nil
 		case strings.TrimSpace(query) == "SELECT CHARSET(CONVERT('' USING utf8))":
 			return QueryResult{Columns: []string{"CHARSET(CONVERT('' USING utf8))"}, Rows: [][]driver.Value{{"utf8mb3"}}}, nil
+		case strings.TrimSpace(query) == "SELECT @@GLOBAL.automatic_sp_privileges":
+			return QueryResult{Columns: []string{"@@GLOBAL.automatic_sp_privileges"}, Rows: [][]driver.Value{{int64(1)}}}, nil
 		case strings.TrimSpace(query) == "SHOW PRIVILEGES":
 			return QueryResult{
 				Columns: []string{"Privilege", "Context", "Comment"},

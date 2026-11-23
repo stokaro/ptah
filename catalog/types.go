@@ -1804,10 +1804,12 @@ type WideGrant struct {
 //
 // On MySQL and MariaDB with the default automatic_sp_privileges, DROP
 // PROCEDURE and DROP FUNCTION delete every row of mysql.procs_priv for the
-// routine, whoever the grantee is, and the CREATE brings none back. A plan
-// that replaces a routine for a new body grants these again after the CREATE.
-// They are what the server holds, not what a declaration grants, so they
-// cover accounts a schema does not manage, and nothing compares them.
+// routine, whoever the grantee is, and the CREATE brings back only the row it
+// grants the account that runs it. A plan that replaces a routine for a new
+// body grants the others again after the CREATE. They are what the server
+// holds, not what a declaration grants, so they cover accounts a schema does
+// not manage, and nothing compares them. With automatic_sp_privileges off the
+// DROP keeps every row, and the read reports none.
 //
 // The zero value gives nothing back and refuses nothing. It is what a read
 // that found no such privilege reports, and what a description that did not
@@ -1861,6 +1863,12 @@ type RoutineGrant struct {
 	// WithOption reports that the account may grant what it holds on the
 	// routine.
 	WithOption bool `json:"with_option,omitempty"`
+	// ReaderMayGrant reports that the account the read ran as may grant the
+	// row again once the routine is replaced: it holds the grant option and
+	// the row's privileges on the routine's database, or on every database. A
+	// privilege it holds on the routine itself does not count, because the
+	// DROP takes that too.
+	ReaderMayGrant bool `json:"reader_may_grant,omitempty"`
 }
 
 // WideAccess is a role's access to every relation of a database that no grant

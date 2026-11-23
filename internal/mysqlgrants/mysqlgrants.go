@@ -73,6 +73,29 @@ func (p Privileges) Holds(names ...string) bool {
 	return false
 }
 
+// Grantable reports whether the session may grant every one of names onward:
+// the set carries the grant option and holds each name. `ALL PRIVILEGES` holds
+// every name and not the grant option, which a row carries only when SHOW
+// GRANTS prints it WITH GRANT OPTION. With no names it asks for the grant
+// option alone.
+func (p Privileges) Grantable(names ...string) bool {
+	if _, option := p.named[grantOption]; !option {
+		return false
+	}
+	if p.all {
+		return true
+	}
+	for _, name := range names {
+		if _, held := p.named[name]; !held {
+			return false
+		}
+	}
+	return true
+}
+
+// grantOption is the name a row's WITH GRANT OPTION joins its set under.
+const grantOption = "GRANT OPTION"
+
 func (p Privileges) union(other Privileges) Privileges {
 	merged := Privileges{all: p.all || other.all, named: make(map[string]struct{}, len(p.named)+len(other.named))}
 	maps.Copy(merged.named, p.named)
@@ -334,7 +357,7 @@ func parseLine(line string) (row, shape) {
 	}
 	parsed.grantee = s.rawWord()
 	if strings.Contains(strings.ToUpper(s.text[s.at:]), "WITH GRANT OPTION") {
-		parsed.privileges.named["GRANT OPTION"] = struct{}{}
+		parsed.privileges.named[grantOption] = struct{}{}
 	}
 	return parsed, shapePrivileges
 }

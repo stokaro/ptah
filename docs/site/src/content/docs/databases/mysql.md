@@ -1569,13 +1569,32 @@ it, and the comparison does not read routine privileges, so it cannot see an
 `EXECUTE` granted or revoked outside the schema.
 
 A routine whose body changes is replaced with `DROP` and `CREATE`. Under the
-default `automatic_sp_privileges` the `DROP` deletes every privilege on the
+default `automatic_sp_privileges=1` the `DROP` deletes every privilege on the
 routine, whoever holds it, measured on MySQL 8.4 and MariaDB 11.8. So the read
 takes the rows of `mysql.procs_priv` for the routines of the databases it
 describes, and a plan that replaces a routine grants each of them again after
 the `CREATE`: to a user with its host, to a role, and with the grant option
-where it was held. With `automatic_sp_privileges` off the `DROP` keeps them,
-and the grants change nothing.
+where it was held. The `GRANT` names the routine as the `CREATE` does, with
+its database only where the schema names one.
+
+Two rows are not granted again. The `CREATE` gives its account `EXECUTE` and
+`ALTER ROUTINE` on the routine when the account cannot already run and change
+it, so the applying account's own row of exactly those two privileges, without
+the grant option, comes back with the `CREATE`. With
+`automatic_sp_privileges=0` the `DROP` keeps every row and the `CREATE` adds
+none, so the read reports no rows, a plan grants nothing back, and
+`mysql.procs_priv` is not read.
+
+The `GRANT`s run as the applying account, and the server refuses one from an
+account without the grant option with `ERROR 1370`, after the `DROP` and the
+`CREATE` have run. So the read records whether the account may grant each row
+again: it needs the grant option and the row's privileges on the routine's
+database or on every database. A plan that would replace a routine with a row
+the account may not grant again is refused before anything runs:
+
+```text
+cannot replace procedure app.rt: the DROP that replaces it takes EXECUTE on it from `svc`@`10.1.%`, and the account may not grant it again without the grant option on `app`.*; grant the account EXECUTE ON `app`.* WITH GRANT OPTION, or replace the routine as an account that holds it
+```
 
 Reading `mysql.procs_priv` needs `SELECT` on it. Where the server refuses that
 read, a plan that would replace a routine is refused before anything runs,
@@ -1585,9 +1604,11 @@ because nothing says what the `DROP` would take:
 cannot replace procedure app.rt: the account may not read mysql.procs_priv, so nothing says who holds privileges on the routine, and the DROP that replaces it takes them all; grant the account SELECT on mysql.procs_priv
 ```
 
-A plan that replaces no routine does not need the privilege. A versioned
-migration grants back what the database it was planned against holds, which is
-not always what the database it later runs on holds.
+A plan that replaces no routine needs neither privilege. A versioned migration
+grants back what the database it was planned against holds, which is not
+always what the database it later runs on holds, and the grant option it
+checks is the planning account's, not the one of the account that later runs
+the migration.
 
 A database name is matched exactly. On a server started with
 `lower_case_table_names=0`, the Linux default, `app` and `APP` are two

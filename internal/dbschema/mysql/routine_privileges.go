@@ -3,15 +3,16 @@ package mysql
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/internal/mysqlname"
 )
 
-// readRoutinePrivilegesInto records what is granted on the routines of the
-// databases a read describes, or that the server refused to say
-// ([catalog.RoutinePrivileges]).
+// readRoutinePrivilegesInto records what the plan that replaces a routine of
+// the databases a read describes has to grant again, or that the server
+// refused to say ([catalog.RoutinePrivileges]).
 //
 // DROP PROCEDURE and DROP FUNCTION delete the routine's rows of
 // mysql.procs_priv under the default automatic_sp_privileges, measured on
@@ -21,8 +22,20 @@ import (
 // mysql.procs_priv, which an account reads only with SELECT on it. A refusal
 // is recorded rather than failing the read: the description does not depend
 // on these rows, and only a plan that replaces a routine does.
+//
+// With automatic_sp_privileges off the DROP keeps the rows and the CREATE
+// grants none, so there is nothing to give back and nothing to refuse, and
+// mysql.procs_priv is not read.
 func (r *Reader) readRoutinePrivilegesInto(ctx context.Context, account sessionAccount, schema *catalog.Database, databases []string) error {
-	grants, err := r.readRoutinePrivileges(ctx, account.mariaDB, databases)
+	var automatic int64
+	if err := r.db.QueryRowContext(ctx, "SELECT @@GLOBAL.automatic_sp_privileges").Scan(&automatic); err != nil {
+		return fmt.Errorf("failed to read automatic_sp_privileges: %w", err)
+	}
+	if automatic == 0 {
+		schema.RoutinePrivileges = catalog.RoutinePrivileges{}
+		return nil
+	}
+	grants, err := r.readRoutinePrivileges(ctx, account, databases)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read privileges on routines: %w", err)
@@ -34,10 +47,10 @@ func (r *Reader) readRoutinePrivilegesInto(ctx context.Context, account sessionA
 	return nil
 }
 
-func (r *Reader) readRoutinePrivileges(ctx context.Context, mariaDB bool, databases []string) ([]catalog.RoutineGrant, error) {
+func (r *Reader) readRoutinePrivileges(ctx context.Context, account sessionAccount, databases []string) ([]catalog.RoutineGrant, error) {
 	var grants []catalog.RoutineGrant
 	for _, database := range databases {
-		inDatabase, err := r.readRoutinePrivilegesIn(ctx, database, mariaDB)
+		inDatabase, err := r.readRoutinePrivilegesIn(ctx, account, database)
 		if err != nil {
 			return nil, err
 		}
@@ -50,12 +63,18 @@ func (r *Reader) readRoutinePrivileges(ctx context.Context, mariaDB bool, databa
 // of one database. The database is reported as the read spells it, as
 // [Reader.readGrants] reports it.
 //
+// The CREATE that replaces a routine grants the account running it EXECUTE
+// and ALTER ROUTINE on the routine, unless it holds both already, so a row of
+// the reading account that holds exactly those, without the grant option, is
+// the one the CREATE writes back and is left out. Each other row records
+// whether the reading account may grant it again ([sessionAccount.mayGrant]).
+//
 // MariaDB records a role with an empty host, and only a role: it records a
 // user created with an empty host under the host %, and answers ERROR 1133
 // to a GRANT that names a role with an empty host, measured on 11.8.9. MySQL
 // 8.4.13 records a user created with an empty host under it, and a role
 // there is an account with a host.
-func (r *Reader) readRoutinePrivilegesIn(ctx context.Context, database string, mariaDB bool) ([]catalog.RoutineGrant, error) {
+func (r *Reader) readRoutinePrivilegesIn(ctx context.Context, account sessionAccount, database string) ([]catalog.RoutineGrant, error) {
 	rows, err := r.db.QueryContext(ctx, routinePrivilegeQuery(), nameBinds(database, 1)...)
 	if err != nil {
 		return nil, err
@@ -70,7 +89,7 @@ func (r *Reader) readRoutinePrivilegesIn(ctx context.Context, database string, m
 		grant := catalog.RoutineGrant{
 			User:   user,
 			Host:   host,
-			Role:   mariaDB && host == "",
+			Role:   account.mariaDB && host == "",
 			Schema: database,
 			Name:   name,
 			Type:   strings.ToUpper(strings.TrimSpace(routineType)),
@@ -83,12 +102,37 @@ func (r *Reader) readRoutinePrivilegesIn(ctx context.Context, database string, m
 				grant.Privileges = append(grant.Privileges, privilege)
 			}
 		}
+		if account.isCreator(grant) {
+			continue
+		}
+		grant.ReaderMayGrant = account.mayGrant(grant)
 		grants = append(grants, grant)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return grants, nil
+}
+
+// isCreator reports whether grant is the row the CREATE of the routine grants
+// the account: its own, holding EXECUTE and ALTER ROUTINE and not the grant
+// option. Measured on MySQL 8.4.13 and MariaDB 11.8.9 with
+// automatic_sp_privileges on, an account holding CREATE ROUTINE on the
+// database alone gets that row from each CREATE PROCEDURE it runs.
+func (a sessionAccount) isCreator(grant catalog.RoutineGrant) bool {
+	at := strings.LastIndex(a.name, "@")
+	return at >= 0 && !grant.Role && grant.User == a.name[:at] && grant.Host == a.name[at+1:] && !grant.WithOption &&
+		len(grant.Privileges) == 2 &&
+		slices.Contains(grant.Privileges, "EXECUTE") && slices.Contains(grant.Privileges, "ALTER ROUTINE")
+}
+
+// mayGrant reports whether the account may grant grant again after the DROP
+// of its routine: SHOW GRANTS gives it the grant option and each privilege of
+// the row on the routine's database, or on every database. A row SHOW GRANTS
+// prints on the routine itself is not read, which is right here, because the
+// DROP takes it.
+func (a sessionAccount) mayGrant(grant catalog.RoutineGrant) bool {
+	return a.grants.OnDatabase(grant.Schema).Grantable(grant.Privileges...)
 }
 
 // routinePrivilegeQuery projects the rows of mysql.procs_priv in one

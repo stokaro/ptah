@@ -181,17 +181,26 @@ func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error
 // 11.8.9, and the comparison reads none of them, so without these a body
 // change leaves every grantee without EXECUTE on the routine and the next
 // plan reports the schema synced. With automatic_sp_privileges off the DROP
-// keeps the rows, and the GRANT changes nothing. Ptah models no privilege on
-// a routine on these engines, so the plan revokes none and every row comes
-// back, to a user or a role alike: a user is named with its host, a MariaDB
-// role by its name alone ([catalog.RoutineGrant.Role]).
+// keeps the rows and the read reports none, so the plan grants nothing. Ptah
+// models no privilege on a routine on these engines, so the plan revokes none
+// and every row comes back, to a user or a role alike: a user is named with
+// its host, a MariaDB role by its name alone ([catalog.RoutineGrant.Role]).
+// The row the CREATE grants the applying account is not among them.
+//
+// The GRANTs run as the applying account, and a server refuses one from an
+// account without the grant option, with ERROR 1370 after the DROP and the
+// CREATE have run. So a row the account may not grant again
+// ([catalog.RoutineGrant.ReaderMayGrant]) refuses the plan before anything
+// runs.
 //
 // A routine name compares without case on these engines, and a row spells the
 // name as the GRANT that wrote it did, so the name is compared without case
-// and the GRANT names the routine as the CREATE does. A routine named without
-// its database is in the one database the read describes. A privilege name
-// is written as the server spells it, and one that is not a run of words is
-// refused rather than written into the statement.
+// and the GRANT names the routine as the CREATE does, with its database only
+// where the CREATE names one. A routine named without its database is in the
+// one database the read describes, which is the connection's, and naming that
+// database would tie a generated migration to the database it was planned
+// against. A privilege name is written as the server spells it, and one that
+// is not a run of words is refused rather than written into the statement.
 func (p *Planner) routinePrivilegesGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if !p.isMySQLFamily() || len(diff.CurrentRoutinePrivileges.Grants) == 0 {
 		return nil, nil
@@ -207,7 +216,10 @@ func (p *Planner) routinePrivilegesGivenBack(diff *difftypes.SchemaDiff) ([]ast.
 			if !grantsOn(semantics, grant, routine, ref) {
 				continue
 			}
-			statement, err := p.routineGrantStatement(grant, routine, ref.Name)
+			if !grant.ReaderMayGrant {
+				return nil, p.refuseUngrantableRoutinePrivilege(grant, routine)
+			}
+			statement, err := p.routineGrantStatement(grant, routine, ref)
 			if err != nil {
 				return nil, err
 			}
@@ -239,28 +251,65 @@ func grantsOn(semantics identifier.Semantics, grant catalog.RoutineGrant, routin
 }
 
 // routineGrantStatement spells the GRANT that gives grant back on routine,
-// named name in the database the read found the row in.
-func (p *Planner) routineGrantStatement(grant catalog.RoutineGrant, routine schemamodel.Function, name string) (string, error) {
-	privileges := "USAGE"
-	if len(grant.Privileges) > 0 {
-		privileges = strings.Join(grant.Privileges, ", ")
-	}
+// whose name ref parses: qualified where the routine's name is, which is how
+// the DROP and the CREATE name it.
+func (p *Planner) routineGrantStatement(grant catalog.RoutineGrant, routine schemamodel.Function, ref tableref.Ref) (string, error) {
+	privileges := routineGrantPrivileges(grant)
 	if !permissionName.MatchString(strings.ReplaceAll(privileges, ", ", " ")) {
 		return "", fmt.Errorf("%w: %s: cannot grant %q on %s %s to %q again after the routine is replaced: "+
 			"the catalog names a privilege Ptah does not write", ptaherr.ErrUnsupportedFeature, p.targetDialect(),
 			privileges, routineWord(routine), routine.Name, grant.User)
 	}
 	dialect := p.targetDialect()
-	grantee := sqlident.Quote(dialect, grant.User)
-	if !grant.Role {
-		grantee += "@" + sqlident.Quote(dialect, grant.Host)
+	name := sqlident.Quote(dialect, ref.Name)
+	if ref.Qualified {
+		name = sqlident.Quote(dialect, ref.Schema) + "." + name
 	}
-	statement := fmt.Sprintf("GRANT %s ON %s %s.%s TO %s", privileges, strings.ToUpper(routineWord(routine)),
-		sqlident.Quote(dialect, grant.Schema), sqlident.Quote(dialect, name), grantee)
+	statement := fmt.Sprintf("GRANT %s ON %s %s TO %s", privileges, strings.ToUpper(routineWord(routine)), name,
+		p.routineGrantee(grant))
 	if grant.WithOption {
 		statement += " WITH GRANT OPTION"
 	}
 	return statement, nil
+}
+
+// routineGrantPrivileges is the privilege list of the GRANT that gives grant
+// back: USAGE for a row that holds only the grant option.
+func routineGrantPrivileges(grant catalog.RoutineGrant) string {
+	if len(grant.Privileges) == 0 {
+		return "USAGE"
+	}
+	return strings.Join(grant.Privileges, ", ")
+}
+
+// routineGrantee names the account of grant as a GRANT names it.
+func (p *Planner) routineGrantee(grant catalog.RoutineGrant) string {
+	grantee := sqlident.Quote(p.targetDialect(), grant.User)
+	if !grant.Role {
+		grantee += "@" + sqlident.Quote(p.targetDialect(), grant.Host)
+	}
+	return grantee
+}
+
+// refuseUngrantableRoutinePrivilege refuses the plan that replaces routine,
+// on which grant is held and the applying account may not grant it again.
+// The GRANT would fail with ERROR 1370 after the DROP and the CREATE have run,
+// measured on MySQL 8.4.13 and MariaDB 11.8.9, and the grantee would be left
+// without the privilege.
+func (p *Planner) refuseUngrantableRoutinePrivilege(grant catalog.RoutineGrant, routine schemamodel.Function) error {
+	privileges := routineGrantPrivileges(grant)
+	held := privileges
+	if len(grant.Privileges) == 0 {
+		held = "the grant option"
+	}
+	database := sqlident.Quote(p.targetDialect(), grant.Schema) + ".*"
+	return fmt.Errorf(
+		"%w: %s: cannot replace %s %s: the DROP that replaces it takes %s on it from %s, and the account may not "+
+			"grant it again without the grant option on %s; grant the account %s ON %s WITH GRANT OPTION, or "+
+			"replace the routine as an account that holds it",
+		ptaherr.ErrUnsupportedFeature, p.targetDialect(), routineWord(routine), routine.Name, held,
+		p.routineGrantee(grant), database, privileges, database,
+	)
 }
 
 // refuseUnreadRoutinePrivileges refuses a plan that replaces a MySQL or
