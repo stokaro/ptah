@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/privilegefold"
@@ -119,7 +120,11 @@ func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, s
 // the privilege and takes only the right to pass it on, which the model can say
 // only about a grant this file made: it has no spelling for "held, but without
 // the option" on its own, so that form is refused when no earlier GRANT here
-// carries the privilege.
+// carries the privilege. On a server with no statement for it, such as Oracle,
+// the form is refused wherever it stands: the GRANT it follows would be kept
+// without the option, which is the declaration the message asks for, and the
+// option a grantee holds on the server would stay held while the plan reads
+// as synced.
 //
 // A REVOKE ALL is kept as ALL, the absence of every privilege on the object,
 // on every kind of object and for every source platform. Spelled as a list,
@@ -141,6 +146,9 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 	statement := "REVOKE"
 	if node.GrantOptionFor {
 		statement = "REVOKE GRANT OPTION FOR"
+		if err := refuseGrantOptionRevoke(revoked, target, privileges, sourcePlatform); err != nil {
+			return err
+		}
 	}
 	if err := refuseColumnRevokeUnderTableGrant(database, revoked, statement, privileges); err != nil {
 		return err
@@ -164,6 +172,22 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 	revoked.Privileges = privileges
 	privilegefold.Merge(database, &schemamodel.Database{RevokedGrants: []schemamodel.Grant{revoked}})
 	return nil
+}
+
+// refuseGrantOptionRevoke refuses a REVOKE GRANT OPTION FOR read for a
+// server that has no statement taking the grant option alone; see
+// [descriptor.Descriptor.GrantOptionRevokedWithPrivilege].
+func refuseGrantOptionRevoke(revoked schemamodel.Grant, target string, privileges []string, sourcePlatform string) error {
+	facts := factsOf(sourcePlatform)
+	if !facts.grantOptionRevokedWithPrivilege {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: REVOKE GRANT OPTION FOR %s ON %s FROM %s: %s has no statement that takes the grant option and leaves "+
+			"the privilege, and a REVOKE also takes the privilege from everyone %s granted it to; declare the GRANT "+
+			"without WITH GRANT OPTION, and take an option the server holds by revoking the privilege and granting "+
+			"it again by hand",
+		ptaherr.ErrUnsupportedFeature, strings.Join(privileges, ", "), target, revoked.Role, facts.name, revoked.Role)
 }
 
 // refuseOptionKeptOnColumns refuses a REVOKE GRANT OPTION FOR on a whole table

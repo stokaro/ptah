@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
 )
 
@@ -102,6 +103,23 @@ func TestOracleRoleStatements(t *testing.T) {
 			c.Assert(renderedStatement(rendered, err), qt.Equals, test.want)
 		})
 	}
+}
+
+// A revoke of the grant option alone is refused: Oracle has no statement for
+// it, ORA-00990 answers `REVOKE GRANT OPTION FOR`, and the plain REVOKE would
+// take the privilege the revoke keeps, from the grantee and from everyone it
+// granted the privilege to.
+func TestOracleRevokesNoGrantOptionAlone(t *testing.T) {
+	c := qt.New(t)
+	node := ast.NewRevokePrivilege("U48", "TABLE", "app.t48", []string{"SELECT"}).SetGrantOptionFor(true)
+
+	rendered, err := builtin.RenderSQL(platform.Oracle, node)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*oracle: cannot take the grant option on SELECT ON app.t48 from "U48" and leave the `+
+		`privilege: Oracle has no statement for it, and a REVOKE also takes the privilege from everyone "U48" granted it `+
+		`to; revoke the privilege and grant it again by hand`)
+	c.Assert(rendered, qt.Equals, "")
 }
 
 func renderErrorText(err error) string {

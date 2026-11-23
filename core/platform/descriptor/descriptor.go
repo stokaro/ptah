@@ -87,6 +87,12 @@ type Dialect struct {
 	// the grantee at the whole object rather than to one privilege, so
 	// revoking the option from one privilege revokes it from all of them.
 	GrantOptionPerObject bool `json:"grant_option_per_object,omitempty"`
+	// GrantOptionRevokedWithPrivilege reports that the engine has no
+	// statement that takes the grant option from a privilege and leaves the
+	// privilege held. A REVOKE takes the privilege and its option together,
+	// and with them the privilege from everyone the grantee granted it to. A
+	// declared REVOKE GRANT OPTION FOR has nothing to plan, so it is refused.
+	GrantOptionRevokedWithPrivilege bool `json:"grant_option_revoked_with_privilege,omitempty"`
 	// TableRevokeTakesOnlyTableGrants reports that a REVOKE on a table takes
 	// only a privilege granted on that table, and that the engine refuses one
 	// of a privilege the grantee holds nowhere on the table. A grant on the

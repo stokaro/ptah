@@ -49,6 +49,11 @@ type readingFacts struct {
 	// table rather than its schema, so two tables of a schema may each have an
 	// index of one name; see [indexCommentTarget].
 	indexNamesPerTable bool
+	// grantOptionRevokedWithPrivilege is the descriptor's
+	// GrantOptionRevokedWithPrivilege: the server has no statement that takes
+	// the grant option alone, so a declared REVOKE GRANT OPTION FOR is
+	// refused; see [appendRevoke].
+	grantOptionRevokedWithPrivilege bool
 }
 
 // readingFactsCache keeps each dialect name's facts once read. A read asks
@@ -94,6 +99,8 @@ func factsOf(sourcePlatform string) readingFacts {
 		routines:            described.Grammar.Routines.Body,
 		serialOwnsSequence:  described.Comparison.SerialOwnsSequence,
 		indexNamesPerTable:  identifier.IndexNamespace(described.Identifiers.IndexNamespace) == identifier.IndexNamespaceTable,
+
+		grantOptionRevokedWithPrivilege: described.GrantOptionRevokedWithPrivilege,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

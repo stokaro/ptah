@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 )
@@ -64,4 +65,21 @@ func TestPlan_SQLServerRevokesTheGrantOptionPerPrivilege(t *testing.T) {
 		"REVOKE GRANT OPTION FOR SELECT ON [orders] FROM [reader] CASCADE",
 		"REVOKE GRANT OPTION FOR SELECT ON [customers] FROM [reader] CASCADE",
 	})
+}
+
+// Oracle shares this planner and has no statement that takes the grant option
+// alone, so a diff that takes it and keeps the privilege is refused rather
+// than planned as the REVOKE that takes the privilege.
+func TestPlan_OracleRefusesToTakeOnlyTheGrantOption(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(
+		context.Background(), must.Must(builtin.New()),
+		grantOptionsRevoked(), "oracle",
+	)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*oracle: cannot take the grant option on INSERT ON orders from "reader" and leave `+
+		`the privilege: .*`)
+	c.Assert(statements, qt.IsNil)
 }

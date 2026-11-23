@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/sqlschema"
 )
@@ -311,6 +312,49 @@ func TestRead_GrantAndRevoke_FailurePath(t *testing.T) {
 			database, _, err := sqlschema.Read([]byte(test.sql), platform.Postgres)
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.wantErr)
+			c.Assert(database.Grants, qt.IsNil)
+		})
+	}
+}
+
+// Oracle has no statement that takes the grant option and leaves the
+// privilege, so a REVOKE GRANT OPTION FOR read for it is refused by name, after
+// a GRANT of the privilege WITH GRANT OPTION as well as without one, and nothing
+// is read. The same statements read for PostgreSQL are kept; see
+// TestRead_GrantAndRevoke_HappyPath.
+func TestRead_GrantOptionRevokeForOracle_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{
+			name:    "after the GRANT it takes the option from",
+			sql:     "GRANT SELECT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR SELECT ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR SELECT ON TABLE t FROM r: oracle has no statement`,
+		},
+		{
+			name:    "of ALL",
+			sql:     "GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION;\nREVOKE GRANT OPTION FOR ALL ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR ALL ON TABLE t FROM r: oracle has no statement`,
+		},
+		{
+			name:    "with no grant in the file",
+			sql:     "REVOKE GRANT OPTION FOR SELECT ON t FROM r;",
+			wantErr: `REVOKE GRANT OPTION FOR SELECT ON TABLE t FROM r: oracle has no statement`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), platform.Oracle)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.wantErr+` that takes the grant option and leaves the privilege, `+
+				`and a REVOKE also takes the privilege from everyone r granted it to; declare the GRANT without WITH GRANT `+
+				`OPTION, and take an option the server holds by revoking the privilege and granting it again by hand`)
 			c.Assert(database.Grants, qt.IsNil)
 		})
 	}
