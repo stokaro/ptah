@@ -15,6 +15,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
@@ -99,6 +100,9 @@ func RegisterProjectEnvFlag(flags *pflag.FlagSet) {
 
 func markProjectEnvFlag(flags *pflag.FlagSet) {
 	RegisterProjectVarFlag(flags)
+	// No env has a blank name, so PTAH_ENV="  " is the empty variable, and
+	// [RefuseEmptyProjectEnv] refuses it as one.
+	cmdflags.ReadBlankAsEmpty(flags, EnvFlagName)
 	if err := flags.SetAnnotation(EnvFlagName, ProjectConfigEnvAnnotation, []string{"true"}); err != nil {
 		panic(err)
 	}

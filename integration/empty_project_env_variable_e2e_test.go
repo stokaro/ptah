@@ -20,6 +20,15 @@ import (
 // Each test applies a history under the env, runs again with the variable
 // empty, and reads the database back.
 
+// emptyProjectEnvSettings are the PTAH_ENV settings that name no env, with
+// how the refusal describes each.
+var emptyProjectEnvSettings = []struct {
+	env, state string
+}{
+	{env: "PTAH_ENV=", state: "set but empty"},
+	{env: "PTAH_ENV=  ", state: `set to "  ", which names nothing`},
+}
+
 // projectEnvHistoryTable is the revision table the env dev names.
 const projectEnvHistoryTable = "dev_history"
 
@@ -58,18 +67,22 @@ func nativeProjectEnvDir(c *qt.C) (string, []string) {
 }
 
 // TestMigrationsUpRefusesAnEmptyProjectEnvVariableE2E_FailurePath runs `ptah
-// migrations up` again with PTAH_ENV empty. Read as unset, the variable would
-// select no env, read the default revision table, find nothing applied and run
-// migration 1 again over the table it created.
+// migrations up` again with PTAH_ENV empty or blank. Read as unset, the
+// variable would select no env, read the default revision table, find nothing
+// applied and run migration 1 again over the table it created.
 func TestMigrationsUpRefusesAnEmptyProjectEnvVariableE2E_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	dir, before := nativeProjectEnvDir(c)
+	for _, setting := range emptyProjectEnvSettings {
+		t.Run(setting.env, func(t *testing.T) {
+			c := qt.New(t)
+			dir, before := nativeProjectEnvDir(c)
 
-	got := nativeProjectEnvRun(c, dir, []string{"PTAH_ENV="})
+			got := nativeProjectEnvRun(c, dir, []string{setting.env})
 
-	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stderr, qt.Contains, `PTAH_ENV is set but empty, and ptah.yaml declares env "dev"`)
-	c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.DeepEquals, before)
+			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, `PTAH_ENV is `+setting.state+`, and ptah.yaml declares env "dev"`)
+			c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.DeepEquals, before)
+		})
+	}
 }
 
 // TestMigrationsUpReadsTheProjectEnvVariableE2E_HappyPath is the control for
@@ -162,18 +175,23 @@ func (t compatProjectEnvTarget) run(c *qt.C, env []string, args ...string) cliru
 }
 
 // TestCompatMigrateApplyRefusesAnEmptyProjectEnvVariableE2E_FailurePath runs
-// `ptah-compat migrate apply` again with PTAH_ENV empty. Read as unset, the
-// variable would select no env, so the run would read no project file, look
-// for its history in the default revision schema and run migration 1 again.
+// `ptah-compat migrate apply` again with PTAH_ENV empty or blank. Read as
+// unset, the variable would select no env, so the run would read no project
+// file, look for its history in the default revision schema and run migration
+// 1 again.
 func TestCompatMigrateApplyRefusesAnEmptyProjectEnvVariableE2E_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	target := newCompatProjectEnvTarget(c)
+	for _, setting := range emptyProjectEnvSettings {
+		t.Run(setting.env, func(t *testing.T) {
+			c := qt.New(t)
+			target := newCompatProjectEnvTarget(c)
 
-	got := target.run(c, []string{"PTAH_ENV="})
+			got := target.run(c, []string{setting.env})
 
-	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stderr, qt.Contains, `PTAH_ENV is set but empty, and atlas.hcl declares env "dev"`)
-	c.Assert(target.tables(c), qt.DeepEquals, target.before)
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, `PTAH_ENV is `+setting.state+`, and atlas.hcl declares env "dev"`)
+			c.Assert(target.tables(c), qt.DeepEquals, target.before)
+		})
+	}
 }
 
 // TestCompatMigrateApplyReadsTheProjectEnvVariableE2E_HappyPath is the control

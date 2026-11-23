@@ -320,8 +320,9 @@ func (n Name) Explicit() bool { return n.Spelling != "" }
 // whitespace-only string is refused, naming the spelling used, because the
 // migrator would read it as "use the default" and a caller who meant to
 // separate two histories would silently share a lock. An empty
-// PTAH_MIGRATION_LOCK_NAME never reaches here: the binding refuses it, as
-// [RegisterNameFlag] declares.
+// PTAH_MIGRATION_LOCK_NAME, or one of only white space, never reaches here:
+// the binding refuses both, as [RegisterNameFlag] declares, so the refusal
+// here is of a blank --migration-lock-name or [NameConfigKey].
 //
 // A forwarded run selects no name. `ptah-compat migrate down` reaches the
 // native command through the adapter, and the compatibility surface has no

@@ -28,10 +28,34 @@ func TestEmptyEnvName_ReportsAnEmptyVariable(t *testing.T) {
 
 	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
 
-	name, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
+	name, value, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
 	c.Assert(empty, qt.IsTrue)
 	c.Assert(name, qt.Equals, "PTAH_ENV")
+	c.Assert(value, qt.Equals, "")
 	c.Assert(env, qt.Equals, "")
+}
+
+// TestEmptyEnvName_ReportsABlankVariableOnAFlagThatReadsBlankAsEmpty: on a
+// flag declared with ReadBlankAsEmpty, a value of only white space is read as
+// the empty one, and the value is reported.
+func TestEmptyEnvName_ReportsABlankVariableOnAFlagThatReadsBlankAsEmpty(t *testing.T) {
+	for _, blank := range []string{" ", "  ", "\t"} {
+		t.Run(blank, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv("PTAH_ENV", blank)
+			var env string
+			cmd := envCommand(&env)
+			cmdflags.ReadBlankAsEmpty(cmd.Flags(), "env")
+
+			c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+			name, value, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
+			c.Assert(empty, qt.IsTrue)
+			c.Assert(name, qt.Equals, "PTAH_ENV")
+			c.Assert(value, qt.Equals, blank)
+			c.Assert(env, qt.Equals, "")
+		})
+	}
 }
 
 func TestEmptyEnvName_ReportsNothingElse(t *testing.T) {
@@ -43,9 +67,10 @@ func TestEmptyEnvName_ReportsNothingElse(t *testing.T) {
 
 		c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
 
-		name, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
+		name, value, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
 		c.Assert(empty, qt.IsFalse)
 		c.Assert(name, qt.Equals, "")
+		c.Assert(value, qt.Equals, "")
 	})
 
 	tests := []struct {
@@ -55,7 +80,7 @@ func TestEmptyEnvName_ReportsNothingElse(t *testing.T) {
 		flag  string
 	}{
 		{name: "a variable with a value", value: "dev", flag: "env"},
-		{name: "a variable of only white space, which is a value", value: " ", flag: "env"},
+		{name: "a variable of only white space, which is a value on a flag that reads it so", value: " ", flag: "env"},
 		{name: "an empty variable beside a typed --env", value: "", args: []string{"--env", "dev"}, flag: "env"},
 		{name: "an empty variable beside a typed empty --env", value: "", args: []string{"--env", ""}, flag: "env"},
 		{name: "a flag the set does not have", value: "", flag: "missing"},
@@ -70,9 +95,10 @@ func TestEmptyEnvName_ReportsNothingElse(t *testing.T) {
 
 			c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
 
-			name, empty := cmdflags.EmptyEnvName(cmd.Flags(), test.flag)
+			name, value, empty := cmdflags.EmptyEnvName(cmd.Flags(), test.flag)
 			c.Assert(empty, qt.IsFalse)
 			c.Assert(name, qt.Equals, "")
+			c.Assert(value, qt.Equals, "")
 		})
 	}
 
@@ -89,9 +115,10 @@ func TestEmptyEnvName_ReportsNothingElse(t *testing.T) {
 
 		c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
 
-		name, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
+		name, value, empty := cmdflags.EmptyEnvName(cmd.Flags(), "env")
 		c.Assert(empty, qt.IsFalse)
 		c.Assert(name, qt.Equals, "")
+		c.Assert(value, qt.Equals, "")
 		c.Assert(env, qt.Equals, "dev")
 	})
 }

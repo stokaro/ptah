@@ -1673,8 +1673,8 @@ $ ptah migrations up --db-url 'clickhouse://…' \
 `PTAH_MIGRATIONS_ENGINE` carries the same value, and is the only spelling on the
 compatibility surface — `ptah-compat` registers no flag for it, because the
 community binary has none and the conformance `cli-surface` tier asserts flag
-parity against it. `ptah-compat migrate apply`, `status` and `down` read the
-variable; the native verbs take either. An empty or blank value is refused
+parity against it. `ptah-compat migrate apply`, `status`, `set` and `down` read
+the variable; the native verbs take either. An empty or blank value is refused
 before the run connects: read as unset, it would create the table with
 `MergeTree`.
 

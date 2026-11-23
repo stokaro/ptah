@@ -63,10 +63,11 @@ type atlasLockRequest struct {
 // registers it on. Type and default match the reference: a string with no
 // default, where "unset" means the tool's own default lock name.
 //
-// Its variable, PTAH_LOCK_NAME, refuses an empty value. Read as unset, it takes
-// the default lock, and a runner holding the lock the variable was meant to
-// name does not exclude this one. A blank value reaches
-// [resolveAtlasLockRequest] and is refused there, as a blank --lock-name is.
+// Its variable, PTAH_LOCK_NAME, refuses an empty value and one of only white
+// space, which the binding trims to empty. Read as unset, either takes the
+// default lock, and a runner holding the lock the variable was meant to name
+// does not exclude this one. A blank --lock-name typed on the command line
+// reaches [resolveAtlasLockRequest] and is refused there.
 func registerAtlasLockNameFlag(flags *pflag.FlagSet, opts *atlasLockOptions) {
 	flags.StringVar(&opts.name, atlasLockNameFlag, "",
 		"Name of the database advisory lock to acquire; unset uses the default lock name")

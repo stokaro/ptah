@@ -1342,7 +1342,11 @@ The native `ptah` binary selects an `env` block the same way: only when
 `--env` (or `PTAH_ENV`) names it. A file that declares one env does not make it
 the default. Without `--env`, a native command evaluates the file's variables,
 locals and top-level blocks and applies no env, and a command that then lacks a
-value names the envs the file declares:
+value names the envs the file declares. On both binaries, an empty or blank
+`PTAH_ENV` beside a file that declares an env is refused rather than read as
+no env, and `ptah-compat` refuses it beside an `atlas.hcl` it cannot parse,
+since it cannot tell whether the file declares one; see
+[Variables that choose a lock, an engine or an env](../../reference/configuration/#variables-that-choose-a-lock-an-engine-or-an-env).
 
 ```text
 error: database URL is required: no --env given; atlas.hcl declares env "prod"

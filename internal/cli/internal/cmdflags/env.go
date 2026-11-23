@@ -19,8 +19,12 @@ const (
 	forwardedEnvAnnotation = "ptah.env.forwarded"
 	appliedEnvAnnotation   = "ptah.env.applied"
 	// emptyEnvAnnotation records the variable of a flag whose value the
-	// binding read as unset because it was empty; see [EmptyEnvName].
+	// binding read as unset because it was empty, then the value; see
+	// [EmptyEnvName].
 	emptyEnvAnnotation = "ptah.env.empty"
+	// blankEmptyAnnotation marks a flag whose variable reads a value of only
+	// white space as empty; see [ReadBlankAsEmpty].
+	blankEmptyAnnotation = "ptah.env.blank-empty"
 )
 
 // AddForwardedEnvBinding records an environment variable that reaches the
@@ -190,8 +194,8 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 				return
 			}
 		}
-		if value == "" && flag.Value.Type() != "bool" {
-			markEnvEmpty(flag, envName)
+		if flag.Value.Type() != "bool" && (value == "" || (readsBlankAsEmpty(flag) && strings.TrimSpace(value) == "")) {
+			markEnvEmpty(flag, envName, value)
 			return
 		}
 		applyErr = setEnvValue(flags, flag, envName, value)
@@ -249,13 +253,31 @@ func clearEnvApplied(flag *pflag.Flag) {
 	delete(flag.Annotations, emptyEnvAnnotation)
 }
 
-// markEnvEmpty records that the flag's variable was set to the empty value,
-// which the binding reads as unset.
-func markEnvEmpty(flag *pflag.Flag, envName string) {
+// markEnvEmpty records that the flag's variable envName was set to value, an
+// empty value the binding reads as unset.
+func markEnvEmpty(flag *pflag.Flag, envName, value string) {
 	if flag.Annotations == nil {
 		flag.Annotations = make(map[string][]string)
 	}
-	flag.Annotations[emptyEnvAnnotation] = []string{envName}
+	flag.Annotations[emptyEnvAnnotation] = []string{envName, value}
+}
+
+// ReadBlankAsEmpty makes the binding read a value of only white space for the
+// named flag's variable as it reads the empty value: as unset, recorded for
+// [EmptyEnvName]. It is for a flag no blank value can be meant for, such as
+// --env, whose value names an env: a blank PTAH_ENV is the empty variable
+// with a stray space in it, and reading it as a name refuses it as an env
+// nothing declares rather than as the empty variable it is. It panics when the
+// set has no such flag, which is a mistake in the command's declaration.
+func ReadBlankAsEmpty(flags *pflag.FlagSet, name string) {
+	if err := flags.SetAnnotation(name, blankEmptyAnnotation, []string{"true"}); err != nil {
+		panic(err)
+	}
+}
+
+// readsBlankAsEmpty reports whether flag was declared with [ReadBlankAsEmpty].
+func readsBlankAsEmpty(flag *pflag.Flag) bool {
+	return len(flag.Annotations[blankEmptyAnnotation]) > 0
 }
 
 func envApplied(flag *pflag.Flag) bool {
@@ -304,25 +326,26 @@ func AppliedEnvName(flags *pflag.FlagSet, name string) (string, bool) {
 	return appliedEnvName(flag)
 }
 
-// EmptyEnvName returns the variable of the named flag when it was set to the
-// empty value, which the binding reads as unset, and false when the variable
-// was unset or carried a value, when the flag was typed on the command line,
-// and for a flag this set does not have.
+// EmptyEnvName returns the variable of the named flag and its value when it
+// was set to the empty value, or for a flag declared with [ReadBlankAsEmpty]
+// to one of only white space, which the binding reads as unset. It returns
+// false when the variable was unset or carried a value, when the flag was
+// typed on the command line, and for a flag this set does not have.
 //
 // Unset is the answer for most flags, and the binding gives it. A command asks
 // here where the empty value matters once it knows more than the binding does:
 // an empty PTAH_ENV selects no env, which is what the operator meant only when
 // no project file declares one.
-func EmptyEnvName(flags *pflag.FlagSet, name string) (string, bool) {
+func EmptyEnvName(flags *pflag.FlagSet, name string) (envName, value string, empty bool) {
 	flag := flags.Lookup(name)
 	if flag == nil {
-		return "", false
+		return "", "", false
 	}
 	values := flag.Annotations[emptyEnvAnnotation]
-	if len(values) == 0 || values[0] == "" {
-		return "", false
+	if len(values) < 2 || values[0] == "" {
+		return "", "", false
 	}
-	return values[0], true
+	return values[0], values[1], true
 }
 
 // MutuallyExclusiveOnCommandLine returns cobra's own flag-group diagnostic when

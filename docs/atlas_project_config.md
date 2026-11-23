@@ -748,7 +748,9 @@ The native `ptah` binary selects an `env` block the same way: only when
 the default, and a file that declares several needs no tie-break. Without
 `--env`, a native command reads `./atlas.hcl`, evaluates its variables, locals
 and top-level blocks, and applies no env. A command that then lacks a value
-says so and names the envs the file declares:
+says so and names the envs the file declares. On both binaries, an empty or
+blank `PTAH_ENV` beside a file that declares an env is refused rather than read
+as no env.
 
 ```text
 error: database URL is required: no --env given; atlas.hcl declares env "prod"

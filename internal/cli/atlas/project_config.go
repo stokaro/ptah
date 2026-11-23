@@ -45,10 +45,12 @@ type atlasProjectFlagValues struct {
 	// file, as opposed to configPath holding the default ./atlas.hcl.
 	configNamed bool
 	envName     string
-	// emptyEnv is PTAH_ENV when the variable is set but empty and --env was
-	// not typed, and is empty otherwise; see [refuseEmptyAtlasEnv].
-	emptyEnv string
-	vars     []string
+	// emptyEnv is PTAH_ENV when the variable is set but empty or only white
+	// space and --env was not typed, and is empty otherwise; emptyEnvValue is
+	// its value. See [refuseEmptyAtlasEnv].
+	emptyEnv      string
+	emptyEnvValue string
+	vars          []string
 }
 
 // readsProject reports whether the invocation reads a project file at all.
@@ -691,7 +693,7 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 		flags.envName = flag.Value.String()
 		changed = changed || flag.Changed
 		if !flag.Changed {
-			flags.emptyEnv = emptyAtlasEnvVariable()
+			flags.emptyEnv, flags.emptyEnvValue = emptyAtlasEnvVariable()
 		}
 	}
 	// --var deliberately does NOT contribute to `changed`: it supplies values
@@ -858,14 +860,15 @@ func validateAtlasVarFlagsOnCommand(cmd *cobra.Command) error {
 	return nil
 }
 
-// emptyAtlasEnvVariable returns PTAH_ENV when it is set but empty, which
-// [refreshAtlasProjectFlagEnvironment] leaves off the flag, and "" otherwise.
-func emptyAtlasEnvVariable() string {
-	name := cmdflags.EnvName("PTAH", dbcli.EnvFlagName)
-	if value, ok := os.LookupEnv(name); ok && value == "" {
-		return name
+// emptyAtlasEnvVariable returns PTAH_ENV and its value when it is set but
+// empty or only white space, which [refreshAtlasProjectFlagEnvironment] leaves
+// off the flag, and "" otherwise.
+func emptyAtlasEnvVariable() (name, value string) {
+	name = cmdflags.EnvName("PTAH", dbcli.EnvFlagName)
+	if value, ok := os.LookupEnv(name); ok && strings.TrimSpace(value) == "" {
+		return name, value
 	}
-	return ""
+	return "", ""
 }
 
 // refuseEmptyAtlasEnv refuses an empty PTAH_ENV beside a project file that
@@ -902,12 +905,12 @@ func refuseEmptyAtlasEnv(flags atlasProjectFlagValues) error {
 	}
 	declared, err := projectconfig.DeclaredAtlasEnvs(raw, path)
 	if err != nil {
-		return err
+		return dbcli.UnreadableProjectEnvError(flags.emptyEnv, flags.emptyEnvValue, path, err)
 	}
 	if len(declared) == 0 {
 		return nil
 	}
-	return dbcli.EmptyProjectEnvError(flags.emptyEnv, declared)
+	return dbcli.EmptyProjectEnvError(flags.emptyEnv, flags.emptyEnvValue, declared)
 }
 
 // refuseEmptyAtlasEnvOnCommand is [refuseEmptyAtlasEnv] over the flags cmd
@@ -953,7 +956,9 @@ func refreshAtlasProjectFlagEnvironment(cmd *cobra.Command) error {
 			continue
 		}
 		value, ok := os.LookupEnv(cmdflags.EnvName("PTAH", name))
-		if !ok || value == "" {
+		// No env has a blank name, so a blank PTAH_ENV is left off the flag as
+		// the empty one is, and [refuseEmptyAtlasEnv] refuses it.
+		if !ok || value == "" || (name == dbcli.EnvFlagName && strings.TrimSpace(value) == "") {
 			continue
 		}
 		if err := cmd.Flags().Set(name, value); err != nil {
@@ -1270,6 +1275,7 @@ func mergeAtlasProjectArgs(
 	// short circuits too, unless the arguments typed --env.
 	if !raw.envChanged {
 		raw.flags.emptyEnv = parent.flags.emptyEnv
+		raw.flags.emptyEnvValue = parent.flags.emptyEnvValue
 	}
 	if !parent.changed {
 		raw.flags.vars = vars

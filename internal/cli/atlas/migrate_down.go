@@ -60,6 +60,13 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 			return err
 		}
 		if !atlasMigrateDownWantsFormat(verb, args) {
+			// The forwarded rollback reads PTAH_MIGRATIONS_ENGINE through the
+			// native --migrations-engine binding, whose refusal of an empty
+			// value says to leave that flag out. This verb has no such flag,
+			// so the value is refused here first, naming only the variable.
+			if _, err := migrationsEngineFromEnv(); err != nil {
+				return err
+			}
 			cmd.SetContext(repeatables.downSourceCheck(cmd.Context()))
 			return forward(cmd, args)
 		}

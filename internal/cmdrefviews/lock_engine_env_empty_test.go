@@ -3,6 +3,7 @@ package cmdrefviews_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"testing"
@@ -72,7 +73,9 @@ func TestEveryLockAndEngineVariableRefusesAnEmptyValue(t *testing.T) {
 // compatEngineVerbs are the `ptah-compat` verbs that read
 // PTAH_MIGRATIONS_ENGINE without a flag, since the community binary registers
 // none, with the arguments that reach the run. `migrate down` without --format
-// forwards to `ptah migrations down`, whose flag binding reads it.
+// forwards to `ptah migrations down`, whose flag binding reads it, and refuses
+// an empty value itself before it forwards, since the binding's refusal names
+// a flag the verb does not have.
 var compatEngineVerbs = []struct {
 	name string
 	args []string
@@ -96,18 +99,25 @@ func compatEngineTree() *cobra.Command { return cmdrefviews.Compat(atlascompatpo
 // unset, the variable would create the revision table with the default
 // engine, which the table keeps.
 func TestCompatVerbsRefuseAnEmptyMigrationsEngineVariable(t *testing.T) {
-	for _, value := range []string{"", " "} {
+	values := []struct {
+		value, state string
+	}{
+		{value: "", state: "set but empty"},
+		{value: " ", state: `set to " ", which names nothing`},
+	}
+	for _, value := range values {
 		for _, verb := range compatEngineVerbs {
-			t.Run(verb.name+"/"+strconv.Quote(value), func(t *testing.T) {
+			t.Run(verb.name+"/"+strconv.Quote(value.value), func(t *testing.T) {
 				c := qt.New(t)
 				dir := c.TempDir()
 				c.Chdir(dir)
-				c.Setenv("PTAH_MIGRATIONS_ENGINE", value)
+				c.Setenv("PTAH_MIGRATIONS_ENGINE", value.value)
 
 				err := projectEnvRun(c, compatEngineTree, verb.args, nil)
 
 				c.Assert(err, qt.ErrorIs, envbinding.ErrEmptyValue)
-				c.Assert(err, qt.ErrorMatches, `PTAH_MIGRATIONS_ENGINE is (set but empty|set to " ", which names nothing): .*`)
+				c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`PTAH_MIGRATIONS_ENGINE is `+value.state+
+					`: give it a value, or unset it to use the dialect's default engine`))
 				_, statErr := os.Stat(filepath.Join(dir, "app.db"))
 				c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 			})

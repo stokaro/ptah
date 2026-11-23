@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/dburldisplay"
@@ -89,6 +90,9 @@ This command reads files and contacts no database.`,
 	flags.StringVar(&opts.atlasPath, "atlas-config", "", "Path to atlas.hcl (default: ./atlas.hcl when present)")
 	flags.StringVar(&opts.ptahPath, "config", "", "Path to ptah.yaml (default: ./ptah.yaml when present)")
 	flags.StringVar(&opts.envName, "env", "", "Project environment to resolve; without it no env applies")
+	// A blank PTAH_ENV names no env, and dbcli.RefuseEmptyProjectEnv refuses
+	// it as the empty variable.
+	cmdflags.ReadBlankAsEmpty(flags, "env")
 	flags.StringVar(&opts.format, "format", inspectFormatText, "Output format: text or json")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd

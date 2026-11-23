@@ -150,8 +150,8 @@ or blank value, which names the default history: over a history in
 An empty or blank `PTAH_MIGRATION_LOCK_NAME`, `PTAH_LOCK_NAME` or
 `PTAH_MIGRATIONS_ENGINE` is refused: read as unset, it would take the default
 lock, which a runner holding the named one does not hold, or the default engine
-for the revision table. An empty `PTAH_ENV` is refused where a project file
-declares an environment: it would apply none.
+for the revision table. An empty or blank `PTAH_ENV` is refused where a project
+file declares an environment: it would apply none.
 
 ## Boolean environment variables
 
