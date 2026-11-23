@@ -338,6 +338,10 @@ func ApplyPlanWithOptions(
 	}
 	conn.SchemaWriter().SetDryRun(false)
 	if run, scoped := scopedExecution(describedOf(conn.Info().Dialect), conn.Info().Capabilities); scoped {
+		run, err := scopedRunOnSession(ctx, conn, run)
+		if err != nil {
+			return err
+		}
 		if !run.held {
 			return applyUnheldScopedPlan(ctx, conn, changes, opts)
 		}
@@ -596,6 +600,28 @@ func scopedExecution(described descriptor.Dialect, caps capability.Capabilities)
 		return scopedRun{}, true
 	}
 	return scopedRun{held: true, savepoint: scopedSavepoint(described)}, true
+}
+
+// scopedRunOnSession returns run as the session q runs on takes it. A held run
+// becomes one where each drop commits as it runs when the session commits an
+// open transaction ahead of each schema statement
+// ([dbreset.AutocommitBeforeDDL.CommitsEachSchemaStatement]): the transaction
+// would end at the first drop and take its savepoint with it. The release
+// line decides capability.TransactionalDDL, and a CockroachDB session can turn
+// autocommit_before_ddl either way, so the session is asked. The PostgreSQL
+// writer decides its own cleanup by the same predicate.
+func scopedRunOnSession(ctx context.Context, q dbreset.Querier, run scopedRun) (scopedRun, error) {
+	if !run.held {
+		return run, nil
+	}
+	setting, err := dbreset.ReadAutocommitBeforeDDL(ctx, q)
+	if err != nil {
+		return scopedRun{}, err
+	}
+	if setting.CommitsEachSchemaStatement() {
+		return scopedRun{}, nil
+	}
+	return run, nil
 }
 
 // scopedSavepoint names the savepoint statements of the dialect described.

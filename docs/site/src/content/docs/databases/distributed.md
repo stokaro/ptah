@@ -184,20 +184,28 @@ earlier drops in place, and the error names them.
 
 ## Dev and shadow database cleanup
 
-Ptah empties a dev or shadow database with `RESTRICT` drops, as when the drift
-check replays the applied migrations. CockroachDB records the tables, views,
-sequences and functions a routine body names, and refuses to drop one while
-the routine exists, but its catalog does not report these dependencies. No
-fixed order of the drops works: a function that a table default calls goes
-after that table, and before a table the function reads. So Ptah tries a
-refused drop again after the others, and stops only when a round drops
-nothing. A cleanup that fails partway keeps the drops that ran before the
-failure, and the error names the object that stopped it.
+Ptah empties a schema with `RESTRICT` drops: a dev or shadow database after
+the drift check replays the applied migrations, and a user's database under
+`ptah db drop-all` and `ptah-compat schema clean`. CockroachDB records the
+tables, views, sequences and functions a routine body names, and refuses to
+drop one while the routine exists, but its catalog does not report these
+dependencies. No fixed order of the drops works: a function that a table
+default calls goes after that table, and before a table the function reads.
+So Ptah tries a refused drop again after the others, and stops only when a
+round drops nothing.
 
 The retry relies on `autocommit_before_ddl`, which is on by default from v25:
-each drop then runs in a transaction of its own, and a refused one fails
-alone. A session that turns the setting off keeps the drops in one
-transaction, and the first refused drop stops the cleanup.
+each drop then commits in a transaction of its own, and a refused one fails
+alone. Nothing rolls back, so before the first drop Ptah refuses the cleanup
+when a view outside it reads a table, view or sequence it drops, and names
+the view. A dependency the catalog does not report, such as a function in
+another schema, still stops the cleanup partway, and the error then lists
+every object dropped before the failure.
+
+Ptah reads the setting from the session. Where it is off, as on v24.3 by
+default, or where the server has no such setting, as on v23.2, the drops share
+one transaction: Ptah makes one pass, the first refused drop rolls the cleanup
+back, and the error names the setting when the session has it.
 
 ## CockroachDB row-level TTL
 

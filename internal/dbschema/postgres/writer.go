@@ -395,11 +395,12 @@ type postgresCleanupCapabilities struct {
 	inspectDatabaseArtifacts         bool
 	cleanupLargeObjects              bool
 	preservePublicSchema             bool
-	// runsEachDDLAlone reports that the server commits the open transaction
-	// ahead of a schema statement while autocommit_before_ddl is on, as
-	// CockroachDB does by default, so each drop of the cleanup runs in a
-	// transaction of its own and a refused one fails alone. The cleanup then
-	// retries a refused drop without a savepoint.
+	// runsEachDDLAlone reports that the session commits the open transaction
+	// ahead of each schema statement
+	// ([dbreset.AutocommitBeforeDDL.CommitsEachSchemaStatement]), as
+	// CockroachDB does while autocommit_before_ddl is on, so each drop of the
+	// cleanup runs in a transaction of its own and a refused one fails alone.
+	// The cleanup then retries a refused drop without a savepoint.
 	//
 	// CockroachDB records the tables, views, sequences and functions a
 	// routine body names, and a function a table default calls, and refuses
@@ -409,16 +410,22 @@ type postgresCleanupCapabilities struct {
 	// goes after that table and before a table the function reads.
 	//
 	// A savepoint cannot carry the retry: the first DROP commits the
-	// transaction and takes the savepoint with it (SQLSTATE 3B001). The retry
-	// needs the setting on, which is the default on every declared line. With
-	// it off the drops stay in one transaction and the first failed statement
-	// aborts it: measured on v26.4.1, the cleanup of a function another one
-	// calls stops at that drop with 2BP01. `SET LOCAL` cannot turn it on for
-	// the cleanup alone. The transaction it belongs to ends at the first
-	// DROP, and with the session's setting off the cleanup's COMMIT then
-	// fails with 25P01, after every drop has run. A cleanup that fails
-	// partway keeps the drops that ran before the failure.
+	// transaction and takes the savepoint with it (SQLSTATE 3B001). Nothing
+	// rolls back either, so before the first drop the cleanup refuses a view
+	// outside its list that reads a relation in it, which is the dependent the
+	// catalog does report, and a failure that still comes partway names the
+	// drops that ran before it. `SET LOCAL` cannot turn the setting on for the
+	// cleanup alone: the transaction it belongs to ends at the first DROP,
+	// and with the session's setting off the cleanup's COMMIT then fails with
+	// 25P01, after every drop has run.
 	runsEachDDLAlone bool
+	// autocommitBeforeDDLOff reports a CockroachDB session that runs with
+	// autocommit_before_ddl off. The drops share the cleanup's transaction,
+	// and the first refused one aborts it, so the cleanup makes one pass,
+	// the transaction rolls back on a refusal, and the refusal names the
+	// setting. A retry there would answer every later statement with 25P02
+	// in place of the refusal.
+	autocommitBeforeDDLOff bool
 	// readsSchemaOwnership reports that the catalog answers whether the
 	// connecting role owns a schema, through pg_has_role, so a realm cleanup
 	// can empty in place a kept schema it may not drop; see
@@ -477,11 +484,19 @@ func inspectCleanupCapabilities(
 	version = strings.ToLower(version)
 	switch {
 	case strings.Contains(version, "cockroachdb"):
+		setting, err := dbreset.ReadAutocommitBeforeDDL(ctx, tx)
+		if err != nil {
+			return postgresCleanupCapabilities{}, fmt.Errorf(
+				"failed to inspect CockroachDB cleanup capabilities: %w",
+				err,
+			)
+		}
 		return postgresCleanupCapabilities{
-			runsEachDDLAlone:      true,
-			preservePublicSchema:  true,
-			showDefaultPrivileges: true,
-			protectedDatabases:    protectedCockroachDatabases,
+			runsEachDDLAlone:       setting.CommitsEachSchemaStatement(),
+			autocommitBeforeDDLOff: setting == dbreset.AutocommitBeforeDDLOff,
+			preservePublicSchema:   true,
+			showDefaultPrivileges:  true,
+			protectedDatabases:     protectedCockroachDatabases,
 		}, nil
 	case strings.Contains(version, "yugabytedb"),
 		strings.Contains(version, "yugabyte"),
@@ -565,7 +580,6 @@ func (c postgresCleanupCapabilities) globalDefaultPrivilegeResets() globalDefaul
 
 func (c postgresCleanupCapabilities) withoutTransaction() postgresCleanupCapabilities {
 	c.retryFailedDDL = false
-	c.runsEachDDLAlone = false
 	c.retryFailedDDLWithoutTransaction = true
 	return c
 }
@@ -576,6 +590,9 @@ func (c postgresCleanupCapabilities) dropObjects(
 	objects []postgresCleanupObject,
 ) error {
 	if c.runsEachDDLAlone {
+		if err := refuseExternalCleanupDependents(ctx, tx, objects); err != nil {
+			return err
+		}
 		return dropCleanupObjectsRetrying(ctx, tx, objects)
 	}
 	if c.retryFailedDDL {
@@ -592,7 +609,15 @@ func (c postgresCleanupCapabilities) dropObjects(
 	if c.retryFailedDDLWithoutTransaction {
 		return dropCleanupObjectsRetrying(ctx, tx, objects)
 	}
-	return dropCleanupObjectsOnce(ctx, tx, objects)
+	err := dropCleanupObjectsOnce(ctx, tx, objects)
+	if err != nil && c.autocommitBeforeDDLOff {
+		return errors.Join(err, errors.New(
+			"the session runs with autocommit_before_ddl off, so the drops share one transaction and a refused "+
+				"one cannot be retried; with the setting on, the default from v25, the cleanup retries a refused "+
+				"drop once the dependent that holds it up is dropped",
+		))
+	}
+	return err
 }
 
 // postgresSchemaCleanupScope is the cleanup of the named schemas, leaving the
@@ -1812,17 +1837,52 @@ func dropCleanupObjects(
 // `DROP TABLE` answers `Cannot drop table dfp with indices: dfp_uq`
 // (SQLSTATE 0A000), so a table has to be attempted again after its index is
 // gone (stokaro/ptah#1901).
+//
+// Each drop the server accepts stays committed, so the error that ends the
+// cleanup names every drop that ran before it.
 func dropCleanupObjectsRetrying(
 	ctx context.Context,
 	conn cleanupConn,
 	objects []postgresCleanupObject,
 ) error {
-	return retryCleanupObjects(ctx, objects, func(object postgresCleanupObject) (dropErr, controlErr error) {
+	var dropped []postgresCleanupObject
+	err := retryCleanupObjects(ctx, objects, func(object postgresCleanupObject) (dropErr, controlErr error) {
 		if _, err := conn.ExecContext(ctx, object.Statement); err != nil {
 			return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, object.Statement), nil
 		}
+		dropped = append(dropped, object)
 		return nil, nil
 	})
+	if err != nil {
+		return errors.Join(err, fmt.Errorf(
+			"the server commits each drop as it runs; dropped before the failure: %s",
+			droppedCleanupObjects(dropped),
+		))
+	}
+	return nil
+}
+
+// droppedCleanupObjects names the objects of dropped in the order they were
+// dropped, or says that there are none.
+func droppedCleanupObjects(dropped []postgresCleanupObject) string {
+	if len(dropped) == 0 {
+		return "nothing"
+	}
+	names := make([]string, 0, len(dropped))
+	for _, object := range dropped {
+		names = append(names, cleanupObjectName(object))
+	}
+	return strings.Join(names, ", ")
+}
+
+// cleanupObjectName spells object for a diagnostic: its kind and its
+// schema-qualified name, and the relation a constraint belongs to.
+func cleanupObjectName(object postgresCleanupObject) string {
+	name := fmt.Sprintf("%s %q.%q", object.Kind, object.Schema, object.Name)
+	if object.Qualifier != "" {
+		name += fmt.Sprintf(" on %q.%q", object.Schema, object.Qualifier)
+	}
+	return name
 }
 
 // retryCleanupObjects runs attempt over the objects, round after round, for as

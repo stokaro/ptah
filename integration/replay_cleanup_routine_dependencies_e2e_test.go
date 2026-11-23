@@ -6,8 +6,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,5 +181,97 @@ func TestReplayCleanupRoutineDependenciesE2E_HappyPath(t *testing.T) {
 				c.Assert(pendingMarkerTables(c, ctx, replay.target), qt.Equals, 1)
 			})
 		}
+	}
+}
+
+// withAutocommitBeforeDDLOff returns dbURL with the CockroachDB connection
+// option that starts the session with autocommit_before_ddl off. The option
+// is written byte for byte: url.Values spells the space as "+", and CockroachDB
+// ignores the option then without a word.
+func withAutocommitBeforeDDLOff(c *qt.C, dbURL string) string {
+	c.Helper()
+	parsed, err := url.Parse(dbURL)
+	c.Assert(err, qt.IsNil)
+	query := slices.DeleteFunc([]string{parsed.RawQuery, "options=-c%20autocommit_before_ddl%3Doff"}, func(part string) bool {
+		return part == ""
+	})
+	parsed.RawQuery = strings.Join(query, "&")
+	return parsed.String()
+}
+
+// autocommitBeforeDDL reads the setting a session opened with dbURL runs with.
+func autocommitBeforeDDL(c *qt.C, ctx context.Context, dbURL string) string {
+	c.Helper()
+	db, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbURL))
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	var setting string
+	c.Assert(db.QueryRowContext(ctx, "SHOW autocommit_before_ddl").Scan(&setting), qt.IsNil)
+	return setting
+}
+
+// TestReplayCleanupRoutineDependenciesE2E_FailurePath replays, on a
+// CockroachDB shadow whose session runs with autocommit_before_ddl off, a
+// history where function b calls function a. The drops share the cleanup's
+// transaction there, so the cleanup makes one pass: the drift check reports
+// the refusal of a's drop, SQLSTATE 2BP01, and names the setting, and the
+// rollback leaves the replayed objects in place. A retry would have answered
+// every statement after the refusal with 25P02 in place of it.
+func TestReplayCleanupRoutineDependenciesE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+	defer cancel()
+	replay := newReplayCleanupHistory(c, ctx, dbtarget.CockroachDB, `CREATE TABLE z (id int);
+CREATE FUNCTION a() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
+CREATE FUNCTION b() RETURNS int LANGUAGE sql AS $$ SELECT a() $$;
+`)
+	shadowURL := withAutocommitBeforeDDLOff(c, replay.shadowURL)
+	c.Assert(autocommitBeforeDDL(c, ctx, shadowURL), qt.Equals, "off")
+
+	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: replay.dir},
+		"migrations", "drift", "--db-url", replay.targetURL,
+		"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", shadowURL)
+
+	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	output := got.Stdout + got.Stderr
+	c.Assert(output, qt.Contains, `cannot drop function "a" because other objects`)
+	c.Assert(output, qt.Contains, "(SQLSTATE 2BP01)")
+	c.Assert(output, qt.Contains, "the session runs with autocommit_before_ddl off")
+	c.Assert(output, qt.Not(qt.Contains), "25P02")
+	c.Assert(userObjects(c, ctx, replay.shadow), qt.Equals, 3)
+}
+
+// TestReplayCleanupProcedureHistoryE2E_HappyPath replays the history
+// stokaro/ptah#6568 reports, a procedure that writes a table, and empties the
+// shadow database afterward on both engines. On CockroachDB the comparison
+// that follows reports drift, because the server qualifies the procedure body
+// with the database's name (stokaro/ptah#6581); the row pins that exit status
+// so the cleanup's success is not read from it.
+func TestReplayCleanupProcedureHistoryE2E_HappyPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		engine   dbtarget.Engine
+		wantExit int
+	}{
+		{name: "CockroachDB", engine: dbtarget.CockroachDB, wantExit: 1},
+		{name: "PostgreSQL", engine: dbtarget.PostgreSQL, wantExit: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+			defer cancel()
+			replay := newReplayCleanupHistory(c, ctx, test.engine, `CREATE TABLE p (id int);
+CREATE PROCEDURE pc() LANGUAGE plpgsql AS $$ BEGIN INSERT INTO p VALUES (1); END $$;
+`)
+
+			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: replay.dir},
+				"migrations", "drift", "--db-url", replay.targetURL,
+				"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL)
+
+			c.Assert(got.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout+got.Stderr, qt.Not(qt.Contains), "empty the database after the replay")
+			c.Assert(userObjects(c, ctx, replay.shadow), qt.Equals, 0)
+		})
 	}
 }
