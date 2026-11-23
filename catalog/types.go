@@ -1219,6 +1219,23 @@ func (s Sequence) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
 }
 
+// NameFolding is how a server compares database and table names where a
+// setting each server is started with decides it; see
+// [ServerInfo.NameFolding].
+type NameFolding string
+
+const (
+	// NameFoldingUnknown is folding no connection read. It is the zero value.
+	NameFoldingUnknown NameFolding = ""
+	// NameFoldingFolds is a server that compares database and table names
+	// without regard to case: lower_case_table_names 1 or 2. FA and fa name
+	// one database there.
+	NameFoldingFolds NameFolding = "folds"
+	// NameFoldingExact is a server that keeps database and table names apart
+	// by case: lower_case_table_names 0. FA and fa are two databases there.
+	NameFoldingExact NameFolding = "exact"
+)
+
 // ServerInfo is the identity of one connected server as
 // dbschema.ConnectToDatabase resolved it: which product answered, which
 // version, which schema unqualified names mean there, and the capability set
@@ -1256,6 +1273,21 @@ type ServerInfo struct {
 	// databases. A ServerInfo built without a connection leaves it false: an
 	// empty Schema alone does not make a server.
 	WholeServer bool `json:"whole_server,omitempty"`
+
+	// NameFolding is how the server compares database and table names, on a
+	// dialect whose servers each decide it by a setting: MySQL and MariaDB,
+	// under lower_case_table_names. A MySQL or MariaDB connection reads the
+	// setting and records [NameFoldingFolds] or [NameFoldingExact]. On a
+	// server that folds names, a comparison matches a name the schema spells
+	// in another case to the server's spelling of it, and refuses two names
+	// the schema declares that the server reads as one.
+	//
+	// The zero value is [NameFoldingUnknown], and a ServerInfo built without a
+	// connection holds it. A MySQL-family comparison with folding unknown
+	// refuses a database or table name that matches another name only without
+	// regard to case, because the plan for the pair depends on the setting;
+	// every other name compares as bytes. Other dialects do not read it.
+	NameFolding NameFolding `json:"name_folding,omitempty"`
 
 	// DefaultIntSize is the width in bytes CockroachDB gives a column
 	// declared INT or INTEGER without one, read from the session's

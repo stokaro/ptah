@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -130,6 +132,56 @@ func comparisonSemantics(desired *schemamodel.Database, database *catalog.Databa
 	return semantics, nil
 }
 
+// comparedDesired is desired as a comparison with database keys it. Either side
+// missing is refused, and the names of desired are matched to the read's
+// spelling of them; see [foldedNames].
+func comparedDesired(desired *schemamodel.Database, database *catalog.Database, info catalog.ServerInfo) (*schemamodel.Database, error) {
+	if desired == nil || database == nil {
+		return nil, fmt.Errorf("%w: comparison requires desired and observed schemas", ptaherr.ErrInvalidSchemaDiff)
+	}
+	return foldedNames(desired, database, info.Dialect, info.Schema, info.NameFolding)
+}
+
+// foldedNames is desired with each database and table name it spells in
+// another case than the read spells it, on a dialect whose servers each decide
+// by a setting how they compare those names; see
+// [schemaprep.RespellReadNames]. folding is how the server compares them, and
+// session is the database a name written without one is in. On a server that
+// folds names such a name is respelled before anything is keyed, and where no
+// connection read the setting it is refused. Either side nil returns desired
+// as it is, for the caller to refuse.
+func foldedNames(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect, session string,
+	folding catalog.NameFolding,
+) (*schemamodel.Database, error) {
+	if desired == nil || database == nil || !platform.NamesFoldBySetting(dialect) {
+		return desired, nil
+	}
+	read := schemaprep.ReadNames{Session: session}
+	for _, schema := range database.Schemas {
+		read.Databases = append(read.Databases, schema.Name)
+	}
+	for _, table := range database.Tables {
+		read.Databases = append(read.Databases, table.Schema)
+		read.Relations = append(read.Relations, schemaprep.ReadRelation{Database: table.Schema, Name: table.Name})
+	}
+	for _, view := range database.Views {
+		read.Databases = append(read.Databases, view.Schema)
+		read.Relations = append(read.Relations, schemaprep.ReadRelation{Database: view.Schema, Name: view.Name})
+	}
+	for _, sequence := range database.Sequences {
+		read.Databases = append(read.Databases, sequence.Schema)
+		read.Relations = append(read.Relations, schemaprep.ReadRelation{Database: sequence.Schema, Name: sequence.Name})
+	}
+	respelled, err := schemaprep.RespellReadNames(desired, read, folding)
+	if err != nil {
+		return nil, &RefusalError{cause: err}
+	}
+	return respelled, nil
+}
+
 // compareWithDatabaseInfoReportingUndecidedAdditions is the comparison every
 // entry point with caller-supplied server metadata runs. session is the
 // connection's probe session, through which a target asks its server about
@@ -147,8 +199,9 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	if desired == nil || database == nil {
-		return nil, Diagnostics{}, fmt.Errorf("%w: comparison requires desired and observed schemas", ptaherr.ErrInvalidSchemaDiff)
+	desired, err := comparedDesired(desired, database, info)
+	if err != nil {
+		return nil, Diagnostics{}, err
 	}
 	merged := copyComparisonOptions(opts)
 	scoped, err := resolveComparisonScope(desired, database, info.Dialect, info.IdentifierSemantics, runtime)

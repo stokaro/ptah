@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/cabundle"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/sqlmode"
 	"ptah.run/internal/sqlrunner"
 )
@@ -162,6 +163,17 @@ func (Service) Describe(
 	info.Version = version
 	info.Dialect = detectMySQLWireDialect(version)
 	info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
+	// Read on every connection, the whole server included: the setting is the
+	// server's, and a comparison reads it wherever a schema file names the
+	// selected database in another case.
+	var folds bool
+	if err := opened.DB.QueryRowContext(ctx, mysqlname.FoldsNamesQuery).Scan(&folds); err != nil {
+		return info, fmt.Errorf("failed to read whether the MySQL/MariaDB server folds database names: %w", err)
+	}
+	info.NameFolding = catalog.NameFoldingExact
+	if folds {
+		info.NameFolding = catalog.NameFoldingFolds
+	}
 
 	// The database the URL names. None is a whole-server connection, which
 	// only dbschema.ConnectToServer opens: the session selects no database,

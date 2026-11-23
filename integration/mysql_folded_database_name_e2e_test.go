@@ -183,9 +183,11 @@ func TestSchemaApplyMySQLFamilyFoldedDatabaseNameE2E_RefusesARevokeUnderADeclare
 					"--auto-approve", "--schema-file", grants)
 
 				c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				// The refusal names the database as the server spells it: the
+				// comparison respells the grant's database before it checks it.
 				c.Assert(applied.Stderr, qt.Matches, fmt.Sprintf(
 					`(?s).*the schema grants SELECT ON %s\.\* to role "%s", which covers table %s, so a revoke on the table cannot take it.*`,
-					spelled, run.role, regexp.QuoteMeta(table)))
+					run.database, run.role, regexp.QuoteMeta(table)))
 				c.Assert(run.tablePrivileges(c), qt.DeepEquals, []string{"items SELECT"})
 				c.Assert(run.databasePrivileges(c), qt.IsNil)
 			})

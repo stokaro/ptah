@@ -1,10 +1,51 @@
 package mysqlname
 
+import "strings"
+
 // foldsNames is true on a server that folds database and table names, which
 // holds no two databases that differ in case: lower_case_table_names 1 stores
 // names in lower case, and 2 stores them as written and looks them up in lower
 // case.
 const foldsNames = "@@lower_case_table_names <> 0"
+
+// FoldsNamesQuery is the statement that reads whether the server folds
+// database names, as 1 or 0. It reads the setting [SameDatabase] tests, so a
+// connection that records the answer and the predicate a reader sends cannot
+// disagree about the server.
+const FoldsNamesQuery = "SELECT " + foldsNames
+
+// Names is the rule a server compares database and table names by:
+// without regard to case on a server that folds names, and as bytes on one
+// that keeps names apart by case. lower_case_table_names governs both. The
+// zero value compares as bytes.
+//
+// It is the rule [SameDatabase] states, for a name the server is not asked
+// about. SameDatabase compares the rows of a catalog on the server; this
+// compares a name a schema file wrote with a name the read found, which is what
+// a comparison holds once the read is done. Without it, on a server started
+// with lower_case_table_names=1, `REVOKE SELECT ON FA.items` or `REVOKE SELECT
+// ON Items` against a connection to fa names a table no grant the read found
+// is on, and the role keeps SELECT. Measured on MySQL 26.10.0 and MariaDB
+// 12.3.3.
+//
+// The fold is [strings.EqualFold]. It agrees with the server on ASCII letters;
+// the non-ASCII pairs a server's character set folds otherwise are not
+// modeled.
+type Names struct {
+	folds bool
+}
+
+// NamesOf is the rule of a server whose folding [FoldsNamesQuery] answered:
+// folds is true where the server folds names.
+func NamesOf(folds bool) Names {
+	return Names{folds: folds}
+}
+
+// Same reports whether left and right name the same database, or the same
+// table of one database, under the rule.
+func (n Names) Same(left, right string) bool {
+	return left == right || n.folds && strings.EqualFold(left, right)
+}
 
 // SameDatabase is a SQL predicate that left and right name the same database,
 // where each is a column or a SQL expression; a bind in either is bound twice,
@@ -27,6 +68,8 @@ const foldsNames = "@@lower_case_table_names <> 0"
 // must: measured on MariaDB 11.8.9 and 12.3.3 with lower_case_table_names=2,
 // DATABASE() answers R_LC for a session that selected R_LC while the privilege
 // views spell it r_lc, so a byte comparison there would find no grant at all.
+//
+// [Names] is the same rule in Go, for a name a schema file wrote.
 func SameDatabase(left, right string) string {
 	return "(" + left + " = " + right +
 		" AND (" + foldsNames + " OR CONVERT(" + left + " USING utf8mb4) COLLATE utf8mb4_bin = CONVERT(" +

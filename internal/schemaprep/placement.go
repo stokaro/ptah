@@ -91,55 +91,93 @@ func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform str
 		return view
 	})
 	enums := placedEnumTypes(database.Enums, schema, targetPlatform)
-	placed.Fields = mapSlice(database.Fields, func(field schemamodel.Field) schemamodel.Field {
-		field.Foreign = placedReference(field.Foreign, relation)
+	placeReferences(&placed, referenceMaps{
+		relation: relation, sequence: sequence, routine: routine, anyDeclared: anyDeclared,
+		database: unchanged, object: unchanged,
+	})
+	placed.Fields = mapSlice(placed.Fields, func(field schemamodel.Field) schemamodel.Field {
 		field.Type = qualifyUserTypeReference(field.Type, enums, enums)
 		return field
 	})
-	placed.EmbeddedFields = mapSlice(database.EmbeddedFields, func(field schemamodel.EmbeddedField) schemamodel.EmbeddedField {
-		field.Ref = placedReference(field.Ref, relation)
-		return field
-	})
-	placed.Indexes = mapSlice(database.Indexes, func(index schemamodel.Index) schemamodel.Index {
-		index.TableName = relation(index.TableName)
-		return index
-	})
-	placed.Constraints = mapSlice(database.Constraints, func(constraint schemamodel.Constraint) schemamodel.Constraint {
-		constraint.Table = relation(constraint.Table)
-		constraint.ForeignTable = relation(constraint.ForeignTable)
-		return constraint
-	})
-	placed.Triggers = mapSlice(database.Triggers, func(trigger schemamodel.Trigger) schemamodel.Trigger {
-		trigger.Table = relation(trigger.Table)
-		trigger.ExecuteFunction = routine(trigger.ExecuteFunction)
-		return trigger
-	})
-	placed.RLSPolicies = mapSlice(database.RLSPolicies, func(policy schemamodel.RLSPolicy) schemamodel.RLSPolicy {
-		policy.Table = relation(policy.Table)
-		return policy
-	})
-	placed.RLSEnabledTables = mapSlice(database.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) schemamodel.RLSEnabledTable {
-		table.Table = relation(table.Table)
-		return table
-	})
-	placeGrant := func(grant schemamodel.Grant) schemamodel.Grant {
-		grant.OnTable = relation(grant.OnTable)
-		grant.OnSequence = sequence(grant.OnSequence)
-		grant.OnRoutine = routine(grant.OnRoutine)
-		return grant
-	}
-	placed.Grants = mapSlice(database.Grants, placeGrant)
-	placed.RevokedGrants = mapSlice(database.RevokedGrants, placeGrant)
 	placed.ManagedData = mapSlice(database.ManagedData, func(data schemamodel.ManagedData) schemamodel.ManagedData {
 		if strings.TrimSpace(data.Schema) == "" && unqualified(data.Table) && declared.has(data.Table, declared.relations) {
 			data.Schema = schema
 		}
 		return data
 	})
-	placed.Dependencies = placedDependencies(database.Dependencies, relation)
-	placed.FunctionDependencies = placedDependencies(database.FunctionDependencies, anyDeclared)
-	placed.SelfReferencingForeignKeys = placedSelfReferences(database.SelfReferencingForeignKeys, relation)
 	return QualifyDeclaredUserTypes(&placed, targetPlatform), nil
+}
+
+// referenceMaps are the functions a placement maps each kind of reference by:
+// a table or view, a sequence, a routine written as `name` or
+// `name(arguments)`, a routine dependency that may name either, the database a
+// grant names as its target, and the other object a grant names.
+type referenceMaps struct {
+	relation    func(string) string
+	sequence    func(string) string
+	routine     func(string) string
+	anyDeclared func(string) string
+	database    func(string) string
+	object      func(string) string
+}
+
+// unchanged is a reference map that leaves a reference as written.
+func unchanged(name string) string { return name }
+
+// placeReferences maps every reference the objects of placed make to another
+// object, each kind by its function in by: the tables of columns, relation
+// embeddings, indexes, constraints, triggers, row-level security records and
+// grants, the tables a foreign key references, the function a trigger
+// executes, the sequence, routine, database or object a grant or a revoke
+// names, the dependency maps and the self-referencing foreign keys.
+//
+// It is the one list of reference sites [PlaceUnqualified] and
+// [RespellReadNames] read, so a site added for one is a site the other
+// maps too.
+func placeReferences(placed *schemamodel.Database, by referenceMaps) {
+	placed.Fields = mapSlice(placed.Fields, func(field schemamodel.Field) schemamodel.Field {
+		field.Foreign = placedReference(field.Foreign, by.relation)
+		return field
+	})
+	placed.EmbeddedFields = mapSlice(placed.EmbeddedFields, func(field schemamodel.EmbeddedField) schemamodel.EmbeddedField {
+		field.Ref = placedReference(field.Ref, by.relation)
+		return field
+	})
+	placed.Indexes = mapSlice(placed.Indexes, func(index schemamodel.Index) schemamodel.Index {
+		index.TableName = by.relation(index.TableName)
+		return index
+	})
+	placed.Constraints = mapSlice(placed.Constraints, func(constraint schemamodel.Constraint) schemamodel.Constraint {
+		constraint.Table = by.relation(constraint.Table)
+		constraint.ForeignTable = by.relation(constraint.ForeignTable)
+		return constraint
+	})
+	placed.Triggers = mapSlice(placed.Triggers, func(trigger schemamodel.Trigger) schemamodel.Trigger {
+		trigger.Table = by.relation(trigger.Table)
+		trigger.ExecuteFunction = by.routine(trigger.ExecuteFunction)
+		return trigger
+	})
+	placed.RLSPolicies = mapSlice(placed.RLSPolicies, func(policy schemamodel.RLSPolicy) schemamodel.RLSPolicy {
+		policy.Table = by.relation(policy.Table)
+		return policy
+	})
+	placed.RLSEnabledTables = mapSlice(placed.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) schemamodel.RLSEnabledTable {
+		table.Table = by.relation(table.Table)
+		return table
+	})
+	placeGrant := func(grant schemamodel.Grant) schemamodel.Grant {
+		grant.OnTable = by.relation(grant.OnTable)
+		grant.OnSchema = by.database(grant.OnSchema)
+		grant.OnSequence = by.sequence(grant.OnSequence)
+		grant.OnRoutine = by.routine(grant.OnRoutine)
+		grant.OnObject = by.object(grant.OnObject)
+		return grant
+	}
+	placed.Grants = mapSlice(placed.Grants, placeGrant)
+	placed.RevokedGrants = mapSlice(placed.RevokedGrants, placeGrant)
+	placed.Dependencies = placedDependencies(placed.Dependencies, by.relation)
+	placed.FunctionDependencies = placedDependencies(placed.FunctionDependencies, by.anyDeclared)
+	placed.SelfReferencingForeignKeys = placedSelfReferences(placed.SelfReferencingForeignKeys, by.relation)
 }
 
 // placedTables is tables with each one written without a schema placed in

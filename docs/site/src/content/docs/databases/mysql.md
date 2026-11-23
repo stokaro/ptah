@@ -1577,6 +1577,32 @@ started with `lower_case_table_names=1`, a URL may spell the database in any
 case: the server folds the name, and the read describes the database under the
 name the server gives it.
 
+On a server started with `lower_case_table_names` 1 or 2, a schema file may
+spell a database or a table in any case too. The comparison matches each name
+to the spelling the server holds: a table, view, routine, trigger, foreign key,
+grant or revoke that the file qualifies with `FA` is in `fa` when the URL names
+`fa`, and one that names `Items` is on `items`. So `REVOKE SELECT ON FA.items
+FROM r` and `REVOKE SELECT ON Items FROM r` revoke the privilege, `CREATE TABLE
+Items` beside `items` declares that table, and a plan made a second time is
+empty. On a URL that names no database, a name is matched the same way against
+every database the server holds: `CREATE DATABASE FA` beside `fa` declares
+`fa`, and the plan drops nothing.
+
+Such a server reads two spellings that differ only in case as one name. A file
+that declares two databases in two cases, or two tables, views or sequences of
+one database, is refused before anything is planned, and the error names both
+spellings. Planned, the second CREATE would fail on the object the first made.
+
+On a server started with `lower_case_table_names=0`, `FA` is another database
+and `Items` another table. A table in `FA` is refused as outside the URL's
+database, and a revoke on `FA.items` leaves the grant on `fa.items`.
+
+A comparison that no connection to the server makes, such as a `schema diff`
+between two files, does not know the setting. It refuses a database or table
+name that matches another only without regard to case, rather than plan under
+either answer, and the error names both spellings. Compare against the
+database, or spell both names the same way.
+
 With `lower_case_table_names=2`, which needs a file system that ignores case,
 MariaDB answers `DATABASE()` in the spelling of the URL while its privilege
 views spell the database in lower case. The read describes the database and its

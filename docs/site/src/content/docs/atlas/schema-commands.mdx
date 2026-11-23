@@ -1305,9 +1305,12 @@ second time, measured on MySQL 8.4.11 and MariaDB 11.8.9.
 
 A URL that names one database limits the run to that database. A table the
 desired schema writes without a database, or with that database's name, is in
-it. A table, view, routine, sequence or trigger that the document puts in
-another database is refused by name before anything is planned, and so is a
-database the document declares besides the one the URL names:
+it. On a server started with `lower_case_table_names` 1 or 2, `schema apply`
+takes any spelling of that name as the database, as the server does; `schema
+diff` matches the name exactly. A table, view, routine, sequence or trigger that
+the document puts in another database is refused by name before anything is
+planned, and so is a database the document declares besides the one the URL
+names:
 
 ```text
 Error: table "other.u" is in database "other", but the target URL is limited to database "app"; name no database in the URL to reach the whole server, or leave the database out of the name
@@ -2160,6 +2163,32 @@ comparison with `--schema` and
 A diff whose change needs a dialect-specific rebuild plan — for example adding
 a column to a SQLite table — fails with an explicit error instead of emitting
 SQL the dialect cannot run in place.
+
+On MySQL and MariaDB, a diff between two schema files does not know whether
+the server it is meant for folds names, which `lower_case_table_names` decides.
+A database or table name on one side that matches a name on the other only
+without regard to case is refused, and so is a reference that spells a
+declared table in another case. So are two databases, or two tables of one
+database, that one side declares in two cases. This is stricter than Atlas on
+purpose.
+Measured with Atlas v1.4.0 against a dev database started with
+`lower_case_table_names=0`:
+
+- a diff from `CREATE TABLE items` to `CREATE TABLE Items` plans `CREATE TABLE
+  Items` and `DROP TABLE items`;
+- a diff from database `fa` to database `FA` plans `DROP DATABASE fa` and
+  `CREATE DATABASE FA`.
+
+Against a dev database started with 1, both diffs are empty. Applied to a
+server that folds names, the second plan drops the database; the first stops
+at its CREATE. Ptah refuses both, whichever dev database it is given:
+
+```text
+Error: table "Items" and "items" differ only in case, and whether they name one table depends on the server's lower_case_table_names, which this comparison does not know; compare against a database connection, which reads the setting, or spell both names the same way
+```
+
+A diff with a database URL on one side reads the setting from that server and
+matches each name to the spelling the server holds.
 
 ## Look at a schema as a diagram
 

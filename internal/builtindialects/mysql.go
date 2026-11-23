@@ -60,6 +60,9 @@ func mysql() descriptor.Dialect {
 		// 1147: measured on 8.4.13, also under a grant on the database or on
 		// *.*.
 		TableRevokeTakesOnlyTableGrants: true,
+		// lower_case_table_names decides it per server; a connection reads
+		// it into catalog.ServerInfo.NameFolding.
+		NamesFoldBySetting: true,
 		// A column privilege held through a role serves only the spelling
 		// the GRANT used; see platform.ColumnPrivilegeIsBySpelling. MariaDB
 		// serves either, so its descriptor leaves this out.

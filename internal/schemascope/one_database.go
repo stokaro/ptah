@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlname"
 )
 
 // OutsideDatabaseError refuses a desired object that a URL naming one database
@@ -64,7 +65,15 @@ func (e *OutsideDatabaseError) Error() string {
 // engine whose run reaches the connected database alone, ClickHouse's. A name
 // the document leaves unqualified is in the one database, and so is one
 // qualified with its name.
-func RefuseOutsideDatabase(dialect, limit, side string, desired *schemamodel.Database) error {
+//
+// names is how the server compares database names, from
+// [catalog.ServerInfo.NameFolding]: on a server that folds names, the one
+// database is any spelling of limit, under the rule
+// [ptah.run/internal/schemaprep.RespellReadNames] respells by. Folding no
+// connection read compares as bytes.
+// Measured on MySQL 26.10.0 and MariaDB 12.3.3 with lower_case_table_names=1,
+// `CREATE TABLE FA.items` on a connection to fa creates fa.items.
+func RefuseOutsideDatabase(dialect, limit string, names mysqlname.Names, side string, desired *schemamodel.Database) error {
 	described, _ := platform.Lookup(dialect)
 	noServerScope := described.Schemas.ConnectedDatabaseOnly
 	if described.Schemas.Selection != descriptor.SchemaSelectionDatabase && !noServerScope {
@@ -74,7 +83,7 @@ func RefuseOutsideDatabase(dialect, limit, side string, desired *schemamodel.Dat
 		return nil
 	}
 	outside := func(kind, name, database string) error {
-		if database == "" || database == limit {
+		if database == "" || names.Same(database, limit) {
 			return nil
 		}
 		return &OutsideDatabaseError{
@@ -138,5 +147,5 @@ func RefuseOutsideTargetDatabase(info catalog.ServerInfo, desired *schemamodel.D
 	if info.WholeServer {
 		return nil
 	}
-	return RefuseOutsideDatabase(info.Dialect, info.Schema, "the target URL", desired)
+	return RefuseOutsideDatabase(info.Dialect, info.Schema, mysqlname.NamesOf(info.NameFolding == catalog.NameFoldingFolds), "the target URL", desired)
 }
