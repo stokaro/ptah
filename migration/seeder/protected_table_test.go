@@ -98,6 +98,13 @@ func TestApplyProtectedTables_FailurePath(t *testing.T) {
 				`or qualified by "main"`,
 		},
 		{
+			name:    "the connection's schema in another case, quoted after a space",
+			entries: []string{`  "Main".audit`},
+			wantErr: `refusing to seed target database: the protected table entry "\\"Main\\".audit" names a schema ` +
+				`other than "main", and the fence checks the tables of "main" alone; name the table without a schema, ` +
+				`or qualified by "main"`,
+		},
+		{
 			name:    "the connection's schema in another case, in backticks",
 			entries: []string{"`MAIN`.audit"},
 			wantErr: "refusing to seed target database: the protected table entry \"`MAIN`.audit\" names a schema " +

@@ -631,7 +631,7 @@ func sameSchema(entry, qualifier, schema string) bool {
 	if qualifier == schema {
 		return true
 	}
-	quoted := strings.IndexAny(entry, "\"`[") == 0
+	quoted := strings.IndexAny(strings.TrimSpace(entry), "\"`[") == 0
 	return !quoted && strings.EqualFold(qualifier, schema)
 }
 

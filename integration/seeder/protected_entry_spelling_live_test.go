@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -187,6 +188,12 @@ func TestApplyProtectedEntryCaseTwinsLive_FailurePath(t *testing.T) {
 			entry:      `"App2".extra`,
 		},
 		{
+			name:       "a capitalized twin of the connection's schema, after a space",
+			statements: []string{"CREATE SCHEMA app2", `CREATE TABLE "App2".extra (id integer)`},
+			schema:     "app2",
+			entry:      `  "App2".extra`,
+		},
+		{
 			name:       "a lower-case twin of the connection's schema",
 			statements: []string{`CREATE SCHEMA "Tw"`, "CREATE SCHEMA tw", "CREATE TABLE tw.extra (id integer)"},
 			schema:     "Tw",
@@ -208,7 +215,7 @@ func TestApplyProtectedEntryCaseTwinsLive_FailurePath(t *testing.T) {
 			result, err := seeder.Apply(c.Context(), conn, spellingSeeds, seeder.Options{Env: "test", ProtectedTables: []string{test.entry}})
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`refusing to seed target database: the protected table entry `+
-				strconv.Quote(test.entry)+` names a schema other than "`+test.schema+`"`)+`.*`)
+				strconv.Quote(strings.TrimSpace(test.entry))+` names a schema other than "`+test.schema+`"`)+`.*`)
 			c.Assert(result, qt.IsNil)
 			c.Assert(spellingSeeded(c, target.url, test.schema), qt.Equals, 0)
 		})
