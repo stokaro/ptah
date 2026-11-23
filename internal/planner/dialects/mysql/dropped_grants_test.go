@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -304,4 +305,107 @@ func TestPlan_GivesBackNothingWhereTheTargetHostsNoRoutines(t *testing.T) {
 	sql, err := builtin.RenderSQLWithCapabilities(platform.SQLServer, caps, nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, "REVOKE CONTROL ON [rt] FROM [reader];\n")
+}
+
+// deniedOnAReplacedRoutine is [heldOnAReplacedRoutine] with the privileges
+// the read reported denied: on the replaced routine to a role and to a user,
+// on a column of the routine's name, which is a column REVOKE row rather than
+// a DENY, on the table t3 the schema keeps, and on a schema of the routine's
+// name.
+func deniedOnAReplacedRoutine(language string) *difftypes.SchemaDiff {
+	diff := heldOnAReplacedRoutine(language, "CONTROL", false)
+	diff.CurrentPartialRevokes = []difftypes.GrantRef{
+		{Role: "r]d", Privilege: "EXECUTE", ObjectType: "TABLE", ObjectName: "rt"},
+		{Role: "app_user", Privilege: "VIEW DEFINITION", ObjectType: "TABLE", ObjectName: "rt"},
+		{Role: "r]d", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "rt", Column: "one"},
+		{Role: "r]d", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t3"},
+		{Role: "r]d", Privilege: "EXECUTE", ObjectType: "SCHEMA", ObjectName: "rt"},
+	}
+	return diff
+}
+
+// The DROP of a replaced SQL Server routine takes every DENY on it, measured
+// on SQL Server 2025, and the comparison plans none. The plan denies again,
+// after the grants it gives back, what the read reported denied on the
+// routine, to a role or a user alike, and nothing it reported denied on
+// another object.
+func TestPlan_SQLServerDeniesAgainWhatWasDeniedOnAReplacedRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()),
+		deniedOnAReplacedRoutine("sql"), "sqlserver")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements[len(statements)-4:], qt.DeepEquals, []string{
+		"GRANT EXECUTE ON [rt] TO [reader]",
+		"GRANT EXECUTE ON [rt] TO [auditor]",
+		"DENY EXECUTE ON [rt] TO [r]]d]",
+		"DENY VIEW DEFINITION ON [rt] TO [app_user]",
+	})
+}
+
+// A routine named with its schema is denied on under both names, each
+// bracketed the way the GRANT beside it is.
+func TestPlan_SQLServerDeniesAgainOnAQualifiedRoutine(t *testing.T) {
+	c := qt.New(t)
+	diff := deniedOnAReplacedRoutine("sql")
+	diff.FunctionsModified[0].Desired.Name = "app.rt"
+	diff.CurrentGrants = []difftypes.GrantRef{{Role: "reader", Privilege: "EXECUTE", ObjectType: "TABLE", ObjectName: "app.rt"}}
+	diff.CurrentPartialRevokes = []difftypes.GrantRef{{Role: "r]d", Privilege: "EXECUTE", ObjectType: "TABLE", ObjectName: "app.rt"}}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), diff, "sqlserver")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements[len(statements)-2:], qt.DeepEquals, []string{
+		"GRANT EXECUTE ON [app].[rt] TO [reader]",
+		"DENY EXECUTE ON [app].[rt] TO [r]]d]",
+	})
+}
+
+// No other target of the planner reads a partial revoke, and Oracle has no
+// DENY, so an Oracle plan writes none even for a diff that carries one.
+func TestPlan_OracleDeniesNothingOnAReplacedRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()),
+		deniedOnAReplacedRoutine("plsql"), "oracle")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements[len(statements)-2:], qt.DeepEquals, []string{
+		"GRANT EXECUTE ON rt TO reader",
+		"GRANT EXECUTE ON rt TO auditor",
+	})
+}
+
+// A permission name the plan would write into the DENY is the catalog's, and
+// one that is not a run of upper-case words is refused rather than written.
+func TestPlan_SQLServerDeniesAgainOnAReplacedRoutine_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	diff := deniedOnAReplacedRoutine("sql")
+	diff.CurrentPartialRevokes = []difftypes.GrantRef{{Role: "r_d", Privilege: "EXECUTE ON x TO y; DROP", ObjectType: "TABLE", ObjectName: "rt"}}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), diff, "sqlserver")
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*sqlserver: cannot deny "EXECUTE ON x TO y; DROP" on rt to "r_d" again after the routine is replaced: `+
+		`the catalog names a permission Ptah does not write.*`)
+	c.Assert(statements, qt.IsNil)
+}
+
+// A DENY removes no object, so a plan in the exact style still drops a table
+// it removes after the DENY without IF EXISTS, as it would with no DENY in
+// front of it.
+func TestPlan_SQLServerDenyLeavesALaterDropUnguarded(t *testing.T) {
+	c := qt.New(t)
+	diff := deniedOnAReplacedRoutine("sql")
+	diff.TablesRemoved = difftypes.TableRemovals{{Name: "t1"}}
+	caps := capability.ForDialect(platform.SQLServer)
+
+	nodes, err := mysql.NewForDialect(platform.SQLServer, caps).WithStatementStyle(planext.StatementStyleExact).
+		GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)
+
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.SQLServer, caps, nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "DENY VIEW DEFINITION ON [rt] TO [app_user];\nDROP TABLE [t1];\n")
 }

@@ -220,3 +220,66 @@ func TestSchemaApplySQLServerKeepsARevokeOnAReplacedRoutineE2E(t *testing.T) {
 		})
 	}
 }
+
+// A body change to a SQL Server routine keeps what every grantee held on it
+// and what was denied on it. r_d holds EXECUTE on the whole schema and is
+// denied it on the routine, a database user and public hold a permission on
+// it, and the schema manages none of the three. The DROP takes all of it; the
+// plan grants and denies it again after the CREATE. A member of r_d still
+// cannot run the routine, the user still can, and the next plan is empty.
+func TestSchemaApplySQLServerKeepsADenyAndEveryGranteeOnAReplacedRoutineE2E(t *testing.T) {
+	tests := []struct {
+		name   string
+		before string
+		after  string
+		call   string
+	}{
+		{
+			name:   "a procedure",
+			before: "CREATE PROCEDURE dbo.rt AS BEGIN SELECT 1 AS one; END;\nGO\n",
+			after:  "CREATE PROCEDURE dbo.rt AS BEGIN SELECT 2 AS one; END;\nGO\n",
+			call:   "EXEC dbo.rt",
+		},
+		{
+			name:   "a scalar function",
+			before: "CREATE FUNCTION dbo.rt() RETURNS INT AS BEGIN RETURN 1; END;\nGO\n",
+			after:  "CREATE FUNCTION dbo.rt() RETURNS INT AS BEGIN RETURN 2; END;\nGO\n",
+			call:   "SELECT dbo.rt()",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, db := declaredSQLServerDatabase(c)
+			grants := "CREATE ROLE rt_runner;\nGRANT EXECUTE ON dbo.rt TO rt_runner;\n"
+			created := runPtahIn(c, "schema", "apply", "--db-url", target,
+				"--schema-file", writeDeclaredSchemaFile(c, "before.sql", test.before+grants), "--auto-approve")
+			c.Assert(created.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", created.Stdout, created.Stderr))
+			declaredSQLServerExec(c, db,
+				"CREATE ROLE r_d", "GRANT EXECUTE ON SCHEMA::dbo TO r_d", "DENY EXECUTE ON dbo.rt TO r_d",
+				"CREATE USER rt_denied WITHOUT LOGIN", "ALTER ROLE r_d ADD MEMBER rt_denied",
+				"CREATE USER rt_user WITHOUT LOGIN", "GRANT EXECUTE ON dbo.rt TO rt_user",
+				"GRANT VIEW DEFINITION ON dbo.rt TO public")
+			after := writeDeclaredSchemaFile(c, "after.sql", test.after+grants)
+
+			replaced := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", after, "--auto-approve")
+			settled := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", after, "--dry-run")
+
+			c.Assert(replaced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replaced.Stdout, replaced.Stderr))
+			c.Assert(replaced.Stdout, qt.Contains, "DENY EXECUTE ON [dbo].[rt] TO [r_d]")
+			c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
+			c.Assert(settled.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "r_d"), qt.DeepEquals, []string{"EXECUTE DENY"})
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "rt_user"), qt.DeepEquals, []string{"EXECUTE GRANT"})
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "public"), qt.DeepEquals, []string{"VIEW DEFINITION GRANT"})
+			c.Assert(sqlServerRoutinePermissionsOf(c, db, "rt_runner"), qt.DeepEquals, []string{"EXECUTE GRANT"})
+			conn, err := db.Conn(c.Context())
+			c.Assert(err, qt.IsNil)
+			defer func() { c.Assert(conn.Close(), qt.IsNil) }()
+			_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = 'rt_user'; "+test.call+"; REVERT;")
+			c.Assert(err, qt.IsNil)
+			_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = 'rt_denied'; "+test.call+"; REVERT;")
+			c.Assert(err, qt.ErrorMatches, `(?s).*The EXECUTE permission was denied on the object 'rt'.*`)
+		})
+	}
+}

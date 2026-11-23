@@ -878,6 +878,24 @@ func CurrentGrants(database *catalog.Database) []difftypes.GrantRef {
 	return refs
 }
 
+// CurrentPartialRevokes returns every row the read of the database reported
+// that takes a privilege away rather than holding one, as the references a
+// plan names a grant with, sorted. A privilege an object's owner revoked from
+// itself is left out: the object has it again when a plan creates it again.
+func CurrentPartialRevokes(database *catalog.Database) []difftypes.GrantRef {
+	if database == nil {
+		return nil
+	}
+	var refs []difftypes.GrantRef
+	for _, grant := range database.Grants {
+		if grant.IsPartialRevoke && !grant.Implicit && grant.Privilege != "" {
+			refs = append(refs, grantRefFromDatabase(grant))
+		}
+	}
+	sortGrantRefs(refs)
+	return refs
+}
+
 func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 	objectType := strings.ToUpper(strings.TrimSpace(grant.ObjectType))
 	objectName := grant.QualifiedTarget()

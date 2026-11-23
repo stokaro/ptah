@@ -1015,7 +1015,19 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 	return owners, nil
 }
 
-// readGrants reads the permissions this database's roles hold.
+// readGrants reads the permissions this database's roles hold, and the ones a
+// database user or public holds on the database's own objects and schemas.
+//
+// A user, an application role and public are read only there, because the
+// rest of what they hold no statement of the schema's wrote. Measured on SQL
+// Server 2025, a new database grants public SELECT on 232 system objects and
+// two permissions on the database, and CREATE USER grants the user CONNECT on
+// the database; none of them is a permission on an object of the schema. A
+// fixed role holds no object permission at all. Every grantee is read on the
+// schema's objects because a plan that drops one of them and creates it again
+// takes every grantee's permissions, and gives back only what was read. The
+// comparison leaves the permissions of a grantee the schema does not manage
+// alone, as on a role it does not declare.
 //
 // state_desc carries four values, not two. GRANT and
 // GRANT_WITH_GRANT_OPTION are the pair Grant.WithOption models. DENY and
@@ -1076,7 +1088,11 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		JOIN sys.database_principals AS grantee ON grantee.principal_id = pe.grantee_principal_id
 		LEFT JOIN sys.objects AS o ON o.object_id = pe.major_id AND pe.class = 1
 		LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id
-		WHERE grantee.type = 'R' AND grantee.is_fixed_role = 0 AND grantee.name <> 'public'
+		WHERE grantee.is_fixed_role = 0 AND (
+			(grantee.type = 'R' AND grantee.name <> 'public')
+			OR (pe.class = 1 AND o.is_ms_shipped = 0)
+			OR pe.class = 3
+		)
 		ORDER BY grantee.name, pe.permission_name, pe.class, pe.major_id, pe.minor_id`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {

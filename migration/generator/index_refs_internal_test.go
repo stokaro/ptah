@@ -164,6 +164,23 @@ func TestCloneSchemaDiff_ClonesTableQualifiedIndexRepresentations(t *testing.T) 
 	})
 }
 
+// A clone owns the read's grants and partial revokes: a split plan writes to
+// its own copy, and the diff it was cloned from keeps what the database holds.
+func TestCloneSchemaDiff_ClonesTheGrantsAndPartialRevokesTheReadReported(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		CurrentGrants:         []difftypes.GrantRef{{ObjectType: "TABLE", ObjectName: "rt", Role: "r", Privilege: "EXECUTE"}},
+		CurrentPartialRevokes: []difftypes.GrantRef{{ObjectType: "TABLE", ObjectName: "rt", Role: "r_d", Privilege: "EXECUTE"}},
+	}
+
+	got := cloneSchemaDiff(diff)
+	got.CurrentGrants[0].Role = "changed"
+	got.CurrentPartialRevokes[0].Role = "changed"
+
+	c.Assert(diff.CurrentGrants[0].Role, qt.Equals, "r")
+	c.Assert(diff.CurrentPartialRevokes[0].Role, qt.Equals, "r_d")
+}
+
 func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 	c := qt.New(t)
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").

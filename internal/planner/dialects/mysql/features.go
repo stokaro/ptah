@@ -60,6 +60,16 @@ func (p *Planner) revokesFirst() bool {
 	}
 }
 
+// deniesOnObjects reports whether a partial revoke the read reports on a
+// whole object, rather than on one of its columns, is a DENY the target writes
+// as `DENY privilege ON object TO grantee`. SQL Server's is: its reader reports
+// a DENY that way, and the REVOKE row it keeps only for a column. No other
+// target of this planner reads a partial revoke.
+// [Planner.deniesGivenBack] reads it.
+func (p *Planner) deniesOnObjects() bool {
+	return p.targetDialect() == platform.SQLServer
+}
+
 // writesGrantOption reports whether the renderer writes WITH GRANT OPTION.
 // Oracle's does not: Oracle refuses one to a role with ORA-01926, measured on
 // 23.26.2, and a grant carries no mark of whether its grantee is a role or a
