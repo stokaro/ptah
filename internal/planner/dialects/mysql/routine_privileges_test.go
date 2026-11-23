@@ -2,6 +2,7 @@ package mysql_test
 
 import (
 	"context"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -36,12 +37,13 @@ func replacedProcedure(name string, privileges ...catalog.RoutineGrant) *difftyp
 
 // heldOnShopRt is what the read found granted on routines of the database
 // shop: on the procedure rt to a role, a user and a MariaDB role, and on
-// routines the plan does not replace.
+// routines the plan does not replace. The reading account may grant each row
+// again.
 func heldOnShopRt() []catalog.RoutineGrant {
 	return []catalog.RoutineGrant{
-		{User: "app_r", Host: "%", Schema: "shop", Name: "RT", Type: "PROCEDURE", Privileges: []string{"EXECUTE", "ALTER ROUTINE"}, WithOption: true},
-		{User: "svc", Host: "10.1.%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
-		{User: "m_r", Role: true, Schema: "shop", Name: "rt", Type: "PROCEDURE", WithOption: true},
+		{User: "app_r", Host: "%", Schema: "shop", Name: "RT", Type: "PROCEDURE", Privileges: []string{"EXECUTE", "ALTER ROUTINE"}, WithOption: true, ReaderMayGrant: true},
+		{User: "svc", Host: "10.1.%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}, ReaderMayGrant: true},
+		{User: "m_r", Role: true, Schema: "shop", Name: "rt", Type: "PROCEDURE", WithOption: true, ReaderMayGrant: true},
 		{User: "svc", Host: "%", Schema: "shop", Name: "rt", Type: "FUNCTION", Privileges: []string{"EXECUTE"}},
 		{User: "svc", Host: "%", Schema: "shop", Name: "rt2", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
 	}
@@ -51,7 +53,9 @@ func heldOnShopRt() []catalog.RoutineGrant {
 // mysql.procs_priv. The plan grants each one again after the CREATE, to a
 // user with its host and to a MariaDB role by its name, with the grant option
 // where the row held it, and leaves alone a function of the same name and
-// another procedure.
+// another procedure, which the reading account could not grant. The routine is
+// named as the CREATE names it, without the database the read describes, which
+// is the connection's.
 func TestPlan_GivesBackThePrivilegesOnAReplacedMySQLRoutine(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
@@ -64,9 +68,9 @@ func TestPlan_GivesBackThePrivilegesOnAReplacedMySQLRoutine(t *testing.T) {
 			c.Assert(statements, qt.DeepEquals, []string{
 				"-- Replace procedure rt: body\nDROP PROCEDURE IF EXISTS `rt`",
 				"-- Modify procedure rt: body\nCREATE PROCEDURE `rt`() READS SQL DATA BEGIN SELECT 2; END",
-				"GRANT EXECUTE, ALTER ROUTINE ON PROCEDURE `shop`.`rt` TO `app_r`@`%` WITH GRANT OPTION",
-				"GRANT EXECUTE ON PROCEDURE `shop`.`rt` TO `svc`@`10.1.%`",
-				"GRANT USAGE ON PROCEDURE `shop`.`rt` TO `m_r` WITH GRANT OPTION",
+				"GRANT EXECUTE, ALTER ROUTINE ON PROCEDURE `rt` TO `app_r`@`%` WITH GRANT OPTION",
+				"GRANT EXECUTE ON PROCEDURE `rt` TO `svc`@`10.1.%`",
+				"GRANT USAGE ON PROCEDURE `rt` TO `m_r` WITH GRANT OPTION",
 			})
 		})
 	}
@@ -78,7 +82,7 @@ func TestPlan_GivesBackThePrivilegesOnAQualifiedMySQLRoutine(t *testing.T) {
 	c := qt.New(t)
 	diff := replacedProcedure("shop.rt",
 		catalog.RoutineGrant{User: "svc", Host: "%", Schema: "elsewhere", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
-		catalog.RoutineGrant{User: "svc", Host: "%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
+		catalog.RoutineGrant{User: "svc", Host: "%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}, ReaderMayGrant: true},
 	)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), diff, platform.MySQL)
@@ -155,6 +159,7 @@ func TestPlan_GivesBackThePrivilegesOnAReplacedMySQLRoutine_FailurePath(t *testi
 	c := qt.New(t)
 	diff := replacedProcedure("rt", catalog.RoutineGrant{
 		User: "svc", Host: "%", Schema: "shop", Name: "rt", Type: "PROCEDURE", Privileges: []string{"EXECUTE ON *.* TO x; DROP"},
+		ReaderMayGrant: true,
 	})
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), diff, platform.MySQL)
@@ -163,4 +168,44 @@ func TestPlan_GivesBackThePrivilegesOnAReplacedMySQLRoutine_FailurePath(t *testi
 	c.Assert(err, qt.ErrorMatches, `(?s).*mysql: cannot grant "EXECUTE ON \*\.\* TO x; DROP" on procedure rt to "svc" again `+
 		`after the routine is replaced: the catalog names a privilege Ptah does not write.*`)
 	c.Assert(statements, qt.IsNil)
+}
+
+// The GRANTs that give the privileges back run as the applying account, and a
+// server refuses one from an account without the grant option, after the DROP
+// and the CREATE have run. A row the reading account may not grant again
+// refuses the plan instead, and the refusal names the routine, the grantee and
+// the grant option the account lacks.
+func TestPlan_RefusesToReplaceAMySQLRoutineItMayNotGrantThePrivilegesOnAgain(t *testing.T) {
+	tests := []struct {
+		name    string
+		grant   catalog.RoutineGrant
+		wantErr string
+	}{
+		{
+			name:  "a privilege",
+			grant: catalog.RoutineGrant{User: "u1", Host: "10.1.%", Schema: "pvdb", Name: "p", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}},
+			wantErr: "mysql: cannot replace procedure p: the DROP that replaces it takes EXECUTE on it from `u1`@`10.1.%`, " +
+				"and the account may not grant it again without the grant option on `pvdb`.*; grant the account " +
+				"EXECUTE ON `pvdb`.* WITH GRANT OPTION, or replace the routine as an account that holds it",
+		},
+		{
+			name:  "the grant option alone",
+			grant: catalog.RoutineGrant{User: "m_r", Role: true, Schema: "pvdb", Name: "p", Type: "PROCEDURE", WithOption: true},
+			wantErr: "mysql: cannot replace procedure p: the DROP that replaces it takes the grant option on it from `m_r`, " +
+				"and the account may not grant it again without the grant option on `pvdb`.*; grant the account " +
+				"USAGE ON `pvdb`.* WITH GRANT OPTION, or replace the routine as an account that holds it",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()),
+				replacedProcedure("p", test.grant), platform.MySQL)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(test.wantErr))
+			c.Assert(statements, qt.IsNil)
+		})
+	}
 }
