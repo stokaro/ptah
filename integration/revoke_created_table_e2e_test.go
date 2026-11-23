@@ -220,10 +220,11 @@ func heldOnDatabase(c *qt.C, run columnGrantRun) []string {
 }
 
 // A declared revoke on a table that SELECT ANY TABLE keeps is refused on
-// Oracle, for a table the plan creates and for one that exists. Measured on
-// Oracle 23.26.3 with the refusal taken out: the plan for a created table has
-// only CREATE TABLE, the next plan reads as synced, and a member of the role
-// reads t3. The owner's REVOKE fails with ORA-01927.
+// Oracle, for a table the plan creates and for one that exists, and so is a
+// revoke of ALL, which names SELECT among what ALL grants on a table. Measured
+// on Oracle 23.26.3 with the refusal taken out: the plan for a created table
+// has only CREATE TABLE, the next plan reads as synced, and a member of the
+// role reads t3. The owner's REVOKE fails with ORA-01927.
 func TestSchemaApplyOracleRevokeUnderASystemPrivilegeE2E(t *testing.T) {
 	const tables = "CREATE TABLE t1 (id NUMBER(10) PRIMARY KEY, name VARCHAR2(50));\nCREATE TABLE t3 (id NUMBER(10) PRIMARY KEY);\n"
 	tests := []struct {
@@ -233,6 +234,7 @@ func TestSchemaApplyOracleRevokeUnderASystemPrivilegeE2E(t *testing.T) {
 	}{
 		{name: "a table the plan creates", declared: tables + "REVOKE SELECT ON t3 FROM {role};\n", table: "t3"},
 		{name: "a table that exists", declared: tables + "REVOKE SELECT ON t1 FROM {role};\n", table: "t1"},
+		{name: "ALL on a table that exists", declared: tables + "REVOKE ALL ON t1 FROM {role};\n", table: "t1"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -322,4 +324,140 @@ func TestSchemaApplyMySQLFamilyRevokeWithItsDatabaseGrantE2E(t *testing.T) {
 			c.Assert(run.privileges(c), qt.IsNil)
 		})
 	}
+}
+
+// A grant on the database that the schema declares and the server does not
+// hold yet covers a declared revoke on one of its tables as a held one does:
+// the plan grants it, and a revoke on the table cannot take it. Measured on
+// MySQL 8.4.13 and MariaDB 11.8.9 with the declared grant left out of the
+// cover: the apply exits 0 and grants the privileges on the database, a member
+// of the role reads t3, and the next apply refuses the revoke because the
+// role then holds the grant. The refusal names the declared grant and the
+// apply changes nothing.
+func TestSchemaApplyMySQLFamilyRevokeUnderADeclaredDatabaseGrantE2E(t *testing.T) {
+	const declared = "CREATE TABLE t1 (id INT PRIMARY KEY);\nCREATE TABLE t3 (id INT PRIMARY KEY);\nCREATE ROLE %[1]s;\nREVOKE SELECT ON t3 FROM %[1]s;\n"
+	tests := []struct {
+		name       string
+		schema     string
+		privileges string
+		want       string
+		tables     []string
+	}{
+		{
+			name:       "ALL on the database, a table the plan creates",
+			schema:     "CREATE TABLE t1 (id INT PRIMARY KEY);\n",
+			privileges: "ALL",
+			want:       `(?s).*the schema grants ALL ON %[1]s\.\* to role "%[2]s", which covers table t3, so a revoke on the table cannot take it.*`,
+			tables:     []string{"t1"},
+		},
+		{
+			name:       "SELECT on the database, a table the plan creates",
+			schema:     "CREATE TABLE t1 (id INT PRIMARY KEY);\n",
+			privileges: "SELECT",
+			want:       `(?s).*the schema grants SELECT ON %[1]s\.\* to role "%[2]s", which covers table t3, so a revoke on the table cannot take it.*`,
+			tables:     []string{"t1"},
+		},
+		{
+			name:       "ALL on the database, a table that exists",
+			schema:     "CREATE TABLE t1 (id INT PRIMARY KEY);\nCREATE TABLE t3 (id INT PRIMARY KEY);\n",
+			privileges: "ALL",
+			want:       `(?s).*the schema grants ALL ON %[1]s\.\* to role "%[2]s", which covers table t3, so a revoke on the table cannot take it.*`,
+			tables:     []string{"t1", "t3"},
+		},
+	}
+	for _, engine := range mysqlServerEngines {
+		for _, test := range tests {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				run := newColumnGrantRunFrom(c, engine.admin, test.schema, nil)
+				grants := filepath.Join(c.TempDir(), "grants.yaml")
+				c.Assert(os.WriteFile(grants, fmt.Appendf(nil,
+					"grants:\n  everything:\n    role: %s\n    privileges: [%s]\n    on_schema: %s\n", run.role, test.privileges, run.database), 0o600), qt.IsNil)
+
+				applied := run.apply(c, declared, "--auto-approve", "--schema-file", grants)
+
+				c.Assert(applied.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				c.Assert(applied.Stderr, qt.Matches, fmt.Sprintf(test.want, run.database, run.role))
+				c.Assert(heldOnDatabase(c, run), qt.IsNil)
+				c.Assert(run.privileges(c), qt.IsNil)
+				c.Assert(tablesOf(c, run), qt.DeepEquals, test.tables)
+			})
+		}
+	}
+}
+
+// A REVOKE ALL on a table names what ALL grants on a table, so a grant on the
+// database of a privilege no table carries keeps nothing it names, and the
+// revoke is planned as on a table no wider grant covers. The server accepts
+// the REVOKE and keeps the privilege on the database. Measured on MySQL 8.4.13
+// and MariaDB 11.8.9 with ALL read as every privilege: Ptah refuses the
+// revoke and advises revoking EXECUTE on the database, which the schema never
+// asked to remove. The role keeps the privileges on the database, holds
+// nothing on the tables, and the next plan is empty.
+func TestSchemaApplyMySQLFamilyRevokeAllUnderADatabaseGrantNoTableCarriesE2E(t *testing.T) {
+	const declared = "CREATE TABLE t1 (id INT PRIMARY KEY);\nCREATE TABLE t3 (id INT PRIMARY KEY);\nREVOKE ALL ON t3 FROM %[1]s;\n"
+	tests := []struct {
+		name     string
+		schema   string
+		held     []string
+		database []string
+	}{
+		{
+			name:     "EXECUTE, a table the plan creates",
+			schema:   "CREATE TABLE t1 (id INT PRIMARY KEY);\n",
+			held:     []string{"GRANT EXECUTE ON `%[1]s`.* TO %[2]s"},
+			database: []string{"EXECUTE"},
+		},
+		{
+			name:     "EXECUTE, a table that exists and grants on it",
+			schema:   "CREATE TABLE t1 (id INT PRIMARY KEY);\nCREATE TABLE t3 (id INT PRIMARY KEY);\n",
+			held:     []string{"GRANT EXECUTE ON `%[1]s`.* TO %[2]s", "GRANT SELECT, INSERT ON `%[1]s`.t3 TO %[2]s"},
+			database: []string{"EXECUTE"},
+		},
+		{
+			name:     "routine, event and lock privileges, a table the plan creates",
+			schema:   "CREATE TABLE t1 (id INT PRIMARY KEY);\n",
+			held:     []string{"GRANT CREATE ROUTINE, EVENT, LOCK TABLES ON `%[1]s`.* TO %[2]s"},
+			database: []string{"CREATE ROUTINE", "EVENT", "LOCK TABLES"},
+		},
+	}
+	for _, engine := range mysqlServerEngines {
+		for _, test := range tests {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				run := newColumnGrantRunFrom(c, engine.admin, test.schema, test.held)
+
+				applied := run.apply(c, declared, "--auto-approve")
+
+				c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				again := run.apply(c, declared, "--dry-run")
+
+				c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+				c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+				c.Assert(heldOnDatabase(c, run), qt.DeepEquals, test.database)
+				c.Assert(run.privileges(c), qt.IsNil)
+				c.Assert(tablesOf(c, run), qt.DeepEquals, []string{"t1", "t3"})
+			})
+		}
+	}
+}
+
+// tablesOf is the base tables of the run's database, in order, without the
+// log a successful apply writes.
+func tablesOf(c *qt.C, run columnGrantRun) []string {
+	c.Helper()
+	rows, err := run.scratch.admin.QueryContext(c.Context(), `
+		SELECT TABLE_NAME FROM information_schema.TABLES
+		WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME <> 'ptah_schema_apply_log'
+		ORDER BY TABLE_NAME`, run.database)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var tables []string
+	for rows.Next() {
+		var table string
+		c.Assert(rows.Scan(&table), qt.IsNil)
+		tables = append(tables, table)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return tables
 }

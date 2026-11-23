@@ -6,9 +6,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/grantcover"
 )
+
+// listsOf is what ALL grants on each object kind of dialect.
+func listsOf(dialect string) descriptor.AllPrivileges {
+	target, _ := platform.Lookup(dialect)
+	return target.AllPrivileges
+}
 
 // revokes is a schema that revokes privileges on table from r2.
 func revokes(table string, privileges ...string) *schemamodel.Database {
@@ -117,7 +125,149 @@ func TestFind_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table)
+			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table, descriptor.AllPrivileges{})
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(covers, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// declares is a schema that grants privileges on database to grantee.
+func declares(grantee, database string, privileges ...string) *schemamodel.Database {
+	return &schemamodel.Database{Grants: []schemamodel.Grant{{Role: grantee, Privileges: privileges, OnSchema: database}}}
+}
+
+// TestFind_HappyPathDeclared lists which grants the schema declares keep a
+// revoke on a table: a grant on the table's database that the database does
+// not hold yet, which the plan adds, spelled with the privileges it adds. A
+// target that grants nothing on a schema, as Oracle, has no such grant.
+func TestFind_HappyPathDeclared(t *testing.T) {
+	tests := []struct {
+		name       string
+		desired    *schemamodel.Database
+		privileges []string
+		table      string
+		all        descriptor.AllPrivileges
+		current    *catalog.Database
+		want       []grantcover.Cover
+	}{
+		{
+			name: "ALL on the database", desired: declares("r2", "d2", "ALL"), privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding(nil),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "ALL ON d2.*", Declared: true}},
+		},
+		{
+			name: "the privileges a revoke of ALL names, in the grant's order", desired: declares("r2", "d2", "insert", "EXECUTE", "SELECT"),
+			privileges: []string{"ALL"}, table: "t3", all: listsOf("mysql"),
+			current: readHolding(nil),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "INSERT, SELECT ON d2.*", Declared: true}},
+		},
+		{
+			name: "to PUBLIC, on the database a qualified table names", desired: declares("public", "d2", "SELECT"),
+			privileges: []string{"SELECT"}, table: "d2.t3",
+			current: readHolding(nil),
+			want:    []grantcover.Cover{{Grantee: "public", Grant: "SELECT ON d2.*", Declared: true}},
+		},
+		{
+			name: "held already, which the read reports", desired: declares("r2", "d2", "SELECT"), privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "to PUBLIC, held already under the spelling the read reports", desired: declares("public", "d2", "SELECT"),
+			privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding([]catalog.Grant{databaseGrant("PUBLIC", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "PUBLIC", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "ALL, of which the read reports one privilege", desired: declares("r2", "d2", "ALL PRIVILEGES"),
+			privileges: []string{"ALL"}, table: "t3", all: listsOf("mariadb"),
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want: []grantcover.Cover{
+				{Grantee: "r2", Grant: "SELECT ON d2.*"},
+				{Grantee: "r2", Grant: "ALL ON d2.*", Declared: true},
+			},
+		},
+		{
+			name: "ALL, of which the read reports every privilege the revoke names", desired: declares("r2", "d2", "ALL"),
+			privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "on another database", desired: declares("r2", "d9", "SELECT"), privileges: []string{"SELECT"}, table: "d2.t3",
+			current: readHolding(nil),
+		},
+		{
+			name: "to another role", desired: declares("r7", "d2", "SELECT"), privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding(nil),
+		},
+		{
+			name: "of another privilege", desired: declares("r2", "d2", "INSERT"), privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding(nil),
+		},
+		{
+			name: "of a privilege no table carries, under a revoke of ALL", desired: declares("r2", "d2", "EXECUTE"),
+			privileges: []string{"ALL"}, table: "t3", all: listsOf("mysql"),
+			current: readHolding(nil),
+		},
+		{
+			name: "on Oracle, where a grant on a schema reaches none of its tables", desired: declares("r2", "d2", "ALL"),
+			privileges: []string{"SELECT"}, table: "t3", all: listsOf("oracle"),
+			current: readHolding(nil),
+		},
+		{
+			name: "on the table",
+			desired: &schemamodel.Database{Grants: []schemamodel.Grant{
+				{Role: "r2", Privileges: []string{"SELECT"}, OnTable: "t3"},
+			}},
+			privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding(nil),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table, test.all)
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(covers, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestFind_HappyPathTableAll reads ALL in a revoke on a table as the target's
+// table list, so a grant on the database of a privilege no table carries
+// keeps nothing it names, and as every privilege where the target lists
+// nothing.
+func TestFind_HappyPathTableAll(t *testing.T) {
+	current := readHolding([]catalog.Grant{databaseGrant("r2", "EXECUTE"), databaseGrant("r2", "SELECT")},
+		catalog.WideGrant{Role: "r2", Privilege: "LOCK TABLES", Grant: "LOCK TABLES ON *.*"})
+	tests := []struct {
+		name string
+		all  descriptor.AllPrivileges
+		want []grantcover.Cover
+	}{
+		{
+			name: "the table list", all: listsOf("mysql"),
+			want: []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "no list",
+			want: []grantcover.Cover{
+				{Grantee: "r2", Grant: "EXECUTE ON d2.*"},
+				{Grantee: "r2", Grant: "SELECT ON d2.*"},
+				{Grantee: "r2", Grant: "LOCK TABLES ON *.*"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			covers, known := grantcover.Find(nil, current, "r2", []string{"all privileges"}, "t3", test.all)
 
 			c.Assert(known, qt.IsTrue)
 			c.Assert(covers, qt.DeepEquals, test.want)
@@ -132,7 +282,7 @@ func TestFind_NotKnown(t *testing.T) {
 	c := qt.New(t)
 
 	covers, known := grantcover.Find(nil, &catalog.Database{Grants: []catalog.Grant{databaseGrant("r2", "SELECT")}},
-		"r2", []string{"SELECT"}, "t3")
+		"r2", []string{"SELECT"}, "t3", descriptor.AllPrivileges{})
 
 	c.Assert(known, qt.IsFalse)
 	c.Assert(covers, qt.DeepEquals, []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}})
@@ -189,6 +339,50 @@ func TestValidate_FailurePath(t *testing.T) {
 	}
 }
 
+// TestValidate_FailurePathDeclared refuses a revoke that a grant on the
+// database the schema declares keeps, and a revoke of ALL that a held grant
+// of a table privilege keeps, naming only that grant.
+func TestValidate_FailurePathDeclared(t *testing.T) {
+	withRevoke := func(desired *schemamodel.Database, privileges ...string) *schemamodel.Database {
+		desired.RevokedGrants = revokes("t3", privileges...).RevokedGrants
+		return desired
+	}
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		current *catalog.Database
+		want    string
+	}{
+		{
+			name: "a grant the schema declares", desired: withRevoke(declares("r2", "d2", "ALL"), "SELECT"),
+			current: readHolding(nil),
+			want: `the schema grants ALL ON d2\.\* to role "r2", which covers table t3, so a revoke on the table cannot take it: ` +
+				`grant the privilege on each table that needs it instead of on the database`,
+		},
+		{
+			name: "a grant the schema declares to PUBLIC", desired: withRevoke(declares("PUBLIC", "d2", "SELECT"), "SELECT"),
+			current: readHolding(nil),
+			want: `the schema grants SELECT ON d2\.\* to PUBLIC, which gives role "r2" the privilege on table t3, so a revoke on the table cannot take it: ` +
+				`grant the privilege on each table that needs it instead of on the database`,
+		},
+		{
+			name: "a revoke of ALL under a grant of a table privilege and one no table carries", desired: revokes("t3", "ALL"),
+			current: readHolding([]catalog.Grant{databaseGrant("r2", "EXECUTE"), databaseGrant("r2", "SELECT")}),
+			want: `role "r2" holds SELECT ON d2\.\*, which covers table t3, so a revoke on the table cannot take it: ` +
+				`revoke SELECT ON d2\.\* from "r2" instead, or grant the privilege on each table that needs it`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := grantcover.Validate("mysql", test.desired, test.current)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
 // TestValidate_HappyPath accepts a revoke nothing wider keeps, a revoke that
 // is not on a table, and every revoke on a target where a REVOKE on a table
 // takes more than a table grant.
@@ -206,6 +400,19 @@ func TestValidate_HappyPath(t *testing.T) {
 		{
 			name: "a revoke on the database", dialect: "mysql", current: covered,
 			desired: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "r2", Privileges: []string{"SELECT"}, OnSchema: "d2"}}},
+		},
+		{
+			name: "a revoke of ALL under grants on the database no table carries", dialect: "mysql", desired: revokes("t3", "ALL"),
+			current: readHolding([]catalog.Grant{
+				databaseGrant("r2", "EXECUTE"), databaseGrant("r2", "CREATE ROUTINE"), databaseGrant("r2", "EVENT"), databaseGrant("r2", "LOCK TABLES"),
+			}),
+		},
+		{
+			name: "a grant the schema declares of another privilege", dialect: "mariadb", current: readHolding(nil),
+			desired: &schemamodel.Database{
+				Grants:        declares("r2", "d2", "INSERT").Grants,
+				RevokedGrants: revokes("t3", "SELECT").RevokedGrants,
+			},
 		},
 		{name: "PostgreSQL", dialect: "postgres", desired: revokes("t3", "SELECT"), current: covered},
 		{name: "ClickHouse, which refuses it on its own", dialect: "clickhouse", desired: revokes("t3", "SELECT"), current: covered},
