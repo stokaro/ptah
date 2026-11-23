@@ -66,8 +66,9 @@ func (r *Reader) readRoutinePrivileges(ctx context.Context, account sessionAccou
 // The CREATE that replaces a routine grants the account running it EXECUTE
 // and ALTER ROUTINE on the routine, unless it holds both already, so a row of
 // the reading account that holds exactly those, without the grant option, is
-// the one the CREATE writes back and is left out. Each other row records
-// whether the reading account may grant it again ([sessionAccount.mayGrant]).
+// the one the CREATE writes back and is left out ([sessionAccount.isCreator]).
+// Each other row records whether the reading account may grant it again
+// ([sessionAccount.mayGrant]).
 //
 // MariaDB records a role with an empty host, and only a role: it records a
 // user created with an empty host under the host %, and answers ERROR 1133
@@ -119,9 +120,15 @@ func (r *Reader) readRoutinePrivilegesIn(ctx context.Context, account sessionAcc
 // option. Measured on MySQL 8.4.13 and MariaDB 11.8.9 with
 // automatic_sp_privileges on, an account holding CREATE ROUTINE on the
 // database alone gets that row from each CREATE PROCEDURE it runs.
+//
+// On MySQL a session with a role active gets it only from the first CREATE of
+// the routine: after a DROP of the routine, the CREATE writes no row, from that
+// session or a later one, with or without a role that holds anything on the
+// database. Measured on 8.4.13; MariaDB 11.8.9 writes the row back. Such a
+// session keeps the row, so a plan grants it back or refuses.
 func (a sessionAccount) isCreator(grant catalog.RoutineGrant) bool {
 	at := strings.LastIndex(a.name, "@")
-	return at >= 0 && !grant.Role && grant.User == a.name[:at] && grant.Host == a.name[at+1:] && !grant.WithOption &&
+	return at >= 0 && !a.activeRole && !grant.Role && grant.User == a.name[:at] && grant.Host == a.name[at+1:] && !grant.WithOption &&
 		len(grant.Privileges) == 2 &&
 		slices.Contains(grant.Privileges, "EXECUTE") && slices.Contains(grant.Privileges, "ALTER ROUTINE")
 }

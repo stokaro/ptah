@@ -633,6 +633,7 @@ func TestReader_FailsWithoutTheAccountsGrants_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "who the session is", marker: "SELECT CURRENT_USER(), VERSION()", wantErr: `failed to read the connecting account: refused`},
+		{name: "its active roles", marker: "SELECT CURRENT_ROLE()", wantErr: `failed to read the session's active roles: refused`},
 		{name: "what it holds", marker: "SHOW GRANTS", wantErr: `failed to read the connecting account's grants: refused`},
 		{name: "how grants apply", marker: "SHOW VARIABLES", wantErr: `failed to read the settings grants depend on: refused`},
 	}
