@@ -43,6 +43,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemasource"
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
@@ -197,6 +198,32 @@ type Set struct {
 	// a command validate before unrelated database or lock work and then replay
 	// those exact bytes instead of reopening the pathname.
 	migrationSnapshot fs.FS
+	// held is the connection the caller holds that the database source is
+	// read on; see [Set.ReadOn]. Nil opens the source from its URL.
+	held *dbschema.DatabaseConnection
+}
+
+// ReadOn returns the set with its database read on conn, a connection the
+// caller holds, which the resolution leaves open and the caller closes. It
+// applies when the set is one database source, conn was opened with the
+// source's URL, and conn's database lives in its one session
+// ([dbschema.DatabaseConnection.SingleSession]): opened again by its URL, a
+// private in-memory database is a new, empty one, and a comparison with it
+// plans to drop everything the other side holds.
+//
+// Every other set, and a nil conn, returns the set as it is. A database a URL
+// reaches from any connection is opened again, so the read gets a fresh
+// session and the scope its own connection resolves.
+//
+// The connection is bound to this set rather than looked up by URL, since
+// two private in-memory databases may be opened with one URL, and a lookup by
+// URL would read one of them for both sides of a comparison.
+func (s Set) ReadOn(conn *dbschema.DatabaseConnection) Set {
+	if s.Kind != KindDatabase || len(s.Sources) != 1 || !conn.SingleSession() || conn.Info().URL != s.Sources[0].Raw {
+		return s
+	}
+	s.held = conn
+	return s
 }
 
 // PrepareMigrationSource captures and validates a migration-directory source

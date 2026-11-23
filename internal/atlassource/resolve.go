@@ -184,14 +184,6 @@ type ResolveOptions struct {
 	// schema path before it is parsed or a dev database is opened. Nil accepts
 	// every source format supported by schemafile.
 	ValidateLocalSchemaSource func(string) error
-	// Held are connections the caller already holds. A database source whose
-	// URL is the one a held connection was opened with, and whose database
-	// lives in that connection's one session
-	// ([dbschema.DatabaseConnection.SingleSession]), is read on that connection
-	// and left open: opened again by its URL, a private in-memory database is
-	// a new, empty one, and a comparison with it plans to drop everything the
-	// other side holds. Every other source is opened from its URL, held or not.
-	Held []*dbschema.DatabaseConnection
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -345,8 +337,8 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 // with the replayed schema still in place. Every other kind has no server
 // behind it, and the connection is nil. It must not escape the call. A
 // connection the resolution opened is closed, and a replayed dev database is
-// cleaned, when the call returns. A connection taken from
-// [ResolveOptions.Held] stays open after the call, and its caller closes it.
+// cleaned, when the call returns. The connection a set reads on
+// ([Set.ReadOn]) stays open after the call, and its caller closes it.
 type HoldFunc func(state State, conn *dbschema.DatabaseConnection) error
 
 // ResolveHolding resolves the set as [Set.Resolve] does, validation
@@ -569,12 +561,11 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 }
 
 // connectDatabase returns the connection a database source is read on, and
-// what releases it: a held connection serving the source's URL
-// ([heldSession]), which stays open, or a connection opened from the URL,
-// which is closed.
+// what releases it: the connection the caller holds ([Set.ReadOn]), which
+// stays open, or a connection opened from the URL, which is closed.
 func (s Set) connectDatabase(ctx context.Context, opts ResolveOptions) (*dbschema.DatabaseConnection, func(), error) {
-	if held := heldSession(opts.Held, s.Sources[0].Raw); held != nil {
-		return held, func() {}, nil
+	if s.held != nil {
+		return s.held, func() {}, nil
 	}
 	connect := dbschema.ConnectToDatabase
 	if opts.ServerScope {
@@ -585,22 +576,6 @@ func (s Set) connectDatabase(ctx context.Context, opts ResolveOptions) (*dbschem
 		return nil, nil, err
 	}
 	return conn, func() { dbschema.CloseAndWarn(conn) }, nil
-}
-
-// heldSession returns the connection in held that a source naming rawURL must
-// be read on, or nil when the URL can be opened again. That is a connection
-// opened with exactly rawURL whose database lives in its one session
-// ([dbschema.DatabaseConnection.SingleSession]). A database a URL reaches
-// from any connection is opened again, so the read gets a fresh session and
-// the scope its own connection resolves, as it does without a held
-// connection.
-func heldSession(held []*dbschema.DatabaseConnection, rawURL string) *dbschema.DatabaseConnection {
-	for _, conn := range held {
-		if conn != nil && conn.SingleSession() && conn.Info().URL == rawURL {
-			return conn
-		}
-	}
-	return nil
 }
 
 // ensureDialect rejects database sources whose URL scheme cannot name a

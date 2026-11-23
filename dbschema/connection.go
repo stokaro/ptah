@@ -505,6 +505,25 @@ func (dc *DatabaseConnection) SingleSession() bool {
 	return dc.singleSession
 }
 
+// SharesPool reports whether dc and other draw their sessions from one pool:
+// they are one connection, or one is a session-scoped copy of the other, such
+// as the connection [DatabaseConnection.WithSession] hands its callback. Two
+// connections opened separately never share a pool, whatever URLs they were
+// opened with.
+//
+// For a private in-memory SQLite database, which lives in its connection's one
+// session ([DatabaseConnection.SingleSession]), that answers whether the two
+// reach one database. It is false when either connection is nil.
+func (dc *DatabaseConnection) SharesPool(other *DatabaseConnection) bool {
+	if dc == nil || other == nil {
+		return false
+	}
+	if dc.db == nil {
+		return dc.native != nil && dc.native == other.native
+	}
+	return dc.db == other.db
+}
+
 // VulnerabilityScanState reports "supported", "not_applicable", or
 // "unassessed" for this connection's engine. The deployment and advisory
 // source are separate scan decisions.

@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dburlext/sqlite"
 )
@@ -24,7 +25,29 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 		right string
 		want  bool
 	}{
-		{name: "two databases in memory", left: "sqlite://:memory:", right: "sqlite3://file::memory:?cache=shared", want: true},
+		{name: "a private and a shared database in memory", left: "sqlite://:memory:", right: "sqlite3://file::memory:?cache=shared", want: false},
+		{name: "two private databases in memory under one URL", left: "sqlite://dev?mode=memory", right: "sqlite://dev?mode=memory", want: false},
+		{name: "two unnamed databases in memory", left: "sqlite://:memory:", right: "sqlite:///:memory:", want: false},
+		{
+			name: "one shared-cache name", left: "sqlite://memdb1?mode=memory&cache=shared",
+			right: "sqlite:file:memdb1?cache=shared&mode=memory&_fk=1", want: true,
+		},
+		{
+			name: "two shared-cache names", left: "sqlite://memdb1?mode=memory&cache=shared",
+			right: "sqlite://memdb2?mode=memory&cache=shared", want: false,
+		},
+		{
+			name: "a shared-cache name and a private one", left: "sqlite://memdb1?mode=memory&cache=shared",
+			right: "sqlite://memdb1?mode=memory", want: false,
+		},
+		{
+			name: "a percent escape in a shared-cache name", left: "sqlite:file:a%2Db?mode=memory&cache=shared",
+			right: "sqlite:file:a-b?mode=memory&cache=shared", want: true,
+		},
+		{
+			name: "cache=shared outside a URI", left: "sqlite://:memory:?cache=shared",
+			right: "sqlite://:memory:?cache=shared", want: false,
+		},
 		{name: "a database in memory and a file", left: "sqlite://:memory:", right: atlasurl.SQLiteURLFromPath(existing), want: false},
 		{
 			name: "one existing file in two spellings", left: atlasurl.SQLiteURLFromPath(existing),
@@ -48,10 +71,80 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 }
 
 func TestSameDatabase_FailurePath(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name   string
+		parsed *url.URL
+	}{
+		{name: "an escape in a file URI", parsed: &url.URL{Scheme: "sqlite", Opaque: "file:%zz"}},
+		{name: "an escape in the name of a database in memory", parsed: &url.URL{Scheme: "sqlite", Path: "/a%zz", RawQuery: "mode=memory"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	got, err := sqlite.Services().Databases.SameDatabase(&url.URL{Scheme: "sqlite", Opaque: "file:%zz"}, must.Must(url.Parse("sqlite://:memory:")))
+			got, err := sqlite.Services().Databases.SameDatabase(test.parsed, must.Must(url.Parse("sqlite://:memory:")))
 
-	c.Assert(err, qt.ErrorMatches, `invalid SQLite database URL`)
-	c.Assert(got, qt.IsFalse)
+			c.Assert(err, qt.ErrorMatches, `invalid SQLite database URL`)
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
+// TestSameDatabase_AgreesWithTheDriver opens each pair of URLs naming a
+// database in memory, creates a table through the first connection and looks
+// for it through the second. SameDatabase answers what the driver does: a
+// pair it calls two databases while the driver gives them one is a dev
+// database that is the target, and a pair it calls one while the driver gives
+// two is a refusal of a distinct dev database.
+func TestSameDatabase_AgreesWithTheDriver(t *testing.T) {
+	// A spelling the driver read as a file name would create the file here.
+	t.Chdir(t.TempDir())
+	tests := []struct {
+		name  string
+		left  string
+		right string
+	}{
+		{name: "two private databases under one URL", left: "sqlite://dev?mode=memory", right: "sqlite://dev?mode=memory"},
+		{name: "two unnamed databases", left: "sqlite://:memory:", right: "sqlite://:memory:"},
+		{name: "two unnamed databases with an empty host", left: "sqlite:///:memory:", right: "sqlite:///:memory:"},
+		{name: "two private names", left: "sqlite://a?mode=memory", right: "sqlite://b?mode=memory"},
+		{name: "one shared-cache name", left: "sqlite://memdb1?mode=memory&cache=shared", right: "sqlite://memdb1?cache=shared&mode=memory&_fk=1"},
+		{name: "a shared-cache name in two spellings", left: "sqlite:file:memdb1?mode=memory&cache=shared", right: "sqlite://memdb1?mode=memory&cache=shared"},
+		{name: "shared-cache names that differ in case", left: "sqlite://Memdb1?mode=memory&cache=shared", right: "sqlite://memdb1?mode=memory&cache=shared"},
+		{name: "two shared-cache names", left: "sqlite://memdb1?mode=memory&cache=shared", right: "sqlite://memdb2?mode=memory&cache=shared"},
+		{name: "a shared-cache name with a directory", left: "sqlite://dir/memdb1?mode=memory&cache=shared", right: "sqlite://memdb1?mode=memory&cache=shared"},
+		{name: "a shared-cache name and a private one", left: "sqlite://memdb1?mode=memory&cache=shared", right: "sqlite://memdb1?mode=memory"},
+		{name: "a percent escape in a shared-cache name", left: "sqlite:file:a%2Db?mode=memory&cache=shared", right: "sqlite:file:a-b?mode=memory&cache=shared"},
+		{name: "the shared unnamed URI", left: "sqlite://file::memory:?cache=shared", right: "sqlite://file::memory:?cache=shared"},
+		{name: "cache=shared outside a URI", left: "sqlite://:memory:?cache=shared", right: "sqlite://:memory:?cache=shared"},
+		{name: "cache=shared on an unnamed database", left: "sqlite://?mode=memory&cache=shared", right: "sqlite://?mode=memory&cache=shared"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			shared := driverShares(c, test.left, test.right)
+
+			got, err := sqlite.Services().Databases.SameDatabase(must.Must(atlasurl.Parse(test.left)), must.Must(atlasurl.Parse(test.right)))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, shared)
+		})
+	}
+}
+
+// driverShares opens left and right and reports whether a table created
+// through the first is visible through the second.
+func driverShares(c *qt.C, left, right string) bool {
+	c.Helper()
+	first, err := dbschema.ConnectToDatabase(c.Context(), left)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(first) })
+	second, err := dbschema.ConnectToDatabase(c.Context(), right)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(second) })
+	_, err = first.ExecContext(c.Context(), "CREATE TABLE marker (id INTEGER)")
+	c.Assert(err, qt.IsNil)
+	var tables int
+	c.Assert(second.QueryRowContext(c.Context(), "SELECT count(*) FROM sqlite_master WHERE name = 'marker'").Scan(&tables), qt.IsNil)
+	return tables == 1
 }

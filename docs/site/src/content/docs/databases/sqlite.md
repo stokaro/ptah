@@ -47,6 +47,13 @@ held on one open connection, because a second connection to a private
 in-memory database opens a new, empty one. A database file is read through a
 pool of connections, and the pragmas the URL names apply to each of them.
 
+Two in-memory databases are one database only when both URLs open one
+shared-cache name, such as `sqlite:file:memdb1?mode=memory&cache=shared` twice.
+Any other in-memory database is private to its connection, so two opens of
+`sqlite://dev?mode=memory` are two databases. A dev database in memory beside a
+target in memory is therefore accepted, and a dev URL that opens the target's
+shared-cache name is refused, as one that names the target's file is.
+
 ## What renders natively
 
 The SQLite renderer and planner support:

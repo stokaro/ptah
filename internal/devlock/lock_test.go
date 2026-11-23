@@ -114,6 +114,73 @@ func TestSameRealm_SQLite(t *testing.T) {
 	c.Assert(same, qt.IsFalse)
 }
 
+// TestSameRealm_SQLiteInMemory compares connections opened separately to
+// databases in memory, which name no file. Two private databases are two
+// realms whatever their URLs say, and two connections to one shared-cache
+// name reach one database.
+func TestSameRealm_SQLiteInMemory(t *testing.T) {
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		want  bool
+	}{
+		{name: "two private databases under one URL", left: "sqlite://dev?mode=memory", right: "sqlite://dev?mode=memory", want: false},
+		{name: "two unnamed private databases", left: "sqlite://:memory:", right: "sqlite://:memory:", want: false},
+		{name: "two private names", left: "sqlite://target?mode=memory", right: "sqlite://dev?mode=memory", want: false},
+		{name: "one shared-cache name", left: "sqlite://dev?mode=memory&cache=shared", right: "sqlite://dev?mode=memory&cache=shared", want: true},
+		{name: "two shared-cache names", left: "sqlite://target?mode=memory&cache=shared", right: "sqlite://dev?mode=memory&cache=shared", want: false},
+		{name: "a shared-cache name and a private one", left: "sqlite://dev?mode=memory&cache=shared", right: "sqlite://dev?mode=memory", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			left, err := dbschema.ConnectToDatabase(c.Context(), test.left)
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { dbschema.CloseAndWarn(left) })
+			right, err := dbschema.ConnectToDatabase(c.Context(), test.right)
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { dbschema.CloseAndWarn(right) })
+
+			same, err := devlock.SameRealm(c.Context(), left, right)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(same, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestSameRealm_SQLiteInMemoryOnePool compares a private in-memory database's
+// connection with itself, with the copy WithExecutor returns, and with the
+// session copy WithSession hands its callback, which reach the one database
+// the pool holds. The session copy pins the pool's one session, so asking the
+// connection itself which file it holds would wait for that session forever.
+func TestSameRealm_SQLiteInMemoryOnePool(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://dev?mode=memory")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
+	c.Cleanup(cancel)
+	var scopedSame bool
+	var scopedErr error
+
+	err = conn.WithSession(ctx, func(scoped *dbschema.DatabaseConnection) error {
+		scopedSame, scopedErr = devlock.SameRealm(ctx, conn, scoped)
+		return nil
+	})
+	sameCopy, copyErr := devlock.SameRealm(ctx, conn, conn.WithExecutor(conn.Writer()))
+	same, sameErr := devlock.SameRealm(ctx, conn, conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedErr, qt.IsNil)
+	c.Assert(scopedSame, qt.IsTrue)
+	c.Assert(copyErr, qt.IsNil)
+	c.Assert(sameCopy, qt.IsTrue)
+	c.Assert(sameErr, qt.IsNil)
+	c.Assert(same, qt.IsTrue)
+}
+
 func TestSameRealm_FailurePathRequiresConnections(t *testing.T) {
 	c := qt.New(t)
 

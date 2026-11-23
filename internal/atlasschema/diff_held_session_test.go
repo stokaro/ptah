@@ -28,25 +28,41 @@ func heldDatabase(c *qt.C, url, statements string) *dbschema.DatabaseConnection 
 
 // TestDiffHeldSession compares two private in-memory SQLite databases: --from
 // holds a, b and c, and --to holds a and b. A side whose connection the caller
-// holds is read on it. A side the caller does not hold is opened again by its
-// URL, which reaches a new, empty database, and the plan drops every table:
-// that row is the reason Held exists, and the control that the first row's
-// answer came from the held connection.
+// holds is read on it, and each connection is bound to its side, so two
+// private databases opened with one URL are read as the two they are. A side
+// the caller does not hold, or holds on a connection opened with another URL,
+// is opened again by its URL, which reaches a new, empty database, and the
+// plan drops every table: those rows are the control that the first rows'
+// answer came from the held connections.
 func TestDiffHeldSession(t *testing.T) {
 	const fromURL, toURL = "sqlite://from?mode=memory", "sqlite://to?mode=memory"
 	tests := []struct {
 		name string
-		held []string
-		want []string
+		// fromURL and toURL open the two databases, and --from names fromURL.
+		fromURL, toURL string
+		// toSide is the URL --to names.
+		toSide string
+		// holdTo hands the --to connection over; the --from one is always
+		// handed over.
+		holdTo bool
+		want   []string
 	}{
 		{
-			name: "both sides held",
-			held: []string{fromURL, toURL},
+			name: "both sides held", fromURL: fromURL, toURL: toURL, toSide: toURL, holdTo: true,
 			want: []string{`DROP TABLE "c"`},
 		},
 		{
-			name: "the side that is not held is empty",
-			held: []string{fromURL},
+			name:    "two private databases under one URL",
+			fromURL: "sqlite://db?mode=memory", toURL: "sqlite://db?mode=memory", toSide: "sqlite://db?mode=memory", holdTo: true,
+			want: []string{`DROP TABLE "c"`},
+		},
+		{
+			name: "the side that is not held is empty", fromURL: fromURL, toURL: toURL, toSide: toURL, holdTo: false,
+			want: []string{`DROP TABLE "a"`, `DROP TABLE "b"`, `DROP TABLE "c"`},
+		},
+		{
+			name:    "a connection opened with another URL is not read",
+			fromURL: fromURL, toURL: toURL, toSide: "sqlite://elsewhere?mode=memory", holdTo: true,
 			want: []string{`DROP TABLE "a"`, `DROP TABLE "b"`, `DROP TABLE "c"`},
 		},
 	}
@@ -54,22 +70,19 @@ func TestDiffHeldSession(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			from := heldDatabase(c, fromURL,
+			from := heldDatabase(c, test.fromURL,
 				"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY); "+
 					"CREATE TABLE c (id INTEGER PRIMARY KEY);")
-			to := heldDatabase(c, toURL,
+			to := heldDatabase(c, test.toURL,
 				"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY);")
-			opened := map[string]*dbschema.DatabaseConnection{fromURL: from, toURL: to}
-			held := make([]*dbschema.DatabaseConnection, 0, len(test.held))
-			for _, url := range test.held {
-				held = append(held, opened[url])
-			}
+			toHeld := map[bool]*dbschema.DatabaseConnection{true: to}[test.holdTo]
 
 			report, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
 				Runtime:  must.Must(builtin.New()),
-				FromURLs: []string{fromURL},
-				ToURLs:   []string{toURL},
-				Held:     held,
+				FromURLs: []string{test.fromURL},
+				ToURLs:   []string{test.toSide},
+				FromHeld: from,
+				ToHeld:   toHeld,
 			})
 
 			c.Assert(err, qt.IsNil)
@@ -98,7 +111,8 @@ func TestDiffHeldSession_FileIsOpenedAgain(t *testing.T) {
 		Runtime:  must.Must(builtin.New()),
 		FromURLs: []string{fromURL},
 		ToURLs:   []string{toURL},
-		Held:     []*dbschema.DatabaseConnection{from, to},
+		FromHeld: from,
+		ToHeld:   to,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -120,7 +134,8 @@ func TestDiffHeldSession_LeavesTheConnectionOpen(t *testing.T) {
 		Runtime:  must.Must(builtin.New()),
 		FromURLs: []string{fromURL},
 		ToURLs:   []string{toURL},
-		Held:     []*dbschema.DatabaseConnection{from, to},
+		FromHeld: from,
+		ToHeld:   to,
 	})
 
 	c.Assert(err, qt.IsNil)

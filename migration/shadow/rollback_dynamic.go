@@ -195,12 +195,15 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	// on any other connection. Opened again by its URL, a dev database holds
 	// none of the replayed tables, and the plan drops every table the target
 	// holds; a target holds none of its tables, and the plan creates every
-	// table the target version declares.
+	// table the target version declares. The connections are bound to their
+	// sides, since a private in-memory target and dev database may share a
+	// URL.
 	diff, err := atlasschema.Diff(ctx, atlasschema.DiffOptions{
 		Runtime:  opts.Runtime,
 		FromURLs: []string{opts.TargetConnection.Info().URL},
 		ToURLs:   []string{devConn.Info().URL},
-		Held:     []*dbschema.DatabaseConnection{devConn, opts.TargetConnection},
+		FromHeld: opts.TargetConnection,
+		ToHeld:   devConn,
 		// Both sides are databases, so no third database is needed to
 		// materialize either one.
 		Exclude:                opts.Exclude,
