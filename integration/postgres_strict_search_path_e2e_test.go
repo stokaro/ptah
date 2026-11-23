@@ -18,18 +18,21 @@ import (
 // The pinned community binary reads a URL's search_path as one literal schema
 // name: a space around the value, a capital letter and a comma stay part of
 // the name. The server, and Ptah with it, reads the value with the search_path
-// grammar, which trims an unquoted name, folds it to lower case and splits on a
-// comma. PTAH_ATLAS_STRICT_COMPAT=1 refuses a value the two read differently,
-// before it connects, and names where the URL came from. The tests below run
-// against a database holding one table in each of the schemas `a`, ` a`, `a `,
-// `A` and `a,b`, so the table a run reads names the schema it selected.
+// grammar, which trims an unquoted name, folds it to lower case, splits on a
+// comma and reads `$user` as the schema named after the session's user.
+// PTAH_ATLAS_STRICT_COMPAT=1 refuses a value the two read differently, before
+// it connects, and names where the URL came from. The tests below run against
+// a database holding one table in each of the schemas `a`, ` a`, `a `, `A`,
+// `a,b` and `$user`, so the table a run reads names the schema it selected.
 
 // strictSearchPathSchemas creates the schemas and their tables, and the empty
 // schema e a diff starts from.
 var strictSearchPathSchemas = []string{
-	"CREATE SCHEMA a", `CREATE SCHEMA " a"`, `CREATE SCHEMA "a "`, `CREATE SCHEMA "A"`, `CREATE SCHEMA "a,b"`, "CREATE SCHEMA e",
+	"CREATE SCHEMA a", `CREATE SCHEMA " a"`, `CREATE SCHEMA "a "`, `CREATE SCHEMA "A"`, `CREATE SCHEMA "a,b"`, `CREATE SCHEMA "$user"`,
+	"CREATE SCHEMA e",
 	"CREATE TABLE a.t_plain (id integer)", `CREATE TABLE " a".t_lead (id integer)`,
 	`CREATE TABLE "a ".t_trail (id integer)`, `CREATE TABLE "A".t_upper (id integer)`, `CREATE TABLE "a,b".t_comma (id integer)`,
+	`CREATE TABLE "$user".t_dollar (id integer)`,
 }
 
 // strictSearchPathCommands are the places a compatibility run reads a database
@@ -65,7 +68,9 @@ var strictSearchPathCommands = map[string]struct {
 // tables the pinned binary v1.4.0 reads for each and its exit code, measured
 // against PostgreSQL 18. It reads `a,b` as the one schema a,b through -u and
 // an env url, and refuses it through --to as `missing scheme`, because it
-// splits that flag on the comma.
+// splits that flag on the comma. It reads `$user` as a schema of that name,
+// and refuses it with `schema "$user" was not found` where there is none; the
+// server reads the schema named after the session's user.
 var strictSearchPathRows = []struct {
 	source, value   string
 	referenceTables []string
@@ -75,14 +80,17 @@ var strictSearchPathRows = []struct {
 	{source: "-u", value: "a%20", referenceTables: []string{`CREATE TABLE "t_trail" ("id" integer NULL);`}},
 	{source: "-u", value: "A", referenceTables: []string{`CREATE TABLE "t_upper" ("id" integer NULL);`}},
 	{source: "-u", value: "a,b", referenceTables: []string{`CREATE TABLE "t_comma" ("id" integer NULL);`}},
+	{source: "-u", value: "$user", referenceTables: []string{`CREATE TABLE "t_dollar" ("id" integer NULL);`}},
 	{source: "--to", value: "%20a", referenceTables: []string{`CREATE TABLE "t_lead" ("id" integer NULL);`}},
 	{source: "--to", value: "a%20", referenceTables: []string{`CREATE TABLE "t_trail" ("id" integer NULL);`}},
 	{source: "--to", value: "A", referenceTables: []string{`CREATE TABLE "t_upper" ("id" integer NULL);`}},
 	{source: "--to", value: "a,b", referenceExit: 1},
+	{source: "--to", value: "$user", referenceTables: []string{`CREATE TABLE "t_dollar" ("id" integer NULL);`}},
 	{source: "the atlas.hcl env url", value: "%20a", referenceTables: []string{`CREATE TABLE "t_lead" ("id" integer NULL);`}},
 	{source: "the atlas.hcl env url", value: "a%20", referenceTables: []string{`CREATE TABLE "t_trail" ("id" integer NULL);`}},
 	{source: "the atlas.hcl env url", value: "A", referenceTables: []string{`CREATE TABLE "t_upper" ("id" integer NULL);`}},
 	{source: "the atlas.hcl env url", value: "a,b", referenceTables: []string{`CREATE TABLE "t_comma" ("id" integer NULL);`}},
+	{source: "the atlas.hcl env url", value: "$user", referenceTables: []string{`CREATE TABLE "t_dollar" ("id" integer NULL);`}},
 }
 
 // TestStrictSearchPathRefusesWhatTheReferenceReadsLiterallyE2E runs each source
@@ -131,6 +139,7 @@ func TestStrictSearchPathRefusesBeforeConnectingE2E(t *testing.T) {
 		args        []string
 	}{
 		{name: "-u", label: "--url", args: []string{"schema", "inspect", "-u", selected}},
+		{name: "--from", label: "--from", args: []string{"schema", "diff", "--from", selected, "--to", withURLParameter(unreachable, "search_path", "e")}},
 		{name: "--to", label: "--to", args: []string{"schema", "diff", "--from", withURLParameter(unreachable, "search_path", "e"), "--to", selected}},
 		{name: "--dev-url", label: "--dev-url", args: []string{"schema", "inspect", "-u", "file://schema.sql", "--dev-url", selected}},
 		{name: "the atlas.hcl env url", label: `the url of env "x"`, args: []string{"schema", "inspect", "--env", "x"}},

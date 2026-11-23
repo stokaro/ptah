@@ -15,9 +15,9 @@ import (
 func strictSearchPathRefusal(value, source string) string {
 	return regexp.QuoteMeta(`Atlas Community Edition strict compatibility refuses search_path=` + value + ` in ` + source + `: ` +
 		`the community binary reads the value as one schema name, byte for byte, and the server's ` +
-		`search_path grammar reads another; name a schema in lower case, at most 63 bytes, without ` +
-		`white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT to read the ` +
-		`value as the server does`)
+		`search_path grammar reads another; name a schema other than $user, in lower case, at most 63 ` +
+		`bytes, without white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT ` +
+		`to read the value as the server does`)
 }
 
 // Strict mode refuses a search_path the pinned community binary reads as one
@@ -35,6 +35,7 @@ func TestStrictCEValidateSearchPath_FailurePath(t *testing.T) {
 		{name: "a plus sign", rawURL: "postgres://u@h/db?search_path=a+b", value: "a+b"},
 		{name: "a capital letter", rawURL: "postgres://u@h/db?search_path=A", value: "A"},
 		{name: "a list", rawURL: "postgres://u@h/db?search_path=a,b", value: "a,b"},
+		{name: "the session user's schema", rawURL: "postgres://u@h/db?search_path=$user", value: "$user"},
 		{name: "a quoted name", rawURL: "postgres://u@h/db?search_path=%22%20a%22", value: "%22%20a%22"},
 		{name: "the postgresql scheme", rawURL: "postgresql://u@h/db?search_path=A", value: "A"},
 	} {

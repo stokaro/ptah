@@ -556,9 +556,9 @@ func (p Policy) ValidateSearchPath(source, rawURL string) error {
 	}
 	return fmt.Errorf("Atlas Community Edition strict compatibility refuses search_path=%s in %s: "+
 		"the community binary reads the value as one schema name, byte for byte, and the server's "+
-		"search_path grammar reads another; name a schema in lower case, at most 63 bytes, without "+
-		"white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT to read the "+
-		"value as the server does", value, source)
+		"search_path grammar reads another; name a schema other than $user, in lower case, at most 63 "+
+		"bytes, without white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT "+
+		"to read the value as the server does", value, source)
 }
 
 // noAtlasDriver reports whether name is an engine no Atlas edition has a

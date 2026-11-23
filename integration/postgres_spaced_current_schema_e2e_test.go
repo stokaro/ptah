@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,10 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/dbtarget"
 )
 
 // A URL with search_path=%22%20a%22 sends the server the quoted identifier
@@ -250,6 +253,127 @@ func TestSpacedCurrentSchemaMigratesE2E(t *testing.T) {
 
 	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 	c.Assert(again.Stdout, qt.Contains, "No migration files to execute")
+}
+
+// spacedCurrentSchemaSeedHCL declares what the seeded target holds in ` a`
+// and a column on t_space whose default draws from seq_x, so the plan is
+// rehearsed on the dev database with the target's objects copied into it.
+const spacedCurrentSchemaSeedHCL = `schema " a" {
+}
+
+sequence "seq_x" {
+  schema = schema[" a"]
+  type = "bigint"
+  start = 1
+  increment = 1
+  min_value = 1
+  max_value = 9223372036854775807
+  cache = 1
+}
+
+table "shared" {
+  schema = schema[" a"]
+  column "id" {
+    type = integer
+    null = true
+  }
+}
+
+table "t_space" {
+  schema = schema[" a"]
+  column "id" {
+    type = integer
+    null = true
+  }
+  column "n" {
+    type = bigint
+    null = true
+    default = sql("nextval('seq_x')")
+  }
+}
+`
+
+// TestSpacedCurrentSchemaSeedsADevDatabaseThatHoldsTheSchemaWithoutTheSpaceE2E
+// rehearses a plan on each surface through a dev database that holds both `a`
+// and ` a`, with ` a` the current schema of the target and of the dev URL.
+// The rehearsal copies the target's objects of ` a` into the dev database's
+// ` a`, plans the new column and leaves the dev database empty. With the
+// current schema trimmed, the seed placed those objects in `a`, which the dev
+// database held before the run, and refused it: `the dev database held schema
+// "a" before the run`.
+func TestSpacedCurrentSchemaSeedsADevDatabaseThatHoldsTheSchemaWithoutTheSpaceE2E(t *testing.T) {
+	for _, surface := range spacedCurrentSchemaSurfaces {
+		t.Run(surface.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := newEmptyReadScopeDatabase(c, "spaced_seed_target")
+			for _, statement := range []string{
+				`CREATE SCHEMA " a"`, `CREATE TABLE " a".t_space (id integer)`, `CREATE TABLE " a".shared (id integer)`,
+				`CREATE SEQUENCE " a".seq_x`,
+			} {
+				execPostgresFamilySQL(c, c.Context(), target, statement)
+			}
+			dev := newEmptyReadScopeDatabase(c, "spaced_seed_dev")
+			for _, statement := range []string{"CREATE SCHEMA a", `CREATE SCHEMA " a"`} {
+				execPostgresFamilySQL(c, c.Context(), dev, statement)
+			}
+			document := writeSpacedSchemaFile(c, "seed.hcl", spacedCurrentSchemaSeedHCL)
+			args := append(surface.apply(spacedCurrentSchemaURL(target), document), "--dev-url", spacedCurrentSchemaURL(dev))
+
+			applied := clirun.Run(c, surface.program, clirun.Options{Dir: c.TempDir()}, args...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stdout, qt.Contains, `ALTER TABLE " a"."t_space" ADD COLUMN "n" bigint`)
+			c.Assert(spacedCurrentSchemaTables(c, dev), qt.Equals, "")
+			c.Assert(spacedCurrentSchemaTables(c, target), qt.Equals, "[ a].shared, [ a].t_space")
+		})
+	}
+}
+
+// TestSpacedCurrentSchemaKeepsTheDevDatabasesDefaultPrivilegeE2E diffs a
+// migration directory through a dev database whose current schema is ` a`
+// and which holds a default privilege defined in ` a`. The cleanup between
+// replays keeps the default privileges of the connection's own schema, so the
+// row is still there after the run. With that schema trimmed, the cleanup kept
+// the default privileges of `a` and dropped the one in ` a` without a word.
+func TestSpacedCurrentSchemaKeepsTheDevDatabasesDefaultPrivilegeE2E(t *testing.T) {
+	c := qt.New(t)
+	admin := openReadScopeDatabase(c, dbtarget.URL(c, dbtarget.PostgreSQL))
+	role := fmt.Sprintf("ptah_spaced_reader_%d", time.Now().UnixNano())
+	_, err := admin.ExecContext(c.Context(), "CREATE ROLE "+quoteE2EIdent(role)+" NOLOGIN")
+	c.Assert(err, qt.IsNil)
+	// Registered before the database is created, so it runs after the database
+	// is dropped and no default privilege names the role any more.
+	c.Cleanup(func() {
+		_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+quoteE2EIdent(role))
+		c.Check(dropErr, qt.IsNil)
+	})
+	dev := newSpacedCurrentSchemaMigrateDatabase(c, "spaced_current_acl")
+	execPostgresFamilySQL(c, c.Context(), dev, `ALTER DEFAULT PRIVILEGES IN SCHEMA " a" GRANT SELECT ON TABLES TO `+quoteE2EIdent(role))
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte("CREATE TABLE t_new (id integer);\n"), 0o600), qt.IsNil)
+	want := "[ a] r " + role + ":SELECT"
+	c.Assert(spacedCurrentSchemaDefaultPrivileges(c, dev), qt.Equals, want)
+
+	diffed := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+		"migrate", "diff", "init", "--dir", "file://migrations", "--to", "file://schema.sql", "--dev-url", spacedCurrentSchemaURL(dev))
+
+	c.Assert(diffed.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diffed.Stdout, diffed.Stderr))
+	c.Assert(spacedCurrentSchemaDefaultPrivileges(c, dev), qt.Equals, want)
+}
+
+// spacedCurrentSchemaDefaultPrivileges lists the default privileges of
+// database as [schema] object type grantee:privilege, in byte order.
+func spacedCurrentSchemaDefaultPrivileges(c *qt.C, database string) string {
+	c.Helper()
+	var privileges string
+	c.Assert(openReadScopeDatabase(c, database).QueryRowContext(c.Context(), `
+		SELECT COALESCE(string_agg('[' || n.nspname || '] ' || d.defaclobjtype::text || ' ' || g.rolname || ':' || a.privilege_type, ', '
+			ORDER BY n.nspname COLLATE "C", g.rolname COLLATE "C", a.privilege_type COLLATE "C"), '')
+		FROM pg_default_acl d
+		JOIN pg_namespace n ON n.oid = d.defaclnamespace
+		CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+		JOIN pg_roles g ON g.oid = a.grantee`).Scan(&privileges), qt.IsNil)
+	return privileges
 }
 
 // spacedCurrentSchemaDataSource declares rows for events, which it names

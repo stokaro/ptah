@@ -93,15 +93,18 @@ describes.
 Strict mode refuses a PostgreSQL `search_path` that the pinned binary and the
 server read as different schemas. The pinned binary reads the whole value as
 one schema name, byte for byte, so a space around it, a capital letter and a
-comma stay part of the name. The server, and Ptah with it, reads the value with
-the `search_path` grammar, which trims an unquoted name, folds it to lower case
-and reads a comma as a list. The refusal covers a value that holds white
-space, a double quote, a comma, a plus sign or an upper-case letter, or is
-longer than 63 bytes, in `-u`, `--to`, `--dev-url` and the URLs an `atlas.hcl`
-env sets. It arrives before Ptah connects and names the source:
+comma stay part of the name, and `$user` names a schema called `$user`. The
+server, and Ptah with it, reads the value with the `search_path` grammar,
+which trims an unquoted name, folds it to lower case, reads a comma as a list
+and reads `$user` as the schema named after the session's user. The refusal
+covers the value `$user` and a value that holds the ASCII white space the
+server trims, a double quote, a comma, a plus sign or an upper-case letter, or
+is longer than 63 bytes. It applies to `-u`, `--from`, `--to`, `--dev-url` and
+the URLs an `atlas.hcl` env sets, arrives before Ptah connects, and names the
+source:
 
 ```text
-Error: Atlas Community Edition strict compatibility refuses search_path=A in --url: the community binary reads the value as one schema name, byte for byte, and the server's search_path grammar reads another; name a schema in lower case, at most 63 bytes, without white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT to read the value as the server does
+Error: Atlas Community Edition strict compatibility refuses search_path=A in --url: the community binary reads the value as one schema name, byte for byte, and the server's search_path grammar reads another; name a schema other than $user, in lower case, at most 63 bytes, without white space, quotes, commas or a plus sign, or unset PTAH_ATLAS_STRICT_COMPAT to read the value as the server does
 ```
 
 A lower-case name passes, and a `docker://` dev URL is not checked, because its
@@ -120,11 +123,16 @@ v1.4.0 against PostgreSQL 18, on a database holding the schemas `a`, ` a`,
 | `a%20` | selects `a ` | selects `a ` | refused | selects `a` |
 | `A` | selects `A` | selects `A` | refused | selects `a` |
 | `a,b` | selects `a,b` | refused: `missing scheme` | refused | reads every schema |
+| `$user` | selects `$user` | selects `$user` | refused | selects the session user's schema |
 
 On `--to`, Atlas CE splits the flag's value on the comma, so `a,b` leaves a URL
 fragment without a scheme. Through `-u` and an env `url`, it selects `a,b` only
 because the database holds a schema of that name; without one it refuses the
-run with `postgres: schema "a,b" was not found`. A value the server refuses,
+run with `postgres: schema "a,b" was not found`. The same holds for `$user`:
+without a schema of that name, Atlas CE refuses the run with
+`postgres: schema "$user" was not found`, where the server reads the schema
+named after the session's user, and a run that applies a plan through it
+changes that schema. A value the server refuses,
 such as `a%20b`, fails on Atlas CE as
 `invalid value for parameter "search_path": "a b"`. Atlas CE reads `a+b` as
 `a b` and fails the same way.

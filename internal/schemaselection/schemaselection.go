@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"unicode"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -138,9 +137,12 @@ func fromQuery(query url.Values) Selection {
 // byte. The server reads it as a search_path list: it trims an unquoted name,
 // folds it to lower case, truncates it to 63 bytes, splits on a comma and reads
 // a double quote as quoting. The two agree on a name that holds none of those,
-// so a value differs when it holds white space, a double quote, a comma or an
-// upper-case letter, or is longer than 63 bytes. A plus sign differs too: the
-// binary's driver decodes it as a space and Ptah's sends it as itself.
+// so a value differs when it holds the ASCII white space the server trims, a
+// double quote, a comma or an upper-case letter, or is longer than 63 bytes.
+// A plus sign differs too: the binary's driver decodes it as a space and
+// Ptah's sends it as itself. So does `$user`, which the server reads as the
+// schema named after the session's user and the binary as a schema of that
+// name, refusing it with `schema "$user" was not found` where there is none.
 //
 // Measured on v1.4.0 against PostgreSQL 18, the binary selects " a" for
 // `search_path=%20a`, "a " for `a%20` and "A" for `A`, and reads `a,b` as the
@@ -189,11 +191,11 @@ func literalReadingDiffers(raw string) bool {
 	if err != nil || decoded == "" {
 		return false
 	}
-	if len(decoded) > maxIdentifierBytes {
+	if len(decoded) > maxIdentifierBytes || decoded == "$user" {
 		return true
 	}
 	return strings.ContainsFunc(decoded, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '"' || r == ',' || ('A' <= r && r <= 'Z')
+		return strings.ContainsRune(" \t\n\r\v\f", r) || r == '"' || r == ',' || ('A' <= r && r <= 'Z')
 	})
 }
 
