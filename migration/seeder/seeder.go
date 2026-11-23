@@ -565,7 +565,38 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 	if len(matches) > 0 {
 		return fmt.Errorf("refusing to seed target database because protected tables exist: %s; pass --allow-prod to override", strings.Join(matches, ", "))
 	}
-	return nil
+	return refuseOtherSchemaEntries(opts.ProtectedTables, schema)
+}
+
+// refuseOtherSchemaEntries refuses a protected entry qualified by a schema
+// other than schema, the connection's, which is the one schema the fence lists
+// tables from. Such an entry can never fence a table, and accepting it would
+// seed a target that holds the table it names: `app2.extra` beside a
+// connection to public would seed although app2.extra exists. An entry that matched
+// a table by its bare name, such as a table named with a dot, has already
+// refused the run.
+func refuseOtherSchemaEntries(entries []string, schema string) error {
+	var other []string
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		qualifier, _, qualified := strings.Cut(entry, ".")
+		if qualified && !strings.EqualFold(strings.TrimSpace(qualifier), schema) {
+			other = append(other, strconv.Quote(entry))
+		}
+	}
+	if len(other) == 0 {
+		return nil
+	}
+	subject := "the protected table entry " + other[0] + " names"
+	if len(other) > 1 {
+		subject = "the protected table entries " + strings.Join(other, ", ") + " name"
+	}
+	if schema == "" {
+		return fmt.Errorf("refusing to seed target database: %s a schema, and the fence checks the tables of the "+
+			"connection's own schema alone, which it does not name; name the table without a schema", subject)
+	}
+	return fmt.Errorf("refusing to seed target database: %s a schema other than %q, and the fence checks the "+
+		"tables of %q alone; name the table without a schema, or qualified by %q", subject, schema, schema, schema)
 }
 
 // existingTables lists the base tables of the connection's schema, with the

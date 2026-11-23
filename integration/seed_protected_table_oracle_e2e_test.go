@@ -73,11 +73,14 @@ func oracleFencedTable(c *qt.C) (dir, dbURL, table, schema string) {
 	return dir, dbURL, table, schema
 }
 
-// oracleFenceEntry spells a --protected-table entry, with {table} and {schema}
-// standing for the table of [oracleFencedTable] and the connection's schema in
-// lower case.
-func oracleFenceEntry(entry, table, schema string) string {
-	return strings.NewReplacer("{table}", table, "{schema}", strings.ToLower(schema)).Replace(entry)
+// oracleFenceEntry spells a --protected-table entry or a refusal, with {table}
+// and {schema} standing for the table of [oracleFencedTable] and the
+// connection's schema in lower case, {SCHEMA} for the schema as the connection
+// reports it, and {entry} for entry, once it is spelled.
+func oracleFenceEntry(text, table, schema, entry string) string {
+	return strings.NewReplacer(
+		"{table}", table, "{schema}", strings.ToLower(schema), "{SCHEMA}", schema, "{entry}", entry,
+	).Replace(text)
 }
 
 // oracleFencedSeed runs `ptah seed` over the seeds of [oracleFencedTable] with
@@ -100,14 +103,14 @@ func TestSeedProtectedTableOracleE2E_HappyPath(t *testing.T) {
 		entry string
 	}{
 		{name: "a table the schema does not hold", entry: "{table}_absent"},
-		{name: "the table in another schema", entry: "other.{table}"},
+		{name: "a table the schema does not hold, by the schema", entry: "{schema}.{table}_absent"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir, dbURL, table, schema := oracleFencedTable(c)
 
-			got := oracleFencedSeed(c, dir, dbURL, oracleFenceEntry(tc.entry, table, schema))
+			got := oracleFencedSeed(c, dir, dbURL, oracleFenceEntry(tc.entry, table, schema, ""))
 
 			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(oracleSeededRows(c, dbURL, table), qt.DeepEquals, []string{"1"})
@@ -116,26 +119,38 @@ func TestSeedProtectedTableOracleE2E_HappyPath(t *testing.T) {
 }
 
 func TestSeedProtectedTableOracleE2E_FailurePath(t *testing.T) {
+	// fencedRefusal is the refusal of an entry that fences a table.
+	const fencedRefusal = "error: error applying seeds: refusing to seed target database because protected tables exist: " +
+		"{entry}; pass --allow-prod to override\n"
 	tests := []struct {
-		name  string
-		entry string
+		name       string
+		entry      string
+		wantStderr string
 	}{
 		// The catalog holds the unquoted name in upper case; the entry matches
 		// it case-insensitively.
-		{name: "the table by its bare name", entry: "{table}"},
-		{name: "the table by the connection's schema", entry: "{schema}.{table}"},
+		{name: "the table by its bare name", entry: "{table}", wantStderr: fencedRefusal},
+		{name: "the table by the connection's schema", entry: "{schema}.{table}", wantStderr: fencedRefusal},
+		// The fence lists the tables of the connection's schema alone, so an
+		// entry qualified by another schema could never fence one.
+		{
+			name:  "a table of another schema",
+			entry: "other.{table}",
+			wantStderr: `error: error applying seeds: refusing to seed target database: the protected table entry "{entry}" ` +
+				`names a schema other than "{SCHEMA}", and the fence checks the tables of "{SCHEMA}" alone; name the table ` +
+				`without a schema, or qualified by "{SCHEMA}"` + "\n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir, dbURL, table, schema := oracleFencedTable(c)
-			entry := oracleFenceEntry(tc.entry, table, schema)
+			entry := oracleFenceEntry(tc.entry, table, schema, "")
 
 			got := oracleFencedSeed(c, dir, dbURL, entry)
 
 			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stderr, qt.Equals, "error: error applying seeds: refusing to seed target database because protected tables exist: "+
-				entry+"; pass --allow-prod to override\n")
+			c.Assert(got.Stderr, qt.Equals, oracleFenceEntry(tc.wantStderr, table, schema, entry))
 			c.Assert(oracleSeededRows(c, dbURL, table), qt.DeepEquals, []string{"0"})
 		})
 	}

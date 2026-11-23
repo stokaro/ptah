@@ -349,3 +349,75 @@ func TestMigrateUpToVersionFromTheEnvironment_HappyPath(t *testing.T) {
 		c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
 	})
 }
+
+// TestMigrateUpEmptyStopVariableBesideATypedDefault_FailurePath refuses an
+// empty stop variable beside a typed flag that names no stop: an empty
+// --to-version and --limit 0 apply every pending migration, as the empty
+// variable read as unset would, so the typed flag cannot decide in its place.
+func TestMigrateUpEmptyStopVariableBesideATypedDefault_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     [2]string
+		args    []string
+		wantErr string
+	}{
+		{
+			name: "empty PTAH_LIMIT beside a typed empty --to-version",
+			env:  [2]string{"PTAH_LIMIT", ""},
+			args: []string{"--to-version", ""},
+			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to " +
+				"apply every pending migration",
+		},
+		{
+			name: "empty PTAH_TO_VERSION beside a typed --limit 0",
+			env:  [2]string{"PTAH_TO_VERSION", ""},
+			args: []string{"--limit", "0"},
+			wantErr: "PTAH_TO_VERSION is set but empty: give it a value, or unset it and leave --to-version out to " +
+				"apply every pending migration",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(tc.env[0], tc.env[1])
+			migrationsDir := writeThreeUpMigrations(c)
+			dbPath := filepath.Join(c.TempDir(), "typed-default.db")
+
+			out, err := runUpThroughRoot(append([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", migrationsDir},
+				tc.args...)...)
+
+			c.Assert(err, qt.ErrorMatches, tc.wantErr, qt.Commentf("%s", out))
+			_, statErr := os.Stat(dbPath)
+			c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
+// TestMigrateUpEmptyStopVariableBesideATypedStop_HappyPath is the control for
+// the refusal above: a typed flag that names a stop decides the run, and the
+// empty variable beside it is read as unset.
+func TestMigrateUpEmptyStopVariableBesideATypedStop_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		env  [2]string
+		args []string
+		want int64
+	}{
+		{name: "empty PTAH_LIMIT beside a typed --to-version", env: [2]string{"PTAH_LIMIT", ""}, args: []string{"--to-version", "2"}, want: 2},
+		{name: "empty PTAH_TO_VERSION beside a typed --limit", env: [2]string{"PTAH_TO_VERSION", ""}, args: []string{"--limit", "1"}, want: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(tc.env[0], tc.env[1])
+			migrationsDir := writeThreeUpMigrations(c)
+			dbPath := filepath.Join(c.TempDir(), "typed-stop.db")
+
+			out, err := runUpThroughRoot(append([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", migrationsDir},
+				tc.args...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, tc.want)
+		})
+	}
+}

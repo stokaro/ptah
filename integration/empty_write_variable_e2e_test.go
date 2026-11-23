@@ -441,7 +441,7 @@ func TestSeedProtectedTableE2E_HappyPath(t *testing.T) {
 		// query of the SQLite descriptor it asks information_schema, which
 		// SQLite does not have, and the run fails before it seeds.
 		{name: "PTAH_PROTECTED_TABLE names a table the database does not hold", env: []string{"PTAH_PROTECTED_TABLE=audit"}},
-		{name: "PTAH_PROTECTED_TABLE names a table of another schema", env: []string{"PTAH_PROTECTED_TABLE=other.extra"}},
+		{name: "PTAH_PROTECTED_TABLE names an absent table by the connection's schema", env: []string{"PTAH_PROTECTED_TABLE=main.audit"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -489,6 +489,15 @@ func TestSeedProtectedTableE2E_FailurePath(t *testing.T) {
 			env:  []string{"PTAH_PROTECTED_TABLE=Main.Extra"},
 			wantStderr: "error: error applying seeds: refusing to seed target database because protected tables exist: Main.Extra; " +
 				"pass --allow-prod to override\n",
+		},
+		// The fence lists the tables of main alone, so an entry qualified by
+		// another schema could never fence one.
+		{
+			name: "PTAH_PROTECTED_TABLE names a table of another schema",
+			env:  []string{"PTAH_PROTECTED_TABLE=other.extra"},
+			wantStderr: `error: error applying seeds: refusing to seed target database: the protected table entry "other.extra" ` +
+				`names a schema other than "main", and the fence checks the tables of "main" alone; name the table ` +
+				`without a schema, or qualified by "main"` + "\n",
 		},
 	}
 	for _, tc := range tests {
@@ -590,6 +599,7 @@ func TestMigrationsUpStopVariablesE2E_FailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
 		env        []string
+		args       []string
 		wantStderr string
 	}{
 		{
@@ -616,6 +626,22 @@ func TestMigrationsUpStopVariablesE2E_FailurePath(t *testing.T) {
 			wantStderr: "error: PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to " +
 				"apply every pending migration\n",
 		},
+		// A typed default names no stop, so beside it the empty variable would
+		// apply every pending migration.
+		{
+			name: "empty PTAH_LIMIT beside a typed empty --to-version",
+			env:  []string{"PTAH_LIMIT="},
+			args: []string{"--to-version", ""},
+			wantStderr: "error: PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to " +
+				"apply every pending migration\n",
+		},
+		{
+			name: "empty PTAH_TO_VERSION beside a typed --limit 0",
+			env:  []string{"PTAH_TO_VERSION="},
+			args: []string{"--limit", "0"},
+			wantStderr: "error: PTAH_TO_VERSION is set but empty: give it a value, or unset it and leave --to-version out to " +
+				"apply every pending migration\n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -624,7 +650,7 @@ func TestMigrationsUpStopVariablesE2E_FailurePath(t *testing.T) {
 			dir, targetURL := nativeStopHistory(c)
 
 			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: withVariables(tc.env...)},
-				"migrations", "up", "--db-url", targetURL, "--migrations-dir", "migrations")
+				append([]string{"migrations", "up", "--db-url", targetURL, "--migrations-dir", "migrations"}, tc.args...)...)
 
 			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stderr, qt.Equals, tc.wantStderr)
@@ -736,6 +762,22 @@ func TestMigrationsDownStopVariablesE2E_FailurePath(t *testing.T) {
 			env:  []string{"PTAH_TARGET=0", "PTAH_TO_TAG="},
 			wantStderr: "error: PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to " +
 				"stop at --target or --limit\n",
+		},
+		// A typed default names no stop, so beside it PTAH_TARGET=0 would roll
+		// the whole history back.
+		{
+			name: "empty PTAH_TO_TAG beside PTAH_TARGET of 0 and a typed --limit 0",
+			env:  []string{"PTAH_TARGET=0", "PTAH_TO_TAG="},
+			args: []string{"--limit", "0"},
+			wantStderr: "error: PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to " +
+				"stop at --target or --limit\n",
+		},
+		{
+			name: "empty PTAH_LIMIT beside PTAH_TARGET of 0 and a typed empty --to-tag",
+			env:  []string{"PTAH_TARGET=0", "PTAH_LIMIT="},
+			args: []string{"--to-tag", ""},
+			wantStderr: "error: PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to " +
+				"stop at --target or --to-tag\n",
 		},
 		{
 			name: "PTAH_LIMIT of 0",

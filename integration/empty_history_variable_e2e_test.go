@@ -283,14 +283,20 @@ func TestMigrationsGenerateHistoryTableE2E_HappyPath(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateDownReadsNoMigrationsTableVariableE2E_HappyPath rolls back
+// TestCompatMigrateDownReadsNoNativeHistoryVariableE2E_HappyPath rolls back
 // a history `ptah-compat migrate apply` recorded. The revision table is
-// Atlas's, which `migrate apply` and `migrate status` read whatever
-// PTAH_MIGRATIONS_TABLE says, so `migrate down` reads it too: a value naming
-// another table and an empty value both revert the last applied migration.
-func TestCompatMigrateDownReadsNoMigrationsTableVariableE2E_HappyPath(t *testing.T) {
+// Atlas's, which `migrate apply` and `migrate status` read whatever the
+// variables of `ptah migrations` say, so `migrate down` reads it too: a value
+// naming another table, schema or layout and an empty value each revert the
+// last applied migration.
+func TestCompatMigrateDownReadsNoNativeHistoryVariableE2E_HappyPath(t *testing.T) {
 	t.Parallel()
-	for _, variable := range []string{"PTAH_MIGRATIONS_TABLE=nope", "PTAH_MIGRATIONS_TABLE="} {
+	variables := []string{
+		"PTAH_MIGRATIONS_TABLE=nope", "PTAH_MIGRATIONS_TABLE=",
+		"PTAH_MIGRATIONS_SCHEMA=nope", "PTAH_MIGRATIONS_SCHEMA=",
+		"PTAH_REVISION_FORMAT=ptah", "PTAH_REVISION_FORMAT=",
+	}
+	for _, variable := range variables {
 		t.Run(variable, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)

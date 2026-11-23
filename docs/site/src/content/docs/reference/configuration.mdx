@@ -100,16 +100,15 @@ error: PTAH_SCHEMAS is set but empty: give it a value, or unset it and leave --s
 error: PTAH_SCHEMAS is set to " , ", which names nothing: give it a value, or unset it and leave --schemas out to let the URL decide which schemas are read
 ```
 
-Unset the variable to get that default. A flag typed on the command line wins
-without reading the variable. An empty value typed on the command line keeps
-the meaning the flag's `--help` gives it, `--schemas ''` included.
+Unset the variable to get that default. An empty value typed on the command
+line keeps the meaning the flag's `--help` gives it, `--schemas ''` included.
 
 ## Variables that narrow a write
 
 A command that writes refuses an empty or blank value of a variable that
 narrows what it changes: read as unset, an empty `PTAH_EXCLUDE` plans the
-`DROP` a value keeps out. Blank means only white space,
-a tab included, or for a list only blank fields.
+`DROP` a value keeps out. Blank means only white space, or for a list only
+blank fields.
 
 | Command | Variables | Leaving the flag out |
 | --- | --- | --- |
@@ -131,17 +130,19 @@ error: PTAH_TO_VERSION is set to " ", which names nothing: give it a value, or u
 
 A command that only reads, or writes a plan for review such as
 `ptah schema plan`, reads an empty value as unset, and so does a stop variable
-beside a stop typed on `migrations up` or `migrations down`.
+beside a stop typed on `migrations up` or `migrations down`. `--limit 0` and
+an empty `--to-version` or `--to-tag` are no stop.
 
 ## Variables that name the migration history
 
 `PTAH_MIGRATIONS_TABLE`, `PTAH_MIGRATIONS_SCHEMA` and `PTAH_REVISION_FORMAT` on
 `ptah migrations`, and `PTAH_REVISIONS_SCHEMA` on `ptah-compat migrate`, name
-the history of applied migrations. Every command that reads one, a read-only
-one included, refuses an empty or blank value, which names the default
-history: over a history in `--migrations-table mine`, `migrations up` runs
-every migration again. `ptah migrations lint` reads no history and reads an
-empty `PTAH_REVISION_FORMAT` as unset.
+the history of applied migrations; `ptah-compat` reads none of the first
+three. Every command that reads one, read-only ones included, refuses an empty
+or blank value, which names the default history: over a history in
+`--migrations-table mine`, `migrations up` runs every migration again.
+`ptah migrations lint` reads no history and reads an empty
+`PTAH_REVISION_FORMAT` as unset.
 
 ## Boolean environment variables
 

@@ -323,7 +323,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 			"carry, or one the database has already passed, is refused (empty applies all)",
 	)
 	// Read as unset, an empty variable applies every pending migration. A stop
-	// typed beside it decides the run, so there the empty value is unset.
+	// typed beside it decides the run, so there the empty value is unset; a
+	// typed --limit 0 or --to-version '' names no stop.
 	dbcli.RefuseEmptyStopEnv(flags, limitFlag, applyEveryPending, toVersionFlag)
 	dbcli.RefuseEmptyStopEnv(flags, toVersionFlag, applyEveryPending, limitFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration assertion checks (+ptah check directives and Atlas txtar checks.sql)")

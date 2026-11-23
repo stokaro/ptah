@@ -661,19 +661,17 @@ func resolveAtlasDownFormatTag(
 const atlasMigrateDownLimitFlag = "limit"
 
 // atlasMigrateDownTarget is the native rollback `migrate down` forwards to,
-// with PTAH_LIMIT, PTAH_TARGET and PTAH_MIGRATIONS_TABLE unbound. The adapter
-// decides where every forwarded run stops, from the amount argument,
-// --to-version and its PTAH_TO_VERSION, --to-tag, or the documented default,
-// and forwards that stop typed. A variable the target read itself would be a
-// second decision: a malformed PTAH_LIMIT would refuse a run the adapter had
-// settled, and a PTAH_TARGET the --format path does not read would make the
-// two paths stop at different versions. The revision table is Atlas's
-// atlas_schema_revisions, which no Atlas flag renames, and `migrate apply`,
-// `migrate status` and the --format path read no PTAH_MIGRATIONS_TABLE: read
-// by the target, it would roll back a history the other verbs never see.
+// with PTAH_LIMIT and PTAH_TARGET unbound. The adapter decides where every
+// forwarded run stops, from the amount argument, --to-version and its
+// PTAH_TO_VERSION, --to-tag, or the documented default, and forwards that stop
+// typed. A variable the target read itself would be a second decision: a
+// malformed PTAH_LIMIT would refuse a run the adapter had settled, and a
+// PTAH_TARGET the --format path does not read would make the two paths stop at
+// different versions. The variables that say where the history is are unbound
+// on every forwarded target; see [atlasNativeHistoryOffTarget].
 func atlasMigrateDownTarget() *cobra.Command {
 	cmd := migratedown.NewMigrateDownCommand()
-	for _, name := range []string{atlasMigrateDownLimitFlag, "target", dbcli.MigrationsTableFlagName} {
+	for _, name := range []string{atlasMigrateDownLimitFlag, "target"} {
 		if err := cmdflags.DisableEnvBinding(cmd.Flags(), name); err != nil {
 			panic(err)
 		}

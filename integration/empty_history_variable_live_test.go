@@ -127,3 +127,41 @@ func TestCompatRevisionsSchemaVariableLive_FailurePath(t *testing.T) {
 		"--revisions-schema out to use the project file's schema or the Atlas default\n")
 	c.Assert(postgresTableCensus(c, targetURL), qt.DeepEquals, histRevisionsCensus)
 }
+
+// TestCompatMigrateDownReadsNoNativeHistoryVariableLive_HappyPath reverts the
+// last migration of a history `ptah-compat migrate apply` recorded in Atlas's
+// default place, atlas_schema_revisions.atlas_schema_revisions, under each
+// variable `ptah migrations` reads for its own history. `migrate down` reads
+// the revision table --revisions-schema places, as `migrate apply` and
+// `migrate status` do, so none of them moves it or is refused when empty.
+// Read by the forwarded native verb, PTAH_MIGRATIONS_SCHEMA=elsewhere reverts
+// nothing and creates elsewhere.atlas_schema_revisions, and
+// PTAH_MIGRATIONS_TABLE=elsewhere reverts nothing and creates public.elsewhere.
+func TestCompatMigrateDownReadsNoNativeHistoryVariableLive_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+	}{
+		{name: "PTAH_MIGRATIONS_SCHEMA names another schema", env: []string{"PTAH_MIGRATIONS_SCHEMA=elsewhere"}},
+		{name: "empty PTAH_MIGRATIONS_SCHEMA", env: []string{"PTAH_MIGRATIONS_SCHEMA="}},
+		{name: "PTAH_MIGRATIONS_TABLE names another table", env: []string{"PTAH_MIGRATIONS_TABLE=elsewhere"}},
+		{name: "empty PTAH_REVISION_FORMAT", env: []string{"PTAH_REVISION_FORMAT="}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir, _ := pendingLimitHistory(c)
+			targetURL := postgresScratchURLOn(c, dbtarget.PostgreSQL, "ptah_compat_down_history")
+			applied := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: withVariables()},
+				"migrate", "apply", "--url", targetURL, "--dir", "file://migrations")
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: withVariables(tc.env...)},
+				"migrate", "down", "--url", targetURL, "--dir", "file://migrations")
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(postgresTableCensus(c, targetURL), qt.DeepEquals,
+				[]string{"atlas_schema_revisions.atlas_schema_revisions", "public.a", "public.b"})
+		})
+	}
+}

@@ -74,13 +74,16 @@ type EmptyRule struct {
 	// is passed on to the flag.
 	List bool
 	// Unless names the flags whose value, typed on the command line, decides
-	// the run whatever the variable says. While one of them is typed, a value
-	// that names nothing cannot widen the run, and the binding reads it as
-	// unset instead of refusing it: an empty PTAH_TARGET beside a typed
-	// --limit leaves the stop to --limit. Without one typed, a stop another
-	// variable sets would decide the run in its place, so the value is refused.
-	// The binding in internal/cli/internal/cmdflags applies it;
-	// [EmptyRule.Check] does not read it.
+	// the run whatever the variable says. While one of them is typed with a
+	// value other than its default, a value that names nothing cannot widen
+	// the run, and the binding reads it as unset instead of refusing it: an
+	// empty PTAH_TARGET beside a typed --limit 1 leaves the stop to --limit. A
+	// typed default, such as --limit 0 or --to-tag '', selects what leaving
+	// the flag out does, and so does a value of only white space; beside one
+	// of those, or with none typed, a stop another variable sets would decide
+	// the run in its place, so the value is refused. The binding in
+	// internal/cli/internal/cmdflags applies it; [EmptyRule.Check] does not
+	// read it.
 	Unless []string
 }
 

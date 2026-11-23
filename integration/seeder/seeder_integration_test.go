@@ -45,11 +45,15 @@ func TestApply_Integration(t *testing.T) {
 
 	// The fence asks about each table in the schema it lists them from, public,
 	// so an entry qualified by that schema fences the table, and an entry
-	// qualified by another schema fences nothing.
+	// qualified by another schema, which could never fence one, is refused.
 	_, err = seeder.Apply(t.Context(), conn, fsys, seeder.Options{Env: "test", ProtectedTables: []string{"Public.seed_countries"}})
 	c.Assert(err, qt.ErrorMatches, `refusing to seed target database because protected tables exist: Public.seed_countries; pass --allow-prod to override`)
+	_, err = seeder.Apply(t.Context(), conn, fsys, seeder.Options{Env: "test", ProtectedTables: []string{"other.seed_countries"}})
+	c.Assert(err, qt.ErrorMatches, `refusing to seed target database: the protected table entry "other.seed_countries" names `+
+		`a schema other than "public", and the fence checks the tables of "public" alone; name the table without a `+
+		`schema, or qualified by "public"`)
 
-	result, err := seeder.Apply(t.Context(), conn, fsys, seeder.Options{Env: "test", ProtectedTables: []string{"other.seed_countries"}})
+	result, err := seeder.Apply(t.Context(), conn, fsys, seeder.Options{Env: "test", ProtectedTables: []string{"public.absent"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Total, qt.Equals, 2)
 	c.Assert(seedNames(result.Applied), qt.DeepEquals, []string{"010_countries.all.sql", "020_test_countries.test.sql"})

@@ -1383,7 +1383,7 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 			atlasAdapterUse(verb),
 			verb.short,
 			verb.native,
-			atlasNativeEnvTarget(verb.factory, verb.flags),
+			atlasNativeHistoryOffTarget(atlasNativeEnvTarget(verb.factory, verb.flags)),
 			mapper,
 			verb.prefixArgs...,
 		)
@@ -1437,6 +1437,39 @@ func atlasNativeEnvTarget(factory func() *cobra.Command, flags []atlasargs.Flag)
 	return func() *cobra.Command {
 		target := factory()
 		for _, name := range names {
+			if err := cmdflags.DisableEnvBinding(target.Flags(), name); err != nil {
+				panic(err)
+			}
+		}
+		return target
+	}
+}
+
+// atlasNativeHistoryFlags are the native flags that say where the history of
+// applied migrations is: the revision table, its schema and its layout.
+var atlasNativeHistoryFlags = []string{
+	dbcli.MigrationsSchemaFlagName,
+	dbcli.MigrationsTableFlagName,
+	dbcli.RevisionTableFormatFlagName,
+}
+
+// atlasNativeHistoryOffTarget returns factory with the environment binding
+// disabled on every flag of [atlasNativeHistoryFlags] the target has. A
+// forwarded verb reads Atlas's atlas_schema_revisions, which only this
+// surface's own flags place, through --revisions-schema and the layout the
+// adapter forwards. `migrate apply` and `migrate status` read no
+// PTAH_MIGRATIONS_SCHEMA, PTAH_MIGRATIONS_TABLE or PTAH_REVISION_FORMAT, so a
+// target left to read one would act on a history those verbs never see:
+// `migrate down` under PTAH_MIGRATIONS_SCHEMA=other reverts nothing and creates
+// other.atlas_schema_revisions. A value the adapter forwards is typed, so it
+// still reaches the target.
+func atlasNativeHistoryOffTarget(factory func() *cobra.Command) func() *cobra.Command {
+	return func() *cobra.Command {
+		target := factory()
+		for _, name := range atlasNativeHistoryFlags {
+			if target.Flags().Lookup(name) == nil {
+				continue
+			}
 			if err := cmdflags.DisableEnvBinding(target.Flags(), name); err != nil {
 				panic(err)
 			}

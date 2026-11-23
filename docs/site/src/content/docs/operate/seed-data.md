@@ -166,6 +166,15 @@ and matches either spelling case-insensitively:
 error: error applying seeds: refusing to seed target database because protected tables exist: public.accounts; pass --allow-prod to override
 ```
 
+The fence checks the tables of the connection's schema only. An entry
+qualified by another schema could never match one, so it is refused before
+any seed runs. To fence a table of another schema, seed a connection to that
+schema:
+
+```text
+error: error applying seeds: refusing to seed target database: the protected table entry "app2.extra" names a schema other than "public", and the fence checks the tables of "public" alone; name the table without a schema, or qualified by "public"
+```
+
 ## Edit an applied seed
 
 `schema_seeds` records a SHA-256 checksum of each file's bytes alongside its

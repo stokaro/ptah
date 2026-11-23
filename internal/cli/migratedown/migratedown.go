@@ -191,7 +191,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Roll back only the last N applied migrations (0 sets no limit); exclusive with --"+targetFlag+" and --"+toTagFlag)
 	// Read as unset, an empty variable leaves the stop to whatever else names
 	// one, and a PTAH_TARGET=0 beside it rolls the whole history back. A stop
-	// typed beside it decides the run, so there the empty value is unset.
+	// typed beside it decides the run, so there the empty value is unset; a
+	// typed --limit 0, --target '' or --to-tag '' names no stop.
 	dbcli.RefuseEmptyStopEnv(flags, targetFlag, "stop at --"+toTagFlag+" or --"+limitFlag, limitFlag, toTagFlag)
 	dbcli.RefuseEmptyStopEnv(flags, limitFlag, "stop at --"+targetFlag+" or --"+toTagFlag, targetFlag, toTagFlag)
 	dbcli.RefuseEmptyStopEnv(flags, toTagFlag, "stop at --"+targetFlag+" or --"+limitFlag, targetFlag, limitFlag)

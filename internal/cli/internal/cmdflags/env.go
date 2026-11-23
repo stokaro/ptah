@@ -181,7 +181,7 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		// [envbinding.EmptyRule.Unless] typed beside it decides the run.
 		if rule, refused := envbinding.EmptyRefused(flag); refused {
 			if err := rule.Check(envName, flag.Name, value); err != nil {
-				if !slices.ContainsFunc(rule.Unless, func(name string) bool { return SetOnCommandLine(flags, name) }) {
+				if !slices.ContainsFunc(rule.Unless, func(name string) bool { return typedNotDefault(flags, name) }) {
 					applyErr = err
 				}
 				return
@@ -193,6 +193,18 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		applyErr = setEnvValue(flags, flag, envName, value)
 	})
 	return applyErr
+}
+
+// typedNotDefault reports whether the named flag was typed on the command line
+// with a value that differs, once trimmed, from the flag's default. A typed
+// default, such as `--limit 0` or an empty `--to-tag`, selects what leaving the
+// flag out selects, so it decides nothing a variable beside it could widen.
+func typedNotDefault(flags *pflag.FlagSet, name string) bool {
+	flag := flags.Lookup(name)
+	if flag == nil || !SetOnCommandLine(flags, name) {
+		return false
+	}
+	return strings.TrimSpace(flag.Value.String()) != strings.TrimSpace(flag.DefValue)
 }
 
 func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) error {

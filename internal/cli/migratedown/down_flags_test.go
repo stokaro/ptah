@@ -452,6 +452,26 @@ func TestMigrateDownRequiresAStop_FailurePath(t *testing.T) {
 			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_LIMIT", ""}},
 			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to stop at --target or --to-tag",
 		},
+		// A typed default names no stop, so beside it the stop PTAH_TARGET
+		// sets would decide.
+		{
+			name:    "an empty PTAH_TO_TAG beside PTAH_TARGET of 0 and a typed --limit 0",
+			args:    []string{"--limit", "0"},
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_TO_TAG", ""}},
+			wantErr: "PTAH_TO_TAG is set but empty: give it a value, or unset it and leave --to-tag out to stop at --target or --limit",
+		},
+		{
+			name:    "an empty PTAH_LIMIT beside PTAH_TARGET of 0 and a typed empty --to-tag",
+			args:    []string{"--to-tag", ""},
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_LIMIT", ""}},
+			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to stop at --target or --to-tag",
+		},
+		{
+			name:    "an empty PTAH_LIMIT beside PTAH_TARGET of 0 and a typed blank --to-tag",
+			args:    []string{"--to-tag", " "},
+			env:     [][2]string{{"PTAH_TARGET", "0"}, {"PTAH_LIMIT", ""}},
+			wantErr: "PTAH_LIMIT is set but empty: give it a value, or unset it and leave --limit out to stop at --target or --to-tag",
+		},
 		{
 			name: "a blank PTAH_TARGET beside PTAH_LIMIT",
 			env:  [][2]string{{"PTAH_LIMIT", "1"}, {"PTAH_TARGET", "\t"}},

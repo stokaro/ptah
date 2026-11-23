@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/cmdforward"
 	"ptah.run/internal/cmdrefviews"
 	"ptah.run/internal/envbinding"
 )
@@ -198,19 +199,62 @@ func historyVariableBindings(tree *cobra.Command) (refusing []boundFlag, readAsU
 	return refusing, readAsUnset
 }
 
+// minForwardedHistoryTargets is a floor on the forwarded targets that carry a
+// flag of historyVariables, so a walk that stopped building targets cannot
+// pass by finding no binding on them. `migrate down`, `edit`, `rebase`, `rm`
+// and `test` forward to native verbs that carry one.
+const minForwardedHistoryTargets = 5
+
+// forwardedHistoryBindings builds the native target of every forwarding
+// command in tree and returns the bindings of historyVariables still on, by
+// forwarding command path and flag name, and the number of targets that carry
+// one of the flags at all.
+func forwardedHistoryBindings(tree *cobra.Command) (bound []string, carrying int) {
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		if cmdforward.Target(cmd) != "" {
+			target := cmdforward.Build(cmd)
+			carries := false
+			target.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+				carries = carries || slices.Contains(historyFlagNames, flag.Name)
+				if variable, on := envbinding.Of("PTAH", flag); on && slices.Contains(historyVariables, variable) {
+					bound = append(bound, cmd.CommandPath()+" -> --"+flag.Name)
+				}
+			})
+			if carries {
+				carrying++
+			}
+		}
+		for _, child := range cmd.Commands() {
+			walk(child)
+		}
+	}
+	walk(tree)
+	return bound, carrying
+}
+
+// historyFlagNames are the native flags that read historyVariables.
+var historyFlagNames = []string{"migrations-schema", "migrations-table", "revision-format"}
+
 // TestEveryHistoryVariableRefusesAnEmptyValue holds every binding of
 // historyVariables on both binaries to the refusal, except the ones
 // historyVariablesReadAsUnset names, so a flag added without it fails. Each
 // rule is asked to refuse the empty value too, so a declaration that refuses
-// nothing does not pass for one in effect.
+// nothing does not pass for one in effect. The native target of a forwarding
+// compatibility verb carries no binding of them: the verb reads Atlas's
+// revision table, which only its own flags place.
 func TestEveryHistoryVariableRefusesAnEmptyValue(t *testing.T) {
 	c := qt.New(t)
 	nativeRefusing, nativeUnset := historyVariableBindings(root.NewRootCommand())
-	compatRefusing, compatUnset := historyVariableBindings(cmdrefviews.Compat(atlascompatpolicy.Full()))
+	compat := cmdrefviews.Compat(atlascompatpolicy.Full())
+	compatRefusing, compatUnset := historyVariableBindings(compat)
 	refusing := slices.Concat(nativeRefusing, compatRefusing)
+	forwarded, carrying := forwardedHistoryBindings(compat)
 
 	c.Assert(len(refusing) >= minHistoryVariableBindings, qt.IsTrue, qt.Commentf("found %d bindings", len(refusing)))
 	c.Assert(slices.Concat(nativeUnset, compatUnset), qt.DeepEquals, historyVariablesReadAsUnset)
+	c.Assert(carrying >= minForwardedHistoryTargets, qt.IsTrue, qt.Commentf("found %d forwarded targets", carrying))
+	c.Assert(forwarded, qt.DeepEquals, []string(nil))
 	for _, binding := range refusing {
 		rule, _ := envbinding.EmptyRefused(binding.flag)
 		comment := qt.Commentf("%s --%s reads %s", binding.command, binding.flag.Name, binding.variable)

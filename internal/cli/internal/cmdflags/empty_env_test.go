@@ -175,15 +175,20 @@ func TestRefuseEmptyEnvUnlessTyped_HappyPath(t *testing.T) {
 }
 
 // TestRefuseEmptyEnvUnlessTyped_FailurePath refuses an empty PTAH_TARGET when
-// --limit is not typed: with nothing beside it, and beside a PTAH_LIMIT, which
-// a variable sets rather than the command line.
+// --limit is not typed with a value of its own: with nothing beside it, beside
+// a PTAH_LIMIT, which a variable sets rather than the command line, and beside
+// a typed --limit that is its default or only white space, which selects what
+// leaving it out does.
 func TestRefuseEmptyEnvUnlessTyped_FailurePath(t *testing.T) {
 	tests := []struct {
 		name string
 		env  [][2]string
+		args []string
 	}{
 		{name: "no limit"},
 		{name: "a limit from PTAH_LIMIT", env: [][2]string{{"PTAH_LIMIT", "1"}}},
+		{name: "a typed --limit of its default", args: []string{"--limit", ""}},
+		{name: "a typed blank --limit", args: []string{"--limit", " "}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -194,8 +199,10 @@ func TestRefuseEmptyEnvUnlessTyped_FailurePath(t *testing.T) {
 				c.Setenv(variable[0], variable[1])
 			}
 			var target, limit string
+			cmd := stopCommand(c, &target, &limit)
+			c.Assert(cmd.Flags().Parse(test.args), qt.IsNil)
 
-			err := cmdflags.InitializeEnv("PTAH", stopCommand(c, &target, &limit))
+			err := cmdflags.InitializeEnv("PTAH", cmd)
 
 			c.Assert(err, qt.ErrorIs, envbinding.ErrEmptyValue)
 			c.Assert(err, qt.ErrorMatches, `PTAH_TARGET is set but empty: give it a value, or unset it and leave --target out to stop at --limit`)

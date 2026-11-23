@@ -108,11 +108,12 @@ func RefuseEmptyValueEnv(flags *pflag.FlagSet, name, omitted string) {
 
 // RefuseEmptyStopEnv is [RefuseEmptyValueEnv] for a flag that names where a
 // run stops, beside the flags unless names, which name the stop too. A value
-// typed for one of them decides the stop, so beside it the variable's empty
-// value cannot widen the run and is read as unset; see
+// other than its default typed for one of them decides the stop, so beside it
+// the variable's empty value cannot widen the run and is read as unset; see
 // [envbinding.EmptyRule.Unless]. Without one typed, a stop another variable
 // sets would decide in its place: an empty PTAH_LIMIT beside PTAH_TARGET=0
-// rolls the whole history back, so the empty value is refused.
+// rolls the whole history back, so the empty value is refused. A typed
+// --limit 0 or an empty --to-tag names no stop and is the same as none typed.
 func RefuseEmptyStopEnv(flags *pflag.FlagSet, name, omitted string, unless ...string) {
 	refuseEmptyEnv(flags, name, envbinding.EmptyRule{Omitted: omitted, Unless: unless})
 }
