@@ -1675,7 +1675,7 @@ func (l *enumValueList) UnmarshalYAML(value *yaml.Node) error {
 		*l = cleanStrings(values)
 		return nil
 	}
-	*l = slices.DeleteFunc([]string(values), func(value string) bool { return value == "" })
+	*l = slices.DeleteFunc([]string(values), func(item string) bool { return item == "" })
 	return nil
 }
 

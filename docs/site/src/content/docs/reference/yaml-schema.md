@@ -350,7 +350,14 @@ An enum value, in `enums` or in a column's `enum`, is data rather than a name,
 so an item of a sequence keeps its bytes: `[happy, ' sad']` declares the value
 ` sad`, which PostgreSQL holds apart from `sad`. The one-line form
 `'happy, sad'` is split at each comma, and the space around each part is
-removed. An empty value declares nothing and is left out.
+removed, so a single value that begins with a space needs the sequence form:
+`[' sad']` declares ` sad`, and `enum: ' sad'` declares `sad`. An empty value
+declares nothing and is left out.
+
+MySQL and MariaDB keep a leading space and remove the trailing spaces of a value
+when they build the column, so `ENUM('ok ')` holds `ok`. A value that ends in a
+space would never match the column, and Ptah refuses it on those engines:
+declare `ok`.
 
 API names resolve from the target-specific key, then `api_name`, then the
 database name. GraphQL and Protobuf table values are stems that Ptah

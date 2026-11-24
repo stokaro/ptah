@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlenum"
 	"ptah.run/internal/schemaprep"
 )
 
@@ -26,6 +27,9 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 			return err
 		}
 		if err := validateUndeclaredEnum(dialect, database, field); err != nil {
+			return err
+		}
+		if err := validateEnumTrailingSpaces(dialect, database, field); err != nil {
 			return err
 		}
 		if err := validateRelativeTimeDefault(dialect, database, field); err != nil {
@@ -99,6 +103,50 @@ func validateUndeclaredEnum(dialect string, database *schemamodel.Database, fiel
 			field.Name, tableName, quotedValueList(values), target, remedy,
 		),
 	}
+}
+
+// validateEnumTrailingSpaces refuses an enum value that ends in a space, on a
+// target whose server removes the space when it creates the column
+// ([descriptor.InlineEnum.TrailingSpacesRemoved]).
+//
+// The column built from 'ok ' holds 'ok', so every plan finds the declared
+// value missing from the column and proposes the same MODIFY COLUMN again. A
+// value of spaces alone is stored as the empty value, which a read of the
+// column leaves out, so it is proposed again too. Refused before a plan
+// exists, the author declares the value the server keeps. A named enum's
+// values reach the column the same way, so they are read too.
+func validateEnumTrailingSpaces(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
+	described, _ := platform.Lookup(dialect)
+	if !described.InlineEnum.TrailingSpacesRemoved {
+		return nil
+	}
+	// An HCL document states the values in the column's type text, as
+	// enum("happy", "ok "), and the Go and YAML readers state them as values.
+	values := append(schemaprep.InlineEnumValues(field, database.Enums, dialect), mysqlenum.Values(field.Type)...)
+	for _, value := range values {
+		if !strings.HasSuffix(value, " ") {
+			continue
+		}
+		remedy := "declare a value that does not end in a space"
+		if kept := strings.TrimRight(value, " "); kept != "" {
+			remedy = "declare " + strconv.Quote(kept)
+		}
+		tableName := field.StructName
+		if table := tableByStructName(database.Tables, field.StructName); table != nil {
+			tableName = table.QualifiedName()
+		}
+		target := platform.NormalizeDialect(dialect)
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"column %q of table %q declares the enum value %q, and %s removes the trailing spaces of an "+
+					"ENUM value, so the column would never match its declaration: %s",
+				field.Name, tableName, value, target, remedy,
+			),
+		}
+	}
+	return nil
 }
 
 // quotedValueList writes values as a parenthesized list of quoted strings.

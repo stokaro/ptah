@@ -172,7 +172,7 @@ func mariaDB() descriptor.Dialect {
 		// How the common model is lowered for the engine.
 		GeneratedTimeouts:        descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"},
 		GeneratedColumnDefault:   "VIRTUAL",
-		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
+		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues, TrailingSpacesRemoved: true},
 		IndexesBeforeForeignKeys: true,
 		// Measured on MariaDB 11.8.9: a foreign key to a column no index covers
 		// fails at CREATE TABLE with errno 150, and one to an indexed column no

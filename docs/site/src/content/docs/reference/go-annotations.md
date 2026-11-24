@@ -537,6 +537,12 @@ Declares a reusable enum type.
 | `name` | Yes | Enum type name. |
 | `values` | Yes | Comma-separated enum values. |
 
+`values`, and `enum` on a field, are split at each comma, and the space around
+each value is removed. So a Go annotation cannot declare a value that begins or
+ends with a space, such as ` sad`. Declare such a value in a
+[YAML schema](../yaml-schema/), as an item of a sequence, or in an Atlas HCL
+schema.
+
 ### `//ptah:schema:domain`
 
 Declares a PostgreSQL domain type.
