@@ -116,11 +116,13 @@ type DiffOptions struct {
 	// dev database) and reading their initial connection metadata. A zero
 	// value leaves the caller's context deadline unchanged.
 	ConnectTimeout time.Duration
-	// Held are connections the caller already holds to databases FromURLs or
-	// ToURLs name. A side whose database lives in its held connection's one
-	// session, as an in-memory SQLite database does, is read on that
-	// connection, which stays open; see [atlassource.ResolveOptions.Held].
-	Held []*dbschema.DatabaseConnection
+	// FromHeld and ToHeld are connections the caller holds to the databases
+	// FromURLs and ToURLs name. A side whose database lives in its held
+	// connection's one session, as an in-memory SQLite database does, is read
+	// on that connection, which stays open; see [atlassource.Set.ReadOn]. Each
+	// is bound to its side, so two private in-memory databases opened with one
+	// URL are read as the two databases they are.
+	FromHeld, ToHeld *dbschema.DatabaseConnection
 	// Diagnostics receives non-fatal notices, such as unmatched --exclude
 	// selectors and undecidable additions. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
@@ -280,7 +282,6 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		ServerScope: (fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase) ||
 			isDevServer(opts.DevURL) || readsFromServerWithoutDev(opts.DevURL, fromSet),
 		ConnectTimeout:            opts.ConnectTimeout,
-		Held:                      opts.Held,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,
 		Vars:                      opts.Vars,
@@ -1445,6 +1446,7 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 	if err != nil {
 		return preparedDiffSources{}, err
 	}
+	fromSet, toSet = fromSet.ReadOn(opts.FromHeld), toSet.ReadOn(opts.ToHeld)
 	if err := fromSet.EnsureDevDatabase(opts.DevURL); err != nil {
 		return preparedDiffSources{}, err
 	}

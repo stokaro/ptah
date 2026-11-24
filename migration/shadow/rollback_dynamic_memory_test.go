@@ -64,3 +64,136 @@ func TestPlanDynamicRollbackInMemory_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestPlanDynamicRollbackInMemoryTarget_HappyPath plans the same rollback for
+// a target that lives in its connection's one session, as an embedder that
+// holds an in-memory database has. The comparison reads the target on the
+// connection it is given; opened again by its URL, the target is a new, empty
+// database, and the plan creates a and b instead of dropping c. The plan is
+// then run on the target, which holds a and b.
+//
+// A dev database in memory is another database unless it is the target's
+// shared-cache name: a private one, under the target's own URL too, is
+// reached by its connection alone, and the planner reads each side on its
+// own connection.
+func TestPlanDynamicRollbackInMemoryTarget_HappyPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		targetURL string
+		devURL    func(dir string) string
+	}{
+		{
+			name: "a dev database file", targetURL: "sqlite://target?mode=memory",
+			devURL: func(dir string) string { return atlasurl.SQLiteURLFromPath(filepath.Join(dir, "dev.db")) },
+		},
+		{
+			name: "a private dev database in memory", targetURL: "sqlite://target?mode=memory",
+			devURL: func(string) string { return "sqlite://dev?mode=memory" },
+		},
+		{
+			name: "a private dev database under the target's URL", targetURL: "sqlite://target?mode=memory",
+			devURL: func(string) string { return "sqlite://target?mode=memory" },
+		},
+		{
+			name: "a shared-cache dev database of another name", targetURL: "sqlite://target?mode=memory&cache=shared",
+			devURL: func(string) string { return "sqlite://dev?mode=memory&cache=shared" },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := memoryRollbackTarget(c, test.targetURL)
+
+			statements, err := shadow.PlanDynamicRollback(c.Context(), shadow.DynamicRollbackOptions{
+				Runtime:          builtintest.Runtime(),
+				TargetConnection: target,
+				DevDatabaseURL:   test.devURL(c.TempDir()),
+				FS:               memoryRollbackHistory,
+				TargetVersion:    2,
+				ProviderOptions:  []migrator.FSProviderOption{migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas)},
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, []string{`DROP TABLE "c"`})
+			runStatements(c, target, statements)
+			c.Assert(memoryRollbackTables(c, target), qt.DeepEquals, []string{"a", "b"})
+		})
+	}
+}
+
+// TestPlanDynamicRollbackInMemoryTarget_FailurePath refuses a dev URL that
+// opens the target's shared-cache database, before anything resets it: the
+// target still holds its three tables. SQLite applies the last cache value of
+// a URL that gives two, so a name whose last cache is shared is the target's
+// database too, and the pair is refused by the same check rather than by a
+// later one.
+func TestPlanDynamicRollbackInMemoryTarget_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		targetURL string
+	}{
+		{name: "one shared-cache name", targetURL: "sqlite://target?mode=memory&cache=shared"},
+		{name: "a repeated cache that ends shared", targetURL: "sqlite://target?mode=memory&cache=private&cache=shared"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := memoryRollbackTarget(c, test.targetURL)
+
+			statements, err := shadow.PlanDynamicRollback(c.Context(), shadow.DynamicRollbackOptions{
+				Runtime:          builtintest.Runtime(),
+				TargetConnection: target,
+				DevDatabaseURL:   test.targetURL,
+				FS:               memoryRollbackHistory,
+				TargetVersion:    2,
+				ProviderOptions:  []migrator.FSProviderOption{migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas)},
+			})
+
+			c.Assert(err, qt.ErrorMatches, `dynamic rollback planning failed: dev database must be distinct from target database`)
+			c.Assert(statements, qt.IsNil)
+			c.Assert(memoryRollbackTables(c, target), qt.DeepEquals, []string{"a", "b", "c"})
+		})
+	}
+}
+
+// runStatements runs statements on conn in order.
+func runStatements(c *qt.C, conn *dbschema.DatabaseConnection, statements []string) {
+	c.Helper()
+	for _, statement := range statements {
+		_, err := conn.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil)
+	}
+}
+
+// memoryRollbackTables reads the names of the tables conn holds, in byte
+// order.
+func memoryRollbackTables(c *qt.C, conn *dbschema.DatabaseConnection) []string {
+	c.Helper()
+	rows, err := conn.QueryContext(c.Context(), "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var tables []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		tables = append(tables, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return tables
+}
+
+// memoryRollbackTarget opens the in-memory database at url, closed when the
+// test ends, holding a, b and c: memoryRollbackHistory applied up to version
+// 3.
+func memoryRollbackTarget(c *qt.C, url string) *dbschema.DatabaseConnection {
+	c.Helper()
+	target, err := dbschema.ConnectToDatabase(c.Context(), url)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+	_, err = target.ExecContext(c.Context(),
+		"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY); "+
+			"CREATE TABLE c (id INTEGER PRIMARY KEY);")
+	c.Assert(err, qt.IsNil)
+	return target
+}

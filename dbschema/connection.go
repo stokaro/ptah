@@ -486,13 +486,44 @@ func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 
 // SingleSession reports whether the database lives in this connection's one
 // session, as an in-memory SQLite database does: `sqlite://:memory:`, or a URL
-// with `mode=memory`. Opening the same URL again does not reach it unless the
-// URL also says `cache=shared`: each open of a private in-memory database is a
-// new, empty database. A caller that needs this database read somewhere else
-// hands over this connection, not its URL. It is false for a database stored
-// on disk or on a server.
+// with `mode=memory`. A `file:` URI with no name, as in `sqlite:file:`, is one
+// too: SQLite opens it as a temporary database of its own for each
+// connection. Opening the same URL again does not reach a private
+// in-memory database: each open of one is a new, empty database. A caller that
+// needs this database read somewhere else hands over this connection, not its
+// URL.
+//
+// It is true with `cache=shared` too. A second open of that URL reaches the
+// database, but the database exists only while a connection to it is open, so
+// the connection keeps its one session rather than closing it after use.
+//
+// It is false for a SQLite database stored in a file, for a libsql URL, for a
+// connection an executable provider serves, for every other engine, and for a
+// nil connection.
 func (dc *DatabaseConnection) SingleSession() bool {
+	if dc == nil {
+		return false
+	}
 	return dc.singleSession
+}
+
+// SharesPool reports whether dc and other draw their sessions from one pool:
+// they are one connection, or one is a session-scoped copy of the other, such
+// as the connection [DatabaseConnection.WithSession] hands its callback. Two
+// connections opened separately never share a pool, whatever URLs they were
+// opened with.
+//
+// For a private in-memory SQLite database, which lives in its connection's one
+// session ([DatabaseConnection.SingleSession]), that answers whether the two
+// reach one database. It is false when either connection is nil.
+func (dc *DatabaseConnection) SharesPool(other *DatabaseConnection) bool {
+	if dc == nil || other == nil {
+		return false
+	}
+	if dc.db == nil {
+		return dc.native != nil && dc.native == other.native
+	}
+	return dc.db == other.db
 }
 
 // VulnerabilityScanState reports "supported", "not_applicable", or

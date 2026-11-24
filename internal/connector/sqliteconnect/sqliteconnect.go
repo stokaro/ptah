@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/sqlite"
+	sqliteurl "ptah.run/internal/dburlext/sqlite"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -40,6 +41,9 @@ func (Service) Open(ctx context.Context, request connector.Request) (*connector.
 	driverName, dataSourceName, remote := libSQLDriverConfig(request.URL)
 	if !remote {
 		driverName, dataSourceName = request.Dialect.Driver, convertSQLiteURL(request.URL)
+		if err := refuseRepeatedMode(dataSourceName); err != nil {
+			return nil, err
+		}
 	}
 	db, err := connector.OpenDB(driverName, dataSourceName)
 	if err != nil {
@@ -164,9 +168,25 @@ func sqliteURIForMemory(dsn string, query url.Values) string {
 	return "file:" + dsn
 }
 
+// refuseRepeatedMode refuses a data source that gives mode more than once,
+// which SQLite reads by its last value and [isSQLiteMemoryDSN] by its first. A
+// query the parser refuses is left to the driver, which reports it.
+func refuseRepeatedMode(dsn string) error {
+	_, rawQuery, _ := strings.Cut(dsn, "?")
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return nil
+	}
+	return sqliteurl.RefuseRepeatedMode(query)
+}
+
+// isSQLiteMemoryDSN reports whether dsn opens a database that lives in one
+// connection: `:memory:`, a URI that says mode=memory, or a `file:` URI with no
+// name, which SQLite opens as a private temporary database for each
+// connection.
 func isSQLiteMemoryDSN(dsn string) bool {
 	path, rawQuery, _ := strings.Cut(dsn, "?")
-	if path == "" || path == ":memory:" {
+	if path == "" || path == ":memory:" || path == "file:" {
 		return true
 	}
 	if strings.EqualFold(path, "file::memory:") {

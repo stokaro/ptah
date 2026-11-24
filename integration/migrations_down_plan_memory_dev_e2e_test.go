@@ -71,14 +71,14 @@ func TestMigrationsDownPlanInMemoryDevDatabaseE2E(t *testing.T) {
 
 			applied := clirun.Run(c, test.binary, opts, append(test.apply, target...)...)
 			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-			c.Assert(memoryDevTables(c, targetURL), qt.DeepEquals, []string{"a", "b", "c"})
+			c.Assert(rollbackTargetTables(c, targetURL), qt.DeepEquals, []string{"a", "b", "c"})
 
 			rolledBack := clirun.Run(c, test.binary, opts, append(test.down, target...)...)
 
 			c.Assert(rolledBack.ExitCode, qt.Equals, 0,
 				qt.Commentf("stdout:\n%s\nstderr:\n%s", rolledBack.Stdout, rolledBack.Stderr))
 			c.Assert(rolledBack.Stdout, qt.Contains, "Derived rollback plan: 1 statements\n  DROP TABLE \"c\"\n")
-			c.Assert(memoryDevTables(c, targetURL), qt.DeepEquals, []string{"a", "b"})
+			c.Assert(rollbackTargetTables(c, targetURL), qt.DeepEquals, []string{"a", "b"})
 		})
 	}
 }
@@ -103,8 +103,8 @@ func writeMemoryDevHistory(c *qt.C, dir string) string {
 	return migrations
 }
 
-// memoryDevTables reads back which of the history's tables the target holds.
-func memoryDevTables(c *qt.C, targetURL string) []string {
+// rollbackTargetTables reads back which of the history's tables the target holds.
+func rollbackTargetTables(c *qt.C, targetURL string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), targetURL)
 	c.Assert(err, qt.IsNil)

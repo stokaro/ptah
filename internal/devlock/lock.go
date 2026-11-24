@@ -54,6 +54,10 @@ type Lock struct {
 // beside one database, and a dev database beside a server, before they get
 // here, so this comparison is what keeps a mixed pair from reading as distinct
 // on a path that does not.
+//
+// Two SQLite databases in memory are one realm when the connections share a
+// pool or both name one shared-cache database; two private ones are two
+// realms, even under one URL. See sameMemoryDatabase.
 func SameRealm(
 	ctx context.Context,
 	left, right *dbschema.DatabaseConnection,
@@ -66,27 +70,63 @@ func SameRealm(
 	if leftDialect != rightDialect {
 		return false, nil
 	}
+	// A private database in memory is reached only through the pool that
+	// opened it, so two connections on that pool hold one database. Asking
+	// each which file it holds would wait for the pool's one session while a
+	// session copy of the other holds it.
+	if left.SingleSession() && left.SharesPool(right) {
+		return true, nil
+	}
 	leftRealm, rightRealm := devRealm(left), devRealm(right)
 	// A whole server holds every database on it, so a server and any
 	// database on the same server are one realm: compare the servers.
 	if leftRealm.ServerQuery != "" && rightRealm.ServerQuery != "" && (left.Info().WholeServer || right.Info().WholeServer) {
-		leftServer, err := serverIdentity(ctx, left, leftDialect, leftRealm)
-		if err != nil {
-			return false, err
-		}
-		rightServer, err := serverIdentity(ctx, right, rightDialect, rightRealm)
-		if err != nil {
-			return false, err
-		}
-		return leftServer == rightServer, nil
+		return sameServer(ctx, leftDialect, left, right, leftRealm, rightRealm)
 	}
-	leftIdentity, err := realmIdentity(ctx, left, leftDialect, leftRealm)
+	return sameSelectedRealm(ctx, leftDialect, left, right, leftRealm, rightRealm)
+}
+
+// sameServer compares two connections of one dialect by the server each
+// reached, for a pair in which one side is a whole server (see
+// serverIdentity).
+func sameServer(
+	ctx context.Context,
+	dialect string,
+	left, right *dbschema.DatabaseConnection,
+	leftRealm, rightRealm descriptor.DevRealm,
+) (bool, error) {
+	leftServer, err := serverIdentity(ctx, left, dialect, leftRealm)
 	if err != nil {
 		return false, err
 	}
-	rightIdentity, err := realmIdentity(ctx, right, rightDialect, rightRealm)
+	rightServer, err := serverIdentity(ctx, right, dialect, rightRealm)
 	if err != nil {
 		return false, err
+	}
+	return leftServer == rightServer, nil
+}
+
+// sameSelectedRealm compares two connections of one dialect by the realm
+// each selects (see realmIdentity), then two in-memory SQLite databases by
+// sameMemoryDatabase, and two equal names by their cluster identifiers where
+// the engine reports one.
+func sameSelectedRealm(
+	ctx context.Context,
+	dialect string,
+	left, right *dbschema.DatabaseConnection,
+	leftRealm, rightRealm descriptor.DevRealm,
+) (bool, error) {
+	leftIdentity, err := realmIdentity(ctx, left, dialect, leftRealm)
+	if err != nil {
+		return false, err
+	}
+	rightIdentity, err := realmIdentity(ctx, right, dialect, rightRealm)
+	if err != nil {
+		return false, err
+	}
+	if leftIdentity == memoryIdentity && rightIdentity == memoryIdentity &&
+		left.SingleSession() && right.SingleSession() {
+		return sameMemoryDatabase(left, right)
 	}
 	if leftIdentity != rightIdentity || leftRealm.ClusterQuery == "" {
 		return leftIdentity == rightIdentity, nil
@@ -101,6 +141,22 @@ func SameRealm(
 		return false, nil
 	}
 	return true, nil
+}
+
+// sameMemoryDatabase compares two connections on separate pools to SQLite
+// databases in memory. Neither names a file, so neither session can say which
+// database it holds, and the realm identity of both is [memoryIdentity]. A
+// private database is reached only through the pool that opened it, so two
+// private ones are two. A shared-cache database is reached by its name from
+// every connection of the process, so the two are one when their URLs name
+// it: the comparison the URL guard makes before connecting, which reads each
+// URL the way the connector opens it (internal/dburlext/sqlite).
+func sameMemoryDatabase(left, right *dbschema.DatabaseConnection) (bool, error) {
+	same, err := atlasurl.MayAddressSameDatabase(left.Info().URL, right.Info().URL)
+	if err != nil {
+		return false, fmt.Errorf("compare in-memory dev database URLs: %w", err)
+	}
+	return same, nil
 }
 
 func clusterIdentity(ctx context.Context, conn *dbschema.DatabaseConnection, query string) (string, bool) {
@@ -406,6 +462,11 @@ func selectedDatabase(
 	return database.String, nil
 }
 
+// memoryIdentity is the realm identity of a SQLite database in memory, which
+// names no file. Every such database takes one lock under it, and
+// [SameRealm] tells two of them apart by their connections.
+const memoryIdentity = ":memory:"
+
 // fileIdentity names the file that holds the dev database, whose path query
 // selects, by its identity on disk, so two spellings of one path name one
 // realm. An empty path is an in-memory database.
@@ -419,7 +480,7 @@ func fileIdentity(
 		return "", fmt.Errorf("resolve %s dev database realm: %w", dialect, err)
 	}
 	if strings.TrimSpace(path) == "" {
-		return ":memory:", nil
+		return memoryIdentity, nil
 	}
 	identity, err := filesystemIdentity(path)
 	if err != nil {
