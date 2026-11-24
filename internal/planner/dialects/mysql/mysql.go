@@ -1995,6 +1995,11 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 			return err
 		}
 	}
+	if diff != nil && p.capabilities().Has(capability.RoleManagement) {
+		if err := p.refuseAWiderGrantOptionRevoke(diff); err != nil {
+			return err
+		}
+	}
 	if diff != nil && p.capabilities().Has(capability.RoleManagement) && p.grantOptionCoversTheObject() {
 		spellings := newColumnSpellings(diff, p.targetDialect())
 		if err := spellings.refuseTwoSpellings(diff, p.targetDialect()); err != nil {

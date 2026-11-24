@@ -75,6 +75,47 @@ func TestRenderIsSilentAboutAGrantWithNoGrantor(t *testing.T) {
 		"grantor metadata cannot be represented in HCL schema permission blocks")
 }
 
+// revokedOptionMessage is what a render says about a grant whose option the
+// schema revokes.
+const revokedOptionMessage = "REVOKE GRANT OPTION FOR USAGE ON SCHEMA public cannot be represented in HCL schema " +
+	"permission blocks; the permission takes the grant option only from a role the schema manages"
+
+// renderedGrantDiagnostics renders one grant on the schema public to the role
+// reader and returns what the render said.
+func renderedGrantDiagnostics(c *qt.C, grant schemamodel.Grant) []string {
+	c.Helper()
+	grant.Role, grant.Privileges, grant.OnSchema = "reader", []string{"USAGE"}, "public"
+	rendered, err := atlashclrender.Render(&schemamodel.Database{
+		Schemas: []schemamodel.Schema{{Name: "public"}},
+		Grants:  []schemamodel.Grant{grant},
+	}, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
+	c.Assert(err, qt.IsNil)
+	return diagnosticMessages(rendered.Diagnostics)
+}
+
+// A SQL file's REVOKE GRANT OPTION FOR takes the option from a role the
+// schema does not manage ([schemamodel.Grant.GrantOptionRevoked]). An HCL
+// permission block has no spelling for it, and a permission without
+// `grantable` takes the option only from a role the schema manages, so the
+// render names the privilege and the object the document loses it on.
+func TestRenderDisclosesARevokedGrantOptionItCannotRepresent(t *testing.T) {
+	c := qt.New(t)
+
+	said := renderedGrantDiagnostics(c, schemamodel.Grant{GrantOptionRevoked: true})
+
+	c.Assert(said, qt.Contains, revokedOptionMessage)
+}
+
+// TestRenderIsSilentAboutAGrantWithNoRevokedOption is the control: a grant the
+// document can say in full draws no warning.
+func TestRenderIsSilentAboutAGrantWithNoRevokedOption(t *testing.T) {
+	c := qt.New(t)
+
+	said := renderedGrantDiagnostics(c, schemamodel.Grant{})
+
+	c.Assert(said, qt.Not(qt.Contains), revokedOptionMessage)
+}
+
 // diagnosticMessages is what the render said, without the paths.
 func diagnosticMessages(diagnostics []atlashclrender.Diagnostic) []string {
 	messages := make([]string, len(diagnostics))

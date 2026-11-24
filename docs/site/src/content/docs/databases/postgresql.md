@@ -2569,6 +2569,27 @@ PostgreSQL that is what `ALL` names. On CockroachDB it also takes `DROP`,
 grant the catalog reports as one `ALL` row. A grant after the revoke in a SQL
 file is what the role keeps, and it keeps the grant option only where that
 grant says `WITH GRANT OPTION`.
+
+A role the schema does not manage keeps a grant option it holds unless the file
+takes it. A `GRANT` without `WITH GRANT OPTION` alone takes the option only
+from a role the schema manages. A `REVOKE GRANT OPTION FOR` after the `GRANT`
+takes it from any role:
+
+```sql
+GRANT SELECT ON t48 TO u48 WITH GRANT OPTION;
+REVOKE GRANT OPTION FOR SELECT ON t48 FROM u48;
+```
+
+Where `u48` holds the option, the plan is
+`REVOKE GRANT OPTION FOR SELECT ON TABLE "t48" FROM "u48"`, and `u48` keeps
+`SELECT`. A `REVOKE GRANT OPTION FOR ALL` takes the option from each privilege
+`ALL` grants, `MAINTAIN` included on PostgreSQL 17 and later. Measured on
+PostgreSQL 19.
+
+Only a SQL schema file can say this. An HCL `permission` block and a Go
+`//ptah:schema:grant` have no spelling for it, so `ptah schema push`, which
+publishes the schema as HCL, refuses a schema that holds it.
+
 Ptah revokes the grant option without `CASCADE`. When the role has already
 granted the privilege to another role, the server refuses the revoke with
 SQLSTATE 2BP01 and the migration stops; revoke the dependent grant first.

@@ -118,6 +118,18 @@ func TestCapture_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*index missing_idx.*")
 		c.Assert(snapshot, qt.IsNil)
 	})
+
+	// A SQL schema file's REVOKE GRANT OPTION FOR has no HCL spelling. An
+	// artifact without it takes no option from a role the schema does not
+	// manage, so it is refused rather than published as a weaker schema.
+	t.Run("a revoked grant option", func(t *testing.T) {
+		c := qt.New(t)
+		db := usersDatabase()
+		db.Grants = []schemamodel.Grant{{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users", GrantOptionRevoked: true}}
+		snapshot, err := schemaartifact.Capture(t.Context(), db, nil, coverage.Vocabulary{}, builtintest.Runtime().HCL())
+		c.Assert(err, qt.ErrorMatches, "(?s).*schema artifact cannot be rendered without loss:.*REVOKE GRANT OPTION FOR SELECT ON TABLE users cannot be represented.*")
+		c.Assert(snapshot, qt.IsNil)
+	})
 }
 
 func TestCapturePreservesSystemExtensionPlacementWithoutDeclaringIt(t *testing.T) {

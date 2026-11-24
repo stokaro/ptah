@@ -614,6 +614,11 @@ func (r *renderer) renderGrants() {
 		if grant.GrantedBy != "" {
 			r.warn("grants."+grant.Role, "grantor metadata cannot be represented in HCL schema permission blocks")
 		}
+		if grant.GrantOptionRevoked {
+			r.warn("grants."+grant.Role, fmt.Sprintf("REVOKE GRANT OPTION FOR %s ON %s cannot be represented in HCL "+
+				"schema permission blocks; the permission takes the grant option only from a role the schema manages",
+				strings.Join(grant.Privileges, ", "), grant.TargetKey()))
+		}
 		r.line("}")
 		r.line("")
 	}

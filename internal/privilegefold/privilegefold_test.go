@@ -14,6 +14,21 @@ func grant(role, table string, privileges ...string) schemamodel.Grant {
 	return schemamodel.Grant{Role: role, OnTable: table, Privileges: privileges}
 }
 
+// optionRevoked is a grant that records a REVOKE GRANT OPTION FOR of its
+// privileges.
+func optionRevoked(role, table string, privileges ...string) schemamodel.Grant {
+	revoked := grant(role, table, privileges...)
+	revoked.GrantOptionRevoked = true
+	return revoked
+}
+
+// grantable is a grant WITH GRANT OPTION.
+func grantable(role, table string, privileges ...string) schemamodel.Grant {
+	held := grant(role, table, privileges...)
+	held.WithOption = true
+	return held
+}
+
 // TestMerge_HappyPath pins the fold of one source onto another as though its
 // statements ran later: what src revokes leaves dst's grants, and what src
 // grants leaves dst's revoked set.
@@ -77,6 +92,35 @@ func TestMerge_HappyPath(t *testing.T) {
 			name:        "a revoke naming no privilege is carried as it came",
 			src:         schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "r", OnTable: "t"}}},
 			wantRevoked: []schemamodel.Grant{{Role: "r", OnTable: "t"}},
+		},
+		{
+			name:       "a later grant with the option gives back a revoked option",
+			dst:        schemamodel.Database{Grants: []schemamodel.Grant{optionRevoked("r", "t", "SELECT")}},
+			src:        schemamodel.Database{Grants: []schemamodel.Grant{grantable("r", "t", "SELECT")}},
+			wantGrants: []schemamodel.Grant{grantable("r", "t", "SELECT")},
+		},
+		{
+			name: "a later grant with the option gives back only the options it names",
+			dst: schemamodel.Database{Grants: []schemamodel.Grant{
+				optionRevoked("r", "t", "SELECT", "INSERT"), optionRevoked("other", "t", "SELECT"), optionRevoked("r", "u", "SELECT"),
+			}},
+			src: schemamodel.Database{Grants: []schemamodel.Grant{grantable("r", "t", "SELECT")}},
+			wantGrants: []schemamodel.Grant{
+				optionRevoked("r", "t", "INSERT"), optionRevoked("other", "t", "SELECT"), optionRevoked("r", "u", "SELECT"),
+				grantable("r", "t", "SELECT"),
+			},
+		},
+		{
+			name:       "a later GRANT ALL with the option gives back every revoked option on its object",
+			dst:        schemamodel.Database{Grants: []schemamodel.Grant{optionRevoked("r", "t", "SELECT", "INSERT")}},
+			src:        schemamodel.Database{Grants: []schemamodel.Grant{grantable("r", "t", "ALL")}},
+			wantGrants: []schemamodel.Grant{grantable("r", "t", "ALL")},
+		},
+		{
+			name:       "a later grant without the option leaves a revoked option in place",
+			dst:        schemamodel.Database{Grants: []schemamodel.Grant{optionRevoked("r", "t", "SELECT")}},
+			src:        schemamodel.Database{Grants: []schemamodel.Grant{grant("r", "t", "SELECT")}},
+			wantGrants: []schemamodel.Grant{optionRevoked("r", "t", "SELECT"), grant("r", "t", "SELECT")},
 		},
 		{
 			name: "a revoke on another object or grantee leaves the grant alone",

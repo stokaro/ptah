@@ -377,6 +377,12 @@ var registry = []Entry{
 			"role that IS the current user, so rendering the observed grantor would fail on " +
 			"every apply by another role",
 	},
+	{
+		Field: "schemamodel.Grant.GrantOptionRevoked", Disposition: Comparison,
+		Reason: "a declared REVOKE GRANT OPTION FOR; it makes a comparison take an option the database holds " +
+			"from a role the schema does not manage, and a render creates the grant without the option, " +
+			"which the GRANT it sits on already says",
+	},
 	{Field: "schemamodel.Grant.ObjectKind", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnDatabase", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnObject", Disposition: DDL},
