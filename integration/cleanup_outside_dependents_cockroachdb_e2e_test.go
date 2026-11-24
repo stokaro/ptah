@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -363,7 +364,7 @@ CREATE TRIGGER tr BEFORE INSERT ON other.ot FOR EACH ROW WHEN (nextval('public.s
 CREATE SCHEMA other;
 CREATE VIEW other.vn AS SELECT cardinality(NULL::public.e[]) AS n;`,
 			wantObjects: []string{"e", "z_data"},
-			want:        `CockroachDB records that type "public"."e" is used by other.vn`,
+			want:        `CockroachDB records that type "public"."e" is used by "other"."vn"`,
 		},
 		{
 			name: "a function whose body loses the type",
@@ -371,7 +372,7 @@ CREATE VIEW other.vn AS SELECT cardinality(NULL::public.e[]) AS n;`,
 CREATE SCHEMA other;
 CREATE FUNCTION other.fa() RETURNS int LANGUAGE sql AS $$ SELECT cardinality(NULL::public.e[]) $$;`,
 			wantObjects: []string{"e", "z_data"},
-			want:        `CockroachDB records that type "public"."e" is used by other.fa`,
+			want:        `CockroachDB records that type "public"."e" is used by "other"."fa"`,
 		},
 		{
 			name: "a column default that loses the type",
@@ -379,7 +380,16 @@ CREATE FUNCTION other.fa() RETURNS int LANGUAGE sql AS $$ SELECT cardinality(NUL
 CREATE SCHEMA other;
 CREATE TABLE other.dt (id int PRIMARY KEY, d string DEFAULT 'a'::public.e::string);`,
 			wantObjects: []string{"e", "z_data"},
-			want:        `CockroachDB records that type "public"."e" is used by other.dt`,
+			want:        `CockroachDB records that type "public"."e" is used by "other"."dt"`,
+		},
+		{
+			name: "a view that calls one overload of the function",
+			fixture: `CREATE FUNCTION public.ov() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
+CREATE FUNCTION public.ov(int) RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;
+CREATE SCHEMA other;
+CREATE VIEW other.vov AS SELECT public.ov(1) AS n;`,
+			wantObjects: []string{"ov", "ov", "z_data"},
+			want:        `CockroachDB records that function "public"."ov"(int8) is used by "other"."vov"`,
 		},
 	}
 	for _, test := range tests {
@@ -439,4 +449,45 @@ CREATE FUNCTION public.fa() RETURNS int LANGUAGE sql AS $$ SELECT cardinality(NU
 
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(publicSchemaObjects(c, ctx, db), qt.IsNil)
+}
+
+// TestDropAllWithTheDeclarativeSchemaChangerOffE2E_FailurePath empties, on
+// CockroachDB, a schema holding z_data with 3 rows and a function nothing
+// uses, in a session that sets use_declarative_schema_changer off through the
+// URL. The server plans the drop of an object nothing depends on only with
+// the declarative schema changer, so the cleanup cannot learn that the
+// function has no outside dependent. It refuses before the first drop, names
+// the variable, and the schema keeps every object and z_data its rows.
+func TestDropAllWithTheDeclarativeSchemaChangerOffE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+	defer cancel()
+	adminURL := dbtarget.URL(c, dbtarget.CockroachDB)
+	admin, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
+	dbURL, db := newReplayCleanupDatabase(c, ctx, admin, adminURL,
+		fmt.Sprintf("ptah_cleanup_declarative_off_%d", time.Now().UnixNano()))
+	_, err = db.ExecContext(ctx, `CREATE TABLE public.z_data (id int PRIMARY KEY);
+INSERT INTO public.z_data VALUES (1), (2), (3);
+CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;`)
+	c.Assert(err, qt.IsNil)
+	// The space is %20: a libpq URL reads + as itself, and the server then
+	// ignores the option.
+	offURL, err := url.Parse(dbURL)
+	c.Assert(err, qt.IsNil)
+	offURL.RawQuery += "&options=-c%20use_declarative_schema_changer%3Doff"
+
+	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+		"db", "drop-all", "--auto-approve", "--db-url", offURL.String())
+
+	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stderr, qt.Contains, `refusing to clean schema "public": failed to ask the server what depends on `+
+		`function "public"."fn"(): CockroachDB plans the drop only with use_declarative_schema_changer on, and the `+
+		`cleanup refuses rather than drop without the answer: ERROR: cannot explain a statement which is not `+
+		`supported by the declarative schema changer (SQLSTATE 0A000)`)
+	c.Assert(publicSchemaObjects(c, ctx, db), qt.DeepEquals, []string{"fn", "z_data"})
+	var rows int
+	c.Assert(db.QueryRowContext(ctx, "SELECT count(*) FROM public.z_data").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 3)
 }

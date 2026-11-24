@@ -38,9 +38,13 @@ func readOnUpdateFromCreateStatements(
 		if err := rows.Scan(&statement); err != nil {
 			return nil, fmt.Errorf("failed to read the ON UPDATE expressions outside the cleanup: %w", err)
 		}
-		table, isTable := onUpdateClauses(statement)
+		definition, isTable := strings.CutPrefix(statement, "CREATE TABLE ")
 		if !isTable {
 			continue
+		}
+		table, err := onUpdateClauses(definition)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read the ON UPDATE expressions outside the cleanup: %w", err)
 		}
 		key, spelled := dependentOf(relationFamily, table.schema, table.name, "r")
 		if _, alsoDropped := dropped[key]; alsoDropped {
@@ -68,30 +72,33 @@ type tableOnUpdates struct {
 	clauses      []onUpdateClause
 }
 
-// onUpdateClauses reads a CREATE TABLE statement as SHOW CREATE ALL TABLES
-// prints it: the schema and the name of the table, and each column whose line
-// carries ON UPDATE. A column is a line that starts with a tab, and ON UPDATE
-// is the last clause CockroachDB prints on it. The text runs from the first
-// ON UPDATE on the line to its end, so a string in the default that holds the
-// keyword widens the text rather than cutting the expression short. Any other
-// statement reports false.
-func onUpdateClauses(statement string) (tableOnUpdates, bool) {
+// onUpdateClauses reads the definition of a CREATE TABLE statement, the text
+// after CREATE TABLE, as SHOW CREATE ALL TABLES prints it: the schema and the
+// name of the table, and each column whose line carries ON UPDATE. A column is
+// a line that starts with a tab, and ON UPDATE is the last clause CockroachDB
+// prints on it. The text runs from the first ON UPDATE on the line to its end,
+// so a string in the default that holds the keyword widens the text rather
+// than cutting the expression short.
+//
+// A table name or a column name it cannot read is an error, never a table
+// without an ON UPDATE: the clause it would skip may name what the cleanup
+// drops.
+func onUpdateClauses(definition string) (tableOnUpdates, error) {
 	var table tableOnUpdates
-	rest, isCreateTable := strings.CutPrefix(statement, "CREATE TABLE ")
-	if !isCreateTable {
-		return table, false
+	header, _, _ := strings.Cut(definition, "\n")
+	schema, rest, ok := cutIdentifier(definition)
+	if ok {
+		rest, ok = strings.CutPrefix(rest, ".")
 	}
-	schema, rest, ok := cutIdentifier(rest)
-	if !ok {
-		return table, false
+	var name string
+	if ok {
+		name, rest, ok = cutIdentifier(rest)
 	}
-	rest, ok = strings.CutPrefix(rest, ".")
-	if !ok {
-		return table, false
+	if ok {
+		rest, ok = strings.CutPrefix(rest, " (")
 	}
-	name, rest, ok := cutIdentifier(rest)
 	if !ok {
-		return table, false
+		return tableOnUpdates{}, fmt.Errorf("the table name of %q cannot be read", "CREATE TABLE "+header)
 	}
 	table.schema, table.name = schema, name
 	for line := range strings.SplitSeq(rest, "\n") {
@@ -105,11 +112,11 @@ func onUpdateClauses(statement string) (tableOnUpdates, bool) {
 		}
 		column, _, ok := cutIdentifier(line)
 		if !ok {
-			continue
+			return tableOnUpdates{}, fmt.Errorf("the column name of %q in table %q.%q cannot be read", line, schema, name)
 		}
 		table.clauses = append(table.clauses, onUpdateClause{column: column, text: strings.TrimSuffix(text, ",")})
 	}
-	return table, true
+	return table, nil
 }
 
 // cutIdentifier cuts the identifier s starts with, as CockroachDB prints one:

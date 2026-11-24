@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,17 +33,41 @@ import (
 // open after the rollback to the savepoint, crdb_internal.cluster_locks lists
 // nothing, and DDL on the object and on its dependents runs as fast as beside
 // a transaction that ran SELECT 1.
+//
+// The plan is the declarative schema changer's. In a session with
+// use_declarative_schema_changer off, the drop of an object something depends
+// on is still refused with the list, and the drop of one nothing depends on is
+// refused with SQLSTATE 0A000. Measured on the four lines, setting the variable
+// on inside the transaction, with SET LOCAL or SET, under the savepoint or
+// before it, does not change that answer, so the cleanup refuses and names the
+// variable.
 
 // serverDependentsSavepoint is the savepoint serverReportedDependents asks
 // under inside a transaction, so the refusal of one EXPLAIN does not abort the
 // transaction the cleanup runs in.
 const serverDependentsSavepoint = "ptah_dependents"
 
+// featureNotSupported is the SQLSTATE of an EXPLAIN (DDL) the declarative
+// schema changer does not plan.
+const featureNotSupported = "0A000"
+
 // serverQuestion is the EXPLAIN (DDL) of the drop of one object the cleanup
 // drops, and the object.
 type serverQuestion struct {
-	source  cleanupKey
+	subject serverSubject
 	explain string
+}
+
+// serverSubject is an object the server is asked about: its key, and for a
+// routine the argument list that names one overload of it, as "(INT8)".
+type serverSubject struct {
+	source    cleanupKey
+	arguments string
+}
+
+// describe names the subject as kind, with the arguments of a routine.
+func (s serverSubject) describe(kind string) string {
+	return s.source.describe(kind) + s.arguments
 }
 
 // serverQuestions are the questions to ask about objects: one for each type,
@@ -59,23 +84,48 @@ func serverQuestions(objects []postgresCleanupObject) []serverQuestion {
 			continue
 		}
 		family, _ := familyOfCleanupKind(object.Kind)
+		var arguments string
+		if family == routineFamily {
+			arguments = routineArguments(object.Statement)
+		}
 		questions = append(questions, serverQuestion{
-			source:  cleanupKey{family, object.Schema, object.Name},
+			subject: serverSubject{cleanupKey{family, object.Schema, object.Name}, arguments},
 			explain: "EXPLAIN (DDL) " + object.Statement,
 		})
 	}
 	slices.SortFunc(questions, func(a, b serverQuestion) int {
-		return cmp.Or(compareCleanupKeys(a.source, b.source), strings.Compare(a.explain, b.explain))
+		return cmp.Or(compareCleanupKeys(a.subject.source, b.subject.source), strings.Compare(a.explain, b.explain))
 	})
 	return questions
+}
+
+// routineArguments is the argument list of a routine's drop statement, the
+// text after the routine's qualified name: `DROP FUNCTION IF EXISTS
+// public.fn(INT8, STRING) RESTRICT` gives "(INT8, STRING)". The list is taken
+// whole, because a type in it may be written unquoted with a parenthesis in
+// its name, as v25.4.21 writes `we(ird`. A statement it cannot read gives "".
+func routineArguments(statement string) string {
+	_, rest, ok := strings.Cut(statement, " IF EXISTS ")
+	if ok {
+		_, rest, ok = cutIdentifier(rest)
+	}
+	if ok {
+		rest, ok = strings.CutPrefix(rest, ".")
+	}
+	if ok {
+		_, rest, ok = cutIdentifier(rest)
+	}
+	if !ok || !strings.HasPrefix(rest, "(") {
+		return ""
+	}
+	return strings.TrimSuffix(rest, " RESTRICT")
 }
 
 // serverReportedDependents asks the server, for each type, function and
 // procedure of objects, which objects depend on it, and describes for each
 // one the dependents that are neither in dropped nor named for it by known.
-// The objects are named as the server writes them, without the database,
-// because the server names a dependent by its qualified name alone and does
-// not quote it. The overloads of a routine share one sentence.
+// Each overload of a routine is named by its arguments in a sentence of its
+// own, and each dependent by its schema and name, without the database.
 func serverReportedDependents(
 	ctx context.Context,
 	q cleanupConn,
@@ -84,34 +134,27 @@ func serverReportedDependents(
 	database string,
 	known []outsideDependency,
 ) ([]outsideDependency, error) {
-	outside := make(map[cleanupKey][]string)
-	var sources []cleanupKey
+	var reported []outsideDependency
 	for _, question := range serverQuestions(objects) {
-		list, err := serverDependentsList(ctx, q, question, dropped[question.source])
+		source := question.subject.source
+		list, err := serverDependentsList(ctx, q, question, dropped[source])
 		if err != nil {
 			return nil, err
 		}
 		inside := slices.Collect(maps.Keys(dropped))
 		for _, dependency := range known {
-			if dependency.source == question.source {
+			if dependency.source == source {
 				inside = append(inside, dependency.dependent)
 			}
 		}
-		for _, name := range serverDependentsOutside(list, database, inside) {
-			if !slices.Contains(sources, question.source) {
-				sources = append(sources, question.source)
-			}
-			if !slices.Contains(outside[question.source], name) {
-				outside[question.source] = append(outside[question.source], name)
-			}
+		names := serverDependentsOutside(list, database, inside)
+		if len(names) == 0 {
+			continue
 		}
-	}
-	reported := make([]outsideDependency, 0, len(sources))
-	for _, source := range sources {
 		reported = append(reported, outsideDependency{
 			source: source,
 			sentence: fmt.Sprintf("CockroachDB records that %s is used by %s",
-				source.describe(dropped[source]), strings.Join(outside[source], " ")),
+				question.subject.describe(dropped[source]), strings.Join(names, ", ")),
 		})
 	}
 	return reported, nil
@@ -126,14 +169,19 @@ func serverDependentsList(ctx context.Context, q cleanupConn, question serverQue
 		return "", nil
 	}
 	serverErr, ok := errors.AsType[*pgconn.PgError](err)
+	if ok && serverErr.Code == featureNotSupported {
+		return "", fmt.Errorf("failed to ask the server what depends on %s: CockroachDB plans the drop only with "+
+			"use_declarative_schema_changer on, and the cleanup refuses rather than drop without the answer: %w",
+			question.subject.describe(kind), err)
+	}
 	if !ok || serverErr.Code != dependentObjectsStillExist {
-		return "", fmt.Errorf("failed to ask the server what depends on %s: %w", question.source.describe(kind), err)
+		return "", fmt.Errorf("failed to ask the server what depends on %s: %w", question.subject.describe(kind), err)
 	}
 	_, after, found := strings.Cut(serverErr.Message, "([")
 	list, _, closed := strings.Cut(after, "])")
 	if !found || !closed {
 		return "", fmt.Errorf("failed to read what depends on %s from the server's refusal: %w",
-			question.source.describe(kind), err)
+			question.subject.describe(kind), err)
 	}
 	return list, nil
 }
@@ -160,17 +208,30 @@ func explainInSavepoint(ctx context.Context, q cleanupConn, explain string) erro
 	return explainErr
 }
 
-// serverDependentsOutside removes from list, the objects the server names as
-// db.schema.name separated by a space or a comma and a space, every object of
-// inside, and returns the rest without the database prefix.
+// serverDependentsOutside reads list, the objects the server names as
+// db.schema.name separated by a space or a comma and a space, and returns
+// each one that is not in inside, quoted as schema and name. The server
+// quotes nothing, so a name is cut at the database prefix of the next one and
+// its schema at the first dot; a name of another database stays whole.
 func serverDependentsOutside(list, database string, inside []cleanupKey) []string {
-	rest := " " + strings.ReplaceAll(list, ", ", " ") + " "
-	for _, key := range inside {
-		token := " " + database + "." + key.schema + "." + key.name + " "
-		for strings.Contains(rest, token) {
-			rest = strings.Replace(rest, token, " ", 1)
+	var names []string
+	pieces := strings.Split(" "+strings.ReplaceAll(list, ", ", " "), " "+database+".")
+	for i, piece := range pieces {
+		piece = strings.TrimSpace(piece)
+		if piece == "" {
+			continue
+		}
+		name := strconv.Quote(piece)
+		schema, object, qualified := strings.Cut(piece, ".")
+		if i > 0 && qualified {
+			if slices.ContainsFunc(inside, func(key cleanupKey) bool { return key.schema == schema && key.name == object }) {
+				continue
+			}
+			name = strconv.Quote(schema) + "." + strconv.Quote(object)
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
 		}
 	}
-	rest = strings.ReplaceAll(rest, " "+database+".", " ")
-	return strings.Fields(rest)
+	return names
 }

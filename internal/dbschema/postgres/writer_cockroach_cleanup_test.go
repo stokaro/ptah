@@ -592,24 +592,24 @@ func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnAType_Failure
 		{
 			name: "a view whose text lost the type",
 			list: "app.public.t app.other.va",
-			want: `CockroachDB records that type "public"."e" is used by other.va`,
+			want: `CockroachDB records that type "public"."e" is used by "other"."va"`,
 		},
 		{
 			name: "two outside objects, the list separated by commas",
 			list: "app.public.t, app.other.va, app.other.fa",
-			want: `CockroachDB records that type "public"."e" is used by other.va other.fa`,
+			want: `CockroachDB records that type "public"."e" is used by "other"."va", "other"."fa"`,
 		},
 		{
 			name: "a name with a space",
 			list: "app.public.z_data app.Other Schema.V x",
-			want: `CockroachDB records that type "public"."e" is used by Other Schema.V x`,
+			want: `CockroachDB records that type "public"."e" is used by "Other Schema"."V x"`,
 		},
 		{
 			name:       "a holder another sentence names, and one it does not",
 			dependents: [][]driver.Value{{"column type", "type", "public", "e", "relation", "other", "t4", "r", "c"}},
 			list:       "app.other.t4 app.public.t app.other.va",
 			want: `column "c" of table "other"."t4" has type "public"."e"; CockroachDB records that type ` +
-				`"public"."e" is used by other.va`,
+				`"public"."e" is used by "other"."va"`,
 		},
 	}
 	for _, test := range tests {
@@ -701,6 +701,15 @@ func TestWriterDropAllTables_CockroachRefusesWhenItCannotAskAboutAType_FailurePa
 			wantErr: `refusing to clean schema "public": failed to ask the server what depends on type "public"."e": ` +
 				`ERROR: user app does not have DROP privilege on type e (SQLSTATE 42501)`,
 		},
+		{
+			name: "the declarative schema changer off",
+			explainErr: &pgconn.PgError{Severity: "ERROR", Code: "0A000",
+				Message: `cannot explain a statement which is not supported by the declarative schema changer`},
+			wantErr: `refusing to clean schema "public": failed to ask the server what depends on type "public"."e": ` +
+				`CockroachDB plans the drop only with use_declarative_schema_changer on, and the cleanup refuses ` +
+				`rather than drop without the answer: ERROR: cannot explain a statement which is not supported by ` +
+				`the declarative schema changer (SQLSTATE 0A000)`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -750,6 +759,12 @@ var cockroachProcedureObjects = [][]driver.Value{
 	{"procedure", "public", "pr", nil, `DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`},
 }
 
+// cockroachOddRoutineObjects are a schema of one function whose name and
+// argument type hold a parenthesis, as v25.4.21 writes the drop.
+var cockroachOddRoutineObjects = [][]driver.Value{
+	{"function", "public", "f(x", nil, `DROP FUNCTION IF EXISTS public."f(x"(numeric, we(ird) RESTRICT`},
+}
+
 // cockroachOverloadObjects are a schema of two overloads of one function.
 var cockroachOverloadObjects = [][]driver.Value{
 	{"function", "public", "fn", nil, `DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`},
@@ -777,7 +792,7 @@ func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnARoutine_Fail
 				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`: routineDependentsRefusal(
 					"function", "fn", "app.public.t, app.other.vx"),
 			},
-			want: `CockroachDB records that function "public"."fn" is used by other.vx`,
+			want: `CockroachDB records that function "public"."fn"() is used by "other"."vx"`,
 			wantStatements: []string{
 				"SAVEPOINT ptah_dependents",
 				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
@@ -796,7 +811,7 @@ func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnARoutine_Fail
 					"function", "fn", "app.other.g, app.other.vx"),
 			},
 			want: `function "other"."g" calls function "public"."fn"; CockroachDB records that function ` +
-				`"public"."fn" is used by other.vx`,
+				`"public"."fn"() is used by "other"."vx"`,
 			wantStatements: []string{
 				"SAVEPOINT ptah_dependents",
 				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
@@ -813,7 +828,7 @@ func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnARoutine_Fail
 				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`: routineDependentsRefusal(
 					"procedure", "pr", "app.other.op"),
 			},
-			want: `CockroachDB records that procedure "public"."pr" is used by other.op`,
+			want: `CockroachDB records that procedure "public"."pr"() is used by "other"."op"`,
 			wantStatements: []string{
 				"SAVEPOINT ptah_dependents",
 				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`,
@@ -827,10 +842,24 @@ func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnARoutine_Fail
 				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`: routineDependentsRefusal(
 					"function", "pr", "app.other.op"),
 			},
-			want: `CockroachDB records that procedure "public"."pr" is used by other.op`,
+			want: `CockroachDB records that procedure "public"."pr"() is used by "other"."op"`,
 			wantStatements: []string{
 				"SAVEPOINT ptah_dependents",
 				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+			},
+		},
+		{
+			name:    "a name and an argument type that hold a parenthesis",
+			objects: cockroachOddRoutineObjects,
+			refusals: map[string]error{
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS public."f(x"(numeric, we(ird) RESTRICT`: routineDependentsRefusal(
+					"function", "f(x", "app.other.vf"),
+			},
+			want: `CockroachDB records that function "public"."f(x"(numeric, we(ird) is used by "other"."vf"`,
+			wantStatements: []string{
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS public."f(x"(numeric, we(ird) RESTRICT`,
 				"ROLLBACK TO SAVEPOINT ptah_dependents",
 			},
 		},
@@ -843,7 +872,8 @@ func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnARoutine_Fail
 				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"(INT8) RESTRICT`: routineDependentsRefusal(
 					"function", "fn", "app.other.a, app.other.b"),
 			},
-			want: `CockroachDB records that function "public"."fn" is used by other.a other.b`,
+			want: `CockroachDB records that function "public"."fn"() is used by "other"."a"; CockroachDB records ` +
+				`that function "public"."fn"(INT8) is used by "other"."a", "other"."b"`,
 			wantStatements: []string{
 				"SAVEPOINT ptah_dependents",
 				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
@@ -1073,6 +1103,62 @@ func TestWriterDropAllTables_CockroachRefusesWhenItCannotReadTheCreateStatements
 	c.Assert(statements, qt.HasLen, 0)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+// A CREATE statement whose table name, or the name of a column that carries
+// ON UPDATE, the read cannot cut refuses the cleanup before its first drop:
+// the clause it would skip may name what the cleanup drops.
+func TestWriterDropAllTables_CockroachRefusesACreateStatementItCannotRead_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		wantErr   string
+	}{
+		{
+			name:      "a table name whose quote is not closed",
+			statement: "CREATE TABLE \"other.ou (\n\tf INT8 NULL ON UPDATE public.fn()\n);",
+			wantErr:   `the table name of "CREATE TABLE \"other.ou (" cannot be read`,
+		},
+		{
+			name:      "a table name with its database",
+			statement: "CREATE TABLE app.other.ou (\n\tf INT8 NULL ON UPDATE public.fn()\n);",
+			wantErr:   `the table name of "CREATE TABLE app.other.ou (" cannot be read`,
+		},
+		{
+			name:      "a column line that starts with a space",
+			statement: "CREATE TABLE other.ou (\n\t f INT8 NULL ON UPDATE public.fn()\n);",
+			wantErr:   `the column name of " f INT8 NULL ON UPDATE public.fn()" in table "other"."ou" cannot be read`,
+		},
+		{
+			name:      "a column name whose quote is not closed",
+			statement: "CREATE TABLE other.ou (\n\t\"f INT8 NULL ON UPDATE public.fn()\n);",
+			wantErr:   `the column name of "\"f INT8 NULL ON UPDATE public.fn()" in table "other"."ou" cannot be read`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				withCreateStatements(
+					cockroachCleanupQuery("on", cockroachOutsideObjects, nil,
+						slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread})),
+					[]string{test.statement},
+					nil,
+				),
+				recordingExec(&statements, acceptingDrop),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`refusing to clean schema "public": failed to read the ON UPDATE `+
+				`expressions outside the cleanup: `+test.wantErr))
+			c.Assert(statements, qt.HasLen, 0)
+			c.Assert(db.CommitCount(), qt.Equals, 0)
+			c.Assert(db.RollbackCount(), qt.Equals, 1)
+		})
+	}
 }
 
 // cleanupIndexTablesMarker is what the CockroachDB cleanup's read of the table

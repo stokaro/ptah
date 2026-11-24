@@ -223,7 +223,15 @@ The text can lose a type: the server keeps `NULL::public.e[]` in a view as
 `NULL` and still refuses to drop the type. So Ptah also asks the server, with
 `EXPLAIN (DDL)` of each drop of a type, function or procedure, which objects
 use it. The server plans the drop without running it and lists every
-dependent. It gives no such list for a table, a view or a sequence.
+dependent. It gives no such list for a table, a view or a sequence. The
+question also finds a view that calls one overload of a function, which
+CockroachDB stores without its schema, and the error names that overload by
+its arguments.
+
+In a session with `use_declarative_schema_changer` off, CockroachDB plans no
+drop of an object nothing depends on, so the cleanup of a schema that holds a
+type, function or procedure refuses and names the setting. Leave the setting on for the cleanup;
+setting it inside the cleanup's transaction does not change the answer.
 
 A row-level TTL expression is not among these holders, because CockroachDB
 records no dependency for it. A sequence `OWNED BY` a column of a table the
