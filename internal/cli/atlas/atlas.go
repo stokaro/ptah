@@ -88,7 +88,7 @@ type atlasVerb struct {
 	// the native command does not carry out. It reads the configs as loaded,
 	// before any is merged with ptah.yaml, and given reports whether a flag of
 	// the verb is set, on the command line or through its PTAH_* variable.
-	refuseProjectSettings func(configs []projectconfig.Config, given func(flag string) bool) error
+	refuseProjectSettings func(configs []*projectconfig.Config, given func(flag string) bool) error
 }
 
 type atlasPositionalArg struct {

@@ -108,28 +108,52 @@ var atlasDriftProjectRefusals = []struct {
 // [atlasDriftProjectRefusals], unless given reports the flag that takes
 // precedence over it, or the env sets the value the report carries out. A
 // value the instances of the env disagree on is no value, and is refused.
-func refuseUnreadDriftSettings(configs []projectconfig.Config, given func(flag string) bool) error {
+//
+// A setting the run carries out, `skip_lock = false`, is taken out of the
+// config's tolerated constructs, so the warning that a tolerated attribute has
+// no effect does not name it.
+func refuseUnreadDriftSettings(configs []*projectconfig.Config, given func(flag string) bool) error {
 	for _, cfg := range configs {
+		kept := make([]projectconfig.IgnoredAtlasConstruct, 0, len(cfg.IgnoredConstructs))
 		for _, construct := range cfg.IgnoredConstructs {
-			if !construct.InSelectedEnv {
-				continue
+			carriedOut, err := driftSettingCarriedOut(construct, given)
+			if err != nil {
+				return err
 			}
-			for _, refusal := range atlasDriftProjectRefusals {
-				if construct.Path != refusal.path {
-					continue
-				}
-				if refusal.flag != "" && given(refusal.flag) {
-					continue
-				}
-				if refusal.carriedOut != "" && construct.Value == refusal.carriedOut {
-					continue
-				}
-				return fmt.Errorf("atlas migrate drift reads the env's %s, set at %s:%d, but %s",
-					construct.Path, construct.Filename, construct.Line, refusal.refusal)
+			if !carriedOut {
+				kept = append(kept, construct)
 			}
 		}
+		cfg.IgnoredConstructs = kept
 	}
 	return nil
+}
+
+// driftSettingCarriedOut refuses construct where it is one of
+// [atlasDriftProjectRefusals] in the selected env that the run does not carry
+// out, and reports whether the run carries out what it asks.
+func driftSettingCarriedOut(construct projectconfig.IgnoredAtlasConstruct, given func(flag string) bool) (bool, error) {
+	if !construct.InSelectedEnv {
+		return false, nil
+	}
+	for _, refusal := range atlasDriftProjectRefusals {
+		if construct.Path != refusal.path {
+			continue
+		}
+		if refusal.flag != "" && given(refusal.flag) {
+			return false, nil
+		}
+		if refusal.carriedOut != "" && construct.Value == refusal.carriedOut {
+			return true, nil
+		}
+		reason := refusal.refusal
+		if construct.Disagrees {
+			reason = "the instances of the env give it different values; give it one value in every instance"
+		}
+		return false, fmt.Errorf("atlas migrate drift reads the env's %s, set at %s:%d, but %s",
+			construct.Path, construct.Filename, construct.Line, reason)
+	}
+	return false, nil
 }
 
 // newAtlasMigrateDriftCommand returns `migrate drift`, registered outside the
@@ -275,8 +299,20 @@ func atlasMigrateDriftTarget() *cobra.Command {
 }
 
 // atlasMigrateDriftNativeArgs drops --no-cache from the native arguments,
-// after checking a value given to it reads as a boolean, as pflag would.
+// after checking a value given to it reads as a boolean, as pflag would. A
+// blank --lock-name is refused as `migrate apply` refuses it: read as unset it
+// would take the default lock, and a runner holding the named one would not
+// exclude this report.
 func atlasMigrateDriftNativeArgs(native []string) ([]string, error) {
+	for i, arg := range native {
+		name, inline := strings.CutPrefix(arg, "--migration-lock-name=")
+		if !inline && arg == "--migration-lock-name" && i+1 < len(native) {
+			name, inline = native[i+1], true
+		}
+		if inline && strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("--%s must not be empty", atlasLockNameFlag)
+		}
+	}
 	for _, arg := range native {
 		value, found := strings.CutPrefix(arg, "--"+atlasNoCacheFlag+"=")
 		if !found {
@@ -334,9 +370,16 @@ func resolveAtlasVerbInstances(
 	}
 	cleanup.Add(set.Close)
 	if verb.refuseProjectSettings != nil {
-		loadedConfigs := make([]projectconfig.Config, 0, len(set.projects))
-		for _, project := range set.projects {
-			loadedConfigs = append(loadedConfigs, project.Config)
+		// A variable the flag refuses empty is refused first, as the mapping
+		// would refuse it, so an empty PTAH_LOCK_NAME is not read as no flag.
+		for _, flag := range verb.flags {
+			if err := atlasargs.CheckEmptyEnv(flag); err != nil {
+				return atlasVerbArgs{}, err
+			}
+		}
+		loadedConfigs := make([]*projectconfig.Config, 0, len(set.projects))
+		for i := range set.projects {
+			loadedConfigs = append(loadedConfigs, &set.projects[i].Config)
 		}
 		given := func(flag string) bool { return atlasFlagValueSet(verb.flags, resolved.args, flag) }
 		if err := verb.refuseProjectSettings(loadedConfigs, given); err != nil {

@@ -374,7 +374,7 @@ func TestParseAtlasCollectionSharesIgnoredConstructsAcrossInstances(t *testing.T
 	c.Assert(err, qt.IsNil)
 	c.Assert(configs, qt.HasLen, 2)
 	want := []projectconfig.IgnoredAtlasConstruct{
-		{Name: "custom", Kind: "attribute", Path: "custom", InSelectedEnv: true, Filename: "atlas.hcl", Line: 5},
+		{Name: "custom", Kind: "attribute", Path: "custom", InSelectedEnv: true, Disagrees: true, Filename: "atlas.hcl", Line: 5},
 	}
 	c.Assert(configs[0].IgnoredConstructs, qt.DeepEquals, want)
 	c.Assert(configs[1].IgnoredConstructs, qt.DeepEquals, want)
@@ -414,7 +414,7 @@ env "other" {
 	want := []projectconfig.IgnoredAtlasConstruct{
 		{Name: "agreed", Kind: "attribute", Path: "agreed", InSelectedEnv: true, Value: "false", Filename: "atlas.hcl", Line: 5},
 		{Name: "count", Kind: "attribute", Path: "count", InSelectedEnv: true, Value: "2.5", Filename: "atlas.hcl", Line: 6},
-		{Name: "differs", Kind: "attribute", Path: "differs", InSelectedEnv: true, Filename: "atlas.hcl", Line: 7},
+		{Name: "differs", Kind: "attribute", Path: "differs", InSelectedEnv: true, Disagrees: true, Filename: "atlas.hcl", Line: 7},
 		{Name: "text", Kind: "attribute", Path: "text", InSelectedEnv: true, Filename: "atlas.hcl", Line: 8},
 		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Value: "true", Filename: "atlas.hcl", Line: 10},
 		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", Filename: "atlas.hcl", Line: 15},

@@ -745,6 +745,9 @@ func TestCompatMigrateDrift_HappyPathAcceptsASkipLockOfFalse(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, cleanTarget)
+	// The run takes the lock the setting asks for, so the warning that a
+	// tolerated attribute has no effect does not name it.
+	c.Assert(stderr, qt.Not(qt.Contains), "skip_lock")
 }
 
 // A skip_lock the targets of an env disagree on asks one of them to skip the
@@ -767,7 +770,7 @@ func TestCompatMigrateDrift_FailurePathRefusesASkipLockTheTargetsDisagreeOn(t *t
 	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", "file://settings.hcl", "--env", "tenants")
 
 	c.Assert(err, qt.ErrorMatches, `atlas migrate drift reads the env's migration.skip_lock, set at settings.hcl:7, `+
-		`but Ptah does not implement its behavior: .*`)
+		`but the instances of the env give it different values; give it one value in every instance`)
 	c.Assert(stdout, qt.Equals, "")
 }
 
@@ -840,4 +843,46 @@ func TestCompatMigrateDrift_FailurePathRefusesAMalformedVariable(t *testing.T) {
 	c.Assert(flagErr, qt.ErrorMatches, `invalid boolean value "yes" for PTAH_ATLAS_MIGRATE_DRIFT`)
 	c.Assert(flagOut, qt.Equals, "")
 	c.Assert(hashErr, qt.IsNil, qt.Commentf("%s", hashStderr))
+}
+
+// A blank lock name, on the command line or in PTAH_LOCK_NAME, is refused
+// before the report runs, even beside a migration.lock_name the flag would
+// take precedence over. Read as unset it would take the default lock, and a
+// runner holding the named one would not exclude this report.
+func TestCompatMigrateDrift_FailurePathRefusesABlankLockName(t *testing.T) {
+	tests := []struct {
+		name, migration string
+		args            []string
+		env             map[string]string
+		wantErr         string
+	}{
+		{
+			name:    "the flag",
+			args:    []string{"--lock-name", " "},
+			wantErr: `--lock-name must not be empty`,
+		},
+		{
+			name:      "the variable beside the setting",
+			migration: "    lock_name = \"custom\"\n",
+			env:       map[string]string{"PTAH_LOCK_NAME": ""},
+			wantErr:   `PTAH_LOCK_NAME is set but empty.*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			enterDriftProject(c)
+			config := writeDriftSettings(c, test.migration)
+			for name, value := range test.env {
+				c.Setenv(name, value)
+			}
+
+			stdout, _, err := atlastest.RunCompatStreams(c,
+				append([]string{"migrate", "drift", "-c", config, "--env", "local"}, test.args...)...)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
 }

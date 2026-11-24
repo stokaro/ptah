@@ -324,12 +324,22 @@ func (n Name) Explicit() bool { return n.Spelling != "" }
 // the binding refuses both, as [RegisterNameFlag] declares, so the refusal
 // here is of a blank --migration-lock-name or [NameConfigKey].
 //
-// A forwarded run selects no name. `ptah-compat migrate down` reaches the
-// native command through the adapter, and the compatibility surface has no
-// lock-name flag there, so the setting belongs to the native commands only.
+// A forwarded run selects the name the adapter wrote on the native command
+// line, and nothing else. `ptah-compat migrate drift --lock-name` maps the
+// Atlas spelling onto the native flag, and the run waits on that lock.
+// `ptah-compat migrate down` has no lock-name flag and writes none, so the
+// native variable and the project setting belong to the native commands only.
+// The adapter refuses a blank name in the spelling the operator typed before
+// it forwards one.
 func ResolveName(request Request, value string) (Name, error) {
-	if request.Cmd == nil || cmdadapter.Forwarded(request.Cmd) {
+	if request.Cmd == nil {
 		return Name{}, nil
+	}
+	if cmdadapter.Forwarded(request.Cmd) {
+		if !cmdflags.SetOnCommandLine(request.Cmd.Flags(), request.FlagName) {
+			return Name{}, nil
+		}
+		return Name{Value: strings.TrimSpace(value), Spelling: "--" + request.FlagName}, nil
 	}
 	spelling, asked := request.Spelling()
 	if !asked {

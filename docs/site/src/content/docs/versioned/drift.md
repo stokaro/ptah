@@ -386,7 +386,9 @@ directory in the Atlas layout, as `ptah-compat migrate apply` writes them.
 `data.template_dir` directory is read as rendered. `-u`/`--url` is the
 database and `--dev-url` the dev database the history replays on. `--exclude`
 leaves objects out as [above](#leave-objects-out), and `--lock-timeout` and
-`--lock-name` bound and name the migration lock. `--no-cache` is accepted and
+`--lock-name` bound and name the migration lock: the report waits for a
+`migrate apply` that holds the lock of that name. A blank `--lock-name` or
+`PTAH_LOCK_NAME` is refused, as `migrate apply` refuses it. `--no-cache` is accepted and
 changes nothing, because Ptah keeps no cache of the expected state. `--format`
 and `--skip-lock` are refused: the output is the text report on this page, and
 the history is read under the migration lock.
