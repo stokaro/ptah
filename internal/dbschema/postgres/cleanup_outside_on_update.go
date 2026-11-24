@@ -80,9 +80,14 @@ type tableOnUpdates struct {
 // so a string in the default that holds the keyword widens the text rather
 // than cutting the expression short.
 //
-// A table name or a column name it cannot read is an error, never a table
-// without an ON UPDATE: the clause it would skip may name what the cleanup
-// drops.
+// CockroachDB prints a quoted identifier as it is, with any newline it holds,
+// so the column list is cut into lines by [definitionLines], which reads the
+// quotes, and never at every newline: a newline in a column name would leave
+// the column's ON UPDATE on a line without its tab.
+//
+// A table name, a column name or a column list it cannot read is an error,
+// never a table without an ON UPDATE: the clause it would skip may name what
+// the cleanup drops.
 func onUpdateClauses(definition string) (tableOnUpdates, error) {
 	var table tableOnUpdates
 	header, _, _ := strings.Cut(definition, "\n")
@@ -101,7 +106,11 @@ func onUpdateClauses(definition string) (tableOnUpdates, error) {
 		return tableOnUpdates{}, fmt.Errorf("the table name of %q cannot be read", "CREATE TABLE "+header)
 	}
 	table.schema, table.name = schema, name
-	for line := range strings.SplitSeq(rest, "\n") {
+	lines, ok := definitionLines(rest)
+	if !ok {
+		return tableOnUpdates{}, fmt.Errorf("the column list of table %q.%q cannot be read: a quote is not closed", schema, name)
+	}
+	for _, line := range lines {
 		line, isColumn := strings.CutPrefix(line, "\t")
 		if !isColumn {
 			continue
@@ -117,6 +126,73 @@ func onUpdateClauses(definition string) (tableOnUpdates, error) {
 		table.clauses = append(table.clauses, onUpdateClause{column: column, text: strings.TrimSuffix(text, ",")})
 	}
 	return table, nil
+}
+
+// definitionLines cuts the column list of a CREATE TABLE statement into its
+// lines, at each newline that stands outside a quote. A double quote opens an
+// identifier, which CockroachDB prints with any newline it holds; a single
+// quote opens a string, and one after an e opens an escape string, where a
+// backslash escapes the next character, as in e'it\'s'. A doubled quote closes
+// its quote and opens it again, which reads it whole. It reports false when a
+// quote is still open at the end of the text.
+func definitionLines(text string) ([]string, bool) {
+	const (
+		unquoted = iota
+		identifier
+		literal
+		escapeLiteral
+	)
+	var lines []string
+	state, start := unquoted, 0
+	for i := 0; i < len(text); i++ {
+		switch c := text[i]; state {
+		case unquoted:
+			switch {
+			case c == '\n':
+				lines = append(lines, text[start:i])
+				start = i + 1
+			case c == '"':
+				state = identifier
+			case c == '\'' && opensEscapeLiteral(text[:i]):
+				state = escapeLiteral
+			case c == '\'':
+				state = literal
+			}
+		case identifier:
+			if c == '"' {
+				state = unquoted
+			}
+		case literal:
+			if c == '\'' {
+				state = unquoted
+			}
+		case escapeLiteral:
+			switch c {
+			case '\\':
+				i++
+			case '\'':
+				state = unquoted
+			}
+		}
+	}
+	return append(lines, text[start:]), state == unquoted
+}
+
+// opensEscapeLiteral reports whether a quote after before opens an escape
+// string: before ends in an e that is a word of its own.
+func opensEscapeLiteral(before string) bool {
+	rest, found := strings.CutSuffix(before, "e")
+	if !found {
+		rest, found = strings.CutSuffix(before, "E")
+	}
+	if !found {
+		return false
+	}
+	if rest == "" {
+		return true
+	}
+	last := rest[len(rest)-1]
+	return last != '_' && last != '"' && (last < '0' || last > '9') && (last < 'a' || last > 'z') && (last < 'A' || last > 'Z')
 }
 
 // cutIdentifier cuts the identifier s starts with, as CockroachDB prints one:

@@ -192,6 +192,15 @@ CREATE TABLE other.ou (id int PRIMARY KEY, g int ON UPDATE nextval('public.s'));
 			want:        `the ON UPDATE expression of column "g" of table "other"."ou" names sequence "public"."s"`,
 		},
 		{
+			// v25.4.21 has no column_on_update, so the expression is read from
+			// SHOW CREATE ALL TABLES, which prints the newline of the name as it is.
+			name: "an ON UPDATE expression that takes from the sequence, on a column whose name holds a newline",
+			fixture: "CREATE SEQUENCE public.s;\nCREATE SCHEMA other;\n" +
+				"CREATE TABLE other.nls (\"c\nx\" int ON UPDATE nextval('public.s'));",
+			wantObjects: []string{"s", "z_data"},
+			want:        `the ON UPDATE expression of column "c\nx" of table "other"."nls" names sequence "public"."s"`,
+		},
+		{
 			name: "a check constraint that calls the function",
 			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
 CREATE SCHEMA other;

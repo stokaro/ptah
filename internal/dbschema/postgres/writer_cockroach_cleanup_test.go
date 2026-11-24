@@ -989,6 +989,26 @@ func TestWriterDropAllTables_CockroachRefusesAnONUPDATEFromTheCreateStatements_F
 				"\tCONSTRAINT c_pkey PRIMARY KEY (id ASC)\n);",
 			want: `the ON UPDATE expression of column "d" of table "other"."c" names function "public"."fn"`,
 		},
+		{
+			name: "a column name that holds a newline",
+			statement: "CREATE TABLE other.nls (\n\t\"c\nx\" INT8 NULL ON UPDATE nextval('public.s'::REGCLASS),\n" +
+				"\trowid INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid(),\n\tCONSTRAINT nls_pkey PRIMARY KEY (rowid ASC)\n);",
+			want: `the ON UPDATE expression of column "c\nx" of table "other"."nls" names sequence "public"."s"`,
+		},
+		{
+			name: "a table name that holds a newline",
+			statement: "CREATE TABLE other.\"new\nline\" (\n\tf INT8 NULL ON UPDATE public.fn(),\n" +
+				"\trowid INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid(),\n" +
+				"\tCONSTRAINT \"new\nline_pkey\" PRIMARY KEY (rowid ASC)\n);",
+			want: `the ON UPDATE expression of column "f" of table "other"."new\nline" names function "public"."fn"`,
+		},
+		{
+			name: "an escape string with a quote and a double quote before the column",
+			statement: "CREATE TABLE other.q (\n\t\"q'\"\" y\" STRING NULL DEFAULT e'it\\'s \"x\"\\nz':::STRING,\n" +
+				"\tg INT8 NULL ON UPDATE nextval('public.s'::REGCLASS),\n" +
+				"\trowid INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid(),\n\tCONSTRAINT q_pkey PRIMARY KEY (rowid ASC)\n);",
+			want: `the ON UPDATE expression of column "g" of table "other"."q" names sequence "public"."s"`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1058,6 +1078,20 @@ func TestWriterDropAllTables_CockroachDropsWhatNoONUPDATEOutsideNames_HappyPath(
 			statement: "ALTER TABLE other.c ADD CONSTRAINT c_x_fkey FOREIGN KEY (x) REFERENCES other.ou(id) " +
 				"ON DELETE CASCADE ON UPDATE CASCADE;",
 		},
+		{
+			name:  "a newline in a table name and a column name, with a constant",
+			texts: slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread}),
+			statement: "CREATE TABLE other.\"new\nline\" (\n\t\"c\nx\" INT8 NULL ON UPDATE 7:::INT8,\n" +
+				"\trowid INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid(),\n" +
+				"\tCONSTRAINT \"new\nline_pkey\" PRIMARY KEY (rowid ASC)\n);",
+		},
+		{
+			name:  "an escape string with a quote and a double quote",
+			texts: slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread}),
+			statement: "CREATE TABLE other.q (\n\t\"q'\"\" y\" STRING NULL DEFAULT e'it\\'s \"x\"\\nz':::STRING,\n" +
+				"\tg INT8 NULL ON UPDATE public.fn2(),\n" +
+				"\trowid INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid(),\n\tCONSTRAINT q_pkey PRIMARY KEY (rowid ASC)\n);",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1105,9 +1139,9 @@ func TestWriterDropAllTables_CockroachRefusesWhenItCannotReadTheCreateStatements
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
 
-// A CREATE statement whose table name, or the name of a column that carries
-// ON UPDATE, the read cannot cut refuses the cleanup before its first drop:
-// the clause it would skip may name what the cleanup drops.
+// A CREATE statement whose table name, column list, or name of a column that
+// carries ON UPDATE the read cannot cut refuses the cleanup before its first
+// drop: the clause it would skip may name what the cleanup drops.
 func TestWriterDropAllTables_CockroachRefusesACreateStatementItCannotRead_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -1132,7 +1166,12 @@ func TestWriterDropAllTables_CockroachRefusesACreateStatementItCannotRead_Failur
 		{
 			name:      "a column name whose quote is not closed",
 			statement: "CREATE TABLE other.ou (\n\t\"f INT8 NULL ON UPDATE public.fn()\n);",
-			wantErr:   `the column name of "\"f INT8 NULL ON UPDATE public.fn()" in table "other"."ou" cannot be read`,
+			wantErr:   `the column list of table "other"."ou" cannot be read: a quote is not closed`,
+		},
+		{
+			name:      "an escape string whose quote is not closed",
+			statement: "CREATE TABLE other.ou (\n\tf STRING NULL DEFAULT e'it\\' ON UPDATE public.fn()\n);",
+			wantErr:   `the column list of table "other"."ou" cannot be read: a quote is not closed`,
 		},
 	}
 	for _, test := range tests {
