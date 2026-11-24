@@ -9,13 +9,23 @@ import (
 )
 
 // listed is a descriptor stating the lists of a table and a database, with
-// one privilege of the database's list that ALL does not always grant.
+// one privilege of the database's list that ALL does not always grant, and
+// a grammar that reads each privilege of more than one word they name.
 func listed() descriptor.Dialect {
 	described := head("alpha")
 	described.AllPrivileges = descriptor.AllPrivileges{Kinds: map[string]descriptor.AllPrivilegeList{
 		"TABLE":  {Privileges: []string{"SELECT", "SHOW VIEW"}},
 		"SCHEMA": {Privileges: []string{"SELECT", "SHOW CREATE ROUTINE"}, Optional: []string{"SHOW CREATE ROUTINE"}},
 	}}
+	described.Grammar.Forms.MultiWordPrivileges = []string{"SHOW CREATE ROUTINE", "SHOW VIEW"}
+	return described
+}
+
+// withMultiWord returns listed with a grammar that reads privileges as its
+// privileges of more than one word.
+func withMultiWord(privileges ...string) descriptor.Dialect {
+	described := listed()
+	described.Grammar.Forms.MultiWordPrivileges = privileges
 	return described
 }
 
@@ -24,6 +34,13 @@ func listed() descriptor.Dialect {
 func withList(kind string, list descriptor.AllPrivilegeList) descriptor.Dialect {
 	described := listed()
 	described.AllPrivileges.Kinds[kind] = list
+	return described
+}
+
+// withClasses returns listed with a grammar that names classes before `::`.
+func withClasses(classes ...string) descriptor.Dialect {
+	described := listed()
+	described.Grammar.Forms.GrantClasses = classes
 	return described
 }
 
@@ -139,6 +156,31 @@ func TestNewRegistry_AllPrivileges_FailurePath(t *testing.T) {
 			name:    "an optional privilege the list does not name",
 			edit:    withList("VIEW", descriptor.AllPrivilegeList{Privileges: []string{"SELECT"}, Optional: []string{"MERGE VIEW"}}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": optional ALL privilege "MERGE VIEW" is not one ALL grants on VIEW`,
+		},
+		{
+			name:    "a privilege of more than one word the grammar does not read",
+			edit:    withList("VIEW", descriptor.AllPrivilegeList{Privileges: []string{"SELECT", "MERGE VIEW"}}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": ALL privilege "MERGE VIEW" on VIEW is not one of the grammar's multi-word privileges, so a GRANT naming it could not be read`,
+		},
+		{
+			name:    "a multi-word privilege of one word",
+			edit:    withMultiWord("SHOW CREATE ROUTINE", "SHOW VIEW", "SELECT"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: multi-word privilege "SELECT" must be two or more upper-case words one space apart`,
+		},
+		{
+			name:    "a multi-word privilege in lower case",
+			edit:    withMultiWord("SHOW CREATE ROUTINE", "show view"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: multi-word privilege "show view" must be two or more upper-case words one space apart`,
+		},
+		{
+			name:    "a multi-word privilege named twice",
+			edit:    withMultiWord("SHOW CREATE ROUTINE", "SHOW VIEW", "SHOW VIEW"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: multi-word privilege "SHOW VIEW" is named twice`,
+		},
+		{
+			name:    "a grant class in lower case",
+			edit:    withClasses("schema"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: grant class "schema" must be upper-case words`,
 		},
 		{
 			name:    "routines by name without a function list",

@@ -257,6 +257,9 @@ func convertStatements(
 		return schemamodel.Database{}, err
 	}
 	document.foldColumnSequences(&database, dialect)
+	if err := resolveSequenceGrants(&database, document.base, dialect); err != nil {
+		return schemamodel.Database{}, err
+	}
 	if err := document.applyOwnedComments(ctx, &database, dialect, owners); err != nil {
 		return schemamodel.Database{}, err
 	}

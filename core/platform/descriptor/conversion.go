@@ -42,6 +42,12 @@ type Conversion struct {
 	// OwnedSequences reports that a column declared with a serial type owns
 	// the sequence that fills it, which a read reports.
 	OwnedSequences bool `json:"owned_sequences,omitempty"`
+	// SequenceGrantsByName reports that GRANT and REVOKE name a sequence as
+	// they name a table, with no object kind or with TABLE, and that a read
+	// reports the grant as one on the sequence. A schema file's grant on a
+	// table name is then read as a grant on the sequence of that name, where
+	// the schema declares one and no table or view of the name.
+	SequenceGrantsByName bool `json:"sequence_grants_by_name,omitempty"`
 	// ImplicitRoutineGrants reports that every routine carries EXECUTE for
 	// PUBLIC unless revoked, which a read reports.
 	ImplicitRoutineGrants bool `json:"implicit_routine_grants,omitempty"`

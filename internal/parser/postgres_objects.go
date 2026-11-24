@@ -480,8 +480,7 @@ func (p *Parser) parseObjectPrivileges(statement string) (privileges, columns []
 		if err != nil {
 			return nil, nil, fmt.Errorf("expected privilege name: %w", err)
 		}
-		privilege = strings.ToUpper(privilege)
-		p.skipWhitespace()
+		privilege = p.readPrivilegeWords(strings.ToUpper(privilege))
 		if privilege == "ALL" && p.current.MatchIdentifierValue("PRIVILEGES") {
 			p.advance()
 			p.skipWhitespace()
@@ -508,6 +507,37 @@ func (p *Parser) parseObjectPrivileges(statement string) (privileges, columns []
 		}
 		return nil, nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ON in %s privileges", statement))
 	}
+}
+
+// readPrivilegeWords returns the longest privilege name of more than one word
+// in the target's grammar that first and the words after it spell, and leaves
+// the cursor at the token after its last word. Where no listed name begins
+// with first and the next word, it returns first, so on a target whose grammar
+// lists none a second word is refused by the caller. A quoted first word keeps
+// its quotes and begins no listed name.
+//
+// The words are matched on a copy of the lexer before any is consumed, because
+// a word may begin a longer name it does not finish: MySQL's CREATE TEMPORARY
+// is no privilege, and CREATE is.
+func (p *Parser) readPrivilegeWords(first string) string {
+	p.skipWhitespace()
+	names := p.target.grammar.Forms.MultiWordPrivileges
+	spelled, longest, words := first, first, 0
+	scan := *p.lexer
+	for token, read := p.current, 1; token.Type == lexer.TokenIdentifier; token, read = nextSignificantToken(&scan), read+1 {
+		spelled += " " + strings.ToUpper(token.Value)
+		if !slices.ContainsFunc(names, func(name string) bool { return strings.HasPrefix(name+" ", spelled+" ") }) {
+			break
+		}
+		if slices.Contains(names, spelled) {
+			longest, words = spelled, read
+		}
+	}
+	for range words {
+		p.advance()
+		p.skipWhitespace()
+	}
+	return longest
 }
 
 // parsePrivilegeColumns reads the column list that may follow a privilege
@@ -584,15 +614,73 @@ func (p *Parser) parseGrantTarget(statement string) (grantTarget, error) {
 			"%s ... ON ALL ... IN SCHEMA is not supported: it applies to the objects that exist "+
 				"when it runs, so name each object instead", statement))
 	}
+	if p.databaseWildcardFollows() {
+		return p.parseDatabaseWildcard(statement)
+	}
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
 		if grantObjectTypes[keyword] {
 			target.objectType = keyword
 			p.advance()
 			p.skipWhitespace()
+			if err := p.readGrantClassQualifier(statement, keyword); err != nil {
+				return grantTarget{}, err
+			}
 		}
 	}
 	return p.parseGrantObject(statement, target.objectType)
+}
+
+// databaseWildcardFollows reports whether the target's grammar names a
+// database as `db.*` and the cursor is at a name such a target spells.
+func (p *Parser) databaseWildcardFollows() bool {
+	if !p.target.grammar.Statements.DatabaseWildcards {
+		return false
+	}
+	scan := *p.lexer
+	dot, star := nextSignificantToken(&scan), nextSignificantToken(&scan)
+	return dot.MatchOperatorValue(".") && star.MatchOperatorValue("*")
+}
+
+// parseDatabaseWildcard reads `db.*`, which grants on every table of the
+// database db, as a target on the database. `*.*` names every database,
+// which no schema declares, and is refused by name.
+func (p *Parser) parseDatabaseWildcard(statement string) (grantTarget, error) {
+	if p.current.MatchOperatorValue("*") {
+		return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s ON *.* names every database, and a schema describes one database: run it outside the schema", statement))
+	}
+	database, err := p.expectIdentifier()
+	if err != nil {
+		return grantTarget{}, fmt.Errorf("expected %s database name: %w", statement, err)
+	}
+	for range 2 {
+		p.skipWhitespace()
+		p.advance()
+	}
+	return grantTarget{objectType: "SCHEMA", objectName: database}, nil
+}
+
+// readGrantClassQualifier reads the `::` that may follow an object kind the
+// target's grammar names as a class, as T-SQL's `ON SCHEMA::app` does. A kind
+// it does not name is left for the object name to follow, and a `::` there is
+// refused as a name that does not begin. A `::` with no name after it is
+// refused by name: the TO or FROM that follows would be read as the name.
+func (p *Parser) readGrantClassQualifier(statement, kind string) error {
+	if !slices.Contains(p.target.grammar.Forms.GrantClasses, kind) || !p.current.MatchOperatorValue(":") {
+		return nil
+	}
+	start := p.current.Start
+	p.advance()
+	if !p.current.MatchOperatorValue(":") {
+		return ptaherr.At(start, fmt.Errorf("expected '::' after %s in %s target", kind, statement))
+	}
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenIdentifier || p.current.MatchIdentifierValue("TO") || p.current.MatchIdentifierValue("FROM") {
+		return ptaherr.At(p.current.Start, fmt.Errorf("%s ON %s:: names no %s: write its name after the '::'", statement, kind, strings.ToLower(kind)))
+	}
+	return nil
 }
 
 func (p *Parser) parseGrantObject(statement, objectType string) (grantTarget, error) {

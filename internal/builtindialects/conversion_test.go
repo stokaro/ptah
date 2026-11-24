@@ -35,6 +35,9 @@ func TestDescriptors_ConversionAgreesWithTheRetiredSwitches(t *testing.T) {
 	postgres := postgresFamily
 	postgres.DefaultSchemaUsage = true
 	postgres.DefaultSchemaComment = "standard public schema"
+	// PostgreSQL and Oracle name a sequence in GRANT as they name a table,
+	// measured on PostgreSQL 19 and Oracle 23.26.3. No switch preceded it.
+	postgres.SequenceGrantsByName = true
 	mysqlFamily := descriptor.Conversion{
 		PropertyShortcuts:    true,
 		SerialForeignKeyType: "INT",
@@ -50,7 +53,7 @@ func TestDescriptors_ConversionAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.ClickHouse:  {RowPolicyOwned: true},
 		platform.SQLite:      {},
 		platform.SQLServer:   {},
-		platform.Oracle:      {},
+		platform.Oracle:      {SequenceGrantsByName: true},
 	}
 
 	described := builtindialects.Descriptors()

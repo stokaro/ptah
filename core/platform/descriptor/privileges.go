@@ -70,8 +70,9 @@ func (a AllPrivileges) Required(objectType string) []string {
 // validateAllPrivileges refuses a list a comparison could not match against a
 // catalog read: a kind or a privilege not in upper case, an empty list, a
 // privilege named twice, ALL itself, an optional privilege the list does not
-// name, and a routine list left out where a grant names a routine as it names
-// a table. Without that list a declared ALL on a routine would never be held.
+// name, a routine list left out where a grant names a routine as it names a
+// table, and a privilege of more than one word the grammar does not read.
+// Without the routine list a declared ALL on a routine would never be held.
 func (d Dialect) validateAllPrivileges() error {
 	for _, kind := range routineKinds {
 		if _, stated := d.AllPrivileges.Kinds[kind]; d.AllPrivileges.RoutinesByName && !stated {
@@ -99,6 +100,35 @@ func (d Dialect) validateAllPrivileges() error {
 			if !seen[privilege] {
 				return fmt.Errorf("%w: dialect %q: optional ALL privilege %q is not one ALL grants on %s", ErrInvalidDescriptor, d.Name, privilege, kind)
 			}
+		}
+		for _, privilege := range list.Privileges {
+			if strings.Contains(privilege, " ") && !slices.Contains(d.Grammar.Forms.MultiWordPrivileges, privilege) {
+				return fmt.Errorf("%w: dialect %q: ALL privilege %q on %s is not one of the grammar's multi-word privileges, "+
+					"so a GRANT naming it could not be read", ErrInvalidDescriptor, d.Name, privilege, kind)
+			}
+		}
+	}
+	return nil
+}
+
+// validateMultiWordPrivileges refuses a multi-word privilege a parser could
+// not match against the words of a GRANT: one not in upper-case words one
+// space apart, one of a single word, and one named twice. It refuses a grant
+// class not in upper case for the same reason.
+func validateMultiWordPrivileges(grammar Grammar) error {
+	seen := make(map[string]bool, len(grammar.Forms.MultiWordPrivileges))
+	for _, privilege := range grammar.Forms.MultiWordPrivileges {
+		switch {
+		case !upperWords(privilege) || !strings.Contains(privilege, " "):
+			return fmt.Errorf("multi-word privilege %q must be two or more upper-case words one space apart", privilege)
+		case seen[privilege]:
+			return fmt.Errorf("multi-word privilege %q is named twice", privilege)
+		}
+		seen[privilege] = true
+	}
+	for _, class := range grammar.Forms.GrantClasses {
+		if !upperWords(class) {
+			return fmt.Errorf("grant class %q must be upper-case words", class)
 		}
 	}
 	return nil

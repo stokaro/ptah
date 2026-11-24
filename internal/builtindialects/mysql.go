@@ -317,7 +317,7 @@ func mysql() descriptor.Dialect {
 				Modify:             descriptor.ModifyDefinition,
 				ChecksCapabilities: true,
 			},
-			Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+			Statements: mysqlStatementGrammar(),
 			Forms:      mysqlStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:                 descriptor.RoutineCompoundStatement,
@@ -552,6 +552,20 @@ var mysqlCheckNameFolds = []descriptor.CodePointRange{
 	{First: 0x400, Last: 0x42F}, {First: 0x531, Last: 0x556}, {First: 0x1F00, Last: 0x1FFF},
 	{First: 0x2126, Last: 0x212B}, {First: 0x2160, Last: 0x216F}, {First: 0x24B6, Last: 0x24CF},
 	{First: 0xFF21, Last: 0xFF3A},
+}
+
+// mysqlStatementGrammar is how MySQL spells the statements a schema file
+// holds: USE selects the database, CREATE ROLE takes IF NOT EXISTS, and a
+// grant names a database as `db`.*.
+func mysqlStatementGrammar() descriptor.StatementGrammar {
+	return descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true, DatabaseWildcards: true}
+}
+
+// mysqlMultiWordPrivileges are the privileges of more than one word MySQL
+// grants on a table, a routine and a database, as SHOW GRANTS and
+// information_schema report them, measured on MySQL 8.4.13 and 26.10.0.
+func mysqlMultiWordPrivileges() []string {
+	return []string{"ALTER ROUTINE", "CREATE ROUTINE", "CREATE TEMPORARY TABLES", "CREATE VIEW", "LOCK TABLES", "SHOW VIEW"}
 }
 
 // mysqlAllPrivileges is what GRANT ALL grants on a MySQL table and database,

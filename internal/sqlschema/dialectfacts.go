@@ -54,6 +54,10 @@ type readingFacts struct {
 	// the grant option alone, so a declared REVOKE GRANT OPTION FOR is
 	// refused; see [appendRevoke].
 	grantOptionRevokedWithPrivilege bool
+	// sequenceGrantsByName is the descriptor's Conversion.SequenceGrantsByName:
+	// a grant on a table name may name a sequence; see
+	// [resolveSequenceGrants].
+	sequenceGrantsByName bool
 }
 
 // readingFactsCache keeps each dialect name's facts once read. A read asks
@@ -101,6 +105,7 @@ func factsOf(sourcePlatform string) readingFacts {
 		indexNamesPerTable:  identifier.IndexNamespace(described.Identifiers.IndexNamespace) == identifier.IndexNamespaceTable,
 
 		grantOptionRevokedWithPrivilege: described.GrantOptionRevokedWithPrivilege,
+		sequenceGrantsByName:            described.Conversion.SequenceGrantsByName,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

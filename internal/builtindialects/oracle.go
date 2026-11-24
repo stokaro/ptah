@@ -59,6 +59,10 @@ func oracle() descriptor.Dialect {
 		// Measured on 23.26.3 and 21.3.
 		GrantOptionRevokedWithPrivilege: true,
 		AllPrivileges:                   oracleAllPrivileges(),
+		// GRANT names a sequence as it names a table, with no object kind,
+		// and ALL_TAB_PRIVS reports the grant on an object of type SEQUENCE,
+		// measured on 23.26.3.
+		Conversion: descriptor.Conversion{SequenceGrantsByName: true},
 
 		// An Oracle banner carries two numbers, and the first is not the
 		// version: "Oracle AI Database 26ai Free Release 23.26.2.0.0". The
@@ -297,6 +301,12 @@ END;`,
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 			Statements: descriptor.StatementGrammar{UserTypes: true},
+			Forms: descriptor.StatementForms{
+				// The object privileges of more than one word on a table, a
+				// view and a sequence, as TABLE_PRIVILEGE_MAP lists them on
+				// Oracle 21.3 and 23.26.3. Oracle 21 has no KEEP SEQUENCE.
+				MultiWordPrivileges: []string{"KEEP SEQUENCE", "MERGE VIEW", "ON COMMIT REFRESH", "QUERY REWRITE"},
+			},
 		},
 
 		// Clean checks: what internal/migrateclean reads. A dev database is
