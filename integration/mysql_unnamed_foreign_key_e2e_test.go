@@ -130,7 +130,14 @@ func newMySQLFamilyScratch(c *qt.C, engine dbtarget.Engine) mysqlScratch {
 // it, with nothing of Ptah's in between.
 func (s mysqlScratch) builtFrom(c *qt.C, schema string) (name, url string) {
 	c.Helper()
-	name, url = s.database(c, "fk_built")
+	return s.builtAs(c, "fk_built", schema)
+}
+
+// builtAs is [mysqlScratch.builtFrom] for a database whose name begins with
+// prefix, as [mysqlScratch.database] names it.
+func (s mysqlScratch) builtAs(c *qt.C, prefix, schema string) (name, url string) {
+	c.Helper()
+	name, url = s.database(c, prefix)
 	conn, err := sql.Open("mysql", mySQLDSNForDatabase(c, s.adminDSN, name)+"?multiStatements=true")
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(conn.Close(), qt.IsNil) }()

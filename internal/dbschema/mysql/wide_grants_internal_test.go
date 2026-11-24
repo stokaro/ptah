@@ -1,8 +1,12 @@
 package mysql
 
-// White-box testing required: readWideGrants is unexported, and whether it
-// returns nil or an empty list is what the grant comparison decides on. Through
-// ReadSchema the test would script every other catalog query to observe it.
+// White-box testing required: readWideGrants, readPatternGrants and
+// joinWideGrants are unexported, and whether they return nil or an empty list,
+// and whether the join is partial, is what the grant comparison decides on.
+// Through ReadSchema the test would script every other catalog query to observe
+// it, could not count the queries one of them sends among the rest, and reads
+// one database, where readPatternGrants reads several.
+// pattern_grants_test.go drives what a read of one database reports.
 
 import (
 	"database/sql/driver"
@@ -109,4 +113,85 @@ func TestReadWideGrants_PartOfMySQLUserIsNotKnown(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.IsNil)
 	c.Assert(*queries, qt.HasLen, 2)
+}
+
+// openPatternGrantCatalog is a catalog answering readPatternGrants with
+// partialRevokes as the server's setting and rows as each database's pattern
+// grants, and recording each query it receives.
+func openPatternGrantCatalog(c *qt.C, partialRevokes string, rows [][]driver.Value) (*Reader, *[]string) {
+	c.Helper()
+	var queries []string
+	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		queries = append(queries, query)
+		switch {
+		case strings.Contains(query, "SHOW VARIABLES"):
+			return dbtest.QueryResult{Columns: []string{"Variable_name", "Value"}, Rows: [][]driver.Value{{"partial_revokes", partialRevokes}}}, nil
+		case strings.Contains(query, "SELECT COUNT(*)"):
+			return dbtest.QueryResult{Columns: []string{"count"}, Rows: [][]driver.Value{{int64(1)}}}, nil
+		default:
+			return dbtest.QueryResult{Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"}, Rows: rows}, nil
+		}
+	})
+	return NewMySQLReader(db.SQL, "app"), &queries
+}
+
+// TestReadPatternGrants_ReadsEachDatabase reads the pattern grants of each
+// database a read describes, under that database: a read of a server names
+// several.
+func TestReadPatternGrants_ReadsEachDatabase(t *testing.T) {
+	c := qt.New(t)
+	reader, _ := openPatternGrantCatalog(c, "OFF", [][]driver.Value{{"rvc", "cs%", "SELECT"}})
+
+	got, err := reader.readPatternGrants(t.Context(), []string{"cs1", "cs2"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []catalog.WideGrant{
+		{Role: "rvc", Privilege: "SELECT", Grant: "SELECT ON `cs%`.*", Schema: "cs1"},
+		{Role: "rvc", Privilege: "SELECT", Grant: "SELECT ON `cs%`.*", Schema: "cs2"},
+	})
+}
+
+// TestReadPatternGrants_PartialRevokesReadNamesLiterally returns an empty list,
+// and asks for no pattern grant, where MySQL's partial_revokes is ON: the
+// server then reads "%" and "_" in a database name as the characters
+// themselves, and a pattern grant reaches no other database.
+func TestReadPatternGrants_PartialRevokesReadNamesLiterally(t *testing.T) {
+	c := qt.New(t)
+	reader, queries := openPatternGrantCatalog(c, "ON", [][]driver.Value{{"rvc", "cs%", "SELECT"}})
+
+	got, err := reader.readPatternGrants(t.Context(), []string{"cs1"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, make([]catalog.WideGrant, 0))
+	c.Assert(*queries, qt.HasLen, 1)
+}
+
+// TestJoinWideGrants is nil where neither read established its grants, and
+// partial where only one did: a revoke under a grant the missing read would
+// have found is then planned, as it is with no read at all.
+func TestJoinWideGrants(t *testing.T) {
+	everywhere := []catalog.WideGrant{{Role: "r", Privilege: "SELECT", Grant: "SELECT ON *.*"}}
+	patterns := []catalog.WideGrant{{Role: "r", Privilege: "SELECT", Grant: "SELECT ON `cs%`.*", Schema: "cs1"}}
+	tests := []struct {
+		name                 string
+		everywhere, patterns []catalog.WideGrant
+		want                 []catalog.WideGrant
+		partial              bool
+	}{
+		{name: "both read", everywhere: everywhere, patterns: patterns, want: append(slices.Clone(everywhere), patterns...)},
+		{name: "both read, none held", everywhere: make([]catalog.WideGrant, 0), patterns: make([]catalog.WideGrant, 0), want: make([]catalog.WideGrant, 0)},
+		{name: "no grants on every database", patterns: patterns, want: patterns, partial: true},
+		{name: "no pattern grants", everywhere: make([]catalog.WideGrant, 0), want: make([]catalog.WideGrant, 0), partial: true},
+		{name: "neither"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, partial := joinWideGrants(test.everywhere, test.patterns)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(partial, qt.Equals, test.partial)
+		})
+	}
 }

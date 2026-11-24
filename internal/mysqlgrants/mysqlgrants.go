@@ -262,10 +262,40 @@ func (g Grants) rank(pattern string) int {
 
 // matches reports whether a database-level row applies to name.
 func (g Grants) matches(pattern, name string) bool {
-	if g.options.LiteralDatabaseNames {
-		return g.sameName(pattern, name)
+	return g.options.MatchesDatabase(pattern, name)
+}
+
+// MatchesDatabase reports whether a database-level grant row on pattern
+// applies to the database name, as the server's privilege check decides it:
+// `%` is any run of bytes, `_` is one byte, and a backslash takes the next
+// byte literally, whatever the session's sql_mode. A backslash that ends the
+// pattern is the byte itself: measured on MySQL 8.4.13 and MariaDB 11.8.9, a
+// grant on `ab%\` reaches every table of a database `abx\`. Names compare
+// without regard to case where [Options.FoldCase] holds, and literally where
+// [Options.LiteralDatabaseNames] does.
+//
+// It is the one matcher for a database-level row. SQL LIKE does not agree with
+// the server: measured on MySQL 8.4.13 and MariaDB 11.8.9, LIKE's `_` matches
+// one character, so `nx__d` matches no database `nxéd` while the grant on it
+// reaches every table there, and on MySQL NO_BACKSLASH_ESCAPES takes LIKE's
+// escape away, so `ab\_c` matches no database `ab_c` while the grant reaches
+// it.
+//
+// Measured on MySQL 8.4.13, a row a role holds with no `%` or `_` in it
+// compares byte for byte, backslashes included, where a user's own row, and
+// either row on MariaDB 11.8.9, take a backslash as an escape: through a role
+// there, `a\bc` reaches no database `abc` while this reports a match, so the
+// read refuses a revoke the server would carry out, which fails closed.
+//
+// The fold has a unit test and no engine test. No engine test applies a
+// pattern on the servers CI starts with lower_case_table_names=1, and a server
+// with 2 needs a file system that compares names without case, which no CI
+// runner has.
+func (o Options) MatchesDatabase(pattern, name string) bool {
+	if o.LiteralDatabaseNames {
+		return mysqlname.NamesOf(o.FoldCase).Same(pattern, name)
 	}
-	if g.options.FoldCase {
+	if o.FoldCase {
 		pattern, name = strings.ToLower(pattern), strings.ToLower(name)
 	}
 	return likeMatch(pattern, name)
@@ -279,8 +309,8 @@ func (g Grants) sameName(a, b string) bool {
 }
 
 // likeMatch is the server's comparison of a name with a privilege pattern: `%`
-// is any run of bytes, `_` is one byte, and a backslash takes the next byte
-// literally.
+// is any run of bytes, `_` is one byte, a backslash takes the next byte
+// literally, and a backslash that ends the pattern is the byte itself.
 func likeMatch(pattern, name string) bool {
 	p, n := 0, 0
 	retryPattern, retryName := -1, 0
@@ -292,10 +322,10 @@ func likeMatch(pattern, name string) bool {
 		case p < len(pattern) && pattern[p] == '_':
 			p++
 			n++
-		case p < len(pattern) && pattern[p] == '\\' && p+1 < len(pattern) && pattern[p+1] == name[n]:
+		case p+1 < len(pattern) && pattern[p] == '\\' && pattern[p+1] == name[n]:
 			p += 2
 			n++
-		case p < len(pattern) && pattern[p] != '\\' && pattern[p] == name[n]:
+		case p < len(pattern) && (pattern[p] != '\\' || p+1 == len(pattern)) && pattern[p] == name[n]:
 			p++
 			n++
 		case retryPattern >= 0:

@@ -387,6 +387,9 @@ func TestLikeSemantics(t *testing.T) {
 		{pattern: `a\%c`, name: "a%c", want: true},
 		{pattern: `a\%c`, name: "aXc", want: false},
 		{pattern: `a\\c`, name: `a\c`, want: true},
+		{pattern: `ab%\`, name: `abx\`, want: true},
+		{pattern: `ab%\`, name: "abxy", want: false},
+		{pattern: `a\`, name: `a\`, want: true},
 		{pattern: `ptah\_rt\_%`, name: "ptah_rt_x", want: true},
 		{pattern: `ptah\_rt\_%`, name: "ptahXrt_x", want: false},
 		{pattern: "ab%%", name: "ab", want: true},
@@ -615,6 +618,48 @@ func TestGrantable(t *testing.T) {
 			grants := mysqlgrants.Parse(test.lines, mysqlgrants.Options{})
 
 			c.Assert(grants.OnDatabase("fx").Grantable(test.names...), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestOptions_MatchesDatabase applies a database-level row to a database name
+// as the server's privilege check does: `_` is one byte, so two of them match
+// a two-byte letter and one does not, and a backslash takes the next byte
+// literally, so an escaped wildcard matches only itself, and one that ends the
+// pattern is the byte itself.
+func TestOptions_MatchesDatabase(t *testing.T) {
+	tests := []struct {
+		name    string
+		options mysqlgrants.Options
+		pattern string
+		db      string
+		want    bool
+	}{
+		{name: "a percent sign", pattern: "cs%", db: "cs1", want: true},
+		{name: "an underscore", pattern: "c_1", db: "cs1", want: true},
+		{name: "two underscores over a two-byte letter", pattern: "nx__d", db: "nxéd", want: true},
+		{name: "one underscore over a two-byte letter", pattern: "nx_d", db: "nxéd"},
+		{name: "an escaped underscore", pattern: `ab\_c`, db: "ab_c", want: true},
+		{name: "an escaped underscore over another letter", pattern: `ab\_c`, db: "abxc"},
+		{name: "an escaped percent sign over an underscore", pattern: `ab\%c`, db: "ab_c"},
+		{name: "an escaped percent sign over itself", pattern: `ab\%c`, db: "ab%c", want: true},
+		{name: "an escaped backslash", pattern: `ab\\c`, db: `ab\c`, want: true},
+		{name: "a trailing backslash", pattern: `ab%\`, db: `abx\`, want: true},
+		{name: "a trailing backslash over another byte", pattern: `ab%\`, db: "abxy"},
+		{name: "another case", pattern: "WC%", db: "wc1"},
+		{name: "another case, folded", options: mysqlgrants.Options{FoldCase: true}, pattern: "WC%", db: "wc1", want: true},
+		{name: "a literal name", options: mysqlgrants.Options{LiteralDatabaseNames: true}, pattern: "cs%", db: "cs1"},
+		{name: "a literal name over itself", options: mysqlgrants.Options{LiteralDatabaseNames: true}, pattern: "cs%", db: "cs%", want: true},
+		{
+			name:    "a literal name in another case, folded",
+			options: mysqlgrants.Options{LiteralDatabaseNames: true, FoldCase: true}, pattern: "CS%", db: "cs%", want: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.options.MatchesDatabase(test.pattern, test.db), qt.Equals, test.want)
 		})
 	}
 }
