@@ -486,7 +486,9 @@ func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 
 // SingleSession reports whether the database lives in this connection's one
 // session, as an in-memory SQLite database does: `sqlite://:memory:`, or a URL
-// with `mode=memory`. Opening the same URL again does not reach a private
+// with `mode=memory`. A `file:` URI with no name, as in `sqlite:file:`, is one
+// too: SQLite opens it as a temporary database of its own for each
+// connection. Opening the same URL again does not reach a private
 // in-memory database: each open of one is a new, empty database. A caller that
 // needs this database read somewhere else hands over this connection, not its
 // URL.

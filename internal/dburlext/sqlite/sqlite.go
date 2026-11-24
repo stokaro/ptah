@@ -97,6 +97,9 @@ type location struct {
 // decodes a percent escape in the URI's name, and shares a database in memory
 // among the connections that open its name with `cache=shared`; an empty name
 // is a private temporary database.
+//
+// SQLite applies the last value of a parameter given twice, so cache is read
+// by its last value. A mode given twice is refused by [RefuseRepeatedMode].
 func locate(parsed *url.URL) (location, error) {
 	path := parsed.Opaque
 	switch {
@@ -118,6 +121,9 @@ func locate(parsed *url.URL) (location, error) {
 		name = decoded
 	}
 	query := parsed.Query()
+	if err := RefuseRepeatedMode(query); err != nil {
+		return location{}, err
+	}
 	unnamed := name == "" || name == "/:memory:" || name == ":memory:"
 	memoryMode := query.Get("mode") == "memory"
 	if !unnamed && !memoryMode {
@@ -132,10 +138,36 @@ func locate(parsed *url.URL) (location, error) {
 		}
 		name, uri = decoded, true
 	}
-	if uri && name != "" && query.Get("cache") == "shared" {
+	if uri && name != "" && lastValue(query, "cache") == "shared" {
 		return location{memory: true, shared: name}, nil
 	}
 	return location{memory: true}, nil
+}
+
+// ErrRepeatedMode is the refusal of a SQLite URL that gives mode more than once.
+var ErrRepeatedMode = errors.New("invalid SQLite database URL: mode is given more than once")
+
+// RefuseRepeatedMode returns [ErrRepeatedMode] when query gives mode more than
+// once, and nil otherwise. SQLite applies the last mode, and a reader that
+// takes the first would call a database in memory a file, or a file a database
+// in memory. The connector (internal/connector/sqliteconnect) and the
+// comparison of two URLs refuse through this one rule, so neither can open or
+// compare a URL the other refuses.
+func RefuseRepeatedMode(query url.Values) error {
+	if len(query["mode"]) > 1 {
+		return ErrRepeatedMode
+	}
+	return nil
+}
+
+// lastValue is the value SQLite applies for a parameter: the last one given,
+// or empty when there is none.
+func lastValue(query url.Values, key string) string {
+	values := query[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[len(values)-1]
 }
 
 // unescapeURIName decodes the percent escapes in the name of a `file:` URI, as

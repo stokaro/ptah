@@ -86,8 +86,12 @@ func TestSchemaApplyInMemoryDevDatabaseE2E_HappyPath(t *testing.T) {
 // process, so the dev database's reset would empty the target, and both
 // binaries refuse the pair. The pinned community binary applies it: we are
 // stricter here, deliberately.
+//
+// SQLite applies the last cache value of a URL that gives two, so a name whose
+// last cache is shared is the same one database, and is refused too.
 func TestSchemaApplyInMemoryDevDatabaseE2E_FailurePath(t *testing.T) {
 	const shared = "sqlite://db?mode=memory&cache=shared"
+	const lastShared = "sqlite://db?mode=memory&cache=private&cache=shared"
 	tests := []struct {
 		memoryApplyCase
 		wantExit int
@@ -101,6 +105,18 @@ func TestSchemaApplyInMemoryDevDatabaseE2E_FailurePath(t *testing.T) {
 		{
 			memoryApplyCase: memoryApplyCase{
 				name: "compatibility", binary: clirun.Compat, urlFlag: "--url", target: shared, dev: shared,
+			},
+			wantExit: 1,
+		},
+		{
+			memoryApplyCase: memoryApplyCase{
+				name: "native, the last cache shared", binary: clirun.Ptah, urlFlag: "--db-url", target: lastShared, dev: lastShared,
+			},
+			wantExit: 2,
+		},
+		{
+			memoryApplyCase: memoryApplyCase{
+				name: "compatibility, the last cache shared", binary: clirun.Compat, urlFlag: "--url", target: lastShared, dev: lastShared,
 			},
 			wantExit: 1,
 		},

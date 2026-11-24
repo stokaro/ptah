@@ -90,6 +90,31 @@ func TestSameDatabase_FailurePath(t *testing.T) {
 	}
 }
 
+// TestSameDatabase_FailurePathRefusesARepeatedMode compares URLs that give
+// mode twice. SQLite applies the last mode and the connector reads the first,
+// so whether the URL names a database in memory has two answers, and the
+// comparison refuses it on either side, as the connector refuses to open it.
+func TestSameDatabase_FailurePathRefusesARepeatedMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		left  string
+		right string
+	}{
+		{name: "on the left", left: "sqlite://x?mode=memory&cache=private&mode=rwc", right: "sqlite://:memory:"},
+		{name: "on the right", left: "sqlite://:memory:", right: "sqlite:file:x?mode=rwc&mode=memory&cache=shared"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := sqlite.Services().Databases.SameDatabase(must.Must(atlasurl.Parse(test.left)), must.Must(atlasurl.Parse(test.right)))
+
+			c.Assert(err, qt.ErrorIs, sqlite.ErrRepeatedMode)
+			c.Assert(got, qt.IsFalse)
+		})
+	}
+}
+
 // TestSameDatabase_AgreesWithTheDriver opens each pair of URLs naming a
 // database in memory, creates a table through the first connection and looks
 // for it through the second. SameDatabase answers what the driver does: a
@@ -118,6 +143,10 @@ func TestSameDatabase_AgreesWithTheDriver(t *testing.T) {
 		{name: "the shared unnamed URI", left: "sqlite://file::memory:?cache=shared", right: "sqlite://file::memory:?cache=shared"},
 		{name: "cache=shared outside a URI", left: "sqlite://:memory:?cache=shared", right: "sqlite://:memory:?cache=shared"},
 		{name: "cache=shared on an unnamed database", left: "sqlite://?mode=memory&cache=shared", right: "sqlite://?mode=memory&cache=shared"},
+		{name: "cache=shared on an unnamed URI", left: "sqlite:file:?cache=shared", right: "sqlite:file:?cache=shared"},
+		{name: "a repeated cache that ends shared", left: "sqlite://x?mode=memory&cache=private&cache=shared", right: "sqlite://x?mode=memory&cache=private&cache=shared"},
+		{name: "a repeated cache that ends private", left: "sqlite://x?mode=memory&cache=shared&cache=private", right: "sqlite://x?mode=memory&cache=shared&cache=private"},
+		{name: "a percent escape in a name without file:", left: "sqlite:a%2Db?mode=memory&cache=shared", right: "sqlite:a-b?mode=memory&cache=shared"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -27,13 +27,13 @@ func heldDatabase(c *qt.C, url, statements string) *dbschema.DatabaseConnection 
 }
 
 // TestDiffHeldSession compares two private in-memory SQLite databases: --from
-// holds a, b and c, and --to holds a and b. A side whose connection the caller
-// holds is read on it, and each connection is bound to its side, so two
-// private databases opened with one URL are read as the two they are. A side
-// the caller does not hold, or holds on a connection opened with another URL,
-// is opened again by its URL, which reaches a new, empty database, and the
-// plan drops every table: those rows are the control that the first rows'
-// answer came from the held connections.
+// holds a, b and c, and --to holds a and b. Both sides are handed over, and a
+// side whose connection the caller holds is read on it, and each connection
+// is bound to its side, so two private databases opened with one URL are read
+// as the two they are. A held connection opened with another URL than its side
+// names is not read: the side is opened again by its URL, which reaches a new,
+// empty database, and the plan drops every table. That row is the control that
+// the first rows' answer came from the held connections.
 func TestDiffHeldSession(t *testing.T) {
 	const fromURL, toURL = "sqlite://from?mode=memory", "sqlite://to?mode=memory"
 	tests := []struct {
@@ -42,27 +42,20 @@ func TestDiffHeldSession(t *testing.T) {
 		fromURL, toURL string
 		// toSide is the URL --to names.
 		toSide string
-		// holdTo hands the --to connection over; the --from one is always
-		// handed over.
-		holdTo bool
 		want   []string
 	}{
 		{
-			name: "both sides held", fromURL: fromURL, toURL: toURL, toSide: toURL, holdTo: true,
+			name: "both sides held", fromURL: fromURL, toURL: toURL, toSide: toURL,
 			want: []string{`DROP TABLE "c"`},
 		},
 		{
 			name:    "two private databases under one URL",
-			fromURL: "sqlite://db?mode=memory", toURL: "sqlite://db?mode=memory", toSide: "sqlite://db?mode=memory", holdTo: true,
+			fromURL: "sqlite://db?mode=memory", toURL: "sqlite://db?mode=memory", toSide: "sqlite://db?mode=memory",
 			want: []string{`DROP TABLE "c"`},
 		},
 		{
-			name: "the side that is not held is empty", fromURL: fromURL, toURL: toURL, toSide: toURL, holdTo: false,
-			want: []string{`DROP TABLE "a"`, `DROP TABLE "b"`, `DROP TABLE "c"`},
-		},
-		{
 			name:    "a connection opened with another URL is not read",
-			fromURL: fromURL, toURL: toURL, toSide: "sqlite://elsewhere?mode=memory", holdTo: true,
+			fromURL: fromURL, toURL: toURL, toSide: "sqlite://elsewhere?mode=memory",
 			want: []string{`DROP TABLE "a"`, `DROP TABLE "b"`, `DROP TABLE "c"`},
 		},
 	}
@@ -70,29 +63,56 @@ func TestDiffHeldSession(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			from := heldDatabase(c, test.fromURL,
-				"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY); "+
-					"CREATE TABLE c (id INTEGER PRIMARY KEY);")
-			to := heldDatabase(c, test.toURL,
-				"CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY);")
-			toHeld := map[bool]*dbschema.DatabaseConnection{true: to}[test.holdTo]
+			from := heldDatabase(c, test.fromURL, threeTables)
+			to := heldDatabase(c, test.toURL, twoTables)
 
-			report, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
-				Runtime:  must.Must(builtin.New()),
-				FromURLs: []string{test.fromURL},
-				ToURLs:   []string{test.toSide},
-				FromHeld: from,
-				ToHeld:   toHeld,
-			})
+			statements := heldDiff(c, test.fromURL, test.toSide, from, to)
 
-			c.Assert(err, qt.IsNil)
-			statements := make([]string, 0, len(report.Changes))
-			for _, change := range report.Changes {
-				statements = append(statements, change.Cmd)
-			}
 			c.Assert(statements, qt.ContentEquals, test.want)
 		})
 	}
+}
+
+// TestDiffHeldSession_ToSideNotHeld hands over the --from connection only. The
+// --to side is opened again by its URL, which reaches a new, empty database,
+// so the plan drops every table.
+func TestDiffHeldSession_ToSideNotHeld(t *testing.T) {
+	c := qt.New(t)
+	const fromURL, toURL = "sqlite://from?mode=memory", "sqlite://to?mode=memory"
+	from := heldDatabase(c, fromURL, threeTables)
+	heldDatabase(c, toURL, twoTables)
+
+	statements := heldDiff(c, fromURL, toURL, from, nil)
+
+	c.Assert(statements, qt.ContentEquals, []string{`DROP TABLE "a"`, `DROP TABLE "b"`, `DROP TABLE "c"`})
+}
+
+// threeTables and twoTables are the --from and the --to schema of the held
+// session tests.
+const (
+	threeTables = "CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY); " +
+		"CREATE TABLE c (id INTEGER PRIMARY KEY);"
+	twoTables = "CREATE TABLE a (id INTEGER PRIMARY KEY); CREATE TABLE b (id INTEGER PRIMARY KEY);"
+)
+
+// heldDiff compares fromURL with toSide, reading each side on the connection
+// handed over for it, and returns the planned statements. A nil connection
+// hands over none.
+func heldDiff(c *qt.C, fromURL, toSide string, from, to *dbschema.DatabaseConnection) []string {
+	c.Helper()
+	report, err := atlasschema.Diff(c.Context(), atlasschema.DiffOptions{
+		Runtime:  must.Must(builtin.New()),
+		FromURLs: []string{fromURL},
+		ToURLs:   []string{toSide},
+		FromHeld: from,
+		ToHeld:   to,
+	})
+	c.Assert(err, qt.IsNil)
+	statements := make([]string, 0, len(report.Changes))
+	for _, change := range report.Changes {
+		statements = append(statements, change.Cmd)
+	}
+	return statements
 }
 
 // TestDiffHeldSession_FileIsOpenedAgain holds a connection to a database file

@@ -154,6 +154,7 @@ own measurement conditions.
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
 | [A SQL file naming a database beside a dev database](#a-sql-file-naming-a-database-beside-a-dev-database) | creates a file naming one database inside the dev database, and refuses one naming two before running it | runs the file as written on the dev connection and creates its tables in the databases it names, the target included |
 | [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
+| [One shared-cache SQLite name as the target and the dev database](#one-shared-cache-sqlite-name-as-the-target-and-the-dev-database) | refuses the pair, as it refuses a dev database that is the target | plans and applies, exit `0` (v1.4.0) |
 | [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
@@ -1719,6 +1720,32 @@ before it connects. The divergence is stricter, not looser: `ptah-compat`
 exits `1` where the binary exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3885`](https://github.com/stokaro/ptah/issues/3885)
+
+## One shared-cache SQLite name as the target and the dev database
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A SQLite URL that names a database in memory with
+`cache=shared`, such as `sqlite://memdb1?mode=memory&cache=shared`, gives
+every connection of a process that opens the name one database. Given as both
+`--url` and `--dev-url`, the dev database is the target, and `ptah-compat`
+refuses the pair as it refuses a dev database that is the target on any
+engine. Two private databases in memory, `sqlite://dev?mode=memory` on both
+flags, are two databases and run.
+
+Measured on 2026-11-24 with `schema apply --to file://schema.sql
+--auto-approve`, a file creating one table, and that URL on both flags:
+
+| Binary | Result |
+| --- | --- |
+| Pinned community binary v1.4.0 | plans the table and applies it, exit `0` |
+| `ptah-compat` | prints the plan and exits `1` with `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it` |
+
+The database starts empty in each process, so the binary's run loses nothing
+here. The refusal is the rule every engine follows, because the reset that
+prepares a dev database discards what the target holds. A second name for the dev
+database, or a private one, runs. The divergence is stricter, not looser:
+`ptah-compat` exits `1` where the binary exits `0`, never the reverse.
 
 ## A YDB database URL
 
