@@ -352,3 +352,137 @@ func TestMigrationsDrift_FailurePathStopsWhenTheRunIsCanceled(t *testing.T) {
 	c.Assert(failure.Error, qt.IsNotNil)
 	c.Assert(failure.Error.Message, qt.Equals, "error connecting to database: failed to ping database: context canceled")
 }
+
+// Each target reads the migration directory its own instance names. The
+// instances choose between two data.template_dir sources, one holding both
+// migrations and one only the first, and neither database has run any, so the
+// pending migrations each target reports come from its own directory.
+func TestMigrationsDrift_HappyPathReadsTheTemplateDirectoryOfEachInstance(t *testing.T) {
+	c := qt.New(t)
+	first, second := emptyTarget(c), emptyTarget(c)
+	header := templateDir + "data \"template_dir\" \"first\" {\n  path = \"first\"\n  vars = {}\n}\n"
+	env := "env {\n" +
+		"  for_each = {\n" +
+		"    a = { url = " + strconv.Quote(first.url) + ", dir = data.template_dir.migrations.url },\n" +
+		"    b = { url = " + strconv.Quote(second.url) + ", dir = data.template_dir.first.url },\n" +
+		"  }\n" +
+		"  name = atlas.env\n" +
+		"  url  = each.value.url\n" +
+		"  dev  = " + strconv.Quote(first.shadowURL) + "\n" +
+		"  migration {\n    dir = each.value.dir\n  }\n" +
+		"}\n"
+	path := projectWith(c, header, env)
+	only := filepath.Join(filepath.Dir(path), "first")
+	c.Assert(os.Mkdir(only, 0o750), qt.IsNil)
+	for _, name := range []string{"0000000001_users.up.sql", "0000000001_users.down.sql"} {
+		c.Assert(os.WriteFile(filepath.Join(only, name), []byte(driftMigrations[name]), 0o600), qt.IsNil)
+	}
+
+	_, summaries, code := targetsReport(c, path)
+
+	c.Assert(code, qt.Equals, 0)
+	c.Assert(summaries, qt.DeepEquals, []targetSummary{
+		{Instance: 1, URL: first.url, Outcome: migrator.DriftClean, Pending: []string{"1", "2"}},
+		{Instance: 2, URL: second.url, Outcome: migrator.DriftClean, Pending: []string{"1"}},
+	})
+}
+
+// oneDatabaseForEveryTarget is the refusal of --db-url over the two targets of
+// the env "tenants".
+const oneDatabaseForEveryTarget = `--db-url or PTAH_DB_URL sets one database for every target, and env "tenants" ` +
+	`names 2 targets with a url each; leave both unset to report each target`
+
+// --db-url would replace the url of every target, so the report would read one
+// database once per target and call each tenant what that database is. The
+// run is refused before it opens anything: the shadow database it would
+// replay on is never created.
+func TestMigrationsDrift_FailurePathRefusesADatabaseURLFlagOverTargets(t *testing.T) {
+	c := qt.New(t)
+	clean, drifted := newTarget(c, "2"), newTarget(c, "2", "ALTER TABLE users ADD COLUMN nickname TEXT")
+	path := forEachProject(c, clean.shadowURL, clean.url, drifted.url)
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--config", path, "--env", "tenants",
+		"--migrations-dir", clean.dir, "--db-url", clean.url)
+
+	c.Assert(code, qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "error: "+oneDatabaseForEveryTarget+"\n")
+	_, err := os.Stat(strings.TrimPrefix(clean.shadowURL, "sqlite://"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// PTAH_DB_URL sets --db-url as the flag does, and is refused the same way,
+// with --json too.
+func TestMigrationsDrift_FailurePathRefusesADatabaseURLVariableOverTargets(t *testing.T) {
+	c := qt.New(t)
+	clean, drifted := newTarget(c, "2"), newTarget(c, "2", "ALTER TABLE users ADD COLUMN nickname TEXT")
+	path := forEachProject(c, clean.shadowURL, clean.url, drifted.url)
+	c.Setenv("PTAH_DB_URL", clean.url)
+
+	stdout, _, code := run(c, "migrations", "drift", "--json", "--config", path, "--env", "tenants",
+		"--migrations-dir", clean.dir)
+
+	c.Assert(code, qt.Equals, 2)
+	var failure errorkind.Failure
+	c.Assert(json.Unmarshal([]byte(stdout), &failure), qt.IsNil, qt.Commentf("stdout: %s", stdout))
+	c.Assert(failure.Command, qt.Equals, migrationsdrift.Command)
+	c.Assert(failure.Error, qt.IsNotNil)
+	c.Assert(failure.Error.Message, qt.Equals, oneDatabaseForEveryTarget)
+	_, err := os.Stat(strings.TrimPrefix(clean.shadowURL, "sqlite://"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// A for_each env that expands to one instance is a collection too, so
+// --db-url is refused over it, and the refusal names the one target as one.
+func TestMigrationsDrift_FailurePathRefusesADatabaseURLOverOneInstance(t *testing.T) {
+	c := qt.New(t)
+	clean := newTarget(c, "2")
+	path := forEachProject(c, clean.shadowURL, clean.url)
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--config", path, "--env", "tenants",
+		"--migrations-dir", clean.dir, "--db-url", clean.url)
+
+	c.Assert(code, qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, `error: --db-url or PTAH_DB_URL sets one database for the target, and env "tenants" `+
+		`names one target with a url of its own; leave both unset to report that target`+"\n")
+	_, err := os.Stat(strings.TrimPrefix(clean.shadowURL, "sqlite://"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// An empty --db-url names no database, and is still refused over the targets
+// of an env, because it is set. The refusal says so rather than claiming one
+// database for every target.
+func TestMigrationsDrift_FailurePathRefusesAnEmptyDatabaseURLOverTargets(t *testing.T) {
+	c := qt.New(t)
+	clean, drifted := newTarget(c, "2"), newTarget(c, "2", "ALTER TABLE users ADD COLUMN nickname TEXT")
+	path := forEachProject(c, clean.shadowURL, clean.url, drifted.url)
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--config", path, "--env", "tenants",
+		"--migrations-dir", clean.dir, "--db-url", "")
+
+	c.Assert(code, qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, `error: --db-url or PTAH_DB_URL is set, though empty, and env "tenants" `+
+		`names 2 targets with a url each; leave both unset to report each target`+"\n")
+}
+
+// An env without for_each is one target, and --db-url still chooses its
+// database over the env's url: the env names the drifted database and the
+// flag the clean one, and the report is of the clean one.
+func TestMigrationsDrift_HappyPathTakesADatabaseURLForOneEnv(t *testing.T) {
+	c := qt.New(t)
+	clean, drifted := newTarget(c, "2"), newTarget(c, "2", "ALTER TABLE users ADD COLUMN nickname TEXT")
+	path := projectWith(c, "", "env \"local\" {\n"+
+		"  url = "+strconv.Quote(drifted.url)+"\n"+
+		"  dev = "+strconv.Quote(clean.shadowURL)+"\n"+
+		"}\n")
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--json", "--config", path, "--env", "local",
+		"--migrations-dir", clean.dir, "--db-url", clean.url)
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	var got document
+	c.Assert(json.Unmarshal([]byte(stdout), &got), qt.IsNil, qt.Commentf("stdout: %s", stdout))
+	c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftClean)
+}
