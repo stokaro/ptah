@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/envbinding"
 )
@@ -71,9 +72,23 @@ type atlasLockRequest struct {
 func registerAtlasLockNameFlag(flags *pflag.FlagSet, opts *atlasLockOptions) {
 	flags.StringVar(&opts.name, atlasLockNameFlag, "",
 		"Name of the database advisory lock to acquire; unset uses the default lock name")
-	if err := cmdflags.RefuseEmptyEnv(flags, atlasLockNameFlag, envbinding.EmptyRule{Omitted: "use the default lock name"}); err != nil {
+	if err := cmdflags.RefuseEmptyEnv(flags, atlasLockNameFlag, atlasLockNameEmptyRule); err != nil {
 		panic(err) // the flag is registered above, and the rule names what leaving it out does
 	}
+}
+
+// atlasLockNameEmptyRule is what PTAH_LOCK_NAME refuses; see
+// [registerAtlasLockNameFlag].
+var atlasLockNameEmptyRule = envbinding.EmptyRule{Omitted: "use the default lock name"}
+
+// atlasForwardedLockNameFlag is the --lock-name of a verb that forwards to a
+// native command, mapped onto the native --migration-lock-name. Its variable
+// refuses an empty or blank value, as on the verbs that take the lock
+// themselves.
+func atlasForwardedLockNameFlag(usage string) atlasargs.Flag {
+	flag := atlasargs.NativeString(atlasLockNameFlag, "", usage, "migration-lock-name")
+	flag.EmptyEnv = atlasLockNameEmptyRule
+	return flag
 }
 
 // registerAtlasSkipLockFlag registers `--skip-lock` on a verb that Atlas

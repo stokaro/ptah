@@ -230,7 +230,7 @@ func atlasMigrateDriftVerb() atlasVerb {
 				atlasDriftFormatReason),
 			atlasargs.NativeString("lock-timeout", "", "How long to wait for the migration lock",
 				"migration-lock-timeout"),
-			atlasargs.NativeString(atlasLockNameFlag, "", "Name of the migration lock", "migration-lock-name"),
+			atlasForwardedLockNameFlag("Name of the migration lock"),
 			atlasargs.UnsupportedBoolReason(atlasSkipLockFlag, "", "Skip taking the migration lock",
 				atlasDriftSkipLockReason),
 			atlasargs.NativeBool(atlasNoCacheFlag, "", "Compute the expected state again; Ptah does on every run",

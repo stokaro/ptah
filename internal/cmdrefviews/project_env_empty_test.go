@@ -175,6 +175,7 @@ func TestEveryProjectEnvCommandRefusesAnEmptyVariable(t *testing.T) {
 				projectEnvDir(c, tree.file, tree.contents)
 				c.Setenv("PTAH_ENV", value.value)
 				c.Setenv("PTAH_ATLAS_SECURITY_SCAN", "1")
+				c.Setenv("PTAH_ATLAS_MIGRATE_DRIFT", "1")
 				commands := projectEnvCommands(tree.tree())
 
 				c.Assert(len(commands) >= tree.floor, qt.IsTrue, qt.Commentf("found %d commands", len(commands)))
@@ -220,6 +221,7 @@ func TestProjectEnvCommandsReadAnEmptyVariableAsUnsetOtherwise(t *testing.T) {
 					projectEnvDir(c, tree.file, test.contents(tree))
 					c.Setenv("PTAH_ENV", value.value)
 					c.Setenv("PTAH_ATLAS_SECURITY_SCAN", "1")
+					c.Setenv("PTAH_ATLAS_MIGRATE_DRIFT", "1")
 					commands := projectEnvCommands(tree.tree())
 
 					c.Assert(len(commands) >= tree.floor, qt.IsTrue, qt.Commentf("found %d commands", len(commands)))
@@ -248,6 +250,7 @@ func TestEveryCompatProjectEnvCommandRefusesAnEmptyVariableBesideAFileItCannotRe
 				projectEnvDir(c, tree.file, "env \"dev\" {\n")
 				c.Setenv("PTAH_ENV", value.value)
 				c.Setenv("PTAH_ATLAS_SECURITY_SCAN", "1")
+				c.Setenv("PTAH_ATLAS_MIGRATE_DRIFT", "1")
 				commands := projectEnvCommands(tree.tree())
 
 				c.Assert(len(commands) >= tree.floor, qt.IsTrue, qt.Commentf("found %d commands", len(commands)))
