@@ -430,7 +430,7 @@ func TestValidateChange_AcceptsADefaultedSchema(t *testing.T) {
 // synonym in each is its own: a key that trimmed would pair the two, so a plan
 // could repoint the synonym of one schema at the target declared for the
 // other. A trailing space is not part of the name, since the
-// server compares names without it.
+// server compares names without it, and a trailing tab is.
 func TestSynonym_RefKeepsTheSpaceOfAName(t *testing.T) {
 	c := qt.New(t)
 
@@ -438,9 +438,11 @@ func TestSynonym_RefKeepsTheSpaceOfAName(t *testing.T) {
 	plain := synonym.Synonym{Schema: "b", Name: "s", Target: "dbo.orders"}.Ref()
 	upper := synonym.Synonym{Schema: " B", Name: "S", Target: "dbo.orders"}.Ref()
 	trailing := synonym.Synonym{Schema: "b ", Name: "s ", Target: "dbo.orders"}.Ref()
+	tabbed := synonym.Synonym{Schema: "b\t", Name: "s", Target: "dbo.orders"}.Ref()
 
 	c.Assert(spaced.Key(), qt.Not(qt.Equals), plain.Key())
 	c.Assert(spaced.Key(), qt.Equals, upper.Key())
 	c.Assert(trailing.Key(), qt.Equals, plain.Key())
+	c.Assert(tabbed.Key(), qt.Not(qt.Equals), plain.Key())
 	c.Assert(spaced.Schema.Source, qt.Equals, " b")
 }

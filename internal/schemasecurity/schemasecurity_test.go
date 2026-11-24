@@ -174,6 +174,19 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
+			// CREATE SCHEMA "PUBLIC" makes another schema, and PostgreSQL
+			// ships nothing on it either.
+			name:    "USAGE on the schema \"PUBLIC\" to PUBLIC is",
+			dialect: "postgres",
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
+					{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "PUBLIC"},
+				},
+			},
+			wantCodes:   []string{"PRV03"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
+		},
+		{
 			// CREATE was revoked from PUBLIC by default in PostgreSQL 15, so a
 			// database that grants it is stating something.
 			name:    "CREATE on the same schema to PUBLIC is",

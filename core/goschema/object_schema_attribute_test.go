@@ -61,10 +61,10 @@ func TestParseSource_ADeclaredSchemaReachesTheObjectName(t *testing.T) {
 			why:        "the attribute is trimmed as a table's is, so it names the live app.v_users",
 		},
 		{
-			name:       "view, a schema with a space after it",
-			annotation: `//ptah:schema:view name="v" schema="app " body="SELECT 1"`,
-			want:       "app.v",
-			why:        "Canonical keeps the bytes of a schema, so the tag is trimmed where it is read",
+			name:       "view, a quoted schema with a space after it",
+			annotation: `//ptah:schema:view name="v" schema="\"app \"" body="SELECT 1"`,
+			want:       `"app ".v`,
+			why:        "Canonical keeps the bytes of a schema, and the quoted spelling is how a tag names one with a space",
 		},
 		{
 			name:       "function, a name with a space before it",

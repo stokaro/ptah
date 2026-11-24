@@ -1034,3 +1034,10 @@ v0.34.0 ptah.run/core/difftypes
 # Atlas project file by dialect name, in a map, so a DiffConfig is not a
 # comparable value. Nothing compares one. Pre-v1, so no compatibility is owed.
 v0.34.0 ptah.run/config/projectconfig
+
+# QualifiedName returns an error. A bare table name that begins or ends with
+# white space is refused rather than trimmed: the catalog keeps a name's bytes,
+# so a trimmed " t" named the table t, and an apply beside a live " t" created
+# t and dropped " t" with its rows. The quoted spelling keeps the space. Pre-v1,
+# so no compatibility is owed.
+v0.35.1 ptah.run/core/annotation

@@ -177,7 +177,7 @@ func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catal
 			return strings.EqualFold(grant.Role, "PUBLIC") &&
 				strings.EqualFold(strings.TrimSpace(grant.Privilege), "USAGE") &&
 				strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") &&
-				strings.EqualFold(grant.ObjectName, "public") &&
+				grant.ObjectName == "public" &&
 				!grant.WithOption
 		},
 	)
@@ -228,11 +228,12 @@ func withoutInspectedPublications(objects schemaext.Objects) schemaext.Objects {
 
 // isPostgresPublicUsageBaseline reports whether a grant is the USAGE on schema
 // public that PostgreSQL gives PUBLIC. The role and the schema keep their
-// bytes: " public" is another schema, and a grant on it is authored content
-// the strict refusal has to see.
+// bytes, and the schema its case: " public" and "PUBLIC" are other schemas,
+// and a grant on one is authored content the strict refusal has to see. The
+// role PUBLIC is a keyword, which a read spells in either case.
 func isPostgresPublicUsageBaseline(grant schemamodel.Grant) bool {
 	return strings.EqualFold(grant.Role, "PUBLIC") &&
-		strings.EqualFold(grant.OnSchema, "public") &&
+		grant.OnSchema == "public" &&
 		strings.TrimSpace(grant.OnTable) == "" &&
 		strings.TrimSpace(grant.OnSequence) == "" &&
 		!grant.WithOption &&

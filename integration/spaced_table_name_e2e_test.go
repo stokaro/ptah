@@ -205,3 +205,83 @@ func TestSpacedTableNameDropE2E(t *testing.T) {
 		})
 	}
 }
+
+// spacedTableBareSources declare ` t` with its name written bare. Read
+// trimmed, each named t, and an apply beside a live ` t` planned a CREATE of t
+// and a DROP of ` t` and lost its row.
+var spacedTableBareSources = []struct {
+	name   string
+	flag   string
+	file   string
+	target string
+	body   string
+}{
+	{
+		name:   "YAML name",
+		flag:   "--schema-file",
+		file:   "schema.yaml",
+		target: "schema.yaml",
+		body: `tables:
+  spaced:
+    name: " t"
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+`,
+	},
+	{
+		name:   "YAML key",
+		flag:   "--schema-file",
+		file:   "schema.yaml",
+		target: "schema.yaml",
+		body: `tables:
+  " t":
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+`,
+	},
+	{
+		name:   "Go",
+		flag:   "--root-dir",
+		file:   "models.go",
+		target: "",
+		body: `package models
+
+//ptah:schema:table name=" t"
+type Spaced struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true" not_null="true"
+	ID int
+}
+`,
+	},
+}
+
+// TestSpacedTableNameBareSpellingE2E applies each bare spelling of ` t` to a
+// database holding ` t` and t. The read refuses the name before the run
+// connects to plan, so the command exits non-zero and both tables keep their
+// rows.
+func TestSpacedTableNameBareSpellingE2E(t *testing.T) {
+	for _, engine := range spacedTableEngines {
+		for _, source := range spacedTableBareSources {
+			t.Run(engine.name+"/"+source.name, func(t *testing.T) {
+				c := qt.New(t)
+				database := engine.built(c, engine.create)
+				dir := c.TempDir()
+				c.Assert(os.WriteFile(filepath.Join(dir, source.file), []byte(source.body), 0o600), qt.IsNil)
+
+				applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+					"schema", "apply", "--db-url", database, source.flag, filepath.Join(dir, source.target), "--auto-approve")
+
+				c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+				c.Assert(applied.Stderr, qt.Contains, `" t" begins or ends with white space, which a bare name loses: write it as one quoted identifier, " t", or remove the space`)
+				c.Assert(spacedTableQuery(c, database, engine.tables), qt.Equals, "[ t](id) [t](id)")
+				c.Assert(spacedTableQuery(c, database, engine.rows), qt.Equals, "1,1")
+			})
+		}
+	}
+}

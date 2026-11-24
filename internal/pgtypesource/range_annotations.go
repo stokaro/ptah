@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/dialectscope"
-	"ptah.run/internal/tableref"
 )
 
 const rangeDirective = "ptah:schema:range"
@@ -52,7 +51,10 @@ func rangeAnnotationObject(declaration annotation.Declaration) (schemaext.Object
 			return schemaext.Object{}, &annotation.DeclarationError{Declaration: declaration, Attribute: "dialects", Err: err}
 		}
 	}
-	schema, name := rangeAnnotationNames(attrs["schema"], attrs["name"])
+	schema, name, err := annotation.QualifiedName(attrs["schema"], attrs["name"])
+	if err != nil {
+		return schemaext.Object{}, &annotation.DeclarationError{Declaration: declaration, Attribute: "name", Err: err}
+	}
 	value := &pgtype.DesiredRange{Subtype: strings.TrimSpace(attrs["subtype"]), SubtypeOpClass: optionalRangeValue(attrs["subtype_opclass"]),
 		Collation: optionalRangeValue(attrs["collation"]), Canonical: optionalRangeValue(attrs["canonical"]), SubtypeDiff: optionalRangeValue(attrs["subtype_diff"]),
 		Comment: strings.TrimSpace(attrs["comment"]), StructName: declaration.Struct}
@@ -135,14 +137,4 @@ func optionalRangeValue(value string) string {
 		return ""
 	}
 	return value
-}
-
-// rangeAnnotationNames decodes SQL identifier quotes before building an
-// identity. Schema and name attributes may quote significant spaces or dots.
-func rangeAnnotationNames(schema, name string) (schemaName, typeName string) {
-	schema, name = annotation.QualifiedName(schema, name)
-	if parsed, valid := tableref.Parse(schema); valid && !parsed.Qualified {
-		schema = parsed.Name
-	}
-	return schema, name
 }

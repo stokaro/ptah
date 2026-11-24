@@ -46,7 +46,10 @@ func typeAnnotationObject(declaration annotation.Declaration) (schemaext.Object,
 		return rangeAnnotationObject(declaration)
 	}
 	attrs := declaration.Attributes
-	schema, name := rangeAnnotationNames(attrs["schema"], attrs["name"])
+	schema, name, err := annotation.QualifiedName(attrs["schema"], attrs["name"])
+	if err != nil {
+		return schemaext.Object{}, &annotation.DeclarationError{Declaration: declaration, Attribute: "name", Err: err}
+	}
 	var value schemaext.Value
 	switch declaration.Directive {
 	case domainDirective:

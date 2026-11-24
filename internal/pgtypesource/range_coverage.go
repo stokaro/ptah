@@ -22,7 +22,10 @@ func rangeCoverage(limits []coverage.Object) (schemaext.Coverage, error) {
 			knowledge = unknown
 			continue
 		}
-		schema, name := annotation.QualifiedName("", limit.Name)
+		schema, name, err := annotation.QualifiedName("", limit.Name)
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
 		subjects = append(subjects, schemaext.SubjectCoverage{Kind: pgtype.RangeKind, Subject: pgtype.Ref(pgtype.RangeKind, schema, name), Knowledge: unknown})
 	}
 	return pgtype.Coverage(pgtype.RangeKind, schemaext.Desired, knowledge, subjects)

@@ -103,25 +103,41 @@ func (d Directive) Clone() Directive {
 }
 
 // QualifiedName splits a directive's name the way the frontend splits a table
-// directive's. A schema attribute names the schema, and the name keeps its
-// spelling apart from surrounding quotes. Without one, a schema-qualified
-// name such as `metrics.hourly` names the schema too, rather than an object
-// whose name holds a dot.
-func QualifiedName(schema, name string) (schemaName, objectName string) {
-	schemaName = strings.TrimSpace(schema)
+// directive's. A schema attribute names the schema. Without one, a
+// schema-qualified name such as `metrics.hourly` names the schema too, rather
+// than an object whose name holds a dot.
+//
+// The schema is taken as given, since the frontend reads a schema attribute
+// before a directive does: the space around it removed, and one quoted
+// identifier read as the name inside the quotes. A schema of white space
+// alone is none.
+//
+// The name is text an author typed, so the space around it is removed, and a
+// part written as one quoted identifier, `" t"` in double quotes, backticks or
+// brackets, is the name inside the quotes, bytes and all. A catalog holds " t"
+// and t as two objects, and the quoted spelling is how a directive names the
+// first. A bare name that begins or ends with white space is refused, because
+// the name read would not be the one written; the error says how to quote it.
+func QualifiedName(schema, name string) (schemaName, objectName string, err error) {
+	if tableref.BareSpace(name, "\"`[", "\"`]") {
+		return "", "", tableref.SpacedBareName("name", name)
+	}
+	if strings.TrimSpace(schema) != "" {
+		schemaName = schema
+	}
 	objectName = strings.TrimSpace(name)
 	if schemaName != "" {
 		if ref, ok := tableref.Parse(objectName); ok && !ref.Qualified {
 			objectName = ref.Name
 		}
-		return schemaName, objectName
+		return schemaName, objectName, nil
 	}
 	ref, ok := tableref.Parse(objectName)
 	if !ok {
-		return "", objectName
+		return "", objectName, nil
 	}
 	if !ref.Qualified {
-		return "", ref.Name
+		return "", ref.Name, nil
 	}
-	return ref.Schema, ref.Name
+	return ref.Schema, ref.Name, nil
 }

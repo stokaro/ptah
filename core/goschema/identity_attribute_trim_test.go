@@ -6,13 +6,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // schemaTrimSource declares one object of every directive that names a schema,
-// and the objects a table holds. {S} is where a space goes around a value the
-// tag reader trims: a schema, a table's name, and the name of a view qualified
-// by its schema. {N} is where one goes around a name that keeps its bytes.
+// and the objects a table holds. {S} is where a schema is written, and a
+// table's name, and {N} is where a space goes around a name that keeps its
+// bytes.
 const schemaTrimSource = `
 package fixture
 
@@ -34,7 +37,7 @@ type Order struct {
 //ptah:schema:sequence name="{N}counter{N}" schema="{S}app{S}"
 type Counter struct{}
 
-//ptah:schema:view name="{S}v_orders{S}" schema="{S}app{S}" body="SELECT 1"
+//ptah:schema:view name="v_orders" schema="{S}app{S}" body="SELECT 1"
 type OrderView struct{}
 
 //ptah:schema:function name="{N}touch{N}" returns="trigger" language="plpgsql" body="BEGIN RETURN NEW; END;"
@@ -56,28 +59,92 @@ func schemaTrimFixture(schema, name string) string {
 	return strings.NewReplacer("{S}", schema, "{N}", name).Replace(schemaTrimSource)
 }
 
-// A tag is text an author typed, so the space around a schema is removed where
-// the tag is read, as it is around a table's name: the source parses to the
-// model the same source without the space does. Every layer below keeps a schema name's bytes, so a schema read
-// with its space names another schema, and a sequence tagged schema="app "
-// beside a live app.counter planned a DROP of app.counter.
-func TestParseSource_TrimsTheSpaceAroundASchemaAttribute(t *testing.T) {
-	for _, around := range []string{" ", "\t", "  "} {
-		t.Run(strings.ReplaceAll(around, "\t", `\t`), func(t *testing.T) {
+// A bare schema or table name that begins or ends with white space is refused.
+// A tag is text an author typed, so the reader removes that space, and every
+// layer below keeps a name's bytes: name=" t" beside a live " t" planned a
+// CREATE TABLE t and a DROP TABLE " t", and the apply lost the rows of " t".
+// A sequence tagged schema="app " beside a live app.counter would plan in app
+// as if the author had written app.
+func TestParseSource_FailurePathRefusesASpacedBareSchemaOrTableName(t *testing.T) {
+	tests := []struct {
+		name, annotation, wantErr string
+	}{
+		{
+			name:       "a table name with a space before it",
+			annotation: `//ptah:schema:table name=" t"`,
+			wantErr:    `name " t" begins or ends with white space, which a bare name loses: write it as one quoted identifier, " t", or remove the space on //ptah:schema:table at S`,
+		},
+		{
+			name:       "a table name with a tab after it",
+			annotation: "//ptah:schema:table name=\"t\t\"",
+			wantErr:    `name "t\\t" begins or ends with white space, .*`,
+		},
+		{
+			name:       "a schema attribute with a space after it",
+			annotation: `//ptah:schema:table name="t" schema="app "`,
+			wantErr:    `schema attribute "app " begins or ends with white space, which a bare name loses: write it as one quoted identifier, "app ", or remove the space at fixture.go:3`,
+		},
+		{
+			name:       "a schema directive",
+			annotation: `//ptah:schema:schema name=" app"`,
+			wantErr:    `name attribute " app" begins or ends with white space, .* at fixture.go:3`,
+		},
+		{
+			name:       "a sequence's schema",
+			annotation: `//ptah:schema:sequence name="counter" schema=" app"`,
+			wantErr:    `schema attribute " app" begins or ends with white space, .* at fixture.go:3`,
+		},
+		{
+			name:       "a grant's schema",
+			annotation: `//ptah:schema:grant role="reader" privileges="USAGE" on_schema="app "`,
+			wantErr:    `on_schema attribute "app " begins or ends with white space, .* at fixture.go:3`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			want := mustParseSource(c, "schema.go", schemaTrimFixture("", ""))
 
-			got := mustParseSource(c, "schema.go", schemaTrimFixture(around, ""))
+			database, err := goschema.ParseSource(noOwners, "fixture.go",
+				"package m\n\n"+test.annotation+"\ntype S struct{}\n")
 
-			c.Assert(got.Schemas, qt.DeepEquals, want.Schemas)
-			c.Assert(got.Tables, qt.DeepEquals, want.Tables)
-			c.Assert(got.Fields, qt.DeepEquals, want.Fields)
-			c.Assert(got.Sequences, qt.DeepEquals, want.Sequences)
-			c.Assert(got.Views, qt.DeepEquals, want.Views)
-			c.Assert(got.ManagedData, qt.DeepEquals, want.ManagedData)
-			c.Assert(got.Grants, qt.DeepEquals, want.Grants)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.wantErr+`.*`)
+			c.Assert(database.Tables, qt.HasLen, 0)
 		})
 	}
+}
+
+// A schema or a table name written as one quoted identifier is the name inside
+// the quotes, bytes and all: it is how a tag names a live " t" beside a live t,
+// or the schema "app " beside app.
+func TestParseSource_ReadsAQuotedSchemaOrTableNameWithItsBytes(t *testing.T) {
+	c := qt.New(t)
+
+	db := mustParseSource(c, "schema.go", schemaTrimFixture(`\"`, ""))
+
+	c.Assert(db.Schemas, qt.HasLen, 1)
+	c.Assert(db.Schemas[0].Name, qt.Equals, "app")
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Name, qt.Equals, "orders")
+	c.Assert(db.Tables[0].Schema, qt.Equals, "app")
+
+	spaced := mustParseSource(c, "schema.go", strings.NewReplacer(`"{S}app{S}"`, `"\" app\""`,
+		`"{S}orders{S}"`, `"\"orders \""`, "{N}", "").Replace(schemaTrimSource))
+
+	c.Assert(spaced.Schemas, qt.HasLen, 1)
+	c.Assert(spaced.Schemas[0].Name, qt.Equals, " app")
+	c.Assert(spaced.Tables, qt.HasLen, 1)
+	c.Assert(spaced.Tables[0].Name, qt.Equals, "orders ")
+	c.Assert(spaced.Tables[0].Schema, qt.Equals, " app")
+	c.Assert(spaced.Sequences, qt.HasLen, 1)
+	c.Assert(spaced.Sequences[0].Schema, qt.Equals, " app")
+	c.Assert(spaced.Views, qt.HasLen, 1)
+	c.Assert(spaced.Views[0].Name, qt.Equals, `" app".v_orders`)
+	c.Assert(spaced.ManagedData, qt.HasLen, 1)
+	c.Assert(spaced.ManagedData[0].Schema, qt.Equals, " app")
+	c.Assert(spaced.Grants, qt.HasLen, 1)
+	c.Assert(spaced.Grants[0].OnSchema, qt.Equals, " app")
 }
 
 // An object's name keeps the bytes its tag writes. The catalog holds " note"
@@ -88,39 +155,16 @@ func TestParseSource_TrimsTheSpaceAroundASchemaAttribute(t *testing.T) {
 func TestParseSource_KeepsTheSpaceAroundAnObjectName(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c, "schema.go", schemaTrimFixture(" ", " "))
+	db := mustParseSource(c, "schema.go", schemaTrimFixture("", " "))
 
 	c.Assert(fieldNames(db.Fields), qt.DeepEquals, []string{" id ", " email ", "id"})
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Name, qt.Equals, " orders_email ")
 	c.Assert(db.Functions, qt.HasLen, 1)
 	c.Assert(db.Functions[0].Name, qt.Equals, " touch ")
-	// A sequence's name is trimmed as the model reads it, as a table's is.
+	// A sequence's name is trimmed as the model reads it.
 	c.Assert(db.Sequences, qt.HasLen, 1)
 	c.Assert(db.Sequences[0].Name, qt.Equals, "counter")
-}
-
-// The controls: the spaced fixture holds the schemas trimmed, so the first test
-// cannot pass on a parse that drops them, and a value that names no schema
-// keeps its space.
-func TestParseSource_KeepsTheNamesOfTheTrimFixture(t *testing.T) {
-	c := qt.New(t)
-
-	db := mustParseSource(c, "schema.go", schemaTrimFixture(" ", ""))
-
-	c.Assert(db.Schemas, qt.HasLen, 1)
-	c.Assert(db.Schemas[0].Name, qt.Equals, "app")
-	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Name, qt.Equals, "orders")
-	c.Assert(db.Tables[0].Schema, qt.Equals, "app")
-	c.Assert(db.Sequences, qt.HasLen, 1)
-	c.Assert(db.Sequences[0].Schema, qt.Equals, "app")
-	c.Assert(db.Views, qt.HasLen, 1)
-	c.Assert(db.Views[0].Name, qt.Equals, "app.v_orders")
-	c.Assert(db.ManagedData, qt.HasLen, 1)
-	c.Assert(db.ManagedData[0].Schema, qt.Equals, "app")
-	c.Assert(db.Grants, qt.HasLen, 1)
-	c.Assert(db.Grants[0].OnSchema, qt.Equals, "app")
 	c.Assert(db.Fields, qt.HasLen, 3)
 	c.Assert(db.Fields[1].Default, qt.Equals, "'a '")
 }

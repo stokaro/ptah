@@ -288,6 +288,13 @@ func displayComponent(source string) string {
 // applied its own -- strings.ToLower here, a Semantics call there, nothing at
 // all in a third -- and a comparison whose two sides folded differently is the
 // #1302 shape: an object that exists reads as absent.
+//
+// A table's name and a named schema keep their bytes when the caller gives
+// them as components ([Builder.TableParts], and the owner of a column, an
+// index, a constraint, a policy or a grant given the same way), because a
+// catalog holds " t" and t as two tables. A part split off one qualified string
+// is trimmed, because a space around the dot is only its spelling. The name of
+// every other object is trimmed, and a name of white space alone is none.
 type Builder struct {
 	semantics identifier.Semantics
 }
@@ -314,9 +321,9 @@ func (b Builder) Semantics() identifier.Semantics {
 // Quoted is recorded beside it as the fact rather than as part of the key, so a
 // renderer can ask whether the author quoted without parsing the string back.
 //
-// The component keeps its bytes, because a catalog holds " t" and t as two
-// objects; a component of white space alone is no name. Text an author typed
-// is trimmed where it is read, not here.
+// The component is folded as given, and each caller trims it or keeps its
+// bytes as the [Builder] rule says; a component of white space alone is no
+// name.
 func (b Builder) namePart(value string, key func(string) string) Part {
 	if strings.TrimSpace(value) == "" {
 		return Part{}
@@ -389,7 +396,7 @@ func (b Builder) Column(qualifiedTable, column string) ID {
 		Kind:   KindColumn,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(column, b.semantics.ColumnIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(column), b.semantics.ColumnIdentityKey),
 	}
 }
 
@@ -405,7 +412,7 @@ func (b Builder) ColumnParts(schema, table, column string) ID {
 		Kind:   KindColumn,
 		Schema: owner.Schema,
 		Parent: owner.Name,
-		Name:   b.namePart(column, b.semantics.ColumnIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(column), b.semantics.ColumnIdentityKey),
 	}
 }
 
@@ -435,7 +442,7 @@ func (b Builder) SchemaScopedParts(kind Kind, schema, name string) ID {
 	return ID{
 		Kind:   kind,
 		Schema: b.schemaPart(schema),
-		Name:   b.namePart(name, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
 
@@ -463,7 +470,7 @@ func (b Builder) Policy(qualifiedTable, policy string) ID {
 		Kind:   KindPolicy,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(policy, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(policy), b.semantics.TableIdentityKey),
 	}
 }
 
@@ -475,7 +482,7 @@ func (b Builder) Trigger(qualifiedTable, trigger string) ID {
 		Kind:   KindTrigger,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(trigger, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(trigger), b.semantics.TableIdentityKey),
 	}
 }
 
@@ -493,7 +500,7 @@ func (b Builder) PolicyParts(schema, table, policy string) ID {
 		Kind:   KindPolicy,
 		Schema: owner.Schema,
 		Parent: owner.Name,
-		Name:   b.namePart(policy, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(policy), b.semantics.TableIdentityKey),
 	}
 }
 
@@ -520,7 +527,7 @@ func (b Builder) GrantParts(schema, object, role, privilege string) ID {
 		Kind:      KindGrant,
 		Schema:    owner.Schema,
 		Parent:    owner.Name,
-		Name:      b.namePart(role, b.semantics.TableIdentityKey),
+		Name:      b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey),
 		Signature: NewParts(Part{Source: strings.TrimSpace(privilege), Normalized: strings.ToUpper(strings.TrimSpace(privilege))}),
 	}
 }
@@ -536,7 +543,7 @@ func (b Builder) Index(qualifiedTable, index string) ID {
 	id := ID{
 		Kind:   KindIndex,
 		Schema: table.Schema,
-		Name:   b.namePart(index, b.semantics.IndexIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(index), b.semantics.IndexIdentityKey),
 	}
 	if b.semantics.IndexNamespace != identifier.IndexNamespaceSchema {
 		id.Parent = table.Name
@@ -558,7 +565,7 @@ func (b Builder) Constraint(qualifiedTable, constraint string) ID {
 		Kind:   KindConstraint,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(constraint, b.semantics.IndexIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
 	}
 }
 
@@ -580,7 +587,7 @@ func (b Builder) IndexParts(schema, table, index string) ID {
 	id := ID{
 		Kind:   KindIndex,
 		Schema: owner.Schema,
-		Name:   b.namePart(index, b.semantics.IndexIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(index), b.semantics.IndexIdentityKey),
 	}
 	if b.semantics.IndexNamespace != identifier.IndexNamespaceSchema {
 		id.Parent = owner.Name
@@ -602,7 +609,7 @@ func (b Builder) ConstraintParts(schema, table, constraint string) ID {
 		Kind:   KindConstraint,
 		Schema: owner.Schema,
 		Parent: owner.Name,
-		Name:   b.namePart(constraint, b.semantics.IndexIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
 	}
 }
 
@@ -659,7 +666,7 @@ func (b Builder) CheckConstraintParts(schema, table, constraint, expression stri
 	if folded == "" {
 		return id
 	}
-	id.Name = Part{Source: constraint, Normalized: folded}
+	id.Name = Part{Source: strings.TrimSpace(constraint), Normalized: folded}
 	return id
 }
 
@@ -719,7 +726,7 @@ func balancedParentheses(value string) bool {
 // Role builds the identity of a role, which no dialect Ptah targets qualifies
 // by schema.
 func (b Builder) Role(role string) ID {
-	return ID{Kind: KindRole, Name: b.namePart(role, b.semantics.TableIdentityKey)}
+	return ID{Kind: KindRole, Name: b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey)}
 }
 
 // Function builds the identity of a routine, including its overload signature.
@@ -743,7 +750,7 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 	return ID{
 		Kind:      kind,
 		Schema:    b.schemaPart(strings.TrimSpace(schema)),
-		Name:      b.namePart(name, b.semantics.TableIdentityKey),
+		Name:      b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 		Signature: signatureParts(signature),
 	}
 }

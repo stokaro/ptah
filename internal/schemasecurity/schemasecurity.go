@@ -466,10 +466,10 @@ func findGrantedTablesWithoutRLS(db *schemamodel.Database) []Finding {
 // The exclusion is narrow on purpose: USAGE alone, on the schema named public.
 // CREATE on that schema is NOT excluded, because PostgreSQL 15 revoked it from
 // PUBLIC by default, so a database that still grants it is stating something
-// rather than inheriting it. The schema keeps its bytes, since " public" is
-// another schema that PostgreSQL ships nothing on.
+// rather than inheriting it. The schema keeps its bytes and its case, since
+// " public" and "PUBLIC" are other schemas that PostgreSQL ships nothing on.
 func isShippedDefaultPublicGrant(grant schemamodel.Grant) bool {
-	if !strings.EqualFold(grant.OnSchema, "public") {
+	if grant.OnSchema != "public" {
 		return false
 	}
 	privileges := normalizedPrivileges(grant.Privileges)

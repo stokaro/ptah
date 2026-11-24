@@ -242,6 +242,15 @@ func part(value string) objectidentity.Part {
 // trailing spaces the server ignores, so [b ] is [b]. A leading space is part
 // of the name: [ b] and [b] are two schemas, and trimmed, a synonym in [ b]
 // would key as one in [b], so a plan could pair the two.
+//
+// The fold approximates the case-insensitive collation SQL Server installs by
+// default. It is not that collation: the server also ignores a trailing
+// U+3000 or NUL, which the fold keeps, and under a case-sensitive collation
+// [B] and [b] are two names, which the fold merges. A tab is no space the
+// server ignores, so [b\t] is not [b].
+//
+// The same key serves Oracle's synonyms. Oracle keeps the case of a quoted
+// name, so there the key merges two names the server keeps apart.
 func fold(value string) string { return strings.ToLower(strings.TrimRight(value, " ")) }
 
 // Targets returns the targets that have synonyms, in a new slice.

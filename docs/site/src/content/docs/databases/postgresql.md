@@ -65,14 +65,15 @@ then describes the tables of ` a` in that schema, and `ptah schema apply` pairs
 them with the declared ones.
 
 A table name may begin or end with a space too, so ` t` and `t` are two tables.
-A schema file is text an author typed, so a Go tag or a YAML document removes
-the space around a bare table name: `name=" t"` and `name: " t"` both name `t`.
-Write the name as one quoted identifier to keep its bytes: `name="\" t\""` in a
-Go tag and `name: '" t"'` in YAML name ` t`. A name the database reads back
-keeps its bytes, so `ptah schema apply` pairs ` t` and `t` each with its own
-declaration, and a table the schema leaves out is dropped by its own name. The
-same holds on MySQL, where a table name may begin with a space but not end with
-one.
+Write such a name as one quoted identifier to keep its bytes: `name="\" t\""`
+in a Go tag and `name: '" t"'` in YAML name ` t`. A bare name that begins or
+ends with white space, `name=" t"` or `name: " t"`, is refused: read without
+its space it would name `t`, and an apply would create `t` and drop ` t` with
+its rows. A schema attribute follows the same rule. A name the database reads
+back keeps its bytes, so `ptah schema apply` pairs ` t` and `t` each with its
+own declaration, and a table the schema leaves out is dropped by its own name.
+The same holds on MySQL, where a table name may begin with a space but not end
+with one.
 
 A URL that pins no `search_path` can still resolve to a schema other than
 `public`. With the default search path `"$user", public`, a role named `app`

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/pgdefaultprivilegesource"
+	"ptah.run/internal/tableref"
 )
 
 var goOwners = must.Must(annotation.NewSet(pgdefaultprivilegesource.Annotations()))
@@ -76,15 +77,34 @@ func TestSources_RefuseInvalidDeclarations(t *testing.T) {
 	}
 }
 
-// A schema is text an author typed, so both readers remove the space around it:
-// the schema keeps its bytes below, and "app " is another schema than app.
-func TestSources_TrimTheSchemaTheyRead(t *testing.T) {
+// A schema is text an author typed. The schema keeps its bytes below, and
+// "app " is another schema than app, so both readers refuse a bare schema with
+// a space around it rather than name app with it.
+func TestSources_FailurePathRefusesASpacedBareSchema(t *testing.T) {
 	c := qt.New(t)
-	fromGo := must.Must(goschema.ParseSource(goOwners, "privileges.go", goSource(annotationPrefix+` schema="app " privileges="SELECT"`)))
-	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte(yamlPrefix+"    schema: \" app \"\n    privileges: SELECT\n")))
+
+	fromGo, err := goschema.ParseSource(goOwners, "privileges.go", goSource(annotationPrefix+` schema="app " privileges="SELECT"`))
+
+	c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
+	c.Assert(err, qt.ErrorMatches, `(?s).*schema attribute "app " begins or ends with white space.*`)
+	c.Assert(fromGo.FeatureObjects.IsZero(), qt.IsTrue)
+
+	fromYAML, err := yamlschema.Parse(t.Context(), yamlOwners, []byte(yamlPrefix+"    schema: \" app \"\n    privileges: SELECT\n"))
+
+	c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
+	c.Assert(err, qt.ErrorMatches, `(?s).*schema name " app " begins or ends with white space.*`)
+	c.Assert(fromYAML, qt.IsNil)
+}
+
+// The space around a schema written quoted is removed, and the schema inside
+// the quotes keeps its bytes.
+func TestSources_ReadAQuotedSchemaWithItsBytes(t *testing.T) {
+	c := qt.New(t)
+	fromGo := must.Must(goschema.ParseSource(goOwners, "privileges.go", goSource(annotationPrefix+` schema=" \"app \"" privileges="SELECT"`)))
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte(yamlPrefix+"    schema: ' \"app \" '\n    privileges: SELECT\n")))
 	for _, db := range []schemamodel.Database{fromGo, *fromYAML} {
 		objects := must.Must(db.FeatureObjects.All())
 		c.Assert(objects, qt.HasLen, 1)
-		c.Assert(must.Must(pgdefaultprivilege.IdentityOf(objects[0].Ref)).Schema, qt.Equals, "app")
+		c.Assert(must.Must(pgdefaultprivilege.IdentityOf(objects[0].Ref)).Schema, qt.Equals, "app ")
 	}
 }

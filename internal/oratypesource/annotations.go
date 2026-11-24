@@ -71,7 +71,10 @@ func decodeAnnotation(declaration annotation.Declaration) ([]annotation.Contribu
 // attributes and parsed its target scope before handing it over.
 func annotationObject(declaration annotation.Declaration) (schemaext.Object, error) {
 	attrs := declaration.Attributes
-	schema, name := annotationNames(attrs["schema"], attrs["name"])
+	schema, name, err := annotation.QualifiedName(attrs["schema"], attrs["name"])
+	if err != nil {
+		return schemaext.Object{}, &annotation.DeclarationError{Declaration: declaration, Attribute: "name", Err: err}
+	}
 	var value schemaext.Value
 	switch declaration.Directive {
 	case domainDirective:
@@ -97,16 +100,6 @@ func annotationObject(declaration annotation.Declaration) (schemaext.Object, err
 	object, err := oratype.DesiredObject(oratype.Ref(value.Kind(), schema, name), value)
 	object.Targets = slices.Clone(declaration.Targets)
 	return object, err
-}
-
-// annotationNames reads the schema and name attributes, either of which may
-// carry the schema and may quote a part.
-func annotationNames(schema, name string) (schemaName, typeName string) {
-	schema, name = annotation.QualifiedName(schema, name)
-	if parsed, valid := tableref.Parse(schema); valid && !parsed.Qualified {
-		schema = parsed.Name
-	}
-	return schema, name
 }
 
 // annotationAttributes reads a "name:type,name:type" list. A comma inside

@@ -263,7 +263,7 @@ Each entry under `tables` declares one table.
 
 | Key | Meaning |
 | --- | --- |
-| `name` | Database table name. Defaults to the map key. The space around a bare name is removed, so `name: " t"` names `t`; written as one quoted identifier, the name keeps its bytes, so `name: '" t"'` names ` t`. |
+| `name` | Database table name. Defaults to the map key. A name written as one quoted identifier in double quotes keeps its bytes, so `name: '" t"'` names ` t`. A bare name that begins or ends with white space, such as `name: " t"`, is refused. Brackets and backticks are part of a bare name. |
 | `struct_name` | Internal Go-schema owner name. Defaults to the map key. |
 | `api_name` | Shared OpenAPI, GraphQL, and Protobuf table-name fallback. |
 | `openapi_name` | Exact OpenAPI component key for this table. |
@@ -286,6 +286,11 @@ Each entry under `tables` declares one table.
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML
 author order. Top-level maps render deterministically by sorted key.
+
+A schema a document names, under a table's `schema`, a grant's `on_schema`, an
+extension or a default privilege, follows the rule of a table name: `'" a"'`
+names the schema ` a`, and a bare `" a"` is refused with
+`schema name " a" begins or ends with white space, which a bare name loses`.
 
 ## Columns
 

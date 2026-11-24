@@ -18,12 +18,14 @@ var quotings = descriptortable.New(QuotingFromDescriptor)
 
 // QuotingFromDescriptor returns the Quoting a dialect descriptor states: the
 // backslash rules of its Lexical section, and a double-quoted token read as a
-// string where its Comparison section says the server reads one.
+// string, or a quoted name that keeps its case, where its Comparison section
+// says the server reads one so.
 func QuotingFromDescriptor(described descriptor.Dialect) Quoting {
 	quoting := Quoting{
 		BackslashEscapes:           described.Lexical.BackslashEscapes,
 		IdentifierBackslashEscapes: described.Lexical.IdentifierBackslashEscapes,
 		EscapeStrings:              described.Lexical.EscapeStrings,
+		QuotedNamesKeepCase:        described.Comparison.QuotedNamesKeepCase,
 	}
 	if described.Comparison.DoubleQuotedStrings {
 		quoting.Strings = `'"`

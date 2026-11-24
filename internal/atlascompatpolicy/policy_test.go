@@ -512,6 +512,7 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "app"},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: " public"},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public "},
+		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "PUBLIC"},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public", WithOption: true},
 	} {
 		err := policy.ValidateInspectedSchema(&schemamodel.Database{
@@ -565,27 +566,31 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 	c.Assert(full.Grants, qt.HasLen, 1)
 }
 
-// A grant on the schema " public" is not the baseline PostgreSQL gives the
-// schema public: the catalog holds them as two schemas, and the strict
-// refusal has to see the grant an author issued on the first.
-func TestPrepareInspectedSchemaRefusesTheUsageOfASpacedPublicSchema(t *testing.T) {
-	c := qt.New(t)
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	spaced := &catalog.Database{
-		Grants: []catalog.Grant{{
-			Role:       "PUBLIC",
-			Privilege:  "USAGE",
-			ObjectType: "SCHEMA",
-			ObjectName: " public",
-			GrantedBy:  "database_owner",
-		}},
+// A grant on the schema " public" or "PUBLIC" is not the baseline PostgreSQL
+// gives the schema public: the catalog holds them as other schemas, and the
+// strict refusal has to see the grant an author issued on one.
+func TestPrepareInspectedSchemaRefusesTheUsageOfAnotherPublicSchema(t *testing.T) {
+	for _, schema := range []string{" public", "PUBLIC"} {
+		t.Run(schema, func(t *testing.T) {
+			c := qt.New(t)
+			runtime, err := builtin.New()
+			c.Assert(err, qt.IsNil)
+			other := &catalog.Database{
+				Grants: []catalog.Grant{{
+					Role:       "PUBLIC",
+					Privilege:  "USAGE",
+					ObjectType: "SCHEMA",
+					ObjectName: schema,
+					GrantedBy:  "database_owner",
+				}},
+			}
+
+			prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), other, "postgres", runtime)
+
+			c.Assert(err, qt.ErrorMatches, `Atlas Community Edition strict compatibility does not support inspected schema grants`)
+			c.Assert(prepared, qt.IsNil)
+		})
 	}
-
-	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), spaced, "postgres", runtime)
-
-	c.Assert(err, qt.ErrorMatches, `Atlas Community Edition strict compatibility does not support inspected schema grants`)
-	c.Assert(prepared, qt.IsNil)
 }
 
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {

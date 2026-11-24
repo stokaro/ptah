@@ -97,7 +97,10 @@ func (t Tables) Owning(structName, table, part string) (int, error) {
 		}
 		return -1, fmt.Errorf("struct %s maps to no table in this file; name the table with the table attribute", structName)
 	}
-	schemaName, tableName := QualifiedName("", table)
+	schemaName, tableName, err := QualifiedName("", table)
+	if err != nil {
+		return -1, err
+	}
 	var matches []int
 	for index, declared := range t {
 		if declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName) {
@@ -133,7 +136,10 @@ func (t Tables) Reference(structName, table, part string) (schemaName, tableName
 		}
 		return t[index].Schema, t[index].Name, nil
 	}
-	schemaName, tableName = QualifiedName("", table)
+	schemaName, tableName, err = QualifiedName("", table)
+	if err != nil {
+		return "", "", err
+	}
 	var matches []Table
 	for _, declared := range t {
 		if declared.Name == tableName && (schemaName == "" || declared.Schema == schemaName) {
