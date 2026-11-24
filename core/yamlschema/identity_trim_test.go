@@ -127,3 +127,35 @@ func TestParse_KeepsTheNamesOfTheTrimDocument(t *testing.T) {
 	c.Assert(db.Fields, qt.HasLen, 2)
 	c.Assert(db.Fields[1].Default, qt.Equals, "'a '")
 }
+
+// A table's name written as one quoted identifier is the name inside the
+// quotes, bytes and all, as the Go tag reader reads name="\" t\"". It is how a
+// document names a live " t" beside a live t; the bare spelling is trimmed to
+// t, and the name in the key reads as the name in a name field.
+func TestParse_ReadsAQuotedTableNameWithItsBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+	}{
+		{name: "quoted", document: "tables:\n  spaced:\n    name: '\" t\"'\n", want: " t"},
+		{name: "quoted with space around the quotes", document: "tables:\n  spaced:\n    name: ' \"t \" '\n", want: "t "},
+		{name: "quoted in the key", document: "tables:\n  '\" t\"':\n    columns: {}\n", want: " t"},
+		{name: "quoted with a dot inside", document: "tables:\n  dotted:\n    name: '\"a.b\"'\n", want: "a.b"},
+		{name: "bare with a space around it", document: "tables:\n  spaced:\n    name: ' t '\n", want: "t"},
+		{name: "bare and qualified", document: "tables:\n  dotted:\n    name: metrics.hourly\n", want: "metrics.hourly"},
+		{name: "bare and qualified with a space around it", document: "tables:\n  dotted:\n    name: ' metrics.hourly '\n", want: "metrics.hourly"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := yamlschema.Parse(c.Context(), yamlext.None(), []byte(test.document))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].Name, qt.Equals, test.want)
+			c.Assert(db.Tables[0].Schema, qt.Equals, "")
+		})
+	}
+}

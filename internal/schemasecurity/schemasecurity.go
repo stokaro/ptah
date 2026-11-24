@@ -466,9 +466,10 @@ func findGrantedTablesWithoutRLS(db *schemamodel.Database) []Finding {
 // The exclusion is narrow on purpose: USAGE alone, on the schema named public.
 // CREATE on that schema is NOT excluded, because PostgreSQL 15 revoked it from
 // PUBLIC by default, so a database that still grants it is stating something
-// rather than inheriting it.
+// rather than inheriting it. The schema keeps its bytes, since " public" is
+// another schema that PostgreSQL ships nothing on.
 func isShippedDefaultPublicGrant(grant schemamodel.Grant) bool {
-	if !strings.EqualFold(strings.TrimSpace(grant.OnSchema), "public") {
+	if !strings.EqualFold(grant.OnSchema, "public") {
 		return false
 	}
 	privileges := normalizedPrivileges(grant.Privileges)
@@ -810,6 +811,10 @@ func setOf(byMember map[string][]string) map[string]bool {
 // grantTarget names what a grant is on, and the kind of that object. A grant
 // on the database itself is named by the path the read found it at, or by its
 // kind where the description came from no read.
+//
+// The name keeps its bytes. A read holds " public" and public as two schemas,
+// and a schema frontend removes the space an author typed before the name gets
+// here. Trimmed, a finding on " public" would name public.
 func grantTarget(databasePath string, grant schemamodel.Grant) (name, kind string) {
 	switch {
 	case grant.OnDatabase:
@@ -818,13 +823,13 @@ func grantTarget(databasePath string, grant schemamodel.Grant) (name, kind strin
 		}
 		return "database", "database"
 	case strings.TrimSpace(grant.OnTable) != "":
-		return strings.TrimSpace(grant.OnTable), "table"
+		return grant.OnTable, "table"
 	case strings.TrimSpace(grant.OnSchema) != "":
-		return strings.TrimSpace(grant.OnSchema), "schema"
+		return grant.OnSchema, "schema"
 	case strings.TrimSpace(grant.OnSequence) != "":
-		return strings.TrimSpace(grant.OnSequence), "sequence"
+		return grant.OnSequence, "sequence"
 	case strings.TrimSpace(grant.OnObject) != "":
-		return strings.TrimSpace(grant.OnObject), strings.ToLower(strings.Join(strings.Fields(grant.ObjectKind), " "))
+		return grant.OnObject, strings.ToLower(strings.Join(strings.Fields(grant.ObjectKind), " "))
 	default:
 		return "", ""
 	}

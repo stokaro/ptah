@@ -232,13 +232,17 @@ func unquote(part string) string {
 }
 
 func part(value string) objectidentity.Part {
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		return objectidentity.Part{}
 	}
 	return objectidentity.Part{Source: value, Normalized: fold(value)}
 }
 
-func fold(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+// fold is the key SQL Server compares a name by: lower case, without the
+// trailing spaces the server ignores, so [b ] is [b]. A leading space is part
+// of the name: [ b] and [b] are two schemas, and trimmed, a synonym in [ b]
+// would key as one in [b], so a plan could pair the two.
+func fold(value string) string { return strings.ToLower(strings.TrimRight(value, " ")) }
 
 // Targets returns the targets that have synonyms, in a new slice.
 func Targets() []string { return []string{platform.SQLServer, platform.Oracle} }

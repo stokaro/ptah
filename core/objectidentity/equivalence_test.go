@@ -42,13 +42,18 @@ func TestBuilder_MatchesTheSemanticsKeysItReplaces(t *testing.T) {
 				c.Assert(table.Name.Normalized, qt.Equals, semantics.TableIdentityKey(trimmed(spelling)),
 					qt.Commentf("table spelling %q", spelling))
 
+				// A component given on its own keeps its bytes.
 				column := builder.Column("public.t", spelling)
-				c.Assert(column.Name.Normalized, qt.Equals, semantics.ColumnIdentityKey(trimmed(spelling)),
+				c.Assert(column.Name.Normalized, qt.Equals, semantics.ColumnIdentityKey(spelling),
 					qt.Commentf("column spelling %q", spelling))
 
 				index := builder.Index("public.t", spelling)
-				c.Assert(index.Name.Normalized, qt.Equals, semantics.IndexIdentityKey(trimmed(spelling)),
+				c.Assert(index.Name.Normalized, qt.Equals, semantics.IndexIdentityKey(spelling),
 					qt.Commentf("index spelling %q", spelling))
+
+				parts := builder.TableParts("public", spelling)
+				c.Assert(parts.Name.Normalized, qt.Equals, semantics.TableIdentityKey(spelling),
+					qt.Commentf("table parts spelling %q", spelling))
 			}
 		})
 	}

@@ -170,13 +170,14 @@ func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catal
 	inspected.FeatureObjects = withoutInspectedPublications(
 		pgextension.Select(current.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) }),
 	)
+	// The schema keeps its bytes, as in [isPostgresPublicUsageBaseline].
 	inspected.Grants = slices.DeleteFunc(
 		slices.Clone(current.Grants),
 		func(grant catalog.Grant) bool {
-			return strings.EqualFold(strings.TrimSpace(grant.Role), "PUBLIC") &&
+			return strings.EqualFold(grant.Role, "PUBLIC") &&
 				strings.EqualFold(strings.TrimSpace(grant.Privilege), "USAGE") &&
 				strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") &&
-				strings.EqualFold(strings.TrimSpace(grant.ObjectName), "public") &&
+				strings.EqualFold(grant.ObjectName, "public") &&
 				!grant.WithOption
 		},
 	)
@@ -225,9 +226,13 @@ func withoutInspectedPublications(objects schemaext.Objects) schemaext.Objects {
 	return pgpublication.Select(objects, func(string) bool { return false })
 }
 
+// isPostgresPublicUsageBaseline reports whether a grant is the USAGE on schema
+// public that PostgreSQL gives PUBLIC. The role and the schema keep their
+// bytes: " public" is another schema, and a grant on it is authored content
+// the strict refusal has to see.
 func isPostgresPublicUsageBaseline(grant schemamodel.Grant) bool {
-	return strings.EqualFold(strings.TrimSpace(grant.Role), "PUBLIC") &&
-		strings.EqualFold(strings.TrimSpace(grant.OnSchema), "public") &&
+	return strings.EqualFold(grant.Role, "PUBLIC") &&
+		strings.EqualFold(grant.OnSchema, "public") &&
 		strings.TrimSpace(grant.OnTable) == "" &&
 		strings.TrimSpace(grant.OnSequence) == "" &&
 		!grant.WithOption &&

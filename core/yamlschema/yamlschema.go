@@ -91,6 +91,7 @@ import (
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/temporalkeys"
 	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
@@ -634,9 +635,8 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
-		// A table's name is trimmed as a schema is, so it reads as the Go tag
-		// reader reads one; the names of the objects it holds keep their bytes.
-		tableName := strings.TrimSpace(valueOrDefault(table.Name, tableKey))
+		// The names of the objects a table holds keep their bytes.
+		tableName := declaredTableName(valueOrDefault(table.Name, tableKey))
 		schema := schemaName(table.Schema)
 
 		scalars, sections, err := ownedKeys(owners, yamlext.EntryTable, fmt.Sprintf("table %q", tableKey), table.Owned)
@@ -1638,6 +1638,20 @@ func valueOrDefault(value stringScalar, fallback string) string {
 // live object of that name, and trimming it planned a DROP of that object.
 func schemaName(value stringScalar) string {
 	return strings.TrimSpace(string(value))
+}
+
+// declaredTableName is the name a table entry declares, read as the Go tag
+// reader reads a table's name: the space around it is the author's and is
+// removed, as around a schema, and a name written as one quoted identifier,
+// '" t"', is the name inside the quotes, bytes and all. PostgreSQL holds " t"
+// and t as two tables, and the quoted spelling is how a document names the
+// first: kept with its quotes, it would name a third table, """ t""".
+func declaredTableName(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if ref, ok := tableref.Parse(trimmed); ok && !ref.Qualified {
+		return ref.Name
+	}
+	return trimmed
 }
 
 func cleanStrings(values stringList) []string {

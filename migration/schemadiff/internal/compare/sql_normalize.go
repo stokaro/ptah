@@ -89,9 +89,15 @@ func normalizeSQLCaseAndIdentifierQuotes(value string, quoting normalize.Quoting
 	return b.String()
 }
 
+// stripSQLQualifiers removes the qualifiers a catalog adds to an expression of
+// an object in schema. The schema keeps its bytes: a bare qualifier a. names
+// the schema a and never " a", which a body can only write quoted. Trimmed,
+// the body of an object in " a" would lose a qualifier naming the other
+// schema, and two different bodies would compare equal. A schema of white
+// space alone names none.
 func stripSQLQualifiers(value, schema string, authored map[string]struct{}, quoting normalize.Quoting) string {
-	schema = strings.ToLower(strings.TrimSpace(schema))
-	if schema != "" {
+	if strings.TrimSpace(schema) != "" {
+		schema = strings.ToLower(schema)
 		value = stripMatchingSchemaQualifiers(value, schema, quoting)
 	}
 	return stripSinglePartQualifiers(value, authored, quoting)

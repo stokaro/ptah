@@ -75,12 +75,13 @@ func TestEncodeAnnotations_HappyPath(t *testing.T) {
 }
 
 // TestEncodeAnnotations_MatchesATableAsAPolicyNamesIt pins that a policy is
-// placed beside the declared table its own identity names, under
-// PostgreSQL's rules, which trim a name.
+// placed beside the declared table its own identity names. PostgreSQL keeps
+// every byte of a quoted name, so a table the read found as "orders " is the
+// table a policy on "orders " names.
 func TestEncodeAnnotations_MatchesATableAsAPolicyNamesIt(t *testing.T) {
 	c := qt.New(t)
 	spaced := annotation.Table{Name: "orders ", Struct: "Order"}
-	policy := must.Must(pgpolicy.DesiredPolicyObject(pgpolicy.PolicyRef("", "orders", "tenant"), pgpolicy.DesiredPolicy{}))
+	policy := must.Must(pgpolicy.DesiredPolicyObject(pgpolicy.PolicyRef("", "orders ", "tenant"), pgpolicy.DesiredPolicy{}))
 
 	result, err := encodeRowSecurity(c, annotation.EncodeRequest{Objects: []schemaext.Object{policy}, Tables: annotation.Tables{spaced}})
 
@@ -119,6 +120,10 @@ func TestEncodeAnnotations_FailurePath(t *testing.T) {
 			wantIs: ptaherr.ErrUnsupportedFeature, wantErr: `.*Go annotations cannot represent feature facet "ptah.run/pgpolicy/table-state"`},
 		{name: "a policy on a table the schema does not declare", request: annotation.EncodeRequest{Objects: []schemaext.Object{elsewhere},
 			Tables: annotation.Tables{orders}},
+			wantIs: ptaherr.ErrUnsupportedFeature, wantErr: `.*policy .*tenant.* names a table the export does not declare`},
+		{name: "a policy on a table whose name differs by a space", request: annotation.EncodeRequest{
+			Objects: []schemaext.Object{must.Must(pgpolicy.DesiredPolicyObject(pgpolicy.PolicyRef("", "orders", "tenant"), pgpolicy.DesiredPolicy{}))},
+			Tables:  annotation.Tables{{Name: "orders ", Struct: "Order"}}},
 			wantIs: ptaherr.ErrUnsupportedFeature, wantErr: `.*policy .*tenant.* names a table the export does not declare`},
 		{name: "a policy that is not a declaration", request: annotation.EncodeRequest{Objects: []schemaext.Object{{
 			Ref: pgpolicy.PolicyRef("", "orders", "tenant"), Value: &pgpolicy.ObservedPolicy{}}}, Tables: annotation.Tables{orders}},

@@ -64,7 +64,9 @@ or mutation. The normal `ptah-compat` surface does not set it and retains
 implemented Atlas Pro-like and best-effort capabilities.
 
 Strict inspection removes PostgreSQL's server-installed `plpgsql` extension
-and baseline `PUBLIC USAGE` grant from the snapshot it renders. Full mode keeps
+and baseline `PUBLIC USAGE` grant on the schema `public` from the snapshot it
+renders; the same grant on ` public` is another schema's, and is refused. Full
+mode keeps
 the original reader snapshot. Strict cleanup executes the validated and
 confirmed plan itself. On PostgreSQL it locks every planned table, repeats the
 strict inventory through the transaction session, compares the rebuilt cleanup

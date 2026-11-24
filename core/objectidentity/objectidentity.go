@@ -313,28 +313,37 @@ func (b Builder) Semantics() identifier.Semantics {
 //
 // Quoted is recorded beside it as the fact rather than as part of the key, so a
 // renderer can ask whether the author quoted without parsing the string back.
+//
+// The component keeps its bytes, because a catalog holds " t" and t as two
+// objects; a component of white space alone is no name. Text an author typed
+// is trimmed where it is read, not here.
 func (b Builder) namePart(value string, key func(string) string) Part {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if strings.TrimSpace(value) == "" {
 		return Part{}
 	}
-	_, quoted := unquote(trimmed)
-	return Part{Source: trimmed, Normalized: key(trimmed), Quoted: quoted}
+	_, quoted := unquote(value)
+	return Part{Source: value, Normalized: key(value), Quoted: quoted}
 }
 
-// Table builds the identity of a table from a possibly-qualified name.
+// Table builds the identity of a table from a possibly-qualified name. The
+// parts split off the string are trimmed, because a space around the dot is
+// only the spelling of the qualified name: a name that begins or ends with a
+// space is written quoted, as [tableref.Canonical] writes it. A caller that
+// holds the two names separately uses [Builder.TableParts], which keeps them.
 func (b Builder) Table(qualified string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
 		Kind:   KindTable,
 		Schema: b.schemaPart(strings.TrimSpace(schema)),
-		Name:   b.namePart(name, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
 
 // TableParts builds a table identity from components the caller already has,
-// trimming the name and defaulting an absent schema. A schema that is named
-// keeps its bytes, because a schema name may begin or end with a space.
+// defaulting an absent schema. Both names keep their bytes, because a schema
+// or a table name may begin or end with a space: PostgreSQL holds " t" and t
+// as two tables, and a key that trimmed one would pair it with the other. A
+// name of white space alone names nothing.
 //
 // It exists beside [Builder.Table] because a caller holding the two components
 // separately must not have them rejoined and re-split: a name containing a dot
@@ -343,16 +352,16 @@ func (b Builder) TableParts(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
 		Schema: b.schemaPart(schema),
-		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
+		Name:   b.namePart(name, b.semantics.TableIdentityKey),
 	}
 }
 
-// TablePartsVerbatim builds a table identity without trimming either component.
+// TablePartsVerbatim builds a table identity that keeps either component even
+// when it is white space alone.
 //
-// SQLite is why: a quoted leading or trailing space is part of a SQLite table
-// name, so trimming one there merges two distinct tables. Every other caller
-// wants [Builder.TableParts], whose trimming absorbs the incidental whitespace
-// a schema file carries around a table name.
+// SQLite is why: a quoted name of spaces is a SQLite table name, and a schema
+// of white space is kept as written. Every other caller wants
+// [Builder.TableParts], which reads a blank name or schema as none.
 func (b Builder) TablePartsVerbatim(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
@@ -410,7 +419,7 @@ func (b Builder) ColumnParts(schema, table, column string) ID {
 // it, so `public .email` is `public.email`.
 func (b Builder) Domain(qualified string) ID {
 	schema, name := splitQualified(qualified)
-	return b.SchemaScopedParts(KindDomain, strings.TrimSpace(schema), name)
+	return b.SchemaScopedParts(KindDomain, strings.TrimSpace(schema), strings.TrimSpace(name))
 }
 
 // SchemaScopedParts builds the identity of an object whose name is unique
@@ -426,7 +435,7 @@ func (b Builder) SchemaScopedParts(kind Kind, schema, name string) ID {
 	return ID{
 		Kind:   kind,
 		Schema: b.schemaPart(schema),
-		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
+		Name:   b.namePart(name, b.semantics.TableIdentityKey),
 	}
 }
 
@@ -484,7 +493,7 @@ func (b Builder) PolicyParts(schema, table, policy string) ID {
 		Kind:   KindPolicy,
 		Schema: owner.Schema,
 		Parent: owner.Name,
-		Name:   b.namePart(strings.TrimSpace(policy), b.semantics.TableIdentityKey),
+		Name:   b.namePart(policy, b.semantics.TableIdentityKey),
 	}
 }
 
@@ -511,7 +520,7 @@ func (b Builder) GrantParts(schema, object, role, privilege string) ID {
 		Kind:      KindGrant,
 		Schema:    owner.Schema,
 		Parent:    owner.Name,
-		Name:      b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey),
+		Name:      b.namePart(role, b.semantics.TableIdentityKey),
 		Signature: NewParts(Part{Source: strings.TrimSpace(privilege), Normalized: strings.ToUpper(strings.TrimSpace(privilege))}),
 	}
 }
@@ -549,7 +558,7 @@ func (b Builder) Constraint(qualifiedTable, constraint string) ID {
 		Kind:   KindConstraint,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
+		Name:   b.namePart(constraint, b.semantics.IndexIdentityKey),
 	}
 }
 
@@ -571,7 +580,7 @@ func (b Builder) IndexParts(schema, table, index string) ID {
 	id := ID{
 		Kind:   KindIndex,
 		Schema: owner.Schema,
-		Name:   b.namePart(strings.TrimSpace(index), b.semantics.IndexIdentityKey),
+		Name:   b.namePart(index, b.semantics.IndexIdentityKey),
 	}
 	if b.semantics.IndexNamespace != identifier.IndexNamespaceSchema {
 		id.Parent = owner.Name
@@ -593,7 +602,7 @@ func (b Builder) ConstraintParts(schema, table, constraint string) ID {
 		Kind:   KindConstraint,
 		Schema: owner.Schema,
 		Parent: owner.Name,
-		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
+		Name:   b.namePart(constraint, b.semantics.IndexIdentityKey),
 	}
 }
 
@@ -650,7 +659,7 @@ func (b Builder) CheckConstraintParts(schema, table, constraint, expression stri
 	if folded == "" {
 		return id
 	}
-	id.Name = Part{Source: strings.TrimSpace(constraint), Normalized: folded}
+	id.Name = Part{Source: constraint, Normalized: folded}
 	return id
 }
 

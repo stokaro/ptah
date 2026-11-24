@@ -510,6 +510,8 @@ func TestStrictCEIgnoresOnlyInspectedPostgresPublicUsageBaseline(t *testing.T) {
 		{Role: "app", Privileges: []string{"USAGE"}, OnSchema: "public"},
 		{Role: "PUBLIC", Privileges: []string{"CREATE"}, OnSchema: "public"},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "app"},
+		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: " public"},
+		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public "},
 		{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: "public", WithOption: true},
 	} {
 		err := policy.ValidateInspectedSchema(&schemamodel.Database{
@@ -561,6 +563,29 @@ func TestPrepareInspectedSchemaRemovesOnlyStrictPostgresBaselines(t *testing.T) 
 	c.Assert(full, qt.Equals, baseline)
 	c.Assert(full.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(full.Grants, qt.HasLen, 1)
+}
+
+// A grant on the schema " public" is not the baseline PostgreSQL gives the
+// schema public: the catalog holds them as two schemas, and the strict
+// refusal has to see the grant an author issued on the first.
+func TestPrepareInspectedSchemaRefusesTheUsageOfASpacedPublicSchema(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	spaced := &catalog.Database{
+		Grants: []catalog.Grant{{
+			Role:       "PUBLIC",
+			Privilege:  "USAGE",
+			ObjectType: "SCHEMA",
+			ObjectName: " public",
+			GrantedBy:  "database_owner",
+		}},
+	}
+
+	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), spaced, "postgres", runtime)
+
+	c.Assert(err, qt.ErrorMatches, `Atlas Community Edition strict compatibility does not support inspected schema grants`)
+	c.Assert(prepared, qt.IsNil)
 }
 
 func TestFullCompatibilityRetainsDesiredSchemaExtensions(t *testing.T) {

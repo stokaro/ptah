@@ -263,7 +263,7 @@ Each entry under `tables` declares one table.
 
 | Key | Meaning |
 | --- | --- |
-| `name` | Database table name. Defaults to the map key. |
+| `name` | Database table name. Defaults to the map key. The space around a bare name is removed, so `name: " t"` names `t`; written as one quoted identifier, the name keeps its bytes, so `name: '" t"'` names ` t`. |
 | `struct_name` | Internal Go-schema owner name. Defaults to the map key. |
 | `api_name` | Shared OpenAPI, GraphQL, and Protobuf table-name fallback. |
 | `openapi_name` | Exact OpenAPI component key for this table. |

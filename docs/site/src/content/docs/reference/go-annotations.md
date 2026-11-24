@@ -236,7 +236,7 @@ Maps a Go struct to a database table.
 | `depends_on` | No | Comma-separated tables this table must be created after. |
 | `custom` | No | Raw custom CREATE TABLE SQL. |
 | `engine` | No | MySQL/MariaDB table engine shortcut; see the note below the table. |
-| `name` | No | Table name. |
+| `name` | No | Table name. The space around a bare name is removed, so `name=" t"` names `t`; written as one quoted identifier, the name keeps its bytes, so `name="\" t\""` names ` t`. |
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. Needs `primary_key`; a field's `primary` key has no place for it. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |

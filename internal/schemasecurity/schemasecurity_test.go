@@ -161,6 +161,19 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
+			// " public" is another schema, and PostgreSQL ships nothing on it,
+			// so USAGE on it is a grant an author wrote.
+			name:    "USAGE on the schema \" public\" to PUBLIC is",
+			dialect: "postgres",
+			database: &schemamodel.Database{
+				Grants: []schemamodel.Grant{
+					{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: " public"},
+				},
+			},
+			wantCodes:   []string{"PRV03"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
+		},
+		{
 			// CREATE was revoked from PUBLIC by default in PostgreSQL 15, so a
 			// database that grants it is stating something.
 			name:    "CREATE on the same schema to PUBLIC is",
@@ -560,4 +573,19 @@ func TestAnalyze_OwnerMissingDefaultPrivilegesNamesWhatItLacks(t *testing.T) {
 	c.Assert(finding.Message, qt.Equals, "owner app_owner of table public.orders lacks DELETE, INSERT, UPDATE, which PostgreSQL gives an owner by default")
 	c.Assert(finding.Detail.Privileges, qt.DeepEquals, []string{"DELETE", "INSERT", "UPDATE"})
 	c.Assert(finding.Detail.Roles, qt.DeepEquals, []string{"app_owner"})
+}
+
+// A finding names the object its grant is on with the bytes the read gave:
+// " public" and public are two schemas, and the finding on the first names it.
+func TestAnalyze_NamesTheSchemaAGrantIsOnWithItsSpace(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"USAGE"}, OnSchema: " public"}},
+	}
+
+	report := schemasecurity.Analyze(database, schemasecurity.Options{Capabilities: capability.ForDialect("postgres")})
+
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Code, qt.Equals, "PRV03")
+	c.Assert(report.Findings[0].Subject, qt.Equals, schemasecurity.Subject{Kind: "schema", Name: " public"})
 }
