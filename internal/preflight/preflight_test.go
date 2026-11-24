@@ -88,7 +88,8 @@ func TestExecuteCommandHookFailureIncludesOutput(t *testing.T) {
 func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 	c := qt.New(t)
 	runner := &fakeCommandRunner{
-		output: "PTAH_DB_URL=mysql://app:pw-value@tcp(db.internal:3307)/shop\nMYSQL_PWD=pw-value\npassword=pw-value\n",
+		output: "PTAH_DB_URL=mysql://app:pw-value@tcp(db.internal:3307)/shop\nMYSQL_PWD=pw-value\npassword=pw-value\n" +
+			"+ : mysql -uapp -ppw-value\n",
 		err:    errors.New("exit status 42"),
 	}
 
@@ -103,6 +104,7 @@ func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "pw-value")
 	c.Assert(err.Error(), qt.Contains, "PTAH_DB_URL=mysql://app@db.internal:3307/shop")
 	c.Assert(err.Error(), qt.Contains, "MYSQL_PWD=redacted")
+	c.Assert(err.Error(), qt.Contains, "+ : mysql -uapp -predacted")
 }
 
 // A short password is taken out of the variables that hold it, and the words of

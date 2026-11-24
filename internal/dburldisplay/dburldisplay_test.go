@@ -962,6 +962,18 @@ func TestRedactError_HidesWhatTheDriverRead(t *testing.T) {
 			want:    "connect to postgres://app:***@localhost/shop failed",
 		},
 		{
+			name:    "a password in the query, before a colon",
+			address: "postgres://app@h/execute?sslmode=disable&password=x",
+			message: "parse postgres://app@h/execute?sslmode=disable&password=x: bad",
+			want:    "parse postgres://app@h/execute?sslmode=disable&password=***: bad",
+		},
+		{
+			name:    "a long password glued to a word",
+			address: "postgres://app:Pa55wordX9@localhost/shop",
+			message: "database Pa55wordX9db does not exist",
+			want:    "database ***db does not exist",
+		},
+		{
 			name:    "a short password unescaped as a keyword",
 			address: "postgres://app:p%40s@localhost/shop",
 			message: "password=p@s was refused",
@@ -1023,6 +1035,11 @@ func TestRedactError_KeepsTheWordsOfAShortPassword(t *testing.T) {
 			name:    "a password with no part of its own",
 			address: "postgres://app:abcd@localhost/shop",
 			message: "lookup abcd: no such host",
+		},
+		{
+			name:    "a part inside a longer word",
+			address: "postgres://app:Zq7Kp@Xk9#Vp8Qr@localhost/shop",
+			message: "lookup Xk9db: no such host",
 		},
 	}
 

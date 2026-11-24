@@ -12,45 +12,67 @@ import (
 // shortestFreeTextSecret is the length, in characters, below which a whole
 // hidden value is taken out of a message only where it stands as a credential.
 //
-// A password with no character a parser stops at is never misread, so a driver
-// names it nowhere but in the address. Outside the address, a value this short
-// is as likely to be a word of the message as the password: the product's name,
-// an SQL keyword, a column called id. Taken out there, it garbles the message,
-// and the reader who can tell which word went learns the password.
+// A value this short is as likely to be a word of the message as the
+// password: the product's name, an SQL keyword, a column called id. Taken out
+// wherever it occurs, it garbles the message, and the reader who can tell
+// which word went learns the password. A longer value is taken out wherever it
+// occurs, because the text may be a program's output, and a program may write
+// the password glued to an option or an escape, as `-pSecret1` or `\nSecret1`.
 const shortestFreeTextSecret = 5
 
 // settingBefore is the end of text that names the setting a value follows: a
-// name, an "=", and the quote or brace a value may open with, as in
-// `password=`, `Pwd='`, `PGPASSWORD=` or `app.jwt_secret=`.
-var settingBefore = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*['"{]?$`)
+// name, an "=" or a ":", and the quote or brace a value may open with, as in
+// `password=`, `Pwd='`, `PGPASSWORD=`, `app.jwt_secret=`, `password: ` or the
+// JSON `"password": "`, escaped or not.
+var settingBefore = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.-]*)\\?["']?\s*[=:]\s*\\?['"{]?$`)
+
+// credentialBefore is the end of text that a credential follows on a command
+// line or in SQL: the `-p` the MySQL client takes the password after,
+// `--password` and a space or an "=", `Bearer `, and the quote that opens the
+// value of `PASSWORD '...'` and `IDENTIFIED BY '...'`.
+var credentialBefore = regexp.MustCompile(`(?i)(?:(?:^|[\s'"])-p|--password[\s=]\s*['"]?|\bbearer\s+|\b(?:password|identified\s+by)\s+['"])$`)
 
 // valueEnds holds the characters that end a setting's value in the text a
-// driver or a program writes: a separator, or the quote or bracket that closes
-// the value or the text quoting it.
-const valueEnds = " \t\r\n;&,'\"`})]"
+// driver or a program writes: a separator, the backslash of an escape, or the
+// quote or bracket that closes the value or the text quoting it.
+const valueEnds = " \t\r\n;&,:#\\'\"`})]"
 
 // longestSetting bounds how far before a value [settingBefore] looks for the
 // name of its setting.
 const longestSetting = 64
 
 // secretText is a value to take out of a message, and the length from which it
-// is taken out where it stands as a word of its own.
+// is taken out outside a credential.
 type secretText struct {
 	value string
 	floor int
+	// whole is true for a whole secret, which from floor is taken out wherever
+	// it occurs, and false for a piece of one, which from floor is taken out
+	// where it stands as a word of its own. A piece is what a parser may have
+	// cut out of the password, and as a word inside a longer one it is more
+	// likely the message's own text.
+	whole bool
 }
 
-// MaskSecrets returns text with each occurrence of a secret replaced by
-// replacement, where the occurrence stands as a credential or as a word.
+// MaskSecrets returns text with each occurrence of a secret of five characters
+// or more replaced by replacement, and each occurrence of a shorter one where it
+// stands as a credential.
 //
-// An occurrence stands as a credential between the ":" and the "@" of an
-// address, or as the whole value of a setting whose name [IsSecretParameter]
-// reports: `password=...`, `token=...`, `PGPASSWORD=...`. It is taken out there
-// whatever its length. An occurrence stands as a word when no letter, digit or
-// "_" runs on from it on either side; it is taken out there when the secret has
-// at least five characters. Text that only holds the characters of a secret,
-// such as the "x" in "execute" for a password "x", is left as it is, so the
-// message stays readable and shows nothing by what went missing.
+// An occurrence stands as a credential where an address, a setting or a
+// command keeps a secret, whatever its length:
+//   - between the ":" or the "/" and the "@" of user info, as in
+//     `app:...@host` and `app/...@host`;
+//   - after a ":" and before white space or the end of the text, as in curl's
+//     `-u app:...` and a line of a password file;
+//   - as the whole value of a setting whose name [IsSecretParameter] reports,
+//     after an "=" or a ":": `password=...`, `PGPASSWORD=...`, `password:
+//     ...`, `"password": "..."`;
+//   - as the whole value after `-p`, `--password`, `Bearer`, `PASSWORD '` and
+//     `IDENTIFIED BY '`.
+//
+// A shorter secret anywhere else, such as the "x" in "execute" for a password
+// "x", is left as it is, so the message stays readable and shows nothing by
+// what went missing.
 //
 // An occurrence is the secret as it is, or with any of its characters escaped
 // as an address writes them: `p%40ss` spells `p@ss`, `%2f` and `%2F` spell "/",
@@ -62,7 +84,7 @@ type secretText struct {
 func MaskSecrets(text string, secrets []string, replacement string) string {
 	values := make([]secretText, 0, len(secrets))
 	for _, secret := range secrets {
-		values = append(values, secretText{value: secret, floor: shortestFreeTextSecret})
+		values = append(values, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
 	}
 	return maskText(text, values, replacement)
 }
@@ -92,7 +114,7 @@ func maskText(text string, secrets []secretText, replacement string) string {
 }
 
 // maskedWidth is the length of text, from at, that spells the first secret
-// standing there as a credential or a word, or 0.
+// taken out there, or 0.
 func maskedWidth(text string, at int, secrets []secretText) int {
 	for _, secret := range secrets {
 		width := spelled(text[at:], secret.value)
@@ -101,7 +123,7 @@ func maskedWidth(text string, at int, secrets []secretText) int {
 		}
 		end := at + width
 		if standsAsCredential(text, at, end) ||
-			utf8.RuneCountInString(secret.value) >= secret.floor && standsAsWord(text, at, end) {
+			utf8.RuneCountInString(secret.value) >= secret.floor && (secret.whole || standsAsWord(text, at, end)) {
 			return width
 		}
 	}
@@ -133,18 +155,28 @@ func unescapes(digits string, b byte) bool {
 	return err == nil && byte(value) == b
 }
 
-// standsAsCredential reports whether text[start:end] is where an address or a
-// setting keeps a secret: between the ":" and the "@" of user info, or the whole
-// value after the "=" of a secret's setting.
+// standsAsCredential reports whether text[start:end] is where an address, a
+// setting or a command keeps a secret, as [MaskSecrets] lists them.
 func standsAsCredential(text string, start, end int) bool {
-	if start > 0 && text[start-1] == ':' && end < len(text) && text[end] == '@' {
+	var before byte
+	if start > 0 {
+		before = text[start-1]
+	}
+	last := end == len(text)
+	if (before == ':' || before == '/') && !last && text[end] == '@' {
 		return true
 	}
-	if end < len(text) && !strings.ContainsRune(valueEnds, rune(text[end])) {
+	if before == ':' && (last || unicode.IsSpace(rune(text[end]))) {
+		return true
+	}
+	if !last && !strings.ContainsRune(valueEnds, rune(text[end])) {
 		return false
 	}
-	match := settingBefore.FindStringSubmatch(text[max(0, start-longestSetting):start])
-	return match != nil && IsSecretParameter(match[1])
+	window := text[max(0, start-longestSetting):start]
+	if match := settingBefore.FindStringSubmatch(window); match != nil && IsSecretParameter(match[1]) {
+		return true
+	}
+	return credentialBefore.MatchString(window)
 }
 
 // standsAsWord reports whether no word character runs on from text[start:end]

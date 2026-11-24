@@ -80,6 +80,61 @@ func TestSanitize_KeepsTheWordsOfAShortSecret(t *testing.T) {
 	c.Assert(got, qt.Equals, "ptah: execute as ptah failed: password=redacted url=postgres://ptah:redacted@db/ptah")
 }
 
+// A secret of five characters or more is taken out wherever a program writes
+// it, glued to an option or an escape too, and a short one where it stands as a
+// credential.
+func TestSanitize_RedactsASecretAProgramWrites(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+		text string
+		want string
+	}{
+		{
+			name: "after the MySQL client's -p",
+			env:  []string{"DB_PASSWORD=Srv9Kq2Lm"},
+			text: "+ : mysql -uapp -pSrv9Kq2Lm",
+			want: "+ : mysql -uapp -predacted",
+		},
+		{
+			name: "after an escape in a JSON line",
+			env:  []string{"DB_PASSWORD=Srv9Kq2Lm"},
+			text: `{"msg": "dump\nSrv9Kq2Lm"}`,
+			want: `{"msg": "dump\nredacted"}`,
+		},
+		{
+			name: "a variable whose name ends in PASSWORD",
+			env:  []string{"PGPASSWORD=Tok3nValue9"},
+			text: "dump -pTok3nValue9",
+			want: "dump -predacted",
+		},
+		{
+			name: "a short secret after a colon",
+			env:  []string{"DB_PASSWORD=ab"},
+			text: "password: ab",
+			want: "password: redacted",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(secretdisplay.Sanitize(test.text, test.env, nil), qt.Equals, test.want)
+		})
+	}
+}
+
+// The working directories a shell keeps in PWD and OLDPWD are no secrets, so
+// the paths a program writes keep them.
+func TestSanitize_KeepsTheWorkingDirectory(t *testing.T) {
+	c := qt.New(t)
+	text := "read /work/shop/schema.sql after /work/old"
+
+	got := secretdisplay.Sanitize(text, []string{"PWD=/work/shop", "OLDPWD=/work/old"}, nil)
+
+	c.Assert(got, qt.Equals, text)
+}
+
 func TestSanitize_EscapesTerminalControls(t *testing.T) {
 	c := qt.New(t)
 

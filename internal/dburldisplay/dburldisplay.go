@@ -135,9 +135,9 @@ func ParseURL(rawURL string) (*url.URL, error) {
 // fails to connect. So each part of a hidden value is taken out as well as the
 // whole.
 //
-// A value is taken out where it stands as a credential or as a word, as
-// [MaskSecrets] reads them, and a part of at least three characters where it
-// stands as a word. With the password "x", `database=execute` keeps its word.
+// A value is taken out as [MaskSecrets] takes it out, and a part of at least
+// three characters where it stands as a word as well. With the password "x",
+// `database=execute` keeps its word.
 //
 // The result wraps err, so errors.Is and errors.As answer as they did. An error
 // that holds none of it is returned as it is, and a nil err is nil.
@@ -197,11 +197,11 @@ func (h *hiddenText) hide(value string) {
 }
 
 // secretParts is every secret of dbURL and each piece of it worth looking for,
-// with the length from which each is taken out where it stands as a word.
+// with the length from which each is taken out outside a credential.
 func secretParts(dbURL string) []secretText {
 	var parts []secretText
 	for _, secret := range Secrets(dbURL) {
-		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret})
+		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
 		for piece := range strings.FieldsFuncSeq(secret, stopsAPassword) {
 			if piece != secret && len(piece) >= shortestSecretPart {
 				parts = append(parts, secretText{value: piece, floor: shortestSecretPart})

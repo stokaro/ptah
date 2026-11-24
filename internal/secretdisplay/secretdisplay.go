@@ -17,9 +17,9 @@ import (
 // command arguments, then escapes terminal control characters. Newlines and
 // tabs are preserved for readable diagnostics.
 //
-// A secret is redacted where it stands as a credential or as a word, as
-// [dburldisplay.MaskSecrets] reads them: text that only holds its characters
-// keeps them.
+// A secret of five characters or more is redacted wherever it occurs, and a
+// shorter one where it stands as a credential, as [dburldisplay.MaskSecrets]
+// reads them: text that only holds a short secret's characters keeps them.
 func Sanitize(text string, env, args []string) string {
 	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args), "redacted"))
 }
@@ -103,13 +103,26 @@ func option(arg string) (key, value string, hasValue bool) {
 	return strings.Cut(arg, "=")
 }
 
+// isSensitiveKey reports whether an environment variable or an option names
+// a secret. A word of the name counts when it is one of the secret words, or
+// ends in one that names nothing else when it ends a longer word, as
+// PGPASSWORD ends in "password". PWD and OLDPWD name the working directories
+// the shell keeps, and "pwd" ends no longer word for that reason: taken for a
+// secret, the working directory would be taken out of every path a program
+// writes.
 func isSensitiveKey(key string) bool {
+	if strings.EqualFold(key, "PWD") || strings.EqualFold(key, "OLDPWD") {
+		return false
+	}
 	parts := strings.FieldsFunc(strings.ToLower(key), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
 	for _, part := range parts {
 		switch part {
 		case "credential", "credentials", "passwd", "password", "pwd", "secret", "token":
+			return true
+		}
+		if slices.ContainsFunc([]string{"passwd", "password", "secret", "token"}, func(word string) bool { return strings.HasSuffix(part, word) }) {
 			return true
 		}
 	}
