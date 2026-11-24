@@ -9,7 +9,7 @@ name: Capability Matrix Request
 #
 #	/capability-matrix                     every declared cell
 #	/capability-matrix postgres            every PostgreSQL line
-#	/capability-matrix mysql, oracle-21    a mix of prefixes and exact ids
+#	/capability-matrix mysql, oracle-23    a mix of prefixes and exact ids
 #	/capability-matrix mysql mariadb       the same, separated by a space
 #
 # It LABELS the pull request, which fires `pull_request: labeled` and runs

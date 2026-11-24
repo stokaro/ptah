@@ -101,7 +101,6 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 16.0 (SQL Server 2022) | certified | `SQLServer2022` | yes |
 | `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | yes |
 | `oracle` | 23 | certified | `Oracle23` | yes |
-| `oracle` | 21 | certified | `Oracle21` | yes |
 | `cockroachdb` | 26.4 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
@@ -114,10 +113,11 @@ the declared set cannot say one thing here and another in a workflow file.
 | `mysql` | 26.7 | best-effort | `MySQL84` | no |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
+| `oracle` | 21 | best-effort | `Oracle21` | no |
 
-Declared release lines: 35. Probed on every pull request: 31.
+Declared release lines: 35. Probed on every pull request: 30.
 
-Support levels across the 35 declared lines: 29 certified, 2 legacy-tested, 4 best-effort.
+Support levels across the 35 declared lines: 28 certified, 2 legacy-tested, 5 best-effort.
 
 Lines that are declared and not probed, and why:
 
@@ -125,6 +125,7 @@ Lines that are declared and not probed, and why:
 - `mysql` 26.7 — upstream support ended on 2026-10-20 (endoflife.date/mysql).
 - `clickhouse` 26.7 — upstream support ended on 2026-10-24 (endoflife.date/clickhouse).
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
+- `oracle` 21 — an Oracle Innovation Release, not a long-term release, with no extended support (stokaro/ptah#6600).
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 
@@ -132,8 +133,8 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 - `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
-- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
 - `cockroachdb` 26.4, pinned as `cockroachdb/cockroach:v26.4.1`.
+- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
 <!-- END GENERATED VERSION MATRIX -->
 
 ## Interpret the result

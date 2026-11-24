@@ -399,7 +399,7 @@ jobs:
       # Oracle, which the tagged contour needs because internal/testcontour
       # refuses a skipped integration test: a test in ./integration/... either
       # runs here or does not belong there. gvenzl/oracle-free:slim is the
-      # image both Oracle capability cells name.
+      # image the Oracle 23 capability cell names.
       #
       # It is slower to become healthy than every other service in this list --
       # a minute or two rather than seconds -- so the retries are generous. The

@@ -687,18 +687,14 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		// integration suite starts PostgreSQL 19, so the probe was the only job
 		// measuring it.
 		"postgres-14",
-		// Neither Oracle line is here any more. The 23 line left when the
-		// tagged integration contour started its image, and 21 left when the
-		// matrix gained a launch recipe, which is what #1875 asks for: a
-		// preset kept honest by a server rather than by a paragraph.
-		//
-		// The cost that kept the recipe out is real and now paid knowingly.
-		// The images are 2.87 GB and 2.58 GB, they take a minute or two to
-		// open, and the probe itself is about half a minute against a running
-		// one -- measured, oracle-23 PASS in 31s and oracle-21 PASS in 18s.
-		// Two more jobs beside twenty-four that already run in parallel move
-		// no wall clock, and an unmeasured preset is the thing this repository
-		// refuses everywhere else (stokaro/ptah#1875).
+		// Oracle 21 is here by a third route: not a lost recipe and not an
+		// end-of-life date, but a release kind. Of Oracle Database's releases,
+		// Ptah tests only the long-term ones, and 21 is an Innovation Release
+		// with no extended support, so no job is spent on it
+		// (stokaro/ptah#6600). Oracle 23 is not on
+		// this list: the tagged integration contour and the probe both start
+		// its image.
+		"oracle-21",
 	})
 }
 
