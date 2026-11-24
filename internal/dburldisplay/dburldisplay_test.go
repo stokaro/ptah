@@ -1108,7 +1108,7 @@ func TestUsers(t *testing.T) {
 		address string
 		want    []string
 	}{
-		{name: "no password", address: "postgres://app@localhost/shop", want: []string{}},
+		{name: "no password", address: "postgres://app@localhost/shop", want: make([]string, 0)},
 		{name: "a URL", address: "postgres://app:Pa55wordX9@localhost/shop", want: []string{"app"}},
 		{name: "a URL net/url cannot read", address: "postgres://app:p%ss@localhost/shop", want: []string{"app"}},
 		{name: "a DSN", address: "app:P@5s/w0rd@tcp(localhost:3306)/shop", want: []string{"app"}},

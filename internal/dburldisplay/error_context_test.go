@@ -49,6 +49,8 @@ func TestRecordedTextRedaction(t *testing.T) {
 			text: "dblink to postgres://app:x@localhost/execute refused",
 			want: "dblink to postgres://app:***@localhost/execute refused",
 		},
+		{name: "a short password after the user and a colon", ctx: short, text: "login app:x refused", want: "login app:*** refused"},
+		{name: "a short password after a port", ctx: short, text: "dial localhost:x refused", want: "dial localhost:x refused"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
