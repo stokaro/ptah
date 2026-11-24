@@ -132,6 +132,21 @@ type Service interface {
 	// engine offers on a session that will run SQL the caller does not
 	// trust.
 	RestrictUntrustedSQL(ctx context.Context, session *sql.Conn) error
+	// StoredValuesBySession reports whether a setting of the session decides
+	// that the server changes a value a table stores to fit a new definition
+	// and warns, rather than refusing the statement. A plan Ptah rendered then
+	// runs on a session [Service.KeepStoredValues] set up.
+	StoredValuesBySession() bool
+	// KeepStoredValues sets, on a pinned session that will run a plan Ptah
+	// rendered, whatever makes the server refuse a statement that would
+	// change a value a table stores to fit a new definition. It returns the
+	// function that gives the session back the setting it had, or nil when
+	// the session needed nothing.
+	KeepStoredValues(ctx context.Context, session *sql.Conn) (restore func(context.Context) error, err error)
+	// StoredValueRefusal reports whether err is the server refusing a
+	// statement because it would change a stored value, and the column the
+	// server names, which is empty where it names none.
+	StoredValueRefusal(err error) (column string, refused bool)
 
 	// MarkRead records on a schema the reader read what the read cannot
 	// describe on this target.
@@ -221,6 +236,18 @@ func (Base) TransactionIdentity(context.Context, *sql.Tx) (string, error) { retu
 // RestrictUntrustedSQL does nothing: the engine offers no session-level
 // restriction.
 func (Base) RestrictUntrustedSQL(context.Context, *sql.Conn) error { return nil }
+
+// StoredValuesBySession answers false: the engine's server refuses a change
+// to a stored value whatever the session's settings.
+func (Base) StoredValuesBySession() bool { return false }
+
+// KeepStoredValues sets nothing.
+func (Base) KeepStoredValues(context.Context, *sql.Conn) (func(context.Context) error, error) {
+	return nil, nil
+}
+
+// StoredValueRefusal reports no refusal.
+func (Base) StoredValueRefusal(error) (string, bool) { return "", false }
 
 // MarkRead keeps schema as it is.
 func (Base) MarkRead(schema *catalog.Database, _ catalog.ServerInfo) *catalog.Database { return schema }

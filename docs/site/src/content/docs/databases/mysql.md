@@ -1960,6 +1960,45 @@ as plain `longtext`, removes the column's check with `MODIFY COLUMN`.
 The plan rates removal or replacement of a column check as destructive because
 the new definition may stop enforcing the old condition.
 
+## A session without a strict SQL mode
+
+A session whose `sql_mode` names neither `STRICT_TRANS_TABLES` nor
+`STRICT_ALL_TABLES` lets `ALTER TABLE` rewrite each row the new column
+definition does not fit. The server writes a warning and the statement
+succeeds:
+
+- a removed `ENUM` member becomes the empty string;
+- a removed `SET` member leaves the set, so `'a,c'` becomes `'a'`;
+- a narrower `VARCHAR` or `TEXT` cuts the string;
+- a narrower integer or `DECIMAL` is clamped to its largest value;
+- a `NULL` in a column that becomes `NOT NULL` becomes the type's zero value.
+
+The global mode decides this, and so does a `sql_mode` query parameter in the
+database URL.
+
+`ptah schema apply`, `ptah-compat schema apply` and the rollback that
+`ptah migrations down --plan` derives run their plan on a session that has
+`STRICT_ALL_TABLES` added to its mode. On that session the server refuses a
+statement that would rewrite a row, and the table keeps its rows and its
+definition. The error names the column and keeps the server's own error:
+
+```text
+column "n": the change would rewrite stored values: failed to execute SQL statement: SQL execution failed: Error 1265 (01000): Data truncated for column 'n' at row 1
+```
+
+Every other mode of the session stays, `ANSI_QUOTES` and
+`NO_BACKSLASH_ESCAPES` among them. Three modes are taken out:
+`ERROR_FOR_DIVISION_BY_ZERO`, `NO_ZERO_DATE` and `NO_ZERO_IN_DATE`. A strict
+mode changes what these three do. On a session without one, they keep a zero
+date and the `NULL` of a division by zero, each with a warning. On a session
+with one, they refuse a copy of a table that holds such a value, even when the
+copy changes none of them. A session that already names a strict mode is left
+as it is. When the plan ends, the session's mode is set back to what it was.
+
+Migration files run under the session's mode as written, since a file may
+depend on it. To change a column that a row no longer fits, update or delete
+those rows first, in a migration of their own or by hand.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with
@@ -1968,8 +2007,11 @@ depends on the session's SQL mode:
 
 - Under strict SQL mode, the default on both servers, the statement fails:
   MySQL answers error 1138 and MariaDB error 1265, and the row keeps its `NULL`.
-- Without `STRICT_TRANS_TABLES`, both servers apply the statement and rewrite
-  the `NULL` to the type's zero value, such as `0` or the empty string, with a
+  A plan that `schema apply` runs always takes a strict mode; see
+  [A session without a strict SQL mode](#a-session-without-a-strict-sql-mode).
+- A migration file runs under the session's mode. Without
+  `STRICT_TRANS_TABLES`, both servers apply the statement and rewrite the
+  `NULL` to the type's zero value, such as `0` or the empty string, with a
   warning. A `DEFAULT` in the same `MODIFY` is not what they write.
 
 The safety report lists the statement as a warning for both reasons. Update
