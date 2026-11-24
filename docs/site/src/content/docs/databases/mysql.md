@@ -1503,14 +1503,38 @@ server refuses a revoke of a privilege the role does not hold there with ERROR
 only where the read reports a privilege under the table's name, which a
 dropped table of that name leaves behind.
 
-A grant on the table's database (``GRANT SELECT ON d2.* TO `r` ``), on every
-database (`ON *.*`), or on MariaDB to `PUBLIC`, gives the role the privilege on
-the table as well, and a revoke on the table cannot take it away. The server
-answers that revoke with ERROR 1147, and a plan that left it out would read as
-synced while a member of the role keeps reading the table. So Ptah refuses a
-declared revoke on a table, existing or created, that such a grant keeps, and
-names the grant: revoke it where it was granted, or grant the privilege on
-each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
+A grant on the table's database (``GRANT SELECT ON d2.* TO `r` ``), on a
+database name pattern that matches it (``GRANT SELECT ON `d%`.* TO `r` ``), on
+every database (`ON *.*`), or on MariaDB to `PUBLIC`, gives the role the
+privilege on the table as well, and a revoke on the table cannot take it away.
+The server answers that revoke with ERROR 1147, and a plan that left it out
+would read as synced while a member of the role keeps reading the table. So
+Ptah refuses a declared revoke on a table, existing or created, that such a
+grant keeps, and names the grant: revoke it where it was granted, or grant the
+privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
+
+A pattern matches a database name as the server's privilege check reads it,
+which is not how SQL `LIKE` reads it. `%` is any run of bytes and `_` is one
+byte, so `` `nx__d` `` reaches `nxéd`, where `é` is two bytes. A backslash takes
+the next character literally under every `sql_mode`, `NO_BACKSLASH_ESCAPES`
+included, so `` `ab\_c` `` reaches `ab_c` and no other database. A backslash
+that ends a pattern is the character itself, so `` `ab%\` `` reaches `abx\`.
+Measured on 8.4.13 and 11.8.9.
+
+On MySQL, a role's grant on a name with no `%` or `_` compares the name byte
+for byte, backslashes included, so through a role `` `a\bc` `` reaches no
+database `abc`. Ptah reads that backslash as an escape, as MySQL does for a
+user's own grant and MariaDB does for both, and refuses a revoke the server
+would carry out. Measured on 8.4.13 and 11.8.9.
+
+Case counts on a server with `lower_case_table_names=0` and does not on one
+that folds names, so a grant on `` `D%` `` reaches no table of `d1` there.
+MySQL with `partial_revokes` on reads `%` and `_` as the characters themselves,
+so a pattern grant reaches no other database, and Ptah reports none. Where
+several database rows match, the server applies one of them, and while a role
+is active the row MySQL picks does not follow from the rows. So Ptah reports
+every row that matches, and a revoke under a pattern that another row shadows
+is refused too. Measured on 8.4.13 and 11.8.9.
 
 A database grant the schema declares under `grants:` with `on_schema` keeps
 the privilege too, before the server holds it, because the plan grants it.

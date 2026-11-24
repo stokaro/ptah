@@ -67,6 +67,13 @@ func newColumnGrantRun(c *qt.C, engine dbtarget.Engine, held []string) columnGra
 // schema.
 func newColumnGrantRunFrom(c *qt.C, engine dbtarget.Engine, schema string, held []string) columnGrantRun {
 	c.Helper()
+	return newColumnGrantRunIn(c, engine, "fk_built", schema, held)
+}
+
+// newColumnGrantRunIn is [newColumnGrantRunFrom] on a database whose name
+// begins with prefix, as [mysqlScratch.database] names it.
+func newColumnGrantRunIn(c *qt.C, engine dbtarget.Engine, prefix, schema string, held []string) columnGrantRun {
+	c.Helper()
 	scratch := newMySQLFamilyScratch(c, engine)
 	run := columnGrantRun{scratch: scratch, role: fmt.Sprintf("ptah_cg_%d", time.Now().UnixNano()%1_000_000_000)}
 	_, err := scratch.admin.ExecContext(c.Context(), "CREATE ROLE "+run.role)
@@ -75,7 +82,7 @@ func newColumnGrantRunFrom(c *qt.C, engine dbtarget.Engine, schema string, held 
 		_, dropErr := scratch.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+run.role)
 		c.Check(dropErr, qt.IsNil)
 	})
-	run.database, run.url = scratch.builtFrom(c, schema)
+	run.database, run.url = scratch.builtAs(c, prefix, schema)
 	for _, statement := range held {
 		_, err := scratch.admin.ExecContext(c.Context(), fmt.Sprintf(statement, run.database, run.role))
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))

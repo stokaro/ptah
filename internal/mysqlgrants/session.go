@@ -22,7 +22,7 @@ func Read(ctx context.Context, q dbreset.Querier, mergedRoles bool) (Grants, err
 	if err != nil {
 		return Grants{}, fmt.Errorf("failed to read the connecting account's grants: %w", err)
 	}
-	options, err := readOptions(ctx, q)
+	options, err := ReadOptions(ctx, q)
 	if err != nil {
 		return Grants{}, fmt.Errorf("failed to read the settings grants depend on: %w", err)
 	}
@@ -30,7 +30,11 @@ func Read(ctx context.Context, q dbreset.Querier, mergedRoles bool) (Grants, err
 	return Parse(lines, options), nil
 }
 
-func readOptions(ctx context.Context, q dbreset.Querier) (Options, error) {
+// ReadOptions reads the server settings that decide how a database-level row
+// applies: partial_revokes, which MariaDB does not have and which then reads
+// as off, and lower_case_table_names. [Options.MergedRoles] is the caller's to
+// set.
+func ReadOptions(ctx context.Context, q dbreset.Querier) (Options, error) {
 	rows, err := q.QueryContext(ctx, `SHOW VARIABLES WHERE Variable_name IN ('partial_revokes', 'lower_case_table_names')`)
 	if err != nil {
 		return Options{}, err

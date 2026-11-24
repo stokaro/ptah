@@ -23,6 +23,7 @@ func foldedPrivileges(next dbtest.QueryHandler) dbtest.QueryHandler {
 		result dbtest.QueryResult
 	}{
 		{marker: "column_name = 'is_role'", result: dbtest.QueryResult{Columns: []string{"COUNT(*)"}, Rows: [][]driver.Value{{int64(1)}}}},
+		{marker: "sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE", result: dbtest.QueryResult{Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"}}},
 		{marker: "information_schema.SCHEMA_PRIVILEGES", result: dbtest.QueryResult{
 			Columns: []string{"role_name", "object_schema", "object_name", "column_name", "privilege", "grantable", "object_type"},
 			Rows: [][]driver.Value{
