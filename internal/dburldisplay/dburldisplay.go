@@ -29,8 +29,13 @@ const (
 	redactedQueryValue = "redacted"
 	redactedPassword   = "***"
 	// shortestSecretPart is the length below which [RedactError] leaves a part
-	// of a hidden value in a message: taking out every occurrence of a character
-	// or two leaves a message nobody can read.
+	// of a hidden value in a message where it stands as a word: a character or
+	// two of a password is a word of most messages.
+	//
+	// A part is shorter than a whole secret may be there
+	// ([shortestFreeTextSecret]), because a part surfaces only where a driver
+	// misread the address and names what it read as a host, a port or a
+	// database.
 	shortestSecretPart = 3
 )
 
@@ -130,6 +135,10 @@ func ParseURL(rawURL string) (*url.URL, error) {
 // fails to connect. So each part of a hidden value is taken out as well as the
 // whole.
 //
+// A value is taken out where it stands as a credential or as a word, as
+// [MaskSecrets] reads them, and a part of at least three characters where it
+// stands as a word. With the password "x", `database=execute` keeps its word.
+//
 // The result wraps err, so errors.Is and errors.As answer as they did. An error
 // that holds none of it is returned as it is, and a nil err is nil.
 func RedactError(dbURL string, err error) error {
@@ -137,10 +146,7 @@ func RedactError(dbURL string, err error) error {
 		return nil
 	}
 	text := err.Error()
-	redacted := text
-	for _, secret := range secretParts(dbURL) {
-		redacted = strings.ReplaceAll(redacted, secret, redactedPassword)
-	}
+	redacted := maskText(text, secretParts(dbURL), redactedPassword)
 	if redacted == text {
 		return err
 	}
@@ -191,18 +197,18 @@ func (h *hiddenText) hide(value string) {
 }
 
 // secretParts is every secret of dbURL and each piece of it worth looking for,
-// longest first so that a piece cannot break up a whole.
-func secretParts(dbURL string) []string {
-	var parts []string
+// with the length from which each is taken out where it stands as a word.
+func secretParts(dbURL string) []secretText {
+	var parts []secretText
 	for _, secret := range Secrets(dbURL) {
-		parts = append(parts, secret)
+		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret})
 		for piece := range strings.FieldsFuncSeq(secret, stopsAPassword) {
-			if len(piece) >= shortestSecretPart {
-				parts = append(parts, piece)
+			if piece != secret && len(piece) >= shortestSecretPart {
+				parts = append(parts, secretText{value: piece, floor: shortestSecretPart})
 			}
 		}
 	}
-	return longestFirst(parts)
+	return parts
 }
 
 // stopsAPassword reports a character a parser may stop reading a password at, so

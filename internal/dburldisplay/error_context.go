@@ -3,7 +3,6 @@ package dburldisplay
 import (
 	"context"
 	"slices"
-	"strings"
 	"sync"
 )
 
@@ -54,7 +53,8 @@ func RedactRecordedError(ctx context.Context, err error) error {
 
 // RedactRecordedText is [RedactRecordedError] for a text that is not an
 // error's message, such as a field a database server answered with: it takes
-// every secret of the addresses opened under ctx out of text.
+// the secrets of the addresses opened under ctx out of text, where [RedactError]
+// would take them out.
 func RedactRecordedText(ctx context.Context, text string) string {
 	if ctx == nil {
 		return text
@@ -66,12 +66,9 @@ func RedactRecordedText(ctx context.Context, text string) string {
 	addresses.mu.Lock()
 	urls := slices.Clone(addresses.urls)
 	addresses.mu.Unlock()
-	var parts []string
+	var parts []secretText
 	for _, dbURL := range urls {
 		parts = append(parts, secretParts(dbURL)...)
 	}
-	for _, part := range longestFirst(parts) {
-		text = strings.ReplaceAll(text, part, redactedPassword)
-	}
-	return text
+	return maskText(text, parts, redactedPassword)
 }

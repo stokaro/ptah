@@ -31,6 +31,8 @@ func TestRecordedErrorRedactionUsesEveryAddressInOneRun(t *testing.T) {
 func TestRecordedTextRedaction(t *testing.T) {
 	ctx := dburldisplay.WithErrorRedaction(t.Context())
 	dburldisplay.RecordErrorAddress(ctx, "postgres://app:Pa55wordX9@localhost/first")
+	short := dburldisplay.WithErrorRedaction(t.Context())
+	dburldisplay.RecordErrorAddress(short, "postgres://app:x@localhost/execute")
 	tests := []struct {
 		name string
 		ctx  context.Context
@@ -40,6 +42,13 @@ func TestRecordedTextRedaction(t *testing.T) {
 		{name: "a recorded password", ctx: ctx, text: "Key (secret)=(Pa55wordX9) already exists.", want: "Key (secret)=(***) already exists."},
 		{name: "a text that quotes none", ctx: ctx, text: "Key (id)=(1) already exists.", want: "Key (id)=(1) already exists."},
 		{name: "a context that records nothing", ctx: t.Context(), text: "Pa55wordX9", want: "Pa55wordX9"},
+		{name: "a short password's letters", ctx: short, text: "Key (name)=(execute) already exists.", want: "Key (name)=(execute) already exists."},
+		{
+			name: "a short password in a quoted address",
+			ctx:  short,
+			text: "dblink to postgres://app:x@localhost/execute refused",
+			want: "dblink to postgres://app:***@localhost/execute refused",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

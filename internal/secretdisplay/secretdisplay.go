@@ -16,11 +16,12 @@ import (
 // Sanitize redacts secrets discoverable from the effective environment and
 // command arguments, then escapes terminal control characters. Newlines and
 // tabs are preserved for readable diagnostics.
+//
+// A secret is redacted where it stands as a credential or as a word, as
+// [dburldisplay.MaskSecrets] reads them: text that only holds its characters
+// keeps them.
 func Sanitize(text string, env, args []string) string {
-	for _, secret := range secretValues(env, args) {
-		text = strings.ReplaceAll(text, secret, "redacted")
-	}
-	return escapeControls(text)
+	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args), "redacted"))
 }
 
 // SanitizeError returns an error with display-safe text while preserving the

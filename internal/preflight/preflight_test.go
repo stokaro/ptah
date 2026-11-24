@@ -105,6 +105,25 @@ func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "MYSQL_PWD=redacted")
 }
 
+// A short password is taken out of the variables that hold it, and the words of
+// the output that hold its characters stay whole.
+func TestCommandHookOutputKeepsTheWordsOfAShortPassword(t *testing.T) {
+	c := qt.New(t)
+	runner := &fakeCommandRunner{
+		output: "ptah backup: MYSQL_PWD=ptah PGPASSWORD=ptah\nptah backup: done\n",
+		err:    errors.New("exit status 42"),
+	}
+
+	_, err := Runner{CommandRunner: runner}.Execute(context.Background(), Options{
+		Direction:          DirectionUp,
+		DatabaseURL:        "mysql://ptah:ptah@tcp(db.internal:3307)/shop",
+		DisplayDatabaseURL: "mysql://ptah@db.internal:3307/shop",
+		Command:            "backup",
+	})
+
+	c.Assert(err, qt.ErrorMatches, "(?s).*\nptah backup: MYSQL_PWD=redacted PGPASSWORD=redacted\nptah backup: done\n?")
+}
+
 func TestCommandHookOutputFallbackRedactsURLQuerySecrets(t *testing.T) {
 	c := qt.New(t)
 	dbPassword := "pg-" + "pass"

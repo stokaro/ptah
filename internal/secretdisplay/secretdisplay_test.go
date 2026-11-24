@@ -66,6 +66,20 @@ func TestSanitize_RedactsAPasswordWithReservedCharacters(t *testing.T) {
 	}
 }
 
+// A short secret is taken out where it stands as a credential, and the words
+// that hold its characters stay whole.
+func TestSanitize_KeepsTheWordsOfAShortSecret(t *testing.T) {
+	c := qt.New(t)
+
+	got := secretdisplay.Sanitize(
+		"ptah: execute as ptah failed: password=x url=postgres://ptah:ptah@db/ptah",
+		[]string{"DATABASE_PASSWORD=x", "DATABASE_URL=postgres://ptah:ptah@db/ptah"},
+		nil,
+	)
+
+	c.Assert(got, qt.Equals, "ptah: execute as ptah failed: password=redacted url=postgres://ptah:redacted@db/ptah")
+}
+
 func TestSanitize_EscapesTerminalControls(t *testing.T) {
 	c := qt.New(t)
 

@@ -920,6 +920,12 @@ func TestRedactError_HidesWhatTheDriverRead(t *testing.T) {
 			want:    "lookup ***: no such host",
 		},
 		{
+			name:    "a part of three characters read as a host",
+			address: "postgres://app:Zq7Kp@Xk9#Vp8Qr@localhost/shop",
+			message: "lookup Xk9: no such host",
+			want:    "lookup ***: no such host",
+		},
+		{
 			name:    "the value of a secret parameter",
 			address: "postgres://localhost/shop?sslkey=%2Ftmp%2FXk9Lm",
 			message: "unable to read sslkey: open /tmp/Xk9Lm: no such file or directory",
@@ -930,6 +936,36 @@ func TestRedactError_HidesWhatTheDriverRead(t *testing.T) {
 			address: "app:Zq7Kp/Xk9Lm@tcp(localhost:3306)/shop",
 			message: "cannot parse `app:xxxxxx/Xk9Lm@tcp(localhost:3306)/shop`",
 			want:    "cannot parse `app:xxxxxx/***@tcp(localhost:3306)/shop`",
+		},
+		{
+			name:    "a short password in the address the error quotes",
+			address: "postgres://app:x@localhost/execute",
+			message: "connect to postgres://app:x@localhost/execute failed",
+			want:    "connect to postgres://app:***@localhost/execute failed",
+		},
+		{
+			name:    "a short password in the keywords the error quotes",
+			address: "host=localhost password=x dbname=execute",
+			message: "cannot parse `host=localhost password=x dbname=execute`",
+			want:    "cannot parse `host=localhost password=*** dbname=execute`",
+		},
+		{
+			name:    "a short escaped password in the address the error quotes",
+			address: "postgres://app:p%40s@localhost/shop",
+			message: "connect to postgres://app:p%40s@localhost/shop failed",
+			want:    "connect to postgres://app:***@localhost/shop failed",
+		},
+		{
+			name:    "an escaped password in the address the error quotes",
+			address: "postgres://app:Pa55%40wordX9@localhost/shop",
+			message: "connect to postgres://app:Pa55%40wordX9@localhost/shop failed",
+			want:    "connect to postgres://app:***@localhost/shop failed",
+		},
+		{
+			name:    "a short password unescaped as a keyword",
+			address: "postgres://app:p%40s@localhost/shop",
+			message: "password=p@s was refused",
+			want:    "password=*** was refused",
 		},
 		{
 			// A part this short would take letters out of every other word.
@@ -963,6 +999,42 @@ type wrappedDriverError struct{ message string }
 
 func (e wrappedDriverError) Error() string { return e.message }
 func (e wrappedDriverError) Unwrap() error { return errFromDriver }
+
+// A password too short to look for in free text is taken out of the address
+// alone: the words of the message that hold its characters stay whole, and the
+// error comes back as the very value.
+func TestRedactError_KeepsTheWordsOfAShortPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		message string
+	}{
+		{
+			name:    "a letter of a word",
+			address: "postgres://app:x@localhost/execute",
+			message: "failed to connect to `user=app database=execute`: dial error",
+		},
+		{
+			name:    "the product's name",
+			address: "postgres://ptah:ptah@localhost/ptah",
+			message: "ptah: failed to connect to `user=ptah database=ptah`: dial error",
+		},
+		{
+			name:    "a password with no part of its own",
+			address: "postgres://app:abcd@localhost/shop",
+			message: "lookup abcd: no such host",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := fmtError(test.message)
+
+			c.Assert(dburldisplay.RedactError(test.address, err), qt.Equals, err)
+		})
+	}
+}
 
 // An error that holds nothing of the address comes back as the very value, and
 // no error is no error.
