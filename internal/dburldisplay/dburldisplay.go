@@ -173,7 +173,7 @@ func Users(dbURL string) []string {
 
 // spellings is each of values as it is and unescaped, longest first.
 func spellings(values []string) []string {
-	spelled := make([]string, 0, 2*len(values))
+	spelled := make([]string, 0, len(values))
 	for _, value := range values {
 		spelled = append(spelled, value)
 		if unescaped, err := url.QueryUnescape(value); err == nil && unescaped != value {
