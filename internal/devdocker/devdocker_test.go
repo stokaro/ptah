@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -275,10 +276,14 @@ type fakeRunner struct {
 	startedImages []string
 	startedEnv    [][]string
 
-	// stopped and stoppedErr are what every Stopped call answers: "" for a
-	// container that still runs.
+	// stopped and stoppedErr are what every Stopped call answers until the
+	// container is removed: "" for a container that still runs. A removed
+	// container is gone, as the daemon says, with its log.
 	stopped    string
 	stoppedErr error
+	// stoppedBounded records, for each Stopped call before the removal,
+	// whether its context carried a deadline.
+	stoppedBounded []bool
 
 	// remoteHost and remoteErr are what every RemoteHost call answers: "" for
 	// a runtime on this machine.
@@ -309,7 +314,14 @@ func (f *fakeRunner) Start(_ context.Context, name, image, _ string, env []strin
 	return f.hostPort, f.startErr
 }
 
-func (f *fakeRunner) Stopped(context.Context, string) (string, error) {
+func (f *fakeRunner) Stopped(ctx context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if slices.Contains(f.removed, name) {
+		return devdocker.ContainerGone, nil
+	}
+	_, bounded := ctx.Deadline()
+	f.stoppedBounded = append(f.stoppedBounded, bounded)
 	return f.stopped, f.stoppedErr
 }
 
@@ -1111,4 +1123,84 @@ func TestRunLabelNamesThisProcessAlone(t *testing.T) {
 	label := devdocker.RunLabel()
 	c.Assert(label, qt.Matches, `ptah-dev=[a-z2-7]{26}`)
 	c.Assert(devdocker.RunLabel(), qt.Equals, label)
+}
+
+// TestResolveReportsAContainerThatStoppedBeforeItsPortWasRead starts a
+// container that has exited before Start reads its port, as one whose init
+// script fails can on a remote daemon. The run reports the exit and the end of
+// the log, as the readiness wait does, and removes the container.
+func TestResolveReportsAContainerThatStoppedBeforeItsPortWasRead(t *testing.T) {
+	c := qt.New(t)
+	runner := &fakeRunner{
+		startErr: fmt.Errorf("%w of container ptah-dev-x: no public port '5432/tcp' published for ptah-dev-x: exit status 1",
+			devdocker.ErrPortNotRead),
+		stopped: "it exited with code 3; the end of its log:\nptah-init-fails-here",
+	}
+	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+		Runner: runner,
+		Ready:  alwaysReady,
+	})
+	c.Assert(err, qt.IsNotNil)
+	t.Cleanup(release)
+
+	c.Check(err, qt.ErrorMatches, `(?s)dev database postgres:16 did not become ready: the container stopped before the `+
+		`server answered: it exited with code 3; the end of its log:\nptah-init-fails-here`)
+	started, removed := runner.calls()
+	c.Assert(started, qt.HasLen, 1)
+	c.Check(removed, qt.DeepEquals, started)
+	// Asked with a deadline, so a daemon that stalls cannot hold up the
+	// removal.
+	c.Check(runner.stoppedBounded, qt.DeepEquals, []bool{true})
+}
+
+// TestResolveKeepsTheStartErrorOfAContainerThatDidNotStop is the control: a
+// start that failed before the container existed, and a container the runtime
+// says still runs or cannot describe, keep the error Start returned.
+func TestResolveKeepsTheStartErrorOfAContainerThatDidNotStop(t *testing.T) {
+	notRead := fmt.Errorf("%w of container ptah-dev-x: exit status 1", devdocker.ErrPortNotRead)
+	tests := []struct {
+		name       string
+		startErr   error
+		stopped    string
+		stoppedErr error
+	}{
+		{
+			name:     "the image does not exist",
+			startErr: errors.New("start dev database container from postgres:16: no such image: exit status 125"),
+			stopped:  devdocker.ContainerGone,
+		},
+		{name: "the container still runs", startErr: notRead},
+		{
+			// `docker run` created it, so something else removed it, which
+			// says nothing about why the port could not be read.
+			name:     "the container is gone",
+			startErr: notRead,
+			stopped:  devdocker.ContainerGone,
+		},
+		{
+			// An answer that comes with an error is not believed.
+			name:       "the runtime cannot say",
+			startErr:   notRead,
+			stopped:    "it exited with code 3",
+			stoppedErr: errors.New("daemon busy"),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runner := &fakeRunner{startErr: test.startErr, stopped: test.stopped, stoppedErr: test.stoppedErr}
+			_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
+				Runner: runner,
+				Ready:  alwaysReady,
+			})
+			c.Assert(err, qt.IsNotNil)
+			t.Cleanup(release)
+
+			c.Check(err, qt.ErrorIs, test.startErr)
+			c.Check(err.Error(), qt.Equals, test.startErr.Error())
+			started, removed := runner.calls()
+			c.Assert(started, qt.HasLen, 1)
+			c.Check(removed, qt.DeepEquals, started)
+		})
+	}
 }

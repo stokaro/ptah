@@ -69,6 +69,16 @@ const stoppedCheckInterval = time.Second
 // quotes: enough to hold an init script's error and the line that named it.
 const stoppedLogLines = 20
 
+// ErrPortNotRead is wrapped by a [Runner.Start] error when the container was
+// created and the port the runtime published for it could not be read. A
+// container that exits during init leaves the runtime's port table, so the
+// read fails, and [Runner.Stopped] then says why the container ended.
+var ErrPortNotRead = errors.New("read published port")
+
+// ContainerGone is what [Runner.Stopped] answers for a container the runtime
+// does not have, such as one that was removed.
+const ContainerGone = "the container is gone"
+
 // Runner is the container runtime this package drives.
 //
 // It is an interface on the consumer side so the lifecycle -- naming, readiness,
@@ -79,13 +89,16 @@ type Runner interface {
 	Available(ctx context.Context) error
 	// Start runs image detached under name, publishing containerPort on a
 	// loopback port the runtime chooses, and returns the published host:port.
+	// An error after the container was created, when its port could not be
+	// read, wraps [ErrPortNotRead].
 	Start(ctx context.Context, name, image, containerPort string, env []string) (hostPort string, err error)
 	// Remove deletes the container, whether or not it is still running. It must
 	// succeed when the container is already gone.
 	Remove(ctx context.Context, name string) error
 	// Stopped describes how the container ended when it no longer runs: its
 	// exit code and the end of its log. It answers "" while the container
-	// runs, and an error when the runtime could not say.
+	// runs, [ContainerGone] when the runtime has no such container, and an
+	// error when the runtime could not say.
 	Stopped(ctx context.Context, name string) (string, error)
 	// Build builds image from build, tagging it with image.
 	Build(ctx context.Context, image string, build Build) error
@@ -381,6 +394,8 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 	}
 	hostPort, err := runner.Start(ctx, name, spec.Image, spec.Port(), spec.Env(password))
 	if err != nil {
+		// Asked before the removal, which takes the container's log with it.
+		err = explainStartFailure(ctx, runner, name, spec.Image, err)
 		// Start may have created the container before failing to publish or
 		// inspect it -- `docker run` succeeding and `docker port` failing leaves
 		// a live container behind -- so removal is attempted regardless of where
@@ -427,6 +442,43 @@ func Provision(ctx context.Context, rawURL string, opts Options) (*Instance, err
 		recordStartingPoint(instance.url)
 	}
 	return instance, nil
+}
+
+// explainStartFailure returns the error a failed [Runner.Start] of the
+// container name, run from image, is reported with. A container that exits
+// during init can be gone from the port table before Start reads its port,
+// and the error that says so hides why it exited: where the port could not be
+// read and the container has stopped, the run reports the stop as the
+// readiness wait does. Every other error keeps the error Start returned, and
+// so does a container the runtime says still runs, cannot describe, or does
+// not have: `docker run` created the container, so one that is gone was
+// removed by something else, which says nothing about why the port could not
+// be read.
+//
+// The question is bounded as the removal is, so a daemon that stalls here
+// cannot keep the removal that follows from running.
+func explainStartFailure(ctx context.Context, runner Runner, name, image string, err error) error {
+	if !errors.Is(err, ErrPortNotRead) {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, removeTimeout)
+	defer cancel()
+	reason, stoppedErr := runner.Stopped(ctx, name)
+	if stoppedErr != nil {
+		slog.Debug("could not ask how the dev database container ended; reporting the start error",
+			"container", name, "error", stoppedErr)
+		return err
+	}
+	if reason == "" || reason == ContainerGone {
+		return err
+	}
+	return fmt.Errorf("dev database %s did not become ready: %w", image, stoppedBeforeReady(reason))
+}
+
+// stoppedBeforeReady reports a container that stopped, for reason, before the
+// server in it accepted a connection.
+func stoppedBeforeReady(reason string) error {
+	return fmt.Errorf("the container stopped before the server answered: %s", reason)
 }
 
 // RemoteHoster is the part of a [Runner] that says where the container runtime
@@ -622,7 +674,7 @@ func waitReady(
 			// A runtime that cannot say is not an answer: the wait goes on
 			// and the deadline still bounds it.
 			if reason, err := stopped(waitCtx); err == nil && reason != "" {
-				return fmt.Errorf("the container stopped before the server answered: %s", reason)
+				return stoppedBeforeReady(reason)
 			}
 		}
 		select {
@@ -755,8 +807,15 @@ func (d DockerCLI) Start(ctx context.Context, name, image, containerPort string,
 // colon is what makes all three shapes answer the same thing.
 func (DockerCLI) publishedPort(ctx context.Context, name, containerPort string) (string, error) {
 	out, err := exec.CommandContext(ctx, "docker", "port", name, containerPort+"/tcp").CombinedOutput()
+	return portFromDockerPort(name, containerPort, out, err)
+}
+
+// portFromDockerPort reads the port out of what `docker port` answered for
+// containerPort of the container name, out and err. Every failure wraps
+// [ErrPortNotRead]: the container exists by then, so its state can say more.
+func portFromDockerPort(name, containerPort string, out []byte, err error) (string, error) {
 	if err != nil {
-		return "", fmt.Errorf("read published port of container %s: %s: %w", name, trimDockerOutput(out), err)
+		return "", fmt.Errorf("%w of container %s: %s: %w", ErrPortNotRead, name, trimDockerOutput(out), err)
 	}
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		mapping := strings.TrimSpace(line)
@@ -771,7 +830,7 @@ func (DockerCLI) publishedPort(ctx context.Context, name, containerPort string) 
 			}
 		}
 	}
-	return "", fmt.Errorf("container %s published no port for %s", name, containerPort)
+	return "", fmt.Errorf("%w of container %s: it published none for %s", ErrPortNotRead, name, containerPort)
 }
 
 // Remove deletes the container and treats an already-absent one as success, so
@@ -796,7 +855,7 @@ func (DockerCLI) Stopped(ctx context.Context, name string) (string, error) {
 		// Docker 29 answers `Error: no such object: <name>`; older daemons
 		// capitalize it, or name a container.
 		if answer := strings.ToLower(string(out)); strings.Contains(answer, "no such object") || strings.Contains(answer, "no such container") {
-			return "the container is gone", nil
+			return ContainerGone, nil
 		}
 		return "", fmt.Errorf("inspect container %s: %s: %w", name, trimDockerOutput(out), err)
 	}

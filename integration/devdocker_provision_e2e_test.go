@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -300,6 +301,29 @@ func TestDevDockerRemovesTheContainerWhenTheRunFails(t *testing.T) {
 	// container nothing else ever would.
 	c.Assert(after, qt.DeepEquals, before,
 		qt.Commentf("a failed provisioning leaked a container: before=%v after=%v", before, after))
+}
+
+// TestDockerCLIStartReportsARefusedRunAsTheRun asks the daemon to run an image
+// tag that does not exist. No container is created, so the error is the run's
+// own and does not wrap devdocker.ErrPortNotRead, which would send the
+// provisioner to ask how a container ended that never existed.
+func TestDockerCLIStartReportsARefusedRunAsTheRun(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(devdocker.DockerCLI{}.Available(t.Context()), qt.IsNil)
+	before := devDockerCensus(c)
+	name := "ptah-missing-image-" + randomHex(c)
+	c.Cleanup(func() {
+		// #nosec G204 -- the name is generated above.
+		_ = exec.Command("docker", "rm", "--force", name).Run()
+	})
+	image := "postgres:ptah-missing-" + randomHex(c)
+
+	hostPort, err := devdocker.DockerCLI{}.Start(t.Context(), name, image, "5432", nil)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)start dev database container from `+regexp.QuoteMeta(image)+`: .*`)
+	c.Assert(err, qt.Not(qt.ErrorIs), devdocker.ErrPortNotRead)
+	c.Assert(hostPort, qt.Equals, "")
+	c.Assert(devDockerCensus(c), qt.DeepEquals, before)
 }
 
 func TestDevDockerParallelInvocationsDoNotCollide(t *testing.T) {
