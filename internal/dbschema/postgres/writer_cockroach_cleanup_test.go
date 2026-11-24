@@ -715,6 +715,176 @@ func TestWriterDropAllTables_CockroachRefusesWhenItCannotAskAboutAType_FailurePa
 	}
 }
 
+// cockroachOnUpdateUnread is the row the text read adds on a server whose
+// information_schema.columns has no column_on_update, as v25.4.21.
+var cockroachOnUpdateUnread = []driver.Value{"on update unread", "", "", "", "", ""}
+
+// withCreateStatements answers SHOW CREATE ALL TABLES with statements, one
+// row each, or with err, and every other query with next.
+func withCreateStatements(next dbtest.QueryHandler, statements []string, err error) dbtest.QueryHandler {
+	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		if query != "SHOW CREATE ALL TABLES" {
+			return next(query, args)
+		}
+		rows := make([][]driver.Value, 0, len(statements))
+		for _, statement := range statements {
+			rows = append(rows, []driver.Value{statement})
+		}
+		return dbtest.QueryResult{Columns: []string{"create_statement"}, Rows: rows}, err
+	}
+}
+
+// On a server whose information_schema.columns has no column_on_update, an ON
+// UPDATE expression outside the cleanup is read from the CREATE statement of
+// its table, as SHOW CREATE ALL TABLES prints it on v25.4.21, and refused
+// before the first drop.
+func TestWriterDropAllTables_CockroachRefusesAnONUPDATEFromTheCreateStatements_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		want      string
+	}{
+		{
+			name: "a call to the function",
+			statement: "CREATE TABLE other.ou (\n\tid INT8 NOT NULL,\n\tf INT8 NULL ON UPDATE public.fn(),\n" +
+				"\tCONSTRAINT ou_pkey PRIMARY KEY (id ASC)\n);",
+			want: `the ON UPDATE expression of column "f" of table "other"."ou" names function "public"."fn"`,
+		},
+		{
+			name: "the sequence",
+			statement: "CREATE TABLE other.ou (\n\tid INT8 NOT NULL,\n" +
+				"\tg INT8 NULL ON UPDATE nextval('public.s'::REGCLASS),\n\tCONSTRAINT ou_pkey PRIMARY KEY (id ASC)\n);",
+			want: `the ON UPDATE expression of column "g" of table "other"."ou" names sequence "public"."s"`,
+		},
+		{
+			name: "quoted names",
+			statement: "CREATE TABLE \"Odd S\".\"T x\" (\n\t\"Col \"\"q\"\"\" INT8 NOT VISIBLE NULL DEFAULT 1:::INT8 " +
+				"ON UPDATE public.fn(),\n\tid INT8 NOT NULL,\n\tCONSTRAINT \"T x_pkey\" PRIMARY KEY (id ASC)\n);",
+			want: `the ON UPDATE expression of column "Col \"q\"" of table "Odd S"."T x" names function "public"."fn"`,
+		},
+		{
+			name: "an expression whose string holds the keyword",
+			statement: "CREATE TABLE other.c (\n\tid INT8 NOT NULL,\n" +
+				"\td STRING NULL ON UPDATE public.fn()::STRING || ' ON UPDATE x':::STRING,\n" +
+				"\tCONSTRAINT c_pkey PRIMARY KEY (id ASC)\n);",
+			want: `the ON UPDATE expression of column "d" of table "other"."c" names function "public"."fn"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				withCreateStatements(
+					cockroachCleanupQuery("on", cockroachOutsideObjects, nil,
+						slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread})),
+					[]string{"CREATE SEQUENCE public.s MINVALUE 1 MAXVALUE 9223372036854775807 INCREMENT 1 START 1;",
+						test.statement},
+					nil,
+				),
+				recordingExec(&statements, acceptingDrop),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, `refusing to clean schema "public": an object the cleanup does not drop `+
+				`depends on one it drops: `+test.want+`; the server commits each drop as it runs, so the cleanup `+
+				`refuses before it drops anything`)
+			c.Assert(statements, qt.DeepEquals, cockroachTypeProbeStatements)
+			c.Assert(db.CommitCount(), qt.Equals, 0)
+			c.Assert(db.RollbackCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// A CREATE statement whose ON UPDATE names nothing the cleanup drops from
+// outside it adds nothing, and a server whose information_schema.columns has
+// column_on_update is not asked for the statements at all: the drops run.
+func TestWriterDropAllTables_CockroachDropsWhatNoONUPDATEOutsideNames_HappyPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		texts     [][]driver.Value
+		statement string
+	}{
+		{
+			name:  "a server that carries column_on_update",
+			texts: cockroachOutsideSpellings,
+			statement: "CREATE TABLE other.ou (\n\tid INT8 NOT NULL,\n\tf INT8 NULL ON UPDATE public.fn(),\n" +
+				"\tCONSTRAINT ou_pkey PRIMARY KEY (id ASC)\n);",
+		},
+		{
+			name:  "a table the cleanup drops",
+			texts: slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread}),
+			statement: "CREATE TABLE public.t (\n\tid INT8 NOT NULL,\n\tf INT8 NULL ON UPDATE public.fn(),\n" +
+				"\tCONSTRAINT t_pkey PRIMARY KEY (id ASC)\n);",
+		},
+		{
+			name:  "another function",
+			texts: slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread}),
+			statement: "CREATE TABLE other.ou (\n\tid INT8 NOT NULL,\n\tf INT8 NULL ON UPDATE public.fn2(),\n" +
+				"\tCONSTRAINT ou_pkey PRIMARY KEY (id ASC)\n);",
+		},
+		{
+			name:  "a comment that quotes the function",
+			texts: slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread}),
+			statement: "CREATE TABLE other.c (\n\tid INT8 NOT NULL,\n\tCONSTRAINT c_pkey PRIMARY KEY (id ASC)\n);\n" +
+				"COMMENT ON TABLE other.c IS 'set ON UPDATE public.fn()';",
+		},
+		{
+			name:  "a foreign key that cascades its updates",
+			texts: slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread}),
+			statement: "ALTER TABLE other.c ADD CONSTRAINT c_x_fkey FOREIGN KEY (x) REFERENCES other.ou(id) " +
+				"ON DELETE CASCADE ON UPDATE CASCADE;",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				withCreateStatements(cockroachCleanupQuery("on", cockroachOutsideObjects, nil, test.texts),
+					[]string{test.statement}, nil),
+				recordingExec(&statements, acceptingDrop),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, slices.Concat(cockroachTypeProbeStatements, cockroachOutsideDrops))
+			c.Assert(db.CommitCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// A server that cannot list the CREATE statements, where they are the only
+// place its ON UPDATE expressions show, refuses the cleanup before its first
+// drop.
+func TestWriterDropAllTables_CockroachRefusesWhenItCannotReadTheCreateStatements_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	var statements []string
+	db := dbtest.OpenWithExec(t,
+		withCreateStatements(
+			cockroachCleanupQuery("on", cockroachOutsideObjects, nil,
+				slices.Concat(cockroachOutsideSpellings, [][]driver.Value{cockroachOnUpdateUnread})),
+			nil,
+			errors.New("user app has no privileges on the database"),
+		),
+		recordingExec(&statements, acceptingDrop),
+	)
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`refusing to clean schema "public": failed to read the ON UPDATE `+
+		`expressions outside the cleanup: user app has no privileges on the database`))
+	c.Assert(statements, qt.HasLen, 0)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
 // cleanupIndexTablesMarker is what the CockroachDB cleanup's read of the table
 // of each index it lists selects, and no other statement does.
 const cleanupIndexTablesMarker = "x.indexrelid"

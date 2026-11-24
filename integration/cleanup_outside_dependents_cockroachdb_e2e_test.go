@@ -183,6 +183,14 @@ CREATE TABLE other.ou (id int PRIMARY KEY, f int ON UPDATE public.fn());`,
 			want:        `the ON UPDATE expression of column "f" of table "other"."ou" names function "public"."fn"`,
 		},
 		{
+			name: "an ON UPDATE expression that takes from the sequence",
+			fixture: `CREATE SEQUENCE public.s;
+CREATE SCHEMA other;
+CREATE TABLE other.ou (id int PRIMARY KEY, g int ON UPDATE nextval('public.s'));`,
+			wantObjects: []string{"s", "z_data"},
+			want:        `the ON UPDATE expression of column "g" of table "other"."ou" names sequence "public"."s"`,
+		},
+		{
 			name: "a check constraint that calls the function",
 			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
 CREATE SCHEMA other;

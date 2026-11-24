@@ -27,7 +27,10 @@ import (
 // condition name the sequences, functions and types they use, and a routine
 // body names the relations, sequences and types it uses. The text match
 // refuses on a name that could be the object rather than miss one, so a body
-// that only quotes the name in a string is refused too.
+// that only quotes the name in a string is refused too. Where
+// information_schema.columns has no column_on_update, the ON UPDATE
+// expressions come from SHOW CREATE ALL TABLES
+// (readOnUpdateFromCreateStatements).
 //
 // The text can lose a type: CockroachDB v26.4.1 keeps `NULL::public.e[]` in a
 // view or a body as `NULL`, and a default `'a'::public.e::STRING` as
@@ -142,9 +145,10 @@ const outsideStructuredDependentsQuery = `
 // expression index keeps its expression in a hidden column too, which
 // pg_attrdef lists as dropped, so the index row is read and the column is not.
 // An ON UPDATE expression is in no pg_catalog table, and
-// information_schema.columns carries it as column_on_update on v26.4.1 and not
-// on v24.3.37, so the column is read through the row's JSON, where an absent
-// key reads as NULL. pg_get_triggerdef does not exist on v25.4.21, so a
+// information_schema.columns carries it as column_on_update from v26.2.12 and
+// not on v25.4.21 or v24.3.37, so the column is read through the row's JSON,
+// where an absent key reads as NULL, and the query adds an "on update unread"
+// row when the column is absent. pg_get_triggerdef does not exist on v25.4.21, so a
 // trigger's condition is read from tgqual.
 const outsideTextDependentsQuery = `
 	SELECT CASE WHEN a.attgenerated = '' THEN 'default' ELSE 'computed' END,
@@ -221,6 +225,12 @@ const outsideTextDependentsQuery = `
 	FROM pg_type t
 	JOIN pg_namespace n ON n.oid = t.typnamespace
 	WHERE n.nspname IN (%[1]s)
+	UNION ALL
+	SELECT 'on update unread', '', '', '', '', ''
+	WHERE NOT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'information_schema' AND table_name = 'columns' AND column_name = 'column_on_update'
+	)
 	UNION ALL
 	SELECT 'database', '', current_database(), '', '', ''`
 
@@ -502,7 +512,9 @@ func (t outsideText) describe(source string) string {
 
 // readOutsideTexts reads outsideTextDependentsQuery over the schemas in, bound
 // by args: the texts whose holder dropped does not list, and the spellings
-// they name objects by.
+// they name objects by. On a server whose information_schema.columns has no
+// column_on_update, it reads the ON UPDATE expressions from the CREATE
+// statements.
 func readOutsideTexts(
 	ctx context.Context,
 	q cleanupConn,
@@ -510,26 +522,57 @@ func readOutsideTexts(
 	args []any,
 	dropped map[cleanupKey]string,
 ) ([]outsideText, cleanupSpellings, error) {
-	spellings := cleanupSpellings{oids: make(map[cleanupKey]string)}
+	read, err := readOutsideTextRows(ctx, q, in, args, dropped)
+	if err != nil || !read.onUpdateUnread {
+		return read.texts, read.spellings, err
+	}
+	onUpdate, err := readOnUpdateFromCreateStatements(ctx, q, dropped)
+	if err != nil {
+		return nil, read.spellings, err
+	}
+	return append(read.texts, onUpdate...), read.spellings, nil
+}
+
+// outsideTextRows is what the rows of outsideTextDependentsQuery hold: the
+// texts, the spellings they name objects by, and whether the server has no
+// column_on_update to read the ON UPDATE expressions from.
+type outsideTextRows struct {
+	texts          []outsideText
+	spellings      cleanupSpellings
+	onUpdateUnread bool
+}
+
+// readOutsideTextRows reads the rows of outsideTextDependentsQuery over the
+// schemas in, bound by args. It closes the rows before it returns, so the
+// connection can take the next query.
+func readOutsideTextRows(
+	ctx context.Context,
+	q cleanupConn,
+	in string,
+	args []any,
+	dropped map[cleanupKey]string,
+) (outsideTextRows, error) {
+	read := outsideTextRows{spellings: cleanupSpellings{oids: make(map[cleanupKey]string)}}
 	rows, err := q.QueryContext(ctx, fmt.Sprintf(outsideTextDependentsQuery, in), args...)
 	if err != nil {
-		return nil, spellings, fmt.Errorf("failed to read the defaults and routine bodies outside the cleanup: %w", err)
+		return read, fmt.Errorf("failed to read the defaults and routine bodies outside the cleanup: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var texts []outsideText
 	for rows.Next() {
 		var what, schema, name, kind, column, text string
 		if err := rows.Scan(&what, &schema, &name, &kind, &column, &text); err != nil {
-			return nil, spellings, fmt.Errorf("failed to read the defaults and routine bodies outside the cleanup: %w", err)
+			return read, fmt.Errorf("failed to read the defaults and routine bodies outside the cleanup: %w", err)
 		}
 		switch what {
+		case "on update unread":
+			read.onUpdateUnread = true
 		case "database":
-			spellings.database = name
+			read.spellings.database = name
 		case "sequence":
-			spellings.oids[cleanupKey{relationFamily, schema, name}] = column
+			read.spellings.oids[cleanupKey{relationFamily, schema, name}] = column
 		case "type":
-			spellings.oids[cleanupKey{typeFamily, schema, name}] = column
+			read.spellings.oids[cleanupKey{typeFamily, schema, name}] = column
 		default:
 			family := relationFamily
 			if what == "body" {
@@ -539,13 +582,13 @@ func readOutsideTexts(
 			if _, alsoDropped := dropped[key]; alsoDropped {
 				continue
 			}
-			texts = append(texts, outsideText{what: what, key: key, kind: spelled, text: text, carrier: column})
+			read.texts = append(read.texts, outsideText{what: what, key: key, kind: spelled, text: text, carrier: column})
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, spellings, fmt.Errorf("failed to read the defaults and routine bodies outside the cleanup: %w", err)
+		return read, fmt.Errorf("failed to read the defaults and routine bodies outside the cleanup: %w", err)
 	}
-	return texts, spellings, nil
+	return read, nil
 }
 
 // compareCleanupKeys orders keys by family, schema and name, so a refusal

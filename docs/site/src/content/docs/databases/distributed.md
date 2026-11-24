@@ -214,7 +214,9 @@ dependency:
 
 CockroachDB shows the expressions and bodies only as text, so Ptah matches the
 names in that text. It refuses a body that names an object even inside a
-string, and says that it matched the body's text. The text can lose a type:
+string, and says that it matched the body's text. On v25.4, where
+`information_schema.columns` has no `column_on_update`, Ptah reads each
+`ON UPDATE` expression from `SHOW CREATE ALL TABLES`. The text can lose a type:
 the server keeps `NULL::public.e[]` in a view as `NULL` and still refuses to
 drop the type. So Ptah also asks the server, with `EXPLAIN (DDL) DROP TYPE`,
 which objects use each type it drops. A row-level TTL expression is not on the
