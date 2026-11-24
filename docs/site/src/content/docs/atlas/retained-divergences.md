@@ -155,6 +155,7 @@ own measurement conditions.
 | [A SQL file naming a database beside a dev database](#a-sql-file-naming-a-database-beside-a-dev-database) | creates a file naming one database inside the dev database, and refuses one naming two before running it | runs the file as written on the dev connection and creates its tables in the databases it names, the target included |
 | [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
 | [One shared-cache SQLite name as the target and the dev database](#one-shared-cache-sqlite-name-as-the-target-and-the-dev-database) | refuses the pair, as it refuses a dev database that is the target | plans and applies, exit `0` (v1.4.0) |
+| [A SQLite URL that repeats `mode`](#a-sqlite-url-that-repeats-mode) | refuses the URL before it connects: `mode is given more than once` | applies, exit `0` (v1.4.0) |
 | [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
@@ -1746,6 +1747,30 @@ here. The refusal is the rule every engine follows, because the reset that
 prepares a dev database discards what the target holds. A second name for the dev
 database, or a private one, runs. The divergence is stricter, not looser:
 `ptah-compat` exits `1` where the binary exits `0`, never the reverse.
+
+## A SQLite URL that repeats `mode`
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A SQLite URL can give the `mode` key more than once, as
+in `sqlite://x?mode=memory&mode=memory` or
+`sqlite:file:x?mode=rwc&mode=memory&cache=shared`. The connector reads the
+first value and SQLite applies the last, so the two disagree about whether the
+database is in memory, and the answer decides whether a dev database can be
+the target. `ptah-compat` refuses the URL before it connects. A URL that gives
+`mode` once runs.
+
+Measured on 2026-11-24 with `schema apply --to file://schema.sql
+--auto-approve`, a file creating one table, `--url
+'sqlite://x?mode=memory&mode=memory'` and `--dev-url 'sqlite://d?mode=memory'`:
+
+| Binary | Result |
+| --- | --- |
+| Pinned community binary v1.4.0 | plans the table and applies it, exit `0` |
+| `ptah-compat` | exits `1` with `connect to --url: invalid SQLite database URL: mode is given more than once` |
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the
+binary exits `0`, never the reverse. The fix is to give `mode` once.
 
 ## A YDB database URL
 
