@@ -124,24 +124,37 @@ func TestPlanDynamicRollbackInMemoryTarget_HappyPath(t *testing.T) {
 
 // TestPlanDynamicRollbackInMemoryTarget_FailurePath refuses a dev URL that
 // opens the target's shared-cache database, before anything resets it: the
-// target still holds its three tables.
+// target still holds its three tables. SQLite applies the last cache value of
+// a URL that gives two, so a name whose last cache is shared is the target's
+// database too, and the pair is refused by the same check rather than by a
+// later one.
 func TestPlanDynamicRollbackInMemoryTarget_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	const targetURL = "sqlite://target?mode=memory&cache=shared"
-	target := memoryRollbackTarget(c, targetURL)
+	tests := []struct {
+		name      string
+		targetURL string
+	}{
+		{name: "one shared-cache name", targetURL: "sqlite://target?mode=memory&cache=shared"},
+		{name: "a repeated cache that ends shared", targetURL: "sqlite://target?mode=memory&cache=private&cache=shared"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := memoryRollbackTarget(c, test.targetURL)
 
-	statements, err := shadow.PlanDynamicRollback(c.Context(), shadow.DynamicRollbackOptions{
-		Runtime:          builtintest.Runtime(),
-		TargetConnection: target,
-		DevDatabaseURL:   targetURL,
-		FS:               memoryRollbackHistory,
-		TargetVersion:    2,
-		ProviderOptions:  []migrator.FSProviderOption{migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas)},
-	})
+			statements, err := shadow.PlanDynamicRollback(c.Context(), shadow.DynamicRollbackOptions{
+				Runtime:          builtintest.Runtime(),
+				TargetConnection: target,
+				DevDatabaseURL:   test.targetURL,
+				FS:               memoryRollbackHistory,
+				TargetVersion:    2,
+				ProviderOptions:  []migrator.FSProviderOption{migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas)},
+			})
 
-	c.Assert(err, qt.ErrorMatches, `dynamic rollback planning failed: dev database must be distinct from target database`)
-	c.Assert(statements, qt.IsNil)
-	c.Assert(memoryRollbackTables(c, target), qt.DeepEquals, []string{"a", "b", "c"})
+			c.Assert(err, qt.ErrorMatches, `dynamic rollback planning failed: dev database must be distinct from target database`)
+			c.Assert(statements, qt.IsNil)
+			c.Assert(memoryRollbackTables(c, target), qt.DeepEquals, []string{"a", "b", "c"})
+		})
+	}
 }
 
 // runStatements runs statements on conn in order.
