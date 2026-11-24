@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -21,8 +22,9 @@ import (
 
 const driftVariable = "PTAH_ATLAS_MIGRATE_DRIFT"
 
-// driftProject declares a two-target env, a one-target env and a two-target
-// env whose targets name two directories.
+// driftProject declares a two-target env, an env without for_each, the same
+// env naming no directory, a for_each env of one target, and a two-target env
+// whose targets ask for two lock timeouts.
 const driftProject = `env "tenants" {
   for_each = toset(["a", "b"])
   url      = "sqlite://${each.value}.db"
@@ -40,7 +42,34 @@ env "local" {
   }
 }
 
-env "split" {
+env "bare" {
+  url = "sqlite://a.db"
+  dev = "sqlite://dev?mode=memory"
+}
+
+env "single" {
+  for_each = toset(["a"])
+  url      = "sqlite://${each.value}.db"
+  dev      = "sqlite://dev?mode=memory"
+  migration {
+    dir = "file://migrations"
+  }
+}
+
+env "timeouts" {
+  for_each = toset(["a", "b"])
+  url      = "sqlite://${each.value}.db"
+  dev      = "sqlite://dev?mode=memory"
+  migration {
+    dir          = "file://migrations"
+    lock_timeout = each.value == "a" ? "1s" : "2s"
+  }
+}
+`
+
+// splitProject declares an env whose two targets each name a directory of
+// their own.
+const splitProject = `env "split" {
   for_each = toset(["a", "b"])
   url      = "sqlite://${each.value}.db"
   dev      = "sqlite://dev?mode=memory"
@@ -77,6 +106,14 @@ DROP TABLE "extra";
 const oneDatabaseForEveryTarget = `--url or PTAH_URL sets one database for every target, and env "tenants" names 2 targets ` +
 	`with a url each; leave both unset to report each target`
 
+// twoTargets is the report on a.db and b.db of the env "tenants", both clean.
+const twoTargets = `Instance 1 of env "tenants": sqlite://a.db
+` + cleanTarget + `
+Instance 2 of env "tenants": sqlite://b.db
+` + cleanTarget + `
+Summary: 2 targets: 2 without drift, 0 with drift, 0 not compared.
+`
+
 // writeDriftProject writes driftProject into projectDir with a hashed
 // migration directory beside it, migrates a.db and b.db in the working
 // directory through the env "tenants", and returns the path of the project
@@ -108,6 +145,40 @@ func enterDriftProject(c *qt.C) string {
 	return writeDriftProject(c, root)
 }
 
+// writeMigrations writes files into a new directory dir and hashes it.
+func writeMigrations(c *qt.C, dir string, files map[string]string) {
+	c.Helper()
+	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+	for name, body := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+	}
+	_, stderr, err := atlastest.RunCompatStreams(c, "migrate", "hash", "--dir", "file://"+filepath.ToSlash(dir))
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+}
+
+// enterSplitProject moves the test into a fresh directory, writes
+// splitProject into a project directory below it with migrations-a holding
+// two migrations and migrations-b one, migrates a.db and b.db in the working
+// directory through the env "split", and returns the project file's address.
+func enterSplitProject(c *qt.C) string {
+	c.Helper()
+	root := c.TempDir()
+	c.Chdir(root)
+	projectDir := filepath.Join(root, "project")
+	one := map[string]string{"20240101000000_one.sql": "CREATE TABLE t1 (id integer PRIMARY KEY);\n"}
+	writeMigrations(c, filepath.Join(projectDir, "migrations-a"), map[string]string{
+		"20240101000000_one.sql": one["20240101000000_one.sql"],
+		"20240102000000_two.sql": "CREATE TABLE t2 (id integer PRIMARY KEY);\n",
+	})
+	writeMigrations(c, filepath.Join(projectDir, "migrations-b"), one)
+	project := filepath.Join(projectDir, "atlas.hcl")
+	c.Assert(os.WriteFile(project, []byte(splitProject), 0o600), qt.IsNil)
+	config := "file://" + filepath.ToSlash(project)
+	_, stderr, err := atlastest.RunCompatStreams(c, "migrate", "apply", "-c", config, "--env", "split")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	return config
+}
+
 func TestCompatMigrateDrift_HappyPathReportsEveryTargetOfAnEnv(t *testing.T) {
 	c := qt.New(t)
 	c.Setenv(driftVariable, "1")
@@ -116,13 +187,129 @@ func TestCompatMigrateDrift_HappyPathReportsEveryTargetOfAnEnv(t *testing.T) {
 	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "tenants")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Equals, `Instance 1 of env "tenants": sqlite://a.db
+	c.Assert(stdout, qt.Equals, twoTargets)
+	c.Assert(stderr, qt.Equals, "")
+}
+
+// Each target reads the directory its own instance names, against the
+// project file's directory, and b.db reports the one migration its directory
+// holds. Read against migrations-a, it would report a pending migration.
+func TestCompatMigrateDrift_HappyPathReadsTheDirectoryEachTargetNames(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	config := enterSplitProject(c)
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "split")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, `Instance 1 of env "split": sqlite://a.db
 `+cleanTarget+`
-Instance 2 of env "tenants": sqlite://b.db
-`+cleanTarget+`
+Instance 2 of env "split": sqlite://b.db
+Dialect: sqlite
+Revision table: "atlas_schema_revisions"
+Current version: 20240101000000
+Pending migrations: 0
+
+No drift: the database matches the schema its 1 applied migration produces.
+
 Summary: 2 targets: 2 without drift, 0 with drift, 0 not compared.
 `)
 	c.Assert(stderr, qt.Equals, "")
+}
+
+// --dir names one directory, which every target reads in place of its own.
+func TestCompatMigrateDrift_HappyPathReadsTheDirectoryOfTheFlagForEveryTarget(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	config := enterSplitProject(c)
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "split",
+		"--dir", "file://project/migrations-a")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(strings.Count(stdout, "Pending migrations: 0\n"), qt.Equals, 1)
+	c.Assert(stdout, qt.Contains, `Instance 2 of env "split": sqlite://b.db
+Dialect: sqlite
+Revision table: "atlas_schema_revisions"
+Current version: 20240101000000
+Pending migrations: 1
+`)
+}
+
+// The report reads the database and the history out of what this surface
+// forwards. A variable of a native flag this surface refuses changes nothing:
+// PTAH_JSON would print the native document, and the others would point every
+// target at one dev database, directory or revision table. The project sits
+// below the working directory, so a directory read against the working
+// directory is not found.
+func TestCompatMigrateDrift_HappyPathReadsNoNativeVariable(t *testing.T) {
+	variables := []struct {
+		name, value string
+	}{
+		{name: "PTAH_JSON", value: "1"},
+		{name: "PTAH_SHADOW_DB", value: "sqlite:///nonexistent/dev.db"},
+		{name: "PTAH_MIGRATIONS_DIR", value: "nonexistent"},
+		{name: "PTAH_MIGRATIONS_TABLE", value: "other_revisions"},
+		{name: "PTAH_REVISION_FORMAT", value: "ptah"},
+	}
+	for _, variable := range variables {
+		t.Run(variable.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			root := c.TempDir()
+			c.Chdir(root)
+			config := writeDriftProject(c, filepath.Join(root, "project"))
+			c.Setenv(variable.name, variable.value)
+
+			stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "tenants")
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Equals, twoTargets)
+		})
+	}
+}
+
+// An env that names no directory reads the documented default, file://migrations,
+// even with PTAH_MIGRATIONS_DIR set: the target reads no variable of its own,
+// so the variable must not hold the default back either.
+func TestCompatMigrateDrift_HappyPathReadsTheDefaultDirectoryBesideTheNativeVariable(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	config := enterDriftProject(c)
+	c.Setenv("PTAH_MIGRATIONS_DIR", "nonexistent")
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "bare")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, cleanTarget)
+}
+
+// A setting the report refuses is refused only in the env the run selects:
+// another env's is that env's business.
+func TestCompatMigrateDrift_HappyPathLeavesTheSettingsOfAnotherEnvAlone(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	enterDriftProject(c)
+	c.Assert(os.WriteFile("settings.hcl", []byte(`env "local" {
+  url = "sqlite://a.db"
+  dev = "sqlite://dev?mode=memory"
+  migration {
+    dir = "file://migrations"
+  }
+}
+
+env "other" {
+  url = "sqlite://b.db"
+  migration {
+    skip_lock = true
+  }
+}
+`), 0o600), qt.IsNil)
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", "file://settings.hcl", "--env", "local")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, cleanTarget)
 }
 
 // The migration directory of a project file elsewhere is read against that
@@ -209,17 +396,25 @@ func TestCompatMigrateDrift_HappyPathAnswersAsAnUnregisteredWordWithoutTheVariab
 		{name: "a group flag", before: []string{"migrate"}, after: []string{"--env", "nope"}},
 		{name: "flag completion", before: []string{"__complete", "migrate"}, after: []string{"--e"}},
 	}
+	// set is what the variable is set to, in order; an unset variable sets
+	// nothing.
 	values := []struct {
-		name, value string
+		name string
+		set  []string
 	}{
-		{name: "false", value: "false"},
-		{name: "zero", value: "0"},
+		{name: "unset"},
+		{name: "false", set: []string{"false"}},
+		{name: "zero", set: []string{"0"}},
 	}
 	for _, value := range values {
 		for _, spelling := range spellings {
 			t.Run(value.name+"/"+spelling.name, func(t *testing.T) {
 				c := qt.New(t)
-				c.Setenv(driftVariable, value.value)
+				c.Setenv(driftVariable, "")
+				c.Assert(os.Unsetenv(driftVariable), qt.IsNil)
+				for _, set := range value.set {
+					c.Setenv(driftVariable, set)
+				}
 				c.Chdir(c.TempDir())
 				word := append(append(slices.Clone(spelling.before), "unregistered"), spelling.after...)
 				drift := append(append(slices.Clone(spelling.before), "drift"), spelling.after...)
@@ -372,18 +567,98 @@ func TestCompatMigrateDrift_FailurePathRefusesAURLVariableOverTargets(t *testing
 	c.Assert(stdout, qt.Equals, "")
 }
 
-// One --dir is forwarded for every target, so targets naming two
-// directories are refused rather than read against the first one's.
-func TestCompatMigrateDrift_FailurePathRefusesTargetsThatNameTwoDirectories(t *testing.T) {
+// One --lock-timeout is forwarded for every target, so targets that ask for
+// two are refused rather than each given the first one's.
+func TestCompatMigrateDrift_FailurePathRefusesTargetsThatDisagreeOnALockTimeout(t *testing.T) {
 	c := qt.New(t)
 	c.Setenv(driftVariable, "1")
 	config := enterDriftProject(c)
 
-	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "split")
+	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "timeouts")
 
-	c.Assert(err, qt.ErrorMatches, `the targets of env "split" do not agree on --dir, which the drift report `+
-		`takes once for every target; give them one value or pass --dir`)
+	c.Assert(err, qt.ErrorMatches, `the targets of env "timeouts" do not agree on --lock-timeout, which this surface `+
+		`forwards once for every target; give them one value or pass --lock-timeout`)
 	c.Assert(stdout, qt.Equals, "")
+}
+
+// A for_each env of one element is a list of targets too, and the refusal
+// names the one.
+func TestCompatMigrateDrift_FailurePathRefusesAURLFlagOverOneInstance(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	config := enterDriftProject(c)
+
+	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "single",
+		"--url", "sqlite://b.db")
+
+	c.Assert(err, qt.ErrorMatches, `--url or PTAH_URL sets one database for the target, and env "single" names `+
+		`one target with a url of its own; leave both unset to report that target`)
+	c.Assert(stdout, qt.Equals, "")
+}
+
+// An empty --url names no database, and is refused as set.
+func TestCompatMigrateDrift_FailurePathRefusesAnEmptyURLOverTargets(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	config := enterDriftProject(c)
+
+	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "tenants", "--url", "")
+
+	c.Assert(err, qt.ErrorMatches, `--url or PTAH_URL is set, though empty, and env "tenants" names 2 targets `+
+		`with a url each; leave both unset to report each target`)
+	c.Assert(stdout, qt.Equals, "")
+}
+
+// The settings the Atlas drift documentation gives an effect, and this
+// surface does not carry out, are refused where the project file sets them,
+// as the flags asking for the same are.
+func TestCompatMigrateDrift_FailurePathRefusesASettingItDoesNotCarryOut(t *testing.T) {
+	settings := []struct {
+		name, body, wantErr string
+	}{
+		{
+			name: "migration.skip_lock",
+			body: "migration {\n    dir       = \"file://migrations\"\n    skip_lock = true\n  }",
+			wantErr: `atlas migrate drift reads the env's migration.skip_lock, set at settings.hcl:6, but Ptah does ` +
+				`not implement its behavior: the report reads the revision table under the migration lock, so that ` +
+				`a migration being applied is not reported as drift`,
+		},
+		{
+			name: "migration.exclude",
+			body: "migration {\n    dir     = \"file://migrations\"\n    exclude = [\"main.t2\"]\n  }",
+			wantErr: `atlas migrate drift reads the env's migration.exclude, set at settings.hcl:6, but Ptah does ` +
+				`not read it yet; pass the patterns with --exclude`,
+		},
+		{
+			name: "migration.lock_name",
+			body: "migration {\n    dir       = \"file://migrations\"\n    lock_name = \"custom\"\n  }",
+			wantErr: `atlas migrate drift reads the env's migration.lock_name, set at settings.hcl:6, but Ptah does ` +
+				`not read it yet; pass the name with --lock-name`,
+		},
+		{
+			name: "format.migrate.drift",
+			body: "migration {\n    dir = \"file://migrations\"\n  }\n  format {\n    migrate {\n" +
+				"      drift = \"{{ json . }}\"\n    }\n  }",
+			wantErr: `atlas migrate drift reads the env's format.migrate.drift, set at settings.hcl:9, but Ptah ` +
+				`does not implement its behavior: Ptah prints its own drift report, and has no template data in the ` +
+				`shape Atlas documents for it`,
+		},
+	}
+	for _, setting := range settings {
+		t.Run(setting.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			enterDriftProject(c)
+			c.Assert(os.WriteFile("settings.hcl", []byte("env \"local\" {\n  url = \"sqlite://a.db\"\n"+
+				"  dev = \"sqlite://dev?mode=memory\"\n  "+setting.body+"\n}\n"), 0o600), qt.IsNil)
+
+			stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", "file://settings.hcl",
+				"--env", "local")
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(setting.wantErr))
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
 }
 
 func TestCompatMigrateDrift_FailurePathRefusesWhatItDoesNotImplement(t *testing.T) {

@@ -105,9 +105,10 @@ type virtualContextKey struct{}
 
 type sourceCheckContextKey struct{}
 
+// localRootContextValue holds the local options of each forwarded path, by
+// the path as forwarded.
 type localRootContextValue struct {
-	raw     string
-	options LocalOptions
+	roots map[string]LocalOptions
 }
 
 type virtualContextSource struct {
@@ -120,31 +121,33 @@ type virtualContextValue struct {
 }
 
 // WithLocalRoot returns a context that preserves the allowed-root provenance
-// for one forwarded local migration path.
+// for one forwarded local migration path. The paths bound by earlier calls
+// stay bound, so a command that reads one directory per target can bind each.
 func WithLocalRoot(ctx context.Context, raw, allowedRoot string) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, localRootContextKey{}, localRootContextValue{
-		raw:     raw,
-		options: LocalOptions{AllowedRoot: allowedRoot},
-	})
+	return withLocalOptions(ctx, raw, LocalOptions{AllowedRoot: allowedRoot})
 }
 
 // WithRootedLocal returns a context that preserves a borrowed rooted handle
-// for one forwarded local migration path.
+// for one forwarded local migration path. The paths bound by earlier calls
+// stay bound, as for [WithLocalRoot].
 func WithRootedLocal(
 	ctx context.Context,
 	raw string,
 	root *pathguard.OpenedDirectory,
 ) context.Context {
+	return withLocalOptions(ctx, raw, LocalOptions{Root: root})
+}
+
+func withLocalOptions(ctx context.Context, raw string, options LocalOptions) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return context.WithValue(ctx, localRootContextKey{}, localRootContextValue{
-		raw:     raw,
-		options: LocalOptions{Root: root},
-	})
+	roots := make(map[string]LocalOptions)
+	if current, ok := ctx.Value(localRootContextKey{}).(localRootContextValue); ok {
+		maps.Copy(roots, current.roots)
+	}
+	roots[raw] = options
+	return context.WithValue(ctx, localRootContextKey{}, localRootContextValue{roots: roots})
 }
 
 // WithVirtual returns a context that binds raw to one immutable in-memory
@@ -257,11 +260,8 @@ func localOptionsFromContext(ctx context.Context, raw string) LocalOptions {
 	if ctx == nil {
 		return LocalOptions{}
 	}
-	value, ok := ctx.Value(localRootContextKey{}).(localRootContextValue)
-	if !ok || value.raw != raw {
-		return LocalOptions{}
-	}
-	return value.options
+	value, _ := ctx.Value(localRootContextKey{}).(localRootContextValue)
+	return value.roots[raw]
 }
 
 // CaptureLocal validates and opens raw through its allowed root, then captures

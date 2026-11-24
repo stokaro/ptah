@@ -1133,18 +1133,22 @@ env "other" {
   }
 }
 `)
-	want := []projectconfig.IgnoredAtlasConstruct{
-		{Name: "sensitive", Kind: "attribute", Filename: "atlas.hcl", Line: 4},
-		{Name: "sensitive", Kind: "attribute", Filename: "atlas.hcl", Line: 11},
+	inSelected := []projectconfig.IgnoredAtlasConstruct{
+		{Name: "sensitive", Kind: "attribute", Path: "schema.mode.sensitive", InSelectedEnv: true, Filename: "atlas.hcl", Line: 4},
+		{Name: "sensitive", Kind: "attribute", Path: "schema.mode.sensitive", Filename: "atlas.hcl", Line: 11},
+	}
+	inOther := []projectconfig.IgnoredAtlasConstruct{
+		{Name: "sensitive", Kind: "attribute", Path: "schema.mode.sensitive", Filename: "atlas.hcl", Line: 4},
+		{Name: "sensitive", Kind: "attribute", Path: "schema.mode.sensitive", InSelectedEnv: true, Filename: "atlas.hcl", Line: 11},
 	}
 
 	selected, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "selected")
 	c.Assert(err, qt.IsNil)
-	c.Assert(selected.IgnoredConstructs, qt.DeepEquals, want)
+	c.Assert(selected.IgnoredConstructs, qt.DeepEquals, inSelected)
 
 	other, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "other")
 	c.Assert(err, qt.IsNil)
-	c.Assert(other.IgnoredConstructs, qt.DeepEquals, want)
+	c.Assert(other.IgnoredConstructs, qt.DeepEquals, inOther)
 }
 
 func TestParseAtlasProjectConfigEvaluatesIgnoredExpressionsInSelectedEnv(t *testing.T) {
@@ -1227,8 +1231,48 @@ env "other" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
-		{Name: "project", Kind: "attribute", Filename: "atlas.hcl", Line: 3},
-		{Name: "cloud", Kind: "block", Filename: "atlas.hcl", Line: 6},
+		{Name: "project", Kind: "attribute", Path: "project", InSelectedEnv: true, Filename: "atlas.hcl", Line: 3},
+		{Name: "cloud", Kind: "block", Path: "cloud", Filename: "atlas.hcl", Line: 6},
+	})
+}
+
+// The path names the block an ignored name sits in, so a command that reads
+// migration.skip_lock can tell it from a skip_lock written anywhere else. An
+// env block without a label is in the selection when its name expression
+// selects it.
+func TestParseAtlasProjectConfigRecordsWhereAnIgnoredConstructSits(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`frobnicate = "top"
+env {
+  name = atlas.env
+  skip_lock = true
+  migration {
+    skip_lock = true
+    lock_name = "custom"
+  }
+  format {
+    migrate {
+      drift = "{{ json . }}"
+    }
+  }
+}
+env "other" {
+  migration {
+    exclude = ["t"]
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
+		{Name: "skip_lock", Kind: "attribute", Path: "skip_lock", InSelectedEnv: true, Filename: "atlas.hcl", Line: 4},
+		{Name: "lock_name", Kind: "attribute", Path: "migration.lock_name", InSelectedEnv: true, Filename: "atlas.hcl", Line: 7},
+		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Filename: "atlas.hcl", Line: 6},
+		{Name: "drift", Kind: "attribute", Path: "format.migrate.drift", InSelectedEnv: true, Filename: "atlas.hcl", Line: 11},
+		{Name: "exclude", Kind: "attribute", Path: "migration.exclude", Filename: "atlas.hcl", Line: 17},
+		{Name: "frobnicate", Kind: "attribute", Path: "frobnicate", Filename: "atlas.hcl", Line: 1},
 	})
 }
 
@@ -1244,8 +1288,8 @@ func TestParseAtlasProjectConfigOrdersIgnoredGlobalLintAttributesDeterministical
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
-		{Name: "alpha", Kind: "attribute", Filename: "atlas.hcl", Line: 3},
-		{Name: "zebra", Kind: "attribute", Filename: "atlas.hcl", Line: 2},
+		{Name: "alpha", Kind: "attribute", Path: "lint.alpha", Filename: "atlas.hcl", Line: 3},
+		{Name: "zebra", Kind: "attribute", Path: "lint.zebra", Filename: "atlas.hcl", Line: 2},
 	})
 }
 

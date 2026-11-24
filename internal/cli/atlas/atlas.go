@@ -83,6 +83,11 @@ type atlasVerb struct {
 	// of the config it is handed, so the adapter hands over every instance
 	// rather than one; see [resolveAtlasVerbInstances].
 	eachInstance bool
+	// refuseProjectSettings, on a verb marked eachInstance, refuses settings
+	// of the selected env that the verb's Atlas contract gives an effect and
+	// the native command does not carry out. It reads the configs as loaded,
+	// before any is merged with ptah.yaml.
+	refuseProjectSettings func(configs []projectconfig.Config) error
 }
 
 type atlasPositionalArg struct {
@@ -1665,6 +1670,7 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
+		verbFlags = atlasInstanceDirFlags(verbFlags, project)
 		mapped, err := atlasargs.Map(group, verb.use, verbFlags, args)
 		if err != nil {
 			return nil, nil, err
@@ -1715,6 +1721,10 @@ type atlasVerbArgs struct {
 	// instances are the configs a verb marked [atlasVerb.eachInstance] hands
 	// over, one per instance of the selected env; nil for every other verb.
 	instances []projectconfig.Config
+	// instanceDirs reports that each of instances carries its own migration
+	// directory, so no --dir is forwarded; see
+	// [atlasInstancesNameTheirDirectories].
+	instanceDirs bool
 }
 
 // resolveAtlasVerbProject merges the Atlas project selection flags reachable

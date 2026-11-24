@@ -374,7 +374,7 @@ func TestParseAtlasCollectionSharesIgnoredConstructsAcrossInstances(t *testing.T
 	c.Assert(err, qt.IsNil)
 	c.Assert(configs, qt.HasLen, 2)
 	want := []projectconfig.IgnoredAtlasConstruct{
-		{Name: "custom", Kind: "attribute", Filename: "atlas.hcl", Line: 5},
+		{Name: "custom", Kind: "attribute", Path: "custom", InSelectedEnv: true, Filename: "atlas.hcl", Line: 5},
 	}
 	c.Assert(configs[0].IgnoredConstructs, qt.DeepEquals, want)
 	c.Assert(configs[1].IgnoredConstructs, qt.DeepEquals, want)

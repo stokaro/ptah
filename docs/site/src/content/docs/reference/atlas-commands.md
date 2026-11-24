@@ -937,19 +937,22 @@ and the output is Ptah's text report.
 | --- | --- |
 | `-u`, `--url` | The database to check (native `--db-url`). Refused over an env with `for_each`, as `PTAH_URL` is. |
 | `--dev-url` | The dev database the applied migrations replay on (native `--shadow-db`). |
-| `--dir`, `--dir-format` | The migration directory, read relative to the directory that holds `atlas.hcl`, and its layout. |
+| `--dir`, `--dir-format` | The migration directory, read relative to the directory that holds `atlas.hcl`, and its layout. `--dir` is the one directory every target reads. |
 | `--revisions-schema` | The schema that holds `atlas_schema_revisions`. |
 | `--exclude` | Leaves matching objects out of the comparison; repeats. |
 | `--lock-timeout`, `--lock-name` | The migration lock wait and name (native `--migration-lock-timeout`, `--migration-lock-name`). |
-| `--no-cache` | Accepted and ignored: Ptah computes the expected state on every run. |
-| `--format` | Refused: the report has no template data in the shape Atlas documents. |
-| `--skip-lock` | Refused: the report reads the history under the migration lock. |
+| `--no-cache` | Accepted; every run computes the expected state. |
+| `--format` | Refused, as `format.migrate.drift` in `atlas.hcl` is: the report has no template data in the shape Atlas documents. |
+| `--skip-lock` | Refused, as `migration.skip_lock` is: the report reads the history under the migration lock. |
 
-Over an env with `for_each`, the `migration` block's `dir`, `format`,
-`revisions_schema` and `lock_timeout` must be the same on every target or be
-given as a flag, because the native command takes each once for the run. The
-native flags, such as `--db-url`, `--shadow-db` and `--json`, are refused, and
-the native `PTAH_DB_URL` is not read.
+Over an env with `for_each`, each target reads the `dir` its instance names.
+The `migration` block's `format`, `revisions_schema` and `lock_timeout` must be
+the same on every target or be given as a flag, because this surface forwards
+each once for the run. `migration.exclude` and `migration.lock_name` are
+refused, because the report does not read them yet; pass `--exclude` and
+`--lock-name`. The native flags, such as `--db-url`, `--shadow-db` and
+`--json`, are refused, and their variables, such as `PTAH_DB_URL`, are not
+read.
 
 ### `ptah-compat migrate diff`
 

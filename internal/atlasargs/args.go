@@ -74,6 +74,11 @@ type Flag struct {
 	// database URLs become one URL that names neither. A value is forwarded as
 	// written, an empty one included, so the native flag judges it.
 	ForwardEach bool
+	// TargetEnvDisabled says the forwarded target reads no PTAH_* variable
+	// for NativeName: the caller disabled that binding on the target. The
+	// native variable then sets nothing, so it does not keep Default from
+	// being forwarded.
+	TargetEnvDisabled bool
 }
 
 // String creates an Atlas string flag descriptor.
@@ -509,7 +514,7 @@ func withDefaultArgs(flags []Flag, args []string) []string {
 }
 
 func nativeEnvironmentPresent(flag Flag) bool {
-	if flag.EnvDisabled || flag.NativeName == "" || flag.NativeName == flag.Name {
+	if flag.EnvDisabled || flag.TargetEnvDisabled || flag.NativeName == "" || flag.NativeName == flag.Name {
 		return false
 	}
 	value, ok := os.LookupEnv(envName("PTAH", flag.NativeName))

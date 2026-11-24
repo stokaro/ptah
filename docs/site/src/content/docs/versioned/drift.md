@@ -391,16 +391,23 @@ changes nothing, because Ptah keeps no cache of the expected state. `--format`
 and `--skip-lock` are refused: the output is the text report on this page, and
 the history is read under the migration lock.
 
+In `atlas.hcl`, `format { migrate { drift = ... } }` and
+`migration { skip_lock = ... }` are refused for the same reasons. `migration { exclude = ... }` and
+`migration { lock_name = ... }` are refused too, because the report does not
+read them yet: pass the patterns with `--exclude` and the name with
+`--lock-name`.
+
 An env with `for_each` is reported target by target, as in
 [Report every target of an env](#report-every-target-of-an-env), and each target
-takes its own `url` and `dev`. The native command takes the `migration`
-block's `dir`, `format`, `revisions_schema` and `lock_timeout` once for the
-run, so they must be the same on every target or be given as a flag. `--url`
-or `PTAH_URL` over such an env is refused, because it would point every target
-at one database; leave both unset to report each target. The native
-`PTAH_DB_URL` is not read here. The run exits 1 when any target drifted or
-could not be compared, the status the community CLI gives every failure, and 0
-otherwise.
+takes its own `url`, `dev` and migration `dir`. `--dir` names one directory for
+every target. This surface forwards the `migration` block's `format`,
+`revisions_schema` and `lock_timeout` once for the run, so they must be the
+same on every target or be given as a flag. `--url` or `PTAH_URL` over such an
+env is refused, because it would point every target at one database; leave both
+unset to report each target. The variables of the native flags, such as
+`PTAH_DB_URL`, `PTAH_SHADOW_DB` and `PTAH_JSON`, are not read here. The run
+exits 1 when any target drifted or could not be compared, the status the
+community CLI gives every failure, and 0 otherwise.
 
 ## What it does not cover
 

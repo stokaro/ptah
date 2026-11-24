@@ -43,14 +43,21 @@ type compatDriftProject struct {
 func newCompatDriftProject(c *qt.C, engine driftEngine) compatDriftProject {
 	c.Helper()
 	project := compatDriftProject{engine: engine, dir: c.TempDir()}
-	migrations := filepath.Join(project.dir, "migrations")
-	c.Assert(os.Mkdir(migrations, 0o755), qt.IsNil)
-	for name, content := range compatDriftMigrations {
-		c.Assert(os.WriteFile(filepath.Join(migrations, name), []byte(content), 0o600), qt.IsNil)
-	}
-	project.run(c, 0, "migrate", "hash", "--dir", "file://migrations")
+	project.directory(c, "migrations", compatDriftMigrations)
 	project.shadow, _ = project.database(c)
 	return project
+}
+
+// directory writes files into a new migration directory of the project and
+// hashes it.
+func (p compatDriftProject) directory(c *qt.C, name string, files map[string]string) {
+	c.Helper()
+	dir := filepath.Join(p.dir, name)
+	c.Assert(os.Mkdir(dir, 0o755), qt.IsNil)
+	for file, content := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, file), []byte(content), 0o600), qt.IsNil)
+	}
+	p.run(c, 0, "migrate", "hash", "--dir", "file://"+name)
 }
 
 // database creates an empty database on the server, dropped when the test
@@ -77,8 +84,15 @@ func (p compatDriftProject) database(c *qt.C) (url, name string) {
 // with statements run on it afterwards.
 func (p compatDriftProject) migrated(c *qt.C, statements ...string) string {
 	c.Helper()
+	return p.migratedFrom(c, "migrations", statements...)
+}
+
+// migratedFrom is [compatDriftProject.migrated] from the project's directory
+// called dir.
+func (p compatDriftProject) migratedFrom(c *qt.C, dir string, statements ...string) string {
+	c.Helper()
 	url, _ := p.database(c)
-	p.run(c, 0, "migrate", "apply", "--url", url, "--dir", "file://migrations")
+	p.run(c, 0, "migrate", "apply", "--url", url, "--dir", "file://"+dir)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -154,6 +168,44 @@ func TestCompatMigrateDriftE2E_HappyPathReportsEveryTargetOfAForEachEnv(t *testi
 			c.Assert(result.Stderr, qt.Equals, "")
 			c.Assert(project.header(c, first), qt.Equals, project.header(c, second))
 			c.Assert(strings.Count(result.Stdout, project.header(c, first)), qt.Equals, 2)
+			c.Assert(result.Stdout, qt.Matches, "(?s).*"+regexp.QuoteMeta("Summary: 2 targets: 2 without drift, 0 with drift, 0 not compared.\n"))
+			c.Assert(project.scalar(c, project.shadow, engine.tables), qt.Equals, 0)
+		})
+	}
+}
+
+// Each target replays the directory its own instance names on the dev
+// database: the second directory holds only the first migration, and the
+// second database ran only that one. Replayed from the first directory, the
+// second target would report a pending migration.
+func TestCompatMigrateDriftE2E_HappyPathReplaysTheDirectoryEachTargetNames(t *testing.T) {
+	for _, engine := range driftEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			project := newCompatDriftProject(c, engine)
+			project.directory(c, "migrations-second", map[string]string{
+				"20240101000000_users.sql": compatDriftMigrations["20240101000000_users.sql"],
+			})
+			first, second := project.migrated(c), project.migratedFrom(c, "migrations-second")
+			c.Assert(os.WriteFile(filepath.Join(project.dir, "atlas.hcl"), []byte("locals {\n"+
+				"  urls = { first = "+strconv.Quote(first)+", second = "+strconv.Quote(second)+" }\n"+
+				"  dirs = { first = \"file://migrations\", second = \"file://migrations-second\" }\n"+
+				"}\n\n"+
+				"env \"split\" {\n"+
+				"  for_each = toset([\"first\", \"second\"])\n"+
+				"  url      = local.urls[each.value]\n"+
+				"  dev      = "+strconv.Quote(project.shadow)+"\n"+
+				"  migration {\n"+
+				"    dir = local.dirs[each.value]\n"+
+				"  }\n"+
+				"}\n"), 0o600), qt.IsNil)
+
+			result := project.run(c, 0, "migrate", "drift", "--env", "split")
+
+			c.Assert(result.Stderr, qt.Equals, "")
+			c.Assert(project.header(c, first), qt.Not(qt.Equals), project.header(c, second))
+			c.Assert(strings.Count(result.Stdout, project.header(c, first)), qt.Equals, 1)
+			c.Assert(strings.Count(result.Stdout, project.header(c, second)), qt.Equals, 1)
 			c.Assert(result.Stdout, qt.Matches, "(?s).*"+regexp.QuoteMeta("Summary: 2 targets: 2 without drift, 0 with drift, 0 not compared.\n"))
 			c.Assert(project.scalar(c, project.shadow, engine.tables), qt.Equals, 0)
 		})
