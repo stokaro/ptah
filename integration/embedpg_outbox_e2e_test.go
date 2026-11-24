@@ -483,14 +483,20 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 	_, err = inFlight.ExecContext(ctx,
 		`INSERT INTO articles (id, title, body, updated_at) VALUES (3, 'In', 'flight', '10')`)
 	c.Assert(err, qt.IsNil)
+	var inFlightXID uint64
+	c.Assert(inFlight.QueryRowContext(ctx, `SELECT pg_current_xact_id()::text::bigint`).Scan(&inFlightXID), qt.IsNil)
 
 	during, horizonDuring, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(during, qt.HasLen, len(settled))
 	// The horizon is held back by the open transaction rather than racing past
-	// it. That is what makes advancing a cursor to it safe.
-	c.Assert(horizonDuring <= horizonBefore+1, qt.IsTrue,
-		qt.Commentf("horizon moved from %d to %d with a transaction open", horizonBefore, horizonDuring))
+	// it. That is what makes advancing a cursor to it safe. The bound is the
+	// open transaction's own id: other sessions on a shared server conclude
+	// transactions meanwhile and may move the horizon up to it, never past it.
+	c.Assert(horizonDuring >= horizonBefore, qt.IsTrue,
+		qt.Commentf("horizon went back from %d to %d", horizonBefore, horizonDuring))
+	c.Assert(horizonDuring <= inFlightXID, qt.IsTrue,
+		qt.Commentf("horizon %d moved past the open transaction %d", horizonDuring, inFlightXID))
 	unprocessed, err := outbox.Unprocessed(ctx, embedcatchup.Cursor{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(unprocessed, qt.Equals, len(settled))
@@ -500,8 +506,8 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 	after, horizonAfter, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(after, qt.HasLen, len(settled)+1)
-	c.Assert(horizonAfter > horizonDuring, qt.IsTrue,
-		qt.Commentf("horizon %d did not move past the committed transaction", horizonAfter))
+	c.Assert(horizonAfter > inFlightXID, qt.IsTrue,
+		qt.Commentf("horizon %d did not move past the committed transaction %d", horizonAfter, inFlightXID))
 	c.Assert(after[len(after)-1].Key, qt.DeepEquals, []string{"3"})
 	c.Assert(after[len(after)-1].Operation, qt.Equals, embedcatchup.OperationInsert)
 }
