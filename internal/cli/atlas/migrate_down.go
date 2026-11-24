@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/devdocker"
@@ -59,6 +60,13 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 			return err
 		}
 		if !atlasMigrateDownWantsFormat(verb, args) {
+			// The forwarded rollback reads PTAH_MIGRATIONS_ENGINE through the
+			// native --migrations-engine binding, whose refusal of an empty
+			// value says to leave that flag out. This verb has no such flag,
+			// so the value is refused here first, naming only the variable.
+			if _, err := migrationsEngineFromEnv(); err != nil {
+				return err
+			}
 			cmd.SetContext(repeatables.downSourceCheck(cmd.Context()))
 			return forward(cmd, args)
 		}
@@ -96,6 +104,9 @@ type atlasMigrateDownFormatOptions struct {
 	plan       bool
 	// amount is the amount argument, 0 when none was given.
 	amount uint64
+	// migrationsEngine is PTAH_MIGRATIONS_ENGINE, which the run resolves
+	// before anything else; see [migrationsEngineFromEnv].
+	migrationsEngine string
 
 	flagSet *pflag.FlagSet
 	// rawDir preserves the pre-resolution --dir value for the report's Env.Dir.
@@ -111,6 +122,10 @@ func runAtlasMigrateDownFormat(
 	repeatables atlasRepeatableReading,
 	args []string,
 ) (runErr error) {
+	migrationsEngine, err := migrationsEngineFromEnv()
+	if err != nil {
+		return err
+	}
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
@@ -130,20 +145,16 @@ func runAtlasMigrateDownFormat(
 	// A golang-migrate file runs the way golang-migrate runs it, which opens no
 	// transaction around a file, on the target and on the dev database alike.
 	ownTransactions := runner.TransactionOwner() == lintext.TransactionOwnerFile
-	parentFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
+	project, remaining, err := resolveAtlasProjectArgs(cmd, args)
 	if err != nil {
 		return err
 	}
-	project, remaining, err := extractAtlasProjectArgs(args)
-	if err != nil {
-		return err
-	}
-	project = mergeAtlasProjectArgs(atlasProjectArgValues{flags: parentFlags, changed: parentChanged}, project)
 
 	opts, err := parseAtlasMigrateDownFormatArgs(verb, remaining)
 	if err != nil {
 		return err
 	}
+	opts.migrationsEngine = migrationsEngine
 	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(cmd.Context(), cmd.ErrOrStderr(), opts, project)
 	if err != nil {
 		return err
@@ -253,7 +264,7 @@ func runAtlasMigrateDownFormat(
 	}
 
 	plan, err := atlasmigrate.PrepareDown(cmd.Context(), conn, atlasmigrate.DownOptions{
-		MigrationsEngine:     migrationsEngineFromEnv(),
+		MigrationsEngine:     opts.migrationsEngine,
 		Dir:                  dir,
 		FS:                   source.FileSystem,
 		TargetVersion:        targetVersion,
@@ -651,7 +662,7 @@ func resolveAtlasDownFormatTag(
 	}
 	resolver = resolver.
 		WithMigrationsTable(revisiontable.Schema(opts.revisionsSchema, opts.url), "").
-		WithMigrationsEngine(migrationsEngineFromEnv()).
+		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	return resolver.ResolveMigrationTag(ctx, opts.toTag)
 }
@@ -661,17 +672,24 @@ func resolveAtlasDownFormatTag(
 const atlasMigrateDownLimitFlag = "limit"
 
 // atlasMigrateDownTarget is the native rollback `migrate down` forwards to,
-// with PTAH_LIMIT and PTAH_TARGET unbound. The adapter decides where every
-// forwarded run stops, from the amount argument, --to-version and its
-// PTAH_TO_VERSION, --to-tag, or the documented default, and forwards that stop
-// typed. A variable the target read itself would be a second decision: a
-// malformed PTAH_LIMIT would refuse a run the adapter had settled, and a
-// PTAH_TARGET the --format path does not read would make the two paths stop at
-// different versions. The variables that say where the history is are unbound
-// on every forwarded target; see [atlasNativeHistoryOffTarget].
+// with PTAH_LIMIT, PTAH_TARGET and PTAH_MIGRATION_LOCK_NAME unbound. The
+// adapter decides where every forwarded run stops, from the amount argument,
+// --to-version and its PTAH_TO_VERSION, --to-tag, or the documented default,
+// and forwards that stop typed. A variable the target read itself would be a
+// second decision: a malformed PTAH_LIMIT would refuse a run the adapter had
+// settled, and a PTAH_TARGET the --format path does not read would make the
+// two paths stop at different versions. The variables that say where the
+// history is are unbound on every forwarded target; see
+// [atlasNativeHistoryOffTarget].
+//
+// The lock name is decided the same way: a forwarded run takes the default
+// lock `migrate apply` takes, since Atlas registers no lock-name flag on this
+// verb. Left bound, a PTAH_MIGRATION_LOCK_NAME exported for the native
+// commands would still be read here, and an empty one refused, on a run that
+// selects no name.
 func atlasMigrateDownTarget() *cobra.Command {
 	cmd := migratedown.NewMigrateDownCommand()
-	for _, name := range []string{atlasMigrateDownLimitFlag, "target"} {
+	for _, name := range []string{atlasMigrateDownLimitFlag, "target", migratelock.NameFlag} {
 		if err := cmdflags.DisableEnvBinding(cmd.Flags(), name); err != nil {
 			panic(err)
 		}

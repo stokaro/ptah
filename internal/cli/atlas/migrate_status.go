@@ -56,6 +56,10 @@ func runAtlasMigrateStatus(
 	cmd *cobra.Command,
 	opts atlasMigrateStatusOptions,
 ) (runErr error) {
+	migrationsEngine, err := migrationsEngineFromEnv()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	repeatables, err := resolveAtlasRepeatableMigrations()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -214,7 +218,7 @@ func runAtlasMigrateStatus(
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.Status(cmd.Context(), conn, atlasmigrate.StatusOptions{
-		MigrationsEngine: migrationsEngineFromEnv(),
+		MigrationsEngine: migrationsEngine,
 		Dir:              dir,
 		FS:               migrationFS,
 		AtlasEnv:         opts.atlasEnv,

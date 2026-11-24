@@ -68,9 +68,14 @@ func TestMigrationVerbsRefuseABlankMigrationLockName_FailurePath(t *testing.T) {
 					wantErr: `--migration-lock-name must name the migration lock: .*`,
 				},
 				{
+					name:    "environment empty",
+					env:     "",
+					wantErr: `PTAH_MIGRATION_LOCK_NAME is set but empty: give it a value, or unset it .*`,
+				},
+				{
 					name:    "environment whitespace",
 					env:     "   ",
-					wantErr: `PTAH_MIGRATION_LOCK_NAME must name the migration lock: .*`,
+					wantErr: `PTAH_MIGRATION_LOCK_NAME is set to "   ", which names nothing: give it a value, or unset it .*`,
 				},
 			} {
 				t.Run(spelling.name, func(t *testing.T) {

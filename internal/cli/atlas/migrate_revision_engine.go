@@ -3,6 +3,9 @@ package atlas
 import (
 	"os"
 	"strings"
+
+	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/envbinding"
 )
 
 // migrationsEngineEnvVar names the storage engine the revision table is created
@@ -31,14 +34,29 @@ import (
 const migrationsEngineEnvVar = "PTAH_MIGRATIONS_ENGINE"
 
 // migrationsEngineFromEnv is the engine the compatibility surface was told to
-// use, empty when it was told nothing.
+// use, empty when the variable is unset, which means the dialect's own default.
 //
-// An empty or blank value means the dialect's own default, which is what every
-// deployment that never heard of this variable gets. There is no invalid value
-// to refuse here: which engines a revision table may have is the server's
-// judgment, it answers with its own message, and the refusal creates nothing.
-// The two engines Ptah itself turns down are refused by the migrator before any
-// statement runs, on both surfaces.
-func migrationsEngineFromEnv() string {
-	return strings.TrimSpace(os.Getenv(migrationsEngineEnvVar))
+// A value that is set but empty or blank is refused, as the native flag's
+// binding refuses it. Read as unset, it creates the revision table with the
+// default engine, and the table keeps the engine it is created with: on a
+// replicated ClickHouse cluster the history then exists on one node. Each verb
+// that reads the variable resolves it before its first early return, so a
+// blank value is refused on every run of the verb rather than on the run that
+// first creates the table.
+//
+// Beyond that there is no invalid value to refuse here: which engines a
+// revision table may have is the server's judgment, it answers with its own
+// message, and the refusal creates nothing. The two engines Ptah itself turns
+// down are refused by the migrator before any statement runs, on both
+// surfaces.
+func migrationsEngineFromEnv() (string, error) {
+	value, set := os.LookupEnv(migrationsEngineEnvVar)
+	if !set {
+		return "", nil
+	}
+	rule := envbinding.EmptyRule{Omitted: dbcli.OmittedMigrationsEngine}
+	if err := rule.CheckVariable(migrationsEngineEnvVar, value); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
 }

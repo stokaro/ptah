@@ -247,11 +247,18 @@ func RegisterActorFlag(flags *pflag.FlagSet, target *string, log string) {
 // (stokaro/ptah#2234).
 //
 // Empty means the dialect's own default, which is what every other engine has
-// always used.
+// always used. The variable, PTAH_MIGRATIONS_ENGINE, refuses an empty value
+// all the same: read as unset, it creates the revision table with the default
+// engine, and on a replicated cluster that table exists on one node only.
 func RegisterMigrationsEngineFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsEngineFlagName, "",
 		"Storage engine for Ptah's migration tracking table (ClickHouse; for example \"ReplicatedMergeTree('/clickhouse/tables/{shard}/schema_migrations', '{replica}')\"). Empty uses the dialect default.")
+	RefuseEmptyValueEnv(flags, MigrationsEngineFlagName, OmittedMigrationsEngine)
 }
+
+// OmittedMigrationsEngine is what leaving --migrations-engine out does, in the
+// words the refusal of an empty PTAH_MIGRATIONS_ENGINE prints.
+const OmittedMigrationsEngine = "use the dialect's default engine"
 
 // RegisterRevisionTableFormatFlag registers the migration revision table
 // layout flag. The layout names the table a run reads, so its variable refuses

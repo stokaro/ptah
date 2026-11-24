@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/dblock"
+	"ptah.run/internal/envbinding"
 )
 
 // ConfigKey is the project-config path that fills the same flag as
@@ -41,14 +42,25 @@ const (
 	NameConfigKey = "migration.migration_lock_name"
 )
 
+// OmittedName is what leaving `--migration-lock-name` out does, in the words
+// the refusal of an empty PTAH_MIGRATION_LOCK_NAME prints.
+const OmittedName = "take the default lock ptah_migrate"
+
 // RegisterNameFlag adds `--migration-lock-name` to flags, storing the raw value
 // in dst. The environment binding the command tree installs gives it the
 // PTAH_MIGRATION_LOCK_NAME variable and the `[env: ...]` help marker.
+//
+// The variable refuses an empty value. Read as unset, it takes the default
+// lock, and a runner holding the lock the variable was meant to name does not
+// exclude this one: two runs apply to one history at once.
 func RegisterNameFlag(flags *pflag.FlagSet, dst *string) {
 	flags.StringVar(dst, NameFlag, "", "Name of the session-level migration advisory lock; "+
 		"runners that share a name wait for each other, and the default is ptah_migrate. "+
 		"Give each independent migration history its own name to run them concurrently; "+
 		"refused against a dialect that takes no such lock")
+	if err := cmdflags.RefuseEmptyEnv(flags, NameFlag, envbinding.EmptyRule{Omitted: OmittedName}); err != nil {
+		panic(err) // the flag is registered above, and the rule names what leaving it out does
+	}
 }
 
 // UnsupportedError reports that a caller asked for the migration advisory lock
@@ -308,9 +320,9 @@ func (n Name) Explicit() bool { return n.Spelling != "" }
 // whitespace-only string is refused, naming the spelling used, because the
 // migrator would read it as "use the default" and a caller who meant to
 // separate two histories would silently share a lock. An empty
-// PTAH_MIGRATION_LOCK_NAME is the one blank spelling that cannot be told from
-// an absent variable: every string flag treats an empty environment value as
-// unset.
+// PTAH_MIGRATION_LOCK_NAME, or one of only white space, never reaches here:
+// the binding refuses both, as [RegisterNameFlag] declares, so the refusal
+// here is of a blank --migration-lock-name or [NameConfigKey].
 //
 // A forwarded run selects no name. `ptah-compat migrate down` reaches the
 // native command through the adapter, and the compatibility surface has no

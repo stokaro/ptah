@@ -49,6 +49,9 @@ type atlasMigrateApplyOptions struct {
 	lockTimeout     time.Duration
 	lock            atlasLockOptions
 	format          string
+	// migrationsEngine is PTAH_MIGRATIONS_ENGINE, which the run resolves
+	// before anything else; see [migrationsEngineFromEnv].
+	migrationsEngine string
 }
 
 type atlasMigrateApplyRunOptions struct {
@@ -177,6 +180,11 @@ func runAtlasMigrateApply(
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
+	migrationsEngine, err := migrationsEngineFromEnv()
+	if err != nil {
+		return err
+	}
+	opts.migrationsEngine = migrationsEngine
 	repeatables, err := resolveAtlasRepeatableMigrations()
 	if err != nil {
 		return err
@@ -398,7 +406,7 @@ func runAtlasMigrateApplyTarget(
 	}
 
 	cleanScope, plan, err := inspectThenPrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
-		MigrationsEngine:         migrationsEngineFromEnv(),
+		MigrationsEngine:         opts.migrationsEngine,
 		Dir:                      dir,
 		FS:                       migrationFS,
 		DryRun:                   opts.dryRun,

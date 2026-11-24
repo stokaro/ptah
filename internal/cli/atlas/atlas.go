@@ -1719,19 +1719,10 @@ func resolveAtlasVerbProject(
 	cleanup *cmdadapter.CleanupScope,
 ) (atlasVerbArgs, error) {
 	resolved := atlasVerbArgs{context: cmd.Context()}
-	parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
+	project, remaining, err := resolveAtlasProjectArgs(cmd, args)
 	if err != nil {
 		return atlasVerbArgs{}, err
 	}
-	parentProject := atlasProjectArgValues{
-		flags:   parentProjectFlags,
-		changed: parentChanged,
-	}
-	project, remaining, err := extractAtlasProjectArgs(args)
-	if err != nil {
-		return atlasVerbArgs{}, err
-	}
-	project = mergeAtlasProjectArgs(parentProject, project)
 	resolved.args = remaining
 	resolved.projectFlags = project.flags
 	// The native target reads the project configuration this adapter selected

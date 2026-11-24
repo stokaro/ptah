@@ -15,6 +15,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
@@ -99,6 +100,9 @@ func RegisterProjectEnvFlag(flags *pflag.FlagSet) {
 
 func markProjectEnvFlag(flags *pflag.FlagSet) {
 	RegisterProjectVarFlag(flags)
+	// No env has a blank name, so PTAH_ENV="  " is the empty variable, and
+	// [RefuseEmptyProjectEnv] refuses it as one.
+	cmdflags.ReadBlankAsEmpty(flags, EnvFlagName)
 	if err := flags.SetAnnotation(EnvFlagName, ProjectConfigEnvAnnotation, []string{"true"}); err != nil {
 		panic(err)
 	}
@@ -208,6 +212,9 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
+	if err := RefuseEmptyProjectEnv(cmd.Flags(), config); err != nil {
+		return projectconfig.Config{}, err
+	}
 	if err := ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), config); err != nil {
 		return projectconfig.Config{}, err
 	}
@@ -233,6 +240,11 @@ func LoadProjectConfigs(cmd *cobra.Command, ptahConfigPath string) ([]projectcon
 	}
 	configs, err := projectconfig.LoadCollection(opts)
 	if err != nil {
+		return nil, err
+	}
+	// Every instance carries the envs the files declare, so the first one
+	// answers for the run.
+	if err := RefuseEmptyProjectEnv(cmd.Flags(), configs[0]); err != nil {
 		return nil, err
 	}
 	// Every instance carries the file's ignored names, so one report covers

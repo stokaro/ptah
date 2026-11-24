@@ -31,13 +31,14 @@ A `PTAH_<FLAG>` value must parse as the corresponding flag type. Ptah rejects a
 malformed value before argument validation, command hooks, or database work
 begins. For example, `PTAH_DRY_RUN=notabool` fails with
 `invalid boolean value "notabool" for PTAH_DRY_RUN` instead of running with
-the default `false` value. An explicit CLI flag wins without reading its
-environment twin, including when that environment value is malformed. An empty
-value remains unset, except for a
+the default `false`. An explicit CLI flag wins without reading its environment
+twin, even a malformed one. An empty value remains unset, except for a
 [boolean](#boolean-environment-variables), the
 [schema-selecting variables](#schema-selecting-variables), the
-[variables that narrow a write](#variables-that-narrow-a-write) and the
-[variables that name the migration history](#variables-that-name-the-migration-history).
+[variables that narrow a write](#variables-that-narrow-a-write), the
+[variables that name the migration history](#variables-that-name-the-migration-history)
+and the
+[variables that choose a lock, an engine or an env](#variables-that-choose-a-lock-an-engine-or-an-env).
 
 `exclude` is the one key the table does not order: `--exclude` and
 `PTAH_EXCLUDE` add to the project list rather than replace it, as
@@ -144,6 +145,14 @@ or blank value, which names the default history: over a history in
 `ptah migrations lint` reads no history and reads an empty
 `PTAH_REVISION_FORMAT` as unset.
 
+## Variables that choose a lock, an engine or an env
+
+An empty or blank `PTAH_MIGRATION_LOCK_NAME`, `PTAH_LOCK_NAME` or
+`PTAH_MIGRATIONS_ENGINE` is refused: read as unset, it would take the default
+lock, which a runner holding the named one does not hold, or the default engine
+for the revision table. An empty or blank `PTAH_ENV` is refused where a project
+file declares an environment: it would apply none.
+
 ## Boolean environment variables
 
 Every boolean `PTAH_*` variable follows one rule, whether it is a flag's
@@ -249,11 +258,9 @@ Atlas capability: `PTAH_ALLOW_EXTERNAL_TEST_COMMAND`,
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`, `PTAH_STRICT_DIR_QUERY` and
 `PTAH_TRUST_REPLAY_SQL`.
 
-`PTAH_ALLOW_EXTERNAL_TEST_COMMAND` is the older spelling of the permission to
-run an `external` step in a `.test.hcl` case. `ptah-compat` runs the step as
-the pinned community binary does and needs no variable. Native ptah runs it
-with `--allow-config-exec`, or with this variable, which still authorizes
-external steps and nothing else. See
+`PTAH_ALLOW_EXTERNAL_TEST_COMMAND` is the older spelling of the permission
+native ptah needs to run an `external` step in a `.test.hcl` case, and permits
+nothing else; see
 [Programs a project file names](#programs-a-project-file-names).
 
 The program is executed as an argument vector with no shell, and a refused
@@ -287,8 +294,7 @@ community binary plans for a SQLite virtual table anyway, and
 own, since the binary has no notion of a module this build cannot classify and
 plans the drops regardless. Gating either would make strict mode the one place
 Ptah is stricter than the binary it matches. Every other declared
-boolean is gated, and a malformed value for any of them fails the process
-whatever its classification. Native `ptah` does not read
+boolean is gated. Native `ptah` does not read
 `PTAH_ATLAS_STRICT_COMPAT`.
 
 Project-file merging preserves source presence. For a supported field, an
@@ -420,11 +426,6 @@ Run with the named environment:
 ptah migrations status --env dev
 ptah migrations up --env dev --verify-sum
 ```
-
-The two files are not interchangeable everywhere: `--config` names a
-`ptah.yaml` and refuses an `atlas.hcl` by name, because the Atlas project
-config is discovered as `./atlas.hcl` and selected with `--env`. Where both
-exist, `atlas.hcl` wins — see the precedence table above.
 
 An environment applies only when `--env` or `PTAH_ENV` names it. A file that
 declares one environment does not make it the default: without `--env`, no

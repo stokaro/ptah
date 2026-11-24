@@ -67,8 +67,10 @@ An environment applies only when `--env <name>` (or `PTAH_ENV`) names it. A
 file that declares exactly one environment does not make it the default:
 without `--env`, no environment's values apply, on `ptah` and `ptah-compat`
 alike. A command whose required inputs are all explicit does not need to
-select an environment. A command that lacks a value and selected none says so
-and names the environments the project files declare:
+select an environment. An empty or blank `PTAH_ENV` beside a project file that
+declares an environment is refused rather than read as none. A command that
+lacks a value and selected none says so and names the environments the project
+files declare:
 
 ```text
 error: database URL is required: no --env given; ptah.yaml declares env "prod"

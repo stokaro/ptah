@@ -6,6 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"ptah.run/internal/cli/internal/cmdflags"
+	"ptah.run/internal/envbinding"
 )
 
 // The named-lock family: `--lock-name` and `--skip-lock`.
@@ -59,9 +62,18 @@ type atlasLockRequest struct {
 // registerAtlasLockNameFlag registers `--lock-name` on a verb that Atlas
 // registers it on. Type and default match the reference: a string with no
 // default, where "unset" means the tool's own default lock name.
+//
+// Its variable, PTAH_LOCK_NAME, refuses an empty value and one of only white
+// space, which the binding trims to empty. Read as unset, either takes the
+// default lock, and a runner holding the lock the variable was meant to name
+// does not exclude this one. A blank --lock-name typed on the command line
+// reaches [resolveAtlasLockRequest] and is refused there.
 func registerAtlasLockNameFlag(flags *pflag.FlagSet, opts *atlasLockOptions) {
 	flags.StringVar(&opts.name, atlasLockNameFlag, "",
 		"Name of the database advisory lock to acquire; unset uses the default lock name")
+	if err := cmdflags.RefuseEmptyEnv(flags, atlasLockNameFlag, envbinding.EmptyRule{Omitted: "use the default lock name"}); err != nil {
+		panic(err) // the flag is registered above, and the rule names what leaving it out does
+	}
 }
 
 // registerAtlasSkipLockFlag registers `--skip-lock` on a verb that Atlas

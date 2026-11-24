@@ -13,6 +13,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/adoptpreflight"
 	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 )
@@ -132,6 +133,9 @@ than converted.`,
 	flags.StringVar(&opts.atlasPath, "atlas-config", "", "Path to atlas.hcl (default: ./atlas.hcl when present)")
 	flags.StringVar(&opts.ptahPath, "config", "", "Path to ptah.yaml (default: ./ptah.yaml when present)")
 	flags.StringVar(&opts.envName, "env", "", "Project env to analyze; required when the project file declares envs")
+	// A blank PTAH_ENV names no env, and dbcli.RefuseEmptyProjectEnv refuses
+	// it as the empty variable.
+	cmdflags.ReadBlankAsEmpty(flags, "env")
 	flags.StringVar(&opts.format, "format", inspectFormatText, "Output format: text or json")
 	flags.BoolVar(&opts.check, "check", false,
 		"Report the analysis without changing anything")
@@ -154,6 +158,9 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 		Verb:      "project adopt",
 	})
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := dbcli.RefuseEmptyProjectEnv(cmd.Flags(), config); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if config.EnvName == "" && len(config.DeclaredEnvs) > 0 {

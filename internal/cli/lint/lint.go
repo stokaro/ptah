@@ -190,7 +190,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return writeCause(cmd.ErrOrStderr(), opts.format, opts.failOn, err)
 	}
 	// The runtime a provider selection installed, or the bundled one. A
 	// selected provider owns its engine's split, rules and annotations here as
@@ -445,6 +445,13 @@ func ReportSetupFailure(cmd *cobra.Command, err error) error {
 }
 
 func writeError(w io.Writer, format, failOn, msg string) error {
-	_ = migrationlintreport.Write(w, format, migrationlintreport.ErrorReport(failOn, msg))
-	return exitcode.New(2, errors.New(msg))
+	return writeCause(w, format, failOn, errors.New(msg))
+}
+
+// writeCause is [writeError] for a refusal whose cause a caller tests, such as
+// one wrapping envbinding.ErrEmptyValue: the report carries the message, and
+// the returned error wraps err.
+func writeCause(w io.Writer, format, failOn string, err error) error {
+	_ = migrationlintreport.Write(w, format, migrationlintreport.ErrorReport(failOn, err.Error()))
+	return exitcode.New(2, err)
 }

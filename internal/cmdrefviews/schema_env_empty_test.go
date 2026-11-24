@@ -107,7 +107,8 @@ var writeVariableRefusals = []string{
 }
 
 // emptyRefusingBindings walks tree and returns every bound flag outside
-// schemaVariables and historyVariables that declares an empty rule.
+// schemaVariables, historyVariables and lockEngineVariables that declares an
+// empty rule.
 func emptyRefusingBindings(tree *cobra.Command) []boundFlag {
 	var found []boundFlag
 	var walk func(cmd *cobra.Command)
@@ -115,7 +116,10 @@ func emptyRefusingBindings(tree *cobra.Command) []boundFlag {
 		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
 			variable, bound := envbinding.Of("PTAH", flag)
 			_, refused := envbinding.EmptyRefused(flag)
-			if bound && refused && !slices.Contains(schemaVariables, variable) && !slices.Contains(historyVariables, variable) {
+			declared := slices.Contains(schemaVariables, variable) ||
+				slices.Contains(historyVariables, variable) ||
+				slices.Contains(lockEngineVariables, variable)
+			if bound && refused && !declared {
 				found = append(found, boundFlag{command: cmd.CommandPath(), variable: variable, flag: flag})
 			}
 		})

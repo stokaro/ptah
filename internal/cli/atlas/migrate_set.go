@@ -73,6 +73,10 @@ func runAtlasMigrateSet(
 	opts atlasMigrateSetOptions,
 	args []string,
 ) (runErr error) {
+	migrationsEngine, err := migrationsEngineFromEnv()
+	if err != nil {
+		return failAtlasCommand(cmd, err)
+	}
 	prepared, err := prepareAtlasMigrateSet(cmd, opts)
 	if err != nil {
 		return failAtlasCommand(cmd, err)
@@ -144,7 +148,7 @@ func runAtlasMigrateSet(
 		Dir:                       source.Display,
 		FS:                        migrationFS,
 		AtlasEnv:                  opts.atlasEnv,
-		MigrationsEngine:          migrationsEngineFromEnv(),
+		MigrationsEngine:          migrationsEngine,
 		RevisionsSchema:           revisiontable.Schema(opts.revisionsSchema, opts.url),
 		RevisionVersions:          sourceVersions,
 		RevisionTypes:             linearity.revisionTypes,
