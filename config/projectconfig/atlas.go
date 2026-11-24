@@ -870,15 +870,13 @@ func (p atlasParser) noteIgnored(kind, name, path string, rng hcl.Range, value c
 	if p.ignored == nil {
 		return
 	}
-	text := ignoredConstructValue(value)
-	evaluated := value != cty.NilVal
 	key := ignoredAtlasConstructKey{
 		kind: kind, name: name, filename: rng.Filename,
 		line: rng.Start.Line, column: rng.Start.Column,
 	}
 	if p.ignoredSeen != nil {
 		if index, ok := p.ignoredSeen[key]; ok {
-			p.noteIgnoredValue(index, text, evaluated)
+			p.noteIgnoredValue(index, value)
 			return
 		}
 		p.ignoredSeen[key] = len(*p.ignored)
@@ -887,16 +885,17 @@ func (p atlasParser) noteIgnored(kind, name, path string, rng hcl.Range, value c
 		Name: name, Kind: kind, Path: path, Filename: rng.Filename, Line: rng.Start.Line,
 	})
 	*p.ignoredAt = append(*p.ignoredAt, rng.Start)
-	p.noteIgnoredValue(len(*p.ignored)-1, text, evaluated)
+	p.noteIgnoredValue(len(*p.ignored)-1, value)
 }
 
-// noteIgnoredValue records text, the value of the construct at index, when the
-// parse evaluated it: the first value is kept, and a later one that differs
-// empties it.
-func (p atlasParser) noteIgnoredValue(index int, text string, evaluated bool) {
-	if !evaluated {
+// noteIgnoredValue records value, what the parse evaluated the construct at
+// index to, and does nothing for [cty.NilVal]: the first value is kept, and a
+// later one that differs empties it.
+func (p atlasParser) noteIgnoredValue(index int, value cty.Value) {
+	if value == cty.NilVal {
 		return
 	}
+	text := ignoredConstructValue(value)
 	construct := &(*p.ignored)[index]
 	switch {
 	case p.ignoredEvaluated == nil:
