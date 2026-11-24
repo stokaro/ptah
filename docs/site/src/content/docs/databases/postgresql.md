@@ -2171,6 +2171,11 @@ items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
 
+PostgreSQL also takes `GRANT SELECT ON s1` and `GRANT SELECT ON TABLE s1` on a
+sequence `s1`. A SQL schema file that declares the sequence, and no table or
+view of that name, reads either as a grant on the sequence, so it compares with
+what the read reports. Measured on PostgreSQL 19.
+
 A plan refuses a grant on a table, a view or a materialized view it removes,
 with `--schemas` as without it: declare the object, or leave the grant out.
 `--schemas` compares the grants on every relation in a selected schema, including

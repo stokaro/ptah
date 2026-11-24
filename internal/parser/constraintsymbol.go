@@ -142,14 +142,7 @@ func (p *Parser) constraintSymbolOmitted(kinds []string) bool {
 // whitespace and comments, and leaves the parser where it is.
 func (p *Parser) peekSignificantToken() lexer.Token {
 	scan := *p.lexer
-	for {
-		token := scan.NextToken()
-		switch token.Type {
-		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
-		default:
-			return token
-		}
-	}
+	return nextSignificantToken(&scan)
 }
 
 // containsFold reports whether words holds word, compared without case.

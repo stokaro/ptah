@@ -727,6 +727,20 @@ and `UPDATE`. On a view `MERGE VIEW` takes the place of `ALTER`. A role the
 schema creates keeps each of them on the table or the view. On a sequence
 `ALL` grants `ALTER` and `SELECT`. Measured on 21.3 and 23.26.
 
+A SQL schema file names a privilege of more than one word as Oracle does,
+`GRANT ON COMMIT REFRESH, QUERY REWRITE ON t1 TO READER`, so what `ptah db
+read` writes for it reads back, and a plan against the database it came from
+is empty. Measured on 21.3 and 23.26.3.
+
+Oracle's `GRANT` names no object kind, so a grant on a sequence reads `GRANT
+SELECT ON s1 TO READER`, as a grant on a table does. A SQL schema file that
+declares the sequence `s1`, and no table or view of that name, reads the
+grant as one on the sequence, which is how the read reports it. An unqualified
+name is in the schema of the account that runs the file, so `GRANT SELECT ON
+APP.S1` reaches a sequence declared as `S1`. Where an unqualified name could
+reach objects of that name in more than one schema, one of them a sequence,
+the file is refused: write the schema in the name. Measured on 23.26.3.
+
 `GRANT ALL ON fn_double TO READER` names a function or a procedure the way it
 names a table, and on either `ALL` grants `DEBUG` and `EXECUTE`. A declared
 `ALL` on a routine is held once the role holds both, and a role the schema

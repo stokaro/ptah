@@ -86,6 +86,7 @@ var noOldSwitch = cmp.Options{
 		"RelativeTimeLiterals"),
 	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
 	cmpopts.IgnoreFields(descriptor.ConstraintGrammar{}, "TableNotNull"),
+	cmpopts.IgnoreFields(descriptor.StatementGrammar{}, "DatabaseWildcards"),
 }
 
 var oldParserSwitches = map[string]descriptor.Grammar{

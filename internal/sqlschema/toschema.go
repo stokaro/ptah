@@ -719,7 +719,7 @@ func appendFamilyStatement(
 	if handled, err := appendRoutine(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
-	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
+	if handled, err := appendPrivilegeDeclaration(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
 	if handled, err := appendView(database, document, stmt, sourcePlatform); handled {
@@ -881,12 +881,29 @@ func toRoutine(node *ast.RoutineNode, sourcePlatform string) (schemamodel.Functi
 // neither function is refused by that switch's default, so nothing is dropped
 // by falling through; a node kind this package decides not to model says so
 // there, in a case of its own.
-func appendPrivilegeDeclaration(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
+//
+// A grant or revoke on a table name that names a declared sequence is one on
+// the sequence; see [declaredTargetKind].
+func appendPrivilegeDeclaration(
+	database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
+) (bool, error) {
 	switch node := stmt.(type) {
 	case *ast.GrantPrivilegeNode:
-		appendGrant(database, node, sourcePlatform)
+		resolved := *node
+		kind, err := declaredTargetKind(database, document.base, "GRANT", node.ObjectType, node.ObjectName, node.Columns, sourcePlatform)
+		if err != nil {
+			return true, err
+		}
+		resolved.ObjectType = kind
+		appendGrant(database, &resolved, sourcePlatform)
 	case *ast.RevokePrivilegeNode:
-		return true, appendRevoke(database, node, sourcePlatform)
+		resolved := *node
+		kind, err := declaredTargetKind(database, document.base, "REVOKE", node.ObjectType, node.ObjectName, node.Columns, sourcePlatform)
+		if err != nil {
+			return true, err
+		}
+		resolved.ObjectType = kind
+		return true, appendRevoke(database, &resolved, sourcePlatform)
 	default:
 		return false, nil
 	}

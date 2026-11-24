@@ -305,7 +305,7 @@ func mariaDB() descriptor.Dialect {
 				ChecksCapabilities: true,
 				ColumnGuards:       true,
 			},
-			Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+			Statements: mysqlStatementGrammar(),
 			Forms:      mariaDBStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:                 descriptor.RoutineCompoundStatement,

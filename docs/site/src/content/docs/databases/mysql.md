@@ -1436,6 +1436,14 @@ grants as a comparison limit instead of claiming the schemas are fully synced.
 Native `schema diff --format json` includes these limits in `comparison_limits`.
 An account that compares grants needs `SELECT` on `mysql.*`.
 
+A privilege named in more than one word, such as `SHOW VIEW`, `LOCK TABLES` or
+`CREATE TEMPORARY TABLES`, and `DELETE HISTORY` on MariaDB, is read from a SQL
+schema file as one privilege. A grant on a database is written the way the
+server writes it, ``GRANT LOCK TABLES ON `app`.* TO `r` ``. So what `ptah db
+read` writes for them reads back, and a plan against the database it came from
+is empty. A global grant, `ON *.*`, is refused in a schema file, which
+describes one database. Measured on MySQL 8.4.13 and MariaDB 11.8.
+
 A grant may name columns of a table or a view, as in
 ``GRANT SELECT (id, name) ON t1 TO `reader` ``. The server holds it as a
 privilege on each column and on nothing else: the role cannot read a column the

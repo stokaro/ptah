@@ -495,6 +495,10 @@ type StatementGrammar struct {
 	GrantTargetLists bool `json:"grant_target_lists,omitempty"`
 	// RoleIfNotExists reports that CREATE ROLE takes IF NOT EXISTS.
 	RoleIfNotExists bool `json:"role_if_not_exists,omitempty"`
+	// DatabaseWildcards reports that GRANT and REVOKE name every table of a
+	// database as `db.*`, as MySQL does, which grants on the database: the
+	// target is read as the object kind SCHEMA named db.
+	DatabaseWildcards bool `json:"database_wildcards,omitempty"`
 }
 
 // StatementForms states the statements the parser reads as the engine writes them,
@@ -529,6 +533,17 @@ type StatementForms struct {
 	// listed is refused. The parser reads the statement to its end, and
 	// contributes a node for a kind of ManagedOwners alone.
 	OwnerTo []string `json:"owner_to,omitempty"`
+	// MultiWordPrivileges are the privilege names of more than one word that
+	// GRANT and REVOKE take, as the engine's catalog reports them: upper-case
+	// words one space apart, such as MySQL's SHOW VIEW. A privilege is read
+	// as the longest of them its words spell, and one no entry spells is read
+	// as its first word alone. Every name of more than one word in
+	// [Dialect.AllPrivileges] is one of them.
+	MultiWordPrivileges []string `json:"multi_word_privileges,omitempty"`
+	// GrantClasses are the object kinds GRANT and REVOKE may name as a class
+	// before `::`, in upper case, as T-SQL names SCHEMA in `ON SCHEMA::app`.
+	// Another kind is not followed by `::`.
+	GrantClasses []string `json:"grant_classes,omitempty"`
 	// ManagedOwners states the kinds of OwnerTo whose owner a desired schema
 	// declares and Ptah reconciles: the engine changes the owner with that
 	// statement, a read reports it, and an object the engine creates belongs
@@ -714,7 +729,7 @@ func KeyVisibilityClauses() []string {
 func (d Dialect) validateGrammar() error {
 	for _, check := range []func(Grammar) error{
 		validateColumnGrammar, validateConstraintGrammar, validateKeyGrammar, validateGrammarNames, validateRoutineGrammar,
-		validateStatementForms,
+		validateStatementForms, validateMultiWordPrivileges,
 	} {
 		if err := check(d.Grammar); err != nil {
 			return fmt.Errorf("%w: dialect %q: grammar: %w", ErrInvalidDescriptor, d.Name, err)

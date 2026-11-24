@@ -107,10 +107,12 @@ func mysqlOperations(lock string) []string {
 }
 
 // mysqlStatementForms is MySQL's. CASCADE and RESTRICT on a view are parsed and
-// ignored there, and a routine takes neither an argument list nor a second name.
+// ignored there, a routine takes neither an argument list nor a second name,
+// and the privileges of more than one word are [mysqlMultiWordPrivileges].
 func mysqlStatementForms() descriptor.StatementForms {
 	return descriptor.StatementForms{
-		RenameTable: true,
+		RenameTable:         true,
+		MultiWordPrivileges: mysqlMultiWordPrivileges(),
 		Drops: []descriptor.Drop{
 			{Kind: descriptor.DropKindView, IfExists: true, List: true, Behavior: true},
 			{Kind: descriptor.DropKindTrigger, IfExists: true},
@@ -122,10 +124,14 @@ func mysqlStatementForms() descriptor.StatementForms {
 	}
 }
 
-// mariaDBStatementForms is MySQL's with a sequence, and with the LOW_PRIORITY MySQL
-// 26.10 answers with a syntax error.
+// mariaDBStatementForms is MySQL's with a sequence, with the LOW_PRIORITY MySQL
+// 26.10 answers with a syntax error, and with MariaDB's own privileges of more
+// than one word: DELETE HISTORY, and SHOW CREATE ROUTINE, which MariaDB 11.4
+// and later grant on a database and 10.11 does not, measured on MariaDB
+// 10.11.19, 11.8.9 and 12.3.3.
 func mariaDBStatementForms() descriptor.StatementForms {
 	grammar := mysqlStatementForms()
+	grammar.MultiWordPrivileges = append(grammar.MultiWordPrivileges, "DELETE HISTORY", "SHOW CREATE ROUTINE")
 	grammar.Drops = append(grammar.Drops, descriptor.Drop{Kind: descriptor.DropKindSequence, IfExists: true, List: true})
 	grammar.Operations = mysqlOperations("LOCK {TABLE|TABLES} (<name> [AS <name>] {READ [LOCAL]|WRITE|LOW_PRIORITY WRITE}),...")
 	return grammar
@@ -152,6 +158,13 @@ func clickHouseStatementForms() descriptor.StatementForms {
 // has no RELEASE, and no DROP takes CASCADE.
 func sqlServerStatementForms() descriptor.StatementForms {
 	return descriptor.StatementForms{
+		// The permissions of more than one word on an object and on a
+		// schema, as sys.fn_builtin_permissions lists them for the OBJECT
+		// and SCHEMA classes on SQL Server 2025.
+		MultiWordPrivileges: []string{"CREATE SEQUENCE", "TAKE OWNERSHIP", "VIEW CHANGE TRACKING", "VIEW DEFINITION"},
+		// The reader reads a permission on a schema, which a GRANT names
+		// ON SCHEMA::app.
+		GrantClasses: []string{"SCHEMA"},
 		Drops: []descriptor.Drop{
 			{Kind: descriptor.DropKindView, IfExists: true, List: true},
 			{Kind: descriptor.DropKindTrigger, IfExists: true, List: true},

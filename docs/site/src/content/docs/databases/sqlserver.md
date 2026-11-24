@@ -631,6 +631,19 @@ are read, as a role's are. Measured on SQL Server 2025:
 - `ptah schema diff` between two databases reads `--to` as complete, so it
   revokes a grant of a user or of `public` that `--to` lacks.
 
+## Permissions on a schema
+
+`GRANT SELECT, VIEW DEFINITION ON SCHEMA::dbo TO reader` names the schema
+after its class and `::`, and a SQL schema file reads it the same way. A
+permission named in more than one word, such as `VIEW DEFINITION`,
+`TAKE OWNERSHIP` or `VIEW CHANGE TRACKING`, is read as one permission, on a
+schema and on an object alike. So what `ptah db read` writes for them reads
+back, and a plan against the database it came from is empty. Measured on SQL
+Server 2025.
+
+A SQL schema file that writes a `DENY` is refused with
+`unsupported SQL statement: DENY`, so a deny is not managed.
+
 ## Permissions on columns
 
 `GRANT SELECT (id, name) ON dbo.t TO reader` limits a permission to columns
