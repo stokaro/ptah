@@ -2,11 +2,15 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // The cleanup of a server that commits each drop as it runs refuses, before
@@ -18,12 +22,20 @@ import (
 // outsideStructuredDependentsQuery reads them. CockroachDB reports the others
 // only as text, so outsideTextDependentsQuery reads that text and
 // refuseOutsideCleanupDependents matches it: a column default, a computed
-// column, an ON UPDATE expression or a check constraint names the sequences,
-// functions and types it uses, and a routine body names the relations,
-// sequences and types it uses. The text match refuses on a name that could be
-// the object rather than miss one, so a body that only quotes the name in a
-// string is refused too. What neither reports reaches the server's refusal at
-// the drop, and the error then lists the drops that ran before it.
+// column, an ON UPDATE expression, a check constraint, a view definition, a
+// policy expression, an index expression or predicate and a trigger's WHEN
+// condition name the sequences, functions and types they use, and a routine
+// body names the relations, sequences and types it uses. The text match
+// refuses on a name that could be the object rather than miss one, so a body
+// that only quotes the name in a string is refused too.
+//
+// The text can lose a type: CockroachDB v26.4.1 keeps `NULL::public.e[]` in a
+// view or a body as `NULL`, and a default `'a'::public.e::STRING` as
+// `'a'::text`, and still refuses to drop the type while they exist. So for
+// each type it drops the cleanup also asks the server, through EXPLAIN (DDL)
+// of its drop, which objects depend on it. What none of these reports reaches
+// the server's refusal at the drop, and the error then lists the drops that
+// ran before it.
 
 // outsideStructuredDependentsQuery asks which objects depend on an object of
 // the schemas named, wherever the dependent lives, through the catalog row
@@ -112,20 +124,28 @@ const outsideStructuredDependentsQuery = `
 
 // outsideTextDependentsQuery reads what refuseOutsideCleanupDependents
 // matches as text: every column default, computed column, ON UPDATE
-// expression, check constraint and routine body outside the system schemas,
-// with the object that holds it, and the database name, the sequences and the
-// types of the schemas named, which the text spells them by. Each row is what
-// it carries, the schema, name and kind of an object, the column or
-// constraint that carries the text or an OID, and the text.
+// expression, check constraint, view and materialized view definition,
+// policy expression, index with an expression or a predicate, trigger WHEN
+// condition and routine body outside the system schemas, with the object that
+// holds it, and the database name, the sequences and the types of the schemas
+// named, which the text spells them by. Each row is what it carries, the
+// schema, name and kind of an object, the column, constraint, policy, index or
+// trigger that carries it or an OID, and the text.
 //
 // Measured on CockroachDB v26.4.1, a default reads
-// `nextval('public.s'::regclass)` and `public.fn()`, and a check `CHECK ((d::public.e = 'a'::public.e))`,
-// whether or not the name was written qualified; a routine body reads a
-// relation as `db.public.t`, a sequence as `nextval(4208:::REGCLASS)` and a
-// type as `@104221`. pg_depend records none of them. An ON UPDATE expression
-// is in no pg_catalog table, and information_schema.columns carries it as
-// column_on_update on v26.4.1 and not on v24.3.37, so the column is read
-// through the row's JSON, where an absent key reads as NULL.
+// `nextval('public.s'::regclass)` and `public.fn()`, a check `CHECK ((d::public.e = 'a'::public.e))`,
+// a policy `public.fn() = 1:::INT8`, an index `CREATE INDEX ix ON other.t USING btree ((public.fn() + id) ASC)`
+// and a trigger's tgqual `(public.fn() = 1:::INT8)`, whether or not the name
+// was written qualified. A view definition and a routine body read a sequence
+// as `nextval(4208:::REGCLASS)` and a type as `@104221`, and a routine body
+// reads a relation as `db.public.t`. pg_depend records none of them. An
+// expression index keeps its expression in a hidden column too, which
+// pg_attrdef lists as dropped, so the index row is read and the column is not.
+// An ON UPDATE expression is in no pg_catalog table, and
+// information_schema.columns carries it as column_on_update on v26.4.1 and not
+// on v24.3.37, so the column is read through the row's JSON, where an absent
+// key reads as NULL. pg_get_triggerdef does not exist on v25.4.21, so a
+// trigger's condition is read from tgqual.
 const outsideTextDependentsQuery = `
 	SELECT CASE WHEN a.attgenerated = '' THEN 'default' ELSE 'computed' END,
 		dependent_ns.nspname, dependent.relname, dependent.relkind::text, a.attname::text,
@@ -134,7 +154,43 @@ const outsideTextDependentsQuery = `
 	JOIN pg_attribute a ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum
 	JOIN pg_class dependent ON dependent.oid = ad.adrelid
 	JOIN pg_namespace dependent_ns ON dependent_ns.oid = dependent.relnamespace
-	WHERE dependent_ns.nspname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	WHERE NOT a.attisdropped
+		AND dependent_ns.nspname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	UNION ALL
+	SELECT 'view', v.schemaname::text, v.viewname::text, 'v', '', v.definition::text
+	FROM pg_views v
+	WHERE v.schemaname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	UNION ALL
+	SELECT 'view', m.schemaname::text, m.matviewname::text, 'm', '', m.definition::text
+	FROM pg_matviews m
+	WHERE m.schemaname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	UNION ALL
+	SELECT 'policy using', p.schemaname::text, p.tablename::text, 'r', p.policyname::text, p.qual::text
+	FROM pg_policies p
+	WHERE p.qual IS NOT NULL
+		AND p.schemaname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	UNION ALL
+	SELECT 'policy check', p.schemaname::text, p.tablename::text, 'r', p.policyname::text, p.with_check::text
+	FROM pg_policies p
+	WHERE p.with_check IS NOT NULL
+		AND p.schemaname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	UNION ALL
+	SELECT 'index', dependent_ns.nspname, dependent.relname, dependent.relkind::text, index_class.relname::text,
+		pg_get_indexdef(i.indexrelid)
+	FROM pg_index i
+	JOIN pg_class index_class ON index_class.oid = i.indexrelid
+	JOIN pg_class dependent ON dependent.oid = i.indrelid
+	JOIN pg_namespace dependent_ns ON dependent_ns.oid = dependent.relnamespace
+	WHERE (i.indexprs IS NOT NULL OR i.indpred IS NOT NULL)
+		AND dependent_ns.nspname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
+	UNION ALL
+	SELECT 'trigger', dependent_ns.nspname, dependent.relname, dependent.relkind::text, t.tgname::text,
+		t.tgqual::text
+	FROM pg_trigger t
+	JOIN pg_class dependent ON dependent.oid = t.tgrelid
+	JOIN pg_namespace dependent_ns ON dependent_ns.oid = dependent.relnamespace
+	WHERE t.tgqual IS NOT NULL
+		AND dependent_ns.nspname NOT IN ('pg_catalog', 'information_schema', 'crdb_internal', 'pg_extension')
 	UNION ALL
 	SELECT 'check', dependent_ns.nspname, dependent.relname, dependent.relkind::text, con.conname::text,
 		pg_get_constraintdef(con.oid)
@@ -264,19 +320,42 @@ func refuseOutsideCleanupDependents(ctx context.Context, q cleanupConn, objects 
 	if err != nil {
 		return err
 	}
-	textual, err := textOutsideDependents(ctx, q, in, args, dropped)
+	textual, database, err := textOutsideDependents(ctx, q, in, args, dropped)
 	if err != nil {
 		return err
 	}
 	blocked = append(blocked, textual...)
+	reported, err := serverReportedTypeDependents(ctx, q, dropped, database, blocked)
+	if err != nil {
+		return err
+	}
+	blocked = append(blocked, reported...)
 	if len(blocked) == 0 {
 		return nil
+	}
+	sentences := make([]string, 0, len(blocked))
+	for _, dependency := range blocked {
+		sentences = append(sentences, dependency.sentence)
 	}
 	return fmt.Errorf(
 		"an object the cleanup does not drop depends on one it drops: %s; the server commits each drop as it "+
 			"runs, so the cleanup refuses before it drops anything",
-		strings.Join(blocked, "; "),
+		strings.Join(sentences, "; "),
 	)
+}
+
+// outsideDependency is a dependency of dependent, an object the cleanup does
+// not drop, on source, one it drops, and the sentence that names it. A
+// dependent the server names only by its qualified name has the zero key.
+type outsideDependency struct {
+	source, dependent cleanupKey
+	sentence          string
+}
+
+// compareOutsideDependencies orders dependencies by their sentences, so a
+// refusal names them in the same order on every run.
+func compareOutsideDependencies(a, b outsideDependency) int {
+	return strings.Compare(a.sentence, b.sentence)
 }
 
 // structuredOutsideDependents reads outsideStructuredDependentsQuery over the
@@ -288,14 +367,14 @@ func structuredOutsideDependents(
 	in string,
 	args []any,
 	dropped map[cleanupKey]string,
-) ([]string, error) {
+) ([]outsideDependency, error) {
 	rows, err := q.QueryContext(ctx, fmt.Sprintf(outsideStructuredDependentsQuery, in), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read what depends on the cleanup's objects: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var blocked []string
+	var blocked []outsideDependency
 	for rows.Next() {
 		var how, sourceFamily, sourceSchema, sourceName string
 		var dependentFamily, dependentSchema, dependentName, dependentKind, carrier string
@@ -309,13 +388,17 @@ func structuredOutsideDependents(
 		if _, alsoDropped := dropped[dependent]; !drops || alsoDropped {
 			continue
 		}
-		blocked = append(blocked, describeOutsideDependency(how, kind, dependent.describe(kind), carrier,
-			source.describe(sourceKind)))
+		blocked = append(blocked, outsideDependency{
+			source:    source,
+			dependent: dependent,
+			sentence: describeOutsideDependency(how, kind, dependent.describe(kind), carrier,
+				source.describe(sourceKind)),
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read what depends on the cleanup's objects: %w", err)
 	}
-	slices.Sort(blocked)
+	slices.SortFunc(blocked, compareOutsideDependencies)
 	return blocked, nil
 }
 
@@ -343,19 +426,18 @@ func describeOutsideDependency(how, dependentKind, dependent, carrier, source st
 }
 
 // textOutsideDependents reads outsideTextDependentsQuery over the schemas in,
-// bound by args, and describes each column default, computed column, ON
-// UPDATE expression, check constraint and routine body outside dropped whose
-// text names an object of dropped.
+// bound by args, describes each text outside dropped that names an object of
+// dropped, and returns the name of the database the texts qualify names by.
 func textOutsideDependents(
 	ctx context.Context,
 	q cleanupConn,
 	in string,
 	args []any,
 	dropped map[cleanupKey]string,
-) ([]string, error) {
+) ([]outsideDependency, string, error) {
 	holders, spellings, err := readOutsideTexts(ctx, q, in, args, dropped)
 	if err != nil || len(holders) == 0 {
-		return nil, err
+		return nil, spellings.database, err
 	}
 	sources := slices.SortedFunc(maps.Keys(dropped), compareCleanupKeys)
 	bodyPatterns := make(map[cleanupKey]*regexp.Regexp, len(sources))
@@ -364,22 +446,25 @@ func textOutsideDependents(
 		bodyPatterns[source] = spellings.bodyPattern(source)
 		expressionPatterns[source] = expressionPattern(source)
 	}
-	var blocked []string
+	var blocked []outsideDependency
 	for _, h := range holders {
 		for _, source := range sources {
 			if spellings.textNames(h, source, bodyPatterns[source], expressionPatterns[source]) {
-				blocked = append(blocked, h.describe(source.describe(dropped[source])))
+				blocked = append(blocked, outsideDependency{
+					source:    source,
+					dependent: h.key,
+					sentence:  h.describe(source.describe(dropped[source])),
+				})
 			}
 		}
 	}
-	slices.Sort(blocked)
-	return blocked, nil
+	slices.SortFunc(blocked, compareOutsideDependencies)
+	return blocked, spellings.database, nil
 }
 
-// outsideText is a column default, computed column, ON UPDATE expression,
-// check constraint or routine body outside a cleanup: what it is, the object
-// that holds it, the kind to spell that object by, the column or constraint
-// that carries it, and its text.
+// outsideText is a text outside a cleanup that can name an object of it: what
+// it is, the object that holds it, the kind to spell that object by, the
+// column, constraint, policy, index or trigger that carries it, and its text.
 type outsideText struct {
 	what       string
 	key        cleanupKey
@@ -393,7 +478,17 @@ func (t outsideText) describe(source string) string {
 	holder := t.key.describe(t.kind)
 	switch t.what {
 	case "body":
-		return fmt.Sprintf("the body of %s names %s", holder, source)
+		return fmt.Sprintf("the text of the body of %s names %s", holder, source)
+	case "view":
+		return fmt.Sprintf("the definition of %s names %s", holder, source)
+	case "policy using":
+		return fmt.Sprintf("the USING expression of policy %q on %s names %s", t.carrier, holder, source)
+	case "policy check":
+		return fmt.Sprintf("the WITH CHECK expression of policy %q on %s names %s", t.carrier, holder, source)
+	case "index":
+		return fmt.Sprintf("index %q on %s names %s", t.carrier, holder, source)
+	case "trigger":
+		return fmt.Sprintf("the WHEN condition of trigger %q on %s names %s", t.carrier, holder, source)
 	case "check":
 		return fmt.Sprintf("check constraint %q on %s names %s", t.carrier, holder, source)
 	case "computed":
@@ -484,13 +579,18 @@ func (s cleanupSpellings) textNames(t outsideText, source cleanupKey, body, expr
 	return s.expressionNames(t.text, source, expression)
 }
 
-// expressionNames reports whether the column default, computed column or
-// check constraint text names source: a relation by its name or OID cast to
-// regclass, and a routine or a type by pattern, the name expressionPattern
-// returns.
+// expressionNames reports whether the expression or view definition text
+// names source: a relation by its name or OID cast to regclass, a routine by
+// pattern, the name expressionPattern returns, and a type by pattern or by its
+// OID after an @, as a view definition spells it.
 func (s cleanupSpellings) expressionNames(text string, source cleanupKey, pattern *regexp.Regexp) bool {
-	if source.family == relationFamily {
+	switch source.family {
+	case relationFamily:
 		return s.regclassNames(text, source)
+	case typeFamily:
+		if oid, ok := s.oids[source]; ok && containsTypeOID(text, oid) {
+			return true
+		}
 	}
 	return pattern != nil && pattern.MatchString(text)
 }
@@ -569,7 +669,8 @@ func (s cleanupSpellings) bodyNames(text string, source cleanupKey, pattern *reg
 }
 
 // containsTypeOID reports whether text names the type of OID oid as a routine
-// body spells it, an @ before the OID and no digit after it.
+// body or a view definition spells it, an @ before the OID and no digit after
+// it.
 func containsTypeOID(text, oid string) bool {
 	needle := "@" + oid
 	for rest := text; ; {
@@ -611,4 +712,112 @@ func splitQualifiedName(name string) []string {
 		}
 	}
 	return append(parts, part.String())
+}
+
+// typeDependentsSavepoint is the savepoint serverReportedTypeDependents asks
+// under inside a transaction, so the refusal of one EXPLAIN does not abort the
+// transaction the cleanup runs in.
+const typeDependentsSavepoint = "ptah_type_dependents"
+
+// serverReportedTypeDependents asks the server, for each type of dropped,
+// which objects depend on it, and describes the dependents that are neither
+// in dropped nor named for that type by known. The objects are named as the
+// server writes them, without the database, because the server names a
+// dependent by its qualified name alone and does not quote it.
+//
+// Measured on CockroachDB v26.4.1 and v25.4.21, EXPLAIN (DDL) DROP TYPE plans
+// the drop without running it, and refuses with SQLSTATE 2BP01 and
+// `cannot drop type "e" because other objects ([db.public.t db.other.v]) still depend on it`
+// while anything depends on the type, the objects in the cleanup among them.
+// It runs inside the cleanup's transaction without committing it, and a
+// rollback to a savepoint leaves that transaction open.
+func serverReportedTypeDependents(
+	ctx context.Context,
+	q cleanupConn,
+	dropped map[cleanupKey]string,
+	database string,
+	known []outsideDependency,
+) ([]outsideDependency, error) {
+	var reported []outsideDependency
+	for _, source := range slices.SortedFunc(maps.Keys(dropped), compareCleanupKeys) {
+		if source.family != typeFamily {
+			continue
+		}
+		list, err := typeDependentsList(ctx, q, source)
+		if err != nil {
+			return nil, err
+		}
+		inside := slices.Collect(maps.Keys(dropped))
+		for _, dependency := range known {
+			if dependency.source == source {
+				inside = append(inside, dependency.dependent)
+			}
+		}
+		if rest := typeDependentsOutside(list, database, inside); rest != "" {
+			reported = append(reported, outsideDependency{
+				source: source,
+				sentence: fmt.Sprintf("CockroachDB records that %s is used by %s",
+					source.describe(dropped[source]), rest),
+			})
+		}
+	}
+	return reported, nil
+}
+
+// typeDependentsList answers the objects the server lists as depending on the
+// type source, as it writes the list, or "" when it lists none.
+func typeDependentsList(ctx context.Context, q cleanupConn, source cleanupKey) (string, error) {
+	explain := "EXPLAIN (DDL) DROP TYPE " + quoteIdent(source.schema) + "." + quoteIdent(source.name)
+	err := explainInSavepoint(ctx, q, explain)
+	if err == nil {
+		return "", nil
+	}
+	serverErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || serverErr.Code != dependentObjectsStillExist {
+		return "", fmt.Errorf("failed to ask the server what depends on %s: %w", source.describe("type"), err)
+	}
+	_, after, found := strings.Cut(serverErr.Message, "([")
+	list, _, closed := strings.Cut(after, "])")
+	if !found || !closed {
+		return "", fmt.Errorf("failed to read what depends on %s from the server's refusal: %w",
+			source.describe("type"), err)
+	}
+	return list, nil
+}
+
+// explainInSavepoint runs explain, and inside a transaction runs it under
+// typeDependentsSavepoint and rolls back to it when the server refuses, so
+// the transaction stays open.
+func explainInSavepoint(ctx context.Context, q cleanupConn, explain string) error {
+	if _, inTransaction := q.(*sql.Tx); !inTransaction {
+		_, err := q.ExecContext(ctx, explain)
+		return err
+	}
+	if _, err := q.ExecContext(ctx, "SAVEPOINT "+typeDependentsSavepoint); err != nil {
+		return fmt.Errorf("failed to open a savepoint to ask what depends on a type: %w", err)
+	}
+	_, explainErr := q.ExecContext(ctx, explain)
+	finish := "RELEASE SAVEPOINT " + typeDependentsSavepoint
+	if explainErr != nil {
+		finish = "ROLLBACK TO SAVEPOINT " + typeDependentsSavepoint
+	}
+	if _, err := q.ExecContext(ctx, finish); err != nil {
+		return fmt.Errorf("failed to close the savepoint after asking what depends on a type: %w", err)
+	}
+	return explainErr
+}
+
+// typeDependentsOutside removes from list, the objects the server names as
+// db.schema.name separated by a space or a comma and a space, every object of
+// inside, and returns the rest without the database prefix, or "".
+func typeDependentsOutside(list, database string, inside []cleanupKey) string {
+	rest := " " + strings.ReplaceAll(list, ", ", " ") + " "
+	for _, key := range inside {
+		token := " " + database + "." + key.schema + "." + key.name + " "
+		for strings.Contains(rest, token) {
+			rest = strings.Replace(rest, token, " ", 1)
+		}
+	}
+	rest = strings.ReplaceAll(rest, " "+database+".", " ")
+	return strings.Join(strings.Fields(rest), " ")
 }

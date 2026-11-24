@@ -3,11 +3,13 @@ package postgres_test
 import (
 	"database/sql/driver"
 	"errors"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
@@ -211,6 +213,45 @@ func acceptingDrop(string, []driver.NamedValue) (driver.Result, error) {
 	return driver.RowsAffected(0), nil
 }
 
+// cockroachTypeProbeStatements are what the cleanup of cockroachOutsideObjects
+// sends to ask the server what depends on its type, when the server plans the
+// drop.
+var cockroachTypeProbeStatements = []string{
+	"SAVEPOINT ptah_type_dependents",
+	`EXPLAIN (DDL) DROP TYPE "public"."e"`,
+	"RELEASE SAVEPOINT ptah_type_dependents",
+}
+
+// cockroachRefusedTypeProbeStatements are what the cleanup of
+// cockroachOutsideObjects sends to ask the server what depends on its type,
+// when the server refuses to plan the drop.
+var cockroachRefusedTypeProbeStatements = []string{
+	"SAVEPOINT ptah_type_dependents",
+	`EXPLAIN (DDL) DROP TYPE "public"."e"`,
+	"ROLLBACK TO SAVEPOINT ptah_type_dependents",
+}
+
+// refusingTypeExplain answers the EXPLAIN of a type's drop with err, and
+// accepts every other statement.
+func refusingTypeExplain(err error) dbtest.ExecHandler {
+	return func(query string, _ []driver.NamedValue) (driver.Result, error) {
+		if strings.HasPrefix(query, "EXPLAIN (DDL) DROP TYPE ") {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
+	}
+}
+
+// typeDependentsRefusal is the refusal CockroachDB v26.4.1 gives to plan the
+// drop of type e while the objects of list depend on it.
+func typeDependentsRefusal(list string) error {
+	return &pgconn.PgError{
+		Severity: "ERROR",
+		Code:     "2BP01",
+		Message:  `cannot drop type "e" because other objects ([` + list + `]) still depend on it`,
+	}
+}
+
 // Each dependency an object outside the cleanup holds on one in it is refused
 // before the first drop, and named: the ones the catalog records, and the
 // defaults and routine bodies CockroachDB spells them in.
@@ -313,27 +354,79 @@ func TestWriterDropAllTables_CockroachRefusesEachOutsideDependent_FailurePath(t 
 		{
 			name:  "a body that reads the table",
 			texts: [][]driver.Value{{"body", "other", "f", "f", "", "SELECT count(*)::INT8 FROM app.public.t;"}},
-			want:  `the body of function "other"."f" names table "public"."t"`,
+			want:  `the text of the body of function "other"."f" names table "public"."t"`,
 		},
 		{
 			name:  "a body that quotes the table's name",
 			texts: [][]driver.Value{{"body", "other", "f", "f", "", `SELECT 1 FROM "app".public."t";`}},
-			want:  `the body of function "other"."f" names table "public"."t"`,
+			want:  `the text of the body of function "other"."f" names table "public"."t"`,
 		},
 		{
 			name:  "a procedure body that writes the table",
 			texts: [][]driver.Value{{"body", "other", "pc", "p", "", "BEGIN INSERT INTO app.public.t VALUES (1); END;"}},
-			want:  `the body of procedure "other"."pc" names table "public"."t"`,
+			want:  `the text of the body of procedure "other"."pc" names table "public"."t"`,
 		},
 		{
 			name:  "a body that casts the sequence's OID",
 			texts: [][]driver.Value{{"body", "other", "k", "f", "", "SELECT nextval(4208:::REGCLASS)::INT8;"}},
-			want:  `the body of function "other"."k" names sequence "public"."s"`,
+			want:  `the text of the body of function "other"."k" names sequence "public"."s"`,
 		},
 		{
 			name:  "a body that names the type by OID",
 			texts: [][]driver.Value{{"body", "other", "h", "f", "", "SELECT b'@':::@104221;"}},
-			want:  `the body of function "other"."h" names type "public"."e"`,
+			want:  `the text of the body of function "other"."h" names type "public"."e"`,
+		},
+		{
+			name:  "a view that calls the function",
+			texts: [][]driver.Value{{"view", "other", "vf", "v", "", "SELECT public.fn() AS n;"}},
+			want:  `the definition of view "other"."vf" names function "public"."fn"`,
+		},
+		{
+			name:  "a view that casts the sequence's OID",
+			texts: [][]driver.Value{{"view", "other", "vs", "v", "", "SELECT nextval(4208:::REGCLASS) AS n;"}},
+			want:  `the definition of view "other"."vs" names sequence "public"."s"`,
+		},
+		{
+			name:  "a materialized view that names the type by OID",
+			texts: [][]driver.Value{{"view", "other", "mv", "m", "", "SELECT b'@':::@104221 AS x;"}},
+			want:  `the definition of materialized view "other"."mv" names type "public"."e"`,
+		},
+		{
+			name:  "a policy USING expression that calls the function",
+			texts: [][]driver.Value{{"policy using", "other", "ot", "r", "p", "public.fn() = 1:::INT8"}},
+			want:  `the USING expression of policy "p" on table "other"."ot" names function "public"."fn"`,
+		},
+		{
+			name:  "a policy WITH CHECK expression that casts to the type",
+			texts: [][]driver.Value{{"policy check", "other", "ot", "r", "p", "c::public.e = 'a':::public.e"}},
+			want:  `the WITH CHECK expression of policy "p" on table "other"."ot" names type "public"."e"`,
+		},
+		{
+			name:  "a policy that takes from the sequence",
+			texts: [][]driver.Value{{"policy using", "other", "ot", "r", "p", "nextval('public.s'::REGCLASS) > 0:::INT8"}},
+			want:  `the USING expression of policy "p" on table "other"."ot" names sequence "public"."s"`,
+		},
+		{
+			name: "an index expression that calls the function",
+			texts: [][]driver.Value{{"index", "other", "ot", "r", "ix",
+				"CREATE INDEX ix ON other.ot USING btree ((public.fn() + id) ASC)"}},
+			want: `index "ix" on table "other"."ot" names function "public"."fn"`,
+		},
+		{
+			name: "a partial index predicate that casts to the type",
+			texts: [][]driver.Value{{"index", "other", "ot", "r", "ix",
+				"CREATE INDEX ix ON other.ot USING btree (id ASC) WHERE (c::public.e = 'a'::public.e)"}},
+			want: `index "ix" on table "other"."ot" names type "public"."e"`,
+		},
+		{
+			name:  "a trigger WHEN condition that calls the function",
+			texts: [][]driver.Value{{"trigger", "other", "ot", "r", "tr", "(public.fn() = 1:::INT8)"}},
+			want:  `the WHEN condition of trigger "tr" on table "other"."ot" names function "public"."fn"`,
+		},
+		{
+			name:  "a trigger WHEN condition that casts the sequence's OID",
+			texts: [][]driver.Value{{"trigger", "other", "ot", "r", "tr", "(nextval(4208:::REGCLASS) > 0:::INT8)"}},
+			want:  `the WHEN condition of trigger "tr" on table "other"."ot" names sequence "public"."s"`,
 		},
 	}
 	for _, test := range tests {
@@ -353,7 +446,7 @@ func TestWriterDropAllTables_CockroachRefusesEachOutsideDependent_FailurePath(t 
 			c.Assert(err.Error(), qt.Equals, `refusing to clean schema "public": an object the cleanup does not drop `+
 				`depends on one it drops: `+test.want+`; the server commits each drop as it runs, so the cleanup `+
 				`refuses before it drops anything`)
-			c.Assert(statements, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, cockroachTypeProbeStatements)
 			c.Assert(db.CommitCount(), qt.Equals, 0)
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
 		})
@@ -422,6 +515,27 @@ func TestWriterDropAllTables_CockroachDropsWhatOnlyItsOwnObjectsDependOn_HappyPa
 			texts: [][]driver.Value{{"body", "other", "h", "f", "", "SELECT b'@':::@1042210;"}},
 		},
 		{
+			name:  "a view that names a longer type OID",
+			texts: [][]driver.Value{{"view", "other", "vt", "v", "", "SELECT b'@':::@1042210 AS x;"}},
+		},
+		{
+			name:  "a definition held by a relation it drops",
+			texts: [][]driver.Value{{"view", "public", "t", "v", "", "SELECT public.fn() AS n;"}},
+		},
+		{
+			name: "an index predicate that casts to a longer type name",
+			texts: [][]driver.Value{{"index", "other", "ot", "r", "ix",
+				"CREATE INDEX ix ON other.ot USING btree (id ASC) WHERE (c::public.ex = 'a'::public.ex)"}},
+		},
+		{
+			name:  "a policy that calls a function of another schema",
+			texts: [][]driver.Value{{"policy using", "other", "ot", "r", "p", "other.fn() = 1:::INT8"}},
+		},
+		{
+			name:  "a trigger WHEN condition that calls a function of a longer name",
+			texts: [][]driver.Value{{"trigger", "other", "ot", "r", "tr", "(public.fn2() = 1:::INT8)"}},
+		},
+		{
 			name:       "a function that returns the rows of a table it does not list",
 			dependents: [][]driver.Value{{"signature type", "relation", "public", "kept", "routine", "other", "f", "f", ""}},
 		},
@@ -440,14 +554,163 @@ func TestWriterDropAllTables_CockroachDropsWhatOnlyItsOwnObjectsDependOn_HappyPa
 			err := writer.DropAllTables(t.Context())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, []string{
-				`DROP TABLE IF EXISTS "public"."t" RESTRICT`,
-				`DROP TABLE IF EXISTS "public"."z_data" RESTRICT`,
-				`DROP SEQUENCE IF EXISTS "public"."s" RESTRICT`,
-				`DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
-				`DROP TYPE IF EXISTS "public"."e" RESTRICT`,
-			})
+			c.Assert(statements, qt.DeepEquals, slices.Concat(cockroachTypeProbeStatements, cockroachOutsideDrops))
 			c.Assert(db.CommitCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// cockroachOutsideDrops are the drops of cockroachOutsideObjects, in the order
+// the cleanup sends them.
+var cockroachOutsideDrops = []string{
+	`DROP TABLE IF EXISTS "public"."t" RESTRICT`,
+	`DROP TABLE IF EXISTS "public"."z_data" RESTRICT`,
+	`DROP SEQUENCE IF EXISTS "public"."s" RESTRICT`,
+	`DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+	`DROP TYPE IF EXISTS "public"."e" RESTRICT`,
+}
+
+// The server's own record of what uses a type the cleanup drops reaches the
+// refusal when no catalog text shows it: CockroachDB folds `NULL::public.e[]`
+// in a view to `NULL` and still refuses the type's drop. Only the objects
+// outside the cleanup are named, without the database, and a holder another
+// sentence already names for that type is not named twice.
+func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnAType_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		dependents [][]driver.Value
+		list       string
+		want       string
+	}{
+		{
+			name: "a view whose text lost the type",
+			list: "app.public.t app.other.va",
+			want: `CockroachDB records that type "public"."e" is used by other.va`,
+		},
+		{
+			name: "two outside objects, the list separated by commas",
+			list: "app.public.t, app.other.va, app.other.fa",
+			want: `CockroachDB records that type "public"."e" is used by other.va other.fa`,
+		},
+		{
+			name: "a name with a space",
+			list: "app.public.z_data app.Other Schema.V x",
+			want: `CockroachDB records that type "public"."e" is used by Other Schema.V x`,
+		},
+		{
+			name:       "a holder another sentence names, and one it does not",
+			dependents: [][]driver.Value{{"column type", "type", "public", "e", "relation", "other", "t4", "r", "c"}},
+			list:       "app.other.t4 app.public.t app.other.va",
+			want: `column "c" of table "other"."t4" has type "public"."e"; CockroachDB records that type ` +
+				`"public"."e" is used by other.va`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				cockroachCleanupQuery("on", cockroachOutsideObjects, test.dependents, cockroachOutsideSpellings),
+				recordingExec(&statements, refusingTypeExplain(typeDependentsRefusal(test.list))),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, `refusing to clean schema "public": an object the cleanup does not drop `+
+				`depends on one it drops: `+test.want+`; the server commits each drop as it runs, so the cleanup `+
+				`refuses before it drops anything`)
+			c.Assert(statements, qt.DeepEquals, cockroachRefusedTypeProbeStatements)
+			c.Assert(db.CommitCount(), qt.Equals, 0)
+			c.Assert(db.RollbackCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// A type the server reports only the cleanup's own objects as using, or a
+// holder another sentence of the refusal already names, adds nothing, and a
+// type nothing uses is planned: the drops run.
+func TestWriterDropAllTables_CockroachDropsATypeOnlyItsOwnObjectsUse_HappyPath(t *testing.T) {
+	tests := []struct {
+		name           string
+		explainErr     error
+		wantStatements []string
+	}{
+		{
+			name:           "its own tables",
+			explainErr:     typeDependentsRefusal("app.public.t app.public.z_data"),
+			wantStatements: slices.Concat(cockroachRefusedTypeProbeStatements, cockroachOutsideDrops),
+		},
+		{
+			name:           "its own tables, separated by commas",
+			explainErr:     typeDependentsRefusal("app.public.t, app.public.z_data"),
+			wantStatements: slices.Concat(cockroachRefusedTypeProbeStatements, cockroachOutsideDrops),
+		},
+		{
+			name:           "nothing",
+			wantStatements: slices.Concat(cockroachTypeProbeStatements, cockroachOutsideDrops),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				cockroachCleanupQuery("on", cockroachOutsideObjects, nil, cockroachOutsideSpellings),
+				recordingExec(&statements, refusingTypeExplain(test.explainErr)),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, test.wantStatements)
+			c.Assert(db.CommitCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// A refusal to plan a type's drop that does not list what depends on it, or
+// that is not about dependents at all, refuses the cleanup before its first
+// drop: nothing then says which objects use the type.
+func TestWriterDropAllTables_CockroachRefusesWhenItCannotAskAboutAType_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		explainErr error
+		wantErr    string
+	}{
+		{
+			name: "a refusal without the list",
+			explainErr: &pgconn.PgError{Severity: "ERROR", Code: "2BP01",
+				Message: `cannot drop type "e" because other objects depend on it`},
+			wantErr: `refusing to clean schema "public": failed to read what depends on type "public"."e" from the ` +
+				`server's refusal: ERROR: cannot drop type "e" because other objects depend on it (SQLSTATE 2BP01)`,
+		},
+		{
+			name: "a refusal of the privilege",
+			explainErr: &pgconn.PgError{Severity: "ERROR", Code: "42501",
+				Message: `user app does not have DROP privilege on type e`},
+			wantErr: `refusing to clean schema "public": failed to ask the server what depends on type "public"."e": ` +
+				`ERROR: user app does not have DROP privilege on type e (SQLSTATE 42501)`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				cockroachCleanupQuery("on", cockroachOutsideObjects, nil, cockroachOutsideSpellings),
+				recordingExec(&statements, refusingTypeExplain(test.explainErr)),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			c.Assert(statements, qt.DeepEquals, cockroachRefusedTypeProbeStatements)
+			c.Assert(db.CommitCount(), qt.Equals, 0)
+			c.Assert(db.RollbackCount(), qt.Equals, 1)
 		})
 	}
 }

@@ -128,7 +128,7 @@ CREATE TABLE other.c (id int PRIMARY KEY, pid int REFERENCES public.p (id));`,
 CREATE SCHEMA other;
 CREATE FUNCTION other.f() RETURNS int LANGUAGE sql AS $$ SELECT count(*)::int FROM public.t $$;`,
 			wantObjects: []string{"t", "z_data"},
-			want:        `the body of function "other"."f" names table "public"."t"`,
+			want:        `the text of the body of function "other"."f" names table "public"."t"`,
 		},
 		{
 			name: "a procedure that writes the table",
@@ -136,7 +136,7 @@ CREATE FUNCTION other.f() RETURNS int LANGUAGE sql AS $$ SELECT count(*)::int FR
 CREATE SCHEMA other;
 CREATE PROCEDURE other.pc() LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.p VALUES (1); END $$;`,
 			wantObjects: []string{"p", "z_data"},
-			want:        `the body of procedure "other"."pc" names table "public"."p"`,
+			want:        `the text of the body of procedure "other"."pc" names table "public"."p"`,
 		},
 		{
 			name: "a function that calls the function",
@@ -212,7 +212,7 @@ CREATE TABLE other.t3 (id int PRIMARY KEY DEFAULT nextval('public.s'));`,
 CREATE SCHEMA other;
 CREATE FUNCTION other.k() RETURNS int LANGUAGE sql AS $$ SELECT nextval('public.s')::int $$;`,
 			wantObjects: []string{"s", "z_data"},
-			want:        `the body of function "other"."k" names sequence "public"."s"`,
+			want:        `the text of the body of function "other"."k" names sequence "public"."s"`,
 		},
 		{
 			name: "a column of the type",
@@ -228,7 +228,7 @@ CREATE TABLE other.t4 (id int PRIMARY KEY, c public.e);`,
 CREATE SCHEMA other;
 CREATE FUNCTION other.h() RETURNS public.e LANGUAGE sql AS $$ SELECT 'a'::public.e $$;`,
 			wantObjects: []string{"e", "z_data"},
-			want: `function "other"."h" takes or returns type "public"."e"; the body of function "other"."h" ` +
+			want: `function "other"."h" takes or returns type "public"."e"; the text of the body of function "other"."h" ` +
 				`names type "public"."e"`,
 		},
 		{
@@ -248,6 +248,130 @@ CREATE SCHEMA other;
 CREATE VIEW other.w AS SELECT id FROM public.v;`,
 			wantObjects: []string{"t", "v", "z_data"},
 			want:        `view "other"."w" reads view "public"."v"`,
+		},
+		{
+			name: "a view that calls the function",
+			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$;
+CREATE SCHEMA other;
+CREATE VIEW other.vf AS SELECT public.fn() AS n;`,
+			wantObjects: []string{"fn", "z_data"},
+			want:        `the definition of view "other"."vf" names function "public"."fn"`,
+		},
+		{
+			name: "a view that takes from the sequence",
+			fixture: `CREATE SEQUENCE public.s;
+CREATE SCHEMA other;
+CREATE VIEW other.vs AS SELECT nextval('public.s') AS n;`,
+			wantObjects: []string{"s", "z_data"},
+			want:        `the definition of view "other"."vs" names sequence "public"."s"`,
+		},
+		{
+			name: "a view that casts to the type",
+			fixture: `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE SCHEMA other;
+CREATE VIEW other.vty AS SELECT 'a'::public.e::string AS x;`,
+			wantObjects: []string{"e", "z_data"},
+			want:        `the definition of view "other"."vty" names type "public"."e"`,
+		},
+		{
+			name: "a materialized view that calls the function",
+			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$;
+CREATE SCHEMA other;
+CREATE MATERIALIZED VIEW other.mvf AS SELECT public.fn() AS n;`,
+			wantObjects: []string{"fn", "z_data"},
+			want:        `the definition of materialized view "other"."mvf" names function "public"."fn"`,
+		},
+		{
+			name: "a policy USING expression that calls the function",
+			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$;
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY);
+ALTER TABLE other.ot ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON other.ot USING (public.fn() = 1);`,
+			wantObjects: []string{"fn", "z_data"},
+			want:        `the USING expression of policy "p" on table "other"."ot" names function "public"."fn"`,
+		},
+		{
+			name: "a policy WITH CHECK expression that casts to the type",
+			fixture: `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY, c string);
+ALTER TABLE other.ot ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON other.ot FOR INSERT WITH CHECK (c::public.e = 'a');`,
+			wantObjects: []string{"e", "z_data"},
+			want:        `the WITH CHECK expression of policy "p" on table "other"."ot" names type "public"."e"`,
+		},
+		{
+			name: "a policy that takes from the sequence",
+			fixture: `CREATE SEQUENCE public.s;
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY);
+ALTER TABLE other.ot ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p ON other.ot USING (nextval('public.s') > 0);`,
+			wantObjects: []string{"s", "z_data"},
+			want:        `the USING expression of policy "p" on table "other"."ot" names sequence "public"."s"`,
+		},
+		{
+			name: "an index expression that calls the function",
+			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$;
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY);
+CREATE INDEX ix ON other.ot ((public.fn() + id));`,
+			wantObjects: []string{"fn", "z_data"},
+			want:        `index "ix" on table "other"."ot" names function "public"."fn"`,
+		},
+		{
+			name: "a partial index predicate that casts to the type",
+			fixture: `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY, c string);
+CREATE INDEX ix ON other.ot (id) WHERE c::public.e = 'a';`,
+			wantObjects: []string{"e", "z_data"},
+			want:        `index "ix" on table "other"."ot" names type "public"."e"`,
+		},
+		{
+			name: "a trigger WHEN condition that calls the function",
+			fixture: `CREATE FUNCTION public.fn() RETURNS int LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$;
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY);
+CREATE FUNCTION other.tf() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE TRIGGER tr BEFORE INSERT ON other.ot FOR EACH ROW WHEN (public.fn() = 1) EXECUTE FUNCTION other.tf();`,
+			wantObjects: []string{"fn", "z_data"},
+			want:        `the WHEN condition of trigger "tr" on table "other"."ot" names function "public"."fn"`,
+		},
+		{
+			name: "a trigger WHEN condition that takes from the sequence",
+			fixture: `CREATE SEQUENCE public.s;
+CREATE SCHEMA other;
+CREATE TABLE other.ot (id int PRIMARY KEY);
+CREATE FUNCTION other.tf() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE TRIGGER tr BEFORE INSERT ON other.ot FOR EACH ROW WHEN (nextval('public.s') > 0) EXECUTE FUNCTION other.tf();`,
+			wantObjects: []string{"s", "z_data"},
+			want:        `the WHEN condition of trigger "tr" on table "other"."ot" names sequence "public"."s"`,
+		},
+		{
+			name: "a view whose definition loses the type",
+			fixture: `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE SCHEMA other;
+CREATE VIEW other.vn AS SELECT cardinality(NULL::public.e[]) AS n;`,
+			wantObjects: []string{"e", "z_data"},
+			want:        `CockroachDB records that type "public"."e" is used by other.vn`,
+		},
+		{
+			name: "a function whose body loses the type",
+			fixture: `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE SCHEMA other;
+CREATE FUNCTION other.fa() RETURNS int LANGUAGE sql AS $$ SELECT cardinality(NULL::public.e[]) $$;`,
+			wantObjects: []string{"e", "z_data"},
+			want:        `CockroachDB records that type "public"."e" is used by other.fa`,
+		},
+		{
+			name: "a column default that loses the type",
+			fixture: `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE SCHEMA other;
+CREATE TABLE other.dt (id int PRIMARY KEY, d string DEFAULT 'a'::public.e::string);`,
+			wantObjects: []string{"e", "z_data"},
+			want:        `CockroachDB records that type "public"."e" is used by other.dt`,
 		},
 	}
 	for _, test := range tests {
@@ -279,4 +403,32 @@ CREATE VIEW other.w AS SELECT id FROM public.v;`,
 			c.Assert(rows, qt.Equals, 3)
 		})
 	}
+}
+
+// TestDropAllOfASchemaWhoseTypeOnlyItsOwnObjectsUseE2E_HappyPath empties, on
+// CockroachDB, a schema whose type its own table, view and function use, the
+// view and the function through a text the server folds the type out of. The
+// server lists them when asked what depends on the type; they are all in the
+// cleanup, so nothing is refused, the question leaves the cleanup's
+// transaction open, and the schema ends empty.
+func TestDropAllOfASchemaWhoseTypeOnlyItsOwnObjectsUseE2E_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+	defer cancel()
+	adminURL := dbtarget.URL(c, dbtarget.CockroachDB)
+	admin, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
+	dbURL, db := newReplayCleanupDatabase(c, ctx, admin, adminURL,
+		fmt.Sprintf("ptah_cleanup_own_type_%d", time.Now().UnixNano()))
+	_, err = db.ExecContext(ctx, `CREATE TYPE public.e AS ENUM ('a', 'b');
+CREATE TABLE public.t (id int PRIMARY KEY, c public.e);
+CREATE VIEW public.vn AS SELECT cardinality(NULL::public.e[]) AS n;
+CREATE FUNCTION public.fa() RETURNS int LANGUAGE sql AS $$ SELECT cardinality(NULL::public.e[]) $$;`)
+	c.Assert(err, qt.IsNil)
+
+	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, "db", "drop-all", "--auto-approve", "--db-url", dbURL)
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(publicSchemaObjects(c, ctx, db), qt.IsNil)
 }

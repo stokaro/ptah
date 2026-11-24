@@ -205,14 +205,23 @@ dependency:
 - a function that calls a function, or a trigger that runs one;
 - a column, or a routine's arguments or result, of a type or of a table's
   row type;
-- a column default, a computed column, an `ON UPDATE` expression or a check
-  constraint that names a sequence, function or type;
-- a routine body that names a table, view, sequence or type.
+- a column default, a computed column, an `ON UPDATE` expression, a check
+  constraint, a view or materialized view definition, a policy's `USING` or
+  `WITH CHECK` expression, an index expression or partial-index predicate, or a
+  trigger's `WHEN` condition that names a sequence, function or type;
+- a routine body that names a table, view, sequence or type;
+- an object the server records as using a type the cleanup drops.
 
-CockroachDB records the last two only as text, so Ptah matches the names in
-that text, and refuses a body that names an object even inside a string. A
-dependency neither shows still stops the cleanup partway, and the error then
-lists every object a statement dropped before the failure.
+CockroachDB shows the expressions and bodies only as text, so Ptah matches the
+names in that text. It refuses a body that names an object even inside a
+string, and says that it matched the body's text. The text can lose a type:
+the server keeps `NULL::public.e[]` in a view as `NULL` and still refuses to
+drop the type. So Ptah also asks the server, with `EXPLAIN (DDL) DROP TYPE`,
+which objects use each type it drops. A row-level TTL expression is not on the
+list, because CockroachDB records no dependency for it. A sequence `OWNED BY` a
+column of a table the cleanup drops is dropped with the table, as on
+PostgreSQL. A dependency none of these shows still stops the cleanup partway,
+and the error then lists every object a statement dropped before the failure.
 
 Ptah reads the setting from the session. Where it is off, as on v24.3 by
 default, or where the server has no such setting, as on v23.2, the drops share
