@@ -346,6 +346,12 @@ column whose default is the call `now()` is changed to the string.
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates a generated
 enum type name and uses that type for the column.
 
+An enum value, in `enums` or in a column's `enum`, is data rather than a name,
+so an item of a sequence keeps its bytes: `[happy, ' sad']` declares the value
+` sad`, which PostgreSQL holds apart from `sad`. The one-line form
+`'happy, sad'` is split at each comma, and the space around each part is
+removed. An empty value declares nothing and is left out.
+
 API names resolve from the target-specific key, then `api_name`, then the
 database name. GraphQL and Protobuf table values are stems that Ptah
 singularizes and PascalCases into a type or message name; their column values
