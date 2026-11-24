@@ -96,13 +96,13 @@ func TestCompatMigrateDiffStartsAnImageThatNamesItsOwnUserE2E(t *testing.T) {
 }
 
 // TestCompatMigrateDiffReportsAnImageThatExitsDuringInitE2E builds an image
-// that exits with code 3 and builds the image: through an init script, which
-// runs after the server starts, and through its entrypoint, which exits before
-// anything listens. The entrypoint's exit leaves the runtime's port table
-// before Ptah reads its port on a remote daemon, and the init script's exit
-// can. The block allows five minutes, and the run ends with the exit code and
-// the image's own line instead of waiting them out, whichever comes first.
-// The container and the image are removed.
+// that exits with code 3 in one of two ways: through an init script, which
+// runs after the server starts, or through its entrypoint, which exits before
+// anything listens. The entrypoint's exit always clears the runtime's port
+// table before Ptah reads the port on a remote daemon, and the init script's
+// exit sometimes does. Either way the run ends with the exit code and the
+// image's own line, well inside the five minutes the block allows. The
+// container and the image are removed.
 func TestCompatMigrateDiffReportsAnImageThatExitsDuringInitE2E(t *testing.T) {
 	tests := []struct {
 		name, dockerfile string
