@@ -374,38 +374,16 @@ func sanitizeHookOutput(output string, opts Options) string {
 	if output == "" {
 		return ""
 	}
-	replacements := hookOutputReplacements(opts)
-	for _, replacement := range replacements {
-		if replacement.old == "" {
-			continue
+	if opts.DatabaseURL != "" {
+		displayURL := opts.DisplayDatabaseURL
+		if displayURL == "" {
+			displayURL = redactedDatabaseURL(opts.DatabaseURL)
 		}
-		output = strings.ReplaceAll(output, replacement.old, replacement.new)
+		output = strings.ReplaceAll(output, opts.DatabaseURL, displayURL)
 	}
-	return output
-}
-
-type hookOutputReplacement struct {
-	old string
-	new string
-}
-
-func hookOutputReplacements(opts Options) []hookOutputReplacement {
-	displayURL := opts.DisplayDatabaseURL
-	if displayURL == "" {
-		displayURL = redactedDatabaseURL(opts.DatabaseURL)
-	}
-	replacements := []hookOutputReplacement{
-		{old: opts.DatabaseURL, new: displayURL},
-	}
-	for _, secret := range dburldisplay.Secrets(opts.DatabaseURL) {
-		replacements = append(
-			replacements,
-			hookOutputReplacement{old: "PGPASSWORD=" + secret, new: "PGPASSWORD=redacted"},
-			hookOutputReplacement{old: "MYSQL_PWD=" + secret, new: "MYSQL_PWD=redacted"},
-			hookOutputReplacement{old: secret, new: "redacted"},
-		)
-	}
-	return replacements
+	// PGPASSWORD=... and MYSQL_PWD=... name a secret's setting, so the
+	// password is taken out of them whatever its length.
+	return dburldisplay.MaskSecrets(output, dburldisplay.Secrets(opts.DatabaseURL), dburldisplay.Users(opts.DatabaseURL), "redacted")
 }
 
 func redactSecretURL(rawURL string) string {

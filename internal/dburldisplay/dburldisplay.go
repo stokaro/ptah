@@ -29,8 +29,13 @@ const (
 	redactedQueryValue = "redacted"
 	redactedPassword   = "***"
 	// shortestSecretPart is the length below which [RedactError] leaves a part
-	// of a hidden value in a message: taking out every occurrence of a character
-	// or two leaves a message nobody can read.
+	// of a hidden value in a message where it stands as a word: a character or
+	// two of a password is a word of most messages.
+	//
+	// A part is shorter than a whole secret may be there
+	// ([shortestFreeTextSecret]), because a part surfaces only where a driver
+	// misread the address and names what it read as a host, a port or a
+	// database.
 	shortestSecretPart = 3
 )
 
@@ -130,6 +135,10 @@ func ParseURL(rawURL string) (*url.URL, error) {
 // fails to connect. So each part of a hidden value is taken out as well as the
 // whole.
 //
+// A value is taken out as [MaskSecrets] takes it out, and a part of at least
+// three characters where it stands as a word as well. With the password "x",
+// `database=execute` keeps its word.
+//
 // The result wraps err, so errors.Is and errors.As answer as they did. An error
 // that holds none of it is returned as it is, and a nil err is nil.
 func RedactError(dbURL string, err error) error {
@@ -137,10 +146,7 @@ func RedactError(dbURL string, err error) error {
 		return nil
 	}
 	text := err.Error()
-	redacted := text
-	for _, secret := range secretParts(dbURL) {
-		redacted = strings.ReplaceAll(redacted, secret, redactedPassword)
-	}
+	redacted := maskText(text, secretParts(dbURL), Users(dbURL), redactedPassword)
 	if redacted == text {
 		return err
 	}
@@ -153,14 +159,28 @@ func RedactError(dbURL string, err error) error {
 func Secrets(dbURL string) []string {
 	var hidden hiddenText
 	hidden.format(dbURL)
-	secrets := make([]string, 0, 2*len(hidden))
-	for _, value := range hidden {
-		secrets = append(secrets, value)
+	return spellings(hidden.values)
+}
+
+// Users returns the user name dbURL gives with the password [Format] hides, as
+// it is written there and unescaped, longest first. [MaskSecrets] takes a
+// short secret out after it and a ":".
+func Users(dbURL string) []string {
+	var hidden hiddenText
+	hidden.format(dbURL)
+	return spellings(hidden.users)
+}
+
+// spellings is each of values as it is and unescaped, longest first.
+func spellings(values []string) []string {
+	spelled := make([]string, 0, len(values))
+	for _, value := range values {
+		spelled = append(spelled, value)
 		if unescaped, err := url.QueryUnescape(value); err == nil && unescaped != value {
-			secrets = append(secrets, unescaped)
+			spelled = append(spelled, unescaped)
 		}
 	}
-	return longestFirst(secrets)
+	return longestFirst(spelled)
 }
 
 // longestFirst sorts and compacts values.
@@ -180,29 +200,40 @@ type redactedError struct {
 func (e redactedError) Error() string { return e.text }
 func (e redactedError) Unwrap() error { return e.err }
 
-// hiddenText collects what a display left out.
-type hiddenText []string
+// hiddenText collects what a display left out, and the user names it showed
+// beside a hidden password.
+type hiddenText struct {
+	values []string
+	users  []string
+}
 
 // hide records a value the display does not show.
 func (h *hiddenText) hide(value string) {
 	if value != "" {
-		*h = append(*h, value)
+		h.values = append(h.values, value)
+	}
+}
+
+// name records the user name of a password the display hides.
+func (h *hiddenText) name(user string) {
+	if user != "" {
+		h.users = append(h.users, user)
 	}
 }
 
 // secretParts is every secret of dbURL and each piece of it worth looking for,
-// longest first so that a piece cannot break up a whole.
-func secretParts(dbURL string) []string {
-	var parts []string
+// with the length from which each is taken out outside a credential.
+func secretParts(dbURL string) []secretText {
+	var parts []secretText
 	for _, secret := range Secrets(dbURL) {
-		parts = append(parts, secret)
+		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
 		for piece := range strings.FieldsFuncSeq(secret, stopsAPassword) {
-			if len(piece) >= shortestSecretPart {
-				parts = append(parts, piece)
+			if piece != secret && len(piece) >= shortestSecretPart {
+				parts = append(parts, secretText{value: piece, floor: shortestSecretPart})
 			}
 		}
 	}
-	return longestFirst(parts)
+	return parts
 }
 
 // stopsAPassword reports a character a parser may stop reading a password at, so
@@ -235,6 +266,7 @@ func (h *hiddenText) format(dbURL string) string {
 	if parsedURL.User != nil {
 		if password, hasPassword := parsedURL.User.Password(); hasPassword {
 			h.hide(password)
+			h.name(parsedURL.User.Username())
 			return formatURLWithRedactedUserPassword(parsedURL)
 		}
 	}
@@ -334,6 +366,7 @@ func (h *hiddenText) unparsedCredentials(scheme, rest string) string {
 		return h.urlQuery(rest, urlValued)
 	}
 	h.hide(password)
+	h.name(user)
 	return user + ":" + redactedPassword + "@" + h.afterCredentials(rest[at+1:], urlValued)
 }
 
@@ -369,6 +402,7 @@ func (h *hiddenText) driverDSN(dsn string, urlValued func(key string) bool) stri
 		return dsn[:at+1] + h.urlQuery(dsn[at+1:], urlValued)
 	}
 	h.hide(password)
+	h.name(user)
 	if driverNetwork.MatchString(dsn) {
 		return user + ":" + redactedPassword + "@" + h.urlQuery(dsn[at+1:], urlValued)
 	}
@@ -408,7 +442,7 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 		return "", false
 	}
 	var out strings.Builder
-	var secrets []string
+	var secrets, users []string
 	rest := dsn
 	for strings.TrimSpace(rest) != "" {
 		match := keywordValuePair.FindStringSubmatchIndex(rest)
@@ -431,6 +465,9 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 		case strings.ContainsAny(value, ";&"):
 			return "", false
 		default:
+			if IsUserParameter(rest[match[2]:match[3]]) {
+				users = append(users, strings.Trim(value, `'"`))
+			}
 			out.WriteString(rest[:end])
 		}
 		rest = rest[end:]
@@ -438,6 +475,9 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 	out.WriteString(rest)
 	for _, secret := range secrets {
 		h.hide(secret)
+	}
+	for _, user := range users {
+		h.name(user)
 	}
 	return out.String(), true
 }
@@ -458,6 +498,9 @@ func (h *hiddenText) assignments(text string) string {
 		name := rest[match[2]:match[3]]
 		out.WriteString(rest[:match[1]])
 		rest = rest[match[1]:]
+		if IsUserParameter(name) {
+			h.name(strings.Trim(rest[:assignmentValueEnd(rest)], `'"{}`))
+		}
 		if IsSecretParameter(name) {
 			end := assignmentValueEnd(rest)
 			h.hide(rest[:end])
@@ -667,4 +710,19 @@ func IsSecretParameter(key string) bool {
 	default:
 		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
 	}
+}
+
+// IsUserParameter reports whether key names the user a connection logs in as:
+// libpq's `user`, SQL Server's `User Id` and `UID`, and an environment
+// variable such as PGUSER or MYSQL_USER. The name is compared as
+// [IsSecretParameter] compares it. [MaskSecrets] takes a short secret out
+// after the user's name and a ":".
+func IsUserParameter(key string) bool {
+	name := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, key)
+	return name == "uid" || slices.ContainsFunc([]string{"user", "username", "userid"}, func(word string) bool { return strings.HasSuffix(name, word) })
 }

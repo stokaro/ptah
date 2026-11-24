@@ -66,6 +66,105 @@ func TestSanitize_RedactsAPasswordWithReservedCharacters(t *testing.T) {
 	}
 }
 
+// A short secret is taken out where it stands as a credential, and the words
+// that hold its characters stay whole.
+func TestSanitize_KeepsTheWordsOfAShortSecret(t *testing.T) {
+	c := qt.New(t)
+
+	got := secretdisplay.Sanitize(
+		"ptah: execute as ptah failed: password=x url=postgres://ptah:ptah@db/ptah",
+		[]string{"DATABASE_PASSWORD=x", "DATABASE_URL=postgres://ptah:ptah@db/ptah"},
+		nil,
+	)
+
+	c.Assert(got, qt.Equals, "ptah: execute as ptah failed: password=redacted url=postgres://ptah:redacted@db/ptah")
+}
+
+// A secret of five characters or more is taken out wherever a program writes
+// it, glued to an option or an escape too, and a short one where it stands as a
+// credential.
+func TestSanitize_RedactsASecretAProgramWrites(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+		args []string
+		text string
+		want string
+	}{
+		{
+			name: "after the MySQL client's -p",
+			env:  []string{"DB_PASSWORD=Srv9Kq2Lm"},
+			text: "+ : mysql -uapp -pSrv9Kq2Lm",
+			want: "+ : mysql -uapp -predacted",
+		},
+		{
+			name: "after an escape in a JSON line",
+			env:  []string{"DB_PASSWORD=Srv9Kq2Lm"},
+			text: `{"msg": "dump\nSrv9Kq2Lm"}`,
+			want: `{"msg": "dump\nredacted"}`,
+		},
+		{
+			name: "a variable whose name ends in PASSWORD",
+			env:  []string{"PGPASSWORD=Tok3nValue9"},
+			text: "dump -pTok3nValue9",
+			want: "dump -predacted",
+		},
+		{
+			name: "a short secret after a colon",
+			env:  []string{"DB_PASSWORD=ab"},
+			text: "password: ab",
+			want: "password: redacted",
+		},
+		{
+			name: "a short secret after a user a variable names",
+			env:  []string{"PGUSER=app", "PGPASSWORD=ab"},
+			text: "curl -u app:ab https://h/",
+			want: "curl -u app:redacted https://h/",
+		},
+		{
+			name: "a short secret after a user an option names",
+			args: []string{"--user", "app", "--password=ab"},
+			text: "curl -u app:ab https://h/",
+			want: "curl -u app:redacted https://h/",
+		},
+		{
+			name: "a short secret after the user of an address",
+			env:  []string{"DATABASE_URL=postgres://app:ab@db/shop"},
+			text: "localhost:5432:shop:app:ab",
+			want: "localhost:5432:shop:app:redacted",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(secretdisplay.Sanitize(test.text, test.env, test.args), qt.Equals, test.want)
+		})
+	}
+}
+
+// A short secret after a ":" that no user name stands before is a port, and
+// stays.
+func TestSanitize_KeepsAPort(t *testing.T) {
+	c := qt.New(t)
+	text := "dial 127.0.0.1:1 (127.0.0.1) failed"
+
+	got := secretdisplay.Sanitize(text, []string{"PGUSER=app", "PGPASSWORD=1"}, nil)
+
+	c.Assert(got, qt.Equals, text)
+}
+
+// The working directories a shell keeps in PWD and OLDPWD are no secrets, so
+// the paths a program writes keep them.
+func TestSanitize_KeepsTheWorkingDirectory(t *testing.T) {
+	c := qt.New(t)
+	text := "read /work/shop/schema.sql after /work/old"
+
+	got := secretdisplay.Sanitize(text, []string{"PWD=/work/shop", "OLDPWD=/work/old"}, nil)
+
+	c.Assert(got, qt.Equals, text)
+}
+
 func TestSanitize_EscapesTerminalControls(t *testing.T) {
 	c := qt.New(t)
 
