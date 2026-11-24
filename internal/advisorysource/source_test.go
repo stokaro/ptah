@@ -125,7 +125,33 @@ func newSource(location *url.URL, cache string, k *clock) *advisorysource.Source
 	return advisorysource.New(advisorysource.Config{Location: location, CacheDir: cache, Now: k.Now})
 }
 
-var start = time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+// start is the clock every test begins at: a day after the newest bundled
+// snapshot was retrieved. The tests serve copies dated relative to the bundled
+// snapshots, and the source refuses a copy dated more than
+// vulnerability.MaxFutureRetrieval after its clock. Against a fixed date, the
+// first refresh that dates a bundled snapshot past it fails them.
+var start = newestBundledRetrieval().Truncate(time.Hour).Add(24 * time.Hour)
+
+// stamp formats a moment the way the source writes one into a reason.
+func stamp(moment time.Time) string { return moment.UTC().Format(time.RFC3339Nano) }
+
+// newestBundledRetrieval returns the latest retrieval time among the bundled
+// snapshots. It panics on a bundled snapshot that does not check, which every
+// test in this package would report anyway.
+func newestBundledRetrieval() time.Time {
+	var newest time.Time
+	for _, product := range vulnerability.BundledProducts() {
+		_, data, _ := vulnerability.BundledSnapshot(product)
+		retrieved, err := vulnerability.CheckSnapshot(product, data)
+		if err != nil {
+			panic(err)
+		}
+		if retrieved.After(newest) {
+			newest = retrieved
+		}
+	}
+	return newest
+}
 
 // TestDefaultLocation_NamesTheFilesOnMaster pins the contract released
 // binaries read: each bundled snapshot is served from master at the path the
@@ -325,7 +351,8 @@ func TestSource_FallbackReasons(t *testing.T) {
 				`, before the bundled snapshot at ` + retrieved.UTC().Format(time.RFC3339Nano)},
 		{name: "retrieved more than a day ahead", answer: response{status: http.StatusOK,
 			body: edited(c, "mysql", map[string]any{"retrieved_at": start.Add(24*time.Hour + time.Second).Format(time.RFC3339Nano)})},
-			want: `the snapshot was retrieved at 2026-11-22T09:00:01Z, more than 24 hours after this machine's clock at 2026-11-21T09:00:00Z`},
+			want: `the snapshot was retrieved at ` + stamp(start.Add(24*time.Hour+time.Second)) +
+				`, more than 24 hours after this machine's clock at ` + stamp(start)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -355,7 +382,8 @@ func TestSource_FutureDatedCopyIsNotCached(t *testing.T) {
 	_, origin := newSource(s.location(c), cache, k).Snapshot(c.Context(), "mysql")
 
 	c.Assert(origin.Kind, qt.Equals, "bundled")
-	c.Assert(origin.Fallback, qt.Equals, "the snapshot was retrieved at 2026-11-22T10:00:00Z, more than 24 hours after this machine's clock at 2026-11-21T09:00:00Z")
+	c.Assert(origin.Fallback, qt.Equals, "the snapshot was retrieved at "+stamp(start.Add(25*time.Hour))+
+		", more than 24 hours after this machine's clock at "+stamp(start))
 
 	body := newer(c, "mysql")
 	s.set("mysql.json", response{status: http.StatusOK, body: body})
@@ -691,7 +719,8 @@ func TestSource_FailureIsRemembered(t *testing.T) {
 	data, origin := newSource(s.location(c), cache, k).Snapshot(c.Context(), "mysql")
 	c.Assert(data, qt.DeepEquals, want)
 	c.Assert(origin, qt.DeepEquals, vulnerability.Origin{Kind: "bundled", URL: s.URL + "/snapshots/mysql.json",
-		Fallback: "the advisory source answered HTTP 503 Service Unavailable, at 2026-11-21T09:00:00Z; the source is asked again from 2026-11-21T10:00:00Z"})
+		Fallback: "the advisory source answered HTTP 503 Service Unavailable, at " + stamp(start) +
+			"; the source is asked again from " + stamp(start.Add(time.Hour))})
 	c.Assert(s.seen(), qt.HasLen, 1)
 
 	k.now = start.Add(advisorysource.Freshness)
