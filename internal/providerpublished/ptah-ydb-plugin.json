@@ -7,6 +7,22 @@
       "goSourceDirectives": [
         {
           "attributes": [
+            "name",
+            "schema",
+            "text",
+            "run",
+            "resource_pool",
+            "allow_state_reset"
+          ],
+          "directive": "ptah:schema:streamingquery",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/streaming-query"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:streamingquery"
+        },
+        {
+          "attributes": [
             "auto_partitioning_by_size",
             "auto_partitioning_partition_size_mb",
             "auto_partitioning_by_load",
@@ -27,7 +43,11 @@
           "directive": "ptah:schema:table",
           "models": [
             "github.com/stokaro/ptah-ydb-plugin/row-table-properties",
-            "github.com/stokaro/ptah-ydb-plugin/column-storage-properties"
+            "github.com/stokaro/ptah-ydb-plugin/column-storage-properties",
+            "github.com/stokaro/ptah-ydb-plugin/column-properties",
+            "github.com/stokaro/ptah-ydb-plugin/table-changefeeds",
+            "github.com/stokaro/ptah-ydb-plugin/table-indexes",
+            "github.com/stokaro/ptah-ydb-plugin/index-properties"
           ],
           "scope": "TABLE",
           "selector": "ptah:schema:table"
@@ -64,7 +84,7 @@
           ],
           "directive": "ptah:schema:index",
           "models": [
-            "github.com/stokaro/ptah-ydb-plugin/row-table-properties"
+            "github.com/stokaro/ptah-ydb-plugin/index-properties"
           ],
           "scope": "INDEX",
           "selector": "ptah:schema:index"
@@ -103,7 +123,7 @@
           ],
           "directive": "ptah:schema:changefeed",
           "models": [
-            "github.com/stokaro/ptah-ydb-plugin/row-table-properties"
+            "github.com/stokaro/ptah-ydb-plugin/table-changefeeds"
           ],
           "scope": "TABLE",
           "selector": "ptah:schema:changefeed"
@@ -120,14 +140,212 @@
           ],
           "directive": "ptah:schema:changefeed:consumer",
           "models": [
-            "github.com/stokaro/ptah-ydb-plugin/row-table-properties"
+            "github.com/stokaro/ptah-ydb-plugin/table-changefeeds"
           ],
           "scope": "TABLE",
           "selector": "ptah:schema:changefeed:consumer"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "value_env",
+            "value"
+          ],
+          "directive": "ptah:schema:secret",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/secret"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:secret"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "self_check_period",
+            "session_grace_period",
+            "read_consistency_mode",
+            "attach_consistency_mode",
+            "rate_limiter_counters_mode"
+          ],
+          "directive": "ptah:schema:coordinationnode",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/coordination-node"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:coordinationnode"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "min_active_partitions",
+            "max_active_partitions",
+            "auto_partitioning_strategy",
+            "auto_partitioning_up_utilization_percent",
+            "auto_partitioning_down_utilization_percent",
+            "auto_partitioning_stabilization_window",
+            "retention_period",
+            "partition_write_speed_bytes_per_second",
+            "partition_write_burst_bytes",
+            "supported_codecs"
+          ],
+          "directive": "ptah:schema:topic",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/topic"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:topic"
+        },
+        {
+          "attributes": [
+            "name",
+            "topic",
+            "schema",
+            "important",
+            "read_from",
+            "supported_codecs",
+            "availability_period"
+          ],
+          "directive": "ptah:schema:topic:consumer",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/topic"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:topic:consumer"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "consistency_level",
+            "commit_interval",
+            "connection_string",
+            "token_secret_name",
+            "token_secret_path",
+            "user",
+            "password_secret_name",
+            "password_secret_path"
+          ],
+          "directive": "ptah:schema:async_replication",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/async-replication"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:async_replication"
+        },
+        {
+          "attributes": [
+            "replication",
+            "schema",
+            "source",
+            "target"
+          ],
+          "directive": "ptah:schema:async_replication:item",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/async-replication"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:async_replication:item"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "source",
+            "target",
+            "using",
+            "consumer",
+            "batch_size_bytes",
+            "flush_interval",
+            "connection_string",
+            "token_secret_name",
+            "token_secret_path",
+            "user",
+            "password_secret_name",
+            "password_secret_path"
+          ],
+          "directive": "ptah:schema:transfer",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/transfer"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:transfer"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "source_type",
+            "location",
+            "auth_method",
+            "options"
+          ],
+          "directive": "ptah:schema:externaldatasource",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/external-data-source"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:externaldatasource"
+        },
+        {
+          "attributes": [
+            "name",
+            "schema",
+            "data_source",
+            "location",
+            "columns",
+            "options"
+          ],
+          "directive": "ptah:schema:externaltable",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/external-table"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:externaltable"
+        },
+        {
+          "attributes": [
+            "name",
+            "concurrent_query_limit",
+            "queue_size",
+            "database_load_cpu_threshold",
+            "query_memory_limit_percent_per_node",
+            "query_cpu_limit_percent_per_node",
+            "total_cpu_limit_percent_per_node",
+            "resource_weight"
+          ],
+          "directive": "ptah:schema:resourcepool",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/resource-pool"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:resourcepool"
+        },
+        {
+          "attributes": [
+            "name",
+            "resource_pool",
+            "member_name",
+            "rank"
+          ],
+          "directive": "ptah:schema:resourcepool:classifier",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/resource-pool-classifier"
+          ],
+          "scope": "DOCUMENT",
+          "selector": "ptah:schema:resourcepool:classifier"
         }
       ],
       "id": "ydb",
       "lintRules": [
+        {
+          "appliesToDown": true,
+          "code": "capability/analyze",
+          "severity": "WARNING",
+          "title": "ANALYZE in a migration"
+        },
         {
           "appliesToDown": true,
           "code": "capability/unique-index-on-existing-table",
@@ -137,6 +355,130 @@
             "data-dependent/rebuild-index-as-unique"
           ],
           "title": "unique index added to an existing table"
+        },
+        {
+          "appliesToDown": true,
+          "code": "capability/vector-index",
+          "severity": "ERROR",
+          "title": "vector index the target does not build"
+        },
+        {
+          "code": "dependency/drop-indexed-column",
+          "severity": "ERROR",
+          "title": "column dropped while an index or the TTL uses it"
+        },
+        {
+          "code": "dependency/drop-table-read-by-view",
+          "severity": "ERROR",
+          "title": "table dropped or renamed while a view reads it"
+        },
+        {
+          "code": "dependency/rename-table-with-changefeed",
+          "severity": "ERROR",
+          "title": "table renamed while it carries a changefeed"
+        },
+        {
+          "appliesToDown": true,
+          "code": "destructive/discard-streaming-query-state",
+          "severity": "WARNING",
+          "title": "streaming query checkpoint state discarded"
+        },
+        {
+          "appliesToDown": true,
+          "code": "destructive/drop-backup-collection",
+          "severity": "ERROR",
+          "title": "backup collection dropped"
+        },
+        {
+          "appliesToDown": true,
+          "code": "destructive/drop-default-resource-pool",
+          "severity": "ERROR",
+          "title": "the resource pool default dropped"
+        },
+        {
+          "appliesToDown": true,
+          "code": "security/deprecated-secret-object",
+          "severity": "WARNING",
+          "title": "external data source credential in a deprecated secret object"
+        },
+        {
+          "appliesToDown": true,
+          "code": "security/secret-in-clear",
+          "severity": "ERROR",
+          "title": "secret written in clear"
+        },
+        {
+          "appliesToDown": true,
+          "code": "security/secret-value-in-migration",
+          "severity": "ERROR",
+          "title": "secret value written in the migration"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/drop-replication-without-failover",
+          "severity": "WARNING",
+          "title": "async replication dropped without failover"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/dropped-principal-keeps-permissions",
+          "severity": "WARNING",
+          "title": "dropped user or group keeps its permissions"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/ignored-topic-setting",
+          "severity": "ERROR",
+          "title": "topic setting YDB keeps as nothing"
+        },
+        {
+          "code": "side-effect/implicit-column-family",
+          "severity": "WARNING",
+          "title": "column family the table does not have"
+        },
+        {
+          "code": "side-effect/orphaned-comment",
+          "severity": "WARNING",
+          "title": "comment left behind by a drop or a rename"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/replay-sequence-restart",
+          "severity": "ERROR",
+          "title": "ALTER SEQUENCE replays an earlier RESTART"
+        },
+        {
+          "code": "side-effect/reset-min-partition-count",
+          "severity": "WARNING",
+          "title": "partitioning change resets the minimum partition count"
+        },
+        {
+          "code": "side-effect/reset-partition-size",
+          "severity": "WARNING",
+          "title": "partitioning change resets the partition size"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/reset-topic-setting",
+          "severity": "ERROR",
+          "title": "topic setting reset"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/revoke-grant-option",
+          "severity": "ERROR",
+          "title": "REVOKE GRANT OPTION FOR revokes the permission too"
+        },
+        {
+          "code": "side-effect/vector-index-misses-writes",
+          "severity": "WARNING",
+          "title": "rows written past a vector index that does not take them"
+        },
+        {
+          "appliesToDown": true,
+          "code": "side-effect/widen-serial-sequence",
+          "severity": "ERROR",
+          "title": "ALTER SEQUENCE widens a 16-bit or 32-bit Serial"
         },
         {
           "code": "transaction/scheme-and-data-in-one-query",
@@ -151,141 +493,11 @@
             "data-dependent/add-not-null-column"
           ],
           "title": "column added in a form YDB refuses"
-        },
-        {
-          "code": "dependency/drop-indexed-column",
-          "severity": "ERROR",
-          "title": "column dropped while an index or the TTL uses it"
-        },
-        {
-          "code": "side-effect/reset-min-partition-count",
-          "severity": "WARNING",
-          "title": "partitioning change resets the minimum partition count"
-        },
-        {
-          "code": "dependency/drop-table-read-by-view",
-          "severity": "ERROR",
-          "title": "table dropped or renamed while a view reads it"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/widen-serial-sequence",
-          "severity": "ERROR",
-          "title": "ALTER SEQUENCE widens a 16-bit or 32-bit Serial"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/replay-sequence-restart",
-          "severity": "ERROR",
-          "title": "ALTER SEQUENCE replays an earlier RESTART"
-        },
-        {
-          "code": "dependency/rename-table-with-changefeed",
-          "severity": "ERROR",
-          "title": "table renamed while it carries a changefeed"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/revoke-grant-option",
-          "severity": "ERROR",
-          "title": "REVOKE GRANT OPTION FOR revokes the permission too"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/dropped-principal-keeps-permissions",
-          "severity": "WARNING",
-          "title": "dropped user or group keeps its permissions"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/reset-topic-setting",
-          "severity": "ERROR",
-          "title": "topic setting reset"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/ignored-topic-setting",
-          "severity": "ERROR",
-          "title": "topic setting YDB keeps as nothing"
-        },
-        {
-          "appliesToDown": true,
-          "code": "side-effect/drop-replication-without-failover",
-          "severity": "WARNING",
-          "title": "async replication dropped without failover"
-        },
-        {
-          "appliesToDown": true,
-          "code": "security/secret-in-clear",
-          "severity": "ERROR",
-          "title": "secret written in clear"
-        },
-        {
-          "code": "side-effect/reset-partition-size",
-          "severity": "WARNING",
-          "title": "partitioning change resets the partition size"
-        },
-        {
-          "code": "side-effect/implicit-column-family",
-          "severity": "WARNING",
-          "title": "column family the table does not have"
-        },
-        {
-          "appliesToDown": true,
-          "code": "destructive/drop-default-resource-pool",
-          "severity": "ERROR",
-          "title": "the resource pool default dropped"
-        },
-        {
-          "appliesToDown": true,
-          "code": "destructive/drop-backup-collection",
-          "severity": "ERROR",
-          "title": "backup collection dropped"
-        },
-        {
-          "appliesToDown": true,
-          "code": "capability/analyze",
-          "severity": "WARNING",
-          "title": "ANALYZE in a migration"
-        },
-        {
-          "appliesToDown": true,
-          "code": "capability/vector-index",
-          "severity": "ERROR",
-          "title": "vector index the target does not build"
-        },
-        {
-          "code": "side-effect/vector-index-misses-writes",
-          "severity": "WARNING",
-          "title": "rows written past a vector index that does not take them"
-        },
-        {
-          "appliesToDown": true,
-          "code": "security/secret-value-in-migration",
-          "severity": "ERROR",
-          "title": "secret value written in the migration"
-        },
-        {
-          "appliesToDown": true,
-          "code": "security/deprecated-secret-object",
-          "severity": "WARNING",
-          "title": "external data source credential in a deprecated secret object"
-        },
-        {
-          "code": "side-effect/orphaned-comment",
-          "severity": "WARNING",
-          "title": "comment left behind by a drop or a rename"
-        },
-        {
-          "appliesToDown": true,
-          "code": "destructive/discard-streaming-query-state",
-          "severity": "WARNING",
-          "title": "streaming query checkpoint state discarded"
         }
       ]
     }
   ],
   "providerId": "github.com/stokaro/ptah-ydb-plugin",
-  "revision": 25,
-  "version": "0.0.0-dev"
+  "revision": 26,
+  "version": "0.11.0"
 }

@@ -43,6 +43,6 @@
     }
   ],
   "providerId": "github.com/stokaro/ptah-spanner-plugin",
-  "revision": 25,
-  "version": "0.0.0-20261107062806-5e810c53e491"
+  "revision": 26,
+  "version": "0.5.0"
 }
