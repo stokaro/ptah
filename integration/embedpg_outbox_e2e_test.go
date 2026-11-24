@@ -485,6 +485,11 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 	c.Assert(err, qt.IsNil)
 	var inFlightXID uint64
 	c.Assert(inFlight.QueryRowContext(ctx, `SELECT pg_current_xact_id()::text::bigint`).Scan(&inFlightXID), qt.IsNil)
+	// A later transaction concludes while the earlier one is still open. A
+	// horizon that follows completed transactions rather than open ones passes
+	// the open one here.
+	_, err = db.ExecContext(ctx, `SELECT pg_current_xact_id()`)
+	c.Assert(err, qt.IsNil)
 
 	during, horizonDuring, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
@@ -505,9 +510,9 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 
 	after, horizonAfter, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
-	c.Assert(after, qt.HasLen, len(settled)+1)
 	c.Assert(horizonAfter > inFlightXID, qt.IsTrue,
 		qt.Commentf("horizon %d did not move past the committed transaction %d", horizonAfter, inFlightXID))
+	c.Assert(after, qt.HasLen, len(settled)+1)
 	c.Assert(after[len(after)-1].Key, qt.DeepEquals, []string{"3"})
 	c.Assert(after[len(after)-1].Operation, qt.Equals, embedcatchup.OperationInsert)
 }
