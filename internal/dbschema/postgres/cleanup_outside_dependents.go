@@ -2,15 +2,11 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // The cleanup of a server that commits each drop as it runs refuses, before
@@ -35,10 +31,12 @@ import (
 // The text can lose a type: CockroachDB v26.4.1 keeps `NULL::public.e[]` in a
 // view or a body as `NULL`, and a default `'a'::public.e::STRING` as
 // `'a'::text`, and still refuses to drop the type while they exist. So for
-// each type it drops the cleanup also asks the server, through EXPLAIN (DDL)
-// of its drop, which objects depend on it. What none of these reports reaches
-// the server's refusal at the drop, and the error then lists the drops that
-// ran before it.
+// each type, function and procedure it drops the cleanup also asks the
+// server, through EXPLAIN (DDL) of its drop, which objects depend on it
+// (serverReportedDependents). The catalog and the text still name what they
+// can, because they say how the object depends; the server's answer names the
+// rest. What none of these reports reaches the server's refusal at the drop,
+// and the error then lists the drops that ran before it.
 
 // outsideStructuredDependentsQuery asks which objects depend on an object of
 // the schemas named, wherever the dependent lives, through the catalog row
@@ -335,7 +333,7 @@ func refuseOutsideCleanupDependents(ctx context.Context, q cleanupConn, objects 
 		return err
 	}
 	blocked = append(blocked, textual...)
-	reported, err := serverReportedTypeDependents(ctx, q, dropped, database, blocked)
+	reported, err := serverReportedDependents(ctx, q, objects, dropped, database, blocked)
 	if err != nil {
 		return err
 	}
@@ -755,112 +753,4 @@ func splitQualifiedName(name string) []string {
 		}
 	}
 	return append(parts, part.String())
-}
-
-// typeDependentsSavepoint is the savepoint serverReportedTypeDependents asks
-// under inside a transaction, so the refusal of one EXPLAIN does not abort the
-// transaction the cleanup runs in.
-const typeDependentsSavepoint = "ptah_type_dependents"
-
-// serverReportedTypeDependents asks the server, for each type of dropped,
-// which objects depend on it, and describes the dependents that are neither
-// in dropped nor named for that type by known. The objects are named as the
-// server writes them, without the database, because the server names a
-// dependent by its qualified name alone and does not quote it.
-//
-// Measured on CockroachDB v26.4.1 and v25.4.21, EXPLAIN (DDL) DROP TYPE plans
-// the drop without running it, and refuses with SQLSTATE 2BP01 and
-// `cannot drop type "e" because other objects ([db.public.t db.other.v]) still depend on it`
-// while anything depends on the type, the objects in the cleanup among them.
-// It runs inside the cleanup's transaction without committing it, and a
-// rollback to a savepoint leaves that transaction open.
-func serverReportedTypeDependents(
-	ctx context.Context,
-	q cleanupConn,
-	dropped map[cleanupKey]string,
-	database string,
-	known []outsideDependency,
-) ([]outsideDependency, error) {
-	var reported []outsideDependency
-	for _, source := range slices.SortedFunc(maps.Keys(dropped), compareCleanupKeys) {
-		if source.family != typeFamily {
-			continue
-		}
-		list, err := typeDependentsList(ctx, q, source)
-		if err != nil {
-			return nil, err
-		}
-		inside := slices.Collect(maps.Keys(dropped))
-		for _, dependency := range known {
-			if dependency.source == source {
-				inside = append(inside, dependency.dependent)
-			}
-		}
-		if rest := typeDependentsOutside(list, database, inside); rest != "" {
-			reported = append(reported, outsideDependency{
-				source: source,
-				sentence: fmt.Sprintf("CockroachDB records that %s is used by %s",
-					source.describe(dropped[source]), rest),
-			})
-		}
-	}
-	return reported, nil
-}
-
-// typeDependentsList answers the objects the server lists as depending on the
-// type source, as it writes the list, or "" when it lists none.
-func typeDependentsList(ctx context.Context, q cleanupConn, source cleanupKey) (string, error) {
-	explain := "EXPLAIN (DDL) DROP TYPE " + quoteIdent(source.schema) + "." + quoteIdent(source.name)
-	err := explainInSavepoint(ctx, q, explain)
-	if err == nil {
-		return "", nil
-	}
-	serverErr, ok := errors.AsType[*pgconn.PgError](err)
-	if !ok || serverErr.Code != dependentObjectsStillExist {
-		return "", fmt.Errorf("failed to ask the server what depends on %s: %w", source.describe("type"), err)
-	}
-	_, after, found := strings.Cut(serverErr.Message, "([")
-	list, _, closed := strings.Cut(after, "])")
-	if !found || !closed {
-		return "", fmt.Errorf("failed to read what depends on %s from the server's refusal: %w",
-			source.describe("type"), err)
-	}
-	return list, nil
-}
-
-// explainInSavepoint runs explain, and inside a transaction runs it under
-// typeDependentsSavepoint and rolls back to it when the server refuses, so
-// the transaction stays open.
-func explainInSavepoint(ctx context.Context, q cleanupConn, explain string) error {
-	if _, inTransaction := q.(*sql.Tx); !inTransaction {
-		_, err := q.ExecContext(ctx, explain)
-		return err
-	}
-	if _, err := q.ExecContext(ctx, "SAVEPOINT "+typeDependentsSavepoint); err != nil {
-		return fmt.Errorf("failed to open a savepoint to ask what depends on a type: %w", err)
-	}
-	_, explainErr := q.ExecContext(ctx, explain)
-	finish := "RELEASE SAVEPOINT " + typeDependentsSavepoint
-	if explainErr != nil {
-		finish = "ROLLBACK TO SAVEPOINT " + typeDependentsSavepoint
-	}
-	if _, err := q.ExecContext(ctx, finish); err != nil {
-		return fmt.Errorf("failed to close the savepoint after asking what depends on a type: %w", err)
-	}
-	return explainErr
-}
-
-// typeDependentsOutside removes from list, the objects the server names as
-// db.schema.name separated by a space or a comma and a space, every object of
-// inside, and returns the rest without the database prefix, or "".
-func typeDependentsOutside(list, database string, inside []cleanupKey) string {
-	rest := " " + strings.ReplaceAll(list, ", ", " ") + " "
-	for _, key := range inside {
-		token := " " + database + "." + key.schema + "." + key.name + " "
-		for strings.Contains(rest, token) {
-			rest = strings.Replace(rest, token, " ", 1)
-		}
-	}
-	rest = strings.ReplaceAll(rest, " "+database+".", " ")
-	return strings.Join(strings.Fields(rest), " ")
 }

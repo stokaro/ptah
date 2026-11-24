@@ -213,22 +213,29 @@ func acceptingDrop(string, []driver.NamedValue) (driver.Result, error) {
 	return driver.RowsAffected(0), nil
 }
 
-// cockroachTypeProbeStatements are what the cleanup of cockroachOutsideObjects
-// sends to ask the server what depends on its type, when the server plans the
-// drop.
-var cockroachTypeProbeStatements = []string{
-	"SAVEPOINT ptah_type_dependents",
-	`EXPLAIN (DDL) DROP TYPE "public"."e"`,
-	"RELEASE SAVEPOINT ptah_type_dependents",
+// cockroachProbeStatements are what the cleanup of cockroachOutsideObjects
+// sends to ask the server what depends on its function and on its type, when
+// the server plans both drops.
+var cockroachProbeStatements = []string{
+	"SAVEPOINT ptah_dependents",
+	`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+	"RELEASE SAVEPOINT ptah_dependents",
+	"SAVEPOINT ptah_dependents",
+	`EXPLAIN (DDL) DROP TYPE IF EXISTS "public"."e" RESTRICT`,
+	"RELEASE SAVEPOINT ptah_dependents",
 }
 
 // cockroachRefusedTypeProbeStatements are what the cleanup of
-// cockroachOutsideObjects sends to ask the server what depends on its type,
-// when the server refuses to plan the drop.
+// cockroachOutsideObjects sends to ask the server what depends on its
+// function and on its type, when the server plans the function's drop and
+// refuses the type's.
 var cockroachRefusedTypeProbeStatements = []string{
-	"SAVEPOINT ptah_type_dependents",
-	`EXPLAIN (DDL) DROP TYPE "public"."e"`,
-	"ROLLBACK TO SAVEPOINT ptah_type_dependents",
+	"SAVEPOINT ptah_dependents",
+	`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+	"RELEASE SAVEPOINT ptah_dependents",
+	"SAVEPOINT ptah_dependents",
+	`EXPLAIN (DDL) DROP TYPE IF EXISTS "public"."e" RESTRICT`,
+	"ROLLBACK TO SAVEPOINT ptah_dependents",
 }
 
 // refusingTypeExplain answers the EXPLAIN of a type's drop with err, and
@@ -446,7 +453,7 @@ func TestWriterDropAllTables_CockroachRefusesEachOutsideDependent_FailurePath(t 
 			c.Assert(err.Error(), qt.Equals, `refusing to clean schema "public": an object the cleanup does not drop `+
 				`depends on one it drops: `+test.want+`; the server commits each drop as it runs, so the cleanup `+
 				`refuses before it drops anything`)
-			c.Assert(statements, qt.DeepEquals, cockroachTypeProbeStatements)
+			c.Assert(statements, qt.DeepEquals, cockroachProbeStatements)
 			c.Assert(db.CommitCount(), qt.Equals, 0)
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
 		})
@@ -554,7 +561,7 @@ func TestWriterDropAllTables_CockroachDropsWhatOnlyItsOwnObjectsDependOn_HappyPa
 			err := writer.DropAllTables(t.Context())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, slices.Concat(cockroachTypeProbeStatements, cockroachOutsideDrops))
+			c.Assert(statements, qt.DeepEquals, slices.Concat(cockroachProbeStatements, cockroachOutsideDrops))
 			c.Assert(db.CommitCount(), qt.Equals, 1)
 		})
 	}
@@ -649,7 +656,7 @@ func TestWriterDropAllTables_CockroachDropsATypeOnlyItsOwnObjectsUse_HappyPath(t
 		},
 		{
 			name:           "nothing",
-			wantStatements: slices.Concat(cockroachTypeProbeStatements, cockroachOutsideDrops),
+			wantStatements: slices.Concat(cockroachProbeStatements, cockroachOutsideDrops),
 		},
 	}
 	for _, test := range tests {
@@ -713,6 +720,189 @@ func TestWriterDropAllTables_CockroachRefusesWhenItCannotAskAboutAType_FailurePa
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
 		})
 	}
+}
+
+// refusingExplains answers each EXPLAIN that refusals names with its error,
+// and accepts every other statement.
+func refusingExplains(refusals map[string]error) dbtest.ExecHandler {
+	return func(query string, _ []driver.NamedValue) (driver.Result, error) {
+		if err, refused := refusals[query]; refused {
+			return nil, err
+		}
+		return driver.RowsAffected(0), nil
+	}
+}
+
+// routineDependentsRefusal is the refusal CockroachDB gives to plan the drop
+// of the routine name while the objects of list depend on it, with word for
+// the routine's kind: v26.4.1 says procedure for a procedure, and the lines
+// before it say function.
+func routineDependentsRefusal(word, name, list string) error {
+	return &pgconn.PgError{
+		Severity: "ERROR",
+		Code:     "2BP01",
+		Message:  `cannot drop ` + word + ` "` + name + `" because other objects ([` + list + `]) still depend on it`,
+	}
+}
+
+// cockroachProcedureObjects are a schema of one procedure.
+var cockroachProcedureObjects = [][]driver.Value{
+	{"procedure", "public", "pr", nil, `DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`},
+}
+
+// cockroachOverloadObjects are a schema of two overloads of one function.
+var cockroachOverloadObjects = [][]driver.Value{
+	{"function", "public", "fn", nil, `DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`},
+	{"function", "public", "fn", nil, `DROP FUNCTION IF EXISTS "public"."fn"(INT8) RESTRICT`},
+}
+
+// The server's own record of what uses a function or a procedure the cleanup
+// drops reaches the refusal, as it does for a type: the plan of the routine's
+// drop lists every object that depends on it, whichever holds it. A holder
+// another sentence names is not named twice, the overloads of a routine share
+// one sentence, and a procedure is read whichever word the server uses for it.
+func TestWriterDropAllTables_CockroachRefusesWhatTheServerReportsOnARoutine_FailurePath(t *testing.T) {
+	tests := []struct {
+		name           string
+		objects        [][]driver.Value
+		dependents     [][]driver.Value
+		refusals       map[string]error
+		want           string
+		wantStatements []string
+	}{
+		{
+			name:    "a function",
+			objects: cockroachOutsideObjects,
+			refusals: map[string]error{
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`: routineDependentsRefusal(
+					"function", "fn", "app.public.t, app.other.vx"),
+			},
+			want: `CockroachDB records that function "public"."fn" is used by other.vx`,
+			wantStatements: []string{
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP TYPE IF EXISTS "public"."e" RESTRICT`,
+				"RELEASE SAVEPOINT ptah_dependents",
+			},
+		},
+		{
+			name:       "a holder another sentence names, and one it does not",
+			objects:    cockroachOutsideObjects,
+			dependents: [][]driver.Value{{"call", "routine", "public", "fn", "routine", "other", "g", "f", ""}},
+			refusals: map[string]error{
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`: routineDependentsRefusal(
+					"function", "fn", "app.other.g, app.other.vx"),
+			},
+			want: `function "other"."g" calls function "public"."fn"; CockroachDB records that function ` +
+				`"public"."fn" is used by other.vx`,
+			wantStatements: []string{
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP TYPE IF EXISTS "public"."e" RESTRICT`,
+				"RELEASE SAVEPOINT ptah_dependents",
+			},
+		},
+		{
+			name:    "a procedure, worded as v26.4.1 words it",
+			objects: cockroachProcedureObjects,
+			refusals: map[string]error{
+				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`: routineDependentsRefusal(
+					"procedure", "pr", "app.other.op"),
+			},
+			want: `CockroachDB records that procedure "public"."pr" is used by other.op`,
+			wantStatements: []string{
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+			},
+		},
+		{
+			name:    "a procedure, worded as a function by v26.3.6 and older",
+			objects: cockroachProcedureObjects,
+			refusals: map[string]error{
+				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`: routineDependentsRefusal(
+					"function", "pr", "app.other.op"),
+			},
+			want: `CockroachDB records that procedure "public"."pr" is used by other.op`,
+			wantStatements: []string{
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP PROCEDURE IF EXISTS "public"."pr"() RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+			},
+		},
+		{
+			name:    "two overloads",
+			objects: cockroachOverloadObjects,
+			refusals: map[string]error{
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`: routineDependentsRefusal(
+					"function", "fn", "app.other.a"),
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"(INT8) RESTRICT`: routineDependentsRefusal(
+					"function", "fn", "app.other.a, app.other.b"),
+			},
+			want: `CockroachDB records that function "public"."fn" is used by other.a other.b`,
+			wantStatements: []string{
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+				"SAVEPOINT ptah_dependents",
+				`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"(INT8) RESTRICT`,
+				"ROLLBACK TO SAVEPOINT ptah_dependents",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var statements []string
+			db := dbtest.OpenWithExec(t,
+				cockroachCleanupQuery("on", test.objects, test.dependents, cockroachOutsideSpellings),
+				recordingExec(&statements, refusingExplains(test.refusals)),
+			)
+			writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, `refusing to clean schema "public": an object the cleanup does not drop `+
+				`depends on one it drops: `+test.want+`; the server commits each drop as it runs, so the cleanup `+
+				`refuses before it drops anything`)
+			c.Assert(statements, qt.DeepEquals, test.wantStatements)
+			c.Assert(db.CommitCount(), qt.Equals, 0)
+			c.Assert(db.RollbackCount(), qt.Equals, 1)
+		})
+	}
+}
+
+// A routine the server reports only the cleanup's own objects as using adds
+// nothing, and the drops run.
+func TestWriterDropAllTables_CockroachDropsARoutineOnlyItsOwnObjectsUse_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var statements []string
+	db := dbtest.OpenWithExec(t,
+		cockroachCleanupQuery("on", cockroachOutsideObjects, nil, cockroachOutsideSpellings),
+		recordingExec(&statements, refusingExplains(map[string]error{
+			`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`: routineDependentsRefusal(
+				"function", "fn", "app.public.t, app.public.z_data"),
+		})),
+	)
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, slices.Concat([]string{
+		"SAVEPOINT ptah_dependents",
+		`EXPLAIN (DDL) DROP FUNCTION IF EXISTS "public"."fn"() RESTRICT`,
+		"ROLLBACK TO SAVEPOINT ptah_dependents",
+		"SAVEPOINT ptah_dependents",
+		`EXPLAIN (DDL) DROP TYPE IF EXISTS "public"."e" RESTRICT`,
+		"RELEASE SAVEPOINT ptah_dependents",
+	}, cockroachOutsideDrops))
+	c.Assert(db.CommitCount(), qt.Equals, 1)
 }
 
 // cockroachOnUpdateUnread is the row the text read adds on a server whose
@@ -792,7 +982,7 @@ func TestWriterDropAllTables_CockroachRefusesAnONUPDATEFromTheCreateStatements_F
 			c.Assert(err.Error(), qt.Equals, `refusing to clean schema "public": an object the cleanup does not drop `+
 				`depends on one it drops: `+test.want+`; the server commits each drop as it runs, so the cleanup `+
 				`refuses before it drops anything`)
-			c.Assert(statements, qt.DeepEquals, cockroachTypeProbeStatements)
+			c.Assert(statements, qt.DeepEquals, cockroachProbeStatements)
 			c.Assert(db.CommitCount(), qt.Equals, 0)
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
 		})
@@ -853,7 +1043,7 @@ func TestWriterDropAllTables_CockroachDropsWhatNoONUPDATEOutsideNames_HappyPath(
 			err := writer.DropAllTables(t.Context())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(statements, qt.DeepEquals, slices.Concat(cockroachTypeProbeStatements, cockroachOutsideDrops))
+			c.Assert(statements, qt.DeepEquals, slices.Concat(cockroachProbeStatements, cockroachOutsideDrops))
 			c.Assert(db.CommitCount(), qt.Equals, 1)
 		})
 	}
