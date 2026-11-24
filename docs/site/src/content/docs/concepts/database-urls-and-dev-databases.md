@@ -74,15 +74,27 @@ secret-named run-time parameter that PostgreSQL's `options` setting passes,
 such as `-c app.jwt_secret=...`, is shown as `redacted` too. The rest of the
 address stays, so the line still says which database it means.
 
+### Secrets in errors and program output
+
 A driver's or a server's error can quote the address, or what the driver read
-from it. Ptah takes the password out of that text where it stands as a
-credential: between the `:` and the `@` of an address, as written or
-percent-encoded, or as the whole value of a secret setting such as
-`password=` or `PGPASSWORD=`. A password of five characters or more is also
-taken out where it stands as a word of its own. A shorter one is taken out of
-those places alone, so with the password `x` the error still reads
-`database=execute`. A word that only holds the password's letters stays whole,
-and does not show the password by what is missing from it.
+from it, and a hook or another program Ptah starts can print a password it was
+given. Ptah takes each secret it knows of out of that text:
+
+- A secret of five characters or more is taken out wherever it occurs, glued
+  to other text too, as in `-pSecret1` or `\nSecret1`.
+- A shorter one is taken out only where it stands as a credential:
+  - between the `:` or the `/` and the `@` of an address, as written or
+    percent-encoded: `app:...@host`, `app/...@host`;
+  - after a `:` and before a space or the end of a line, as curl's `-u
+    app:...` and a line of a password file write it;
+  - as the whole value of a secret setting after an `=` or a `:`, such as
+    `password=`, `PGPASSWORD=`, `password: ` or the JSON `"password": "`;
+  - after `-p`, `--password`, `Bearer`, `PASSWORD '` and `IDENTIFIED BY '`.
+
+A short password in any other place stays, so with the password `x` an error
+still reads `database=execute`. A word that only holds a short password's
+letters stays whole, and does not show the password by what is missing from
+it. A program that writes a short password in another shape prints it.
 
 ## The four database roles
 

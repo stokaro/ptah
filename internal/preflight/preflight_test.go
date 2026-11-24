@@ -90,7 +90,7 @@ func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 	runner := &fakeCommandRunner{
 		output: "PTAH_DB_URL=mysql://app:pw-value@tcp(db.internal:3307)/shop\nMYSQL_PWD=pw-value\npassword=pw-value\n" +
 			"+ : mysql -uapp -ppw-value\n",
-		err:    errors.New("exit status 42"),
+		err: errors.New("exit status 42"),
 	}
 
 	_, err := Runner{CommandRunner: runner}.Execute(context.Background(), Options{
