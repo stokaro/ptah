@@ -59,6 +59,11 @@ type Command struct {
 	// the program starts. PATH and PWD cannot be overridden (matched
 	// case-insensitively); use an explicit executable path and Dir.
 	Env []string
+	// Secrets are values the program's diagnostics are masked against as
+	// secrets of their own, beside the secrets the environment, Env and Args
+	// show by a name or an address: a token passed as a bare argument has
+	// neither. Nil masks only those.
+	Secrets []string
 }
 
 // ErrNoFormats is returned for a nil [Formats]: a program's output cannot be
@@ -141,10 +146,11 @@ func Run(ctx context.Context, formats Formats, cmd Command) (*schemamodel.Databa
 
 	db, err := parseOutput(runCtx, formats, stdout, format, cmd.Dialect)
 	if err != nil {
-		safeErr := secretdisplay.SanitizeError(
+		safeErr := secretdisplay.SanitizeErrorKnown(
 			err,
 			append(os.Environ(), cmd.Env...),
 			cmd.Args,
+			cmd.Secrets,
 		)
 		return nil, fmt.Errorf("parse schema command %q output: %w", cmd.Args[0], safeErr)
 	}
@@ -213,10 +219,11 @@ func run(ctx context.Context, cmd Command) ([]byte, error) {
 			processcapture.DefaultMaxStdout,
 		)
 	default:
-		safeStderr := secretdisplay.Sanitize(
+		safeStderr := secretdisplay.SanitizeKnown(
 			failure.Stderr,
 			append(os.Environ(), cmd.Env...),
 			cmd.Args,
+			cmd.Secrets,
 		)
 		return nil, fmt.Errorf(
 			"schema command %q failed: %w%s",

@@ -56,6 +56,14 @@ var helperModes = map[string]func(){
 		fmt.Fprintln(os.Stderr, "loader blew up")
 		exitHelper(3)
 	},
+	"bare-fail": func() {
+		fmt.Fprintf(os.Stderr, "denied for %s\n", os.Getenv("SCHEMASOURCE_BARE_VALUE"))
+		exitHelper(3)
+	},
+	"bare-badsql": func() {
+		fmt.Fprintf(os.Stdout, "CREATE %s object;\n", os.Getenv("SCHEMASOURCE_BARE_VALUE"))
+		exitHelper(0)
+	},
 	"secret-fail": func() {
 		fmt.Fprintf(os.Stderr, "token=%s \x1b[31mfailed\r\n", os.Getenv("SCHEMA_TOKEN"))
 		exitHelper(3)
@@ -352,6 +360,47 @@ func TestRun_SanitizesParseError(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "SECRET")
 	c.Assert(err.Error(), qt.Contains, "unsupported CREATE target: redacted")
+}
+
+// A value the caller names in Secrets is redacted from the program's stderr
+// and from the error its output fails to parse with, though the program prints
+// it with no name beside it, and SCHEMASOURCE_BARE_VALUE names no secret. The
+// value is upper case because the SQL reader folds the name it quotes.
+func TestRun_RedactsAKnownSecret(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "in stderr", mode: "bare-fail", want: `(?s)schema command ".*" failed: exit status 3: denied for redacted`},
+		{name: "in a parse error", mode: "bare-badsql", want: `(?s)parse schema command ".*" output: .*unsupported CREATE target: redacted.*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := schemasource.Run(context.Background(), noOwners, schemasource.Command{
+				Args:    helperArgs(),
+				Env:     append(helperEnv(test.mode), "SCHEMASOURCE_BARE_VALUE=TOK3NVALUEX9"),
+				Secrets: []string{"TOK3NVALUEX9"},
+			})
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+// The control for the test above: with no Secrets the same value stays in the
+// error, so Secrets is what redacts it.
+func TestRun_KeepsABareValueNoSecretNames(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := schemasource.Run(context.Background(), noOwners, schemasource.Command{
+		Args: helperArgs(),
+		Env:  append(helperEnv("bare-fail"), "SCHEMASOURCE_BARE_VALUE=TOK3NVALUEX9"),
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)schema command ".*" failed: exit status 3: denied for TOK3NVALUEX9`)
 }
 
 func TestRun_RejectsEmptyCommand(t *testing.T) {

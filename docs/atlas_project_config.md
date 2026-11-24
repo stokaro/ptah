@@ -724,8 +724,11 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   `set(...)`, or `tuple(...)`) fail with named errors.
 - `sensitive = true` is accepted. Parse-time conversion errors print
   `(sensitive value)` instead of the variable's value; a sensitive value
-  interpolated into a URL or path can still appear in downstream errors that
-  print that URL or path.
+  interpolated into a path can still appear in downstream errors that print
+  that path. A value that reaches the password of an address the file writes
+  is shown as `redacted` in any `atlas.hcl` error, whether or not a variable
+  declares it sensitive, and so is a sensitive value a program or data source
+  receives as a bare argument.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
 A cloud-specific source outside the recognized lazy set fails during

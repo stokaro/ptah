@@ -1,0 +1,98 @@
+//go:build integration
+
+package integration_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/clirun"
+)
+
+// hclSecretMaskingProject writes an atlas.hcl that declares the variable pw
+// and the sensitive variable token, with env "dev" taking url, and returns its
+// directory.
+func hclSecretMaskingProject(c *qt.C, preamble, url string) string {
+	c.Helper()
+	dir := c.TempDir()
+	project := `variable "pw" {
+  type    = string
+  default = "x"
+}
+
+variable "token" {
+  type      = string
+  default   = "x"
+  sensitive = true
+}
+
+` + preamble + `
+env "dev" {
+  url = ` + url + `
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
+	return dir
+}
+
+// TestCompatMasksASecretInAnAtlasHCLErrorE2E runs `ptah-compat migrate status`
+// over a project whose evaluation fails on a secret, and reads stderr. Each
+// error quotes the value it failed on, and each value is a secret: a --var
+// value that reaches the password of the env's url, which no variable declares
+// sensitive, and a sensitive variable a data source quotes with no name or
+// address beside it. Both fail before anything connects.
+func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		preamble string
+		url      string
+		want     string
+	}{
+		{
+			name: "a call in the password of the url",
+			url:  `"postgres://app:${tonumber(var.pw)}@127.0.0.1:1/db?sslmode=disable"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a sensitive variable a data source quotes",
+			preamble: `data "runtimevar" "probe" {
+  url = "constant://?val=${var.token}&decoder=json"
+}
+`,
+			url:  `"postgres://app:${data.runtimevar.probe}@127.0.0.1:1/db?sslmode=disable"`,
+			want: `data.runtimevar.probe: opening variable: open variable constant:?val=redacted&decoder=json`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, test.preamble, test.url)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"migrate", "status", "--env", "dev", "--var", "pw=Pa55wordX9", "--var", "token=Tok3nValueX9")
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, test.want)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), "Pa55wordX9")
+			c.Assert(got.Stderr, qt.Not(qt.Contains), "Tok3nValueX9")
+		})
+	}
+}
+
+// TestCompatKeepsAValueThatReachesNoPasswordInAnAtlasHCLErrorE2E is the control
+// for the test above: a --var value in a query parameter that keeps no secret
+// stays in the error, so the masking reads where the value goes rather than
+// taking out every --var value.
+func TestCompatKeepsAValueThatReachesNoPasswordInAnAtlasHCLErrorE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := hclSecretMaskingProject(c, "", `"postgres://app@127.0.0.1:1/db?connect_timeout=${tonumber(var.pw)}"`)
+
+	got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+		"migrate", "status", "--env", "dev", "--var", "pw=Visib1eValue")
+
+	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stderr, qt.Contains, `cannot convert "Visib1eValue" to number`)
+}

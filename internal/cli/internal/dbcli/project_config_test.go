@@ -397,6 +397,7 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 			Format:     "hcl",
 			WorkingDir: ".",
 			Env:        []string{"K=V"},
+			Secrets:    []string{"Tok3nValueX9"},
 		},
 	}
 	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
@@ -407,6 +408,8 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 	c.Assert(commands[0].Format, qt.Equals, "hcl")
 	c.Assert(commands[0].Dir, qt.Equals, workingDir)
 	c.Assert(commands[0].Env, qt.DeepEquals, []string{"K=V"})
+	// The values the program's diagnostics are masked against travel with it.
+	c.Assert(commands[0].Secrets, qt.DeepEquals, []string{"Tok3nValueX9"})
 	// The run asks the policy again by this name where the program starts.
 	c.Assert(commands[0].Origin, qt.Equals, "ptah.yaml external_schema")
 }

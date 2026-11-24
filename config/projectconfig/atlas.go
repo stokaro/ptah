@@ -261,9 +261,11 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectAzureDBToken = opts.RejectAzureDBToken
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
 	p.ignoreDialectDiffBlocks = opts.IgnoreDialectDiffBlocks
+	p.addressTemplates = addressTemplates(body)
+	p.locals = localExpressions(body)
 	configs, err := p.parseCollection(body, opts.EnvName)
 	if err != nil {
-		return nil, err
+		return nil, p.maskError(err)
 	}
 	for i := range configs {
 		if configs[i].presence.has(fieldExclude) {
@@ -363,6 +365,12 @@ type atlasParser struct {
 	// expression touched a sensitive variable at all, which is decidable where
 	// "did any function derive a value from it" is not.
 	sensitiveNames *map[string]struct{}
+	// addressTemplates are the templates of the file that write an address,
+	// and locals the expression of each local it declares, read before
+	// anything is evaluated so an error can be masked against what reaches
+	// an address's password. See [atlasParser.addressSecrets].
+	addressTemplates []addressTemplate
+	locals           map[string]hclsyntax.Expression
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
@@ -2695,6 +2703,7 @@ func (p atlasParser) applyExternalSchemaSource(cfg *Config, source externalSchem
 		WorkingDir: p.resolveExternalSchemaWorkingDir(source.workingDir),
 		Env:        slices.Clone(source.env),
 		Origin:     AtlasFileName,
+		Secrets:    p.displaySecrets(),
 	}
 	cfg.presence.mark(fieldExternalSchemaProgram)
 	cfg.presence.mark(fieldExternalSchemaFormat)

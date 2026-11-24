@@ -684,6 +684,12 @@ type ExternalSchemaConfig struct {
 	// data.external_schema source. Safety-gate errors use it to point the user
 	// at the file that configured the program.
 	Origin string
+	// Secrets are values the program's diagnostics are masked against beside
+	// what Program and Env show, because they carry no name or address that
+	// says they are secrets: the values an atlas.hcl declares sensitive and
+	// what reaches the password of an address it writes. A ptah.yaml block
+	// sets none.
+	Secrets []string
 }
 
 // ConfigBool preserves whether a boolean project config value was set
@@ -1303,6 +1309,7 @@ func mergeExternalSchema(
 	// file the safety gate should point at.
 	if overridePresence.has(fieldExternalSchemaProgram) || len(override.Program) > 0 {
 		result.Origin = override.Origin
+		result.Secrets = override.Secrets
 	}
 	result.Format = mergeStringValue(
 		base.Format,

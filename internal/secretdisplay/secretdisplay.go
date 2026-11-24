@@ -24,18 +24,34 @@ import (
 // in env and args, and the values of the variables and options that name a
 // user, such as PGUSER and --user.
 func Sanitize(text string, env, args []string) string {
-	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args), userNames(env, args), "redacted"))
+	return SanitizeKnown(text, env, args, nil)
+}
+
+// SanitizeKnown is [Sanitize] with the secrets the caller holds. Each value in
+// known is a secret of its own, redacted by the length rule [Sanitize] states
+// whatever stands next to it: a value that is a secret only because the caller
+// says so has no name or address beside it for env and args to show. A known
+// value that is an address gives its password too, as an address in env or
+// args does.
+func SanitizeKnown(text string, env, args, known []string) string {
+	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args, known), userNames(env, args), "redacted"))
 }
 
 // SanitizeError returns an error with display-safe text while preserving the
 // original error for errors.Is and errors.As.
 func SanitizeError(err error, env, args []string) error {
+	return SanitizeErrorKnown(err, env, args, nil)
+}
+
+// SanitizeErrorKnown is [SanitizeError] with the secrets the caller holds, as
+// [SanitizeKnown] reads them.
+func SanitizeErrorKnown(err error, env, args, known []string) error {
 	if err == nil {
 		return nil
 	}
 	return displayError{
 		err:  err,
-		text: boundDisplay(Sanitize(err.Error(), env, args)),
+		text: boundDisplay(SanitizeKnown(err.Error(), env, args, known)),
 	}
 }
 
@@ -67,8 +83,12 @@ func boundDisplay(text string) string {
 	return text[:prefixEnd] + marker + text[suffixStart:]
 }
 
-func secretValues(env, args []string) []string {
+func secretValues(env, args, known []string) []string {
 	values := make(map[string]struct{})
+	for _, value := range known {
+		addSecret(values, value)
+		addURLSecrets(values, value)
+	}
 	for _, entry := range env {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {

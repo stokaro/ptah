@@ -607,7 +607,23 @@ differ on purpose:
   was derived — `upper(var.token)` puts bytes in the message that replacing the
   original value cannot find.
 
-A non-sensitive expression keeps its full diagnostic either way.
+A non-sensitive expression keeps its full diagnostic either way, with one
+exception. A value that reaches the password of an address the file writes is a
+secret whether or not a variable declares it sensitive, so an error that quotes
+it shows `redacted` in its place. With
+`url = "postgres://app:${tonumber(var.pw)}@db/app"`, `--var pw=...` fails with
+`cannot convert "redacted" to number`. The places read are a template that
+writes `://`, a `format()` whose literal format does, and the password argument
+of `urluserinfo()`. The values read are what an expression there evaluates to,
+the `--var` value of a variable it names, a `getenv()` value, and the same for a
+local it names. A value in any other part of the address, such as the user name
+or a query parameter whose name says nothing secret, keeps its text.
+
+A sensitive value passed to a program or a data source alone, with no name
+beside it, is masked in what that source fails with too:
+`program = ["./loader", var.token]` shows `redacted` for the token in the
+error and in the standard-error tail it prints. The same holds for a value that
+reaches a password.
 
 ## Reading files with file() and fileset()
 
@@ -1326,8 +1342,9 @@ encode maps. Overrides of the wrong shape, defaults that do not match the
 declared type, and other constraints such as `object(...)` fail with named errors.
 `sensitive = true` is accepted; parse-time conversion errors print
 `(sensitive value)` instead of the variable's value, though a sensitive value
-interpolated into a URL or path can still appear in downstream errors that
-print that URL or path. `validation` blocks remain unsupported and fail
+interpolated into a path can still appear in downstream errors that print that
+path. A value that reaches a URL's password is masked wherever an error shows
+it; see [Functions](#functions). `validation` blocks remain unsupported and fail
 explicitly.
 
 `ptah-compat` evaluates an `env` block only when `--env` names it, as the

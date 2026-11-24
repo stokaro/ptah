@@ -802,11 +802,12 @@ func expandEnvExternalSchema(source Source, env ProjectEnv) ([]Source, error) {
 		Raw:  source.Raw,
 		Kind: KindExternalSchema,
 		Command: schemasource.Command{
-			Origin: externalSchemaOrigin,
-			Args:   slices.Clone(external.Program),
-			Format: external.Format,
-			Dir:    external.WorkingDir,
-			Env:    slices.Clone(external.Env),
+			Origin:  externalSchemaOrigin,
+			Args:    slices.Clone(external.Program),
+			Format:  external.Format,
+			Dir:     external.WorkingDir,
+			Env:     slices.Clone(external.Env),
+			Secrets: slices.Clone(external.Secrets),
 		},
 	}}, nil
 }
