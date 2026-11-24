@@ -1,14 +1,15 @@
 package schemaclean
 
 // White-box testing required: a scoped plan reaches its savepoint, its
-// writer's dependents and a whole server's listing only through a
-// *dbschema.DatabaseConnection, which only the built-in connector registry
+// writer's dependents, the session's autocommit_before_ddl and a whole
+// server's listing only through a *dbschema.DatabaseConnection, which only the built-in connector registry
 // builds, and a test must not register a dialect it invents in the process
 // registry. This file drives the connection-free seams the connection path
 // calls, with the descriptor and the writer of an invented engine.
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // acmeDialect is an engine nobody ships whose cleanup is schema-scoped and
@@ -322,4 +324,54 @@ func TestServerObjects_FailurePath(t *testing.T) {
 			c.Assert(objects, qt.IsNil)
 		})
 	}
+}
+
+// TestScopedRunOnSession_HappyPath asks the session before a scoped plan is
+// held in one transaction. A session that commits ahead of each schema
+// statement, as CockroachDB does with autocommit_before_ddl on, runs the plan
+// unheld; a session that holds them, or a server without the setting, keeps the
+// held run; an unheld run is not asked about.
+func TestScopedRunOnSession_HappyPath(t *testing.T) {
+	held := scopedRun{held: true, savepoint: savepointStatements{create: "SAVEPOINT s", rollback: "ROLLBACK TO SAVEPOINT s"}}
+	tests := []struct {
+		name        string
+		run         scopedRun
+		setting     string
+		wantRun     scopedRun
+		wantQueries int
+	}{
+		{name: "a held run on a session with the setting on", run: held, setting: "on", wantRun: scopedRun{}, wantQueries: 1},
+		{name: "a held run on a session with the setting off", run: held, setting: "off", wantRun: held, wantQueries: 1},
+		{name: "a held run on a server without the setting", run: held, setting: "", wantRun: held, wantQueries: 1},
+		{name: "an unheld run", run: scopedRun{}, setting: "off", wantRun: scopedRun{}, wantQueries: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(c, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+				return dbtest.QueryResult{Columns: []string{"coalesce"}, Rows: [][]driver.Value{{test.setting}}}, nil
+			})
+
+			got, err := scopedRunOnSession(c.Context(), db.SQL, test.run)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.wantRun)
+			c.Assert(db.QueryCount(), qt.Equals, test.wantQueries)
+		})
+	}
+}
+
+// TestScopedRunOnSession_FailurePath refuses the plan when the session cannot
+// answer: a held run on a session that commits each drop would lose its
+// savepoint at the first one.
+func TestScopedRunOnSession_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(c, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, errors.New("connection reset")
+	})
+
+	got, err := scopedRunOnSession(c.Context(), db.SQL, scopedRun{held: true})
+
+	c.Assert(err, qt.ErrorMatches, `read the session's autocommit_before_ddl: connection reset`)
+	c.Assert(got, qt.Equals, scopedRun{})
 }

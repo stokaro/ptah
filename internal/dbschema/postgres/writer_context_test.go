@@ -158,15 +158,20 @@ func TestWriterDropAllTables_ResolvesInternalDependencies(t *testing.T) {
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
 
-func TestWriterDropAllTables_CockroachUsesCatalogOrderWithoutSavepoints(t *testing.T) {
+// TestWriterDropAllTables_CockroachRetriesEachDropAlone drops on CockroachDB a
+// schema whose table a view reads, listed table first. Each drop runs in a
+// transaction of its own, so the refused table drop is sent again after the
+// view, with no savepoint around it.
+func TestWriterDropAllTables_CockroachRetriesEachDropAlone(t *testing.T) {
 	c := qt.New(t)
 	var execQueries []string
-	db := dbtest.OpenWithExec(t, cockroachOrderedDependencyQuery, func(
+	execHandler := new(postgresInternalDependencyExec)
+	db := dbtest.OpenWithExec(t, cockroachInternalDependencyQuery, func(
 		query string,
-		_ []driver.NamedValue,
+		args []driver.NamedValue,
 	) (driver.Result, error) {
 		execQueries = append(execQueries, query)
-		return driver.RowsAffected(0), nil
+		return execHandler.execute(query, args)
 	})
 	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
 
@@ -174,13 +179,11 @@ func TestWriterDropAllTables_CockroachUsesCatalogOrderWithoutSavepoints(t *testi
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(execQueries, qt.DeepEquals, []string{
-		`DROP VIEW IF EXISTS "public"."z_dependent_view" RESTRICT`,
-		`DROP VIEW IF EXISTS "public"."a_base_view" RESTRICT`,
+		`DROP TABLE IF EXISTS "public"."users" RESTRICT`,
+		`DROP VIEW IF EXISTS "public"."active_users" RESTRICT`,
 		`DROP TABLE IF EXISTS "public"."users" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 5)
-	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
@@ -519,7 +522,7 @@ func TestWriterDropDatabaseRealm_CockroachPreservesPublicSchemaContainer(t *test
 		`DROP SCHEMA IF EXISTS "audit" RESTRICT`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.QueryCount(), qt.Equals, 12)
+	c.Assert(db.QueryCount(), qt.Equals, 15)
 	c.Assert(db.ExecCount(), qt.Equals, 2)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
@@ -558,18 +561,21 @@ func TestWriterDropDatabaseRealm_RejectsSystemRootSchema(t *testing.T) {
 
 // postgresFamilySystemDatabases are refused by a realm cleanup on every
 // server: a template every later CREATE DATABASE copies, or a database the
-// server keeps for itself.
+// server keeps for itself. queries counts what the cleanup reads before it
+// refuses: the version and the database, and on CockroachDB the session's
+// autocommit_before_ddl between them.
 var postgresFamilySystemDatabases = []struct {
 	name     string
 	version  string
 	database string
+	queries  int
 }{
-	{name: "postgres template0", version: "PostgreSQL 18.0", database: "template0"},
-	{name: "postgres template1", version: "PostgreSQL 18.0", database: "TEMPLATE1"},
-	{name: "cockroach system", version: "CockroachDB CCL v26.2.4", database: "system"},
-	{name: "yugabyte template0", version: "YugabyteDB 2026.1", database: "template0"},
-	{name: "yugabyte template1", version: "YugabyteDB 2026.1", database: "template1"},
-	{name: "yugabyte system platform", version: "YugabyteDB 2026.1", database: "system_platform"},
+	{name: "postgres template0", version: "PostgreSQL 18.0", database: "template0", queries: 2},
+	{name: "postgres template1", version: "PostgreSQL 18.0", database: "TEMPLATE1", queries: 2},
+	{name: "cockroach system", version: "CockroachDB CCL v26.2.4", database: "system", queries: 3},
+	{name: "yugabyte template0", version: "YugabyteDB 2026.1", database: "template0", queries: 2},
+	{name: "yugabyte template1", version: "YugabyteDB 2026.1", database: "template1", queries: 2},
+	{name: "yugabyte system platform", version: "YugabyteDB 2026.1", database: "system_platform", queries: 2},
 }
 
 // postgresFamilyDefaultDatabases are the user databases each server is created
@@ -579,12 +585,15 @@ var postgresFamilyDefaultDatabases = []struct {
 	name     string
 	version  string
 	database string
+	// queries counts what a refusing cleanup reads, as for
+	// postgresFamilySystemDatabases.
+	queries int
 }{
-	{name: "postgres database", version: "PostgreSQL 18.0", database: "POSTGRES"},
-	{name: "cockroach defaultdb", version: "CockroachDB CCL v26.2.4", database: "defaultdb"},
-	{name: "cockroach postgres", version: "CockroachDB CCL v26.2.4", database: "postgres"},
-	{name: "yugabyte database", version: "YugabyteDB 2026.1", database: "yugabyte"},
-	{name: "yugabyte postgres", version: "YugabyteDB 2026.1", database: "postgres"},
+	{name: "postgres database", version: "PostgreSQL 18.0", database: "POSTGRES", queries: 2},
+	{name: "cockroach defaultdb", version: "CockroachDB CCL v26.2.4", database: "defaultdb", queries: 3},
+	{name: "cockroach postgres", version: "CockroachDB CCL v26.2.4", database: "postgres", queries: 3},
+	{name: "yugabyte database", version: "YugabyteDB 2026.1", database: "yugabyte", queries: 2},
+	{name: "yugabyte postgres", version: "YugabyteDB 2026.1", database: "postgres", queries: 2},
 }
 
 // realmCleanupServers are both answers to whose server a cleanup runs on.
@@ -611,7 +620,7 @@ func TestWriterDropDatabaseRealm_RejectsSystemDatabasesBeforeMutation(t *testing
 				err := writer.DropDatabaseRealmKeeping(t.Context(), dbreset.Kept{Server: owner.server})
 
 				c.Assert(err, qt.ErrorMatches, `refusing to clean protected PostgreSQL-family database "`+test.database+`"`)
-				c.Assert(db.QueryCount(), qt.Equals, 2)
+				c.Assert(db.QueryCount(), qt.Equals, test.queries)
 				c.Assert(db.BeginCount(), qt.Equals, 1)
 				c.Assert(db.ExecCount(), qt.Equals, 0)
 				c.Assert(db.CommitCount(), qt.Equals, 0)
@@ -640,7 +649,7 @@ func TestWriterDropDatabaseRealm_RejectsDefaultDatabasesOnANamedServer(t *testin
 			c.Assert(err, qt.ErrorIs, dbreset.ErrServerDefaultDatabase)
 			c.Assert(err, qt.ErrorMatches, `refusing to clean protected PostgreSQL-family database "`+test.database+`": `+
 				`it is the server's default database, which is reset only on a server the run owns`)
-			c.Assert(db.QueryCount(), qt.Equals, 2)
+			c.Assert(db.QueryCount(), qt.Equals, test.queries)
 			c.Assert(db.ExecCount(), qt.Equals, 0)
 			c.Assert(db.CommitCount(), qt.Equals, 0)
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
@@ -1074,7 +1083,7 @@ func TestWriterDropAllTables_CockroachRevokesWhatShowNamesHappyPath(t *testing.T
 	err := writer.DropAllTables(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(queries[3:], qt.DeepEquals, []string{
+	c.Assert(queries[4:], qt.DeepEquals, []string{
 		"SELECT rolname FROM pg_roles ORDER BY rolname",
 		`SHOW DEFAULT PRIVILEGES FOR ALL ROLES IN SCHEMA "public"`,
 		`SHOW DEFAULT PRIVILEGES FOR ROLE "d-dash", "d_owner" IN SCHEMA "public"`,
@@ -1187,19 +1196,16 @@ func postgresInternalDependencyQuery(
 	})
 }
 
-func cockroachOrderedDependencyQuery(
+// cockroachInternalDependencyQuery is [postgresInternalDependencyQuery]
+// answered by CockroachDB.
+func cockroachInternalDependencyQuery(
 	query string,
 	_ []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
-	return postgresCleanupCatalogQuery(
-		query,
-		"CockroachDB CCL v26.2.4",
-		[][]driver.Value{
-			{"view", "public", "z_dependent_view", nil, `DROP VIEW IF EXISTS "public"."z_dependent_view" RESTRICT`},
-			{"view", "public", "a_base_view", nil, `DROP VIEW IF EXISTS "public"."a_base_view" RESTRICT`},
-			{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
-		},
-	)
+	return postgresCleanupCatalogQuery(query, "CockroachDB CCL v26.4.1", [][]driver.Value{
+		{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
+		{"view", "public", "active_users", nil, `DROP VIEW IF EXISTS "public"."active_users" RESTRICT`},
+	})
 }
 
 type postgresRealmQuery struct {
@@ -1310,6 +1316,7 @@ func newPostgresRealmCockroachQuery() *postgresRealmQuery {
 			"table",
 			"public",
 			"stale_items",
+			nil,
 			`DROP TABLE IF EXISTS "public"."stale_items" RESTRICT`,
 		}},
 	}
@@ -1355,6 +1362,12 @@ func (q *postgresRealmQuery) query(
 		schema, _ = args[0].Value.(string)
 	}
 	switch {
+	case strings.Contains(query, autocommitBeforeDDLMarker):
+		return autocommitBeforeDDLResult("on"), nil
+	case strings.Contains(query, outsideTextDependentsMarker):
+		return outsideTextDependentsResult(nil), nil
+	case strings.Contains(query, outsideStructuredDependentsMarker):
+		return outsideStructuredDependentsResult(nil), nil
 	case strings.Contains(query, "NOT pg_has_role(n.nspowner, 'USAGE')"):
 		return dbtest.QueryResult{
 			Columns: []string{"nspname", "owner", "grantable"},
@@ -1492,6 +1505,12 @@ func postgresCleanupCatalogQuery(
 	switch {
 	case strings.Contains(query, "SELECT version()"):
 		return postgresVersionResult(version), nil
+	case strings.Contains(query, autocommitBeforeDDLMarker):
+		return autocommitBeforeDDLResult("on"), nil
+	case strings.Contains(query, outsideTextDependentsMarker):
+		return outsideTextDependentsResult(nil), nil
+	case strings.Contains(query, outsideStructuredDependentsMarker):
+		return outsideStructuredDependentsResult(nil), nil
 	case strings.Contains(query, "SELECT COUNT(*)") && strings.Contains(query, "FROM pg_extension"):
 		return noPostgresSchemaOwnedExtensions(), nil
 	case strings.Contains(query, "FROM pg_inherits"):
@@ -1509,6 +1528,50 @@ func postgresCleanupCatalogQuery(
 			Columns: []string{"object_kind", "object_schema", "object_name", "object_qualifier", "drop_statement"},
 			Rows:    objects,
 		}, nil
+	}
+}
+
+// autocommitBeforeDDLMarker is what the CockroachDB cleanup's read of its
+// session setting selects, and no other statement the writer sends does.
+const autocommitBeforeDDLMarker = "current_setting('autocommit_before_ddl', true)"
+
+// autocommitBeforeDDLResult answers the read of autocommit_before_ddl with
+// setting, which is "on", "off", or empty for a server without it.
+func autocommitBeforeDDLResult(setting string) dbtest.QueryResult {
+	return dbtest.QueryResult{Columns: []string{"coalesce"}, Rows: [][]driver.Value{{setting}}}
+}
+
+// outsideStructuredDependentsMarker is what the CockroachDB cleanup's read of
+// the catalog rows that record a dependency on its objects selects, and no
+// other statement does.
+const outsideStructuredDependentsMarker = "'signature type'"
+
+// outsideStructuredDependentsResult answers that read, one row per
+// dependency: how it is recorded, the source's family, schema and name, the
+// dependent's family, schema, name and kind, and the constraint, trigger or
+// column that carries it.
+func outsideStructuredDependentsResult(rows [][]driver.Value) dbtest.QueryResult {
+	return dbtest.QueryResult{
+		Columns: []string{
+			"how", "source_family", "source_schema", "source_name",
+			"dependent_family", "dependent_schema", "dependent_name", "dependent_kind", "carrier",
+		},
+		Rows: rows,
+	}
+}
+
+// outsideTextDependentsMarker is what the CockroachDB cleanup's read of the
+// column defaults and routine bodies it matches as text selects, and no other
+// statement does.
+const outsideTextDependentsMarker = "FROM pg_attrdef ad"
+
+// outsideTextDependentsResult answers that read: a default or a body with the
+// schema, name and kind of the object that holds it, the column of a default,
+// and the text; or a sequence or a type with its OID, or the database name.
+func outsideTextDependentsResult(rows [][]driver.Value) dbtest.QueryResult {
+	return dbtest.QueryResult{
+		Columns: []string{"what", "schema", "name", "kind", "column", "text"},
+		Rows:    rows,
 	}
 }
 

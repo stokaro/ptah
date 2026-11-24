@@ -182,6 +182,68 @@ YugabyteDB runs each selected drop separately because its default setting does
 not roll schema changes back with the transaction. A refused plan leaves the
 earlier drops in place, and the error names them.
 
+## Dev and shadow database cleanup
+
+Ptah empties a schema with `RESTRICT` drops: a dev or shadow database after
+the drift check replays the applied migrations, and a user's database under
+`ptah db drop-all` and `ptah-compat schema clean`. CockroachDB records the
+tables, views, sequences and functions a routine body names, and refuses to
+drop one while the routine exists, but its catalog does not report these
+dependencies. No fixed order of the drops works: a function that a table
+default calls goes after that table, and before a table the function reads.
+So Ptah tries a refused drop again after the others, and stops only when a
+round drops nothing.
+
+The retry relies on `autocommit_before_ddl`, which is on by default from v25:
+each drop then commits in a transaction of its own, and a refused one fails
+alone. Nothing rolls back, so before the first drop Ptah refuses the cleanup
+when an object outside it depends on one it drops, and names each
+dependency:
+
+- a view that reads a table, view or sequence;
+- a foreign key that references a table;
+- a function that calls a function, or a trigger that runs one;
+- a column, or a routine's arguments or result, of a type or of a table's
+  row type;
+- a column default, a computed column, an `ON UPDATE` expression, a check
+  constraint, a view or materialized view definition, a policy's `USING` or
+  `WITH CHECK` expression, an index expression or partial-index predicate, or a
+  trigger's `WHEN` condition that names a sequence, function or type;
+- a routine body that names a table, view, sequence or type;
+- an object the server records as using a type, function or procedure the
+  cleanup drops.
+
+CockroachDB shows the expressions and bodies only as text, so Ptah matches the
+names in that text. It refuses a body that names an object even inside a
+string, and says that it matched the body's text. On v25.4, where
+`information_schema.columns` has no `column_on_update`, Ptah reads each
+`ON UPDATE` expression from `SHOW CREATE ALL TABLES`.
+
+The text can lose a type: the server keeps `NULL::public.e[]` in a view as
+`NULL` and still refuses to drop the type. So Ptah also asks the server, with
+`EXPLAIN (DDL)` of each drop of a type, function or procedure, which objects
+use it. The server plans the drop without running it and lists every
+dependent. It gives no such list for a table, a view or a sequence. The
+question also finds a view that calls one overload of a function, which
+CockroachDB stores without its schema, and the error names that overload by
+its arguments.
+
+In a session with `use_declarative_schema_changer` off, CockroachDB plans no
+drop of an object nothing depends on, so the cleanup of a schema that holds a
+type, function or procedure refuses and names the setting. Leave the setting on for the cleanup;
+setting it inside the cleanup's transaction does not change the answer.
+
+A row-level TTL expression is not among these holders, because CockroachDB
+records no dependency for it. A sequence `OWNED BY` a column of a table the
+cleanup drops is dropped with the table, as on PostgreSQL. A dependency none of
+these shows still stops the cleanup partway, and the error then lists every
+object a statement dropped before the failure.
+
+Ptah reads the setting from the session. Where it is off, as on v24.3 by
+default, or where the server has no such setting, as on v23.2, the drops share
+one transaction: Ptah makes one pass, the first refused drop rolls the cleanup
+back, and the error names the setting when the session has it.
+
 ## CockroachDB row-level TTL
 
 CockroachDB expires rows on a schedule the server runs, declared as table
