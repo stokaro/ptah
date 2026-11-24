@@ -103,6 +103,7 @@ var nonBooleanPtahVars = []string{
 	"PTAH_TARGET_VERSION",       // migration version, passed to preflight hooks
 	"PTAH_TARGET_VERSION_KEY",   // migration version key, passed to preflight hooks
 	"PTAH_TO_TAG",               // tag name, an Atlas capability Ptah refuses
+	"PTAH_URL",                  // database URL, the twin of the compatibility surface's --url
 	"PTAH_VAR",                  // repeatable name=value assignment
 
 	// The provider SDK's conformance command reads its live addresses from

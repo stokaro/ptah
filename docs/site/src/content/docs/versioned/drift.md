@@ -10,6 +10,7 @@ goal: "Compare a database with its applied migration history and read the differ
 sourceOfTruth:
   - "internal/cli/migrationsdrift"
   - "internal/driftgate"
+  - "internal/cli/atlas"
 generated: false
 searchAliases:
   - "migrate drift"
@@ -367,11 +368,42 @@ account owns), and a new lock name adds its row. Where the account may not
 create it, a DBA creates the table and grants `SELECT` and `INSERT`; see
 [the migration lock on Oracle](../../databases/oracle/#the-migration-lock).
 
+## From `ptah-compat`
+
+`ptah-compat migrate drift` runs this report under the Atlas flag names. It is
+off by default: until
+[`PTAH_ATLAS_MIGRATE_DRIFT=1`](../../reference/extension-variables/#ptah_atlas_migrate_drift)
+is set, it answers as the community CLI does, with the `migrate` group help,
+and a flag after it is refused as unknown. Strict mode refuses the variable.
+
+```console
+PTAH_ATLAS_MIGRATE_DRIFT=1 ptah-compat migrate drift --env tenants
+```
+
+The report reads the Atlas revision table, `atlas_schema_revisions`, and a
+directory in the Atlas layout, as `ptah-compat migrate apply` writes them.
+`--dir` is read relative to the directory that holds `atlas.hcl`, and a
+`data.template_dir` directory is read as rendered. `-u`/`--url` is the
+database and `--dev-url` the dev database the history replays on. `--exclude`
+leaves objects out as [above](#leave-objects-out), and `--lock-timeout` and
+`--lock-name` bound and name the migration lock. `--no-cache` is accepted and
+changes nothing, because Ptah keeps no cache of the expected state. `--format`
+and `--skip-lock` are refused: the output is the text report on this page, and
+the history is read under the migration lock.
+
+An env with `for_each` is reported target by target, as in
+[Report every target of an env](#report-every-target-of-an-env), and each target
+takes its own `url` and `dev`. The native command takes the `migration`
+block's `dir`, `format`, `revisions_schema` and `lock_timeout` once for the
+run, so they must be the same on every target or be given as a flag. `--url`
+or `PTAH_URL` over such an env is refused, because it would point every target
+at one database; leave both unset to report each target. The native
+`PTAH_DB_URL` is not read here. The run exits 1 when any target drifted or
+could not be compared, the status the community CLI gives every failure, and 0
+otherwise.
+
 ## What it does not cover
 
 `ptah schema drift` answers a different question: whether a database matches a
 declared desired schema. `ptah migrations drift` asks whether it matches the
 history it claims to have run.
-
-A `migrate drift` spelling in `ptah-compat` is not covered yet
-(stokaro/ptah#6326).

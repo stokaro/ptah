@@ -63,7 +63,7 @@ const projectEnvFlagUsage = "Project env to read from ptah.yaml or atlas.hcl; wi
 type projectConfigContextKey struct{}
 
 type projectConfigContextValue struct {
-	config projectconfig.Config
+	configs []projectconfig.Config
 }
 
 // WithProjectConfig returns a context carrying an immutable project-config
@@ -72,9 +72,22 @@ func WithProjectConfig(ctx context.Context, config projectconfig.Config) context
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return context.WithValue(ctx, projectConfigContextKey{}, projectConfigContextValue{
-		config: cloneProjectConfig(config),
-	})
+	return WithProjectConfigs(ctx, []projectconfig.Config{config})
+}
+
+// WithProjectConfigs returns a context carrying an immutable snapshot of every
+// config an env expands to, in the order given, for a forwarded native command
+// that runs once per instance. [LoadProjectConfigs] returns the snapshot, and
+// [LoadProjectConfig] refuses one that holds more than one config.
+func WithProjectConfigs(ctx context.Context, configs []projectconfig.Config) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	snapshot := make([]projectconfig.Config, 0, len(configs))
+	for _, config := range configs {
+		snapshot = append(snapshot, cloneProjectConfig(config))
+	}
+	return context.WithValue(ctx, projectConfigContextKey{}, projectConfigContextValue{configs: snapshot})
 }
 
 // RegisterEnvFlag registers the shared project env selection flag, bound to
@@ -199,8 +212,12 @@ func splitExplicitConfigPath(path string) (ptahPath, atlasPath string) {
 // the load. An env that expands to several instances is refused; a command
 // that runs once per instance loads them with [LoadProjectConfigs].
 func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig.Config, error) {
-	if config, ok := projectConfigFromContext(cmd.Context()); ok {
-		config = cloneProjectConfig(config)
+	if configs, ok := projectConfigsFromContext(cmd.Context()); ok {
+		if len(configs) != 1 {
+			return projectconfig.Config{}, fmt.Errorf(
+				"%s runs against one database, and the forwarded project config names %d", cmd.CommandPath(), len(configs))
+		}
+		config := cloneProjectConfig(configs[0])
 		cmd.SetContext(WithProjectMigrationDirectory(cmd.Context(), config))
 		return config, nil
 	}
@@ -225,14 +242,22 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 // LoadProjectConfigs is [LoadProjectConfig] for a command that runs once per
 // instance of an env: it returns every config the selected env expands to, in
 // the order the expansion gives, where LoadProjectConfig refuses more than
-// one. The slice is never empty. An adapter's snapshot is one config.
+// one. The slice is never empty. An adapter's snapshot is returned as it was
+// handed over, see [WithProjectConfigs].
 //
 // It binds no migration directory to cmd, because each instance may name its
 // own: the caller runs each instance under
 // [WithProjectMigrationDirectory](cmd.Context(), config).
 func LoadProjectConfigs(cmd *cobra.Command, ptahConfigPath string) ([]projectconfig.Config, error) {
-	if config, ok := projectConfigFromContext(cmd.Context()); ok {
-		return []projectconfig.Config{cloneProjectConfig(config)}, nil
+	if configs, ok := projectConfigsFromContext(cmd.Context()); ok {
+		if len(configs) == 0 {
+			return nil, fmt.Errorf("%s: the forwarded project config names no instance", cmd.CommandPath())
+		}
+		clones := make([]projectconfig.Config, 0, len(configs))
+		for _, config := range configs {
+			clones = append(clones, cloneProjectConfig(config))
+		}
+		return clones, nil
 	}
 	opts, err := projectLoadOptions(cmd, ptahConfigPath)
 	if err != nil {
@@ -371,12 +396,12 @@ func projectVars(cmd *cobra.Command) ([]string, error) {
 	return stringArrayFlag(cmd, ProjectVarFlagName)
 }
 
-func projectConfigFromContext(ctx context.Context) (projectconfig.Config, bool) {
+func projectConfigsFromContext(ctx context.Context) ([]projectconfig.Config, bool) {
 	if ctx == nil {
-		return projectconfig.Config{}, false
+		return nil, false
 	}
 	value, ok := ctx.Value(projectConfigContextKey{}).(projectConfigContextValue)
-	return value.config, ok
+	return value.configs, ok
 }
 
 func cloneProjectConfig(config projectconfig.Config) projectconfig.Config {
