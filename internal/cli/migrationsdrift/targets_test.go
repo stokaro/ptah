@@ -432,6 +432,41 @@ func TestMigrationsDrift_FailurePathRefusesADatabaseURLVariableOverTargets(t *te
 	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 }
 
+// A for_each env that expands to one instance is a collection too, so
+// --db-url is refused over it, and the refusal names the one target as one.
+func TestMigrationsDrift_FailurePathRefusesADatabaseURLOverOneInstance(t *testing.T) {
+	c := qt.New(t)
+	clean := newTarget(c, "2")
+	path := forEachProject(c, clean.shadowURL, clean.url)
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--config", path, "--env", "tenants",
+		"--migrations-dir", clean.dir, "--db-url", clean.url)
+
+	c.Assert(code, qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, `error: --db-url or PTAH_DB_URL sets one database for the target, and env "tenants" `+
+		`names one target with a url of its own; leave both unset to report that target`+"\n")
+	_, err := os.Stat(strings.TrimPrefix(clean.shadowURL, "sqlite://"))
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// An empty --db-url names no database, and is still refused over the targets
+// of an env, because it is set. The refusal says so rather than claiming one
+// database for every target.
+func TestMigrationsDrift_FailurePathRefusesAnEmptyDatabaseURLOverTargets(t *testing.T) {
+	c := qt.New(t)
+	clean, drifted := newTarget(c, "2"), newTarget(c, "2", "ALTER TABLE users ADD COLUMN nickname TEXT")
+	path := forEachProject(c, clean.shadowURL, clean.url, drifted.url)
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--config", path, "--env", "tenants",
+		"--migrations-dir", clean.dir, "--db-url", "")
+
+	c.Assert(code, qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, `error: --db-url or PTAH_DB_URL is set, though empty, and env "tenants" `+
+		`names 2 targets with a url each; leave both unset to report each target`+"\n")
+}
+
 // An env without for_each is one target, and --db-url still chooses its
 // database over the env's url: the env names the drifted database and the
 // flag the clean one, and the report is of the clean one.

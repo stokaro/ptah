@@ -288,15 +288,18 @@ The run of the text example above prints:
       "instance": 2,
       "url": "postgres://db2.example/app",
       "exit_code": 2,
-      "error": { "message": "error connecting to database: failed to ping database: ..." }
+      "error": {
+        "kind": "database_unreachable",
+        "message": "error connecting to database: failed to ping database: ..."
+      }
     }
   ]
 }
 ```
 
-`contract_version` 1 covers both documents. A report over the targets of an
-env carries `targets` and no `check`, and a report over one database carries
-`check`.
+`contract_version` 1 covers the report over one database, which carries
+`check`; the report over the targets of an env, which carries `targets` and no
+`check`; and the failure document, which carries `error` and no `check`.
 
 A `for_each` env whose `name` selects one instance prints this shape too, so a
 script reads the same document however many targets the env holds.

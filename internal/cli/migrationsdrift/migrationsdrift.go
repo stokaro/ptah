@@ -314,12 +314,22 @@ func refuseOneDatabaseForEveryTarget(cmd *cobra.Command, configs []projectconfig
 	if variable, bound := cmdflags.EnvBindingName(envPrefix, flag); bound {
 		setBy += " or " + variable
 	}
-	noun := "targets"
-	if len(configs) == 1 {
-		noun = "target"
+	return errors.New(oneDatabaseRefusal(setBy, flag.Value.String(), configs[0].EnvName, len(configs)))
+}
+
+// oneDatabaseRefusal words the refusal of the database url value, set by
+// setBy, over the targets of env. An empty value names no database and is
+// still refused, because it is set; one target is named as one.
+func oneDatabaseRefusal(setBy, value, env string, targets int) string {
+	every, named, each := "every target", fmt.Sprintf("names %d targets with a url each", targets), "each target"
+	if targets == 1 {
+		every, named, each = "the target", "names one target with a url of its own", "that target"
 	}
-	return fmt.Errorf("%s sets one database for every target, and env %q names %d %s with a url each; "+
-		"leave both unset to report each target", setBy, configs[0].EnvName, len(configs), noun)
+	set := setBy + " sets one database for " + every + ","
+	if value == "" {
+		set = setBy + " is set, though empty,"
+	}
+	return fmt.Sprintf("%s and env %q %s; leave both unset to report %s", set, env, named, each)
 }
 
 // collection reports whether configs are the targets of an env that names
