@@ -31,12 +31,19 @@ import (
 // connection that sends the first client message the trigger matches. It stands
 // where a network or a failover would, so the command under test meets the error
 // a lost connection gives it and the server meets the end of a real session.
+//
+// The client hears nothing after the matching message, whatever the server does
+// with it: the breaker closes the client's side before it forwards the message,
+// so no answer can be relayed back. Forwarded first, a fast answer can reach the
+// client before the close, and the command then sees its statement succeed and
+// loses the connection at the next one.
 type connectionBreaker struct {
 	listener net.Listener
 	upstream string
 	trigger  func(message []byte) bool
-	// forward sends the matching message to the server before ending the
-	// connection, so the server may act on it and the client hears nothing.
+	// forward sends the matching message to the server, after the client's
+	// side is closed and before the server's is, so the server may act on it
+	// and the client hears nothing.
 	forward bool
 	// broken reports that the trigger matched.
 	broken atomic.Bool
@@ -82,14 +89,15 @@ func (b *connectionBreaker) relay(client net.Conn) {
 	for {
 		n, err := client.Read(buffer)
 		if n > 0 {
-			matched := !b.broken.Load() && b.trigger(buffer[:n])
-			if !matched || b.forward {
-				if _, writeErr := server.Write(buffer[:n]); writeErr != nil {
-					return
-				}
-			}
-			if matched {
+			if !b.broken.Load() && b.trigger(buffer[:n]) {
 				b.broken.Store(true)
+				_ = client.Close()
+				if b.forward {
+					_, _ = server.Write(buffer[:n])
+				}
+				return
+			}
+			if _, writeErr := server.Write(buffer[:n]); writeErr != nil {
 				return
 			}
 		}
