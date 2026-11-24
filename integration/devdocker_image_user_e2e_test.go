@@ -40,10 +40,7 @@ const (
 func dockerBlockProject(c *qt.C, dockerfile, initName, initScript, timeout string) string {
 	c.Helper()
 	c.Assert(devdocker.DockerCLI{}.Available(c.Context()), qt.IsNil)
-	suffix := make([]byte, 6)
-	_, err := rand.Read(suffix)
-	c.Assert(err, qt.IsNil)
-	image := "ptah-image-user-" + hex.EncodeToString(suffix) + ":1"
+	image := "ptah-image-user-" + randomHex(c) + ":1"
 	c.Cleanup(func() {
 		// #nosec G204 -- the tag is generated above.
 		_ = exec.Command("docker", "rmi", "--force", image).Run()
@@ -55,7 +52,7 @@ func dockerBlockProject(c *qt.C, dockerfile, initName, initScript, timeout strin
 	migrations := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrations, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrations, "20240101000000_t.sql"), []byte(imageUserMigration), 0o600), qt.IsNil)
-	_, err = runCompatVerb("migrate", "hash", "--dir", "file://"+migrations)
+	_, err := runCompatVerb("migrate", "hash", "--dir", "file://"+migrations)
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(imageUserSchema), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`docker "postgres" "dev" {
@@ -99,20 +96,67 @@ func TestCompatMigrateDiffStartsAnImageThatNamesItsOwnUserE2E(t *testing.T) {
 }
 
 // TestCompatMigrateDiffReportsAnImageThatExitsDuringInitE2E builds an image
-// whose init script exits. The block allows five minutes, and the run ends
-// with the exit code and the script's own line instead of waiting them out.
+// that exits with code 3 and builds the image: through an init script, which
+// runs after the server starts, and through its entrypoint, which exits before
+// anything listens. The entrypoint's exit leaves the runtime's port table
+// before Ptah reads its port on a remote daemon, and the init script's exit
+// can. The block allows five minutes, and the run ends with the exit code and
+// the image's own line instead of waiting them out, whichever comes first.
 // The container and the image are removed.
 func TestCompatMigrateDiffReportsAnImageThatExitsDuringInitE2E(t *testing.T) {
-	c := qt.New(t)
-	image := dockerBlockProject(c,
-		"FROM postgres:16-alpine\nCOPY --chmod=644 99-fail.sh /docker-entrypoint-initdb.d/\n",
-		"99-fail.sh", "echo ptah-init-fails-here >&2\nexit 3\n", "5m")
+	tests := []struct {
+		name, dockerfile string
+	}{
+		{
+			name:       "an init script that exits",
+			dockerfile: "FROM postgres:16-alpine\nCOPY --chmod=644 99-fail.sh /docker-entrypoint-initdb.d/\n",
+		},
+		{
+			name:       "an entrypoint that exits",
+			dockerfile: "FROM postgres:16-alpine\nENTRYPOINT [\"sh\", \"-c\", \"echo ptah-init-fails-here >&2; exit 3\"]\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			image := dockerBlockProject(c, test.dockerfile, "99-fail.sh", "echo ptah-init-fails-here >&2\nexit 3\n", "5m")
 
-	out, err := runCompatVerb("migrate", "diff", "--env", "dev", "next")
+			out, err := runCompatVerb("migrate", "diff", "--env", "dev", "next")
+
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+			c.Assert(err.Error(), qt.Contains, "the container stopped before the server answered: it exited with code 3")
+			c.Assert(err.Error(), qt.Contains, "ptah-init-fails-here")
+			c.Assert(err.Error(), qt.Not(qt.Contains), "timed out")
+			c.Assert(imageExists(image), qt.IsFalse)
+		})
+	}
+}
+
+// TestCompatSchemaInspectReportsAMissingImageTagE2E names a tag the registry
+// does not have. `docker run` refuses it before any container exists, and the
+// run reports that refusal, as docs/conformance.md documents for an image
+// that cannot be found, rather than asking how a container ended.
+func TestCompatSchemaInspectReportsAMissingImageTagE2E(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(devdocker.DockerCLI{}.Available(c.Context()), qt.IsNil)
+	image := "postgres:ptah-missing-" + randomHex(c)
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(imageUserSchema), 0o600), qt.IsNil)
+	c.Chdir(dir)
+
+	out, err := runCompatVerb("schema", "inspect", "-u", "file://schema.sql", "--dev-url", "docker+postgres://_/"+image+"/dev")
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
-	c.Assert(err.Error(), qt.Contains, "the container stopped before the server answered: it exited with code 3")
-	c.Assert(err.Error(), qt.Contains, "ptah-init-fails-here")
-	c.Assert(err.Error(), qt.Not(qt.Contains), "timed out")
-	c.Assert(imageExists(image), qt.IsFalse)
+	c.Assert(err.Error(), qt.Contains, "start dev database container from "+image+": ")
+	c.Assert(err.Error(), qt.Not(qt.Contains), devdocker.ContainerGone)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "did not become ready")
+}
+
+// randomHex is twelve random hex digits, for a name no other run uses.
+func randomHex(c *qt.C) string {
+	c.Helper()
+	suffix := make([]byte, 6)
+	_, err := rand.Read(suffix)
+	c.Assert(err, qt.IsNil)
+	return hex.EncodeToString(suffix)
 }

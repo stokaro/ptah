@@ -281,6 +281,9 @@ type fakeRunner struct {
 	// container is gone, as the daemon says, with its log.
 	stopped    string
 	stoppedErr error
+	// stoppedBounded records, for each Stopped call before the removal,
+	// whether its context carried a deadline.
+	stoppedBounded []bool
 
 	// remoteHost and remoteErr are what every RemoteHost call answers: "" for
 	// a runtime on this machine.
@@ -311,12 +314,14 @@ func (f *fakeRunner) Start(_ context.Context, name, image, _ string, env []strin
 	return f.hostPort, f.startErr
 }
 
-func (f *fakeRunner) Stopped(_ context.Context, name string) (string, error) {
+func (f *fakeRunner) Stopped(ctx context.Context, name string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if slices.Contains(f.removed, name) {
-		return "the container is gone", nil
+		return devdocker.ContainerGone, nil
 	}
+	_, bounded := ctx.Deadline()
+	f.stoppedBounded = append(f.stoppedBounded, bounded)
 	return f.stopped, f.stoppedErr
 }
 
@@ -1143,6 +1148,9 @@ func TestResolveReportsAContainerThatStoppedBeforeItsPortWasRead(t *testing.T) {
 	started, removed := runner.calls()
 	c.Assert(started, qt.HasLen, 1)
 	c.Check(removed, qt.DeepEquals, started)
+	// Asked with a deadline, so a daemon that stalls cannot hold up the
+	// removal.
+	c.Check(runner.stoppedBounded, qt.DeepEquals, []bool{true})
 }
 
 // TestResolveKeepsTheStartErrorOfAContainerThatDidNotStop is the control: a
@@ -1159,9 +1167,16 @@ func TestResolveKeepsTheStartErrorOfAContainerThatDidNotStop(t *testing.T) {
 		{
 			name:     "the image does not exist",
 			startErr: errors.New("start dev database container from postgres:16: no such image: exit status 125"),
-			stopped:  "the container is gone",
+			stopped:  devdocker.ContainerGone,
 		},
 		{name: "the container still runs", startErr: notRead},
+		{
+			// `docker run` created it, so something else removed it, which
+			// says nothing about why the port could not be read.
+			name:     "the container is gone",
+			startErr: notRead,
+			stopped:  devdocker.ContainerGone,
+		},
 		{
 			// An answer that comes with an error is not believed.
 			name:       "the runtime cannot say",
