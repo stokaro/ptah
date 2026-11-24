@@ -638,15 +638,9 @@ Native ptah runs the configured block only with `--allow-config-exec`; see
 [Programs a project file names](#programs-a-project-file-names). An explicit
 `--schema-cmd` names the program itself and needs no further permission.
 Relative `working_dir` values are constrained to the current working directory
-after symlink resolution. Ptah bounds output, escapes terminal control
-characters in stderr and parser diagnostics, and cleans up descendant
-processes. In that text it writes `redacted` for each secret: the value of an
-environment variable or option whose name marks a secret, such as `PGPASSWORD`
-or `--token`, and the password and secret parameters of a database address. A
-secret of five characters or more is replaced wherever it occurs, and a
-shorter one only where it stands as a credential, as
-[Secrets in errors and program output](../../concepts/database-urls-and-dev-databases/#secrets-in-errors-and-program-output)
-lists.
+after symlink resolution. Ptah bounds output, escapes control characters and
+[redacts secrets](../../concepts/database-urls-and-dev-databases/#secrets-in-errors-and-program-output)
+in stderr and parser diagnostics, and cleans up descendant processes.
 
 Continue with [Atlas project config](../../atlas/project-config/) for the supported
 `atlas.hcl` subset.

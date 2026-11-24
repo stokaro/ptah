@@ -8,6 +8,10 @@ import (
 	"ptah.run/internal/dburldisplay"
 )
 
+// maskUsers are the user names the tables give the masker: the user of the
+// addresses they quote.
+var maskUsers = []string{"app"}
+
 // A secret is taken out where it stands as a credential, whatever its length.
 func TestMaskSecrets_TakesACredentialOfAnyLength(t *testing.T) {
 	tests := []struct {
@@ -155,6 +159,12 @@ func TestMaskSecrets_TakesACredentialOfAnyLength(t *testing.T) {
 			want:    "localhost:5432:shop:app:***",
 		},
 		{
+			name:    "the last field of a password file, before a new line",
+			secrets: []string{"ab"},
+			text:    "localhost:5432:shop:app:ab\nnext",
+			want:    "localhost:5432:shop:app:***\nnext",
+		},
+		{
 			name:    "a user and a password after a slash",
 			secrets: []string{"ab"},
 			text:    "sqlplus app/ab@h:1521/FREEPDB1",
@@ -201,7 +211,7 @@ func TestMaskSecrets_TakesACredentialOfAnyLength(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(dburldisplay.MaskSecrets(test.text, test.secrets, "***"), qt.Equals, test.want)
+			c.Assert(dburldisplay.MaskSecrets(test.text, test.secrets, maskUsers, "***"), qt.Equals, test.want)
 		})
 	}
 }
@@ -286,7 +296,7 @@ func TestMaskSecrets_TakesALongSecretWhereverItOccurs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(dburldisplay.MaskSecrets(test.text, test.secrets, "***"), qt.Equals, test.want)
+			c.Assert(dburldisplay.MaskSecrets(test.text, test.secrets, maskUsers, "***"), qt.Equals, test.want)
 		})
 	}
 }
@@ -307,6 +317,14 @@ func TestMaskSecrets_KeepsTextThatOnlyHoldsTheCharacters(t *testing.T) {
 		{name: "a keyword value the secret begins before punctuation", secrets: []string{"p@"}, text: "password=p@ss"},
 		{name: "a setting that is no secret", secrets: []string{"x"}, text: "user=x database=x"},
 		{name: "a colon before a separator", secrets: []string{"x"}, text: "columns a:x, b are ambiguous"},
+		{name: "a label before a colon", secrets: []string{"x"}, text: "column a:x is ambiguous"},
+		{name: "a port", secrets: []string{"1"}, text: "127.0.0.1:1 (127.0.0.1): dial error"},
+		{name: "a port of four digits", secrets: []string{"5432"}, text: "dial 10.0.0.5:5432 (db) failed"},
+		{name: "a word before a colon", secrets: []string{"x"}, text: "sql:x statement failed"},
+		{name: "a time", secrets: []string{"34"}, text: "12:34 failed"},
+		{name: "an address of two colons", secrets: []string{"1"}, text: "host ::1 down"},
+		{name: "another user before a colon", secrets: []string{"ab"}, text: "curl -u bob:ab https://h/"},
+		{name: "a user name that ends a longer word", secrets: []string{"ab"}, text: "curl -u myapp:ab https://h/"},
 		{name: "an option value the secret only begins", secrets: []string{"ab"}, text: "cp -pabc dest"},
 		{name: "an escape that spells another character", secrets: []string{"x"}, text: "postgres://app:%79@localhost/shop"},
 		{name: "an escape cut short", secrets: []string{"@"}, text: "postgres://app:%4@localhost/shop"},
@@ -317,7 +335,7 @@ func TestMaskSecrets_KeepsTextThatOnlyHoldsTheCharacters(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(dburldisplay.MaskSecrets(test.text, test.secrets, "***"), qt.Equals, test.text)
+			c.Assert(dburldisplay.MaskSecrets(test.text, test.secrets, maskUsers, "***"), qt.Equals, test.text)
 		})
 	}
 }

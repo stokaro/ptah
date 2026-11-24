@@ -383,7 +383,7 @@ func sanitizeHookOutput(output string, opts Options) string {
 	}
 	// PGPASSWORD=... and MYSQL_PWD=... name a secret's setting, so the
 	// password is taken out of them whatever its length.
-	return dburldisplay.MaskSecrets(output, dburldisplay.Secrets(opts.DatabaseURL), "redacted")
+	return dburldisplay.MaskSecrets(output, dburldisplay.Secrets(opts.DatabaseURL), dburldisplay.Users(opts.DatabaseURL), "redacted")
 }
 
 func redactSecretURL(rawURL string) string {

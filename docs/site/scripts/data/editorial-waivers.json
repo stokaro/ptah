@@ -96,12 +96,6 @@
     "reason": "The generated reference is exhaustive by design and provides a keyboard-accessible filter across all command and flag rows."
   },
   {
-    "route": "/reference/configuration/",
-    "check": "page-length",
-    "target": "page",
-    "reason": "The reference records every ptah.yaml key with its precedence and the safety rules for the programs a project file names, including what is redacted from their output; splitting it would separate a key from the rule that governs it."
-  },
-  {
     "route": "/reference/go-annotations/",
     "check": "page-length",
     "target": "page",

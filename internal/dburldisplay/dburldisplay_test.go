@@ -900,6 +900,12 @@ func TestRedactError_HidesWhatTheDriverRead(t *testing.T) {
 			want:    "connect to postgres://app:***@localhost/shop failed",
 		},
 		{
+			name:    "a short password after the user and a colon",
+			address: "postgres://app:x@localhost/shop",
+			message: "+ curl -u app:x https://h/",
+			want:    "+ curl -u app:*** https://h/",
+		},
+		{
 			name:    "the password unescaped",
 			address: "postgres://app:Pa55%40wordX9@localhost/shop",
 			message: "login as app with Pa55@wordX9 failed",
@@ -1041,6 +1047,11 @@ func TestRedactError_KeepsTheWordsOfAShortPassword(t *testing.T) {
 			address: "postgres://app:Zq7Kp@Xk9#Vp8Qr@localhost/shop",
 			message: "lookup Xk9db: no such host",
 		},
+		{
+			name:    "the port after the host",
+			address: "postgres://app:1@127.0.0.1:1/shop",
+			message: "failed to connect to `user=app database=shop`: 127.0.0.1:1 (127.0.0.1): dial error",
+		},
 	}
 
 	for _, test := range tests {
@@ -1085,6 +1096,30 @@ func TestSecrets(t *testing.T) {
 			for i, secret := range test.want {
 				c.Assert(got[i], qt.Equals, secret)
 			}
+		})
+	}
+}
+
+// The user names are those a password is given with, in each form an address
+// takes.
+func TestUsers(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    []string
+	}{
+		{name: "no password", address: "postgres://app@localhost/shop", want: []string{}},
+		{name: "a URL", address: "postgres://app:Pa55wordX9@localhost/shop", want: []string{"app"}},
+		{name: "a URL net/url cannot read", address: "postgres://app:p%ss@localhost/shop", want: []string{"app"}},
+		{name: "a DSN", address: "app:P@5s/w0rd@tcp(localhost:3306)/shop", want: []string{"app"}},
+		{name: "keywords", address: "host=db user=app password=x", want: []string{"app"}},
+		{name: "assignments", address: "server=h;User Id=app;Password=x", want: []string{"app"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(dburldisplay.Users(test.address), qt.DeepEquals, test.want)
 		})
 	}
 }

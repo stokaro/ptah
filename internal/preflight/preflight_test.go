@@ -89,7 +89,7 @@ func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 	c := qt.New(t)
 	runner := &fakeCommandRunner{
 		output: "PTAH_DB_URL=mysql://app:pw-value@tcp(db.internal:3307)/shop\nMYSQL_PWD=pw-value\npassword=pw-value\n" +
-			"+ : mysql -uapp -ppw-value\n",
+			"+ : mysql -uapp -ppw-value\nMYSQL_OPTS=-ppw-value\n",
 		err: errors.New("exit status 42"),
 	}
 
@@ -105,6 +105,7 @@ func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "PTAH_DB_URL=mysql://app@db.internal:3307/shop")
 	c.Assert(err.Error(), qt.Contains, "MYSQL_PWD=redacted")
 	c.Assert(err.Error(), qt.Contains, "+ : mysql -uapp -predacted")
+	c.Assert(err.Error(), qt.Contains, "MYSQL_OPTS=-predacted")
 }
 
 // A short password is taken out of the variables that hold it, and the words of
@@ -112,7 +113,7 @@ func TestCommandHookOutputRedactsDatabaseSecrets(t *testing.T) {
 func TestCommandHookOutputKeepsTheWordsOfAShortPassword(t *testing.T) {
 	c := qt.New(t)
 	runner := &fakeCommandRunner{
-		output: "ptah backup: MYSQL_PWD=ptah PGPASSWORD=ptah\nptah backup: done\n",
+		output: "ptah backup: MYSQL_PWD=ptah PGPASSWORD=ptah\n+ curl -u ptah:ptah https://h/\nptah backup: done\n",
 		err:    errors.New("exit status 42"),
 	}
 
@@ -123,7 +124,7 @@ func TestCommandHookOutputKeepsTheWordsOfAShortPassword(t *testing.T) {
 		Command:            "backup",
 	})
 
-	c.Assert(err, qt.ErrorMatches, "(?s).*\nptah backup: MYSQL_PWD=redacted PGPASSWORD=redacted\nptah backup: done\n?")
+	c.Assert(err, qt.ErrorMatches, "(?s).*\nptah backup: MYSQL_PWD=redacted PGPASSWORD=redacted\n\\+ curl -u ptah:redacted https://h/\nptah backup: done\n?")
 }
 
 func TestCommandHookOutputFallbackRedactsURLQuerySecrets(t *testing.T) {

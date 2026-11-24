@@ -87,6 +87,7 @@ func TestSanitize_RedactsASecretAProgramWrites(t *testing.T) {
 	tests := []struct {
 		name string
 		env  []string
+		args []string
 		text string
 		want string
 	}{
@@ -114,14 +115,43 @@ func TestSanitize_RedactsASecretAProgramWrites(t *testing.T) {
 			text: "password: ab",
 			want: "password: redacted",
 		},
+		{
+			name: "a short secret after a user a variable names",
+			env:  []string{"PGUSER=app", "PGPASSWORD=ab"},
+			text: "curl -u app:ab https://h/",
+			want: "curl -u app:redacted https://h/",
+		},
+		{
+			name: "a short secret after a user an option names",
+			args: []string{"--user", "app", "--password=ab"},
+			text: "curl -u app:ab https://h/",
+			want: "curl -u app:redacted https://h/",
+		},
+		{
+			name: "a short secret after the user of an address",
+			env:  []string{"DATABASE_URL=postgres://app:ab@db/shop"},
+			text: "localhost:5432:shop:app:ab",
+			want: "localhost:5432:shop:app:redacted",
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(secretdisplay.Sanitize(test.text, test.env, nil), qt.Equals, test.want)
+			c.Assert(secretdisplay.Sanitize(test.text, test.env, test.args), qt.Equals, test.want)
 		})
 	}
+}
+
+// A short secret after a ":" that no user name stands before is a port, and
+// stays.
+func TestSanitize_KeepsAPort(t *testing.T) {
+	c := qt.New(t)
+	text := "dial 127.0.0.1:1 (127.0.0.1) failed"
+
+	got := secretdisplay.Sanitize(text, []string{"PGUSER=app", "PGPASSWORD=1"}, nil)
+
+	c.Assert(got, qt.Equals, text)
 }
 
 // The working directories a shell keeps in PWD and OLDPWD are no secrets, so

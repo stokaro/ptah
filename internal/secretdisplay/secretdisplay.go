@@ -19,9 +19,12 @@ import (
 //
 // A secret of five characters or more is redacted wherever it occurs, and a
 // shorter one where it stands as a credential, as [dburldisplay.MaskSecrets]
-// reads them: text that only holds a short secret's characters keeps them.
+// reads them: text that only holds a short secret's characters keeps them. The
+// user names that a short secret is redacted after are those of the addresses
+// in env and args, and the values of the variables and options that name a
+// user, such as PGUSER and --user.
 func Sanitize(text string, env, args []string) string {
-	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args), "redacted"))
+	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args), userNames(env, args), "redacted"))
 }
 
 // SanitizeError returns an error with display-safe text while preserving the
@@ -96,6 +99,43 @@ func secretValues(env, args []string) []string {
 		return len(right) - len(left)
 	})
 	return secrets
+}
+
+// userNames is each user name env and args give: the value of a variable or an
+// option that names a user, and the user of each address among them.
+func userNames(env, args []string) []string {
+	var users []string
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if dburldisplay.IsUserParameter(key) && value != "" {
+			users = append(users, value)
+		}
+		users = append(users, addressUsers(value)...)
+	}
+	for idx, arg := range args {
+		key, value, hasValue := option(arg)
+		if strings.HasPrefix(arg, "--") && dburldisplay.IsUserParameter(key) {
+			if hasValue && value != "" {
+				users = append(users, value)
+			} else if !hasValue && idx+1 < len(args) {
+				users = append(users, args[idx+1])
+			}
+		}
+		users = append(users, addressUsers(arg)...)
+	}
+	return users
+}
+
+// addressUsers is the user of raw where it is an address, which
+// [addURLSecrets] reads the secrets of too.
+func addressUsers(raw string) []string {
+	if !strings.Contains(raw, "://") {
+		return nil
+	}
+	return dburldisplay.Users(raw)
 }
 
 func option(arg string) (key, value string, hasValue bool) {

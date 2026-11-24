@@ -67,8 +67,10 @@ func RedactRecordedText(ctx context.Context, text string) string {
 	urls := slices.Clone(addresses.urls)
 	addresses.mu.Unlock()
 	var parts []secretText
+	var users []string
 	for _, dbURL := range urls {
 		parts = append(parts, secretParts(dbURL)...)
+		users = append(users, Users(dbURL)...)
 	}
-	return maskText(text, parts, redactedPassword)
+	return maskText(text, parts, users, redactedPassword)
 }

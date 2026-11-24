@@ -85,14 +85,18 @@ given. Ptah takes each secret it knows of out of that text:
 - A shorter one is taken out only where it stands as a credential:
   - between the `:` or the `/` and the `@` of an address, as written or
     percent-encoded: `app:...@host`, `app/...@host`;
-  - after a `:` and before a space or the end of a line, as curl's `-u
-    app:...` and a line of a password file write it;
+  - after the user name of the address and a `:`, and before a space or the
+    end of a line, as curl's `-u app:...` and a line of a password file
+    write it;
   - as the whole value of a secret setting after an `=` or a `:`, such as
     `password=`, `PGPASSWORD=`, `password: ` or the JSON `"password": "`;
-  - after `-p`, `--password`, `Bearer`, `PASSWORD '` and `IDENTIFIED BY '`.
+  - after a `-p` that follows a space, a quote or the start of the text;
+  - after `--password` and after `Bearer`;
+  - after `PASSWORD` or `IDENTIFIED BY` and a single or a double quote.
 
 A short password in any other place stays, so with the password `x` an error
-still reads `database=execute`. A word that only holds a short password's
+still reads `database=execute`, and with the password `1` it still reads
+`127.0.0.1:1`. A word that only holds a short password's
 letters stays whole, and does not show the password by what is missing from
 it. A program that writes a short password in another shape prints it.
 

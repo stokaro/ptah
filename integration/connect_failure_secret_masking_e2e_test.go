@@ -59,6 +59,13 @@ func TestConnectFailureKeepsTheWordsOfAShortPasswordE2E(t *testing.T) {
 			want:     "failed to connect to `user=ptah database=ptah`",
 		},
 		{
+			name:     "the port after the host",
+			binary:   clirun.Ptah,
+			args:     schemaApplyAgainst("postgres://app:1@127.0.0.1:1/shop?sslmode=disable"),
+			exitCode: 2,
+			want:     "127.0.0.1:1 (127.0.0.1)",
+		},
+		{
 			name:   "the compatibility binary",
 			binary: clirun.Compat,
 			args: func(string) []string {
