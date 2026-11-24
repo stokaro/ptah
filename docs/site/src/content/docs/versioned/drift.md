@@ -392,10 +392,17 @@ and `--skip-lock` are refused: the output is the text report on this page, and
 the history is read under the migration lock.
 
 In `atlas.hcl`, `format { migrate { drift = ... } }` and
-`migration { skip_lock = ... }` are refused for the same reasons. `migration { exclude = ... }` and
-`migration { lock_name = ... }` are refused too, because the report does not
-read them yet: pass the patterns with `--exclude` and the name with
-`--lock-name`.
+`migration { skip_lock = true }` are refused for the same reasons.
+`skip_lock = false` asks for the lock the report takes, and is accepted. A
+`skip_lock` the targets of an env disagree on is refused.
+
+`migration { exclude = ... }` and `migration { lock_name = ... }` are refused
+too, because the report does not read them yet: pass the patterns with
+`--exclude` and the name with `--lock-name`. The flag takes precedence over the
+setting, as an Atlas flag overrides an env attribute, so with the flag given,
+or its variable `PTAH_EXCLUDE` or `PTAH_LOCK_NAME`, the setting is not refused
+and the flag's value is the one the report uses. A project file that
+`migrate apply` also reads can keep `lock_name` that way.
 
 An env with `for_each` is reported target by target, as in
 [Report every target of an env](#report-every-target-of-an-env), and each target

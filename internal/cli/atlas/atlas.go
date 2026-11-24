@@ -86,8 +86,9 @@ type atlasVerb struct {
 	// refuseProjectSettings, on a verb marked eachInstance, refuses settings
 	// of the selected env that the verb's Atlas contract gives an effect and
 	// the native command does not carry out. It reads the configs as loaded,
-	// before any is merged with ptah.yaml.
-	refuseProjectSettings func(configs []projectconfig.Config) error
+	// before any is merged with ptah.yaml, and given reports whether a flag of
+	// the verb is set, on the command line or through its PTAH_* variable.
+	refuseProjectSettings func(configs []projectconfig.Config, given func(flag string) bool) error
 }
 
 type atlasPositionalArg struct {

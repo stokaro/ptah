@@ -943,14 +943,15 @@ and the output is Ptah's text report.
 | `--lock-timeout`, `--lock-name` | The migration lock wait and name (native `--migration-lock-timeout`, `--migration-lock-name`). |
 | `--no-cache` | Accepted; every run computes the expected state. |
 | `--format` | Refused, as `format.migrate.drift` in `atlas.hcl` is: the report has no template data in the shape Atlas documents. |
-| `--skip-lock` | Refused, as `migration.skip_lock` is: the report reads the history under the migration lock. |
+| `--skip-lock` | Refused, as `migration.skip_lock = true` is: the report reads the history under the migration lock. `skip_lock = false` is accepted. |
 
 Over an env with `for_each`, each target reads the `dir` its instance names.
 The `migration` block's `format`, `revisions_schema` and `lock_timeout` must be
 the same on every target or be given as a flag, because this surface forwards
 each once for the run. `migration.exclude` and `migration.lock_name` are
 refused, because the report does not read them yet; pass `--exclude` and
-`--lock-name`. The native flags, such as `--db-url`, `--shadow-db` and
+`--lock-name`, which take precedence: with the flag or its variable given, the
+setting is not refused and the flag's value is used. The native flags, such as `--db-url`, `--shadow-db` and
 `--json`, are refused, and their variables, such as `PTAH_DB_URL`, are not
 read.
 

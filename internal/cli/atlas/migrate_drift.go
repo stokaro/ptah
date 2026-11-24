@@ -79,27 +79,53 @@ var atlasDriftNativeOnlyFlags = []string{
 // to, or printed text while a template asked for JSON, would look like an
 // answer to the request.
 var atlasDriftProjectRefusals = []struct {
-	path, refusal string
+	path string
+	// flag takes precedence over the setting, as an Atlas flag overrides the
+	// env attribute of the same meaning: given, the setting is not refused,
+	// and the flag's value is the one the report runs with.
+	flag string
+	// carriedOut is the one value the report carries out as it stands, which
+	// is not refused: skip_lock = false asks for the lock the report takes.
+	carriedOut string
+	refusal    string
 }{
 	{path: "format.migrate.drift", refusal: "Ptah does not implement its behavior: " + atlasDriftFormatReason},
-	{path: "migration.skip_lock", refusal: "Ptah does not implement its behavior: " + atlasDriftSkipLockReason},
-	{path: "migration.exclude", refusal: "Ptah does not read it yet; pass the patterns with --exclude"},
-	{path: "migration.lock_name", refusal: "Ptah does not read it yet; pass the name with --lock-name"},
+	{
+		path: "migration.skip_lock", carriedOut: "false",
+		refusal: "Ptah does not implement its behavior: " + atlasDriftSkipLockReason,
+	},
+	{
+		path: "migration.exclude", flag: "exclude",
+		refusal: "Ptah does not read it yet; pass the patterns with --exclude, which takes precedence",
+	},
+	{
+		path: "migration.lock_name", flag: atlasLockNameFlag,
+		refusal: "Ptah does not read it yet; pass the name with --lock-name, which takes precedence",
+	},
 }
 
 // refuseUnreadDriftSettings refuses a selected env that sets one of
-// [atlasDriftProjectRefusals].
-func refuseUnreadDriftSettings(configs []projectconfig.Config) error {
+// [atlasDriftProjectRefusals], unless given reports the flag that takes
+// precedence over it, or the env sets the value the report carries out. A
+// value the instances of the env disagree on is no value, and is refused.
+func refuseUnreadDriftSettings(configs []projectconfig.Config, given func(flag string) bool) error {
 	for _, cfg := range configs {
 		for _, construct := range cfg.IgnoredConstructs {
 			if !construct.InSelectedEnv {
 				continue
 			}
 			for _, refusal := range atlasDriftProjectRefusals {
-				if construct.Path == refusal.path {
-					return fmt.Errorf("atlas migrate drift reads the env's %s, set at %s:%d, but %s",
-						construct.Path, construct.Filename, construct.Line, refusal.refusal)
+				if construct.Path != refusal.path {
+					continue
 				}
+				if refusal.flag != "" && given(refusal.flag) {
+					continue
+				}
+				if refusal.carriedOut != "" && construct.Value == refusal.carriedOut {
+					continue
+				}
+				return fmt.Errorf("atlas migrate drift reads the env's %s, set at %s:%d, but %s",
+					construct.Path, construct.Filename, construct.Line, refusal.refusal)
 			}
 		}
 	}
@@ -312,7 +338,8 @@ func resolveAtlasVerbInstances(
 		for _, project := range set.projects {
 			loadedConfigs = append(loadedConfigs, project.Config)
 		}
-		if err := verb.refuseProjectSettings(loadedConfigs); err != nil {
+		given := func(flag string) bool { return atlasFlagValueSet(verb.flags, resolved.args, flag) }
+		if err := verb.refuseProjectSettings(loadedConfigs, given); err != nil {
 			return atlasVerbArgs{}, err
 		}
 	}

@@ -1267,9 +1267,9 @@ env "other" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
-		{Name: "skip_lock", Kind: "attribute", Path: "skip_lock", InSelectedEnv: true, Filename: "atlas.hcl", Line: 4},
+		{Name: "skip_lock", Kind: "attribute", Path: "skip_lock", InSelectedEnv: true, Value: "true", Filename: "atlas.hcl", Line: 4},
 		{Name: "lock_name", Kind: "attribute", Path: "migration.lock_name", InSelectedEnv: true, Filename: "atlas.hcl", Line: 7},
-		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Filename: "atlas.hcl", Line: 6},
+		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Value: "true", Filename: "atlas.hcl", Line: 6},
 		{Name: "drift", Kind: "attribute", Path: "format.migrate.drift", InSelectedEnv: true, Filename: "atlas.hcl", Line: 11},
 		{Name: "exclude", Kind: "attribute", Path: "migration.exclude", Filename: "atlas.hcl", Line: 17},
 		{Name: "frobnicate", Kind: "attribute", Path: "frobnicate", Filename: "atlas.hcl", Line: 1},

@@ -627,13 +627,13 @@ func TestCompatMigrateDrift_FailurePathRefusesASettingItDoesNotCarryOut(t *testi
 			name: "migration.exclude",
 			body: "migration {\n    dir     = \"file://migrations\"\n    exclude = [\"main.t2\"]\n  }",
 			wantErr: `atlas migrate drift reads the env's migration.exclude, set at settings.hcl:6, but Ptah does ` +
-				`not read it yet; pass the patterns with --exclude`,
+				`not read it yet; pass the patterns with --exclude, which takes precedence`,
 		},
 		{
 			name: "migration.lock_name",
 			body: "migration {\n    dir       = \"file://migrations\"\n    lock_name = \"custom\"\n  }",
 			wantErr: `atlas migrate drift reads the env's migration.lock_name, set at settings.hcl:6, but Ptah does ` +
-				`not read it yet; pass the name with --lock-name`,
+				`not read it yet; pass the name with --lock-name, which takes precedence`,
 		},
 		{
 			name: "format.migrate.drift",
@@ -659,6 +659,116 @@ func TestCompatMigrateDrift_FailurePathRefusesASettingItDoesNotCarryOut(t *testi
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}
+}
+
+// writeDriftSettings writes settings.hcl, an env "local" over a.db whose
+// migration block holds migration, and returns its address.
+func writeDriftSettings(c *qt.C, migration string) string {
+	c.Helper()
+	c.Assert(os.WriteFile("settings.hcl", []byte("env \"local\" {\n  url = \"sqlite://a.db\"\n"+
+		"  dev = \"sqlite://dev?mode=memory\"\n  migration {\n    dir = \"file://migrations\"\n"+
+		migration+"  }\n}\n"), 0o600), qt.IsNil)
+	return "file://settings.hcl"
+}
+
+// A flag takes precedence over the setting of the same meaning, as an Atlas
+// flag overrides an env attribute: the setting is not refused, and the flag's
+// value is what runs. The setting names no table here and the flag names the
+// table that drifted, so the report is clean.
+func TestCompatMigrateDrift_HappyPathRunsTheFlagOverTheSetting(t *testing.T) {
+	settings := []struct {
+		name, migration string
+		args            []string
+		env             map[string]string
+	}{
+		{
+			name:      "exclude",
+			migration: "    exclude = [\"nothing\"]\n",
+			args:      []string{"--exclude", "extra"},
+		},
+		{
+			name:      "the variable of exclude",
+			migration: "    exclude = [\"nothing\"]\n",
+			env:       map[string]string{"PTAH_EXCLUDE": "extra"},
+		},
+		{
+			name:      "lock_name",
+			migration: "    lock_name = \"custom\"\n",
+			args:      []string{"--exclude", "extra", "--lock-name", "other"},
+		},
+	}
+	for _, setting := range settings {
+		t.Run(setting.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			for name, value := range setting.env {
+				c.Setenv(name, value)
+			}
+			enterDriftProject(c)
+			atlastest.SqliteExec(c, "a.db", "CREATE TABLE extra (id integer)")
+			config := writeDriftSettings(c, setting.migration)
+
+			stdout, stderr, err := atlastest.RunCompatStreams(c,
+				append([]string{"migrate", "drift", "-c", config, "--env", "local"}, setting.args...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Equals, cleanTarget)
+		})
+	}
+}
+
+// The setting is not what runs beside the flag: it names the table that
+// drifted, the flag names none, and the drift is reported.
+func TestCompatMigrateDrift_FailurePathReportsWhatOnlyTheSettingExcludes(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	enterDriftProject(c)
+	atlastest.SqliteExec(c, "a.db", "CREATE TABLE extra (id integer)")
+	config := writeDriftSettings(c, "    exclude = [\"extra\"]\n")
+
+	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "local",
+		"--exclude", "nothing")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(stdout, qt.Equals, driftedTarget)
+}
+
+// skip_lock = false asks for the lock the report takes anyway, so it is not
+// refused.
+func TestCompatMigrateDrift_HappyPathAcceptsASkipLockOfFalse(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	enterDriftProject(c)
+	config := writeDriftSettings(c, "    skip_lock = false\n")
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "local")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Equals, cleanTarget)
+}
+
+// A skip_lock the targets of an env disagree on asks one of them to skip the
+// lock, and is refused.
+func TestCompatMigrateDrift_FailurePathRefusesASkipLockTheTargetsDisagreeOn(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(driftVariable, "1")
+	enterDriftProject(c)
+	c.Assert(os.WriteFile("settings.hcl", []byte(`env "tenants" {
+  for_each = toset(["a", "b"])
+  url      = "sqlite://${each.value}.db"
+  dev      = "sqlite://dev?mode=memory"
+  migration {
+    dir       = "file://migrations"
+    skip_lock = each.value == "b"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", "file://settings.hcl", "--env", "tenants")
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate drift reads the env's migration.skip_lock, set at settings.hcl:7, `+
+		`but Ptah does not implement its behavior: .*`)
+	c.Assert(stdout, qt.Equals, "")
 }
 
 func TestCompatMigrateDrift_FailurePathRefusesWhatItDoesNotImplement(t *testing.T) {
