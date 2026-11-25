@@ -940,10 +940,10 @@ and the output is Ptah's text report.
 | `--dir`, `--dir-format` | The migration directory, read relative to the directory that holds `atlas.hcl`, and its layout. `--dir` is the one directory every target reads. |
 | `--revisions-schema` | The schema that holds `atlas_schema_revisions`. |
 | `--exclude` | Leaves matching objects out of the comparison; repeats. |
-| `--lock-timeout`, `--lock-name` | The migration lock wait and name (native `--migration-lock-timeout`, `--migration-lock-name`). |
+| `--lock-timeout`, `--lock-name` | The migration lock wait and name (native `--migration-lock-timeout`, `--migration-lock-name`). On a dialect with no advisory lock, a stderr note names the lock the report did not acquire. |
 | `--no-cache` | Accepted; every run computes the expected state. |
 | `--format` | Refused, as `format.migrate.drift` in `atlas.hcl` is: the report has no template data in the shape Atlas documents. |
-| `--skip-lock` | Refused, as `migration.skip_lock = true` is: the report reads the history under the migration lock. `skip_lock = false` is accepted. |
+| `--skip-lock` | Refused, as `migration.skip_lock = true` is: the report reads the history under the migration lock. `--skip-lock=false`, `PTAH_SKIP_LOCK=false` and `skip_lock = false` are accepted. |
 
 Over an env with `for_each`, each target reads the `dir` its instance names.
 The `migration` block's `format`, `revisions_schema` and `lock_timeout` must be

@@ -385,13 +385,19 @@ directory in the Atlas layout, as `ptah-compat migrate apply` writes them.
 `--dir` is read relative to the directory that holds `atlas.hcl`, and a
 `data.template_dir` directory is read as rendered. `-u`/`--url` is the
 database and `--dev-url` the dev database the history replays on. `--exclude`
-leaves objects out as [above](#leave-objects-out), and `--lock-timeout` and
-`--lock-name` bound and name the migration lock: the report waits for a
-`migrate apply` that holds the lock of that name. A blank `--lock-name` or
-`PTAH_LOCK_NAME` is refused, as `migrate apply` refuses it. `--no-cache` is accepted and
+leaves objects out as [above](#leave-objects-out). `--no-cache` is accepted and
 changes nothing, because Ptah keeps no cache of the expected state. `--format`
-and `--skip-lock` are refused: the output is the text report on this page, and
-the history is read under the migration lock.
+is refused: the output is the text report on this page.
+
+`--lock-timeout` and `--lock-name` bound and name the migration lock: the
+report waits for a `migrate apply` that holds the lock of that name. A blank
+`--lock-name` or `PTAH_LOCK_NAME` is refused, as `migrate apply` refuses it. On
+an engine with no advisory lock, such as SQLite, the report takes no lock under
+that name and prints a note on standard error that says so, as `migrate apply`
+does; the native `--migration-lock-name` is refused there. `--skip-lock` is
+refused, because the history is read under the migration lock.
+`--skip-lock=false` and `PTAH_SKIP_LOCK=false` ask for that lock, and are
+accepted.
 
 In `atlas.hcl`, `format { migrate { drift = ... } }` and
 `migration { skip_lock = true }` are refused for the same reasons.
