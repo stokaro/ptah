@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/atlaschange"
 	"ptah.run/internal/mysqldefiner"
 	"ptah.run/internal/planeffect"
+	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -224,8 +225,10 @@ func sqlUnitText(units []renderer.Fragment) []string {
 	return text
 }
 
-// Execute applies the captured units after repeating preflight. Callers own
-// approval, target-state verification, and workflow lock acquisition.
+// Execute applies the captured units after repeating preflight and reading
+// again the rows of each column type change that keeps fewer digits after the
+// point. Callers own approval, target-state verification, and workflow lock
+// acquisition.
 func (p ApplyPlan) Execute(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode) error {
 	if err := p.Preflight(ctx, conn, mode); err != nil {
 		return err
@@ -233,7 +236,20 @@ func (p ApplyPlan) Execute(ctx context.Context, conn *dbschema.DatabaseConnectio
 	if !p.HasChanges() {
 		return nil
 	}
+	if err := refuseRoundedSince(ctx, conn, p.roundings, p.roundingRequest); err != nil {
+		return err
+	}
 	return applyUnits(ctx, conn, mode, p.units)
+}
+
+// refuseRoundedSince reads the rows of changes again right before the first
+// statement runs: the planning found no value they would change, and a row
+// written since can hold one.
+func refuseRoundedSince(ctx context.Context, conn *dbschema.DatabaseConnection, changes []roundingscan.Change, request string) error {
+	if err := roundingscan.Refuse(ctx, conn, changes, request); err != nil {
+		return fmt.Errorf("%w. The plan found no such value when it read the table; a row written since holds one", err)
+	}
+	return nil
 }
 
 // nativeTextForm renders a plan that holds a native operation again in

@@ -246,6 +246,17 @@ themselves are not written into the plan file. A plan that declares no rows
 carries neither field, and the Atlas `.plan.hcl` format, which has no place for
 them, refuses a plan that does.
 
+A plan that gives a column fewer digits after the point records `roundings`, each
+column with the type the database held and the type the plan converts it to.
+Applying the plan reads those columns again and refuses while a row holds a value
+the change would round; see
+[A change that rounds stored values](#a-change-that-rounds-stored-values). That read
+runs before the confirmation prompt and on `--dry-run`, so reading the file refuses a
+record whose types are not type names, whose two types keep every digit on the plan's
+engine, or whose column no statement of the plan names. The `.plan.hcl` format has no
+field for them, so applying such a file reads the changes from the desired state that
+`--to` names instead.
+
 `from_fingerprint` also covers the role memberships the plan depends on, and no
 others. A membership counts when it connects to one of these roles, directly or
 through a chain of groups:
@@ -322,7 +333,7 @@ A change between families asks the same question. A fraction under an integer is
 number with more digits than a float keeps loses the low ones (`bigint` under `double
 precision`), and text under a number, a date or an enum may hold what the new type cannot.
 Some servers convert without a word and others refuse the value. The rating is the same,
-since a plan does not read the rows. A temporal type under text is not rated.
+since the rating does not read the rows. A temporal type under text is not rated.
 
 A temporal type that declares no precision holds what its engine says, so
 `timestamp(3)` under `timestamp` loses digits on MySQL and gains them on
@@ -367,6 +378,66 @@ destructive, and while a row exists `ptah schema apply` stops with the server's
 column, or rebuild it by hand, and plan again. Raising a size runs with the rows in
 place. Oracle's `TIMESTAMP(0)` under `DATE` keeps every second and is rated destructive
 all the same, since the rating reads the two as a time of day going away.
+
+### A change that rounds stored values
+
+Some type changes keep fewer digits after the point: a decimal with a lower scale,
+such as `DECIMAL(8,3)` declared `DECIMAL(8,1)`, a decimal declared as an integer, and
+a temporal type of the same kind with a lower fractional-second precision, such as
+`DATETIME(6)` declared `DATETIME`. An `interval` declared with a coarser last field,
+such as `interval hour`, is one too. Most servers convert such a column without an
+error and store each value rounded or cut to the new digits:
+
+| Engine | `1234.567` under a scale of 1 | `1234.567` under an integer | `10:00:00.987654` under a precision of 0 |
+| --- | --- | --- | --- |
+| PostgreSQL, YugabyteDB | `1234.6` | `1235` | `10:00:01`, also for `interval` |
+| CockroachDB | `1234.6` | `1235` | `10:00:01`, also for `interval` |
+| MySQL | `1234.6` | `1235` | `10:00:01` |
+| MariaDB | `1234.6` | `1235` | `10:00:00` |
+| SQL Server | `1234.6` | `1234` | `10:00:01`; `smalldatetime` rounds to the minute and `datetime` to 1/300 of a second |
+| ClickHouse | `1234.5` | `1234` | `10:00:00` |
+
+MySQL and MariaDB convert this way under a strict `sql_mode` too. CockroachDB rounds
+between two decimals that both state a size; it refuses an unsized `DECIMAL` declared
+with a size while a value would change (SQLSTATE `23514`). PostgreSQL's `money` keeps
+the digits `lc_monetary` gives it, two in the usual locales. Oracle refuses the change
+itself while a row exists, and SQLite stores the declaration without reading it, as
+the section above says.
+
+So before the plan runs, `ptah schema plan` and `ptah schema apply` read each such
+table in full and count, for each column, the rows whose value the server's own `CAST`
+to the declared type changes. The `CAST` rounds or cuts as the server's `ALTER` does.
+A temporal value is compared with its conversion in the declared type: `timetz` declared
+`time(0)`, `timestamptz` declared `timestamp(0)` and `datetimeoffset` declared
+`datetime2(0)` keep the time of day and drop the zone or the offset, so only the digits
+count. When any row would change, the command refuses with exit code `2`, names each
+column with both types and the count, and changes nothing:
+
+```text
+error: refusing a type change that keeps fewer digits after the point while the
+table holds values it would change: column "amount" of table "prices" from
+decimal(8,3) to DECIMAL(8,1), where 1 row holds a value with more digits, which the
+server rounds or cuts without an error. Nothing was changed; store values the new
+type keeps, or ask for the change with --allow-value-rounding
+```
+
+A value the declared type cannot hold at all, such as `99.999` under `DECIMAL(3,1)`,
+is refused the same way, with the server's error in place of the count. An empty
+table, and a table whose values already fit, such as `1.500` under `DECIMAL(8,1)`,
+plan as usual. Under `--json` the refusal code is
+[`rounded-values`](../apply/#refusal-codes).
+
+`ptah schema apply` reads each such table in full twice: when it plans, or checks a
+saved plan against the database, and again right before the first statement runs,
+after the confirmation prompt, since a row written in between can hold a value the
+change would round.
+
+To round the values, pass `--allow-value-rounding` to `ptah schema plan` or
+`ptah schema apply`. The command reads no rows, warns once for each column, and the
+server rounds or cuts each value. The flag reads no environment variable;
+`ptah-compat` reads `PTAH_ALLOW_VALUE_ROUNDING=1` instead. A saved plan reads the rows
+again when it is applied, and `ptah schema apply --plan` refuses the flag: plan again
+with it to save a plan that rounds the values.
 
 `ptah schema apply` shows this rating beside its confirmation prompt. With
 `--auto-approve` there is no prompt and no rating, so read the plan to see one. Plan

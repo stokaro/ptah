@@ -39,12 +39,13 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	mariaDB := mysqlFamily
 	mariaDB.ColumnCheckDropByModify = true
 	postgresFloats := descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24}
+	postgresMoney := descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24, MoneyScale: 2}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
 			QuotedNamesKeepCase:            true,
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
-			BareTypes:                      postgresFloats,
+			BareTypes:                      postgresMoney,
 			SerialOwnsSequence:             true,
 			ForeignKeysOutside:             true,
 			ForeignKeyMatchesKeyInAnyOrder: true,
@@ -85,7 +86,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			QuotedNamesKeepCase:  true,
 			DeclaredSchemas:      true,
 			TimePrecision:        descriptor.TimePrecision{Compared: true, Default: 6},
-			BareTypes:            postgresFloats,
+			BareTypes:            postgresMoney,
 			ExpressionProbes:     "pg-catalog",
 			RolePasswords:        true,
 			RoutineTypeAliases:   "pg-aliases",

@@ -13,6 +13,7 @@ package servercode
 
 import (
 	"errors"
+	"strings"
 
 	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -95,6 +96,41 @@ func RefusedInATransaction(err error) bool {
 	switch serverErr.Code {
 	case "25001", "2D000", "55P04":
 		return true
+	}
+	return false
+}
+
+// ConversionRefused reports whether a server refused to convert a value to
+// another type: SQLSTATE class 22 (data exception) from the PostgreSQL and the
+// MySQL protocols, such as 22003 numeric_value_out_of_range and 22008
+// datetime_field_overflow; 0A000 feature_not_supported from the PostgreSQL
+// protocol, which PostgreSQL raises for a NaN or an infinity cast to an integer
+// type, so it counts only where the caller has already read the same rows
+// without the conversion; SQL Server's arithmetic overflow and conversion
+// errors 220, 232, 241, 242, 244, 245, 248, 517, 8114 and 8115; and ClickHouse's
+// codes 69 (ARGUMENT_OUT_OF_BOUND), 70 (CANNOT_CONVERT_TYPE), 321
+// (VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE) and 407 (DECIMAL_OVERFLOW). It is false for
+// every other error, such as a canceled statement, a lock timeout or a lost
+// connection, and for an engine whose errors it does not read.
+func ConversionRefused(err error) bool {
+	if serverErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return strings.HasPrefix(serverErr.Code, "22") || serverErr.Code == "0A000"
+	}
+	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err); ok {
+		return serverErr.SQLState[0] == '2' && serverErr.SQLState[1] == '2'
+	}
+	if serverErr, ok := errors.AsType[numberedError](err); ok {
+		switch serverErr.SQLErrorNumber() {
+		case 220, 232, 241, 242, 244, 245, 248, 517, 8114, 8115:
+			return true
+		}
+		return false
+	}
+	if serverErr, ok := errors.AsType[*clickhousedriver.Exception](err); ok {
+		switch serverErr.Code {
+		case 69, 70, 321, 407:
+			return true
+		}
 	}
 	return false
 }

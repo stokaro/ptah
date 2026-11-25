@@ -1620,6 +1620,20 @@ other direction. A change of a column's collation is a `TYPE` clause too, so
 it rebuilds the same views. See
 [What a view rebuild keeps](#what-a-view-rebuild-keeps).
 
+## A lower scale or precision
+
+`ALTER COLUMN ... TYPE` rounds each value to the new digits and succeeds: `1234.567`
+under `numeric(8,1)` reads `1234.6` and under `integer` reads `1235`, and
+`10:00:00.987654` under `timestamp(0)` reads `10:00:01`. `timestamptz`, `time`, `timetz`
+and `interval` round the same way, and an `interval` declared with a coarser last
+field drops what lies below it: `1 day 02:03:04` under `interval hour` reads
+`1 day 02:00:00`. `money` keeps the digits `lc_monetary` gives it, two in the usual
+locales, so `money` under `numeric(12,1)` rounds as well. `timetz` under `time` keeps
+the time of day, `timestamptz` under `timestamp` keeps it as the session's time zone
+reads it, and only the digits count. While a row holds a value the change would alter,
+`ptah schema plan` and `ptah schema apply` refuse the change; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
 ## The kind of a generated column
 
 PostgreSQL 18 builds `VIRTUAL` generated columns as well as `STORED` ones, and

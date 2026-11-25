@@ -96,6 +96,16 @@ var (
 		},
 	}
 
+	// UnscannedRoundings is a column a plan converts to a type that keeps
+	// fewer digits after the point without reading the values the table
+	// holds, because the operator asked for the conversion to round them. The
+	// server rounds or cuts each value to the new digits without an error.
+	// The warning is written before the plan it concerns; see [Settle]. Its
+	// records carry the column as the "column" attribute.
+	// Each column is a warning of its own, because each is a column whose
+	// values the operator agreed to lose digits of.
+	UnscannedRoundings = &Category{Name: "unscanned-rounding", Each: true}
+
 	// UnprobedDeclarations is a declaration a probe would spell that is
 	// compared as written instead, because its text could reach past the
 	// place the probe statement writes it in: it leaves a string, quoted name

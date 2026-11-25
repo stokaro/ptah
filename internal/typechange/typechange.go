@@ -392,7 +392,24 @@ func decimalSizeNarrows(oldSize, newSize decimalSize) bool {
 	}
 	oldIntegerDigits := oldSize.precision - oldSize.scale
 	newIntegerDigits := newSize.precision - newSize.scale
-	return newSize.precision < oldSize.precision || newSize.scale < oldSize.scale || newIntegerDigits < oldIntegerDigits
+	return newSize.precision < oldSize.precision || fewerScaleDigits(oldSize, newSize) || newIntegerDigits < oldIntegerDigits
+}
+
+// integerScale is what an integer keeps after the point, as a decimal size: nothing.
+var integerScale = decimalSize{}
+
+// fewerScaleDigits reports whether newSize keeps fewer digits after the point than
+// oldSize. A narrowing and a rounding both ask it, so the two cannot disagree about
+// which decimal change keeps fewer digits. An unlimited size keeps every digit.
+func fewerScaleDigits(oldSize, newSize decimalSize) bool {
+	switch {
+	case newSize.unlimited:
+		return false
+	case oldSize.unlimited:
+		return true
+	default:
+		return newSize.scale < oldSize.scale
+	}
 }
 
 func decimalWidens(oldSpec, newSpec spec, engine *Engine) bool {
@@ -428,6 +445,9 @@ func decimalSizeOf(s spec, engine *Engine) (size decimalSize, ok bool) {
 	}
 	switch s.name {
 	case "money":
+		if engine != nil && engine.Bare.MoneyScale > 0 {
+			return decimalSize{precision: 19, scale: engine.Bare.MoneyScale}, true
+		}
 		return decimalSize{precision: 19, scale: 4}, true
 	case "smallmoney":
 		return decimalSize{precision: 10, scale: 4}, true

@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
@@ -298,14 +299,15 @@ cannot be combined with --edit.`,
 	cmd.MarkFlagsMutuallyExclusive(applyToFlag, applySchemaFileFlag)
 	tablerebuild.Register(cmd)
 	checkscan.Register(cmd)
+	valuerounding.Register(cmd)
 	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 // nativeDiffPolicy maps the native project diff policy, and the command's
-// --allow-table-rebuild, --rotate-secret and --skip-check-scan, onto the shared
-// schema-apply planning policy.
+// --allow-table-rebuild, --rotate-secret, --skip-check-scan and
+// --allow-value-rounding, onto the shared schema-apply planning policy.
 func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
@@ -319,6 +321,10 @@ func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema
 	if err != nil {
 		return atlasschema.DiffPolicy{}, err
 	}
+	allowValueRounding, err := valuerounding.Requested(cmd)
+	if err != nil {
+		return atlasschema.DiffPolicy{}, err
+	}
 	return atlasschema.DiffPolicy{
 		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
@@ -327,6 +333,8 @@ func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema
 		OnlineAlter:                   cfg.Diff.OnlineAlterRequested(),
 		AllowTableRebuild:             rebuild,
 		SkipCheckScan:                 skipCheckScan,
+		AllowValueRounding:            allowValueRounding,
+		ValueRoundingRequest:          valuerounding.Request,
 		RotateSecrets:                 rotations,
 	}, nil
 }
@@ -1001,6 +1009,8 @@ func validateSchemaApplyPlanOptions(cmd *cobra.Command) error {
 		{applyProtectedTableFlag, "the fence is read when the plan is computed, and the plan file does not record " +
 			"which declared row sets its statements change; pass it to `ptah schema plan --protected-table`, " +
 			"which refuses to save a plan that would change a fenced table, and apply the plan without it"},
+		{valuerounding.FlagName, "the plan file records the columns whose stored values it reads again before it runs; " +
+			"pass it to `ptah schema plan` to save a plan that rounds them"},
 	}
 	flags := cmd.Flags()
 	for _, conflict := range conflicts {

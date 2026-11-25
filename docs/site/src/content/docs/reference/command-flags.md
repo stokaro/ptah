@@ -1651,6 +1651,7 @@ Read the columns as follows.
 | `--actor` | `string` | — | `PTAH_ACTOR` | — |
 | `--actor-origin` | `string` | — | `PTAH_ACTOR_ORIGIN` | — |
 | `--allow-table-rebuild` | `bool` | `false` | — | — |
+| `--allow-value-rounding` | `bool` | `false` | — | — |
 | `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
 | `--auto-approve` | `bool` | `false` | — | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
@@ -1892,6 +1893,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--allow-table-rebuild` | `bool` | `false` | — | — |
+| `--allow-value-rounding` | `bool` | `false` | — | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |

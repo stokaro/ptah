@@ -112,19 +112,29 @@ func schemaFile(c *qt.C, statement string) string {
 }
 
 // planOf runs `schema plan` through the shipped binary.
+//
+// The rows these tests hold carry the digits a lower size rounds or cuts, since what
+// the server keeps of them is the measurement, so the plan is asked for with
+// --allow-value-rounding: without it the plan refuses such a row before it runs
+// (integration/valuerounding holds that refusal).
 func planOf(c *qt.C, address, schema string) planOutcome {
 	c.Helper()
-	run := clirun.Run(c, clirun.Ptah, clirun.Options{}, "schema", "plan", "--db-url", address, "--schema-file", schema, "--dry-run", "--json")
+	run := clirun.Run(c, clirun.Ptah, clirun.Options{},
+		"schema", "plan", "--db-url", address, "--schema-file", schema, "--dry-run", "--json", "--allow-value-rounding",
+	)
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
 	var outcome planOutcome
 	c.Assert(json.Unmarshal([]byte(run.Stdout), &outcome), qt.IsNil)
 	return outcome
 }
 
-// applySchema runs `schema apply` through the shipped binary.
+// applySchema runs `schema apply` through the shipped binary, with
+// --allow-value-rounding for the reason planOf gives.
 func applySchema(c *qt.C, address, schema string) {
 	c.Helper()
-	run := clirun.Run(c, clirun.Ptah, clirun.Options{}, "schema", "apply", "--db-url", address, "--schema-file", schema, "--auto-approve")
+	run := clirun.Run(c, clirun.Ptah, clirun.Options{},
+		"schema", "apply", "--db-url", address, "--schema-file", schema, "--auto-approve", "--allow-value-rounding",
+	)
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
 }
 

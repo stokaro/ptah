@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolegraph"
+	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemafingerprint"
 	"ptah.run/internal/schemascope"
@@ -146,10 +147,18 @@ type PlanFile struct {
 	// [VerifyPlanTarget] reads the same projection again and refuses a plan
 	// whose rows moved. A plan that declares no rows carries neither, and reads
 	// exactly as it did before.
-	ManagedRows     []PlanRowSet    `json:"managed_rows,omitempty"`
-	RowsFingerprint string          `json:"rows_fingerprint,omitempty"`
-	Destructive     bool            `json:"destructive"`
-	Statements      []PlanStatement `json:"statements"`
+	ManagedRows     []PlanRowSet `json:"managed_rows,omitempty"`
+	RowsFingerprint string       `json:"rows_fingerprint,omitempty"`
+	// Roundings are the column type changes of the plan that keep fewer digits
+	// after the point, whose rows the planning read and found no value the
+	// change would round or cut. [VerifyPlanTarget] reads them again, and
+	// refuses the plan while a row has come to hold such a value. A plan
+	// computed with the request to round values records none. That read runs
+	// before the plan is approved, so [ReadPlanFile] refuses a record the
+	// plan's comparison could not have written; see validatePlanRoundings.
+	Roundings   []PlanRounding  `json:"roundings,omitempty"`
+	Destructive bool            `json:"destructive"`
+	Statements  []PlanStatement `json:"statements"`
 	// Annotations are ordered display notes. They are not statements and do
 	// not contribute to schema fingerprints or execution requirements.
 	Annotations []renderer.Annotation `json:"annotations,omitempty"`
@@ -450,6 +459,7 @@ func PreparePlanFileReportingUndecided(
 		PlacedSchema:     computation.naming.schema,
 		ManagedRows:      computation.rowSets,
 		RowsFingerprint:  rowsFingerprint,
+		Roundings:        planRoundings(computation.roundings),
 		Destructive:      destructive,
 		Statements:       statements,
 		Annotations:      computation.executionAnnotations(),
@@ -1148,6 +1158,18 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 			Rows:                true,
 		}
 	}
+	// A row written after planning can hold digits the plan's type change has
+	// no room for, which the fingerprints above do not read.
+	return plan.refuseRoundedValues(ctx, conn)
+}
+
+// refuseRoundedValues reads the rows of the plan's Roundings again, and
+// refuses the plan while one holds a value its type change would alter.
+func (p PlanFile) refuseRoundedValues(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if err := roundingscan.Refuse(ctx, conn, roundingChanges(p.Roundings), ""); err != nil {
+		return fmt.Errorf("%w. The plan found no such value when it read the table; compute it again, with the request "+
+			"to round them if they should change", err)
+	}
 	return nil
 }
 
@@ -1254,6 +1276,70 @@ func managedRowsFingerprint(ctx context.Context, conn *dbschema.DatabaseConnecti
 	return digest.FromBytes(payload).String(), nil
 }
 
+// PlanRounding is one column type change a saved plan reads the rows of again
+// before it runs; see [PlanFile.Roundings].
+type PlanRounding struct {
+	// Table is the column's table, as the comparison names it.
+	Table string `json:"table"`
+	// Column is the column's name.
+	Column string `json:"column"`
+	// HeldType is the type the database held, as its catalog spells it, and
+	// DeclaredType the type the plan converts the column to, as the plan's
+	// statement spells it. The scan converts each value to DeclaredType.
+	HeldType     string `json:"held_type"`
+	DeclaredType string `json:"declared_type"`
+	// Temporal reports a temporal type; false reports a decimal.
+	Temporal bool `json:"temporal,omitempty"`
+}
+
+func planRoundings(changes []roundingscan.Change) []PlanRounding {
+	if len(changes) == 0 {
+		return nil
+	}
+	recorded := make([]PlanRounding, len(changes))
+	for i, change := range changes {
+		recorded[i] = PlanRounding{
+			Table: change.Table, Column: change.Column, HeldType: change.HeldType, DeclaredType: change.DeclaredType,
+			Temporal: change.Temporal,
+		}
+	}
+	return recorded
+}
+
+func roundingChanges(recorded []PlanRounding) []roundingscan.Change {
+	changes := make([]roundingscan.Change, len(recorded))
+	for i, rounding := range recorded {
+		changes[i] = roundingscan.Change{
+			Table: rounding.Table, Column: rounding.Column, HeldType: rounding.HeldType, DeclaredType: rounding.DeclaredType,
+			Temporal: rounding.Temporal,
+		}
+	}
+	return changes
+}
+
+// validatePlanRoundings refuses a rounding record the plan's own comparison
+// could not have written. The scan builds SQL from each record and runs it
+// before the plan is shown for approval, on --dry-run too, so a record is held
+// to the type grammar, to a change that keeps fewer digits on the plan's
+// dialect ([roundingscan.Check]), and to a column and table a statement of the
+// plan names. Anyone can edit a plan file; without this a record could carry
+// SQL of its own into that scan, or read a column the plan leaves alone.
+func validatePlanRoundings(plan PlanFile) error {
+	for i, rounding := range plan.Roundings {
+		change := roundingChanges([]PlanRounding{rounding})[0]
+		if err := roundingscan.Check(plan.Dialect, change); err != nil {
+			return fmt.Errorf("plan rounding %d is not a change the plan records: %w", i+1, err)
+		}
+		if !slices.ContainsFunc(plan.Statements, func(statement PlanStatement) bool {
+			return roundingscan.Names(statement.SQL, change)
+		}) {
+			return fmt.Errorf("plan rounding %d is not a change the plan records: no statement of the plan names "+
+				"column %q of table %q", i+1, rounding.Column, rounding.Table)
+		}
+	}
+	return nil
+}
+
 func validatePlanFile(plan PlanFile) error {
 	if err := validatePlanProvider(plan.Provider); err != nil {
 		return err
@@ -1269,6 +1355,9 @@ func validatePlanFile(plan PlanFile) error {
 		return errors.New("plan from_fingerprint is required")
 	}
 	if err := validatePlanRowSets(plan); err != nil {
+		return err
+	}
+	if err := validatePlanRoundings(plan); err != nil {
 		return err
 	}
 	if err := renderer.ValidateAnnotations(plan.Annotations, len(plan.Statements)); err != nil {

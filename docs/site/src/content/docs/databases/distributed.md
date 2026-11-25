@@ -445,6 +445,16 @@ three engines, so `numeric` declared `numeric(10,2)` is a change rated destructi
 `numeric(10,2)` declared `numeric` is a change rated safe. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
+A lower scale between two decimals that both state a size, a decimal under an integer,
+and a lower fractional-second precision of a `timestamp`, `timestamptz`, `time` or
+`interval` are converted with each value rounded, on CockroachDB 26.4 as on
+PostgreSQL: `1234.567` under `DECIMAL(8,1)` reads `1234.6` and under `INT` reads
+`1235`. An unsized `DECIMAL` declared with a size is refused by the server itself while
+a value would change, with SQLSTATE `23514` from the check it validates. While a row
+holds a value the change would alter, `ptah schema plan` and `ptah schema apply` refuse
+the change first; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
 A lower capacity is rated destructive here as elsewhere: `string(100)` declared
 `string(5)` on CockroachDB, `double precision` declared `real` on all three, and a fraction
 under an integer. CockroachDB keeps the eight bytes of a row it has already written under

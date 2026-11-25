@@ -305,6 +305,9 @@ type Dialect struct {
 	// Comparison states facts about the engine that comparing a declaration
 	// with a catalog depends on.
 	Comparison Comparison `json:"comparison,omitzero"`
+	// Rounding states how a plan reads whether a type change that keeps fewer
+	// digits after the point would change a value the column holds.
+	Rounding Rounding `json:"rounding,omitzero"`
 
 	// Preparation states how a declared schema is prepared for the engine
 	// before it is rendered or compared.
@@ -599,6 +602,7 @@ func (d Dialect) validate() error {
 		d.validateCleanup,
 		d.validateRevisionTable,
 		d.validateAllPrivileges,
+		d.validateRounding,
 	}
 	for _, check := range checks {
 		if err := check(); err != nil {

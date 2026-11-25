@@ -112,6 +112,8 @@ func sqlite() descriptor.Dialect {
 		GeneratedColumnDefault:   "VIRTUAL",
 		InlineEnum:               descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare},
 		ForeignKeysInCreateTable: true,
+		// No rounding condition: a column's declared size is not enforced, and a
+		// change of it alone plans no statement.
 		// Comparison: what comparing a declaration with a catalog reads.
 		// SQLite keeps a table's name as the bytes it was given, names its
 		// own backing structures sqlite_autoindex_*, which no statement can

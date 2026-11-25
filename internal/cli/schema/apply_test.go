@@ -362,6 +362,28 @@ func TestSchemaApplyPlanRejectsASchemasSelection(t *testing.T) {
 		qt.Commentf("%s", out))
 }
 
+// TestSchemaApplyPlanRejectsTheValueRoundingRequest refuses
+// --allow-value-rounding beside --plan: the plan file records the columns whose
+// stored values it reads again, and a request at apply would round values
+// nobody reviewed, so the refusal names the command that takes it.
+func TestSchemaApplyPlanRejectsTheValueRoundingRequest(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--plan", filepath.Join(dir, "missing.plan.json"),
+		"--allow-value-rounding",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		"ptah schema apply --plan cannot be combined with --allow-value-rounding: the plan file records the columns "+
+			"whose stored values it reads again before it runs; pass it to `ptah schema plan` to save a plan that rounds them",
+		qt.Commentf("%s", out))
+}
+
 // writeTxModeDirectivePlan computes a native plan that creates the orders
 // table and rewrites it so its first statement carries `-- atlas:txmode none`,
 // the header `ptah-compat schema plan --directive` writes into a plan file.

@@ -185,6 +185,13 @@ const (
 	// changes it in place. Declare the kind the column has, or drop the column
 	// and add it back.
 	RefusalGeneratedKind RefusalCode = "generated-kind"
+	// RefusalRoundedValues means the plan would convert a column to a type
+	// that keeps fewer digits after the point, a decimal with a lower scale or
+	// a temporal type with a lower fractional-second precision, while the table
+	// holds a value with digits the new type has no room for, which the server
+	// would round or cut without an error. Store values the new type keeps, or
+	// ask for the conversion to round them.
+	RefusalRoundedValues RefusalCode = "rounded-values"
 )
 
 // Refusal is the reason a plan or an apply refused, with the details a caller
@@ -215,6 +222,11 @@ type Refusal struct {
 	// with the kind the database holds and the kind the schema declares, in
 	// the order the comparison lists the tables.
 	GeneratedColumns []planrefusal.GeneratedKind `json:"generated_columns,omitempty"`
+	// RoundedColumns are the columns a rounded-values refusal names, each with
+	// the type the database holds, the type the schema declares and how many
+	// rows hold a value the conversion would change, in the order the
+	// comparison lists the tables.
+	RoundedColumns []planrefusal.RoundedValue `json:"rounded_columns,omitempty"`
 	// DefinerPrivileges are the statements a definer-privilege refusal names,
 	// each with the definer it names, the connected account and the privilege
 	// that account lacks, in statement order.
@@ -608,6 +620,7 @@ func refusalFor(err error) *Refusal {
 	var ownerSchema *OwnerSchemaError
 	var dependentObject *planrefusal.DependentObjectError
 	var generatedKind *planrefusal.GeneratedKindError
+	var roundedValues *planrefusal.RoundedValuesError
 	var declaration *planrefusal.DeclarationError
 	var backslash *BackslashModeError
 	switch {
@@ -656,6 +669,8 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalDependentObject}
 	case errors.As(err, &generatedKind):
 		return &Refusal{Code: RefusalGeneratedKind, GeneratedColumns: generatedKind.Columns}
+	case errors.As(err, &roundedValues):
+		return &Refusal{Code: RefusalRoundedValues, RoundedColumns: roundedValues.Columns}
 	case errors.As(err, &declaration):
 		return &Refusal{Code: RefusalDeclarationRefused}
 	case errors.As(err, &backslash):

@@ -174,6 +174,22 @@ END`,
 		// primary or candidate key covers fails at CREATE TABLE with Msg 1776,
 		// indexed or not.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Measured on SQL Server 2022: ALTER COLUMN rounds decimal, money, datetime2,
+		// time and datetimeoffset to the new digits, a datetime2 under smalldatetime
+		// to the minute and under datetime to 1/300 of a second, and cuts a decimal
+		// under an integer. CAST reads back what the ALTER stores. A temporal value
+		// and its conversion are compared at seven digits in the declared type's
+		// family, datetime2 for datetime and smalldatetime: a datetimeoffset under a
+		// datetime2 then compares the time of day the new column keeps rather than
+		// two instants, which differ by the offset with no digit lost.
+		Rounding: descriptor.Rounding{
+			Decimal:  "{column} <> CAST({column} AS {type})",
+			Temporal: "CAST({column} AS {domain}) <> CAST(CAST({column} AS {type}) AS {domain})",
+			Domains: map[string]string{
+				"datetime2": "datetime2(7)", "datetimeoffset": "datetimeoffset(7)", "time": "time(7)",
+				"datetime": "datetime2(7)", "smalldatetime": "datetime2(7)",
+			},
+		},
 		// Comparison: what comparing a declaration with a catalog reads.
 		// A UNIQUE constraint and a unique index are separate objects, so
 		// neither backs the other.

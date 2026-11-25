@@ -868,6 +868,12 @@ safety report marks an integer narrowing between ClickHouse type names, a float,
 or `FixedString` narrowing, a lost `Enum` member and a temporal narrowing as destructive;
 check the values before applying any of them.
 
+A lower scale, a `Decimal` under an integer, and a lower `DateTime64` or `Time64`
+precision cut each value: `1234.567` under `Decimal(8, 1)` reads `1234.5` and under
+`Int32` reads `1234`. While a row holds a value the change would alter,
+`ptah schema plan` and `ptah schema apply` refuse the change; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
 A type that already admits NULL, such as `LowCardinality(Nullable(String))`, is
 not wrapped in a second `Nullable`, which ClickHouse refuses. A `Nullable` inside
 an array, a map or a tuple makes the elements nullable and not the column, so

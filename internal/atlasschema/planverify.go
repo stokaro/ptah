@@ -17,6 +17,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/readscope"
 	"ptah.run/migration/migrator"
 )
@@ -309,6 +310,57 @@ func VerifyAppliedPlanState(
 		return &PlanDesiredStateError{Phase: "post-apply", Drift: drift}
 	}
 	return nil
+}
+
+// ReviewPlanRoundings reads which column type changes of plan keep fewer digits
+// after the point, for a plan whose format records none, as an Atlas .plan.hcl
+// does not. It compares the schema conn holds with desired, as
+// [VerifyAppliedPlanState] does after the plan runs, and reads the rows of each
+// such change: it refuses the plan with a [*planrefusal.RoundedValuesError]
+// while a row holds a value one would change, and warns of each instead where
+// policy asks for the changes ([DiffPolicy.AllowValueRounding]). It plans no
+// statement of its own: the comparison is read for these changes alone. It
+// returns plan with the changes in [PlanFile.Roundings], so that
+// [PlanFile.Execute] reads them again before the first statement.
+func ReviewPlanRoundings(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	plan PlanFile,
+	devURL string,
+	runtime engine.SchemaRuntime,
+	policy DiffPolicy,
+) (PlanFile, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return PlanFile{}, err
+	}
+	if conn == nil || desired == nil {
+		return PlanFile{}, errors.New("reading the type changes of a plan requires a database connection and the desired schema state")
+	}
+	naming, recorded := recordedNaming(conn.Info(), plan.PlacedSchema)
+	if !recorded {
+		var err error
+		if naming, err = resolveDesiredNaming(ctx, conn.Info(), devURL); err != nil {
+			return PlanFile{}, fmt.Errorf("read the type changes of the plan: %w", err)
+		}
+	}
+	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
+		Runtime: runtime,
+		Desired: desired,
+		Exclude: plan.Exclude,
+		Policy:  policy,
+		naming:  naming,
+		// The statements are the plan's own; only the type changes are read.
+		roundingsOnly: true,
+	})
+	if refusal, refused := errors.AsType[*planrefusal.RoundedValuesError](err); refused {
+		return PlanFile{}, refusal
+	}
+	if err != nil {
+		return PlanFile{}, fmt.Errorf("read the type changes of the plan: %w", err)
+	}
+	plan.Roundings = planRoundings(computation.roundings)
+	return plan, nil
 }
 
 // NewEphemeralSQLiteDev creates a throwaway SQLite dev database for plan

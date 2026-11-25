@@ -100,6 +100,9 @@ func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error 
 	if sqlText == original {
 		return p.Execute(ctx)
 	}
+	if err := refuseRoundedSince(ctx, p.conn, p.plan.roundings, p.plan.roundingRequest); err != nil {
+		return err
+	}
 	return ApplySQL(ctx, p.conn, p.txMode, sqlText)
 }
 
@@ -143,6 +146,9 @@ func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection
 	}
 	if !p.HasChanges() {
 		return nil
+	}
+	if err := p.refuseRoundedValues(ctx, conn); err != nil {
+		return err
 	}
 	return ApplyStatements(ctx, conn, mode, p.StatementSQL())
 }

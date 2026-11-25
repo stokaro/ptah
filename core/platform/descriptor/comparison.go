@@ -310,4 +310,8 @@ type BareTypes struct {
 	// LobTiers reports that TEXT and BLOB are one of four sizes, as MySQL's are, rather
 	// than holding a value of any length.
 	LobTiers bool `json:"lob_tiers,omitempty"`
+	// MoneyScale is the digits after the point a MONEY column keeps, where they are not
+	// the four SQL Server's money keeps. PostgreSQL's money keeps the digits its
+	// lc_monetary locale names, two in the C and en_US locales.
+	MoneyScale int `json:"money_scale,omitempty"`
 }

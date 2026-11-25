@@ -260,6 +260,7 @@ func (p PlanFile) ExecutionPlan(ctx context.Context, conn *dbschema.DatabaseConn
 	return ApplyPlan{
 		target: info.Dialect, capabilities: info.Capabilities, provider: p.Provider,
 		units: units, transactions: transactions, annotations: slices.Clone(p.Annotations),
+		roundings: roundingChanges(p.Roundings),
 	}, nil
 }
 

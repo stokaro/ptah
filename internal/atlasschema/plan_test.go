@@ -272,6 +272,29 @@ func TestReadPlanFileCarriesSchemasBeyondURL(t *testing.T) {
 	c.Assert(plan.SchemasBeyondURL, qt.DeepEquals, []string{"extra"})
 }
 
+// roundingPlan is a SQL Server plan that lowers the scale of prices.amount, with
+// the rounding record given.
+func roundingPlan(rounding string) string {
+	return `{"format_version":1,"dialect":"sqlserver","from_fingerprint":"sha256:ab","roundings":[` + rounding + `],` +
+		`"statements":[{"sql":"ALTER TABLE [prices] ALTER COLUMN [amount] DECIMAL(8,1) NULL"}]}`
+}
+
+// TestReadPlanFileReadsARoundingItsStatementConverts reads the record a plan writes
+// for a type change that keeps fewer digits after the point.
+func TestReadPlanFileReadsARoundingItsStatementConverts(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "rounding.plan.json")
+	contents := roundingPlan(`{"table":"prices","column":"amount","held_type":"DECIMAL(8,3)","declared_type":"DECIMAL(8,1)"}`)
+	c.Assert(os.WriteFile(path, []byte(contents), 0o600), qt.IsNil)
+
+	plan, err := atlasschema.ReadPlanFile(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Roundings, qt.DeepEquals, []atlasschema.PlanRounding{{
+		Table: "prices", Column: "amount", HeldType: "DECIMAL(8,3)", DeclaredType: "DECIMAL(8,1)",
+	}})
+}
+
 func TestReadPlanFileValidatesContract(t *testing.T) {
 	dir := t.TempDir()
 
@@ -330,6 +353,38 @@ func TestReadPlanFileValidatesContract(t *testing.T) {
 			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab",` +
 				`"rows_fingerprint":"sha256:` + strings.Repeat("a", 64) + `","statements":[{"sql":"SELECT 1"}]}`,
 			want: `invalid plan file .*: plan managed_rows and rows_fingerprint must be recorded together`,
+		},
+		{
+			// A rounding the plan reads again names the column it reads.
+			name:     "rounding_without_a_column",
+			contents: roundingPlan(`{"table":"prices","column":" ","held_type":"DECIMAL(8,3)","declared_type":"DECIMAL(8,1)"}`),
+			want:     `invalid plan file .*: plan rounding 1 is not a change the plan records: it names no table or column`,
+		},
+		{
+			// The scan splices a record's types into SQL it runs before the
+			// approval prompt, so a type outside the grammar is refused at decode.
+			name: "rounding_with_sql_in_the_declared_type",
+			contents: roundingPlan(`{"table":"prices","column":"amount","held_type":"DECIMAL(8,3)",` +
+				`"declared_type":"DECIMAL(8,1)) THEN 1 END) FROM prices; CREATE TABLE pwned (i int); SELECT COUNT(CASE WHEN 1 <> CAST(1 AS int"}`),
+			want: `invalid plan file .*: plan rounding 1 is not a change the plan records: the declared type is not a type spelling: .*`,
+		},
+		{
+			name: "rounding_with_sql_in_the_held_type",
+			contents: roundingPlan(`{"table":"prices","column":"amount","held_type":"DECIMAL(8,3)); CREATE TABLE pwned (i int); --",` +
+				`"declared_type":"DECIMAL(8,1)"}`),
+			want: `invalid plan file .*: plan rounding 1 is not a change the plan records: the held type is not a type spelling: .*`,
+		},
+		{
+			name:     "rounding_that_keeps_every_digit",
+			contents: roundingPlan(`{"table":"prices","column":"amount","held_type":"DECIMAL(8,1)","declared_type":"DECIMAL(8,3)"}`),
+			want: `invalid plan file .*: plan rounding 1 is not a change the plan records: ` +
+				`DECIMAL\(8,1\) under DECIMAL\(8,3\) is not a change that keeps fewer digits after the point`,
+		},
+		{
+			name:     "rounding_of_a_column_no_statement_names",
+			contents: roundingPlan(`{"table":"prices","column":"id","held_type":"DECIMAL(8,3)","declared_type":"DECIMAL(8,1)"}`),
+			want: `invalid plan file .*: plan rounding 1 is not a change the plan records: ` +
+				`no statement of the plan names column "id" of table "prices"`,
 		},
 		{
 			name: "row_sets_without_rows_fingerprint",

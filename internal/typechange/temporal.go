@@ -230,6 +230,14 @@ func temporalNarrows(old, updated temporalType, engine *Engine) bool {
 			return true
 		}
 	}
+	_, fewer := fewerFractionDigits(old, updated, engine)
+	return fewer
+}
+
+// fewerFractionDigits reports whether updated keeps fewer fractional-second digits than
+// old, and how many it keeps. Both a narrowing and a rounding ask it, so the two cannot
+// disagree about which change keeps fewer digits.
+func fewerFractionDigits(old, updated temporalType, engine *Engine) (int, bool) {
 	oldDigits, oldOK := old.resolvedDigits(engine)
 	newDigits, newOK := updated.resolvedDigits(engine)
 	// SQL Server's datetime takes no precision, and holds three digits rounded to
@@ -239,7 +247,16 @@ func temporalNarrows(old, updated temporalType, engine *Engine) bool {
 	if old.name == "datetime" && (updated.name == "datetime2" || updated.name == "datetimeoffset") {
 		oldDigits, oldOK = 3, true
 	}
-	return oldOK && newOK && newDigits < oldDigits
+	// Under it, the 1/300 grid holds every value of two digits and not every one of
+	// three: measured on SQL Server 2022, .001 under datetime reads .000 and .9876543
+	// reads .9866667. So it keeps two digits where it is the new type.
+	if updated.name == "datetime" && (old.name == "datetime2" || old.name == "datetimeoffset") {
+		newDigits, newOK = 2, true
+	}
+	if !oldOK || !newOK || newDigits >= oldDigits {
+		return 0, false
+	}
+	return newDigits, true
 }
 
 // temporalWidens reports a type of the same family that keeps more digits or spans a

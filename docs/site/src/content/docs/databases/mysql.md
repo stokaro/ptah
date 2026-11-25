@@ -1932,16 +1932,20 @@ trigger, and is destructive.
 
 `timestamp`, `datetime` and `time` hold no fractional-second digits where a column
 declares none, on both servers. So `datetime` and `datetime(0)` are one type and plan
-nothing, and `datetime(6)` declared `datetime` plans a `MODIFY COLUMN` that rounds the
-digits away. The plan rates that destructive. See
+nothing, and `datetime(6)` declared `datetime` plans a `MODIFY COLUMN` that drops the
+digits: MySQL rounds `10:00:00.987654` to `10:00:01` and MariaDB cuts it to
+`10:00:00`, both under a strict `sql_mode`. The plan rates that destructive. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
+While a row holds a value the change would alter, `ptah schema plan` and
+`ptah schema apply` refuse the change; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 ## A column's size
 
 `decimal` and `numeric` are `decimal(10,0)` where a column declares no precision, on
 both servers. So `decimal` and `decimal(10,0)` are one type and plan nothing, and
 `decimal(10,2)` declared `decimal` plans a `MODIFY COLUMN` that rounds `1.50` to `2`,
-rated destructive. `char`, `binary` and `bit` are the same types with a length of one.
+rated destructive, and refused while a row holds such a value. `char`, `binary` and `bit` are the same types with a length of one.
 `float(p)` is `float` up to a `p` of 24 and `double` above it, and `real` is `double`
 unless `REAL_AS_FLOAT` is set.
 
@@ -1993,10 +1997,12 @@ column "n": the server would change a value to fit its column: failed to execute
 ```
 
 A strict mode does not refuse a change that rounds a value. `DECIMAL(8,3)`
-changed to `DECIMAL(8,1)` turns `1234.567` into `1234.6`. `DATETIME(6)`
+changed to `DECIMAL(8,1)` turns `1234.567` into `1234.6`, and changed to `INT`
+into `1235`. `DATETIME(6)`
 changed to `DATETIME` turns `10:00:00.987654` into `10:00:01` on MySQL and
-into `10:00:00` on MariaDB. Both statements succeed on the strict session too
-(stokaro/ptah#6644).
+into `10:00:00` on MariaDB. Both statements succeed on the strict session too,
+so `ptah schema plan` and `ptah schema apply` read such a column before the plan
+runs; see [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 A strict mode also refuses a definition that a session without one adjusts.
 In a `utf8mb4` table, `VARCHAR(20000)` becomes `mediumtext` on a loose
