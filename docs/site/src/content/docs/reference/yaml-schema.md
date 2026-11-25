@@ -355,10 +355,17 @@ removed, so a single value that begins with a space needs the sequence form:
 declares nothing and is left out.
 
 MySQL and MariaDB keep a leading space and remove the trailing spaces of a value
-when they build the column, so `ENUM('ok ')` holds `ok`. A value that ends in a
-space would never match the column, and Ptah refuses it on those engines:
-declare `ok`. A member of a `SET` column type is read the same way, so
-`type: "SET('a ', 'b')"` is refused too.
+when they build the column, so `ENUM('ok ')` holds `ok`. A column of the
+`binary` character set is the exception and keeps them. In any other column, a
+value that ends in a space would never match the column, so on those engines
+Ptah refuses it when it validates, renders or plans the schema. Declare `ok`,
+or give the column the binary character set with `charset: binary` in its
+`mysql` or `mariadb` platform group. A member of a `SET` column type is read
+the same way, so `type: "SET('a ', 'b')"` is refused too. A character set or a
+collation written after the list is not part of the last value, so
+`type: "ENUM('ok ') CHARACTER SET utf8mb4"` is refused as well. Reading a
+database does not refuse such a value: `ptah db read` and `ptah schema inspect`
+describe a binary column that holds `ok ` with its character set.
 
 API names resolve from the target-specific key, then `api_name`, then the
 database name. GraphQL and Protobuf table values are stems that Ptah

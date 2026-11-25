@@ -450,10 +450,13 @@ type InlineEnum struct {
 	// TrailingSpacesRemoved reports that the server removes the trailing
 	// spaces of each value when it creates the column, as MySQL and MariaDB
 	// do: ENUM('ok ') is stored as ENUM('ok'), and ENUM(' ') as ENUM('').
-	// They do the same to each member of a SET type. A declared value that
-	// ends in a space then never matches what a read of the column reports,
-	// so the renderer refuses it. A leading space is kept, and so is any
-	// other trailing character, such as a tab.
+	// They do the same to each member of a SET type, in every character set
+	// except binary, which keeps the spaces. A declared value that ends in a
+	// space, in a column of another character set, then never matches what a
+	// read of the column reports, so the validation of a declaration refuses
+	// it. The render does not, because it also describes what a server holds,
+	// and a binary column can hold such a value. A leading space is kept, and
+	// so is any other trailing character, such as a tab.
 	TrailingSpacesRemoved bool `json:"trailing_spaces_removed,omitempty"`
 }
 

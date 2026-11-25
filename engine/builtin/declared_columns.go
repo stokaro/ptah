@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlcollation"
 	"ptah.run/internal/mysqlenum"
 	"ptah.run/internal/schemaprep"
 )
@@ -27,9 +28,6 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 			return err
 		}
 		if err := validateUndeclaredEnum(dialect, database, field); err != nil {
-			return err
-		}
-		if err := validateEnumTrailingSpaces(dialect, database, field); err != nil {
 			return err
 		}
 		if err := validateRelativeTimeDefault(dialect, database, field); err != nil {
@@ -116,18 +114,46 @@ func validateUndeclaredEnum(dialect string, database *schemamodel.Database, fiel
 // exists, the author declares the value the server keeps. A named enum's
 // values reach the column the same way, so they are read too, and so do the
 // members of a SET type, which no reader states as values.
-func validateEnumTrailingSpaces(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
+//
+// A column of the binary character set keeps the space, so it is not refused
+// ([mysqlcollation.Binary]). The check is a rule about a declaration, so the
+// validation of a schema runs it and the render does not: a read verb renders
+// what a server holds, and a binary column holding 'ok ' is one of those.
+func validateEnumTrailingSpaces(dialect string, database schemamodel.Database) error {
 	described, _ := platform.Lookup(dialect)
 	if !described.InlineEnum.TrailingSpacesRemoved {
 		return nil
 	}
-	// An HCL document states the values in the column's type text, as
-	// enum("happy", "ok "), and the Go and YAML readers state them as values.
-	values := append(schemaprep.InlineEnumValues(field, database.Enums, dialect), mysqlenum.Values(field.Type)...)
-	if err := refuseTrailingSpace(dialect, database, field, "enum value", "an ENUM value", values); err != nil {
-		return err
+	for _, field := range database.Fields {
+		var table schemamodel.Table
+		if owner := tableByStructName(database.Tables, field.StructName); owner != nil {
+			table = *owner
+		}
+		var schema schemamodel.Schema
+		if index := slices.IndexFunc(database.Schemas, func(s schemamodel.Schema) bool {
+			return table.Schema != "" && s.Name == table.Schema
+		}); index >= 0 {
+			schema = database.Schemas[index]
+		}
+		binary, err := mysqlcollation.Binary(dialect, schema, table, field)
+		if err != nil {
+			return err
+		}
+		if binary {
+			continue
+		}
+		// An HCL document states the values in the column's type text, as
+		// enum("happy", "ok "), and the Go and YAML readers state them as
+		// values.
+		values := append(schemaprep.InlineEnumValues(field, database.Enums, dialect), mysqlenum.Values(field.Type)...)
+		if err := refuseTrailingSpace(dialect, &database, field, "enum value", "an ENUM value", values); err != nil {
+			return err
+		}
+		if err := refuseTrailingSpace(dialect, &database, field, "SET member", "a SET member", mysqlenum.SetValues(field.Type)); err != nil {
+			return err
+		}
 	}
-	return refuseTrailingSpace(dialect, database, field, "SET member", "a SET member", mysqlenum.SetValues(field.Type))
+	return nil
 }
 
 // refuseTrailingSpace refuses the first of values, each of them a what of the

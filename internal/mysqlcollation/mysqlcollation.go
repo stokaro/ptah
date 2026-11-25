@@ -2,12 +2,14 @@
 // declaration leaves to the server: the table's default collation, and the
 // collation of each column that names none. It also names the type the server
 // stores a character column of the binary character set as, since that
-// character set is what decides it. Two owner services read it, so the
-// two sides of a comparison resolve one way: dialect/mysql/mysqlprepare
+// character set is what decides it. Two owner services read the resolution, so
+// the two sides of a comparison resolve one way: dialect/mysql/mysqlprepare
 // resolves the declaration a comparison plans toward, and the creation
 // projection in dialect/mysql/mysqlconvert predicts what a read of a table
-// created from a schema file reports. It consults no server; the caller hands
-// it the server facts it has.
+// created from a schema file reports. [Binary] says whether a column takes the
+// binary character set, which keeps the trailing spaces of an ENUM value; the
+// validation of a declaration in engine/builtin reads it. It consults no
+// server; the caller hands it the server facts it has.
 package mysqlcollation
 
 import (
@@ -21,6 +23,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/mysqlenum"
 	"ptah.run/internal/schemaprep"
 )
 
@@ -112,6 +115,49 @@ func Resolve(target string, table schemamodel.Table, fields []schemamodel.Field,
 		result.Inherited[field.Name] = inherited
 	}
 	return result, nil
+}
+
+// Binary reports whether field, a column of table, takes the binary character
+// set on target, MySQL or MariaDB, where schema is the schema the table is in.
+// The binary character set has one collation, also named binary, so a
+// character set or a collation decides, the character set where both are
+// named.
+//
+// The column decides first, by what it names: the character set or the
+// collation written after the list of an ENUM or SET type
+// ([mysqlenum.Charset]), the owner's character set setting, and Collate. A
+// column that names neither takes the table's defaults, read as [Resolve]
+// reads them, and then the schema's. A declaration that names none of them
+// reports false: the server's default is not consulted. An owner setting of
+// another type wraps schemaext.ErrInvalidValue.
+func Binary(target string, schema schemamodel.Schema, table schemamodel.Table, field schemamodel.Field) (bool, error) {
+	charset, collation := mysqlenum.Charset(field.Type)
+	if charset == "" {
+		settings, _, err := mysqlschema.Settings(field.Facets)
+		if err != nil {
+			return false, err
+		}
+		charset = settings.Charset
+	}
+	if named, binary := namesBinary(charset, cmp.Or(collation, field.Collate)); named {
+		return binary, nil
+	}
+	collation, charset, err := declaredTableDefaults(table, platform.NormalizeDialect(target))
+	if err != nil {
+		return false, err
+	}
+	if named, binary := namesBinary(charset, collation); named {
+		return binary, nil
+	}
+	_, binary := namesBinary(schema.Charset, schema.Collate)
+	return binary, nil
+}
+
+// namesBinary reports whether a character set or a collation is named, and
+// whether the one that decides, the character set where both are, is binary.
+func namesBinary(charset, collation string) (named, binary bool) {
+	name := cmp.Or(strings.TrimSpace(charset), strings.TrimSpace(collation))
+	return name != "", strings.EqualFold(name, "binary")
 }
 
 // facts are the server facts, with the aliases settled, and the descriptor's

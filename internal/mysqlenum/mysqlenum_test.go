@@ -33,6 +33,13 @@ func TestValues_HappyPath(t *testing.T) {
 		},
 		{name: "a value of spaces", columnType: "enum('a',' ')", want: []string{"a", " "}},
 		{name: "an empty value is left out", columnType: "enum('a','')", want: []string{"a"}},
+		{
+			// A declared type may name a character set and a collation after
+			// the list, and a parenthesis inside a value does not close it.
+			name:       "attributes after the list",
+			columnType: "ENUM('ok ', 'a)') CHARACTER SET utf8mb4 COLLATE utf8mb4_bin",
+			want:       []string{"ok ", "a)"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -50,6 +57,7 @@ func TestSetValues_HappyPath(t *testing.T) {
 	}{
 		{name: "the type a catalog reports", columnType: "set('a',' b')", want: []string{"a", " b"}},
 		{name: "a declared type", columnType: `SET ("a ", "b")`, want: []string{"a ", "b"}},
+		{name: "attributes after the list", columnType: "set('m ','n') COLLATE utf8mb4_bin", want: []string{"m ", "n"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -96,6 +104,50 @@ func TestValues_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(mysqlenum.Values(test.columnType), qt.IsNil)
+		})
+	}
+}
+
+func TestCharset_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, columnType, charset, collation string
+	}{
+		{
+			name:       "a character set and a collation",
+			columnType: "ENUM('ok ','x') CHARACTER SET binary COLLATE binary",
+			charset:    "binary", collation: "binary",
+		},
+		{name: "CHARSET in lower case", columnType: "enum('a') charset latin1", charset: "latin1"},
+		{name: "a collation alone", columnType: "set('m ','n') COLLATE utf8mb4_bin", collation: "utf8mb4_bin"},
+		{name: "quoted names", columnType: "enum('a') CHARACTER SET 'binary' COLLATE `binary`", charset: "binary", collation: "binary"},
+		{name: "other attributes are passed over", columnType: "enum('a') NOT NULL CHARSET binary", charset: "binary"},
+		{name: "a parenthesis inside a value", columnType: "enum('CHARSET latin1)') CHARSET binary", charset: "binary"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			charset, collation := mysqlenum.Charset(test.columnType)
+			c.Assert(charset, qt.Equals, test.charset)
+			c.Assert(collation, qt.Equals, test.collation)
+		})
+	}
+}
+
+func TestCharset_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, columnType string
+	}{
+		{name: "no attributes", columnType: "enum('a','b')"},
+		{name: "not an enum or a set", columnType: "varchar(10) CHARACTER SET binary"},
+		{name: "a list nothing closes", columnType: "enum('a' CHARACTER SET binary"},
+		{name: "a keyword with no name", columnType: "enum('a') CHARACTER SET"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			charset, collation := mysqlenum.Charset(test.columnType)
+			c.Assert(charset, qt.Equals, "")
+			c.Assert(collation, qt.Equals, "")
 		})
 	}
 }

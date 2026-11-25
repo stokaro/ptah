@@ -5,6 +5,7 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -229,6 +230,16 @@ func TestEnumTrailingSpaceE2E_FailurePath(t *testing.T) {
 			},
 			table: func(schema string) string { return schema + ".c" },
 		},
+		{
+			// A character set after the list is not part of the last value,
+			// and utf8mb4 removes the space as the default does.
+			name: "YAML type naming a character set", file: "schema.yaml",
+			document: func(string) string {
+				return "tables:\n  c:\n    columns:\n      id:\n        type: INTEGER\n        primary: true\n" +
+					"        not_null: true\n      n:\n        type: \"ENUM('happy', ' sad', 'ok ') CHARACTER SET utf8mb4\"\n"
+			},
+			table: func(string) string { return "c" },
+		},
 	}
 	for _, engine := range engines {
 		for _, document := range documents {
@@ -313,6 +324,114 @@ func TestSetTrailingSpaceE2E_FailurePath(t *testing.T) {
 					"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"),
 					qt.Equals, "set('a',' b','c')")
 				c.Assert(enumBytesQuery(c, database, "SELECT CONCAT('[', n, ']') FROM c"), qt.Equals, "[ b,c]")
+			})
+		}
+	}
+}
+
+// binaryEnumEngines are the servers a binary ENUM or SET column is built on.
+var binaryEnumEngines = []struct {
+	name  string
+	admin dbtarget.Engine
+}{
+	{name: "MySQL", admin: dbtarget.MySQLAdmin},
+	{name: "MariaDB", admin: dbtarget.MariaDBAdmin},
+}
+
+// TestEnumTrailingSpaceE2E_ReadsABinaryColumn reads a database holding 'ok '
+// and 'm ' in an ENUM and a SET column of the binary character set, which
+// keeps the trailing space of a value: measured on MySQL 8.4 and MariaDB 11.8,
+// the column type holds 'ok ' and the row stores 6F6B20. Each read verb
+// describes the column with its character set, and the HCL description,
+// applied back, plans nothing. Refused as a declaration the server would not
+// keep, the read verbs could not describe this database at all, and without
+// the character set the description would build a column that removes the
+// space.
+func TestEnumTrailingSpaceE2E_ReadsABinaryColumn(t *testing.T) {
+	const (
+		enumColumn = "`b` enum('ok ','x') CHARACTER SET binary COLLATE binary"
+		setColumn  = "`s` set('m ','n') CHARACTER SET binary COLLATE binary"
+	)
+	for _, engine := range binaryEnumEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, database := newMySQLFamilyScratch(c, engine.admin).builtFrom(c,
+				"CREATE TABLE c (id INT PRIMARY KEY NOT NULL, b ENUM('ok ','x') CHARACTER SET binary, "+
+					"s SET('m ','n') CHARACTER SET binary);\nINSERT INTO c VALUES (1, 'ok ', 'm ');")
+			dir := c.TempDir()
+
+			read := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir}, "db", "read", "--db-url", database)
+			sql := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+				"schema", "inspect", "--db-url", database, "--format", "sql")
+			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"schema", "inspect", "--url", database, "--format", "{{ sql . }}")
+			hcl := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir}, "schema", "inspect", "--db-url", database)
+
+			c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", read.Stderr))
+			c.Assert(read.Stdout, qt.Contains, enumColumn)
+			c.Assert(read.Stdout, qt.Contains, setColumn)
+			c.Assert(sql.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", sql.Stderr))
+			c.Assert(sql.Stdout, qt.Contains, enumColumn)
+			c.Assert(sql.Stdout, qt.Contains, setColumn)
+			c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", compat.Stderr))
+			c.Assert(compat.Stdout, qt.Contains, "`b` enum('ok ','x') CHARACTER SET binary COLLATE binary NULL")
+			c.Assert(hcl.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", hcl.Stderr))
+			c.Assert(hcl.Stdout, qt.Contains, `charset = "binary"`)
+
+			schema := filepath.Join(dir, "inspected.hcl")
+			c.Assert(os.WriteFile(schema, []byte(hcl.Stdout), 0o600), qt.IsNil)
+			synced := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+				"schema", "apply", "--db-url", database, "--schema-file", schema, "--dry-run")
+
+			c.Assert(synced.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", synced.Stderr))
+			c.Assert(synced.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+			c.Assert(enumBytesQuery(c, database, "SELECT CONCAT(HEX(b), ' ', HEX(s)) FROM c"), qt.Equals, "6F6B20 6D20")
+		})
+	}
+}
+
+// TestEnumTrailingSpaceE2E_AppliesABinaryColumn declares 'ok ' in a column of
+// the binary character set, which keeps the space, so the apply builds the
+// column with it and a second plan is synced. A refusal here would name a
+// space the server does not remove.
+func TestEnumTrailingSpaceE2E_AppliesABinaryColumn(t *testing.T) {
+	documents := []struct {
+		name, file string
+		document   func(schema string) string
+	}{
+		{
+			name: "HCL", file: "schema.hcl",
+			document: func(schema string) string {
+				return strings.Replace(trailingSpaceHCLDocument(schema, `"enum('ok ','x')"`),
+					"    null = true\n", "    null = true\n    charset = \"binary\"\n", 1)
+			},
+		},
+		{
+			name: "YAML", file: "schema.yaml",
+			document: func(string) string {
+				return enumBytesMySQLDocument("['ok ', x]") +
+					"        platform:\n          mysql: {charset: binary}\n          mariadb: {charset: binary}\n"
+			},
+		},
+	}
+	for _, engine := range binaryEnumEngines {
+		for _, document := range documents {
+			t.Run(engine.name+"/"+document.name, func(t *testing.T) {
+				c := qt.New(t)
+				name, database := newMySQLFamilyScratch(c, engine.admin).database(c, "enum_binary")
+				schema := filepath.Join(c.TempDir(), document.file)
+				c.Assert(os.WriteFile(schema, []byte(document.document(name)), 0o600), qt.IsNil)
+
+				applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+					"schema", "apply", "--db-url", database, "--schema-file", schema, "--auto-approve")
+				synced := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+					"schema", "apply", "--db-url", database, "--schema-file", schema, "--dry-run")
+
+				c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
+				c.Assert(enumBytesQuery(c, database, "SELECT COLUMN_TYPE FROM information_schema.COLUMNS "+
+					"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"), qt.Equals, "enum('ok ','x')")
+				c.Assert(synced.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", synced.Stderr))
+				c.Assert(synced.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 			})
 		}
 	}
