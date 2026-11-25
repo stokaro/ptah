@@ -745,6 +745,17 @@ func applyMySQLColumnMetadata(
 		scale := int(numericScale.Int64)
 		col.NumericScale = &scale
 	}
+	// An ENUM or SET column holds text, so it always has a character set, and
+	// MySQL reports none only for the binary one: measured on MySQL 8.4, an
+	// ENUM or SET column of the binary character set, named on the column or
+	// taken from the table, reports NULL for both, where MariaDB 11.8 reports
+	// binary and SHOW CREATE TABLE prints CHARACTER SET binary COLLATE binary.
+	// It is the character set that keeps the trailing spaces of the values,
+	// so a description without it would build a column that removes them.
+	if !charset.Valid && !collate.Valid && enumOrSetType(col.ColumnType) {
+		charset = sql.NullString{String: "binary", Valid: true}
+		collate = charset
+	}
 	// The character set and the ON UPDATE clause are the MySQL owner's
 	// settings, recorded as its observation. The server reports a character
 	// set for every text column, inherited ones included.
@@ -773,6 +784,13 @@ func applyMySQLColumnMetadata(
 	var err error
 	col.Facets, err = mysqlschema.WithObservedColumnSettings(col.Facets, settings)
 	return err
+}
+
+// enumOrSetType reports whether columnType, as COLUMN_TYPE reports it, is an
+// ENUM or a SET type.
+func enumOrSetType(columnType string) bool {
+	lowered := strings.ToLower(columnType)
+	return strings.HasPrefix(lowered, "enum(") || strings.HasPrefix(lowered, "set(")
 }
 
 // mysqlUpdateExpression reads the `ON UPDATE` clause out of a column's EXTRA.
