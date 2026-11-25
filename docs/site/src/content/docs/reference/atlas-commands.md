@@ -953,7 +953,10 @@ refused, because the report does not read them yet; pass `--exclude` and
 `--lock-name`, which take precedence: with the flag or its variable given, the
 setting is not refused and the flag's value is used. The native flags, such as `--db-url`, `--shadow-db` and
 `--json`, are refused, and their variables, such as `PTAH_DB_URL`, are not
-read.
+read. `--trust-replay-sql` is refused too, but `PTAH_TRUST_REPLAY_SQL=1` is
+read: it trusts the SQL the replay runs on the dev database, as it does on
+`migrate down` and `migrate checkpoint`; see
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
 
 ### `ptah-compat migrate diff`
 

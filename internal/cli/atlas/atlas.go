@@ -479,6 +479,9 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 			factory:            migratecheckpoint.NewMigrateCheckpointCommand,
 			positionals:        []atlasPositionalArg{{name: "name", nativeName: "description"}},
 			positionalOptional: true,
+			// This surface trusts replayed SQL through PTAH_TRUST_REPLAY_SQL
+			// alone, which the target still reads through the native binding.
+			nativeOnlyFlags: []string{dbcli.TrustReplaySQLFlagName},
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
@@ -831,8 +834,12 @@ func atlasMigrateDownVerb() atlasVerb {
 		// particular would be read and then ignored, since a forwarded run
 		// takes the default lock. --limit is the native count the amount
 		// argument forwards to: typed beside it, one of the two would be
-		// dropped, and the --format path refuses it as unknown.
-		nativeOnlyFlags:     []string{"confirm", "dir-format", "migration-lock-name", atlasMigrateDownLimitFlag},
+		// dropped, and the --format path refuses it as unknown. This surface
+		// trusts replayed SQL through PTAH_TRUST_REPLAY_SQL alone, which the
+		// target still reads through the native binding.
+		nativeOnlyFlags: []string{
+			"confirm", "dir-format", "migration-lock-name", atlasMigrateDownLimitFlag, dbcli.TrustReplaySQLFlagName,
+		},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
