@@ -125,3 +125,48 @@ func TestMigrateValidateRefusesASequenceOfAnotherDatabaseE2E(t *testing.T) {
 		"SELECT next_not_cached_value FROM `"+other+"`.s").Scan(&next), qt.IsNil)
 	c.Assert(next, qt.Equals, int64(1))
 }
+
+// tableMaintenanceEngines are the MySQL-family servers, each with the view
+// that reports the InnoDB id of a table. OPTIMIZE rebuilds an InnoDB table
+// under a new id on both servers; ANALYZE and REPAIR keep it, so for them the
+// refusal is what tells a guard that reads the plural from one that does not.
+var tableMaintenanceEngines = []struct {
+	name     string
+	admin    dbtarget.Engine
+	innoDBID string
+}{
+	{name: "MySQL", admin: dbtarget.MySQLAdmin, innoDBID: "information_schema.INNODB_TABLES"},
+	{name: "MariaDB", admin: dbtarget.MariaDBAdmin, innoDBID: "information_schema.INNODB_SYS_TABLES"},
+}
+
+// innoDBTableID reads the InnoDB id of database.t from view.
+func innoDBTableID(c *qt.C, scratch mysqlScratch, view, database string) int64 {
+	c.Helper()
+	var id int64
+	c.Assert(scratch.admin.QueryRowContext(c.Context(),
+		"SELECT TABLE_ID FROM "+view+" WHERE NAME = ?", database+"/t").Scan(&id), qt.IsNil)
+	return id
+}
+
+// Both servers take TABLES for TABLE in OPTIMIZE, ANALYZE and REPAIR, and
+// the replay guard reads the plural as it reads the singular.
+func TestMigrateValidateRefusesTableMaintenanceOfAnotherDatabaseE2E(t *testing.T) {
+	for _, engine := range tableMaintenanceEngines {
+		for _, verb := range []string{"OPTIMIZE", "ANALYZE", "REPAIR"} {
+			t.Run(engine.name+"/"+verb+" TABLES", func(t *testing.T) {
+				c := qt.New(t)
+				scratch := newMySQLFamilyScratch(c, engine.admin)
+				other, _ := scratch.builtAs(c, "xdb_other", "CREATE TABLE t (id int PRIMARY KEY);\nINSERT INTO t VALUES (1);")
+				_, devURL := scratch.database(c, "xdb_dev")
+				id := innoDBTableID(c, scratch, engine.innoDBID, other)
+				dir := crossDatabaseMigration(c, verb+" TABLES {other}.t;\n", other)
+
+				output, err := runCompatVerb("migrate", "validate", "--dir", "file://"+dir, "--dev-url", devURL)
+
+				c.Assert(innoDBTableID(c, scratch, engine.innoDBID, other), qt.Equals, id)
+				c.Assert(err, qt.ErrorMatches, `(?s).*migration replay rejects cross-database target "`+regexp.QuoteMeta(other+".t")+`".*`,
+					qt.Commentf("%s", output))
+			})
+		}
+	}
+}

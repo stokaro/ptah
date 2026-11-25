@@ -632,7 +632,20 @@ replication change; and a MySQL executable comment, which hides SQL from the
 guard. SQLite keeps
 `ATTACH`, `load_extension` and a pragma that changes state refused.
 
-On MySQL and MariaDB, a refusal that stays under trust holds only for a
+On MySQL and MariaDB these refusals hold for a statement as the history writes
+it. The guard does not read the SQL that a statement builds and runs, and
+trust accepts the statements that do: a prepared statement, a routine that
+`CALL` runs, and on MariaDB `EXECUTE IMMEDIATE` and a compound statement. Each
+of them can run a statement that trust keeps refused. Measured on MySQL 8.4.13
+and MariaDB 11.8.9 under trust,
+`PREPARE s FROM 'SET GLOBAL max_connect_errors = 101'` followed by
+`EXECUTE s` changes the server setting, and so does a procedure that runs the
+same `SET GLOBAL`, where the statement written on its own is refused. On
+MariaDB a prepared `CREATE EVENT` creates an event. Trust declares that you
+accept what the history runs. The refusals that stay catch a statement the
+history writes on its own, not one it builds to get past them.
+
+On MySQL and MariaDB, a refusal that stays under trust also holds only for a
 statement the guard reads as the server does. The guard reads each statement
 as UTF-8. Under trust a prepared statement can change the client character
 set as `SET NAMES` can, so trust lifts that refusal and the refusal of a

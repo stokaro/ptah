@@ -57,6 +57,11 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 // session or the server the run uses; a TABLESPACE, LOGFILE GROUP, SERVER,
 // RESOURCE GROUP or SPATIAL REFERENCE SYSTEM, which configure the server, as a
 // server the run owns keeps them refused; ALTER DATABASE; and a TEMP object.
+//
+// Those refusals read a statement as the history writes it. The SQL a
+// prepared statement, EXECUTE IMMEDIATE, a compound statement or a routine
+// builds and runs is not read, and trust lifts each of them, so under trust
+// such SQL can run a statement these refusals name.
 func validateMySQLReplayStatement(dialect, database, stmt string, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
