@@ -755,9 +755,10 @@ ALTER TABLE "prices" ALTER COLUMN "amount" TYPE numeric(8,1);
 The assertion is the comparison `ptah migrations generate` counted, the server's own
 `CAST` against the stored value. With `--replay`, `ptah migrations generate` counts the
 rows of the dev database the directory was replayed on, which holds only the rows the
-migrations insert; the check reads the database the file runs on either way. `ptah migrations up` and `ptah-compat migrate apply`
-evaluate it before the body like any other check, so a row written after the file was
-generated stops the migration with nothing applied:
+migrations insert; the check reads the database the file runs on either way.
+`ptah migrations up` and `ptah-compat migrate apply` evaluate it before the body like
+any other check, so a row written after the file was generated stops the migration
+with nothing applied:
 
 ```text
 error: pre-migration check prices.amount for migration 1795620874 was not satisfied:
@@ -780,7 +781,9 @@ wherever it runs. Edit the file to add a check, or generate it again without the
 to have it read the rows where it runs.
 
 A check of kind `rounded-values` reads the rows before the body and refuses
-`phase=after`. The down file widens the column back and carries no such check. Under
+`phase=after`. Only the up file carries the check. The down file of such a migration
+widens the column back, and the down file of a migration that widens a column narrows
+it without a check, so a rollback rounds the values written after the up file ran. Under
 `PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah directive, so `ptah-compat migrate
 apply` refuses the file, as it refuses every other check; `migrate hash`,
 `migrate status` and `migrate validate` without `--dev-url` read the bytes and keep
