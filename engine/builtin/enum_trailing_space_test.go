@@ -101,12 +101,6 @@ func TestValidateEnumTrailingSpace_HappyPath(t *testing.T) {
 			database: binaryDefaultDatabase(schemamodel.Table{Collate: "binary"}, schemamodel.Schema{}),
 			want:     `'ok '`,
 		},
-		{
-			name:     "a schema of the binary character set",
-			dialect:  platform.MySQL,
-			database: binaryDefaultDatabase(schemamodel.Table{Schema: "s"}, schemamodel.Schema{Name: "s", Charset: "binary"}),
-			want:     `'ok '`,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -242,6 +236,29 @@ func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 			dialect:  platform.MySQL,
 			database: binaryTableColumn(schemamodel.Field{Type: "ENUM('ok ', 'x') CHARSET latin1"}),
 			want:     okOnMySQL,
+		},
+		{
+			name:     "a column of another collation in a binary table",
+			dialect:  platform.MySQL,
+			database: binaryTableColumn(schemamodel.Field{Type: "ENUM", Enum: []string{"ok ", "x"}, Collate: "utf8mb4_bin"}),
+			want:     okOnMySQL,
+		},
+		{
+			name:    "a utf8mb4 table in a binary schema",
+			dialect: platform.MySQL,
+			database: binaryDefaultDatabase(schemamodel.Table{Schema: "s", Collate: "utf8mb4_bin"},
+				schemamodel.Schema{Name: "s", Charset: "binary", Collate: "binary"}),
+			want: `column "n" of table "s.c" declares the enum value "ok "`,
+		},
+		{
+			// A plan creates the table in an existing schema without changing
+			// its default (stokaro/ptah#6665), so a binary schema default does
+			// not say what the column takes.
+			name:    "a column in a binary schema",
+			dialect: platform.MariaDB,
+			database: binaryDefaultDatabase(schemamodel.Table{Schema: "s"},
+				schemamodel.Schema{Name: "s", Charset: "binary", Collate: "binary"}),
+			want: `column "n" of table "s.c" declares the enum value "ok "`,
 		},
 	}
 	for _, test := range tests {

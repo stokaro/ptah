@@ -118,19 +118,22 @@ func Resolve(target string, table schemamodel.Table, fields []schemamodel.Field,
 }
 
 // Binary reports whether field, a column of table, takes the binary character
-// set on target, MySQL or MariaDB, where schema is the schema the table is in.
-// The binary character set has one collation, also named binary, so a
-// character set or a collation decides, the character set where both are
-// named.
+// set on target, MySQL or MariaDB. The binary character set has one
+// collation, also named binary, so a character set or a collation decides,
+// the character set where both are named.
 //
 // The column decides first, by what it names: the character set or the
 // collation written after the list of an ENUM or SET type
 // ([mysqlenum.Charset]), the owner's character set setting, and Collate. A
 // column that names neither takes the table's defaults, read as [Resolve]
-// reads them, and then the schema's. A declaration that names none of them
-// reports false: the server's default is not consulted. An owner setting of
-// another type wraps schemaext.ErrInvalidValue.
-func Binary(target string, schema schemamodel.Schema, table schemamodel.Table, field schemamodel.Field) (bool, error) {
+// reads them. A declaration that names none of them reports false, and so
+// does a binary default of the schema the table is in: a plan creates a table
+// in an existing schema without changing the schema's default
+// (stokaro/ptah#6665), so the column takes the default the server already
+// has, which a declaration does not know. The server's default is not
+// consulted either. An owner setting of another type wraps
+// schemaext.ErrInvalidValue.
+func Binary(target string, table schemamodel.Table, field schemamodel.Field) (bool, error) {
 	charset, collation := mysqlenum.Charset(field.Type)
 	if charset == "" {
 		settings, _, err := mysqlschema.Settings(field.Facets)
@@ -146,10 +149,7 @@ func Binary(target string, schema schemamodel.Schema, table schemamodel.Table, f
 	if err != nil {
 		return false, err
 	}
-	if named, binary := namesBinary(charset, collation); named {
-		return binary, nil
-	}
-	_, binary := namesBinary(schema.Charset, schema.Collate)
+	_, binary := namesBinary(charset, collation)
 	return binary, nil
 }
 

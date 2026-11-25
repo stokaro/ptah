@@ -231,6 +231,20 @@ func TestEnumTrailingSpaceE2E_FailurePath(t *testing.T) {
 			table: func(schema string) string { return schema + ".c" },
 		},
 		{
+			// A plan does not change the default of an existing schema
+			// (stokaro/ptah#6665), so the column keeps its table's utf8mb4
+			// and the server removes the space.
+			name: "HCL in a binary schema", file: "schema.hcl",
+			document: func(schema string) string {
+				return strings.Replace(enumTrailingSpaceHCLDocument(schema, `"happy", " sad", "ok "`),
+					`schema "`+schema+`" {}`, `schema "`+schema+`" {
+  charset = "binary"
+  collate = "binary"
+}`, 1)
+			},
+			table: func(schema string) string { return schema + ".c" },
+		},
+		{
 			// A character set after the list is not part of the last value,
 			// and utf8mb4 removes the space as the default does.
 			name: "YAML type naming a character set", file: "schema.yaml",

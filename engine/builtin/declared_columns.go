@@ -129,13 +129,7 @@ func validateEnumTrailingSpaces(dialect string, database schemamodel.Database) e
 		if owner := tableByStructName(database.Tables, field.StructName); owner != nil {
 			table = *owner
 		}
-		var schema schemamodel.Schema
-		if index := slices.IndexFunc(database.Schemas, func(s schemamodel.Schema) bool {
-			return table.Schema != "" && s.Name == table.Schema
-		}); index >= 0 {
-			schema = database.Schemas[index]
-		}
-		binary, err := mysqlcollation.Binary(dialect, schema, table, field)
+		binary, err := mysqlcollation.Binary(dialect, table, field)
 		if err != nil {
 			return err
 		}
