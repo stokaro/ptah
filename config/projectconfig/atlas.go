@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/secretmask"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
@@ -3947,9 +3948,16 @@ func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, di
 				"function may have derived from that variable in a form scrubbing cannot recognize",
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
 	}
+	diagnostic := p.scrubSensitive(hcldiag.Stable(diags).Error())
+	if p.quotesShortSensitiveValue(diagnostic) {
+		return fmt.Errorf(
+			"cannot evaluate atlas.hcl %q at %s:%d: the underlying diagnostic is withheld because it may quote "+
+				"the value of a sensitive variable, which is too short to take out of it without taking "+
+				"letters out of its words",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line)
+	}
 	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
-		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
-		p.scrubSensitive(hcldiag.Stable(diags).Error()))
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line, diagnostic)
 }
 
 // sensitiveVariableIn reports the first `sensitive = true` variable expr reads.
@@ -3985,14 +3993,34 @@ func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
 // that `sensitive` exists to hide. The rest of this parser already refuses to
 // put variable values in messages; this keeps that invariant when the message
 // comes from HCL rather than from us.
+//
+// A value is taken out as [secretmask.Mask] takes a secret out: one of five
+// characters or more wherever it occurs, and a shorter one only where it stands
+// as a credential. A value of a character or two taken out of every word it
+// occurs in would garble the message and show the value by the gaps, so the
+// callers withhold a message [atlasParser.quotesShortSensitiveValue] reports
+// rather than show it.
 func (p atlasParser) scrubSensitive(text string) string {
 	if p.sensitiveValues == nil {
 		return text
 	}
-	for _, secret := range *p.sensitiveValues {
-		text = strings.ReplaceAll(text, secret, "(sensitive value)")
+	return secretmask.Mask(text, *p.sensitiveValues, nil, "(sensitive value)")
+}
+
+// quotesShortSensitiveValue reports whether text, as [atlasParser.scrubSensitive]
+// left it, still holds the value of a `sensitive = true` variable as a word of
+// its own: one too short to take out wherever it occurs. The text may quote the
+// value, as `open x: file does not exist` quotes a path "x", or hold a word of
+// its own that is spelled the same, and which of the two cannot be told, so a
+// message that holds it is withheld whole. The letters of the value inside a
+// longer word, as "x" stands in "exist", are the message's own.
+func (p atlasParser) quotesShortSensitiveValue(text string) bool {
+	if p.sensitiveValues == nil {
+		return false
 	}
-	return text
+	return slices.ContainsFunc(*p.sensitiveValues, func(value string) bool {
+		return !secretmask.MasksAnywhere(value) && secretmask.ContainsWord(text, value)
+	})
 }
 
 // invalidValue reports a known key whose value is of the right type but breaks a
@@ -4018,6 +4046,10 @@ func (p atlasParser) scrubSensitive(text string) string {
 // [atlasParser.evaluationFailed] withholds for a bare reference too, and that
 // asymmetry is deliberate: an HCL diagnostic quotes whatever sub-expression it
 // blames, so there is no equivalent guarantee that the bytes survived.
+//
+// A reason that still holds a sensitive value too short for scrubbing to take
+// out wherever it occurs is withheld as well, by
+// [atlasParser.quotesShortSensitiveValue].
 func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err error) error {
 	if secret, found := p.derivedSensitiveVariableIn(attr.Expr); found {
 		return fmt.Errorf(
@@ -4026,9 +4058,16 @@ func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err er
 				"a function may have derived from that variable in a form scrubbing cannot recognize",
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
 	}
+	reason := p.scrubSensitive(err.Error())
+	if p.quotesShortSensitiveValue(reason) {
+		return fmt.Errorf(
+			"atlas.hcl %q at %s:%d: the value was refused; the underlying reason is withheld because it may "+
+				"quote the value of a sensitive variable, which is too short to take out of it without "+
+				"taking letters out of its words",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line)
+	}
 	return fmt.Errorf("atlas.hcl %q at %s:%d: %s",
-		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
-		p.scrubSensitive(err.Error()))
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line, reason)
 }
 
 // wrongValueType reports a known key given a value of the wrong type. The key

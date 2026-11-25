@@ -359,6 +359,59 @@ func TestOpenAICompatible_AQuotedBodyNeverCarriesTheCredential(t *testing.T) {
 	}
 }
 
+// A token too short to take out of every word of a body is taken out where the
+// body quotes it as a credential, and the words that hold its letters keep their
+// text, as a gateway's name that repeats the token does. A longer token is taken
+// out wherever the body repeats it, the gateway's name included.
+func TestOpenAICompatible_AQuotedBodyKeepsTheWordsOfAShortToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		body  string
+		want  string
+	}{
+		{
+			name:  "one character after Bearer",
+			token: "x",
+			body:  `{"error":{"message":"Authorization: Bearer x is expired"}}`,
+			want:  `{"error":{"message":"Authorization: Bearer [redacted] is expired"}}`,
+		},
+		{
+			name:  "two characters as the value of a key",
+			token: "ab",
+			body:  `{"error":{"message":"key rejected by the lab gateway","api_key":"ab"}}`,
+			want:  `{"error":{"message":"key rejected by the lab gateway","api_key":"[redacted]"}}`,
+		},
+		{
+			name:  "two characters as the gateway's name",
+			token: "gw",
+			body:  `{"error":{"message":"gateway gw refused token=gw"}}`,
+			want:  `{"error":{"message":"gateway gw refused token=[redacted]"}}`,
+		},
+		{
+			name:  "a longer token as the gateway's name",
+			token: "llmgateway01",
+			body:  `{"error":{"message":"llmgateway01 refused the key"}}`,
+			want:  `{"error":{"message":"[redacted] refused the key"}}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv("PTAH_2641_TOKEN", test.token)
+			provider := credentialledEndpoint(c, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(test.body))
+			})
+
+			_, err := provider.Embed(context.Background(), []string{"first"})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, test.want)
+		})
+	}
+}
+
 // credentialledEndpoint is [endpoint] with a resolvable credential, which is
 // what makes a redaction assertion possible at all.
 func credentialledEndpoint(c *qt.C, handler http.HandlerFunc) embedprovider.Provider {

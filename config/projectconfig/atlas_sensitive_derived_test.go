@@ -2,6 +2,7 @@ package projectconfig_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -284,4 +285,94 @@ env "local" {
 	// withholding where the bytes are known to match.
 	c.Assert(err.Error(), qt.Contains, "unsupported URL scheme")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "withheld")
+}
+
+// A sensitive value too short to take out of every word of a diagnostic is
+// taken out of none of them, so a diagnostic that still holds it is withheld
+// whole: what it quotes cannot be told from a word of its own. A value equal to
+// a database name is as short as a path.
+func TestParseAtlasWithholdsADiagnosticThatHoldsAShortSensitiveValue(t *testing.T) {
+	for _, value := range []string{"x", "ex", "shop"} {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
+			raw := []byte(`variable "target" {
+  type      = string
+  sensitive = true
+  default   = "` + value + `"
+}
+
+env {
+  for_each = toset([var.target])
+  name     = atlas.env
+  url      = file(each.value)
+}
+`)
+
+			_, err := projectconfig.ParseAtlasFSCollectionWithOptions(raw, "atlas.hcl", fstest.MapFS{},
+				projectconfig.AtlasLoadOptions{EnvName: "local"})
+
+			c.Assert(err, qt.ErrorMatches, `.*cannot evaluate atlas\.hcl "url" at atlas\.hcl:10: the underlying diagnostic is withheld because it may quote the value of a sensitive variable.*`)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "open "+value)
+		})
+	}
+}
+
+// The value-error path withholds a reason that holds a short sensitive value in
+// the same way.
+func TestParseAtlasWithholdsAValueErrorThatHoldsAShortSensitiveValue(t *testing.T) {
+	for _, value := range []string{"/", "/x"} {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
+			raw := []byte(`variable "secret" {
+  type      = string
+  default   = "` + value + `"
+  sensitive = true
+}
+
+data "hcl_schema" "x" {
+  path = var.secret
+}
+
+env "local" {
+  url = "sqlite://x.db?_fk=1"
+  src = data.hcl_schema.x.url
+}
+`)
+
+			_, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{EnvName: "local"})
+
+			c.Assert(err, qt.ErrorMatches, `atlas\.hcl "path" at atlas\.hcl:8: the value was refused; the underlying reason is withheld because it may quote the value of a sensitive variable.*`)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "absolute")
+		})
+	}
+}
+
+// The control for the two tests above: a short sensitive value whose letters
+// stand only inside the words of a diagnostic, as "on" stands in "function",
+// leaves the diagnostic whole.
+func TestParseAtlasKeepsADiagnosticThatHoldsAShortSensitiveValueOnlyInsideWords(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "token" {
+  type      = string
+  sensitive = true
+  default   = "on"
+}
+
+variable "pw" {
+  type    = string
+  default = "x"
+}
+
+env "dev" {
+  url = "postgres://app@127.0.0.1:1/db?connect_timeout=${tonumber(var.pw)}"
+}
+`)
+
+	got, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl",
+		projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Visib1eValue"}})
+
+	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*`)
+	c.Assert(err.Error(), qt.Contains, `Invalid function argument`)
+	c.Assert(err.Error(), qt.Contains, `cannot convert "Visib1eValue" to number`)
+	c.Assert(got.DatabaseURL, qt.Equals, "")
 }

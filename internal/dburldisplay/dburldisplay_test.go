@@ -774,6 +774,57 @@ func TestFormat_HidesASecretSetting(t *testing.T) {
 	}
 }
 
+// A password the address repeats as another part is hidden there too, by the
+// rule RedactError hides it with in a driver's error, so the display and the
+// error show the same parts of the address. The scheme and the name of a
+// setting are no part of the address and keep their text.
+func TestFormat_HidesAPasswordWhereTheAddressRepeatsIt(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		{name: "as the database", address: "postgres://app:hunter22@127.0.0.1:1/hunter22", want: "postgres://app:***@127.0.0.1:1/***"},
+		{name: "as the host", address: "postgres://app:dbhost01@dbhost01:5432/shop", want: "postgres://app:***@***:5432/shop"},
+		{name: "as the user", address: "postgres://hunter22:hunter22@localhost/shop", want: "postgres://***:***@localhost/shop"},
+		{name: "as a parameter that is no secret", address: "postgres://app:hunter22@localhost/shop?application_name=hunter22", want: "postgres://app:***@localhost/shop?application_name=***"},
+		{name: "a secret parameter as the database", address: "postgres://app@localhost/querysecret?password=querysecret", want: "postgres://app@localhost/***?password=redacted"},
+		{name: "a piece of the password as the database", address: "postgres://app:shop%2FXk9Lm@localhost/shop", want: "postgres://app:***@localhost/***"},
+		{name: "as part of the name of a setting", address: "postgres://app:secret@localhost/shop?client_secret=x", want: "postgres://app:***@localhost/shop?client_secret=redacted"},
+		{name: "as part of the scheme", address: "postgres://app:postgres@localhost/shop", want: "postgres://app:***@localhost/shop"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(dburldisplay.Format(test.address), qt.Equals, test.want)
+		})
+	}
+}
+
+// A password too short to look for in the rest of the address is hidden in its
+// own place alone, as RedactError hides it: a database, a host or a user that
+// repeats it, or holds its letters, keeps its text.
+func TestFormat_KeepsWhatAShortPasswordRepeats(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		{name: "one character inside the database", address: "postgres://app:x@localhost/execute", want: "postgres://app:***@localhost/execute"},
+		{name: "two characters inside the database", address: "postgres://app:ex@localhost/execute", want: "postgres://app:***@localhost/execute"},
+		{name: "two characters as the database", address: "postgres://app:db@localhost/db", want: "postgres://app:***@localhost/db"},
+		{name: "one character as the host", address: "postgres://app:h@h/shop", want: "postgres://app:***@h/shop"},
+		{name: "as the user and the database", address: "postgres://ptah:ptah@localhost/ptah", want: "postgres://ptah:***@localhost/ptah"},
+		{name: "one character as the port", address: "postgres://app:1@127.0.0.1:1/shop", want: "postgres://app:***@127.0.0.1:1/shop"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(dburldisplay.Format(test.address), qt.Equals, test.want)
+		})
+	}
+}
+
 // A parameter that holds no secret keeps its value.
 func TestFormat_KeepsAParameterThatIsNoSecret(t *testing.T) {
 	tests := []struct {
@@ -1120,53 +1171,6 @@ func TestUsers(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(dburldisplay.Users(test.address), qt.DeepEquals, test.want)
-		})
-	}
-}
-
-func TestIsSecretParameter(t *testing.T) {
-	tests := []struct {
-		key  string
-		want bool
-	}{
-		{key: "password", want: true},
-		{key: "PASSWORD", want: true},
-		{key: "passwd", want: true},
-		{key: "pwd", want: true},
-		{key: "sslpassword", want: true},
-		{key: "sslkey", want: true},
-		{key: "sslcert", want: true},
-		{key: "token", want: true},
-		{key: "authToken", want: true},
-		{key: "auth_token", want: true},
-		{key: "jwt", want: true},
-		{key: "api_key", want: true},
-		{key: "apikey", want: true},
-		{key: "client_secret", want: true},
-		{key: "aws_secret_access_key", want: true},
-		{key: "credentials", want: true},
-		{key: "credentialsJson", want: true},
-		{key: "WALLET PASSWORD", want: true},
-		{key: "OS PASS", want: true},
-		{key: "OS PASSHASH", want: true},
-		{key: "OS HASH", want: true},
-		{key: "change password", want: true},
-		{key: "_auth_pass", want: true},
-		{key: "_key", want: true},
-		{key: "sslmode", want: false},
-		{key: "passfile", want: false},
-		{key: "user", want: false},
-		{key: "username", want: false},
-		{key: "database", want: false},
-		{key: "application_name", want: false},
-		{key: "parseTime", want: false},
-		{key: "monitoring", want: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.key, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(dburldisplay.IsSecretParameter(test.key), qt.Equals, test.want)
 		})
 	}
 }

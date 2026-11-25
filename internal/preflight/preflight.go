@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/execpolicy"
+	"ptah.run/internal/secretmask"
 )
 
 const defaultWebhookTimeout = 30 * time.Second
@@ -383,7 +384,7 @@ func sanitizeHookOutput(output string, opts Options) string {
 	}
 	// PGPASSWORD=... and MYSQL_PWD=... name a secret's setting, so the
 	// password is taken out of them whatever its length.
-	return dburldisplay.MaskSecrets(output, dburldisplay.Secrets(opts.DatabaseURL), dburldisplay.Users(opts.DatabaseURL), "redacted")
+	return secretmask.Mask(output, dburldisplay.Secrets(opts.DatabaseURL), dburldisplay.Users(opts.DatabaseURL), "redacted")
 }
 
 func redactSecretURL(rawURL string) string {
@@ -418,7 +419,7 @@ func redactSecretQuery(query url.Values) url.Values {
 	redacted := make(url.Values, len(query))
 	for key, values := range query {
 		copied := append([]string(nil), values...)
-		if dburldisplay.IsSecretParameter(key) {
+		if secretmask.IsSecretParameter(key) {
 			for idx := range copied {
 				copied[idx] = "redacted"
 			}
@@ -431,7 +432,7 @@ func redactSecretQuery(query url.Values) url.Values {
 func stripSecretQuery(query url.Values) url.Values {
 	stripped := make(url.Values, len(query))
 	for key, values := range query {
-		if dburldisplay.IsSecretParameter(key) {
+		if secretmask.IsSecretParameter(key) {
 			continue
 		}
 		stripped[key] = append([]string(nil), values...)

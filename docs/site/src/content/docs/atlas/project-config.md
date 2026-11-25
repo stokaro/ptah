@@ -607,12 +607,22 @@ differ on purpose:
   was derived — `upper(var.token)` puts bytes in the message that replacing the
   original value cannot find.
 
+A sensitive value is scrubbed by the rule
+[database addresses](../../concepts/database-urls-and-dev-databases/#secrets-in-errors-and-program-output)
+use: a value of five characters or more wherever it occurs, and a shorter one
+only where it stands as a credential. A diagnostic or a reason that still holds
+a shorter value as a word of its own, as `open x: file does not exist` holds
+the path `x`, is withheld whole; the letters of the value inside a longer word,
+as `x` stands in `exist`, leave it as it is.
+
 A non-sensitive expression keeps its full diagnostic either way, with one
 exception. A value that reaches a secret part of an address the file writes is
 a secret whether or not a variable declares it sensitive, so an error that
 quotes it shows `redacted` in its place. With
 `url = "postgres://app:${tonumber(var.pw)}@db/app"`, `--var pw=...` fails with
-`cannot convert "redacted" to number`.
+`cannot convert "redacted" to number`. A value shorter than five characters is
+taken out where it stands as a credential, and where the diagnostic of a call
+quotes it whole, as `cannot convert "x" to number` does.
 
 The addresses read are those written by:
 
@@ -628,9 +638,18 @@ nothing else of it. One that writes no `://` of its own is read with the
 address a value in it evaluates to: with
 `url = "${var.base}&password=${tonumber(var.pw)}"`, the password parameter is
 read as part of the address `var.base` holds, and so is the one
-`urlqueryset(var.base, "password", var.pw)` sets. An address built any other
-way, such as a `join()` over a variable list or over a `concat()`, is not
-read, and a value in its password shows in full (stokaro/ptah#6645).
+`urlqueryset(var.base, "password", var.pw)` sets.
+
+An address another function writes cannot be read where the call fails, because
+the call's result is what would say which part each value fills. Each value
+such an expression holds then counts as a secret: a `join()` over a
+`concat()`, a `flatten()`, or a list a variable or a local holds, and a
+template whose address a failing call was to give, as
+`"${trimsuffix(var.base, tonumber(var.pw))}&password=${var.pw}"` is. So does
+each value of a part that a call which fails writes text around, such as the
+query `join("", concat(["password="], [var.pw]))` writes. The user name and the
+host such an address writes are masked with the password. A call that converts
+one value, as `tonumber(var.port)` does, is read by the part it stands in.
 
 The secret parts are the password, a query parameter whose name says it holds a
 secret, and a user info a single value fills: there, the text after the
@@ -641,9 +660,9 @@ argument of a `format()` that takes its arguments by index, and the value
 The values read are what an expression in such a part evaluates to, in each
 `for_each` instance too, the `--var` value of a variable it names, and a
 `getenv()` value.
-A value in any other part of the address, such as the user name, the host or a
-query parameter whose name says nothing secret, keeps its text, and so do the
-other items of an object local.
+A value in any other part of an address that is read, such as the user name,
+the host or a query parameter whose name says nothing secret, keeps its text,
+and so do the other items of an object local.
 
 A sensitive value passed to a program or a data source alone, with no name
 beside it, is masked in what that source fails with too:
@@ -1377,7 +1396,8 @@ from defaults or HCL expressions because the string/list flag syntax does not
 encode maps. Overrides of the wrong shape, defaults that do not match the
 declared type, and other constraints such as `object(...)` fail with named errors.
 `sensitive = true` is accepted; parse-time conversion errors print
-`(sensitive value)` instead of the variable's value, though a sensitive value
+`(sensitive value)` instead of the variable's value, or are withheld where the
+value is too short to take out of them, though a sensitive value
 interpolated into a path can still appear in downstream errors that print that
 path. A value that reaches a URL's password is masked wherever an error shows
 it; see [Functions](#functions). `validation` blocks remain unsupported and fail

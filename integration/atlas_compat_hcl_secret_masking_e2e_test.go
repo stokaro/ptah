@@ -76,6 +76,50 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 			url:  `"postgres://app:${data.runtimevar.probe}@127.0.0.1:1/db?sslmode=disable"`,
 			want: `data.runtimevar.probe: opening variable: open variable constant:?val=redacted&decoder=json`,
 		},
+		{
+			name: "a password a join() over a concat() writes",
+			url:  `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]))`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a flatten() writes",
+			url:  `join("", flatten([["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]]))`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a variable list writes",
+			preamble: `variable "head" {
+  type    = list(string)
+  default = ["postgres://app:"]
+}
+`,
+			url:  `join("", concat(var.head, [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]))`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a local list writes",
+			preamble: `locals {
+  parts = ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db?sslmode=disable"]
+}
+`,
+			url:  `join("", local.parts)`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password after an address a failing call was to give",
+			preamble: `variable "base" {
+  type    = string
+  default = "postgres://app@127.0.0.1:1/app?sslmode=disable"
+}
+`,
+			url:  `"${trimsuffix(var.base, tonumber(var.pw))}&password=${var.pw}"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password parameter a join() over a concat() writes",
+			url:  `"postgres://app@127.0.0.1:1/db?${join("", concat(["password="], [tonumber(var.pw)]))}"`,
+			want: `cannot convert "redacted" to number`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -89,6 +133,27 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 			c.Assert(got.Stderr, qt.Contains, test.want)
 			c.Assert(got.Stderr, qt.Not(qt.Contains), "Pa55wordX9")
 			c.Assert(got.Stderr, qt.Not(qt.Contains), "Tok3nValueX9")
+		})
+	}
+}
+
+// TestCompatMasksAShortPasswordAFailingCallQuotesE2E runs `ptah-compat migrate
+// status` over a project whose url a join() over a concat() writes, with a
+// password too short to take out of every word of an error. The diagnostic of
+// the call that refused it quotes it whole, and it is taken out there.
+func TestCompatMasksAShortPasswordAFailingCallQuotesE2E(t *testing.T) {
+	const url = `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]))`
+	for _, password := range []string{"x", "ab"} {
+		t.Run(password, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, "", url)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"migrate", "status", "--env", "dev", "--var", "pw="+password, "--var", "token=Tok3nValueX9")
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, `cannot convert "redacted" to number`)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), `"`+password+`"`)
 		})
 	}
 }

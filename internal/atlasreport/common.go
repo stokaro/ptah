@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/secretmask"
 )
 
 type atlasEnv struct {
@@ -41,7 +42,7 @@ func atlasRedactedURL(raw string) atlasTemplateURL {
 	}
 	query := parsed.Query()
 	for key := range query {
-		if dburldisplay.IsSecretParameter(key) {
+		if secretmask.IsSecretParameter(key) {
 			query.Set(key, "xxxxx")
 		}
 	}

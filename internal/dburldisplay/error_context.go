@@ -4,6 +4,8 @@ import (
 	"context"
 	"slices"
 	"sync"
+
+	"ptah.run/internal/secretmask"
 )
 
 type errorRedactionKey struct{}
@@ -87,14 +89,12 @@ func RedactRecordedText(ctx context.Context, text string) string {
 	urls := slices.Clone(addresses.urls)
 	secrets := slices.Clone(addresses.secrets)
 	addresses.mu.Unlock()
-	var parts []secretText
-	var users []string
+	var pieces, users []string
 	for _, dbURL := range urls {
-		parts = append(parts, secretParts(dbURL)...)
+		addressSecrets, addressPieces := secretParts(dbURL)
+		secrets = append(secrets, addressSecrets...)
+		pieces = append(pieces, addressPieces...)
 		users = append(users, Users(dbURL)...)
 	}
-	for _, secret := range secrets {
-		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
-	}
-	return maskText(text, parts, users, redactedPassword)
+	return secretmask.MaskPieces(text, secrets, pieces, users, redactedPassword)
 }

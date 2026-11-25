@@ -1,4 +1,23 @@
-package dburldisplay
+// Package secretmask takes secrets out of text that is about to be shown: a
+// driver's error, a server's answer, a program's output, a configuration
+// diagnostic or a provider's response body.
+//
+// It owns the one rule every such display applies, so that a value hidden on
+// one line is not shown on the next: a secret of five characters or more is
+// taken out wherever it occurs, and a shorter one only where it stands as a
+// credential. A short value taken out of every word it occurs in garbles the
+// text, and a reader who can tell which letters went learns the value.
+//
+// It knows no address grammar. internal/dburldisplay reads a database address
+// for what it hides and passes the values here, and so do the callers that hold
+// a secret of another kind: a role password, an API token, a sensitive
+// variable of an atlas.hcl file.
+//
+// provider-sdk/internal/secretmask is a copy of this rule. The SDK is a module
+// of its own, consumed here at a released version, so neither can import the
+// other's package; the corpus both tests read,
+// provider-sdk/internal/secretmask/testdata/rule.json, pins that they agree.
+package secretmask
 
 import (
 	"regexp"
@@ -10,15 +29,19 @@ import (
 )
 
 // shortestFreeTextSecret is the length, in characters, below which a whole
-// hidden value is taken out of a message only where it stands as a credential.
+// secret is taken out of a text only where it stands as a credential.
 //
-// A value this short is as likely to be a word of the message as the
-// password: the product's name, an SQL keyword, a column called id. Taken out
-// wherever it occurs, it garbles the message, and the reader who can tell
-// which word went learns the password. A longer value is taken out wherever it
-// occurs, because the text may be a program's output, and a program may write
-// the password glued to an option or an escape, as `-pSecret1` or `\nSecret1`.
+// A value this short is as likely to be a word of the text as the password:
+// the product's name, an SQL keyword, a column called id. Taken out wherever it
+// occurs, it garbles the text, and the reader who can tell which word went
+// learns the password. A longer value is taken out wherever it occurs, because
+// the text may be a program's output, and a program may write the password
+// glued to an option or an escape, as `-pSecret1` or `\nSecret1`.
 const shortestFreeTextSecret = 5
+
+// shortestPiece is the length below which [MaskPieces] leaves a piece of a
+// secret in a text: a character or two of a password is a word of most texts.
+const shortestPiece = 3
 
 // settingBefore is the end of text that names the setting a value follows: a
 // name, an "=" or a ":", and the quote or brace a value may open with, as in
@@ -29,8 +52,9 @@ var settingBefore = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.-]*)\\?["']?\s*[=:
 // credentialBefore is the end of text that a credential follows on a command
 // line or in SQL: the `-p` the MySQL client takes the password after,
 // `--password` and a space or an "=", `Bearer `, and the quote that opens the
-// value of `PASSWORD '...'` and `IDENTIFIED BY '...'`.
-var credentialBefore = regexp.MustCompile(`(?i)(?:(?:^|[\s'"])-p|--password[\s=]\s*['"]?|\bbearer\s+|\b(?:password|identified\s+by)\s+['"])$`)
+// value of `PASSWORD '...'`, PostgreSQL's escape string `PASSWORD E'...'` and
+// `IDENTIFIED BY '...'`.
+var credentialBefore = regexp.MustCompile(`(?i)(?:(?:^|[\s'"])-p|--password[\s=]\s*['"]?|\bbearer\s+|\b(?:password\s+e?|identified\s+by\s+)['"])$`)
 
 // valueEnds holds the characters that end a setting's value in the text a
 // driver or a program writes: a separator, the backslash of an escape, or the
@@ -41,8 +65,8 @@ const valueEnds = " \t\r\n;&,:#\\'\"`})]"
 // name of its setting.
 const longestSetting = 64
 
-// secretText is a value to take out of a message, and the length from which it
-// is taken out outside a credential.
+// secretText is a value to take out of a text, and the length from which it is
+// taken out outside a credential.
 type secretText struct {
 	value string
 	floor int
@@ -50,13 +74,13 @@ type secretText struct {
 	// it occurs, and false for a piece of one, which from floor is taken out
 	// where it stands as a word of its own. A piece is what a parser may have
 	// cut out of the password, and as a word inside a longer one it is more
-	// likely the message's own text.
+	// likely the text's own.
 	whole bool
 }
 
-// MaskSecrets returns text with each occurrence of a secret of five characters
-// or more replaced by replacement, and each occurrence of a shorter one where it
-// stands as a credential.
+// Mask returns text with each occurrence of a secret of five characters or more
+// replaced by replacement, and each occurrence of a shorter one where it stands
+// as a credential.
 //
 // An occurrence stands as a credential where an address, a setting or a
 // command keeps a secret, whatever its length:
@@ -70,11 +94,12 @@ type secretText struct {
 //     ...`, `"password": "..."`;
 //   - as the whole value after `-p` that follows white space, a quote or the
 //     start of the text, after `--password`, after `Bearer`, and after
-//     `PASSWORD` or `IDENTIFIED BY` and a single or a double quote.
+//     `PASSWORD` or `IDENTIFIED BY` and a single or a double quote, or
+//     PostgreSQL's `E'` that opens an escape string.
 //
 // A shorter secret anywhere else, such as the "x" in "execute" for a password
 // "x", or the "1" of the port in `127.0.0.1:1` for a password "1", is left as
-// it is, so the message stays readable and shows nothing by what went missing.
+// it is, so the text stays readable and shows nothing by what went missing.
 //
 // An occurrence is the secret as it is, or with any of its characters escaped
 // as an address writes them: `p%40ss` spells `p@ss`, `%2f` and `%2F` spell "/",
@@ -83,15 +108,57 @@ type secretText struct {
 //
 // Longer secrets are tried first, so a secret that holds a shorter one is taken
 // out whole. Empty secrets are ignored.
-func MaskSecrets(text string, secrets, users []string, replacement string) string {
-	values := make([]secretText, 0, len(secrets))
+func Mask(text string, secrets, users []string, replacement string) string {
+	return MaskPieces(text, secrets, nil, users, replacement)
+}
+
+// MaskPieces is [Mask] that also takes out pieces of a secret: each piece of
+// three characters or more where it stands as a word of its own, or as a
+// credential. A piece is part of a secret that a parser may have cut out of it
+// and named on its own, as a driver that misread an address names a host or a
+// database; as a word inside a longer one it is more likely the text's own. A
+// shorter piece is left in the text.
+func MaskPieces(text string, secrets, pieces, users []string, replacement string) string {
+	values := make([]secretText, 0, len(secrets)+len(pieces))
 	for _, secret := range secrets {
 		values = append(values, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
+	}
+	for _, piece := range pieces {
+		if len(piece) >= shortestPiece {
+			values = append(values, secretText{value: piece, floor: shortestPiece})
+		}
 	}
 	return maskText(text, values, users, replacement)
 }
 
-// maskText is [MaskSecrets] with a floor for each value.
+// MasksAnywhere reports whether [Mask] takes secret out wherever it occurs,
+// rather than only where it stands as a credential.
+func MasksAnywhere(secret string) bool {
+	return utf8.RuneCountInString(secret) >= shortestFreeTextSecret
+}
+
+// ContainsWord reports whether text holds word where no letter, digit or "_"
+// runs on from it on either side, as [MaskPieces] reads a piece that stands as
+// a word of its own. An empty word is in no text.
+func ContainsWord(text, word string) bool {
+	if word == "" {
+		return false
+	}
+	for at := 0; at <= len(text)-len(word); {
+		found := strings.Index(text[at:], word)
+		if found < 0 {
+			return false
+		}
+		start := at + found
+		if standsAsWord(text, start, start+len(word)) {
+			return true
+		}
+		at = start + 1
+	}
+	return false
+}
+
+// maskText is [Mask] with a floor for each value.
 func maskText(text string, secrets []secretText, users []string, replacement string) string {
 	secrets = slices.DeleteFunc(slices.Clone(secrets), func(secret secretText) bool { return secret.value == "" })
 	slices.SortStableFunc(secrets, func(left, right secretText) int { return len(right.value) - len(left.value) })
@@ -158,7 +225,7 @@ func unescapes(digits string, b byte) bool {
 }
 
 // standsAsCredential reports whether text[start:end] is where an address, a
-// setting or a command keeps a secret, as [MaskSecrets] lists them.
+// setting or a command keeps a secret, as [Mask] lists them.
 func standsAsCredential(text string, start, end int, users []string) bool {
 	var before byte
 	if start > 0 {
@@ -211,4 +278,47 @@ func wordEnds(text string, offset int) bool {
 // wordRune reports a character that continues a word.
 func wordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+}
+
+// secretParameterWords mark a parameter as a secret wherever they stand in its
+// name.
+var secretParameterWords = []string{"apikey", "credential", "jwt", "passhash", "passwd", "password", "pwd", "secret", "token"}
+
+// IsSecretParameter reports a query parameter, connection-string keyword or
+// setting that holds a secret or says where one is.
+//
+// The name is compared without case or punctuation, so `authToken`, `auth_token`
+// and go-ora's `WALLET PASSWORD` read alike, and a name ending in `key` or `pass`
+// counts, as `sslkey` and go-ora's `OS PASS` do. It errs on the wide side: an
+// engine's parameter a narrower list missed prints its value, and hiding a value
+// that is no secret costs a word on a line.
+func IsSecretParameter(key string) bool {
+	name := comparableName(key)
+	switch {
+	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "key"), strings.HasSuffix(name, "pass"):
+		return true
+	default:
+		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
+	}
+}
+
+// IsUserParameter reports whether key names the user a connection logs in as:
+// libpq's `user`, SQL Server's `User Id` and `UID`, and an environment
+// variable such as PGUSER or MYSQL_USER. The name is compared as
+// [IsSecretParameter] compares it. [Mask] takes a short secret out after the
+// user's name and a ":".
+func IsUserParameter(key string) bool {
+	name := comparableName(key)
+	return name == "uid" || slices.ContainsFunc([]string{"user", "username", "userid"}, func(word string) bool { return strings.HasSuffix(name, word) })
+}
+
+// comparableName is key in lower case with everything but its letters and
+// digits left out.
+func comparableName(key string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, key)
 }

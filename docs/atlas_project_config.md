@@ -723,7 +723,8 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   wrong shape, and any other type constraint (for example `object(...)`,
   `set(...)`, or `tuple(...)`) fail with named errors.
 - `sensitive = true` is accepted. Parse-time conversion errors print
-  `(sensitive value)` instead of the variable's value; a sensitive value
+  `(sensitive value)` instead of the variable's value, or are withheld where
+  they hold a value of under five characters as a word; a sensitive value
   interpolated into a path can still appear in downstream errors that print
   that path. A value that reaches the password, a secret query parameter or
   a whole user info of an address the file writes is shown as `redacted` in
@@ -738,8 +739,10 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   errors alone. An address is read where it is a template or a call to
   `format()`, `join()` over written lists, `replace()`, `urlqueryset()` or
   `urluserinfo()`, with the address a value in it evaluates to written in
-  where the file writes no `://` of its own; one built any other way is not
-  (stokaro/ptah#6645).
+  where the file writes no `://` of its own. An address another function
+  writes, such as a `join()` over a `concat()`, a `flatten()` or a list a
+  variable holds, cannot be read where the call fails, so every value it holds
+  is masked in `atlas.hcl` errors, the user name and the host among them.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
 A cloud-specific source outside the recognized lazy set fails during

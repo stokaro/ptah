@@ -859,3 +859,176 @@ env "dev" {
 		})
 	}
 }
+
+// callAddressProject is a project whose env "dev" takes url and the lines of
+// env after it, with the variables pw, host and base, the list variable head,
+// and the blocks of preamble before the env.
+func callAddressProject(preamble, url, env string) []byte {
+	return []byte(`variable "pw" {
+  type    = string
+  default = "x"
+}
+
+variable "host" {
+  type    = string
+  default = "x"
+}
+
+variable "base" {
+  type    = string
+  default = "postgres://app@127.0.0.1:1/db?sslmode=disable"
+}
+
+variable "head" {
+  type    = list(string)
+  default = ["postgres://app:"]
+}
+
+` + preamble + `
+env "dev" {
+  url = ` + url + `
+  ` + env + `
+}
+`)
+}
+
+// An address a call writes that the masking does not read, and that fails,
+// gives every value it holds as one that may be a secret: the call's value
+// would have said which part of the address each value fills, and the error is
+// raised where it has none. So the password is masked however the address is
+// assembled, and the host such an address writes is masked too, which is the
+// cost of not reading the call.
+func TestParseAtlas_MasksWhatAnAddressACallWritesHolds_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		preamble string
+		url      string
+	}{
+		{
+			name: "a password a join() over a concat() writes",
+			url:  `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db"]))`,
+		},
+		{
+			name: "a password a join() over a flatten() writes",
+			url:  `join("", flatten([["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db"]]))`,
+		},
+		{
+			name: "a password a join() over a variable list writes",
+			url:  `join("", concat(var.head, [tonumber(var.pw)], ["@127.0.0.1:1/db"]))`,
+		},
+		{
+			name:     "a password a join() over a local list writes",
+			preamble: "locals {\n  parts = [\"postgres://app:\", tonumber(var.pw), \"@127.0.0.1:1/db\"]\n}\n",
+			url:      `join("", local.parts)`,
+		},
+		{
+			name: "a password after an address a failing call was to give",
+			url:  `"${trimsuffix(var.base, tonumber(var.pw))}&password=${var.pw}"`,
+		},
+		{
+			name: "a password parameter a join() over a concat() writes in the query",
+			url:  `"postgres://app@127.0.0.1:1/db?${join("", concat(["password="], [tonumber(var.pw)]))}"`,
+		},
+		{
+			name: "a host a join() over a concat() writes",
+			url:  `join("", concat(["postgres://app:x@"], [tonumber(var.host)], ["/db"]))`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := projectconfig.ParseAtlasWithOptions(callAddressProject(test.preamble, test.url, ""), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Pa55wordX9", "host=dbhost.internal"}})
+
+			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl ".*`)
+			c.Assert(err.Error(), qt.Contains, `cannot convert "redacted" to number`)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "Pa55wordX9")
+			c.Assert(err.Error(), qt.Not(qt.Contains), "dbhost.internal")
+			c.Assert(got.DatabaseURL, qt.Equals, "")
+		})
+	}
+}
+
+// The control for the test above: a call the masking does not read keeps the
+// text of what it holds where it converts one value in a place the masking
+// reads, where it writes no address, and where it writes text beside the
+// scheme and evaluates, so a value an address takes is read by where it stands
+// rather than masked for being near a call.
+func TestParseAtlas_KeepsWhatACallThatWritesNoAddressPartHolds_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		env  string
+		want string
+	}{
+		{
+			name: "a value two calls convert in a query parameter",
+			url:  `"postgres://app@127.0.0.1:1/db?application_name=${tonumber(lower(var.pw))}"`,
+			want: `cannot convert "visib1evalue" to number`,
+		},
+		{
+			name: "a value a call converts in an address a join() writes out",
+			url:  `join("", ["postgres://app@127.0.0.1:1/db?connect_timeout=", tonumber(var.pw)])`,
+			want: `cannot convert "Visib1eValue" to number`,
+		},
+		{
+			name: "a value a join() over a concat() writes beside no scheme",
+			url:  `join("", concat(["db-"], [tonumber(var.pw)]))`,
+			want: `cannot convert "Visib1eValue" to number`,
+		},
+		{
+			name: "a value another attribute writes beside the scheme through a call that evaluates",
+			url:  `"postgres://app@127.0.0.1:1/db?connect_timeout=${tonumber(var.pw)}"`,
+			env:  `dev = "db-${trimprefix(var.pw, "postgres://")}"`,
+			want: `cannot convert "Visib1eValue" to number`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := projectconfig.ParseAtlasWithOptions(callAddressProject("", test.url, test.env), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Visib1eValue"}})
+
+			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*`)
+			c.Assert(err.Error(), qt.Contains, test.want)
+			c.Assert(got.DatabaseURL, qt.Equals, "")
+		})
+	}
+}
+
+// A value too short to take out of every word of an error is taken out where
+// the diagnostic of a call that refused it quotes it whole, which is where an
+// address that a call the masking does not read writes puts it. A value equal
+// to the database the address names is one of them.
+func TestParseAtlas_MasksAShortValueAFailingCallQuotes_FailurePath(t *testing.T) {
+	const url = `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db"]))`
+	for _, password := range []string{"x", "ab", "db"} {
+		t.Run(password, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := projectconfig.ParseAtlasWithOptions(callAddressProject("", url, ""), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=" + password}})
+
+			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*`)
+			c.Assert(err.Error(), qt.Contains, `cannot convert "redacted" to number`)
+			c.Assert(err.Error(), qt.Not(qt.Contains), `"`+password+`"`)
+			c.Assert(got.DatabaseURL, qt.Equals, "")
+		})
+	}
+}
+
+// The control for the test above: a short value in a place of the address that
+// holds no secret is quoted as it is.
+func TestParseAtlas_KeepsAShortValueOfAPlaceThatIsNoSecret_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	const url = `"postgres://app@127.0.0.1:1/db?connect_timeout=${tonumber(var.pw)}"`
+
+	got, err := projectconfig.ParseAtlasWithOptions(callAddressProject("", url, ""), "atlas.hcl",
+		projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=ab"}})
+
+	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*`)
+	c.Assert(err.Error(), qt.Contains, `cannot convert "ab" to number`)
+	c.Assert(got.DatabaseURL, qt.Equals, "")
+}

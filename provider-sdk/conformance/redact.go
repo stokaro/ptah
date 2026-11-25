@@ -4,21 +4,17 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"ptah.run/provider-sdk/internal/secretmask"
 )
 
 // redacted stands in for a sensitive text in what the suite reports.
 const redacted = "<redacted>"
 
-// minimumSecret is the shortest query value the suite treats as a secret.
-// A shorter one, such as a flag, would match ordinary text.
-const minimumSecret = 4
-
 // sensitiveTexts returns the texts no reply may quote and no report may
 // show: the canary, the credential address, the live address, and the
 // credentials in the live address, which are its password and the value of
-// each query parameter whose name says it carries one. The longest come
-// first, so that redacting a short one does not break a long one that
-// contains it.
+// each query parameter whose name says it carries one.
 func sensitiveTexts(config Config) []string {
 	texts := []string{Canary}
 	if config.CredentialAddress != "" {
@@ -28,8 +24,28 @@ func sensitiveTexts(config Config) []string {
 		texts = append(texts, config.Live.Address)
 		texts = append(texts, addressSecrets(config.Live.Address)...)
 	}
-	slices.SortFunc(texts, func(a, b string) int { return len(b) - len(a) })
+	slices.Sort(texts)
 	return slices.Compact(texts)
+}
+
+// sensitiveUsers returns the user names of the credential address and the
+// live address, after which [secretmask.Mask] takes a short credential out.
+func sensitiveUsers(config Config) []string {
+	var users []string
+	for _, address := range []string{config.CredentialAddress, liveAddress(config)} {
+		if parsed, err := url.Parse(address); err == nil && parsed.User != nil {
+			users = append(users, parsed.User.Username())
+		}
+	}
+	return users
+}
+
+// liveAddress is the address of config's live database, or empty.
+func liveAddress(config Config) string {
+	if config.Live == nil {
+		return ""
+	}
+	return config.Live.Address
 }
 
 // addressSecrets returns the password of an address and the values of its
@@ -44,61 +60,24 @@ func addressSecrets(address string) []string {
 		secrets = append(secrets, password)
 	}
 	for name, values := range parsed.Query() {
-		if !credentialName(name) {
-			continue
-		}
-		for _, value := range values {
-			if len(value) >= minimumSecret {
-				secrets = append(secrets, value)
-			}
+		if secretmask.IsSecretParameter(name) {
+			secrets = append(secrets, values...)
 		}
 	}
 	return secrets
 }
 
-func credentialName(name string) bool {
-	name = strings.ToLower(name)
-	for _, word := range []string{"password", "token", "secret", "credential", "key"} {
-		if strings.Contains(name, word) {
-			return true
-		}
-	}
-	return false
-}
-
-// redact replaces every sensitive text in text.
+// redact takes every sensitive text out of text, by the rule the host masks
+// its own output with: a text of five characters or more wherever it occurs,
+// in any ASCII letter case, and a shorter one where it stands as a
+// credential. A credential of a character or two taken out of every word
+// would garble the detail and show the credential by the gaps.
+//
+// What [run.observeText] counts as quoting a sensitive text is what redact
+// takes out, so a check that fails for a quoted credential reports a detail
+// with it taken out, and one that passes reports the detail as it was sent.
 func (r *run) redact(text string) string {
-	for _, secret := range r.sensitive {
-		text = replaceFold(text, secret, redacted)
-	}
-	return text
-}
-
-func containsFold(text, part string) bool {
-	return part != "" && strings.Contains(strings.ToLower(text), strings.ToLower(part))
-}
-
-// replaceFold replaces every occurrence of part in text, compared without
-// regard to ASCII letter case.
-func replaceFold(text, part, with string) string {
-	if part == "" {
-		return text
-	}
-	lowerText, lowerPart := strings.ToLower(text), strings.ToLower(part)
-	if len(lowerText) != len(text) || len(lowerPart) != len(part) {
-		return strings.ReplaceAll(text, part, with)
-	}
-	var b strings.Builder
-	for {
-		at := strings.Index(lowerText, lowerPart)
-		if at < 0 {
-			b.WriteString(text)
-			return b.String()
-		}
-		b.WriteString(text[:at])
-		b.WriteString(with)
-		text, lowerText = text[at+len(part):], lowerText[at+len(part):]
-	}
+	return secretmask.Mask(text, r.sensitive, r.users, redacted)
 }
 
 // joinFailures writes the failures of one check, one per line.

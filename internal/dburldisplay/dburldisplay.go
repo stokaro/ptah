@@ -23,20 +23,12 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/secretmask"
 )
 
 const (
 	redactedQueryValue = "redacted"
 	redactedPassword   = "***"
-	// shortestSecretPart is the length below which [RedactError] leaves a part
-	// of a hidden value in a message where it stands as a word: a character or
-	// two of a password is a word of most messages.
-	//
-	// A part is shorter than a whole secret may be there
-	// ([shortestFreeTextSecret]), because a part surfaces only where a driver
-	// misread the address and names what it read as a host, a port or a
-	// database.
-	shortestSecretPart = 3
 )
 
 // schemeWord is what can stand before a "://" as a scheme in a display: one word,
@@ -98,9 +90,43 @@ var errUnreadableCredentials = errors.New("the user name or password cannot be r
 // its password behind any scheme or none. A libpq keyword/value string, which
 // the PostgreSQL drivers accept in place of a URL, and SQL Server's ADO and ODBC
 // strings keep their text and lose the values of their secret keywords.
+//
+// A hidden value the address repeats elsewhere, as a database, a host or a user
+// named like the password, is taken out there too, by the rule [RedactError]
+// takes it out of a driver's error with: a value of five characters or more
+// wherever it occurs, a shorter one only where it stands as a credential, and a
+// piece of one where it stands as a word. So the display and the error a driver
+// answers with show the same parts of the address, and the two lines together
+// do not tell which part is the password. The scheme and the names of the
+// settings are words of the grammar rather than values, and keep their text: a
+// password taken out of `client_secret` would show by the gap which word it is.
 func Format(dbURL string) string {
 	var hidden hiddenText
-	return hidden.format(dbURL)
+	display := hidden.format(dbURL)
+	secrets, pieces := hidden.parts()
+	return maskRepeats(display, secrets, pieces, spellings(hidden.users))
+}
+
+// grammarWords matches what a display shows that is no value of the address:
+// the scheme, the name of each setting with its "=", and the placeholder a
+// hidden setting shows, which a secret that is part of the word must not cut.
+var grammarWords = regexp.MustCompile(`^[^\s:/?#@]+://|[A-Za-z0-9_.%+-]+=|` + redactedQueryValue)
+
+// maskRepeats takes secrets and pieces out of display where it repeats them, as
+// [secretmask.MaskPieces] does, outside what [grammarWords] matches.
+func maskRepeats(display string, secrets, pieces, users []string) string {
+	if len(secrets) == 0 {
+		return display
+	}
+	var out strings.Builder
+	last := 0
+	for _, word := range grammarWords.FindAllStringIndex(display, -1) {
+		out.WriteString(secretmask.MaskPieces(display[last:word[0]], secrets, pieces, users, redactedPassword))
+		out.WriteString(display[word[0]:word[1]])
+		last = word[1]
+	}
+	out.WriteString(secretmask.MaskPieces(display[last:], secrets, pieces, users, redactedPassword))
+	return out.String()
 }
 
 // ParseURL is [url.Parse] for a database URL: its error repeats nothing [Format]
@@ -135,9 +161,8 @@ func ParseURL(rawURL string) (*url.URL, error) {
 // fails to connect. So each part of a hidden value is taken out as well as the
 // whole.
 //
-// A value is taken out as [MaskSecrets] takes it out, and a part of at least
-// three characters where it stands as a word as well. With the password "x",
-// `database=execute` keeps its word.
+// A value is taken out as [secretmask.MaskPieces] takes a secret and its pieces
+// out. With the password "x", `database=execute` keeps its word.
 //
 // The result wraps err, so errors.Is and errors.As answer as they did. An error
 // that holds none of it is returned as it is, and a nil err is nil.
@@ -146,7 +171,8 @@ func RedactError(dbURL string, err error) error {
 		return nil
 	}
 	text := err.Error()
-	redacted := maskText(text, secretParts(dbURL), Users(dbURL), redactedPassword)
+	secrets, pieces := secretParts(dbURL)
+	redacted := secretmask.MaskPieces(text, secrets, pieces, Users(dbURL), redactedPassword)
 	if redacted == text {
 		return err
 	}
@@ -163,7 +189,7 @@ func Secrets(dbURL string) []string {
 }
 
 // Users returns the user name dbURL gives with the password [Format] hides, as
-// it is written there and unescaped, longest first. [MaskSecrets] takes a
+// it is written there and unescaped, longest first. [secretmask.Mask] takes a
 // short secret out after it and a ":".
 func Users(dbURL string) []string {
 	var hidden hiddenText
@@ -221,19 +247,27 @@ func (h *hiddenText) name(user string) {
 	}
 }
 
-// secretParts is every secret of dbURL and each piece of it worth looking for,
-// with the length from which each is taken out outside a credential.
-func secretParts(dbURL string) []secretText {
-	var parts []secretText
-	for _, secret := range Secrets(dbURL) {
-		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
+// secretParts is every secret of dbURL, and apart from them each piece of one
+// that a parser may name on its own.
+func secretParts(dbURL string) (secrets, pieces []string) {
+	var hidden hiddenText
+	hidden.format(dbURL)
+	return hidden.parts()
+}
+
+// parts is every value h hid, as it is written and unescaped, and apart from
+// them each piece of one that a parser may name on its own: what lies between
+// the characters it may stop reading a password at.
+func (h *hiddenText) parts() (secrets, pieces []string) {
+	secrets = spellings(h.values)
+	for _, secret := range secrets {
 		for piece := range strings.FieldsFuncSeq(secret, stopsAPassword) {
-			if piece != secret && len(piece) >= shortestSecretPart {
-				parts = append(parts, secretText{value: piece, floor: shortestSecretPart})
+			if piece != secret {
+				pieces = append(pieces, piece)
 			}
 		}
 	}
-	return parts
+	return secrets, pieces
 }
 
 // stopsAPassword reports a character a parser may stop reading a password at, so
@@ -455,7 +489,7 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 		}
 		value := rest[match[4]:end]
 		switch {
-		case IsSecretParameter(rest[match[2]:match[3]]):
+		case secretmask.IsSecretParameter(rest[match[2]:match[3]]):
 			secrets = append(secrets, value)
 			out.WriteString(rest[:match[4]] + redactedQueryValue)
 		case strings.EqualFold(rest[match[2]:match[3]], serverOptionsSetting):
@@ -465,7 +499,7 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 		case strings.ContainsAny(value, ";&"):
 			return "", false
 		default:
-			if IsUserParameter(rest[match[2]:match[3]]) {
+			if secretmask.IsUserParameter(rest[match[2]:match[3]]) {
 				users = append(users, strings.Trim(value, `'"`))
 			}
 			out.WriteString(rest[:end])
@@ -498,10 +532,10 @@ func (h *hiddenText) assignments(text string) string {
 		name := rest[match[2]:match[3]]
 		out.WriteString(rest[:match[1]])
 		rest = rest[match[1]:]
-		if IsUserParameter(name) {
+		if secretmask.IsUserParameter(name) {
 			h.name(strings.Trim(rest[:assignmentValueEnd(rest)], `'"{}`))
 		}
-		if IsSecretParameter(name) {
+		if secretmask.IsSecretParameter(name) {
 			end := assignmentValueEnd(rest)
 			h.hide(rest[:end])
 			out.WriteString(redactedQueryValue)
@@ -570,8 +604,8 @@ func (h *hiddenText) urlQuery(text string, urlValued func(key string) bool) stri
 	return result
 }
 
-// rawQuery redacts a query, with the secrets of [IsSecretParameter] and the
-// user info of the parameters urlValued names. A query that does not parse is
+// rawQuery redacts a query, with the secrets of [secretmask.IsSecretParameter]
+// and the user info of the parameters urlValued names. A query that does not parse is
 // left out whole, since nothing says what it holds.
 func (h *hiddenText) rawQuery(rawQuery string, urlValued func(key string) bool) string {
 	if rawQuery == "" {
@@ -585,7 +619,7 @@ func (h *hiddenText) rawQuery(rawQuery string, urlValued func(key string) bool) 
 	}
 	for key, values := range query {
 		switch {
-		case IsSecretParameter(key):
+		case secretmask.IsSecretParameter(key):
 			for idx := range values {
 				h.hide(values[idx])
 				values[idx] = redactedQueryValue
@@ -615,12 +649,12 @@ const serverOptionsSetting = "options"
 // of every secret-named parameter in it hidden, and the values it hid.
 // PostgreSQL takes a custom parameter there, such as
 // `-c app.jwt_secret=...`, and a parameter is a secret by its name as a
-// query parameter is, by [IsSecretParameter].
+// query parameter is, by [secretmask.IsSecretParameter].
 func serverOptions(value string) (shown string, hidden []string) {
 	var out strings.Builder
 	last := 0
 	for _, match := range serverOption.FindAllStringSubmatchIndex(value, -1) {
-		if match[4] == match[5] || !IsSecretParameter(value[match[2]:match[3]]) {
+		if match[4] == match[5] || !secretmask.IsSecretParameter(value[match[2]:match[3]]) {
 			continue
 		}
 		hidden = append(hidden, value[match[4]:match[5]])
@@ -683,46 +717,4 @@ func (h *hiddenText) userInfo(value string) string {
 	default:
 		return value
 	}
-}
-
-// secretParameterWords mark a parameter as a secret wherever they stand in its
-// name.
-var secretParameterWords = []string{"apikey", "credential", "jwt", "passhash", "passwd", "password", "pwd", "secret", "token"}
-
-// IsSecretParameter reports a query parameter or connection-string keyword that
-// holds a secret or says where one is.
-//
-// The name is compared without case or punctuation, so `authToken`, `auth_token`
-// and go-ora's `WALLET PASSWORD` read alike, and a name ending in `key` or `pass`
-// counts, as `sslkey` and go-ora's `OS PASS` do. It errs on the wide side: an
-// engine's parameter a narrower list missed prints its value, and hiding a value
-// that is no secret costs a word on a line.
-func IsSecretParameter(key string) bool {
-	name := strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return unicode.ToLower(r)
-		}
-		return -1
-	}, key)
-	switch {
-	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "key"), strings.HasSuffix(name, "pass"):
-		return true
-	default:
-		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
-	}
-}
-
-// IsUserParameter reports whether key names the user a connection logs in as:
-// libpq's `user`, SQL Server's `User Id` and `UID`, and an environment
-// variable such as PGUSER or MYSQL_USER. The name is compared as
-// [IsSecretParameter] compares it. [MaskSecrets] takes a short secret out
-// after the user's name and a ":".
-func IsUserParameter(key string) bool {
-	name := strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return unicode.ToLower(r)
-		}
-		return -1
-	}, key)
-	return name == "uid" || slices.ContainsFunc([]string{"user", "username", "userid"}, func(word string) bool { return strings.HasSuffix(name, word) })
 }

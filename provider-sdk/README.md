@@ -917,7 +917,12 @@ database while the first holds a session of it
 Across the run, a refusal or a result carries a reason only when both sides
 list `errors.reasons`, and then one reason of the valid shape; no reason,
 execution or transaction message or session field quotes the live address, a
-credential in it, or the canary.
+credential in it, or the canary. They are matched in any letter case, and by
+the rule Ptah hides a password in its own output with: a credential of five
+characters or more counts wherever a reply holds it, and a shorter one only
+where the reply quotes it as a credential, such as between the `:` and the `@`
+of an address or as the value of `password=`. The letters of a short credential
+inside a word, as `data` stands in `database`, are the reply's own.
 
 Under a host that lists fewer features, a provider may refuse what it cannot
 serve without them, as long as it does not use what the host did not list. A

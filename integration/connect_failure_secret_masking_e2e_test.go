@@ -101,3 +101,57 @@ func TestConnectFailureHidesALongPasswordE2E(t *testing.T) {
 	c.Assert(result.Stderr, qt.Contains, "failed to connect to `user=app database=***`")
 	c.Assert(result.Stderr+result.Stdout, qt.Not(qt.Contains), "Pa55wordX9")
 }
+
+// `ptah db read` prints the address before it connects and the driver's error
+// after, and the two lines hide the same parts of it: a password the address
+// repeats as the database or the user is hidden on both, so neither line tells
+// which part was the password.
+func TestDBReadHidesARepeatedPasswordOnBothLinesE2E(t *testing.T) {
+	rows := []struct {
+		name    string
+		address string
+		reading string
+		failure string
+	}{
+		// #nosec G101 -- made-up addresses of a port nothing listens on, not credentials
+		{
+			name:    "as the database",
+			address: "postgres://app:hunter22@127.0.0.1:1/hunter22?sslmode=disable",
+			reading: "Reading schema from database: postgres://app:***@127.0.0.1:1/***?sslmode=disable",
+			failure: "failed to connect to `user=app database=***`",
+		},
+		// #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+		{
+			name:    "as the user",
+			address: "postgres://hunter22:hunter22@127.0.0.1:1/shop?sslmode=disable",
+			reading: "Reading schema from database: postgres://***:***@127.0.0.1:1/shop?sslmode=disable",
+			failure: "failed to connect to `user=*** database=shop`",
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := clirun.Run(c, clirun.Ptah, clirun.Options{}, "db", "read", "--db-url", row.address)
+
+			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stderr: %s", result.Stderr))
+			c.Assert(result.Stderr, qt.Contains, row.reading)
+			c.Assert(result.Stderr, qt.Contains, row.failure)
+			c.Assert(result.Stderr+result.Stdout, qt.Not(qt.Contains), "hunter22")
+		})
+	}
+}
+
+// The control: a password too short to look for in the rest of the address is
+// hidden in its own place alone, and the database that holds its letters prints
+// whole on both lines.
+func TestDBReadKeepsWhatAShortPasswordRepeatsOnBothLinesE2E(t *testing.T) {
+	c := qt.New(t)
+
+	result := clirun.Run(c, clirun.Ptah, clirun.Options{}, "db", "read", "--db-url", "postgres://app:ex@127.0.0.1:1/execute?sslmode=disable")
+
+	c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stderr: %s", result.Stderr))
+	c.Assert(result.Stderr, qt.Contains, "Reading schema from database: postgres://app:***@127.0.0.1:1/execute?sslmode=disable")
+	c.Assert(result.Stderr, qt.Contains, "failed to connect to `user=app database=execute`")
+}

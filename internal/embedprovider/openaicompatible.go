@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"ptah.run/internal/secretmask"
 )
 
 // OpenAICompatibleOptions configures the one adapter this build ships.
@@ -287,13 +289,16 @@ func (p *openAICompatible) decode(payload []byte, inputs int) (Result, error) {
 // a gateway that validates the header itself carries the same risk, and a rule
 // that holds for one status class is one somebody has to remember.
 //
+// The token is taken out as [secretmask.Mask] takes a secret out: a token of
+// five characters or more wherever it occurs, and a shorter one where it stands
+// as a credential, such as after `Bearer` or as the value of `"api_key"`. A
+// token of a character or two taken out of every word of the body would garble
+// it and show the token by the gaps.
+//
 // An empty token removes nothing: a local endpoint that needs no credential
-// resolves to the empty string, and cutting on it would blank the whole body.
+// resolves to the empty string.
 func withoutToken(body, token string) string {
-	if token == "" {
-		return body
-	}
-	return strings.ReplaceAll(body, token, "[redacted]")
+	return secretmask.Mask(body, []string{token}, nil, "[redacted]")
 }
 
 // firstLine keeps a provider's error body to one line for a diagnostic.

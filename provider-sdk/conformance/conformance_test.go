@@ -143,6 +143,22 @@ func TestCheck_HappyPath(t *testing.T) {
 	})
 }
 
+// A credential of the live address shorter than five characters is quoted
+// only where it stands as one. The memory provider refuses the credential
+// address with a reason that says "database", which holds the credential
+// "data" as letters of a word, and conforms.
+func TestCheck_KeepsTheWordsOfAShortCredential_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{}).server())
+	config := memoryConfig(target, "short")
+	config.Live.Address += "?password=data"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	assertConforms(c, report)
+}
+
 // A provider that needs a two-way feature refuses a host that lists none, as
 // it refuses a host that leaves out that one feature, and the suite holds
 // both refusals to one rule.

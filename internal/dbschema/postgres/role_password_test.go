@@ -166,6 +166,50 @@ func TestWriterKeepsThePasswordOutOfARefusal_FailurePath(t *testing.T) {
 	c.Assert(runner.sent, qt.HasLen, 1)
 }
 
+// A password too short to take out of every word of the server's answer is
+// taken out where the answer quotes it as the password, and the words that hold
+// its letters keep their text, the role's own name among them.
+func TestWriterKeepsAShortPasswordOutOfARefusal_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		refusal  string
+		want     string
+	}{
+		{
+			name:     "one character in an escape string",
+			password: "x",
+			refusal:  `ERROR: syntax error in CREATE ROLE app PASSWORD E'x' VALID UNTIL 'infinity'`,
+			want:     `ERROR: syntax error in CREATE ROLE app PASSWORD E'[secret]' VALID UNTIL 'infinity'`,
+		},
+		{
+			name:     "two characters inside the role's name",
+			password: "ab",
+			refusal:  `ERROR: cannot alter role "lab": ALTER ROLE lab PASSWORD 'ab'`,
+			want:     `ERROR: cannot alter role "lab": ALTER ROLE lab PASSWORD '[secret]'`,
+		},
+		{
+			name:     "the role's name",
+			password: "app",
+			refusal:  `ERROR: role "app" already exists: CREATE ROLE app PASSWORD 'app'`,
+			want:     `ERROR: role "app" already exists: CREATE ROLE app PASSWORD '[secret]'`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			refusal := errors.New(test.refusal)
+			runner := &passwordRunner{refusal: refusal}
+			ctx := rolepassword.With(c.Context(), map[string]string{"PTAH_SECRET_PASSWORD_APP": test.password})
+
+			err := passwordWriter(runner).ExecuteSQL(ctx, "CREATE ROLE app PASSWORD $PTAH_SECRET_PASSWORD_APP;")
+
+			c.Assert(err, qt.ErrorIs, refusal)
+			c.Assert(err.Error(), qt.Contains, test.want)
+		})
+	}
+}
+
 // The server's own fields are read past the writer's message, from the driver
 // error it wraps, and lose the password there too: a reader of the fields
 // finds the redaction in the chain. The statement the server read is not the

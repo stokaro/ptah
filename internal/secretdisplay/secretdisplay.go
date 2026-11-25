@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/secretmask"
 )
 
 // Sanitize redacts secrets discoverable from the effective environment and
@@ -18,7 +19,7 @@ import (
 // tabs are preserved for readable diagnostics.
 //
 // A secret of five characters or more is redacted wherever it occurs, and a
-// shorter one where it stands as a credential, as [dburldisplay.MaskSecrets]
+// shorter one where it stands as a credential, as [secretmask.Mask]
 // reads them: text that only holds a short secret's characters keeps them. The
 // user names that a short secret is redacted after are those of the addresses
 // in env and args, and the values of the variables and options that name a
@@ -34,7 +35,7 @@ func Sanitize(text string, env, args []string) string {
 // value that is an address gives its password too, as an address in env or
 // args does.
 func SanitizeKnown(text string, env, args, known []string) string {
-	return escapeControls(dburldisplay.MaskSecrets(text, secretValues(env, args, known), userNames(env, args), "redacted"))
+	return escapeControls(secretmask.Mask(text, secretValues(env, args, known), userNames(env, args), "redacted"))
 }
 
 // SanitizeError returns an error with display-safe text while preserving the
@@ -130,14 +131,14 @@ func userNames(env, args []string) []string {
 		if !ok {
 			continue
 		}
-		if dburldisplay.IsUserParameter(key) && value != "" {
+		if secretmask.IsUserParameter(key) && value != "" {
 			users = append(users, value)
 		}
 		users = append(users, addressUsers(value)...)
 	}
 	for idx, arg := range args {
 		key, value, hasValue := option(arg)
-		if strings.HasPrefix(arg, "--") && dburldisplay.IsUserParameter(key) {
+		if strings.HasPrefix(arg, "--") && secretmask.IsUserParameter(key) {
 			if hasValue && value != "" {
 				users = append(users, value)
 			} else if !hasValue && idx+1 < len(args) {
