@@ -447,9 +447,10 @@ func TestCompatSchemaApplyReadsAnAtlasPlanAgainE2E(t *testing.T) {
 }
 
 // TestSchemaApplyRefusesAValueTheNewTypeCannotHoldE2E lowers a scale where a
-// value rounds past the precision the new type keeps. The server's CAST fails
-// as the ALTER would, and the run names the column with the server's error
-// rather than ending the plan with it; the value stays.
+// value rounds past the precision the new type keeps, or where the new type has
+// no spelling for the value at all. The server's CAST fails as the ALTER would,
+// and the run names the column with the server's error rather than ending the
+// plan with it; the value stays.
 func TestSchemaApplyRefusesAValueTheNewTypeCannotHoldE2E(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -459,6 +460,7 @@ func TestSchemaApplyRefusesAValueTheNewTypeCannotHoldE2E(t *testing.T) {
 		insert  string
 		want    string
 		read    string
+		held    string
 	}{
 		{
 			name:    "postgres",
@@ -468,6 +470,19 @@ func TestSchemaApplyRefusesAValueTheNewTypeCannotHoldE2E(t *testing.T) {
 			insert:  "INSERT INTO prices VALUES (1, 99.999)",
 			want:    `column "amount" of table "public.prices" from numeric(5,3) to numeric(3,1), where the server cannot convert a stored value to the new type: `,
 			read:    "SELECT amount::text FROM prices",
+			held:    "99.999",
+		},
+		{
+			// PostgreSQL refuses NaN under an integer with 0A000, not with a
+			// data exception.
+			name:    "postgres NaN to an integer",
+			server:  postgresServer,
+			table:   "CREATE TABLE prices (id int PRIMARY KEY, amount numeric(10,3))",
+			desired: "CREATE TABLE prices (id int PRIMARY KEY, amount integer);\n",
+			insert:  "INSERT INTO prices VALUES (1, 'NaN')",
+			want:    `where the server cannot convert a stored value to the new type: ERROR: cannot convert NaN to integer (SQLSTATE 0A000)`,
+			read:    "SELECT amount::text FROM prices",
+			held:    "NaN",
 		},
 		{
 			name:    "sqlserver",
@@ -477,6 +492,7 @@ func TestSchemaApplyRefusesAValueTheNewTypeCannotHoldE2E(t *testing.T) {
 			insert:  "INSERT INTO prices VALUES (1, 99.999)",
 			want:    `column "amount" of table "prices" from DECIMAL(5,3) to DECIMAL(3,1), where the server cannot convert a stored value to the new type: `,
 			read:    "SELECT CONVERT(varchar(40), amount) FROM prices",
+			held:    "99.999",
 		},
 	}
 	for _, test := range tests {
@@ -488,7 +504,7 @@ func TestSchemaApplyRefusesAValueTheNewTypeCannotHoldE2E(t *testing.T) {
 
 			c.Assert(applied.ExitCode, qt.Equals, 2, outcome(applied))
 			c.Assert(applied.Stderr, qt.Contains, test.want)
-			c.Assert(read(c, target, test.read), qt.Equals, "99.999")
+			c.Assert(read(c, target, test.read), qt.Equals, test.held)
 		})
 	}
 }

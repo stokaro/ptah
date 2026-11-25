@@ -148,6 +148,7 @@ func TestConversionRefused(t *testing.T) {
 	}{
 		{name: "PostgreSQL numeric_value_out_of_range", err: &pgconn.PgError{Code: "22003"}, want: true},
 		{name: "PostgreSQL datetime_field_overflow", err: &pgconn.PgError{Code: "22008"}, want: true},
+		{name: "PostgreSQL NaN or infinity to an integer", err: &pgconn.PgError{Code: "0A000"}, want: true},
 		{name: "a wrapped refusal", err: fmt.Errorf("read: %w", &pgconn.PgError{Code: "22003"}), want: true},
 		{name: "PostgreSQL query_canceled", err: &pgconn.PgError{Code: "57014"}},
 		{name: "PostgreSQL lock_not_available", err: &pgconn.PgError{Code: "55P03"}},
