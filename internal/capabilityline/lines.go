@@ -40,7 +40,7 @@ const (
 	// engine/builtin/internal/dialects/clickhouse pins them to a live 26.7.3.19
 	// throughout.
 	ClickHouse267 = "26.7"
-	// ClickHouse268 is the newest measured ClickHouse release line.
+	// ClickHouse268 is the measured ClickHouse 26.8 release line.
 	//
 	// Measured on 26.8.2.7 against the preset the cell declares: 54 rows, 34
 	// agreements, 0 disagreements, and the cell's floor of 34 met. Until it was
@@ -54,15 +54,20 @@ const (
 	// Measured on 26.9.1.1629 against the preset the cell declares: 58 rows,
 	// 35 agreements, 0 disagreements, and the cell's floor of 35 met.
 	ClickHouse269 = "26.9"
-	// ClickHouse2610 is the newest measured ClickHouse release line.
+	// ClickHouse2610 is the measured ClickHouse 26.10 release line.
 	//
 	// Measured on 26.10.3.7 against the preset the cell declares: 149 rows, 99
-	// agreements, 0 disagreements, and the cell's floor of 99 met. Declaring
-	// the line without this constant is what the probe refuses: a
+	// agreements, 0 disagreements, and the cell's floor of 99 met.
+	ClickHouse2610 = "26.10"
+	// ClickHouse2611 is the newest measured ClickHouse release line.
+	//
+	// Measured on 26.11.1.2942 against the preset the cell declares: 159 rows,
+	// 103 agreements, 0 disagreements, and the cell's floor of 103 met.
+	// Declaring the line without this constant is what the probe refuses: a
 	// server past the newest measured line receives the dialect default rather
 	// than this line's answer, and the probe exits non-zero rather than
 	// papering over the gap.
-	ClickHouse2610 = "26.10"
+	ClickHouse2611 = "26.11"
 	// YugabyteDB2024 is the measured YugabyteDB 2024 LTS release line, and the
 	// only one below the PostgreSQL 11 to 15 engine swap.
 	YugabyteDB2024 = "2024.2"
@@ -94,7 +99,7 @@ func YugabyteDBMeasured() []string {
 // ClickHouseMeasured returns every ClickHouse release line with direct matrix
 // evidence.
 func ClickHouseMeasured() []string {
-	return []string{ClickHouse24, ClickHouse25, ClickHouse263, ClickHouse267, ClickHouse268, ClickHouse269, ClickHouse2610}
+	return []string{ClickHouse24, ClickHouse25, ClickHouse263, ClickHouse267, ClickHouse268, ClickHouse269, ClickHouse2610, ClickHouse2611}
 }
 
 // MySQLMeasured returns every MySQL release line with direct matrix evidence.
