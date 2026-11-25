@@ -50,6 +50,7 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 		name     string
 		preamble string
 		url      string
+		vars     []string
 		want     string
 	}{
 		{
@@ -76,6 +77,216 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 			url:  `"postgres://app:${data.runtimevar.probe}@127.0.0.1:1/db?sslmode=disable"`,
 			want: `data.runtimevar.probe: opening variable: open variable constant:?val=redacted&decoder=json`,
 		},
+		{
+			name: "a password a join() over a concat() writes",
+			url:  `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]))`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a flatten() writes",
+			url:  `join("", flatten([["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]]))`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a variable list writes",
+			preamble: `variable "head" {
+  type    = list(string)
+  default = ["postgres://app:"]
+}
+`,
+			url:  `join("", concat(var.head, [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]))`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a local list writes",
+			preamble: `locals {
+  parts = ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db?sslmode=disable"]
+}
+`,
+			url:  `join("", local.parts)`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password after an address a failing call was to give",
+			preamble: `variable "base" {
+  type    = string
+  default = "postgres://app@127.0.0.1:1/app?sslmode=disable"
+}
+`,
+			url:  `"${trimsuffix(var.base, tonumber(var.pw))}&password=${var.pw}"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password parameter a join() over a concat() writes",
+			url:  `"postgres://app@127.0.0.1:1/db?${join("", concat(["password="], [tonumber(var.pw)]))}"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over a for expression writes",
+			url:  `join("", [for p in ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"] : p])`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a for directive writes",
+			url:  `"%{ for p in ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"] }${p}%{ endfor }"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password between the head and the tail of an address two variables give",
+			preamble: `variable "head" {
+  default = "postgres://app:"
+}
+
+variable "tail" {
+  default = "@127.0.0.1:1/db"
+}
+`,
+			url:  `"${var.head}${tonumber(var.pw)}${var.tail}"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over the elements of a variable list writes",
+			preamble: `variable "parts" {
+  type    = list(string)
+  default = ["x"]
+}
+`,
+			url:  `join("", [var.parts[0], tonumber(var.parts[1]), var.parts[2]])`,
+			vars: []string{"--var", "parts=postgres://app:", "--var", "parts=Pa55wordX9", "--var", "parts=@127.0.0.1:1/db"},
+			want: `cannot convert "redacted" to number`,
+		},
+		{ // #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+			name: "a password replace() puts in an address a variable holds",
+			preamble: `variable "tpl" {
+  default = "postgres://app:PW@127.0.0.1:1/db"
+}
+`,
+			url:  `replace(var.tpl, "PW", tonumber(var.pw))`,
+			want: `cannot convert "redacted" to number`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, test.preamble, test.url)
+
+			args := append([]string{"migrate", "status", "--env", "dev", "--var", "pw=Pa55wordX9", "--var", "token=Tok3nValueX9"}, test.vars...)
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir}, args...)
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, test.want)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), "Pa55wordX9")
+			c.Assert(got.Stderr, qt.Not(qt.Contains), "Tok3nValueX9")
+		})
+	}
+}
+
+// TestCompatRunsAProjectWhoseAddressAForExpressionWritesE2E runs `ptah-compat
+// migrate hash` over a project whose url a for expression helps write, and
+// reads the sum file it writes. The masking reads every address a project
+// writes on each run, so the for's scope among the nodes it reads must not stop
+// a valid project.
+func TestCompatRunsAProjectWhoseAddressAForExpressionWritesE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{ // #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+			name: "a for expression in the query",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=${join(",", [for s in ["a", "b"] : s])}"`,
+		},
+		{ // #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+			name: "a for directive in the query",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=%{ for s in ["a", "b"] }${s}%{ endfor }"`,
+		},
+		{
+			name: "a for expression in the password",
+			url:  `"postgres://app:${join("", [for s in ["p", "w"] : s])}@127.0.0.1:1/db"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, "", test.url)
+			c.Assert(os.Mkdir(filepath.Join(dir, "migrations"), 0o700), qt.IsNil)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir}, "migrate", "hash", "--env", "dev")
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			_, err := os.Stat(filepath.Join(dir, "migrations", "atlas.sum"))
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestCompatMasksAShortPasswordAFailingCallQuotesE2E runs `ptah-compat migrate
+// status` over a project whose url a join() over a concat() writes, with a
+// password too short to take out of every word of an error. The diagnostic of
+// the call that refused it quotes it whole, and it is taken out there.
+func TestCompatMasksAShortPasswordAFailingCallQuotesE2E(t *testing.T) {
+	const url = `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db?sslmode=disable"]))`
+	for _, password := range []string{"x", "ab"} {
+		t.Run(password, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, "", url)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"migrate", "status", "--env", "dev", "--var", "pw="+password, "--var", "token=Tok3nValueX9")
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, `cannot convert "redacted" to number`)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), `"`+password+`"`)
+		})
+	}
+}
+
+// TestCompatWithholdsADiagnosticThatMayQuoteAShortSensitiveValueE2E runs
+// `ptah-compat migrate status` over a project whose url fails on the value of
+// a sensitive variable too short to take out of every word of the diagnostic,
+// and reads stderr. The diagnostic is withheld whatever spelling reads the
+// value: a string index of the variable or of a local, and the iteration
+// variable of a for expression or a for directive over a local. leak is a part
+// of the diagnostic shown when it is not withheld.
+func TestCompatWithholdsADiagnosticThatMayQuoteAShortSensitiveValueE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		preamble string
+		url      string
+		token    string
+		want     string
+		leak     string
+	}{
+		{
+			name:  "a string index of the variable",
+			url:   `"${file(var["token"])}"`,
+			token: "ab",
+			want:  `the expression reads the sensitive variable "token" and failed`,
+			leak:  "open",
+		},
+		{
+			name:     "a string index of a local",
+			preamble: "locals {\n  a = var.token\n}\n",
+			url:      `regex(local["a"], "x")`,
+			token:    "a(",
+			want:     "the underlying diagnostic is withheld because it may quote the value of a sensitive variable",
+			leak:     "missing closing",
+		},
+		{
+			name:     "a for expression over a local",
+			preamble: "locals {\n  a = [var.token]\n}\n",
+			url:      `"${join("", [for s in local.a : file(s)])}"`,
+			token:    "ab",
+			want:     "the underlying diagnostic is withheld because it may quote the value of a sensitive variable",
+			leak:     "open",
+		},
+		{
+			name:     "a for directive over a local",
+			preamble: "locals {\n  a = [var.token]\n}\n",
+			url:      `"%{ for s in local.a }${file(s)}%{ endfor }"`,
+			token:    "ab",
+			want:     "the underlying diagnostic is withheld because it may quote the value of a sensitive variable",
+			leak:     "open",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -83,12 +294,11 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 			dir := hclSecretMaskingProject(c, test.preamble, test.url)
 
 			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
-				"migrate", "status", "--env", "dev", "--var", "pw=Pa55wordX9", "--var", "token=Tok3nValueX9")
+				"migrate", "status", "--env", "dev", "--var", "token="+test.token)
 
 			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stderr, qt.Contains, test.want)
-			c.Assert(got.Stderr, qt.Not(qt.Contains), "Pa55wordX9")
-			c.Assert(got.Stderr, qt.Not(qt.Contains), "Tok3nValueX9")
+			c.Assert(got.Stderr, qt.Not(qt.Contains), test.leak)
 		})
 	}
 }

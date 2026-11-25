@@ -2397,7 +2397,12 @@ and `app`, are refused.
 
 When the server's answer to such a statement quotes the password it was sent,
 Ptah writes `[secret]` in its place. That holds for the error a command prints
-and for the error a revision table records for a failed migration.
+and for the error a revision table records for a failed migration. A password
+of five characters or more is taken out wherever the answer quotes it, and a
+shorter one where it stands as the password, as after `PASSWORD '` or
+`PASSWORD E'`, by the rule
+[database addresses](../../concepts/database-urls-and-dev-databases/#secrets-in-errors-and-program-output)
+use.
 
 A `password` written as a reference, `$PTAH_SECRET_` and a name in upper case
 such as `$PTAH_SECRET_APP_PASSWORD`, names that variable instead of holding a

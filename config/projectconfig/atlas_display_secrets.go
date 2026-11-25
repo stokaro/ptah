@@ -1,10 +1,12 @@
 package projectconfig
 
 import (
+	"errors"
 	"math/big"
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -13,6 +15,7 @@ import (
 
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/secretdisplay"
+	"ptah.run/internal/secretmask"
 )
 
 // HCL quotes the argument of a call that fails, so an atlas.hcl error can
@@ -34,6 +37,18 @@ import (
 // cannot be read may be a secret: the file's own errors are masked against
 // it, and the rest of the command is not, since a value that is not a secret
 // would lose its text in every error that names it.
+//
+// A place cannot be read where a call the reading does not follow writes the
+// address around a value and fails, because the error is raised exactly where
+// the call's result would have said which part each value fills. Rather than
+// name more functions to follow, the reading takes such an address as unread: an
+// expression that writes "://" through such a call, and does not evaluate,
+// gives every value it holds as one that may be a secret, and so does a slot
+// that does not evaluate and writes text of its own beside the value it takes,
+// as `join("", concat(["password="], [var.pw]))` does in a query. The user name
+// and the host such a call writes are masked in the file's errors with the
+// password; a slot that converts one value, as `tonumber(var.port)` does, is
+// read by where it stands.
 
 // addressBuilders are the functions whose call may write an address. A
 // template is read beside them.
@@ -82,6 +97,12 @@ type addressTemplate struct {
 	// text.
 	contexts []*hcl.EvalContext
 	secrets  []string
+	// known holds, by the index of its piece, the text of each slot that
+	// evaluates in the one context of an address a value gives: written in as
+	// it is, it says where the other slots stand. unknown counts the slots that
+	// do not evaluate there.
+	known   map[int]string
+	unknown int
 }
 
 // slotPlace is the part of an address a slot fills.
@@ -122,6 +143,10 @@ func (t addressTemplate) written(slot int, value, others string) string {
 		case i == slot:
 			address.WriteString(value)
 		default:
+			if text, ok := t.known[i]; ok {
+				address.WriteString(text)
+				continue
+			}
 			address.WriteString(others)
 		}
 	}
@@ -182,7 +207,9 @@ func addressUserInfo(address string) (string, bool) {
 // addressTemplates returns each address the file writes and puts a value
 // into, with the locals it names read through their expressions. A candidate
 // that writes no "://" of its own is read once for each value a slot of it
-// gives that writes one; see [atlasParser.givenAddressTemplates].
+// gives that writes one, see [atlasParser.givenAddressTemplates], and as one
+// value in an unknown place where it fails and that reading cannot place each
+// value it holds, see [atlasParser.unreadAddressTemplates].
 func (p atlasParser) addressTemplates() []addressTemplate {
 	var templates []addressTemplate
 	for _, candidate := range p.addressCandidates {
@@ -201,17 +228,156 @@ func (p atlasParser) addressTemplates() []addressTemplate {
 			templates = append(templates, template)
 			continue
 		}
-		templates = append(templates, p.givenAddressTemplates(pieces)...)
+		given := p.givenAddressTemplates(pieces)
+		templates = append(templates, given...)
+		templates = append(templates, p.unreadAddressTemplates(candidate, given)...)
 	}
 	return templates
+}
+
+// unreadAddressTemplates returns candidate whole as the one slot of an address
+// in a place that is unknown, for each context candidate is evaluated in and
+// fails in, where it may write "://" there and given holds no reading of it in
+// that context that places every value. Its pieces do not write the address
+// out, so only its value would say which part each value it holds fills, and
+// the error is raised where it has none: a join() over a concat(), a flatten()
+// or a list a variable holds, a template whose address a failing call was to
+// give, and a replace() in a string a variable holds. A reading of an address
+// a value gives places every value where at most one other slot does not
+// evaluate: a second one would stand in it as digits, and the part the first
+// fills would be read beside text the address does not write.
+func (p atlasParser) unreadAddressTemplates(candidate hclsyntax.Expression, given []addressTemplate) []addressTemplate {
+	failing := slices.DeleteFunc(p.failingContexts(candidate), func(ctx *hcl.EvalContext) bool {
+		return slices.ContainsFunc(given, func(template addressTemplate) bool {
+			return template.unknown <= 1 && slices.Contains(template.contexts, ctx)
+		})
+	})
+	if len(failing) == 0 || !p.writesScheme(candidate, failing) {
+		return nil
+	}
+	return []addressTemplate{{
+		pieces:     []addressPiece{{slot: candidate}},
+		whole:      true,
+		wholePlace: placeUnknown,
+		contexts:   failing,
+	}}
+}
+
+// failingContexts returns the contexts expr is evaluated in where it does not
+// evaluate to a wholly known value. An expression a for_each instance holds is
+// evaluated in the context of each instance alone, since the file's own context
+// lacks the each object the instance gives; any other is evaluated in the
+// file's own context. Each context is evaluated in once.
+func (p atlasParser) failingContexts(expr hclsyntax.Expression) []*hcl.EvalContext {
+	contexts := p.contextsOf(expr)
+	if len(contexts) > 1 {
+		contexts = contexts[1:]
+	}
+	var failing []*hcl.EvalContext
+	for _, ctx := range contexts {
+		if value, diags := expr.Value(ctx); diags.HasErrors() || !value.IsWhollyKnown() {
+			failing = append(failing, ctx)
+		}
+	}
+	return failing
+}
+
+// writesScheme reports whether expr may write the "://" of an address in
+// contexts: the text its parts write in order holds one, whether a part writes
+// it whole or parts beside each other write it together, as "postgres:" and
+// "//app:" do; or a string a part of it evaluates to holds one. A part is a
+// literal string, the part of a local it names, or a value it names, such as a
+// list variable, which writes the strings it holds.
+func (p atlasParser) writesScheme(expr hclsyntax.Expression, contexts []*hcl.EvalContext) bool {
+	var written strings.Builder
+	for _, part := range p.valueParts(expr, contexts, make(map[string]struct{})) {
+		if part.value == nil {
+			written.WriteString(part.text)
+			continue
+		}
+		for _, ctx := range contexts {
+			if evaluated, diags := part.value.Value(ctx); !diags.HasErrors() {
+				var leaves []string
+				appendStringLeaves(&leaves, evaluated)
+				written.WriteString(strings.Join(leaves, ""))
+			}
+		}
+	}
+	if strings.Contains(written.String(), "://") {
+		return true
+	}
+	return slices.ContainsFunc(p.expressionStrings(expr, contexts, make(map[string]struct{})), func(text string) bool {
+		return strings.Contains(text, "://")
+	})
+}
+
+// writesBeside reports whether expr may write text of its own beside the value
+// it takes, so that the part of the address that value fills cannot be read
+// from where expr stands: it is made of more than one part, or of one value
+// that holds more than one string, such as a list or an object.
+func (p atlasParser) writesBeside(expr hclsyntax.Expression, contexts []*hcl.EvalContext) bool {
+	parts := p.valueParts(expr, contexts, make(map[string]struct{}))
+	switch {
+	case len(parts) > 1:
+		return true
+	case len(parts) == 1 && parts[0].value != nil:
+		return slices.ContainsFunc(contexts, func(ctx *hcl.EvalContext) bool {
+			value, diags := parts[0].value.Value(ctx)
+			return !diags.HasErrors() && value.IsWhollyKnown() && !value.IsNull() && value.CanIterateElements()
+		})
+	default:
+		return false
+	}
+}
+
+// valuePart is a part of the string an expression writes: the text of a
+// literal string, or a value it names.
+type valuePart struct {
+	text  string
+	value *hclsyntax.ScopeTraversalExpr
+}
+
+// valueParts returns the parts the string expr writes is made of, in the
+// order the file writes them: the text of each literal string with text it
+// holds, and each value it names. A local it names is read through its
+// expression, as [atlasParser.traversalStrings] reads it: as one value where
+// the traversal steps past what the expression writes out and the local
+// evaluates, and as the parts of the part it reaches otherwise. The key of an
+// object is a name and no part.
+func (p atlasParser) valueParts(expr hclsyntax.Expression, contexts []*hcl.EvalContext, seen map[string]struct{}) []valuePart {
+	keys := objectKeyNodes(expr)
+	var parts []valuePart
+	_ = hclsyntax.VisitAll(expr, func(node hclsyntax.Node) hcl.Diagnostics {
+		if keys.has(node) {
+			return nil
+		}
+		switch node := node.(type) {
+		case *hclsyntax.LiteralValueExpr:
+			if node.Val.Type() == cty.String && node.Val.IsKnown() && !node.Val.IsNull() && node.Val.AsString() != "" {
+				parts = append(parts, valuePart{text: node.Val.AsString()})
+			}
+		case *hclsyntax.ScopeTraversalExpr:
+			reached, name, resolved := p.localExpression(node.Traversal, seen)
+			if reached == nil || (!resolved && p.evaluatesIn(node, contexts)) {
+				parts = append(parts, valuePart{value: node})
+				return nil
+			}
+			parts = append(parts, p.valueParts(reached, p.contextsOf(reached), withSeen(seen, name))...)
+		}
+		return nil
+	})
+	return parts
 }
 
 // givenAddressTemplates returns pieces as an address once for each context a
 // slot of them evaluates in to a string that writes "://": that string is
 // written in as text, and the other slots are evaluated in that context alone.
 // `"${var.base}&password=${var.pw}"` takes its address from var.base this way.
-// What the string holds secret is the template's own secret, as for a value
-// that carries a whole user info and host.
+// A slot that evaluates there is written in with its text when the place of
+// another is read, so `"${var.head}${tonumber(var.pw)}${var.tail}"` reads the
+// password between the "://" var.head gives and the "@" var.tail gives. What
+// those strings hold secret is the template's own secret, as for a value that
+// carries a whole user info and host.
 func (p atlasParser) givenAddressTemplates(pieces []addressPiece) []addressTemplate {
 	var templates []addressTemplate
 	for i, piece := range pieces {
@@ -229,8 +395,9 @@ func (p atlasParser) givenAddressTemplates(pieces []addressPiece) []addressTempl
 			}
 			given := addressTemplate{pieces: slices.Clone(pieces), contexts: []*hcl.EvalContext{ctx}}
 			given.pieces[i] = addressPiece{text: text}
+			texts := append([]string{text}, given.writeKnownSlots(ctx)...)
 			for _, secret := range dburldisplay.Secrets(given.written(-1, "", otherSlot)) {
-				if strings.Contains(text, secret) {
+				if slices.ContainsFunc(texts, func(text string) bool { return strings.Contains(text, secret) }) {
 					given.secrets = append(given.secrets, secret)
 				}
 			}
@@ -238,6 +405,27 @@ func (p atlasParser) givenAddressTemplates(pieces []addressPiece) []addressTempl
 		}
 	}
 	return templates
+}
+
+// writeKnownSlots evaluates each slot of t in ctx, records the text of each
+// that evaluates to a string in t.known and counts the others in t.unknown,
+// and returns the texts it recorded.
+func (t *addressTemplate) writeKnownSlots(ctx *hcl.EvalContext) []string {
+	t.known = make(map[int]string)
+	var texts []string
+	for i, piece := range t.pieces {
+		if piece.slot == nil {
+			continue
+		}
+		value, diags := piece.slot.Value(ctx)
+		if diags.HasErrors() || !value.IsWhollyKnown() || value.IsNull() || value.Type() != cty.String {
+			t.unknown++
+			continue
+		}
+		t.known[i] = value.AsString()
+		texts = append(texts, value.AsString())
+	}
+	return texts
 }
 
 // newAddressTemplate returns pieces as an address. It reports false when the
@@ -410,19 +598,21 @@ func joinPieces(args []hclsyntax.Expression, pieceOf func(hclsyntax.Expression) 
 // replacePieces writes the string replace() takes with the pieces of its
 // replacement in place of each occurrence of the substring in the text the
 // string writes out. It reports false when the substring is not written out
-// in the file or is empty.
+// in the file or is empty, and when the string puts a value in: the substring
+// may stand in the value, and where it does, the replacement goes in a place
+// the pieces cannot show.
 func replacePieces(args []hclsyntax.Expression, pieceOf func(hclsyntax.Expression) []addressPiece) ([]addressPiece, bool) {
 	substring, ok := literalArgument(args, 1)
 	if !ok || substring == "" || len(args) != 3 {
 		return nil, false
 	}
+	source := pieceOf(args[0])
+	if slices.ContainsFunc(source, func(piece addressPiece) bool { return piece.slot != nil }) {
+		return nil, false
+	}
 	replacement := pieceOf(args[2])
 	var pieces []addressPiece
-	for _, piece := range pieceOf(args[0]) {
-		if piece.slot != nil {
-			pieces = append(pieces, piece)
-			continue
-		}
+	for _, piece := range source {
 		for i, part := range strings.Split(piece.text, substring) {
 			if i > 0 {
 				pieces = append(pieces, replacement...)
@@ -489,22 +679,22 @@ func (p atlasParser) localExpression(traversal hcl.Traversal, seen map[string]st
 	if len(traversal) < 2 || traversal.RootName() != "local" {
 		return nil, "", false
 	}
-	attr, ok := traversal[1].(hcl.TraverseAttr)
+	name, ok := stepName(traversal[1])
 	if !ok {
 		return nil, "", false
 	}
-	expr, declared := p.locals[attr.Name]
-	if _, done := seen[attr.Name]; !declared || done {
+	expr, declared := p.locals[name]
+	if _, done := seen[name]; !declared || done {
 		return nil, "", false
 	}
 	for _, step := range traversal[2:] {
 		next, found := expressionStep(expr, step)
 		if !found {
-			return expr, attr.Name, false
+			return expr, name, false
 		}
 		expr = next
 	}
-	return expr, attr.Name, true
+	return expr, name, true
 }
 
 // expressionStep returns the part of expr that step names: the value of the
@@ -601,13 +791,17 @@ func (p atlasParser) addressSecrets() (secret, possible []string) {
 
 // slotSecrets returns what the values the slot at i of template may hold give,
 // by the slot's place, and apart from it what they may give: itself whole in
-// the password or a secret query parameter; in a user info the slot fills
+// the password or a secret query parameter, apart from a flag value the
+// address with it written in does not hold as a secret, since the place was
+// read with a value that is no flag; in a user info the slot fills
 // whole, the text after its first ":", and itself whole as a value that may be
 // a secret where it has none and the slot does not evaluate, since then which
 // part it fills is unknown; in a place that is unknown, itself whole as a
 // value that may be a secret; and anywhere else, what [dburldisplay.Secrets]
 // reads as a secret of the address with the value written in and the value
-// holds, as a value that carries a whole user info and host does.
+// holds, as a value that carries a whole user info and host does, unless the
+// slot writes text beside the value and does not evaluate, which makes the
+// place each value fills unknown.
 func (p atlasParser) slotSecrets(template addressTemplate, i int) (secret, possible []string) {
 	slot := template.pieces[i].slot
 	contexts := template.contexts
@@ -617,7 +811,13 @@ func (p atlasParser) slotSecrets(template addressTemplate, i int) (secret, possi
 	values := p.expressionStrings(slot, contexts, make(map[string]struct{}))
 	switch template.place(i) {
 	case placeSecret:
-		return values, nil
+		for _, value := range values {
+			if secretmask.IsFlagValue(value) && !slices.Contains(dburldisplay.Secrets(template.written(i, value, otherSlot)), value) {
+				continue
+			}
+			secret = append(secret, value)
+		}
+		return secret, nil
 	case placeUnknown:
 		return nil, values
 	case placeUserInfo:
@@ -627,6 +827,9 @@ func (p atlasParser) slotSecrets(template addressTemplate, i int) (secret, possi
 		}
 		return passwords, nil
 	default:
+		if p.writesBeside(slot, contexts) && !p.evaluatesIn(slot, contexts) {
+			return nil, values
+		}
 		for _, value := range values {
 			for _, found := range dburldisplay.Secrets(template.written(i, value, otherSlot)) {
 				if strings.Contains(value, found) {
@@ -664,7 +867,7 @@ func (p atlasParser) expressionStrings(expr hclsyntax.Expression, contexts []*hc
 	var values []string
 	_ = hclsyntax.VisitAll(expr, func(node hclsyntax.Node) hcl.Diagnostics {
 		part, ok := node.(hclsyntax.Expression)
-		if _, key := keys[node]; !ok || key {
+		if !ok || keys.has(node) {
 			return nil
 		}
 		if _, literal := part.(*hclsyntax.LiteralValueExpr); literal {
@@ -686,13 +889,30 @@ func (p atlasParser) expressionStrings(expr hclsyntax.Expression, contexts []*hc
 	return values
 }
 
+// objectKeys holds each node of the object keys an expression holds.
+type objectKeys map[hclsyntax.Node]struct{}
+
+// has reports whether node is part of an object key. The scope of a for
+// expression, a [hclsyntax.ChildScope], is never one, and is never looked up:
+// it is a struct that holds a map, so a map of nodes cannot hold it, and
+// hashing it panics.
+func (k objectKeys) has(node hclsyntax.Node) bool {
+	if _, scope := node.(hclsyntax.ChildScope); scope {
+		return false
+	}
+	_, key := k[node]
+	return key
+}
+
 // objectKeyNodes returns each node of the object keys expr holds.
-func objectKeyNodes(expr hclsyntax.Expression) map[hclsyntax.Node]struct{} {
-	keys := make(map[hclsyntax.Node]struct{})
+func objectKeyNodes(expr hclsyntax.Expression) objectKeys {
+	keys := make(objectKeys)
 	_ = hclsyntax.VisitAll(expr, func(node hclsyntax.Node) hcl.Diagnostics {
 		if key, ok := node.(*hclsyntax.ObjectConsKeyExpr); ok {
 			_ = hclsyntax.VisitAll(key, func(inner hclsyntax.Node) hcl.Diagnostics {
-				keys[inner] = struct{}{}
+				if _, scope := inner.(hclsyntax.ChildScope); !scope {
+					keys[inner] = struct{}{}
+				}
 				return nil
 			})
 		}
@@ -710,8 +930,8 @@ func objectKeyNodes(expr hclsyntax.Expression) map[hclsyntax.Node]struct{} {
 func (p atlasParser) traversalStrings(traversal *hclsyntax.ScopeTraversalExpr, contexts []*hcl.EvalContext, seen map[string]struct{}) []string {
 	switch traversal.Traversal.RootName() {
 	case "var":
-		attr, ok := traversal.Traversal[min(1, len(traversal.Traversal)-1)].(hcl.TraverseAttr)
-		value, given := p.varOverride[attr.Name]
+		name, ok := stepName(traversal.Traversal[min(1, len(traversal.Traversal)-1)])
+		value, given := p.varOverride[name]
 		var values []string
 		if ok && given {
 			appendStringLeaves(&values, value)
@@ -870,11 +1090,34 @@ func (p atlasParser) maskError(err error, secrets []string) error {
 		return nil
 	}
 	text := err.Error()
-	masked := secretdisplay.SanitizeKnown(text, os.Environ(), p.varArguments(), secrets)
+	quoted := text
+	if evaluation, ok := errors.AsType[*evaluationError](err); ok {
+		if at := strings.LastIndex(text, evaluation.diagnostic); at >= 0 && evaluation.diagnostic != "" {
+			quoted = text[:at] + maskQuotedValues(evaluation.diagnostic, secrets) + text[at+len(evaluation.diagnostic):]
+		}
+	}
+	masked := secretdisplay.SanitizeKnown(quoted, os.Environ(), p.varArguments(), secrets)
 	if masked == text {
 		return err
 	}
 	return maskedError{text: masked, err: err}
+}
+
+// maskQuotedValues takes each of values too short for [secretmask.Mask] to take
+// out wherever it occurs out of text, an HCL diagnostic, where it quotes it
+// whole, as a function that refused its argument does: `cannot convert "x" to
+// number`. The quotes are HCL's, so what stands between them is the value the
+// call was given rather than a word of the message, and its place in the
+// message says nothing of its length. Ptah's own words around a diagnostic
+// quote names, as `cannot evaluate atlas.hcl "url"` does, and are never given
+// to it.
+func maskQuotedValues(text string, values []string) string {
+	for _, value := range values {
+		if value != "" && !secretmask.MasksAnywhere(value) {
+			text = strings.ReplaceAll(text, strconv.Quote(value), `"redacted"`)
+		}
+	}
+	return text
 }
 
 // maskedError is an error whose text the parser masked.

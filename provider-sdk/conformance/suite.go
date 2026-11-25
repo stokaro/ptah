@@ -38,7 +38,7 @@ func Check(ctx context.Context, config Config) (*Report, error) {
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
-	r := &run{config: config, timeout: config.CallTimeout, sensitive: sensitiveTexts(config)}
+	r := &run{config: config, timeout: config.CallTimeout, sensitive: sensitiveTexts(config), users: sensitiveUsers(config)}
 	if r.timeout == 0 {
 		r.timeout = defaultCallTimeout
 	}
@@ -129,7 +129,10 @@ type run struct {
 	config    Config
 	timeout   time.Duration
 	sensitive []string
-	report    *Report
+	// users are the user names of the addresses sensitive holds, after which
+	// a short credential stands as one.
+	users  []string
+	report *Report
 	// full is the provider's description under a host that lists every
 	// two-way feature, as the provider sent it.
 	full *protocol.Description
@@ -349,13 +352,11 @@ func (r *run) observeResultReason(c *conn, method string, diagnostic *protocol.P
 	r.observeText("the reason of the result of "+where, diagnostic.GetReason())
 }
 
-// observeText records text the provider sent that quotes a sensitive text.
+// observeText records text the provider sent that quotes a sensitive text:
+// text [run.redact] takes something out of.
 func (r *run) observeText(what, text string) {
-	for _, secret := range r.sensitive {
-		if containsFold(text, secret) {
-			r.violate(&r.redaction, what+" quotes the live address, its credential or the canary")
-			return
-		}
+	if r.redact(text) != text {
+		r.violate(&r.redaction, what+" quotes the live address, its credential or the canary")
 	}
 }
 

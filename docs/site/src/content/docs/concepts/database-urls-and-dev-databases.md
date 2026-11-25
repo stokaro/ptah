@@ -71,8 +71,22 @@ its password as `***` and the value of a secret parameter, such as `sslpassword`
 `authToken` or `TOKEN`, as `redacted`, in every form an engine takes: a URL, a
 Go-driver DSN with or without a scheme, and a keyword, ADO or ODBC string. A
 secret-named run-time parameter that PostgreSQL's `options` setting passes,
-such as `-c app.jwt_secret=...`, is shown as `redacted` too. The rest of the
-address stays, so the line still says which database it means.
+such as `-c app.jwt_secret=...`, is shown as `redacted` too. A setting whose
+name holds `key`, `token`, `secret`, `credential` or `jwt` and whose value is a
+boolean, such as `allowPublicKeyRetrieval=true` or `_foreign_keys=false`, is a
+flag and keeps its value; a password setting is hidden whatever its value. The
+rest of the address stays, so the line still says which database it means.
+
+A password the address repeats in another part, such as the database name, the
+host or the user, is hidden there by the rule below, which is the rule a
+driver's error is held to: `postgres://app:hunter22@db/hunter22` shows as
+`postgres://app:***@db/***`. The line that names the address and the error that
+follows it hide the same values. The exception is a password that is a word of
+the address's grammar: the scheme, the name of a setting, or `redacted`. The
+line keeps those words, and the error, which is free text, does not, so with
+the password `sslmode` the line shows `?sslmode=bogus` and the error
+`?***=bogus`. A part of the address that only holds a short password's letters,
+as the database `execute` holds `x`, stays.
 
 ### Secrets in errors and program output
 
@@ -92,13 +106,19 @@ given. Ptah takes each secret it knows of out of that text:
     `password=`, `PGPASSWORD=`, `password: ` or the JSON `"password": "`;
   - after a `-p` that follows a space, a quote or the start of the text;
   - after `--password` and after `Bearer`;
-  - after `PASSWORD` or `IDENTIFIED BY` and a single or a double quote.
+  - after `PASSWORD` or `IDENTIFIED BY` and a single or a double quote, or
+    the `E'` that opens a PostgreSQL escape string.
 
 A short password in any other place stays, so with the password `x` an error
 still reads `database=execute`, and with the password `1` it still reads
 `127.0.0.1:1`. A word that only holds a short password's
 letters stays whole, and does not show the password by what is missing from
 it. A program that writes a short password in another shape prints it.
+
+The same rule holds for every other secret Ptah takes out of text: a role
+password in a server's answer, an embedding provider's API key in a response
+body, a `sensitive = true` variable of `atlas.hcl`, and the address and the
+credential a provider conformance run holds a provider's replies to.
 
 ## The four database roles
 

@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/secretmask"
 )
 
 type atlasEnv struct {
@@ -26,23 +27,42 @@ func (u atlasTemplateURL) IsZero() bool {
 	return u.URL.String() == "" && u.Schema == ""
 }
 
+// atlasRedacted is what an Atlas-shaped URL writes in place of a value it
+// hides. It needs no escape in any part of a URL, so a part that holds it
+// keeps the shape it was parsed with.
+const atlasRedacted = "xxxxx"
+
+// atlasRedactedURL is raw as an Atlas-shaped URL: the display [dburldisplay]
+// lays out, parsed, with the password dropped, each secret setting's value
+// written as [atlasRedacted], and a hidden value taken out of each other part
+// that repeats it. The parts are masked after the parse, so a port or a user
+// that repeats the password keeps the URL whole.
 func atlasRedactedURL(raw string) atlasTemplateURL {
-	parsed, err := atlasurl.Parse(dburldisplay.Format(raw))
+	display, hidden := dburldisplay.Layout(raw)
+	parsed, err := atlasurl.Parse(display)
 	if err != nil {
 		return atlasTemplateURL{}
 	}
 	if parsed.User != nil {
-		username := parsed.User.Username()
+		username := hidden.Mask(parsed.User.Username(), atlasRedacted)
 		if username != "" {
 			parsed.User = url.User(username)
 		} else {
 			parsed.User = nil
 		}
 	}
+	parsed.Host = hidden.Mask(parsed.Host, atlasRedacted)
+	parsed.Path, parsed.RawPath = hidden.Mask(parsed.Path, atlasRedacted), ""
+	parsed.Opaque = hidden.Mask(parsed.Opaque, atlasRedacted)
+	parsed.Fragment, parsed.RawFragment = hidden.Mask(parsed.Fragment, atlasRedacted), ""
 	query := parsed.Query()
-	for key := range query {
-		if dburldisplay.IsSecretParameter(key) {
-			query.Set(key, "xxxxx")
+	for key, values := range query {
+		for i, value := range values {
+			if secretmask.IsSecretParameter(key, value) {
+				values[i] = atlasRedacted
+				continue
+			}
+			values[i] = hidden.Mask(value, atlasRedacted)
 		}
 	}
 	parsed.RawQuery = query.Encode()

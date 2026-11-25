@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/rolepassword"
+	"ptah.run/internal/secretmask"
 )
 
 // A declared role password reaches a PostgreSQL-family server only in the
@@ -45,15 +46,14 @@ func (e passwordExpansion) redact(err error) error {
 	return redactedPasswordError{err: err, text: redactValues(err.Error(), e.values), values: e.values}
 }
 
-// redactValues replaces every value in text, longest first as the expansion
-// sorts them, so a value that holds a shorter one is taken out whole.
+// redactValues takes every value out of text as [secretmask.Mask] takes a
+// secret out: a password of five characters or more wherever it occurs, and a
+// shorter one where it stands as a credential, such as the literal after
+// PASSWORD. A password of a character or two taken out of every word of a
+// server's message would garble it and show the password by the gaps. A value
+// that holds a shorter one is taken out whole.
 func redactValues(text string, values []string) string {
-	for _, value := range values {
-		if value != "" {
-			text = strings.ReplaceAll(text, value, "[secret]")
-		}
-	}
-	return text
+	return secretmask.Mask(text, values, nil, "[secret]")
 }
 
 // redactedPasswordError is the failure of a statement this writer wrote a

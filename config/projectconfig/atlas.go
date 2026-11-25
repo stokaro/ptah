@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/secretmask"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
@@ -265,6 +266,7 @@ func ParseAtlasFSCollectionWithOptions(
 	p.ignoreDialectDiffBlocks = opts.IgnoreDialectDiffBlocks
 	p.addressCandidates = addressCandidates(body)
 	p.locals = localExpressions(body)
+	p.valueSources = readValueSources(body)
 	configs, err := p.parseCollection(body, opts.EnvName)
 	// The secrets are read once, after every instance is expanded, so reading
 	// them costs one evaluation of each slot per context it evaluates in.
@@ -384,6 +386,11 @@ type atlasParser struct {
 	// reaches a secret place of an address. See [atlasParser.addressSecrets].
 	addressCandidates []hclsyntax.Expression
 	locals            map[string]hclsyntax.Expression
+	// valueSources are the for_each and data blocks that pass a value on to
+	// the expressions naming them, read as the locals are, so a failing
+	// expression can be followed to the sensitive variables it reads. See
+	// [atlasParser.readsSensitive].
+	valueSources valueSources
 	// instanceContexts holds the context of each env instance a for_each
 	// expanded, with the range of the block that declares it, so an error
 	// masked after the instance is gone still reads what `each` gave an
@@ -3120,15 +3127,14 @@ func appendHCLSchemaTraversalNames(traversals []hcl.Traversal, names *[]string) 
 		if len(traversal) < 3 || traversal.RootName() != "data" {
 			continue
 		}
-		kind, ok := traversal[1].(hcl.TraverseAttr)
-		if !ok || kind.Name != "hcl_schema" {
+		if kind, _ := stepName(traversal[1]); kind != "hcl_schema" {
 			continue
 		}
-		name, ok := traversal[2].(hcl.TraverseAttr)
-		if !ok || slices.Contains(*names, name.Name) {
+		name, ok := stepName(traversal[2])
+		if !ok || slices.Contains(*names, name) {
 			continue
 		}
-		*names = append(*names, name.Name)
+		*names = append(*names, name)
 	}
 }
 
@@ -3229,8 +3235,7 @@ func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {
 		if len(traversal) < 2 || traversal.RootName() != "atlas" {
 			continue
 		}
-		attribute, ok := traversal[1].(hcl.TraverseAttr)
-		if ok && attribute.Name == "env" {
+		if attribute, _ := stepName(traversal[1]); attribute == "env" {
 			return true
 		}
 	}
@@ -3947,10 +3952,29 @@ func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, di
 				"function may have derived from that variable in a form scrubbing cannot recognize",
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
 	}
-	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
-		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
-		p.scrubSensitive(hcldiag.Stable(diags).Error()))
+	if p.diagnosticQuotesShortSensitiveValue(attr.Expr, diags) {
+		return fmt.Errorf(
+			"cannot evaluate atlas.hcl %q at %s:%d: the underlying diagnostic is withheld because it may quote "+
+				"the value of a sensitive variable, which is too short to take out of it without taking "+
+				"letters out of its words",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line)
+	}
+	return &evaluationError{
+		prefix:     fmt.Sprintf("cannot evaluate atlas.hcl %q at %s:%d: ", name, attr.NameRange.Filename, attr.NameRange.Start.Line),
+		diagnostic: p.scrubSensitive(hcldiag.Stable(diags).Error()),
+	}
 }
+
+// evaluationError is an expression that could not be evaluated: Ptah's words
+// naming the attribute, and the HCL diagnostic they carry. The two are kept
+// apart so the masking of a value HCL quotes reads the diagnostic alone, and a
+// name Ptah quotes keeps its text; see [maskQuotedValues].
+type evaluationError struct {
+	prefix     string
+	diagnostic string
+}
+
+func (e *evaluationError) Error() string { return e.prefix + e.diagnostic }
 
 // sensitiveVariableIn reports the first `sensitive = true` variable expr reads.
 //
@@ -3965,12 +3989,12 @@ func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
 		if len(traversal) < 2 || traversal.RootName() != "var" {
 			continue
 		}
-		attr, ok := traversal[1].(hcl.TraverseAttr)
+		name, ok := stepName(traversal[1])
 		if !ok {
 			continue
 		}
-		if _, sensitive := (*p.sensitiveNames)[attr.Name]; sensitive {
-			return attr.Name, true
+		if _, sensitive := (*p.sensitiveNames)[name]; sensitive {
+			return name, true
 		}
 	}
 	return "", false
@@ -3985,14 +4009,18 @@ func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
 // that `sensitive` exists to hide. The rest of this parser already refuses to
 // put variable values in messages; this keeps that invariant when the message
 // comes from HCL rather than from us.
+//
+// A value is taken out as [secretmask.Mask] takes a secret out: one of five
+// characters or more wherever it occurs, and a shorter one only where it stands
+// as a credential. A value of a character or two taken out of every word it
+// occurs in would garble the message and show the value by the gaps, so the
+// callers withhold a message that may quote one rather than show it; see
+// [atlasParser.diagnosticQuotesShortSensitiveValue].
 func (p atlasParser) scrubSensitive(text string) string {
 	if p.sensitiveValues == nil {
 		return text
 	}
-	for _, secret := range *p.sensitiveValues {
-		text = strings.ReplaceAll(text, secret, "(sensitive value)")
-	}
-	return text
+	return secretmask.Mask(text, *p.sensitiveValues, nil, "(sensitive value)")
 }
 
 // invalidValue reports a known key whose value is of the right type but breaks a
@@ -4018,6 +4046,10 @@ func (p atlasParser) scrubSensitive(text string) string {
 // [atlasParser.evaluationFailed] withholds for a bare reference too, and that
 // asymmetry is deliberate: an HCL diagnostic quotes whatever sub-expression it
 // blames, so there is no equivalent guarantee that the bytes survived.
+//
+// A reason that still holds a sensitive value too short for scrubbing to take
+// out wherever it occurs, of an expression that reads a sensitive variable, is
+// withheld as well; see [atlasParser.reasonQuotesShortSensitiveValue].
 func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err error) error {
 	if secret, found := p.derivedSensitiveVariableIn(attr.Expr); found {
 		return fmt.Errorf(
@@ -4026,9 +4058,16 @@ func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err er
 				"a function may have derived from that variable in a form scrubbing cannot recognize",
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
 	}
+	reason := p.scrubSensitive(err.Error())
+	if p.reasonQuotesShortSensitiveValue(attr.Expr, err.Error()) {
+		return fmt.Errorf(
+			"atlas.hcl %q at %s:%d: the value was refused; the underlying reason is withheld because it may "+
+				"quote the value of a sensitive variable, which is too short to take out of it without "+
+				"taking letters out of its words",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line)
+	}
 	return fmt.Errorf("atlas.hcl %q at %s:%d: %s",
-		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
-		p.scrubSensitive(err.Error()))
+		name, attr.NameRange.Filename, attr.NameRange.Start.Line, reason)
 }
 
 // wrongValueType reports a known key given a value of the wrong type. The key

@@ -774,6 +774,82 @@ func TestFormat_HidesASecretSetting(t *testing.T) {
 	}
 }
 
+// A password the address repeats as another part is hidden there too, by the
+// rule RedactError hides it with in a driver's error, so the display and the
+// error show the same parts of the address. The scheme and the name of a
+// setting are no part of the address and keep their text.
+func TestFormat_HidesAPasswordWhereTheAddressRepeatsIt(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		{name: "as the database", address: "postgres://app:hunter22@127.0.0.1:1/hunter22", want: "postgres://app:***@127.0.0.1:1/***"},
+		{name: "as the host", address: "postgres://app:dbhost01@dbhost01:5432/shop", want: "postgres://app:***@***:5432/shop"},
+		{name: "as the user", address: "postgres://hunter22:hunter22@localhost/shop", want: "postgres://***:***@localhost/shop"},
+		{name: "as a parameter that is no secret", address: "postgres://app:hunter22@localhost/shop?application_name=hunter22", want: "postgres://app:***@localhost/shop?application_name=***"},
+		{name: "a secret parameter as the database", address: "postgres://app@localhost/querysecret?password=querysecret", want: "postgres://app@localhost/***?password=redacted"},
+		{name: "a piece of the password as the database", address: "postgres://app:shop%2FXk9Lm@localhost/shop", want: "postgres://app:***@localhost/***"},
+		{name: "as part of the name of a setting", address: "postgres://app:secret@localhost/shop?client_secret=x", want: "postgres://app:***@localhost/shop?client_secret=redacted"},
+		{name: "as part of the scheme", address: "postgres://app:postgres@localhost/shop", want: "postgres://app:***@localhost/shop"},
+		{name: "as the name of a setting", address: "postgres://app:sslmode@127.0.0.1:1/db?sslmode=bogus", want: "postgres://app:***@127.0.0.1:1/db?sslmode=bogus"},
+		{
+			name:    "a base64 password as the database",
+			address: "postgres://app:c2VjcmV0cGFzcw%3D%3D@127.0.0.1:1/c2VjcmV0cGFzcw==?sslmode=disable",
+			want:    "postgres://app:***@127.0.0.1:1/***?sslmode=disable",
+		},
+		{
+			name:    "a base64 password as a keyword value",
+			address: "password=Zm9vYmFyYmF6= dbname=Zm9vYmFyYmF6=",
+			want:    "password=redacted dbname=***",
+		},
+		{name: "a password with an equals sign as the database", address: "postgres://app:abc%3Ddefgh@127.0.0.1:1/abc=defgh", want: "postgres://app:***@127.0.0.1:1/***"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(dburldisplay.Format(test.address), qt.Equals, test.want)
+		})
+	}
+}
+
+// A password too short to look for in the rest of the address is hidden in its
+// own place alone, as RedactError hides it: a database, a host or a user that
+// repeats it, or holds its letters, keeps its text.
+func TestFormat_KeepsWhatAShortPasswordRepeats(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		{name: "one character inside the database", address: "postgres://app:x@localhost/execute", want: "postgres://app:***@localhost/execute"},
+		{name: "two characters inside the database", address: "postgres://app:ex@localhost/execute", want: "postgres://app:***@localhost/execute"},
+		{name: "two characters as the database", address: "postgres://app:db@localhost/db", want: "postgres://app:***@localhost/db"},
+		{name: "one character as the host", address: "postgres://app:h@h/shop", want: "postgres://app:***@h/shop"},
+		{name: "as the user and the database", address: "postgres://ptah:ptah@localhost/ptah", want: "postgres://ptah:***@localhost/ptah"},
+		{name: "one character as the port", address: "postgres://app:1@127.0.0.1:1/shop", want: "postgres://app:***@127.0.0.1:1/shop"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(dburldisplay.Format(test.address), qt.Equals, test.want)
+		})
+	}
+}
+
+// A secret setting's value is read to its end, so the directories of a path it
+// names are no pieces of a password: a user named like one keeps its name, on
+// the display line and in a driver's error. The password of the user info
+// still gives its pieces.
+func TestFormat_KeepsAUserASecretPathNames(t *testing.T) {
+	const address = "postgres://deploy:Pa55wordX9@127.0.0.1:1/db?sslpassword=x&sslkey=/srv/deploy/certs/client.key" // #nosec G101 -- a made-up password for the test
+	c := qt.New(t)
+
+	c.Assert(dburldisplay.Format(address), qt.Equals, "postgres://deploy:***@127.0.0.1:1/db?sslkey=redacted&sslpassword=redacted")
+	c.Assert(dburldisplay.RedactError(address, fmtError(`password authentication failed for user "deploy"`)).Error(),
+		qt.Equals, `password authentication failed for user "deploy"`)
+}
+
 // A parameter that holds no secret keeps its value.
 func TestFormat_KeepsAParameterThatIsNoSecret(t *testing.T) {
 	tests := []struct {
@@ -787,6 +863,12 @@ func TestFormat_KeepsAParameterThatIsNoSecret(t *testing.T) {
 		{name: "parseTime", address: "mysql://app@tcp(db.internal:3306)/shop?parseTime=true"},
 		{name: "a server option", address: "postgres://db.internal/shop?options=-c+statement_timeout%3D5s"},
 		{name: "a libpq server option", address: "host=db.internal options='-c statement_timeout=5s' dbname=shop"},
+		{name: "a flag named for a key", address: "mysql://app@db.internal:3306/shop?allowPublicKeyRetrieval=true"},
+		{name: "a flag named for keys", address: "sqlite://x.db?_foreign_keys=false"},
+		{name: "a keyword flag named for a key", address: "host=db.internal sslkey=0 dbname=shop"},
+		{name: "a server option flag named for a token", address: "postgres://db.internal/shop?options=-c+app.jwt_enabled%3Don"},
+		{name: "an ADO flag named for a key", address: "server=db.internal;column encryption key cache=true;database=shop"},
+		{name: "a quoted ADO flag named for a key", address: "server=db.internal;column encryption key cache='true';database=shop"},
 	}
 
 	for _, test := range tests {
@@ -986,6 +1068,20 @@ func TestRedactError_HidesWhatTheDriverRead(t *testing.T) {
 			want:    "password=*** was refused",
 		},
 		{
+			// pgx on Windows writes the key file it cannot open with
+			// backslashes, after the directory it resolved it against.
+			name:    "a secret path written with backslashes",
+			address: "postgres://127.0.0.1:1/shop?sslkey=Pa5/5wordX9",
+			message: `unable to read sslkey: open D:\a\shop\Pa5\5wordX9: The system cannot find the path specified.`,
+			want:    `unable to read sslkey: open D:\a\shop\***: The system cannot find the path specified.`,
+		},
+		{
+			name:    "a secret path written with slashes",
+			address: "postgres://127.0.0.1:1/shop?sslkey=Pa5%5C5wordX9",
+			message: "unable to read sslkey: open Pa5/5wordX9: no such file or directory",
+			want:    "unable to read sslkey: open ***: no such file or directory",
+		},
+		{
 			// A part this short would take letters out of every other word.
 			name:    "a part too short to look for",
 			address: "postgres://app:a/b@localhost/shop",
@@ -1073,6 +1169,17 @@ func TestRedactError_KeepsAnErrorWithNothingToHide(t *testing.T) {
 	c.Assert(dburldisplay.RedactError("postgres://app:Pa55wordX9@localhost/shop", nil), qt.IsNil)
 }
 
+// The value of a flag whose name holds a secret word is no secret, so an error
+// that says the same word elsewhere keeps it.
+func TestRedactError_KeepsTheValueOfAFlag(t *testing.T) {
+	c := qt.New(t)
+	err := fmtError(`column "active" default false is not a boolean`)
+
+	got := dburldisplay.RedactError("sqlite://x.db?_foreign_keys=false", err)
+
+	c.Assert(got, qt.Equals, err)
+}
+
 func TestSecrets(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1081,10 +1188,11 @@ func TestSecrets(t *testing.T) {
 	}{
 		{name: "none", address: "postgres://app@localhost/shop"},
 		{name: "a password", address: "postgres://app:Pa55wordX9@localhost/shop", want: []string{"Pa55wordX9"}},
-		{name: "a DSN's password", address: "app:P@5s/w0rd@tcp(localhost:3306)/shop", want: []string{"P@5s/w0rd"}},
+		{name: "a DSN's password", address: "app:P@5s/w0rd@tcp(localhost:3306)/shop", want: []string{"P@5s/w0rd", `P@5s\w0rd`}},
 		{name: "a parameter, escaped", address: "postgres://localhost/shop?password=a%40b", want: []string{"a@b"}},
 		{name: "two secrets, the longer first", address: "postgres://app:ab@localhost/shop?password=abcd", want: []string{"abcd", "ab"}},
-		{name: "an escaped password", address: "mysql+unix://app:p%2Fss@/tmp/m.sock", want: []string{"p/ss"}},
+		{name: "an escaped password", address: "mysql+unix://app:p%2Fss@/tmp/m.sock", want: []string{"p/ss", `p\ss`}},
+		{name: "a secret path", address: "postgres://localhost/shop?sslkey=certs/client.key", want: []string{"certs/client.key", `certs\client.key`}},
 		{name: "a server option", address: "postgres://localhost/shop?options=-c%20app.jwt_secret%3Dabc123", want: []string{"abc123"}},
 	}
 
@@ -1120,53 +1228,6 @@ func TestUsers(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(dburldisplay.Users(test.address), qt.DeepEquals, test.want)
-		})
-	}
-}
-
-func TestIsSecretParameter(t *testing.T) {
-	tests := []struct {
-		key  string
-		want bool
-	}{
-		{key: "password", want: true},
-		{key: "PASSWORD", want: true},
-		{key: "passwd", want: true},
-		{key: "pwd", want: true},
-		{key: "sslpassword", want: true},
-		{key: "sslkey", want: true},
-		{key: "sslcert", want: true},
-		{key: "token", want: true},
-		{key: "authToken", want: true},
-		{key: "auth_token", want: true},
-		{key: "jwt", want: true},
-		{key: "api_key", want: true},
-		{key: "apikey", want: true},
-		{key: "client_secret", want: true},
-		{key: "aws_secret_access_key", want: true},
-		{key: "credentials", want: true},
-		{key: "credentialsJson", want: true},
-		{key: "WALLET PASSWORD", want: true},
-		{key: "OS PASS", want: true},
-		{key: "OS PASSHASH", want: true},
-		{key: "OS HASH", want: true},
-		{key: "change password", want: true},
-		{key: "_auth_pass", want: true},
-		{key: "_key", want: true},
-		{key: "sslmode", want: false},
-		{key: "passfile", want: false},
-		{key: "user", want: false},
-		{key: "username", want: false},
-		{key: "database", want: false},
-		{key: "application_name", want: false},
-		{key: "parseTime", want: false},
-		{key: "monitoring", want: false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.key, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(dburldisplay.IsSecretParameter(test.key), qt.Equals, test.want)
 		})
 	}
 }

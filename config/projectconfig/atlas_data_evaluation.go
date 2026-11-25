@@ -282,8 +282,7 @@ func atlasTraversalAttribute(traversal hcl.Traversal, index int) (string, bool) 
 	if len(traversal) <= index {
 		return "", false
 	}
-	attr, ok := traversal[index].(hcl.TraverseAttr)
-	return attr.Name, ok
+	return stepName(traversal[index])
 }
 
 func (e *atlasEvaluator) resolveLocal(name string) error {

@@ -143,6 +143,68 @@ func TestCheck_HappyPath(t *testing.T) {
 	})
 }
 
+// A credential of the live address shorter than five characters is quoted
+// only where it stands as one. The memory provider refuses the credential
+// address with a reason that says "database", which holds the credential
+// "data" as letters of a word, and conforms.
+func TestCheck_KeepsTheWordsOfAShortCredential_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{}).server())
+	config := memoryConfig(target, "short")
+	config.Live.Address += "?password=data"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	assertConforms(c, report)
+}
+
+// A credential shorter than five characters is found after its user's name
+// and a ":", where a session that names the login quotes it, as well as
+// between the ":" and the "@" of an address. The suite reads the user name of
+// the live address for that.
+func TestCheck_FindsAShortCredentialAfterItsUser_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{leakLogin: true}).server())
+	config := memoryConfig(target, "login")
+	config.CredentialAddress = ""
+	config.Live.Address = "memory://app:ab@/login"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(failed(report), qt.DeepEquals, []string{"reasons.redacted"}, qt.Commentf("%v", report.Err()))
+}
+
+// A flag whose name holds a secret word, such as _foreign_keys, holds no
+// secret, so a provider that quotes it conforms.
+func TestCheck_AcceptsAQuotedFlagNamedForAKey_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{echoSettings: true}).server())
+	config := memoryConfig(target, "flag")
+	config.Live.Address = "memory:///flag?_foreign_keys=false"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Err(), qt.IsNil)
+	c.Assert(statuses(report), qt.DeepEquals, conforming())
+}
+
+// The control for the test above: a provider that quotes a secret setting
+// leaks it.
+func TestCheck_FindsAQuotedSecretSetting_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{echoSettings: true}).server())
+	config := memoryConfig(target, "flag")
+	config.Live.Address = "memory:///flag?api_key=Ap1KeyValue9"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(failed(report), qt.DeepEquals, []string{"reasons.redacted"}, qt.Commentf("%v", report.Err()))
+}
+
 // A provider that needs a two-way feature refuses a host that lists none, as
 // it refuses a host that leaves out that one feature, and the suite holds
 // both refusals to one rule.

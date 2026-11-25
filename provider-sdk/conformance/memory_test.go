@@ -37,6 +37,13 @@ type memoryDefects struct {
 	renderCounts bool
 	// leakAddress quotes the address in the reason Open refuses it with.
 	leakAddress bool
+	// leakLogin opens an address with user info and names its user and
+	// password in the server version of the session, as "1, login app:ab".
+	leakLogin bool
+	// echoSettings writes the query of the address it opens in the server
+	// version of the session, as "1, settings _foreign_keys=false". It leaks a
+	// secret setting, and quotes a flag, which holds none.
+	echoSettings bool
 	// unreadRegardless reports an unread table whatever the host listed.
 	unreadRegardless bool
 	// sharedLocks hands a held lock to every session that asks.
@@ -140,7 +147,8 @@ func refuse(code codes.Code, reason string) error { return runtime.ErrorWithReas
 
 func (m *memoryProvider) Open(_ context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
 	parsed, err := url.Parse(request.GetAddress())
-	if err != nil || parsed.Scheme != memoryEngine || parsed.Host != "" || parsed.User != nil || strings.Trim(parsed.Path, "/") == "" {
+	login := m.defects.leakLogin && err == nil && parsed.User != nil
+	if err != nil || parsed.Scheme != memoryEngine || parsed.Host != "" || (parsed.User != nil && !login) || strings.Trim(parsed.Path, "/") == "" {
 		if m.defects.leakAddress {
 			return nil, refuse(codes.InvalidArgument, "cannot open "+request.GetAddress())
 		}
@@ -156,7 +164,15 @@ func (m *memoryProvider) Open(_ context.Context, request *protocol.OpenRequest) 
 	id := fmt.Sprintf("memory-session-%d", m.nextSession)
 	m.sessions[id] = &memorySession{database: name, used: make(map[string]bool), released: make(map[string]bool),
 		transactions: make(map[string]*protocol.TransactionResult), open: make(map[string]bool)}
-	return &protocol.Session{Id: id, Engine: memoryEngine, Database: name, DefaultSchema: "main", ServerVersion: "1", Identifiers: memoryRules()}, nil
+	version := "1"
+	if login {
+		password, _ := parsed.User.Password()
+		version += ", login " + parsed.User.Username() + ":" + password
+	}
+	if m.defects.echoSettings && parsed.RawQuery != "" {
+		version += ", settings " + parsed.RawQuery
+	}
+	return &protocol.Session{Id: id, Engine: memoryEngine, Database: name, DefaultSchema: "main", ServerVersion: version, Identifiers: memoryRules()}, nil
 }
 
 func (m *memoryProvider) Close(_ context.Context, request *protocol.CloseRequest) error {
