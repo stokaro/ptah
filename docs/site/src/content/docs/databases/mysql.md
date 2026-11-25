@@ -1433,11 +1433,21 @@ The plan records the mode before and after each statement on a view, as the
 
 Reading roles and the grants on them needs `SELECT` on the `mysql` database, which
 ordinary schema work does not. An account without it records them as not described
-and is not refused, so a comparison decides nothing about them in either direction.
+and is not refused. A comparison cannot infer that an unread role or grant is absent.
 When a SQL diff finds no changes in the readable objects, it names roles and
 grants as a comparison limit instead of claiming the schemas are fully synced.
 Native `schema diff --format json` includes these limits in `comparison_limits`.
-An account that compares grants needs `SELECT` on `mysql.*`.
+An account that compares grants needs `SELECT` on `mysql.*`. Separate `SELECT`
+grants on `mysql.user`, `mysql.db`, `mysql.tables_priv` and `mysql.columns_priv`
+do not suffice: the `information_schema` privilege views still hide other
+grantees. Ptah checks the connecting account's grants before treating these
+views as complete, for a database URL and for a URL naming no database.
+
+When the grant read is incomplete, a declared `REVOKE` remains in the plan,
+including a revoke on an existing table. The server then decides whether it
+can remove that privilege. For example, a table revoke of access a database
+grant gives is refused by MySQL or MariaDB with ERROR 1147; the plan does not
+claim the role has lost access.
 
 A privilege named in more than one word, such as `SHOW VIEW`, `LOCK TABLES` or
 `CREATE TEMPORARY TABLES`, and `DELETE HISTORY` on MariaDB, is read from a SQL

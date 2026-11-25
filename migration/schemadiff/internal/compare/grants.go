@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/descriptor"
@@ -233,7 +234,7 @@ func GrantsWithOptions(
 			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
 		}
 	}
-	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, lists,
+	revokeUnmatchedDeclarations(desired, database, databaseGrantMapForRemovals, lists,
 		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target},
 		diff, semantics)
 	read.planDenies(desired, diff)
@@ -841,15 +842,19 @@ func revokedGrantIdentities(
 	return revoked
 }
 
-// revokeOnCreatedTargets plans a revoked grant on an object this plan creates,
-// although the database holds nothing to match it yet: PostgreSQL gives PUBLIC
-// EXECUTE on a function the moment CREATE FUNCTION runs, and ALTER DEFAULT
-// PRIVILEGES hands a new table's privileges to a role. Without the REVOKE in
-// the same plan the created object holds what the schema revokes, and the next
-// comparison plans it again. A REVOKE of a privilege not held changes nothing,
-// measured on PostgreSQL 18, so the statement is safe whether or not the
-// privilege arrives. planned holds the removals already decided, which this
-// does not repeat.
+// revokeUnmatchedDeclarations keeps a declared revoke when the read did not
+// inspect the role's grants, or when the plan creates the target. An unread
+// grant is not an absent grant, so the statement lets the server answer for
+// the role instead of reporting the declaration satisfied.
+//
+// An object the plan creates can acquire grants before the revoke: PostgreSQL
+// gives PUBLIC EXECUTE on a function the moment CREATE FUNCTION runs, and
+// ALTER DEFAULT PRIVILEGES hands a new table's privileges to a role. Without
+// the REVOKE in the same plan, the created object holds what the schema
+// revokes, and the next comparison plans it again. A REVOKE of a privilege
+// not held changes nothing, measured on PostgreSQL 18, so the statement is
+// safe whether or not the privilege arrives. planned holds the removals
+// already decided, which this does not repeat.
 //
 // Where a REVOKE on a table takes only a grant on that table, as on MySQL,
 // MariaDB and Oracle, a revoke on a table the plan creates is left out when
@@ -862,7 +867,7 @@ func revokedGrantIdentities(
 // out, the list would name MAINTAIN, and PostgreSQL 16 refuses the word
 // (`unrecognized privilege type "maintain"`), so a schema file revoking ALL
 // could not be applied there; ALL means what the server has.
-func revokeOnCreatedTargets(
+func revokeUnmatchedDeclarations(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	planned map[grantIdentity]difftypes.GrantRef,
@@ -882,7 +887,8 @@ func revokeOnCreatedTargets(
 			if removalCovers(planned, newGrantIdentity(ref, semantics)) {
 				continue
 			}
-			if !created.needsRevoke(ref) || !revokedTargetCreated(ref, desired, database, semantics) {
+			if database.NotDescribed.Describes(coverage.Role, ref.Role) &&
+				(!created.needsRevoke(ref) || !revokedTargetCreated(ref, desired, database, semantics)) {
 				continue
 			}
 			key := target{ref.Role, ref.ObjectType, ref.ObjectName, ref.Arguments, ref.Column}
