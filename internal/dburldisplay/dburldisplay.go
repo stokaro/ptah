@@ -296,14 +296,17 @@ func (h *hiddenText) name(user string) {
 	}
 }
 
-// parts is every value h hid, as it is written and unescaped, and apart from
-// them each piece of the password of the user info that a parser may name on
-// its own: what lies between the characters it may stop reading a password at.
-// A parser reads a setting's value to its end, so a path a secret setting
-// names, such as an sslkey file, gives no pieces, and a directory named like
-// the user keeps the user's name in the display.
+// parts is every value h hid, as it is written and unescaped and with each
+// path separator written as the other one, and apart from them each piece of
+// the password of the user info that a parser may name on its own: what lies
+// between the characters it may stop reading a password at. A parser reads a
+// setting's value to its end, so a path a secret setting names, such as an
+// sslkey file, gives no pieces, and a directory named like the user keeps the
+// user's name in the display. A driver that cannot open that path writes it
+// back as the operating system spells it, with backslashes on Windows.
 func (h *hiddenText) parts() (secrets, pieces []string) {
-	secrets = spellings(h.values)
+	written := spellings(h.values)
+	secrets = longestFirst(append(written, otherSeparators(written)...))
 	for _, secret := range spellings(h.passwords) {
 		for piece := range strings.FieldsFuncSeq(secret, stopsAPassword) {
 			if piece != secret {
@@ -312,6 +315,25 @@ func (h *hiddenText) parts() (secrets, pieces []string) {
 		}
 	}
 	return secrets, pieces
+}
+
+// otherSeparators is each of values that holds a path separator, with every
+// "/" written as a backslash and every backslash as a "/". The variants do not
+// depend on the platform reading the address, since the error it masks may
+// come from a driver on another one.
+func otherSeparators(values []string) []string {
+	var spelled []string
+	for _, value := range values {
+		for _, variant := range [...]string{
+			strings.ReplaceAll(value, "/", `\`),
+			strings.ReplaceAll(value, `\`, "/"),
+		} {
+			if variant != value {
+				spelled = append(spelled, variant)
+			}
+		}
+	}
+	return spelled
 }
 
 // stopsAPassword reports a character a parser may stop reading a password at, so

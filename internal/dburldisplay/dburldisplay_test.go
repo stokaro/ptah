@@ -1062,6 +1062,20 @@ func TestRedactError_HidesWhatTheDriverRead(t *testing.T) {
 			want:    "password=*** was refused",
 		},
 		{
+			// pgx on Windows writes the key file it cannot open with
+			// backslashes, after the directory it resolved it against.
+			name:    "a secret path written with backslashes",
+			address: "postgres://127.0.0.1:1/shop?sslkey=Pa5/5wordX9",
+			message: `unable to read sslkey: open D:\a\shop\Pa5\5wordX9: The system cannot find the path specified.`,
+			want:    `unable to read sslkey: open D:\a\shop\***: The system cannot find the path specified.`,
+		},
+		{
+			name:    "a secret path written with slashes",
+			address: "postgres://127.0.0.1:1/shop?sslkey=Pa5%5C5wordX9",
+			message: "unable to read sslkey: open Pa5/5wordX9: no such file or directory",
+			want:    "unable to read sslkey: open ***: no such file or directory",
+		},
+		{
 			// A part this short would take letters out of every other word.
 			name:    "a part too short to look for",
 			address: "postgres://app:a/b@localhost/shop",
