@@ -60,8 +60,10 @@ func addressSecrets(address string) []string {
 		secrets = append(secrets, password)
 	}
 	for name, values := range parsed.Query() {
-		if secretmask.IsSecretParameter(name) {
-			secrets = append(secrets, values...)
+		for _, value := range values {
+			if secretmask.IsSecretParameter(name, value) {
+				secrets = append(secrets, value)
+			}
 		}
 	}
 	return secrets

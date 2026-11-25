@@ -725,8 +725,10 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
 - `sensitive = true` is accepted. Parse-time conversion errors print
   `(sensitive value)` instead of the variable's value, or are withheld where
   what HCL reports holds a value of under five characters as a word and the
-  failing expression reads a sensitive variable, by name or through a local,
-  `each` or a data block; a sensitive value
+  failing expression reads a sensitive variable, by name (`var.x` or
+  `var["x"]`) or through a local, `each`, a data block or a block nested in
+  one; where it names the variable of a `for`, the whole attribute is read. A
+  sensitive value
   interpolated into a path can still appear in downstream errors that print
   that path. A value that reaches the password, a secret query parameter or
   a whole user info of an address the file writes is shown as `redacted` in

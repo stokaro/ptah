@@ -242,7 +242,7 @@ func standsAsCredential(text string, start, end int, users []string) bool {
 		return false
 	}
 	window := text[max(0, start-longestSetting):start]
-	if match := settingBefore.FindStringSubmatch(window); match != nil && IsSecretParameter(match[1]) {
+	if match := settingBefore.FindStringSubmatch(window); match != nil && IsSecretParameter(match[1], text[start:end]) {
 		return true
 	}
 	return credentialBefore.MatchString(window)
@@ -280,28 +280,48 @@ func wordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
-// secretParameterWords mark a parameter as a secret wherever they stand in its
-// name.
-var secretParameterWords = []string{"credential", "jwt", "key", "passhash", "passwd", "password", "pwd", "secret", "token"}
+// passwordParameterWords mark a parameter as a password wherever they stand in
+// its name, whatever value it takes.
+var passwordParameterWords = []string{"passhash", "passwd", "password", "pwd"}
 
-// IsSecretParameter reports a query parameter, connection-string keyword or
-// setting that holds a secret or says where one is.
+// secretParameterWords mark a parameter as a secret wherever they stand in its
+// name, unless its value is one of [flagValues].
+var secretParameterWords = []string{"credential", "jwt", "key", "secret", "token"}
+
+// flagValues are the spellings of a boolean a driver's flag takes, compared in
+// any letter case. A flag says whether to do something, and holds no secret
+// whatever its name holds.
+var flagValues = []string{"0", "1", "false", "no", "off", "on", "true", "yes"}
+
+// IsSecretParameter reports whether a query parameter, connection-string
+// keyword or setting named key holds a secret, or says where one is, in value.
 //
 // The name is compared without case or punctuation, so `authToken`, `auth_token`
-// and go-ora's `WALLET PASSWORD` read alike. A name that holds `key` anywhere
-// counts, as `sslkey`, `keyfile` and `encryption_key_b64` do, and so does one
-// ending in `pass`, as go-ora's `OS PASS` does; `passfile` names a file of
-// passwords and does not. It errs on the wide side: an engine's parameter a
-// narrower list missed prints its value, and hiding a value that is no secret
-// costs a word on a line.
-func IsSecretParameter(key string) bool {
+// and go-ora's `WALLET PASSWORD` read alike. A name that names a password
+// counts whatever its value, and so does one ending in `pass`, as go-ora's `OS
+// PASS` does; `passfile` names a file of passwords and does not. A name that
+// holds `key` anywhere counts, as `sslkey`, `keyfile` and `encryption_key_b64`
+// do, and so does one that holds `secret`, `token`, `jwt` or `credential`,
+// unless value is a boolean: `allowPublicKeyRetrieval=true` and
+// `_foreign_keys=false` are flags, and a value such as "false" taken for a
+// secret would be taken out of every message. Otherwise it errs on the wide
+// side: an engine's parameter a narrower list missed prints its value, and
+// hiding a value that is no secret costs a word on a line.
+func IsSecretParameter(key, value string) bool {
 	name := comparableName(key)
 	switch {
-	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "pass"):
+	case name == "oshash", strings.HasSuffix(name, "pass"), holdsAnyOf(name, passwordParameterWords):
 		return true
+	case slices.ContainsFunc(flagValues, func(flag string) bool { return strings.EqualFold(value, flag) }):
+		return false
 	default:
-		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
+		return name == "sslcert" || holdsAnyOf(name, secretParameterWords)
 	}
+}
+
+// holdsAnyOf reports whether name holds one of words.
+func holdsAnyOf(name string, words []string) bool {
+	return slices.ContainsFunc(words, func(word string) bool { return strings.Contains(name, word) })
 }
 
 // IsUserParameter reports whether key names the user a connection logs in as:

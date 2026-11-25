@@ -863,6 +863,12 @@ func TestFormat_KeepsAParameterThatIsNoSecret(t *testing.T) {
 		{name: "parseTime", address: "mysql://app@tcp(db.internal:3306)/shop?parseTime=true"},
 		{name: "a server option", address: "postgres://db.internal/shop?options=-c+statement_timeout%3D5s"},
 		{name: "a libpq server option", address: "host=db.internal options='-c statement_timeout=5s' dbname=shop"},
+		{name: "a flag named for a key", address: "mysql://app@db.internal:3306/shop?allowPublicKeyRetrieval=true"},
+		{name: "a flag named for keys", address: "sqlite://x.db?_foreign_keys=false"},
+		{name: "a keyword flag named for a key", address: "host=db.internal sslkey=0 dbname=shop"},
+		{name: "a server option flag named for a token", address: "postgres://db.internal/shop?options=-c+app.jwt_enabled%3Don"},
+		{name: "an ADO flag named for a key", address: "server=db.internal;column encryption key cache=true;database=shop"},
+		{name: "a quoted ADO flag named for a key", address: "server=db.internal;column encryption key cache='true';database=shop"},
 	}
 
 	for _, test := range tests {
@@ -1163,6 +1169,17 @@ func TestRedactError_KeepsAnErrorWithNothingToHide(t *testing.T) {
 	c.Assert(dburldisplay.RedactError("postgres://app:Pa55wordX9@localhost/shop", nil), qt.IsNil)
 }
 
+// The value of a flag whose name holds a secret word is no secret, so an error
+// that says the same word elsewhere keeps it.
+func TestRedactError_KeepsTheValueOfAFlag(t *testing.T) {
+	c := qt.New(t)
+	err := fmtError(`column "active" default false is not a boolean`)
+
+	got := dburldisplay.RedactError("sqlite://x.db?_foreign_keys=false", err)
+
+	c.Assert(got, qt.Equals, err)
+}
+
 func TestSecrets(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1171,10 +1188,11 @@ func TestSecrets(t *testing.T) {
 	}{
 		{name: "none", address: "postgres://app@localhost/shop"},
 		{name: "a password", address: "postgres://app:Pa55wordX9@localhost/shop", want: []string{"Pa55wordX9"}},
-		{name: "a DSN's password", address: "app:P@5s/w0rd@tcp(localhost:3306)/shop", want: []string{"P@5s/w0rd"}},
+		{name: "a DSN's password", address: "app:P@5s/w0rd@tcp(localhost:3306)/shop", want: []string{"P@5s/w0rd", `P@5s\w0rd`}},
 		{name: "a parameter, escaped", address: "postgres://localhost/shop?password=a%40b", want: []string{"a@b"}},
 		{name: "two secrets, the longer first", address: "postgres://app:ab@localhost/shop?password=abcd", want: []string{"abcd", "ab"}},
-		{name: "an escaped password", address: "mysql+unix://app:p%2Fss@/tmp/m.sock", want: []string{"p/ss"}},
+		{name: "an escaped password", address: "mysql+unix://app:p%2Fss@/tmp/m.sock", want: []string{"p/ss", `p\ss`}},
+		{name: "a secret path", address: "postgres://localhost/shop?sslkey=certs/client.key", want: []string{"certs/client.key", `certs\client.key`}},
 		{name: "a server option", address: "postgres://localhost/shop?options=-c%20app.jwt_secret%3Dabc123", want: []string{"abc123"}},
 	}
 

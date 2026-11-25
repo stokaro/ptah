@@ -127,6 +127,24 @@ func TestCommandHookOutputKeepsTheWordsOfAShortPassword(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "(?s).*\nptah backup: MYSQL_PWD=redacted PGPASSWORD=redacted\n\\+ curl -u ptah:redacted https://h/\nptah backup: done\n?")
 }
 
+// A hook on Windows writes back the key file it cannot open with backslashes,
+// and the path is taken out in that spelling too.
+func TestCommandHookOutputHidesASecretPathInItsOtherSeparatorSpelling(t *testing.T) {
+	c := qt.New(t)
+	runner := &fakeCommandRunner{
+		output: `pg_dump: error: could not open certificate file "D:\a\certs\Pa5\5wordX9": No such file or directory` + "\n",
+		err:    errors.New("exit status 1"),
+	}
+
+	_, err := Runner{CommandRunner: runner}.Execute(context.Background(), Options{
+		Direction:   DirectionUp,
+		DatabaseURL: "postgres://app@db.internal/shop?sslkey=Pa5/5wordX9",
+		Command:     "backup",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*could not open certificate file "D:\\a\\certs\\redacted": No such file or directory.*`)
+}
+
 func TestCommandHookOutputFallbackRedactsURLQuerySecrets(t *testing.T) {
 	c := qt.New(t)
 	dbPassword := "pg-" + "pass"
@@ -306,6 +324,16 @@ func TestPostgresDumpStripsSecretQueryParamsFromArgs(t *testing.T) {
 	c.Assert(env, qt.DeepEquals, []string{"PGPASSWORD=pg-pass"})
 }
 
+// A flag whose name holds a secret word holds no secret, so pg_dump keeps it
+// while the secret beside it is taken out.
+func TestPostgresDumpKeepsAFlagNamedForAKey(t *testing.T) {
+	c := qt.New(t)
+
+	args, _ := postgresDumpCommand("postgres://app@db.internal/prod?sslkey=0&token=api-token", "/tmp/pre.dump")
+
+	c.Assert(args[3], qt.Equals, "postgres://app@db.internal/prod?sslkey=0")
+}
+
 func TestWebhookPostsMetadataAndRequiresHTTP200(t *testing.T) {
 	c := qt.New(t)
 	var payload webhookPayload
@@ -403,6 +431,7 @@ func TestRedactedDatabaseURL_HidesAnAddressItCannotRead(t *testing.T) {
 		{name: "a driver DSN with no scheme", url: "app:Pa55wordX9@tcp(db:3306)/shop", want: "app:***@tcp(db:3306)/shop"},
 		{name: "a / in a DSN's password and no database", url: "mysql://app:Pa5/5wordX9@tcp(db:3306)", want: "mysql://app:***@tcp(db:3306)"},
 		{name: "a / in a URL's password that reads as a path", url: "postgres://app:12345/5wordX9@db/shop", want: "postgres://app@db/shop"},
+		{name: "a flag named for a key", url: "postgres://app@db/shop?allowPublicKeyRetrieval=true&token=api-token", want: "postgres://app@db/shop?allowPublicKeyRetrieval=true&token=redacted"},
 	}
 
 	for _, test := range tests {

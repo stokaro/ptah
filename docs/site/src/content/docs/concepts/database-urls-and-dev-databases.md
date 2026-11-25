@@ -71,8 +71,11 @@ its password as `***` and the value of a secret parameter, such as `sslpassword`
 `authToken` or `TOKEN`, as `redacted`, in every form an engine takes: a URL, a
 Go-driver DSN with or without a scheme, and a keyword, ADO or ODBC string. A
 secret-named run-time parameter that PostgreSQL's `options` setting passes,
-such as `-c app.jwt_secret=...`, is shown as `redacted` too. The rest of the
-address stays, so the line still says which database it means.
+such as `-c app.jwt_secret=...`, is shown as `redacted` too. A setting whose
+name holds `key`, `token`, `secret`, `credential` or `jwt` and whose value is a
+boolean, such as `allowPublicKeyRetrieval=true` or `_foreign_keys=false`, is a
+flag and keeps its value; a password setting is hidden whatever its value. The
+rest of the address stays, so the line still says which database it means.
 
 A password the address repeats in another part, such as the database name, the
 host or the user, is hidden there by the rule below, which is the rule a

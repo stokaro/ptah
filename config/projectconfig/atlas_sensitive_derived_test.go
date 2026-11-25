@@ -448,6 +448,18 @@ func TestParseAtlasKeepsADiagnosticOfAnExpressionThatReadsNoSensitiveVariable(t 
 			url:   `tonumber("${local.db.size}x")`,
 			want:  `cannot convert "1x" to number`,
 		},
+		{
+			name:  "a word of a call's diagnostic beside a value that reads a sensitive variable",
+			token: "is",
+			url:   `"${local.db.size}${nosuchfn("x")}"`,
+			want:  `There is no function named "nosuchfn".`,
+		},
+		{
+			name:  "a word of a call's diagnostic in a for expression over values that are no secret",
+			token: "is",
+			url:   `join("", [for s in ["x"] : nosuchfn(s)])`,
+			want:  `There is no function named "nosuchfn".`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -529,6 +541,121 @@ env "local" {
 
 			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" at atlas\.hcl:\d+: the underlying diagnostic is withheld because it may quote the value of a sensitive variable.*`)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "open x")
+		})
+	}
+}
+
+// shortSensitiveSpellingsProject is an atlas.hcl with a sensitive variable
+// tok, a sensitive list toks and a sensitive list secrets, followed by body.
+func shortSensitiveSpellingsProject(body string) []byte {
+	return []byte(`variable "tok" {
+  type      = string
+  sensitive = true
+  default   = "zz"
+}
+
+variable "toks" {
+  type      = list(string)
+  sensitive = true
+  default   = []
+}
+
+variable "secrets" {
+  type      = list(string)
+  sensitive = true
+  default   = []
+}
+
+` + body)
+}
+
+// A diagnostic that may quote a short sensitive value is withheld whatever
+// spelling reads it: a string index, which HCL reads as the same lookup as an
+// attribute, an iteration variable of a for expression or a for directive,
+// whose value the expression it ranges over gives, and a data block whose
+// nested block reads it. leak is a part of the diagnostic shown when it is
+// not withheld.
+func TestParseAtlasWithholdsADiagnosticThatMayQuoteAShortSensitiveValueInEverySpelling(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		vars []string
+		want string
+		leak string
+	}{
+		{
+			name: "a string index of a variable in a template",
+			body: "env \"dev\" {\n  url = \"${file(var[\"tok\"])}\"\n}\n",
+			vars: []string{"tok=ab"},
+			want: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:20: the expression reads the sensitive variable "tok" and failed; .*`,
+			leak: "open ab",
+		},
+		{
+			name: "a string index of a variable in a call",
+			body: "env \"dev\" {\n  url = regex(var[\"tok\"], \"x\")\n}\n",
+			vars: []string{"tok=a("},
+			want: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:20: the expression reads the sensitive variable "tok" and failed; .*`,
+			leak: "missing closing",
+		},
+		{
+			name: "a string index of a local",
+			body: "locals {\n  a = var.tok\n}\nenv \"dev\" {\n  url = regex(local[\"a\"], \"x\")\n}\n",
+			vars: []string{"tok=a("},
+			want: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:23: the underlying diagnostic is withheld because it may quote .*`,
+			leak: "missing closing",
+		},
+		{
+			name: "a string index of a variable in a local",
+			body: "locals {\n  y = file(var[\"tok\"])\n}\nenv \"dev\" {\n  url = local.y\n}\n",
+			vars: []string{"tok=ab"},
+			want: `cannot evaluate atlas\.hcl "y" at atlas\.hcl:20: the expression reads the sensitive variable "tok" and failed; .*`,
+			leak: "open ab",
+		},
+		{
+			name: "a for expression over a local in a local",
+			body: "locals {\n  a = var.toks\n  y = join(\"\", [for s in local.a : file(s)])\n}\nenv \"dev\" {\n  url = local.y\n}\n",
+			vars: []string{"toks=ab", "toks=cd"},
+			want: `cannot evaluate atlas\.hcl "y" at atlas\.hcl:21: the underlying diagnostic is withheld because it may quote .*`,
+			leak: "open ab",
+		},
+		{
+			name: "a for expression over a local in a template",
+			body: "locals {\n  a = [var.tok]\n}\nenv \"dev\" {\n  url = \"${join(\"\", [for s in local.a : file(s)])}\"\n}\n",
+			vars: []string{"tok=ab"},
+			want: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:23: the underlying diagnostic is withheld because it may quote .*`,
+			leak: "open ab",
+		},
+		{
+			name: "a for directive over a local",
+			body: "locals {\n  a = [var.tok]\n}\nenv \"dev\" {\n  url = \"%{ for s in local.a }${file(s)}%{ endfor }\"\n}\n",
+			vars: []string{"tok=ab"},
+			want: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:23: the underlying diagnostic is withheld because it may quote .*`,
+			leak: "open ab",
+		},
+		{
+			name: "a for expression over the value of a for_each",
+			body: "env {\n  name     = atlas.env\n  for_each = toset(var.secrets)\n  url      = join(\"\", [for s in [each.value] : regex(s, \"x\")])\n}\n",
+			vars: []string{"secrets=a(", "secrets=b("},
+			want: `schemahcl: evaluate env block instance 1: cannot evaluate atlas\.hcl "url" at atlas\.hcl:22: the underlying diagnostic is withheld because it may quote .*`,
+			leak: "missing closing",
+		},
+		{
+			name: "a nested block of a data block",
+			body: "data \"composite_schema\" \"app\" {\n  schema \"main\" {\n    url = \"file://${var.tok}.hcl\"\n  }\n}\nenv \"dev\" {\n  url = nosuchfn(data.composite_schema.app.url)\n}\n",
+			vars: []string{"tok=is"},
+			want: `cannot evaluate atlas\.hcl "url" at atlas\.hcl:25: the underlying diagnostic is withheld because it may quote .*`,
+			leak: "no function named",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := projectconfig.ParseAtlasFSCollectionWithOptions(shortSensitiveSpellingsProject(test.body), "atlas.hcl",
+				fstest.MapFS{}, projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: test.vars})
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(err.Error(), qt.Not(qt.Contains), test.leak)
 		})
 	}
 }

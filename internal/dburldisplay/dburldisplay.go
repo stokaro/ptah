@@ -217,12 +217,15 @@ func RedactError(dbURL string, err error) error {
 }
 
 // Secrets returns each value [Format] hides in dbURL, as it is written there and
-// unescaped, longest first so that replacing them in that order leaves no part of
-// a longer one behind.
+// unescaped, and a value that holds a path separator also with each separator
+// written as the other one, as a program on another platform writes the path
+// back. They come longest first so that replacing them in that order leaves no
+// part of a longer one behind.
 func Secrets(dbURL string) []string {
 	var hidden hiddenText
 	hidden.format(dbURL)
-	return spellings(hidden.values)
+	secrets, _ := hidden.parts()
+	return secrets
 }
 
 // Users returns the user name dbURL gives with the password [Format] hides, as
@@ -555,7 +558,7 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 		}
 		value := rest[match[4]:end]
 		switch {
-		case secretmask.IsSecretParameter(rest[match[2]:match[3]]):
+		case secretmask.IsSecretParameter(rest[match[2]:match[3]], value):
 			secrets = append(secrets, value)
 			out.WriteString(rest[:match[4]] + redactedQueryValue)
 		case strings.EqualFold(rest[match[2]:match[3]], serverOptionsSetting):
@@ -601,8 +604,7 @@ func (h *hiddenText) assignments(text string) string {
 		if secretmask.IsUserParameter(name) {
 			h.name(strings.Trim(rest[:assignmentValueEnd(rest)], `'"{}`))
 		}
-		if secretmask.IsSecretParameter(name) {
-			end := assignmentValueEnd(rest)
+		if end := assignmentValueEnd(rest); secretmask.IsSecretParameter(name, strings.Trim(rest[:end], `'"{} `)) {
 			h.hide(rest[:end])
 			out.WriteString(redactedQueryValue)
 			rest = rest[end:]
@@ -684,23 +686,19 @@ func (h *hiddenText) rawQuery(rawQuery string, urlValued func(key string) bool) 
 		return ""
 	}
 	for key, values := range query {
-		switch {
-		case secretmask.IsSecretParameter(key):
-			for idx := range values {
-				h.hide(values[idx])
+		for idx, value := range values {
+			switch {
+			case secretmask.IsSecretParameter(key, value):
+				h.hide(value)
 				values[idx] = redactedQueryValue
-			}
-		case strings.EqualFold(key, serverOptionsSetting):
-			for idx := range values {
-				shown, hidden := serverOptions(values[idx])
+			case strings.EqualFold(key, serverOptionsSetting):
+				shown, hidden := serverOptions(value)
 				for _, secret := range hidden {
 					h.hide(secret)
 				}
 				values[idx] = shown
-			}
-		case urlValued(key):
-			for idx := range values {
-				values[idx] = h.userInfo(values[idx])
+			case urlValued(key):
+				values[idx] = h.userInfo(value)
 			}
 		}
 	}
@@ -720,7 +718,7 @@ func serverOptions(value string) (shown string, hidden []string) {
 	var out strings.Builder
 	last := 0
 	for _, match := range serverOption.FindAllStringSubmatchIndex(value, -1) {
-		if match[4] == match[5] || !secretmask.IsSecretParameter(value[match[2]:match[3]]) {
+		if match[4] == match[5] || !secretmask.IsSecretParameter(value[match[2]:match[3]], value[match[4]:match[5]]) {
 			continue
 		}
 		hidden = append(hidden, value[match[4]:match[5]])

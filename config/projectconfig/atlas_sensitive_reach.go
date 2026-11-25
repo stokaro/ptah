@@ -5,6 +5,7 @@ import (
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 
 	"ptah.run/internal/secretmask"
 )
@@ -106,16 +107,46 @@ func (p atlasParser) bodyReachesSensitive(body *hclsyntax.Body, seen map[string]
 	})
 }
 
-// traversalStep returns the name of the attribute step i of traversal takes,
-// or "" when it takes none there.
+// traversalStep returns the name step i of traversal takes, or "" when it
+// takes none there; see [stepName].
 func traversalStep(traversal hcl.Traversal, i int) string {
 	if i >= len(traversal) {
 		return ""
 	}
-	if attr, ok := traversal[i].(hcl.TraverseAttr); ok {
-		return attr.Name
+	name, _ := stepName(traversal[i])
+	return name
+}
+
+// stepName returns the name step takes: an attribute's, as in `var.tok`, or a
+// string index the file writes out, as in `var["tok"]`. HCL reads the two
+// spellings as the same lookup, so a rule about what a name reads must read
+// both. It reports false for a step that takes no name, such as a number
+// index.
+func stepName(step hcl.Traverser) (string, bool) {
+	switch step := step.(type) {
+	case hcl.TraverseAttr:
+		return step.Name, true
+	case hcl.TraverseIndex:
+		if step.Key.IsKnown() && !step.Key.IsNull() && step.Key.Type() == cty.String {
+			return step.Key.AsString(), true
+		}
 	}
-	return ""
+	return "", false
+}
+
+// evaluationRoots are the names the evaluation context of atlas.hcl gives an
+// expression. A traversal from any other root names a variable a scope of the
+// expression's own declares, as a `for` expression or a `%{ for }` directive
+// declares its iteration variables.
+var evaluationRoots = []string{"var", "local", "each", "data", "atlas"}
+
+// readsAScopeOfItsOwn reports whether expr names a variable that no root of
+// the evaluation context gives, so that what it reads is decided by an
+// enclosing expression rather than by expr.
+func readsAScopeOfItsOwn(expr hcl.Expression) bool {
+	return slices.ContainsFunc(expr.Variables(), func(traversal hcl.Traversal) bool {
+		return !slices.Contains(evaluationRoots, traversal.RootName())
+	})
 }
 
 // firstVisit records key in seen, and reports whether it was not there.
@@ -159,10 +190,12 @@ func (p atlasParser) holdsShortSensitiveValue(text string, short []string) bool 
 // may quote the value of a `sensitive = true` variable that
 // [atlasParser.scrubSensitive] cannot take out: its summary or its detail
 // holds a short sensitive value as a word of its own, and the expression it
-// blames, or attr where it blames none, reads a sensitive variable. The rest
-// of the message is Ptah's -- the file's name, a line and a column -- and an
-// expression that reads no sensitive variable cannot quote one, so a word of
-// the message spelled like the value does not withhold it.
+// blames reads a sensitive variable. Where it blames none, or blames one that
+// names an iteration variable, as `file(s)` in `[for s in local.a : file(s)]`
+// does, the expression read is attr, which holds what gives that variable its
+// value. The rest of the message is Ptah's -- the file's name, a line and a
+// column -- and an expression that reads no sensitive variable cannot quote
+// one, so a word of the message spelled like the value does not withhold it.
 func (p atlasParser) diagnosticQuotesShortSensitiveValue(attr hcl.Expression, diags hcl.Diagnostics) bool {
 	short := p.shortSensitiveValues()
 	if len(short) == 0 {
@@ -173,7 +206,7 @@ func (p atlasParser) diagnosticQuotesShortSensitiveValue(attr hcl.Expression, di
 			return false
 		}
 		blamed := diag.Expression
-		if blamed == nil {
+		if blamed == nil || readsAScopeOfItsOwn(blamed) {
 			blamed = attr
 		}
 		return p.readsSensitive(blamed)

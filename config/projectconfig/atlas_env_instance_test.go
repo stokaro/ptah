@@ -44,6 +44,16 @@ func TestParseAtlasCollectionNumbersEachInstance_HappyPath(t *testing.T) {
 			want: []envInstance{{1, "sqlite://c.db"}, {2, "sqlite://a.db"}, {3, "sqlite://b.db"}},
 		},
 		{
+			name: "a name that reads the selected env by a string index",
+			raw: `env {
+  for_each = ["sqlite://c.db"]
+  name     = atlas["env"]
+  url      = each.value
+}
+`,
+			want: []envInstance{{1, "sqlite://c.db"}},
+		},
+		{
 			name: "a set numbers its elements in key order",
 			raw: `env "local" {
   for_each = toset(["sqlite://b.db", "sqlite://a.db"])

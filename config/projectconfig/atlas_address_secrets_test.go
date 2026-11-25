@@ -232,23 +232,31 @@ func TestParseAtlas_MasksAnEnvironmentValueInAPassword_FailurePath(t *testing.T)
 }
 
 // A --var value that a typed variable refuses is masked when the variable
-// reaches a password, before any expression that reads it runs.
+// reaches a password, before any expression that reads it runs, whether the
+// address names it by an attribute or by a string index.
 func TestParseAtlas_MasksATypedVariableThatReachesAPassword_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	raw := []byte(`variable "pw" {
+	for _, url := range []string{
+		`"postgres://app:${var.pw}@127.0.0.1:1/db"`,
+		`"postgres://app:${var["pw"]}@127.0.0.1:1/db"`,
+	} {
+		t.Run(url, func(t *testing.T) {
+			c := qt.New(t)
+			raw := []byte(`variable "pw" {
   type = number
 }
 
 env "dev" {
-  url = "postgres://app:${var.pw}@127.0.0.1:1/db"
+  url = ` + url + `
 }
 `)
 
-	got, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl",
-		projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Pa55wordX9"}})
+			got, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Pa55wordX9"}})
 
-	c.Assert(err, qt.ErrorMatches, `atlas\.hcl variable "pw" expects number, got --var value "redacted"`)
-	c.Assert(got.DatabaseURL, qt.Equals, "")
+			c.Assert(err, qt.ErrorMatches, `atlas\.hcl variable "pw" expects number, got --var value "redacted"`)
+			c.Assert(got.DatabaseURL, qt.Equals, "")
+		})
+	}
 }
 
 // The control for the tests above: a value in a place where an address keeps
@@ -916,6 +924,15 @@ func TestParseAtlas_MasksWhatAnAddressACallWritesHolds_FailurePath(t *testing.T)
 		{
 			name: "a password a join() over a variable list writes",
 			url:  `join("", concat(var.head, [tonumber(var.pw)], ["@127.0.0.1:1/db"]))`,
+		},
+		{
+			name: "a password a join() over a concat() writes from a string index of a variable",
+			url:  `join("", concat(["postgres://app:"], [tonumber(var["pw"])], ["@127.0.0.1:1/db"]))`,
+		},
+		{
+			name:     "a password a join() over a local list a string index names writes",
+			preamble: "locals {\n  parts = [\"postgres://app:\", tonumber(var.pw), \"@127.0.0.1:1/db\"]\n}\n",
+			url:      `join("", local["parts"])`,
 		},
 		{
 			name:     "a password a join() over a local list writes",

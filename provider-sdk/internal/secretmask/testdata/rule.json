@@ -195,7 +195,10 @@
      "want": "password=x"},
     {"name": "an escape string that is no password", "secrets": ["ab"], "users": ["app"],
      "text": "SELECT E'ab' AS label",
-     "want": "SELECT E'ab' AS label"}
+     "want": "SELECT E'ab' AS label"},
+    {"name": "a flag a name holding a secret word sets to a short secret's spelling", "secrets": ["on"], "users": ["app"],
+     "text": "useKeyring=on password=on",
+     "want": "useKeyring=on password=***"}
   ],
   "secretParameters": [
     {"key": "password", "secret": true},
@@ -232,6 +235,17 @@
     {"key": "database", "secret": false},
     {"key": "application_name", "secret": false},
     {"key": "parseTime", "secret": false},
-    {"key": "monitoring", "secret": false}
+    {"key": "monitoring", "secret": false},
+    {"key": "allowPublicKeyRetrieval", "value": "true", "secret": false},
+    {"key": "_foreign_keys", "value": "false", "secret": false},
+    {"key": "_foreign_keys", "value": "FALSE", "secret": false},
+    {"key": "jwtAuth", "value": "Yes", "secret": false},
+    {"key": "useSecretManager", "value": "on", "secret": false},
+    {"key": "keyfile", "value": "0", "secret": false},
+    {"key": "_foreign_keys", "value": "Pa55wordX9", "secret": true},
+    {"key": "sslkey", "value": "/srv/certs/client.key", "secret": true},
+    {"key": "password", "value": "false", "secret": true},
+    {"key": "OS PASS", "value": "1", "secret": true},
+    {"key": "OS HASH", "value": "true", "secret": true}
   ]
 }

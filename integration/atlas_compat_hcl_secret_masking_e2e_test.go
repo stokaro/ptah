@@ -240,6 +240,69 @@ func TestCompatMasksAShortPasswordAFailingCallQuotesE2E(t *testing.T) {
 	}
 }
 
+// TestCompatWithholdsADiagnosticThatMayQuoteAShortSensitiveValueE2E runs
+// `ptah-compat migrate status` over a project whose url fails on the value of
+// a sensitive variable too short to take out of every word of the diagnostic,
+// and reads stderr. The diagnostic is withheld whatever spelling reads the
+// value: a string index of the variable or of a local, and the iteration
+// variable of a for expression or a for directive over a local. leak is a part
+// of the diagnostic shown when it is not withheld.
+func TestCompatWithholdsADiagnosticThatMayQuoteAShortSensitiveValueE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		preamble string
+		url      string
+		token    string
+		want     string
+		leak     string
+	}{
+		{
+			name:  "a string index of the variable",
+			url:   `"${file(var["token"])}"`,
+			token: "ab",
+			want:  `the expression reads the sensitive variable "token" and failed`,
+			leak:  "open",
+		},
+		{
+			name:     "a string index of a local",
+			preamble: "locals {\n  a = var.token\n}\n",
+			url:      `regex(local["a"], "x")`,
+			token:    "a(",
+			want:     "the underlying diagnostic is withheld because it may quote the value of a sensitive variable",
+			leak:     "missing closing",
+		},
+		{
+			name:     "a for expression over a local",
+			preamble: "locals {\n  a = [var.token]\n}\n",
+			url:      `"${join("", [for s in local.a : file(s)])}"`,
+			token:    "ab",
+			want:     "the underlying diagnostic is withheld because it may quote the value of a sensitive variable",
+			leak:     "open",
+		},
+		{
+			name:     "a for directive over a local",
+			preamble: "locals {\n  a = [var.token]\n}\n",
+			url:      `"%{ for s in local.a }${file(s)}%{ endfor }"`,
+			token:    "ab",
+			want:     "the underlying diagnostic is withheld because it may quote the value of a sensitive variable",
+			leak:     "open",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, test.preamble, test.url)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"migrate", "status", "--env", "dev", "--var", "token="+test.token)
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, test.want)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), test.leak)
+		})
+	}
+}
+
 // TestCompatKeepsAValueThatReachesNoPasswordInAnAtlasHCLErrorE2E is the control
 // for the test above: a --var value in a query parameter that keeps no secret
 // stays in the error, so the masking reads where the value goes rather than

@@ -55,6 +55,25 @@ env "local" {
 			wantScoped: true,
 		},
 		{
+			// HCL reads a string index as the same lookup as an attribute.
+			name: "a data source a string index names",
+			raw: `data "hcl_schema" "app" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = data["hcl_schema"]["app"].url
+}
+`,
+			wantURL:    "file://s.hcl",
+			wantValues: map[string]string{"tenant": "acme"},
+			wantScoped: true,
+		},
+		{
 			// The binary converts a number to the string form of the literal.
 			name: "a number value is carried as its literal text",
 			raw: `data "hcl_schema" "app" {

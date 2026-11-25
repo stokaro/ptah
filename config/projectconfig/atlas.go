@@ -3127,15 +3127,14 @@ func appendHCLSchemaTraversalNames(traversals []hcl.Traversal, names *[]string) 
 		if len(traversal) < 3 || traversal.RootName() != "data" {
 			continue
 		}
-		kind, ok := traversal[1].(hcl.TraverseAttr)
-		if !ok || kind.Name != "hcl_schema" {
+		if kind, _ := stepName(traversal[1]); kind != "hcl_schema" {
 			continue
 		}
-		name, ok := traversal[2].(hcl.TraverseAttr)
-		if !ok || slices.Contains(*names, name.Name) {
+		name, ok := stepName(traversal[2])
+		if !ok || slices.Contains(*names, name) {
 			continue
 		}
-		*names = append(*names, name.Name)
+		*names = append(*names, name)
 	}
 }
 
@@ -3236,8 +3235,7 @@ func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {
 		if len(traversal) < 2 || traversal.RootName() != "atlas" {
 			continue
 		}
-		attribute, ok := traversal[1].(hcl.TraverseAttr)
-		if ok && attribute.Name == "env" {
+		if attribute, _ := stepName(traversal[1]); attribute == "env" {
 			return true
 		}
 	}
@@ -3991,12 +3989,12 @@ func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
 		if len(traversal) < 2 || traversal.RootName() != "var" {
 			continue
 		}
-		attr, ok := traversal[1].(hcl.TraverseAttr)
+		name, ok := stepName(traversal[1])
 		if !ok {
 			continue
 		}
-		if _, sensitive := (*p.sensitiveNames)[attr.Name]; sensitive {
-			return attr.Name, true
+		if _, sensitive := (*p.sensitiveNames)[name]; sensitive {
+			return name, true
 		}
 	}
 	return "", false

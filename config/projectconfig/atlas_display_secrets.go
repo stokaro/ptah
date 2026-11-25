@@ -679,22 +679,22 @@ func (p atlasParser) localExpression(traversal hcl.Traversal, seen map[string]st
 	if len(traversal) < 2 || traversal.RootName() != "local" {
 		return nil, "", false
 	}
-	attr, ok := traversal[1].(hcl.TraverseAttr)
+	name, ok := stepName(traversal[1])
 	if !ok {
 		return nil, "", false
 	}
-	expr, declared := p.locals[attr.Name]
-	if _, done := seen[attr.Name]; !declared || done {
+	expr, declared := p.locals[name]
+	if _, done := seen[name]; !declared || done {
 		return nil, "", false
 	}
 	for _, step := range traversal[2:] {
 		next, found := expressionStep(expr, step)
 		if !found {
-			return expr, attr.Name, false
+			return expr, name, false
 		}
 		expr = next
 	}
-	return expr, attr.Name, true
+	return expr, name, true
 }
 
 // expressionStep returns the part of expr that step names: the value of the
@@ -922,8 +922,8 @@ func objectKeyNodes(expr hclsyntax.Expression) objectKeys {
 func (p atlasParser) traversalStrings(traversal *hclsyntax.ScopeTraversalExpr, contexts []*hcl.EvalContext, seen map[string]struct{}) []string {
 	switch traversal.Traversal.RootName() {
 	case "var":
-		attr, ok := traversal.Traversal[min(1, len(traversal.Traversal)-1)].(hcl.TraverseAttr)
-		value, given := p.varOverride[attr.Name]
+		name, ok := stepName(traversal.Traversal[min(1, len(traversal.Traversal)-1)])
+		value, given := p.varOverride[name]
 		var values []string
 		if ok && given {
 			appendStringLeaves(&values, value)

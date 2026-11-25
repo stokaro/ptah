@@ -928,10 +928,13 @@ lets the suite find more.
 
 A credential is the password of the live address and the value of each of its
 query parameters whose name says it carries one. Names are compared without case or
-punctuation; one that holds `key`, `password`, `passwd`, `pwd`, `token`,
-`secret`, `credential` or `jwt`, or ends in `pass`, counts, as do a few
-engine-specific names. So `sslkey`, `accessKeyId` and `auth_token` count, and
-`passfile`, which names a file, does not.
+punctuation; one that holds `password`, `passwd` or `pwd`, or ends in `pass`,
+counts whatever its value, and one that holds `key`, `token`, `secret`,
+`credential` or `jwt` counts unless its value is a boolean (`true`, `false`,
+`yes`, `no`, `on`, `off`, `1` or `0`, in any case), as do a few
+engine-specific names. So `sslkey`, `accessKeyId` and `auth_token` count,
+`allowPublicKeyRetrieval=true` and `_foreign_keys=false` are flags and do not,
+and `passfile`, which names a file, does not.
 
 Under a host that lists fewer features, a provider may refuse what it cannot
 serve without them, as long as it does not use what the host did not list. A

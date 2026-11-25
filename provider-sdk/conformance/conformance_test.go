@@ -176,6 +176,35 @@ func TestCheck_FindsAShortCredentialAfterItsUser_FailurePath(t *testing.T) {
 	c.Assert(failed(report), qt.DeepEquals, []string{"reasons.redacted"}, qt.Commentf("%v", report.Err()))
 }
 
+// A flag whose name holds a secret word, such as _foreign_keys, holds no
+// secret, so a provider that quotes it conforms.
+func TestCheck_AcceptsAQuotedFlagNamedForAKey_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{echoSettings: true}).server())
+	config := memoryConfig(target, "flag")
+	config.Live.Address = "memory:///flag?_foreign_keys=false"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Err(), qt.IsNil)
+	c.Assert(statuses(report), qt.DeepEquals, conforming())
+}
+
+// The control for the test above: a provider that quotes a secret setting
+// leaks it.
+func TestCheck_FindsAQuotedSecretSetting_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{echoSettings: true}).server())
+	config := memoryConfig(target, "flag")
+	config.Live.Address = "memory:///flag?api_key=Ap1KeyValue9"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(failed(report), qt.DeepEquals, []string{"reasons.redacted"}, qt.Commentf("%v", report.Err()))
+}
+
 // A provider that needs a two-way feature refuses a host that lists none, as
 // it refuses a host that leaves out that one feature, and the suite holds
 // both refusals to one rule.

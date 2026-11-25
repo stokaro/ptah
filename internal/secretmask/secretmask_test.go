@@ -25,6 +25,7 @@ type ruleCorpus struct {
 	} `json:"mask"`
 	SecretParameters []struct {
 		Key    string `json:"key"`
+		Value  string `json:"value"`
 		Secret bool   `json:"secret"`
 	} `json:"secretParameters"`
 }
@@ -32,8 +33,8 @@ type ruleCorpus struct {
 // The corpus floors: a corpus that stopped decoding into its fields would
 // otherwise run no row and pass.
 const (
-	maskRowsFloor      = 65
-	parameterRowsFloor = 35
+	maskRowsFloor      = 66
+	parameterRowsFloor = 46
 )
 
 func readRuleCorpus(c *qt.C) ruleCorpus {
@@ -64,9 +65,9 @@ func TestIsSecretParameter_FollowsTheSharedRule(t *testing.T) {
 	c.Assert(len(corpus.SecretParameters) >= parameterRowsFloor, qt.IsTrue, qt.Commentf("%d rows", len(corpus.SecretParameters)))
 
 	for _, row := range corpus.SecretParameters {
-		t.Run(row.Key, func(t *testing.T) {
+		t.Run(row.Key+"="+row.Value, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(secretmask.IsSecretParameter(row.Key), qt.Equals, row.Secret)
+			c.Assert(secretmask.IsSecretParameter(row.Key, row.Value), qt.Equals, row.Secret)
 		})
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -419,8 +420,8 @@ func redactSecretQuery(query url.Values) url.Values {
 	redacted := make(url.Values, len(query))
 	for key, values := range query {
 		copied := append([]string(nil), values...)
-		if secretmask.IsSecretParameter(key) {
-			for idx := range copied {
+		for idx, value := range copied {
+			if secretmask.IsSecretParameter(key, value) {
 				copied[idx] = "redacted"
 			}
 		}
@@ -432,10 +433,10 @@ func redactSecretQuery(query url.Values) url.Values {
 func stripSecretQuery(query url.Values) url.Values {
 	stripped := make(url.Values, len(query))
 	for key, values := range query {
-		if secretmask.IsSecretParameter(key) {
-			continue
+		kept := slices.DeleteFunc(slices.Clone(values), func(value string) bool { return secretmask.IsSecretParameter(key, value) })
+		if len(kept) > 0 {
+			stripped[key] = kept
 		}
-		stripped[key] = append([]string(nil), values...)
 	}
 	return stripped
 }

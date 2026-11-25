@@ -613,8 +613,17 @@ use: a value of five characters or more wherever it occurs, and a shorter one
 only where it stands as a credential. A diagnostic or a reason that still holds
 a shorter value as a word of its own, as `open x: file does not exist` holds
 the path `x`, is withheld whole when the expression it blames reads a sensitive
-variable: by name, through a local, through the `for_each` that gives `each`,
-or through a data block. The letters of the value inside a longer word, as `x`
+variable. An expression reads one in each of these ways:
+
+- by name, as an attribute or as a string index: `var.token` and
+  `var["token"]`;
+- through a local, named either way, through the `for_each` that gives `each`,
+  or through a data block or a block nested in one;
+- through the variable of a `for` expression or a `%{ for }` directive, as
+  `file(s)` reads `s` in `[for s in local.a : file(s)]`; the whole attribute is
+  read then, since it holds what gives that variable its value.
+
+The letters of the value inside a longer word, as `x`
 stands in `exist`, leave it as it is, and so does a word of a diagnostic about
 an expression that reads no sensitive variable. For a diagnostic, only the
 summary and the detail HCL writes are read, not the file name and the position

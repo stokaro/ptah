@@ -234,6 +234,22 @@ func TestWriteMigrateStatusFormat_KeepsTheShapeOfAURLThatRepeatsThePassword(t *t
 	}
 }
 
+// A flag whose name holds a secret word holds no secret, so the Atlas-shaped
+// URL keeps its value beside a secret parameter it masks.
+func TestWriteMigrateStatusFormat_KeepsAFlagNamedForAKey(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ .Env.URL }}`, atlasreport.MigrateStatusOptions{
+		URL:    "sqlite://x.db?_foreign_keys=false&token=Tok3nValueX9",
+		FS:     fstest.MapFS{},
+		Status: &migrator.MigrationStatus{CurrentVersion: 1},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "sqlite://x.db?_foreign_keys=false&token=xxxxx")
+}
+
 func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{

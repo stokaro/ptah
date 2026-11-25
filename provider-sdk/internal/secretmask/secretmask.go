@@ -161,7 +161,7 @@ func standsAsCredential(text string, start, end int, users []string) bool {
 		return false
 	}
 	window := text[max(0, start-longestSetting):start]
-	if match := settingBefore.FindStringSubmatch(window); match != nil && IsSecretParameter(match[1]) {
+	if match := settingBefore.FindStringSubmatch(window); match != nil && IsSecretParameter(match[1], text[start:end]) {
 		return true
 	}
 	return credentialBefore.MatchString(window)
@@ -191,22 +191,40 @@ func wordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
-// secretParameterWords mark a parameter as a secret wherever they stand in its
-// name.
-var secretParameterWords = []string{"credential", "jwt", "key", "passhash", "passwd", "password", "pwd", "secret", "token"}
+// passwordParameterWords mark a parameter as a password wherever they stand in
+// its name, whatever value it takes.
+var passwordParameterWords = []string{"passhash", "passwd", "password", "pwd"}
 
-// IsSecretParameter reports a query parameter, connection-string keyword or
-// setting that holds a secret or says where one is. The name is compared
-// without case or punctuation. A name that holds `key` anywhere counts, and so
-// does one ending in `pass`.
-func IsSecretParameter(key string) bool {
+// secretParameterWords mark a parameter as a secret wherever they stand in its
+// name, unless its value is one of [flagValues].
+var secretParameterWords = []string{"credential", "jwt", "key", "secret", "token"}
+
+// flagValues are the spellings of a boolean a driver's flag takes, compared in
+// any letter case. A flag says whether to do something, and holds no secret
+// whatever its name holds.
+var flagValues = []string{"0", "1", "false", "no", "off", "on", "true", "yes"}
+
+// IsSecretParameter reports whether a query parameter, connection-string
+// keyword or setting named key holds a secret, or says where one is, in value.
+// The name is compared without case or punctuation. A name that names a
+// password counts whatever its value, and so does one ending in `pass`; one
+// that holds `key`, `secret`, `token`, `jwt` or `credential` anywhere counts
+// unless value is a boolean flag.
+func IsSecretParameter(key, value string) bool {
 	name := comparableName(key)
 	switch {
-	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "pass"):
+	case name == "oshash", strings.HasSuffix(name, "pass"), holdsAnyOf(name, passwordParameterWords):
 		return true
+	case slices.ContainsFunc(flagValues, func(flag string) bool { return strings.EqualFold(value, flag) }):
+		return false
 	default:
-		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
+		return name == "sslcert" || holdsAnyOf(name, secretParameterWords)
 	}
+}
+
+// holdsAnyOf reports whether name holds one of words.
+func holdsAnyOf(name string, words []string) bool {
+	return slices.ContainsFunc(words, func(word string) bool { return strings.Contains(name, word) })
 }
 
 // comparableName is key in lower case with everything but its letters and

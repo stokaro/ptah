@@ -57,12 +57,12 @@ func atlasRedactedURL(raw string) atlasTemplateURL {
 	parsed.Fragment, parsed.RawFragment = hidden.Mask(parsed.Fragment, atlasRedacted), ""
 	query := parsed.Query()
 	for key, values := range query {
-		if secretmask.IsSecretParameter(key) {
-			query.Set(key, atlasRedacted)
-			continue
-		}
-		for i := range values {
-			values[i] = hidden.Mask(values[i], atlasRedacted)
+		for i, value := range values {
+			if secretmask.IsSecretParameter(key, value) {
+				values[i] = atlasRedacted
+				continue
+			}
+			values[i] = hidden.Mask(value, atlasRedacted)
 		}
 	}
 	parsed.RawQuery = query.Encode()

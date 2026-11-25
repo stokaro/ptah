@@ -40,6 +40,10 @@ type memoryDefects struct {
 	// leakLogin opens an address with user info and names its user and
 	// password in the server version of the session, as "1, login app:ab".
 	leakLogin bool
+	// echoSettings writes the query of the address it opens in the server
+	// version of the session, as "1, settings _foreign_keys=false". It leaks a
+	// secret setting, and quotes a flag, which holds none.
+	echoSettings bool
 	// unreadRegardless reports an unread table whatever the host listed.
 	unreadRegardless bool
 	// sharedLocks hands a held lock to every session that asks.
@@ -164,6 +168,9 @@ func (m *memoryProvider) Open(_ context.Context, request *protocol.OpenRequest) 
 	if login {
 		password, _ := parsed.User.Password()
 		version += ", login " + parsed.User.Username() + ":" + password
+	}
+	if m.defects.echoSettings && parsed.RawQuery != "" {
+		version += ", settings " + parsed.RawQuery
 	}
 	return &protocol.Session{Id: id, Engine: memoryEngine, Database: name, DefaultSchema: "main", ServerVersion: version, Identifiers: memoryRules()}, nil
 }
