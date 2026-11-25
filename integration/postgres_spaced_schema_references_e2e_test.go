@@ -77,9 +77,13 @@ func TestSpacedSchemaViewQualifierE2E(t *testing.T) {
 	c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 }
 
-// spacedPublicGrantSQL grants on the schema " public" what PostgreSQL grants on
-// public in every database it creates.
-const spacedPublicGrantSQL = `CREATE SCHEMA " public";
+// spacedPublicGrantSQL gives the schema " public" the owner and the grant
+// PostgreSQL gives public in every database it creates, so the two schemas
+// hold the same privileges and differ in their name alone. Owned by the
+// connecting role instead, the schema's privileges name that role once the
+// grant is made, and strict mode refuses the role before it reaches the grant
+// when the role is not one it reads as the server's own.
+const spacedPublicGrantSQL = `CREATE SCHEMA " public" AUTHORIZATION pg_database_owner;
 GRANT USAGE ON SCHEMA " public" TO PUBLIC;`
 
 // spacedSecurityFinding is the part of a `ptah schema security --format json`
