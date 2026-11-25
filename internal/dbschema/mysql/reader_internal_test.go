@@ -448,11 +448,11 @@ func functionOwnershipDB(c *qt.C) *dbtest.DB {
 				Columns: []string{
 					"ROUTINE_NAME", "DTD_IDENTIFIER", "IS_DETERMINISTIC",
 					"SQL_DATA_ACCESS", "SECURITY_TYPE", "DEFINER", "CURRENT_USER()",
-					"ROUTINE_DEFINITION", "ROUTINE_COMMENT", "ROUTINE_TYPE",
+					"ROUTINE_DEFINITION", "ROUTINE_COMMENT", "ROUTINE_TYPE", "SQL_MODE", "@@SESSION.sql_mode",
 				},
 				Rows: [][]driver.Value{{
 					"f", "int", "YES", "NO SQL", "DEFINER", "owner_a@%",
-					"migrator_a@%", "RETURN 1", "owned function", "FUNCTION",
+					"migrator_a@%", "RETURN 1", "owned function", "FUNCTION", "", "",
 				}},
 			}, nil
 		default:

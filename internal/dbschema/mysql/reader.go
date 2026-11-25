@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/mysqlsystemdb"
 	"ptah.run/internal/normalize"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -1207,7 +1208,9 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) (routineRead,
 			CURRENT_USER(),
 			ROUTINE_DEFINITION,
 			COALESCE(ROUTINE_COMMENT, ''),
-			ROUTINE_TYPE
+			ROUTINE_TYPE,
+			SQL_MODE,
+			@@SESSION.sql_mode
 		FROM information_schema.ROUTINES
 		WHERE ` + mysqlname.SameDatabase("ROUTINE_SCHEMA", "?") + `
 		-- Both routine kinds. A procedure used to be filtered out here with
@@ -1231,10 +1234,13 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) (routineRead,
 			body            sql.NullString
 			returns         sql.NullString
 			routineType     string
+			storedMode      string
+			sessionMode     string
 		)
 		if err := rows.Scan(
 			&fn.Name, &returns, &isDeterministic, &sqlDataAccess,
 			&fn.Security, &fn.Definer, &read.currentAccount, &body, &fn.Comment, &routineType,
+			&storedMode, &sessionMode,
 		); err != nil {
 			return routineRead{}, err
 		}
@@ -1245,6 +1251,11 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) (routineRead,
 		// function, which is the catalog saying the same thing the grammar
 		// does: a procedure has no return type. Measured on MySQL 26.7.
 		fn.Kind = routineKind(routineType)
+		if readscope.Needs(ctx, readscope.Routines) {
+			if err := refuseStoredProgramMode(fn.Kind, dbName, fn.Name, storedMode, sessionMode); err != nil {
+				return routineRead{}, err
+			}
+		}
 		fn.Body = body.String
 		fn.Schema = dbName
 		fn.Language = mysqlroutine.Language
@@ -1343,7 +1354,9 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 			ACTION_TIMING,
 			EVENT_MANIPULATION,
 			ACTION_ORIENTATION,
-			ACTION_STATEMENT
+			ACTION_STATEMENT,
+			SQL_MODE,
+			@@SESSION.sql_mode
 		FROM information_schema.TRIGGERS
 		WHERE ` + mysqlname.SameDatabase("TRIGGER_SCHEMA", "?") + `
 		ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`
@@ -1358,6 +1371,7 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 	for rows.Next() {
 		var trigger catalog.Trigger
 		var body sql.NullString
+		var storedMode, sessionMode string
 		err := rows.Scan(
 			&trigger.Name,
 			&trigger.Table,
@@ -1365,9 +1379,16 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 			&trigger.Event,
 			&trigger.ForEach,
 			&body,
+			&storedMode,
+			&sessionMode,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if readscope.Needs(ctx, readscope.Triggers) {
+			if err := refuseStoredProgramMode("trigger", dbName, trigger.Name, storedMode, sessionMode); err != nil {
+				return nil, err
+			}
 		}
 		trigger.Body = body.String
 		triggers = append(triggers, trigger)

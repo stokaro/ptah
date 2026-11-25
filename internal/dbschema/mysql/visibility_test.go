@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,12 +22,14 @@ import (
 // fields say. Every question it does not model answers no rows, which is how a
 // catalog view answers for what the account may not see.
 type visibleCatalog struct {
-	selected  any
-	databases []string
-	tables    []string
-	views     [][]driver.Value
-	triggers  [][]driver.Value
-	routines  [][]driver.Value
+	selected    any
+	databases   []string
+	tables      []string
+	views       [][]driver.Value
+	triggers    [][]driver.Value
+	routines    [][]driver.Value
+	storedMode  string
+	sessionMode string
 	// events are the event names the account may see, by database.
 	events map[string][]string
 }
@@ -57,16 +60,32 @@ func (v visibleCatalog) answer(query string, args []driver.NamedValue) (dbtest.Q
 	case strings.Contains(query, "FROM information_schema.VIEWS"):
 		return dbtest.QueryResult{Columns: []string{"TABLE_NAME", "VIEW_DEFINITION", "CHECK_OPTION", "SECURITY_TYPE", "DEFINER", "CURRENT_USER()"}, Rows: v.views}, nil
 	case strings.Contains(query, "FROM information_schema.TRIGGERS"):
-		return dbtest.QueryResult{Columns: []string{
+		return v.withModes(query, dbtest.QueryResult{Columns: []string{
 			"TRIGGER_NAME", "EVENT_OBJECT_TABLE", "ACTION_TIMING", "EVENT_MANIPULATION", "ACTION_ORIENTATION", "ACTION_STATEMENT",
-		}, Rows: v.triggers}, nil
+		}, Rows: v.triggers}), nil
 	case strings.Contains(query, "FROM information_schema.ROUTINES"):
-		return dbtest.QueryResult{Columns: []string{
+		return v.withModes(query, dbtest.QueryResult{Columns: []string{
 			"ROUTINE_NAME", "DTD_IDENTIFIER", "IS_DETERMINISTIC", "SQL_DATA_ACCESS", "SECURITY_TYPE",
 			"DEFINER", "CURRENT_USER()", "ROUTINE_DEFINITION", "ROUTINE_COMMENT", "ROUTINE_TYPE",
-		}, Rows: v.routines}, nil
+		}, Rows: v.routines}), nil
 	}
 	return dbtest.QueryResult{}, nil
+}
+
+// withModes projects the mode columns only when the reader asks for them, so
+// a reader that stops reading the modes still reaches the regression assertion.
+func (v visibleCatalog) withModes(query string, result dbtest.QueryResult) dbtest.QueryResult {
+	if !strings.Contains(query, "SQL_MODE") {
+		return result
+	}
+	result.Columns = append(result.Columns, "SQL_MODE", "@@SESSION.sql_mode")
+	rows := make([][]driver.Value, 0, len(result.Rows))
+	for _, row := range result.Rows {
+		values := slices.Clone(row)
+		rows = append(rows, append(values, v.storedMode, v.sessionMode))
+	}
+	result.Rows = rows
+	return result
 }
 
 // procedureRow is a procedure the account may list, with its body or without.
