@@ -19,7 +19,10 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/roundingcheck"
+	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/rundiag"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrationfile"
@@ -80,10 +83,11 @@ func planGeneratedMigrationSpecs(
 	requiresNoTransaction := bidirectional.Forward.RequiresNoTransaction
 	if !requiresNoTransaction {
 		spec, assessments, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
-			Plan:      bidirectional,
-			Qualifier: qualifier,
-			Version:   version,
-			Name:      migrationName,
+			Plan:               bidirectional,
+			Qualifier:          qualifier,
+			Version:            version,
+			Name:               migrationName,
+			AllowValueRounding: policy.AllowValueRounding,
 		})
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
@@ -94,10 +98,11 @@ func planGeneratedMigrationSpecs(
 	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
 	if len(nodeGroups.transactional) == 0 {
 		spec, assessments, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
-			Plan:      bidirectional,
-			Qualifier: qualifier,
-			Version:   version,
-			Name:      migrationName,
+			Plan:               bidirectional,
+			Qualifier:          qualifier,
+			Version:            version,
+			Name:               migrationName,
+			AllowValueRounding: policy.AllowValueRounding,
 		})
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
@@ -148,10 +153,11 @@ func planGeneratedMigrationSpecs(
 			return nil, nil, err
 		}
 		spec, assessments, err := buildGeneratedMigrationSpec(ctx, runtime, generatedMigrationSpecOptions{
-			Plan:      plan,
-			Qualifier: qualifier,
-			Version:   version,
-			Name:      migrationName + group.suffix,
+			Plan:               plan,
+			Qualifier:          qualifier,
+			Version:            version,
+			Name:               migrationName + group.suffix,
+			AllowValueRounding: policy.AllowValueRounding,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -203,6 +209,30 @@ type generatedMigrationSpecOptions struct {
 	Version   int64
 	Name      string
 	Qualifier atlasmigrate.Qualifier
+	// AllowValueRounding writes the up migration with a note in place of the
+	// check of each column type change that keeps fewer digits after the
+	// point; see [DiffPolicy.AllowValueRounding].
+	AllowValueRounding bool
+}
+
+// roundingBlock is what the up migration carries before its statements for
+// each column type change of the forward plan that keeps fewer digits after
+// the point: a check that reads the rows on the database the file runs on, or
+// with the rounding allowed a note that none does. A table the qualifier
+// moves is read in the schema the statements name.
+func (opts generatedMigrationSpecOptions) roundingBlock() (string, error) {
+	changes := roundingscan.Changes(opts.Plan.Forward.Diff, opts.Plan.Dialect)
+	if !opts.Qualifier.IsZero() {
+		for i := range changes {
+			if ref, parsed := tableref.Parse(changes[i].Table); parsed {
+				changes[i].Table = tableref.Canonical(opts.Qualifier.Name(), ref.Name)
+			}
+		}
+	}
+	if opts.AllowValueRounding {
+		return roundingcheck.Allowed(changes), nil
+	}
+	return roundingcheck.Checked(opts.Plan.Dialect, changes)
 }
 
 func buildGeneratedMigrationSpec(ctx context.Context, runtime Runtime, opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
@@ -222,7 +252,11 @@ func buildGeneratedMigrationSpec(ctx context.Context, runtime Runtime, opts gene
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error assessing migration safety: %w", err)
 	}
-	upDirectiveOpts := generatedDirectiveOptions{skipTimeouts: opts.Plan.Forward.RequiresNoTransaction}
+	rounding, err := opts.roundingBlock()
+	if err != nil {
+		return generatedMigrationSpec{}, nil, err
+	}
+	upDirectiveOpts := generatedDirectiveOptions{skipTimeouts: opts.Plan.Forward.RequiresNoTransaction, preamble: rounding}
 	upSQL, err := renderGeneratedMigrationSQL(
 		ctx, runtime,
 		upNodes,
@@ -358,7 +392,7 @@ func renderGeneratedMigrationSQL(
 		return "", nil
 	}
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: %s\n\n",
-		time.Now().Format(time.RFC3339), direction) + leftOut(ctx, rawSQL.Omissions)
+		time.Now().Format(time.RFC3339), direction) + leftOut(ctx, rawSQL.Omissions) + directiveOpts.preambleBlock()
 	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements, dialect), dialect, directiveOpts), nil
 }
 

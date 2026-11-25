@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -45,16 +46,62 @@ const (
 	CheckPhaseAfter CheckPhase = "after"
 )
 
+// CheckKind names what a check asserts, for a check a run may waive with the
+// others of its kind. The zero value is an ordinary check, which only
+// [Migrator.WithSkipChecks] waives.
+type CheckKind string
+
+// CheckKindRoundedValues is a check that no row holds a value the column type
+// change of its migration would round or cut: a decimal given a lower scale
+// or put under an integer, or a temporal column given a lower
+// fractional-second precision, which most servers convert without an error.
+// `ptah migrations generate` writes one before each such change, and
+// [Migrator.WithValueRounding] waives them.
+const CheckKindRoundedValues CheckKind = "rounded-values"
+
 // Check is an assertion parsed from a `-- +ptah check` directive. Assert is a
 // SQL predicate that must evaluate to a single truthy scalar; Name labels the
 // check in error output; OnFail selects the failure behavior; Phase selects
 // whether the predicate is evaluated before or after the migration body, and
-// is [CheckPhaseBefore] when the directive names none.
+// is [CheckPhaseBefore] when the directive names none; Kind is the class a
+// run may waive the check with, and empty for an ordinary check.
 type Check struct {
 	Name   string
 	Assert string
 	OnFail OnFail
 	Phase  CheckPhase
+	Kind   CheckKind
+}
+
+// Directive is the `-- +ptah check` line [ParseChecks] reads back as c, on
+// one line with no line break: name and assert are always quoted, each double
+// quote inside doubled, and on_fail, phase and kind are written only where
+// they differ from what a directive that omits them selects. A Name or Assert
+// that holds a line break cannot be written as one line, and is refused.
+func (c Check) Directive() (string, error) {
+	if strings.ContainsAny(c.Name+c.Assert, "\r\n") {
+		return "", errors.New("a +ptah check directive is one line, and its name or assert holds a line break")
+	}
+	var line strings.Builder
+	line.WriteString("-- +ptah check")
+	if c.Kind != "" {
+		line.WriteString(" kind=" + string(c.Kind))
+	}
+	line.WriteString(" name=" + quoteCheckValue(c.Name))
+	if c.Phase != "" && c.Phase != CheckPhaseBefore {
+		line.WriteString(" phase=" + string(c.Phase))
+	}
+	if c.OnFail != "" && c.OnFail != OnFailAbort {
+		line.WriteString(" on_fail=" + string(c.OnFail))
+	}
+	line.WriteString(" assert=" + quoteCheckValue(c.Assert))
+	return line.String(), nil
+}
+
+// quoteCheckValue writes value as a quoted check argument, which
+// [unquoteCheckValue] reads back as value.
+func quoteCheckValue(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }
 
 type checkGroupMode uint8
@@ -69,6 +116,10 @@ type checkGroup struct {
 	checks []Check
 	mode   checkGroupMode
 	phase  CheckPhase
+	// roundingRequest is how the run asks to waive the checks of kind
+	// [CheckKindRoundedValues], which a failed one names; see
+	// [ValueRounding.Request].
+	roundingRequest string
 }
 
 // ParseChecks extracts ordered `-- +ptah check` assertion directives from
@@ -135,8 +186,10 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 			check.OnFail = OnFail(value)
 		case "phase":
 			check.Phase = CheckPhase(value)
+		case "kind":
+			check.Kind = CheckKind(value)
 		default:
-			return Check{}, fmt.Errorf("unknown +ptah check key %q (want name, assert, on_fail, phase)", key)
+			return Check{}, fmt.Errorf("unknown +ptah check key %q (want name, assert, on_fail, phase, kind)", key)
 		}
 	}
 	if strings.TrimSpace(check.Assert) == "" {
@@ -147,6 +200,15 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	}
 	if check.Phase != CheckPhaseBefore && check.Phase != CheckPhaseAfter {
 		return Check{}, fmt.Errorf("unsupported +ptah check phase=%q (want before or after)", check.Phase)
+	}
+	if seen["kind"] && check.Kind != CheckKindRoundedValues {
+		return Check{}, fmt.Errorf("unsupported +ptah check kind=%q (want %s)", check.Kind, CheckKindRoundedValues)
+	}
+	// After the body the values are already rounded, so the assertion would
+	// hold on every table and refuse nothing.
+	if check.Kind == CheckKindRoundedValues && check.Phase == CheckPhaseAfter {
+		return Check{}, fmt.Errorf("+ptah check kind=%s reads the rows before the body and takes no phase=%s",
+			CheckKindRoundedValues, CheckPhaseAfter)
 	}
 	if statements := sqlutil.SplitStatementsForDialect(dialect, check.Assert); len(statements) > 1 {
 		return Check{}, fmt.Errorf("+ptah check assert must be a single statement, got %d", len(statements))
@@ -172,9 +234,16 @@ type CheckFailedError struct {
 	// Err is set when the assertion query itself failed to execute (as opposed
 	// to running and returning a falsy result).
 	Err error
+	// Kind is the kind the directive names, and empty for an ordinary check.
+	// A check of kind [CheckKindRoundedValues] that ran and did not hold says
+	// what a row holds and how the run asks to waive it.
+	Kind CheckKind
 	// versionLabel names Version as its file name spells it, for an Atlas
 	// file whose version is not a number; empty otherwise.
 	versionLabel string
+	// request is how the run asks to waive a check of Kind; see
+	// [ValueRounding.Request].
+	request string
 }
 
 func (e *CheckFailedError) Error() string {
@@ -189,6 +258,16 @@ func (e *CheckFailedError) Error() string {
 	if e.Err != nil {
 		return fmt.Sprintf("%s %s for migration %d could not run: %v (assert: %s)",
 			kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Err, e.Assert)
+	}
+	if e.Kind == CheckKindRoundedValues {
+		how := "store values the new type keeps"
+		if e.request != "" {
+			how += ", or ask for the change with " + e.request
+		}
+		return fmt.Sprintf("%s %s for migration %d was not satisfied: the migration converts a column to a type that "+
+			"keeps fewer digits after the point while the table holds a value with more digits, which the server rounds "+
+			"or cuts without an error; %s (assert: %s)",
+			kind, label, versionText{number: e.Version, label: e.versionLabel}, how, e.Assert)
 	}
 	return fmt.Sprintf("%s %s for migration %d was not satisfied (assert: %s)",
 		kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Assert)
@@ -309,7 +388,7 @@ func runCheckGroup(
 		if err != nil {
 			return &CheckFailedError{
 				Version: version.number, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
-				versionLabel: version.label,
+				Kind: check.Kind, versionLabel: version.label, request: group.roundingRequest,
 			}
 		}
 		if assertionPassed(result) {
@@ -319,7 +398,7 @@ func runCheckGroup(
 		if group.mode == checkGroupAll {
 			return &CheckFailedError{
 				Version: version.number, Name: check.Name, Assert: check.Assert, Phase: check.Phase,
-				versionLabel: version.label,
+				Kind: check.Kind, versionLabel: version.label, request: group.roundingRequest,
 			}
 		}
 	}

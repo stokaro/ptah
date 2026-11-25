@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
@@ -27,12 +28,14 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planartifact"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
@@ -96,7 +99,12 @@ replaces it.
 
 --include keeps only the objects it selects on both sides, after --exclude,
 as migrations generate --include does. Selectors that select nothing are
-refused.`,
+refused.
+
+A column type change that keeps fewer digits after the point, such as a lower
+decimal scale or fractional-second precision, is refused while a row of the
+database holds a value the server would round or cut, unless
+--allow-value-rounding is given.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateCommandWithOptions(cmd, &opts)
 		},
@@ -131,6 +139,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
 	checkscan.Register(cmd)
+	valuerounding.Register(cmd)
 	secretrotation.Register(cmd)
 }
 
@@ -285,6 +294,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
 	schemascope.WarnUndescribed(cmd.ErrOrStderr(), undescribed)
+	if err := reviewRoundedValues(cmd, conn, diff); err != nil {
+		return err
+	}
 
 	// 4. Display differences summary
 	rebuild, err := tablerebuild.Requested(cmd)
@@ -385,6 +397,21 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "⚠️  Review the SQL carefully before executing!")
 
 	return nil
+}
+
+// reviewRoundedValues refuses a plan that converts a column to a type keeping
+// fewer digits after the point while the database holds a value the
+// conversion would change, unless --allow-value-rounding asks for it, which
+// warns of each such column instead. The file `migrations generate` writes for
+// the same plan reads the rows again where it runs.
+func reviewRoundedValues(cmd *cobra.Command, conn *dbschema.DatabaseConnection, diff *difftypes.SchemaDiff) error {
+	allowed, err := valuerounding.Requested(cmd)
+	if err != nil {
+		return err
+	}
+	policy := roundingscan.Policy{Allowed: allowed, Request: valuerounding.Request}
+	_, err = policy.Review(cmd.Context(), conn, roundingscan.Changes(diff, conn.Info().Dialect))
+	return err
 }
 
 // planStates are the two sides `migrations plan` compares, and the schemas the

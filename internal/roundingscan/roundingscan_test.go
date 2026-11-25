@@ -409,3 +409,108 @@ func TestChanges_HoldsNoneWhereNothingIsRead(t *testing.T) {
 		})
 	}
 }
+
+// TestAssertion_HappyPath writes the SELECT a migration file carries for a change: the
+// condition the scan counts, asked through EXISTS on the table as the scan names it,
+// answering 1 while no row would change. A table the comparison names without a schema
+// is read without one, where the connection resolves it.
+func TestAssertion_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		change  roundingscan.Change
+		want    string
+	}{
+		{"PostgreSQL a scale", "postgres",
+			roundingscan.Change{Table: "public.prices", Column: "amount", HeldType: "numeric(8,3)", DeclaredType: "numeric(8,1)"},
+			`SELECT CASE WHEN EXISTS (SELECT 1 FROM "public"."prices" WHERE CAST("amount" AS numeric) IS DISTINCT FROM ` +
+				`CAST("amount" AS numeric(8,1))) THEN 0 ELSE 1 END`},
+		{"PostgreSQL a quoted name", "postgres",
+			roundingscan.Change{Table: `public."odd ""name"""`, Column: `a"b`, HeldType: "timestamp(6)", DeclaredType: "timestamp(0)", Temporal: true},
+			`SELECT CASE WHEN EXISTS (SELECT 1 FROM "public"."odd ""name""" WHERE CAST("a""b" AS timestamp) IS DISTINCT FROM ` +
+				`CAST("a""b" AS timestamp(0))) THEN 0 ELSE 1 END`},
+		{"MySQL an integer", "mysql",
+			roundingscan.Change{Table: "prices", Column: "whole", HeldType: "decimal(8,3)", DeclaredType: "INT"},
+			"SELECT CASE WHEN EXISTS (SELECT 1 FROM `prices` WHERE `whole` <> CAST(`whole` AS SIGNED)) THEN 0 ELSE 1 END"},
+		{"SQL Server datetime", "sqlserver",
+			roundingscan.Change{Table: "dbo.prices", Column: "at", HeldType: "datetime2(3)", DeclaredType: "datetime", Temporal: true},
+			"SELECT CASE WHEN EXISTS (SELECT 1 FROM [dbo].[prices] WHERE CAST([at] AS datetime2(7)) <> " +
+				"CAST(CAST([at] AS datetime) AS datetime2(7))) THEN 0 ELSE 1 END"},
+		{"ClickHouse a decimal", "clickhouse",
+			roundingscan.Change{Table: "prices", Column: "amount", HeldType: "Decimal(8, 3)", DeclaredType: "Decimal(8, 1)"},
+			"SELECT CASE WHEN EXISTS (SELECT 1 FROM `prices` WHERE `amount` != CAST(assumeNotNull(`amount`) AS Decimal(8, 1))) " +
+				"THEN 0 ELSE 1 END"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := roundingscan.Assertion(test.dialect, test.change)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestAssertion_FailurePath refuses what the scan refuses: a change [roundingscan.Check]
+// refuses writes no SELECT, so a type outside the grammar never reaches a migration file,
+// and a table name that does not parse names nothing to read.
+func TestAssertion_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		change  roundingscan.Change
+		want    string
+	}{
+		{"SQL in the declared type", "postgres",
+			roundingscan.Change{Table: "prices", Column: "amount", HeldType: "numeric(8,3)", DeclaredType: "numeric(8,1)); DROP TABLE prices; --"},
+			`read the values of column "amount" of table "prices": the declared type is not a type spelling: .*`},
+		{"a scale raised", "mysql",
+			roundingscan.Change{Table: "prices", Column: "amount", HeldType: "decimal(8,1)", DeclaredType: "decimal(8,3)"},
+			`read the values of column "amount" of table "prices": decimal\(8,1\) under decimal\(8,3\) is not a change .*`},
+		{"an engine that reads no value", "sqlite",
+			roundingscan.Change{Table: "prices", Column: "amount", HeldType: "numeric(8,3)", DeclaredType: "numeric(8,1)"},
+			`read the values of column "amount" of table "prices": dialect "sqlite" reads no value of such a change`},
+		{"a table name that does not parse", "postgres",
+			roundingscan.Change{Table: "a.b.c", Column: "amount", HeldType: "numeric(8,3)", DeclaredType: "numeric(8,1)"},
+			`read the values of column "amount" of table "a.b.c": the table name "a.b.c" does not parse`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := roundingscan.Assertion(test.dialect, test.change)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+
+// TestPolicy_ReviewReadsNothingItNeedNot holds the two answers that need no database: a
+// plan asked to round reads no row and keeps no change to read again, and a plan with no
+// such change reads nothing and refuses nothing. Neither touches the connection, which is
+// nil here.
+func TestPolicy_ReviewReadsNothingItNeedNot(t *testing.T) {
+	change := roundingscan.Change{Table: "prices", Column: "amount", HeldType: "numeric(8,3)", DeclaredType: "numeric(8,1)"}
+	tests := []struct {
+		name    string
+		policy  roundingscan.Policy
+		changes []roundingscan.Change
+	}{
+		{name: "the rounding allowed", policy: roundingscan.Policy{Allowed: true, Request: "--allow-value-rounding"},
+			changes: []roundingscan.Change{change}},
+		{name: "no change", policy: roundingscan.Policy{Request: "--allow-value-rounding"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			read, err := test.policy.Review(c.Context(), nil, test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(read, qt.HasLen, 0)
+		})
+	}
+}

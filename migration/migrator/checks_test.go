@@ -150,6 +150,14 @@ func TestParseChecks_HappyPath(t *testing.T) {
 			sql:  `-- +ptah check name="q" assert="SELECT count(*) = 0 FROM ""My Table"""` + "\nSELECT 1;\n",
 			want: []migrator.Check{{Name: "q", Assert: `SELECT count(*) = 0 FROM "My Table"`, OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore}},
 		},
+		{
+			name: "a kind",
+			sql:  `-- +ptah check kind=rounded-values name="public.t.c" assert="SELECT 1"` + "\nALTER TABLE t ALTER COLUMN c TYPE int;\n",
+			want: []migrator.Check{{
+				Name: "public.t.c", Assert: "SELECT 1", OnFail: migrator.OnFailAbort, Phase: migrator.CheckPhaseBefore,
+				Kind: migrator.CheckKindRoundedValues,
+			}},
+		},
 	}
 
 	for _, tt := range tests {
@@ -176,7 +184,22 @@ func TestParseChecks_FailurePath(t *testing.T) {
 		{
 			name:    "unknown key",
 			sql:     `-- +ptah check name="x" assert="SELECT 1" bogus=1` + "\nSELECT 1;\n",
-			wantErr: `unknown \+ptah check key "bogus" \(want name, assert, on_fail, phase\)`,
+			wantErr: `unknown \+ptah check key "bogus" \(want name, assert, on_fail, phase, kind\)`,
+		},
+		{
+			name:    "unknown kind",
+			sql:     `-- +ptah check kind=rounded name="x" assert="SELECT 1"` + "\nSELECT 1;\n",
+			wantErr: `unsupported \+ptah check kind="rounded" \(want rounded-values\)`,
+		},
+		{
+			name:    "empty kind",
+			sql:     `-- +ptah check kind="" name="x" assert="SELECT 1"` + "\nSELECT 1;\n",
+			wantErr: `unsupported \+ptah check kind="" \(want rounded-values\)`,
+		},
+		{
+			name:    "rounded values after the body",
+			sql:     `-- +ptah check kind=rounded-values phase=after name="x" assert="SELECT 1"` + "\nSELECT 1;\n",
+			wantErr: `\+ptah check kind=rounded-values reads the rows before the body and takes no phase=after`,
 		},
 		{
 			name:    "unsupported on_fail",
@@ -218,4 +241,78 @@ func TestParseFileDirectivesIgnoresChecks(t *testing.T) {
 		"-- +ptah no_transaction\nDROP TABLE users;\n"
 	directives := migrationfile.ParseDirectives(sql)
 	c.Assert(directives, qt.DeepEquals, map[string]string{"no_transaction": "true"})
+}
+
+// TestCheckDirective_RoundTrip writes each check as a directive and reads it back: the
+// line [migrator.ParseChecks] parses is the check that wrote it, with a double quote in
+// a name or an assertion doubled and the defaults a directive may omit filled in.
+func TestCheckDirective_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		check migrator.Check
+		line  string
+		phase migrator.CheckPhase
+	}{
+		{
+			name:  "an ordinary check",
+			check: migrator.Check{Name: "users_empty", Assert: "SELECT count(*) = 0 FROM users"},
+			line:  `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users"`,
+			phase: migrator.CheckPhaseBefore,
+		},
+		{
+			name: "a rounded-values check with quoted names",
+			check: migrator.Check{
+				Kind: migrator.CheckKindRoundedValues, Name: `public."odd ""t""".c`,
+				Assert: `SELECT CASE WHEN EXISTS (SELECT 1 FROM "public"."odd ""t""" WHERE "c" = 1) THEN 0 ELSE 1 END`,
+			},
+			line: `-- +ptah check kind=rounded-values name="public.""odd """"t"""""".c" ` +
+				`assert="SELECT CASE WHEN EXISTS (SELECT 1 FROM ""public"".""odd """"t"""""" WHERE ""c"" = 1) THEN 0 ELSE 1 END"`,
+			phase: migrator.CheckPhaseBefore,
+		},
+		{
+			name:  "a check after the body",
+			check: migrator.Check{Name: "seeded", Assert: "SELECT count(*) > 0 FROM t", Phase: migrator.CheckPhaseAfter},
+			line:  `-- +ptah check name="seeded" phase=after assert="SELECT count(*) > 0 FROM t"`,
+			phase: migrator.CheckPhaseAfter,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			line, err := test.check.Directive()
+			c.Assert(err, qt.IsNil)
+			c.Assert(line, qt.Equals, test.line)
+
+			parsed, err := migrator.ParseChecks(line+"\nSELECT 1;\n", "postgres")
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed, qt.HasLen, 1)
+			c.Assert(parsed[0].Kind, qt.Equals, test.check.Kind)
+			c.Assert(parsed[0].Name, qt.Equals, test.check.Name)
+			c.Assert(parsed[0].Assert, qt.Equals, test.check.Assert)
+			c.Assert(parsed[0].Phase, qt.Equals, test.phase)
+		})
+	}
+}
+
+// TestCheckDirective_FailurePath refuses a check that one line cannot carry: a line break
+// in the name or the assertion would end the directive and leave the rest as SQL.
+func TestCheckDirective_FailurePath(t *testing.T) {
+	tests := []struct {
+		name  string
+		check migrator.Check
+	}{
+		{"a line break in the assert", migrator.Check{Name: "x", Assert: "SELECT 1\nDROP TABLE t"}},
+		{"a carriage return in the name", migrator.Check{Name: "x\ry", Assert: "SELECT 1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			line, err := test.check.Directive()
+
+			c.Assert(err, qt.ErrorMatches, `a \+ptah check directive is one line, and its name or assert holds a line break`)
+			c.Assert(line, qt.Equals, "")
+		})
+	}
 }

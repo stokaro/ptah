@@ -62,6 +62,9 @@ type atlasMigrateApplyRunOptions struct {
 	toVersionSource atlasMigrateApplyOperandSource
 	lockRequest     atlasLockRequest
 	skipChecks      bool
+	// allowValueRounding is the PTAH_ALLOW_VALUE_ROUNDING choice, which skips
+	// the checks of kind rounded-values a generated migration carries.
+	allowValueRounding bool
 	// serverDetails is the PTAH_SERVER_DETAILS choice, with the directory it
 	// reads once the run has captured one.
 	serverDetails migraterun.ServerDetails
@@ -207,18 +210,23 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	allowValueRounding, err := atlasValueRounding.Resolve()
+	if err != nil {
+		return err
+	}
 	serverDetails, err := resolveAtlasApplyServerDetails(cmd)
 	if err != nil {
 		return err
 	}
 	runOpts := atlasMigrateApplyRunOptions{
-		amount:          amount,
-		baselineSource:  atlasMigrateApplyFlagSource(cmd, "baseline"),
-		toVersionSource: atlasMigrateApplyFlagSource(cmd, "to-version"),
-		lockRequest:     lockRequest,
-		skipChecks:      skipChecks,
-		serverDetails:   serverDetails,
-		repeatables:     repeatables,
+		amount:             amount,
+		baselineSource:     atlasMigrateApplyFlagSource(cmd, "baseline"),
+		toVersionSource:    atlasMigrateApplyFlagSource(cmd, "to-version"),
+		lockRequest:        lockRequest,
+		skipChecks:         skipChecks,
+		allowValueRounding: allowValueRounding,
+		serverDetails:      serverDetails,
+		repeatables:        repeatables,
 	}
 
 	targets := projects.projects
@@ -428,6 +436,10 @@ func runAtlasMigrateApplyTarget(
 		DiscardRolledBackFailure: true,
 		BaselineVersion:          runOpts.baselineVersion,
 		SkipChecks:               runOpts.skipChecks,
+		ValueRounding: migrator.ValueRounding{
+			Allowed: runOpts.allowValueRounding,
+			Request: atlasValueRoundingEnvVar + "=1",
+		},
 		// A golang-migrate file runs the way golang-migrate runs it, which
 		// opens no transaction around a file.
 		OwnTransactions: resolvedDirFormat.TransactionOwner() == lintext.TransactionOwnerFile,

@@ -54,6 +54,10 @@ type MigrateApplyResultOptions struct {
 	// Their checks are left out of the report, which would otherwise show
 	// them as passed.
 	ChecksNotRun []int64
+	// ValueRounding says the checks the run skipped by their kind, which the
+	// report leaves out of the versions it evaluated; see
+	// [migrator.ValueRounding.Waives].
+	ValueRounding migrator.ValueRounding
 	// Repeatables is the repeatable work the run selected and
 	// AppliedRepeatables the identities whose content applied; see
 	// [MigrateApplyRepeatable]. DryRun says the run wrote nothing, so the
@@ -304,7 +308,7 @@ func atlasMigrateApplyAppliedFiles(
 		}
 		appliedFile.Applied = atlasMigrateApplyWrittenStatements(migration.UpSQL, dialect)
 		if !slices.Contains(opts.ChecksNotRun, migration.Version) {
-			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, opts.ApplyError, identities)
+			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, opts.ApplyError, identities, opts.ValueRounding)
 		}
 		applied = append(applied, appliedFile)
 		if failedVersionSet && version == failedVersion {
@@ -646,11 +650,14 @@ func atlasTemplateJSONMerge(objects ...string) (string, error) {
 // applied -- every declared check passed -- and for one a check refused, where
 // the refusal names the assertion and this marks it. A check after the refused
 // one never ran, and saying so would need execution data this does not have.
+// A directive rounding waives was never evaluated, so it is left out, as a
+// skipped version's checks are.
 func atlasMigrateApplyChecks(
 	migration *migrator.Migration,
 	dialect string,
 	applyErr error,
 	identities map[int64]string,
+	rounding migrator.ValueRounding,
 ) []*atlasMigrateApplyFileChecks {
 	groups := make([]*atlasMigrateApplyFileChecks, 0, len(migration.AtlasCheckFiles())+1)
 	for _, file := range migration.AtlasCheckFiles() {
@@ -659,7 +666,9 @@ func atlasMigrateApplyChecks(
 			Stmts: atlasMigrateApplyCheckStatements(atlasMigrateApplySplitStatements(file.SQL, dialect)),
 		})
 	}
-	if directives, err := migrator.ParseChecks(migration.UpSQL, dialect); err == nil && len(directives) > 0 {
+	directives, err := migrator.ParseChecks(migration.UpSQL, dialect)
+	directives = slices.DeleteFunc(directives, rounding.Waives)
+	if err == nil && len(directives) > 0 {
 		asserts := make([]string, 0, len(directives))
 		for _, directive := range directives {
 			asserts = append(asserts, directive.Assert)

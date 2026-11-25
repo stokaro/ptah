@@ -297,6 +297,57 @@ func Refuse(ctx context.Context, conn *dbschema.DatabaseConnection, changes []Ch
 	return &planrefusal.RoundedValuesError{Columns: refused, Err: refusal(refused, request)}
 }
 
+// Policy is how a plan treats the changes this package reads.
+type Policy struct {
+	// Allowed plans the changes without reading the rows, and warns of each
+	// ([Warn]).
+	Allowed bool
+	// Request is how the caller asks for Allowed, which a refusal names.
+	// Empty names no way to ask.
+	Request string
+}
+
+// Review refuses changes while a row holds a value they would change, as
+// [Refuse] does, and returns the changes it read the rows of. With Allowed it
+// reads no row, warns of each change and returns none. It is the one decision
+// every command that plans such a change makes, whichever surface asks.
+func (p Policy) Review(ctx context.Context, conn *dbschema.DatabaseConnection, changes []Change) ([]Change, error) {
+	if p.Allowed {
+		Warn(ctx, changes)
+		return nil, nil
+	}
+	if err := Refuse(ctx, conn, changes, p.Request); err != nil {
+		return nil, err
+	}
+	return changes, nil
+}
+
+// Assertion is one read-only SELECT, on dialect, that answers 1 while no row
+// of the table of change holds a value the change would round or cut, and 0
+// once one does. It asks the condition [Refuse] counts, through EXISTS, so the
+// read stops at the first such row. A value the declared type cannot hold at
+// all makes the server's CAST fail, and the SELECT fails rather than answers.
+//
+// It is what a migration file carries to the database it runs on, where the
+// rows are the ones that database holds when the file runs. It refuses a
+// change [Check] refuses.
+func Assertion(dialect string, change Change) (string, error) {
+	if err := Check(dialect, change); err != nil {
+		return "", fmt.Errorf("read the values of %s: %w", column(change), err)
+	}
+	ref, parsed := tableref.Parse(change.Table)
+	if !parsed {
+		return "", fmt.Errorf("read the values of %s: the table name %q does not parse", column(change), change.Table)
+	}
+	described, _ := platform.Lookup(dialect)
+	condition, err := Condition(described.Rounding, sqlident.Ident(dialect, change.Column), change)
+	if err != nil {
+		return "", fmt.Errorf("read the values of %s: %w", column(change), err)
+	}
+	return "SELECT CASE WHEN EXISTS (SELECT 1 FROM " + sqlident.QualifiedIdent(dialect, ref.Schema, ref.Name) +
+		" WHERE " + condition + ") THEN 0 ELSE 1 END", nil
+}
+
 // byTable groups changes by table, in the order each table first appears.
 func byTable(changes []Change) [][]Change {
 	var tables [][]Change
