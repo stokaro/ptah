@@ -625,7 +625,8 @@ The addresses read are those written by:
 A local the address names is read through its expression, down to the item
 the traversal names, so `local.db.password` reads that item of the object and
 nothing else of it. An address built any other way, such as a `join()` over a
-variable list, is not read.
+variable list or over a `concat()`, is not read, and a value in its password
+shows in full (stokaro/ptah#6645).
 
 The secret parts are the password, a query parameter whose name says it holds a
 secret, and a user info a single value fills: there, the text after the

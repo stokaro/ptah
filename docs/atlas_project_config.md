@@ -731,7 +731,9 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   so is a sensitive value a program or data source receives as a bare
   argument. The command that loads the file masks its later errors against
   the same values, such as a schema file a `data "hcl_schema"` block passes a
-  sensitive value to.
+  sensitive value to. An address is read where it is a template or a call to
+  `format()`, `join()` over written lists, `replace()`, `urlqueryset()` or
+  `urluserinfo()`; one built any other way is not (stokaro/ptah#6645).
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
 A cloud-specific source outside the recognized lazy set fails during
