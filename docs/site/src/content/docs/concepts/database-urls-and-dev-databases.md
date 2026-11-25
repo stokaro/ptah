@@ -328,28 +328,50 @@ proven to stay inside the disposable realm:
   `SET search_path`, `SELECT INTO` protected namespaces, and CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
 - MySQL and MariaDB executable comments, `CALL`, a `CREATE` or `ALTER` of an
-  event, a trigger, a routine or a MariaDB package or package body,
-  `LOAD DATA`/`LOAD XML`, and externally backed `FEDERATED` or `CONNECT`
-  tables. A `DEFINER` clause is read as the server reads it, an unquoted host
-  such as `app@$` included. A `CREATE` or `ALTER` whose words the guard cannot
-  follow to a kind of object it knows is refused, since it may define a body.
-  On MariaDB, the statement a `SET STATEMENT ... FOR` or an `ANALYZE` runs is
-  checked as a statement of its own. A `SET` of a global or persisted
-  variable is refused in any spelling: `SET GLOBAL`, `SET @@global.x`, or an
-  item of a longer list. A `SET NAMES`, `SET CHARACTER SET` or
-  `character_set_client` change to a character set outside the UTF-8 family
-  is refused too: under `latin1` the byte `0xA0` is white space, and under
-  `gbk` a valid UTF-8 character can hide the quote after it, so the guard
-  would read the statement other than the server does. The refusal says to
-  convert the history to `utf8mb4`. For the same reason a dev session whose
-  client character set is outside the UTF-8 family is refused before any
-  statement runs, whether a `charset` or `collation` parameter of the dev URL
-  or the server's own default sets it; `charset=utf8mb4` in the dev URL gives
-  the session `utf8mb4` on such a server too. A migration can set
-  `NO_BACKSLASH_ESCAPES`, `ANSI_QUOTES` or, on
+  event, a trigger, a routine or a MariaDB package or package body, prepared
+  statements, MariaDB compound statements outside a stored program, such as
+  `BEGIN NOT ATOMIC` or an Oracle-mode block that begins with `DECLARE` or
+  with a `BEGIN` other than `BEGIN` or `BEGIN WORK`, `LOAD DATA`/`LOAD XML`, `IMPORT TABLE`, and externally
+  backed `FEDERATED`, `CONNECT` or `SPIDER` tables. A `DEFINER` clause is read
+  as the server reads it, an unquoted host such as `app@$` included. A
+  `CREATE` or `ALTER` whose words the guard cannot follow to a kind of object
+  it knows is refused, since it may define a body. On MariaDB, the statement a
+  `SET STATEMENT ... FOR` or an `ANALYZE` runs is checked as a statement of
+  its own. A `SET` of a global or persisted variable is refused in any
+  spelling: `SET GLOBAL`, `SET @@global.x`, or an item of a longer list. A
+  `SET NAMES`, `SET CHARACTER SET` or `character_set_client` change to a
+  character set outside the UTF-8 family is refused too: under `latin1` the
+  byte `0xA0` is white space, and under `gbk` a valid UTF-8 character can hide
+  the quote after it, so the guard would read the statement other than the
+  server does. The refusal says to convert the history to `utf8mb4`. For the
+  same reason a dev session whose client character set is outside the UTF-8
+  family is refused before any statement runs, whether a `charset` or
+  `collation` parameter of the dev URL or the server's own default sets it;
+  `charset=utf8mb4` in the dev URL gives the session `utf8mb4` on such a
+  server too. A migration can set `NO_BACKSLASH_ESCAPES`, `ANSI_QUOTES` or, on
   MariaDB, `MSSQL`, so a statement that holds a backslash, a double quote or
   a `[` is read under each combination of them, and refused when any reading
   refuses it.
+- In a MySQL or MariaDB dev database the operator named, a write to another
+  database is refused where the guard reads the other database's name in the
+  statement: a statement that creates, changes, drops or truncates one of its
+  tables, `DROP TABLES` and `RENAME TABLES` included; an `INSERT` or `REPLACE`
+  with or without `INTO`; every table the references of an `UPDATE` or a
+  `DELETE` name, after an index hint, a MariaDB `FOR SYSTEM_TIME` clause, a
+  `STRAIGHT_JOIN` or a MySQL alias named `returning`; table maintenance; an
+  `ALTER TABLE` that renames a table into it, exchanges a partition with it,
+  converts a partition into one of its tables or one of its tables into a
+  partition, or points a `MERGE` table at it; a `CREATE TABLE ... LIKE` of one
+  of its tables, which copies a `MERGE` table's `UNION`; a view over one of its
+  tables; and a call of one of its functions or an advance of one of its
+  sequences. The guard reads these forms. It does not prove that no other
+  spelling reaches another database.
+- MySQL and MariaDB statements that act on the whole server are refused in
+  every realm and under trust: `SHUTDOWN`, `RESTART`, `KILL`, `BINLOG`, `PURGE`
+  and the other replication statements, `CLONE`, `LOCK INSTANCE`, and
+  MariaDB's `BACKUP STAGE`. So are `SET PASSWORD` and `SET DEFAULT ROLE`, as
+  the whole statement or as any item of a MariaDB `SET` list: they are
+  spellings of `ALTER USER`, which every realm and trust keep refused.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.
@@ -473,7 +495,9 @@ reaches past the dev database:
   [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own comment
   and privileges where its reset returns them.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
-  and `DROP` of a user, role or database, and writes to another database.
+  and `DROP` of a user, role or database, writes to another database, the key
+  cache statements `CACHE INDEX` and `LOAD INDEX INTO CACHE`, and
+  `SET RESOURCE GROUP`.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
   groups, permissions, secrets, resource pools, backups and topics, on
   `docker://ydb/<tag>`, which the YDB provider starts. YDB gets no dev realm
@@ -590,11 +614,13 @@ accepts:
   on an extension or a schema of the dev database and an extension update, and
   also an external `COPY`,
   `dblink` and `IMPORT FOREIGN SCHEMA`;
-- on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements, users,
-  roles, `GRANT`, `REVOKE`, loadable functions, other databases and writes to
-  them, `FEDERATED` and `CONNECT` tables, `LOAD DATA`, `LOAD XML`,
-  `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a client character set outside
-  the UTF-8 family, set by the history or by the dev session;
+- on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements,
+  MariaDB compound statements, users, roles, `GRANT`, `REVOKE`, loadable
+  functions, other databases and writes to them, the key cache and resource
+  group statements, `FEDERATED`, `CONNECT` and `SPIDER` tables, `LOAD DATA`,
+  `LOAD XML`, `IMPORT TABLE`, `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a
+  client character set outside the UTF-8 family, set by the history or by the
+  dev session;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
   logins, credentials, synonyms, a target in another database, `BACKUP`,
   `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
@@ -610,11 +636,26 @@ transaction; a write to a system catalog such as `pg_catalog`; server
 configuration such as `ALTER SYSTEM`, `SET GLOBAL` or `RECONFIGURE`; an object
 the dev database cleanup cannot remove, such as an event trigger, a YugabyteDB
 publication or a SQL Server ledger table; a MySQL event or a SQL Server DDL
-trigger, which would run on their own during the rest of the command; and a
-MySQL executable comment, which hides SQL from the guard. SQLite keeps
+trigger, which would run on their own during the rest of the command; a MySQL
+statement that acts on the whole server, such as `SHUTDOWN`, `KILL` or a
+replication change; and a MySQL executable comment, which hides SQL from the
+guard. SQLite keeps
 `ATTACH`, `load_extension` and a pragma that changes state refused.
 
-On MySQL and MariaDB, a refusal that stays under trust holds only for a
+On MySQL and MariaDB these refusals hold for a statement as the history writes
+it. The guard does not read the SQL that a statement builds and runs, and
+trust accepts the statements that do: a prepared statement, a routine that
+`CALL` runs, and on MariaDB `EXECUTE IMMEDIATE` and a compound statement. Each
+of them can run a statement that trust keeps refused. Measured on MySQL 8.4.13
+and MariaDB 11.8.9 under trust,
+`PREPARE s FROM 'SET GLOBAL max_connect_errors = 101'` followed by
+`EXECUTE s` changes the server setting, and so does a procedure that runs the
+same `SET GLOBAL`, where the statement written on its own is refused. On
+MariaDB a prepared `CREATE EVENT` creates an event. Trust declares that you
+accept what the history runs. The refusals that stay catch a statement the
+history writes on its own, not one it builds to get past them.
+
+On MySQL and MariaDB, a refusal that stays under trust also holds only for a
 statement the guard reads as the server does. The guard reads each statement
 as UTF-8. Under trust a prepared statement can change the client character
 set as `SET NAMES` can, so trust lifts that refusal and the refusal of a
