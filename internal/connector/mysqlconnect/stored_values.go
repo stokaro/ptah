@@ -39,14 +39,25 @@ func (Service) StoredValuesBySession() bool { return true }
 // strict one and fail a later statement of the application's loose session.
 // It reads each statement with [mysqlstored.Statement] for the server the
 // session reports, so it reads what the server reads, an executable comment
-// the server runs included.
+// the server runs included. That reader takes a statement's bytes as UTF-8,
+// so a loose session whose client character set is outside the UTF-8 family,
+// as a URL's charset or collation parameter or the server's default can make
+// it, is refused before the window opens: the server would read a statement
+// by other rules, and the window could miss the object it defines.
 func (Service) KeepStoredValues(ctx context.Context, session *sql.Conn) (connector.StoredValuesWindow, error) {
-	var current, version string
-	if err := session.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode, VERSION()").Scan(&current, &version); err != nil {
+	var current, version, charset string
+	if err := session.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode, VERSION(), @@character_set_client").
+		Scan(&current, &version, &charset); err != nil {
 		return nil, fmt.Errorf("query sql_mode: %w", err)
 	}
 	if sqlmode.Strict(current) {
 		return nil, nil
+	}
+	if !mysqlstored.UTF8CharacterSet(charset) {
+		return nil, fmt.Errorf("the session's client character set is %q, and the statements are read as UTF-8 "+
+			"to find each one that defines an object keeping the session's sql_mode: connect with a utf8mb4 client "+
+			"character set, such as charset=utf8mb4 in the URL, or give the session a strict sql_mode, which needs "+
+			"no such reading", charset)
 	}
 	strict := sqlmode.WithStrict(current)
 	if _, err := session.ExecContext(ctx, setSQLMode, strict); err != nil {

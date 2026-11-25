@@ -632,6 +632,10 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 			wantErr: executableComment},
 		{name: "executable comment behind a bracketed name", statement: "SELECT 1 AS [a'], /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 'b' AS y",
 			wantErr: executableComment},
+		// MariaDB under MSSQL,NO_BACKSLASH_ESCAPES returns hidden = 2: only
+		// the two modes together end both quotes before the comment.
+		{name: "executable comment behind a bracketed name and a backslash", statement: "SELECT 1 AS [a'], 'x\\' AS c2, /*!50000 2 AS hidden, */ 'y' AS c3 -- '",
+			wantErr: executableComment},
 		{name: "executable comment behind a dash and a no-break space", statement: "SELECT 1 -- a, /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 2 AS y FROM t2",
 			wantErr: executableComment},
 		{name: "executable comment behind a dash and a next line", statement: "SELECT 1 --\u0085a, /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 2 AS y FROM t2",
@@ -643,6 +647,8 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 		{name: "client character set the server defaults to", statement: "SET NAMES DEFAULT", wantErr: clientCharset},
 		{name: "client character set by variable", statement: "SET character_set_client = gbk", wantErr: clientCharset},
 		{name: "client character set by session variable", statement: "SET @@session.character_set_client = 'latin1'", wantErr: clientCharset},
+		{name: "client character set by variable and :=", statement: "SET character_set_client := latin1", wantErr: clientCharset},
+		{name: "client character set by session variable and :=", statement: "SET @@session.character_set_client := latin1", wantErr: clientCharset},
 		{name: "global variable by prefix", statement: "SET @@global.max_connections = 152", wantErr: globalSet},
 		{name: "global variable by prefix in upper case", statement: "SET @@GLOBAL.sql_mode = @@GLOBAL.sql_mode", wantErr: globalSet},
 		{name: "global variable in a list", statement: "SET @a = 1, GLOBAL max_connections = 154", wantErr: globalSet},

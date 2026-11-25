@@ -306,7 +306,11 @@ func replayOnLockedConnection(
 		// files that open and close their own transaction. Replay runs those
 		// outside a transaction of its own and rolls a failed one back on this
 		// pinned session, which it then cleans.
-		guard := devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions().
+		guard, err := devclean.NewDevReplayGuardFor(ctx, replayConn)
+		if err != nil {
+			return err
+		}
+		guard = guard.WithSessionScope().WithOwnTransactions().
 			WithSchemaCommentReturned(claim.returnsSchemaState).WithPublications(claim.publications)
 		if hooks.ownTransactions {
 			guard = guard.WithUnwrappedTransactions()

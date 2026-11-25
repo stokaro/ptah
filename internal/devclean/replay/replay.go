@@ -130,6 +130,12 @@ func Refuse(dialect, operation string) error {
 	return &Refusal{Dialect: dialect, Operation: operation}
 }
 
+// RefuseWithRemedy is [Refuse] for a statement the author can rewrite so that
+// the guard accepts it, and remedy says how.
+func RefuseWithRemedy(dialect, operation, remedy string) error {
+	return &Refusal{Dialect: dialect, Operation: operation, Remedy: remedy}
+}
+
 // Refusal is the error [Refuse] returns. A caller that rehearses a baseline
 // rather than replaying a migration sets Baseline on a copy, and the refusal
 // says it is the baseline's.
@@ -140,13 +146,22 @@ type Refusal struct {
 	Operation string
 	// Baseline words the refusal as a plan rehearsal baseline's.
 	Baseline bool
+	// Remedy says how the author can rewrite the statement so that the guard
+	// accepts it, and is empty where the guard has nothing to suggest.
+	Remedy string
 }
 
 func (e *Refusal) Error() string {
+	var refusal string
 	if e.Baseline {
-		return fmt.Sprintf("%s rehearsal baseline refuses %s because its effects cannot be confined to the dev database realm",
+		refusal = fmt.Sprintf("%s rehearsal baseline refuses %s because its effects cannot be confined to the dev database realm",
+			e.Dialect, e.Operation)
+	} else {
+		refusal = fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
 			e.Dialect, e.Operation)
 	}
-	return fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
-		e.Dialect, e.Operation)
+	if e.Remedy == "" {
+		return refusal
+	}
+	return refusal + "; " + e.Remedy
 }

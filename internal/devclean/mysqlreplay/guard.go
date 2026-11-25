@@ -41,7 +41,9 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 // DUMPFILE, which move data across the server's edge and leave nothing in it
 // that the cleanup does not remove; and a write to another database. Each
 // one's only reason to be refused is that its effect reaches past the dev
-// database.
+// database. It lifts a SET of a client character set outside the UTF-8 family
+// too: a prepared statement makes the same change, so refusing the SET under
+// trust would refuse a latin1 history and protect nothing.
 //
 // It keeps every refusal that protects the run: an executable comment, which
 // hides SQL from every check here; an EVENT, which the scheduler runs on its own
@@ -62,6 +64,9 @@ func validateMySQLReplayStatement(dialect, database, stmt string, tokens []lexer
 	}
 	if operation := unsafeMySQLReplayOperation(tokens, scope); operation != "" {
 		return replay.Refuse(dialect, operation)
+	}
+	if first == "SET" && !scope.TrustedSQL && setsClientCharacterSet(tokens) {
+		return replay.RefuseWithRemedy(dialect, "client character set change", clientCharacterSetRemedy)
 	}
 	if isGlobalMySQLDDL(tokens) {
 		return replay.Refuse(dialect, replay.DescribeStatementObject(tokens))
@@ -104,9 +109,6 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token, scope replay.Scope) string
 	case "SET":
 		if setsGlobalVariable(tokens) {
 			return "global or persistent SET"
-		}
-		if setsClientCharacterSet(tokens) {
-			return "client character set change"
 		}
 	case "GRANT", "REVOKE":
 		return "privilege or role mutation"
@@ -338,6 +340,11 @@ func setsGlobalVariable(tokens []lexer.Token) bool {
 	return false
 }
 
+// clientCharacterSetRemedy ends the refusal of a SET that gives the session a
+// client character set outside the UTF-8 family. Trusting the SQL lifts the
+// refusal too, and the guard names that remedy itself.
+const clientCharacterSetRemedy = "convert the history to utf8mb4 and remove the SET"
+
 // setsClientCharacterSet reports a SET that gives the session a client
 // character set outside the UTF-8 family: NAMES, CHARACTER SET or CHARSET as
 // an item of the SET's list, or an assignment to character_set_client in any
@@ -395,12 +402,7 @@ func namesUTF8(tokens []lexer.Token, at int) bool {
 	if at >= len(tokens) {
 		return false
 	}
-	switch replay.NormalizedIdentifier(tokens[at]) {
-	case "UTF8MB4", "UTF8MB3", "UTF8":
-		return true
-	default:
-		return false
-	}
+	return mysqlstored.UTF8CharacterSet(replay.NormalizedIdentifier(tokens[at]))
 }
 
 func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {

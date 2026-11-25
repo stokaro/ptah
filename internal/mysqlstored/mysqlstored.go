@@ -266,8 +266,9 @@ func readDefiner(statement string, tokens []lexer.Token, at int) (Definer, int, 
 // Measured on MySQL 8.4.13 and MariaDB 11.8.9, app@localhost.localdomain names
 // the host localhost.localdomain, root@$, root@x.$, root@1$ and root@$$ name
 // the hosts $, x.$, 1$ and $$, app@ followed by a space names an empty host,
-// and app@ 'h' and app @ h are refused. MySQL reads a byte outside ASCII as
-// part of the host, as in root@hé, and MariaDB refuses that statement.
+// and app@ 'h' and app @ h are refused. Under a utf8mb4 client both read a
+// letter outside ASCII as part of the host, so root@hé names the host hé, and
+// both refuse root@h followed by a no-break space and TRIGGER.
 func readHost(statement string, tokens []lexer.Token, at int) (lexer.Token, int, error) {
 	start := tokens[at].End
 	next := at + 1

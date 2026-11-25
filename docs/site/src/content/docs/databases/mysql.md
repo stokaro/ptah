@@ -2031,7 +2031,12 @@ The session's `sql_mode` decides whether a backslash escapes the next
 character in a string (`NO_BACKSLASH_ESCAPES`), whether `"..."` is a name
 (`ANSI_QUOTES`), and on MariaDB whether `[...]` is a name (`MSSQL`). The other
 rules were measured on MySQL 8.4 and MariaDB 11.8 under a UTF-8 client
-character set, the one Ptah connects with:
+character set (`utf8mb4`, `utf8mb3` or `utf8`). A loose session whose client
+character set is another one, from a `charset` or `collation` parameter of
+the URL or from the server's default, reads the same bytes by other rules, so
+the plan is refused before the window opens. Connect with `utf8mb4`, as
+`charset=utf8mb4` in the URL does, or give the session a strict `sql_mode`,
+which needs no window. The rules:
 
 - a `#` or `-- ` comment ends at a line feed, never at a carriage return
   alone;

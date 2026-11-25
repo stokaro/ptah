@@ -340,9 +340,13 @@ proven to stay inside the disposable realm:
   `character_set_client` change to a character set outside the UTF-8 family
   is refused too: under `latin1` the byte `0xA0` is white space, and under
   `gbk` a valid UTF-8 character can hide the quote after it, so the guard
-  would read the statement other than the server does. A dev URL that sets
-  such a character set for its own connection is outside what the guard
-  reads. A migration can set `NO_BACKSLASH_ESCAPES`, `ANSI_QUOTES` or, on
+  would read the statement other than the server does. The refusal says to
+  convert the history to `utf8mb4`. For the same reason a dev session whose
+  client character set is outside the UTF-8 family is refused before any
+  statement runs, whether a `charset` or `collation` parameter of the dev URL
+  or the server's own default sets it; `charset=utf8mb4` in the dev URL gives
+  the session `utf8mb4` on such a server too. A migration can set
+  `NO_BACKSLASH_ESCAPES`, `ANSI_QUOTES` or, on
   MariaDB, `MSSQL`, so a statement that holds a backslash, a double quote or
   a `[` is read under each combination of them, and refused when any reading
   refuses it.
@@ -588,8 +592,9 @@ accepts:
   `dblink` and `IMPORT FOREIGN SCHEMA`;
 - on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements, users,
   roles, `GRANT`, `REVOKE`, loadable functions, other databases and writes to
-  them, `FEDERATED` and `CONNECT` tables, `LOAD DATA`, `LOAD XML`, and
-  `SELECT ... INTO OUTFILE` or `DUMPFILE`;
+  them, `FEDERATED` and `CONNECT` tables, `LOAD DATA`, `LOAD XML`,
+  `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a client character set outside
+  the UTF-8 family, set by the history or by the dev session;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
   logins, credentials, synonyms, a target in another database, `BACKUP`,
   `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
@@ -608,6 +613,15 @@ publication or a SQL Server ledger table; a MySQL event or a SQL Server DDL
 trigger, which would run on their own during the rest of the command; and a
 MySQL executable comment, which hides SQL from the guard. SQLite keeps
 `ATTACH`, `load_extension` and a pragma that changes state refused.
+
+On MySQL and MariaDB, a refusal that stays under trust holds only for a
+statement the guard reads as the server does. The guard reads each statement
+as UTF-8. Under trust a prepared statement can change the client character
+set as `SET NAMES` can, so trust lifts that refusal and the refusal of a
+non-UTF-8 dev session too. After such a change the server reads the bytes of
+the statements that follow by other rules, and an event or an executable
+comment the guard does not see can run. Keep a history that trust replays in
+`utf8mb4` for these refusals to hold.
 
 An executable provider, such as the YDB provider, guards its own dev databases
 and decides in its dialect what trust lifts. A provider that declares

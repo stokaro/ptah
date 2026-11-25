@@ -7,6 +7,8 @@
 package mysqlreplay
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -73,6 +75,35 @@ func readings(dialect, stmt string) []mysqlstored.Server {
 		}
 	}
 	return readings
+}
+
+// ValidateSession refuses a session whose client character set is outside
+// the UTF-8 family, as a dev URL's charset or collation parameter or the
+// server's own default can make it. The guard reads every statement as UTF-8,
+// and such a session reads the same bytes by other rules, so the server can
+// run a statement the guard reads as harmless; see
+// [mysqlstored.UTF8CharacterSet].
+//
+// A run that trusts its SQL is not refused, and the session is not read:
+// trust already lifts a prepared statement, which can change the character
+// set as well as SET NAMES can, so the refusal would protect nothing there.
+// What trust gives up is that the guard reads the statements it still
+// refuses under trust as the server reads them.
+func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) error {
+	if scope.TrustedSQL {
+		return nil
+	}
+	var charset string
+	if err := session.QueryRowContext(ctx, "SELECT @@character_set_client").Scan(&charset); err != nil {
+		return fmt.Errorf("read the dev session's client character set: %w", err)
+	}
+	if mysqlstored.UTF8CharacterSet(charset) {
+		return nil
+	}
+	return fmt.Errorf("the dev session's client character set is %q, and the %s replay guard reads each statement as UTF-8: "+
+		"the server reads the same bytes as %s and can run what the guard does not see; "+
+		"connect with a utf8mb4 client character set, such as charset=utf8mb4 in the dev URL",
+		charset, g.dialect, charset)
 }
 
 // validate is [guard.Validate] for the statement read by reading's rules.

@@ -74,6 +74,8 @@ var trustLifted = []struct {
 	{"MySQL LOAD DATA", trustedMySQLDev, "LOAD DATA INFILE '/tmp/items' INTO TABLE items"},
 	{"MySQL OUTFILE", trustedMySQLDev, "SELECT * FROM items INTO OUTFILE '/tmp/items'"},
 	{"MySQL FEDERATED table", trustedMySQLDev, "CREATE TABLE t (id int) ENGINE=FEDERATED CONNECTION='mysql://u@elsewhere/db/t'"},
+	// A prepared statement makes the same change, and trust lifts it.
+	{"MySQL client character set", trustedMySQLDev, "SET NAMES latin1"},
 	{"SQL Server procedure", trustedSQLServerDev, "CREATE PROCEDURE dbo.refresh AS SELECT 1"},
 	{"SQL Server EXEC", trustedSQLServerDev, "EXEC dbo.refresh"},
 	{"SQL Server remote EXECUTE", trustedSQLServerDev, "EXEC ('SELECT 1') AT remote_server"},
@@ -157,6 +159,9 @@ func TestDevReplayGuard_WithoutTrust_RefusalWording(t *testing.T) {
 		{"an engine with no owned realm", trustedSQLServerDev, "CREATE PROCEDURE dbo.refresh AS SELECT 1",
 			`sqlserver migration replay rejects CREATE executable stored body because its effects cannot be confined ` +
 				`to the disposable database realm` + trustRemedy},
+		{"rewritten or trusted", trustedMySQLDev, "SET NAMES latin1",
+			`mysql migration replay rejects client character set change because its effects cannot be confined ` +
+				`to the disposable database realm; convert the history to utf8mb4 and remove the SET` + trustRemedy},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -253,8 +258,6 @@ func TestDevReplayGuard_TrustedSQL_KeepsRunProtections(t *testing.T) {
 			`mysql migration replay rejects ALTER DATABASE` + refused},
 		{"MySQL TEMP object", trustedMySQLDev, "CREATE TEMPORARY TABLE x (id int)",
 			`mysql migration replay rejects TEMP object` + refused},
-		{"MySQL client character set", trustedMySQLDev, "SET NAMES gbk",
-			`mysql migration replay rejects client character set change` + refused},
 		{"MySQL global SET by prefix", trustedMySQLDev, "SET @@global.max_connections = 10",
 			`mysql migration replay rejects global or persistent SET` + refused},
 		{"MySQL event behind a dollar sign host", trustedMySQLDev, "CREATE DEFINER=root@$ EVENT e ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM t",

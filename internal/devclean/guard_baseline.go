@@ -1,6 +1,8 @@
 package devclean
 
 import (
+	"context"
+
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/internal/devclean/replay"
@@ -29,9 +31,13 @@ func NewBaselineGuard(info catalog.ServerInfo) *BaselineGuard {
 }
 
 // NewBaselineGuardFor is [NewBaselineGuard] for the dev database conn reaches,
-// with the guard [NewDevReplayGuardFor] gives it.
-func NewBaselineGuardFor(conn *dbschema.DatabaseConnection) *BaselineGuard {
-	return newBaselineGuard(NewDevReplayGuardFor(conn))
+// with the guard [NewDevReplayGuardFor] gives it, and its error.
+func NewBaselineGuardFor(ctx context.Context, conn *dbschema.DatabaseConnection) (*BaselineGuard, error) {
+	guard, err := NewDevReplayGuardFor(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	return newBaselineGuard(guard), nil
 }
 
 func newBaselineGuard(guard *ReplayGuard) *BaselineGuard {
