@@ -1036,8 +1036,12 @@ v0.34.0 ptah.run/core/difftypes
 v0.34.0 ptah.run/config/projectconfig
 
 # QualifiedName returns an error. A bare table name that begins or ends with
-# white space is refused rather than trimmed: the catalog keeps a name's bytes,
-# so a trimmed " t" named the table t, and an apply beside a live " t" created
-# t and dropped " t" with its rows. The quoted spelling keeps the space. Pre-v1,
-# so no compatibility is owed.
-v0.35.1 ptah.run/core/annotation
+# white space is refused rather than trimmed, and so is a schema-qualified name
+# with white space beside the dot of a bare part: the catalog keeps a name's
+# bytes, so a trimmed " t" named the table t, and an apply beside a live " t"
+# created t and dropped " t" with its rows. The quoted spelling keeps the space.
+# QualifiedName also returns the schema it is given as given, where it trimmed
+# it: the caller reads a schema attribute first, and a schema " app" read once
+# more would name app. apidiff sees the signature change and not this one.
+# Pre-v1, so no compatibility is owed.
+v0.36.0 ptah.run/core/annotation
