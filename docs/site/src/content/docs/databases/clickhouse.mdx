@@ -630,10 +630,11 @@ since ClickHouse has no transaction to undo the `ADD`, and the next plan finds t
 constraint and plans nothing, so delete or correct that row, or drop the constraint.
 A row written after the `ADD` is the constraint's to refuse.
 
-A changed `CHECK` is dropped and added again. On a table whose columns the plan does
-not change, the first count runs ahead of the `DROP CONSTRAINT`, so a held row the
-new condition refuses stops the apply with the old `CHECK` still on the table,
-refusing the rows written after it:
+A changed `CHECK` is dropped and added again. When the plan adds no column and
+changes no column definition, the first count runs ahead of the `DROP CONSTRAINT`.
+Removing a column or changing its comment keeps this order: neither changes the
+values the new condition reads. A held row the new condition refuses stops the apply
+with the old `CHECK` still on the table, refusing the rows written after it:
 
 ```sql
 SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0);
@@ -643,11 +644,12 @@ ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 5);
 SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0);
 ```
 
-On a table whose columns the plan also changes, the new condition may read a column
-only that change makes, so the first count waits until the columns have changed and
-runs right ahead of the `ADD`. The old `CHECK` is dropped before the column changes,
-so a held row the new condition refuses then leaves the table with neither
-condition until the rows are corrected.
+When the plan adds a column or changes a column's type, nullability, default or
+generated expression, the new condition may need the resulting values. The first
+count then waits until the columns have changed and runs right ahead of the `ADD`.
+The old `CHECK` is dropped before those column changes, so a held row the new
+condition refuses then leaves the table with neither condition until the rows are
+corrected.
 
 The counts read the whole table twice for each `CHECK` the plan adds, so on a large
 table they cost what two of those `SELECT` statements cost. To find the rows before
@@ -670,9 +672,15 @@ checked, and the run warns once before the plan:
 ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
 ```
 
-A held row the `CHECK` refuses then stays in the table, and the constraint refuses
-only the rows written after it. The strict compatibility profile,
-`PTAH_ATLAS_STRICT_COMPAT=1`, refuses the variable.
+On a table the plan keeps, a held row the `CHECK` refuses then stays, and the
+constraint refuses only the rows written after it. A table rebuild still copies
+rows into a new table whose `CREATE TABLE` carries the `CHECK`, so the copy refuses
+such a row even with the scans skipped.
+
+`ptah migrations generate --skip-check-scan` leaves the scans out of both generated
+up and down files. The warning appears during generation; applying those files
+does not repeat it or add a scan. The strict compatibility profile,
+`PTAH_ATLAS_STRICT_COMPAT=1`, refuses `PTAH_SKIP_CHECK_SCAN`.
 
 The server refuses to drop a column that a `CHECK` reads, and to add a `CHECK` over
 a column the table does not have, both with code 47. A plan therefore drops `CHECK`

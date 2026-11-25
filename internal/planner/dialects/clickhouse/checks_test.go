@@ -104,8 +104,8 @@ func unscannedAdd(name, condition string) string {
 // CONSTRAINT over a column the table lacks, so the CHECK drops go first and
 // the additions last. An unnamed CHECK takes the name ClickHouse needs, and an
 // added column's CHECK is a constraint of its own, since ADD COLUMN has none.
-// A condition may read a column the change makes, so on a table whose columns
-// change each scan waits for the column changes.
+// A condition may read the added column, so each scan waits for that column
+// to reach the table.
 func TestGenerateMigrationAST_PlansCheckChangesAroundTheColumnChanges(t *testing.T) {
 	c := qt.New(t)
 	desired := checkTable(
@@ -144,6 +144,86 @@ func TestGenerateMigrationAST_PlansACheckOnlyChange(t *testing.T) {
 		scannedAdd("t_check", "v > 1"),
 		heldRowScan("t_check", "v > 1"),
 	})
+}
+
+// Dropping a column or changing its comment cannot change the values the new
+// CHECK reads. Its first scan must run while the old CHECK still protects the
+// table, including when the removed column is one the old CHECK reads.
+func TestGenerateMigrationAST_ScansBeforeDroppingChecksForColumnMetadata(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		fields     []schemamodel.Field
+		oldCheck   string
+		columnStep string
+	}{
+		{
+			name:       "removed column",
+			fields:     []schemamodel.Field{int32Field("id", ""), int32Field("v", "")},
+			oldCheck:   "v > 0",
+			columnStep: "ALTER TABLE t DROP COLUMN s",
+		},
+		{
+			name:       "removed column read by the old check",
+			fields:     []schemamodel.Field{int32Field("id", ""), int32Field("v", "")},
+			oldCheck:   "length(s) > 0",
+			columnStep: "ALTER TABLE t DROP COLUMN s",
+		},
+		{
+			name: "column comment",
+			fields: []schemamodel.Field{int32Field("id", ""), int32Field("v", ""),
+				{StructName: "T", Name: "s", Type: "String", Comment: "a note"}},
+			oldCheck:   "v > 0",
+			columnStep: "ALTER TABLE t COMMENT COLUMN s 'a note'",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := checkTable(test.fields, tableCheck("t_check", "v > 5"))
+			current := observedCheckTable([]string{"id", "v", "s"}, reportedCheck("t_check", test.oldCheck))
+
+			got := checkStatements(c, desired, current)
+
+			c.Assert(got, qt.DeepEquals, []string{
+				heldRowScan("t_check", "v > 5"),
+				"ALTER TABLE t DROP CONSTRAINT t_check",
+				test.columnStep,
+				scannedAdd("t_check", "v > 5"),
+				heldRowScan("t_check", "v > 5"),
+			})
+		})
+	}
+}
+
+// A type, nullability, default or generated expression changes the values a
+// CHECK can read. The scan must wait for that definition to reach the table.
+func TestGenerateMigrationAST_ScansAfterColumnDefinitionChanges(t *testing.T) {
+	for _, test := range []struct {
+		name, definition string
+		field            schemamodel.Field
+	}{
+		{name: "type", definition: "Int64", field: schemamodel.Field{Type: "Int64"}},
+		{name: "nullability", definition: "Nullable(Int32)", field: schemamodel.Field{Type: "Int32", Nullable: true}},
+		{name: "default", definition: "Int32 DEFAULT 7", field: schemamodel.Field{Type: "Int32", DefaultExpr: "7"}},
+		{name: "generated expression", definition: "Int32 ALIAS id + 1", field: schemamodel.Field{Type: "Int32", GeneratedKind: "ALIAS", GeneratedExpression: "id + 1"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			field := test.field
+			field.Name, field.StructName = "v", "T"
+			desired := checkTable([]schemamodel.Field{int32Field("id", ""), field}, tableCheck("t_check", "v > 5"))
+			current := observedCheckTable([]string{"id", "v"}, reportedCheck("t_check", "v > 0"))
+
+			got := checkStatements(c, desired, current)
+
+			c.Assert(got, qt.DeepEquals, []string{
+				"ALTER TABLE t DROP CONSTRAINT t_check",
+				"ALTER TABLE t MODIFY COLUMN v " + test.definition,
+				heldRowScan("t_check", "v > 5"),
+				scannedAdd("t_check", "v > 5"),
+				heldRowScan("t_check", "v > 5"),
+			})
+		})
+	}
 }
 
 // A plan asked for without the scans writes none, on a table whose columns
