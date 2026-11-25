@@ -154,6 +154,14 @@ var shadowReplayCompatCases = []struct {
 			"--dev-url", "sqlite://dev.db", "--to-version", "1"},
 	},
 	{
+		// --format runs the rollback on the compatibility surface's own
+		// migrator rather than forwarding it.
+		name:  "migrate down --dev-url --format",
+		setup: [][]string{{"migrate", "apply", "--url", "sqlite://target.db", "--dir", "file://migrations"}},
+		args: []string{"migrate", "down", "--url", "sqlite://target.db", "--dir", "file://migrations",
+			"--dev-url", "sqlite://dev.db", "--to-version", "1", "--format", "{{ .Current }}->{{ .Target }}"},
+	},
+	{
 		name: "migrate apply with a declared drift check",
 		project: map[string]string{"atlas.hcl": "env \"local\" {\n  url = \"sqlite://target.db\"\n  dev = \"sqlite://dev.db\"\n" +
 			"  migration {\n    dir = \"file://migrations\"\n  }\n  check \"migrate_apply\" {\n    drift {}\n  }\n}\n"},
