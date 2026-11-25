@@ -91,6 +91,7 @@ import (
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/temporalkeys"
 	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
@@ -634,10 +635,15 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 	for _, tableKey := range sortedKeys(d.Tables) {
 		table := d.Tables[tableKey]
 		structName := valueOrDefault(table.StructName, tableKey)
-		// A table's name is trimmed as a schema is, so it reads as the Go tag
-		// reader reads one; the names of the objects it holds keep their bytes.
-		tableName := strings.TrimSpace(valueOrDefault(table.Name, tableKey))
-		schema := schemaName(table.Schema)
+		// The names of the objects a table holds keep their bytes.
+		tableName, err := declaredName("table name", valueOrDefault(table.Name, tableKey))
+		if err != nil {
+			return fmt.Errorf("table %q: %w", tableKey, err)
+		}
+		schema, err := schemaName(table.Schema)
+		if err != nil {
+			return fmt.Errorf("table %q: %w", tableKey, err)
+		}
 
 		scalars, sections, err := ownedKeys(owners, yamlext.EntryTable, fmt.Sprintf("table %q", tableKey), table.Owned)
 		if err != nil {
@@ -1565,12 +1571,16 @@ func buildGrant(kind, key string, spec revokeSpec) (schemamodel.Grant, error) {
 	if len(privileges) == 0 {
 		privileges = cleanStrings(spec.Privileges)
 	}
+	onSchema, err := schemaName(spec.OnSchema)
+	if err != nil {
+		return schemamodel.Grant{}, fmt.Errorf("%s %q on_schema: %w", kind, key, err)
+	}
 	grant := schemamodel.Grant{
 		StructName: string(spec.StructName),
 		Role:       string(spec.Role),
 		Privileges: privileges,
 		OnTable:    string(spec.OnTable),
-		OnSchema:   schemaName(spec.OnSchema),
+		OnSchema:   onSchema,
 		OnSequence: string(spec.OnSequence),
 		OnDatabase: spec.OnDatabase,
 		Comment:    string(spec.Comment),
@@ -1626,18 +1636,22 @@ func valueOrDefault(value stringScalar, fallback string) string {
 	return fallback
 }
 
-// schemaName is a field that names a schema, with the space around it
-// removed. A document is text an author typed, and every layer below keeps a
-// schema name's bytes, because PostgreSQL holds "app " and "app" as two
-// schemas: read with its space, a table entry with schema "app " beside a live
-// app.orders planned CREATE TABLE "app "."orders" and DROP TABLE
-// "app"."orders".
+// schemaName is a field that names a schema, read as [declaredName] reads a
+// table's name. Every layer below keeps a schema name's bytes, because
+// PostgreSQL holds "app " and "app" as two schemas, so `schema: '"app "'` is
+// how a document names the first.
 //
 // An object's name keeps its bytes. The catalog holds " note" and "note" as two
 // columns, so a column, an index or a constraint named with a space names the
 // live object of that name, and trimming it planned a DROP of that object.
-func schemaName(value stringScalar) string {
-	return strings.TrimSpace(string(value))
+func schemaName(value stringScalar) (string, error) {
+	return declaredName("schema name", string(value))
+}
+
+// declaredName is the name a table entry or a schema field declares, read as
+// [tableref.DocumentName] reads it.
+func declaredName(what, value string) (string, error) {
+	return tableref.DocumentName(what, value)
 }
 
 func cleanStrings(values stringList) []string {

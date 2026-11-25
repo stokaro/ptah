@@ -178,13 +178,23 @@ func RefAddress(ref objectidentity.ID) (Property, bool) {
 }
 
 func part(value string) objectidentity.Part {
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		return objectidentity.Part{}
 	}
 	return objectidentity.Part{Source: value, Normalized: fold(value)}
 }
 
-func fold(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+// fold is the key SQL Server compares a name by: lower case, without the
+// trailing spaces the server ignores, so [b ] is [b]. A leading space is part
+// of the name: [ b] and [b] are two schemas, and trimmed, an extended property
+// in [ b] would key as one in [b], so a plan could pair the two.
+//
+// The fold approximates the case-insensitive collation SQL Server installs by
+// default. It is not that collation: the server also ignores a trailing
+// U+3000 or NUL, which the fold keeps, and under a case-sensitive collation
+// [B] and [b] are two names, which the fold merges. A tab is no space the
+// server ignores, so [b\t] is not [b].
+func fold(value string) string { return strings.ToLower(strings.TrimRight(value, " ")) }
 
 // DesiredObject records one declared property.
 func DesiredObject(property DesiredProperty) schemaext.Object {

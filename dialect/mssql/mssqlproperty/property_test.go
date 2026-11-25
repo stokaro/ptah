@@ -304,3 +304,25 @@ func TestRefAddressKeepsTableAndColumnBoundaries(t *testing.T) {
 	left, right := property("App", "a b", "c", "Note", ""), property("App", "a", "b c", "Note", "")
 	c.Assert(left.Ref().Equal(right.Ref()), qt.IsFalse)
 }
+
+// TestProperty_RefKeepsTheSpaceOfAName pins that the identity folds case and
+// keeps a leading space. [ b] and b are two schemas on SQL Server, and a
+// property in each is its own: a key that trimmed would pair the two, so a plan
+// could change the property of one schema to match the declaration of the
+// other. A trailing space is not part of the name, since the
+// server compares names without it, and a trailing tab is.
+func TestProperty_RefKeepsTheSpaceOfAName(t *testing.T) {
+	c := qt.New(t)
+
+	spaced := property(" b", "t", "", "MS_Description", "x").Ref()
+	plain := property("b", "t", "", "MS_Description", "x").Ref()
+	upper := property(" B", "T", "", "MS_Description", "x").Ref()
+	trailing := property("b ", "t ", "", "MS_Description", "x").Ref()
+	tabbed := property("b\t", "t", "", "MS_Description", "x").Ref()
+
+	c.Assert(spaced.Key(), qt.Not(qt.Equals), plain.Key())
+	c.Assert(spaced.Key(), qt.Equals, upper.Key())
+	c.Assert(trailing.Key(), qt.Equals, plain.Key())
+	c.Assert(tabbed.Key(), qt.Not(qt.Equals), plain.Key())
+	c.Assert(spaced.Schema.Source, qt.Equals, " b")
+}

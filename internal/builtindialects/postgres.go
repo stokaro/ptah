@@ -185,6 +185,10 @@ func postgres() descriptor.Dialect {
 		ForeignKeyReferencesCheckedAtCreate: true,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
+			// A bare name folds to lower case and a quoted one keeps its case,
+			// section 4.1.1 of the PostgreSQL manual.
+			QuotedNamesKeepCase: true,
+
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},

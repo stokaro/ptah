@@ -69,7 +69,7 @@ func TestQuoting_OpensString(t *testing.T) {
 }
 
 // TestQuotingOf reads each built-in dialect's quoting from its descriptor:
-// PostgreSQL's E'...' strings, MySQL's and MariaDB's double-quoted strings and
+// PostgreSQL's E'...' strings and quoted names that keep their case, MySQL's and MariaDB's double-quoted strings and
 // backslash escapes, ClickHouse's backslash escapes in names too, and the SQL
 // standard for SQLite and for a dialect the registry does not know.
 func TestQuotingOf(t *testing.T) {
@@ -77,7 +77,7 @@ func TestQuotingOf(t *testing.T) {
 		dialect string
 		want    normalize.Quoting
 	}{
-		{dialect: platform.Postgres, want: normalize.Quoting{EscapeStrings: true}},
+		{dialect: platform.Postgres, want: normalize.Quoting{EscapeStrings: true, QuotedNamesKeepCase: true}},
 		{dialect: platform.MySQL, want: normalize.Quoting{Strings: `'"`, BackslashEscapes: true}},
 		{dialect: platform.MariaDB, want: normalize.Quoting{Strings: `'"`, BackslashEscapes: true}},
 		{dialect: platform.ClickHouse, want: normalize.Quoting{BackslashEscapes: true, IdentifierBackslashEscapes: true}},

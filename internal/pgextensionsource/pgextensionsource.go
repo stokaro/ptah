@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlext"
 	"ptah.run/feature/pgextension"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/yamlvalue"
 )
 
@@ -103,10 +104,14 @@ func decodeYAML(decode func(target any) error, _ yamlext.Tables) ([]yamlext.Cont
 		if name == "" {
 			name = key
 		}
-		// The schema is trimmed where the document is read, as every schema a
+		// The schema is read where the document is read, as every schema a
 		// YAML schema document names is: it keeps its bytes below, and "app "
 		// is another schema than app.
-		object, err := Declare(name, pgextension.DesiredExtension{Schema: strings.TrimSpace(string(entry.Schema)), Version: string(entry.Version),
+		schema, err := tableref.DocumentName("schema name", string(entry.Schema))
+		if err != nil {
+			return nil, fmt.Errorf("%s.%s: %w", Key, key, err)
+		}
+		object, err := Declare(name, pgextension.DesiredExtension{Schema: schema, Version: string(entry.Version),
 			Comment: string(entry.Comment), IfNotExists: entry.IfNotExists})
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", Key, key, err)

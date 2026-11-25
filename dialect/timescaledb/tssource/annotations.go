@@ -58,7 +58,10 @@ func decode(declaration annotation.Declaration) ([]annotation.Contribution, erro
 	// SELECT, and a live comparison puts the declaration through the same
 	// rewrite rather than folding either text -- so a declaration normalized
 	// here would be normalized twice and match nothing.
-	schemaName, name := annotation.QualifiedName(kv["schema"], kv["name"])
+	schemaName, name, err := annotation.QualifiedName(kv["schema"], kv["name"])
+	if err != nil {
+		return nil, &annotation.DeclarationError{Declaration: declaration, Attribute: "name", Err: err}
+	}
 	object := tsschema.DesiredContinuousAggregateObject(schemaName, name, tsschema.DesiredContinuousAggregate{
 		Body:             kv["body"],
 		MaterializedOnly: optionalBool(kv, "materialized_only"),

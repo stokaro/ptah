@@ -288,6 +288,13 @@ func displayComponent(source string) string {
 // applied its own -- strings.ToLower here, a Semantics call there, nothing at
 // all in a third -- and a comparison whose two sides folded differently is the
 // #1302 shape: an object that exists reads as absent.
+//
+// A table's name and a named schema keep their bytes when the caller gives
+// them as components ([Builder.TableParts], and the owner of a column, an
+// index, a constraint, a policy or a grant given the same way), because a
+// catalog holds " t" and t as two tables. A part split off one qualified string
+// is trimmed, because a space around the dot is only its spelling. The name of
+// every other object is trimmed, and a name of white space alone is none.
 type Builder struct {
 	semantics identifier.Semantics
 }
@@ -313,28 +320,37 @@ func (b Builder) Semantics() identifier.Semantics {
 //
 // Quoted is recorded beside it as the fact rather than as part of the key, so a
 // renderer can ask whether the author quoted without parsing the string back.
+//
+// The component is folded as given, and each caller trims it or keeps its
+// bytes as the [Builder] rule says; a component of white space alone is no
+// name.
 func (b Builder) namePart(value string, key func(string) string) Part {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if strings.TrimSpace(value) == "" {
 		return Part{}
 	}
-	_, quoted := unquote(trimmed)
-	return Part{Source: trimmed, Normalized: key(trimmed), Quoted: quoted}
+	_, quoted := unquote(value)
+	return Part{Source: value, Normalized: key(value), Quoted: quoted}
 }
 
-// Table builds the identity of a table from a possibly-qualified name.
+// Table builds the identity of a table from a possibly-qualified name. The
+// parts split off the string are trimmed, because a space around the dot is
+// only the spelling of the qualified name: a name that begins or ends with a
+// space is written quoted, as [tableref.Canonical] writes it. A caller that
+// holds the two names separately uses [Builder.TableParts], which keeps them.
 func (b Builder) Table(qualified string) ID {
 	schema, name := splitQualified(qualified)
 	return ID{
 		Kind:   KindTable,
 		Schema: b.schemaPart(strings.TrimSpace(schema)),
-		Name:   b.namePart(name, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 	}
 }
 
 // TableParts builds a table identity from components the caller already has,
-// trimming the name and defaulting an absent schema. A schema that is named
-// keeps its bytes, because a schema name may begin or end with a space.
+// defaulting an absent schema. Both names keep their bytes, because a schema
+// or a table name may begin or end with a space: PostgreSQL holds " t" and t
+// as two tables, and a key that trimmed one would pair it with the other. A
+// name of white space alone names nothing.
 //
 // It exists beside [Builder.Table] because a caller holding the two components
 // separately must not have them rejoined and re-split: a name containing a dot
@@ -343,16 +359,16 @@ func (b Builder) TableParts(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
 		Schema: b.schemaPart(schema),
-		Name:   b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
+		Name:   b.namePart(name, b.semantics.TableIdentityKey),
 	}
 }
 
-// TablePartsVerbatim builds a table identity without trimming either component.
+// TablePartsVerbatim builds a table identity that keeps either component even
+// when it is white space alone.
 //
-// SQLite is why: a quoted leading or trailing space is part of a SQLite table
-// name, so trimming one there merges two distinct tables. Every other caller
-// wants [Builder.TableParts], whose trimming absorbs the incidental whitespace
-// a schema file carries around a table name.
+// SQLite is why: a quoted name of spaces is a SQLite table name, and a schema
+// of white space is kept as written. Every other caller wants
+// [Builder.TableParts], which reads a blank name or schema as none.
 func (b Builder) TablePartsVerbatim(schema, name string) ID {
 	return ID{
 		Kind:   KindTable,
@@ -380,7 +396,7 @@ func (b Builder) Column(qualifiedTable, column string) ID {
 		Kind:   KindColumn,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(column, b.semantics.ColumnIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(column), b.semantics.ColumnIdentityKey),
 	}
 }
 
@@ -396,7 +412,7 @@ func (b Builder) ColumnParts(schema, table, column string) ID {
 		Kind:   KindColumn,
 		Schema: owner.Schema,
 		Parent: owner.Name,
-		Name:   b.namePart(column, b.semantics.ColumnIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(column), b.semantics.ColumnIdentityKey),
 	}
 }
 
@@ -410,7 +426,7 @@ func (b Builder) ColumnParts(schema, table, column string) ID {
 // it, so `public .email` is `public.email`.
 func (b Builder) Domain(qualified string) ID {
 	schema, name := splitQualified(qualified)
-	return b.SchemaScopedParts(KindDomain, strings.TrimSpace(schema), name)
+	return b.SchemaScopedParts(KindDomain, strings.TrimSpace(schema), strings.TrimSpace(name))
 }
 
 // SchemaScopedParts builds the identity of an object whose name is unique
@@ -454,7 +470,7 @@ func (b Builder) Policy(qualifiedTable, policy string) ID {
 		Kind:   KindPolicy,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(policy, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(policy), b.semantics.TableIdentityKey),
 	}
 }
 
@@ -466,7 +482,7 @@ func (b Builder) Trigger(qualifiedTable, trigger string) ID {
 		Kind:   KindTrigger,
 		Schema: table.Schema,
 		Parent: table.Name,
-		Name:   b.namePart(trigger, b.semantics.TableIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(trigger), b.semantics.TableIdentityKey),
 	}
 }
 
@@ -527,7 +543,7 @@ func (b Builder) Index(qualifiedTable, index string) ID {
 	id := ID{
 		Kind:   KindIndex,
 		Schema: table.Schema,
-		Name:   b.namePart(index, b.semantics.IndexIdentityKey),
+		Name:   b.namePart(strings.TrimSpace(index), b.semantics.IndexIdentityKey),
 	}
 	if b.semantics.IndexNamespace != identifier.IndexNamespaceSchema {
 		id.Parent = table.Name
@@ -710,7 +726,7 @@ func balancedParentheses(value string) bool {
 // Role builds the identity of a role, which no dialect Ptah targets qualifies
 // by schema.
 func (b Builder) Role(role string) ID {
-	return ID{Kind: KindRole, Name: b.namePart(role, b.semantics.TableIdentityKey)}
+	return ID{Kind: KindRole, Name: b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey)}
 }
 
 // Function builds the identity of a routine, including its overload signature.
@@ -734,7 +750,7 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 	return ID{
 		Kind:      kind,
 		Schema:    b.schemaPart(strings.TrimSpace(schema)),
-		Name:      b.namePart(name, b.semantics.TableIdentityKey),
+		Name:      b.namePart(strings.TrimSpace(name), b.semantics.TableIdentityKey),
 		Signature: signatureParts(signature),
 	}
 }

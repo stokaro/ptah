@@ -279,14 +279,16 @@ func TestTable_QualifiedName(t *testing.T) {
 		{name: "a table without a schema", table: annotation.Table{Name: "rooms"}, want: "rooms"},
 		{name: "a table in a schema", table: annotation.Table{Schema: "app", Name: "rooms"}, want: "app.rooms"},
 		{name: "a name holding a dot", table: annotation.Table{Schema: "app", Name: "rooms.v1"}, want: `app."rooms.v1"`},
+		{name: "a name that begins with a space", table: annotation.Table{Schema: "app", Name: " rooms"}, want: `app." rooms"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			got := test.table.QualifiedName()
-			schema, name := annotation.QualifiedName("", got)
+			schema, name, err := annotation.QualifiedName("", got)
 
+			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
 			c.Assert([]string{schema, name}, qt.DeepEquals, []string{test.table.Schema, test.table.Name})
 		})

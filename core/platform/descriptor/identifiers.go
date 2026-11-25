@@ -107,6 +107,12 @@ func (d Dialect) validateIdentifiers() error {
 	if fold := d.Identifiers.UnquotedFold; fold != "" && !slices.Contains(UnquotedFolds(), fold) {
 		return fmt.Errorf("%w: dialect %q: unquoted fold %q is not one of %q", ErrInvalidDescriptor, d.Name, fold, UnquotedFolds())
 	}
+	// Both fields say which case a bare name folds to, and SQL text compared
+	// offline reads the one in Comparison, so the two must not disagree.
+	if d.Comparison.QuotedNamesKeepCase && d.Identifiers.UnquotedFold == "upper" {
+		return fmt.Errorf("%w: dialect %q: quoted names keep case folds a bare name to lower case, and unquoted fold %q folds it to upper case",
+			ErrInvalidDescriptor, d.Name, d.Identifiers.UnquotedFold)
+	}
 	for _, char := range d.Identifiers.BareChars {
 		if !bareChar(char) {
 			return fmt.Errorf("%w: dialect %q: bare character %q is not ASCII punctuation outside quotes and dots",

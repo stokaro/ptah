@@ -18,6 +18,7 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/pgextensionsource"
 	"ptah.run/internal/pgpolicysource"
+	"ptah.run/internal/tableref"
 )
 
 var (
@@ -238,14 +239,33 @@ func TestRedeclaration_PoliciesStayStrict(t *testing.T) {
 	})
 }
 
-// A schema is text an author typed, so both readers remove the space around
-// it: a schema keeps its bytes below, and "ext " is another schema than ext.
-func TestReaders_TrimTheSchemaTheyRead(t *testing.T) {
+// A schema is text an author typed. A schema keeps its bytes below, and "ext "
+// is another schema than ext, so both readers refuse a bare schema with a
+// space around it rather than name ext with it.
+func TestReaders_FailurePathRefusesASpacedBareSchema(t *testing.T) {
 	c := qt.New(t)
 
-	fromGo := parseGo(c, "extensions.go", `//ptah:schema:extension name="pg_trgm" schema="ext "`)
-	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte("extensions:\n  trigrams:\n    name: pg_trgm\n    schema: \" ext\"\n")))
+	fromGo, err := goschema.ParseSource(goOwners, "extensions.go", goSource(`//ptah:schema:extension name="pg_trgm" schema="ext "`))
 
-	c.Assert(extension(c, fromGo, "pg_trgm").Schema, qt.Equals, "ext")
-	c.Assert(extension(c, fromYAML, "pg_trgm").Schema, qt.Equals, "ext")
+	c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
+	c.Assert(err, qt.ErrorMatches, `(?s).*schema attribute "ext " begins or ends with white space.*`)
+	c.Assert(fromGo.FeatureObjects.IsZero(), qt.IsTrue)
+
+	fromYAML, err := yamlschema.Parse(t.Context(), yamlOwners, []byte("extensions:\n  trigrams:\n    name: pg_trgm\n    schema: \" ext\"\n"))
+
+	c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
+	c.Assert(err, qt.ErrorMatches, `(?s).*extensions.trigrams: schema name " ext" begins or ends with white space.*`)
+	c.Assert(fromYAML, qt.IsNil)
+}
+
+// The space around a schema written quoted is removed, and the schema inside
+// the quotes keeps its bytes.
+func TestReaders_ReadAQuotedSchemaWithItsBytes(t *testing.T) {
+	c := qt.New(t)
+
+	fromGo := parseGo(c, "extensions.go", `//ptah:schema:extension name="pg_trgm" schema="\"ext \" "`)
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte("extensions:\n  trigrams:\n    name: pg_trgm\n    schema: ' \" ext\"'\n")))
+
+	c.Assert(extension(c, fromGo, "pg_trgm").Schema, qt.Equals, "ext ")
+	c.Assert(extension(c, fromYAML, "pg_trgm").Schema, qt.Equals, " ext")
 }

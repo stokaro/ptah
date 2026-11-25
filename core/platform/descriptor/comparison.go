@@ -83,6 +83,15 @@ type Comparison struct {
 	// DoubleQuotedStrings reports that a double-quoted token is a string
 	// literal, as it is under MySQL's default SQL mode, rather than a name.
 	DoubleQuotedStrings bool `json:"double_quoted_strings,omitempty"`
+	// QuotedNamesKeepCase reports that a double-quoted name keeps the case it
+	// is written in while a name written without quotes is folded to lower
+	// case, as in PostgreSQL. SQL text compared offline then keeps a quoted
+	// name holding an upper-case letter apart from every bare spelling:
+	// "A".src and a.src read two schemas. It states the lower fold for SQL
+	// text, where [Identifiers.UnquotedFold] states a fold for catalog names,
+	// and a descriptor that sets it with the upper fold is refused when the
+	// registry is built ([ErrInvalidDescriptor]).
+	QuotedNamesKeepCase bool `json:"quoted_names_keep_case,omitempty"`
 	// RestrictIsNoAction reports that a RESTRICT referential action means
 	// what NO ACTION does, as InnoDB implements both.
 	RestrictIsNoAction bool `json:"restrict_is_no_action,omitempty"`

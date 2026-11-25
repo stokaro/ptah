@@ -95,7 +95,10 @@ func addYAMLRowPolicy(collector *chpolicysource.Collector, tables yamlext.Tables
 	case strings.TrimSpace(entry.Table) == "":
 		return fmt.Errorf("%w: a row policy names its table", ptaherr.ErrInvalidAttributeValue)
 	default:
-		database, table = annotation.QualifiedName("", entry.Table)
+		database, table, err = annotation.QualifiedName("", entry.Table)
+		if err != nil {
+			return fmt.Errorf("row policy %q: %w", key, err)
+		}
 	}
 	written, err := composition(entry.As)
 	if err != nil {
@@ -128,7 +131,10 @@ func decodeRowPolicy(declaration annotation.Declaration) ([]annotation.Contribut
 		return nil, err
 	}
 	policy.Composition = written
-	database, table := annotation.QualifiedName("", kv["table"])
+	database, table, err := annotation.QualifiedName("", kv["table"])
+	if err != nil {
+		return nil, &annotation.DeclarationError{Declaration: declaration, Attribute: "table", Err: err}
+	}
 	ref := chpolicysource.Ref(database, table, kv["name"])
 	object, err := chschema.DesiredRowPolicyObject(ref, policy)
 	if err != nil {

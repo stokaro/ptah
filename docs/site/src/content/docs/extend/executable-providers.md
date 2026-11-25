@@ -1767,7 +1767,11 @@ A provider also declares the Go annotation syntax it owns. Each claim in
 `go_source_directives` names a directive, its scope (`DOCUMENT`, `TABLE`, `COLUMN`
 or `INDEX`), the attribute names it accepts and the desired models it can declare.
 Ptah splits the comment into a directive name and key/value attributes, so the
-provider receives parsed attributes and never comment text. A directive name
+provider receives parsed attributes and never comment text. A `schema` or
+`on_schema` value arrives read as it is for Ptah's own directives: the space
+around it is removed and one quoted identifier is unquoted, so
+`schema="\"App\""` arrives as `App`, and a bare value that begins or ends with
+white space is refused before the provider runs. A directive name
 belongs to one provider. An attribute the claim does not list is refused before
 the provider runs.
 

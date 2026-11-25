@@ -642,9 +642,17 @@ func sequenceIdentifier(name, schema string) string {
 
 // sequenceSchemaOrDefault names the schema an unqualified sequence lands in,
 // which is the one the existence guard has to look in.
+//
+// A named schema keeps its bytes, as the CREATE SEQUENCE beside the guard
+// does. Trimmed, the guard of a sequence in [ b] would look in b and find the
+// sequence of the same name there, so the one in [ b] would never be created.
+// A schema of white space alone names none.
 func sequenceSchemaOrDefault(schema string) string {
-	if trimmed := unquoteIdentifier(strings.TrimSpace(schema)); trimmed != "" {
-		return trimmed
+	if strings.TrimSpace(schema) == "" {
+		return defaultSchema
+	}
+	if unquoted := unquoteIdentifier(schema); unquoted != "" {
+		return unquoted
 	}
 	return defaultSchema
 }

@@ -153,6 +153,10 @@ func cockroachDB() descriptor.Dialect {
 		// public.items` is stored as `SELECT public.items.id, ... FROM
 		// f1.public.items;` (stokaro/ptah#4058).
 		Comparison: descriptor.Comparison{
+			// A bare name folds to lower case and a quoted one keeps its case,
+			// as on PostgreSQL.
+			QuotedNamesKeepCase: true,
+
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},

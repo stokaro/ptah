@@ -322,11 +322,10 @@ func TablesAndColumnsWithTableContext(
 	})
 }
 
-// tableMapIdentity preserves SQLite's exact catalog bytes at the table-map
-// boundary. This path decides whether a table is added, removed, or paired for
-// comparison; trimming here can pair a virtual table named " docs " with the
-// distinct ordinary table docs before the exact removal name reaches the
-// planner. Other dialects retain the established comparison behavior.
+// tableMapIdentity keys a table by the bytes of its names. This path decides
+// whether a table is added, removed, or paired for comparison. Trimmed here, a
+// live " t" would pair with a declared or live t, and the plan would alter or
+// drop the wrong table. SQLite also keeps a name of white space alone.
 func tableMapIdentity(schema, name, dialect string, semantics identifier.Semantics) tableIdentity {
 	return tableidentity.Subject(schema, name, dialect, semantics).Key()
 }
@@ -353,13 +352,13 @@ func removedTableName(schema, name, dialect string) string {
 	if comparisonOf(dialect).VerbatimTableNames {
 		return tableref.CanonicalExact(schema, name)
 	}
-	// The schema is the catalog's, so it keeps its bytes: trimmed, the DROP of
-	// a table in `a ` names the table of the same name in `a`.
+	// Both names are the catalog's, so they keep their bytes: trimmed, the DROP
+	// of a table in `a ` names the table of the same name in `a`, and the DROP
+	// of ` t` names the table t.
 	if strings.TrimSpace(schema) == "" {
 		schema = ""
 	}
 	schema = sqlident.CatalogName(dialect, schema)
-	name = strings.TrimSpace(name)
 	if !spelledQuoted(schema) && !spelledQuoted(name) {
 		return catalog.QualifyTableName(schema, name)
 	}

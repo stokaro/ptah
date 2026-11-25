@@ -3,6 +3,7 @@ package compare
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"ptah.run/internal/normalize"
 )
@@ -89,9 +90,15 @@ func normalizeSQLCaseAndIdentifierQuotes(value string, quoting normalize.Quoting
 	return b.String()
 }
 
+// stripSQLQualifiers removes the qualifiers a catalog adds to an expression of
+// an object in schema. The schema keeps its bytes: a bare qualifier a. names
+// the schema a and never " a", which a body can only write quoted, and
+// [copyIdentifierQuote] keeps the quotes of " a". Trimmed, the body of an
+// object in " a" would lose a qualifier naming the other schema, and two
+// different bodies would compare equal. A schema of white space alone names
+// none.
 func stripSQLQualifiers(value, schema string, authored map[string]struct{}, quoting normalize.Quoting) string {
-	schema = strings.ToLower(strings.TrimSpace(schema))
-	if schema != "" {
+	if strings.TrimSpace(schema) != "" {
 		value = stripMatchingSchemaQualifiers(value, schema, quoting)
 	}
 	return stripSinglePartQualifiers(value, authored, quoting)
@@ -108,17 +115,33 @@ func stripSQLQualifiers(value, schema string, authored map[string]struct{}, quot
 // declaration kept it, reporting a change on an object nobody edited. On
 // ClickHouse that reads as a body change and is planned as a drop and a create,
 // which discards the view's accumulated rows.
+//
+// The schema is matched as [copyIdentifierQuote] writes it. A schema some bare
+// spelling reaches is matched bare and lowered, and only then: where quoting
+// says a quoted name keeps its case, a bare a. names a and never "A", so the
+// body of a view in "A" that reads a.src reads another schema's table, and
+// stripped it would compare equal to a declared src. A schema no bare spelling
+// reaches is matched quoted, exactly.
 func stripMatchingSchemaQualifiers(value, schema string, quoting normalize.Quoting) string {
+	bare, bareReaches := bareSpelling(schema, quoting)
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
+		if value[i] == '"' {
+			if name, end := quotedIdentifier(value, i, quoting); name == schema &&
+				end+1 < len(value) && value[end+1] == '.' &&
+				qualifiesRelationAt(value, i, end+1) {
+				i = end + 1
+				continue
+			}
+		}
 		if value[i] == '\'' || value[i] == '"' {
 			i = copyQuotedSQL(&b, value, i, quoting)
 			continue
 		}
-		if strings.HasPrefix(value[i:], schema+".") &&
+		if bareReaches && strings.HasPrefix(value[i:], bare+".") &&
 			startsIdentifierAt(value, i) &&
-			qualifiesRelationAt(value, i, i+len(schema)) {
-			i += len(schema)
+			qualifiesRelationAt(value, i, i+len(bare)) {
+			i += len(bare)
 			continue
 		}
 		b.WriteByte(value[i])
@@ -279,11 +302,18 @@ func startsIdentifierAt(value string, start int) bool {
 		start+1 < len(value) && isSQLIdentifierByte(value[start])
 }
 
+// collapseWhitespaceOutsideQuotedSQL folds each run of white space outside
+// quoted text to one space. The space before a quoted part is kept too: a name
+// [copyIdentifierQuote] keeps quoted stands where a bare one would, and
+// `from" a".src` loses the word boundary the qualifier strip reads.
 func collapseWhitespaceOutsideQuotedSQL(value string, quoting normalize.Quoting) string {
 	var b strings.Builder
 	inWhitespace := false
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\'' || value[i] == '"' {
+			if inWhitespace && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
 			i = copyQuotedSQL(&b, value, i, quoting)
 			inWhitespace = false
 			continue
@@ -335,28 +365,83 @@ func copyQuotedSQL(b *strings.Builder, value string, start int, quoting normaliz
 	return end
 }
 
-// copyIdentifierQuote copies the name quoted at value[start] without its
-// quotes and lowered, and returns the index of its closing quote. A backslash
-// escapes the next byte where quoting says a quoted name reads one.
+// copyIdentifierQuote copies the name quoted at value[start] and returns the
+// index of its closing quote. A backslash escapes the next byte where quoting
+// says a quoted name reads one.
+//
+// A name some bare spelling reaches is written as that spelling would be:
+// without its quotes, and lowered. Any other name keeps its quotes and its
+// bytes, written in double quotes whichever quote opened it: a name holding
+// white space, which no bare spelling holds, and where quoting says a quoted
+// name keeps its case, a double-quoted name holding an upper-case letter.
+// Without the quotes `" a".src` reads as ` a.src`, the white-space collapse
+// makes that `a.src`, and a view reading the table src of " a" compares equal
+// to one reading the src of a.
 func copyIdentifierQuote(b *strings.Builder, value string, start int, quoting normalize.Quoting) int {
+	name, end := quotedIdentifier(value, start, quoting)
+	if !identifierKeepsQuotes(name, value[start], quoting) {
+		for i := range len(name) {
+			b.WriteByte(lowerASCII(name[i]))
+		}
+		return end
+	}
+	b.WriteByte('"')
+	b.WriteString(strings.ReplaceAll(name, `"`, `""`))
+	b.WriteByte('"')
+	return end
+}
+
+// quotedIdentifier returns the name quoted at value[start], its doubled quotes
+// and escapes read, and the index of its closing quote.
+func quotedIdentifier(value string, start int, quoting normalize.Quoting) (string, int) {
 	quote := value[start]
+	var name strings.Builder
 	for i := start + 1; i < len(value); i++ {
 		if quoting.IdentifierBackslashEscapes && value[i] == '\\' && i+1 < len(value) {
 			i++
-			b.WriteByte(lowerASCII(value[i]))
+			name.WriteByte(value[i])
 			continue
 		}
 		if value[i] == quote {
 			if i+1 < len(value) && value[i+1] == quote {
 				i++
-				b.WriteByte(lowerASCII(value[i]))
+				name.WriteByte(value[i])
 				continue
 			}
-			return i
+			return name.String(), i
 		}
-		b.WriteByte(lowerASCII(value[i]))
+		name.WriteByte(value[i])
 	}
-	return len(value) - 1
+	return name.String(), len(value) - 1
+}
+
+// identifierKeepsQuotes reports whether name, quoted with quote, is a name no
+// bare spelling reaches, so the comparison keeps it apart from them.
+func identifierKeepsQuotes(name string, quote byte, quoting normalize.Quoting) bool {
+	if strings.ContainsFunc(name, unicode.IsSpace) {
+		return true
+	}
+	return quote == '"' && quoting.QuotedNamesKeepCase && strings.ContainsFunc(name, isASCIIUpper)
+}
+
+// bareSpelling returns the spelling [copyIdentifierQuote] writes for name
+// quoted, and whether it is a bare one: false for a name that keeps its quotes,
+// which no bare spelling reaches. It reads [identifierKeepsQuotes], so the
+// qualifier a body writes and the qualifier the strip looks for cannot be read
+// by two rules.
+func bareSpelling(name string, quoting normalize.Quoting) (string, bool) {
+	if identifierKeepsQuotes(name, '"', quoting) {
+		return "", false
+	}
+	lowered := []byte(name)
+	for i := range lowered {
+		lowered[i] = lowerASCII(lowered[i])
+	}
+	return string(lowered), true
+}
+
+func isASCIIUpper(r rune) bool {
+	return r >= 'A' && r <= 'Z'
 }
 
 func isSQLIdentifierByte(ch byte) bool {

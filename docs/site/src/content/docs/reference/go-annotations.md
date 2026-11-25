@@ -68,6 +68,12 @@ space-separated `key="value"` attributes.
   For index settings owned by a provider, these pairs declare source properties.
   A selected provider decodes its keys into typed settings and refuses competing
   common and scoped declarations of the same property.
+- An attribute that names a schema (`schema`, `on_schema`, and the `name` of
+  `//ptah:schema:schema`) and the `name` of a table keep the bytes of a name
+  written as one quoted identifier: `schema="\" a\""` names the schema ` a`.
+  A bare name that begins or ends with white space fails parsing with
+  `<attribute> " a" begins or ends with white space, which a bare name loses:
+  write it as one quoted identifier, " a", or remove the space`.
 - The Required column records what the parser rejects. An attribute the
   renderer needs for valid SQL (such as `name` on a table) can still be
   omitted at parse time; the rendered SQL is then invalid. `ptah schema
@@ -236,7 +242,7 @@ Maps a Go struct to a database table.
 | `depends_on` | No | Comma-separated tables this table must be created after. |
 | `custom` | No | Raw custom CREATE TABLE SQL. |
 | `engine` | No | MySQL/MariaDB table engine shortcut; see the note below the table. |
-| `name` | No | Table name. |
+| `name` | No | Table name. A name written as one quoted identifier keeps its bytes, so `name="\" t\""` names ` t`. A bare part that begins or ends with white space, such as `name=" t"` or `name="public. t"`, is refused. |
 | `primary_key` | No | Comma-separated primary key columns. |
 | `primary_key_block_size` | No | MySQL-family primary index block-size hint. Zero uses the engine default. Needs `primary_key`; a field's `primary` key has no place for it. |
 | `primary_key_comment` | No | MySQL-family primary index comment. |

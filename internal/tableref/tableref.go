@@ -168,6 +168,9 @@ type referenceParser struct {
 	quote            byte
 	partQuoted       bool
 	quotedPartClosed bool
+	// spacedBare reports that white space began or ended a part written
+	// bare, which the part read leaves out.
+	spacedBare bool
 }
 
 func (p *referenceParser) consume(value string, position *int) bool {
@@ -233,7 +236,9 @@ func (p *referenceParser) result() ([]string, bool) {
 func (p *referenceParser) appendPart() bool {
 	value := p.part.String()
 	if !p.partQuoted {
-		value = strings.TrimSpace(value)
+		trimmed := strings.TrimSpace(value)
+		p.spacedBare = p.spacedBare || trimmed != "" && trimmed != value
+		value = trimmed
 	}
 	if value == "" {
 		return false

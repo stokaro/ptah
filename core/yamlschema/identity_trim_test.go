@@ -9,19 +9,19 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
+	"ptah.run/internal/tableref"
 )
 
 // schemaTrimDocument declares a table in a schema, the objects it holds, and a
-// grant on the schema. {S} is where a space goes around a value the reader
-// trims, a schema or a table's name, and {N} is where one goes around a name
-// that keeps its bytes.
+// grant on the schema. {S} is where a schema and a table's name are written,
+// and {N} is where a space goes around a name that keeps its bytes.
 const schemaTrimDocument = `
 enums:
   "{N}status{N}": [on, off]
 tables:
   orders:
-    name: "{S}orders{S}"
-    schema: "{S}app{S}"
+    name: '{S}orders{S}'
+    schema: '{S}app{S}'
     columns:
       id:
         name: "{N}id{N}"
@@ -53,7 +53,7 @@ grants:
   reader_app:
     role: reader
     privileges: [USAGE]
-    on_schema: "{S}app{S}"
+    on_schema: '{S}app{S}'
 `
 
 // schemaTrimModel parses the document with schema around every schema it marks
@@ -66,26 +66,87 @@ func schemaTrimModel(c *qt.C, schema, name string) *schemamodel.Database {
 	return db
 }
 
-// A document is text an author typed, so the space around a schema is removed
-// where the document is read, as it is around a table's name: it parses to the
-// model the same document without the space does. Every layer below keeps a schema name's bytes, so a
-// table entry with schema "app " beside a live app.orders planned a DROP of
-// app.orders.
-func TestParse_TrimsTheSpaceAroundASchemaField(t *testing.T) {
-	for _, around := range []string{" ", "\t", "  "} {
-		t.Run(strings.ReplaceAll(around, "\t", `\t`), func(t *testing.T) {
+// A bare schema or table name that begins or ends with white space is refused.
+// A document is text an author typed, so the reader removes that space, and
+// every layer below keeps a name's bytes: `name: " t"` beside a live " t"
+// planned CREATE TABLE t and DROP TABLE " t", and the apply lost the rows of
+// " t". A table entry with schema "app " beside a live app.orders planned a
+// DROP of app.orders.
+func TestParse_FailurePathRefusesASpacedBareSchemaOrTableName(t *testing.T) {
+	tests := []struct {
+		name, document, wantErr string
+	}{
+		{
+			name:     "a table name with a space before it",
+			document: "tables:\n  spaced:\n    name: ' t'\n",
+			wantErr:  `table "spaced": table name " t" begins or ends with white space, which a bare name loses: write it as one quoted identifier, " t", or remove the space`,
+		},
+		{
+			name:     "a table name with a tab after it",
+			document: "tables:\n  spaced:\n    name: \"t\\t\"\n",
+			wantErr:  `table "spaced": table name "t\\t" begins or ends with white space, .*`,
+		},
+		{
+			name:     "a table key with a space before it",
+			document: "tables:\n  ' t':\n    columns: {}\n",
+			wantErr:  `table " t": table name " t" begins or ends with white space, .*`,
+		},
+		{
+			name:     "a qualified name with a space around it",
+			document: "tables:\n  dotted:\n    name: ' metrics.hourly '\n",
+			wantErr:  `table "dotted": table name " metrics.hourly " begins or ends with white space, which a bare name loses: write it as one quoted identifier, " metrics.hourly ", or remove the space`,
+		},
+		{
+			name:     "a bracket is no quote",
+			document: "tables:\n  bracketed:\n    name: ' [t]'\n",
+			wantErr:  `table "bracketed": table name " \[t\]" begins or ends with white space, .*`,
+		},
+		{
+			name:     "a schema with a space after it",
+			document: "tables:\n  orders:\n    schema: 'app '\n",
+			wantErr:  `table "orders": schema name "app " begins or ends with white space, which a bare name loses: write it as one quoted identifier, "app ", or remove the space`,
+		},
+		{
+			name:     "a grant's schema",
+			document: "grants:\n  reader_app:\n    role: reader\n    privileges: [USAGE]\n    on_schema: ' app'\n",
+			wantErr:  `grant "reader_app" on_schema: schema name " app" begins or ends with white space, .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			want := schemaTrimModel(c, "", "")
 
-			got := schemaTrimModel(c, around, "")
+			db, err := yamlschema.Parse(c.Context(), yamlext.None(), []byte(test.document))
 
-			c.Assert(got.Tables, qt.DeepEquals, want.Tables)
-			c.Assert(got.Fields, qt.DeepEquals, want.Fields)
-			c.Assert(got.Indexes, qt.DeepEquals, want.Indexes)
-			c.Assert(got.Constraints, qt.DeepEquals, want.Constraints)
-			c.Assert(got.Grants, qt.DeepEquals, want.Grants)
+			c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.wantErr)
+			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+// A schema written as one quoted identifier in double quotes is the name
+// inside the quotes, bytes and all, so a document names a live "app " beside a
+// live app. The space around the quotes is removed.
+func TestParse_ReadsAQuotedSchemaWithItsBytes(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemaTrimModel(c, `"`, "")
+
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Name, qt.Equals, "orders")
+	c.Assert(db.Tables[0].Schema, qt.Equals, "app")
+	c.Assert(db.Grants, qt.HasLen, 1)
+	c.Assert(db.Grants[0].OnSchema, qt.Equals, "app")
+
+	document := strings.NewReplacer("'{S}app{S}'", `' "app " '`, "'{S}orders{S}'", "orders", "{N}", "").Replace(schemaTrimDocument)
+	quoted, err := yamlschema.Parse(c.Context(), yamlext.None(), []byte(document))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(quoted.Tables, qt.HasLen, 1)
+	c.Assert(quoted.Tables[0].Schema, qt.Equals, "app ")
+	c.Assert(quoted.Grants, qt.HasLen, 1)
+	c.Assert(quoted.Grants[0].OnSchema, qt.Equals, "app ")
 }
 
 // An object's name keeps the bytes the document writes. The catalog holds
@@ -96,11 +157,12 @@ func TestParse_TrimsTheSpaceAroundASchemaField(t *testing.T) {
 func TestParse_KeepsTheSpaceAroundAnObjectName(t *testing.T) {
 	c := qt.New(t)
 
-	db := schemaTrimModel(c, " ", " ")
+	db := schemaTrimModel(c, "", " ")
 
 	c.Assert(db.Fields, qt.HasLen, 2)
 	c.Assert(db.Fields[0].Name, qt.Equals, " id ")
 	c.Assert(db.Fields[1].Name, qt.Equals, " email ")
+	c.Assert(db.Fields[1].Default, qt.Equals, "'a '")
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Name, qt.Equals, " orders_email ")
 	c.Assert(db.Constraints, qt.HasLen, 1)
@@ -111,19 +173,35 @@ func TestParse_KeepsTheSpaceAroundAnObjectName(t *testing.T) {
 	c.Assert(db.Functions[0].Name, qt.Equals, " touch ")
 }
 
-// The controls: the spaced document holds the schemas trimmed, so the first
-// test cannot pass on a parse that drops them, and a value that names no
-// schema keeps its space.
-func TestParse_KeepsTheNamesOfTheTrimDocument(t *testing.T) {
-	c := qt.New(t)
+// A table's name written as one quoted identifier in double quotes is the
+// name inside the quotes, bytes and all, as the Go tag reader reads
+// name="\" t\"". It is how a document names a live " t" beside a live t, and
+// the name in the key reads as the name in a name field. Brackets and
+// backticks are no quotes here: they are part of the name.
+func TestParse_ReadsAQuotedTableNameWithItsBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+	}{
+		{name: "quoted", document: "tables:\n  spaced:\n    name: '\" t\"'\n", want: " t"},
+		{name: "quoted with space around the quotes", document: "tables:\n  spaced:\n    name: ' \"t \" '\n", want: "t "},
+		{name: "quoted in the key", document: "tables:\n  '\" t\"':\n    columns: {}\n", want: " t"},
+		{name: "quoted with a dot inside", document: "tables:\n  dotted:\n    name: '\"a.b\"'\n", want: "a.b"},
+		{name: "bare with a dot", document: "tables:\n  dotted:\n    name: metrics.hourly\n", want: "metrics.hourly"},
+		{name: "in brackets", document: "tables:\n  bracketed:\n    name: '[orders]'\n", want: "[orders]"},
+		{name: "in backticks", document: "tables:\n  ticked:\n    name: '`orders`'\n", want: "`orders`"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	db := schemaTrimModel(c, " ", "")
+			db, err := yamlschema.Parse(c.Context(), yamlext.None(), []byte(test.document))
 
-	c.Assert(db.Tables, qt.HasLen, 1)
-	c.Assert(db.Tables[0].Name, qt.Equals, "orders")
-	c.Assert(db.Tables[0].Schema, qt.Equals, "app")
-	c.Assert(db.Grants, qt.HasLen, 1)
-	c.Assert(db.Grants[0].OnSchema, qt.Equals, "app")
-	c.Assert(db.Fields, qt.HasLen, 2)
-	c.Assert(db.Fields[1].Default, qt.Equals, "'a '")
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].Name, qt.Equals, test.want)
+			c.Assert(db.Tables[0].Schema, qt.Equals, "")
+		})
+	}
 }

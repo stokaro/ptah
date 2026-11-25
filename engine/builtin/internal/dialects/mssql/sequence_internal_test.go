@@ -62,6 +62,23 @@ func TestRenderer_CreateSequenceGuardsWithAnExistenceTest(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "CREATE SEQUENCE IF NOT EXISTS")
 }
 
+// TestRenderer_CreateSequenceGuardLooksInTheSchemaItCreatesIn pins that the
+// guard and the statement name one schema. [ b] and b are two schemas on SQL
+// Server, and a guard that looked in b found the sequence of the same name
+// there and skipped the one in [ b].
+func TestRenderer_CreateSequenceGuardLooksInTheSchemaItCreatesIn(t *testing.T) {
+	c := qt.New(t)
+	node := ast.NewCreateSequence("s").SetSchema(" b").SetIfNotExists()
+
+	sql, err := New().Render(node)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, ""+
+		"IF NOT EXISTS (SELECT 1 FROM sys.sequences sq JOIN sys.schemas sc "+
+		"ON sc.schema_id = sq.schema_id WHERE sc.name = ' b' AND sq.name = 's')\n"+
+		"    EXEC('CREATE SEQUENCE [ b].[s]');\n")
+}
+
 // TestRenderer_SequenceCacheOfZeroBecomesNoCache pins the second clause the
 // engine refuses: `CACHE 0` is `The cache size for sequence object must be
 // greater than 0`, and NO CACHE is what a cache of zero means.

@@ -25,6 +25,14 @@ func folded(fold string) descriptor.Dialect {
 	return described
 }
 
+// caseKept is a descriptor whose SQL text keeps the case of a quoted name and
+// whose catalog records an unquoted name in the case fold names.
+func caseKept(fold string) descriptor.Dialect {
+	described := folded(fold)
+	described.Comparison.QuotedNamesKeepCase = true
+	return described
+}
+
 // bare is a descriptor whose unquoted names may hold chars besides letters,
 // digits and underscores.
 func bare(chars string) descriptor.Dialect {
@@ -75,6 +83,8 @@ func TestNewRegistry_IdentifierFields_HappyPath(t *testing.T) {
 		{name: "bare names everywhere", dialect: spelled(descriptor.Quoting{
 			Style: descriptor.QuoteBracket, Bare: descriptor.BareEverywhere,
 		}, descriptor.ColumnKeyAfterColumn)},
+		{name: "quoted names keep case with no fold", dialect: caseKept("")},
+		{name: "quoted names keep case with the lower fold", dialect: caseKept("lower")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -113,6 +123,8 @@ func TestNewRegistry_IdentifierFields_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": bare character '\.' is not ASCII punctuation outside quotes and dots`},
 		{name: "an undeclared unquoted fold", dialect: folded("title"),
 			wantErr: `invalid dialect descriptor: dialect "alpha": unquoted fold "title" is not one of \["upper" "lower"\]`},
+		{name: "quoted names keep case with the upper fold", dialect: caseKept("upper"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": quoted names keep case folds a bare name to lower case, and unquoted fold "upper" folds it to upper case`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

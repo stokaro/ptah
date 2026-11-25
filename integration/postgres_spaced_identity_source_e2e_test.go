@@ -13,11 +13,11 @@ import (
 	"ptah.run/internal/clirun"
 )
 
-// A Go tag and a YAML document are text an author typed, so Ptah removes the
-// space around a schema where it reads them, and around a table's or a
-// sequence's name, and keeps a schema's bytes everywhere below. The name of a
-// column, an index or a constraint keeps its bytes, because the catalog holds
-// " note" and "note" as two columns.
+// A Go tag and a YAML document are text an author typed. A bare schema or
+// table name there that begins or ends with a space is refused, because the
+// bare name loses the space and would name another object; a quoted
+// identifier keeps it. The name of a column, an index or a constraint keeps
+// its bytes, because the catalog holds " note" and "note" as two columns.
 
 // spacedIdentityGoSource declares app.orders and the sequence app.counter in
 // Go. Each %s is where the space goes.
@@ -63,13 +63,14 @@ const spacedIdentityObjects = `
 		WHERE n.nspname LIKE '%app%'
 	) entries`
 
-// TestSpacedSchemaInASourceKeepsTheLiveObjectsE2E applies each source once
-// without the space, which creates the live objects, and then with a space
-// after the schema, the table's name and the sequence's name. The second run
-// has to name the same objects: read with the space, the schema planned a
-// CREATE in "app " and a DROP of the live app object, and the apply destroyed
-// the row.
-func TestSpacedSchemaInASourceKeepsTheLiveObjectsE2E(t *testing.T) {
+// TestSpacedSchemaInASourceE2E_FailurePath applies each source once without
+// the space, which creates the live objects, and then with a space after the
+// schema, the table's name and the sequence's name. The second run is refused
+// before it plans, and the live objects and the row stay as they were: read
+// with the space, the schema planned a CREATE in "app " and a DROP of the live
+// app object, and the apply destroyed the row; read without it, the source
+// would name app where the author wrote another schema.
+func TestSpacedSchemaInASourceE2E_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
 		flag   string
@@ -77,14 +78,19 @@ func TestSpacedSchemaInASourceKeepsTheLiveObjectsE2E(t *testing.T) {
 		source string
 		// relations are the relations the source creates, without their OIDs.
 		relations []string
+		wantErr   string
 	}{
 		{
 			name: "Go annotations", flag: "--root-dir", file: "models.go", source: spacedIdentityGoSource,
 			relations: []string{"[app].counter(S)", "[app].orders(r)", "[app].orders_pkey(i)"},
+			wantErr: `schema attribute "app " begins or ends with white space, which a bare name loses: ` +
+				`write it as one quoted identifier, "app ", or remove the space`,
 		},
 		{
 			name: "YAML schema document", flag: "--schema-file", file: "schema.yaml", source: spacedIdentityYAMLSource,
 			relations: []string{"[app].orders(r)", "[app].orders_pkey(i)"},
+			wantErr: `table name "orders " begins or ends with white space, which a bare name loses: ` +
+				`write it as one quoted identifier, "orders ", or remove the space`,
 		},
 	}
 	for _, test := range tests {
@@ -103,14 +109,10 @@ func TestSpacedSchemaInASourceKeepsTheLiveObjectsE2E(t *testing.T) {
 			before := spacedIdentityState(c, database)
 			c.Assert(spacedIdentityWithoutOIDs(before), qt.Equals, "[app], "+strings.Join(test.relations, ", "))
 
-			planned := apply(spaced, "--dry-run")
-
-			c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
-			c.Assert(planned.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
-
 			applied := apply(spaced, "--auto-approve")
 
-			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s", applied.Stdout))
+			c.Assert(applied.Stderr, qt.Contains, test.wantErr)
 			c.Assert(spacedIdentityState(c, database), qt.Equals, before)
 			var rows int
 			c.Assert(openReadScopeDatabase(c, database).QueryRowContext(c.Context(),

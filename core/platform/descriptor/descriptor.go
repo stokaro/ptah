@@ -483,7 +483,9 @@ type Identifiers struct {
 	// that is a plain identifier and not in that case was created quoted, so
 	// no unquoted name reaches it: it compares exactly, and a statement names
 	// it quoted. Any other value is refused when the registry is built
-	// ([ErrInvalidDescriptor]); [UnquotedFolds] lists the accepted ones.
+	// ([ErrInvalidDescriptor]); [UnquotedFolds] lists the accepted ones. SQL
+	// text compared offline reads the lower fold from
+	// [Comparison.QuotedNamesKeepCase], which "upper" contradicts.
 	UnquotedFold string `json:"unquoted_fold,omitempty"`
 	// BareChars lists the characters besides ASCII letters, digits and the
 	// underscore that a name written without quotes may hold after its first

@@ -41,6 +41,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	postgresFloats := descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
+			QuotedNamesKeepCase:            true,
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                      postgresFloats,
@@ -59,6 +60,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			ProbesSQLStandardBodies:        true,
 		},
 		"cockroachdb": {
+			QuotedNamesKeepCase:            true,
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                      postgresFloats,
@@ -80,6 +82,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			DefaultGeneratedKind:           "STORED",
 		},
 		"yugabytedb": {
+			QuotedNamesKeepCase:  true,
 			DeclaredSchemas:      true,
 			TimePrecision:        descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:            postgresFloats,

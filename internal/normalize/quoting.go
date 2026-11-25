@@ -25,6 +25,9 @@ type Quoting struct {
 	// escapes the next byte whatever BackslashEscapes says, as PostgreSQL
 	// reads one.
 	EscapeStrings bool
+	// QuotedNamesKeepCase reports that a double-quoted name keeps its case
+	// while a bare one folds to lower case, as PostgreSQL reads them.
+	QuotedNamesKeepCase bool
 }
 
 // OpensString reports that value[at] is a quote that opens a string, not a

@@ -2,6 +2,7 @@ package annotation_test
 
 import (
 	"encoding/json"
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -161,21 +162,64 @@ func TestReader_Decode_FailurePath(t *testing.T) {
 	}
 }
 
-func TestQualifiedName(t *testing.T) {
+func TestQualifiedName_HappyPath(t *testing.T) {
 	tests := []struct {
 		name, schema, object, wantSchema, wantName string
 	}{
 		{name: "a qualified name names its schema", object: "metrics.hourly", wantSchema: "metrics", wantName: "hourly"},
 		{name: "a schema attribute names the schema", schema: "metrics", object: "hourly", wantSchema: "metrics", wantName: "hourly"},
 		{name: "an unqualified name", object: "hourly", wantName: "hourly"},
-		{name: "surrounding space is trimmed", schema: " metrics ", object: " hourly ", wantSchema: "metrics", wantName: "hourly"},
+		{name: "a schema is taken as given", schema: " metrics", object: "hourly", wantSchema: " metrics", wantName: "hourly"},
+		{name: "a schema of white space is none", schema: " ", object: "a.hourly", wantSchema: "a", wantName: "hourly"},
+		{name: "a quoted name keeps its bytes", object: `" hourly"`, wantName: " hourly"},
+		{name: "space around a quoted name is removed", object: ` "hourly " `, wantName: "hourly "},
+		{name: "a quoted schema in the name", object: `" metrics".hourly`, wantSchema: " metrics", wantName: "hourly"},
+		{name: "a space beside the dot of a quoted part", object: `public. " t"`, wantSchema: "public", wantName: " t"},
+		{name: "a dotted name beside a schema attribute is the name", schema: "app", object: "public. t", wantSchema: "app", wantName: "public. t"},
+		{name: "backticks", object: "` hourly`", wantName: " hourly"},
+		{name: "brackets", object: "[ hourly]", wantName: " hourly"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			schema, name := annotation.QualifiedName(test.schema, test.object)
+
+			schema, name, err := annotation.QualifiedName(test.schema, test.object)
+
+			c.Assert(err, qt.IsNil)
 			c.Assert(schema, qt.Equals, test.wantSchema)
 			c.Assert(name, qt.Equals, test.wantName)
+		})
+	}
+}
+
+// A bare name that begins or ends with white space is refused: read without
+// it, name=" t" names t, and a catalog holds " t" and t as two tables.
+func TestQualifiedName_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, object, wantErr string
+	}{
+		{name: "a leading space", object: " hourly",
+			wantErr: `name " hourly" begins or ends with white space, which a bare name loses: write it as one quoted identifier, " hourly", or remove the space`},
+		{name: "a trailing tab", object: "hourly\t",
+			wantErr: "name \"hourly\\t\" begins or ends with white space, which a bare name loses: write it as one quoted identifier, \"hourly\t\", or remove the space"},
+		{name: "a space beside the bare part of a qualified name", object: `" metrics".hourly `,
+			wantErr: `name "\" metrics\".hourly " begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+		{name: "a space beside a bare schema", object: ` metrics."hourly"`,
+			wantErr: `name " metrics.\"hourly\"" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+		{name: "a space after the dot", object: `public. t`,
+			wantErr: `name "public. t" has a bare part that begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+		{name: "a space before the dot", object: `public .t`,
+			wantErr: `name "public .t" has a bare part that begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			schema, name, err := annotation.QualifiedName("", test.object)
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			c.Assert(schema, qt.Equals, "")
+			c.Assert(name, qt.Equals, "")
 		})
 	}
 }
