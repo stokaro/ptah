@@ -8,22 +8,23 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/mysqldefiner"
+	"ptah.run/internal/mysqlstored"
 )
 
 // The servers the scan and the decision are asked about, by the version each
 // reports.
 var (
-	mysql2610 = mysqldefiner.Server{Dialect: platform.MySQL, VersionID: 261000}
-	mysql80   = mysqldefiner.Server{Dialect: platform.MySQL, VersionID: 80046}
-	mysql57   = mysqldefiner.Server{Dialect: platform.MySQL, VersionID: 50744}
-	mariadb   = mysqldefiner.Server{Dialect: platform.MariaDB, VersionID: 120303}
-	unknown   = mysqldefiner.Server{Dialect: platform.MySQL}
+	mysql2610 = mysqlstored.Server{Dialect: platform.MySQL, VersionID: 261000}
+	mysql80   = mysqlstored.Server{Dialect: platform.MySQL, VersionID: 80046}
+	mysql57   = mysqlstored.Server{Dialect: platform.MySQL, VersionID: 50744}
+	mariadb   = mysqlstored.Server{Dialect: platform.MariaDB, VersionID: 120303}
+	unknown   = mysqlstored.Server{Dialect: platform.MySQL}
 )
 
 func TestScan_HappyPath(t *testing.T) {
 	tests := []struct {
 		name      string
-		server    mysqldefiner.Server
+		server    mysqlstored.Server
 		statement string
 		want      mysqldefiner.Named
 	}{
@@ -162,6 +163,36 @@ func TestScan_HappyPath(t *testing.T) {
 			statement: "/*!50001 CREATE ALGORITHM=UNDEFINED */ /*!50013 DEFINER=`root`@`localhost` */ /*!50001 VIEW `v` AS select 1 */",
 			want:      mysqldefiner.Named{Object: "view v", Definer: "root@localhost"},
 		},
+		{
+			name:      "an unquoted host of several dotted parts",
+			server:    mysql2610,
+			statement: "CREATE DEFINER=app@localhost.localdomain TRIGGER t BEFORE INSERT ON x FOR EACH ROW SET @a = 1",
+			want:      mysqldefiner.Named{Object: "trigger t", Definer: "app@localhost.localdomain"},
+		},
+		{
+			name:      "an unquoted address",
+			server:    mysql2610,
+			statement: "CREATE DEFINER=app@10.0.0.1 PROCEDURE p() SELECT 1",
+			want:      mysqldefiner.Named{Object: "procedure p", Definer: "app@10.0.0.1"},
+		},
+		{
+			name:      "an unquoted host ended by a comment",
+			server:    mysql2610,
+			statement: "CREATE DEFINER=app@localhost/* host */PROCEDURE p() SELECT 1",
+			want:      mysqldefiner.Named{Object: "procedure p", Definer: "app@localhost"},
+		},
+		{
+			name:      "an ALTER EVENT with a definer",
+			server:    mysql2610,
+			statement: "ALTER DEFINER=app@localhost.localdomain EVENT ev DO SELECT 1",
+			want:      mysqldefiner.Named{Object: "event ev", Definer: "app@localhost.localdomain"},
+		},
+		{
+			name:      "CURRENT_ROLE() on MariaDB, the current role",
+			server:    mariadb,
+			statement: "CREATE DEFINER=CURRENT_ROLE() VIEW v AS SELECT 1",
+			want:      mysqldefiner.Named{Object: "view v", Definer: "CURRENT_ROLE@%", Hostless: true},
+		},
 	}
 
 	for _, test := range tests {
@@ -181,13 +212,12 @@ func TestScan_HappyPath(t *testing.T) {
 func TestScan_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
-		server    mysqldefiner.Server
+		server    mysqlstored.Server
 		statement string
 	}{
 		{name: "no clause", server: mysql2610, statement: "CREATE OR REPLACE VIEW v AS SELECT 1"},
 		{name: "CURRENT_USER", server: mysql2610, statement: "CREATE DEFINER=CURRENT_USER VIEW v AS SELECT 1"},
 		{name: "CURRENT_USER()", server: mysql2610, statement: "CREATE DEFINER=CURRENT_USER() PROCEDURE p() SELECT 1"},
-		{name: "CURRENT_ROLE() on MariaDB", server: mariadb, statement: "CREATE DEFINER=CURRENT_ROLE() VIEW v AS SELECT 1"},
 		{name: "a backslash in a quoted user", server: mysql2610, statement: "CREATE DEFINER='o\\'b'@'%' VIEW v AS SELECT 1"},
 		{name: "a backslash in a quoted host", server: mysql2610, statement: "CREATE DEFINER=`app`@'h\\%' VIEW v AS SELECT 1"},
 		{name: "a comment gated on a later version", server: mysql80,
@@ -206,6 +236,9 @@ func TestScan_FailurePath(t *testing.T) {
 		{name: "a select", server: mysql2610, statement: "SELECT 'CREATE DEFINER=`app`@`%` VIEW v AS SELECT 1'"},
 		{name: "a clause the statement does not finish", server: mysql2610, statement: "CREATE DEFINER="},
 		{name: "an empty user", server: mysql2610, statement: "CREATE DEFINER=''@'%' VIEW v AS SELECT 1"},
+		{name: "an empty host after an @ and a space", server: mysql2610, statement: "CREATE DEFINER=app@ VIEW v AS SELECT 1"},
+		{name: "a seven-digit gate", server: mysql2610, statement: "CREATE /*!1000000 DEFINER=`app`@`%` */ VIEW v AS SELECT 1"},
+		{name: "a comment that does not close", server: mysql2610, statement: "CREATE /*!50013 DEFINER=`app`@`%` VIEW v AS SELECT 1"},
 	}
 
 	for _, test := range tests {
@@ -288,7 +321,7 @@ func TestDecide(t *testing.T) {
 	mysql := mysql2610
 	tests := []struct {
 		name       string
-		server     mysqldefiner.Server
+		server     mysqlstored.Server
 		privileges string
 		existence  mysqldefiner.Existence
 		want       mysqldefiner.Verdict
@@ -342,36 +375,6 @@ func TestDecide(t *testing.T) {
 			got := mysqldefiner.Decide(test.server, privileges, test.existence)
 
 			c.Assert(got, qt.Equals, test.want)
-		})
-	}
-}
-
-func TestVersionID(t *testing.T) {
-	tests := []struct {
-		version string
-		want    int
-	}{
-		{version: "8.0.46", want: 80046},
-		{version: "8.1.0", want: 80100},
-		{version: "8.2.0", want: 80200},
-		{version: "8.4.11", want: 80411},
-		{version: "26.10.0", want: 261000},
-		{version: "5.7.44", want: 50744},
-		{version: "8.0.46-0ubuntu1", want: 80046},
-		{version: "12.3.3-MariaDB-ubu2404", want: 120303},
-		{version: "11.4.2-MariaDB-log", want: 110402},
-		{version: "8.0", want: 80000},
-		{version: "8.x.1", want: 0},
-		{version: "8-beta.1", want: 0},
-		{version: "garbage", want: 0},
-		{version: "", want: 0},
-	}
-
-	for _, test := range tests {
-		t.Run(test.version, func(t *testing.T) {
-			c := qt.New(t)
-
-			c.Assert(mysqldefiner.VersionID(test.version), qt.Equals, test.want)
 		})
 	}
 }

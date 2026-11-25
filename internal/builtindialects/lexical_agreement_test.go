@@ -38,7 +38,10 @@ import (
 // which no switch read and which PostgreSQL 18.6, CockroachDB v26.3.5,
 // YugabyteDB 2026.1.2 and SQL Server 2025 read as one comment. ClickHouse
 // states its heredocs, which no switch read: 26.10 reads `$1abc$` as one,
-// and `SELECT 1 AS $ab$` as a column alias.
+// and `SELECT 1 AS $ab$` as a column alias. MySQL and MariaDB state that a
+// line comment ends at a line feed alone and that a dollar sign, a leading
+// digit and every character outside ASCII are name characters, which MySQL
+// 8.4.13 and MariaDB 11.8.9 read and no switch read.
 func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	postgresFamily := descriptor.Lexical{EscapeStrings: true, NestedComments: true}
 	want := map[string]descriptor.Lexical{
@@ -48,10 +51,12 @@ func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		platform.MySQL: {
 			LineComments: []string{"#"}, BackslashEscapes: true,
 			DashCommentNeedsSpace: true, ExecutableComments: descriptor.ExecutableCommentsBang,
+			LineCommentsEndAtLineFeed: true, DollarNames: true, DigitLeadingNames: true, NonASCIINames: true,
 		},
 		platform.MariaDB: {
 			LineComments: []string{"#"}, BackslashEscapes: true,
 			DashCommentNeedsSpace: true, ExecutableComments: descriptor.ExecutableCommentsMBang,
+			LineCommentsEndAtLineFeed: true, DollarNames: true, DigitLeadingNames: true, NonASCIINames: true,
 		},
 		platform.ClickHouse: {
 			LineComments: []string{"#", "//"}, BackslashEscapes: true, IdentifierBackslashEscapes: true,

@@ -22,7 +22,9 @@ import (
 // the batch before it sends anything; see [refuseMissingOwners]. The batch is
 // Ptah's own plan, so it runs on a session that refuses a statement that would
 // change a value to fit its column; see
-// [dbschema.DatabaseConnection.WithStoredValuesKept].
+// [dbschema.DatabaseConnection.WithStoredValuesKept]. That session refuses a
+// statement it cannot read, and the whole batch is read first, so such a
+// statement refuses the batch before any of it is sent.
 func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode, units []renderer.Fragment) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -42,6 +44,9 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 		return err
 	}
 	return conn.WithStoredValuesKept(ctx, func(session *dbschema.DatabaseConnection) error {
+		if err := session.PreflightStoredValues(statements); err != nil {
+			return err
+		}
 		return executeUnitBatch(ctx, session, mode, prepared, statements)
 	})
 }

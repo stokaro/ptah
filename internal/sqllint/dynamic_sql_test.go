@@ -83,11 +83,11 @@ func TestDynamicSQL_TheBoundaryIsReportedWhereItIs(t *testing.T) {
 			why:     "the control for the row above: the node type is not what makes a boundary",
 		},
 		{
-			name:    "a dialect with no execute Kind",
+			name:    "MySQL reads no dollar quote",
 			sql:     executes,
 			dialect: platform.MySQL,
-			want:    0,
-			why:     "MySQL routine statements carry no execute classification, so dynamic SQL is indistinguishable from raw",
+			want:    1,
+			why:     "MySQL has no dollar quotes, so the text after AS $$ is the body's statements, and its EXECUTE runs a prepared statement",
 		},
 	}
 

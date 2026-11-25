@@ -248,13 +248,8 @@ func mysql() descriptor.Dialect {
 		// sql_mode a backslash escapes in '...' and "..." but not in a
 		// backtick-quoted name: `a\` names a table whose name ends in one.
 		// The catalog writes a view's strings with backslash escapes, as in
-		// 'it\'s'.
-		Lexical: descriptor.Lexical{
-			LineComments:          []string{"#"},
-			BackslashEscapes:      true,
-			DashCommentNeedsSpace: true,
-			ExecutableComments:    descriptor.ExecutableCommentsBang,
-		},
+		// 'it\'s'. The rest of the family's reading is in mysqlFamilyLexical.
+		Lexical: mysqlFamilyLexical(descriptor.ExecutableCommentsBang),
 
 		// Database URLs and the Atlas contract: what internal/atlasurl and the
 		// Atlas HCL reader read.
@@ -482,6 +477,25 @@ operator_version = VALUES(operator_version)`,
 		// community binary keeps its revision table in a database of its own,
 		// measured on MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#3789).
 		AtlasSchema: "database",
+	}
+}
+
+// mysqlFamilyLexical is how MySQL and MariaDB read a statement's text, with
+// comments, the executable comments each runs. Measured on MySQL 8.4.13 and
+// MariaDB 11.8.9, a line comment ends at a line feed alone, so
+// "CREATE #\rX\nTRIGGER" defines a trigger; root@$, $$ and 1other are names;
+// and with the driver's utf8mb4 client character set CREATE<U+00A0>TRIGGER is
+// one name and --<U+00A0> opens no comment.
+func mysqlFamilyLexical(comments descriptor.ExecutableComments) descriptor.Lexical {
+	return descriptor.Lexical{
+		LineComments:              []string{"#"},
+		BackslashEscapes:          true,
+		DashCommentNeedsSpace:     true,
+		LineCommentsEndAtLineFeed: true,
+		DollarNames:               true,
+		DigitLeadingNames:         true,
+		NonASCIINames:             true,
+		ExecutableComments:        comments,
 	}
 }
 

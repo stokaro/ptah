@@ -143,8 +143,8 @@ func TestSplitStatementsForDialect_FamilyRules_HappyPath(t *testing.T) {
 		{name: "sqlserver bracketed name", dialect: "sqlserver", script: bracket, want: []string{"SELECT [a'b] FROM t", "SELECT 1", "SELECT 2"}},
 		{name: "sqlite bracketed name", dialect: "sqlite", script: bracket, want: []string{"SELECT [a'b] FROM t", "SELECT 1", "SELECT 2"}},
 		{name: "postgres square brackets are not a name", dialect: "postgres", script: arrayIndex, want: []string{"SELECT x[']']", "SELECT 1", "SELECT 2"}},
-		{name: "mysql reads no dollar quote", dialect: "mysql", script: mysqlDollar, want: []string{"SELECT $x$ 1;\nSELECT 2; SELECT 3;\nSELECT $x$ 4"}},
-		{name: "mariadb reads no dollar quote", dialect: "mariadb", script: mysqlDollar, want: []string{"SELECT $x$ 1;\nSELECT 2; SELECT 3;\nSELECT $x$ 4"}},
+		{name: "mysql reads no dollar quote", dialect: "mysql", script: mysqlDollar, want: []string{"SELECT $x$ 1", "SELECT 2", "SELECT 3", "SELECT $x$ 4"}},
+		{name: "mariadb reads no dollar quote", dialect: "mariadb", script: mysqlDollar, want: []string{"SELECT $x$ 1", "SELECT 2", "SELECT 3", "SELECT $x$ 4"}},
 		{name: "clickhouse slash comment", dialect: "clickhouse", script: clickhouseSlash, want: []string{"SELECT 1", "SELECT 2", "SELECT 3"}},
 		{name: "clickhouse heredoc", dialect: "clickhouse", script: heredoc, want: []string{"SELECT $$it's$$", "SELECT 1", "SELECT 2", "SELECT 3"}},
 	}

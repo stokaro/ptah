@@ -1,6 +1,7 @@
 package devclean
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -138,12 +139,45 @@ type replayGuardOwner interface {
 // reaches. On a connection whose owner judges its own replays, the owner's
 // guard reads every statement; an owner that offers no guard leaves every
 // statement refused, as a dialect no engine guards is.
-func NewDevReplayGuardFor(conn *dbschema.DatabaseConnection) *ReplayGuard {
+//
+// A dialect whose guard reads a statement as only some sessions read it, as
+// [replay.SessionGuard] says, has conn's session read here, once, and a
+// session the guard refuses refuses the run: the error names every way the
+// operator can lift the refusal. conn is the session the run executes its
+// statements on, or a pool whose every session has the settings that one
+// starts with.
+func NewDevReplayGuardFor(ctx context.Context, conn *dbschema.DatabaseConnection) (*ReplayGuard, error) {
 	guard := NewDevReplayGuard(conn.Info())
 	if owner, ok := conn.SchemaWriter().(replayGuardOwner); ok {
 		guard.guard = owner.ReplayGuard()
 	}
-	return guard
+	if err := guard.validateSession(ctx, conn); err != nil {
+		return nil, err
+	}
+	return guard, nil
+}
+
+// validateSession asks the dialect's guard about session, when the guard
+// reads statements by the session's rules, and ends a refusal with the trust
+// remedy when trusting the SQL would lift it. Ownership lifts no such
+// refusal: what the guard misreads, it misreads in every realm.
+func (g *ReplayGuard) validateSession(ctx context.Context, session replay.Session) error {
+	reader, ok := g.guard.(replay.SessionGuard)
+	if !ok {
+		return nil
+	}
+	scope := g.realm.scope(g.info.Schema)
+	scope.TrustedSQL = g.trustSQL
+	err := reader.ValidateSession(ctx, session, scope)
+	var refusal *replay.SessionRefusal
+	if err == nil || g.trustSQL || g.trustRemedy == "" || !errors.As(err, &refusal) {
+		return err
+	}
+	scope.TrustedSQL = true
+	if reader.ValidateSession(ctx, session, scope) != nil {
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, g.trustRemedy)
 }
 
 // WithSessionScope returns a guard for a replay that owns one pinned physical

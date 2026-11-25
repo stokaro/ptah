@@ -11,13 +11,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/mysqlstored"
 )
 
 func TestChangesAccounts(t *testing.T) {
-	mysql := Server{Dialect: platform.MySQL, VersionID: 261000}
-	mariadb := Server{Dialect: platform.MariaDB, VersionID: 120303}
+	mysql := mysqlstored.Server{Dialect: platform.MySQL, VersionID: 261000}
+	mariadb := mysqlstored.Server{Dialect: platform.MariaDB, VersionID: 120303}
 	tests := []struct {
-		server    Server
+		server    mysqlstored.Server
 		statement string
 		want      bool
 	}{
@@ -31,9 +32,12 @@ func TestChangesAccounts(t *testing.T) {
 		{statement: "SELECT 'CREATE USER app'", want: false},
 		{statement: "RENAME TABLE a TO b", want: false},
 		{statement: "CREATE", want: false},
+		{statement: "CREATE UſER app", want: false},
+		{statement: "CREATE ROLE ınherit", want: true},
 		{server: mysql, statement: "/*!80016 CREATE USER app */", want: true},
 		{server: mariadb, statement: "/*M!100100 CREATE ROLE reader */", want: true},
 		{server: mariadb, statement: "/*!80016 CREATE USER app */", want: false},
+		{server: mysql, statement: "/*!1000000 CREATE USER app */", want: true},
 	}
 
 	for _, test := range tests {

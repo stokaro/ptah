@@ -15,6 +15,15 @@ import (
 // is the character rather than the start of an escape.
 const NoBackslashEscapes = "NO_BACKSLASH_ESCAPES"
 
+// AnsiQuotes is the mode under which "..." is a quoted name, in which a
+// backslash is a character, rather than a string.
+const AnsiQuotes = "ANSI_QUOTES"
+
+// MSSQL is MariaDB's mode under which [...] is a quoted name. The server
+// writes it in the list whenever a session sets it, alone or within the
+// combination of the same name.
+const MSSQL = "MSSQL"
+
 // StrictTransTables and StrictAllTables are the strict modes. A session that
 // names either fails an ALTER TABLE that would store a value a column cannot
 // hold, on a transactional table and on a MyISAM one alike, since the

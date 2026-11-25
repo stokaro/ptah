@@ -33,8 +33,10 @@ type Lexical struct {
 	BackslashEscapes bool `json:"backslash_escapes,omitempty"`
 	// IdentifierBackslashEscapes reports that a backslash also escapes the
 	// next character inside a quoted identifier, as it does on ClickHouse.
-	// The body scanner honors it. On MySQL it does not: `a\` names a table
-	// whose name ends in a backslash.
+	// The body scanner honors it, and so does the shared lexer for an engine
+	// whose [Quoting] style is [QuoteBacktick]: where such an engine does not
+	// state it, a backslash inside a backtick-quoted name is a character, as
+	// on MySQL, where `a\` names a table whose name ends in a backslash.
 	IdentifierBackslashEscapes bool `json:"identifier_backslash_escapes,omitempty"`
 	// EscapeStrings reports that E'...' is a string literal in which a
 	// backslash escapes the next character whatever BackslashEscapes says,
@@ -75,6 +77,28 @@ type Lexical struct {
 	// lexer does not read them, so a scan that has to agree with the server
 	// about where a string ends refuses one.
 	AlternativeQuoting bool `json:"alternative_quoting,omitempty"`
+	// LineCommentsEndAtLineFeed reports that a line comment, a -- comment or
+	// one a LineComments marker opens, ends at a line feed alone, so a
+	// carriage return is part of it, as on MySQL, where "CREATE #\rX\nTRIGGER"
+	// reads as CREATE TRIGGER. The shared lexer reads it. Unset, a carriage
+	// return ends a line comment too.
+	LineCommentsEndAtLineFeed bool `json:"line_comments_end_at_line_feed,omitempty"`
+	// DollarNames reports that a dollar sign is a name character wherever it
+	// stands and opens no dollar-quoted string, as on MySQL, where `$`, `$$`
+	// and the host in root@$ are names. The shared lexer and the client
+	// delimiter rewrite read it; HeredocDollarTags has no effect beside it.
+	DollarNames bool `json:"dollar_names,omitempty"`
+	// DigitLeadingNames reports that a run of digits followed by a name
+	// character is one name, as on MySQL, where `1other.t` names a table in
+	// the database 1other. A run followed by an exponent, such as 1e5, stays a
+	// number. The shared lexer reads it.
+	DigitLeadingNames bool `json:"digit_leading_names,omitempty"`
+	// NonASCIINames reports that every character outside ASCII is a name
+	// character, so none of them is whitespace and none closes the --
+	// marker DashCommentNeedsSpace reads, as on MySQL with a UTF-8 client
+	// character set, where U+00A0 is part of a name. The shared lexer reads
+	// it.
+	NonASCIINames bool `json:"non_ascii_names,omitempty"`
 	// HeredocDollarTags reports that a dollar-quoted string, `$tag$ ...
 	// $tag$`, is read as a ClickHouse heredoc. Its tag is any run of ASCII
 	// letters, digits, underscores and characters outside ASCII, so it may

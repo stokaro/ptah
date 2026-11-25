@@ -3,7 +3,7 @@ package mysqlreplay
 import (
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/mysqlbody"
+	"ptah.run/internal/mysqlstored"
 )
 
 // mysqlServerWideOperation names a MySQL or MariaDB statement whose only reason
@@ -15,7 +15,7 @@ import (
 // its own timetable, which is during the rest of the run. ALTER USER and ALTER
 // ROLE are left out because they can change the credentials the run connects
 // with.
-func mysqlServerWideOperation(tokens []lexer.Token) string {
+func mysqlServerWideOperation(stmt string, tokens []lexer.Token) string {
 	if len(tokens) == 0 {
 		return ""
 	}
@@ -26,11 +26,12 @@ func mysqlServerWideOperation(tokens []lexer.Token) string {
 	case "GRANT", "REVOKE":
 		return "privilege or role mutation"
 	case "CREATE", "ALTER", "DROP":
-		switch mysqlbody.Kind(tokens) {
-		case "":
-		case "EVENT":
-			return ""
-		default:
+		// A statement Read cannot read is refused before this is asked; see
+		// [rejectUnreadableDefinition].
+		if definition, ok, _ := mysqlstored.Read(stmt, tokens); ok && definition.Body() {
+			if definition.Kind == mysqlstored.Event {
+				return ""
+			}
 			return first + " executable stored body"
 		}
 		if first == "ALTER" {

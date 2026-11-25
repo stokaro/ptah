@@ -72,6 +72,11 @@ var optionsByDialect = descriptortable.New(FromDescriptor)
 // # that is not listed as an operator character. A dialect that lists
 // none, such as PostgreSQL, has no # comments.
 //
+// A backslash inside a backtick-quoted name is a character on an engine whose
+// names are quoted with backticks and whose descriptor does not state
+// IdentifierBackslashEscapes, as on MySQL; elsewhere it escapes the character
+// after it, as the lexer reads it with no dialect.
+//
 // The shared lexer reads PostgreSQL's continued and U&'...' strings as one
 // rule, so a descriptor that states one of the two has neither read as one
 // constant, and such text is refused rather than read by a rule the server
@@ -94,6 +99,11 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 		DisableHashComments:            lexical.HashNames,
 		NestedBlockComments:            lexical.NestedComments,
 		DollarTags:                     DollarTags(lexical),
+		LineCommentsEndAtLineFeed:      lexical.LineCommentsEndAtLineFeed,
+		LiteralBacktickBackslashes:     described.Quoting.Style == descriptor.QuoteBacktick && !lexical.IdentifierBackslashEscapes,
+		DollarNames:                    lexical.DollarNames,
+		DigitLeadingNames:              lexical.DigitLeadingNames,
+		NonASCIINames:                  lexical.NonASCIINames,
 	}
 }
 
@@ -128,24 +138,21 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 // literals, for the client delimiter rewrite: where a literal or comment ends
 // decides whether a line that reads like a directive stands inside one. The
 // backslash rule is the session's ([ForSession]) and the line comment markers
-// are the descriptor's. A `$tag$` body quotes in every dialect except MySQL and
-// MariaDB, where a dollar sign is a name character: the shared lexer reads
-// one for the rest, PostgreSQL's dollar quotes and ClickHouse's heredocs
-// among them, and the rewrite reads its tag by the lexer's rule. A blank
-// dialect has no rules to read; ok is false and the caller uses the
-// permissive set [clientdelimiter.Normalize] reads with.
+// are the descriptor's. A `$tag$` body quotes in every dialect whose
+// descriptor does not state DollarNames, as MySQL's and MariaDB's do: the
+// shared lexer reads one for the rest, PostgreSQL's dollar quotes and
+// ClickHouse's heredocs among them, and the rewrite reads its tag by the
+// lexer's rule. A blank dialect has no rules to read; ok is false and the
+// caller uses the permissive set [clientdelimiter.Normalize] reads with.
 func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules clientdelimiter.Rules, ok bool) {
 	if dialect == "" {
 		return clientdelimiter.Rules{}, false
 	}
 	options := ForSession(dialect, caps)
 	return clientdelimiter.Rules{
-		BackslashEscapes: options.BackslashEscapes,
-		EscapeStrings:    options.PostgreSQLEscapeStrings,
-		// No descriptor field states the dollar rule itself. Executable
-		// comments are what the descriptors set on MySQL and MariaDB alone,
-		// so they stand in for it.
-		DollarQuotes:         options.ExecutableComments == lexer.ExecutableCommentsNone,
+		BackslashEscapes:     options.BackslashEscapes,
+		EscapeStrings:        options.PostgreSQLEscapeStrings,
+		DollarQuotes:         !options.DollarNames,
 		LineComments:         options.LineComments,
 		LineCommentsDeclared: true,
 		BracketIdentifiers:   options.BracketIdentifiers,

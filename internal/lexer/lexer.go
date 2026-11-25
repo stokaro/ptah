@@ -53,18 +53,47 @@ type Token struct {
 	End   int
 }
 
+// MatchOperatorValue reports an operator token whose text is value, its ASCII
+// letters compared in either case; see [Token.MatchIdentifierValue].
 func (tt *Token) MatchOperatorValue(value string) bool {
 	if tt.Type != TokenOperator {
 		return false
 	}
-	return strings.EqualFold(tt.Value, value)
+	return asciiEqualFold(tt.Value, value)
 }
 
+// MatchIdentifierValue reports an identifier token whose text is value, its
+// ASCII letters compared in either case and every other byte as written, as
+// MySQL and MariaDB match a keyword: measured on MySQL 8.4.13 and MariaDB
+// 11.8.9, `ſET`, with a long s, is a name there, though Unicode case folding
+// reads it as SET.
 func (tt *Token) MatchIdentifierValue(value string) bool {
 	if tt.Type != TokenIdentifier {
 		return false
 	}
-	return strings.EqualFold(tt.Value, value)
+	return asciiEqualFold(tt.Value, value)
+}
+
+// asciiEqualFold reports whether a and b are equal with their ASCII letters
+// compared in either case.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range len(a) {
+		if asciiLower(a[index]) != asciiLower(b[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+// asciiLower is b in lower case where it is an ASCII letter.
+func asciiLower(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b - 'A' + 'a'
+	}
+	return b
 }
 
 // Options configures optional, dialect-sensitive lexer behavior. The zero
@@ -181,8 +210,41 @@ type Options struct {
 	// as part of a name. So `x€$a$` is one name there, where the default rules
 	// end a name at a character that is not a letter or a digit and read the
 	// rest as an operator and a dollar quote. A space outside ASCII, such as
-	// U+00A0, is a name character too.
+	// U+00A0, is a name character too, and none ends the -- marker
+	// [Options.RequireWhitespaceAfterDashDash] reads. MySQL and MariaDB read
+	// the same rule under a UTF-8 client character set.
 	NonASCIINames bool
+
+	// LineCommentsEndAtLineFeed ends a line comment, a -- comment or one a
+	// declared marker opens, at a line feed alone, as MySQL and MariaDB end
+	// theirs: a carriage return is part of the comment there, so in
+	// "CREATE #\rX\nTRIGGER" the server reads CREATE TRIGGER. Unset, a
+	// carriage return ends one too.
+	LineCommentsEndAtLineFeed bool
+
+	// LiteralBacktickBackslashes reads a backslash inside a backtick-quoted
+	// name as a character, as MySQL and MariaDB read it: `a\` names a table
+	// whose name ends in a backslash. Unset, a backslash escapes the character
+	// after it there, as ClickHouse reads it.
+	LiteralBacktickBackslashes bool
+
+	// DollarNames reads `$` as a name character wherever it stands, as MySQL
+	// and MariaDB do: `$`, `$$` and `$a$` are names there, and no dollar
+	// sign opens a dollar-quoted string or a parameter. Unset, a dollar sign
+	// opens a dollar-quoted string where [Options.DollarTags] reads a tag.
+	DollarNames bool
+
+	// DigitLeadingNames reads a run of digits followed by a name character
+	// as one name, as MySQL and MariaDB do: `1other` names a database there.
+	// A digit run followed by an exponent, such as 1e5 or 1E-5, stays one
+	// number. Unset, the digits are a number and the rest a second token.
+	DigitLeadingNames bool
+
+	// DoubleQuotedNames reads "..." as a quoted name in which a doubled quote
+	// stands for one quote and a backslash is a character, as MySQL and
+	// MariaDB read it under the ANSI_QUOTES sql_mode. Unset, "..." is read as
+	// a string under the string rules above.
+	DoubleQuotedNames bool
 
 	// DollarParameters reads `$` followed by a digit as a positional
 	// parameter, the digits and nothing more, as the PostgreSQL family does:
@@ -456,8 +518,12 @@ func (l *Lexer) scanWhitespace() Token {
 }
 
 // scanString scans a quoted string literal, dispatching to the SQL-standard
-// scanner when opted in and to the legacy scanner otherwise.
+// scanner when opted in and to the legacy scanner otherwise. A double quote
+// opens a quoted name instead where [Options.DoubleQuotedNames] is set.
 func (l *Lexer) scanString() Token {
+	if l.peek() == '"' && l.opts.DoubleQuotedNames {
+		return l.scanDoubleQuotedName()
+	}
 	if l.opts.StandardStrings {
 		return l.scanStringStandard()
 	}
@@ -650,12 +716,18 @@ func (l *Lexer) isUnicodeEscapeString(ch rune) bool {
 		l.peekAfterNext() == '\''
 }
 
+// isDashDashComment reports whether the -- at the current position opens a
+// comment. Under [Options.NonASCIINames] a character outside ASCII after it is
+// a name character, never whitespace or a control character.
 func (l *Lexer) isDashDashComment() bool {
 	if !l.opts.RequireWhitespaceAfterDashDash {
 		return true
 	}
 	afterMarker := l.peekAfterNext()
-	return afterMarker != eof && (unicode.IsSpace(afterMarker) || unicode.IsControl(afterMarker))
+	if afterMarker == eof || l.opts.NonASCIINames && afterMarker >= utf8.RuneSelf {
+		return false
+	}
+	return unicode.IsSpace(afterMarker) || unicode.IsControl(afterMarker)
 }
 
 func (l *Lexer) isExecutableBlockComment() bool {
@@ -705,14 +777,7 @@ func (l *Lexer) scanLineComment() Token {
 	l.advance() // consume first -
 	l.advance() // consume second -
 
-	for {
-		ch := l.peek()
-		if ch == eof || ch == '\n' || ch == '\r' {
-			break
-		}
-		l.advance()
-	}
-
+	l.skipToLineEnd()
 	return l.emit(TokenComment)
 }
 
@@ -733,15 +798,21 @@ func (l *Lexer) declaredCommentMarkerLen() int {
 func (l *Lexer) scanMarkedLineComment(size int) Token {
 	l.pos += size
 
+	l.skipToLineEnd()
+	return l.emit(TokenComment)
+}
+
+// skipToLineEnd advances to the line ending that closes a line comment: a
+// line feed, or a carriage return too unless
+// [Options.LineCommentsEndAtLineFeed] is set.
+func (l *Lexer) skipToLineEnd() {
 	for {
 		ch := l.peek()
-		if ch == eof || ch == '\n' || ch == '\r' {
-			break
+		if ch == eof || ch == '\n' || ch == '\r' && !l.opts.LineCommentsEndAtLineFeed {
+			return
 		}
 		l.advance()
 	}
-
-	return l.emit(TokenComment)
 }
 
 func isHashOperatorContinuation(ch rune) bool {
@@ -814,6 +885,9 @@ func (l *Lexer) scanIdentifier() Token {
 // where [Options.DollarParameters] is set, a dollar-quoted string, a name that
 // continues after the sign, or the sign as an operator.
 func (l *Lexer) scanDollar() Token {
+	if l.opts.DollarNames {
+		return l.scanIdentifier()
+	}
 	if l.opts.DollarParameters && isASCIIDigit(l.peekNext()) {
 		return l.scanParameter()
 	}
@@ -891,7 +965,7 @@ func (l *Lexer) scanBacktickedIdentifier() Token {
 			break
 		}
 
-		if ch == '\\' {
+		if ch == '\\' && !l.opts.LiteralBacktickBackslashes {
 			l.advance() // consume backslash
 			if l.peek() != eof {
 				l.advance() // consume escaped character
@@ -904,16 +978,87 @@ func (l *Lexer) scanBacktickedIdentifier() Token {
 	return l.emit(TokenIdentifier)
 }
 
-// scanNumber scans a numeric literal
+// scanDoubleQuotedName scans "..." as a quoted name under
+// [Options.DoubleQuotedNames]: a doubled quote stays inside it and a backslash
+// is a character.
+func (l *Lexer) scanDoubleQuotedName() Token {
+	l.consumeQuoted(stringBackslashLiteral)
+	return l.emit(TokenIdentifier)
+}
+
+// scanNumber scans a numeric literal, or under [Options.DigitLeadingNames] a
+// name that begins with digits.
 func (l *Lexer) scanNumber() Token {
+	dotted := false
 	for {
 		ch := l.peek()
 		if !unicode.IsDigit(ch) && ch != '.' {
 			break
 		}
+		dotted = dotted || ch == '.'
 		l.advance()
 	}
+	if l.opts.DigitLeadingNames && !dotted && l.isNamePart(l.peek()) && !l.prefixedNumber() {
+		if l.consumeExponent() {
+			return l.emit(TokenIdentifier)
+		}
+		return l.scanIdentifier()
+	}
 	return l.emit(TokenIdentifier) // Treat numbers as identifiers for simplicity
+}
+
+// prefixedNumber reports whether the 0 just read opens a hexadecimal number,
+// 0x and at least one hexadecimal digit, or a bit number, 0b and at least one
+// binary digit, with no name character after the digits. The prefix is lower
+// case: measured on MySQL 8.4.13 and MariaDB 11.8.9, 0X1F and 0B101 are names,
+// as 0xg and 0x1fg are. The number stays the 0 alone, as it is read without
+// [Options.DigitLeadingNames], and the prefix and digits a second token.
+func (l *Lexer) prefixedNumber() bool {
+	if l.input[l.start:l.pos] != "0" {
+		return false
+	}
+	var digit func(byte) bool
+	switch l.peek() {
+	case 'x':
+		digit = func(b byte) bool { return '0' <= b && b <= '9' || 'a' <= b && b <= 'f' || 'A' <= b && b <= 'F' }
+	case 'b':
+		digit = func(b byte) bool { return b == '0' || b == '1' }
+	default:
+		return false
+	}
+	end := l.pos + 1
+	for end < len(l.input) && digit(l.input[end]) {
+		end++
+	}
+	if end == l.pos+1 {
+		return false
+	}
+	next, _ := utf8.DecodeRuneInString(l.input[end:])
+	return end == len(l.input) || !l.isNamePart(next)
+}
+
+// consumeExponent advances over the exponent of a number, e or E, an optional
+// sign and at least one digit, and reports false, advancing nothing, where
+// none starts at the current position.
+func (l *Lexer) consumeExponent() bool {
+	if ch := l.peek(); ch != 'e' && ch != 'E' {
+		return false
+	}
+	digit := l.peekNext()
+	if digit == '+' || digit == '-' {
+		digit = l.peekAfterNext()
+	}
+	if !isASCIIDigit(digit) {
+		return false
+	}
+	l.advance() // consume e
+	if ch := l.peek(); ch == '+' || ch == '-' {
+		l.advance()
+	}
+	for isASCIIDigit(l.peek()) {
+		l.advance()
+	}
+	return true
 }
 
 // scanOperator scans operators and other symbols

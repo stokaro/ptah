@@ -16,6 +16,7 @@ import (
 	// their own, so the answer does not pass through the provider.
 	_ "modernc.org/sqlite"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/providerhost"
@@ -196,13 +197,13 @@ func TestProviderGuardsReplayedStatements(t *testing.T) {
 			c := qt.New(t)
 			host, _ := yamlProviderCommand(c, row.program)
 			conn, _ := transactionConnection(c, host, "")
-			c.Assert(devclean.NewDevReplayGuardFor(conn).ValidateStatement(row.statement), qt.ErrorMatches, row.wantErr)
+			c.Assert(devReplayGuard(c, conn).ValidateStatement(row.statement), qt.ErrorMatches, row.wantErr)
 		})
 	}
 	c := qt.New(t)
 	host, _ := yamlProviderCommand(c, "devdb")
 	conn, _ := transactionConnection(c, host, "")
-	c.Assert(devclean.NewDevReplayGuardFor(conn).ValidateStatement(`CREATE TABLE "x" ("id" INTEGER)`), qt.IsNil)
+	c.Assert(devReplayGuard(c, conn).ValidateStatement(`CREATE TABLE "x" ("id" INTEGER)`), qt.IsNil)
 }
 
 // The dev database services are the engine's as well as the provider's. An
@@ -224,7 +225,7 @@ func TestProviderEngineWithoutDevServicesIsNeitherCleanedNorGuarded(t *testing.T
 
 	host, _ := yamlProviderEnvironment(c, "devdb", []string{"FIXTURE_DEV_ENGINE=bare"})
 	conn, _ := transactionConnection(c, host, "")
-	c.Assert(devclean.NewDevReplayGuardFor(conn).ValidateStatement(`CREATE TABLE "x" ("id" INTEGER)`), qt.ErrorMatches,
+	c.Assert(devReplayGuard(c, conn).ValidateStatement(`CREATE TABLE "x" ("id" INTEGER)`), qt.ErrorMatches,
 		`fixture migration replay rejects unsupported dialect because .*`)
 }
 
@@ -369,4 +370,12 @@ func TestProviderLintReplaysMigrationsOnItsDevDatabase_FailurePath(t *testing.T)
 		c.Assert(diagnostics, qt.Contains, `connected database is not clean: found table "leftover"`)
 		c.Assert(tables(c, devPath), qt.DeepEquals, []string{"leftover"})
 	})
+}
+
+// devReplayGuard is the guard a run builds for the dev database conn reaches.
+func devReplayGuard(c *qt.C, conn *dbschema.DatabaseConnection) *devclean.ReplayGuard {
+	c.Helper()
+	guard, err := devclean.NewDevReplayGuardFor(c.Context(), conn)
+	c.Assert(err, qt.IsNil)
+	return guard
 }

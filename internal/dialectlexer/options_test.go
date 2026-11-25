@@ -30,7 +30,12 @@ import (
 // differs: its descriptor states PostgreSQL's string constants, which
 // YugabyteDB 2026.1.2 reads. ClickHouse differs too: its descriptor states
 // its heredocs, whose tag may begin with a digit, so `$1abc$` opens one on
-// ClickHouse 26.10, and which a tag never closed does not open.
+// ClickHouse 26.10, and which a tag never closed does not open. MySQL and
+// MariaDB differ as well: their descriptors state the rules the replay guard
+// has to share with the server, measured on MySQL 8.4.13 and MariaDB 11.8.9 --
+// a line comment ends at a line feed alone, a backslash in a backtick-quoted
+// name is a character, a dollar sign, a leading digit and every character
+// outside ASCII are name characters, and no dollar sign opens a quote.
 var switchAnswers = map[string]lexer.Options{
 	platform.Postgres: {
 		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true, NestedBlockComments: true,
@@ -44,10 +49,14 @@ var switchAnswers = map[string]lexer.Options{
 	platform.MySQL: {
 		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#"},
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMySQL,
+		LineCommentsEndAtLineFeed: true, LiteralBacktickBackslashes: true, DollarNames: true,
+		DigitLeadingNames: true, NonASCIINames: true,
 	},
 	platform.MariaDB: {
 		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#"},
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMariaDB,
+		LineCommentsEndAtLineFeed: true, LiteralBacktickBackslashes: true, DollarNames: true,
+		DigitLeadingNames: true, NonASCIINames: true,
 	},
 	platform.ClickHouse: {
 		StandardStrings: true, BackslashEscapes: true, LineCommentsDeclared: true, LineComments: []string{"#", "//"},

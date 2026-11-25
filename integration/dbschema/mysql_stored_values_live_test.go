@@ -48,12 +48,18 @@ func connectLoose(c *qt.C, engine dbtarget.Engine) *dbschema.DatabaseConnection 
 }
 
 // connectWithMode connects to engine's database with every session under
-// mode, an expression the driver sets the session's mode to. The address may
-// name its host as tcp(host:port), which url.Parse refuses, so only the query
-// is parsed.
+// mode, an expression the driver sets the session's mode to.
 func connectWithMode(c *qt.C, engine dbtarget.Engine, mode string) *dbschema.DatabaseConnection {
 	c.Helper()
-	address, rawQuery, _ := strings.Cut(dbtarget.URL(c, engine), "?")
+	return connectURLWithMode(c, dbtarget.URL(c, engine), mode)
+}
+
+// connectURLWithMode connects to the database rawURL names with every session
+// under mode. The address may name its host as tcp(host:port), which
+// url.Parse refuses, so only the query is parsed.
+func connectURLWithMode(c *qt.C, rawURL, mode string) *dbschema.DatabaseConnection {
+	c.Helper()
+	address, rawQuery, _ := strings.Cut(rawURL, "?")
 	query, err := url.ParseQuery(rawQuery)
 	c.Assert(err, qt.IsNil)
 	query.Set("sql_mode", mode)

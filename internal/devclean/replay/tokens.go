@@ -19,8 +19,10 @@ func ContainsIdentifier(tokens []lexer.Token, value string) bool {
 }
 
 // NormalizedIdentifier returns an identifier or string token without its
-// quotes, with doubled quote characters undone, in upper case. Any other token
-// reads as "".
+// quotes, with doubled quote characters undone, and its ASCII letters in upper
+// case. Any other token reads as "". A character outside ASCII keeps its case:
+// no engine matches a keyword by Unicode case, so `ſET` with a long s and
+// `ınsert` with a dotless i are names, never SET or INSERT.
 func NormalizedIdentifier(token lexer.Token) string {
 	value := token.Value
 	switch token.Type {
@@ -41,7 +43,19 @@ func NormalizedIdentifier(token lexer.Token) string {
 	value = strings.ReplaceAll(value, `""`, `"`)
 	value = strings.ReplaceAll(value, "''", "'")
 	value = strings.ReplaceAll(value, "]]", "]")
-	return strings.ToUpper(value)
+	return asciiUpper(value)
+}
+
+// asciiUpper is s with its ASCII letters in upper case and every other byte
+// as written.
+func asciiUpper(s string) string {
+	upper := []byte(s)
+	for index, b := range upper {
+		if 'a' <= b && b <= 'z' {
+			upper[index] = b - 'a' + 'A'
+		}
+	}
+	return string(upper)
 }
 
 // MutationTargetNotFound is the index the token searches return when what

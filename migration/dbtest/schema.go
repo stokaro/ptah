@@ -239,7 +239,11 @@ func applyDesiredSchema(
 	// column, as `schema apply` does; see
 	// [dbschema.DatabaseConnection.WithStoredValuesKept].
 	err = conn.WithStoredValuesKept(ctx, func(session *dbschema.DatabaseConnection) error {
-		for _, stmt := range sqlutil.SplitStatementsForDialect(session.Info().Dialect, sql) {
+		statements := sqlutil.SplitStatementsForDialect(session.Info().Dialect, sql)
+		if err := session.PreflightStoredValues(statements); err != nil {
+			return fmt.Errorf("apply desired schema: %w", err)
+		}
+		for _, stmt := range statements {
 			if strings.TrimSpace(stmt) == "" {
 				continue
 			}

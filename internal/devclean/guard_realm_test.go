@@ -245,6 +245,8 @@ var mysqlServerWideStatements = []struct {
 	{name: "CREATE FUNCTION with a definer", statement: "CREATE DEFINER = `root`@`%` FUNCTION add_one(i INT) RETURNS INT DETERMINISTIC RETURN i + 1"},
 	{name: "CREATE TRIGGER", statement: "CREATE TRIGGER orders_touch BEFORE UPDATE ON orders FOR EACH ROW SET NEW.updated_at = NOW()"},
 	{name: "ALTER PROCEDURE", statement: "ALTER PROCEDURE refresh_totals COMMENT 'nightly'"},
+	{name: "CREATE FUNCTION with a dotted definer host", statement: "CREATE DEFINER=app@localhost.localdomain FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM archive.t)"},
+	{name: "CREATE PACKAGE BODY", statement: "CREATE OR REPLACE PACKAGE BODY pkg PROCEDURE p() BEGIN DELETE FROM archive.t; END; END"},
 	{name: "CALL", statement: "CALL refresh_totals()"},
 	{name: "CREATE USER", statement: "CREATE USER 'app'@'%' IDENTIFIED BY 'secret'"},
 	{name: "DROP USER", statement: "DROP USER IF EXISTS 'app'@'%'"},
@@ -253,6 +255,8 @@ var mysqlServerWideStatements = []struct {
 	{name: "REVOKE", statement: "REVOKE INSERT ON dev.orders FROM 'app'@'%'"},
 	{name: "CREATE DATABASE", statement: "CREATE DATABASE IF NOT EXISTS archive"},
 	{name: "write in another database", statement: "CREATE TABLE archive.orders (id INT PRIMARY KEY)"},
+	{name: "CREATE PROCEDURE a SET STATEMENT runs", statement: "SET STATEMENT max_statement_time=0 FOR CREATE PROCEDURE refresh_totals() BEGIN SELECT 1; END"},
+	{name: "CREATE FUNCTION with a dollar sign definer host", statement: "CREATE DEFINER=root@$ FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM archive.t)"},
 }
 
 func mysqlGuard(dialect string, realm devclean.ReplayRealm) *devclean.ReplayGuard {
@@ -301,6 +305,11 @@ func TestReplayGuardServerRealm_MySQLFailurePath(t *testing.T) {
 	}{
 		{name: "scheduled event", statement: "CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders", wantErr: `.*rejects CREATE executable stored body .*`},
 		{name: "event with a definer", statement: "CREATE DEFINER = `root`@`%` EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders", wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "event with a dotted definer host", statement: "CREATE DEFINER=app@localhost.localdomain EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders",
+			wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "event with a definer host spelled as a kind", statement: "CREATE DEFINER=app@trigger EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders",
+			wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "event a definer alters", statement: "ALTER DEFINER=app@localhost EVENT purge DO DELETE FROM orders", wantErr: `.*rejects ALTER executable stored body .*`},
 		{name: "credential change", statement: "ALTER USER 'root'@'%' IDENTIFIED BY 'changed'", wantErr: `.*rejects ALTER USER .*`},
 		{name: "session database", statement: "USE archive", wantErr: `.*rejects USE .*`},
 		{name: "global setting", statement: "SET GLOBAL max_connections = 10", wantErr: `.*rejects global or persistent SET .*`},
@@ -309,6 +318,23 @@ func TestReplayGuardServerRealm_MySQLFailurePath(t *testing.T) {
 		{name: "federated table", statement: "CREATE TABLE remote_orders (id INT) ENGINE=FEDERATED CONNECTION='mysql://prod/orders'", wantErr: `.*rejects FEDERATED storage engine .*`},
 		{name: "temporary table", statement: "CREATE TEMPORARY TABLE scratch (id INT)", wantErr: `.*rejects TEMP object .*`},
 		{name: "executable comment", statement: "/*!50000 CREATE USER 'app'@'%' */", wantErr: `.*rejects executable comment .*`},
+		// Measured on MySQL 8.4.13 and MariaDB 11.8.9, each of these creates an
+		// event or changes the server.
+		{name: "event with a dollar sign definer host", statement: "CREATE DEFINER=root@$ EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders",
+			wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "event with a dollar sign definer user", statement: "CREATE DEFINER=$@h EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders",
+			wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "event behind a carriage return in a comment", statement: "CREATE #\rX\nEVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders",
+			wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "event body behind a carriage return in a comment", statement: "ALTER -- \rX\nEVENT purge DO DELETE FROM orders",
+			wantErr: `.*rejects ALTER executable stored body .*`},
+		{name: "event a SET STATEMENT runs", statement: "SET STATEMENT max_statement_time=0 FOR CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM orders",
+			wantErr: `.*rejects CREATE executable stored body .*`},
+		{name: "CREATE of a kind it does not know", statement: "CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS 'export function f() {}'",
+			wantErr: `.*rejects CREATE statement whose object kind cannot be read .*`},
+		{name: "global setting by prefix", statement: "SET @@global.max_connections = 10", wantErr: `.*rejects global or persistent SET .*`},
+		{name: "persisted setting in a list", statement: "SET @a = 1, PERSIST max_connections = 10", wantErr: `.*rejects global or persistent SET .*`},
+		{name: "client character set", statement: "SET NAMES latin1", wantErr: `.*rejects client character set change .*`},
 	}
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		guard := mysqlGuard(dialect, devclean.ReplayRealmServer)

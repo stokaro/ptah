@@ -45,11 +45,17 @@ const storedValuesRestoreTimeout = 5 * time.Second
 //
 // The server keeps the session's settings with some objects and applies them
 // each time the object runs: MySQL keeps the sql_mode of a trigger, a stored
-// routine and an event. A statement that defines one runs under the settings
-// the session started with, so the object keeps them, and the session's
-// settings for the rest of use are set again after it. This holds for a
-// statement use sends through the session's writer, a transaction the writer
-// begins, the session's executor, or [DatabaseConnection.ExecContext].
+// routine, an event and a MariaDB package. A statement that defines one runs
+// under the settings the session started with, so the object keeps them, and
+// the session's settings for the rest of use are set again after it, whether
+// the statement succeeded or not. This holds for a statement use sends
+// through the session's writer, a transaction the writer begins, the
+// session's executor, or [DatabaseConnection.ExecContext]. A statement the
+// engine cannot read far enough to tell whether it defines one, such as one
+// holding an executable comment whose effect on the server is unknown, is
+// refused before any of it is sent, and
+// [DatabaseConnection.PreflightStoredValues] reads a whole batch that way
+// before the first statement of it is sent.
 //
 // An error from use that the server gives for a statement it refuses this way
 // wraps [ErrValueChangedToFit] and names the column the server names. A
@@ -96,6 +102,32 @@ func (dc *DatabaseConnection) WithStoredValuesKept(
 	})
 }
 
+// PreflightStoredValues reads statements, a batch about to be sent on the
+// session [DatabaseConnection.WithStoredValuesKept] gives its callback, as
+// that session reads each statement it sends. It returns an error naming the
+// first statement it cannot read far enough to tell whether the statement
+// defines an object that keeps the session's settings: the session refuses
+// that statement when it is sent, and reading the batch first refuses it
+// before any statement of the batch reaches the server. It sends nothing.
+// On any other connection, including a nil one, it returns nil.
+func (dc *DatabaseConnection) PreflightStoredValues(statements []string) error {
+	if dc == nil || dc.storedValues == nil {
+		return nil
+	}
+	for index, statement := range statements {
+		if _, err := dc.storedValues.StoredWith(statement); err != nil {
+			return fmt.Errorf("statement %d of %d: %w", index+1, len(statements), unreadableStoredWith(err))
+		}
+	}
+	return nil
+}
+
+// unreadableStoredWith is err, the error the window gives for a statement it
+// cannot read, with what the read was for in front.
+func unreadableStoredWith(err error) error {
+	return fmt.Errorf("read whether the statement defines an object that keeps the session's settings: %w", err)
+}
+
 // storedValuesError is err, refused by the server because it would change a
 // value to fit column, with the column in front of the reason.
 func storedValuesError(column string, err error) error {
@@ -111,6 +143,7 @@ func storedValuesError(column string, err error) error {
 // reads. The reader is the session's own, since a read stores nothing.
 func (dc *DatabaseConnection) inStoredValuesWindow(window connector.StoredValuesWindow) *DatabaseConnection {
 	scoped := *dc
+	scoped.storedValues = window
 	if dc.writer != nil {
 		scoped.writer = windowWriter{SchemaWriter: dc.writer, window: window}
 	}
@@ -236,7 +269,8 @@ func executeInWindow(
 // keeps with the object it defines runs between set giving the session its
 // own settings and set giving it the window's again. The second runs even when
 // the statement fails, on a context that outlives the caller's, since the rest
-// of the session's statements need it; its error is joined to the result.
+// of the session's statements need it; its error is joined to the result. A
+// statement the window cannot read far enough to tell is not run.
 func runInWindow(
 	ctx context.Context,
 	window connector.StoredValuesWindow,
@@ -244,17 +278,20 @@ func runInWindow(
 	set func(context.Context, connector.SessionStatement) error,
 	run func(context.Context) error,
 ) (resultErr error) {
-	own, kept, stored := window.StoredWith(statement)
-	if !stored {
+	settings, err := window.StoredWith(statement)
+	if err != nil {
+		return unreadableStoredWith(err)
+	}
+	if settings == nil {
 		return run(ctx)
 	}
-	if err := set(ctx, own); err != nil {
+	if err := set(ctx, settings.Own); err != nil {
 		return fmt.Errorf("give the session its own settings for a statement that keeps them: %w", err)
 	}
 	defer func() {
 		keptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storedValuesRestoreTimeout)
 		defer cancel()
-		if err := set(keptCtx, kept); err != nil {
+		if err := set(keptCtx, settings.Window); err != nil {
 			resultErr = errors.Join(resultErr, fmt.Errorf("set the session's settings again after a statement that keeps them: %w", err))
 		}
 	}()
