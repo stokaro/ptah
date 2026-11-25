@@ -22,6 +22,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/mysqlgrants"
 )
 
 func TestReadRolesMarksNonAuthenticatingPasswordsAbsent(t *testing.T) {
@@ -116,7 +117,8 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 			reader := NewMySQLReader(db.SQL, "app")
 
 			schema := &catalog.Database{}
-			c.Assert(reader.readRolesInto(t.Context(), schema, []string{"app"}), qt.IsNil)
+			account := sessionAccount{grants: mysqlgrants.Parse(dbtest.MySQLAllGrants, mysqlgrants.Options{})}
+			c.Assert(reader.readRolesInto(t.Context(), account, schema, []string{"app"}), qt.IsNil)
 
 			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals, test.want)
 		})

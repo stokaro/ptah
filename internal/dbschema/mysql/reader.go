@@ -190,7 +190,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	// not lose the whole description over an object kind the schema may not
 	// even declare.
 	if r.caps.Has(capability.RoleManagement) {
-		if err := r.readRolesInto(ctx, schema, []string{selected.String}); err != nil {
+		if err := r.readRolesInto(ctx, account, schema, []string{selected.String}); err != nil {
 			return nil, err
 		}
 	}
@@ -295,7 +295,7 @@ func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catal
 		names = append(names, database.Name)
 	}
 	if r.caps.Has(capability.RoleManagement) {
-		if err := r.readRolesInto(ctx, server, names); err != nil {
+		if err := r.readRolesInto(ctx, account, server, names); err != nil {
 			return nil, err
 		}
 	}

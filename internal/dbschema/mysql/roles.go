@@ -227,9 +227,17 @@ func isRoleReadDenied(err error) bool {
 // than silent, exactly as the ClickHouse reader does for system.roles. The
 // comparator refuses to conclude "this role is missing" from a read that admits
 // it did not look, so a declared role is reported as an undecided addition
-// instead of planned from nothing. Nothing destructive follows either: role and
-// grant removals are decided from live rows, and there are none.
-func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, databases []string) error {
+// instead of planned from nothing. A removal is never inferred from an unread
+// grant; an explicit REVOKE is still planned so the server answers for it.
+func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, schema *catalog.Database, databases []string) error {
+	// The privilege views check SELECT at mysql's database scope before
+	// listing another grantee. SELECT on mysql.user, or even on every grant
+	// table separately, proves no such visibility. Keep the roles and grants
+	// unknown together instead of accepting a filtered empty result.
+	if !account.grants.OnDatabase("mysql").Holds("SELECT") {
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
+		return nil
+	}
 	roles, err := r.readRoles(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
