@@ -32,10 +32,10 @@ import (
 // a lost connection gives it and the server meets the end of a real session.
 //
 // The client hears nothing after the matching message, whatever the server does
-// with it: the breaker closes the client's side before it forwards the message,
-// so no answer can be relayed back. Forwarded first, a fast answer can reach the
-// client before the close, and the command then sees its statement succeed and
-// loses the connection at the next one.
+// with it: the breaker stops relaying the server's answers before it forwards the
+// message, and closes the client's side only after the server has ended its
+// session. Relayed, a fast answer reaches the client, and the command sees its
+// statement succeed and loses the connection at the next one.
 type connectionBreaker struct {
 	listener net.Listener
 	upstream string
@@ -130,6 +130,9 @@ func deliverAndWait(server net.Conn, message []byte, serverDone <-chan struct{})
 	if _, err := server.Write(message); err != nil {
 		return
 	}
+	// The server side comes from net.Dial("tcp"), a *net.TCPConn, so it can
+	// close its write side; without that the wait would have no end of input to
+	// end the session, and the race this function closes would return.
 	half, ok := server.(interface{ CloseWrite() error })
 	if !ok {
 		return
