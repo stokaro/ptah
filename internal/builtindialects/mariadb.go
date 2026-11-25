@@ -231,13 +231,8 @@ func mariaDB() descriptor.Dialect {
 		// sql_mode a backslash escapes in '...' and "..." but not in a
 		// backtick-quoted name: `a\` names a table whose name ends in one.
 		// The catalog writes a view's strings with backslash escapes, as in
-		// 'it\'s'.
-		Lexical: descriptor.Lexical{
-			LineComments:          []string{"#"},
-			BackslashEscapes:      true,
-			DashCommentNeedsSpace: true,
-			ExecutableComments:    descriptor.ExecutableCommentsMBang,
-		},
+		// 'it\'s'. The rest of the family's reading is in mysqlFamilyLexical.
+		Lexical: mysqlFamilyLexical(descriptor.ExecutableCommentsMBang),
 
 		// Database URLs and the Atlas contract: what internal/atlasurl and the
 		// Atlas HCL reader read. The MariaDB schemes open the MySQL driver, so

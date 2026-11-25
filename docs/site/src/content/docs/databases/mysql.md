@@ -1378,8 +1378,9 @@ A plan that also holds a provider-native operation is scanned over its SQL
 statements. The statements are read as the strict session reads them,
 [below](#a-session-without-a-strict-sql-mode), so a clause inside an executable comment the
 connected server runs is part of the statement, such as `/*!50013 DEFINER=...
-*/` as `mysqldump` writes it. A statement whose executable comment the scan
-cannot read is left out, and the server checks the privilege when the
+*/` as `mysqldump` writes it. A statement the scan cannot read, one whose
+executable comment it cannot read or a `CREATE` or `ALTER` it cannot follow to
+a kind of object, is left out, and the server checks the privilege when the
 statement runs. The message names the object, the definer, the account and
 the privilege. Grant the privilege, or apply as the definer:
 
@@ -2025,16 +2026,37 @@ whether the statement succeeds or fails. So a trigger keeps the mode the
 session had, and a later insert from the application's loose session runs the
 trigger as it would without the strict session.
 
-The window reads each statement as the server reads it. A `DEFINER` clause
-may follow `CREATE` or `ALTER`, and its host may be written unquoted across
-several parts, as in `app@localhost.localdomain`. The text of an executable
-comment the server runs is part of the statement: `/*! ... */`, a
-`/*!NNNNN ... */` comment gated on a version no later than the server's, and
-on MariaDB `/*M! ... */`. A statement whose executable comment the window
-cannot read is refused before it is sent, and the statements before it in the
-plan have run. Such a comment has a version of seven or more digits, holds
-another comment, or leaves a string or a quoted name open where the comment
-ends.
+The window reads each statement by the rules of the session that sends it.
+The session's `sql_mode` decides whether a backslash escapes the next
+character in a string (`NO_BACKSLASH_ESCAPES`), whether `"..."` is a name
+(`ANSI_QUOTES`), and on MariaDB whether `[...]` is a name (`MSSQL`). The other
+rules were measured on MySQL 8.4 and MariaDB 11.8 under a UTF-8 client
+character set, the one Ptah connects with:
+
+- a `#` or `-- ` comment ends at a line feed, never at a carriage return
+  alone;
+- a backslash in a backtick-quoted name is a character;
+- `$` is a name character, and no string is dollar-quoted;
+- a name may begin with digits, as `1other` does;
+- a character outside ASCII is a name character, so `--` followed by a
+  no-break space opens no comment;
+- a keyword is matched in ASCII letters of either case, so `ſET`, with a
+  long s, is a name.
+
+A `DEFINER` clause may follow `CREATE` or `ALTER`. Its host is a quoted name,
+or else the bytes after the `@` that the server reads as a host: ASCII letters
+and digits, `.`, `_`, `$`, and any byte outside ASCII. So `app@localhost.localdomain`
+and `app@$` both name a host. On MariaDB, a `SET STATEMENT ... FOR` is read as
+the statement after `FOR`. The text of an executable comment the server runs
+is part of the statement: `/*! ... */`, a `/*!NNNNN ... */` comment gated on a
+version no later than the server's, and on MariaDB `/*M! ... */`.
+
+A statement the window cannot read is refused, and the whole plan is read
+before any of it is sent, so nothing of the plan runs. The window cannot read
+a `CREATE` or `ALTER` whose words it cannot follow to a kind of object it
+knows, or a statement whose executable comment has a version of seven or more
+digits, holds another comment, does not close, or leaves a string, a quoted
+name or a line comment open where the comment ends.
 
 Migration files run under the session's mode as written, since a file may
 depend on it. To change a column that a row no longer fits, update or delete

@@ -51,13 +51,13 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 // session or the server the run uses; a TABLESPACE, LOGFILE GROUP, SERVER,
 // RESOURCE GROUP or SPATIAL REFERENCE SYSTEM, which configure the server, as a
 // server the run owns keeps them refused; ALTER DATABASE; and a TEMP object.
-func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token, scope replay.Scope) error {
+func validateMySQLReplayStatement(dialect, database, stmt string, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 	tokens = replay.LeadingCTEExecutableTokens(tokens)
 	first := replay.NormalizedIdentifier(tokens[0])
-	if err := rejectMySQLExecutableObjects(dialect, first, tokens, scope); err != nil {
+	if err := rejectMySQLExecutableObjects(dialect, stmt, first, tokens, scope); err != nil {
 		return err
 	}
 	if operation := unsafeMySQLReplayOperation(tokens, scope); operation != "" {
@@ -102,10 +102,11 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token, scope replay.Scope) string
 			return first + " external data operation"
 		}
 	case "SET":
-		if replay.TokenSequenceAt(tokens, 1, "GLOBAL") ||
-			replay.TokenSequenceAt(tokens, 1, "PERSIST") ||
-			replay.TokenSequenceAt(tokens, 1, "PERSIST_ONLY") {
+		if setsGlobalVariable(tokens) {
 			return "global or persistent SET"
+		}
+		if setsClientCharacterSet(tokens) {
+			return "client character set change"
 		}
 	case "GRANT", "REVOKE":
 		return "privilege or role mutation"
@@ -121,8 +122,8 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token, scope replay.Scope) string
 	return ""
 }
 
-func rejectMySQLExecutableObjects(dialect, first string, tokens []lexer.Token, scope replay.Scope) error {
-	if definesMySQLExecutableBody(tokens) {
+func rejectMySQLExecutableObjects(dialect, stmt, first string, tokens []lexer.Token, scope replay.Scope) error {
+	if definesMySQLExecutableBody(stmt, tokens) {
 		return replay.Refuse(dialect, first+" executable stored body")
 	}
 	if engine := unconfinedMySQLStorageEngine(tokens); engine != "" && !scope.TrustedSQL {
@@ -276,11 +277,130 @@ func isGlobalMySQLDDL(tokens []lexer.Token) bool {
 }
 
 // definesMySQLExecutableBody reports a CREATE or ALTER of an object with a
-// body, as [mysqlstored.Read] reads it: the database realm refuses every
-// such statement, and the server realm lifts every one but an EVENT's.
-func definesMySQLExecutableBody(tokens []lexer.Token) bool {
-	definition, ok := mysqlstored.Read(tokens)
+// body, as [mysqlstored.Read] reads it: the database realm refuses every such
+// statement, and the server realm lifts every one but an EVENT's. Read reads
+// one that defines nothing with a body, such as CREATE TABLE, as such. A
+// statement Read cannot read reports false here, because
+// [rejectUnreadableDefinition] refused it before any realm was consulted.
+func definesMySQLExecutableBody(stmt string, tokens []lexer.Token) bool {
+	definition, ok, _ := mysqlstored.Read(stmt, tokens)
 	return ok && definition.Body()
+}
+
+// rejectUnreadableDefinition refuses a CREATE or ALTER whose head
+// [mysqlstored.Read] cannot follow to a kind of object it knows. It runs
+// before any realm or trust lifts a statement, since such a statement may
+// define an EVENT, which every realm keeps refused.
+func rejectUnreadableDefinition(dialect, stmt string, tokens []lexer.Token) error {
+	if _, _, err := mysqlstored.Read(stmt, tokens); err != nil {
+		return replay.Refuse(dialect, replay.NormalizedIdentifier(tokens[0])+" statement whose object kind cannot be read")
+	}
+	return nil
+}
+
+// setItems returns the index at which each item of a SET's list begins: the
+// token after SET and each token after a comma outside parentheses.
+func setItems(tokens []lexer.Token) []int {
+	items := []int{1}
+	depth := 0
+	for index := 1; index < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && tokens[index].MatchOperatorValue(","):
+			items = append(items, index+1)
+		}
+	}
+	return items
+}
+
+// setsGlobalVariable reports a SET with an item that assigns a global or
+// persisted variable: GLOBAL, PERSIST or PERSIST_ONLY in front of the name,
+// or @@GLOBAL., @@PERSIST. or @@PERSIST_ONLY. as its prefix. Each item names
+// its own scope, so measured on MySQL 8.4.13 and MariaDB 11.8.9,
+// SET @@global.max_connections = 152 changes the server for every session, as
+// SET GLOBAL does.
+func setsGlobalVariable(tokens []lexer.Token) bool {
+	for _, item := range setItems(tokens) {
+		scope := item
+		if at, next := replay.TokenAt(tokens, item), replay.TokenAt(tokens, item+1); at.MatchOperatorValue("@") && next.MatchOperatorValue("@") {
+			scope = item + 2
+		}
+		switch replay.NormalizedIdentifier(replay.TokenAt(tokens, scope)) {
+		case "GLOBAL", "PERSIST", "PERSIST_ONLY":
+			if scope == item || scope+1 < len(tokens) && tokens[scope+1].MatchOperatorValue(".") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// setsClientCharacterSet reports a SET that gives the session a client
+// character set outside the UTF-8 family: NAMES, CHARACTER SET or CHARSET as
+// an item of the SET's list, or an assignment to character_set_client in any
+// spelling, whose value is not utf8mb4, utf8mb3 or utf8. DEFAULT and an
+// expression are refused, since the guard cannot tell what they name.
+//
+// The guard reads a statement's bytes as UTF-8, which is how a session whose
+// client character set is in that family reads them. Measured on MySQL
+// 8.4.13 and MariaDB 11.8.9: under latin1 the byte 0xA0 is whitespace, so
+// CREATE<0xA0>TRIGGER defines a trigger; and under gbk the last byte of 中
+// and the backtick after it are one character, so the server ends a quoted
+// name where the guard reads a doubled backtick, and runs the executable
+// comment that follows. That statement is valid UTF-8, so refusing bytes that
+// are not UTF-8 would not catch it; refusing the change does.
+func setsClientCharacterSet(tokens []lexer.Token) bool {
+	for _, at := range setItems(tokens) {
+		switch {
+		case replay.TokenSequenceAt(tokens, at, "NAMES") || replay.TokenSequenceAt(tokens, at, "CHARSET"):
+			if !namesUTF8(tokens, at+1) {
+				return true
+			}
+		case replay.TokenSequenceAt(tokens, at, "CHARACTER", "SET"):
+			if !namesUTF8(tokens, at+2) {
+				return true
+			}
+		}
+	}
+	for index, token := range tokens {
+		if replay.NormalizedIdentifier(token) != "CHARACTER_SET_CLIENT" {
+			continue
+		}
+		if value := assignedValue(tokens, index+1); value >= 0 && !namesUTF8(tokens, value) {
+			return true
+		}
+	}
+	return false
+}
+
+// assignedValue returns the index of the value an = or := at at assigns, and
+// -1 where no assignment stands at at.
+func assignedValue(tokens []lexer.Token, at int) int {
+	switch {
+	case at < len(tokens) && tokens[at].MatchOperatorValue("="):
+		return at + 1
+	case at+1 < len(tokens) && tokens[at].MatchOperatorValue(":") && tokens[at+1].MatchOperatorValue("="):
+		return at + 2
+	default:
+		return -1
+	}
+}
+
+// namesUTF8 reports whether the token at at names a character set of the
+// UTF-8 family, quoted or not.
+func namesUTF8(tokens []lexer.Token, at int) bool {
+	if at >= len(tokens) {
+		return false
+	}
+	switch replay.NormalizedIdentifier(tokens[at]) {
+	case "UTF8MB4", "UTF8MB3", "UTF8":
+		return true
+	default:
+		return false
+	}
 }
 
 func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {

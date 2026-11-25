@@ -328,11 +328,24 @@ proven to stay inside the disposable realm:
   `SET search_path`, `SELECT INTO` protected namespaces, and CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
 - MySQL and MariaDB executable comments, `CALL`, a `CREATE` or `ALTER` of an
-  event, a trigger, a routine or a MariaDB package or package body, whatever
-  `DEFINER` clause it writes, `LOAD DATA`/`LOAD XML`, and externally backed
-  `FEDERATED` or `CONNECT` tables. A migration can set `NO_BACKSLASH_ESCAPES`,
-  so a statement that holds a backslash is read both with and without it, and
-  refused when either reading refuses it.
+  event, a trigger, a routine or a MariaDB package or package body,
+  `LOAD DATA`/`LOAD XML`, and externally backed `FEDERATED` or `CONNECT`
+  tables. A `DEFINER` clause is read as the server reads it, an unquoted host
+  such as `app@$` included. A `CREATE` or `ALTER` whose words the guard cannot
+  follow to a kind of object it knows is refused, since it may define a body.
+  On MariaDB, the statement a `SET STATEMENT ... FOR` or an `ANALYZE` runs is
+  checked as a statement of its own. A `SET` of a global or persisted
+  variable is refused in any spelling: `SET GLOBAL`, `SET @@global.x`, or an
+  item of a longer list. A `SET NAMES`, `SET CHARACTER SET` or
+  `character_set_client` change to a character set outside the UTF-8 family
+  is refused too: under `latin1` the byte `0xA0` is white space, and under
+  `gbk` a valid UTF-8 character can hide the quote after it, so the guard
+  would read the statement other than the server does. A dev URL that sets
+  such a character set for its own connection is outside what the guard
+  reads. A migration can set `NO_BACKSLASH_ESCAPES`, `ANSI_QUOTES` or, on
+  MariaDB, `MSSQL`, so a statement that holds a backslash, a double quote or
+  a `[` is read under each combination of them, and refused when any reading
+  refuses it.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.

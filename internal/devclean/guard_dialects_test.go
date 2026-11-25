@@ -295,6 +295,46 @@ func TestReplayGuardMySQLFamily_HappyPath(t *testing.T) {
 			statement: "DROP TABLE ptah_dev.users, ptah_dev.audit",
 		},
 		{
+			name:      "client character set in the UTF-8 family",
+			statement: "SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci, character_set_client = 'utf8mb4'",
+		},
+		{
+			name:      "session variables",
+			statement: "SET SESSION max_statement_time = 1, @@session.sql_mode = 'ANSI_QUOTES', @@local.autocommit = 1",
+		},
+		{
+			name:      "local write a SET STATEMENT runs",
+			statement: "SET STATEMENT max_statement_time=0 FOR INSERT INTO users VALUES (1)",
+		},
+		{
+			name:      "local update a SET STATEMENT runs that names a column global",
+			statement: "SET STATEMENT max_statement_time=0 FOR UPDATE users SET active = 1, global = 2",
+		},
+		{
+			name:      "local delete an ANALYZE runs",
+			statement: "ANALYZE FORMAT=JSON DELETE FROM users WHERE id = 1",
+		},
+		{
+			name:      "table maintenance",
+			statement: "ANALYZE NO_WRITE_TO_BINLOG TABLE users",
+		},
+		{
+			name:      "replaced table",
+			statement: "CREATE OR REPLACE TABLE users_copy (id bigint)",
+		},
+		{
+			name:      "online table change",
+			statement: "ALTER ONLINE TABLE users ADD COLUMN nickname varchar(10)",
+		},
+		{
+			name:      "name with a long s",
+			statement: "UPDATE users SET \u017fet = 1",
+		},
+		{
+			name:      "local table named with a leading digit",
+			statement: "INSERT INTO ptah_dev.1t VALUES (1)",
+		},
+		{
 			name: "local multi-table rename",
 			statement: "RENAME TABLE ptah_dev.users TO ptah_dev.users_old, " +
 				"ptah_dev.audit TO ptah_dev.audit_old",
@@ -371,6 +411,15 @@ func TestReplayGuardServerDatabases_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// The refusals the review spellings receive, and the trigger they define.
+const (
+	reviewTrigger     = " TRIGGER tr AFTER INSERT ON users FOR EACH ROW INSERT INTO other.t VALUES (88)"
+	storedBody        = `mysql migration replay rejects CREATE executable stored body .*`
+	executableComment = `mysql migration replay rejects executable comment .*`
+	clientCharset     = `mysql migration replay rejects client character set change .*`
+	globalSet         = `mysql migration replay rejects global or persistent SET .*`
+)
 
 func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{
@@ -539,11 +588,80 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 		},
 		{
 			// A migration can set NO_BACKSLASH_ESCAPES on the session, which
-			// reads 'a\' as a whole string: the default rule finds no kind.
+			// reads 'a\' as a whole string and finds a function. The default
+			// rule reads on past the quote and finds no kind of object.
 			name:      "definer read without backslash escapes",
 			statement: `CREATE DEFINER='a\'@'%' FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)`,
-			wantErr:   `mysql migration replay rejects CREATE executable stored body .*`,
+			wantErr:   `mysql migration replay rejects CREATE statement whose object kind cannot be read .*`,
 		},
+		// The spellings below were measured on MySQL 8.4.13 and MariaDB
+		// 11.8.9: each runs on the server and does what its refusal names.
+		{name: "definer host that is a dollar sign", statement: "CREATE DEFINER=root@$" + reviewTrigger, wantErr: storedBody},
+		{name: "definer host ending in a dollar sign", statement: "CREATE DEFINER=root@x.$" + reviewTrigger, wantErr: storedBody},
+		{name: "definer host of a digit and a dollar sign", statement: "CREATE DEFINER=root@1$" + reviewTrigger, wantErr: storedBody},
+		{name: "definer host starting with a dollar sign", statement: "CREATE DEFINER=root@$.x" + reviewTrigger, wantErr: storedBody},
+		{name: "definer host of two dollar signs", statement: "CREATE DEFINER=root@$$" + reviewTrigger, wantErr: storedBody},
+		{name: "function with a dollar sign host", statement: "CREATE DEFINER=root@$ FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)", wantErr: storedBody},
+		{name: "event with a dollar sign host", statement: "CREATE DEFINER=root@$ EVENT e ON SCHEDULE EVERY 1 DAY DO DELETE FROM other.t", wantErr: storedBody},
+		{name: "event with a dollar sign user", statement: "CREATE DEFINER=$@h EVENT e ON SCHEDULE EVERY 1 SECOND DO DELETE FROM other.t", wantErr: storedBody},
+		{name: "function behind a carriage return in a hash comment", statement: "CREATE #\rX\nFUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)", wantErr: storedBody},
+		{name: "trigger behind a carriage return in a dash comment", statement: "CREATE -- \rX\n" + reviewTrigger[1:], wantErr: storedBody},
+		{name: "procedure behind a carriage return in a hash comment", statement: "CREATE #\rX\nPROCEDURE p() DELETE FROM other.t", wantErr: storedBody},
+		{name: "event body behind a carriage return in a hash comment", statement: "ALTER #\rX\nEVENT e DO DELETE FROM other.t",
+			wantErr: `mysql migration replay rejects ALTER executable stored body .*`},
+		{name: "trigger behind a backslash in a quoted host", statement: "CREATE DEFINER=root@`h\\`" + reviewTrigger + " -- `\n", wantErr: storedBody},
+		{name: "kind it does not know", statement: "CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS 'export function f() {}'",
+			wantErr: `mysql migration replay rejects CREATE statement whose object kind cannot be read .*`},
+		{name: "update target behind a backslash in a quoted alias", statement: "UPDATE users AS `a\\` JOIN other.t ON 1=1 SET other.t.id = other.t.id + 1000 -- `",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "update target behind an alias spelled with a long s", statement: "UPDATE users ſET JOIN other.t ON 1=1 SET other.t.id = other.t.id + 1000",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "update target behind a table spelled with a dotless i", statement: "UPDATE ıgnore JOIN other.t ON 1=1 SET other.t.id = other.t.id + 1000",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "database named with a leading digit", statement: "INSERT INTO 1other.t VALUES (1)",
+			wantErr: `mysql migration replay rejects cross-database target "1other.t" .*`},
+		{name: "table named with a leading digit", statement: "INSERT INTO other.1t VALUES (1)",
+			wantErr: `mysql migration replay rejects cross-database target "other.1t" .*`},
+		{name: "database named like a number in upper case", statement: "INSERT INTO 0Xab.t VALUES (1)",
+			wantErr: `mysql migration replay rejects cross-database target "0Xab.t" .*`},
+		{name: "executable comment behind a backslash in a quoted name", statement: "SELECT 1 AS `a\\`, /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 2 AS `b`",
+			wantErr: executableComment},
+		{name: "executable comment a string hides only with backslash escapes",
+			statement: "UPDATE users SET name = 'x\\' /*!50000 , active = (SELECT COUNT(*) FROM other.t) */ , email = '\\'", wantErr: executableComment},
+		{name: "executable comment behind a double-quoted name", statement: `SELECT 'p\'q' AS "a\" , /*!50000 1 AS x, */ 'r' AS "z"`,
+			wantErr: executableComment},
+		{name: "executable comment behind a bracketed name", statement: "SELECT 1 AS [a'], /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 'b' AS y",
+			wantErr: executableComment},
+		{name: "executable comment behind a dash and a no-break space", statement: "SELECT 1 -- a, /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 2 AS y FROM t2",
+			wantErr: executableComment},
+		{name: "executable comment behind a dash and a next line", statement: "SELECT 1 --\u0085a, /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 2 AS y FROM t2",
+			wantErr: executableComment},
+		{name: "client character set by SET NAMES", statement: "SET NAMES latin1", wantErr: clientCharset},
+		{name: "client character set in a list", statement: "SET @a = 1, NAMES latin1", wantErr: clientCharset},
+		{name: "client character set by SET CHARSET", statement: "SET CHARSET latin1", wantErr: clientCharset},
+		{name: "client character set by SET CHARACTER SET", statement: "SET CHARACTER SET gbk", wantErr: clientCharset},
+		{name: "client character set the server defaults to", statement: "SET NAMES DEFAULT", wantErr: clientCharset},
+		{name: "client character set by variable", statement: "SET character_set_client = gbk", wantErr: clientCharset},
+		{name: "client character set by session variable", statement: "SET @@session.character_set_client = 'latin1'", wantErr: clientCharset},
+		{name: "global variable by prefix", statement: "SET @@global.max_connections = 152", wantErr: globalSet},
+		{name: "global variable by prefix in upper case", statement: "SET @@GLOBAL.sql_mode = @@GLOBAL.sql_mode", wantErr: globalSet},
+		{name: "global variable in a list", statement: "SET @a = 1, GLOBAL max_connections = 154", wantErr: globalSet},
+		{name: "persisted variable by prefix", statement: "SET @@persist.max_connections = 155", wantErr: globalSet},
+		{name: "persisted-only variable by prefix", statement: "SET @@persist_only.max_connections = 155", wantErr: globalSet},
+		{name: "trigger a SET STATEMENT runs", statement: "SET STATEMENT max_statement_time=0 FOR CREATE" + reviewTrigger, wantErr: storedBody},
+		{name: "trigger a SET STATEMENT runs after a FOR in its value",
+			statement: "SET STATEMENT lc_time_names=SUBSTRING('en_USx' FROM 1 FOR 5) FOR CREATE" + reviewTrigger, wantErr: storedBody},
+		{name: "write a SET STATEMENT runs", statement: "SET STATEMENT max_statement_time=0 FOR INSERT INTO other.t VALUES (94)",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "global variable a SET STATEMENT sets", statement: "SET STATEMENT max_statement_time=0 FOR SET GLOBAL max_connections = 156", wantErr: globalSet},
+		{name: "delete an ANALYZE runs", statement: "ANALYZE DELETE FROM other.t",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "insert an ANALYZE runs", statement: "ANALYZE INSERT INTO other.t SELECT 95",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "delete an ANALYZE with a format runs", statement: "ANALYZE FORMAT=JSON DELETE FROM other.t",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
+		{name: "ANALYZE a SET STATEMENT runs", statement: "SET STATEMENT max_statement_time=0 FOR ANALYZE DELETE FROM other.t",
+			wantErr: `mysql migration replay rejects cross-database target "other.t" .*`},
 		{
 			name:      "version executable comment",
 			statement: "/*!50000 CREATE USER escaped */",
@@ -644,6 +762,26 @@ func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
 			name:      "connect engine",
 			statement: "CREATE TABLE remote_users (id bigint) ENGINE CONNECT TABLE_TYPE MYSQL",
 			wantErr:   `mariadb migration replay rejects CONNECT storage engine .*`,
+		},
+		{
+			name:      "package body with a dollar sign definer host",
+			statement: "CREATE DEFINER=root@$ PACKAGE BODY pkg PROCEDURE p() BEGIN DELETE FROM other.t; END; END",
+			wantErr:   `mariadb migration replay rejects CREATE executable stored body .*`,
+		},
+		{
+			name:      "trigger a SET STATEMENT runs",
+			statement: "SET STATEMENT max_statement_time=0 FOR CREATE TRIGGER tr AFTER INSERT ON users FOR EACH ROW INSERT INTO other.t VALUES (93)",
+			wantErr:   `mariadb migration replay rejects CREATE executable stored body .*`,
+		},
+		{
+			name:      "delete an ANALYZE runs",
+			statement: "ANALYZE DELETE FROM other.t",
+			wantErr:   `mariadb migration replay rejects cross-database target "other.t" .*`,
+		},
+		{
+			name:      "executable comment behind a bracketed name",
+			statement: "SELECT 1 AS [a'], /*!50000 (SELECT COUNT(*) FROM other.t) AS x, */ 'b' AS y",
+			wantErr:   `mariadb migration replay rejects executable comment .*`,
 		},
 		{
 			name:      "cross database update with leading cte",

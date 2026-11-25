@@ -1698,6 +1698,9 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution) error {
 // does; see [dbschema.DatabaseConnection.WithStoredValuesKept].
 func applyDerivedStatements(ctx context.Context, conn *dbschema.DatabaseConnection, statements []string) error {
 	return conn.WithStoredValuesKept(ctx, func(session *dbschema.DatabaseConnection) error {
+		if err := session.PreflightStoredValues(statements); err != nil {
+			return fmt.Errorf("apply derived rollback statements: %w", err)
+		}
 		for _, statement := range statements {
 			if err := session.Writer().ExecuteSQL(ctx, statement); err != nil {
 				return fmt.Errorf("apply derived rollback statement %q: %w", statement, err)

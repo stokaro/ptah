@@ -13,11 +13,16 @@
 // strict mode and fails the application's later statements. So the head is
 // read as the server reads it, measured on MySQL 8.4 and MariaDB 11.8: a
 // DEFINER clause after CREATE or ALTER, a host the server reads unquoted
-// across several tokens, such as localhost.localdomain, and an executable
-// comment the server runs, which [Tokens] reads as part of the statement.
+// from the bytes after the @, such as localhost.localdomain or $, and an
+// executable comment the server runs, which [Tokens] reads as part of the
+// statement. A CREATE or ALTER whose head it cannot follow to a kind of
+// object it knows is an error, never a statement that defines nothing, so a
+// spelling it misses is refused rather than let through.
 package mysqlstored
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"ptah.run/internal/lexer"
@@ -63,10 +68,11 @@ type Definer struct {
 	// parentheses the server accepts after those two.
 	User lexer.Token
 	// Host is the token that names the host, and nil where no @ follows the
-	// user. A host the server reads unquoted across several tokens, such as
-	// localhost.localdomain or 10.0.0.1, is one identifier token holding the
-	// whole name. An @ with no name directly behind it, as in app@ TRIGGER,
-	// which MySQL reads as the host '' and MariaDB as '%', is an empty one.
+	// user. A host the server reads unquoted, such as localhost.localdomain,
+	// 10.0.0.1 or $, is one identifier token holding the bytes the server
+	// reads as the name. An @ with no name directly behind it, as in app@
+	// TRIGGER, which MySQL reads as the host '' and MariaDB as '%', is an
+	// empty one.
 	Host *lexer.Token
 }
 
@@ -90,36 +96,55 @@ func (d Definition) KeepsSessionMode() bool {
 	return d.Body() && (d.Verb == "CREATE" || d.writesBody)
 }
 
-// Read reads the head of a statement from its significant tokens, as
-// [Tokens] returns them, and reports false for any statement but a CREATE or
-// ALTER of a stored object.
+// ErrUnreadableDefinition is the error [Read] wraps for a CREATE or ALTER
+// statement whose head it cannot follow to a kind of object it knows. Such a
+// statement can define a stored object in a spelling the reader misses, so a
+// caller that has to know refuses it rather than guess.
+var ErrUnreadableDefinition = errors.New("a CREATE or ALTER statement whose kind of object is not known")
+
+// Read reads the head of statement from its significant tokens, as [Tokens]
+// returns them for statement: each token's position is a byte offset in
+// statement. It reports true for a CREATE or ALTER of a stored object, and
+// false with a nil error for any other statement and for a CREATE or ALTER of
+// an object that keeps no body, such as a table, an index, a database, a
+// user, a sequence or a tablespace.
 //
 // It reads CREATE [OR REPLACE] [ALGORITHM = ...] [DEFINER = account]
 // [SQL SECURITY ...] and the same after ALTER, then the kind -- AGGREGATE
 // FUNCTION, PACKAGE BODY and the single words -- and IF NOT EXISTS and the
 // name. The account is read as the server reads it. Its host is one quoted
-// token directly after the @, or the run of unquoted tokens directly after
-// it with nothing between them, which is how the server reads a host name;
-// whitespace or a comment ends the run. A keyword written in quotes is a
-// name to the server, never a keyword, and reads as one here too.
-func Read(tokens []lexer.Token) (Definition, bool) {
-	if len(tokens) == 0 {
-		return Definition{}, false
+// token directly after the @, or else the bytes directly after it that the
+// server reads as a host name: ASCII letters and digits, '.', '_', '$' and
+// every byte outside ASCII. A keyword is matched in ASCII letters of either
+// case alone, as the server matches it, and a keyword written in quotes is a
+// name to the server, never a keyword, and reads as one here too. A SET
+// STATEMENT ... FOR reads as the statement after FOR; see [Wrapped].
+//
+// It returns an error wrapping [ErrUnreadableDefinition] for a CREATE or
+// ALTER it cannot read that way: a DEFINER clause with no account, a token
+// that runs past the end of the host the server reads, a kind it does not
+// know after an ALGORITHM, DEFINER or SQL SECURITY clause, which only a view
+// and a stored object take, or a first word after CREATE [OR REPLACE] or
+// ALTER that names no kind of object it knows.
+func Read(statement string, tokens []lexer.Token) (Definition, bool, error) {
+	if start, ok := Wrapped(tokens); ok {
+		return Read(statement, tokens[start:])
 	}
-	verb := strings.ToUpper(tokens[0].Value)
 	if !isWord(tokens, 0, "CREATE") && !isWord(tokens, 0, "ALTER") {
-		return Definition{}, false
+		return Definition{}, false, nil
 	}
+	verb := asciiUpper(tokens[0].Value)
 	definition := Definition{Verb: verb}
 	at := 1
 	if verb == "CREATE" {
 		at = skipWords(tokens, at, "OR", "REPLACE")
 	}
+	head := at
 	at = skipAssignment(tokens, at, "ALGORITHM")
 	if isWord(tokens, at, "DEFINER") {
-		definer, next, ok := readDefiner(tokens, at+1)
-		if !ok {
-			return Definition{}, false
+		definer, next, err := readDefiner(statement, tokens, at+1)
+		if err != nil {
+			return Definition{}, false, err
 		}
 		definition.Definer, at = &definer, next
 	}
@@ -127,8 +152,11 @@ func Read(tokens []lexer.Token) (Definition, bool) {
 		at += 3
 	}
 	kind, next, ok := readKind(tokens, at)
-	if !ok {
-		return Definition{}, false
+	switch {
+	case !ok && at == head && keepsNoBody(verb, tokens, at):
+		return Definition{}, false, nil
+	case !ok:
+		return Definition{}, false, unreadableDefinition(statement, tokens, at, "no kind of object it knows stands there")
 	}
 	definition.Kind = kind
 	at = next
@@ -137,7 +165,52 @@ func Read(tokens []lexer.Token) (Definition, bool) {
 	}
 	definition.Name, at = readName(tokens, at)
 	definition.writesBody = verb == "ALTER" && kind == Event && containsWord(tokens[at:], "DO")
-	return definition, true
+	return definition, true, nil
+}
+
+// keepsNoBody reports whether the words at at, directly after CREATE [OR
+// REPLACE] or ALTER, name a kind of object that keeps no body, in a spelling
+// MySQL 8.4 or MariaDB 11.8 accepts.
+func keepsNoBody(verb string, tokens []lexer.Token, at int) bool {
+	spellings := createdWithoutBody
+	if verb == "ALTER" {
+		spellings = alteredWithoutBody
+	}
+	for _, words := range spellings {
+		if skipWords(tokens, at, words...) != at {
+			return true
+		}
+	}
+	return false
+}
+
+// createdWithoutBody are the spellings of a kind of object CREATE makes that
+// keeps no body. A word that is not here, after CREATE, makes the statement
+// one [Read] cannot read.
+var createdWithoutBody = [][]string{
+	{"TABLE"}, {"TEMPORARY", "TABLE"}, {"TEMPORARY", "SEQUENCE"}, {"SEQUENCE"},
+	{"INDEX"}, {"UNIQUE", "INDEX"}, {"FULLTEXT", "INDEX"}, {"SPATIAL", "INDEX"}, {"VECTOR", "INDEX"},
+	{"DATABASE"}, {"SCHEMA"}, {"USER"}, {"ROLE"}, {"SERVER"},
+	{"TABLESPACE"}, {"UNDO", "TABLESPACE"}, {"LOGFILE", "GROUP"}, {"RESOURCE", "GROUP"},
+	{"SPATIAL", "REFERENCE", "SYSTEM"},
+}
+
+// alteredWithoutBody are the spellings of a kind of object ALTER changes that
+// keeps no body.
+var alteredWithoutBody = [][]string{
+	{"TABLE"}, {"ONLINE", "TABLE"}, {"IGNORE", "TABLE"}, {"ONLINE", "IGNORE", "TABLE"}, {"SEQUENCE"},
+	{"DATABASE"}, {"SCHEMA"}, {"USER"}, {"SERVER"}, {"INSTANCE"},
+	{"TABLESPACE"}, {"UNDO", "TABLESPACE"}, {"LOGFILE", "GROUP"}, {"RESOURCE", "GROUP"},
+}
+
+// unreadableDefinition is the error of a statement whose head [Read] cannot
+// follow past the token at at, for reason.
+func unreadableDefinition(statement string, tokens []lexer.Token, at int, reason string) error {
+	near := "the end of the statement"
+	if at < len(tokens) {
+		near = fmt.Sprintf("%q", commentHead(statement[tokens[at].Start:]))
+	}
+	return fmt.Errorf("%w: at %s: %s", ErrUnreadableDefinition, near, reason)
 }
 
 // readKind reads the kind of object at at.
@@ -156,15 +229,15 @@ func readKind(tokens []lexer.Token, at int) (string, int, bool) {
 	return "", at, false
 }
 
-// readDefiner reads `= account` from at, and reports false where no account
-// follows the =.
-func readDefiner(tokens []lexer.Token, at int) (Definer, int, bool) {
+// readDefiner reads `= account` from at, and returns an error where no
+// account follows the = or the host cannot be read.
+func readDefiner(statement string, tokens []lexer.Token, at int) (Definer, int, error) {
 	if at >= len(tokens) || !tokens[at].MatchOperatorValue("=") {
-		return Definer{}, at, false
+		return Definer{}, at, unreadableDefinition(statement, tokens, at, "DEFINER is not followed by =")
 	}
 	at++
 	if at >= len(tokens) || tokens[at].Type != lexer.TokenIdentifier && tokens[at].Type != lexer.TokenString {
-		return Definer{}, at, false
+		return Definer{}, at, unreadableDefinition(statement, tokens, at, "DEFINER = names no account")
 	}
 	definer := Definer{User: tokens[at]}
 	at++
@@ -174,33 +247,53 @@ func readDefiner(tokens []lexer.Token, at int) (Definer, int, bool) {
 		}
 	}
 	if at < len(tokens) && tokens[at].MatchOperatorValue("@") {
-		host, next := readHost(tokens, at)
+		host, next, err := readHost(statement, tokens, at)
+		if err != nil {
+			return Definer{}, at, err
+		}
 		definer.Host, at = &host, next
 	}
-	return definer, at, true
+	return definer, at, nil
 }
 
 // readHost reads the host after the @ at at, as the server reads it: a
-// quoted name directly after the @, or the run of unquoted name and number
-// tokens and dots directly after it, each starting where the one before it
-// ends. Measured on MySQL 8.4 and MariaDB 11.8, app@localhost.localdomain
-// names the host localhost.localdomain, app@ followed by a space names an
-// empty host, and app@ 'h' and app @ h are refused.
-func readHost(tokens []lexer.Token, at int) (lexer.Token, int) {
-	end := tokens[at].End
-	host := lexer.Token{Type: lexer.TokenIdentifier, Start: end, End: end}
+// quoted name directly after the @, or else the bytes directly after it that
+// the server reads as an unquoted host name, which may be none. It returns
+// the index of the first token at or after the host's end, and an error where
+// a token begins inside the host and ends past it, since the server and the
+// lexer then disagree about where the host ends.
+//
+// Measured on MySQL 8.4.13 and MariaDB 11.8.9, app@localhost.localdomain names
+// the host localhost.localdomain, root@$, root@x.$, root@1$ and root@$$ name
+// the hosts $, x.$, 1$ and $$, app@ followed by a space names an empty host,
+// and app@ 'h' and app @ h are refused. MySQL reads a byte outside ASCII as
+// part of the host, as in root@hé, and MariaDB refuses that statement.
+func readHost(statement string, tokens []lexer.Token, at int) (lexer.Token, int, error) {
+	start := tokens[at].End
 	next := at + 1
-	if next < len(tokens) && tokens[next].Start == end && isQuoted(tokens[next]) {
-		return tokens[next], next + 1
+	if next < len(tokens) && tokens[next].Start == start && isQuoted(tokens[next]) {
+		return tokens[next], next + 1, nil
 	}
-	var name strings.Builder
-	for next < len(tokens) && tokens[next].Start == end && hostPart(tokens[next]) {
-		name.WriteString(tokens[next].Value)
-		end = tokens[next].End
+	end := start
+	for end < len(statement) && isHostByte(statement[end]) {
+		end++
+	}
+	for next < len(tokens) && tokens[next].Start < end {
+		if tokens[next].End > end {
+			return lexer.Token{}, next, unreadableDefinition(statement, tokens, next,
+				"a token runs past the end of the host name the server reads")
+		}
 		next++
 	}
-	host.Value, host.End = name.String(), end
-	return host, next
+	host := lexer.Token{Type: lexer.TokenIdentifier, Value: statement[start:end], Start: start, End: end}
+	return host, next, nil
+}
+
+// isHostByte reports a byte the server reads as part of an unquoted host
+// name: an ASCII letter or digit, '.', '_', '$', or a byte outside ASCII.
+func isHostByte(b byte) bool {
+	return 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z' || '0' <= b && b <= '9' ||
+		b == '.' || b == '_' || b == '$' || b >= 0x80
 }
 
 // isQuoted reports a string or a quoted name.
@@ -213,12 +306,6 @@ func isQuoted(token lexer.Token) bool {
 	default:
 		return false
 	}
-}
-
-// hostPart reports a token an unquoted host name is made of: an unquoted
-// name or number, or a dot.
-func hostPart(token lexer.Token) bool {
-	return token.MatchOperatorValue(".") || token.Type == lexer.TokenIdentifier && !isQuoted(token)
 }
 
 // readName reads the object's name at at, [database.]name, without quotes,
@@ -270,10 +357,24 @@ func containsWord(tokens []lexer.Token, word string) bool {
 	return false
 }
 
-// isWord reports an unquoted word at at, in any case.
+// isWord reports an unquoted word at at, its ASCII letters in either case.
+// The server matches a keyword that way, so `ſET` with a long s is a name
+// there, never SET, though Unicode case folding reads the two as one.
 func isWord(tokens []lexer.Token, at int, word string) bool {
 	return at >= 0 && at < len(tokens) && tokens[at].Type == lexer.TokenIdentifier &&
-		strings.EqualFold(tokens[at].Value, word)
+		asciiUpper(tokens[at].Value) == word
+}
+
+// asciiUpper is s with its ASCII letters in upper case and every other byte
+// as written.
+func asciiUpper(s string) string {
+	upper := []byte(s)
+	for index, b := range upper {
+		if 'a' <= b && b <= 'z' {
+			upper[index] = b - 'a' + 'A'
+		}
+	}
+	return string(upper)
 }
 
 // Unquote returns the text of a name or string token without the quotes

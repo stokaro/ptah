@@ -83,7 +83,7 @@ type account struct {
 // it cannot read, is reported as not found.
 func readAccount(clause mysqlstored.Definer) (account, bool) {
 	user, ok := accountPart(clause.User)
-	if !ok || clause.User.Type == lexer.TokenIdentifier && strings.EqualFold(user, "CURRENT_USER") {
+	if !ok || clause.User.MatchIdentifierValue("CURRENT_USER") {
 		return account{}, false
 	}
 	host, hostless := "%", true

@@ -251,9 +251,10 @@ func changesAccounts(server mysqlstored.Server, statement string) bool {
 			isWord(tokens[0], "RENAME") && isWord(tokens[1], "USER"))
 }
 
-// isWord reports an unquoted word, in any case.
+// isWord reports an unquoted word, its ASCII letters in either case, as the
+// server matches a keyword.
 func isWord(token lexer.Token, word string) bool {
-	return token.Type == lexer.TokenIdentifier && strings.EqualFold(token.Value, word)
+	return token.MatchIdentifierValue(word)
 }
 
 // appliesTo reports whether dialect is one whose statements name definers

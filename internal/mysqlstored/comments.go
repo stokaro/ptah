@@ -21,6 +21,12 @@ type Server struct {
 	// NO_BACKSLASH_ESCAPES, which reads a backslash in a string as the
 	// character rather than the start of an escape.
 	NoBackslashEscapes bool
+	// AnsiQuotes reports a session whose sql_mode names ANSI_QUOTES, which
+	// reads "..." as a quoted name in which a backslash is a character.
+	AnsiQuotes bool
+	// BracketNames reports a MariaDB session whose sql_mode names MSSQL,
+	// which reads [...] as a quoted name, a doubled ] standing for one.
+	BracketNames bool
 }
 
 // ErrUnreadableComment is the error [Tokens] wraps for an executable comment
@@ -62,20 +68,20 @@ func Tokens(server Server, statement string) ([]lexer.Token, error) {
 }
 
 // Statement is [Read] over [Tokens]: the head of statement, as server reads
-// it.
+// it. Its error wraps [ErrUnreadableComment] or [ErrUnreadableDefinition].
 func Statement(server Server, statement string) (Definition, bool, error) {
 	tokens, err := Tokens(server, statement)
 	if err != nil {
 		return Definition{}, false, err
 	}
-	definition, ok := Read(tokens)
-	return definition, ok, nil
+	return Read(statement, tokens)
 }
 
 // LexerOptions are the options [Tokens] reads a statement with for server:
 // the dialect's lexer, every block comment read as a comment so the
-// executable ones are decided here, and the session's rule for a backslash.
-// MySQL and MariaDB read the same text the same way apart from those.
+// executable ones are decided here, and the session's rules for a backslash,
+// a double quote and a square bracket. MySQL and MariaDB read the same text
+// the same way apart from those.
 func LexerOptions(server Server) lexer.Options {
 	dialect := platform.MySQL
 	if server.Dialect == platform.MariaDB {
@@ -84,6 +90,8 @@ func LexerOptions(server Server) lexer.Options {
 	options := dialectlexer.Options(dialect)
 	options.ExecutableComments = lexer.ExecutableCommentsNone
 	options.BackslashEscapes = options.BackslashEscapes && !server.NoBackslashEscapes
+	options.DoubleQuotedNames = server.AnsiQuotes
+	options.BracketIdentifiers = server.BracketNames
 	return options
 }
 

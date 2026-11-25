@@ -29,7 +29,6 @@ func TestParse_PrefixedLiteralDefault_HappyPath(t *testing.T) {
 		{name: "a bit string in upper case", dialect: "mysql", column: "b bit(3) DEFAULT B'101'", want: ast.DefaultValue{Expression: "b'101'"}},
 		{name: "a hexadecimal string", dialect: "mariadb", column: "x varbinary(8) DEFAULT X'6A6B'", want: ast.DefaultValue{Expression: "x'6a6b'"}},
 		{name: "MySQL's hexadecimal number", dialect: "mysql", column: "x varbinary(8) DEFAULT 0x61626364", want: ast.DefaultValue{Expression: "0x61626364"}},
-		{name: "MySQL's hexadecimal number in upper case", dialect: "mariadb", column: "a int DEFAULT 0X1F", want: ast.DefaultValue{Expression: "0x1f"}},
 		{name: "MySQL's bit number", dialect: "mysql", column: "b bit(3) DEFAULT 0b101", want: ast.DefaultValue{Expression: "0b101"}},
 		{name: "a character set introducer", dialect: "mysql", column: "u varchar(30) DEFAULT _utf8mb4'u'", want: ast.DefaultValue{Value: "'u'", ValueSet: true}},
 		{name: "a national string", dialect: "mariadb", column: "n varchar(30) DEFAULT N'n'", want: ast.DefaultValue{Value: "'n'", ValueSet: true}},

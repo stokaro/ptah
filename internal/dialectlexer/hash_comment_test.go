@@ -177,3 +177,29 @@ func TestClientDelimiterRules_LineComments_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// ClientDelimiterRules reads a dollar quote where the dialect has one, and
+// none on MySQL or MariaDB, where `$$` is a name: a client delimiter rewrite
+// must not run a MySQL script's statements together as one quoted body.
+func TestClientDelimiterRules_DollarQuotes(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		want    bool
+	}{
+		{"mysql", platform.MySQL, false},
+		{"mariadb", platform.MariaDB, false},
+		{"postgres", platform.Postgres, true},
+		{"cockroachdb", platform.CockroachDB, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			rules, ok := dialectlexer.ClientDelimiterRules(test.dialect, capability.Capabilities{})
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(rules.DollarQuotes, qt.Equals, test.want)
+		})
+	}
+}

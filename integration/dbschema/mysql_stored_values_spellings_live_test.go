@@ -41,18 +41,19 @@ func connectAdminLoose(c *qt.C, engine, admin dbtarget.Engine) *dbschema.Databas
 // MySQL and MariaDB accept unquoted in a DEFINER clause.
 const dottedDefiner = "'stored_values_trg'@'localhost.localdomain'"
 
-// withDottedDefiner creates [dottedDefiner] on conn's server, locked so that
-// nothing signs in as it, with the privileges a trigger it defines needs on
-// conn's database, and drops it when the test ends.
-func withDottedDefiner(c *qt.C, conn *dbschema.DatabaseConnection) {
+// withDefiner creates account, written as an account in SQL, on conn's
+// server, locked so that nothing signs in as it, with the privileges a
+// trigger it defines needs on conn's database, and drops it when the test
+// ends.
+func withDefiner(c *qt.C, conn *dbschema.DatabaseConnection, account string) {
 	c.Helper()
 	var database string
 	c.Assert(conn.QueryRowContext(c.Context(), "SELECT DATABASE()").Scan(&database), qt.IsNil)
-	drop := "DROP USER IF EXISTS " + dottedDefiner
+	drop := "DROP USER IF EXISTS " + account
 	for _, statement := range []string{
 		drop,
-		"CREATE USER " + dottedDefiner + " ACCOUNT LOCK",
-		"GRANT ALL ON `" + strings.ReplaceAll(database, "`", "``") + "`.* TO " + dottedDefiner,
+		"CREATE USER " + account + " ACCOUNT LOCK",
+		"GRANT ALL ON `" + strings.ReplaceAll(database, "`", "``") + "`.* TO " + account,
 	} {
 		_, err := conn.ExecContext(c.Context(), statement)
 		c.Assert(err, qt.IsNil)
@@ -63,25 +64,49 @@ func withDottedDefiner(c *qt.C, conn *dbschema.DatabaseConnection) {
 	})
 }
 
-// A trigger whose DEFINER clause spells the account the way MySQL and
-// MariaDB accept it keeps the session's own mode, and the application's
-// loose insert stores the value the trigger cuts to fit. Without the window
-// recognizing the spelling, the trigger keeps STRICT_ALL_TABLES and the
-// insert fails with error 1406.
+// spelledTrigger is the trigger of [storedBodies] after its CREATE and any
+// DEFINER clause.
+const spelledTrigger = " TRIGGER stored_values_mode_bi BEFORE INSERT ON stored_values_mode FOR EACH ROW SET NEW.code = CONCAT(NEW.code, '-x')"
+
+// A trigger whose CREATE is spelled the way MySQL and MariaDB accept it keeps
+// the session's own mode, and the application's loose insert stores the
+// value the trigger cuts to fit. Without the window recognizing the
+// spelling, the trigger keeps STRICT_ALL_TABLES and the insert fails with
+// error 1406. account is the definer the trigger names, or one it does not
+// name where its CREATE names none.
 func TestWithStoredValuesKept_LiveMySQLFamilySpelledTriggerKeepsTheSessionsMode(t *testing.T) {
 	triggers := []struct {
-		name, create string
+		name, account, create string
 	}{
 		{
-			name: "a definer host of dotted parts",
-			create: "CREATE DEFINER=stored_values_trg@localhost.localdomain TRIGGER stored_values_mode_bi " +
-				"BEFORE INSERT ON stored_values_mode FOR EACH ROW SET NEW.code = CONCAT(NEW.code, '-x')",
+			name:    "a definer host of dotted parts",
+			account: dottedDefiner,
+			create:  "CREATE DEFINER=stored_values_trg@localhost.localdomain" + spelledTrigger,
 		},
 		{
-			name: "executable comments as mysqldump writes them",
+			name:    "executable comments as mysqldump writes them",
+			account: dottedDefiner,
 			create: "/*!50003 CREATE*/ /*!50017 DEFINER=`stored_values_trg`@`localhost.localdomain`*/ /*!50003 TRIGGER " +
 				"stored_values_mode_bi BEFORE INSERT ON stored_values_mode FOR EACH ROW SET NEW.code = CONCAT(NEW.code, '-x') */",
 		},
+		{name: "a definer host that is a dollar sign", account: "'stored_values_trg'@'$'", create: "CREATE DEFINER=stored_values_trg@$" + spelledTrigger},
+		{name: "a definer host ending in a dollar sign", account: "'stored_values_trg'@'x.$'", create: "CREATE DEFINER=stored_values_trg@x.$" + spelledTrigger},
+		{name: "a definer host of a digit and a dollar sign", account: "'stored_values_trg'@'1$'", create: "CREATE DEFINER=stored_values_trg@1$" + spelledTrigger},
+		{name: "a definer host starting with a dollar sign", account: "'stored_values_trg'@'$.x'", create: "CREATE DEFINER=stored_values_trg@$.x" + spelledTrigger},
+		{name: "a definer host of two dollar signs", account: "'stored_values_trg'@'$$'", create: "CREATE DEFINER=stored_values_trg@$$" + spelledTrigger},
+		{name: "a definer user that is a dollar sign", account: "'$'@'localhost.localdomain'", create: "CREATE DEFINER=$@localhost.localdomain" + spelledTrigger},
+		{
+			name:    "a quoted definer host ending in a backslash",
+			account: "'stored_values_trg'@'h\\\\'",
+			create:  "CREATE DEFINER=stored_values_trg@`h\\`" + spelledTrigger + " -- `\n",
+		},
+		{
+			name:    "a double-quoted definer user ending in a backslash",
+			account: "'stored_values_trg\\\\'@'localhost.localdomain'",
+			create:  "CREATE DEFINER=\"stored_values_trg\\\"@localhost.localdomain" + spelledTrigger,
+		},
+		{name: "a carriage return inside a hash comment", account: dottedDefiner, create: "CREATE #\rX\n" + spelledTrigger[1:]},
+		{name: "a carriage return inside a dash comment", account: dottedDefiner, create: "CREATE -- \rX\n" + spelledTrigger[1:]},
 	}
 	for _, row := range storedSpellingEngines {
 		for _, trigger := range triggers {
@@ -89,7 +114,7 @@ func TestWithStoredValuesKept_LiveMySQLFamilySpelledTriggerKeepsTheSessionsMode(
 				c := qt.New(t)
 				admin := connectAdminLoose(c, row.engine, row.admin)
 				withStoredModeObjects(c, admin)
-				withDottedDefiner(c, admin)
+				withDefiner(c, admin, trigger.account)
 
 				err := admin.WithStoredValuesKept(c.Context(), func(kept *dbschema.DatabaseConnection) error {
 					return kept.Writer().ExecuteSQL(c.Context(), trigger.create)
@@ -157,6 +182,18 @@ func TestWithStoredValuesKept_LiveMariaDBBodyKeepsTheSessionsMode(t *testing.T) 
 			statements: []string{"/*M!100100 CREATE PROCEDURE stored_values_mode_p() SELECT 1 */"},
 			modes:      []string{storedBodies[1].mode},
 		},
+		{
+			name:       "a procedure a SET STATEMENT runs",
+			statements: []string{"SET STATEMENT max_statement_time=0 FOR CREATE PROCEDURE stored_values_mode_p() SELECT 1"},
+			modes:      []string{storedBodies[1].mode},
+		},
+		{
+			name: "a procedure a SET STATEMENT runs after a FOR in its value",
+			statements: []string{
+				"SET STATEMENT lc_time_names=SUBSTRING('en_USx' FROM 1 FOR 5) FOR CREATE PROCEDURE stored_values_mode_p() SELECT 1",
+			},
+			modes: []string{storedBodies[1].mode},
+		},
 	}
 	for _, body := range bodies {
 		t.Run(body.name, func(t *testing.T) {
@@ -186,6 +223,15 @@ func sendAll(ctx context.Context, kept *dbschema.DatabaseConnection, statements 
 		}
 	}
 	return nil
+}
+
+// preflightAndSend reads statements whole through the window and, where it
+// reads each one, sends them in order, as `schema apply` sends a batch.
+func preflightAndSend(ctx context.Context, kept *dbschema.DatabaseConnection, statements []string) error {
+	if err := kept.PreflightStoredValues(statements); err != nil {
+		return err
+	}
+	return sendAll(ctx, kept, statements)
 }
 
 // withDroppedAtEnd runs drop on conn at once and again when the test ends.
@@ -218,6 +264,33 @@ func TestWithStoredValuesKept_LiveMySQLFamilyRefusesABodyItCannotRead(t *testing
 			c.Assert(err, qt.ErrorIs, mysqlstored.ErrUnreadableComment)
 			c.Assert(storedMode(c, conn, "SELECT CAST(COUNT(*) AS CHAR) FROM information_schema.TRIGGERS "+
 				"WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 'stored_values_mode_bi'"), qt.Equals, "0")
+		})
+	}
+}
+
+// A batch read whole before it is sent refuses a statement the window cannot
+// read before the statements in front of it reach the server: the table the
+// first statement creates is not there afterward.
+func TestWithStoredValuesKept_LiveMySQLFamilyPreflightSendsNothing(t *testing.T) {
+	batch := []string{
+		"CREATE TABLE stored_values_preflight (id INT)",
+		"/*!50003 CREATE TRIGGER stored_values_mode_bi BEFORE INSERT ON stored_values_mode FOR EACH ROW SET NEW.code = '*/' */",
+	}
+	for _, row := range storedSpellingEngines {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := connectLoose(c, row.engine)
+			withStoredModeObjects(c, conn)
+			withDroppedAtEnd(c, conn, "DROP TABLE IF EXISTS stored_values_preflight")
+
+			err := conn.WithStoredValuesKept(c.Context(), func(kept *dbschema.DatabaseConnection) error {
+				return preflightAndSend(c.Context(), kept, batch)
+			})
+
+			c.Assert(err, qt.ErrorIs, mysqlstored.ErrUnreadableComment)
+			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 of 2: .*`)
+			c.Assert(storedMode(c, conn, "SELECT CAST(COUNT(*) AS CHAR) FROM information_schema.TABLES "+
+				"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'stored_values_preflight'"), qt.Equals, "0")
 		})
 	}
 }

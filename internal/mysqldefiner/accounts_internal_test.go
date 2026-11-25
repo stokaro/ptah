@@ -32,6 +32,8 @@ func TestChangesAccounts(t *testing.T) {
 		{statement: "SELECT 'CREATE USER app'", want: false},
 		{statement: "RENAME TABLE a TO b", want: false},
 		{statement: "CREATE", want: false},
+		{statement: "CREATE UſER app", want: false},
+		{statement: "CREATE ROLE ınherit", want: true},
 		{server: mysql, statement: "/*!80016 CREATE USER app */", want: true},
 		{server: mariadb, statement: "/*M!100100 CREATE ROLE reader */", want: true},
 		{server: mariadb, statement: "/*!80016 CREATE USER app */", want: false},

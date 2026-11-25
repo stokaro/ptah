@@ -96,6 +96,26 @@ func TestStatement_ReadsTheHead(t *testing.T) {
 			verb: "CREATE", kind: "TRIGGER", object: "t_bi", body: true, keeps: true},
 		{name: "a dotted host inside an executable comment", statement: "CREATE /*!50017 DEFINER=trg@localhost.localdomain*/ TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = 'x'",
 			verb: "CREATE", kind: "TRIGGER", object: "t_bi", body: true, keeps: true},
+		{name: "a dollar sign as the host", statement: "CREATE DEFINER=root@$ TRIGGER tr AFTER INSERT ON t FOR EACH ROW INSERT INTO other.t VALUES (88)",
+			verb: "CREATE", kind: "TRIGGER", object: "tr", body: true, keeps: true},
+		{name: "a dollar sign as the host of a function", statement: "CREATE DEFINER=root@$ FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)",
+			verb: "CREATE", kind: "FUNCTION", object: "f", body: true, keeps: true},
+		{name: "a dollar sign as the host of an event", statement: "CREATE DEFINER=root@$ EVENT e ON SCHEDULE EVERY 1 DAY DO DELETE FROM other.t",
+			verb: "CREATE", kind: "EVENT", object: "e", body: true, keeps: true},
+		{name: "a dollar sign as the user", statement: "CREATE DEFINER=$@h EVENT e ON SCHEDULE EVERY 1 SECOND DO DELETE FROM other.t",
+			verb: "CREATE", kind: "EVENT", object: "e", body: true, keeps: true},
+		{name: "a carriage return inside a hash comment", statement: "CREATE #\rX\nFUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)",
+			verb: "CREATE", kind: "FUNCTION", object: "f", body: true, keeps: true},
+		{name: "a carriage return inside a dash comment", statement: "CREATE -- \rX\nTRIGGER tr AFTER INSERT ON t FOR EACH ROW INSERT INTO other.t VALUES (77)",
+			verb: "CREATE", kind: "TRIGGER", object: "tr", body: true, keeps: true},
+		{name: "a carriage return inside a comment before a procedure", statement: "CREATE #\rX\nPROCEDURE p() DELETE FROM other.t",
+			verb: "CREATE", kind: "PROCEDURE", object: "p", body: true, keeps: true},
+		{name: "a carriage return inside a comment before an altered event", statement: "ALTER #\rX\nEVENT e DO DELETE FROM other.t",
+			verb: "ALTER", kind: "EVENT", object: "e", body: true, keeps: true},
+		{name: "a backslash ending a quoted host", statement: "CREATE DEFINER=root@`h\\` TRIGGER tr9 AFTER INSERT ON t FOR EACH ROW INSERT INTO other.t VALUES (90) -- `\n",
+			verb: "CREATE", kind: "TRIGGER", object: "tr9", body: true, keeps: true},
+		{name: "a trigger a SET STATEMENT runs", statement: "SET STATEMENT max_statement_time=0 FOR CREATE TRIGGER tr AFTER INSERT ON t FOR EACH ROW INSERT INTO other.t VALUES (93)",
+			verb: "CREATE", kind: "TRIGGER", object: "tr", body: true, keeps: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -114,10 +134,8 @@ func TestStatement_ReadsTheHead(t *testing.T) {
 	}
 }
 
-// A statement that is not a CREATE or ALTER of a stored object reads as no
-// definition, and so does one spelled in a way the server refuses: measured
-// on MySQL 8.4 and MariaDB 11.8, a space after the @ ends the host, a quoted
-// host after it is then a syntax error, and DEFINER needs its =.
+// A statement that is not a CREATE or ALTER, and a CREATE or ALTER of an
+// object that keeps no body, reads as no definition.
 func TestStatement_ReadsNoDefinition(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -125,17 +143,20 @@ func TestStatement_ReadsNoDefinition(t *testing.T) {
 	}{
 		{name: "a table", statement: "CREATE TABLE t (id INT PRIMARY KEY)"},
 		{name: "a table named event", statement: "CREATE TABLE event (id INT PRIMARY KEY)"},
+		{name: "a temporary table", statement: "CREATE TEMPORARY TABLE t (id INT)"},
+		{name: "a replaced table", statement: "CREATE OR REPLACE TABLE t (id INT)"},
+		{name: "a unique index", statement: "CREATE UNIQUE INDEX i ON t (id)"},
+		{name: "a vector index", statement: "CREATE VECTOR INDEX i ON t (v)"},
+		{name: "a sequence", statement: "CREATE OR REPLACE SEQUENCE s"},
+		{name: "a database", statement: "CREATE DATABASE IF NOT EXISTS d"},
+		{name: "a user", statement: "CREATE USER u IDENTIFIED BY 'x'"},
+		{name: "a spatial reference system", statement: "CREATE OR REPLACE SPATIAL REFERENCE SYSTEM 4120 NAME 'n' DEFINITION 'd'"},
 		{name: "an altered table", statement: "ALTER TABLE t MODIFY code VARCHAR(5)"},
+		{name: "an online altered table", statement: "ALTER ONLINE IGNORE TABLE t ADD COLUMN c INT"},
+		{name: "the instance", statement: "ALTER INSTANCE ROTATE INNODB MASTER KEY"},
 		{name: "a dropped trigger", statement: "DROP TRIGGER t_bi"},
 		{name: "an insert naming a trigger", statement: "INSERT INTO t VALUES (1, 'CREATE TRIGGER')"},
-		{name: "a kind in quotes", statement: "CREATE `TRIGGER` t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = 'x'"},
-		{name: "a host after a space", statement: "CREATE DEFINER=trg @ localhost PROCEDURE p() SELECT 1"},
-		{name: "a quoted host after a space", statement: "CREATE DEFINER=trg@ 'localhost' PROCEDURE p() SELECT 1"},
-		{name: "a host with a dash", statement: "CREATE DEFINER=trg@my-host PROCEDURE p() SELECT 1"},
-		{name: "a definer without its =", statement: "CREATE DEFINER app@localhost VIEW v AS SELECT 1"},
-		{name: "parentheses after a user", statement: "CREATE DEFINER=app() VIEW v AS SELECT 1"},
-		{name: "a definer the statement does not finish", statement: "CREATE DEFINER="},
-		{name: "OR REPLACE after ALTER", statement: "ALTER OR REPLACE TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = 'x'"},
+		{name: "a no-break space inside a name", statement: "CREATE\u00a0TRIGGER tr AFTER INSERT ON t FOR EACH ROW INSERT INTO other.t VALUES (81)"},
 		{name: "an empty statement", statement: ""},
 	}
 	for _, test := range tests {
@@ -145,6 +166,45 @@ func TestStatement_ReadsNoDefinition(t *testing.T) {
 			got, ok, err := mysqlstored.Statement(mysql84, test.statement)
 
 			c.Assert(err, qt.IsNil)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, mysqlstored.Definition{})
+		})
+	}
+}
+
+// A CREATE or ALTER the reader cannot follow to a kind of object it knows is
+// an error, never a statement that defines nothing: the guard and the strict
+// session refuse it rather than miss a body. Measured on MySQL 8.4 and
+// MariaDB 11.8, the server refuses each of these, apart from the kind it
+// does not know, which a later server may accept.
+func TestStatement_UnreadableDefinition_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "a kind in quotes", statement: "CREATE `TRIGGER` t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = 'x'"},
+		{name: "a host after a space", statement: "CREATE DEFINER=trg @ localhost PROCEDURE p() SELECT 1"},
+		{name: "a quoted host after a space", statement: "CREATE DEFINER=trg@ 'localhost' PROCEDURE p() SELECT 1"},
+		{name: "a host with a dash", statement: "CREATE DEFINER=trg@my-host PROCEDURE p() SELECT 1"},
+		{name: "an exponent past the host", statement: "CREATE DEFINER=trg@1e+5 PROCEDURE p() SELECT 1"},
+		{name: "a no-break space after the host", statement: "CREATE DEFINER=root@h\u00a0PROCEDURE p() SELECT 1"},
+		{name: "a definer without its =", statement: "CREATE DEFINER app@localhost VIEW v AS SELECT 1"},
+		{name: "parentheses after a user", statement: "CREATE DEFINER=app() VIEW v AS SELECT 1"},
+		{name: "a definer the statement does not finish", statement: "CREATE DEFINER="},
+		{name: "OR REPLACE after ALTER", statement: "ALTER OR REPLACE TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = 'x'"},
+		{name: "four digits in a comment", statement: "CREATE /*!1234*/ TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = 'x'"},
+		{name: "a kind it does not know", statement: "CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS 'export function f() {}'"},
+		{name: "a table after a definer", statement: "CREATE DEFINER=app@h TABLE t (id INT)"},
+		{name: "a keyword spelled with a long s", statement: "CREATE \u017fEQUENCE s"},
+		{name: "a keyword spelled with a dotless i", statement: "CREATE TR\u0131GGER tr AFTER INSERT ON t FOR EACH ROW INSERT INTO other.t VALUES (1)"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, ok, err := mysqlstored.Statement(mysql84, test.statement)
+
+			c.Assert(err, qt.ErrorIs, mysqlstored.ErrUnreadableDefinition)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(got, qt.Equals, mysqlstored.Definition{})
 		})
@@ -168,6 +228,14 @@ func TestStatement_ReadsTheDefinerHost(t *testing.T) {
 		{name: "a keyword", statement: "CREATE DEFINER=trg@localhost.procedure PROCEDURE p() SELECT 1", user: "trg", host: "localhost.procedure"},
 		{name: "empty", statement: "CREATE DEFINER=trg@ VIEW v AS SELECT 1", user: "trg", host: ""},
 		{name: "ended by a comment", statement: "CREATE DEFINER=trg@localhost/**/VIEW v AS SELECT 1", user: "trg", host: "localhost"},
+		{name: "a dollar sign", statement: "CREATE DEFINER=root@$ VIEW v AS SELECT 1", user: "root", host: "$"},
+		{name: "a dollar sign after a dot", statement: "CREATE DEFINER=root@x.$ VIEW v AS SELECT 1", user: "root", host: "x.$"},
+		{name: "a dollar sign after a digit", statement: "CREATE DEFINER=root@1$ VIEW v AS SELECT 1", user: "root", host: "1$"},
+		{name: "a dot after a dollar sign", statement: "CREATE DEFINER=root@$.x VIEW v AS SELECT 1", user: "root", host: "$.x"},
+		{name: "two dollar signs", statement: "CREATE DEFINER=root@$$ VIEW v AS SELECT 1", user: "root", host: "$$"},
+		{name: "a character outside ASCII", statement: "CREATE DEFINER=root@h\u00e9 VIEW v AS SELECT 1", user: "root", host: "h\u00e9"},
+		{name: "a backslash in quotes", statement: "CREATE DEFINER=root@`h\\` VIEW v AS SELECT 1", user: "root", host: "`h\\`"},
+		{name: "a dollar sign as the user", statement: "CREATE DEFINER=$@h VIEW v AS SELECT 1", user: "$", host: "h"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -231,7 +299,6 @@ func TestStatement_ReadsExecutableCommentsAsTheServerDoes(t *testing.T) {
 		{name: "a MariaDB comment with a MySQL 5.7 version", server: mariadb, statement: "/*M!50700 CREATE" + trigger, kind: "TRIGGER"},
 		{name: "a MariaDB comment on MySQL", server: mysql84, statement: "/*M! CREATE" + trigger},
 		{name: "a lowercase m on MariaDB", server: mariadb, statement: "/*m! CREATE" + trigger},
-		{name: "four digits are SQL", server: mysql84, statement: "CREATE /*!1234*/" + trigger},
 		{name: "a version before 5.7 on a server of unknown version", server: unknown, statement: "/*!50003 CREATE" + trigger, kind: "TRIGGER"},
 		{name: "a kind split across comments", server: mariadb, statement: "/*!50003 CREATE*/ /*M!100100 OR REPLACE*/ /*!50003" + trigger, kind: "TRIGGER"},
 	}
@@ -281,22 +348,98 @@ func TestStatement_UnreadableComment_FailurePath(t *testing.T) {
 	}
 }
 
-// A session whose sql_mode names NO_BACKSLASH_ESCAPES reads 'a\' as a whole
-// string, so the definer ends there and the kind follows it. The default rule
-// reads the string on past the quote, and finds no kind.
-func TestStatement_ReadsTheSessionsBackslashRule(t *testing.T) {
-	c := qt.New(t)
-	statement := `CREATE DEFINER='a\'@'%' TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET @a = 1`
-	noBackslashEscapes := mysqlstored.Server{Dialect: platform.MySQL, VersionID: 80413, NoBackslashEscapes: true}
+// A session's sql_mode decides where a quoted user ends: NO_BACKSLASH_ESCAPES
+// reads 'a\' as a whole string, ANSI_QUOTES reads "a\" as a name, and
+// MariaDB's MSSQL mode reads [a'b] as one, so the definer ends there and the
+// kind follows it. The default rules read on past the quote, find no kind,
+// and cannot read the statement.
+func TestStatement_ReadsTheSessionsQuoteRules(t *testing.T) {
+	const trigger = " TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET @a = 1"
+	tests := []struct {
+		name      string
+		server    mysqlstored.Server
+		statement string
+	}{
+		{name: "NO_BACKSLASH_ESCAPES", server: mysqlstored.Server{Dialect: platform.MySQL, NoBackslashEscapes: true},
+			statement: `CREATE DEFINER='a\'@'%'` + trigger},
+		{name: "ANSI_QUOTES", server: mysqlstored.Server{Dialect: platform.MySQL, AnsiQuotes: true},
+			statement: `CREATE DEFINER="a\"@'%'` + trigger},
+		{name: "MSSQL", server: mysqlstored.Server{Dialect: platform.MariaDB, BracketNames: true},
+			statement: `CREATE DEFINER=[a'b]@'%'` + trigger},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	read, ok, err := mysqlstored.Statement(noBackslashEscapes, statement)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(read.Kind, qt.Equals, "TRIGGER")
+			read, ok, err := mysqlstored.Statement(test.server, test.statement)
+			c.Assert(err, qt.IsNil)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(read.Kind, qt.Equals, "TRIGGER")
 
-	_, ok, err = mysqlstored.Statement(mysql84, statement)
-	c.Assert(err, qt.IsNil)
-	c.Assert(ok, qt.IsFalse)
+			_, ok, err = mysqlstored.Statement(mysqlstored.Server{Dialect: test.server.Dialect}, test.statement)
+			c.Assert(err, qt.ErrorIs, mysqlstored.ErrUnreadableDefinition)
+			c.Assert(ok, qt.IsFalse)
+		})
+	}
+}
+
+// Wrapped finds the statement a SET STATEMENT or an ANALYZE runs: want is
+// the first word of that statement.
+func TestWrapped_HoldsAStatement(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		want      string
+	}{
+		{name: "SET STATEMENT", statement: "SET STATEMENT max_statement_time=0 FOR INSERT INTO t VALUES (1)", want: "INSERT"},
+		{name: "SET STATEMENT with a list", statement: "set statement a=1, b='for' for delete from t", want: "delete"},
+		{name: "SET STATEMENT with FOR in a subquery", statement: "SET STATEMENT a=(SELECT 1 FROM t FOR UPDATE) FOR DELETE FROM t", want: "DELETE"},
+		{name: "SET STATEMENT with FOR in a function", statement: "SET STATEMENT lc_time_names=SUBSTRING('en_USx' FROM 1 FOR 5) FOR DELETE FROM t", want: "DELETE"},
+		{name: "ANALYZE", statement: "ANALYZE DELETE FROM t", want: "DELETE"},
+		{name: "ANALYZE with a format", statement: "ANALYZE FORMAT=JSON SELECT 1", want: "SELECT"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tokens, err := mysqlstored.Tokens(mariadb, test.statement)
+			c.Assert(err, qt.IsNil)
+
+			start, ok := mysqlstored.Wrapped(tokens)
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(tokens[start].Value, qt.Equals, test.want)
+		})
+	}
+}
+
+// A statement that runs no other, ANALYZE TABLE and MySQL's EXPLAIN ANALYZE
+// among them.
+func TestWrapped_HoldsNone(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "SET STATEMENT without FOR", statement: "SET STATEMENT max_statement_time=0"},
+		{name: "SET STATEMENT ending in FOR", statement: "SET STATEMENT max_statement_time=0 FOR"},
+		{name: "a plain SET", statement: "SET max_statement_time=0"},
+		{name: "ANALYZE TABLE", statement: "ANALYZE TABLE t"},
+		{name: "ANALYZE NO_WRITE_TO_BINLOG", statement: "ANALYZE NO_WRITE_TO_BINLOG TABLE t"},
+		{name: "ANALYZE LOCAL", statement: "ANALYZE LOCAL TABLE t"},
+		{name: "ANALYZE alone", statement: "ANALYZE"},
+		{name: "EXPLAIN ANALYZE", statement: "EXPLAIN ANALYZE UPDATE t SET c = 1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tokens, err := mysqlstored.Tokens(mariadb, test.statement)
+			c.Assert(err, qt.IsNil)
+
+			start, ok := mysqlstored.Wrapped(tokens)
+
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(start, qt.Equals, 0)
+		})
+	}
 }
 
 // Tokens keeps each token's position in the statement, a token read from an

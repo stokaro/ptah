@@ -314,6 +314,10 @@ type DatabaseConnection struct {
 	// state that only applies per physical connection — see
 	// WithUntrustedSQLSession — needs it.
 	session *sql.Conn
+	// storedValues is the window [DatabaseConnection.WithStoredValuesKept]
+	// runs the session it gives its callback through, and nil on any other
+	// connection.
+	storedValues connector.StoredValuesWindow
 }
 
 type schemaReaderFactory func(sqlrunner.Runner) catalog.SchemaReader

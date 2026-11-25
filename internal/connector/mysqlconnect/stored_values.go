@@ -10,6 +10,7 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/mysqlstored"
 	"ptah.run/internal/sqlmode"
@@ -55,12 +56,23 @@ func (Service) KeepStoredValues(ctx context.Context, session *sql.Conn) (connect
 		session: session,
 		own:     current,
 		strict:  strict,
-		server: mysqlstored.Server{
-			Dialect:            detectMySQLWireDialect(version),
-			VersionID:          mysqlstored.VersionID(version),
-			NoBackslashEscapes: sqlmode.Has(current, sqlmode.NoBackslashEscapes),
-		},
+		server:  readFor(current, version),
 	}, nil
+}
+
+// readFor is the server and session the window reads statements for: the
+// dialect and version VERSION() reports, and the modes of sql_mode, the
+// session's own, that change where a string, a quoted name or a comment
+// ends. The window sets only strict modes, so it keeps those.
+func readFor(sqlMode, version string) mysqlstored.Server {
+	dialect := detectMySQLWireDialect(version)
+	return mysqlstored.Server{
+		Dialect:            dialect,
+		VersionID:          mysqlstored.VersionID(version),
+		NoBackslashEscapes: sqlmode.Has(sqlMode, sqlmode.NoBackslashEscapes),
+		AnsiQuotes:         sqlmode.Has(sqlMode, sqlmode.AnsiQuotes),
+		BracketNames:       dialect == platform.MariaDB && sqlmode.Has(sqlMode, sqlmode.MSSQL),
+	}
 }
 
 // setSQLMode sets the session's sql_mode to the one argument it binds.
@@ -87,8 +99,8 @@ func (w sqlModeWindow) Restore(ctx context.Context) error {
 // mode with the object, as [mysqlstored.Definition.KeepsSessionMode] reads
 // it, and returns the statements that set the session's own mode for it and
 // the strict one after it. A statement holding an executable comment the
-// reader cannot read is refused: the comment may hold the words that define
-// such an object.
+// reader cannot read, and a CREATE or ALTER whose kind of object it cannot
+// read, is refused: either may define such an object.
 func (w sqlModeWindow) StoredWith(statement string) (*connector.StoredSettings, error) {
 	definition, ok, err := mysqlstored.Statement(w.server, statement)
 	if err != nil {
