@@ -191,6 +191,13 @@
         "ptah.run/provider-sdk"
       ],
       "enabled": false
+    },
+    {
+      "description": "A Go module version ending in `-dev` is a build of that module's development branch, not a release. stokaro/ptah#3399 pinned google.golang.org/grpc to a v1.85.0-dev pseudo-version on purpose, to clear GHSA-2v4p-qf9q-27wj while no release had the fix. Renovate reads an unstable current version as consent to more unstable ones, so stokaro/ptah#3595 moved it to v1.86.0-dev, and every module that requires ptah.run inherited an unreleased grpc. With this rule a development build is never proposed: a deliberate pin is still made by hand, and the release that supersedes it is still proposed. TestRenovate_ProposesNoDevelopmentBuild requires this rule.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "allowedVersions": "!/-dev(\\.|$)/"
     }
   ]
 }
