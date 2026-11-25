@@ -36,7 +36,8 @@ func TestGenerateCommand_EnumTrailingSpace_FailurePath(t *testing.T) {
 	stdout, _, err := executeGenerate(c, cmd)
 
 	c.Assert(err, qt.ErrorMatches, `error rendering mysql schema: column "n" of table "c" declares the enum value "ok ", `+
-		`and mysql removes the trailing spaces of an ENUM value, so the column would never match its declaration: declare "ok"`)
+		`and mysql removes the trailing spaces of an ENUM value, so the column would never match its declaration: declare "ok", `+
+		`or name the binary character set on the column or its table; a binary schema default does not count \(stokaro/ptah#6665\)`)
 	c.Assert(stdout, qt.Equals, "")
 }
 

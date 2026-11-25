@@ -43,7 +43,8 @@ func TestRenderSchema_ValidatesTheDeclaration_FailurePath(t *testing.T) {
 	c.Assert(coded, qt.IsTrue)
 	c.Assert(code, qt.Equals, agentdiag.CodeRenderFailed)
 	c.Assert(err, qt.ErrorMatches, `render mysql: column "n" of table "c" declares the enum value "ok ", and mysql `+
-		`removes the trailing spaces of an ENUM value, so the column would never match its declaration: declare "ok"`)
+		`removes the trailing spaces of an ENUM value, so the column would never match its declaration: declare "ok", `+
+		`or name the binary character set on the column or its table; a binary schema default does not count \(stokaro/ptah#6665\)`)
 	c.Assert(response, qt.IsNil)
 }
 

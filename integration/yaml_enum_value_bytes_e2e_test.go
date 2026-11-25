@@ -195,6 +195,11 @@ table "c" {
 `
 }
 
+// keepsTheSpace is the end of every trailing-space refusal: where the binary
+// character set counts, which keeps the space.
+const keepsTheSpace = `, or name the binary character set on the column or its table; ` +
+	`a binary schema default does not count (stokaro/ptah#6665)`
+
 // TestEnumTrailingSpaceE2E_FailurePath declares 'ok ' beside the column the
 // server built from ENUM('happy', ' sad', 'ok ') and holds as
 // enum('happy',' sad','ok'): measured on MySQL 8.4.13 and 26.10.0 and MariaDB
@@ -271,7 +276,7 @@ func TestEnumTrailingSpaceE2E_FailurePath(t *testing.T) {
 				c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s", got.Stdout))
 				c.Assert(got.Stderr, qt.Contains, `column "n" of table "`+document.table(name)+`" declares the enum value "ok ", and `+
 					engine.dialect+` removes the trailing spaces of an ENUM value, so the column would never `+
-					`match its declaration: declare "ok"`)
+					`match its declaration: declare "ok"`+keepsTheSpace)
 				c.Assert(enumBytesQuery(c, database, "SELECT COLUMN_TYPE FROM information_schema.COLUMNS "+
 					"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"),
 					qt.Equals, "enum('happy',' sad','ok')")
@@ -333,7 +338,7 @@ func TestSetTrailingSpaceE2E_FailurePath(t *testing.T) {
 				c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s", got.Stdout))
 				c.Assert(got.Stderr, qt.Contains, `column "n" of table "`+document.table(name)+`" declares the SET member "c ", and `+
 					engine.dialect+` removes the trailing spaces of a SET member, so the column would never `+
-					`match its declaration: declare "c"`)
+					`match its declaration: declare "c"`+keepsTheSpace)
 				c.Assert(enumBytesQuery(c, database, "SELECT COLUMN_TYPE FROM information_schema.COLUMNS "+
 					"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"),
 					qt.Equals, "set('a',' b','c')")

@@ -29,6 +29,11 @@ func enumColumnDatabase(field schemamodel.Field, enums ...schemamodel.Enum) *sch
 	}
 }
 
+// keepsTheSpace is the end of every refusal: where the binary character set
+// counts, which keeps the space.
+const keepsTheSpace = `, or name the binary character set on the column or its table; ` +
+	`a binary schema default does not count (stokaro/ptah#6665)`
+
 // binaryCharset is the column settings that give a column the binary
 // character set.
 var binaryCharset = must.Must(mysqlschema.WithColumnSettings(schemaext.Facets{}, mysqlschema.ColumnSettings{Charset: "binary"}))
@@ -164,7 +169,7 @@ func TestRenderEnumTrailingSpace_HappyPath(t *testing.T) {
 // never match its declaration.
 func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 	const okOnMySQL = `column "n" of table "c" declares the enum value "ok ", and mysql removes the trailing spaces ` +
-		`of an ENUM value, so the column would never match its declaration: declare "ok"`
+		`of an ENUM value, so the column would never match its declaration: declare "ok"` + keepsTheSpace
 	tests := []struct {
 		name, dialect string
 		database      *schemamodel.Database
@@ -181,7 +186,7 @@ func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 			dialect:  platform.MariaDB,
 			database: enumColumnDatabase(schemamodel.Field{Type: "ENUM", Enum: []string{"happy", "ok "}}),
 			want: `column "n" of table "c" declares the enum value "ok ", and mariadb removes the trailing spaces ` +
-				`of an ENUM value, so the column would never match its declaration: declare "ok"`,
+				`of an ENUM value, so the column would never match its declaration: declare "ok"` + keepsTheSpace,
 		},
 		{
 			name:     "the type text of an HCL column",
@@ -201,21 +206,22 @@ func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 			dialect:  platform.MySQL,
 			database: enumColumnDatabase(schemamodel.Field{Type: "SET('a ','b')"}),
 			want: `column "n" of table "c" declares the SET member "a ", and mysql removes the trailing spaces ` +
-				`of a SET member, so the column would never match its declaration: declare "a"`,
+				`of a SET member, so the column would never match its declaration: declare "a"` + keepsTheSpace,
 		},
 		{
 			name:     "the members of an HCL set type on MariaDB",
 			dialect:  platform.MariaDB,
 			database: enumColumnDatabase(schemamodel.Field{Type: `set("a", "b ")`}),
 			want: `column "n" of table "c" declares the SET member "b ", and mariadb removes the trailing spaces ` +
-				`of a SET member, so the column would never match its declaration: declare "b"`,
+				`of a SET member, so the column would never match its declaration: declare "b"` + keepsTheSpace,
 		},
 		{
 			name:     "a value of spaces alone",
 			dialect:  platform.MySQL,
 			database: enumColumnDatabase(schemamodel.Field{Type: "ENUM", Enum: []string{"happy", "  "}}),
 			want: `column "n" of table "c" declares the enum value "  ", and mysql removes the trailing spaces ` +
-				`of an ENUM value, so the column would never match its declaration: declare a value that does not end in a space`,
+				`of an ENUM value, so the column would never match its declaration: ` +
+				`declare a value that does not end in a space` + keepsTheSpace,
 		},
 		{
 			// Measured on MySQL 8.4 and MariaDB 11.8: utf8mb4, its _bin and
@@ -248,7 +254,8 @@ func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 			dialect: platform.MySQL,
 			database: binaryDefaultDatabase(schemamodel.Table{Schema: "s", Collate: "utf8mb4_bin"},
 				schemamodel.Schema{Name: "s", Charset: "binary", Collate: "binary"}),
-			want: `column "n" of table "s.c" declares the enum value "ok "`,
+			want: `column "n" of table "s.c" declares the enum value "ok ", and mysql removes the trailing spaces ` +
+				`of an ENUM value, so the column would never match its declaration: declare "ok"` + keepsTheSpace,
 		},
 		{
 			// A plan creates the table in an existing schema without changing
@@ -258,7 +265,8 @@ func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 			dialect: platform.MariaDB,
 			database: binaryDefaultDatabase(schemamodel.Table{Schema: "s"},
 				schemamodel.Schema{Name: "s", Charset: "binary", Collate: "binary"}),
-			want: `column "n" of table "s.c" declares the enum value "ok "`,
+			want: `column "n" of table "s.c" declares the enum value "ok ", and mariadb removes the trailing spaces ` +
+				`of an ENUM value, so the column would never match its declaration: declare "ok"` + keepsTheSpace,
 		},
 	}
 	for _, test := range tests {
@@ -268,7 +276,7 @@ func TestValidateEnumTrailingSpace_FailurePath(t *testing.T) {
 			err := builtin.ValidateSchemaWithCapabilities(test.database, test.dialect, capability.ForDialect(test.dialect))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(test.want)+`.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+regexp.QuoteMeta(test.want))
 		})
 	}
 }
@@ -315,7 +323,7 @@ func TestValidateEnumTrailingSpace_FailurePathReadsAnHCLDocument(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*declares the enum value "ok ", and mysql removes the trailing spaces `+
-		`of an ENUM value, so the column would never match its declaration: declare "ok".*`)
+		`of an ENUM value, so the column would never match its declaration: declare "ok"`+regexp.QuoteMeta(keepsTheSpace))
 }
 
 // An Atlas HCL document gives a column or its table the binary character set

@@ -164,6 +164,10 @@ func refuseTrailingSpace(dialect string, database *schemamodel.Database, field s
 		if kept := strings.TrimRight(value, " "); kept != "" {
 			remedy = "declare " + strconv.Quote(kept)
 		}
+		// The binary character set keeps the spaces, so the author who
+		// meant them is told where naming it counts.
+		remedy += ", or name the binary character set on the column or its table; " +
+			"a binary schema default does not count (stokaro/ptah#6665)"
 		tableName := field.StructName
 		if table := tableByStructName(database.Tables, field.StructName); table != nil {
 			tableName = table.QualifiedName()
