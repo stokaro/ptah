@@ -45,6 +45,17 @@
 // [VerifyMigration] applies have run nowhere, so they run as `migrations up`
 // runs a pending file.
 //
+// Every replay into the shadow database, of the history and of a candidate,
+// runs through the dev replay guard `ptah migrations validate` runs. Before the
+// first statement of a run, the guard refuses a statement whose effect the
+// reset of the shadow database cannot take back, such as a write to another
+// database on the same server, a role, or a routine body, and the run fails
+// with that refusal. A MySQL-family shadow URL that names no database widens
+// what the guard accepts to every user database on the server. A Ptah command
+// also lifts a refusal for a server it started or the operator declared
+// disposable, and for SQL the operator trusts; a caller of this package
+// outside those commands gets neither.
+//
 // # Failures are structured
 //
 // A [VerifyMigration] or [VerifyBaseline] failure carries a

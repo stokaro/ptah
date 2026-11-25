@@ -191,7 +191,10 @@ verify the rollback plan before changing the target.
 
 The shadow database must meet the same rule and must not be the target's live
 database realm. Ptah checks both before changing either database, and empties
-the shadow database again after each run.
+the shadow database again after each run. A replay on the shadow database
+refuses the same statements as a replay on a dev database (see
+[statement forms that fail closed](#statement-forms-that-fail-closed)), and the
+same declarations lift those refusals.
 
 **A throwaway test database** is what `ptah migrations test` and
 `ptah schema test` run cases against: by default a fresh ephemeral SQLite
@@ -582,9 +585,9 @@ command that replays the same directory on the same server meets it, so a
 migration that creates one without checking for it first fails the second
 time. Declare only a server that nothing else uses.
 
-Every command that replays a migration directory or rehearses a plan on a dev
-database reads the variable, on both binaries, and refuses a non-boolean value
-before any work, whether or not it replays. Strict Atlas
+Every command that replays a migration directory on a dev or shadow database,
+or rehearses a plan on a dev database, reads the variable, on both binaries,
+and refuses a non-boolean value before any work, whether or not it replays. Strict Atlas
 compatibility keeps the variable, because the pinned community binary runs
 these statements on any dev database.
 
@@ -700,14 +703,17 @@ statement that changes the session, such as `PRAGMA TablePathPrefix` or `USE`,
 refused, inside the body of an action or a `DO` block too.
 
 Trust covers the SQL a run executes on its dev database: a migration directory
-it replays, a desired schema file it loads there, and the baseline and plan a
-rehearsal writes. An apply to the target never needs it, and a command that
+it replays there or on a shadow database, a desired schema file it loads there,
+and the baseline and plan a rehearsal writes. An apply to the target never needs it, and a command that
 parses or compares its input without executing it runs no input SQL. The
 native commands that take `--trust-replay-sql` are `migrations validate`,
-`migrations lint`, `migrations generate`, `schema inspect`, `schema diff` and
-`schema apply`. On `ptah-compat`, `migrate validate`, `migrate diff`,
-`migrate lint`, `schema inspect`, `schema diff`, `schema apply`,
-`schema plan lint` and `schema plan validate` read the variable. Each of them
+`migrations lint`, `migrations generate`, `migrations down`,
+`migrations baseline`, `migrations up`, `migrations drift`,
+`migrations checkpoint`, `schema inspect`, `schema diff` and `schema apply`.
+On `ptah-compat`, `migrate validate`, `migrate diff`, `migrate lint`,
+`migrate down`, `migrate apply`, `migrate drift`, `migrate checkpoint`,
+`schema inspect`, `schema diff`, `schema apply`, `schema plan lint` and
+`schema plan validate` read the variable. Each of them
 refuses a value that is not a boolean before any work. Strict Atlas
 compatibility keeps the variable, because the pinned community binary runs
 these statements on any dev database.
