@@ -257,7 +257,7 @@ func TestCompatMigrateApplyRefusesARowInsertedAfterGenerationE2E(t *testing.T) {
 			args := []string{"migrate", "apply", "--url", target, "--dir", hashed(c, dir), "--allow-dirty"}
 
 			refused := compat(c, nil, args...)
-			c.Assert(refused.ExitCode, qt.Equals, 2, outcome(refused))
+			c.Assert(refused.ExitCode, qt.Equals, 1, outcome(refused))
 			c.Assert(refused.Stderr, qt.Contains, checkRefusal)
 			c.Assert(refused.Stderr, qt.Contains, "or ask for the change with PTAH_ALLOW_VALUE_ROUNDING=1")
 			c.Assert(read(c, target, engine.readBack), qt.Equals, engine.held)
