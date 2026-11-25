@@ -29,6 +29,25 @@ func BareSpace(value, opening, closing string) bool {
 		trailing && !strings.ContainsRune(closing, rune(trimmed[len(trimmed)-1]))
 }
 
+// BarePartSpace reports whether white space begins or ends a part of the
+// reference value, as [Parse] splits it, that is written bare. `public. t` and
+// `public .t` report true: [Parse] reads them as public.t, and the space the
+// author wrote is lost. Space beside a quoted part, as in `public. " t"`, is
+// the spelling of the reference and is not reported. A value [Parse] does not
+// read reports false.
+func BarePartSpace(value string) bool {
+	parser := referenceParser{parts: make([]string, 0, 2)}
+	for position := 0; position < len(value); position++ {
+		if !parser.consume(value, &position) {
+			return false
+		}
+	}
+	if _, ok := parser.result(); !ok {
+		return false
+	}
+	return parser.spacedBare
+}
+
 // DocumentName is the name value declares in a document, such as a table entry
 // or a schema field of a YAML schema. A document is text an author typed, so
 // the space around the name is removed, and a name written as one quoted

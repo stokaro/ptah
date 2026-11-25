@@ -174,6 +174,8 @@ func TestQualifiedName_HappyPath(t *testing.T) {
 		{name: "a quoted name keeps its bytes", object: `" hourly"`, wantName: " hourly"},
 		{name: "space around a quoted name is removed", object: ` "hourly " `, wantName: "hourly "},
 		{name: "a quoted schema in the name", object: `" metrics".hourly`, wantSchema: " metrics", wantName: "hourly"},
+		{name: "a space beside the dot of a quoted part", object: `public. " t"`, wantSchema: "public", wantName: " t"},
+		{name: "a dotted name beside a schema attribute is the name", schema: "app", object: "public. t", wantSchema: "app", wantName: "public. t"},
 		{name: "backticks", object: "` hourly`", wantName: " hourly"},
 		{name: "brackets", object: "[ hourly]", wantName: " hourly"},
 	}
@@ -204,6 +206,10 @@ func TestQualifiedName_FailurePath(t *testing.T) {
 			wantErr: `name "\" metrics\".hourly " begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
 		{name: "a space beside a bare schema", object: ` metrics."hourly"`,
 			wantErr: `name " metrics.\"hourly\"" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+		{name: "a space after the dot", object: `public. t`,
+			wantErr: `name "public. t" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+		{name: "a space before the dot", object: `public .t`,
+			wantErr: `name "public .t" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -38,6 +38,28 @@ func TestBareSpace(t *testing.T) {
 
 // Only the quotes a reader names make a part quoted: a reader that reads
 // double quotes alone reports the space beside a bracket.
+func TestBarePartSpace(t *testing.T) {
+	tests := []struct {
+		name, value string
+		want        bool
+	}{
+		{name: "a bare qualified name", value: "public.t", want: false},
+		{name: "a space after the dot", value: "public. t", want: true},
+		{name: "a space before the dot", value: "public .t", want: true},
+		{name: "a space around the whole name", value: " public.t ", want: true},
+		{name: "a space beside the dot of a quoted part", value: `public. " t"`, want: false},
+		{name: "a space after a quoted schema", value: `"public" .t`, want: false},
+		{name: "a space inside a bare part", value: "my schema.t", want: false},
+		{name: "a name the parser does not read", value: "a.b.c", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(tableref.BarePartSpace(test.value), qt.Equals, test.want)
+		})
+	}
+}
+
 func TestBareSpace_ReadsOnlyTheQuotesItIsGiven(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(tableref.BareSpace(" [t]", `"`, `"`), qt.IsTrue)

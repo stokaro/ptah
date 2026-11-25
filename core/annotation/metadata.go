@@ -118,6 +118,8 @@ func (d Directive) Clone() Directive {
 // and t as two objects, and the quoted spelling is how a directive names the
 // first. A bare name that begins or ends with white space is refused, because
 // the name read would not be the one written; the error says how to quote it.
+// So is a schema-qualified name with white space beside the dot of a bare part:
+// `public. t` would name public.t, and a plan beside a live " t" would drop it.
 func QualifiedName(schema, name string) (schemaName, objectName string, err error) {
 	if tableref.BareSpace(name, "\"`[", "\"`]") {
 		return "", "", tableref.SpacedBareName("name", name)
@@ -138,6 +140,9 @@ func QualifiedName(schema, name string) (schemaName, objectName string, err erro
 	}
 	if !ref.Qualified {
 		return "", ref.Name, nil
+	}
+	if tableref.BarePartSpace(objectName) {
+		return "", "", tableref.SpacedBareName("name", name)
 	}
 	return ref.Schema, ref.Name, nil
 }
