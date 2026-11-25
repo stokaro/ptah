@@ -168,7 +168,7 @@ func TestReadCache_RefusalIsNamedInTheFallback(t *testing.T) {
 		c.Assert(got, qt.DeepEquals, bundled)
 		c.Assert(origin.Fallback, qt.Equals, failed+fmt.Sprintf(
 			"the snapshot was retrieved at %s, more than 24 hours after this machine's clock at %s",
-			now.Add(25*time.Hour).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+			now.Add(25*time.Hour).UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano),
 		))
 	})
 }

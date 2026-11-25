@@ -127,8 +127,8 @@ func newSource(location *url.URL, cache string, k *clock) *advisorysource.Source
 }
 
 // start is the clock every test begins at: within a day after the newest
-// bundled snapshot was retrieved. The tests serve copies dated relative to the bundled
-// snapshots, and the source refuses a copy dated more than
+// bundled snapshot was retrieved. The tests serve copies dated relative to
+// the bundled snapshots, and the source refuses a copy dated more than
 // vulnerability.MaxFutureRetrieval after its clock. Against a fixed date, the
 // first refresh that dates a bundled snapshot past it fails them.
 var start = newestBundledRetrieval().Truncate(time.Hour).Add(24 * time.Hour)
