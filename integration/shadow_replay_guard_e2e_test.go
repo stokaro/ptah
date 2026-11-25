@@ -446,3 +446,25 @@ func TestShadowReplayGuardTrustedE2E_HappyPath(t *testing.T) {
 		}
 	}
 }
+
+// TestShadowReplayGuardDeclaredDisposableE2E_HappyPath is the third control:
+// with PTAH_DEV_SERVER_DISPOSABLE=1 the shadow database's server is the run's
+// own, as it is for a dev database, and each command replays migration 1 and
+// does what it was asked. The write outside the shadow database is not read
+// back: on PostgreSQL the cleanup of a server declared disposable drops the
+// role the replay created, as it does after a replay on a dev database.
+func TestShadowReplayGuardDeclaredDisposableE2E_HappyPath(t *testing.T) {
+	for _, surface := range shadowGuardSurfaces {
+		for _, engine := range shadowGuardEngines {
+			t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
+				c := qt.New(t)
+				outside := engine.outside(c)
+				r := newShadowGuardRun(c, engine, surface, outside, outside.statement)
+
+				got := runShadowGuardSurface(c, surface, r, []string{"PTAH_DEV_SERVER_DISPOSABLE=1"}, nil)
+
+				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			})
+		}
+	}
+}
