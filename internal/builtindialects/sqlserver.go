@@ -141,7 +141,7 @@ END`,
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
+		Names: descriptor.Names{Lookup: "unicode_case_insensitive", TrailingSpacesIgnored: true},
 		// Measured on SQL Server 2022 (16.0.4325.4) and 2025: a CHECK named ck on
 		// one table and the same name on another of the schema is refused, and a
 		// table of another schema holds ck. Whether ck and CK are one name

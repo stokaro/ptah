@@ -457,6 +457,32 @@ func TestSchemaApplySQLServerPublicIsTheFixedRoleE2E(t *testing.T) {
 	}
 }
 
+// A grantee a schema file writes with trailing spaces is the principal named
+// without them: the server compares names with trailing spaces ignored, so
+// [cp_reader ] is the role cp_reader and [public ] the fixed role public. Each
+// lands on that principal, a member is refused what the DENY withholds, and
+// the next plan is empty.
+func TestSchemaApplySQLServerTrailingSpaceGranteeE2E(t *testing.T) {
+	c := qt.New(t)
+	target, db := sqlServerColumnDatabase(c)
+	file := writeDeclaredSchemaFile(c, "schema.sql",
+		sqlServerColumnBase+"GRANT SELECT ON dbo.t TO [cp_reader  ];\nDENY UPDATE ON dbo.t TO [public ];\n")
+
+	applied := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", file, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(sqlServerPermissionsOf(c, db, "cp_reader"), qt.DeepEquals, []string{"SELECT GRANT"})
+	c.Assert(sqlServerPublicPermissions(c, db), qt.DeepEquals, []string{"UPDATE DENY"})
+	c.Assert(sqlServerAsMember(c, db, "SELECT secret FROM dbo.t"), qt.IsNil)
+	c.Assert(sqlServerAsMember(c, db, "UPDATE dbo.t SET name = N'b'"), qt.ErrorMatches,
+		`(?s).*The UPDATE permission was denied on the object 't'.*`)
+
+	settled := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", file, "--dry-run")
+
+	c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
+	c.Assert(settled.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+}
+
 // A database holding a role the read cannot keep apart from another principal
 // is refused before anything runs, and public holds nothing new. A schema
 // names the fixed role PUBLIC, and a case-sensitive database accepts CREATE

@@ -699,7 +699,10 @@ Every other target refuses a `DENY` by name.
 `PUBLIC` too, and a plan writes it as `[public]`. Measured on SQL Server 2025,
 a case-sensitive database refuses `[PUBLIC]` with `Msg 15151` unless a role of
 that name exists, and it accepts a role named `[Public]` beside `public`, which
-stays a role of its own. A database that holds a role or a user named `PUBLIC`,
+stays a role of its own. On a case-insensitive database `[Public]`, and every
+bracketed spelling but `[public]` and `[PUBLIC]`, reaches `public` as well, but
+a schema file records it as a role named `Public`, so a plan never settles
+there; write `PUBLIC` or `[public]`. A database that holds a role or a user named `PUBLIC`,
 spaces aside, is refused before anything runs, because its grants could not be
 told from those of `public`:
 
@@ -708,11 +711,10 @@ sqlserver: read roles: unsupported feature: the database principal "PUBLIC" has 
 ```
 
 A principal whose name starts with a space, such as `[ public]`, is refused
-the same way, and so is a grantee in a schema file with white space around its
-name. A grant does not keep that white space, so a statement for the principal
-would address another one. The server ignores trailing spaces when it compares
-names, so a principal named `[r ]` is read as `r`, and a schema file writes it
-as `r`.
+the same way, in the database and as a grantee in a schema file. A grant does
+not keep that white space, so a statement for the principal would address
+another one. The server ignores trailing spaces when it compares names, so
+`[r ]` names `r` in the database and in a schema file, and is read as `r`.
 
 A `DENY` the database holds and the schema leaves out stays, and the run names
 it on standard error:

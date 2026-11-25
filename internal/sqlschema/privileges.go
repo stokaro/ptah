@@ -55,41 +55,40 @@ var routineObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "R
 // names public on a case-insensitive database, and the read refuses a
 // database that holds a role of that name.
 //
-// A quoted name with white space around it is refused: a grant keeps its
-// grantee without it ([schemamodel.Grant.Canonicalize]), so where the server
-// keeps the white space the statement would address another principal.
-// Measured on SQL Server 2025, a database accepts CREATE ROLE [ public], and a
-// DENY to it read with the space dropped is a DENY to the fixed role public.
-// SQL Server ignores trailing spaces when it compares names, and PostgreSQL
-// does not, so a trailing space is refused on every dialect, and the name
-// written without it is the fix where the server ignores it.
+// On a server that ignores trailing spaces when it compares names (the
+// descriptor's Names.TrailingSpacesIgnored), the grantee is read without
+// them, as the server reads it: [r ] is the role r, and [public ] the fixed
+// role public. Other white space around the name is refused there, because a
+// grant keeps its grantee without it ([schemamodel.Grant.Canonicalize]) and
+// the server does not, so the statement would address another principal.
+// Measured on SQL Server 2025, a database accepts CREATE ROLE [ public], and
+// a DENY to it read with the space dropped is a DENY to the fixed role public.
+// On a server that keeps trailing spaces as well, the grant keeps the name
+// without its white space, which stokaro/ptah#6662 owns.
 func normalizeGrantee(sourcePlatform, role string) (string, error) {
-	name := granteeName(sourcePlatform, role)
-	if trimmed := strings.TrimSpace(name); trimmed != name {
-		return "", fmt.Errorf("%w: the grantee %s has white space around its name, which a grant does not keep, "+
-			"so it cannot be told from %q; write the name without it, or rename the principal",
-			ptaherr.ErrUnsupportedFeature, strings.TrimSpace(role), trimmed)
-	}
-	return name, nil
-}
-
-// granteeName is the grantee role names, with PUBLIC spelled as
-// [normalizeGrantee] says.
-func granteeName(sourcePlatform, role string) string {
-	if factsOf(sourcePlatform).names.PublicKeyword {
+	names := factsOf(sourcePlatform).names
+	if names.PublicKeyword {
 		name := roleName(sourcePlatform, role)
 		if name == "public" {
-			return "PUBLIC"
+			return "PUBLIC", nil
 		}
-		return name
+		return name, nil
 	}
 	normalized := normalizeSQLIdentifier(sourcePlatform, role)
+	if names.TrailingSpacesIgnored {
+		normalized = strings.TrimRight(normalized, " ")
+		if trimmed := strings.TrimSpace(normalized); trimmed != normalized {
+			return "", fmt.Errorf("%w: the grantee %s has white space around its name that the server keeps "+
+				"and a grant does not, so it cannot be told from %q; rename the principal",
+				ptaherr.ErrUnsupportedFeature, strings.TrimSpace(role), trimmed)
+		}
+	}
 	trimmed := strings.TrimSpace(role)
 	quoted := strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, "[")
 	if (!quoted && strings.EqualFold(normalized, "PUBLIC")) || (quoted && normalized == "public") {
-		return "PUBLIC"
+		return "PUBLIC", nil
 	}
-	return normalized
+	return normalized, nil
 }
 
 // setGrantTarget sets the target of a grant from a statement's object type and

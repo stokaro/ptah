@@ -30,6 +30,14 @@ type Names struct {
 	// role name; a grantee spelled otherwise is a role. Without it, PUBLIC is
 	// the keyword unquoted in any case and quoted in lower case.
 	PublicKeyword bool `json:"public_keyword,omitempty"`
+	// TrailingSpacesIgnored reports that the server compares names with their
+	// trailing spaces ignored, as SQL Server does: `[a ]` names `[a]`. A
+	// leading space, and white space other than a trailing space, is part of
+	// the name. A schema file's grantee is read without its trailing spaces,
+	// and one with other white space around its name is refused, because a
+	// grant does not keep it and the statement would address another
+	// principal.
+	TrailingSpacesIgnored bool `json:"trailing_spaces_ignored,omitempty"`
 	// RegclassConstants reports that a string constant the server converts to
 	// regclass names a relation, which the server looks up as it reads the
 	// statement: a constant cast to regclass, as in 'app.ids'::regclass, and

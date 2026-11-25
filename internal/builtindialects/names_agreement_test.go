@@ -102,7 +102,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 		{
 			dialect:          platform.SQLServer,
 			constraintNaming: descriptor.ConstraintNamingServerHash,
-			names:            descriptor.Names{Lookup: "unicode_case_insensitive"},
+			names:            descriptor.Names{Lookup: "unicode_case_insensitive", TrailingSpacesIgnored: true},
 			columns:          descriptor.Columns{AlterColumnKeepsRest: true},
 		},
 		{

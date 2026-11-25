@@ -177,34 +177,38 @@ func TestRead_SQLServerPublicGrantee_HappyPath(t *testing.T) {
 	}
 }
 
-// TestRead_GranteeNamedWithASpace_FailurePath refuses a quoted grantee with
-// white space around its name, on every statement that names one: a grant
-// keeps its grantee without it, so where the server keeps it the statement
-// would address another principal. Measured on SQL Server 2025, a database accepts CREATE
-// ROLE [ public], and a DENY to it read as one to public would deny the fixed
-// role.
-func TestRead_GranteeNamedWithASpace_FailurePath(t *testing.T) {
+// TestRead_PaddedGrantee_HappyPath pins how a quoted grantee with white space
+// around its name is read where the read accepts it. SQL Server compares names
+// with trailing spaces ignored (measured on SQL Server 2025, [a ] is [a]), so
+// [r ] is the role r and [public ] the fixed role public. A server that keeps
+// trailing spaces has its grantee read without its white space, as a grant
+// keeps one; stokaro/ptah#6662 owns that.
+func TestRead_PaddedGrantee_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
 		platform string
-		wantErr  string
+		want     []privilege
 	}{
 		{
-			name: "a deny to a bracketed name", sql: "DENY SELECT ON dbo.t TO [ public];", platform: platform.SQLServer,
-			wantErr: `.*the grantee \[ public\] has white space around its name, which a grant does not keep, so it cannot be told from "public"; write the name without it, or rename the principal`,
+			name: "SQL Server trailing spaces", sql: "GRANT SELECT ON dbo.t TO [r  ];", platform: platform.SQLServer,
+			want: []privilege{{Role: "r", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}},
 		},
 		{
-			name: "a grant to a bracketed name", sql: "GRANT SELECT ON dbo.t TO [r ];", platform: platform.SQLServer,
-			wantErr: `.*the grantee \[r \] has white space around its name, .* cannot be told from "r"; .*`,
+			name: "SQL Server public with a trailing space", sql: "GRANT SELECT ON dbo.t TO [public ];", platform: platform.SQLServer,
+			want: []privilege{{Role: "PUBLIC", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}},
 		},
 		{
-			name: "a revoke from a bracketed name", sql: "REVOKE SELECT ON dbo.t FROM [ r];", platform: platform.SQLServer,
-			wantErr: `.*the grantee \[ r\] has white space around its name, .* cannot be told from "r"; .*`,
+			name: "PostgreSQL leading space", sql: "GRANT SELECT ON t TO \" y\";", platform: platform.Postgres,
+			want: []privilege{{Role: "y", Target: "TABLE t", Privileges: []string{"SELECT"}}},
 		},
 		{
-			name: "a grant to a quoted name", sql: "GRANT SELECT ON t TO \" r\";", platform: platform.Postgres,
-			wantErr: `.*the grantee " r" has white space around its name, .* cannot be told from "r"; .*`,
+			name: "MariaDB leading space", sql: "GRANT INSERT ON t TO ` rr`;", platform: platform.MariaDB,
+			want: []privilege{{Role: "rr", Target: "TABLE t", Privileges: []string{"INSERT"}}},
+		},
+		{
+			name: "Oracle leading space", sql: "GRANT SELECT ON t TO \" RR\";", platform: platform.Oracle,
+			want: []privilege{{Role: "RR", Target: "TABLE t", Privileges: []string{"SELECT"}}},
 		},
 	}
 	for _, test := range tests {
@@ -212,6 +216,47 @@ func TestRead_GranteeNamedWithASpace_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			database, _, err := sqlschema.Read([]byte(test.sql), test.platform)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(privileges(database.Grants), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestRead_SQLServerPaddedGrantee_FailurePath refuses a SQL Server grantee
+// with white space around its name that the server keeps, on every statement
+// that names one: a grant keeps its grantee without it, so the statement would
+// address another principal. Measured on SQL Server 2025, a database accepts
+// CREATE ROLE [ public], and a DENY to it read as one to public would deny the
+// fixed role.
+func TestRead_SQLServerPaddedGrantee_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{
+			name: "a deny to a name after a space", sql: "DENY SELECT ON dbo.t TO [ public];",
+			wantErr: `.*the grantee \[ public\] has white space around its name that the server keeps and a grant does not, so it cannot be told from "public"; rename the principal`,
+		},
+		{
+			name: "a grant to a name after a space", sql: "GRANT SELECT ON dbo.t TO [ r];",
+			wantErr: `.*the grantee \[ r\] has white space around its name that the server keeps .* cannot be told from "r"; .*`,
+		},
+		{
+			name: "a revoke from a name after a space", sql: "REVOKE SELECT ON dbo.t FROM [ r];",
+			wantErr: `.*the grantee \[ r\] has white space around its name that the server keeps .* cannot be told from "r"; .*`,
+		},
+		{
+			name: "a grant to a name before a tab", sql: "GRANT SELECT ON dbo.t TO [r\t];",
+			wantErr: `(?s).*the grantee \[r\s\] has white space around its name that the server keeps .* cannot be told from "r"; .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), platform.SQLServer)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
