@@ -743,11 +743,7 @@ func (p atlasParser) dataSourceError(
 	if err == nil {
 		return nil
 	}
-	allSecrets := append(make([]string, 0), secrets...)
-	if p.sensitiveValues != nil {
-		allSecrets = append(allSecrets, (*p.sensitiveValues)...)
-	}
-	safe := secretdisplay.SanitizeError(err, os.Environ(), allSecrets)
+	safe := secretdisplay.SanitizeErrorKnown(err, os.Environ(), secrets, p.displaySecrets())
 	prefix := fmt.Sprintf("data.%s.%s", block.Labels[0], block.Labels[1])
 	if action == "" {
 		return fmt.Errorf("%s: %w", prefix, safe)

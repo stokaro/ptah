@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/pathguard"
 )
@@ -261,10 +262,23 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectAzureDBToken = opts.RejectAzureDBToken
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
 	p.ignoreDialectDiffBlocks = opts.IgnoreDialectDiffBlocks
+	p.addressCandidates = addressCandidates(body)
+	p.locals = localExpressions(body)
 	configs, err := p.parseCollection(body, opts.EnvName)
+	// The secrets are read once, after every instance is expanded, so reading
+	// them costs one evaluation of each slot per context it evaluates in.
+	held := p.heldSecrets()
+	// The command that loads the file masks its later errors against what the
+	// file holds secret: a schema file a data "hcl_schema" block passes a
+	// sensitive value to quotes it when a call on it fails, long after this
+	// parser is gone. A value that only may be a secret is left out: masked in
+	// every error of the command, the argument of a format() that takes its
+	// arguments by index would take its text out of a directory name.
+	dburldisplay.RecordErrorSecrets(p.runContext, held.secret)
 	if err != nil {
-		return nil, err
+		return nil, p.maskError(err, held.display())
 	}
+	withProgramSecrets(configs, held.secret)
 	for i := range configs {
 		if configs[i].presence.has(fieldExclude) {
 			configs[i].ExcludeOrigin = filename
@@ -363,6 +377,17 @@ type atlasParser struct {
 	// expression touched a sensitive variable at all, which is decidable where
 	// "did any function derive a value from it" is not.
 	sensitiveNames *map[string]struct{}
+	// addressCandidates are the expressions of the file that may write an
+	// address, and locals the expression of each local it declares, read
+	// before anything is evaluated so an error can be masked against what
+	// reaches a secret place of an address. See [atlasParser.addressSecrets].
+	addressCandidates []hclsyntax.Expression
+	locals            map[string]hclsyntax.Expression
+	// instanceContexts holds the context of each env instance a for_each
+	// expanded, with the range of the block that declares it, so an error
+	// masked after the instance is gone still reads what `each` gave an
+	// expression of that block. Pointer for the same reason as sensitiveValues.
+	instanceContexts *[]instanceContext
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
@@ -443,13 +468,15 @@ func newAtlasParser(
 	sensitiveValues := make([]string, 0)
 	sensitiveNames := make(map[string]struct{})
 	ignored := make([]IgnoredAtlasConstruct, 0)
+	instanceContexts := make([]instanceContext, 0)
 	return atlasParser{
-		runContext:      runContext,
-		fsys:            fsys,
-		sensitiveValues: &sensitiveValues,
-		sensitiveNames:  &sensitiveNames,
-		ignored:         &ignored,
-		ignoredSeen:     make(map[ignoredAtlasConstructKey]struct{}),
+		runContext:       runContext,
+		fsys:             fsys,
+		sensitiveValues:  &sensitiveValues,
+		instanceContexts: &instanceContexts,
+		sensitiveNames:   &sensitiveNames,
+		ignored:          &ignored,
+		ignoredSeen:      make(map[ignoredAtlasConstructKey]struct{}),
 		ctx: &hcl.EvalContext{
 			Variables: make(map[string]cty.Value),
 			Functions: atlasProjectFunctions(fsys),
@@ -967,6 +994,9 @@ func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName stri
 				"key":   key,
 				"value": value,
 			}),
+		}
+		if p.instanceContexts != nil {
+			*p.instanceContexts = append(*p.instanceContexts, instanceContext{block: env.block.Range(), ctx: child})
 		}
 		instanceParser := p
 		instanceParser.ctx = child
@@ -2220,7 +2250,7 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		}
 		if variable.sensitive {
 			if p.sensitiveValues != nil {
-				appendSensitiveStrings(p.sensitiveValues, value)
+				appendStringLeaves(p.sensitiveValues, value)
 			}
 			if p.sensitiveNames != nil {
 				(*p.sensitiveNames)[name] = struct{}{}
@@ -2269,27 +2299,6 @@ func appendAtlasVarValue(existing, value cty.Value) cty.Value {
 		return cty.ListVal(append(existing.AsValueSlice(), value))
 	}
 	return cty.ListVal([]cty.Value{existing, value})
-}
-
-func appendSensitiveStrings(target *[]string, value cty.Value) {
-	if value.IsNull() || !value.IsWhollyKnown() {
-		return
-	}
-	if value.Type() == cty.String {
-		if raw := value.AsString(); raw != "" {
-			*target = append(*target, raw)
-		}
-		return
-	}
-	if !value.CanIterateElements() {
-		return
-	}
-	iterator := value.ElementIterator()
-	for iterator.Next() {
-		key, element := iterator.Element()
-		appendSensitiveStrings(target, key)
-		appendSensitiveStrings(target, element)
-	}
 }
 
 // atlasVariable is one parsed atlas.hcl variable block.

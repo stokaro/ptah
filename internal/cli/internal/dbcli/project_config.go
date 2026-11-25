@@ -457,6 +457,7 @@ func ResolveExternalSchemaCommands(
 		cfg.ExternalSchema.Format,
 		cfg.ExternalSchema.WorkingDir,
 		cfg.ExternalSchema.Env,
+		cfg.ExternalSchema.Secrets,
 	)
 }
 
@@ -485,7 +486,8 @@ func externalSchemaCommandsFromConfig(
 	program []string,
 	format,
 	dir string,
-	env []string,
+	env,
+	secrets []string,
 ) ([]schemasource.Command, error) {
 	if len(program) == 0 {
 		return nil, nil
@@ -510,11 +512,12 @@ func externalSchemaCommandsFromConfig(
 		dir = resolvedDir
 	}
 	return []schemasource.Command{{
-		Origin: origin,
-		Args:   slices.Clone(program),
-		Format: format,
-		Dir:    dir,
-		Env:    slices.Clone(env),
+		Origin:  origin,
+		Args:    slices.Clone(program),
+		Format:  format,
+		Dir:     dir,
+		Env:     slices.Clone(env),
+		Secrets: slices.Clone(secrets),
 	}}, nil
 }
 

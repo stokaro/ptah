@@ -724,8 +724,22 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   `set(...)`, or `tuple(...)`) fail with named errors.
 - `sensitive = true` is accepted. Parse-time conversion errors print
   `(sensitive value)` instead of the variable's value; a sensitive value
-  interpolated into a URL or path can still appear in downstream errors that
-  print that URL or path.
+  interpolated into a path can still appear in downstream errors that print
+  that path. A value that reaches the password, a secret query parameter or
+  a whole user info of an address the file writes is shown as `redacted` in
+  any `atlas.hcl` error, whether or not a variable declares it sensitive, and
+  so is a sensitive value a program or data source receives as a bare
+  argument. The values of a sensitive map are sensitive; the names of its
+  items are not. The command that loads the file masks its later errors
+  against the sensitive values and what reaches a secret part of an address,
+  such as a schema file a `data "hcl_schema"` block passes a sensitive value
+  to; a value whose part of the address cannot be read, such as an argument
+  of a `format()` that takes its arguments by index, is masked in `atlas.hcl`
+  errors alone. An address is read where it is a template or a call to
+  `format()`, `join()` over written lists, `replace()`, `urlqueryset()` or
+  `urluserinfo()`, with the address a value in it evaluates to written in
+  where the file writes no `://` of its own; one built any other way is not
+  (stokaro/ptah#6645).
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
 A cloud-specific source outside the recognized lazy set fails during

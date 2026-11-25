@@ -8,11 +8,13 @@ import (
 
 type errorRedactionKey struct{}
 
-// errorAddresses holds the addresses a command opened. A mutex protects the
-// list because a command may open several databases concurrently.
+// errorAddresses holds the addresses a command opened and the secrets it
+// learned. A mutex protects the lists because a command may open several
+// databases concurrently.
 type errorAddresses struct {
-	mu   sync.Mutex
-	urls []string
+	mu      sync.Mutex
+	urls    []string
+	secrets []string
 }
 
 // WithErrorRedaction gives one command a private set of database addresses to
@@ -37,8 +39,26 @@ func RecordErrorAddress(ctx context.Context, dbURL string) {
 	addresses.mu.Unlock()
 }
 
+// RecordErrorSecrets records values a command holds secret, so an error from
+// any later step that quotes one is redacted at the command boundary as a
+// password is: each of five characters or more wherever it occurs, and a
+// shorter one where it stands as a credential.
+func RecordErrorSecrets(ctx context.Context, secrets []string) {
+	if ctx == nil || len(secrets) == 0 {
+		return
+	}
+	addresses, ok := ctx.Value(errorRedactionKey{}).(*errorAddresses)
+	if !ok {
+		return
+	}
+	addresses.mu.Lock()
+	addresses.secrets = append(addresses.secrets, secrets...)
+	addresses.mu.Unlock()
+}
+
 // RedactRecordedError removes every secret from the addresses opened under
-// ctx, preserving the original error for errors.Is and errors.As.
+// ctx, and every secret recorded under it, preserving the original error for
+// errors.Is and errors.As.
 func RedactRecordedError(ctx context.Context, err error) error {
 	if err == nil || ctx == nil {
 		return err
@@ -53,8 +73,8 @@ func RedactRecordedError(ctx context.Context, err error) error {
 
 // RedactRecordedText is [RedactRecordedError] for a text that is not an
 // error's message, such as a field a database server answered with: it takes
-// the secrets of the addresses opened under ctx out of text, where [RedactError]
-// would take them out.
+// the secrets of the addresses opened under ctx, and the secrets recorded
+// under it, out of text, where [RedactError] would take them out.
 func RedactRecordedText(ctx context.Context, text string) string {
 	if ctx == nil {
 		return text
@@ -65,12 +85,16 @@ func RedactRecordedText(ctx context.Context, text string) string {
 	}
 	addresses.mu.Lock()
 	urls := slices.Clone(addresses.urls)
+	secrets := slices.Clone(addresses.secrets)
 	addresses.mu.Unlock()
 	var parts []secretText
 	var users []string
 	for _, dbURL := range urls {
 		parts = append(parts, secretParts(dbURL)...)
 		users = append(users, Users(dbURL)...)
+	}
+	for _, secret := range secrets {
+		parts = append(parts, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
 	}
 	return maskText(text, parts, users, redactedPassword)
 }

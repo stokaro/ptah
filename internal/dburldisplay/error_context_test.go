@@ -59,3 +59,33 @@ func TestRecordedTextRedaction(t *testing.T) {
 		})
 	}
 }
+
+// A secret a command records is taken out of a later error as a password is:
+// a long one wherever it occurs, a short one only where it stands as a
+// credential. A context the command did not give a redaction scope records
+// nothing.
+func TestRecordedSecretRedaction(t *testing.T) {
+	ctx := dburldisplay.WithErrorRedaction(t.Context())
+	dburldisplay.RecordErrorSecrets(ctx, []string{"Tok3nValueX9", "abc"})
+	tests := []struct {
+		name string
+		ctx  context.Context
+		text string
+		want string
+	}{
+		{name: "a long secret anywhere", ctx: ctx, text: `cannot convert "Tok3nValueX9" to number`, want: `cannot convert "***" to number`},
+		{name: "a short secret in a word", ctx: ctx, text: "abcdef", want: "abcdef"},
+		{name: "a short secret as a setting", ctx: ctx, text: "password=abc", want: "password=***"},
+		{name: "no redaction scope", ctx: t.Context(), text: `cannot convert "Tok3nValueX9" to number`, want: `cannot convert "Tok3nValueX9" to number`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dburldisplay.RecordErrorSecrets(t.Context(), []string{"Tok3nValueX9"})
+
+			got := dburldisplay.RedactRecordedText(test.ctx, test.text)
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

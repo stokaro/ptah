@@ -207,3 +207,51 @@ func TestSanitizeError_BoundsLongDiagnostics(t *testing.T) {
 	c.Assert(got.Error(), qt.Contains, "...[truncated]...")
 	c.Assert(strings.HasSuffix(got.Error(), ":end"), qt.IsTrue)
 }
+
+// A value the caller knows is a secret is redacted with no name or address
+// beside it, where Sanitize reads a bare argument as a value like any other.
+func TestSanitizeKnown_RedactsABareSecret(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		known []string
+		want  string
+	}{
+		{name: "a token", text: "denied for Tok3nValueX9", known: []string{"Tok3nValueX9"}, want: "denied for redacted"},
+		{
+			name:  "the password of a known address",
+			text:  "cannot convert \"Pa55wordX9\" to number",
+			known: []string{"postgres://app:Pa55wordX9@db/shop"},
+			want:  "cannot convert \"redacted\" to number",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := secretdisplay.SanitizeKnown(test.text, nil, []string{"Tok3nValueX9"}, test.known)
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// The control for the test above: the same bare value as an argument alone is
+// not read as a secret, so the known values are what redacts it.
+func TestSanitize_KeepsABareArgument(t *testing.T) {
+	c := qt.New(t)
+
+	got := secretdisplay.Sanitize("denied for Tok3nValueX9", nil, []string{"Tok3nValueX9"})
+
+	c.Assert(got, qt.Equals, "denied for Tok3nValueX9")
+}
+
+func TestSanitizeErrorKnown_PreservesIdentityAndRedactsAKnownSecret(t *testing.T) {
+	c := qt.New(t)
+	sentinel := errors.New("denied for Tok3nValueX9")
+
+	got := secretdisplay.SanitizeErrorKnown(sentinel, nil, nil, []string{"Tok3nValueX9"})
+
+	c.Assert(got, qt.ErrorIs, sentinel)
+	c.Assert(got, qt.ErrorMatches, "denied for redacted")
+}
