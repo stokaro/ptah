@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -30,14 +31,15 @@ import (
 // with code 469, and stops the plan with code 395 naming the constraint. One
 // scan runs before the change and one after the ADD, for a row written between
 // the two; a row written after the ADD is the constraint's to refuse. On a
-// table whose columns the plan does not change, the first scan goes ahead of
-// the drops, so a refused row stops the plan while the CHECK the table holds
-// is still there to refuse the rows written after it. On a table whose columns
-// change, the condition may read a column only the change makes, so the first
-// scan waits for the ADD, and a refused row stops the plan with the table's
-// dropped CHECK gone. Either way the constraint is absent when the scan before
-// it fails, so a retried apply plans it and stops again. A plan asked for
-// without the scans writes none, and says so above each ADD.
+// table with no added column or changed column definition, the first scan goes
+// ahead of the drops, so a refused row stops the plan while the CHECK the table
+// holds is still there to refuse the rows written after it. A removed column
+// or a changed comment does not change the values the new condition reads.
+// An added column or a changed definition may produce values the condition
+// needs, so the first scan then waits for the ADD, and a refused row stops the
+// plan with the table's dropped CHECK gone. The new constraint is absent when
+// the scan before it fails, so a retried apply plans it and stops again. A plan
+// requested without scans writes none and says so above each ADD.
 //
 // A table the plan creates or rebuilds takes its CHECKs in its CREATE TABLE
 // ([withDeclaredChecks]), and a table the plan drops takes its CHECKs with it,
@@ -85,7 +87,9 @@ func (p *Planner) planCheckChanges(ctx context.Context, diff *difftypes.SchemaDi
 		if !kept(table.TableName) {
 			continue
 		}
-		if len(table.ColumnsAdded)+len(table.ColumnsRemoved)+len(table.ColumnsModified) > 0 {
+		if len(table.ColumnsAdded) > 0 || slices.ContainsFunc(table.ColumnsModified, func(column difftypes.ColumnDiff) bool {
+			return len(column.Changes) > 0
+		}) {
 			columnsChange[builder.Table(table.TableName).Key()] = true
 		}
 		for _, column := range table.ColumnsAdded {
