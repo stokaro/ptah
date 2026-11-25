@@ -79,6 +79,12 @@ var serverCrossDatabaseReplays = []struct {
 		refused: `cross-database target "{other}.t"`,
 	},
 	{
+		name:      "MySQL/a DELETE whose list after FROM names an alias returning",
+		admin:     dbtarget.MySQLAdmin,
+		migration: "DELETE FROM returning USING {other}.t AS returning;\n",
+		refused:   `cross-database target "{other}.t"`,
+	},
+	{
 		name:  "MariaDB/a DELETE past FOR SYSTEM_TIME",
 		admin: dbtarget.MariaDBAdmin,
 		migration: "CREATE TABLE t (id int PRIMARY KEY) WITH SYSTEM VERSIONING;\nINSERT INTO t VALUES (1);\n" +

@@ -61,8 +61,12 @@ func mysqlInsertTargets(tokens []lexer.Token) [][]string {
 // dev server seldom holds that database.
 //
 // RETURNING ends the list after the FROM of a DELETE that has no delete list
-// before it, where MariaDB reads it as its RETURNING clause: DELETE FROM t
-// RETURNING t.id, t.name. Anywhere else it is an alias. MySQL has no such
+// before it and no USING after it, where MariaDB reads it as its RETURNING
+// clause: DELETE FROM t RETURNING t.id, t.name. Anywhere else it is an alias.
+// MySQL's second multi-table form puts its delete list after FROM and its
+// references after a top-level USING, so in DELETE FROM returning USING
+// other.t AS returning the word is an alias; MariaDB's single-table DELETE has
+// no top-level USING. MySQL has no such
 // clause, and measured on MySQL 8.4.13 both DELETE x FROM t AS returning,
 // other.t AS x and DELETE FROM x USING t returning, other.t AS x delete from
 // other.t. MariaDB 11.8.9 refuses both, so reading on past the word refuses
@@ -77,7 +81,7 @@ func mysqlDeleteTargets(tokens []lexer.Token) [][]string {
 	for first < len(tokens) && isKeyword(tokens[first], "LOW_PRIORITY", "QUICK", "IGNORE") {
 		first++
 	}
-	if isKeyword(replay.TokenAt(tokens, first), "FROM") {
+	if isKeyword(replay.TokenAt(tokens, first), "FROM") && !hasTopLevelKeyword(tokens, first+1, "USING") {
 		listStops = append(slices.Clone(stops), "RETURNING")
 	}
 	var targets [][]string
@@ -94,6 +98,24 @@ func mysqlDeleteTargets(tokens []lexer.Token) [][]string {
 		listStops = stops
 	}
 	return targets
+}
+
+// hasTopLevelKeyword reports whether the unquoted word appears from index on
+// outside parentheses, so the USING of a join inside a subquery or of
+// CONVERT(x USING utf8mb4) does not count.
+func hasTopLevelKeyword(tokens []lexer.Token, index int, word string) bool {
+	depth := 0
+	for ; index < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth = max(depth-1, 0)
+		case depth == 0 && isKeyword(tokens[index], word):
+			return true
+		}
+	}
+	return false
 }
 
 // mysqlTableMaintenanceTargets reads every table an OPTIMIZE, ANALYZE or

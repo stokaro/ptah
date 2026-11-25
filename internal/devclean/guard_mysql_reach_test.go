@@ -329,6 +329,20 @@ func TestReplayGuardMySQLReach_FailurePath(t *testing.T) {
 		{name: "delete past a table aliased returning", statement: "DELETE u FROM audit returning, production.users AS u WHERE returning.id = u.id"},
 		{name: "delete through USING past a table aliased returning", statement: "DELETE FROM u USING audit returning, production.users AS u WHERE returning.id = u.id"},
 		{name: "delete list naming an alias returning", statement: "DELETE returning FROM audit, production.users AS returning WHERE audit.id = returning.id"},
+		{name: "delete list after FROM naming an alias returning", statement: "DELETE FROM returning USING production.users AS returning"},
+		{name: "delete list after FROM naming returning with a star", statement: "DELETE FROM returning.* USING production.users AS returning"},
+		{
+			name:      "delete list after modifiers and FROM naming returning",
+			statement: "DELETE LOW_PRIORITY QUICK IGNORE FROM returning USING production.users AS returning",
+		},
+		{
+			name:      "delete list after FROM ending with returning",
+			statement: "DELETE FROM x, returning USING production.users AS x, audit AS returning WHERE x.id = returning.id",
+		},
+		{
+			name:      "delete list after FROM starting with returning",
+			statement: "DELETE FROM returning, x USING audit AS returning, production.users AS x WHERE x.id = returning.id",
+		},
 		{
 			name:      "delete list named history",
 			statement: "DELETE history FROM audit AS returning, production.users AS history WHERE returning.id = history.id",
@@ -353,6 +367,12 @@ func TestReplayGuardMariaDBReach_HappyPath(t *testing.T) {
 	}{
 		{name: "delete returning qualified columns", statement: "DELETE FROM users RETURNING users.id, users.name"},
 		{name: "delete after modifiers returning qualified columns", statement: "DELETE LOW_PRIORITY QUICK IGNORE FROM users RETURNING users.id, users.name"},
+		{
+			name:      "delete returning after a subquery joining with USING",
+			statement: "DELETE FROM users WHERE id IN (SELECT a.id FROM audit AS a JOIN members AS m USING (id)) RETURNING users.id",
+		},
+		{name: "delete returning a CONVERT USING", statement: "DELETE FROM users RETURNING CONVERT(users.name USING utf8mb4), users.id"},
+		{name: "delete returning after ORDER BY and LIMIT", statement: "DELETE FROM users ORDER BY id LIMIT 1 RETURNING users.id"},
 		{name: "rename after IF EXISTS and WAIT", statement: "RENAME TABLE IF EXISTS users WAIT 5 TO members, audit NOWAIT TO ptah_dev.audit_old"},
 		{name: "partition converted in the dev database", statement: "ALTER TABLE tp CONVERT PARTITION p0 TO TABLE ptah_dev.tp_old"},
 		{name: "table converted into a partition", statement: "ALTER TABLE tp CONVERT TABLE tp_new TO PARTITION p2 VALUES LESS THAN (30)"},
