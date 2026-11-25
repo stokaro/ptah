@@ -255,7 +255,7 @@ func (r *Report) cellProblems() []error {
 	if r.Resolution.Saturated {
 		problems = append(problems, fmt.Errorf(
 			"matrix cell %s claims a measured preset, but the resolver reports the server as past the "+
-				"newest measured line (%s): a saturated version receives the dialect default, not this line's answer",
+				"newest measured line (%s): a saturated version is not resolved against this line's measurement",
 			r.Cell, r.Resolution.NewestMeasured))
 	}
 	if !r.Resolution.Capabilities.Equal(r.Cell.Preset()) {

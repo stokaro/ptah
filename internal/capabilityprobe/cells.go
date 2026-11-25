@@ -95,7 +95,7 @@ type Cell struct {
 	// [capability.SupportLevel] defines. It answers a different question from
 	// Refinement: Refinement says how a capability preset is REACHED, Support
 	// says how much testing stands behind it, and the two are independent —
-	// ClickHouse 26.7 is certified and undecidable at once.
+	// ClickHouse 26.7 is best-effort and still reached by version.
 	//
 	// [capability.BestEffort] is reachable two ways, and they mean the same
 	// thing from opposite directions: declared here for a line this repository
@@ -504,8 +504,7 @@ var Cells = []Cell{
 		Note: "certified because the probe fan-out runs this line. Measured on 26.8.2.7: 54 rows, " +
 			"34 agreements, 0 disagreements, and this cell's floor of 34 met, which is what says " +
 			"ClickHouse2411 -- the arm the ClickHouse ladder gives every line above 24.11 -- is " +
-			"right for 26.8 rather than assumed. capabilityline names 26.8 as the newest measured " +
-			"line on the strength of that measurement (stokaro/ptah#2802)",
+			"right for 26.8 rather than assumed (stokaro/ptah#2802)",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",

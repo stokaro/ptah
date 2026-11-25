@@ -43,11 +43,8 @@ const (
 	// ClickHouse268 is the measured ClickHouse 26.8 release line.
 	//
 	// Measured on 26.8.2.7 against the preset the cell declares: 54 rows, 34
-	// agreements, 0 disagreements, and the cell's floor of 34 met. Until it was
-	// measured this constant named 26.7, so a live 26.8 was past the newest
-	// measured line and received the dialect default instead of this line's
-	// answer -- which failed the nightly for three consecutive nights on a state
-	// the cell's own note had predicted (stokaro/ptah#2802).
+	// agreements, 0 disagreements, and the cell's floor of 34 met
+	// (stokaro/ptah#2802).
 	ClickHouse268 = "26.8"
 	// ClickHouse269 is the measured ClickHouse 26.9 release line.
 	//
@@ -64,9 +61,9 @@ const (
 	// Measured on 26.11.1.2942 against the preset the cell declares: 159 rows,
 	// 103 agreements, 0 disagreements, and the cell's floor of 103 met.
 	// Declaring the line without this constant is what the probe refuses: a
-	// server past the newest measured line receives the dialect default rather
-	// than this line's answer, and the probe exits non-zero rather than
-	// papering over the gap.
+	// server past the newest measured line resolves as saturated, without this
+	// line's measurement behind its answer, and the probe exits non-zero rather
+	// than papering over the gap.
 	ClickHouse2611 = "26.11"
 	// YugabyteDB2024 is the measured YugabyteDB 2024 LTS release line, and the
 	// only one below the PostgreSQL 11 to 15 engine swap.
