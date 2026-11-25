@@ -964,6 +964,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `mariadb` | 11.8 | certified | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
+| `clickhouse` | 26.11 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.11` | yes | yes |
 | `clickhouse` | 26.10 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.10` | yes | yes |
 | `clickhouse` | 26.9 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.9` | yes | yes |
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.8` | yes | yes |

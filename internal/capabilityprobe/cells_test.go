@@ -38,6 +38,7 @@ func TestCells_UseExactlyTheSharedMeasuredLines(t *testing.T) {
 		platform.MySQL:       capabilityline.MySQLMeasured(),
 		platform.MariaDB:     capabilityline.MariaDBMeasured(),
 		platform.CockroachDB: capabilityline.CockroachDBMeasured(),
+		platform.ClickHouse:  capabilityline.ClickHouseMeasured(),
 	} {
 		declared := declaredLines(dialect)
 		c.Assert(declared, qt.ContentEquals, lines,
@@ -537,13 +538,6 @@ func assertPinnedImageIsClassified(c *qt.C, ref string) {
 	}
 }
 
-// cellsDeclaring returns the cells whose Image covers a pinned reference.
-//
-// Exact equality is the ordinary case. The single loosening is the floating
-// tag: docker-compose.yaml pins clickhouse/clickhouse-server:26, which resolves
-// to whichever 26.x the registry serves that day, so it is covered when the
-// matrix declares a line beneath it. The prefix must end at a dot, or "2" would
-// cover "26.7".
 // cellsForDialect is the cells of one dialect, so an image described by
 // another one can be asserted to have something describing it.
 func cellsForDialect(dialect string) []capabilityprobe.Cell {
@@ -556,6 +550,12 @@ func cellsForDialect(dialect string) []capabilityprobe.Cell {
 	return out
 }
 
+// cellsDeclaring returns the cells whose Image covers a pinned reference.
+//
+// Exact equality is the ordinary case. A floating tag such as 26 is covered
+// when the matrix declares a line beneath it, and the prefix must end at a dot,
+// or "2" would cover "26.7". A latest-v<line> image covers a tag naming that
+// line, and a cell that resolves its newest patch covers any patch of its line.
 func cellsDeclaring(repository, tag string) []capabilityprobe.Cell {
 	var out []capabilityprobe.Cell
 	for _, cell := range capabilityprobe.Cells {

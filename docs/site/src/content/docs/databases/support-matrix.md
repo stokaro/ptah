@@ -92,6 +92,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `mariadb` | 11.8 | certified | `MariaDB1011` | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
+| `clickhouse` | 26.11 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.10 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.9 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | yes |
@@ -115,9 +116,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 | `oracle` | 21 | best-effort | `Oracle21` | no |
 
-Declared release lines: 35. Probed on every pull request: 30.
+Declared release lines: 36. Probed on every pull request: 31.
 
-Support levels across the 35 declared lines: 28 certified, 2 legacy-tested, 5 best-effort.
+Support levels across the 36 declared lines: 29 certified, 2 legacy-tested, 5 best-effort.
 
 Lines that are declared and not probed, and why:
 
