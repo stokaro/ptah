@@ -1,12 +1,12 @@
-// Package annotationschema reads the values of a Go annotation that name a
-// schema. The frontend in core/goschema reads every tag with it before a
-// directive reads the tag, and the annotation cleanup in
-// internal/goannotationcleanup reads each tag it removes with it before it
-// compares the tag with the export, so the two read one value the same way.
+// Package schemaattr reads the values of a Go annotation that name a schema.
+// The frontend in core/goschema reads every tag with it before a directive
+// reads the tag, and the annotation cleanup in internal/goannotationcleanup
+// reads each tag it removes with it before it compares the tag with the
+// export, so the two read one value the same way.
 // Read in two places, a quoted schema="\"App\"" would name App on the frontend
 // and "App" in the cleanup, and the cleanup would refuse to remove a tag the
 // export holds.
-package annotationschema
+package schemaattr
 
 import (
 	"strings"

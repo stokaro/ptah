@@ -1,11 +1,11 @@
-package annotationschema_test
+package schemaattr_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/annotationschema"
+	"ptah.run/internal/schemaattr"
 	"ptah.run/internal/tableref"
 )
 
@@ -55,7 +55,7 @@ func TestRead_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := annotationschema.Read(test.directive, test.values)
+			err := schemaattr.Read(test.directive, test.values)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(test.values, qt.DeepEquals, test.want)
@@ -88,7 +88,7 @@ func TestRead_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := annotationschema.Read(test.directive, test.values)
+			err := schemaattr.Read(test.directive, test.values)
 
 			c.Assert(err, qt.ErrorIs, tableref.ErrSpacedBareName)
 			c.Assert(err, qt.ErrorMatches, test.want)

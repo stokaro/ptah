@@ -22,13 +22,13 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
-	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/schemaattr"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/temporalkeys"
 	"ptah.run/internal/viewcheck"
@@ -786,7 +786,7 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 		return err
 	}
 
-	// The name of this directive names a schema, so [annotationschema.Read]
+	// The name of this directive names a schema, so [schemaattr.Read]
 	// has read it as it reads a schema attribute.
 	s.schemas = append(s.schemas, schemamodel.Schema{
 		Name:    kv["name"],
@@ -961,13 +961,13 @@ func (s *schemaParseState) annotationContext(
 //
 // Each value that names a schema is read here, so every directive reads it
 // the same way, and the annotation cleanup reads the tag it removes with the
-// same function; see [annotationschema.Read].
+// same function; see [schemaattr.Read].
 func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, error) {
 	kv, err := s.kv.ParseKeyValueComment(comment.Text)
 	var bare *parseutils.BareValueError
 	if !errors.As(err, &bare) {
 		directive, _ := s.catalog.MatchCommentDirective(comment.Text)
-		if spacedErr := annotationschema.Read(directive.Name, kv); spacedErr != nil {
+		if spacedErr := schemaattr.Read(directive.Name, kv); spacedErr != nil {
 			return nil, s.spacedSchemaError(comment, spacedErr)
 		}
 		return kv, err
@@ -990,7 +990,7 @@ func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, 
 }
 
 // spacedSchemaError is the parse error of comment for err, a refusal of
-// [annotationschema.Read].
+// [schemaattr.Read].
 func (s *schemaParseState) spacedSchemaError(comment *ast.Comment, err error) error {
 	directive, _ := s.catalog.MatchCommentDirective(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive.Name, "")
@@ -1610,7 +1610,7 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment)
 // names that already work is not what adding an optional attribute may do
 // (stokaro/ptah#1270).
 //
-// The schema arrives read, as [annotationschema.Read] reads it, and a
+// The schema arrives read, as [schemaattr.Read] reads it, and a
 // qualified name is trimmed here. Canonical keeps the bytes it is given, so an
 // untrimmed name="v_users " beside schema="app" would name a view other than
 // the live app.v_users, and the plan would drop the one and create the other.
