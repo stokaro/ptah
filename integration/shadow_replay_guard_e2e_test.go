@@ -133,9 +133,11 @@ func postgresShadowGuardOutside(c *qt.C) shadowGuardOutside {
 }
 
 // shadowGuardRefusal is the refusal of migration 1 on a server the run
-// neither owns nor trusts the SQL on: the guard's, naming trust in the SQL on
-// the shadow database as the remedy, and no declaration of a disposable server.
+// neither owns nor trusts the SQL on: the guard's, naming the two remedies a
+// shadow database has, a server the run discards and trust in the SQL, and no
+// declaration of a disposable server.
 const shadowGuardRefusal = `(?s).*migration replay rejects .* because its effects cannot be confined to the disposable database realm; ` +
+	`use a docker:// or docker\+<driver>:// URL for the shadow database; ` +
 	`if you trust this SQL to run with the shadow connection's privileges, set PTAH_TRUST_REPLAY_SQL=1\nSQL: .*`
 
 // shadowGuardRun is a target, a shadow database beside it, the directory the
