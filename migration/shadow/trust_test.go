@@ -1,6 +1,7 @@
 package shadow_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -8,8 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/replaytrust"
 	"ptah.run/migration/generator"
+	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
 )
 
@@ -165,6 +169,50 @@ func TestReplayTrust_FailurePathKeepsWhatTrustDoesNotLift(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, replayGuardRefusal)
 			c.Assert(err, qt.ErrorIs, shadow.ErrReplayRefused)
 			c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*`+regexp.QuoteMeta(shadow.DefaultTrustRemedy)+`.*`)
+		})
+	}
+}
+
+// A replay the caller trusts is recorded for the shadow URL while it runs, so
+// an engine a provider serves opens its session for trusted SQL; the record
+// ends when the verification returns, and an untrusted replay makes none. A
+// migration written in Go reads the record in the middle of the replay.
+func TestReplayTrust_HappyPathRecordsTheShadowURLWhileTheReplayRuns(t *testing.T) {
+	tests := []struct {
+		name       string
+		trust      shadow.ReplayTrust
+		wantDuring bool
+	}{
+		{name: "trusted", trust: shadow.ReplayTrust{Trusted: true}, wantDuring: true},
+		{name: "untrusted", wantDuring: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, shadowURL := replayTarget(c)
+			var during bool
+			items := &migrator.Migration{
+				Version:     1,
+				Description: "items",
+				Up: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+					during = replaytrust.Trusted(shadowURL)
+					_, err := conn.ExecContext(ctx, "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT)")
+					return err
+				},
+			}
+
+			_, err := shadow.VerifyApplied(c.Context(), shadow.AppliedVerifyOptions{
+				Runtime:           builtintest.Runtime(),
+				ShadowDatabaseURL: shadowURL,
+				TargetConn:        target,
+				Migrations:        []*migrator.Migration{items},
+				Dialect:           target.Info().Dialect,
+				Trust:             test.trust,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(during, qt.Equals, test.wantDuring)
+			c.Assert(replaytrust.Trusted(shadowURL), qt.IsFalse)
 		})
 	}
 }

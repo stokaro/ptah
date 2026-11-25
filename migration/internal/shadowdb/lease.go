@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/migrateclean"
+	"ptah.run/internal/replaytrust"
 )
 
 // Lease is a disposable database a verification has claimed: it held nothing
@@ -73,6 +75,20 @@ func Trust(trusted bool, remedy, serverRemedy string) devclean.ShadowTrust {
 		remedy = DefaultTrustRemedy
 	}
 	return devclean.ShadowTrust{Trusted: trusted, Remedy: remedy, ServerRemedy: serverRemedy}
+}
+
+// RecordTrust notes that the caller trusts the SQL replayed through rawURL, so
+// an engine a provider serves opens its session for trusted SQL, and the
+// provider's own checks lift what the replay guard lifts under trust; see
+// [replaytrust.Trusted]. It belongs before the connection to rawURL opens, and
+// returns the release that ends the note. An untrusted replay records nothing,
+// and neither does an empty URL, which names the temporary database [Open]
+// provisions.
+func RecordTrust(rawURL string, trusted bool) func() {
+	if !trusted || strings.TrimSpace(rawURL) == "" {
+		return func() {}
+	}
+	return replaytrust.Record(rawURL)
 }
 
 // replayGuard is the guard of a replay into conn, a database claimed with

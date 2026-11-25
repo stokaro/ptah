@@ -126,6 +126,8 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	if err != nil {
 		return AppliedResult{}, appliedError("configuration", "replay_error", "assemble the applied migrations", err)
 	}
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.Trusted)
+	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()

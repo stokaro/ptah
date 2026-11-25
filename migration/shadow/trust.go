@@ -31,9 +31,10 @@ type ReplayTrust struct {
 	// PostgreSQL, or a stored body on MySQL. The guard still refuses what
 	// trust does not lift: an executable comment on MySQL, a change to the
 	// session's settings, a temporary object, and a statement the reset could
-	// not take back from the shadow database itself. The cleanup still empties
-	// only the shadow database, so a role or another server-level object the
-	// SQL creates stays on the server.
+	// not take back from the shadow database itself. On an engine a provider
+	// serves, the provider opens its session for trusted SQL as well. The
+	// cleanup still empties only the shadow database, so a role or another
+	// server-level object the SQL creates stays on the server.
 	Trusted bool
 	// Remedy ends a refusal that Trusted would lift, when Trusted is false.
 	// Empty ends it with [DefaultTrustRemedy]. A caller that takes trust from

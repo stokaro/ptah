@@ -81,6 +81,8 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.Trusted)
+	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
