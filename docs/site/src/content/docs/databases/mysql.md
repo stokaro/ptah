@@ -1864,6 +1864,34 @@ privileges to name another definer creates it with a note. Cleanup drops it
 with the other views the server cannot open. A `SQL SECURITY INVOKER` view
 naming the same account opens and goes through the usual lock.
 
+## Stored program SQL modes
+
+MySQL and MariaDB keep the `sql_mode` under which each function, procedure or
+trigger was created. That mode can change the program: `||` concatenates under
+`PIPES_AS_CONCAT` and computes logical OR without it. A connection's current
+mode does not change how an existing program runs.
+
+Ptah's schema model does not carry those parsing modes. Reading a function,
+procedure or trigger therefore refuses, by object name and mode, when its
+stored mode or the reading session's mode includes `PIPES_AS_CONCAT`,
+`HIGH_NOT_PRECEDENCE`, `IGNORE_SPACE`, `REAL_AS_FLOAT`,
+`EMPTY_STRING_IS_NULL`, `SIMULTANEOUS_ASSIGNMENT` or
+`NO_UNSIGNED_SUBTRACTION`. The composite modes `ANSI`, `ORACLE`, `DB2`,
+`MAXDB`, `MSSQL`, `POSTGRESQL`, `MYSQL323` and `MYSQL40` are refused too.
+The refusal also holds when the stored and session modes match: an exported
+schema or a generated migration may run under a different session later.
+
+This stops schema planning, export, generated migrations and derived
+rollbacks before they recreate a program with different behavior. It does not
+change the stored program. Manage such an object with migration SQL that saves
+the session mode, sets the object's stored mode around its `CREATE`, and
+restores the session mode. A run that excludes the entire routine or trigger
+kind does not depend on that kind and does not get this refusal.
+
+Ordinary strict modes remain accepted. The modes `ANSI_QUOTES` and
+`NO_BACKSLASH_ESCAPES` change how tokens are spelled and are outside this
+parsing-mode refusal; see [Session SQL modes](#a-session-without-a-strict-sql-mode).
+
 ## Replacing a trigger
 
 A plan runs every trigger change in one block, after the columns a new trigger
