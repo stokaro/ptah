@@ -792,7 +792,8 @@ to have it read the rows where it runs.
 A check of kind `rounded-values` reads the rows before the body and refuses
 `phase=after`. Only the up file carries the check. The down file of such a migration
 widens the column back, and the down file of a migration that widens a column narrows
-it without a check, so a rollback rounds the values written after the up file ran. Under
+it without a check, so a rollback rounds the values written after the up file ran
+(stokaro/ptah#6672). Under
 `PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah directive, so `ptah-compat migrate
 apply` refuses the file, as it refuses every other check; `migrate hash`,
 `migrate status` and `migrate validate` without `--dev-url` read the bytes and keep
