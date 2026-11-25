@@ -46,6 +46,60 @@ var crossDatabaseReplays = []struct {
 		migration: "CREATE VIEW v AS SELECT id FROM {other}.t;\nINSERT INTO v VALUES (2);\n",
 		refused:   `view "v" over cross-database table "{other}.t"`,
 	},
+	{name: "a DROP TABLES", migration: "DROP TABLES {other}.t;\n", refused: `cross-database target "{other}.t"`},
+	{
+		name: "a DELETE past an index hint",
+		migration: "CREATE TABLE t (id int PRIMARY KEY);\nINSERT INTO t VALUES (1);\n" +
+			"DELETE x FROM t USE INDEX FOR ORDER BY (PRIMARY), {other}.t AS x WHERE t.id = x.id;\n",
+		refused: `cross-database target "{other}.t"`,
+	},
+	{
+		name: "a write through a view past an index hint",
+		migration: "CREATE TABLE t (id int PRIMARY KEY);\nINSERT INTO t VALUES (1);\n" +
+			"CREATE VIEW vw AS SELECT o.id AS oid FROM t FORCE INDEX FOR ORDER BY (PRIMARY), {other}.t AS o;\n" +
+			"UPDATE vw SET oid = 99;\n",
+		refused: `view "vw" over cross-database table "{other}.t"`,
+	},
+}
+
+// serverCrossDatabaseReplays are the spellings of such a write that one of
+// the servers takes and the other refuses, each with the server that takes
+// it.
+var serverCrossDatabaseReplays = []struct {
+	name      string
+	admin     dbtarget.Engine
+	migration string
+	refused   string
+}{
+	{
+		name:  "MySQL/a DELETE past a table aliased returning",
+		admin: dbtarget.MySQLAdmin,
+		migration: "CREATE TABLE t (id int PRIMARY KEY);\nINSERT INTO t VALUES (1);\n" +
+			"DELETE x FROM t AS returning, {other}.t AS x WHERE returning.id = x.id;\n",
+		refused: `cross-database target "{other}.t"`,
+	},
+	{
+		name:  "MariaDB/a DELETE past FOR SYSTEM_TIME",
+		admin: dbtarget.MariaDBAdmin,
+		migration: "CREATE TABLE t (id int PRIMARY KEY) WITH SYSTEM VERSIONING;\nINSERT INTO t VALUES (1);\n" +
+			"DELETE x FROM t FOR SYSTEM_TIME ALL, {other}.t AS x WHERE t.id = x.id;\n",
+		refused: `cross-database target "{other}.t"`,
+	},
+	{
+		name:  "MariaDB/a RENAME TABLE after WAIT",
+		admin: dbtarget.MariaDBAdmin,
+		migration: "CREATE TABLE moved (id int PRIMARY KEY);\n" +
+			"RENAME TABLE moved WAIT 5 TO {other}.moved;\n",
+		refused: `cross-database target "{other}.moved"`,
+	},
+	{
+		name:  "MariaDB/a partition converted into another database",
+		admin: dbtarget.MariaDBAdmin,
+		migration: "CREATE TABLE tp (id int PRIMARY KEY) PARTITION BY RANGE (id) " +
+			"(PARTITION p0 VALUES LESS THAN (10), PARTITION p1 VALUES LESS THAN (20));\n" +
+			"ALTER TABLE tp CONVERT PARTITION p0 TO TABLE {other}.moved;\n",
+		refused: `cross-database target "{other}.moved"`,
+	},
 }
 
 // otherDatabaseState answers what a run can change in database: its tables,
@@ -88,20 +142,39 @@ func TestMigrateValidateRefusesAWriteToAnotherDatabaseE2E(t *testing.T) {
 		for _, test := range crossDatabaseReplays {
 			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
-				scratch := newMySQLFamilyScratch(c, engine.admin)
-				other, _ := scratch.builtAs(c, "xdb_other", "CREATE TABLE t (id int PRIMARY KEY);\nINSERT INTO t VALUES (1);")
-				_, devURL := scratch.database(c, "xdb_dev")
-				dir := crossDatabaseMigration(c, test.migration, other)
-
-				output, err := runCompatVerb("migrate", "validate", "--dir", "file://"+dir, "--dev-url", devURL)
-
-				refused := strings.ReplaceAll(test.refused, "{other}", other)
-				c.Assert(err, qt.ErrorMatches, `(?s).*migration replay rejects `+regexp.QuoteMeta(refused)+` .*`,
-					qt.Commentf("%s", output))
-				c.Assert(otherDatabaseState(c, scratch, other), qt.Equals, "tables=t rows=1")
+				assertCrossDatabaseReplayRefused(c, engine.admin, test.migration, test.refused)
 			})
 		}
 	}
+}
+
+func TestMigrateValidateRefusesAServerSpellingOfAWriteToAnotherDatabaseE2E(t *testing.T) {
+	for _, test := range serverCrossDatabaseReplays {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			assertCrossDatabaseReplayRefused(c, test.admin, test.migration, test.refused)
+		})
+	}
+}
+
+// assertCrossDatabaseReplayRefused replays migration into a dev database on
+// the server admin names, beside a database holding t with the row 1 that
+// {other} stands for. It asserts that the database is as it was, read back
+// first so that a replay the guard let through shows what it wrote, and that
+// the refusal names refused.
+func assertCrossDatabaseReplayRefused(c *qt.C, admin dbtarget.Engine, migration, refused string) {
+	c.Helper()
+	scratch := newMySQLFamilyScratch(c, admin)
+	other, _ := scratch.builtAs(c, "xdb_other", "CREATE TABLE t (id int PRIMARY KEY);\nINSERT INTO t VALUES (1);")
+	_, devURL := scratch.database(c, "xdb_dev")
+	dir := crossDatabaseMigration(c, migration, other)
+
+	output, err := runCompatVerb("migrate", "validate", "--dir", "file://"+dir, "--dev-url", devURL)
+
+	c.Assert(otherDatabaseState(c, scratch, other), qt.Equals, "tables=t rows=1", qt.Commentf("%s", output))
+	c.Assert(err, qt.ErrorMatches,
+		`(?s).*migration replay rejects `+regexp.QuoteMeta(strings.ReplaceAll(refused, "{other}", other))+` .*`,
+		qt.Commentf("%s", output))
 }
 
 // TestMigrateValidateRefusesASequenceOfAnotherDatabaseE2E is the same for a

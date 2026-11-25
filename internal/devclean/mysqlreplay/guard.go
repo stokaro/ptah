@@ -189,8 +189,18 @@ func mysqlMutationTargets(tokens []lexer.Token) [][]string {
 			return targets
 		}
 		_, next := replay.QualifiedIdentifierAt(tokens, replay.ObjectNameIndex(tokens, kindIndex))
+		targets = append(targets, likeSource(tokens, next)...)
 		return append(targets, mysqlTableReach(tokens, next)...)
 	case "DROP":
+		// DROP TABLES is DROP TABLE to both servers, and TABLES is no kind of
+		// object the shared reader knows.
+		if replay.TokenSequenceAt(tokens, 1, "TABLES") {
+			at := 2
+			if replay.TokenSequenceAt(tokens, at, "IF", "EXISTS") {
+				at += 2
+			}
+			return replay.CommaSeparatedQualifiedTargets(tokens, at, "")
+		}
 		kindIndex := replay.StatementObjectKindIndex(tokens)
 		if kindIndex != replay.MutationTargetNotFound &&
 			(replay.NormalizedIdentifier(tokens[kindIndex]) == "TABLE" ||
@@ -230,12 +240,20 @@ func mysqlUpdateTargets(tokens []lexer.Token) [][]string {
 
 // mysqlTableReferenceTargets reads the tables of the references that begin at
 // start, each one past a comma or a JOIN, up to a word of stops at the top
-// level. It returns them and the index where it stopped.
+// level. It returns them and the index where it stopped. An index hint or a
+// FOR SYSTEM_TIME clause after a table is read past whole, since its words
+// FOR, ORDER, GROUP and FROM do not end the list.
 func mysqlTableReferenceTargets(tokens []lexer.Token, start int, stops ...string) ([][]string, int) {
 	var targets [][]string
 	expectTarget := true
 	depth := 0
 	for index := start; index < len(tokens); index++ {
+		if depth == 0 && !expectTarget {
+			if end, ok := referenceModifierEnd(tokens, index); ok {
+				index = end - 1
+				continue
+			}
+		}
 		if depth == 0 && isKeyword(tokens[index], stops...) {
 			return targets, index
 		}
@@ -264,10 +282,16 @@ func mysqlTableReferenceTargets(tokens []lexer.Token, start int, stops ...string
 	return targets, len(tokens)
 }
 
+// mysqlRenameTargets reads every table a RENAME TABLE or RENAME TABLES names,
+// each source and each destination. MariaDB takes IF EXISTS after TABLE, and
+// WAIT n or NOWAIT after each source, before its TO.
 func mysqlRenameTargets(tokens []lexer.Token) [][]string {
 	index := 1
-	if index < len(tokens) && tokens[index].MatchIdentifierValue("TABLE") {
+	if index < len(tokens) && isKeyword(tokens[index], "TABLE", "TABLES") {
 		index++
+	}
+	if replay.TokenSequenceAt(tokens, index, "IF", "EXISTS") {
+		index += 2
 	}
 	var targets [][]string
 	for index < len(tokens) {
@@ -276,6 +300,12 @@ func mysqlRenameTargets(tokens []lexer.Token) [][]string {
 			return targets
 		}
 		targets = append(targets, source)
+		switch {
+		case isKeyword(replay.TokenAt(tokens, next), "NOWAIT"):
+			next++
+		case isKeyword(replay.TokenAt(tokens, next), "WAIT"):
+			next += 2
+		}
 		if next >= len(tokens) || !tokens[next].MatchIdentifierValue("TO") {
 			return targets
 		}

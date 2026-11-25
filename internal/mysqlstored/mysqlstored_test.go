@@ -423,6 +423,7 @@ func TestWrapped_HoldsNone(t *testing.T) {
 		{name: "SET STATEMENT ending in FOR", statement: "SET STATEMENT max_statement_time=0 FOR"},
 		{name: "a plain SET", statement: "SET max_statement_time=0"},
 		{name: "ANALYZE TABLE", statement: "ANALYZE TABLE t"},
+		{name: "ANALYZE TABLES", statement: "ANALYZE TABLES t"},
 		{name: "ANALYZE NO_WRITE_TO_BINLOG", statement: "ANALYZE NO_WRITE_TO_BINLOG TABLE t"},
 		{name: "ANALYZE LOCAL", statement: "ANALYZE LOCAL TABLE t"},
 		{name: "ANALYZE alone", statement: "ANALYZE"},

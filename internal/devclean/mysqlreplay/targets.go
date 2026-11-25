@@ -10,12 +10,12 @@ import (
 )
 
 // The readers here name the tables and other objects a statement writes,
-// where the shared reader of [replay.MutationTargets] cannot: every spelling
-// the servers take of an INSERT, a REPLACE and a DELETE, the tables an ALTER
-// TABLE or a CREATE TABLE reaches besides its own, the tables a view writes
-// through, and the stored functions and sequences a statement runs or
-// advances in another database. Each spelling below was measured on MySQL
-// 8.4.13 and MariaDB 11.8.9 writing a table of another database.
+// where the shared reader of [replay.MutationTargets] cannot: the spellings
+// of an INSERT, a REPLACE and a DELETE they know, the tables an ALTER TABLE or
+// a CREATE TABLE reaches besides its own, the tables a view writes through,
+// and the stored functions and sequences a statement runs or advances in
+// another database. Each spelling below was measured on MySQL 8.4.13 or
+// MariaDB 11.8.9, or both, writing a table of another database.
 
 // isKeyword reports whether token is an unquoted word among words, in either
 // case. A quoted name is never a keyword, so `into`.t names a database.
@@ -52,26 +52,46 @@ func mysqlInsertTargets(tokens []lexer.Token) [][]string {
 }
 
 // mysqlDeleteTargets reads every table a DELETE names: the tables of its
-// delete list and of its FROM and USING references. A multi-table DELETE
-// names its targets by alias, as DELETE FROM x USING other.t AS x and DELETE
-// t, o FROM t JOIN other.t AS o ON ... do, so a table the references name
-// counts as written whether or not the delete list names it. A table the
-// statement only reads in another database is refused with them, which costs
-// a migration little: a dev server seldom holds that database. A modifier
-// such as QUICK or IGNORE reads as a table of the dev database, which the
-// check passes.
+// delete list and of its FROM and USING references, past the modifiers
+// LOW_PRIORITY, QUICK and IGNORE. A multi-table DELETE names its targets by
+// alias, as DELETE FROM x USING other.t AS x and DELETE t, o FROM t JOIN
+// other.t AS o ON ... do, so a table the references name counts as written
+// whether or not the delete list names it. A table the statement only reads
+// in another database is refused with them, which costs a migration little: a
+// dev server seldom holds that database.
+//
+// RETURNING ends the list after the FROM of a DELETE that has no delete list
+// before it, where MariaDB reads it as its RETURNING clause: DELETE FROM t
+// RETURNING t.id, t.name. Anywhere else it is an alias. MySQL has no such
+// clause, and measured on MySQL 8.4.13 both DELETE x FROM t AS returning,
+// other.t AS x and DELETE FROM x USING t returning, other.t AS x delete from
+// other.t. MariaDB 11.8.9 refuses both, so reading on past the word refuses
+// nothing it runs. The rule reads the words rather than the dialect, so it
+// holds on whichever server a URL reaches; a mysql URL can reach MariaDB.
+// MariaDB's HISTORY is not skipped as a modifier: to MySQL it is a name, and
+// DELETE history FROM t AS returning, other.t AS history names a delete list.
 func mysqlDeleteTargets(tokens []lexer.Token) [][]string {
+	stops := []string{"FROM", "USING", "WHERE", "ORDER", "LIMIT"}
+	listStops := stops
+	first := 1
+	for first < len(tokens) && isKeyword(tokens[first], "LOW_PRIORITY", "QUICK", "IGNORE") {
+		first++
+	}
+	if isKeyword(replay.TokenAt(tokens, first), "FROM") {
+		listStops = append(slices.Clone(stops), "RETURNING")
+	}
 	var targets [][]string
-	for index := 1; index < len(tokens); {
+	for index := first; index < len(tokens); {
 		if isKeyword(tokens[index], "FROM", "USING") {
 			index++
 		}
-		list, next := mysqlTableReferenceTargets(tokens, index, "FROM", "USING", "WHERE", "ORDER", "LIMIT", "RETURNING")
+		list, next := mysqlTableReferenceTargets(tokens, index, listStops...)
 		targets = append(targets, list...)
 		if next >= len(tokens) || !isKeyword(tokens[next], "FROM", "USING") {
 			return targets
 		}
 		index = next
+		listStops = stops
 	}
 	return targets
 }
@@ -93,10 +113,12 @@ func mysqlTableMaintenanceTargets(tokens []lexer.Token) [][]string {
 // mysqlTableReach reads the tables an ALTER TABLE or CREATE TABLE writes
 // besides its own, from start on: the destination of a RENAME, written with
 // TO, AS or neither, as in ALTER TABLE t RENAME other.t2; the table an
-// EXCHANGE PARTITION ... WITH TABLE swaps rows with; and the tables of a MERGE
-// table's UNION, which an INSERT into the MERGE table writes. RENAME and UNION
-// are reserved words and WITH TABLE ends an EXCHANGE, so none of them stands
-// for a name inside a column list.
+// EXCHANGE PARTITION ... WITH TABLE swaps rows with; the tables of a MERGE
+// table's UNION, which an INSERT into the MERGE table writes; and the table a
+// MariaDB CONVERT PARTITION p TO TABLE creates from a partition's rows, or
+// CONVERT TABLE moves into a partition, taking it out of its database.
+// RENAME, UNION and CONVERT are reserved words and WITH TABLE ends an
+// EXCHANGE, so none of them stands for a name inside a column list.
 func mysqlTableReach(tokens []lexer.Token, start int) [][]string {
 	var targets [][]string
 	for index := start; index < len(tokens); index++ {
@@ -105,11 +127,72 @@ func mysqlTableReach(tokens []lexer.Token, start int) [][]string {
 			targets = append(targets, renameDestination(tokens, index+1)...)
 		case isKeyword(tokens[index], "WITH") && isKeyword(replay.TokenAt(tokens, index+1), "TABLE"):
 			targets = append(targets, qualifiedNameAt(tokens, index+2)...)
+		case isKeyword(tokens[index], "CONVERT") && isKeyword(replay.TokenAt(tokens, index+1), "TABLE"):
+			targets = append(targets, qualifiedNameAt(tokens, index+2)...)
+		case isKeyword(tokens[index], "CONVERT") && isKeyword(replay.TokenAt(tokens, index+1), "PARTITION") &&
+			replay.TokenSequenceAt(tokens, index+3, "TO", "TABLE"):
+			targets = append(targets, qualifiedNameAt(tokens, index+5)...)
 		case isKeyword(tokens[index], "UNION"):
 			targets = append(targets, unionTables(tokens, index+1)...)
 		}
 	}
 	return targets
+}
+
+// likeSource reads the table a CREATE TABLE ... LIKE copies, written LIKE src
+// or (LIKE src) after the new table's name at index. The copy takes the
+// source's whole definition: a MERGE table's UNION, or a FEDERATED, SPIDER or
+// CONNECT table's connection. So CREATE TABLE m LIKE other.mrg followed by
+// INSERT INTO m VALUES (77) writes a table of other.
+func likeSource(tokens []lexer.Token, index int) [][]string {
+	if isOperatorAt(tokens, index, "(") {
+		index++
+	}
+	if !isKeyword(replay.TokenAt(tokens, index), "LIKE") {
+		return nil
+	}
+	return qualifiedNameAt(tokens, index+1)
+}
+
+// referenceModifierEnd returns the index past an index hint or a MariaDB FOR
+// SYSTEM_TIME clause that begins at index, after a table of a list of table
+// references, and false where neither begins there:
+//
+//   - the words of an index hint before its list: USE, IGNORE or FORCE, then
+//     INDEX or KEY, then FOR JOIN, FOR ORDER BY or FOR GROUP BY if it is
+//     written. A reader passes over the list in parentheses after them as it
+//     passes over any other, and hints follow one another without a comma;
+//   - FOR SYSTEM_TIME and the word after it: ALL, AS OF, BETWEEN or FROM. The
+//     expressions of AS OF, BETWEEN ... AND and FROM ... TO hold no word that
+//     ends a list, so a reader goes on through them.
+//
+// Their words FOR, ORDER, GROUP and FROM end a list of references anywhere
+// else. A reader that stopped at them would miss the references after the
+// hint, as in FROM t FORCE INDEX FOR ORDER BY (PRIMARY), other.t AS o.
+func referenceModifierEnd(tokens []lexer.Token, index int) (int, bool) {
+	at := func(offset int) lexer.Token { return replay.TokenAt(tokens, index+offset) }
+	switch {
+	case isKeyword(at(0), "USE", "IGNORE", "FORCE") && isKeyword(at(1), "INDEX", "KEY"):
+		end := index + 2
+		switch {
+		case isKeyword(at(2), "FOR") && isKeyword(at(3), "JOIN"):
+			end += 2
+		case isKeyword(at(2), "FOR") && isKeyword(at(3), "ORDER", "GROUP") && isKeyword(at(4), "BY"):
+			end += 3
+		}
+		return end, true
+	case isKeyword(at(0), "FOR") && isKeyword(at(1), "SYSTEM_TIME"):
+		switch {
+		case isKeyword(at(2), "ALL", "BETWEEN", "FROM"):
+			return index + 3, true
+		case isKeyword(at(2), "AS") && isKeyword(at(3), "OF"):
+			return index + 4, true
+		default:
+			return index + 2, true
+		}
+	default:
+		return index, false
+	}
 }
 
 // renameDestination reads the new name of an ALTER TABLE ... RENAME clause
@@ -156,7 +239,9 @@ type queryFrame struct {
 // a JOIN, a comma of a FROM list or the TABLE statement, in the query and in
 // each subquery it holds. A write through a view lands in the tables its
 // query names, so CREATE VIEW vw AS SELECT * FROM other.t followed by INSERT
-// INTO vw VALUES (42) writes other.t.
+// INTO vw VALUES (42) writes other.t. An index hint or a FOR SYSTEM_TIME
+// clause after a table of a FROM list is read past whole
+// ([referenceModifierEnd]), so the list goes on after it.
 func mysqlQueryTables(tokens []lexer.Token, start int) [][]string {
 	var tables [][]string
 	frames := []queryFrame{{query: true}}
@@ -164,6 +249,12 @@ func mysqlQueryTables(tokens []lexer.Token, start int) [][]string {
 	for index := start; index < len(tokens); index++ {
 		token := tokens[index]
 		frame := &frames[len(frames)-1]
+		if frame.query && frame.list && !expectTable {
+			if end, ok := referenceModifierEnd(tokens, index); ok {
+				index = end - 1
+				continue
+			}
+		}
 		switch {
 		case token.MatchOperatorValue("("):
 			next := replay.TokenAt(tokens, index+1)

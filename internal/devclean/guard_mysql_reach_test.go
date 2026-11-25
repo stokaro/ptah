@@ -13,10 +13,11 @@ import (
 
 // The rows below spell, the way MySQL 8.4.13 and MariaDB 11.8.9 take them, a
 // write that lands outside the dev database: an INSERT or REPLACE without
-// INTO, a multi-table DELETE, the tables an ALTER TABLE or a MERGE table
-// reaches, a view that writes through to another database, and a function or
-// sequence of another database. Each was measured writing a table of another
-// database on both servers.
+// INTO, a multi-table DELETE, a DROP or RENAME of TABLES, the tables an ALTER
+// TABLE, a MERGE table or a CREATE TABLE ... LIKE reaches, a view that writes
+// through to another database, and a function or sequence of another
+// database. Each was measured writing a table of another database on the
+// servers whose test lists it.
 
 // reachRefusal is the refusal of a statement whose effect reaches what want
 // names, as dialect's guard words it in the database realm.
@@ -90,7 +91,20 @@ func TestReplayGuardMySQLFamilyReach_HappyPath(t *testing.T) {
 		{name: "locking read", statement: "SELECT id FROM users WHERE active = 1 FOR UPDATE"},
 		{name: "transaction start", statement: "BEGIN"},
 		{name: "transaction start with WORK", statement: "BEGIN WORK"},
+		{name: "transaction start with a semicolon", statement: "BEGIN WORK;"},
 		{name: "transaction start with START", statement: "START TRANSACTION"},
+		{name: "tables dropped in the dev database with TABLES", statement: "DROP TABLES IF EXISTS users, ptah_dev.audit"},
+		{name: "tables renamed in the dev database with TABLES", statement: "RENAME TABLES users TO members, audit TO ptah_dev.audit_old"},
+		{
+			name:      "delete past an index hint in the dev database",
+			statement: "DELETE u FROM audit USE INDEX FOR ORDER BY (PRIMARY), ptah_dev.users AS u WHERE audit.id = u.id",
+		},
+		{name: "view past an index hint in the dev database", statement: "CREATE VIEW v AS SELECT u.id FROM audit FORCE INDEX FOR GROUP BY (PRIMARY), users AS u"},
+		{name: "copy of a table of the dev database", statement: "CREATE TABLE copy LIKE users"},
+		{name: "copy of a qualified table of the dev database", statement: "CREATE TABLE copy (LIKE ptah_dev.users)"},
+		{name: "check constraint with LIKE", statement: "CREATE TABLE named (name varchar(9), CHECK (name LIKE 'a%'))"},
+		{name: "character set converted", statement: "ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4"},
+		{name: "session variables set in one list", statement: "SET @a = 1, @password = 2, default_storage_engine = InnoDB"},
 		{name: "own backup lock released", statement: "UNLOCK INSTANCE"},
 	}
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
@@ -141,6 +155,43 @@ func TestReplayGuardMySQLFamilyReach_FailurePath(t *testing.T) {
 		{name: "REPAIR TABLES", statement: "REPAIR TABLES production.users", want: users},
 		{name: "ANALYZE TABLES", statement: "ANALYZE TABLES production.users", want: users},
 		{name: "second table of an OPTIMIZE TABLES after LOCAL", statement: "OPTIMIZE LOCAL TABLES ptah_dev.users, production.users", want: users},
+		{name: "DROP TABLES", statement: "DROP TABLES production.users", want: users},
+		{name: "DROP TABLES IF EXISTS", statement: "DROP TABLES IF EXISTS production.users, users", want: users},
+		{name: "RENAME TABLES", statement: "RENAME TABLES users TO production.users", want: users},
+		{
+			name:      "delete past an index hint for ORDER BY",
+			statement: "DELETE u FROM audit USE INDEX FOR ORDER BY (PRIMARY), production.users AS u WHERE audit.id = u.id",
+			want:      users,
+		},
+		{
+			name:      "delete past an index hint before a JOIN",
+			statement: "DELETE u FROM audit FORCE INDEX FOR GROUP BY (PRIMARY) JOIN production.users AS u ON u.id = audit.id",
+			want:      users,
+		},
+		{
+			name:      "update past two index hints",
+			statement: "UPDATE audit USE INDEX (PRIMARY) IGNORE KEY FOR ORDER BY (PRIMARY), production.users AS u SET u.name = 'x'",
+			want:      users,
+		},
+		{
+			name:      "view past an index hint for ORDER BY",
+			statement: "CREATE VIEW v AS SELECT u.id FROM audit FORCE INDEX FOR ORDER BY (PRIMARY), production.users AS u",
+			want:      throughV,
+		},
+		{
+			name:      "view past an index hint before a JOIN",
+			statement: "CREATE VIEW v AS SELECT u.id FROM audit USE KEY FOR JOIN (PRIMARY) JOIN production.users AS u ON u.id = audit.id",
+			want:      throughV,
+		},
+		{
+			name:      "view past an index hint in a subquery",
+			statement: "CREATE VIEW v AS SELECT id FROM audit WHERE id IN (SELECT a.id FROM audit AS a IGNORE INDEX FOR GROUP BY (PRIMARY), production.users AS u)",
+			want:      throughV,
+		},
+		{name: "delete through STRAIGHT_JOIN", statement: "DELETE u FROM audit STRAIGHT_JOIN production.users AS u ON u.id = audit.id", want: users},
+		{name: "update through STRAIGHT_JOIN", statement: "UPDATE audit STRAIGHT_JOIN production.users AS u ON u.id = audit.id SET u.name = 'x'", want: users},
+		{name: "copy of a table of another database", statement: "CREATE TABLE copy LIKE production.users", want: users},
+		{name: "copy in parentheses", statement: "CREATE TABLE IF NOT EXISTS copy (LIKE production.users)", want: users},
 		{name: "rename without TO", statement: "ALTER TABLE users RENAME production.users", want: users},
 		{name: "rename with AS", statement: "ALTER TABLE users RENAME AS production.users", want: users},
 		{name: "partition exchanged with another database", statement: "ALTER TABLE users EXCHANGE PARTITION p0 WITH TABLE production.users", want: users},
@@ -197,6 +248,8 @@ func TestReplayGuardMySQLFamilyReach_FailurePath(t *testing.T) {
 // body the guard cannot read before the server runs it, and a SPIDER table.
 func TestReplayGuardMariaDBReach_FailurePath(t *testing.T) {
 	const sequence = `cross-database target "production.order_ids"`
+	const users = `cross-database target "production.users"`
+	const throughV = `view "v" over cross-database table "production.users"`
 	tests := []struct {
 		name      string
 		statement string
@@ -215,6 +268,39 @@ func TestReplayGuardMariaDBReach_FailurePath(t *testing.T) {
 		{name: "REPEAT statement", statement: "REPEAT DELETE FROM production.users; UNTIL 1 END REPEAT", want: "compound statement"},
 		{name: "WHILE statement", statement: "while 0 do delete from production.users; end while", want: "compound statement"},
 		{name: "FOR statement", statement: "FOR i IN 1..1 DO DELETE FROM production.users; END FOR", want: "compound statement"},
+		{name: "Oracle-mode block with DECLARE", statement: "DECLARE n INT; BEGIN UPDATE users SET name = 'x'; END", want: "compound statement"},
+		{name: "Oracle-mode block", statement: "BEGIN UPDATE users SET name = 'x'; END", want: "compound statement"},
+		{name: "rename after IF EXISTS", statement: "RENAME TABLE IF EXISTS users TO production.users", want: users},
+		{name: "rename after NOWAIT", statement: "RENAME TABLE users NOWAIT TO production.users", want: users},
+		{name: "rename after WAIT", statement: "RENAME TABLE audit TO audit_old, users WAIT 5 TO production.users", want: users},
+		{name: "partition converted into another database", statement: "ALTER TABLE tp CONVERT PARTITION p0 TO TABLE production.users", want: users},
+		{
+			name:      "table of another database converted into a partition",
+			statement: "ALTER TABLE tp CONVERT TABLE production.users TO PARTITION p2 VALUES LESS THAN (30)",
+			want:      users,
+		},
+		{name: "view past FOR SYSTEM_TIME ALL", statement: "CREATE VIEW v AS SELECT u.id FROM audit FOR SYSTEM_TIME ALL, production.users AS u", want: throughV},
+		{
+			name:      "view past FOR SYSTEM_TIME AS OF",
+			statement: "CREATE VIEW v AS SELECT u.id FROM audit FOR SYSTEM_TIME AS OF TIMESTAMP NOW() - INTERVAL 1 DAY, production.users AS u",
+			want:      throughV,
+		},
+		{
+			name: "view past FOR SYSTEM_TIME BETWEEN",
+			statement: "CREATE VIEW v AS SELECT u.id FROM audit FOR SYSTEM_TIME BETWEEN TIMESTAMP '2000-01-01 00:00:00' AND NOW() " +
+				"JOIN production.users AS u ON u.id = audit.id",
+			want: throughV,
+		},
+		{
+			name:      "view past FOR SYSTEM_TIME FROM",
+			statement: "CREATE VIEW v AS SELECT u.id FROM audit FOR SYSTEM_TIME FROM TIMESTAMP '2000-01-01 00:00:00' TO NOW(), production.users AS u",
+			want:      throughV,
+		},
+		{
+			name:      "delete past FOR SYSTEM_TIME",
+			statement: "DELETE u FROM audit FOR SYSTEM_TIME ALL, production.users AS u WHERE audit.id = u.id",
+			want:      users,
+		},
 		{
 			name:      "SPIDER table",
 			statement: `CREATE TABLE remote_users (id bigint) ENGINE=SPIDER COMMENT='wrapper "mysql", host "127.0.0.1", database "production", table "users"'`,
@@ -226,6 +312,57 @@ func TestReplayGuardMariaDBReach_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, reachRefusal(platform.MariaDB, test.want))
+		})
+	}
+}
+
+// TestReplayGuardMySQLReach_FailurePath pins the MySQL spellings: MySQL has
+// no RETURNING clause and takes the word as an alias, so the references after
+// it are read, and HISTORY is a name that can stand for a delete list.
+func TestReplayGuardMySQLReach_FailurePath(t *testing.T) {
+	const users = `cross-database target "production.users"`
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "delete past a table aliased AS returning", statement: "DELETE u FROM audit AS returning, production.users AS u WHERE returning.id = u.id"},
+		{name: "delete past a table aliased returning", statement: "DELETE u FROM audit returning, production.users AS u WHERE returning.id = u.id"},
+		{name: "delete through USING past a table aliased returning", statement: "DELETE FROM u USING audit returning, production.users AS u WHERE returning.id = u.id"},
+		{name: "delete list naming an alias returning", statement: "DELETE returning FROM audit, production.users AS returning WHERE audit.id = returning.id"},
+		{
+			name:      "delete list named history",
+			statement: "DELETE history FROM audit AS returning, production.users AS history WHERE returning.id = history.id",
+		},
+	}
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev"}, devclean.ReplayRealmDatabase)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, reachRefusal(platform.MySQL, users))
+		})
+	}
+}
+
+// TestReplayGuardMariaDBReach_HappyPath is the control for the MariaDB
+// spellings above: each runs when every table it names is in the dev
+// database, and a RETURNING clause lists columns rather than tables.
+func TestReplayGuardMariaDBReach_HappyPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "delete returning qualified columns", statement: "DELETE FROM users RETURNING users.id, users.name"},
+		{name: "delete after modifiers returning qualified columns", statement: "DELETE LOW_PRIORITY QUICK IGNORE FROM users RETURNING users.id, users.name"},
+		{name: "rename after IF EXISTS and WAIT", statement: "RENAME TABLE IF EXISTS users WAIT 5 TO members, audit NOWAIT TO ptah_dev.audit_old"},
+		{name: "partition converted in the dev database", statement: "ALTER TABLE tp CONVERT PARTITION p0 TO TABLE ptah_dev.tp_old"},
+		{name: "table converted into a partition", statement: "ALTER TABLE tp CONVERT TABLE tp_new TO PARTITION p2 VALUES LESS THAN (30)"},
+		{name: "view past FOR SYSTEM_TIME in the dev database", statement: "CREATE VIEW v AS SELECT u.id FROM audit FOR SYSTEM_TIME ALL, users AS u"},
+	}
+	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.MariaDB, Schema: "ptah_dev"}, devclean.ReplayRealmDatabase)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
 		})
 	}
 }
@@ -262,6 +399,9 @@ var mysqlEveryRealmStatements = []struct {
 	{name: "own password set", statement: "SET PASSWORD = 'changed'", operation: "SET PASSWORD"},
 	{name: "account password set", statement: "SET PASSWORD FOR 'app'@'%' = 'changed'", operation: "SET PASSWORD"},
 	{name: "default role set", statement: "SET DEFAULT ROLE ALL TO 'app'@'%'", operation: "SET DEFAULT ROLE"},
+	{name: "account password set by a later item", statement: "SET @a = 1, PASSWORD FOR 'app'@'%' = PASSWORD('changed')", operation: "SET PASSWORD"},
+	{name: "own password set by a later item", statement: "SET @c = 1, PASSWORD = PASSWORD('changed')", operation: "SET PASSWORD"},
+	{name: "default role set by a later item", statement: "SET @d = 1, DEFAULT ROLE NONE FOR 'app'@'%'", operation: "SET DEFAULT ROLE"},
 }
 
 // TestReplayGuard_MySQLRefusesServerStatementsInEveryRealm pins that no realm
@@ -315,6 +455,7 @@ var mysqlTrustLifted = []struct {
 	statement string
 }{
 	{"MariaDB anonymous block", trustedMariaDBDev, "BEGIN NOT ATOMIC DELETE FROM other.t WHERE 1; END"},
+	{"MariaDB Oracle-mode block", trustedMariaDBDev, "DECLARE n INT; BEGIN DELETE FROM other.t WHERE 1; END"},
 	{"MySQL IMPORT TABLE", trustedMySQLDev, "IMPORT TABLE FROM '/tmp/t.sdi'"},
 	{"MariaDB SPIDER table", trustedMariaDBDev, `CREATE TABLE s (id int) ENGINE=SPIDER COMMENT='wrapper "mysql", host "elsewhere", table "t"'`},
 	{"MySQL insert into another database without INTO", trustedMySQLDev, "INSERT other.t VALUES (1)"},

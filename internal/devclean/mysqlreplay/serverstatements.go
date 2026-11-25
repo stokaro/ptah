@@ -62,25 +62,42 @@ var mysqlServerStatements = []mysqlServerStatement{
 	// whole server until the session ends.
 	{words: []string{"LOCK", "INSTANCE"}, operation: "server-wide backup lock", lift: liftedNowhere},
 	{words: []string{"BACKUP"}, operation: "server-wide backup lock", lift: liftedNowhere},
-	// Every realm: spellings of ALTER USER, which the guard keeps refused on
-	// a server the run owns too because it can change the credentials or the
-	// roles the run connects with.
+	// Every realm: spellings of ALTER USER, which the guard refuses in every
+	// realm and under trust, so each answers as the statement it spells.
+	// MariaDB takes either as any item of a SET list, so the guard reads each
+	// item ([mysqlServerStatementOf]).
 	{words: []string{"SET", "PASSWORD"}, operation: "SET PASSWORD", lift: liftedNowhere},
 	{words: []string{"SET", "DEFAULT", "ROLE"}, operation: "SET DEFAULT ROLE", lift: liftedNowhere},
 	// Database realm only: assigns or preloads the key caches of the server,
 	// which every database shares.
 	{words: []string{"CACHE", "INDEX"}, operation: "key cache change", lift: liftedOnOwnedServer},
 	{words: []string{"LOAD", "INDEX"}, operation: "key cache change", lift: liftedOnOwnedServer},
-	// Database realm only: moves threads, other sessions' among them, to
-	// another resource group.
+	// Database realm only: SET RESOURCE GROUP ... FOR moves the threads it
+	// names, other sessions' among them, to another resource group. Without
+	// FOR it moves the session's own thread, and the rule, which reads only
+	// the first words, refuses that form with it.
 	{words: []string{"SET", "RESOURCE", "GROUP"}, operation: "resource group change", lift: liftedOnOwnedServer},
 }
 
-// mysqlServerStatementOf returns the server statement tokens begin with.
+// mysqlServerStatementOf returns the server statement tokens begin with. A
+// server statement that begins with SET is found in any item of a SET list
+// too: measured on MariaDB 11.8.9, SET @a = 1, PASSWORD FOR 'u'@'%' =
+// PASSWORD('x') changes the password of u, and SET @d = 1, DEFAULT ROLE NONE
+// FOR 'u'@'%' runs as well.
 func mysqlServerStatementOf(tokens []lexer.Token) (mysqlServerStatement, bool) {
 	for _, statement := range mysqlServerStatements {
 		if replay.TokenSequenceAt(tokens, 0, statement.words...) {
 			return statement, true
+		}
+	}
+	if !isKeyword(replay.TokenAt(tokens, 0), "SET") {
+		return mysqlServerStatement{}, false
+	}
+	for _, item := range setItems(tokens) {
+		for _, statement := range mysqlServerStatements {
+			if statement.words[0] == "SET" && replay.TokenSequenceAt(tokens, item, statement.words[1:]...) {
+				return statement, true
+			}
 		}
 	}
 	return mysqlServerStatement{}, false
@@ -108,20 +125,24 @@ func mysqlLeadingOperation(tokens []lexer.Token, scope replay.Scope) string {
 }
 
 // isMySQLCompoundStatement reports a compound statement MariaDB runs outside
-// a stored program: BEGIN NOT ATOMIC, IF, CASE, LOOP, REPEAT, WHILE or FOR.
-// Its statements run as the server reads them, EXECUTE IMMEDIATE of a string
-// among them, so the guard cannot read its effects before the server runs it.
-// Measured on MariaDB 11.8.9, each of them deletes from other.t when its body
-// does; a label in front of one is a syntax error there. MySQL 8.4.13 refuses
-// each of them outside a stored program, so refusing them there costs
-// nothing.
+// a stored program: BEGIN NOT ATOMIC, IF, CASE, LOOP, REPEAT, WHILE or FOR,
+// and under sql_mode ORACLE an anonymous block, which begins with DECLARE or
+// with a BEGIN that holds statements. Its statements run as the server reads
+// them, EXECUTE IMMEDIATE of a string among them, so the guard cannot read its
+// effects before the server runs it. Measured on MariaDB 11.8.9, each of them
+// deletes from other.t when its body does; a label in front of one is a
+// syntax error there. MySQL 8.4.13 refuses each of them outside a stored
+// program, so refusing them there costs nothing.
+//
+// A BEGIN alone or BEGIN WORK starts a transaction, which both servers take
+// in any mode; a BEGIN followed by any other word is a block.
 func isMySQLCompoundStatement(tokens []lexer.Token) bool {
 	switch {
 	case len(tokens) == 0:
 		return false
 	case isKeyword(tokens[0], "BEGIN"):
-		return replay.TokenSequenceAt(tokens, 1, "NOT", "ATOMIC")
+		return len(tokens) > 2 || len(tokens) == 2 && !isKeyword(tokens[1], "WORK")
 	default:
-		return isKeyword(tokens[0], "IF", "CASE", "LOOP", "REPEAT", "WHILE", "FOR")
+		return isKeyword(tokens[0], "DECLARE", "IF", "CASE", "LOOP", "REPEAT", "WHILE", "FOR")
 	}
 }

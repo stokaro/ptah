@@ -46,11 +46,13 @@ func statementAfterFor(tokens []lexer.Token) (int, bool) {
 }
 
 // analyzedStatement is the statement an ANALYZE runs, after an optional
-// FORMAT = name.
+// FORMAT = name. ANALYZE TABLE, TABLES, NO_WRITE_TO_BINLOG or LOCAL is the
+// table maintenance statement, which runs no other.
 func analyzedStatement(tokens []lexer.Token) (int, bool) {
 	at := 1
 	switch {
-	case at >= len(tokens), isWord(tokens, at, "TABLE"), isWord(tokens, at, "NO_WRITE_TO_BINLOG"), isWord(tokens, at, "LOCAL"):
+	case at >= len(tokens), isWord(tokens, at, "TABLE"), isWord(tokens, at, "TABLES"),
+		isWord(tokens, at, "NO_WRITE_TO_BINLOG"), isWord(tokens, at, "LOCAL"):
 		return 0, false
 	case isWord(tokens, at, "FORMAT"):
 		at += 3

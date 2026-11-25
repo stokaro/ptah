@@ -329,8 +329,9 @@ proven to stay inside the disposable realm:
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
 - MySQL and MariaDB executable comments, `CALL`, a `CREATE` or `ALTER` of an
   event, a trigger, a routine or a MariaDB package or package body, prepared
-  statements, MariaDB compound statements such as `BEGIN NOT ATOMIC` outside a
-  stored program, `LOAD DATA`/`LOAD XML`, `IMPORT TABLE`, and externally
+  statements, MariaDB compound statements outside a stored program, such as
+  `BEGIN NOT ATOMIC` or an Oracle-mode block that begins with `DECLARE` or
+  with a `BEGIN` other than `BEGIN` or `BEGIN WORK`, `LOAD DATA`/`LOAD XML`, `IMPORT TABLE`, and externally
   backed `FEDERATED`, `CONNECT` or `SPIDER` tables. A `DEFINER` clause is read
   as the server reads it, an unquoted host such as `app@$` included. A
   `CREATE` or `ALTER` whose words the guard cannot follow to a kind of object
@@ -352,16 +353,25 @@ proven to stay inside the disposable realm:
   a `[` is read under each combination of them, and refused when any reading
   refuses it.
 - In a MySQL or MariaDB dev database the operator named, a write to another
-  database is refused in every spelling the servers take: an `INSERT`
-  or `REPLACE` without `INTO`, a multi-table `DELETE`, an `ALTER TABLE` that
-  renames a table into it, exchanges a partition with it or points a `MERGE`
-  table at it, a view over one of its tables, and a call of one of its
-  functions or an advance of one of its sequences.
+  database is refused where the guard reads the other database's name in the
+  statement: a statement that creates, changes, drops or truncates one of its
+  tables, `DROP TABLES` and `RENAME TABLES` included; an `INSERT` or `REPLACE`
+  with or without `INTO`; every table the references of an `UPDATE` or a
+  `DELETE` name, after an index hint, a MariaDB `FOR SYSTEM_TIME` clause, a
+  `STRAIGHT_JOIN` or a MySQL alias named `returning`; table maintenance; an
+  `ALTER TABLE` that renames a table into it, exchanges a partition with it,
+  converts a partition into one of its tables or one of its tables into a
+  partition, or points a `MERGE` table at it; a `CREATE TABLE ... LIKE` of one
+  of its tables, which copies a `MERGE` table's `UNION`; a view over one of its
+  tables; and a call of one of its functions or an advance of one of its
+  sequences. The guard reads these forms. It does not prove that no other
+  spelling reaches another database.
 - MySQL and MariaDB statements that act on the whole server are refused in
   every realm and under trust: `SHUTDOWN`, `RESTART`, `KILL`, `BINLOG`, `PURGE`
-  and the other replication statements, `CLONE`, `LOCK INSTANCE`, MariaDB's
-  `BACKUP STAGE`, and `SET PASSWORD` and `SET DEFAULT ROLE`, which change the
-  account the run connects as.
+  and the other replication statements, `CLONE`, `LOCK INSTANCE`, and
+  MariaDB's `BACKUP STAGE`. So are `SET PASSWORD` and `SET DEFAULT ROLE`, as
+  the whole statement or as any item of a MariaDB `SET` list: they are
+  spellings of `ALTER USER`, which every realm and trust keep refused.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.
