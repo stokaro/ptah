@@ -111,8 +111,11 @@ func TestStoredProgramModesRefuseDerivedRollbackE2E_FailurePath(t *testing.T) {
 				dropped := runPtahIn(c, "migrations", "up", "--db-url", target, "--migrations-dir", directory, "--allow-destructive")
 				c.Assert(dropped.ExitCode, qt.Equals, 0, historyComment(dropped))
 
+				// The history creates a stored program, which the replay guard
+				// refuses on a shadow database the run does not own unless the
+				// SQL is trusted. The test is about the plan's reading of it.
 				down := runPtahIn(c, "migrations", "down", "--db-url", target, "--migrations-dir", directory,
-					"--target", "1", "--plan", "--shadow-db", shadow, "--confirm")
+					"--target", "1", "--plan", "--shadow-db", shadow, "--trust-replay-sql", "--confirm")
 
 				c.Assert(down.ExitCode, qt.Not(qt.Equals), 0, historyComment(down))
 				c.Assert(down.Stderr, qt.Contains, "cannot read "+program.kind)
