@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -31,12 +30,21 @@ import (
 // connection that sends the first client message the trigger matches. It stands
 // where a network or a failover would, so the command under test meets the error
 // a lost connection gives it and the server meets the end of a real session.
+//
+// The client hears nothing after the matching message, whatever the server does
+// with it: the breaker stops relaying the server's answers before it forwards the
+// message, and closes the client's side only after the server has ended its
+// session. Relayed, a fast answer reaches the client, and the command sees its
+// statement succeed and loses the connection at the next one.
 type connectionBreaker struct {
 	listener net.Listener
 	upstream string
 	trigger  func(message []byte) bool
-	// forward sends the matching message to the server before ending the
-	// connection, so the server may act on it and the client hears nothing.
+	// forward sends the matching message to the server and lets the server end
+	// its session before the client's side is closed, so the server acts on the
+	// message and the client hears nothing of the answer. The client learns of
+	// the loss only after the server is done, so the cancel request the driver
+	// sends on a lost connection finds no statement to cancel.
 	forward bool
 	// broken reports that the trigger matched.
 	broken atomic.Bool
@@ -73,23 +81,38 @@ func (b *connectionBreaker) relay(client net.Conn) {
 		return
 	}
 	defer func() { _ = server.Close() }()
+	// muted stops the reply direction once the trigger matched: no answer from
+	// the server reaches the client after that point.
+	var muted atomic.Bool
+	serverDone := make(chan struct{})
 	go func() {
-		// The reply direction stops when the deferred closes end either side.
-		_, _ = io.Copy(client, server)
-		_ = client.Close()
+		defer close(serverDone)
+		defer func() { _ = client.Close() }()
+		buffer := make([]byte, 64*1024)
+		for {
+			n, err := server.Read(buffer)
+			if n > 0 && !muted.Load() {
+				if _, writeErr := client.Write(buffer[:n]); writeErr != nil {
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
 	}()
 	buffer := make([]byte, 64*1024)
 	for {
 		n, err := client.Read(buffer)
 		if n > 0 {
-			matched := !b.broken.Load() && b.trigger(buffer[:n])
-			if !matched || b.forward {
-				if _, writeErr := server.Write(buffer[:n]); writeErr != nil {
-					return
+			if b.trigger(buffer[:n]) && b.broken.CompareAndSwap(false, true) {
+				muted.Store(true)
+				if b.forward {
+					deliverAndWait(server, buffer[:n], serverDone)
 				}
+				return
 			}
-			if matched {
-				b.broken.Store(true)
+			if _, writeErr := server.Write(buffer[:n]); writeErr != nil {
 				return
 			}
 		}
@@ -97,6 +120,26 @@ func (b *connectionBreaker) relay(client net.Conn) {
 			return
 		}
 	}
+}
+
+// deliverAndWait writes the matching message to the server, closes the server's write
+// side, and waits until the server ends its session, which it does once it has
+// acted on the message and read the end of input. The read deadline bounds the
+// wait for a server that never ends it.
+func deliverAndWait(server net.Conn, message []byte, serverDone <-chan struct{}) {
+	if _, err := server.Write(message); err != nil {
+		return
+	}
+	// The server side comes from net.Dial("tcp"), a *net.TCPConn, so it can
+	// close its write side; without that the wait would have no end of input to
+	// end the session, and the race this function closes would return.
+	half, ok := server.(interface{ CloseWrite() error })
+	if !ok {
+		return
+	}
+	_ = half.CloseWrite()
+	_ = server.SetReadDeadline(time.Now().Add(30 * time.Second))
+	<-serverDone
 }
 
 // beginMessage matches the query that opens the apply's transaction, which the
@@ -162,8 +205,8 @@ func runSchemaCommand(c *qt.C, verb string, args ...string) (stdout, stderr stri
 }
 
 // ordersTableWithin reads whether the plan's table is on the server, and waits up
-// to patience for it to appear: the client knows the connection ended before the
-// server has finished with the statement it delivered.
+// to patience for it to appear. The breaker closes the client's side only after
+// the server ended its session, so the wait is a bound, not a race.
 func ordersTableWithin(c *qt.C, db *sql.DB, patience time.Duration) bool {
 	c.Helper()
 	deadline := time.Now().Add(patience)

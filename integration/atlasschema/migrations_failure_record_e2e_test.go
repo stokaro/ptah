@@ -171,7 +171,7 @@ func TestMigrationsUpFailureRecordWhenTheFailureCannotBeRecordedE2E(t *testing.T
 // message would end the connection at the mark before the statement instead.
 func sentAlone(prefix string) func([]byte) bool {
 	return func(message []byte) bool {
-		return message[0] == 'Q' && bytes.HasPrefix(message[5:], []byte(prefix))
+		return len(message) > 5 && message[0] == 'Q' && bytes.HasPrefix(message[5:], []byte(prefix))
 	}
 }
 
