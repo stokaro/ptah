@@ -523,9 +523,42 @@ func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
 			wantErr:   `mysql migration replay rejects ALTER executable stored body .*`,
 		},
 		{
+			name:      "definer function with a dotted host",
+			statement: "CREATE DEFINER=app@localhost.localdomain FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)",
+			wantErr:   `mysql migration replay rejects CREATE executable stored body .*`,
+		},
+		{
+			name:      "definer trigger with an empty host",
+			statement: "CREATE DEFINER=app@ TRIGGER users_audit AFTER INSERT ON users FOR EACH ROW DELETE FROM other.t",
+			wantErr:   `mysql migration replay rejects CREATE executable stored body .*`,
+		},
+		{
+			name:      "event a definer alters",
+			statement: "ALTER DEFINER=app@localhost EVENT prune_users DO DELETE FROM other.t",
+			wantErr:   `mysql migration replay rejects ALTER executable stored body .*`,
+		},
+		{
+			// A migration can set NO_BACKSLASH_ESCAPES on the session, which
+			// reads 'a\' as a whole string: the default rule finds no kind.
+			name:      "definer read without backslash escapes",
+			statement: `CREATE DEFINER='a\'@'%' FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t)`,
+			wantErr:   `mysql migration replay rejects CREATE executable stored body .*`,
+		},
+		{
 			name:      "version executable comment",
 			statement: "/*!50000 CREATE USER escaped */",
 			wantErr:   `mysql migration replay rejects executable comment .*`,
+		},
+		{
+			name:      "body in an executable comment without a version",
+			statement: "/*! CREATE FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM other.t) */",
+			wantErr:   `mysql migration replay rejects executable comment .*`,
+		},
+		{
+			name: "trigger as mysqldump writes it",
+			statement: "/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER users_audit " +
+				"AFTER INSERT ON users FOR EACH ROW DELETE FROM other.t */",
+			wantErr: `mysql migration replay rejects executable comment .*`,
 		},
 		{
 			name:      "federated engine",
@@ -591,6 +624,21 @@ func TestReplayGuardMariaDB_FailurePath(t *testing.T) {
 			name:      "MariaDB executable comment",
 			statement: "/*M!100100 CREATE USER escaped */",
 			wantErr:   `mariadb migration replay rejects executable comment .*`,
+		},
+		{
+			name:      "MariaDB executable comment without a version",
+			statement: "/*M! CREATE PACKAGE BODY pkg PROCEDURE p() BEGIN DELETE FROM other.t; END; END */",
+			wantErr:   `mariadb migration replay rejects executable comment .*`,
+		},
+		{
+			name:      "package body",
+			statement: "CREATE PACKAGE BODY pkg PROCEDURE p() BEGIN DELETE FROM other.t; END; END",
+			wantErr:   `mariadb migration replay rejects CREATE executable stored body .*`,
+		},
+		{
+			name:      "replaced package with a dotted definer host",
+			statement: "CREATE OR REPLACE DEFINER=app@localhost.localdomain PACKAGE pkg PROCEDURE p(); END",
+			wantErr:   `mariadb migration replay rejects CREATE executable stored body .*`,
 		},
 		{
 			name:      "connect engine",

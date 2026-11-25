@@ -3,7 +3,7 @@ package mysqlreplay
 import (
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/mysqlbody"
+	"ptah.run/internal/mysqlstored"
 )
 
 // mysqlServerWideOperation names a MySQL or MariaDB statement whose only reason
@@ -26,11 +26,10 @@ func mysqlServerWideOperation(tokens []lexer.Token) string {
 	case "GRANT", "REVOKE":
 		return "privilege or role mutation"
 	case "CREATE", "ALTER", "DROP":
-		switch mysqlbody.Kind(tokens) {
-		case "":
-		case "EVENT":
-			return ""
-		default:
+		if definition, ok := mysqlstored.Read(tokens); ok && definition.Body() {
+			if definition.Kind == mysqlstored.Event {
+				return ""
+			}
 			return first + " executable stored body"
 		}
 		if first == "ALTER" {

@@ -327,9 +327,12 @@ proven to stay inside the disposable realm:
   creation or alteration, foreign servers, `IMPORT FOREIGN SCHEMA`,
   `SET search_path`, `SELECT INTO` protected namespaces, and CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
-- MySQL and MariaDB executable comments, `CALL`, events, triggers, routines,
-  `LOAD DATA`/`LOAD XML`, and externally backed `FEDERATED` or `CONNECT`
-  tables.
+- MySQL and MariaDB executable comments, `CALL`, a `CREATE` or `ALTER` of an
+  event, a trigger, a routine or a MariaDB package or package body, whatever
+  `DEFINER` clause it writes, `LOAD DATA`/`LOAD XML`, and externally backed
+  `FEDERATED` or `CONNECT` tables. A migration can set `NO_BACKSLASH_ESCAPES`,
+  so a statement that holds a backslash is read both with and without it, and
+  refused when either reading refuses it.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.

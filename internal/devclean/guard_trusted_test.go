@@ -235,6 +235,8 @@ func TestDevReplayGuard_TrustedSQL_KeepsRunProtections(t *testing.T) {
 			`mysql migration replay rejects executable comment` + refused},
 		{"MySQL event", trustedMySQLDev, "CREATE EVENT e ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM t",
 			`mysql migration replay rejects CREATE executable stored body` + refused},
+		{"MySQL event a definer alters", trustedMySQLDev, "ALTER DEFINER=app@localhost.localdomain EVENT e DO DELETE FROM t",
+			`mysql migration replay rejects ALTER executable stored body` + refused},
 		{"MySQL USE", trustedMySQLDev, "USE other",
 			`mysql migration replay rejects USE` + refused},
 		{"MySQL global SET", trustedMySQLDev, "SET GLOBAL max_connections = 10",

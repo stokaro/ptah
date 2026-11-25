@@ -173,11 +173,20 @@ type StoredValuesWindow interface {
 	// StoredWith reports whether the server keeps the session's settings with
 	// the object statement defines and applies them each time the object
 	// runs, as MySQL does with the sql_mode of a trigger, a stored routine and
-	// an event. For such a statement it returns the statement that gives the
-	// session the settings it had before the window, and the one that sets
-	// the window's settings again. The caller runs statement between them on
-	// the same session, so the object keeps the settings the session had.
-	StoredWith(statement string) (own, window SessionStatement, stored bool)
+	// an event. For such a statement it returns the settings to run it
+	// between, and nil for any other. It returns an error for a statement it
+	// cannot read far enough to tell, and the caller sends none of it.
+	StoredWith(statement string) (*StoredSettings, error)
+}
+
+// StoredSettings are the statements [StoredValuesWindow.StoredWith] has a
+// statement run between, on the same session, so the object it defines
+// keeps the settings the session had before the window.
+type StoredSettings struct {
+	// Own gives the session the settings it had before the window.
+	Own SessionStatement
+	// Window sets the window's settings again.
+	Window SessionStatement
 }
 
 // SessionStatement is a statement that changes a session's settings, and the

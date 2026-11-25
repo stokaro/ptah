@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlstored"
 )
 
 // The global privileges that let an account name another definer, as SHOW
@@ -76,50 +77,15 @@ func GlobalPrivileges(lines []string) (map[string]bool, bool) {
 	return privileges, found
 }
 
-// Server is the server [Scan] reads statements for and [Decide] answers for.
-type Server struct {
-	// Dialect is the server's dialect, MySQL or MariaDB.
-	Dialect string
-	// VersionID is the server's version as [VersionID] spells it, and 0 where
-	// it is unknown.
-	VersionID int
+// serverOf is the server a connection reports. The session's backslash rule
+// is left at the default: [Scan] leaves a quoted account holding a backslash
+// out whatever the session reads it as.
+func serverOf(info catalog.ServerInfo) mysqlstored.Server {
+	return mysqlstored.Server{Dialect: platform.NormalizeDialect(info.Dialect), VersionID: mysqlstored.VersionID(info.Version)}
 }
 
-// serverOf is the [Server] a connection reports.
-func serverOf(info catalog.ServerInfo) Server {
-	return Server{Dialect: platform.NormalizeDialect(info.Dialect), VersionID: VersionID(info.Version)}
-}
-
-// VersionID spells a version a server reports, such as "8.0.46" or
-// "11.4.2-MariaDB-log", as the server compares it with the version an
-// executable comment is gated on: major*10000 + minor*100 + patch. A version
-// it cannot read is 0.
-func VersionID(version string) int {
-	parts := strings.SplitN(version, ".", 3)
-	if len(parts) < 2 {
-		return 0
-	}
-	id := 0
-	for i, scale := range []int{10000, 100, 1} {
-		number := 0
-		if i < len(parts) {
-			digits := strings.IndexFunc(parts[i], func(r rune) bool { return r < '0' || r > '9' })
-			if digits < 0 {
-				digits = len(parts[i])
-			}
-			value, err := strconv.Atoi(parts[i][:digits])
-			if err != nil || i < 2 && digits != len(parts[i]) {
-				return 0
-			}
-			number = value
-		}
-		id += number * scale
-	}
-	return id
-}
-
-// The MySQL releases the definer privileges change at, as [VersionID] spells
-// them: 8.0 brought SET_USER_ID, and 8.2 SET_ANY_DEFINER and
+// The MySQL releases the definer privileges change at, as
+// [mysqlstored.VersionID] spells them: 8.0 brought SET_USER_ID, and 8.2 SET_ANY_DEFINER and
 // ALLOW_NONEXISTENT_DEFINER in its place.
 const (
 	mysql80 = 80000
@@ -127,8 +93,8 @@ const (
 )
 
 // beforeSetAnyDefiner reports a MySQL server known to be before 8.2.
-func (s Server) beforeSetAnyDefiner() bool {
-	return s.Dialect == platform.MySQL && s.VersionID > 0 && s.VersionID < mysql82
+func beforeSetAnyDefiner(server mysqlstored.Server) bool {
+	return server.Dialect == platform.MySQL && server.VersionID > 0 && server.VersionID < mysql82
 }
 
 // Decide answers whether an account holding privileges may name a definer on
@@ -143,7 +109,7 @@ func (s Server) beforeSetAnyDefiner() bool {
 // existing or not. SUPER alone is accepted by MariaDB 10.11 and refused by
 // 11.4, 11.8 and 12.3, and the grants cannot tell those servers apart, so an
 // account holding only SUPER is left undecided.
-func Decide(server Server, privileges map[string]bool, definerExists Existence) Verdict {
+func Decide(server mysqlstored.Server, privileges map[string]bool, definerExists Existence) Verdict {
 	if server.Dialect == platform.MariaDB {
 		switch {
 		case privileges[privilegeSetUser] || privileges[privilegeAll]:
@@ -157,9 +123,9 @@ func Decide(server Server, privileges map[string]bool, definerExists Existence) 
 	switch {
 	case privileges[privilegeSuper] || privileges[privilegeSetUserID] || privileges[privilegeAll]:
 		return Verdict{Decided: true}
-	case server.beforeSetAnyDefiner() && server.VersionID < mysql80:
+	case beforeSetAnyDefiner(server) && server.VersionID < mysql80:
 		return Verdict{}
-	case server.beforeSetAnyDefiner():
+	case beforeSetAnyDefiner(server):
 		return Verdict{Decided: true, Missing: privilegeSetUserID}
 	case !privileges[privilegeSetAnyDefiner]:
 		if definerExists == Missing && !privileges[privilegeAllowNonexistentDefiner] {
@@ -272,11 +238,22 @@ func CheckSources(ctx context.Context, conn *dbschema.DatabaseConnection, source
 // or renames an account or a role. A run holding such a statement changes
 // which accounts exist after the server was read, so [CheckSources] does not
 // decide from that read.
-func changesAccounts(server Server, statement string) bool {
-	tokens := significantTokens(server, statement)
+//
+// A statement holding an executable comment the reader cannot read may hold
+// such a statement, and counts as one.
+func changesAccounts(server mysqlstored.Server, statement string) bool {
+	tokens, err := mysqlstored.Tokens(server, statement)
+	if err != nil {
+		return true
+	}
 	return len(tokens) >= 2 &&
-		(isWord(tokens, 0, "CREATE") && (isWord(tokens, 1, "USER") || isWord(tokens, 1, "ROLE")) ||
-			isWord(tokens, 0, "RENAME") && isWord(tokens, 1, "USER"))
+		(isWord(tokens[0], "CREATE") && (isWord(tokens[1], "USER") || isWord(tokens[1], "ROLE")) ||
+			isWord(tokens[0], "RENAME") && isWord(tokens[1], "USER"))
+}
+
+// isWord reports an unquoted word, in any case.
+func isWord(token lexer.Token, word string) bool {
+	return token.Type == lexer.TokenIdentifier && strings.EqualFold(token.Value, word)
 }
 
 // appliesTo reports whether dialect is one whose statements name definers
@@ -313,11 +290,11 @@ func showGrants(ctx context.Context, conn *dbschema.DatabaseConnection) ([]strin
 func definerExistence(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	server Server,
+	server mysqlstored.Server,
 	privileges map[string]bool,
 	account string,
 ) Existence {
-	if server.Dialect == platform.MariaDB || server.beforeSetAnyDefiner() ||
+	if server.Dialect == platform.MariaDB || beforeSetAnyDefiner(server) ||
 		privileges[privilegeSuper] || privileges[privilegeAllowNonexistentDefiner] {
 		return ExistenceUnknown
 	}

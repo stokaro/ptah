@@ -1375,11 +1375,13 @@ package that names another account, and refuse when the connected account
 cannot name it.
 
 A plan that also holds a provider-native operation is scanned over its SQL
-statements. A clause inside an executable comment the connected server runs is
-read as part of the statement: `/*!50013 DEFINER=... */` as `mysqldump` writes
-it, a comment gated on a version no later than the server's, and on MariaDB
-`/*M! ... */`. The message names the object, the definer, the account and the
-privilege. Grant the privilege, or apply as the definer:
+statements. The statements are read as the strict session reads them,
+[below](#a-session-without-a-strict-sql-mode), so a clause inside an executable comment the
+connected server runs is part of the statement, such as `/*!50013 DEFINER=...
+*/` as `mysqldump` writes it. A statement whose executable comment the scan
+cannot read is left out, and the server checks the privilege when the
+statement runs. The message names the object, the definer, the account and
+the privilege. Grant the privilege, or apply as the definer:
 
 ```sql
 -- MySQL
@@ -2013,16 +2015,26 @@ strict mode is left as it is, and its error has no column in front. When the
 plan ends, the session's mode is set back to what it was.
 
 The server keeps the `sql_mode` of the session that defines a trigger, a
-stored procedure, a stored function or an event, and runs the body under it
-each time. A statement of the plan that defines one runs under the session's
-own mode, as mysqldump writes each body, and the strict mode is set again
-after it. So a trigger keeps the mode the session had, and a later insert
-from the application's loose session runs the trigger as it would without
-the strict session. The window recognizes the spellings Ptah renders. A body
-that an edited or hand-written plan spells with a `DEFINER` host of several
-dotted parts, an `ALTER EVENT` with a `DEFINER`, a MariaDB package, or a body
-inside an executable comment is not recognized and keeps the strict mode
-(stokaro/ptah#6660).
+stored procedure, a stored function, an event, or a MariaDB package or package
+body, and runs the body under it each time. An `ALTER EVENT` that writes `DO`
+stores the session's mode with the event too. An `ALTER PROCEDURE`, an `ALTER
+FUNCTION` and an `ALTER EVENT` without `DO` keep the mode the object has. A
+statement of the plan that stores the mode runs under the session's own mode,
+as mysqldump writes each body, and the strict mode is set again after it,
+whether the statement succeeds or fails. So a trigger keeps the mode the
+session had, and a later insert from the application's loose session runs the
+trigger as it would without the strict session.
+
+The window reads each statement as the server reads it. A `DEFINER` clause
+may follow `CREATE` or `ALTER`, and its host may be written unquoted across
+several parts, as in `app@localhost.localdomain`. The text of an executable
+comment the server runs is part of the statement: `/*! ... */`, a
+`/*!NNNNN ... */` comment gated on a version no later than the server's, and
+on MariaDB `/*M! ... */`. A statement whose executable comment the window
+cannot read is refused before it is sent, and the statements before it in the
+plan have run. Such a comment has a version of seven or more digits, holds
+another comment, or leaves a string or a quoted name open where the comment
+ends.
 
 Migration files run under the session's mode as written, since a file may
 depend on it. To change a column that a row no longer fits, update or delete

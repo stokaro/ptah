@@ -6,21 +6,21 @@ import (
 
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/mysqlbody"
+	"ptah.run/internal/mysqlstored"
 )
 
-func rejectMySQLExecutableComments(dialect, stmt string) error {
-	lex := lexer.NewLexerWithOptions(stmt, mysqlbody.LexerOptions())
+// rejectMySQLExecutableComments refuses a statement holding a comment
+// written as an executable comment of either server, read by reading's rule
+// for a backslash. The guard does not know the version of the server the
+// replay reaches, so it refuses each one, run or not.
+func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Server) error {
+	lex := lexer.NewLexerWithOptions(stmt, mysqlstored.LexerOptions(reading))
 	for {
 		token := lex.NextToken()
 		if token.Type == lexer.TokenEOF {
 			return nil
 		}
-		if token.Type != lexer.TokenComment {
-			continue
-		}
-		comment := strings.ToUpper(token.Value)
-		if strings.HasPrefix(comment, "/*!") || strings.HasPrefix(comment, "/*M!") {
+		if token.Type == lexer.TokenComment && mysqlstored.WrittenAsExecutable(token.Value) {
 			return replay.Refuse(dialect, "executable comment")
 		}
 	}
@@ -275,10 +275,12 @@ func isGlobalMySQLDDL(tokens []lexer.Token) bool {
 	}
 }
 
-// definesMySQLExecutableBody reads [mysqlbody.Kind]: the database realm
-// refuses every kind it names, and the server realm lifts every kind but EVENT.
+// definesMySQLExecutableBody reports a CREATE or ALTER of an object with a
+// body, as [mysqlstored.Read] reads it: the database realm refuses every
+// such statement, and the server realm lifts every one but an EVENT's.
 func definesMySQLExecutableBody(tokens []lexer.Token) bool {
-	return mysqlbody.Kind(tokens) != ""
+	definition, ok := mysqlstored.Read(tokens)
+	return ok && definition.Body()
 }
 
 func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {

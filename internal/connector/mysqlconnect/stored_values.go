@@ -11,7 +11,7 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/internal/connector"
-	"ptah.run/internal/mysqlbody"
+	"ptah.run/internal/mysqlstored"
 	"ptah.run/internal/sqlmode"
 )
 
@@ -32,13 +32,16 @@ func (Service) StoredValuesBySession() bool { return true }
 // strict session needs nothing, and the window is nil.
 //
 // The server keeps the sql_mode of the session that creates a trigger, a
-// stored routine or an event, and runs the body under it every time. The
-// window gives such a statement the session's own mode, as mysqldump does
-// around each body it writes, so the body does not keep the strict one and
-// fail a later statement of the application's loose session.
+// stored routine, an event or a MariaDB package, and runs the body under it
+// every time. The window gives such a statement the session's own mode, as
+// mysqldump does around each body it writes, so the body does not keep the
+// strict one and fail a later statement of the application's loose session.
+// It reads each statement with [mysqlstored.Statement] for the server the
+// session reports, so it reads what the server reads, an executable comment
+// the server runs included.
 func (Service) KeepStoredValues(ctx context.Context, session *sql.Conn) (connector.StoredValuesWindow, error) {
-	var current string
-	if err := session.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(&current); err != nil {
+	var current, version string
+	if err := session.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode, VERSION()").Scan(&current, &version); err != nil {
 		return nil, fmt.Errorf("query sql_mode: %w", err)
 	}
 	if sqlmode.Strict(current) {
@@ -48,17 +51,28 @@ func (Service) KeepStoredValues(ctx context.Context, session *sql.Conn) (connect
 	if _, err := session.ExecContext(ctx, setSQLMode, strict); err != nil {
 		return nil, fmt.Errorf("make sql_mode strict: %w", err)
 	}
-	return sqlModeWindow{session: session, own: current, strict: strict}, nil
+	return sqlModeWindow{
+		session: session,
+		own:     current,
+		strict:  strict,
+		server: mysqlstored.Server{
+			Dialect:            detectMySQLWireDialect(version),
+			VersionID:          mysqlstored.VersionID(version),
+			NoBackslashEscapes: sqlmode.Has(current, sqlmode.NoBackslashEscapes),
+		},
+	}, nil
 }
 
 // setSQLMode sets the session's sql_mode to the one argument it binds.
 const setSQLMode = "SET SESSION sql_mode = ?"
 
 // sqlModeWindow is a session KeepStoredValues made strict: own is the mode
-// the session had, and strict the one it runs a plan under.
+// the session had, strict the one it runs a plan under, and server the
+// server and session its statements are read for.
 type sqlModeWindow struct {
 	session     *sql.Conn
 	own, strict string
+	server      mysqlstored.Server
 }
 
 // Restore sets the mode the session had again.
@@ -69,16 +83,24 @@ func (w sqlModeWindow) Restore(ctx context.Context) error {
 	return nil
 }
 
-// StoredWith reports a statement that defines a trigger, a stored routine or
-// an event, as [mysqlbody.StatementKind] reads it, and returns the statements
-// that set the session's own mode for it and the strict one after it.
-func (w sqlModeWindow) StoredWith(statement string) (own, window connector.SessionStatement, stored bool) {
-	if mysqlbody.StatementKind(statement) == "" {
-		return connector.SessionStatement{}, connector.SessionStatement{}, false
+// StoredWith reports a statement after which the server keeps the session's
+// mode with the object, as [mysqlstored.Definition.KeepsSessionMode] reads
+// it, and returns the statements that set the session's own mode for it and
+// the strict one after it. A statement holding an executable comment the
+// reader cannot read is refused: the comment may hold the words that define
+// such an object.
+func (w sqlModeWindow) StoredWith(statement string) (*connector.StoredSettings, error) {
+	definition, ok, err := mysqlstored.Statement(w.server, statement)
+	if err != nil {
+		return nil, fmt.Errorf("the strict session cannot tell whether the statement defines a stored body: %w", err)
 	}
-	return connector.SessionStatement{SQL: setSQLMode, Args: []any{w.own}},
-		connector.SessionStatement{SQL: setSQLMode, Args: []any{w.strict}},
-		true
+	if !ok || !definition.KeepsSessionMode() {
+		return nil, nil
+	}
+	return &connector.StoredSettings{
+		Own:    connector.SessionStatement{SQL: setSQLMode, Args: []any{w.own}},
+		Window: connector.SessionStatement{SQL: setSQLMode, Args: []any{w.strict}},
+	}, nil
 }
 
 // storedValueErrors are the errors a strict session fails a statement with
