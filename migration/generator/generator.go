@@ -23,7 +23,6 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/revisiontable"
-	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
@@ -452,10 +451,6 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if !diff.HasChanges() {
 		// No changes detected - this is a successful no-op operation
 		return nil, nil
-	}
-	rounding := roundingscan.Policy{Allowed: opts.DiffPolicy.AllowValueRounding, Request: opts.DiffPolicy.ValueRoundingRequest}
-	if _, err := rounding.Review(ctx, conn, roundingscan.Changes(diff, info.Dialect)); err != nil {
-		return nil, err
 	}
 
 	// 4. Generate migration version (timestamp). The scan for a free version

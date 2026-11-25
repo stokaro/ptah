@@ -177,19 +177,8 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 		if err != nil {
 			return Check{}, err
 		}
-		switch key {
-		case "name":
-			check.Name = value
-		case "assert":
-			check.Assert = value
-		case "on_fail":
-			check.OnFail = OnFail(value)
-		case "phase":
-			check.Phase = CheckPhase(value)
-		case "kind":
-			check.Kind = CheckKind(value)
-		default:
-			return Check{}, fmt.Errorf("unknown +ptah check key %q (want name, assert, on_fail, phase, kind)", key)
+		if err := check.set(key, value); err != nil {
+			return Check{}, err
 		}
 	}
 	if strings.TrimSpace(check.Assert) == "" {
@@ -200,9 +189,6 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	}
 	if check.Phase != CheckPhaseBefore && check.Phase != CheckPhaseAfter {
 		return Check{}, fmt.Errorf("unsupported +ptah check phase=%q (want before or after)", check.Phase)
-	}
-	if seen["kind"] && check.Kind != CheckKindRoundedValues {
-		return Check{}, fmt.Errorf("unsupported +ptah check kind=%q (want %s)", check.Kind, CheckKindRoundedValues)
 	}
 	// After the body the values are already rounded, so the assertion would
 	// hold on every table and refuse nothing.
@@ -217,6 +203,30 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	// reject a trailing ';' on a prepared query (MySQL) accept the assert.
 	check.Assert = strings.TrimRight(strings.TrimSpace(check.Assert), "; \t")
 	return check, nil
+}
+
+// set gives c the value of one directive key. A kind is checked here, where
+// the directive names it: an empty Kind is an ordinary check, which a directive
+// writes by leaving the key out, never as kind="".
+func (c *Check) set(key, value string) error {
+	switch key {
+	case "name":
+		c.Name = value
+	case "assert":
+		c.Assert = value
+	case "on_fail":
+		c.OnFail = OnFail(value)
+	case "phase":
+		c.Phase = CheckPhase(value)
+	case "kind":
+		if CheckKind(value) != CheckKindRoundedValues {
+			return fmt.Errorf("unsupported +ptah check kind=%q (want %s)", value, CheckKindRoundedValues)
+		}
+		c.Kind = CheckKind(value)
+	default:
+		return fmt.Errorf("unknown +ptah check key %q (want name, assert, on_fail, phase, kind)", key)
+	}
+	return nil
 }
 
 // CheckFailedError reports a pre-migration assertion check that was not

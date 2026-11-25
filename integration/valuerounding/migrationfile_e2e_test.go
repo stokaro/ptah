@@ -52,7 +52,7 @@ func generate(c *qt.C, engine roundingEngine, target string, extra ...string) (c
 
 // generated is the directory `migrations generate` wrote while no row of target
 // would change, and the text of its up file.
-func generated(c *qt.C, engine roundingEngine, target string) (string, string) {
+func generated(c *qt.C, engine roundingEngine, target string) (dir, text string) {
 	c.Helper()
 	result, dir := generate(c, engine, target)
 	c.Assert(result.ExitCode, qt.Equals, 0, outcome(result))

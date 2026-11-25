@@ -40,15 +40,21 @@ func Register(cmd *cobra.Command) {
 }
 
 // RegisterApply adds the flag to cmd, a command that applies migration files,
-// with no environment binding.
-func RegisterApply(cmd *cobra.Command) {
-	register(cmd, applyUsage)
+// with no environment binding, and stores what it asks for in target.
+func RegisterApply(cmd *cobra.Command, target *bool) {
+	cmd.Flags().BoolVar(target, FlagName, false, applyUsage)
+	disableEnvBinding(cmd)
 }
 
 func register(cmd *cobra.Command, usage string) {
-	flags := cmd.Flags()
-	flags.Bool(FlagName, false, usage)
-	if err := cmdflags.DisableEnvBinding(flags, FlagName); err != nil {
+	cmd.Flags().Bool(FlagName, false, usage)
+	disableEnvBinding(cmd)
+}
+
+// disableEnvBinding keeps the flag of cmd from reading a variable, so a request
+// left in a shell profile or a CI job cannot reach every later run.
+func disableEnvBinding(cmd *cobra.Command) {
+	if err := cmdflags.DisableEnvBinding(cmd.Flags(), FlagName); err != nil {
 		panic(err)
 	}
 }

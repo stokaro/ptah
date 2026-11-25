@@ -8,12 +8,16 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/roundingscan"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
 )
 
 // planMigrationFiles plans the migration files for diff and marks those the
-// migrator would refuse to run in transaction mode file.
+// migrator would refuse to run in transaction mode file. It first reads the
+// rows of each column whose type change keeps fewer digits after the point and
+// refuses while a row would change, unless the policy allows the rounding; see
+// [DiffPolicy.AllowValueRounding].
 func planMigrationFiles(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -24,6 +28,10 @@ func planMigrationFiles(
 	opts GenerateMigrationOptions,
 	qualifier atlasmigrate.Qualifier,
 ) ([]generatedMigrationSpec, []safety.StatementAssessment, error) {
+	rounding := roundingscan.Policy{Allowed: opts.DiffPolicy.AllowValueRounding, Request: opts.DiffPolicy.ValueRoundingRequest}
+	if _, err := rounding.Review(ctx, conn, roundingscan.Changes(diff, conn.Info().Dialect)); err != nil {
+		return nil, nil, err
+	}
 	specs, assessments, err := planGeneratedMigrationSpecs(
 		ctx, opts.Runtime, diff, desired, current, conn.Info(), version, opts.MigrationName, opts.DiffPolicy, qualifier,
 	)

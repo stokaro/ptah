@@ -330,7 +330,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RefuseEmptyStopEnv(flags, limitFlag, applyEveryPending, toVersionFlag)
 	dbcli.RefuseEmptyStopEnv(flags, toVersionFlag, applyEveryPending, limitFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration assertion checks (+ptah check directives and Atlas txtar checks.sql)")
-	valuerounding.RegisterApply(cmd)
+	valuerounding.RegisterApply(cmd, &opts.allowValueRounding)
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before applying migrations")
@@ -581,10 +581,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	// Read before anything connects, so a sequence that cannot be parsed is
 	// refused without having taken the migration lock.
 	expected, err := loadExpectedSequence(opts.expectSequence)
-	if err != nil {
-		return err
-	}
-	opts.allowValueRounding, err = valuerounding.Requested(cmd)
 	if err != nil {
 		return err
 	}
