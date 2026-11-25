@@ -10,13 +10,20 @@ import (
 // to be refused is that its effect reaches past the dev database into the rest
 // of the server, or "" for any other statement.
 //
-// It lifts stored routines, triggers, CALL, privileges, and CREATE or DROP of a
-// user, a role or a database. An EVENT is left out: the scheduler runs it on
+// It lifts stored routines, triggers, CALL, privileges, CREATE or DROP of a
+// user, a role or a database, and the statements of [mysqlServerStatements]
+// that name [liftedOnOwnedServer]. An EVENT is left out: the scheduler runs it on
 // its own timetable, which is during the rest of the run. ALTER USER and ALTER
 // ROLE are left out because they can change the credentials the run connects
 // with.
 func mysqlServerWideOperation(stmt string, tokens []lexer.Token) string {
 	if len(tokens) == 0 {
+		return ""
+	}
+	if statement, ok := mysqlServerStatementOf(tokens); ok {
+		if statement.lift == liftedOnOwnedServer {
+			return statement.operation
+		}
 		return ""
 	}
 	first := replay.NormalizedIdentifier(tokens[0])

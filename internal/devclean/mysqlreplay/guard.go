@@ -35,20 +35,24 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 // function is one of them, since CREATE FUNCTION ... SONAME is a definition of
 // a stored function to that reading: its library runs in the server process,
 // as COPY TO PROGRAM runs a command on PostgreSQL's host, and trust lifts both.
-// Here it lifts, beyond them: a prepared statement, which is the dynamic SQL a
-// MySQL history writes where PostgreSQL writes a DO block; a FEDERATED or
-// CONNECT table, LOAD DATA or LOAD XML, and SELECT ... INTO OUTFILE or
-// DUMPFILE, which move data across the server's edge and leave nothing in it
-// that the cleanup does not remove; and a write to another database. Each
-// one's only reason to be refused is that its effect reaches past the dev
-// database. It lifts a SET of a client character set outside the UTF-8 family
-// too: a prepared statement makes the same change, so refusing the SET under
-// trust would refuse a latin1 history and protect nothing.
+// So are the key cache and resource group statements of
+// [mysqlServerStatements] that a server the run owns lifts. Here it lifts,
+// beyond them: a prepared statement and a MariaDB compound statement, which
+// are the dynamic SQL a MySQL history writes where PostgreSQL writes a DO
+// block; a FEDERATED, CONNECT or SPIDER table, LOAD DATA or LOAD XML, IMPORT
+// TABLE, and SELECT ... INTO OUTFILE or DUMPFILE, which move data across the
+// server's edge and leave nothing in it that the cleanup does not remove; and
+// a write to another database, a view over one, and a function or sequence of
+// one. Each one's only reason to be refused is that its effect reaches past
+// the dev database. It lifts a SET of a client character set outside the
+// UTF-8 family too: a prepared statement makes the same change, so refusing
+// the SET under trust would refuse a latin1 history and protect nothing.
 //
 // It keeps every refusal that protects the run: an executable comment, which
 // hides SQL from every check here; an EVENT, which the scheduler runs on its own
 // timetable during the rest of the run; ALTER USER and ALTER ROLE, which can
-// change the credentials the run connects with; USE, a global or persistent
+// change the credentials the run connects with; the statements of
+// [mysqlServerStatements] that no realm lifts; USE, a global or persistent
 // SET, INSTALL, UNINSTALL, FLUSH, RESET and ALTER INSTANCE, which change the
 // session or the server the run uses; a TABLESPACE, LOGFILE GROUP, SERVER,
 // RESOURCE GROUP or SPATIAL REFERENCE SYSTEM, which configure the server, as a
@@ -57,6 +61,7 @@ func validateMySQLReplayStatement(dialect, database, stmt string, tokens []lexer
 	if len(tokens) == 0 {
 		return nil
 	}
+	statement := tokens
 	tokens = replay.LeadingCTEExecutableTokens(tokens)
 	first := replay.NormalizedIdentifier(tokens[0])
 	if err := rejectMySQLExecutableObjects(dialect, stmt, first, tokens, scope); err != nil {
@@ -86,16 +91,28 @@ func validateMySQLReplayStatement(dialect, database, stmt string, tokens []lexer
 	if scope.Server || scope.Databases || scope.TrustedSQL {
 		return nil
 	}
-	if err := rejectMySQLRenameDestinations(dialect, database, tokens); err != nil {
+	if err := rejectMySQLCrossDatabaseTargets(dialect, database, mysqlCrossDatabaseCandidates(statement, tokens)); err != nil {
 		return err
 	}
-	return rejectMySQLCrossDatabaseTargets(dialect, database, tokens)
+	return rejectMySQLViewReach(dialect, database, tokens)
+}
+
+// mysqlCrossDatabaseCandidates are the names a statement writes or runs that
+// the database realm checks against its database: the targets
+// [mysqlMutationTargets] reads from the statement after a leading WITH, and
+// the functions and sequences [mysqlRoutineReach] reads from all of it, a
+// WITH clause included.
+func mysqlCrossDatabaseCandidates(statement, executable []lexer.Token) [][]string {
+	return append(mysqlMutationTargets(executable), mysqlRoutineReach(statement)...)
 }
 
 // unsafeMySQLReplayOperation names a statement the replay refuses by its first
 // words. Under [replay.Scope.TrustedSQL], a prepared statement and LOAD DATA or LOAD XML are
 // not refused; see [validateMySQLReplayStatement].
 func unsafeMySQLReplayOperation(tokens []lexer.Token, scope replay.Scope) string {
+	if operation := mysqlLeadingOperation(tokens, scope); operation != "" {
+		return operation
+	}
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "USE", "INSTALL", "UNINSTALL", "FLUSH", "RESET":
@@ -134,18 +151,11 @@ func rejectMySQLExecutableObjects(dialect, stmt, first string, tokens []lexer.To
 	return nil
 }
 
-func rejectMySQLRenameDestinations(dialect, database string, tokens []lexer.Token) error {
-	if replay.TokenSequenceAt(tokens, 0, "ALTER", "TABLE") && replay.ContainsIdentifier(tokens, "RENAME") {
-		return rejectTargetsAfterKeyword(dialect, database, tokens, "TO")
-	}
-	return nil
-}
-
-func rejectMySQLCrossDatabaseTargets(dialect, database string, tokens []lexer.Token) error {
+func rejectMySQLCrossDatabaseTargets(dialect, database string, targets [][]string) error {
 	if strings.TrimSpace(database) == "" {
 		return replay.Refuse(dialect, "qualified target without a configured database")
 	}
-	for _, target := range mysqlMutationTargets(tokens) {
+	for _, target := range targets {
 		if len(target) < 2 || target[0] == database {
 			continue
 		}
@@ -161,6 +171,20 @@ func mysqlMutationTargets(tokens []lexer.Token) [][]string {
 	switch replay.NormalizedIdentifier(tokens[0]) {
 	case "RENAME":
 		return mysqlRenameTargets(tokens)
+	case "INSERT", "REPLACE":
+		return mysqlInsertTargets(tokens)
+	case "DELETE":
+		return mysqlDeleteTargets(tokens)
+	case "OPTIMIZE", "ANALYZE", "REPAIR":
+		return mysqlTableMaintenanceTargets(tokens)
+	case "CREATE", "ALTER":
+		targets := replay.MutationTargets(tokens)
+		kindIndex := replay.StatementObjectKindIndex(tokens)
+		if !isKeyword(replay.TokenAt(tokens, kindIndex), "TABLE") {
+			return targets
+		}
+		_, next := replay.QualifiedIdentifierAt(tokens, replay.ObjectNameIndex(tokens, kindIndex))
+		return append(targets, mysqlTableReach(tokens, next)...)
 	case "DROP":
 		kindIndex := replay.StatementObjectKindIndex(tokens)
 		if kindIndex != replay.MutationTargetNotFound &&
@@ -192,19 +216,23 @@ func mysqlUpdateTargets(tokens []lexer.Token) [][]string {
 		case "LOW_PRIORITY", "IGNORE", "ONLY":
 			index++
 		default:
-			return mysqlTableReferenceTargets(tokens, index)
+			targets, _ := mysqlTableReferenceTargets(tokens, index, "SET")
+			return targets
 		}
 	}
 	return nil
 }
 
-func mysqlTableReferenceTargets(tokens []lexer.Token, start int) [][]string {
+// mysqlTableReferenceTargets reads the tables of the references that begin at
+// start, each one past a comma or a JOIN, up to a word of stops at the top
+// level. It returns them and the index where it stopped.
+func mysqlTableReferenceTargets(tokens []lexer.Token, start int, stops ...string) ([][]string, int) {
 	var targets [][]string
 	expectTarget := true
 	depth := 0
 	for index := start; index < len(tokens); index++ {
-		if depth == 0 && tokens[index].MatchIdentifierValue("SET") {
-			return targets
+		if depth == 0 && isKeyword(tokens[index], stops...) {
+			return targets, index
 		}
 		if expectTarget {
 			target, next := replay.QualifiedIdentifierAt(tokens, index)
@@ -228,7 +256,7 @@ func mysqlTableReferenceTargets(tokens []lexer.Token, start int) [][]string {
 			expectTarget = true
 		}
 	}
-	return targets
+	return targets, len(tokens)
 }
 
 func mysqlRenameTargets(tokens []lexer.Token) [][]string {
@@ -405,6 +433,11 @@ func namesUTF8(tokens []lexer.Token, at int) bool {
 	return mysqlstored.UTF8CharacterSet(replay.NormalizedIdentifier(tokens[at]))
 }
 
+// unconfinedMySQLStorageEngine names the storage engine of a CREATE or ALTER
+// TABLE whose rows live on another server or in another database: FEDERATED,
+// CONNECT, and MariaDB's SPIDER. Measured on MariaDB 11.8.9, a SPIDER table
+// whose connection names the server itself and another database writes that
+// database's table on INSERT.
 func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {
 	if !replay.IsDDLAction(tokens) {
 		return ""
@@ -415,30 +448,8 @@ func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {
 		return ""
 	}
 	engine, _ := replay.TopLevelValueAfterKeyword(tokens, "ENGINE", replay.ObjectNameIndex(tokens, kindIndex)+1)
-	if engine == "FEDERATED" || engine == "CONNECT" {
+	if engine == "FEDERATED" || engine == "CONNECT" || engine == "SPIDER" {
 		return engine
 	}
 	return ""
-}
-
-func rejectTargetsAfterKeyword(
-	dialect,
-	database string,
-	tokens []lexer.Token,
-	keyword string,
-) error {
-	for index := 1; index < len(tokens); index++ {
-		if replay.NormalizedIdentifier(tokens[index]) != keyword {
-			continue
-		}
-		target, _ := replay.QualifiedIdentifierAt(tokens, replay.SkipNameModifiers(tokens, index+1))
-		if len(target) < 2 || target[0] == database {
-			continue
-		}
-		return replay.Refuse(
-			dialect,
-			fmt.Sprintf("cross-database target %q", strings.Join(target, ".")),
-		)
-	}
-	return nil
 }
