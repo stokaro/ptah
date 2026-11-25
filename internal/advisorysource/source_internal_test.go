@@ -55,11 +55,25 @@ func cachedSource(c *qt.C) ([]byte, Config, string, *atomic.Int32, *atomic.Bool)
 	c.Cleanup(server.Close)
 	location, err := ParseLocation(server.URL)
 	c.Assert(err, qt.IsNil)
-	now := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+	now := cacheClock(c)
 	config := Config{Location: location, CacheDir: c.TempDir(), Now: func() time.Time { return now }}
 	_, origin := New(config).Snapshot(c.Context(), "mysql")
 	c.Assert(origin.Cache, qt.Equals, "fetched")
 	return body, config, New(config).cachePath(origin.URL), requests, failing
+}
+
+// cacheClock is the clock the cache tests run at: within a day after the
+// bundled MySQL snapshot was retrieved, so the copies they serve, dated
+// relative to that snapshot, are inside the window the source accepts.
+// Against a fixed date, the first refresh that dates the MySQL snapshot past
+// it fails these tests.
+func cacheClock(c *qt.C) time.Time {
+	c.Helper()
+	_, bundled, ok := vulnerability.BundledSnapshot("mysql")
+	c.Assert(ok, qt.IsTrue)
+	retrieved, err := vulnerability.CheckSnapshot("mysql", bundled)
+	c.Assert(err, qt.IsNil)
+	return retrieved.Truncate(time.Hour).Add(24 * time.Hour)
 }
 
 // retrievedAt returns data with its retrieval time replaced.
@@ -130,7 +144,7 @@ func TestReadCache_BodyMustMatchItsHash(t *testing.T) {
 func TestReadCache_RefusalIsNamedInTheFallback(t *testing.T) {
 	const failed = "the advisory source answered HTTP 503 Service Unavailable; the cached copy was not used: "
 	_, bundled, _ := vulnerability.BundledSnapshot("mysql")
-	now := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+	now := cacheClock(qt.New(t))
 	t.Run("a body that does not match its hash", func(t *testing.T) {
 		c := qt.New(t)
 		body, config, path, _, failing := cachedSource(c)
@@ -152,8 +166,10 @@ func TestReadCache_RefusalIsNamedInTheFallback(t *testing.T) {
 		got, origin := New(config).Snapshot(c.Context(), "mysql")
 
 		c.Assert(got, qt.DeepEquals, bundled)
-		c.Assert(origin.Fallback, qt.Equals, failed+
-			"the snapshot was retrieved at 2026-11-22T10:00:00Z, more than 24 hours after this machine's clock at 2026-11-21T09:00:00Z")
+		c.Assert(origin.Fallback, qt.Equals, failed+fmt.Sprintf(
+			"the snapshot was retrieved at %s, more than 24 hours after this machine's clock at %s",
+			now.Add(25*time.Hour).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+		))
 	})
 }
 

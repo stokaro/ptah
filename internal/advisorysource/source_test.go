@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net"
@@ -125,8 +126,8 @@ func newSource(location *url.URL, cache string, k *clock) *advisorysource.Source
 	return advisorysource.New(advisorysource.Config{Location: location, CacheDir: cache, Now: k.Now})
 }
 
-// start is the clock every test begins at: a day after the newest bundled
-// snapshot was retrieved. The tests serve copies dated relative to the bundled
+// start is the clock every test begins at: within a day after the newest
+// bundled snapshot was retrieved. The tests serve copies dated relative to the bundled
 // snapshots, and the source refuses a copy dated more than
 // vulnerability.MaxFutureRetrieval after its clock. Against a fixed date, the
 // first refresh that dates a bundled snapshot past it fails them.
@@ -144,7 +145,7 @@ func newestBundledRetrieval() time.Time {
 		_, data, _ := vulnerability.BundledSnapshot(product)
 		retrieved, err := vulnerability.CheckSnapshot(product, data)
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("bundled %s snapshot: %v", product, err))
 		}
 		if retrieved.After(newest) {
 			newest = retrieved
