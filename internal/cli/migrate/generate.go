@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
@@ -95,7 +96,15 @@ replaces it.
 --exclude, with the meaning schema apply --include gives it: the migration
 neither creates nor drops anything else, so an object the migration history
 created and the desired schema does not own stays as it is. Selectors that
-select nothing are refused.`,
+select nothing are refused.
+
+A column type change that keeps fewer digits after the point, such as a lower
+decimal scale or fractional-second precision, is refused while a row of the
+database the plan reads holds a value the server would round or cut. The up
+file then carries a "-- +ptah check kind=rounded-values" for each such column,
+which migrations up evaluates on the database the file runs on.
+--allow-value-rounding writes the file without reading the rows, and with a
+note in place of each check.`,
 		RunE: migrateGenerateCommand,
 	}
 
@@ -138,6 +147,7 @@ select nothing are refused.`,
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
 	checkscan.Register(cmd)
+	valuerounding.Register(cmd)
 	secretrotation.Register(cmd)
 
 	cmdutil.ConfigureCommand(cmd)
@@ -920,8 +930,9 @@ func loadGenerateSchema(
 
 // generateDiffPolicy maps the project's diff policy, and what the operator
 // asked this invocation to plan that a comparison alone would not -- a table
-// rebuild, the rotation of the secrets named, and CHECK additions without
-// their scans -- onto the generator's policy.
+// rebuild, the rotation of the secrets named, CHECK additions without their
+// scans, and type changes that round stored values without their scans and
+// checks -- onto the generator's policy.
 func generateDiffPolicy(cmd *cobra.Command, projectCfg projectconfig.Config) (generator.DiffPolicy, error) {
 	rebuild, err := tablerebuild.Requested(cmd)
 	if err != nil {
@@ -935,14 +946,20 @@ func generateDiffPolicy(cmd *cobra.Command, projectCfg projectconfig.Config) (ge
 	if err != nil {
 		return generator.DiffPolicy{}, err
 	}
+	allowValueRounding, err := valuerounding.Requested(cmd)
+	if err != nil {
+		return generator.DiffPolicy{}, err
+	}
 	return generator.DiffPolicy{
-		SkipChangeKinds:     projectCfg.Diff.SkipChangeKinds(),
-		ConcurrentIndex:     projectCfg.Diff.ConcurrentIndexCreate(),
-		ConcurrentIndexDrop: projectCfg.Diff.ConcurrentIndexDrop(),
-		OnlineAlter:         projectCfg.Diff.OnlineAlterRequested(),
-		AllowTableRebuild:   rebuild,
-		SkipCheckScan:       skipCheckScan,
-		RotateSecrets:       rotateSecrets,
+		SkipChangeKinds:      projectCfg.Diff.SkipChangeKinds(),
+		ConcurrentIndex:      projectCfg.Diff.ConcurrentIndexCreate(),
+		ConcurrentIndexDrop:  projectCfg.Diff.ConcurrentIndexDrop(),
+		OnlineAlter:          projectCfg.Diff.OnlineAlterRequested(),
+		AllowTableRebuild:    rebuild,
+		SkipCheckScan:        skipCheckScan,
+		AllowValueRounding:   allowValueRounding,
+		ValueRoundingRequest: valuerounding.Request,
+		RotateSecrets:        rotateSecrets,
 	}, nil
 }
 

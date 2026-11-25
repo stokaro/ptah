@@ -56,6 +56,15 @@ common_args=(migrations plan "${source_args[@]}" --db-url "${INPUT_DB_URL:?db-ur
 if [[ -n "${INPUT_SCHEMAS:-}" ]]; then
 	common_args+=(--schemas "$INPUT_SCHEMAS")
 fi
+# The plan and the generation read the rows of a column whose type change keeps
+# fewer digits after the point, and refuse while a row would round. The flag
+# reads no environment variable, so the input is the only way to ask, and it
+# reaches every command that reads those rows.
+allow_value_rounding="false"
+if [[ "${INPUT_ALLOW_VALUE_ROUNDING:-false}" == "true" ]]; then
+	allow_value_rounding="true"
+	common_args+=(--allow-value-rounding)
+fi
 
 set +e
 "$ptah_bin" "${common_args[@]}" --report text >"$plan_path" 2>&1
@@ -84,6 +93,9 @@ if [[ "${INPUT_GENERATE:-false}" == "true" ]]; then
 		--db-url "$INPUT_DB_URL" --migrations-dir "$migration_dir")
 	if [[ -n "${INPUT_GENERATE_NAME:-}" ]]; then
 		generate_args+=(--name "$INPUT_GENERATE_NAME")
+	fi
+	if [[ "$allow_value_rounding" == "true" ]]; then
+		generate_args+=(--allow-value-rounding)
 	fi
 	"$ptah_bin" "${generate_args[@]}" >"$output_dir/ptah-generate.txt" 2>&1
 	generate_status="$?"

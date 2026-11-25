@@ -30,7 +30,14 @@ Keys:
 | `name` | no | A label for the check, shown in error output. |
 | `on_fail` | no | What to do when the assertion is not satisfied. Only `abort` is supported; it is the default. |
 | `phase` | no | When the predicate is evaluated: `before` the body (the default) or `after` it. |
+| `kind` | no | `rounded-values`, or no `kind` for an ordinary check. Any other value is refused. |
 
+- `kind=rounded-values` is the check `ptah migrations generate` writes before a
+  column type change that keeps fewer digits after the point. A run asked to round
+  the values (`ptah migrations up --allow-value-rounding`,
+  `PTAH_ALLOW_VALUE_ROUNDING=1` on `ptah-compat migrate apply`) skips this kind
+  alone and warns once for each check skipped; `--skip-checks` skips it with
+  every other check and warns the same way. The kind refuses `phase=after`.
 - `assert` is a single top-level `SELECT` returning exactly one column and one
   row. A boolean result uses its value; a number passes when non-zero; a
   text/`bytea` result accepts the common
@@ -48,7 +55,7 @@ Keys:
   before them, because its position never decided which statements ran. It is
   therefore not reported as a misplaced directive.
 - A malformed check directive (missing `assert`, unknown key, unsupported
-  `on_fail`, unsupported `phase`, unterminated quote, multi-statement `assert`)
+  `on_fail`, unsupported `phase` or `kind`, unterminated quote, multi-statement `assert`)
   aborts the migration with nothing applied. That includes a directive whose
   `phase=after` does not parse: the refusal is a property of the text, so it
   lands before the body runs.

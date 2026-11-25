@@ -838,15 +838,8 @@ func reviewRoundedValues(
 	diff *difftypes.SchemaDiff,
 	policy DiffPolicy,
 ) ([]roundingscan.Change, error) {
-	changes := roundingscan.Changes(diff, dialect)
-	if policy.AllowValueRounding {
-		roundingscan.Warn(ctx, changes)
-		return nil, nil
-	}
-	if err := roundingscan.Refuse(ctx, conn, changes, policy.ValueRoundingRequest); err != nil {
-		return nil, err
-	}
-	return changes, nil
+	return roundingscan.Policy{Allowed: policy.AllowValueRounding, Request: policy.ValueRoundingRequest}.
+		Review(ctx, conn, roundingscan.Changes(diff, dialect))
 }
 
 // renderCapabilities is the capability set the plan's statements are spelled

@@ -362,8 +362,9 @@ rounds to the minute, and `datetime` rounds to 1/300 of a second, so
 `10:00:00.1233333`, which counts as a change. A decimal under an integer is cut:
 `1234.567` under `int` reads `1234`. A `datetimeoffset` under `datetime2`, `datetime` or
 `smalldatetime` keeps its clock time and drops the offset, and only the digits count.
-While a row holds a value the change would alter, `ptah schema plan` and
-`ptah schema apply` refuse the change; see
+While a row holds a value the change would alter, `ptah schema plan`,
+`ptah schema apply`, `ptah migrations plan` and `ptah migrations generate` refuse the
+change, and a generated migration file reads the rows again where it runs; see
 [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 ## Column defaults

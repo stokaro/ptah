@@ -94,6 +94,14 @@ inputs:
     description: Allow destructive migration plans.
     required: false
     default: "false"
+  allow-value-rounding:
+    description: >-
+      Plan and generate a column type change that keeps fewer digits after the
+      point without reading the stored values, passed through as
+      --allow-value-rounding. Without it, the plan and the generation refuse
+      such a change while a row holds a value the server would round.
+    required: false
+    default: "false"
   output-dir:
     description: Directory for generated action reports.
     required: false
@@ -213,6 +221,7 @@ runs:
         INPUT_LINT_GIT_BASE: ${{ inputs.lint-git-base }}
         INPUT_LINT_LATEST: ${{ inputs.lint-latest }}
         INPUT_ALLOW_DESTRUCTIVE: ${{ inputs.allow-destructive }}
+        INPUT_ALLOW_VALUE_ROUNDING: ${{ inputs.allow-value-rounding }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_GENERATE: ${{ inputs.generate }}
         INPUT_GENERATE_NAME: ${{ inputs.generate-name }}

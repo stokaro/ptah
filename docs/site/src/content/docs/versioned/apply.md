@@ -1196,7 +1196,9 @@ The reason is the same in the middle two cases: one transaction spans the whole
 run, so a per-migration timeout would bound the entire batch rather than the
 file that asked for it, and a pre-migration check would read state the batch has
 already changed. The remedy is the default per-file mode, or removing the
-directive from that migration.
+directive from that migration. A check the run skips, under `--skip-checks` or,
+for a check of kind `rounded-values`, under `--allow-value-rounding`, is not
+refused; the run warns once for each skipped check of that kind.
 
 The first row is the engine rather than a Ptah policy, and it is decided by the
 target's transactional-DDL capability rather than by a list of dialect names.

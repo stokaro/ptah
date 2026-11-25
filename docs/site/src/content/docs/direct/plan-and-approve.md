@@ -439,6 +439,14 @@ server rounds or cuts each value. The flag reads no environment variable;
 again when it is applied, and `ptah schema apply --plan` refuses the flag: plan again
 with it to save a plan that rounds the values.
 
+`ptah migrations plan` and `ptah migrations generate` read the rows of the database
+they compare with in the same way, refuse in the same words, and take the same flag.
+A migration file runs later, often on another database, so the up file
+`ptah migrations generate` writes carries a check of kind `rounded-values` for each
+such column, which `ptah migrations up` and `ptah-compat migrate apply` evaluate on the
+database the file runs on; see
+[a check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
+
 `ptah schema apply` shows this rating beside its confirmation prompt. With
 `--auto-approve` there is no prompt and no rating, so read the plan to see one. Plan
 with `ptah schema plan`, review the file, and run it with `ptah schema apply --plan`.

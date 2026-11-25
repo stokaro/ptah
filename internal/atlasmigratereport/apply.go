@@ -71,6 +71,7 @@ func applyReportOptions(opts ApplyFormatOptions) (atlasreport.MigrateApplyResult
 		ApplyError:         result.ApplyError,
 		Applied:            result.Executed,
 		ChecksNotRun:       checksNotRun,
+		ValueRounding:      result.ValueRounding,
 		StartedAt:          result.StartedAt,
 		EndedAt:            result.EndedAt,
 		Repeatables:        result.Repeatables,

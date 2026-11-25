@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/cli/internal/migraterun"
 	"ptah.run/internal/cli/internal/migratetimeout"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
 	"ptah.run/internal/driftgate"
@@ -97,6 +98,7 @@ type options struct {
 	limit                uint64
 	toVersion            string
 	skipChecks           bool
+	allowValueRounding   bool
 	preUpHook            string
 	preUpHookOrigin      string
 	pgDumpTo             string
@@ -328,6 +330,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RefuseEmptyStopEnv(flags, limitFlag, applyEveryPending, toVersionFlag)
 	dbcli.RefuseEmptyStopEnv(flags, toVersionFlag, applyEveryPending, limitFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration assertion checks (+ptah check directives and Atlas txtar checks.sql)")
+	valuerounding.RegisterApply(cmd, &opts.allowValueRounding)
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before applying migrations")
@@ -1064,6 +1067,11 @@ func (o migrateUpOutcome) err() error {
 			return fmt.Errorf("error running migrations: %w", postErr)
 		}
 		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](o.runErr); ok {
+			// A rounded-values check names --allow-value-rounding, which waives
+			// that kind alone; --skip-checks would waive every other check too.
+			if checkErr.Kind == migrator.CheckKindRoundedValues {
+				return checkErr
+			}
 			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
 		}
 		return fmt.Errorf("error running migrations: %w", o.runErr)
@@ -1228,6 +1236,7 @@ func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
 		WithMigrationLockTimeout(in.settings.migrationLockTimeout).
 		WithMigrationLockName(in.settings.lockName.Value).
 		WithSkipChecks(in.opts.skipChecks).
+		WithValueRounding(migrator.ValueRounding{Allowed: in.opts.allowValueRounding, Request: valuerounding.Request}).
 		WithLogger(slog.New(readFloor{
 			Handler: in.runtime.Logger().Handler(),
 			// Only the unlocked reads put the writer in dry-run mode behind a

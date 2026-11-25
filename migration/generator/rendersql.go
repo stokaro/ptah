@@ -75,6 +75,19 @@ type generatedDirectiveOptions struct {
 	// build that waits on a write transaction, leaving an invalid index. A run
 	// that wants the bound sets it with --lock-timeout.
 	skipTimeouts bool
+	// preamble is written after the header, before the first statement, and
+	// ends with a line break: the checks a statement of the file needs read
+	// before it runs.
+	preamble string
+}
+
+// preambleBlock is the preamble followed by the blank line that separates it
+// from the statements, or nothing without one.
+func (opts generatedDirectiveOptions) preambleBlock() string {
+	if opts.preamble == "" {
+		return ""
+	}
+	return opts.preamble + "\n"
 }
 
 func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generatedDirectiveOptions) string {

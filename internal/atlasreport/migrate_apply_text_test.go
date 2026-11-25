@@ -229,6 +229,35 @@ func TestWriteMigrateApplyText_LeavesOutChecksNotRun(t *testing.T) {
 		"  -- 1 sql statement\n")
 }
 
+// A check of kind rounded-values the run waived was never evaluated, so it is left
+// out, and the ordinary check beside it, which the run evaluated, is listed.
+func TestWriteMigrateApplyText_LeavesOutAWaivedRoundingCheck(t *testing.T) {
+	c := qt.New(t)
+	file := applyTextFile{version: 1, name: "1.sql", body: `-- +ptah check kind=rounded-values name="users.id" assert="SELECT 0"` +
+		"\n" + `-- +ptah check name="ordinary" assert="SELECT 1"` + "\nCREATE TABLE users (id int);\n"}
+	opts := applyTextOptions(c, []applyTextFile{file}, 0, []int64{1})
+	opts.ValueRounding = migrator.ValueRounding{Allowed: true}
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateApplyText(&out, opts)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "Migrating to version 1 (1 migrations in total):\n"+
+		"\n"+
+		"  -- pre-migration checks of version 1\n"+
+		"    -> SELECT 1\n"+
+		"  -- ok\n"+
+		"  -- migrating version 1\n"+
+		"    -> CREATE TABLE users (id int);\n"+
+		"  -- ok (1s)\n"+
+		"\n"+
+		"  -------------------------\n"+
+		"  -- 1s\n"+
+		"  -- 1 migration\n"+
+		"  -- 1 check\n"+
+		"  -- 1 sql statement\n")
+}
+
 // A txtar check that refused stops its file before any statement: the report
 // marks the assertion, prints the refusal, and lists no statement. The
 // migrator names the check after its section and position, `checks.sql#1`,

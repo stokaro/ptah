@@ -88,6 +88,11 @@ type ApplyOptions struct {
 	// Atlas's own help surface), so the compat command resolves it from
 	// PTAH_SKIP_CHECKS rather than from the Atlas flag surface.
 	SkipChecks bool
+	// ValueRounding is how the run treats the pre-migration checks of kind
+	// [migrator.CheckKindRoundedValues]; see [migrator.Migrator.WithValueRounding].
+	// Atlas has no such check, so the compat command resolves the waiver from
+	// PTAH_ALLOW_VALUE_ROUNDING rather than from a flag.
+	ValueRounding migrator.ValueRounding
 	// OwnTransactions applies the directory the way a runner that opens no
 	// transaction around a file applies it, as golang-migrate does; see
 	// [migrator.WithOwnTransactions]. The converted layout carries
@@ -156,6 +161,9 @@ type ApplyResult struct {
 	// ChecksSkipped reports that the run bypassed every pre-migration check,
 	// as [ApplyOptions.SkipChecks] asked.
 	ChecksSkipped bool
+	// ValueRounding is [ApplyOptions.ValueRounding], which says the checks
+	// the run skipped by their kind.
+	ValueRounding migrator.ValueRounding
 	// ChecksDeferred lists versions whose checks were parsed and statically
 	// validated but not evaluated, because a dry run cannot produce the state
 	// they assert on. Empty outside a dry run.
@@ -195,6 +203,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		migrationLockName:    opts.MigrationLockName,
 		skipMigrationLock:    opts.SkipMigrationLock,
 		skipChecks:           opts.SkipChecks,
+		valueRounding:        opts.ValueRounding,
 		ownTransactions:      opts.OwnTransactions,
 		repeatables:          opts.Repeatables,
 		stringLinearity:      opts.StringLinearity,
@@ -375,6 +384,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		DryRun:           p.DryRun,
 		StartedAt:        p.StartedAt,
 		ChecksSkipped:    p.opts.SkipChecks,
+		ValueRounding:    p.opts.ValueRounding,
 	}
 	executionStarted := false
 	lockedPlanObserved := false
@@ -633,6 +643,7 @@ type applyMigratorOptions struct {
 	migrationLockName    string
 	skipMigrationLock    bool
 	skipChecks           bool
+	valueRounding        migrator.ValueRounding
 	ownTransactions      bool
 	repeatables          bool
 	stringLinearity      bool
@@ -672,6 +683,7 @@ func newApplyMigrator(
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithMigrationLockName(opts.migrationLockName).
 		WithSkipChecks(opts.skipChecks).
+		WithValueRounding(opts.valueRounding).
 		WithLogger(compatMigratorLogger())
 	if opts.stringLinearity {
 		mig = mig.WithAtlasStringLinearity()

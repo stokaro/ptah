@@ -96,6 +96,14 @@ separate JSON safety run drives the destructive-change gate. With
 after the comment is posted; lint failures also fail the job after the comment
 is posted.
 
+A column type change that keeps fewer digits after the point, such as a decimal
+with a lower scale, makes both plan commands and `ptah migrations generate` read
+the rows of the column. While a row holds a value the server would round, they
+exit `2`: the plan report holds the refusal, the safety report is empty, and no
+file is written. After review,
+`allow-value-rounding: "true"` passes `--allow-value-rounding` to all three; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
 ### What the Action posts
 
 The comment is assembled from the three commands above. On a pull request that
@@ -229,6 +237,7 @@ counterparts, and the three `_EXIT_CODE` variables pointing at that run.
 | `lint-git-base` | empty | Base Git ref for lint, passed through as `--git-base`: only the migrations the pull request adds are linted. Needs `fetch-depth: 0`. Empty lints the whole directory. |
 | `lint-latest` | empty | Lint only the newest N migrations, passed through as `--latest`. Ignored when `lint-git-base` is set. |
 | `allow-destructive` | `false` | Allows destructive plans after review. |
+| `allow-value-rounding` | `false` | Plans and generates a column type change that keeps fewer digits after the point without reading the stored values. |
 | `output-dir` | temporary | Directory for generated reports. |
 
 The outputs `plan-path`, `safety-path`, `lint-path`, their captured stderr

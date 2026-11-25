@@ -913,6 +913,7 @@ Read the columns as follows.
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
 | `--allow-table-rebuild` | `bool` | `false` | — | — |
+| `--allow-value-rounding` | `bool` | `false` | — | — |
 | `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
@@ -1061,6 +1062,7 @@ Read the columns as follows.
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
 | `--allow-table-rebuild` | `bool` | `false` | — | — |
+| `--allow-value-rounding` | `bool` | `false` | — | — |
 | `--attach` | `bool` | `false` | `PTAH_ATTACH` | — |
 | `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
@@ -1373,6 +1375,7 @@ Read the columns as follows.
 | `--actor-origin` | `string` | — | `PTAH_ACTOR_ORIGIN` | — |
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
+| `--allow-value-rounding` | `bool` | `false` | — | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
 | `--check-drift` | `bool` | `false` | `PTAH_CHECK_DRIFT` | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |

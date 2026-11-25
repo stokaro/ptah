@@ -451,8 +451,9 @@ and a lower fractional-second precision of a `timestamp`, `timestamptz`, `time` 
 PostgreSQL: `1234.567` under `DECIMAL(8,1)` reads `1234.6` and under `INT` reads
 `1235`. An unsized `DECIMAL` declared with a size is refused by the server itself while
 a value would change, with SQLSTATE `23514` from the check it validates. While a row
-holds a value the change would alter, `ptah schema plan` and `ptah schema apply` refuse
-the change first; see
+holds a value the change would alter, `ptah schema plan`, `ptah schema apply`,
+`ptah migrations plan` and `ptah migrations generate` refuse the change first, and a
+generated migration file reads the rows again where it runs; see
 [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 A lower capacity is rated destructive here as elsewhere: `string(100)` declared
