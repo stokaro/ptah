@@ -169,7 +169,8 @@ func (g *ReplayGuard) validateSession(ctx context.Context, session replay.Sessio
 	scope := g.realm.scope(g.info.Schema)
 	scope.TrustedSQL = g.trustSQL
 	err := reader.ValidateSession(ctx, session, scope)
-	if err == nil || g.trustSQL || g.trustRemedy == "" {
+	var refusal *replay.SessionRefusal
+	if err == nil || g.trustSQL || g.trustRemedy == "" || !errors.As(err, &refusal) {
 		return err
 	}
 	scope.TrustedSQL = true

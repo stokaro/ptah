@@ -100,10 +100,12 @@ func (g guard) ValidateSession(ctx context.Context, session replay.Session, scop
 	if mysqlstored.UTF8CharacterSet(charset) {
 		return nil
 	}
-	return fmt.Errorf("the dev session's client character set is %q, and the %s replay guard reads each statement as UTF-8: "+
-		"the server reads the same bytes as %s and can run what the guard does not see; "+
-		"connect with a utf8mb4 client character set, such as charset=utf8mb4 in the dev URL",
-		charset, g.dialect, charset)
+	return &replay.SessionRefusal{Reason: fmt.Sprintf(
+		"the dev session's client character set is %q, and the %s replay guard reads each statement as UTF-8: "+
+			"the server reads the same bytes as %s and can run what the guard does not see; "+
+			"connect with a utf8mb4 client character set, such as charset=utf8mb4 in the dev URL",
+		charset, g.dialect, charset,
+	)}
 }
 
 // validate is [guard.Validate] for the statement read by reading's rules.

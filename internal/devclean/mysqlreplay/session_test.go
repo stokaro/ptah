@@ -81,6 +81,8 @@ func TestGuard_ValidateSession_FailurePath(t *testing.T) {
 
 					err := sessionGuardFor(c, dialect).ValidateSession(c.Context(), session, scope.scope)
 
+					var refusal *replay.SessionRefusal
+					c.Assert(err, qt.ErrorAs, &refusal)
 					c.Assert(err, qt.ErrorMatches, `the dev session's client character set is "`+charset+`", and the `+dialect+
 						` replay guard reads each statement as UTF-8: the server reads the same bytes as `+charset+
 						` and can run what the guard does not see; connect with a utf8mb4 client character set, `+
@@ -102,6 +104,8 @@ func TestGuard_ValidateSession_FailurePathUnreadableSession(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, errSessionGone)
 	c.Assert(err, qt.ErrorMatches, `read the dev session's client character set: session gone`)
+	var refusal *replay.SessionRefusal
+	c.Assert(err, qt.Not(qt.ErrorAs), &refusal)
 }
 
 // A run that trusts its SQL is not refused, and its session is not read.
