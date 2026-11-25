@@ -2,6 +2,7 @@ package atlas_test
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -132,5 +133,86 @@ func TestCompatHashIgnoresTheDisposableDeclaration(t *testing.T) {
 
 	out, err := atlastest.RunCompatCommand(t, "migrate", "hash", "--dir", "file://"+t.TempDir())
 
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+}
+
+// shadowReplayCompatCases are the ptah-compat commands whose dev database
+// holds a replay of the migration history, as a native command's shadow
+// database does. Each runs to completion on SQLite, its replay included:
+// project holds the atlas.hcl written to the run's directory, setup prepares
+// the target there, and args is the run.
+var shadowReplayCompatCases = []struct {
+	name    string
+	project map[string]string
+	setup   [][]string
+	args    []string
+}{
+	{
+		name:  "migrate down --dev-url",
+		setup: [][]string{{"migrate", "apply", "--url", "sqlite://target.db", "--dir", "file://migrations"}},
+		args: []string{"migrate", "down", "--url", "sqlite://target.db", "--dir", "file://migrations",
+			"--dev-url", "sqlite://dev.db", "--to-version", "1"},
+	},
+	{
+		name: "migrate apply with a declared drift check",
+		project: map[string]string{"atlas.hcl": "env \"local\" {\n  url = \"sqlite://target.db\"\n  dev = \"sqlite://dev.db\"\n" +
+			"  migration {\n    dir = \"file://migrations\"\n  }\n  check \"migrate_apply\" {\n    drift {}\n  }\n}\n"},
+		setup: [][]string{{"migrate", "apply", "--env", "local", "1"}},
+		args:  []string{"migrate", "apply", "--env", "local"},
+	},
+	{
+		name: "migrate checkpoint",
+		args: []string{"migrate", "checkpoint", "--dir", "file://migrations", "--dev-url", "sqlite://dev.db"},
+	},
+	{
+		name:  "migrate drift",
+		setup: [][]string{{"migrate", "apply", "--url", "sqlite://target.db", "--dir", "file://migrations"}},
+		args: []string{"migrate", "drift", "--url", "sqlite://target.db", "--dir", "file://migrations",
+			"--dev-url", "sqlite://dev.db"},
+	},
+}
+
+// TestCompatShadowReplayCommandsIgnoreTheDisposableDeclaration pins that a
+// command whose dev database holds a replay of the history does not own
+// PTAH_DEV_SERVER_DISPOSABLE: the replay is the shadow database's, which the
+// variable never declares disposable, so a malformed value leaves each run,
+// replay included, to succeed.
+func TestCompatShadowReplayCommandsIgnoreTheDisposableDeclaration(t *testing.T) {
+	for _, test := range shadowReplayCompatCases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Set(devdocker.DisposableServerEnvVar, "maybe")(t)
+			envbooltest.Set("PTAH_ATLAS_MIGRATE_DRIFT", "1")(t)
+			t.Chdir(t.TempDir())
+			writeShadowReplayCompatHistory(c, test.project)
+			for _, args := range test.setup {
+				out, err := atlastest.RunCompatOutput(args...)
+				c.Assert(err, qt.IsNil, qt.Commentf("setup %v:\n%s", args, out))
+			}
+
+			out, err := atlastest.RunCompatOutput(test.args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Not(qt.Contains), devdocker.DisposableServerEnvVar)
+		})
+	}
+}
+
+// writeShadowReplayCompatHistory writes a hashed two-migration history to
+// ./migrations, and each file of project beside it.
+func writeShadowReplayCompatHistory(c *qt.C, project map[string]string) {
+	c.Helper()
+	c.Assert(os.Mkdir("migrations", 0o750), qt.IsNil)
+	for name, body := range map[string]string{
+		"1_items.sql":      "CREATE TABLE items (id integer PRIMARY KEY);\n",
+		"2_notes.sql":      "CREATE TABLE notes (id integer PRIMARY KEY);\n",
+		"2_notes.down.sql": "DROP TABLE notes;\n",
+	} {
+		c.Assert(os.WriteFile(filepath.Join("migrations", name), []byte(body), 0o600), qt.IsNil)
+	}
+	for name, body := range project {
+		c.Assert(os.WriteFile(name, []byte(body), 0o600), qt.IsNil)
+	}
+	out, err := atlastest.RunCompatOutput("migrate", "hash", "--dir", "file://migrations")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 }

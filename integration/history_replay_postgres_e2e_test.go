@@ -29,9 +29,13 @@ import (
 //     table t2 whose column due defaults to the literal '01/02/2020', applied
 //     in the default mode, so the default is 1 February. Replayed outside a
 //     transaction, SET LOCAL does nothing, the server reads the literal month
-//     first, and the default is 2 January. SET LOCAL search_path would show
-//     the same, but the replay guard refuses it, trusted or not: an
-//     unqualified name it sends to pg_catalog escapes the namespace check.
+//     first, and the default is 2 January. Month first is the server's
+//     default DateStyle, MDY. On a server whose default is DMY every reading
+//     is 1 February, so the history applied under --tx-mode none leaves no
+//     drift to find and its failure-path row fails loudly. SET LOCAL
+//     search_path would show the same, but the replay guard refuses it,
+//     trusted or not: an unqualified name it sends to pg_catalog escapes the
+//     namespace check.
 //   - setLocalNone: the same file under `-- atlas:txmode none`, so the
 //     directive gives due 2 January, on the target and in the replay alike.
 //   - deferred: a foreign key DEFERRABLE INITIALLY DEFERRED, with rows that

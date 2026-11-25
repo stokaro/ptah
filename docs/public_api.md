@@ -4894,11 +4894,15 @@ sentinel.
 Every replay into a `migration/shadow` shadow database, of the history and of a
 candidate, runs through the dev replay guard `ptah migrations validate` runs.
 The guard refuses a statement whose effect the reset cannot take back, such as
-a write to another database or a role. A MySQL-family shadow URL that names no
-database widens the guard to every user database on the server, as it does for
-a dev URL. The `ptah` and `ptah-compat` commands also lift a refusal for a
-server the command started or the operator declared disposable, and for SQL the
-operator trusts; an embedder that calls these functions has neither.
+a write to another database or a role, and the error matches
+`shadow.ErrReplayRefused` with `errors.Is`. Its realm is the one database the
+URL names; a MySQL-family URL that names no database is refused when the entry
+point connects. The package reads no environment variable. An embedder that
+trusts the replayed SQL sets `Trusted` in the `Trust` field of the options, a
+`shadow.ReplayTrust`, and names its own remedies there; the zero value trusts
+nothing and its refusal names that field. The same field is
+`ShadowTrust` on `migration/generator.GenerateMigrationOptions` and `Trust` on
+`migration/generator.CheckpointFromShadowOptions`.
 
 `migration/generator.GenerateCheckpointFromShadow` and
 `migration/shadow.VerifyBaseline` apply the same SQLite-only validation before

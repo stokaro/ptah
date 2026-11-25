@@ -74,6 +74,10 @@ type AppliedVerifyOptions struct {
 	// ConnectTimeout bounds the shadow database connection attempt; zero or
 	// negative means no bound beyond the caller's context.
 	ConnectTimeout time.Duration
+	// Trust is the caller's trust in the SQL the verification replays on the
+	// shadow database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // AppliedResult is what [VerifyApplied] found when it could compare the target
@@ -147,7 +151,7 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 		return AppliedResult{}, wrapAppliedError(verr)
 	}
 
-	lease, err := shadowdb.Claim(ctx, shadowConn)
+	lease, err := shadowdb.Claim(ctx, shadowConn, opts.Trust.guardTrust())
 	if err != nil {
 		return AppliedResult{}, appliedErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
 	}

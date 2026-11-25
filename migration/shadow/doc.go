@@ -50,11 +50,12 @@
 // first statement of a run, the guard refuses a statement whose effect the
 // reset of the shadow database cannot take back, such as a write to another
 // database on the same server, a role, or a routine body, and the run fails
-// with that refusal. A MySQL-family shadow URL that names no database widens
-// what the guard accepts to every user database on the server. A Ptah command
-// also lifts a refusal for a server it started or the operator declared
-// disposable, and for SQL the operator trusts; a caller of this package
-// outside those commands gets neither.
+// with that refusal. The guard's realm is the one database the URL names: a
+// MySQL-family URL that names no database is refused when the entry point
+// connects. Nothing in this package reads an environment variable to lift a
+// refusal. A caller that trusts the SQL says so in the Trust field of the
+// options ([ReplayTrust]); trust still leaves the cleanup to the shadow
+// database alone.
 //
 // # Failures are structured
 //
@@ -72,4 +73,7 @@
 // The planner's one refusal with a sentinel is [ErrUnmatchedExclude], given
 // when its caller asks it to refuse an exclude selector that names nothing;
 // match it with errors.Is.
+//
+// A refusal of the replay guard matches [ErrReplayRefused] with errors.Is from
+// every entry point, whatever error carries it.
 package shadow

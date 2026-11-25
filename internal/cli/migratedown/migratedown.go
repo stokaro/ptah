@@ -35,7 +35,6 @@ import (
 	"ptah.run/internal/cli/internal/migratetimeout"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/onlineddl"
@@ -120,9 +119,6 @@ type options struct {
 	metricsAddr          string
 	// resolvedRunner is what runner names once ptah.yaml is merged under it.
 	resolvedRunner migrateflags.Runner
-	// devReplay is how the shadow database --shadow-db names is resolved:
-	// what [dbcli.DevReplayOptions] returned.
-	devReplay devdocker.Options
 	// lockName is the migration lock name the run selected, once the flag, its
 	// environment variable and ptah.yaml are merged and a blank choice is
 	// refused.
@@ -167,15 +163,8 @@ before running down migrations in production.`,
 				Direction:     migrator.MigrationDirectionDown,
 				ServerDetails: migraterun.NewServerDetails(cmd.Context(), opts.serverDetails),
 			}
-			// Every run reads how the shadow database is resolved, so a
-			// malformed PTAH_DEV_SERVER_DISPOSABLE or PTAH_TRUST_REPLAY_SQL
-			// fails a run that replays nothing too.
-			devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
-			if err != nil {
-				return document.FailBeforeRun(err, opts.dryRun)
-			}
-			opts.devReplay = devReplay
-			if err = migrateDownCommand(cmd, &opts, document); err != nil {
+			dbcli.TrustReplaySQL(cmd, opts.trustReplaySQL)
+			if err := migrateDownCommand(cmd, &opts, document); err != nil {
 				return document.FailBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
@@ -197,7 +186,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.target, targetFlag, "",
 		"Version to roll back to; 0 rolls back every applied migration (this, --"+toTagFlag+" or --"+limitFlag+" is required)")
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Ephemeral shadow database URL where the rollback plan is replayed and verified before touching the target")
-	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
+	dbcli.RegisterShadowTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringVar(&opts.toTag, toTagFlag, "",
 		"Migration tag to roll back to, resolved against the tags recorded by `migrations tag`")
 	flags.Uint64Var(&opts.limit, limitFlag, 0,
@@ -274,6 +263,12 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.dbURL = effectiveString(dbURLFlag, opts.dbURL, projectconfig.StringDatabaseURL)
 	opts.migrationsDir = effectiveString(migrationsFlag, opts.migrationsDir, projectconfig.StringMigrationDir)
 	opts.shadowDB = effectiveString(shadowDBFlag, opts.shadowDB, projectconfig.StringDevURL)
+	// Only a run with a shadow database replays SQL: the verification of the
+	// down files, and the rollback --plan derives.
+	if strings.TrimSpace(opts.shadowDB) == "" && dbcli.TrustReplaySQLTyped(cmd, opts.trustReplaySQL) {
+		return opts, fmt.Errorf("--%s is used only with --%s: a rollback without a shadow database replays no SQL",
+			dbcli.TrustReplaySQLFlagName, shadowDBFlag)
+	}
 	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
@@ -701,7 +696,6 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		if err := verifyRollbackOnShadow(cmd.Context(), shadowVerification{
 			targetConnection: conn,
 			shadowDB:         shadowVerificationURL,
-			devReplay:        resolvedOpts.devReplay,
 			migrationsFS:     migrationsFS,
 			currentVersion:   status.CurrentVersion,
 			targetVersion:    targetVersion,
@@ -710,6 +704,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 			connectTimeout:   settings.connectTimeout,
 			skipChecks:       resolvedOpts.skipChecks,
 			providerOptions:  settings.providerOptions,
+			trust:            dbcli.ShadowReplayTrust(cmd.Context()),
 		}, emit); err != nil {
 			return err
 		}
@@ -1358,18 +1353,18 @@ func observeNoopDown(runtime *cliobs.Runtime, mig *migrator.Migrator, dialect st
 type shadowVerification struct {
 	targetConnection *dbschema.DatabaseConnection
 	shadowDB         string
-	// devReplay is how shadowDB is resolved.
-	devReplay      devdocker.Options
-	migrationsFS   fs.FS
-	currentVersion int64
-	targetVersion  int64
-	dirFormat      migrationfile.DirFormat
-	atlasEnv       string
-	connectTimeout time.Duration
-	skipChecks     bool
+	migrationsFS     fs.FS
+	currentVersion   int64
+	targetVersion    int64
+	dirFormat        migrationfile.DirFormat
+	atlasEnv         string
+	connectTimeout   time.Duration
+	skipChecks       bool
 	// providerOptions are the rollback's own, so the shadow database runs each
 	// file the way the target will.
 	providerOptions []migrator.FSProviderOption
+	// trust is the run's trust in the replayed SQL.
+	trust shadow.ReplayTrust
 }
 
 // verifyRollbackOnShadow replays the rollback plan on a disposable shadow
@@ -1386,7 +1381,7 @@ func verifyRollbackOnShadow(
 	}
 	// A docker:// shadow database is provisioned here, after the no-op check
 	// above, so a run with no verification to do never starts a container.
-	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, v.shadowDB, v.devReplay)
+	shadowDB, releaseShadow, err := dbcli.ResolveShadowDB(ctx, v.shadowDB)
 	if err != nil {
 		return err
 	}
@@ -1404,6 +1399,7 @@ func verifyRollbackOnShadow(
 		}, v.providerOptions...),
 		ConnectTimeout: v.connectTimeout,
 		SkipChecks:     v.skipChecks,
+		Trust:          v.trust,
 	})
 	if err != nil {
 		return err
@@ -1569,11 +1565,9 @@ func downOnlineDDLInterceptor(
 
 // dynamicRollback carries what a --plan rollback needs.
 type dynamicRollback struct {
-	runtime engine.SchemaRuntime
-	conn    *dbschema.DatabaseConnection
-	devURL  string
-	// devReplay is how devURL is resolved.
-	devReplay     devdocker.Options
+	runtime       engine.SchemaRuntime
+	conn          *dbschema.DatabaseConnection
+	devURL        string
 	migrationsFS  fs.FS
 	targetVersion int64
 	// targetLabel names targetVersion as [migrator.Migrator.VersionLabel] does.
@@ -1628,7 +1622,7 @@ func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) 
 			"before it can be compared against the live database",
 			planFlag, shadowDBFlag, r.targetLabel)
 	}
-	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), r.devURL, r.devReplay)
+	devURL, releaseDev, err := dbcli.ResolveShadowDB(cmd.Context(), r.devURL)
 	if err != nil {
 		return nil, err
 	}
@@ -1652,6 +1646,7 @@ func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) 
 		// selector that protects nothing is refused before any statement runs.
 		RefuseUnmatchedExclude: !r.allowUnmatchedExclude,
 		Diagnostics:            cmd.ErrOrStderr(),
+		Trust:                  dbcli.ShadowReplayTrust(cmd.Context()),
 	})
 	if err != nil {
 		// The refusal is worded as `schema apply` words it, naming the
@@ -1785,7 +1780,6 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 		runtime:               resolved.featureRuntime,
 		conn:                  conn,
 		devURL:                resolved.shadowDB,
-		devReplay:             resolved.devReplay,
 		migrationsFS:          in.migrationsFS,
 		targetVersion:         in.targetVersion,
 		targetLabel:           in.targetLabel,

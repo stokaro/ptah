@@ -13,6 +13,8 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/replaytrust"
 	"ptah.run/migration/migrator"
 )
 
@@ -334,6 +336,11 @@ func TestMigrateUpCheckDriftFailurePathRefusesAnIgnoredSetting(t *testing.T) {
 		{name: "the check without a shadow database", args: []string{"--check-drift"}, refusal: "--check-drift requires --shadow-db"},
 		{name: "a shadow database without the check", args: []string{"--shadow-db", "sqlite://shadow.db"}, refusal: "--shadow-db is used only by --check-drift"},
 		{name: "an exclusion without the check", args: []string{"--drift-exclude", "scratch"}, refusal: "--drift-exclude is used only by --check-drift"},
+		{
+			name:    "trust in the replayed SQL without the check",
+			args:    []string{"--trust-replay-sql"},
+			refusal: "--trust-replay-sql is used only by --check-drift: no other step of the run replays SQL",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -345,6 +352,32 @@ func TestMigrateUpCheckDriftFailurePathRefusesAnIgnoredSetting(t *testing.T) {
 			c.Assert(code, qt.Equals, 2)
 			c.Assert(out, qt.Contains, test.refusal)
 			c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
+		})
+	}
+}
+
+// Trust that names nothing to replay is refused only where the operator typed
+// it: PTAH_TRUST_REPLAY_SQL, which a CI job sets for every command it runs,
+// leaves a run without the check alone, and so does a typed false.
+func TestMigrateUpCheckDriftHappyPathIgnoresTrustItWasNotGiven(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		variable func(testing.TB)
+		args     []string
+	}{
+		{name: "the variable", variable: envbooltest.Set(replaytrust.EnvVar, "1")},
+		{name: "a typed false", variable: envbooltest.Unset(replaytrust.EnvVar), args: []string{"--trust-replay-sql=false"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			test.variable(t)
+			c := qt.New(t)
+			migrationsDir := writeThreeUpMigrations(c)
+			dbPath := filepath.Join(c.TempDir(), "applied.db")
+
+			out, code := runUpExit(c, append([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", migrationsDir}, test.args...)...)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", out))
+			c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(3))
 		})
 	}
 }

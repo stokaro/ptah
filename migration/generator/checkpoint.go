@@ -24,6 +24,7 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/shadow"
 )
 
 // generateCheckpoint renders a full cumulative schema as a checkpoint migration
@@ -373,6 +374,10 @@ type CheckpointFromShadowOptions struct {
 	// a generated migration. It applies to a single-schema checkpoint only, and
 	// an unqualifiable statement kind is refused rather than emitted unqualified.
 	SchemaQualifier string
+	// Trust is the caller's trust in the SQL the replay runs on the shadow
+	// database, and the remedies a refusal ends with; see
+	// [ptah.run/migration/shadow.ReplayTrust]. The zero value trusts nothing.
+	Trust shadow.ReplayTrust
 }
 
 // GenerateCheckpointFromShadow replays the entire migration directory on a fresh
@@ -430,7 +435,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		)
 	}
 
-	lease, err := shadowdb.Claim(ctx, shadowConn)
+	lease, err := shadowdb.Claim(ctx, shadowConn, shadowdb.Trust(opts.Trust.Trusted, opts.Trust.Remedy, opts.Trust.ServerRemedy))
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}

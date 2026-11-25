@@ -68,6 +68,7 @@ func verifyPlannedShadowMigration(
 		Schemas:     opts.Schemas,
 		Exclude:     opts.Exclude,
 		Include:     opts.Include,
+		Trust:       opts.ShadowTrust,
 	})
 }
 

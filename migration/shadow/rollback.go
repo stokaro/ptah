@@ -43,6 +43,10 @@ type RollbackVerifyOptions struct {
 	// checks waived and the verification replay with them on, so the flag and
 	// --dev-url could not be used together at all (stokaro/ptah#3114).
 	SkipChecks bool
+	// Trust is the caller's trust in the SQL the verification replays on the
+	// shadow database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // VerifyRollback replays a rollback plan on a disposable shadow
@@ -100,7 +104,7 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
 
-	lease, err := shadowdb.Claim(ctx, shadowConn)
+	lease, err := shadowdb.Claim(ctx, shadowConn, opts.Trust.guardTrust())
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: %w", err)
 	}

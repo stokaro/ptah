@@ -40,11 +40,11 @@ type Lease struct {
 // It belongs before the verification's first reset, and before the caller
 // defers Release: deferred first, the release would run on the refusal too.
 //
-// The claim also builds the lease's replay guard, so a session the guard
-// refuses, such as a MySQL client character set it cannot read statements in,
-// refuses the claim before anything resets the database; see
-// [devclean.NewDevReplayGuardFor].
-func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (*Lease, error) {
+// The claim also builds the lease's replay guard, with the caller's trust, so
+// a session the guard refuses, such as a MySQL client character set it cannot
+// read statements in, refuses the claim before anything resets the database;
+// see [devclean.NewShadowReplayGuardFor].
+func Claim(ctx context.Context, conn *dbschema.DatabaseConnection, trust devclean.ShadowTrust) (*Lease, error) {
 	baseline, err := devclean.Claim(ctx, conn)
 	if notClean, ok := errors.AsType[*migrateclean.NotCleanError](err); ok {
 		return nil, fmt.Errorf("%w; Ptah resets this database before and after the replay, so point the URL at an empty database", notClean)
@@ -52,17 +52,33 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (*Lease, erro
 	if err != nil {
 		return nil, err
 	}
-	guard, err := replayGuard(ctx, conn, baseline)
+	guard, err := replayGuard(ctx, conn, baseline, trust)
 	if err != nil {
 		return nil, err
 	}
 	return &Lease{conn: conn, baseline: baseline, guard: guard}, nil
 }
 
+// DefaultTrustRemedy ends a refusal that trust would lift when the caller
+// names no remedy of its own: the field of the public options that trusts the
+// SQL.
+const DefaultTrustRemedy = "if you trust this SQL to run with the shadow connection's privileges, " +
+	"set ReplayTrust.Trusted in the options of the verification"
+
+// Trust is the caller's trust in the SQL a replay runs on the shadow database,
+// and the remedies a refusal ends with, in the form [Claim] takes. An empty
+// remedy is [DefaultTrustRemedy]; an empty serverRemedy appends none.
+func Trust(trusted bool, remedy, serverRemedy string) devclean.ShadowTrust {
+	if remedy == "" {
+		remedy = DefaultTrustRemedy
+	}
+	return devclean.ShadowTrust{Trusted: trusted, Remedy: remedy, ServerRemedy: serverRemedy}
+}
+
 // replayGuard is the guard of a replay into conn, a database claimed with
-// baseline: the dev replay guard every replay of a migration history on a dev
-// database runs through, with the realm, the session reading and the trust
-// [devclean.NewDevReplayGuardFor] gives it.
+// baseline: the dev replay guard every replay of a migration history runs
+// through, with the realm and the session reading
+// [devclean.NewShadowReplayGuardFor] gives it, and trust.
 //
 // The lease's release resets the database with baseline, so the guard accepts
 // what that reset takes back: a comment on a schema it returns to its recorded
@@ -70,8 +86,13 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (*Lease, erro
 // with the transactions it opens itself, as golang-migrate sends it, has its
 // transaction control read the way that runner reads it; the migrator asks
 // for that reading of no other body.
-func replayGuard(ctx context.Context, conn *dbschema.DatabaseConnection, baseline devclean.Baseline) (*devclean.ReplayGuard, error) {
-	guard, err := devclean.NewDevReplayGuardFor(ctx, conn)
+func replayGuard(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	baseline devclean.Baseline,
+	trust devclean.ShadowTrust,
+) (*devclean.ReplayGuard, error) {
+	guard, err := devclean.NewShadowReplayGuardFor(ctx, conn, trust)
 	if err != nil {
 		return nil, err
 	}

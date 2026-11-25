@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -392,6 +393,66 @@ func TestMigrationsDownRunnerPlansOnTheShadowDatabaseE2E(t *testing.T) {
 	rows, tables := revisionCensus(c, target, 2, "base", "t2", "t3")
 	c.Assert(rows, qt.Equals, 0)
 	c.Assert(tables, qt.DeepEquals, []string{"base=true", "t2=false", "t3=false"})
+}
+
+// implicitCommitBody drops the tables of the second version with a COMMIT
+// between them that ends the transaction the first statement runs in, as
+// golang-migrate's single query runs it. A migrator that wraps the file
+// refuses the COMMIT, since no transaction of the file's is open to close.
+const implicitCommitBody = "DROP TABLE t2;\nCOMMIT;\nDROP TABLE t3;\n"
+
+// implicitCommitUpFiles is a directory whose first up file, the one a derived
+// plan for version 1 replays, holds such a COMMIT.
+var implicitCommitUpFiles = map[string]string{
+	"0000000001_init.up.sql":       "CREATE TABLE base (id int);\nCOMMIT;\nCREATE TABLE notes (id int);\n",
+	"0000000001_init.down.sql":     "DROP TABLE notes;\nDROP TABLE base;\n",
+	"0000000002_backfill.up.sql":   "CREATE TABLE t2 (id int);\nCREATE TABLE t3 (id int);\n",
+	"0000000002_backfill.down.sql": "DROP TABLE t3;\nDROP TABLE t2;\n",
+}
+
+// The replay on the shadow database reads a file's transaction control the
+// way golang-migrate runs it, as the replay of `migrations lint --dev-url`
+// does: a COMMIT that ends the implicit transaction of the statements before
+// it is the file's own, and the rollback verifies on the shadow database and
+// then runs on the target. The rows are the rehearsal of the down files and
+// the derived plan, which replays the up files.
+func TestMigrationsDownRunnerReplaysAnImplicitCommitOnTheShadowDatabaseE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	tests := []struct {
+		name    string
+		files   map[string]string
+		upFlags []string
+		flags   []string
+	}{
+		{
+			name:  "the rehearsal of the down files",
+			files: ownTransactionDownFiles(implicitCommitBody),
+			flags: []string{"--runner", "golang-migrate"},
+		},
+		{
+			name:    "the derived plan",
+			files:   implicitCommitUpFiles,
+			upFlags: []string{"--runner", "golang-migrate"},
+			flags:   []string{"--runner", "golang-migrate", "--plan"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			shadow, _ := scratchReplayDatabase(c)
+
+			target, out, err := rollBack(c, binary, rollback{
+				files:   test.files,
+				upFlags: test.upFlags,
+				flags:   append(slices.Clone(test.flags), "--shadow-db", shadow),
+			})
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			rows, tables := revisionCensus(c, target, 2, "base", "t2", "t3")
+			c.Assert(rows, qt.Equals, 0)
+			c.Assert(tables, qt.DeepEquals, []string{"base=true", "t2=false", "t3=false"})
+		})
+	}
 }
 
 // A dry run of a down file that opens its own transactions prints the

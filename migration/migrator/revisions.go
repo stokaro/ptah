@@ -4003,6 +4003,12 @@ func (m *Migrator) resumeMigrationDirectionOnSession(
 	if err := m.refuseUnsplitBody(migration, direction, MigrationTxModeNone); err != nil {
 		return err
 	}
+	// A resume runs the body as a run does, one statement at a time outside a
+	// transaction, so the run's validator reads the whole body before the
+	// first statement: the committed prefix replays the session state it set.
+	if err := m.refuseWhatTheValidatorRefuses(migration, direction, ownTransactionRun{}); err != nil {
+		return err
+	}
 	sqlText := migrationSQLForDirection(migration, direction)
 	executionConn := m.noTransactionConnection()
 	statements := splitSQLStatementsForConnection(executionConn, sqlText)

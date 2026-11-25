@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,8 +28,9 @@ import (
 // --shadow-db`, the drift checks of `migrations up --check-drift`,
 // `migrations drift` and an atlas.hcl drift block on `ptah-compat migrate
 // apply`, the verification of `migrations generate --shadow-db`, the replay of
-// `migrations checkpoint`, and the rehearsals of `ptah-compat migrate down
-// --dev-url`, forwarded and with --format.
+// `migrations checkpoint`, the rehearsals of `ptah-compat migrate down
+// --dev-url`, forwarded and with --format, and the forwarded `ptah-compat
+// migrate checkpoint` and `ptah-compat migrate drift`.
 //
 // Migration 1 of the history writes outside the shadow database: on MySQL it
 // creates a table in another database on the same server, and on PostgreSQL a
@@ -38,6 +40,12 @@ import (
 // directory. Two controls show the refusal is the guard's: the same commands
 // replay a history without that statement, and with the operator's trust in the
 // replayed SQL they replay the statement itself.
+//
+// PTAH_DEV_SERVER_DISPOSABLE declares a dev server disposable and never a
+// shadow database's: the shadow is often a database on the target's own
+// server, and a server the run owns is one its cleanup may empty of roles.
+// With the variable set each command still refuses migration 1, and with trust
+// as well the role it creates is still on the server after the run.
 
 // shadowGuardEngine is a server the commands replay on.
 type shadowGuardEngine struct {
@@ -59,6 +67,14 @@ type shadowGuardOutside struct {
 	count     func(c *qt.C) int
 }
 
+var shadowGuardPostgreSQL = shadowGuardEngine{
+	name:     "PostgreSQL",
+	database: func(c *qt.C, role string) string { return newEmptyReadScopeDatabase(c, "sguard_"+role) },
+	outside:  postgresShadowGuardOutside,
+	tables: "SELECT table_schema || '.' || table_name FROM information_schema.tables " +
+		"WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1",
+}
+
 var shadowGuardEngines = []shadowGuardEngine{
 	{
 		name: "MySQL",
@@ -69,13 +85,7 @@ var shadowGuardEngines = []shadowGuardEngine{
 		outside: mySQLShadowGuardOutside,
 		tables:  "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name",
 	},
-	{
-		name:     "PostgreSQL",
-		database: func(c *qt.C, role string) string { return newEmptyReadScopeDatabase(c, "sguard_"+role) },
-		outside:  postgresShadowGuardOutside,
-		tables: "SELECT table_schema || '.' || table_name FROM information_schema.tables " +
-			"WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1",
-	},
+	shadowGuardPostgreSQL,
 }
 
 // mySQLShadowGuardOutside is a database of its own on the MySQL server, which
@@ -123,9 +133,10 @@ func postgresShadowGuardOutside(c *qt.C) shadowGuardOutside {
 }
 
 // shadowGuardRefusal is the refusal of migration 1 on a server the run
-// neither owns nor trusts the SQL on: the guard's, naming trust as a remedy.
-const shadowGuardRefusal = `(?s).*migration replay rejects .* because its effects cannot be confined to the disposable database realm; .*` +
-	`if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1\nSQL: .*`
+// neither owns nor trusts the SQL on: the guard's, naming trust in the SQL on
+// the shadow database as the remedy, and no declaration of a disposable server.
+const shadowGuardRefusal = `(?s).*migration replay rejects .* because its effects cannot be confined to the disposable database realm; ` +
+	`if you trust this SQL to run with the shadow connection's privileges, set PTAH_TRUST_REPLAY_SQL=1\nSQL: .*`
 
 // shadowGuardRun is a target, a shadow database beside it, the directory the
 // history is in, and the write outside the shadow database migration 1 makes.
@@ -192,6 +203,8 @@ type shadowGuardSurface struct {
 	project func(r shadowGuardRun) string
 	// trustArgs and trustEnv declare trust in the replayed SQL.
 	trustArgs, trustEnv []string
+	// env is the environment every run of the surface carries.
+	env []string
 }
 
 // nativeShadowGuardTrust and compatShadowGuardTrust are the declarations of
@@ -275,6 +288,20 @@ var shadowGuardSurfaces = []shadowGuardSurface{
 		},
 	},
 	{
+		name: "ptah-compat migrate checkpoint", program: clirun.Compat, layout: shadowGuardAtlasLayout,
+		trustEnv: compatShadowGuardTrust,
+		args: func(r shadowGuardRun) []string {
+			return []string{"migrate", "checkpoint", "--dir", "file://migrations", "--dev-url", r.shadow}
+		},
+	},
+	{
+		name: "ptah-compat migrate drift", program: clirun.Compat, layout: shadowGuardAtlasLayout,
+		target: shadowGuardAtVersion2, trustEnv: compatShadowGuardTrust, env: []string{"PTAH_ATLAS_MIGRATE_DRIFT=1"},
+		args: func(r shadowGuardRun) []string {
+			return []string{"migrate", "drift", "--url", r.target, "--dir", "file://migrations", "--dev-url", r.shadow}
+		},
+	},
+	{
 		name: "ptah-compat migrate apply with a declared drift check", program: clirun.Compat, layout: shadowGuardAtlasLayout,
 		target: shadowGuardAtVersion1, trustEnv: compatShadowGuardTrust,
 		args: func(shadowGuardRun) []string { return []string{"migrate", "apply", "--env", "local"} },
@@ -353,7 +380,7 @@ func runShadowGuardSurface(c *qt.C, surface shadowGuardSurface, r shadowGuardRun
 	if surface.project != nil {
 		c.Assert(os.WriteFile(filepath.Join(r.root, "atlas.hcl"), []byte(surface.project(r)), 0o600), qt.IsNil)
 	}
-	return runShadowGuard(c, surface.program, r, env, append(surface.args(r), extraArgs...)...)
+	return runShadowGuard(c, surface.program, r, append(slices.Clone(surface.env), env...), append(surface.args(r), extraArgs...)...)
 }
 
 // shadowGuardCensus is what the run's target and directory hold: the target's
@@ -447,13 +474,41 @@ func TestShadowReplayGuardTrustedE2E_HappyPath(t *testing.T) {
 	}
 }
 
-// TestShadowReplayGuardDeclaredDisposableE2E_HappyPath is the third control:
-// with PTAH_DEV_SERVER_DISPOSABLE=1 the shadow database's server is the run's
-// own, as it is for a dev database, and each command replays migration 1 and
-// does what it was asked. The write outside the shadow database is not read
-// back: on PostgreSQL the cleanup of a server declared disposable drops the
-// role the replay created, as it does after a replay on a dev database.
-func TestShadowReplayGuardDeclaredDisposableE2E_HappyPath(t *testing.T) {
+// shadowGuardDisposable is PTAH_DEV_SERVER_DISPOSABLE set, which declares a
+// dev server disposable and leaves a shadow database alone.
+var shadowGuardDisposable = []string{"PTAH_DEV_SERVER_DISPOSABLE=1"}
+
+// TestShadowReplayGuardDisposableServerE2E_FailurePath runs each command with
+// PTAH_DEV_SERVER_DISPOSABLE=1. The variable says nothing about a shadow
+// database, so each command refuses migration 1 as it does without it, and the
+// write outside the shadow database, the target and the directory read back as
+// they were.
+func TestShadowReplayGuardDisposableServerE2E_FailurePath(t *testing.T) {
+	for _, surface := range shadowGuardSurfaces {
+		for _, engine := range shadowGuardEngines {
+			t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
+				c := qt.New(t)
+				outside := engine.outside(c)
+				r := newShadowGuardRun(c, engine, surface, outside, outside.statement)
+				before := shadowGuardCensus(c, r)
+
+				got := runShadowGuardSurface(c, surface, r, shadowGuardDisposable, nil)
+
+				c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+				c.Assert(got.Stdout+got.Stderr, qt.Matches, shadowGuardRefusal)
+				c.Assert(outside.count(c), qt.Equals, 0)
+				c.Assert(shadowGuardCensus(c, r), qt.Equals, before)
+			})
+		}
+	}
+}
+
+// TestShadowReplayGuardDisposableServerE2E_HappyPath is its control: with
+// trust as well, each command replays migration 1, and its write outside the
+// shadow database is still there after the run. A shadow server recorded as
+// the run's own would be emptied by the replay cleanup, which on PostgreSQL
+// drops the role migration 1 created.
+func TestShadowReplayGuardDisposableServerE2E_HappyPath(t *testing.T) {
 	for _, surface := range shadowGuardSurfaces {
 		for _, engine := range shadowGuardEngines {
 			t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
@@ -461,10 +516,45 @@ func TestShadowReplayGuardDeclaredDisposableE2E_HappyPath(t *testing.T) {
 				outside := engine.outside(c)
 				r := newShadowGuardRun(c, engine, surface, outside, outside.statement)
 
-				got := runShadowGuardSurface(c, surface, r, []string{"PTAH_DEV_SERVER_DISPOSABLE=1"}, nil)
+				got := runShadowGuardSurface(c, surface, r, append(slices.Clone(shadowGuardDisposable), surface.trustEnv...), surface.trustArgs)
 
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+				c.Assert(outside.count(c), qt.Equals, 1)
 			})
 		}
+	}
+}
+
+// shadowGuardLeftEventTrigger is a history line the trusted replay runs and
+// the cleanup of the shadow database cannot take back: a DO block, which the
+// guard does not read, creates an event trigger, which a realm cleanup refuses
+// to leave.
+const shadowGuardLeftEventTrigger = "CREATE FUNCTION sguard_noop() RETURNS event_trigger LANGUAGE plpgsql AS $$ BEGIN END $$;\n" +
+	"DO $$ BEGIN EXECUTE 'CREATE EVENT TRIGGER sguard_left ON ddl_command_start EXECUTE FUNCTION sguard_noop()'; END $$;"
+
+// shadowGuardCleanupFailure is the failure each command reports when the
+// cleanup of the shadow database fails after the replay.
+const shadowGuardCleanupFailure = `empty the database after the replay: refusing to clean PostgreSQL database realm ` +
+	`with unsupported database-scoped event trigger "sguard_left"`
+
+// TestShadowReplayCleanupFailureE2E_FailurePath trusts a history whose
+// replay leaves the shadow database holding an object its cleanup refuses.
+// Each command reports the failed cleanup and fails, even where what it read
+// on the shadow database answered, and the target and the directory read
+// back as they were.
+func TestShadowReplayCleanupFailureE2E_FailurePath(t *testing.T) {
+	engine := shadowGuardPostgreSQL
+	for _, surface := range shadowGuardSurfaces {
+		t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			r := newShadowGuardRun(c, engine, surface, engine.outside(c), shadowGuardLeftEventTrigger)
+			before := shadowGuardCensus(c, r)
+
+			got := runShadowGuardSurface(c, surface, r, surface.trustEnv, surface.trustArgs)
+
+			c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout+got.Stderr, qt.Contains, shadowGuardCleanupFailure)
+			c.Assert(shadowGuardCensus(c, r), qt.Equals, before)
+		})
 	}
 }

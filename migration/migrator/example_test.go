@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing/fstest"
 
 	"github.com/go-extras/go-kit/must"
@@ -273,6 +274,56 @@ func ExampleWithStatementObserver() {
 	// Output:
 	// 0000000001_create_users.up.sql 1/2: CREATE TABLE users (id INTEGER PRIMARY KEY)
 	// 0000000001_create_users.up.sql 2/2: CREATE INDEX idx_users_id ON users(id)
+}
+
+// refuseDrop is a [migrator.StatementValidator] that refuses every DROP
+// statement and accepts the rest.
+type refuseDrop struct{}
+
+// errDropRefused is the error refuseDrop answers with.
+var errDropRefused = errors.New("DROP is not allowed here")
+
+func (refuseDrop) ValidateStatement(statement string) error {
+	if strings.HasPrefix(strings.ToUpper(statement), "DROP ") {
+		return errDropRefused
+	}
+	return nil
+}
+
+// ExampleMigrator_WithStatementValidator installs a validator on the migrator,
+// which reads every statement of every body the run selected before the run's
+// first statement, whatever loaded the migrations. Migration 2 drops a table,
+// so the run is refused and migration 1 is not applied either. The error is a
+// *MigrationExecutionError that names the refused statement and wraps the
+// validator's error.
+func ExampleMigrator_WithStatementValidator() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	provider := migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(1, "create_users", "CREATE TABLE users (id INTEGER PRIMARY KEY);", "DROP TABLE users;"),
+		migrator.CreateMigrationFromSQL(2, "drop_users", "DROP TABLE users;", "CREATE TABLE users (id INTEGER PRIMARY KEY);"),
+	)
+	m := migrator.NewMigrator(conn, provider).WithStatementValidator(refuseDrop{})
+
+	err := m.MigrateUp(ctx)
+	if execution, ok := errors.AsType[*migrator.MigrationExecutionError](err); ok {
+		fmt.Println("refused:", execution.Statement)
+		fmt.Println("validator's error:", errors.Is(err, errDropRefused))
+	}
+
+	status, err := m.GetMigrationStatus(ctx)
+	if err != nil {
+		fmt.Println("status:", err)
+		return
+	}
+	fmt.Println("current version:", status.CurrentVersion)
+
+	// Output:
+	// refused: DROP TABLE users
+	// validator's error: true
+	// current version: 0
 }
 
 // ExampleParseChecks parses the pre-migration assertions a migration body

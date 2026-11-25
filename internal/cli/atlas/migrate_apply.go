@@ -30,7 +30,6 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migraterun"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
@@ -71,10 +70,6 @@ type atlasMigrateApplyRunOptions struct {
 	serverDetails migraterun.ServerDetails
 	// repeatables is the PTAH_ATLAS_REPEATABLE_MIGRATIONS choice.
 	repeatables bool
-	// devReplay is how the dev database of a declared drift check is
-	// resolved: the PTAH_DEV_SERVER_DISPOSABLE choice, with the
-	// PTAH_TRUST_REPLAY_SQL choice attached to the command's context.
-	devReplay devdocker.Options
 }
 
 type atlasMigrateApplyOperandSource uint8
@@ -225,8 +220,7 @@ func runAtlasMigrateApply(
 	}
 	// Resolved on every run, as the drift check the env declares replays the
 	// applied history on its dev database.
-	devReplay, err := dbcli.DevReplayOptionsDeclared(cmd)
-	if err != nil {
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
 		return err
 	}
 	runOpts := atlasMigrateApplyRunOptions{
@@ -238,7 +232,6 @@ func runAtlasMigrateApply(
 		allowValueRounding: allowValueRounding,
 		serverDetails:      serverDetails,
 		repeatables:        repeatables,
-		devReplay:          devReplay,
 	}
 
 	targets := projects.projects
@@ -477,7 +470,7 @@ func runAtlasMigrateApplyTarget(
 
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
 
-	drift, releaseDrift, err := prepareAtlasApplyDrift(cmd, projectCfg, opts.url, driftDevURL, runOpts.devReplay, conn, plan)
+	drift, releaseDrift, err := prepareAtlasApplyDrift(cmd, projectCfg, opts.url, driftDevURL, conn, plan)
 	if err != nil {
 		return formatOutput, err
 	}

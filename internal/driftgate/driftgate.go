@@ -80,6 +80,9 @@ type Options struct {
 	// migration, where there is no history to compare with. Without it the
 	// check compares the target with an empty schema.
 	SkipWithoutHistory bool
+	// Trust is the caller's trust in the SQL the replay runs on the shadow
+	// database; see [shadow.ReplayTrust].
+	Trust shadow.ReplayTrust
 }
 
 // Check is one run's drift check. A nil *Check is a check nobody asked for: it
@@ -229,6 +232,7 @@ func (c *Check) run(ctx context.Context) (Result, bool, error) {
 		MetadataTables:    c.opts.MetadataTables,
 		Scope:             c.scope(),
 		ConnectTimeout:    c.opts.ConnectTimeout,
+		Trust:             c.opts.Trust,
 	})
 	if err != nil {
 		check.Outcome, check.Stage, check.Reason, check.Message = migrator.DriftUnable, "shadow", "verification_error", err.Error()

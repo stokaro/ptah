@@ -35,7 +35,6 @@ import (
 	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/driftgate"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/migrationintegrity"
@@ -127,9 +126,6 @@ type options struct {
 	shadowDB             string
 	trustReplaySQL       bool
 	driftExclude         []string
-	// devReplay is how the shadow database the drift check replays on is
-	// resolved: what [dbcli.DevReplayOptions] returned.
-	devReplay devdocker.Options
 	// driftDeclared is the drift check the selected atlas.hcl env declares,
 	// which runs when --check-drift was not given; see
 	// [resolveDriftRequest].
@@ -223,15 +219,8 @@ whole pending up batch in one transaction on supported dialects, or
 				Direction:     migrator.MigrationDirectionUp,
 				ServerDetails: migraterun.NewServerDetails(cmd.Context(), opts.serverDetails),
 			}
-			// Every run reads how the shadow database is resolved, so a
-			// malformed PTAH_DEV_SERVER_DISPOSABLE or PTAH_TRUST_REPLAY_SQL
-			// fails a run that replays nothing too.
-			devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
-			if err != nil {
-				return document.FailBeforeRun(err, opts.dryRun)
-			}
-			opts.devReplay = devReplay
-			if err = migrateUpCommand(cmd, &opts, document); err != nil {
+			dbcli.TrustReplaySQL(cmd, opts.trustReplaySQL)
+			if err := migrateUpCommand(cmd, &opts, document); err != nil {
 				return document.FailBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
@@ -319,7 +308,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Disposable database the applied history is replayed on for --"+checkDriftFlag+"; it must be empty and "+
 			"distinct from the target, and it is emptied again afterwards",
 	)
-	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
+	dbcli.RegisterShadowTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringArrayVar(
 		&opts.driftExclude,
 		driftExcludeFlag,
@@ -554,8 +543,8 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	// After the shadow database is resolved, so a project dev_url satisfies
 	// --check-drift, and before the hook is authorized for a run it refuses.
 	if err := validateDriftFlags(
-		opts.checkDrift, cmd.Flags().Changed(shadowDBFlag), cmd.Flags().Changed(driftExcludeFlag), opts.shadowDB,
-		opts.driftDeclared,
+		opts.checkDrift, cmd.Flags().Changed(shadowDBFlag), cmd.Flags().Changed(driftExcludeFlag),
+		dbcli.TrustReplaySQLTyped(cmd, opts.trustReplaySQL), opts.shadowDB, opts.driftDeclared,
 	); err != nil {
 		return opts, err
 	}

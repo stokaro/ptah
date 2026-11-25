@@ -13,7 +13,6 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/driftgate"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
@@ -63,7 +62,6 @@ func prepareAtlasApplyDrift(
 	cmd *cobra.Command,
 	config projectconfig.Config,
 	targetURL, devURL string,
-	devReplay devdocker.Options,
 	conn *dbschema.DatabaseConnection,
 	plan atlasmigrate.ApplyPlan,
 ) (*driftgate.Check, func(), error) {
@@ -82,7 +80,7 @@ func prepareAtlasApplyDrift(
 	if err != nil {
 		return nil, func() {}, err
 	}
-	shadowURL, release, err := devdocker.Resolve(ctx, devURL, devReplay)
+	shadowURL, release, err := dbcli.ResolveShadowDB(ctx, devURL)
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -102,6 +100,7 @@ func prepareAtlasApplyDrift(
 		MetadataTables:     revisiontable.Configured("atlas", revisions),
 		OnDrift:            onDrift,
 		SkipWithoutHistory: true,
+		Trust:              dbcli.ShadowReplayTrust(cmd.Context()),
 	}), release, nil
 }
 

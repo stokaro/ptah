@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -137,7 +138,7 @@ func (v *boundaryNamingValidator) TransactionBoundaries([]string) ([]int, error)
 // A body the run wraps in a transaction of its own has no transaction control
 // the validator may name as the body's: a validator that names one is still
 // asked about that statement.
-func TestMigratorWithStatementValidator_ReadsAWrappedBodyStatementByStatement(t *testing.T) {
+func TestMigratorWithStatementValidator_HappyPathReadsAWrappedBodyStatementByStatement(t *testing.T) {
 	c := qt.New(t)
 	conn := sqliteConnection(c, "wrapped.db")
 	history := fstest.MapFS{"1_a.sql": {Data: []byte("CREATE TABLE a (id INTEGER PRIMARY KEY);\n")}}
@@ -149,4 +150,76 @@ func TestMigratorWithStatementValidator_ReadsAWrappedBodyStatementByStatement(t 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(validator.statements, qt.Contains, "CREATE TABLE a (id INTEGER PRIMARY KEY)")
+}
+
+// resumeHistory's up body runs without a transaction and fails at its second
+// statement, so a run leaves version 1 failed with its first statement
+// applied. A repair that resumes from the third runs CREATE TABLE b and then
+// the ATTACH.
+var resumeHistory = fstest.MapFS{
+	"0000000001_a.up.sql": {Data: []byte("-- +ptah no_transaction\n" +
+		"CREATE TABLE a (id INTEGER PRIMARY KEY);\n" +
+		"DROP TABLE definitely_missing;\n" +
+		"CREATE TABLE b (id INTEGER PRIMARY KEY);\n" +
+		"ATTACH DATABASE ':memory:' AS aux;\n")},
+	"0000000001_a.down.sql": {Data: []byte("DROP TABLE a;\n")},
+}
+
+// failedResumeMigrator applies resumeHistory to a new SQLite database, which
+// leaves version 1 failed after its first statement.
+func failedResumeMigrator(c *qt.C, name string) (*migrator.Migrator, *dbschema.DatabaseConnection) {
+	c.Helper()
+	conn := sqliteConnection(c, name)
+	mig, err := migrator.NewFSMigrator(conn, resumeHistory, migrator.WithMigrationDirFormat(migrationfile.DirFormatPtah))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.ErrorMatches, `(?s).*definitely_missing.*`)
+	return mig, conn
+}
+
+// A repair that resumes a body asks the validator of the whole body before the
+// first statement it runs: the refusal of the ATTACH leaves b uncreated. The
+// error is a *MigrationExecutionError naming the refused statement, and it
+// wraps the validator's error.
+func TestMigratorWithStatementValidator_FailurePathForAResumedBody(t *testing.T) {
+	c := qt.New(t)
+	mig, conn := failedResumeMigrator(c, "resumed.db")
+	validator := refusingAttach()
+
+	err := mig.WithStatementValidator(validator).RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3})
+
+	c.Assert(err, qt.ErrorIs, errRunValidatorRefusal)
+	c.Assert(err, qt.ErrorMatches, `(?s).*failed to validate migration SQL in 0000000001_a\.up\.sql: refused by the run's validator.*`)
+	execution, ok := errors.AsType[*migrator.MigrationExecutionError](err)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(execution.Statement, qt.Equals, "ATTACH DATABASE ':memory:' AS aux")
+	c.Assert(execution.StatementIndex, qt.Equals, 4)
+	c.Assert(sqliteTableNames(c, conn), qt.Not(qt.Contains), "b")
+}
+
+// A repair that resumes a rollback asks the validator of the down body before
+// the first down statement it runs: parent, which the refused statement drops,
+// stays.
+func TestMigratorWithStatementValidator_FailurePathForAResumedRollback(t *testing.T) {
+	c := qt.New(t)
+	mig, conn := directionalRepairMigrator(c, "resumed-down.db")
+	validator := &statementValidatorRecorder{reject: "DROP TABLE parent", err: errRunValidatorRefusal}
+
+	err := mig.WithStatementValidator(validator).RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 4})
+
+	c.Assert(err, qt.ErrorIs, errRunValidatorRefusal)
+	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsTrue)
+}
+
+// The control: a validator that accepts every statement is asked about the
+// statements the resume runs, and the repair runs them.
+func TestMigratorWithStatementValidator_HappyPathForAResumedBody(t *testing.T) {
+	c := qt.New(t)
+	mig, conn := failedResumeMigrator(c, "resumed-accepted.db")
+	validator := &statementValidatorRecorder{}
+
+	err := mig.WithStatementValidator(validator).RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(validator.statements, qt.Contains, "CREATE TABLE b (id INTEGER PRIMARY KEY)")
+	c.Assert(sqliteTableNames(c, conn), qt.Contains, "b")
 }

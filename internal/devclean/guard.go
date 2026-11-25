@@ -38,6 +38,11 @@ type ReplayGuard struct {
 	// remedy ends a refusal that [ReplayRealmServer] lifts; see
 	// [ReplayGuard.WithServerRealmRemedy].
 	remedy string
+	// provisionedRemedy ends a refusal that only
+	// [ReplayRealmProvisionedServer] lifts, and is
+	// [devdocker.ProvisionedServerRemedy] when empty; see
+	// [NewShadowReplayGuardFor].
+	provisionedRemedy string
 	// baseline words a refusal as the rehearsal baseline's; see
 	// [BaselineGuard].
 	baseline bool
@@ -147,7 +152,41 @@ type replayGuardOwner interface {
 // statements on, or a pool whose every session has the settings that one
 // starts with.
 func NewDevReplayGuardFor(ctx context.Context, conn *dbschema.DatabaseConnection) (*ReplayGuard, error) {
-	guard := NewDevReplayGuard(conn.Info())
+	return guardFor(ctx, conn, NewDevReplayGuard(conn.Info()))
+}
+
+// ShadowTrust is a caller's answer to trust for a replay on a shadow
+// database, with the text that ends a refusal the caller can lift.
+type ShadowTrust struct {
+	// Trusted answers [replay.Scope.TrustedSQL].
+	Trusted bool
+	// Remedy ends a refusal that trust would lift, when Trusted is false.
+	// Empty appends none.
+	Remedy string
+	// ServerRemedy ends a refusal that a server the run discards would lift.
+	// Empty appends none.
+	ServerRemedy string
+}
+
+// NewShadowReplayGuardFor is [NewDevReplayGuardFor] for a migration history
+// replayed on the shadow database conn reaches, with the realm
+// [DevReplayRealm] gives. Trust and the remedies are the caller's, not the
+// record [replaytrust.Trusted] reads and the text a dev database refusal ends
+// with: a shadow database is resolved by a library caller as well as by a
+// command, and never declared disposable, so the only server that lifts a
+// refusal there is one the run discards, and trust.ServerRemedy says how to
+// reach it.
+func NewShadowReplayGuardFor(ctx context.Context, conn *dbschema.DatabaseConnection, trust ShadowTrust) (*ReplayGuard, error) {
+	guard := NewReplayGuard(conn.Info(), DevReplayRealm(conn.Info())).WithServerRealmRemedy(trust.ServerRemedy)
+	guard.provisionedRemedy = trust.ServerRemedy
+	guard.trustSQL = trust.Trusted
+	guard.trustRemedy = trust.Remedy
+	return guardFor(ctx, conn, guard)
+}
+
+// guardFor gives guard the replay guard conn's owner offers, when it offers
+// one, and refuses a session that guard refuses; see [NewDevReplayGuardFor].
+func guardFor(ctx context.Context, conn *dbschema.DatabaseConnection, guard *ReplayGuard) (*ReplayGuard, error) {
 	if owner, ok := conn.SchemaWriter().(replayGuardOwner); ok {
 		guard.guard = owner.ReplayGuard()
 	}
@@ -381,6 +420,9 @@ func (g *ReplayGuard) serverRemedy(stmt string) string {
 	case g.realm != ReplayRealmServer && g.validate(stmt, ReplayRealmServer, g.trustSQL) == nil:
 		return g.remedy
 	case g.validate(stmt, ReplayRealmProvisionedServer, g.trustSQL) == nil:
+		if g.provisionedRemedy != "" {
+			return g.provisionedRemedy
+		}
 		return devdocker.ProvisionedServerRemedy
 	}
 	return ""

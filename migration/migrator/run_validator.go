@@ -9,8 +9,13 @@ package migrator
 // A run asks it of every body the run selected, repeatable migrations
 // included, in the direction the run executes the body, before the run's first
 // statement, so a refused statement leaves nothing of the run applied. A
-// migration whose body is Go code rather than SQL has no statement to
-// validate.
+// repair that resumes a body ([RepairMigrationOptions.ResumeFrom]) asks it of
+// the whole body before the first statement it runs. A migration whose body is
+// Go code rather than SQL has no statement to validate.
+//
+// A refusal is a [*MigrationExecutionError] naming the refused statement, its
+// position in the body and the body's statement count, and it wraps the error
+// the validator returned, so errors.Is and errors.As reach that error.
 //
 // It is asked beside the validator a filesystem provider installs with the
 // [WithStatementValidator] option, not in place of it. Where the run executes a

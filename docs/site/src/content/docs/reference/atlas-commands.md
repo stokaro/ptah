@@ -846,6 +846,14 @@ refused, as `migrate apply` refuses `PTAH_TO_VERSION`.
 Because the forward defaults to the Atlas revision-table layout, a bare invocation
 reverts the revisions `ptah-compat migrate apply` wrote.
 
+The replay on `--dev-url` runs through the dev replay guard, and the rollback
+is refused before the target is touched when the history holds a statement the
+guard cannot confine to the dev database. `PTAH_TRUST_REPLAY_SQL=1` trusts that
+SQL; the native `--trust-replay-sql` is refused here. `PTAH_DEV_SERVER_DISPOSABLE`
+is not read, because the dev database holds a replay of the history, as a
+shadow database does; see
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
+
 A failed rollback stays dirty even with the Atlas layout. Resume it with
 `ptah migrations repair --dir-format atlas --revision-format atlas`, using the
 same database, directory, revision schema, version, and required
@@ -955,7 +963,8 @@ setting is not refused and the flag's value is used. The native flags, such as `
 `--json`, are refused, and their variables, such as `PTAH_DB_URL`, are not
 read. `--trust-replay-sql` is refused too, but `PTAH_TRUST_REPLAY_SQL=1` is
 read: it trusts the SQL the replay runs on the dev database, as it does on
-`migrate down` and `migrate checkpoint`; see
+[`migrate down`](#ptah-compat-migrate-down) and
+[`migrate checkpoint`](#ptah-compat-migrate-checkpoint-name); see
 [SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
 
 ### `ptah-compat migrate diff`
@@ -1168,6 +1177,13 @@ command and is deliberately not part of this verb's Atlas flag surface.
 `--lock-timeout` bounds a lock only on dialects that implement advisory locking.
 On one that does not — SQLite, ClickHouse — the run says so on stderr rather than
 accepting a bound that binds nothing.
+
+The replay runs through the dev replay guard, and the checkpoint is not written
+when the history holds a statement the guard cannot confine to the dev
+database. `PTAH_TRUST_REPLAY_SQL=1` trusts that SQL; the native
+`--trust-replay-sql` is refused here. `PTAH_DEV_SERVER_DISPOSABLE` is not read;
+see
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
 
 `--qualifier` is refused on a dialect Ptah cannot qualify, so a checkpoint is
 never written half-qualified.

@@ -81,6 +81,10 @@ type DynamicRollbackOptions struct {
 	// Diagnostics receives the warning about an Exclude selector that matched
 	// nothing, when RefuseUnmatchedExclude is off. Nil writes no warning.
 	Diagnostics io.Writer
+	// Trust is the caller's trust in the SQL the planning replays on the dev
+	// database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // PlanDynamicRollback computes the statements that take the live database back
@@ -152,7 +156,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	// directory defines at TargetVersion. A dev database holding anything the
 	// reset would drop is refused first, and the database is emptied again
 	// once the plan is read, on every return.
-	lease, err := shadowdb.Claim(ctx, devConn)
+	lease, err := shadowdb.Claim(ctx, devConn, opts.Trust.guardTrust())
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: %w", err)
 	}

@@ -279,6 +279,10 @@ type MigrationVerifyOptions struct {
 	// plan may drop every object it selects, and the plan itself refuses a
 	// selection of nothing before it writes a candidate.
 	Include []string
+	// Trust is the caller's trust in the SQL the verification replays on the
+	// shadow database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // Candidate is one migration under verification: a version, a name, and the
@@ -363,7 +367,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		)
 	}
 
-	lease, err := shadowdb.Claim(ctx, conn)
+	lease, err := shadowdb.Claim(ctx, conn, opts.Trust.guardTrust())
 	if err != nil {
 		return newVerificationErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
 	}

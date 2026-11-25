@@ -19,7 +19,7 @@ func claimedSQLite(c *qt.C) (*dbschema.DatabaseConnection, *shadowdb.Lease) {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "shadow.db")))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	lease, err := shadowdb.Claim(c.Context(), conn)
+	lease, err := shadowdb.Claim(c.Context(), conn, shadowdb.Trust(false, "", ""))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(lease.Release(c.Context()), qt.IsNil) })
 	return conn, lease

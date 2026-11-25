@@ -28,7 +28,6 @@ import (
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/migratedown"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/migrationintegrity"
@@ -143,11 +142,9 @@ func runAtlasMigrateDownFormat(
 		return err
 	}
 	// The forwarded rollback reads PTAH_TRUST_REPLAY_SQL through the native
-	// --trust-replay-sql binding and PTAH_DEV_SERVER_DISPOSABLE itself. This
-	// path replays the rollback on the dev database on its own, so it reads
-	// both for the dev replay guard.
-	devReplay, err := dbcli.DevReplayOptionsDeclared(cmd)
-	if err != nil {
+	// --trust-replay-sql binding. This path replays the rollback on the dev
+	// database on its own, so it reads the variable for the dev replay guard.
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
 		return err
 	}
 	// A golang-migrate file runs the way golang-migrate runs it, which opens no
@@ -304,7 +301,7 @@ func runAtlasMigrateDownFormat(
 	if opts.devURL != "" && !plan.Noop() {
 		// Inside the guard on purpose: a rollback with nothing to replay must
 		// not pay for a container it will not use.
-		devURL, releaseDev, resolveErr := devdocker.Resolve(cmd.Context(), opts.devURL, devReplay)
+		devURL, releaseDev, resolveErr := dbcli.ResolveShadowDB(cmd.Context(), opts.devURL)
 		if resolveErr != nil {
 			return resolveErr
 		}
@@ -326,6 +323,7 @@ func runAtlasMigrateDownFormat(
 			ProviderOptions:   providerOptions,
 			ConnectTimeout:    dbcli.DefaultConnectTimeout,
 			SkipChecks:        opts.skipChecks,
+			Trust:             dbcli.ShadowReplayTrust(cmd.Context()),
 		})
 		if err != nil {
 			return err
