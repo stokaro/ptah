@@ -82,7 +82,7 @@ func TestParseSource_FailurePathRefusesASpacedBareSchemaOrTableName(t *testing.T
 		{
 			name:       "a table name with a space after the dot",
 			annotation: `//ptah:schema:table name="public. t"`,
-			wantErr:    `name "public. t" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`,
+			wantErr:    `name "public. t" has a bare part that begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`,
 		},
 		{
 			name:       "a schema attribute with a space after it",

@@ -122,7 +122,7 @@ func (d Directive) Clone() Directive {
 // `public. t` would name public.t, and a plan beside a live " t" would drop it.
 func QualifiedName(schema, name string) (schemaName, objectName string, err error) {
 	if tableref.BareSpace(name, "\"`[", "\"`]") {
-		return "", "", tableref.SpacedBareName("name", name)
+		return "", "", tableref.SpacedBareReference("name", name)
 	}
 	if strings.TrimSpace(schema) != "" {
 		schemaName = schema
@@ -142,7 +142,7 @@ func QualifiedName(schema, name string) (schemaName, objectName string, err erro
 		return "", ref.Name, nil
 	}
 	if tableref.BarePartSpace(objectName) {
-		return "", "", tableref.SpacedBareName("name", name)
+		return "", "", tableref.SpacedBareReference("name", name)
 	}
 	return ref.Schema, ref.Name, nil
 }

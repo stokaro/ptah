@@ -207,9 +207,9 @@ func TestQualifiedName_FailurePath(t *testing.T) {
 		{name: "a space beside a bare schema", object: ` metrics."hourly"`,
 			wantErr: `name " metrics.\"hourly\"" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
 		{name: "a space after the dot", object: `public. t`,
-			wantErr: `name "public. t" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+			wantErr: `name "public. t" has a bare part that begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
 		{name: "a space before the dot", object: `public .t`,
-			wantErr: `name "public .t" begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
+			wantErr: `name "public .t" has a bare part that begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

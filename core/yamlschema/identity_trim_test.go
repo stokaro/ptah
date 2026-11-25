@@ -94,7 +94,7 @@ func TestParse_FailurePathRefusesASpacedBareSchemaOrTableName(t *testing.T) {
 		{
 			name:     "a qualified name with a space around it",
 			document: "tables:\n  dotted:\n    name: ' metrics.hourly '\n",
-			wantErr:  `table "dotted": table name " metrics.hourly " begins or ends with white space, which a bare name loses: quote the part that holds the space to keep it, or remove the space`,
+			wantErr:  `table "dotted": table name " metrics.hourly " begins or ends with white space, which a bare name loses: write it as one quoted identifier, " metrics.hourly ", or remove the space`,
 		},
 		{
 			name:     "a bracket is no quote",

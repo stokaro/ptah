@@ -83,16 +83,32 @@ func SpacedBareName(what, value string) error {
 	return spacedBareNameError{what: what, value: value}
 }
 
+// SpacedBareReference returns the refusal of value, a reference of dotted
+// parts such as a Go tag's table name, in which [BareSpace] or [BarePartSpace]
+// reports a bare part with white space at one end. For a reference of one
+// part it is [SpacedBareName]. For one of more parts, the refusal says to
+// quote the part that holds the space, and names the space beside a dot as a
+// part's rather than the whole value's. It matches [ErrSpacedBareName].
+func SpacedBareReference(what, value string) error {
+	return spacedBareNameError{what: what, value: value, reference: true}
+}
+
 type spacedBareNameError struct {
 	what, value string
+	reference   bool
 }
 
 func (e spacedBareNameError) Error() string {
-	remedy := "quote the part that holds the space to keep it, or remove the space"
-	if !strings.Contains(e.value, ".") {
-		remedy = fmt.Sprintf("write it as one quoted identifier, %s, or remove the space", Canonical("", e.value))
+	if !e.reference || !strings.Contains(e.value, ".") {
+		return fmt.Sprintf("%s %q begins or ends with white space, which a bare name loses: "+
+			"write it as one quoted identifier, %s, or remove the space", e.what, e.value, Canonical("", e.value))
 	}
-	return fmt.Sprintf("%s %q begins or ends with white space, which a bare name loses: %s", e.what, e.value, remedy)
+	where := "begins or ends with white space"
+	if !BareSpace(e.value, "\"`[", "\"`]") {
+		where = "has a bare part that begins or ends with white space"
+	}
+	return fmt.Sprintf("%s %q %s, which a bare name loses: quote the part that holds the space to keep it, "+
+		"or remove the space", e.what, e.value, where)
 }
 
 func (e spacedBareNameError) Is(target error) bool {
