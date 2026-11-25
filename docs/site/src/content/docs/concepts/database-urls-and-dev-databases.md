@@ -194,7 +194,9 @@ database realm. Ptah checks both before changing either database, and empties
 the shadow database again after each run. A replay on the shadow database
 refuses the same statements as a replay on a dev database (see
 [statement forms that fail closed](#statement-forms-that-fail-closed)), and the
-same declarations lift those refusals.
+same declarations lift those refusals. It does not keep one session from
+migration to migration, so a temporary table, which a dev database replay on
+PostgreSQL or SQLite may stage data in, is refused there.
 
 **A throwaway test database** is what `ptah migrations test` and
 `ptah schema test` run cases against: by default a fresh ephemeral SQLite
@@ -704,10 +706,10 @@ refused, inside the body of an action or a `DO` block too.
 
 Trust covers the SQL a run executes on its dev database: a migration directory
 it replays there or on a shadow database, a desired schema file it loads there,
-and the baseline and plan a rehearsal writes. An apply to the target never needs it, and a command that
-parses or compares its input without executing it runs no input SQL. These
-commands read the setting, and each refuses a value that is not a boolean
-before any work:
+and the baseline and plan a rehearsal writes. An apply to the target never
+needs it, and a command that parses or compares its input without executing it
+runs no input SQL. These commands read the setting, and each refuses a value
+that is not a boolean before any work:
 
 - `ptah`, with `--trust-replay-sql`: `migrations validate`, `migrations lint`,
   `migrations generate`, `migrations down`, `migrations baseline`,
