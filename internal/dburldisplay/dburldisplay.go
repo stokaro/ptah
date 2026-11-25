@@ -96,36 +96,73 @@ var errUnreadableCredentials = errors.New("the user name or password cannot be r
 // takes it out of a driver's error with: a value of five characters or more
 // wherever it occurs, a shorter one only where it stands as a credential, and a
 // piece of one where it stands as a word. So the display and the error a driver
-// answers with show the same parts of the address, and the two lines together
-// do not tell which part is the password. The scheme and the names of the
-// settings are words of the grammar rather than values, and keep their text: a
-// password taken out of `client_secret` would show by the gap which word it is.
+// answers with hide the same values of the address. The scheme, the names of
+// the settings and the placeholder "redacted" are the exception: they are words
+// of the grammar rather than values, and the display keeps their text, since a
+// password taken out of `client_secret` would show by the gap which word it
+// is. A driver's error is free text and takes such a password out wherever it
+// stands, so a password that is one of these words can be told by setting the
+// two lines side by side.
 func Format(dbURL string) string {
+	display, hidden := Layout(dbURL)
+	return hidden.maskRepeats(display)
+}
+
+// Hidden is what [Format] hides in one address: each value as it is written
+// and unescaped, each piece of the password a parser may name on its own, and
+// the user names beside a hidden password.
+type Hidden struct {
+	secrets []string
+	pieces  []string
+	users   []string
+}
+
+// Layout returns the address [Format] shows with its password and its secret
+// settings hidden, before Format takes a hidden value out of the other parts
+// that repeat it, and what it hid. A caller that lays out the parts of an
+// address itself, as an Atlas-shaped URL does, parses the display and takes
+// what was hidden out of each part with [Hidden.Mask]: a part masked in the
+// text Format returns can stop it parsing, as a port that repeats the password
+// does.
+func Layout(dbURL string) (string, Hidden) {
 	var hidden hiddenText
 	display := hidden.format(dbURL)
 	secrets, pieces := hidden.parts()
-	return maskRepeats(display, secrets, pieces, spellings(hidden.users))
+	return display, Hidden{secrets: secrets, pieces: pieces, users: spellings(hidden.users)}
+}
+
+// Mask takes what h holds out of text, a part of the address, by the rule
+// [Format] takes it out of the parts it shows with, writing replacement in its
+// place; see [secretmask.MaskPieces].
+func (h Hidden) Mask(text, replacement string) string {
+	if len(h.secrets) == 0 {
+		return text
+	}
+	return secretmask.MaskPieces(text, h.secrets, h.pieces, h.users, replacement)
 }
 
 // grammarWords matches what a display shows that is no value of the address:
-// the scheme, the name of each setting with its "=", and the placeholder a
-// hidden setting shows, which a secret that is part of the word must not cut.
-var grammarWords = regexp.MustCompile(`^[^\s:/?#@]+://|[A-Za-z0-9_.%+-]+=|` + redactedQueryValue)
+// the scheme, the name of each setting with its "=" where a setting starts --
+// at the start, or after a space, a "?", a "&" or a ";" -- and the placeholder
+// a hidden setting shows, which a secret that is part of the word must not
+// cut. A word that ends in "=" anywhere else, as a database or a password in
+// base64 does, is a value.
+var grammarWords = regexp.MustCompile(`^[^\s:/?#@]+://|(?:^|[\s?&;])[A-Za-z0-9_.%+-]+=|` + redactedQueryValue)
 
-// maskRepeats takes secrets and pieces out of display where it repeats them, as
-// [secretmask.MaskPieces] does, outside what [grammarWords] matches.
-func maskRepeats(display string, secrets, pieces, users []string) string {
-	if len(secrets) == 0 {
+// maskRepeats takes what h holds out of display where it repeats it, as
+// [Hidden.Mask] does, outside what [grammarWords] matches.
+func (h Hidden) maskRepeats(display string) string {
+	if len(h.secrets) == 0 {
 		return display
 	}
 	var out strings.Builder
 	last := 0
 	for _, word := range grammarWords.FindAllStringIndex(display, -1) {
-		out.WriteString(secretmask.MaskPieces(display[last:word[0]], secrets, pieces, users, redactedPassword))
+		out.WriteString(h.Mask(display[last:word[0]], redactedPassword))
 		out.WriteString(display[word[0]:word[1]])
 		last = word[1]
 	}
-	out.WriteString(secretmask.MaskPieces(display[last:], secrets, pieces, users, redactedPassword))
+	out.WriteString(h.Mask(display[last:], redactedPassword))
 	return out.String()
 }
 
@@ -171,8 +208,8 @@ func RedactError(dbURL string, err error) error {
 		return nil
 	}
 	text := err.Error()
-	secrets, pieces := secretParts(dbURL)
-	redacted := secretmask.MaskPieces(text, secrets, pieces, Users(dbURL), redactedPassword)
+	_, hidden := Layout(dbURL)
+	redacted := hidden.Mask(text, redactedPassword)
 	if redacted == text {
 		return err
 	}
@@ -229,14 +266,26 @@ func (e redactedError) Unwrap() error { return e.err }
 // hiddenText collects what a display left out, and the user names it showed
 // beside a hidden password.
 type hiddenText struct {
-	values []string
-	users  []string
+	values    []string
+	passwords []string
+	users     []string
 }
 
 // hide records a value the display does not show.
 func (h *hiddenText) hide(value string) {
 	if value != "" {
 		h.values = append(h.values, value)
+	}
+}
+
+// hidePassword records the password of the address's user info, or the text
+// it may run into where nothing ends it, as a value the display does not show.
+// It is the one value a driver may misread, so it is the one whose pieces are
+// looked for as well.
+func (h *hiddenText) hidePassword(value string) {
+	h.hide(value)
+	if value != "" {
+		h.passwords = append(h.passwords, value)
 	}
 }
 
@@ -247,20 +296,15 @@ func (h *hiddenText) name(user string) {
 	}
 }
 
-// secretParts is every secret of dbURL, and apart from them each piece of one
-// that a parser may name on its own.
-func secretParts(dbURL string) (secrets, pieces []string) {
-	var hidden hiddenText
-	hidden.format(dbURL)
-	return hidden.parts()
-}
-
 // parts is every value h hid, as it is written and unescaped, and apart from
-// them each piece of one that a parser may name on its own: what lies between
-// the characters it may stop reading a password at.
+// them each piece of the password of the user info that a parser may name on
+// its own: what lies between the characters it may stop reading a password at.
+// A parser reads a setting's value to its end, so a path a secret setting
+// names, such as an sslkey file, gives no pieces, and a directory named like
+// the user keeps the user's name in the display.
 func (h *hiddenText) parts() (secrets, pieces []string) {
 	secrets = spellings(h.values)
-	for _, secret := range secrets {
+	for _, secret := range spellings(h.passwords) {
 		for piece := range strings.FieldsFuncSeq(secret, stopsAPassword) {
 			if piece != secret {
 				pieces = append(pieces, piece)
@@ -299,7 +343,7 @@ func (h *hiddenText) format(dbURL string) string {
 	// Hide password
 	if parsedURL.User != nil {
 		if password, hasPassword := parsedURL.User.Password(); hasPassword {
-			h.hide(password)
+			h.hidePassword(password)
 			h.name(parsedURL.User.Username())
 			return formatURLWithRedactedUserPassword(parsedURL)
 		}
@@ -392,14 +436,14 @@ func (h *hiddenText) unparsedCredentials(scheme, rest string) string {
 		if !hasColon || isNumber(port) || fileSchemes.Get()[strings.ToLower(scheme)] {
 			return h.urlQuery(rest, urlValued)
 		}
-		h.hide(afterColon)
+		h.hidePassword(afterColon)
 		return host + ":" + redactedPassword
 	}
 	user, password, hasPassword := strings.Cut(rest[:at], ":")
 	if !hasPassword {
 		return h.urlQuery(rest, urlValued)
 	}
-	h.hide(password)
+	h.hidePassword(password)
 	h.name(user)
 	return user + ":" + redactedPassword + "@" + h.afterCredentials(rest[at+1:], urlValued)
 }
@@ -411,7 +455,7 @@ func (h *hiddenText) unparsedCredentials(scheme, rest string) string {
 func (h *hiddenText) afterCredentials(text string, urlValued func(key string) bool) string {
 	address, _, _ := strings.Cut(text, "?")
 	if _, err := url.PathUnescape(address); err != nil || strings.Contains(address, "#") {
-		h.hide(text)
+		h.hidePassword(text)
 		return redactedPassword
 	}
 	return h.urlQuery(text, urlValued)
@@ -435,7 +479,7 @@ func (h *hiddenText) driverDSN(dsn string, urlValued func(key string) bool) stri
 	if !hasPassword {
 		return dsn[:at+1] + h.urlQuery(dsn[at+1:], urlValued)
 	}
-	h.hide(password)
+	h.hidePassword(password)
 	h.name(user)
 	if driverNetwork.MatchString(dsn) {
 		return user + ":" + redactedPassword + "@" + h.urlQuery(dsn[at+1:], urlValued)

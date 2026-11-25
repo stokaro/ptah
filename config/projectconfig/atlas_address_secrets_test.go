@@ -903,6 +903,7 @@ func TestParseAtlas_MasksWhatAnAddressACallWritesHolds_FailurePath(t *testing.T)
 		name     string
 		preamble string
 		url      string
+		vars     []string
 	}{
 		{
 			name: "a password a join() over a concat() writes",
@@ -933,15 +934,93 @@ func TestParseAtlas_MasksWhatAnAddressACallWritesHolds_FailurePath(t *testing.T)
 			name: "a host a join() over a concat() writes",
 			url:  `join("", concat(["postgres://app:x@"], [tonumber(var.host)], ["/db"]))`,
 		},
+		{
+			name:     "a password between the head and the tail of an address two variables give",
+			preamble: "variable \"prefix\" {\n  default = \"postgres://app:\"\n}\nvariable \"suffix\" {\n  default = \"@127.0.0.1:1/db\"\n}\n",
+			url:      `"${var.prefix}${tonumber(var.pw)}${var.suffix}"`,
+		},
+		{
+			name:     "a password before a tail a failing call was to give",
+			preamble: "variable \"prefix\" {\n  default = \"postgres://app:\"\n}\nvariable \"suffix\" {\n  default = \"@127.0.0.1:1/db\"\n}\n",
+			url:      `"${var.prefix}${tonumber(var.pw)}${tonumber(var.suffix)}"`,
+		},
+		{
+			name:     "a password a join() over the elements of a variable list writes",
+			preamble: "variable \"parts\" {\n  type    = list(string)\n  default = [\"x\"]\n}\n",
+			url:      `join("", [var.parts[0], tonumber(var.parts[1]), var.parts[2]])`,
+			vars:     []string{"parts=postgres://app:", "parts=Pa55wordX9", "parts=@127.0.0.1:1/db"},
+		},
+		{ // #nosec G101 -- a made-up value, not a credential
+			name:     "a password replace() puts in an address a variable holds",
+			preamble: "variable \"tpl\" {\n  default = \"postgres://app:PW@127.0.0.1:1/db\"\n}\n",
+			url:      `replace(var.tpl, "PW", tonumber(var.pw))`,
+		},
+		{
+			name: "a password a join() writes after a scheme two strings split",
+			url:  `join("", concat(["postgres:"], ["//app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db"]))`,
+		},
+		{
+			name: "a password a join() over a for expression writes",
+			url:  `join("", [for p in ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"] : p])`,
+		},
+		{
+			name: "a password a for directive writes",
+			url:  `"%{ for p in ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"] }${p}%{ endfor }"`,
+		},
+		{ // #nosec G101 -- a made-up value, not a credential
+			name:     "a password a format() writes with a format a variable gives",
+			preamble: "variable \"fmt\" {\n  default = \"postgres://app:%s@127.0.0.1:1/db\"\n}\n",
+			url:      `format(var.fmt, tonumber(var.pw))`,
+		},
+		{
+			name:     "a password a format() writes with a verb a variable gives",
+			preamble: "variable \"verb\" {\n  default = \"s\"\n}\n",
+			url:      `format("postgres://app:%${var.verb}@127.0.0.1:1/db", tonumber(var.pw))`,
+		},
+		{ // #nosec G101 -- a made-up value, not a credential
+			name: "a password a formatlist() writes",
+			url:  `join("", formatlist("postgres://app:%s@127.0.0.1:1/db", [tonumber(var.pw)]))`,
+		},
+		{
+			name: "a password a coalescelist() passes on",
+			url:  `join("", coalescelist(["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"], []))`,
+		},
+		{
+			name: "a password a try() passes on",
+			url:  `"postgres://app:${try(tonumber(var.pw))}@127.0.0.1:1/db"`,
+		},
+		{
+			name: "a password strrev() turns around",
+			url:  `"postgres://app:${tonumber(strrev(var.pw))}@127.0.0.1:1/db"`,
+		},
+		{
+			name: "a password upper() changes",
+			url:  `"postgres://app:${tonumber(upper(var.pw))}@127.0.0.1:1/db"`,
+		},
+		{
+			name:     "a password element() takes out of a split()",
+			preamble: "variable \"pws\" {\n  default = \"x;y\"\n}\n",
+			url:      `"postgres://app:${tonumber(element(split(";", var.pws), 0))}@127.0.0.1:1/db"`,
+			vars:     []string{"pws=Pa55wordX9;other"},
+		},
+		{
+			name:     "a password a chain of locals gives",
+			preamble: "locals {\n  a = var.pw\n  b = local.a\n}\n",
+			url:      `"postgres://app:${tonumber(local.b)}@127.0.0.1:1/db"`,
+		},
+		{
+			name: "a password parameter urlqueryset() sets",
+			url:  `urlqueryset("postgres://app@127.0.0.1:1/db", "password", tonumber(var.pw))`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			got, err := projectconfig.ParseAtlasWithOptions(callAddressProject(test.preamble, test.url, ""), "atlas.hcl",
-				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Pa55wordX9", "host=dbhost.internal"}})
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: append([]string{"pw=Pa55wordX9", "host=dbhost.internal"}, test.vars...)})
 
-			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl ".*`)
+			c.Assert(err, qt.ErrorMatches, `(?s)cannot evaluate atlas\.hcl ".*`)
 			c.Assert(err.Error(), qt.Contains, `cannot convert "redacted" to number`)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "Pa55wordX9")
 			c.Assert(err.Error(), qt.Not(qt.Contains), "dbhost.internal")
@@ -1030,5 +1109,65 @@ func TestParseAtlas_KeepsAShortValueOfAPlaceThatIsNoSecret_FailurePath(t *testin
 
 	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*`)
 	c.Assert(err.Error(), qt.Contains, `cannot convert "ab" to number`)
+	c.Assert(got.DatabaseURL, qt.Equals, "")
+}
+
+// A for expression gives the parser a scope node among the nodes it reads for
+// secrets. The address it helps write evaluates, and the file is read whole,
+// with the for in a template, in the password, in a for directive and in an
+// object key.
+func TestParseAtlas_ReadsAnAddressAForExpressionWrites_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{ // #nosec G101 -- a made-up value, not a credential
+			name: "a for expression in a template",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=${join(",", [for s in ["a", "b"] : s])}"`,
+			want: "postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=a,b",
+		},
+		{ // #nosec G101 -- a made-up value, not a credential
+			name: "a for expression in the password",
+			url:  `"postgres://app:${join("", [for s in ["p", "w"] : s])}@127.0.0.1:1/db"`,
+			want: "postgres://app:pw@127.0.0.1:1/db",
+		},
+		{ // #nosec G101 -- a made-up value, not a credential
+			name: "a for directive",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=%{ for s in ["a", "b"] }${s}%{ endfor }"`,
+			want: "postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=ab",
+		},
+		{ // #nosec G101 -- a made-up value, not a credential
+			name: "a for expression in an object key",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?search_path=${{ (join("", [for s in ["k"] : s])) = "a" }["k"]}"`,
+			want: "postgres://app:pw@127.0.0.1:1/db?search_path=a",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := projectconfig.ParseAtlasWithOptions(callAddressProject("", test.url, ""), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev"})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.DatabaseURL, qt.Equals, test.want)
+		})
+	}
+}
+
+// A short value is taken out where the HCL diagnostic quotes it, and only
+// there: Ptah's words before the diagnostic quote the attribute's name, which
+// keeps its text when a sensitive variable is spelled like it.
+func TestParseAtlas_KeepsTheNameOfAnAttributeAShortSensitiveValueSpells_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	preamble := "variable \"token\" {\n  sensitive = true\n  default   = \"x\"\n}\n"
+
+	got, err := projectconfig.ParseAtlasWithOptions(
+		callAddressProject(preamble, `join("", concat(["postgres://app:"], [tonumber(var.pw)], ["@127.0.0.1:1/db"]))`, ""),
+		"atlas.hcl", projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"token=url", "pw=ab"}})
+
+	c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" at atlas\.hcl:\d+: .*`)
+	c.Assert(err.Error(), qt.Contains, `cannot convert "redacted" to number`)
 	c.Assert(got.DatabaseURL, qt.Equals, "")
 }

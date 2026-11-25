@@ -71,8 +71,9 @@ type Live struct {
 	// accepts. It may carry a credential: the suite never reports it, and
 	// requires that no reply quotes it. A credential shorter than five
 	// characters counts as quoted only where a reply quotes it as a
-	// credential, such as after "password=", since its letters are part of
-	// ordinary words.
+	// credential, such as after "password=" or after the user name and a
+	// ":", since its letters are part of ordinary words; a longer password
+	// lets the suite find more.
 	Address string
 	// Schemas scopes every read the suite makes. Empty reads the whole
 	// database, which then must not change while the suite runs.

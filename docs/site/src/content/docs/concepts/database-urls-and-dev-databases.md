@@ -78,8 +78,11 @@ A password the address repeats in another part, such as the database name, the
 host or the user, is hidden there by the rule below, which is the rule a
 driver's error is held to: `postgres://app:hunter22@db/hunter22` shows as
 `postgres://app:***@db/***`. The line that names the address and the error that
-follows it show the same parts, so the two together do not tell which part is
-the password. A part of the address that only holds a short password's letters,
+follows it hide the same values. The exception is a password that is a word of
+the address's grammar: the scheme, the name of a setting, or `redacted`. The
+line keeps those words, and the error, which is free text, does not, so with
+the password `sslmode` the line shows `?sslmode=bogus` and the error
+`?***=bogus`. A part of the address that only holds a short password's letters,
 as the database `execute` holds `x`, stays.
 
 ### Secrets in errors and program output

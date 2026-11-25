@@ -266,6 +266,7 @@ func ParseAtlasFSCollectionWithOptions(
 	p.ignoreDialectDiffBlocks = opts.IgnoreDialectDiffBlocks
 	p.addressCandidates = addressCandidates(body)
 	p.locals = localExpressions(body)
+	p.valueSources = readValueSources(body)
 	configs, err := p.parseCollection(body, opts.EnvName)
 	// The secrets are read once, after every instance is expanded, so reading
 	// them costs one evaluation of each slot per context it evaluates in.
@@ -385,6 +386,11 @@ type atlasParser struct {
 	// reaches a secret place of an address. See [atlasParser.addressSecrets].
 	addressCandidates []hclsyntax.Expression
 	locals            map[string]hclsyntax.Expression
+	// valueSources are the for_each and data blocks that pass a value on to
+	// the expressions naming them, read as the locals are, so a failing
+	// expression can be followed to the sensitive variables it reads. See
+	// [atlasParser.readsSensitive].
+	valueSources valueSources
 	// instanceContexts holds the context of each env instance a for_each
 	// expanded, with the range of the block that declares it, so an error
 	// masked after the instance is gone still reads what `each` gave an
@@ -3948,17 +3954,29 @@ func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, di
 				"function may have derived from that variable in a form scrubbing cannot recognize",
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
 	}
-	diagnostic := p.scrubSensitive(hcldiag.Stable(diags).Error())
-	if p.quotesShortSensitiveValue(diagnostic) {
+	if p.diagnosticQuotesShortSensitiveValue(attr.Expr, diags) {
 		return fmt.Errorf(
 			"cannot evaluate atlas.hcl %q at %s:%d: the underlying diagnostic is withheld because it may quote "+
 				"the value of a sensitive variable, which is too short to take out of it without taking "+
 				"letters out of its words",
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line)
 	}
-	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
-		name, attr.NameRange.Filename, attr.NameRange.Start.Line, diagnostic)
+	return &evaluationError{
+		prefix:     fmt.Sprintf("cannot evaluate atlas.hcl %q at %s:%d: ", name, attr.NameRange.Filename, attr.NameRange.Start.Line),
+		diagnostic: p.scrubSensitive(hcldiag.Stable(diags).Error()),
+	}
 }
+
+// evaluationError is an expression that could not be evaluated: Ptah's words
+// naming the attribute, and the HCL diagnostic they carry. The two are kept
+// apart so the masking of a value HCL quotes reads the diagnostic alone, and a
+// name Ptah quotes keeps its text; see [maskQuotedValues].
+type evaluationError struct {
+	prefix     string
+	diagnostic string
+}
+
+func (e *evaluationError) Error() string { return e.prefix + e.diagnostic }
 
 // sensitiveVariableIn reports the first `sensitive = true` variable expr reads.
 //
@@ -3998,29 +4016,13 @@ func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
 // characters or more wherever it occurs, and a shorter one only where it stands
 // as a credential. A value of a character or two taken out of every word it
 // occurs in would garble the message and show the value by the gaps, so the
-// callers withhold a message [atlasParser.quotesShortSensitiveValue] reports
-// rather than show it.
+// callers withhold a message that may quote one rather than show it; see
+// [atlasParser.diagnosticQuotesShortSensitiveValue].
 func (p atlasParser) scrubSensitive(text string) string {
 	if p.sensitiveValues == nil {
 		return text
 	}
 	return secretmask.Mask(text, *p.sensitiveValues, nil, "(sensitive value)")
-}
-
-// quotesShortSensitiveValue reports whether text, as [atlasParser.scrubSensitive]
-// left it, still holds the value of a `sensitive = true` variable as a word of
-// its own: one too short to take out wherever it occurs. The text may quote the
-// value, as `open x: file does not exist` quotes a path "x", or hold a word of
-// its own that is spelled the same, and which of the two cannot be told, so a
-// message that holds it is withheld whole. The letters of the value inside a
-// longer word, as "x" stands in "exist", are the message's own.
-func (p atlasParser) quotesShortSensitiveValue(text string) bool {
-	if p.sensitiveValues == nil {
-		return false
-	}
-	return slices.ContainsFunc(*p.sensitiveValues, func(value string) bool {
-		return !secretmask.MasksAnywhere(value) && secretmask.ContainsWord(text, value)
-	})
 }
 
 // invalidValue reports a known key whose value is of the right type but breaks a
@@ -4048,8 +4050,8 @@ func (p atlasParser) quotesShortSensitiveValue(text string) bool {
 // blames, so there is no equivalent guarantee that the bytes survived.
 //
 // A reason that still holds a sensitive value too short for scrubbing to take
-// out wherever it occurs is withheld as well, by
-// [atlasParser.quotesShortSensitiveValue].
+// out wherever it occurs, of an expression that reads a sensitive variable, is
+// withheld as well; see [atlasParser.reasonQuotesShortSensitiveValue].
 func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err error) error {
 	if secret, found := p.derivedSensitiveVariableIn(attr.Expr); found {
 		return fmt.Errorf(
@@ -4059,7 +4061,7 @@ func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err er
 			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
 	}
 	reason := p.scrubSensitive(err.Error())
-	if p.quotesShortSensitiveValue(reason) {
+	if p.reasonQuotesShortSensitiveValue(attr.Expr, err.Error()) {
 		return fmt.Errorf(
 			"atlas.hcl %q at %s:%d: the value was refused; the underlying reason is withheld because it may "+
 				"quote the value of a sensitive variable, which is too short to take out of it without "+

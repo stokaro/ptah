@@ -43,10 +43,12 @@ RawFragment, ForceQuery, OmitHost, Schema
 
 ## Redaction
 
-Ptah removes URL userinfo passwords, and a password of five characters or more
-wherever the URL repeats it, such as the database name, the host or the user.
-Query parameters whose keys look like passwords, tokens, secrets, or API keys
-are replaced with `xxxxx` before the URL reaches template output.
+Ptah removes URL userinfo passwords. Query parameters whose keys look like
+passwords, tokens, secrets, or API keys are replaced with `xxxxx` before the URL
+reaches template output, and so is a password of five characters or more in
+any other part that repeats it, such as the database name, the port or the
+user. The URL keeps its fields: with the password `46741` and the port
+`46741`, `{{ .Env.URL.Host }}` prints `127.0.0.1:xxxxx`.
 
 Redaction protects the recognized URL fields. A template can still print any
 other data the command intentionally exposes, so review custom formats before

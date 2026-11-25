@@ -193,22 +193,29 @@ func wordRune(r rune) bool {
 
 // secretParameterWords mark a parameter as a secret wherever they stand in its
 // name.
-var secretParameterWords = []string{"apikey", "credential", "jwt", "passhash", "passwd", "password", "pwd", "secret", "token"}
+var secretParameterWords = []string{"credential", "jwt", "key", "passhash", "passwd", "password", "pwd", "secret", "token"}
 
 // IsSecretParameter reports a query parameter, connection-string keyword or
 // setting that holds a secret or says where one is. The name is compared
-// without case or punctuation, and a name ending in `key` or `pass` counts.
+// without case or punctuation. A name that holds `key` anywhere counts, and so
+// does one ending in `pass`.
 func IsSecretParameter(key string) bool {
-	name := strings.Map(func(r rune) rune {
+	name := comparableName(key)
+	switch {
+	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "pass"):
+		return true
+	default:
+		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
+	}
+}
+
+// comparableName is key in lower case with everything but its letters and
+// digits left out.
+func comparableName(key string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return unicode.ToLower(r)
 		}
 		return -1
 	}, key)
-	switch {
-	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "key"), strings.HasSuffix(name, "pass"):
-		return true
-	default:
-		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })
-	}
 }

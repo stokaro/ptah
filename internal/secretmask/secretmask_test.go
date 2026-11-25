@@ -33,7 +33,7 @@ type ruleCorpus struct {
 // otherwise run no row and pass.
 const (
 	maskRowsFloor      = 65
-	parameterRowsFloor = 32
+	parameterRowsFloor = 35
 )
 
 func readRuleCorpus(c *qt.C) ruleCorpus {

@@ -921,8 +921,17 @@ credential in it, or the canary. They are matched in any letter case, and by
 the rule Ptah hides a password in its own output with: a credential of five
 characters or more counts wherever a reply holds it, and a shorter one only
 where the reply quotes it as a credential, such as between the `:` and the `@`
-of an address or as the value of `password=`. The letters of a short credential
-inside a word, as `data` stands in `database`, are the reply's own.
+of an address, after the user name and a `:`, or as the value of `password=`.
+The letters of a short credential inside a word, as `data` stands in
+`database`, are the reply's own. So a live password of five characters or more
+lets the suite find more.
+
+A credential is the password of the live address and the value of each of its
+query parameters whose name says it carries one. Names are compared without case or
+punctuation; one that holds `key`, `password`, `passwd`, `pwd`, `token`,
+`secret`, `credential` or `jwt`, or ends in `pass`, counts, as do a few
+engine-specific names. So `sslkey`, `accessKeyId` and `auth_token` count, and
+`passfile`, which names a file, does not.
 
 Under a host that lists fewer features, a provider may refuse what it cannot
 serve without them, as long as it does not use what the host did not list. A

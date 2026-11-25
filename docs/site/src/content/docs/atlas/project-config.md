@@ -612,8 +612,13 @@ A sensitive value is scrubbed by the rule
 use: a value of five characters or more wherever it occurs, and a shorter one
 only where it stands as a credential. A diagnostic or a reason that still holds
 a shorter value as a word of its own, as `open x: file does not exist` holds
-the path `x`, is withheld whole; the letters of the value inside a longer word,
-as `x` stands in `exist`, leave it as it is.
+the path `x`, is withheld whole when the expression it blames reads a sensitive
+variable: by name, through a local, through the `for_each` that gives `each`,
+or through a data block. The letters of the value inside a longer word, as `x`
+stands in `exist`, leave it as it is, and so does a word of a diagnostic about
+an expression that reads no sensitive variable. For a diagnostic, only the
+summary and the detail HCL writes are read, not the file name and the position
+before them, so a sensitive `hcl` or `14` withholds nothing on its own.
 
 A non-sensitive expression keeps its full diagnostic either way, with one
 exception. A value that reaches a secret part of an address the file writes is
@@ -629,7 +634,7 @@ The addresses read are those written by:
 - a template that writes `://`;
 - `format()` with a literal format;
 - `join()` with a literal separator and lists written out in the file;
-- `replace()` with a literal substring;
+- `replace()` with a literal substring, in a string the file writes out;
 - `urlqueryset()`, and the password argument of `urluserinfo()`.
 
 A local the address names is read through its expression, down to the item
@@ -638,18 +643,28 @@ nothing else of it. One that writes no `://` of its own is read with the
 address a value in it evaluates to: with
 `url = "${var.base}&password=${tonumber(var.pw)}"`, the password parameter is
 read as part of the address `var.base` holds, and so is the one
-`urlqueryset(var.base, "password", var.pw)` sets.
+`urlqueryset(var.base, "password", var.pw)` sets. The other values of such an
+address that evaluate are written in too, so
+`"${var.head}${tonumber(var.pw)}${var.tail}"` reads the password between the
+`://` that `var.head` gives and the `@` that `var.tail` gives.
 
 An address another function writes cannot be read where the call fails, because
 the call's result is what would say which part each value fills. Each value
-such an expression holds then counts as a secret: a `join()` over a
-`concat()`, a `flatten()`, or a list a variable or a local holds, and a
-template whose address a failing call was to give, as
-`"${trimsuffix(var.base, tonumber(var.pw))}&password=${var.pw}"` is. So does
-each value of a part that a call which fails writes text around, such as the
-query `join("", concat(["password="], [var.pw]))` writes. The user name and the
-host such an address writes are masked with the password. A call that converts
-one value, as `tonumber(var.port)` does, is read by the part it stands in.
+such an expression holds then counts as a secret, the user name and the host
+among them:
+
+- a `join()` over a `concat()`, a `flatten()`, a `for` expression, or a list a
+  variable or a local holds;
+- a `replace()` in a string a variable holds;
+- a template whose address a failing call was to give, as
+  `"${trimsuffix(var.base, tonumber(var.pw))}&password=${var.pw}"` is, and one
+  whose address a variable gives where two other values fail;
+- a part that a call which fails writes text around, such as the query
+  `join("", concat(["password="], [var.pw]))` writes.
+
+A scheme the file splits across strings, as `concat(["postgres:"], ["//app:"],
+...)` does, is read as the `://` it writes. A call that converts one value, as
+`tonumber(var.port)` does, is read by the part it stands in.
 
 The secret parts are the password, a query parameter whose name says it holds a
 secret, and a user info a single value fills: there, the text after the

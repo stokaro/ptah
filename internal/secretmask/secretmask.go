@@ -119,7 +119,7 @@ func Mask(text string, secrets, users []string, replacement string) string {
 // database; as a word inside a longer one it is more likely the text's own. A
 // shorter piece is left in the text.
 func MaskPieces(text string, secrets, pieces, users []string, replacement string) string {
-	values := make([]secretText, 0, len(secrets)+len(pieces))
+	values := make([]secretText, 0, len(secrets))
 	for _, secret := range secrets {
 		values = append(values, secretText{value: secret, floor: shortestFreeTextSecret, whole: true})
 	}
@@ -282,20 +282,22 @@ func wordRune(r rune) bool {
 
 // secretParameterWords mark a parameter as a secret wherever they stand in its
 // name.
-var secretParameterWords = []string{"apikey", "credential", "jwt", "passhash", "passwd", "password", "pwd", "secret", "token"}
+var secretParameterWords = []string{"credential", "jwt", "key", "passhash", "passwd", "password", "pwd", "secret", "token"}
 
 // IsSecretParameter reports a query parameter, connection-string keyword or
 // setting that holds a secret or says where one is.
 //
 // The name is compared without case or punctuation, so `authToken`, `auth_token`
-// and go-ora's `WALLET PASSWORD` read alike, and a name ending in `key` or `pass`
-// counts, as `sslkey` and go-ora's `OS PASS` do. It errs on the wide side: an
-// engine's parameter a narrower list missed prints its value, and hiding a value
-// that is no secret costs a word on a line.
+// and go-ora's `WALLET PASSWORD` read alike. A name that holds `key` anywhere
+// counts, as `sslkey`, `keyfile` and `encryption_key_b64` do, and so does one
+// ending in `pass`, as go-ora's `OS PASS` does; `passfile` names a file of
+// passwords and does not. It errs on the wide side: an engine's parameter a
+// narrower list missed prints its value, and hiding a value that is no secret
+// costs a word on a line.
 func IsSecretParameter(key string) bool {
 	name := comparableName(key)
 	switch {
-	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "key"), strings.HasSuffix(name, "pass"):
+	case name == "sslcert", name == "oshash", strings.HasSuffix(name, "pass"):
 		return true
 	default:
 		return slices.ContainsFunc(secretParameterWords, func(word string) bool { return strings.Contains(name, word) })

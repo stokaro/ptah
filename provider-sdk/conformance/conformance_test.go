@@ -159,6 +159,23 @@ func TestCheck_KeepsTheWordsOfAShortCredential_HappyPath(t *testing.T) {
 	assertConforms(c, report)
 }
 
+// A credential shorter than five characters is found after its user's name
+// and a ":", where a session that names the login quotes it, as well as
+// between the ":" and the "@" of an address. The suite reads the user name of
+// the live address for that.
+func TestCheck_FindsAShortCredentialAfterItsUser_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{leakLogin: true}).server())
+	config := memoryConfig(target, "login")
+	config.CredentialAddress = ""
+	config.Live.Address = "memory://app:ab@/login"
+
+	report, err := conformance.Check(c.Context(), config)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(failed(report), qt.DeepEquals, []string{"reasons.redacted"}, qt.Commentf("%v", report.Err()))
+}
+
 // A provider that needs a two-way feature refuses a host that lists none, as
 // it refuses a host that leaves out that one feature, and the suite holds
 // both refusals to one rule.

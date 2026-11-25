@@ -91,10 +91,10 @@ func RedactRecordedText(ctx context.Context, text string) string {
 	addresses.mu.Unlock()
 	var pieces, users []string
 	for _, dbURL := range urls {
-		addressSecrets, addressPieces := secretParts(dbURL)
-		secrets = append(secrets, addressSecrets...)
-		pieces = append(pieces, addressPieces...)
-		users = append(users, Users(dbURL)...)
+		_, hidden := Layout(dbURL)
+		secrets = append(secrets, hidden.secrets...)
+		pieces = append(pieces, hidden.pieces...)
+		users = append(users, hidden.users...)
 	}
 	return secretmask.MaskPieces(text, secrets, pieces, users, redactedPassword)
 }

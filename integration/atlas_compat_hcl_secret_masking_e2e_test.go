@@ -50,6 +50,7 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 		name     string
 		preamble string
 		url      string
+		vars     []string
 		want     string
 	}{
 		{
@@ -120,19 +121,100 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 			url:  `"postgres://app@127.0.0.1:1/db?${join("", concat(["password="], [tonumber(var.pw)]))}"`,
 			want: `cannot convert "redacted" to number`,
 		},
+		{
+			name: "a password a join() over a for expression writes",
+			url:  `join("", [for p in ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"] : p])`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a for directive writes",
+			url:  `"%{ for p in ["postgres://app:", tonumber(var.pw), "@127.0.0.1:1/db"] }${p}%{ endfor }"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password between the head and the tail of an address two variables give",
+			preamble: `variable "head" {
+  default = "postgres://app:"
+}
+
+variable "tail" {
+  default = "@127.0.0.1:1/db"
+}
+`,
+			url:  `"${var.head}${tonumber(var.pw)}${var.tail}"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password a join() over the elements of a variable list writes",
+			preamble: `variable "parts" {
+  type    = list(string)
+  default = ["x"]
+}
+`,
+			url:  `join("", [var.parts[0], tonumber(var.parts[1]), var.parts[2]])`,
+			vars: []string{"--var", "parts=postgres://app:", "--var", "parts=Pa55wordX9", "--var", "parts=@127.0.0.1:1/db"},
+			want: `cannot convert "redacted" to number`,
+		},
+		{ // #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+			name: "a password replace() puts in an address a variable holds",
+			preamble: `variable "tpl" {
+  default = "postgres://app:PW@127.0.0.1:1/db"
+}
+`,
+			url:  `replace(var.tpl, "PW", tonumber(var.pw))`,
+			want: `cannot convert "redacted" to number`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := hclSecretMaskingProject(c, test.preamble, test.url)
 
-			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
-				"migrate", "status", "--env", "dev", "--var", "pw=Pa55wordX9", "--var", "token=Tok3nValueX9")
+			args := append([]string{"migrate", "status", "--env", "dev", "--var", "pw=Pa55wordX9", "--var", "token=Tok3nValueX9"}, test.vars...)
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir}, args...)
 
 			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stderr, qt.Contains, test.want)
 			c.Assert(got.Stderr, qt.Not(qt.Contains), "Pa55wordX9")
 			c.Assert(got.Stderr, qt.Not(qt.Contains), "Tok3nValueX9")
+		})
+	}
+}
+
+// TestCompatRunsAProjectWhoseAddressAForExpressionWritesE2E runs `ptah-compat
+// migrate hash` over a project whose url a for expression helps write, and
+// reads the sum file it writes. The masking reads every address a project
+// writes on each run, so the for's scope among the nodes it reads must not stop
+// a valid project.
+func TestCompatRunsAProjectWhoseAddressAForExpressionWritesE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{ // #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+			name: "a for expression in the query",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=${join(",", [for s in ["a", "b"] : s])}"`,
+		},
+		{ // #nosec G101 -- a made-up address of a port nothing listens on, not a credential
+			name: "a for directive in the query",
+			url:  `"postgres://app:pw@127.0.0.1:1/db?sslmode=disable&search_path=%{ for s in ["a", "b"] }${s}%{ endfor }"`,
+		},
+		{
+			name: "a for expression in the password",
+			url:  `"postgres://app:${join("", [for s in ["p", "w"] : s])}@127.0.0.1:1/db"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSecretMaskingProject(c, "", test.url)
+			c.Assert(os.Mkdir(filepath.Join(dir, "migrations"), 0o700), qt.IsNil)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir}, "migrate", "hash", "--env", "dev")
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			_, err := os.Stat(filepath.Join(dir, "migrations", "atlas.sum"))
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }

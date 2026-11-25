@@ -792,6 +792,18 @@ func TestFormat_HidesAPasswordWhereTheAddressRepeatsIt(t *testing.T) {
 		{name: "a piece of the password as the database", address: "postgres://app:shop%2FXk9Lm@localhost/shop", want: "postgres://app:***@localhost/***"},
 		{name: "as part of the name of a setting", address: "postgres://app:secret@localhost/shop?client_secret=x", want: "postgres://app:***@localhost/shop?client_secret=redacted"},
 		{name: "as part of the scheme", address: "postgres://app:postgres@localhost/shop", want: "postgres://app:***@localhost/shop"},
+		{name: "as the name of a setting", address: "postgres://app:sslmode@127.0.0.1:1/db?sslmode=bogus", want: "postgres://app:***@127.0.0.1:1/db?sslmode=bogus"},
+		{
+			name:    "a base64 password as the database",
+			address: "postgres://app:c2VjcmV0cGFzcw%3D%3D@127.0.0.1:1/c2VjcmV0cGFzcw==?sslmode=disable",
+			want:    "postgres://app:***@127.0.0.1:1/***?sslmode=disable",
+		},
+		{
+			name:    "a base64 password as a keyword value",
+			address: "password=Zm9vYmFyYmF6= dbname=Zm9vYmFyYmF6=",
+			want:    "password=redacted dbname=***",
+		},
+		{name: "a password with an equals sign as the database", address: "postgres://app:abc%3Ddefgh@127.0.0.1:1/abc=defgh", want: "postgres://app:***@127.0.0.1:1/***"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -823,6 +835,19 @@ func TestFormat_KeepsWhatAShortPasswordRepeats(t *testing.T) {
 			c.Assert(dburldisplay.Format(test.address), qt.Equals, test.want)
 		})
 	}
+}
+
+// A secret setting's value is read to its end, so the directories of a path it
+// names are no pieces of a password: a user named like one keeps its name, on
+// the display line and in a driver's error. The password of the user info
+// still gives its pieces.
+func TestFormat_KeepsAUserASecretPathNames(t *testing.T) {
+	const address = "postgres://deploy:Pa55wordX9@127.0.0.1:1/db?sslpassword=x&sslkey=/srv/deploy/certs/client.key" // #nosec G101 -- a made-up password for the test
+	c := qt.New(t)
+
+	c.Assert(dburldisplay.Format(address), qt.Equals, "postgres://deploy:***@127.0.0.1:1/db?sslkey=redacted&sslpassword=redacted")
+	c.Assert(dburldisplay.RedactError(address, fmtError(`password authentication failed for user "deploy"`)).Error(),
+		qt.Equals, `password authentication failed for user "deploy"`)
 }
 
 // A parameter that holds no secret keeps its value.

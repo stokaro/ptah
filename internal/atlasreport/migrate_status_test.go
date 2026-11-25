@@ -192,6 +192,48 @@ func TestWriteMigrateStatusFormat_RedactsSensitiveURL(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "postgres://app@db.local/app?access_token=xxxxx&api_key=xxxxx&auth-token=xxxxx&client_secret=xxxxx&sslmode=disable&token=xxxxx")
 }
 
+// A part of the URL that repeats the password is taken out after the URL is
+// parsed, so the Atlas-shaped URL keeps its parts: a port that repeats the
+// password does not drop the URL, and a user that repeats it needs no escape.
+func TestWriteMigrateStatusFormat_KeepsTheShapeOfAURLThatRepeatsThePassword(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{ // #nosec G101 -- a made-up address, not a credential
+			name: "as the port",
+			url:  "postgres://app:46741@127.0.0.1:46741/db",
+			want: "postgres://app@127.0.0.1:xxxxx/db|127.0.0.1:xxxxx|/db",
+		},
+		{ // #nosec G101 -- a made-up address, not a credential
+			name: "as the user and the database",
+			url:  "postgres://hunter22:hunter22@127.0.0.1:46741/hunter22",
+			want: "postgres://xxxxx@127.0.0.1:46741/xxxxx|127.0.0.1:46741|/xxxxx",
+		},
+		{ // #nosec G101 -- a made-up address, not a credential
+			name: "as a parameter that is no secret",
+			url:  "postgres://app:hunter22@127.0.0.1:46741/db?application_name=hunter22",
+			want: "postgres://app@127.0.0.1:46741/db?application_name=xxxxx|127.0.0.1:46741|/db",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			err := atlasreport.WriteMigrateStatusFormat(&out, `{{ .Env.URL }}|{{ .Env.URL.Host }}|{{ .Env.URL.Path }}`, atlasreport.MigrateStatusOptions{
+				URL:    test.url,
+				FS:     fstest.MapFS{},
+				Status: &migrator.MigrationStatus{CurrentVersion: 1},
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
+}
+
 func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
