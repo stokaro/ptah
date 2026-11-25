@@ -10,6 +10,8 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/mysqlcollation"
+	"ptah.run/internal/mysqlenum"
 	"ptah.run/internal/schemaprep"
 )
 
@@ -99,6 +101,89 @@ func validateUndeclaredEnum(dialect string, database *schemamodel.Database, fiel
 			field.Name, tableName, quotedValueList(values), target, remedy,
 		),
 	}
+}
+
+// validateEnumTrailingSpaces refuses an enum value or a SET member that ends
+// in a space, on a target whose server removes the space when it creates the
+// column ([descriptor.InlineEnum.TrailingSpacesRemoved]).
+//
+// The column built from 'ok ' holds 'ok', so every plan finds the declared
+// value missing from the column and proposes the same MODIFY COLUMN again. A
+// value of spaces alone is stored as the empty value, which a read of the
+// column leaves out, so it is proposed again too. Refused before a plan
+// exists, the author declares the value the server keeps. A named enum's
+// values reach the column the same way, so they are read too, and so do the
+// members of a SET type, which no reader states as values.
+//
+// A column of the binary character set keeps the space, so it is not refused
+// ([mysqlcollation.Binary]). The check is a rule about a declaration, so the
+// validation of a schema runs it and the render does not: a read verb renders
+// what a server holds, and a binary column holding 'ok ' is one of those.
+func validateEnumTrailingSpaces(dialect string, database schemamodel.Database) error {
+	described, _ := platform.Lookup(dialect)
+	if !described.InlineEnum.TrailingSpacesRemoved {
+		return nil
+	}
+	for _, field := range database.Fields {
+		var table schemamodel.Table
+		if owner := tableByStructName(database.Tables, field.StructName); owner != nil {
+			table = *owner
+		}
+		binary, err := mysqlcollation.Binary(dialect, table, field)
+		if err != nil {
+			return err
+		}
+		if binary {
+			continue
+		}
+		// An HCL document states the values in the column's type text, as
+		// enum("happy", "ok "), and the Go and YAML readers state them as
+		// values.
+		values := append(schemaprep.InlineEnumValues(field, database.Enums, dialect), mysqlenum.Values(field.Type)...)
+		if err := refuseTrailingSpace(dialect, &database, field, "enum value", "an ENUM value", values); err != nil {
+			return err
+		}
+		if err := refuseTrailingSpace(dialect, &database, field, "SET member", "a SET member", mysqlenum.SetValues(field.Type)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseTrailingSpace refuses the first of values, each of them a what of the
+// column field, that ends in a space, which the server removes from each one
+// of kind.
+func refuseTrailingSpace(dialect string, database *schemamodel.Database, field schemamodel.Field, what, kind string,
+	values []string,
+) error {
+	for _, value := range values {
+		if !strings.HasSuffix(value, " ") {
+			continue
+		}
+		remedy := "declare a value that does not end in a space"
+		if kept := strings.TrimRight(value, " "); kept != "" {
+			remedy = "declare " + strconv.Quote(kept)
+		}
+		// The binary character set keeps the spaces, so the author who
+		// meant them is told where naming it counts.
+		remedy += ", or name the binary character set on the column or its table; " +
+			"a binary schema default does not count (stokaro/ptah#6665)"
+		tableName := field.StructName
+		if table := tableByStructName(database.Tables, field.StructName); table != nil {
+			tableName = table.QualifiedName()
+		}
+		target := platform.NormalizeDialect(dialect)
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"column %q of table %q declares the %s %q, and %s removes the trailing spaces of %s, "+
+					"so the column would never match its declaration: %s",
+				field.Name, tableName, what, value, target, kind, remedy,
+			),
+		}
+	}
+	return nil
 }
 
 // quotedValueList writes values as a parenthesized list of quoted strings.

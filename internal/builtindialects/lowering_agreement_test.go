@@ -23,6 +23,11 @@ type loweringFacts struct {
 	QuotingPaths             bool
 }
 
+// mysqlFamilyInlineEnum adds to the switch the one fact no switch stated: the
+// family removes the trailing spaces of an enum value, which
+// integration/yaml_enum_value_bytes_e2e_test.go measures on the servers.
+var mysqlFamilyInlineEnum = descriptor.InlineEnum{Type: descriptor.InlineEnumValues, TrailingSpacesRemoved: true}
+
 // oldSwitches is what the dialect switches these fields replace answered for
 // each engine: the generated timeouts of postgres, mysql and mariadb, the
 // generated-column and inline-enum switches of internal/modelast, its SQLite,
@@ -32,9 +37,9 @@ var oldSwitches = map[string]loweringFacts{
 	platform.CockroachDB: {GeneratedColumnDefault: "STORED"},
 	platform.YugabyteDB:  {GeneratedColumnDefault: "STORED"},
 	platform.MySQL: {GeneratedTimeouts: descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"}, GeneratedColumnDefault: "VIRTUAL",
-		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumValues}, IndexesBeforeForeignKeys: true},
+		InlineEnum: mysqlFamilyInlineEnum, IndexesBeforeForeignKeys: true},
 	platform.MariaDB: {GeneratedTimeouts: descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"}, GeneratedColumnDefault: "VIRTUAL",
-		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumValues}, IndexesBeforeForeignKeys: true},
+		InlineEnum: mysqlFamilyInlineEnum, IndexesBeforeForeignKeys: true},
 	platform.SQLServer: {GeneratedColumnDefault: "PERSISTED",
 		InlineEnum: descriptor.InlineEnum{Type: "NVARCHAR(255)", Check: descriptor.InlineEnumCheckQuoted}},
 	platform.Oracle:     {InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted}},

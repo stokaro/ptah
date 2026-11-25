@@ -35,6 +35,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/agentdiag"
@@ -279,8 +280,22 @@ func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaRe
 	if err != nil {
 		return nil, err
 	}
+	caps, semantics := capability.ForDialect(dialect), identifier.ForDialect(dialect)
+	// The source is a declaration, so it is validated before it is rendered,
+	// as `ptah schema render` validates it: the render alone also describes
+	// what a server holds, and leaves the rules about what an author writes
+	// to validation.
+	validated, err := schemavalidation.Validate(ctx, runtime, schemavalidation.Request{
+		Target: dialect, Schema: database, Capabilities: caps, Identifiers: semantics,
+	})
+	if err == nil {
+		err = validated.Err(dialect)
+	}
+	if err != nil {
+		return nil, agentdiag.Errorf(agentdiag.CodeRenderFailed, "render %s: %w", dialect, err)
+	}
 	rendered, err := renderer.RenderSchema(ctx, runtime, renderer.SchemaRequest{
-		Target: dialect, Schema: database, Capabilities: capability.ForDialect(dialect), Identifiers: identifier.ForDialect(dialect),
+		Target: dialect, Schema: database, Capabilities: caps, Identifiers: semantics,
 	})
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeRenderFailed, "render %s: %w", dialect, err)

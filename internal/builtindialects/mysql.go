@@ -184,7 +184,7 @@ func mysql() descriptor.Dialect {
 		// How the common model is lowered for the engine.
 		GeneratedTimeouts:        descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"},
 		GeneratedColumnDefault:   "VIRTUAL",
-		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
+		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues, TrailingSpacesRemoved: true},
 		IndexesBeforeForeignKeys: true,
 		// Measured on MySQL 8.4.13, where the target requires a unique reference,
 		// with Error 6125 for an indexed column no unique key covers, and on 8.0.46,

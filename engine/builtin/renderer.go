@@ -1476,7 +1476,13 @@ func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]stri
 // ValidateSchema validates a complete schema against the default capability
 // preset for dialect without rendering SQL. It applies the schema-level
 // validation GetOrderedCreateStatements applies before it emits anything, and
-// refuses the same schemas.
+// refuses those schemas.
+//
+// It also refuses a declaration the server would not keep as written, which a
+// render still accepts, since a render describes a server's schema too: on a
+// target whose server removes the trailing spaces of an ENUM value or a SET
+// member, a value or member that ends in a space, in a column that does not
+// take the binary character set, which keeps them.
 //
 // A nil schema is refused with a [ptaherr.RenderError] satisfying
 // errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]), and so is a table-owned
@@ -1484,7 +1490,8 @@ func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]stri
 // cannot carry — a foreign key, a referential action, an extension
 // installation schema, an index INCLUDE list, a unique index over an access
 // method that builds no unique index, a table without a primary key on a
-// target that requires one — is refused with an error satisfying
+// target that requires one, an ENUM value the server would not keep — is
+// refused with an error satisfying
 // errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
 // declaration refusals carry no sentinel of their own, so treat any non-nil
 // error as a refusal and branch with errors.Is on the sentinels rather than
@@ -1526,6 +1533,9 @@ func validateSchemaWithCapabilities(ctx context.Context, runtime featureplan.Dec
 	}
 	prepared, err := prepareDatabaseForRendering(r, dialect, caps)
 	if err != nil {
+		return err
+	}
+	if err := validateEnumTrailingSpaces(dialect, prepared); err != nil {
 		return err
 	}
 	if err := validateDeclaredPrimaryKeys(ctx, runtime, dialect, caps, prepared); err != nil {

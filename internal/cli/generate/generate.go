@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -189,6 +190,18 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		}
 		if err := reportDialectScopeOmissions(stderr, result, selected, runtime); err != nil {
 			return err
+		}
+		// The render describes what it is given, which for a read verb is
+		// what a server holds. A declaration is validated first, so the rules
+		// about what an author writes refuse it here as they do in a plan.
+		validated, err := schemavalidation.Validate(cmd.Context(), runtime, schemavalidation.Request{
+			Target: renderDialect, Schema: result, Capabilities: renderCapabilities(d, target), Identifiers: identifier.ForDialect(d),
+		})
+		if err == nil {
+			err = validated.Err(renderDialect)
+		}
+		if err != nil {
+			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}
 		schemaSQL, err := renderer.RenderSchema(cmd.Context(), runtime, renderer.SchemaRequest{
 			Target: renderDialect, Schema: result, Capabilities: renderCapabilities(d, target), Identifiers: identifier.ForDialect(d),

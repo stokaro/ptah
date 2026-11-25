@@ -3481,6 +3481,11 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 schema validation without rendering SQL. The selected built-in validation service
 uses those checks before comparison produces a diff for planning.
 
+Validation also refuses a declaration the server would not keep as written,
+which the render accepts because a render describes a server's schema too: on
+MySQL and MariaDB, an ENUM value or a SET member that ends in a space, in a
+column that does not take the binary character set.
+
 `GetOrderedCreateStatementsReportingOmissions` renders the same statements and
 also returns the declarations the target did not carry, as `renderer.Omission`
 values. The record belongs to the neutral rendering contract.

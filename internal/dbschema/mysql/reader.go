@@ -17,8 +17,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/dbschema/mysql/catalogtext"
-	"ptah.run/internal/dialectlexer"
-	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlenum"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlroutine"
@@ -746,6 +745,17 @@ func applyMySQLColumnMetadata(
 		scale := int(numericScale.Int64)
 		col.NumericScale = &scale
 	}
+	// An ENUM or SET column holds text, so it always has a character set, and
+	// MySQL reports none only for the binary one: measured on MySQL 8.4, an
+	// ENUM or SET column of the binary character set, named on the column or
+	// taken from the table, reports NULL for both, where MariaDB 11.8 reports
+	// binary and SHOW CREATE TABLE prints CHARACTER SET binary COLLATE binary.
+	// It is the character set that keeps the trailing spaces of the values,
+	// so a description without it would build a column that removes them.
+	if !charset.Valid && !collate.Valid && enumOrSetType(col.ColumnType) {
+		charset = sql.NullString{String: "binary", Valid: true}
+		collate = charset
+	}
 	// The character set and the ON UPDATE clause are the MySQL owner's
 	// settings, recorded as its observation. The server reports a character
 	// set for every text column, inherited ones included.
@@ -774,6 +784,13 @@ func applyMySQLColumnMetadata(
 	var err error
 	col.Facets, err = mysqlschema.WithObservedColumnSettings(col.Facets, settings)
 	return err
+}
+
+// enumOrSetType reports whether columnType, as COLUMN_TYPE reports it, is an
+// ENUM or a SET type.
+func enumOrSetType(columnType string) bool {
+	lowered := strings.ToLower(columnType)
+	return strings.HasPrefix(lowered, "enum(") || strings.HasPrefix(lowered, "set(")
 }
 
 // mysqlUpdateExpression reads the `ON UPDATE` clause out of a column's EXTRA.
@@ -1406,7 +1423,7 @@ func (r *Reader) readEnums(ctx context.Context, dbName string) ([]catalog.Enum, 
 		}
 
 		// Parse enum values from a column type like "enum('value1','value2')".
-		values := parseEnumValues(columnType)
+		values := mysqlenum.Values(columnType)
 		if len(values) == 0 {
 			continue
 		}
@@ -2034,62 +2051,6 @@ func (r *Reader) readNameOnlyCheckConstraintClauses(ctx context.Context, dbName 
 		clauses[constraintName] = form.sql(checkClause)
 	}
 	return rows.Err()
-}
-
-// parseEnumValues reads the values of a MySQL enum column type, such as
-// enum('a','b'). The catalog writes each value as a string literal: measured
-// on MySQL 26.10 and MariaDB 12.3, the value e\f is written 'e\\f', and a
-// quote inside a value is doubled. Each value is read as the server reads the
-// literal, so one holding a comma, a quote or a backslash is one value. An
-// empty value is left out, and a list that is not literals separated by commas
-// reads as no values.
-func parseEnumValues(columnType string) []string {
-	body, ok := strings.CutPrefix(columnType, "enum(")
-	if !ok || !strings.HasSuffix(body, ")") {
-		return nil
-	}
-	body = body[:len(body)-1]
-	lexing := dialectlexer.Options(platform.MySQL)
-	var values []string
-	for i := 0; i < len(body); i++ {
-		switch quote := body[i]; quote {
-		case ' ', ',':
-			continue
-		case '\'', '"':
-			end := closingQuote(body, i, quote)
-			if end < 0 {
-				return nil
-			}
-			value, read := lexer.StringValue(body[i:end+1], lexing)
-			if !read {
-				return nil
-			}
-			if value != "" {
-				values = append(values, value)
-			}
-			i = end
-		default:
-			return nil
-		}
-	}
-	return values
-}
-
-// closingQuote returns the position of the quote that closes the literal
-// opening at start in text, reading a doubled quote and a backslash escape as
-// part of the literal, or -1 when nothing closes it.
-func closingQuote(text string, start int, quote byte) int {
-	for i := start + 1; i < len(text); i++ {
-		switch {
-		case text[i] == '\\':
-			i++
-		case text[i] == quote && i+1 < len(text) && text[i+1] == quote:
-			i++
-		case text[i] == quote:
-			return i
-		}
-	}
-	return -1
 }
 
 // parameterDeclaration spells one routine parameter the way CREATE accepts it.

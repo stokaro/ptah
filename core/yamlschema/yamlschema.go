@@ -266,7 +266,7 @@ type fieldSpec struct {
 	ForeignKeyName     stringScalar  `yaml:"foreign_key_name"`
 	OnDelete           stringScalar  `yaml:"on_delete"`
 	OnUpdate           stringScalar  `yaml:"on_update"`
-	Enum               stringList    `yaml:"enum"`
+	Enum               enumValueList `yaml:"enum"`
 	Check              stringScalar  `yaml:"check"`
 	CheckName          stringScalar  `yaml:"check_name"`
 	Collate            stringScalar  `yaml:"collate"`
@@ -321,13 +321,13 @@ type constraintSpec struct {
 }
 
 type enumSpec struct {
-	Values  stringList   `yaml:"values"`
-	Comment stringScalar `yaml:"comment"`
+	Values  enumValueList `yaml:"values"`
+	Comment stringScalar  `yaml:"comment"`
 }
 
 func (s *enumSpec) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind == yaml.SequenceNode || value.Kind == yaml.ScalarNode {
-		var values stringList
+		var values enumValueList
 		if err := value.Decode(&values); err != nil {
 			return err
 		}
@@ -616,7 +616,7 @@ func (d document) addEnums(db *schemamodel.Database) {
 	for _, name := range sortedKeys(d.Enums) {
 		db.Enums = append(db.Enums, schemamodel.Enum{
 			Name:    name,
-			Values:  cleanStrings(d.Enums[name].Values),
+			Values:  []string(d.Enums[name].Values),
 			Comment: strings.TrimSpace(string(d.Enums[name].Comment)),
 		})
 	}
@@ -755,7 +755,7 @@ func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database
 	fieldName := valueOrDefault(spec.FieldName, key)
 	columnName := valueOrDefault(spec.Name, key)
 	fieldType := string(spec.Type)
-	enumValues := cleanStrings(spec.Enum)
+	enumValues := []string(spec.Enum)
 	if len(enumValues) > 0 && (fieldType == "" || fieldType == "ENUM") {
 		enumName := "enum_" + strings.ToLower(structName) + "_" + strings.ToLower(fieldName)
 		db.Enums = append(db.Enums, schemamodel.Enum{Name: enumName, Values: enumValues})
@@ -1652,6 +1652,31 @@ func schemaName(value stringScalar) (string, error) {
 // [tableref.DocumentName] reads it.
 func declaredName(what, value string) (string, error) {
 	return tableref.DocumentName(what, value)
+}
+
+// enumValueList is the values of an enum, at the top level or on a column. A
+// value is data rather than a name, and PostgreSQL holds ' sad' and 'sad' as
+// two values, so an item of a sequence keeps its bytes: [happy, ' sad'] declares
+// ' sad'. Trimmed, a declaration of a live enum would differ from it, and the
+// plan would rebuild the type with a cast the stored ' sad' cannot pass. The
+// one-line form "happy, sad" is a list an author typed, where the space after a
+// comma is layout, so its parts lose the space around them. An empty value
+// declares nothing and is left out.
+type enumValueList []string
+
+// UnmarshalYAML reads a sequence or a comma-separated scalar, as [stringList]
+// does.
+func (l *enumValueList) UnmarshalYAML(value *yaml.Node) error {
+	var values stringList
+	if err := value.Decode(&values); err != nil {
+		return err
+	}
+	if value.Kind == yaml.ScalarNode {
+		*l = cleanStrings(values)
+		return nil
+	}
+	*l = slices.DeleteFunc([]string(values), func(item string) bool { return item == "" })
+	return nil
 }
 
 func cleanStrings(values stringList) []string {
