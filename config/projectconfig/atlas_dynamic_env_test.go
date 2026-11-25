@@ -383,7 +383,8 @@ func TestParseAtlasCollectionSharesIgnoredConstructsAcrossInstances(t *testing.T
 // An ignored attribute carries its value where it is a boolean or a number,
 // so a command can tell `skip_lock = false` from `skip_lock = true`. The
 // instances of an env share one record, so a value they disagree on is left
-// out, as a string is.
+// out, as a string is. Disagrees marks a disagreement where a value is a
+// boolean or a number; two strings that differ leave it unset.
 func TestParseAtlasCollectionRecordsTheValueOfAnIgnoredAttribute(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env {
@@ -394,6 +395,7 @@ func TestParseAtlasCollectionRecordsTheValueOfAnIgnoredAttribute(t *testing.T) {
   count    = 2.5
   differs  = each.key
   text     = "secret"
+  values   = each.value
   migration {
     skip_lock = true
   }
@@ -416,8 +418,9 @@ env "other" {
 		{Name: "count", Kind: "attribute", Path: "count", InSelectedEnv: true, Value: "2.5", Filename: "atlas.hcl", Line: 6},
 		{Name: "differs", Kind: "attribute", Path: "differs", InSelectedEnv: true, Disagrees: true, Filename: "atlas.hcl", Line: 7},
 		{Name: "text", Kind: "attribute", Path: "text", InSelectedEnv: true, Filename: "atlas.hcl", Line: 8},
-		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Value: "true", Filename: "atlas.hcl", Line: 10},
-		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", Filename: "atlas.hcl", Line: 15},
+		{Name: "values", Kind: "attribute", Path: "values", InSelectedEnv: true, Filename: "atlas.hcl", Line: 9},
+		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Value: "true", Filename: "atlas.hcl", Line: 11},
+		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", Filename: "atlas.hcl", Line: 16},
 	}
 	c.Assert(configs[0].IgnoredConstructs, qt.DeepEquals, want)
 	c.Assert(configs[1].IgnoredConstructs, qt.DeepEquals, want)

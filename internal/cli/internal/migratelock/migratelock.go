@@ -17,6 +17,7 @@ package migratelock
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,6 +62,24 @@ func RegisterNameFlag(flags *pflag.FlagSet, dst *string) {
 	if err := cmdflags.RefuseEmptyEnv(flags, NameFlag, envbinding.EmptyRule{Omitted: OmittedName}); err != nil {
 		panic(err) // the flag is registered above, and the rule names what leaving it out does
 	}
+}
+
+// NoteUnlocked writes to w, when dialect takes no session advisory lock, that
+// the lock name an operator chose is not acquired and that subject runs
+// without a database lock; subject names what runs, such as "the migrations
+// run" or "the report runs". For a dialect that takes the lock it writes
+// nothing. The dialect set is [dblock.Supported]'s.
+//
+// It is the answer of the compatibility surface, which accepts a lock name on
+// such a dialect where a native verb refuses it ([Request.Decide] leaves a
+// forwarded run alone). Taken in silence, the name would read as
+// serialization the run did not get.
+func NoteUnlocked(w io.Writer, dialect, name, subject string) {
+	if dblock.Supported(dialect) {
+		return
+	}
+	fmt.Fprintf(w, "note: migration locking is not supported for dialect %q; "+
+		"the advisory lock %q is not acquired and %s without a database lock\n", dialect, name, subject)
 }
 
 // UnsupportedError reports that a caller asked for the migration advisory lock

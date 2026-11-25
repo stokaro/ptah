@@ -71,6 +71,13 @@ func TestCompatMigrateDriftE2E_FailurePathWaitsOnTheLockItNames(t *testing.T) {
 			held: "ptah_migrate",
 			want: `timed out acquiring migration lock "ptah_migrate" for postgres after 1s`,
 		},
+		{
+			// --skip-lock=false asks for the lock the report takes, and gets it.
+			name: "--skip-lock=false",
+			held: "ptah_migrate",
+			args: []string{"--skip-lock=false"},
+			want: `timed out acquiring migration lock "ptah_migrate" for postgres after 1s`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -89,7 +96,8 @@ func TestCompatMigrateDriftE2E_FailurePathWaitsOnTheLockItNames(t *testing.T) {
 
 // The control: a lock of another name does not hold the report back, so the
 // test above cannot pass on a run that waits on every lock or fails for
-// another reason.
+// another reason. PostgreSQL takes the lock the name selects, so the report
+// writes no note that it ran without one, as it does on SQLite.
 func TestCompatMigrateDriftE2E_HappyPathDoesNotWaitOnAnotherName(t *testing.T) {
 	c := qt.New(t)
 	project := newCompatDriftProject(c, postgresDrift)
@@ -100,6 +108,7 @@ func TestCompatMigrateDriftE2E_HappyPathDoesNotWaitOnAnotherName(t *testing.T) {
 
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stdout, qt.Contains, "Pending migrations: 0")
+	c.Assert(got.Stderr, qt.Not(qt.Contains), "migration locking is not supported")
 }
 
 // The native verb waits on the same lock, so the two surfaces name one lock

@@ -750,6 +750,36 @@ func TestCompatMigrateDrift_HappyPathAcceptsASkipLockOfFalse(t *testing.T) {
 	c.Assert(stderr, qt.Not(qt.Contains), "skip_lock")
 }
 
+// --skip-lock=false and PTAH_SKIP_LOCK=false ask for the lock the report
+// takes anyway, as skip_lock = false does, so the run is the one without them.
+func TestCompatMigrateDrift_HappyPathAcceptsASkipLockFlagOfFalse(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		env  map[string]string
+	}{
+		{name: "the flag", args: []string{"--skip-lock=false"}},
+		{name: "the variable", env: map[string]string{"PTAH_SKIP_LOCK": "false"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			for name, value := range test.env {
+				c.Setenv(name, value)
+			}
+			config := enterDriftProject(c)
+
+			stdout, stderr, err := atlastest.RunCompatStreams(c,
+				append([]string{"migrate", "drift", "-c", config, "--env", "local"}, test.args...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Equals, cleanTarget)
+			c.Assert(stderr, qt.Equals, "")
+		})
+	}
+}
+
 // A skip_lock the targets of an env disagree on asks one of them to skip the
 // lock, and is refused.
 func TestCompatMigrateDrift_FailurePathRefusesASkipLockTheTargetsDisagreeOn(t *testing.T) {
@@ -787,18 +817,33 @@ func TestCompatMigrateDrift_FailurePathRefusesWhatItDoesNotImplement(t *testing.
 			`behavior: Ptah prints its own drift report, and has no template data in the shape Atlas documents for it`)
 		c.Assert(stdout, qt.Equals, "")
 	})
-	t.Run("skip-lock", func(t *testing.T) {
-		c := qt.New(t)
-		c.Setenv(driftVariable, "1")
-		config := enterDriftProject(c)
+	skipLocks := []struct {
+		name string
+		args []string
+		env  map[string]string
+	}{
+		{name: "skip-lock", args: []string{"--skip-lock"}},
+		{name: "skip-lock=true", args: []string{"--skip-lock=true"}},
+		{name: "PTAH_SKIP_LOCK=true", env: map[string]string{"PTAH_SKIP_LOCK": "true"}},
+	}
+	for _, skipLock := range skipLocks {
+		t.Run(skipLock.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			for name, value := range skipLock.env {
+				c.Setenv(name, value)
+			}
+			config := enterDriftProject(c)
 
-		stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "drift", "-c", config, "--env", "local", "--skip-lock")
+			stdout, _, err := atlastest.RunCompatStreams(c,
+				append([]string{"migrate", "drift", "-c", config, "--env", "local"}, skipLock.args...)...)
 
-		c.Assert(err, qt.ErrorMatches, `atlas migrate drift accepts --skip-lock, but Ptah does not implement its `+
-			`behavior: the report reads the revision table under the migration lock, so that a migration being `+
-			`applied is not reported as drift`)
-		c.Assert(stdout, qt.Equals, "")
-	})
+			c.Assert(err, qt.ErrorMatches, `atlas migrate drift accepts --skip-lock, but Ptah does not implement its `+
+				`behavior: the report reads the revision table under the migration lock, so that a migration being `+
+				`applied is not reported as drift`)
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
 	t.Run("a no-cache value that is not a boolean", func(t *testing.T) {
 		c := qt.New(t)
 		c.Setenv(driftVariable, "1")
@@ -883,6 +928,43 @@ func TestCompatMigrateDrift_FailurePathRefusesABlankLockName(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(stdout, qt.Equals, "")
+		})
+	}
+}
+
+// SQLite takes no advisory lock, so a lock name given on this surface names
+// nothing there, and the report says so on standard error, as `migrate apply`
+// does, rather than let the name read as a wait it did not make. The native
+// verb refuses the name on SQLite instead; this surface accepts it, as
+// `migrate apply` does. Without a lock name the report writes nothing there
+// (TestCompatMigrateDrift_HappyPathReportsEveryTargetOfAnEnv), and on an
+// engine that takes the lock it writes no note either
+// (integration/migrationsdrift).
+func TestCompatMigrateDrift_HappyPathNotesALockNameTheEngineDoesNotTake(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		env  map[string]string
+	}{
+		{name: "the flag", args: []string{"--lock-name", "drift_named"}},
+		{name: "the variable", env: map[string]string{"PTAH_LOCK_NAME": "drift_named"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Setenv(driftVariable, "1")
+			for name, value := range test.env {
+				c.Setenv(name, value)
+			}
+			config := enterDriftProject(c)
+
+			stdout, stderr, err := atlastest.RunCompatStreams(c,
+				append([]string{"migrate", "drift", "-c", config, "--env", "local"}, test.args...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Equals, cleanTarget)
+			c.Assert(stderr, qt.Equals, `note: migration locking is not supported for dialect "sqlite"; `+
+				`the advisory lock "drift_named" is not acquired and the report runs without a database lock`+"\n")
 		})
 	}
 }

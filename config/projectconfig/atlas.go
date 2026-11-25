@@ -473,7 +473,8 @@ type IgnoredAtlasConstruct struct {
 	// value. A string is left out because it may carry a secret, which the
 	// parser keeps out of what it reports. The instances of a for_each env
 	// share one record of each construct, so where they evaluate it to
-	// different values, Value is empty too, and Disagrees says so.
+	// different values, Value is empty too, and where one of those values is
+	// a boolean or a number, Disagrees says so.
 	Value string
 	// Disagrees reports that two instances of a for_each env give the
 	// attribute different values where one of them is a boolean or a number,
@@ -907,7 +908,7 @@ func (p atlasParser) noteIgnoredValue(index int, value cty.Value) {
 	case !p.ignoredEvaluated[index]:
 		construct.Value = text
 		p.ignoredEvaluated[index] = true
-	case construct.Value != text || construct.Disagrees:
+	case construct.Value != text:
 		construct.Value = ""
 		construct.Disagrees = true
 	}
