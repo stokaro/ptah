@@ -14,7 +14,7 @@ import (
 // shadowDBURL names a database on a server the run does not own. Nothing
 // connects to it: a URL that is not a docker:// one is resolved without a
 // connection.
-const shadowDBURL = "postgres://ptah_user:not-a-secret@shadow.invalid:5432/shadow"
+const shadowDBURL = "postgres://ptah_user@shadow.invalid:5432/shadow"
 
 // TestResolveShadowDB_HappyPath pins that no shadow resolution records its
 // server as the run's own, however PTAH_DEV_SERVER_DISPOSABLE is set. The

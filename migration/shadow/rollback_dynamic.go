@@ -254,7 +254,7 @@ func openDistinctDevDatabase(
 		return nil, fmt.Errorf(
 			"dynamic rollback planning failed: dev database must be distinct from target database")
 	}
-	forgetTrust := shadowdb.RecordTrust(opts.DevDatabaseURL, opts.Trust.Trusted)
+	forgetTrust := shadowdb.RecordTrust(opts.DevDatabaseURL, opts.Trust.guardTrust())
 	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	devConn, err := dbschema.ConnectToDatabase(connectCtx, opts.DevDatabaseURL)

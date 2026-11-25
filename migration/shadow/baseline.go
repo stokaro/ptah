@@ -86,7 +86,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 	if err := validateBaselineOptions(ctx, opts); err != nil {
 		return err
 	}
-	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.Trusted)
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.guardTrust())
 	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)

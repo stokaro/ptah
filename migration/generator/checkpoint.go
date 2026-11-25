@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlitevirtual"
@@ -409,7 +410,7 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 			err,
 		)
 	}
-	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.Trusted)
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, checkpointTrust(opts.Trust))
 	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
@@ -420,6 +421,11 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 	defer dbschema.CloseAndWarn(shadowConn)
 
 	return generateCheckpointFromConn(ctx, shadowConn, opts)
+}
+
+// checkpointTrust is the caller's trust in the form the shadow claim takes.
+func checkpointTrust(trust shadow.ReplayTrust) devclean.ShadowTrust {
+	return shadowdb.Trust(trust.Trusted, trust.Remedy, trust.ServerRemedy)
 }
 
 // generateCheckpointFromConn holds the database-facing core of checkpoint
@@ -437,7 +443,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		)
 	}
 
-	lease, err := shadowdb.Claim(ctx, shadowConn, shadowdb.Trust(opts.Trust.Trusted, opts.Trust.Remedy, opts.Trust.ServerRemedy))
+	lease, err := shadowdb.Claim(ctx, shadowConn, checkpointTrust(opts.Trust))
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}

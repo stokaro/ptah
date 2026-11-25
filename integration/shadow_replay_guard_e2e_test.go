@@ -558,3 +558,35 @@ func TestShadowReplayCleanupFailureE2E_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// shadowGuardExtensionComment is a history line that only a server the run
+// discards may run, trusted or not: a comment on an extension is server-wide
+// metadata the cleanup of the shadow database does not take back.
+const shadowGuardExtensionComment = "COMMENT ON EXTENSION plpgsql IS 'shadow guard';"
+
+// shadowGuardServerRefusal is the refusal of shadowGuardExtensionComment. It
+// names the one way to such a server for a shadow database, and neither
+// PTAH_DEV_SERVER_DISPOSABLE nor trust.
+const shadowGuardServerRefusal = `(?s).*; use a docker:// or docker\+<driver>:// URL for the shadow database\nSQL: COMMENT ON EXTENSION .*`
+
+// TestShadowReplayGuardServerRemedyE2E_FailurePath trusts a history whose
+// migration 1 comments on an extension. Each command refuses it with the
+// shadow database's remedy, and the target and the directory read back as
+// they were.
+func TestShadowReplayGuardServerRemedyE2E_FailurePath(t *testing.T) {
+	engine := shadowGuardPostgreSQL
+	for _, surface := range shadowGuardSurfaces {
+		t.Run(surface.name+"/"+engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			r := newShadowGuardRun(c, engine, surface, engine.outside(c), shadowGuardExtensionComment)
+			before := shadowGuardCensus(c, r)
+
+			got := runShadowGuardSurface(c, surface, r, surface.trustEnv, surface.trustArgs)
+
+			c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout+got.Stderr, qt.Matches, shadowGuardServerRefusal)
+			c.Assert(got.Stdout+got.Stderr, qt.Not(qt.Contains), "PTAH_DEV_SERVER_DISPOSABLE")
+			c.Assert(shadowGuardCensus(c, r), qt.Equals, before)
+		})
+	}
+}

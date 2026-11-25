@@ -327,7 +327,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 	if err != nil {
 		return newVerificationError("configuration", "include_error", "apply include selectors", err)
 	}
-	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.Trusted)
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.guardTrust())
 	defer forgetTrust()
 	database, err := shadowdb.Open(ctx, opts.ShadowDatabaseURL, "")
 	if err != nil {

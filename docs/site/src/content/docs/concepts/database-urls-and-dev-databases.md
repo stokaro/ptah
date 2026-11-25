@@ -731,6 +731,14 @@ that is not a boolean before any work:
   `migrate checkpoint`, `schema inspect`, `schema diff`, `schema apply`,
   `schema plan lint` and `schema plan validate`.
 
+`migrations up` and `migrations down` replay SQL only on a shadow database, so
+each refuses a typed `--trust-replay-sql` that its run cannot use: `up` without
+the drift check, and `down` without a shadow database. The variable is not
+refused there, so a CI job can set it for every command it runs. A refusal on a
+shadow database names the variable alone, and a server-level refusal there
+names a docker URL as the remedy. A Go program that calls `migration/shadow`
+reads no variable and passes trust in the options, as `shadow.ReplayTrust`.
+
 Strict Atlas compatibility keeps the variable, because the pinned community
 binary runs these statements on any dev database.
 
