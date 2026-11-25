@@ -385,7 +385,9 @@ func TestMigrationsBaselineRefusesAnUndecidedObjectE2E(t *testing.T) {
 // TestMigrationsBaselineShadowRefusesAnUndecidedObjectE2E is the shadow half:
 // the replay creates a role on the shadow database, the target account cannot
 // read roles, and the verification reports the role as an undecided mismatch
-// rather than passing on a target that was never checked.
+// rather than passing on a target that was never checked. The replay guard
+// refuses a role on a shadow database the run does not own, so the run
+// passes --trust-replay-sql, as the operator who wrote the history would.
 func TestMigrationsBaselineShadowRefusesAnUndecidedObjectE2E(t *testing.T) {
 	c := qt.New(t)
 	restricted := newRestrictedMySQLTarget(c)
@@ -406,7 +408,7 @@ func TestMigrationsBaselineShadowRefusesAnUndecidedObjectE2E(t *testing.T) {
 
 	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: restricted.workDir},
 		"migrations", "baseline", "--db-url", restricted.url, "--migrations-dir", migrations,
-		"--shadow-db", restricted.server.url("mysql", shadowDatabase))
+		"--shadow-db", restricted.server.url("mysql", shadowDatabase), "--trust-replay-sql")
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stderr, qt.Contains, "baseline shadow check failed: undecided role "+role+

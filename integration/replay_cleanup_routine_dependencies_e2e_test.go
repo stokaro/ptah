@@ -38,6 +38,10 @@ var replayCleanupEngines = []struct {
 // name. Measured on master with CockroachDB v26.4.1, `migrations drift` stops
 // at `failed to drop table audit` and at `failed to drop function a`, SQLSTATE
 // 2BP01, after the replay. Both compare clean once the cleanup finishes.
+//
+// Every history in this file defines a routine, which the replay guard
+// refuses on a shadow database the run does not own, so each run passes
+// --trust-replay-sql, as the operator who wrote the history would.
 var replayCleanupHistories = []struct {
 	name string
 	up   string
@@ -159,7 +163,7 @@ func TestReplayCleanupRoutineDependenciesE2E_HappyPath(t *testing.T) {
 
 				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: replay.dir},
 					"migrations", "drift", "--db-url", replay.targetURL,
-					"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL)
+					"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL, "--trust-replay-sql")
 
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 				c.Assert(got.Stdout, qt.Contains, "No drift: the database matches the schema its 1 applied migration produces.")
@@ -174,7 +178,7 @@ func TestReplayCleanupRoutineDependenciesE2E_HappyPath(t *testing.T) {
 
 				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: replay.dir},
 					"migrations", "up", "--check-drift", "--db-url", replay.targetURL,
-					"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL)
+					"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL, "--trust-replay-sql")
 
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 				c.Assert(userObjects(c, ctx, replay.shadow), qt.Equals, 0)
@@ -230,7 +234,7 @@ CREATE FUNCTION b() RETURNS int LANGUAGE sql AS $$ SELECT a() $$;
 
 	got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: replay.dir},
 		"migrations", "drift", "--db-url", replay.targetURL,
-		"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", shadowURL)
+		"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", shadowURL, "--trust-replay-sql")
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	output := got.Stdout + got.Stderr
@@ -267,7 +271,7 @@ CREATE PROCEDURE pc() LANGUAGE plpgsql AS $$ BEGIN INSERT INTO p VALUES (1); END
 
 			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: replay.dir},
 				"migrations", "drift", "--db-url", replay.targetURL,
-				"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL)
+				"--migrations-dir", filepath.Join(replay.dir, "migrations"), "--shadow-db", replay.shadowURL, "--trust-replay-sql")
 
 			c.Assert(got.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stdout+got.Stderr, qt.Not(qt.Contains), "empty the database after the replay")

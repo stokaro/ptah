@@ -25,11 +25,15 @@ import (
 // so only the server shows that the replay reproduced it.
 //
 // The histories:
-//   - setLocal: migration 2 is `SET LOCAL search_path TO s2; CREATE TABLE
-//     t2`, applied in the default mode, so t2 is in s2. Replayed outside a
-//     transaction, SET LOCAL does nothing and t2 lands in public.
+//   - setLocal: migration 2 is `SET LOCAL DateStyle = 'ISO, DMY'` and a
+//     table t2 whose column due defaults to the literal '01/02/2020', applied
+//     in the default mode, so the default is 1 February. Replayed outside a
+//     transaction, SET LOCAL does nothing, the server reads the literal month
+//     first, and the default is 2 January. SET LOCAL search_path would show
+//     the same, but the replay guard refuses it, trusted or not: an
+//     unqualified name it sends to pg_catalog escapes the namespace check.
 //   - setLocalNone: the same file under `-- atlas:txmode none`, so the
-//     directive puts t2 in public, on the target and in the replay alike.
+//     directive gives due 2 January, on the target and in the replay alike.
 //   - deferred: a foreign key DEFERRABLE INITIALLY DEFERRED, with rows that
 //     satisfy it only once both are in, applied in the default mode. Outside
 //     a transaction the first row fails the check.
@@ -49,10 +53,10 @@ import (
 
 var (
 	historyReplaySetLocal = map[string]string{
-		"0000000001_items.up.sql":   "CREATE SCHEMA s2;\nCREATE TABLE items (id int PRIMARY KEY);\n",
-		"0000000001_items.down.sql": "DROP TABLE items;\nDROP SCHEMA s2;\n",
-		"0000000002_t2.up.sql":      "SET LOCAL search_path TO s2;\nCREATE TABLE t2 (id int PRIMARY KEY);\n",
-		"0000000002_t2.down.sql":    "DROP TABLE s2.t2;\n",
+		"0000000001_items.up.sql":   "CREATE TABLE items (id int PRIMARY KEY);\n",
+		"0000000001_items.down.sql": "DROP TABLE items;\n",
+		"0000000002_t2.up.sql":      "SET LOCAL DateStyle = 'ISO, DMY';\nCREATE TABLE t2 (id int PRIMARY KEY, due date DEFAULT '01/02/2020');\n",
+		"0000000002_t2.down.sql":    "DROP TABLE t2;\n",
 	}
 	historyReplaySetLocalNone = map[string]string{
 		"0000000001_items.up.sql":   historyReplaySetLocal["0000000001_items.up.sql"],
@@ -227,12 +231,20 @@ func historyReplayUp(runArgs ...string) postgresHistoryCommand {
 // historyReplayRollback is the rollback rehearsal of `migrations down
 // --shadow-db`, which replays the history before it rolls migration 2 back on
 // the target.
-func historyReplayRollback() postgresHistoryCommand {
+func historyReplayRollback(runArgs ...string) postgresHistoryCommand {
 	return postgresHistoryCommand{args: func(h postgresHistory) []string {
-		return []string{"migrations", "down", "--db-url", h.target, "--migrations-dir", h.dir,
-			"--shadow-db", h.shadow, "--target", "1", "--confirm"}
+		return append([]string{"migrations", "down", "--db-url", h.target, "--migrations-dir", h.dir,
+			"--shadow-db", h.shadow, "--target", "1", "--confirm"}, runArgs...)
 	}}
 }
+
+// The procedure histories define a routine, which the replay guard refuses on
+// a database the run does not own unless the operator trusts the SQL; these
+// are what an operator who wrote the history passes.
+const (
+	historyReplayTrustFlag = "--trust-replay-sql"
+	historyReplayTrustEnv  = "PTAH_TRUST_REPLAY_SQL=1"
+)
 
 func historyReplayDrift(env ...string) postgresHistoryCommand {
 	return postgresHistoryCommand{
@@ -333,20 +345,20 @@ func TestHistoryReplayPostgresE2E_HappyPath(t *testing.T) {
 			name:        "a procedure that commits, checked by an up run",
 			files:       historyReplayProcedureCommit,
 			applyArgs:   []string{"--tx-mode", "none"},
-			command:     historyReplayUp(),
+			command:     historyReplayUp(historyReplayTrustFlag),
 			wantPending: 1,
 		},
 		{
 			name:      "a procedure that commits, reported",
 			files:     historyReplayProcedureCommit,
 			applyArgs: []string{"--tx-mode", "none"},
-			command:   historyReplayDrift(),
+			command:   historyReplayDrift(historyReplayTrustEnv),
 		},
 		{
 			name:      "a procedure that commits, rehearsed before a rollback",
 			files:     historyReplayProcedureCommit,
 			applyArgs: []string{"--tx-mode", "none"},
-			command:   historyReplayRollback(),
+			command:   historyReplayRollback(historyReplayTrustFlag),
 		},
 	}
 
@@ -363,14 +375,15 @@ func TestHistoryReplayPostgresE2E_HappyPath(t *testing.T) {
 	}
 }
 
-// TestHistoryReplayPostgresE2E_FailurePath finds public.t2 in a target the
-// replay puts t2 in s2 for, so public.t2 is drift and the pending migration
-// does not run. A table added by hand to a target whose t2 a SET LOCAL put in
-// s2 is drift whatever mode the run applies in. A history applied under
-// --tx-mode none put t2 in public, as SET LOCAL did nothing outside a
-// transaction, and the replay cannot tell that from the file.
+// TestHistoryReplayPostgresE2E_FailurePath finds a default of 2 January on
+// t2.due in a target the replay gives 1 February, so t2 is drift and the
+// pending migration does not run. A default changed by hand to the one a
+// replay outside a transaction would give is drift whatever mode the run
+// applies in. A history applied under --tx-mode none gave 2 January, as SET
+// LOCAL did nothing outside a transaction, and the replay cannot tell that
+// from the file.
 func TestHistoryReplayPostgresE2E_FailurePath(t *testing.T) {
-	const byHand = "CREATE TABLE public.t2 (id int PRIMARY KEY)"
+	const byHand = "ALTER TABLE t2 ALTER COLUMN due SET DEFAULT '2020-01-02'"
 	tests := []struct {
 		name      string
 		applyArgs []string
@@ -434,6 +447,7 @@ func TestHistoryReplayPostgresE2E_PendingFileKeepsItsRefusal(t *testing.T) {
 		name    string
 		applied map[string]string
 		pending string
+		runArgs []string
 		wantErr string
 		// changed counts what the pending file changes when it runs.
 		changed string
@@ -449,6 +463,7 @@ func TestHistoryReplayPostgresE2E_PendingFileKeepsItsRefusal(t *testing.T) {
 			name:    "a procedure that commits",
 			applied: historyReplayProcedure,
 			pending: historyReplayProcedureCommitUp,
+			runArgs: []string{historyReplayTrustFlag},
 			wantErr: "(SQLSTATE 2D000)",
 			changed: "SELECT count(*) FROM p",
 		},
@@ -461,7 +476,7 @@ func TestHistoryReplayPostgresE2E_PendingFileKeepsItsRefusal(t *testing.T) {
 			c.Assert(os.WriteFile(filepath.Join(h.dir, "0000000003_refused.up.sql"), []byte(test.pending), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(h.dir, "0000000003_refused.down.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
 
-			got := h.run(c, nil, historyReplayUp().args(h)...)
+			got := h.run(c, nil, historyReplayUp(test.runArgs...).args(h)...)
 
 			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stderr, qt.Contains, "failed to apply migration 3")
@@ -511,7 +526,7 @@ func TestHistoryReplayPostgresFamilyE2E_FailurePathTheReplayCannotRunTwice(t *te
 			name:       "a procedure that commits on CockroachDB, reported",
 			engine:     dbtarget.CockroachDB,
 			files:      historyReplayProcedureCommit,
-			command:    historyReplayDrift(),
+			command:    historyReplayDrift(historyReplayTrustEnv),
 			wantFailed: "replay the applied migrations: failed to apply migration 2",
 			wantErr:    "(SQLSTATE 2D000)",
 		},
@@ -519,7 +534,7 @@ func TestHistoryReplayPostgresFamilyE2E_FailurePathTheReplayCannotRunTwice(t *te
 			name:       "a procedure that commits on CockroachDB, checked by an up run",
 			engine:     dbtarget.CockroachDB,
 			files:      historyReplayProcedureCommit,
-			command:    historyReplayUp(),
+			command:    historyReplayUp(historyReplayTrustFlag),
 			wantFailed: "replay the applied migrations: failed to apply migration 2",
 			wantErr:    "(SQLSTATE 2D000)",
 		},

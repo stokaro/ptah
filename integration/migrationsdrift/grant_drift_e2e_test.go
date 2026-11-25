@@ -179,10 +179,15 @@ func (r grantDriftRun) exec(c *qt.C, statements ...string) {
 	}
 }
 
+// report runs the drift report. It trusts the replayed SQL: the history
+// creates a role and grants it privileges, which the replay guard refuses on a
+// shadow database the run does not own, and the test drops the role itself.
 func (r grantDriftRun) report(c *qt.C) (document, clirun.Result) {
 	c.Helper()
 	result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: time.Minute},
-		"migrations", "drift", "--db-url", r.target, "--migrations-dir", r.dir, "--shadow-db", r.shadow, "--json")
+		"migrations", "drift", "--db-url", r.target, "--migrations-dir", r.dir, "--shadow-db", r.shadow,
+		"--trust-replay-sql", "--json",
+	)
 	var got document
 	c.Assert(json.Unmarshal([]byte(result.Stdout), &got), qt.IsNil,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
