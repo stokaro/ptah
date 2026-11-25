@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/hcldiag"
 	"ptah.run/internal/pathguard"
 )
@@ -261,9 +262,14 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectAzureDBToken = opts.RejectAzureDBToken
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
 	p.ignoreDialectDiffBlocks = opts.IgnoreDialectDiffBlocks
-	p.addressTemplates = addressTemplates(body)
+	p.addressCandidates = addressCandidates(body)
 	p.locals = localExpressions(body)
 	configs, err := p.parseCollection(body, opts.EnvName)
+	// The command that loads the file masks its later errors against what the
+	// file holds secret: a schema file a data "hcl_schema" block passes a
+	// sensitive value to quotes it when a call on it fails, long after this
+	// parser is gone.
+	dburldisplay.RecordErrorSecrets(p.runContext, p.displaySecrets())
 	if err != nil {
 		return nil, p.maskError(err)
 	}
@@ -365,12 +371,16 @@ type atlasParser struct {
 	// expression touched a sensitive variable at all, which is decidable where
 	// "did any function derive a value from it" is not.
 	sensitiveNames *map[string]struct{}
-	// addressTemplates are the templates of the file that write an address,
-	// and locals the expression of each local it declares, read before
-	// anything is evaluated so an error can be masked against what reaches
-	// an address's password. See [atlasParser.addressSecrets].
-	addressTemplates []addressTemplate
-	locals           map[string]hclsyntax.Expression
+	// addressCandidates are the expressions of the file that may write an
+	// address, and locals the expression of each local it declares, read
+	// before anything is evaluated so an error can be masked against what
+	// reaches a secret place of an address. See [atlasParser.addressSecrets].
+	addressCandidates []hclsyntax.Expression
+	locals            map[string]hclsyntax.Expression
+	// instanceContexts holds the context of each env instance a for_each
+	// expanded, so an error masked after the instance is gone still reads
+	// what `each` gave it. Pointer for the same reason as sensitiveValues.
+	instanceContexts *[]*hcl.EvalContext
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
@@ -451,13 +461,15 @@ func newAtlasParser(
 	sensitiveValues := make([]string, 0)
 	sensitiveNames := make(map[string]struct{})
 	ignored := make([]IgnoredAtlasConstruct, 0)
+	instanceContexts := make([]*hcl.EvalContext, 0)
 	return atlasParser{
-		runContext:      runContext,
-		fsys:            fsys,
-		sensitiveValues: &sensitiveValues,
-		sensitiveNames:  &sensitiveNames,
-		ignored:         &ignored,
-		ignoredSeen:     make(map[ignoredAtlasConstructKey]struct{}),
+		runContext:       runContext,
+		fsys:             fsys,
+		sensitiveValues:  &sensitiveValues,
+		instanceContexts: &instanceContexts,
+		sensitiveNames:   &sensitiveNames,
+		ignored:          &ignored,
+		ignoredSeen:      make(map[ignoredAtlasConstructKey]struct{}),
 		ctx: &hcl.EvalContext{
 			Variables: make(map[string]cty.Value),
 			Functions: atlasProjectFunctions(fsys),
@@ -975,6 +987,9 @@ func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName stri
 				"key":   key,
 				"value": value,
 			}),
+		}
+		if p.instanceContexts != nil {
+			*p.instanceContexts = append(*p.instanceContexts, child)
 		}
 		instanceParser := p
 		instanceParser.ctx = child

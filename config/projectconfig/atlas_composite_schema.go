@@ -225,6 +225,7 @@ func cloneCompositeSchema(composite CompositeSchema) CompositeSchema {
 			external := *part.ExternalSchema
 			external.Program = slices.Clone(external.Program)
 			external.Env = slices.Clone(external.Env)
+			external.Secrets = slices.Clone(external.Secrets)
 			part.ExternalSchema = &external
 		}
 		parts[i] = part

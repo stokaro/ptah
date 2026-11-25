@@ -96,3 +96,82 @@ func TestCompatKeepsAValueThatReachesNoPasswordInAnAtlasHCLErrorE2E(t *testing.T
 	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stderr, qt.Contains, `cannot convert "Visib1eValue" to number`)
 }
+
+// hclSchemaSecretProject writes an atlas.hcl whose env "dev" takes its desired
+// state from a data "hcl_schema" block that passes variable to the schema
+// file, and a schema file that converts the value to a number, and returns
+// its directory.
+func hclSchemaSecretProject(c *qt.C, variable string) string {
+	c.Helper()
+	dir := c.TempDir()
+	project := `variable "token" {
+  type      = string
+  default   = "x"
+  sensitive = true
+}
+
+variable "label" {
+  type    = string
+  default = "x"
+}
+
+data "hcl_schema" "app" {
+  path = "schema.hcl"
+  vars = {
+    tok = ` + variable + `
+  }
+}
+
+env "dev" {
+  src = data.hcl_schema.app.url
+  url = "sqlite://file?mode=memory"
+  dev = "sqlite://dev?mode=memory"
+}
+`
+	schema := `variable "tok" {
+  type = string
+}
+
+schema "main" {}
+
+table "t" {
+  schema = schema.main
+  column "id" {
+    type    = int
+    default = tonumber(var.tok)
+  }
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.hcl"), []byte(schema), 0o600), qt.IsNil)
+	return dir
+}
+
+// TestCompatMasksASensitiveValueAnHCLSchemaFileQuotesE2E runs `ptah-compat
+// schema apply` over a schema file that a data "hcl_schema" block passes a
+// variable to, and reads stderr. The schema file's parser quotes the value it
+// fails on long after the project's own parser is gone, so a sensitive value
+// is masked by the command, and the control's plain value keeps its text.
+func TestCompatMasksASensitiveValueAnHCLSchemaFileQuotesE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		variable string
+		want     string
+	}{
+		{name: "a sensitive variable", variable: "var.token", want: `cannot convert "***" to number`},
+		{name: "the control, a plain variable", variable: "var.label", want: `cannot convert "Visib1eValue" to number`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := hclSchemaSecretProject(c, test.variable)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"schema", "apply", "--env", "dev", "--dry-run", "--var", "token=Tok3nValueX9", "--var", "label=Visib1eValue")
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, test.want)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), "Tok3nValueX9")
+		})
+	}
+}

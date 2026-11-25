@@ -98,3 +98,45 @@ env "dev" {
 		})
 	}
 }
+
+// TestCompatKeepsWhatAnObjectLocalHoldsBesideAPasswordE2E is the control for
+// the test above: a local that is an object holds a password beside a user, a
+// host and a database name, and a program prints those with the word
+// "password". Only the password item is a secret, so the program's line keeps
+// its text.
+func TestCompatKeepsWhatAnObjectLocalHoldsBesideAPasswordE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	project := `variable "pw" {
+  type    = string
+  default = "x"
+}
+
+locals {
+  db = {
+    user     = "appuser"
+    host     = "dbhost.internal"
+    name     = "appdb"
+    password = var.pw
+  }
+  conn = "postgres://${local.db.user}:${local.db.password}@${local.db.host}:5432/${local.db.name}"
+}
+
+data "external_schema" "app" {
+  program = ["sh", "-c", "echo 'FATAL: password authentication failed for user appuser on dbhost.internal database appdb' >&2; exit 3"]
+}
+
+env "dev" {
+  src = data.external_schema.app.url
+  url = "sqlite://file?mode=memory"
+  dev = "sqlite://dev?mode=memory"
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
+
+	got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+		"schema", "inspect", "--env", "dev", "--url", "env://src", "--var", "pw=Pa55wordX9")
+
+	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stderr, qt.Contains, "FATAL: password authentication failed for user appuser on dbhost.internal database appdb")
+}

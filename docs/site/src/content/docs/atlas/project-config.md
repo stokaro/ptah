@@ -608,22 +608,44 @@ differ on purpose:
   original value cannot find.
 
 A non-sensitive expression keeps its full diagnostic either way, with one
-exception. A value that reaches the password of an address the file writes is a
-secret whether or not a variable declares it sensitive, so an error that quotes
-it shows `redacted` in its place. With
+exception. A value that reaches a secret part of an address the file writes is
+a secret whether or not a variable declares it sensitive, so an error that
+quotes it shows `redacted` in its place. With
 `url = "postgres://app:${tonumber(var.pw)}@db/app"`, `--var pw=...` fails with
-`cannot convert "redacted" to number`. The places read are a template that
-writes `://`, a `format()` whose literal format does, and the password argument
-of `urluserinfo()`. The values read are what an expression there evaluates to,
-the `--var` value of a variable it names, a `getenv()` value, and the same for a
-local it names. A value in any other part of the address, such as the user name
-or a query parameter whose name says nothing secret, keeps its text.
+`cannot convert "redacted" to number`.
+
+The addresses read are those written by:
+
+- a template that writes `://`;
+- `format()` with a literal format;
+- `join()` with a literal separator and lists written out in the file;
+- `replace()` with a literal substring;
+- `urlqueryset()`, and the password argument of `urluserinfo()`.
+
+A local the address names is read through its expression, down to the item
+the traversal names, so `local.db.password` reads that item of the object and
+nothing else of it. An address built any other way, such as a `join()` over a
+variable list, is not read.
+
+The secret parts are the password, a query parameter whose name says it holds a
+secret, and a user info a single value fills: there, the text after the
+value's first `:`, or the whole value when it has none and does not evaluate.
+The values read are what an expression in such a part evaluates to, in each
+`for_each` instance too, the `--var` value of a variable it names, and a
+`getenv()` value.
+A value in any other part of the address, such as the user name, the host or a
+query parameter whose name says nothing secret, keeps its text, and so do the
+other items of an object local.
 
 A sensitive value passed to a program or a data source alone, with no name
 beside it, is masked in what that source fails with too:
 `program = ["./loader", var.token]` shows `redacted` for the token in the
 error and in the standard-error tail it prints. The same holds for a value that
-reaches a password.
+reaches a secret part of an address.
+
+The command that loads the file masks its later errors against the same
+values. A schema file that a `data "hcl_schema"` block passes a sensitive value
+to through `vars` shows `***` in its place when a call on it fails.
 
 ## Reading files with file() and fileset()
 
