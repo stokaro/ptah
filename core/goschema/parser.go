@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
+	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/mysqlviewsecurity"
@@ -785,14 +786,10 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 		return err
 	}
 
-	// The name of this directive names a schema, so it is read as each of
-	// [schemaAttributes] is.
-	name, err := readSchemaName("name", kv["name"])
-	if err != nil {
-		return s.spacedSchemaError(comment, err)
-	}
+	// The name of this directive names a schema, so [annotationschema.Read]
+	// has read it as it reads a schema attribute.
 	s.schemas = append(s.schemas, schemamodel.Schema{
-		Name:    name,
+		Name:    kv["name"],
 		Comment: kv["comment"],
 	})
 	return nil
@@ -962,13 +959,15 @@ func (s *schemaParseState) annotationContext(
 // attribute that takes a value is refused here, where the word is still
 // visible: in the map it would be either missing or a value nobody wrote.
 //
-// The value of each of [schemaAttributes] is read here, so every directive
-// reads it the same way; see [readSchemaAttributes].
+// Each value that names a schema is read here, so every directive reads it
+// the same way, and the annotation cleanup reads the tag it removes with the
+// same function; see [annotationschema.Read].
 func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, error) {
 	kv, err := s.kv.ParseKeyValueComment(comment.Text)
 	var bare *parseutils.BareValueError
 	if !errors.As(err, &bare) {
-		if spacedErr := readSchemaAttributes(kv); spacedErr != nil {
+		directive, _ := s.catalog.MatchCommentDirective(comment.Text)
+		if spacedErr := annotationschema.Read(directive.Name, kv); spacedErr != nil {
 			return nil, s.spacedSchemaError(comment, spacedErr)
 		}
 		return kv, err
@@ -990,65 +989,8 @@ func (s *schemaParseState) attributes(comment *ast.Comment) (map[string]string, 
 	}
 }
 
-// schemaAttributes are the attributes whose value names a schema: the schema
-// an object is in and the schema a grant is on. A tag is text an author typed,
-// so the space around such a value is removed where the tag is read, and a
-// value written as one quoted identifier, schema="\" app\"", is the name inside
-// the quotes. Every layer below keeps a schema name's bytes, because
-// PostgreSQL holds " app" and "app" as two schemas, so the quoted spelling is
-// how a tag names the first. A bare value that begins or ends with white space
-// is refused: read without its space it names another schema, and a sequence
-// tagged schema="app " beside a live app.counter would plan its CREATE
-// SEQUENCE in app as if the author had written app.
-//
-// An object's own name is not in the list. A column, an index or a constraint
-// keeps the bytes its tag writes, because the catalog holds " note" and "note"
-// as two columns: trimmed, field name=" note" beside a live " note" planned an
-// ADD of "note" and a DROP of " note", and the apply lost the column's values.
-// A table's name is trimmed by [annotation.QualifiedName], and a view's,
-// function's or procedure's by [qualifiedObjectName] where the tag names a
-// schema.
-//
-// The list is one declaration for every directive, rather than a trim at each
-// read of a value, so a directive added later reads the value the others read.
-var schemaAttributes = []string{"schema", "on_schema"}
-
-// readSchemaAttributes reads the value of every attribute of
-// [schemaAttributes] that kv holds, in place: the space around it is removed,
-// and a value that is one quoted identifier becomes the name inside the
-// quotes. A value of white space alone becomes empty, which each directive
-// reads as the attribute left out. A bare value that begins or ends with white
-// space is refused, with an error matching [tableref.ErrSpacedBareName].
-func readSchemaAttributes(kv map[string]string) error {
-	for _, key := range schemaAttributes {
-		value, ok := kv[key]
-		if !ok {
-			continue
-		}
-		name, err := readSchemaName(key, value)
-		if err != nil {
-			return err
-		}
-		kv[key] = name
-	}
-	return nil
-}
-
-// readSchemaName reads value, the value of the attribute that names a schema,
-// as [readSchemaAttributes] says.
-func readSchemaName(attribute, value string) (string, error) {
-	if tableref.BareSpace(value, "\"`[", "\"`]") {
-		return "", tableref.SpacedBareName(attribute+" attribute", value)
-	}
-	value = strings.TrimSpace(value)
-	if ref, parsed := tableref.Parse(value); parsed && !ref.Qualified {
-		value = ref.Name
-	}
-	return value, nil
-}
-
 // spacedSchemaError is the parse error of comment for err, a refusal of
-// [readSchemaAttributes].
+// [annotationschema.Read].
 func (s *schemaParseState) spacedSchemaError(comment *ast.Comment, err error) error {
 	directive, _ := s.catalog.MatchCommentDirective(comment.Text)
 	ctx := s.annotationContext(comment, "//"+directive.Name, "")
@@ -1668,11 +1610,11 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment)
 // names that already work is not what adding an optional attribute may do
 // (stokaro/ptah#1270).
 //
-// The schema arrives trimmed, as [schemaAttributes] says, and a qualified name
-// is trimmed here. Canonical keeps the bytes it is given, so an untrimmed
-// name="v_users " beside schema="app" would name a view other than the live
-// app.v_users, and the plan would drop the one and create the other. A name
-// with no schema keeps its bytes, as a column's does.
+// The schema arrives read, as [annotationschema.Read] reads it, and a
+// qualified name is trimmed here. Canonical keeps the bytes it is given, so an
+// untrimmed name="v_users " beside schema="app" would name a view other than
+// the live app.v_users, and the plan would drop the one and create the other.
+// A name with no schema keeps its bytes, as a column's does.
 func qualifiedObjectName(kv map[string]string) string {
 	schema := kv["schema"]
 	if schema == "" {

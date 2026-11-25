@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationparse"
+	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/fsdurable"
 	"ptah.run/internal/goannotationsource"
 	"ptah.run/internal/pathguard"
@@ -805,6 +806,12 @@ func annotationLineNumbers(catalog annotationmeta.Catalog, path string, data []b
 				continue
 			}
 			attributes, values := annotationAttributes(catalog, comment.Text)
+			// The frontend reads each value that names a schema before a
+			// directive reads the tag, so the tag is compared with the
+			// export, and handed to its owner, as the frontend read it.
+			if err := annotationschema.Read(directive.Name, values); err != nil {
+				return nil, fmt.Errorf("%s:%d: %w", path, lineNumber, err)
+			}
 			lineNumbers[lineNumber] = removedLine{
 				number: lineNumber,
 				annotation: Annotation{
