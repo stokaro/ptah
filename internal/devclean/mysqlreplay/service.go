@@ -9,8 +9,7 @@ package mysqlreplay
 import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
-	"ptah.run/internal/dialectlexer"
-	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlbody"
 )
 
 // Services returns the replay guards of MySQL and MariaDB, which read the
@@ -31,7 +30,7 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 	if err := rejectMySQLExecutableComments(g.dialect, stmt); err != nil {
 		return err
 	}
-	tokens := replay.Tokens(stmt, lexerOptions())
+	tokens := replay.Tokens(stmt, mysqlbody.LexerOptions())
 	// A run that trusts its SQL lifts the same statements a server the run
 	// owns lifts, and for the same reason: their only effect the guard cannot
 	// confine is on the rest of the server. See [validateMySQLReplayStatement]
@@ -43,12 +42,4 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 		return nil
 	}
 	return validateMySQLReplayStatement(g.dialect, scope.Database, tokens, scope)
-}
-
-// lexerOptions reads backslash escapes in string literals, as both servers
-// do by default, and # as a comment.
-func lexerOptions() lexer.Options {
-	options := dialectlexer.Options(platform.MySQL)
-	options.ExecutableComments = lexer.ExecutableCommentsNone
-	return options
 }

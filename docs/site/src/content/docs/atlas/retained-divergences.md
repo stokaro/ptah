@@ -175,6 +175,7 @@ own measurement conditions.
 | [A foreign key taken back under its name over a retyped column](#a-foreign-key-taken-back-under-its-name-over-a-retyped-column) | drops the key before the referenced column changes, so the file applies | changes the referenced column first, which the server refuses while the key stands |
 | [A MariaDB table changed to a UCA 14.0.0 collation](#a-mariadb-table-changed-to-a-uca-1400-collation) | writes the character set the collation names on the table, restates a column that takes it without one, and converges in one apply | writes the dev database's character set beside a collation of another, which MariaDB refuses, and gives such a column the character set's default collation |
 | [A backslash on a `NO_BACKSLASH_ESCAPES` session](#a-backslash-on-a-no_backslash_escapes-session) | writes a literal for the session that runs it, so the server stores the declared value | stores four backslashes where the declaration holds one |
+| [A column change a row does not fit, on a MySQL session without a strict mode](#a-column-change-a-row-does-not-fit-on-a-mysql-session-without-a-strict-mode) | runs the plan under a strict mode, so the server refuses the change, the row keeps its value, and the run exits `1` naming the column | applies the change, the server rewrites the row, and the run exits `0` |
 
 ## A `--config` selection naming more than one file
 
@@ -2399,6 +2400,41 @@ as a migration file or `schema diff` output, is written for the default
 
 **Evidence.** `integration/backslash_escapes_session_e2e_test.go`,
 `integration/escaped_literal_apply_e2e_test.go`
+
+## A column change a row does not fit, on a MySQL session without a strict mode
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A MySQL or MariaDB session whose `sql_mode` names
+neither `STRICT_TRANS_TABLES` nor `STRICT_ALL_TABLES` lets `ALTER TABLE`
+rewrite each row a new column definition does not fit. The server warns, and
+the statement succeeds. `ptah-compat schema apply` runs its plan with
+`STRICT_ALL_TABLES` added to the session's mode, so the server refuses the
+statement and the table is unchanged. Measured on 2026-11-24 with the
+community binary v1.3.0 on MySQL 8.4.13 and MariaDB 11.8.9. The session took
+`sql_mode='NO_ENGINE_SUBSTITUTION'` from the URL, `--dev-url` named an empty
+database, and the plan removed the member `'ok'` that one row held:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| the statement | ``ALTER TABLE `c` MODIFY COLUMN `n` enum('happy','sad') NULL`` | the same statement |
+| exit status | `0` | `1`, with `column "n": the server would change a value to fit its column` in front of the server's error 1265 |
+| the row after the run | `''` | `'ok'` |
+
+A removed `SET` member and a narrower `VARCHAR` behave the same way. The
+rows a session without a strict mode stores are kept as they are; see
+[MySQL](../../databases/mysql/#a-session-without-a-strict-sql-mode). Migration
+files run under the session's mode as written, on both binaries.
+
+A trigger, a stored routine or an event the plan defines runs under the
+session's own mode, so the object keeps the mode the session had, as it
+would with no strict session. A change that rounds a value, such as
+`DECIMAL(8,3)` to `DECIMAL(8,1)`, is not refused (stokaro/ptah#6644). The
+strict session refuses `VARCHAR(20000)` in a `utf8mb4` table with error
+1074, where a session without a strict mode builds `mediumtext`.
+
+**Evidence.** `integration/mysql_stored_values_e2e_test.go`,
+`integration/dbschema/mysql_stored_values_live_test.go`
 
 ## Not on this page
 

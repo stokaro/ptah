@@ -19,7 +19,10 @@ import (
 // applyUnits preflights the complete batch before opening a transaction. The
 // transaction repeats validation so switching executors cannot bypass it. A
 // statement that gives an object to a role the server does not hold refuses
-// the batch before it sends anything; see [refuseMissingOwners].
+// the batch before it sends anything; see [refuseMissingOwners]. The batch is
+// Ptah's own plan, so it runs on a session that refuses a statement that would
+// change a value to fit its column; see
+// [dbschema.DatabaseConnection.WithStoredValuesKept].
 func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode, units []renderer.Fragment) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -38,6 +41,19 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 	if err := refuseMissingOwners(ctx, conn, statements); err != nil {
 		return err
 	}
+	return conn.WithStoredValuesKept(ctx, func(session *dbschema.DatabaseConnection) error {
+		return executeUnitBatch(ctx, session, mode, prepared, statements)
+	})
+}
+
+// executeUnitBatch sends the validated batch on conn under mode.
+func executeUnitBatch(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	mode migrator.MigrationTxMode,
+	prepared []renderer.Fragment,
+	statements []string,
+) error {
 	switch mode {
 	case migrator.MigrationTxModeNone:
 		return executeApplyUnits(ctx, conn.Writer(), prepared, statements)
