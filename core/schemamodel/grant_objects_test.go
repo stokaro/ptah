@@ -55,7 +55,7 @@ func TestGrant_ObjectTarget(t *testing.T) {
 	topic := schemamodel.Grant{Role: " app ", Privileges: []string{"select row"}, OnObject: " app.events ", ObjectKind: " coordination\tnode "}
 	topic.Canonicalize()
 
-	c.Assert(topic, qt.DeepEquals, schemamodel.Grant{Role: "app", Privileges: []string{"SELECT ROW"},
+	c.Assert(topic, qt.DeepEquals, schemamodel.Grant{Role: " app ", Privileges: []string{"SELECT ROW"},
 		OnObject: "app.events", ObjectKind: "COORDINATION NODE"})
 	c.Assert([]string{
 		topic.TargetKey(),

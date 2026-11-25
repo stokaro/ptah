@@ -188,7 +188,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))
 		grant.ObjectType = grantObjectTypeFor(objectType)
 		grant.WithOption = strings.EqualFold(strings.TrimSpace(grantable), "YES")
-		grant.GrantedBy = strings.TrimSpace(grantor.String)
+		grant.GrantedBy = grantor.String
 		grants = append(grants, grant)
 	}
 	return grants, rows.Err()

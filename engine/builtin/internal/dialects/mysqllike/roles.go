@@ -39,6 +39,9 @@ import (
 // server then refuses those instead -- moving the failure from one message to a
 // worse one.
 func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
+	if err := validatePrincipalNames(r.dialect, node.Name); err != nil {
+		return err
+	}
 	if !r.caps.Has(capability.RoleManagement) {
 		return unsupportedRoleError(r.dialect, "CREATE ROLE", node.Name)
 	}
@@ -64,6 +67,9 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 // IF EXISTS is accepted on an absent role, so the guarded form needs no
 // existence test.
 func (r *Renderer) renderDropRole(node *ast.DropRoleNode) error {
+	if err := validatePrincipalNames(r.dialect, node.Name); err != nil {
+		return err
+	}
 	if !r.caps.Has(capability.RoleManagement) {
 		return unsupportedRoleError(r.dialect, "DROP ROLE", node.Name)
 	}
@@ -94,6 +100,9 @@ func (r *Renderer) renderAlterRole(node *ast.AlterRoleNode) error {
 // holding the option leaves it on, and the engine has no INHERIT or SET option
 // per membership, so those are refused.
 func (r *Renderer) renderGrantRoleMembership(node *ast.GrantRoleMembershipNode) error {
+	if err := validatePrincipalNames(r.dialect, node.Role, node.Member); err != nil {
+		return err
+	}
 	if !r.caps.Has(capability.RoleMembership) {
 		return grantrefusal.Membership(r.dialect, r.caps, "ADD "+node.Member+" TO "+node.Role)
 	}
@@ -128,6 +137,9 @@ func (r *Renderer) renderGrantRoleMembership(node *ast.GrantRoleMembershipNode) 
 // no statement that revokes the admin option alone, so a node asking for one is
 // refused and the planner revokes the membership and grants it again.
 func (r *Renderer) renderRevokeRoleMembership(node *ast.RevokeRoleMembershipNode) error {
+	if err := validatePrincipalNames(r.dialect, node.Role, node.Member); err != nil {
+		return err
+	}
 	if !r.caps.Has(capability.RoleMembership) {
 		return grantrefusal.Membership(r.dialect, r.caps, "DROP "+node.Member+" FROM "+node.Role)
 	}
@@ -149,6 +161,9 @@ func (r *Renderer) renderRevokeRoleMembership(node *ast.RevokeRoleMembershipNode
 
 // renderGrantPrivilege renders GRANT.
 func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := validatePrincipalNames(r.dialect, node.Role); err != nil {
+		return err
+	}
 	if err := grantrefusal.Path(r.dialect, "GRANT", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}
@@ -186,6 +201,9 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 // privilege itself. The same form on a schema grant, `db`.*, leaves the schema
 // privilege in place too.
 func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := validatePrincipalNames(r.dialect, node.Role); err != nil {
+		return err
+	}
 	if err := grantrefusal.Path(r.dialect, "REVOKE", node.ObjectType, node.ObjectName); err != nil {
 		return err
 	}

@@ -293,8 +293,9 @@ func displayComponent(source string) string {
 // them as components ([Builder.TableParts], and the owner of a column, an
 // index, a constraint, a policy or a grant given the same way), because a
 // catalog holds " t" and t as two tables. A part split off one qualified string
-// is trimmed, because a space around the dot is only its spelling. The name of
-// every other object is trimmed, and a name of white space alone is none.
+// is trimmed, because a space around the dot is only its spelling. A role or
+// grantee also keeps every byte of its name, even white space alone. The name
+// of every other object is trimmed, and a name of white space alone is none.
 type Builder struct {
 	semantics identifier.Semantics
 }
@@ -527,7 +528,7 @@ func (b Builder) GrantParts(schema, object, role, privilege string) ID {
 		Kind:      KindGrant,
 		Schema:    owner.Schema,
 		Parent:    owner.Name,
-		Name:      b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey),
+		Name:      b.Role(role).Name,
 		Signature: NewParts(Part{Source: strings.TrimSpace(privilege), Normalized: strings.ToUpper(strings.TrimSpace(privilege))}),
 	}
 }
@@ -724,9 +725,14 @@ func balancedParentheses(value string) bool {
 }
 
 // Role builds the identity of a role, which no dialect Ptah targets qualifies
-// by schema.
+// by schema. It keeps the name's bytes, including white space.
 func (b Builder) Role(role string) ID {
-	return ID{Kind: KindRole, Name: b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey)}
+	_, quoted := unquote(role)
+	name := role
+	if b.semantics.TrailingSpacesIgnored {
+		name = strings.TrimRight(name, " ")
+	}
+	return ID{Kind: KindRole, Name: Part{Source: role, Normalized: b.semantics.TableIdentityKey(name), Quoted: quoted}}
 }
 
 // Function builds the identity of a routine, including its overload signature.

@@ -147,6 +147,10 @@ type Semantics struct {
 	// keeps apart, because only a name that could be written without quotes
 	// has an unquoted spelling to be confused with.
 	BareChars string `json:"bare_chars,omitempty"`
+	// TrailingSpacesIgnored reports that trailing ASCII spaces do not
+	// distinguish names on the target. StoredName and principal identities
+	// apply this rule; the source spelling still keeps its bytes.
+	TrailingSpacesIgnored bool `json:"trailing_spaces_ignored,omitempty"`
 }
 
 // ResolvedName maps one raw identifier to a deterministic catalog-equivalence
@@ -215,13 +219,14 @@ func newSemanticsTable(registry *descriptor.Registry) *semanticsTable {
 // catalog to answer and so cannot be stated offline.
 func FromDescriptor(described descriptor.Dialect) (Semantics, error) {
 	semantics := Semantics{
-		DefaultSchema:  described.DefaultSchema,
-		IndexNamespace: IndexNamespace(described.Identifiers.IndexNamespace),
-		IndexNames:     Comparison(described.Identifiers.IndexNames),
-		TableNames:     Comparison(described.Identifiers.TableNames),
-		ColumnNames:    Comparison(described.Identifiers.ColumnNames),
-		UnquotedFold:   Fold(described.Identifiers.UnquotedFold),
-		BareChars:      described.Identifiers.BareChars,
+		DefaultSchema:         described.DefaultSchema,
+		IndexNamespace:        IndexNamespace(described.Identifiers.IndexNamespace),
+		IndexNames:            Comparison(described.Identifiers.IndexNames),
+		TableNames:            Comparison(described.Identifiers.TableNames),
+		ColumnNames:           Comparison(described.Identifiers.ColumnNames),
+		UnquotedFold:          Fold(described.Identifiers.UnquotedFold),
+		BareChars:             described.Identifiers.BareChars,
+		TrailingSpacesIgnored: described.Names.TrailingSpacesIgnored,
 	}
 	if !semantics.valid() {
 		return Semantics{}, fmt.Errorf("%w: dialect %q states identifier rules %+v, which are not complete offline rules",
@@ -247,12 +252,13 @@ func unmodelled() Semantics {
 // which falls back to the offline [ForDialect] rules instead.
 func ForSQLServerCatalog(catalogCollation string) Semantics {
 	return Semantics{
-		DefaultSchema:    "dbo",
-		IndexNamespace:   IndexNamespaceTable,
-		IndexNames:       ComparisonCatalogResolved,
-		TableNames:       ComparisonCatalogResolved,
-		ColumnNames:      ComparisonCatalogResolved,
-		CatalogCollation: catalogCollation,
+		DefaultSchema:         "dbo",
+		IndexNamespace:        IndexNamespaceTable,
+		IndexNames:            ComparisonCatalogResolved,
+		TableNames:            ComparisonCatalogResolved,
+		ColumnNames:           ComparisonCatalogResolved,
+		CatalogCollation:      catalogCollation,
+		TrailingSpacesIgnored: true,
 	}
 }
 
@@ -313,7 +319,8 @@ func (s Semantics) IsZero() bool {
 		len(s.ResolvedNames) == 0 &&
 		s.SchemaSeparator == "" &&
 		s.UnquotedFold == "" &&
-		s.BareChars == ""
+		s.BareChars == "" &&
+		!s.TrailingSpacesIgnored
 }
 
 // Equal reports whether two semantics values carry the same rules and resolved
@@ -329,7 +336,8 @@ func (s Semantics) Equal(other Semantics) bool {
 		slices.Equal(s.ResolvedNames, other.ResolvedNames) &&
 		s.SchemaSeparator == other.SchemaSeparator &&
 		s.UnquotedFold == other.UnquotedFold &&
-		s.BareChars == other.BareChars
+		s.BareChars == other.BareChars &&
+		s.TrailingSpacesIgnored == other.TrailingSpacesIgnored
 }
 
 // Normalize returns a deep copy of s when it is complete and internally
@@ -636,12 +644,19 @@ func (s Semantics) quotedName(value string) (string, bool) {
 // reader. A double-quoted value gives the name inside its quotes, and a plain
 // identifier gives the name [Semantics.UnquotedFold] folds it to. Any other
 // value, and every value on a target that states no fold, comes back as
-// written.
+// written. A target that states TrailingSpacesIgnored receives the name
+// without trailing ASCII spaces, since they identify the same principal.
 func (s Semantics) StoredName(value string) string {
+	if s.TrailingSpacesIgnored {
+		value = strings.TrimRight(value, " ")
+	}
 	if s.UnquotedFold == "" {
 		return value
 	}
 	if name, quoted := s.quotedName(value); quoted {
+		if s.TrailingSpacesIgnored {
+			name = strings.TrimRight(name, " ")
+		}
 		return name
 	}
 	if !plainIdentifier(value, s.BareChars) {

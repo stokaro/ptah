@@ -350,7 +350,7 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 func findPublicGrants(db *schemamodel.Database, databasePath string) []Finding {
 	findings := make([]Finding, 0)
 	for _, grant := range db.Grants {
-		if !strings.EqualFold(strings.TrimSpace(grant.Role), publicRole) {
+		if !strings.EqualFold(grant.Role, publicRole) {
 			continue
 		}
 		if isShippedDefaultPublicGrant(grant) {
@@ -430,7 +430,7 @@ func findGrantedTablesWithoutRLS(db *schemamodel.Database) []Finding {
 			roles[table] = make(map[string]bool)
 			privileges[table] = make(map[string]bool)
 		}
-		roles[table][strings.TrimSpace(grant.Role)] = true
+		roles[table][grant.Role] = true
 		for _, privilege := range normalizedPrivileges(grant.Privileges) {
 			privileges[table][privilege] = true
 		}
@@ -604,7 +604,7 @@ func ownersWithUnknownLogin(owners []ObjectOwner) []string {
 func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage, databasePath string) []Finding {
 	used := make(map[string]bool, len(usage))
 	for _, observation := range usage {
-		role := strings.TrimSpace(observation.Role)
+		role := observation.Role
 		name := strings.TrimSpace(observation.Name)
 		if role == "" || name == "" {
 			continue
@@ -614,7 +614,7 @@ func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage
 
 	findings := make([]Finding, 0)
 	for _, grant := range db.Grants {
-		role := strings.TrimSpace(grant.Role)
+		role := grant.Role
 		if role == "" || strings.EqualFold(role, publicRole) {
 			continue
 		}
@@ -663,12 +663,12 @@ func findRolesWithNoMembers(db *schemamodel.Database, memberships []RoleMembersh
 		if !heldForItsPrivileges(membership) {
 			continue
 		}
-		held[strings.TrimSpace(membership.Role)] = true
+		held[membership.Role] = true
 	}
 
 	findings := make([]Finding, 0)
 	for _, role := range db.Roles {
-		name := strings.TrimSpace(role.Name)
+		name := role.Name
 		if name == "" || role.Login || held[name] {
 			continue
 		}
@@ -717,7 +717,7 @@ func heldForItsPrivileges(membership RoleMembership) bool {
 func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership, databasePath string) []Finding {
 	privileges := make(map[string]map[string]bool, len(db.Roles))
 	for _, role := range db.Roles {
-		privileges[strings.TrimSpace(role.Name)] = privilegeSetOfRole(db, strings.TrimSpace(role.Name), databasePath)
+		privileges[role.Name] = privilegeSetOfRole(db, role.Name, databasePath)
 	}
 
 	byMember := make(map[string][]string, len(memberships))
@@ -725,8 +725,8 @@ func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership
 		if !heldForItsPrivileges(membership) {
 			continue
 		}
-		member := strings.TrimSpace(membership.Member)
-		byMember[member] = append(byMember[member], strings.TrimSpace(membership.Role))
+		member := membership.Member
+		byMember[member] = append(byMember[member], membership.Role)
 	}
 
 	findings := make([]Finding, 0)
@@ -761,7 +761,7 @@ func findOverlappingRoles(db *schemamodel.Database, memberships []RoleMembership
 func privilegeSetOfRole(db *schemamodel.Database, role, databasePath string) map[string]bool {
 	held := make(map[string]bool)
 	for _, grant := range db.Grants {
-		if strings.TrimSpace(grant.Role) != role {
+		if grant.Role != role {
 			continue
 		}
 		object, kind := grantTarget(databasePath, grant)

@@ -364,14 +364,14 @@ func tableGrantsFromRemovals(
 	var granted []difftypes.GrantRef
 	for _, grant := range current.Grants {
 		if !strings.EqualFold(strings.TrimSpace(grant.ObjectType), "TABLE") || grant.Implicit || grant.IsPartialRevoke ||
-			strings.EqualFold(strings.TrimSpace(grant.Role), strings.TrimSpace(grant.GrantedBy)) ||
+			strings.EqualFold(grant.Role, grant.GrantedBy) ||
 			!objectlookup.Contains(names, grant.QualifiedTarget(), semantics) {
 			continue
 		}
 		ref := difftypes.GrantRef{
-			Role:        strings.TrimSpace(grant.Role),
-			GrantedBy:   strings.TrimSpace(grant.GrantedBy),
-			ObjectOwner: strings.TrimSpace(grant.ObjectOwner),
+			Role:        grant.Role,
+			GrantedBy:   grant.GrantedBy,
+			ObjectOwner: grant.ObjectOwner,
 			Privilege:   strings.ToUpper(strings.TrimSpace(grant.Privilege)),
 			ObjectType:  "TABLE",
 			ObjectName:  grant.QualifiedTarget(),

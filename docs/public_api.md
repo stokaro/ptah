@@ -5432,6 +5432,15 @@ written without one resolves in, in search order: on PostgreSQL the session's
 unqualified names takes one to be in any schema. `Equal` and `IsZero` compare
 the path too, and `Clone` copies it.
 
+`Semantics.TrailingSpacesIgnored` carries the descriptor's rule that trailing
+ASCII spaces do not distinguish a principal name, as on SQL Server.
+`StoredName` and role/grantee identity keys apply it; leading spaces and tabs
+remain part of the name. The rule participates in `Equal`, `IsZero`, and JSON
+snapshots (`trailing_spaces_ignored`). PostgreSQL, MariaDB and Oracle retain
+the leading space that distinguishes ` public` from the `PUBLIC` grantee.
+MariaDB declarations with trailing ASCII spaces are refused at validation,
+because `CREATE ROLE` removes them; trailing tabs remain significant.
+
 `core/platform/capability.ForDialect` answers the default preset a dialect's
 descriptor names, which an offline command plans with. An engine no descriptor
 describes has none. When an executable provider states the facts its engine is

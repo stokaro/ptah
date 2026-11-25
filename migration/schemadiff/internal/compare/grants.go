@@ -1068,15 +1068,15 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		objectName = grant.ObjectName
 	}
 	return difftypes.GrantRef{
-		Role:        strings.TrimSpace(grant.Role),
+		Role:        grant.Role,
 		Privilege:   strings.ToUpper(strings.TrimSpace(grant.Privilege)),
 		ObjectType:  objectType,
 		ObjectName:  objectName,
 		Arguments:   grant.Arguments,
 		Column:      strings.TrimSpace(grant.Column),
 		WithOption:  grant.WithOption,
-		GrantedBy:   strings.TrimSpace(grant.GrantedBy),
-		ObjectOwner: strings.TrimSpace(grant.ObjectOwner),
+		GrantedBy:   grant.GrantedBy,
+		ObjectOwner: grant.ObjectOwner,
 	}
 }
 

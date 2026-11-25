@@ -33,7 +33,7 @@ func TestReadRoleMemberships_ExcludesTheRolesEveryDatabaseShips(t *testing.T) {
 			Columns: []string{"role_name", "member_name"},
 			Rows: [][]driver.Value{
 				{"analyst", "alice"},
-				{"reader", "alice"},
+				{"reader ", "alice "},
 			},
 		}, nil
 	})
@@ -71,7 +71,7 @@ func TestReadObjectOwners_ResolvesTheOwnerAndWhetherItAuthenticates(t *testing.T
 			Rows: [][]driver.Value{
 				{"U", "dbo", "users", "dbo", true},
 				{"SO", "dbo", "order_seq", "dbo", true},
-				{"schema", "", "reporting", "alice", false},
+				{"schema", "", "reporting", "alice ", false},
 			},
 		}, nil
 	})

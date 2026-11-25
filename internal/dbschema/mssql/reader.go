@@ -886,6 +886,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 		if err := refuseAmbiguousPrincipal(role.Name); err != nil {
 			return nil, err
 		}
+		role.Name = strings.TrimRight(role.Name, " ")
 		// Inherit is the one attribute whose T-SQL answer is not false: a
 		// database role's members always receive its permissions.
 		role.Inherit = true
@@ -910,6 +911,7 @@ func (r *Reader) readRoleGraph(ctx context.Context, schema *catalog.Database) er
 	if err := r.db.QueryRowContext(ctx, `SELECT USER_NAME()`).Scan(&schema.ConnectedRole); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("sqlserver: read the connected role: %w", err)
 	}
+	schema.ConnectedRole = strings.TrimRight(schema.ConnectedRole, " ")
 	return nil
 }
 
@@ -946,6 +948,8 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 		if err := rows.Scan(&membership.Role, &membership.Member); err != nil {
 			return nil, err
 		}
+		membership.Role = strings.TrimRight(membership.Role, " ")
+		membership.Member = strings.TrimRight(membership.Member, " ")
 		memberships = append(memberships, membership)
 	}
 	if err := rows.Err(); err != nil {
@@ -1017,7 +1021,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 			resolved = mapped
 		}
 		owners = append(owners, catalog.ObjectOwner{
-			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: new(canLogin),
+			Kind: resolved, Schema: schemaName, Name: name, Owner: strings.TrimRight(owner, " "), OwnerCanLogin: new(canLogin),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1150,6 +1154,8 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		} else if err := refuseAmbiguousPrincipal(grant.Role); err != nil {
 			return nil, err
 		}
+		grant.Role = strings.TrimRight(grant.Role, " ")
+		grant.GrantedBy = strings.TrimRight(grant.GrantedBy, " ")
 		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))
 		grant.ObjectType = grantObjectTypeFor(class)
 		grant.WithOption = state == "GRANT_WITH_GRANT_OPTION"
@@ -1171,16 +1177,11 @@ const publicPrincipalID = 0
 // names the keyword PUBLIC, and as a schema file records it.
 const publicGrantee = "PUBLIC"
 
-// refuseAmbiguousPrincipal refuses a principal other than the fixed role
-// public that a comparison would take for another principal. A comparison
-// trims the white space around a grantee's name, and measured on SQL Server
-// 2025 any database accepts CREATE ROLE [ r], so read as itself such a
-// principal keys as r: its grants read as r's, a statement the plan writes
-// for it addresses [r], and a DENY declared for r that landed on it reads as
-// applied. The server compares names with trailing spaces ignored, so [r ] is
-// [r] to the server as well, and is read. A case-sensitive database also
-// accepts CREATE ROLE [PUBLIC], which keys as the fixed role, so a replay of
-// the read would give public what that role holds.
+// refuseAmbiguousPrincipal refuses a role named PUBLIC, which the schema
+// reserves for the fixed role, and surrounding white space outside the
+// trailing spaces SQL Server ignores. The SQL schema reader applies the same
+// restriction. A case-sensitive database can hold a separate role named
+// PUBLIC, so accepting it would confuse that role with the fixed one.
 func refuseAmbiguousPrincipal(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == publicGrantee {
@@ -1189,9 +1190,8 @@ func refuseAmbiguousPrincipal(name string) error {
 			ptaherr.ErrUnsupportedFeature, name)
 	}
 	if trimmed != strings.TrimRight(name, " ") {
-		return fmt.Errorf("%w: the database principal %q has white space around its name that the server keeps "+
-			"and a grant does not, so its grants would read as those of %q; rename the principal",
-			ptaherr.ErrUnsupportedFeature, name, trimmed)
+		return fmt.Errorf("%w: the database principal %q uses surrounding white space that Ptah does not support on SQL Server; rename the principal",
+			ptaherr.ErrUnsupportedFeature, name)
 	}
 	return nil
 }

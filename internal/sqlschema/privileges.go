@@ -58,13 +58,9 @@ var routineObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "R
 // On a server that ignores trailing spaces when it compares names (the
 // descriptor's Names.TrailingSpacesIgnored), the grantee is read without
 // them, as the server reads it: [r ] is the role r, and [public ] the fixed
-// role public. Other white space around the name is refused there, because a
-// grant keeps its grantee without it ([schemamodel.Grant.Canonicalize]) and
-// the server does not, so the statement would address another principal.
-// Measured on SQL Server 2025, a database accepts CREATE ROLE [ public], and
-// a DENY to it read with the space dropped is a DENY to the fixed role public.
-// On a server that keeps trailing spaces as well, the grant keeps the name
-// without its white space, which stokaro/ptah#6662 owns.
+// role public. Other white space around the name is refused there, matching
+// the SQL Server reader's restriction on principal names.
+// On a server that keeps trailing spaces, the grant keeps the complete name.
 func normalizeGrantee(sourcePlatform, role string) (string, error) {
 	names := factsOf(sourcePlatform).names
 	if names.PublicKeyword {
@@ -78,9 +74,8 @@ func normalizeGrantee(sourcePlatform, role string) (string, error) {
 	if names.TrailingSpacesIgnored {
 		normalized = strings.TrimRight(normalized, " ")
 		if trimmed := strings.TrimSpace(normalized); trimmed != normalized {
-			return "", fmt.Errorf("%w: the grantee %s has white space around its name that the server keeps "+
-				"and a grant does not, so it cannot be told from %q; rename the principal",
-				ptaherr.ErrUnsupportedFeature, strings.TrimSpace(role), trimmed)
+			return "", fmt.Errorf("%w: the grantee %s uses surrounding white space that Ptah does not support on this target; rename the principal",
+				ptaherr.ErrUnsupportedFeature, strings.TrimSpace(role))
 		}
 	}
 	trimmed := strings.TrimSpace(role)

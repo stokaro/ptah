@@ -1714,6 +1714,8 @@ type Grant struct {
 // keyword. Kept as written, a revoke of ALL PRIVILEGES names a privilege no
 // catalog reports: the plan revokes nothing while the role holds everything,
 // and reads as synced.
+// The grantee keeps every byte of its name: a space can distinguish it from
+// another principal, including the PUBLIC grantee.
 func (g *Grant) Canonicalize() {
 	seen := make(map[string]bool)
 	privileges := make([]string, 0, len(g.Privileges))
@@ -1732,7 +1734,6 @@ func (g *Grant) Canonicalize() {
 		}
 	}
 	g.Privileges = privileges
-	g.Role = strings.TrimSpace(g.Role)
 	g.OnTable = strings.TrimSpace(g.OnTable)
 	// A schema keeps its bytes, since ` a` and `a` are two schemas, and only
 	// a blank one is cleared. A source that reads a name from text, an

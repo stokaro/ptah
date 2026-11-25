@@ -1431,6 +1431,15 @@ The plan records the mode before and after each statement on a view, as the
 
 ### Roles and grants
 
+MySQL role and grantee names with leading or trailing white space are refused
+before a schema is compared or rendered. MySQL normalizes this white space in
+principal references, so use the unpadded name stored by the server. The same
+check applies to SQL, YAML and a schema assembled in Go, including `REVOKE`.
+MariaDB keeps leading white space and trailing tabs distinct: `` ` reader` ``
+and `` `reader` `` name different roles, and grants, revokes and `ptah db read`
+preserve that space. Trailing ASCII spaces are refused on MariaDB too, because
+`CREATE ROLE` removes them; use the name stored without trailing spaces.
+
 Reading roles and the grants on them needs `SELECT` on the `mysql` database, which
 ordinary schema work does not. An account without it records them as not described
 and is not refused, so a comparison decides nothing about them in either direction.

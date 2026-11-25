@@ -87,7 +87,7 @@ func TestReader_ReadsTheFixedRolePublicByItsPrincipal_HappyPath(t *testing.T) {
 	db := dbtest.Open(t, answeringPermissions([][]driver.Value{
 		{int64(0), "public", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
 		{int64(7), "Public", "DELETE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
-		{int64(8), "r ", "UPDATE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
+		{int64(8), "r ", "UPDATE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo "},
 	}))
 
 	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
@@ -96,14 +96,14 @@ func TestReader_ReadsTheFixedRolePublicByItsPrincipal_HappyPath(t *testing.T) {
 	c.Assert(live.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", GrantedBy: "dbo"},
 		{Role: "Public", Privilege: "DELETE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo"},
-		{Role: "r ", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo"},
+		{Role: "r", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo"},
 	})
 }
 
 // TestReader_RefusesAnAmbiguousPrincipal_FailurePath refuses a grantee other
 // than the fixed role that a comparison would take for another principal: a
-// schema names the fixed role PUBLIC, and a comparison trims a grantee's
-// spaces, so read as itself its grants would read as another principal's.
+// schema reserves PUBLIC for the fixed role, and the SQL Server reader
+// refuses leading and non-space trailing white space.
 func TestReader_RefusesAnAmbiguousPrincipal_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -112,8 +112,8 @@ func TestReader_RefusesAnAmbiguousPrincipal_FailurePath(t *testing.T) {
 	}{
 		{name: "PUBLIC", grantee: "PUBLIC", wantErr: `the database principal "PUBLIC" has the name a schema gives the fixed role public, .*`},
 		{name: "PUBLIC after a space", grantee: " PUBLIC", wantErr: `the database principal " PUBLIC" has the name a schema gives the fixed role public, .*`},
-		{name: "public after a space", grantee: " public", wantErr: `the database principal " public" has white space around its name that the server keeps and a grant does not, so its grants would read as those of "public"; rename the principal`},
-		{name: "a role before a tab", grantee: "r\t", wantErr: `the database principal "r\\t" has white space around its name that the server keeps and a grant does not, so its grants would read as those of "r"; rename the principal`},
+		{name: "public after a space", grantee: " public", wantErr: `the database principal " public" uses surrounding white space that Ptah does not support on SQL Server; rename the principal`},
+		{name: "a role before a tab", grantee: "r\t", wantErr: `the database principal "r\\t" uses surrounding white space that Ptah does not support on SQL Server; rename the principal`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -131,10 +131,13 @@ func TestReader_RefusesAnAmbiguousPrincipal_FailurePath(t *testing.T) {
 	}
 }
 
-// answeringRole scripts the read of the database roles with the role named
-// and answers every other catalog read with no rows.
+// answeringRole scripts a database role and the connected role with the same
+// name, and answers every other catalog read with no rows.
 func answeringRole(name string) dbtest.QueryHandler {
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		if query == "SELECT USER_NAME()" {
+			return dbtest.QueryResult{Columns: []string{"name"}, Rows: [][]driver.Value{{name}}}, nil
+		}
 		if !strings.Contains(query, "p.type = 'R' AND p.is_fixed_role = 0") {
 			return dbtest.QueryResult{}, nil
 		}
@@ -142,12 +145,22 @@ func answeringRole(name string) dbtest.QueryHandler {
 	}
 }
 
+func TestReader_SQLServerRoleIgnoresTrailingSpaces(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, answeringRole("reader "))
+
+	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(live.Roles, qt.HasLen, 1)
+	c.Assert(live.Roles[0].Name, qt.Equals, "reader")
+	c.Assert(live.ConnectedRole, qt.Equals, "reader")
+}
+
 // TestReader_RefusesAnAmbiguousRole_FailurePath refuses a database role a
 // comparison would take for another principal, with no grant to it: a role
 // named PUBLIC, which a case-sensitive database accepts beside the fixed role
-// public, and a role named with a space before it, which a comparison keys as
-// the role named without it, so a schema that declares that role reads as
-// applied.
+// public, and a role whose leading white space this reader does not support.
 func TestReader_RefusesAnAmbiguousRole_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -155,7 +168,7 @@ func TestReader_RefusesAnAmbiguousRole_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "PUBLIC", role: "PUBLIC", wantErr: `the database principal "PUBLIC" has the name a schema gives the fixed role public, .*`},
-		{name: "a role after a space", role: " r", wantErr: `the database principal " r" has white space around its name that the server keeps and a grant does not, .*`},
+		{name: "a role after a space", role: " r", wantErr: `the database principal " r" uses surrounding white space that Ptah does not support on SQL Server; .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

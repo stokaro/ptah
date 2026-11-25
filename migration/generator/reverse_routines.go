@@ -215,7 +215,7 @@ func routineGrantsForRestoredFunction(function catalog.Function, observed []cata
 			continue
 		}
 		grantsObserved = true
-		role := strings.TrimSpace(grant.Role)
+		role := grant.Role
 		privilege := strings.ToUpper(strings.TrimSpace(grant.Privilege))
 		if strings.EqualFold(role, "PUBLIC") && privilege == "EXECUTE" {
 			publicExecutes = true
@@ -232,10 +232,10 @@ func routineGrantsForRestoredFunction(function catalog.Function, observed []cata
 			}
 			continue
 		}
-		if grant.Implicit || strings.EqualFold(role, strings.TrimSpace(grant.GrantedBy)) {
+		if grant.Implicit || strings.EqualFold(role, grant.GrantedBy) {
 			continue
 		}
-		granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), strings.TrimSpace(grant.GrantedBy), strings.TrimSpace(grant.ObjectOwner), grant.WithOption))
+		granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), grant.GrantedBy, grant.ObjectOwner, grant.WithOption))
 	}
 	if grantsObserved && !publicExecutes {
 		revoked = append(revoked, target("PUBLIC", "EXECUTE", "", "", "", false))
