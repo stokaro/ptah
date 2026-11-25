@@ -4598,6 +4598,7 @@ migration again before its own first, so a rejected statement cannot leave an
 earlier statement or migration of the run applied. Validators inspect SQL but do
 not replace the migrator's execution path; use `WithStatementInterceptor` only
 when an external executor must take over accepted statements.
+
 `Migrator.WithStatementValidator` installs the same gate on a migrator instead,
 so it also reads migrations no filesystem provider loaded: a migration built
 with `CreateMigrationFromSQL`, or one an `AppliedHistory` carries. A run asks it
@@ -4884,19 +4885,20 @@ the variable.
 rollback statements from the schema a version defines rather than from a down
 body. Every entry point refuses a shadow database that holds anything the reset
 would drop or resolves to the target's live realm, drops it clean before the replay, and
-empties it again before returning. Every replay into the shadow database, of the
-history and of a candidate, runs through the dev replay guard
-`ptah migrations validate` runs, which refuses a statement whose effect the
-reset cannot take back, such as a write to another database or a role. A
-MySQL-family shadow URL that names no database widens the guard to every user
-database on the server, as it does for a dev URL. The `ptah` and `ptah-compat`
-commands also lift a refusal for a server the command started or the operator
-declared disposable, and for SQL the operator trusts; an embedder that calls
-these functions has neither. With `RefuseUnmatchedExclude` set,
+empties it again before returning. With `RefuseUnmatchedExclude` set,
 `PlanDynamicRollback` refuses an exclude selector that names no object with an
 error matching `shadow.ErrUnmatchedExclude` and returns no statement; the
 `ptah schema apply` and `ptah migrations down --plan` refusals match the same
 sentinel.
+
+Every replay into a `migration/shadow` shadow database, of the history and of a
+candidate, runs through the dev replay guard `ptah migrations validate` runs.
+The guard refuses a statement whose effect the reset cannot take back, such as
+a write to another database or a role. A MySQL-family shadow URL that names no
+database widens the guard to every user database on the server, as it does for
+a dev URL. The `ptah` and `ptah-compat` commands also lift a refusal for a
+server the command started or the operator declared disposable, and for SQL the
+operator trusts; an embedder that calls these functions has neither.
 
 `migration/generator.GenerateCheckpointFromShadow` and
 `migration/shadow.VerifyBaseline` apply the same SQLite-only validation before

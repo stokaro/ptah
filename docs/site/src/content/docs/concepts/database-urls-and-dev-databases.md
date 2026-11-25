@@ -705,18 +705,21 @@ refused, inside the body of an action or a `DO` block too.
 Trust covers the SQL a run executes on its dev database: a migration directory
 it replays there or on a shadow database, a desired schema file it loads there,
 and the baseline and plan a rehearsal writes. An apply to the target never needs it, and a command that
-parses or compares its input without executing it runs no input SQL. The
-native commands that take `--trust-replay-sql` are `migrations validate`,
-`migrations lint`, `migrations generate`, `migrations down`,
-`migrations baseline`, `migrations up`, `migrations drift`,
-`migrations checkpoint`, `schema inspect`, `schema diff` and `schema apply`.
-On `ptah-compat`, `migrate validate`, `migrate diff`, `migrate lint`,
-`migrate down`, `migrate apply`, `migrate drift`, `migrate checkpoint`,
-`schema inspect`, `schema diff`, `schema apply`, `schema plan lint` and
-`schema plan validate` read the variable. Each of them
-refuses a value that is not a boolean before any work. Strict Atlas
-compatibility keeps the variable, because the pinned community binary runs
-these statements on any dev database.
+parses or compares its input without executing it runs no input SQL. These
+commands read the setting, and each refuses a value that is not a boolean
+before any work:
+
+- `ptah`, with `--trust-replay-sql`: `migrations validate`, `migrations lint`,
+  `migrations generate`, `migrations down`, `migrations baseline`,
+  `migrations up`, `migrations drift`, `migrations checkpoint`,
+  `schema inspect`, `schema diff` and `schema apply`.
+- `ptah-compat`, through the variable: `migrate validate`, `migrate diff`,
+  `migrate lint`, `migrate down`, `migrate apply`, `migrate drift`,
+  `migrate checkpoint`, `schema inspect`, `schema diff`, `schema apply`,
+  `schema plan lint` and `schema plan validate`.
+
+Strict Atlas compatibility keeps the variable, because the pinned community
+binary runs these statements on any dev database.
 
 There is no `ptah.yaml` key for trust, and a `ptah.yaml` that sets
 `trust_replay_sql` is refused as an unknown key. A command discovers
