@@ -6,10 +6,11 @@ import (
 
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlbody"
 )
 
 func rejectMySQLExecutableComments(dialect, stmt string) error {
-	lex := lexer.NewLexerWithOptions(stmt, lexerOptions())
+	lex := lexer.NewLexerWithOptions(stmt, mysqlbody.LexerOptions())
 	for {
 		token := lex.NextToken()
 		if token.Type == lexer.TokenEOF {
@@ -274,72 +275,10 @@ func isGlobalMySQLDDL(tokens []lexer.Token) bool {
 	}
 }
 
-func definesMySQLExecutableBody(tokens []lexer.Token) bool {
-	return mysqlExecutableBodyKind(tokens) != ""
-}
-
-// mysqlExecutableBodyKind names the kind of executable object a CREATE or
-// ALTER defines -- FUNCTION, PROCEDURE, TRIGGER or EVENT -- or returns "" for
-// any other statement. It is the one reading of that shape: the database realm
+// definesMySQLExecutableBody reads [mysqlbody.Kind]: the database realm
 // refuses every kind it names, and the server realm lifts every kind but EVENT.
-func mysqlExecutableBodyKind(tokens []lexer.Token) string {
-	if !replay.IsDDLAction(tokens) {
-		return ""
-	}
-	first := replay.NormalizedIdentifier(tokens[0])
-	if first != "CREATE" && first != "ALTER" {
-		return ""
-	}
-	index := 1
-	if first == "CREATE" && replay.TokenSequenceAt(tokens, index, "OR", "REPLACE") {
-		index += 2
-	}
-	if first == "CREATE" && replay.TokenSequenceAt(tokens, index, "DEFINER") {
-		index = skipMySQLDefiner(tokens, index+1)
-	}
-	if replay.TokenSequenceAt(tokens, index, "AGGREGATE", "FUNCTION") {
-		return "FUNCTION"
-	}
-	for _, kind := range []string{"EVENT", "FUNCTION", "PROCEDURE", "TRIGGER"} {
-		if replay.TokenSequenceAt(tokens, index, kind) {
-			return kind
-		}
-	}
-	return ""
-}
-
-func skipMySQLDefiner(tokens []lexer.Token, index int) int {
-	if index < len(tokens) && tokens[index].MatchOperatorValue("=") {
-		index++
-	}
-	if index >= len(tokens) {
-		return index
-	}
-	index++
-	if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
-		index = skipBalancedParentheses(tokens, index)
-	}
-	if index < len(tokens) && tokens[index].MatchOperatorValue("@") {
-		index += min(2, len(tokens)-index)
-	}
-	return index
-}
-
-func skipBalancedParentheses(tokens []lexer.Token, index int) int {
-	depth := 0
-	for index < len(tokens) {
-		switch {
-		case tokens[index].MatchOperatorValue("("):
-			depth++
-		case tokens[index].MatchOperatorValue(")"):
-			depth--
-			if depth == 0 {
-				return index + 1
-			}
-		}
-		index++
-	}
-	return index
+func definesMySQLExecutableBody(tokens []lexer.Token) bool {
+	return mysqlbody.Kind(tokens) != ""
 }
 
 func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {

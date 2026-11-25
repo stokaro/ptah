@@ -21,7 +21,8 @@ import (
 // statement that gives an object to a role the server does not hold refuses
 // the batch before it sends anything; see [refuseMissingOwners]. The batch is
 // Ptah's own plan, so it runs on a session that refuses a statement that would
-// rewrite stored values; see [dbschema.DatabaseConnection.WithStoredValuesKept].
+// change a value to fit its column; see
+// [dbschema.DatabaseConnection.WithStoredValuesKept].
 func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode, units []renderer.Fragment) error {
 	if err := ctx.Err(); err != nil {
 		return err

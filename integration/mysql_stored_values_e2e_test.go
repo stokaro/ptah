@@ -45,7 +45,7 @@ const storedValuesRead = "SELECT CONCAT_WS(';', (SELECT GROUP_CONCAT(CONCAT(id, 
 	"(SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'))"
 
 // storedValuesRefusal is what a refused run says about the change.
-const storedValuesRefusal = `column "n": the change would rewrite stored values: `
+const storedValuesRefusal = `column "n": the server would change a value to fit its column: `
 
 // looseStoredValuesTarget creates a database on engine's server, runs live
 // on it as the server receives it, and returns an address whose sessions are
@@ -244,6 +244,204 @@ func TestMigrationsDownPlanRefusesToRewriteStoredValuesOnALooseSessionE2E(t *tes
 			c.Assert(down.ExitCode, qt.Equals, 2, historyComment(down))
 			c.Assert(down.Stderr, qt.Contains, storedValuesRefusal)
 			c.Assert(readStoredValues(c, target), qt.Equals, "1='ok',2='happy';enum('happy','sad','ok')")
+		})
+	}
+}
+
+// readStoredScalar answers query, which reads one value, on a session of
+// database.
+func readStoredScalar(c *qt.C, database, query string) string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), database)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var got string
+	c.Assert(conn.QueryRowContext(c.Context(), query).Scan(&got), qt.IsNil)
+	return got
+}
+
+// storedBodyTable is the table the trigger of [storedBodyChanges] is defined
+// on, and storedTriggerMode reads the sql_mode the trigger kept.
+const (
+	storedBodyTable   = "CREATE TABLE t (id INT PRIMARY KEY, code VARCHAR(5));\n"
+	storedTriggerBody = "CREATE TRIGGER t_bi BEFORE INSERT ON t FOR EACH ROW SET NEW.code = CONCAT(NEW.code, '-x');\n"
+	storedTriggerMode = "SELECT SQL_MODE FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = 't_bi'"
+)
+
+// storedBodyChanges are objects the server keeps a session's sql_mode with,
+// added to table t: the schema that adds one, the query that reads the mode
+// it kept, and what column code holds after the application's loose session
+// inserts 'abcd'.
+var storedBodyChanges = []struct {
+	name, desired, mode, code string
+}{
+	{
+		name:    "a trigger",
+		desired: storedBodyTable + storedTriggerBody,
+		mode:    storedTriggerMode,
+		code:    "abcd-",
+	},
+	{
+		name:    "a procedure",
+		desired: storedBodyTable + "CREATE PROCEDURE p_one() BEGIN SELECT 1; END;\n",
+		mode:    "SELECT SQL_MODE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = 'p_one'",
+		code:    "abcd",
+	},
+}
+
+// TestSchemaApplyGivesAStoredBodyTheSessionsModeOnALooseSessionE2E adds each
+// object with `ptah schema apply`. The plan runs on a strict session, and the
+// statement that defines the object runs under the mode the session had, so
+// the object keeps that mode, as it would without the strict session. The
+// application's loose session then inserts a string the trigger makes longer
+// than the column, and the row stores it cut, rather than the insert failing
+// under a strict mode the trigger kept.
+func TestSchemaApplyGivesAStoredBodyTheSessionsModeOnALooseSessionE2E(t *testing.T) {
+	for _, engine := range storedValueEngines {
+		for _, change := range storedBodyChanges {
+			t.Run(engine.name+"/"+change.name, func(t *testing.T) {
+				c := qt.New(t)
+				target := looseStoredValuesTarget(c, engine.engine, storedBodyTable)
+
+				applied := runPtahIn(c, "schema", "apply", "--db-url", target,
+					"--schema-file", writeStoredValuesSchema(c, change.desired), "--auto-approve")
+
+				c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+				c.Assert(readStoredScalar(c, target, change.mode), qt.Equals, "NO_ENGINE_SUBSTITUTION")
+				execStoredValues(c, target, "INSERT INTO t VALUES (1, 'abcd')")
+				c.Assert(readStoredScalar(c, target, "SELECT code FROM t WHERE id = 1"), qt.Equals, change.code)
+			})
+		}
+	}
+}
+
+// writeStoredTriggerMigrations writes a directory whose version 1 creates
+// table t with trigger t_bi and whose version 2 drops the trigger, and
+// returns it. A trigger is a writer Ptah cannot check before it runs, so the
+// files run with --tx-mode none, and dropping it is destructive, so they run
+// with --allow-destructive.
+func writeStoredTriggerMigrations(c *qt.C) string {
+	c.Helper()
+	dir := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+	files := map[string]string{
+		"0000000000001_create_t.up.sql":       storedBodyTable + storedTriggerBody,
+		"0000000000001_create_t.down.sql":     "DROP TABLE t;\n",
+		"0000000000002_drop_trigger.up.sql":   "DROP TRIGGER t_bi;\n",
+		"0000000000002_drop_trigger.down.sql": storedTriggerBody,
+	}
+	for name, body := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+	}
+	return dir
+}
+
+// TestMigrationsDownPlanGivesARecreatedTriggerTheSessionsModeE2E rolls
+// version 2 back with `ptah migrations down --plan`, which derives a CREATE
+// TRIGGER from the database rather than running the down file. The derived
+// statement runs on the strict session under the mode the session had, so
+// the trigger keeps that mode, and the application's loose session inserts
+// through it as it did before version 2.
+func TestMigrationsDownPlanGivesARecreatedTriggerTheSessionsModeE2E(t *testing.T) {
+	for _, engine := range storedValueEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := looseStoredValuesTarget(c, engine.engine, "SELECT 1;")
+			_, dev := newMySQLFamilyScratch(c, engine.engine).database(c, "stored_trigger_shadow")
+			migrations := writeStoredTriggerMigrations(c)
+			up := runPtahIn(c, "migrations", "up", "--db-url", target, "--migrations-dir", migrations,
+				"--tx-mode", "none", "--allow-destructive")
+			c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
+
+			down := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables(), Timeout: 2 * time.Minute},
+				"migrations", "down", "--db-url", target, "--migrations-dir", migrations,
+				"--target", "1", "--plan", "--shadow-db", dev, "--confirm")
+
+			c.Assert(down.ExitCode, qt.Equals, 0, historyComment(down))
+			c.Assert(readStoredScalar(c, target, storedTriggerMode), qt.Equals, "NO_ENGINE_SUBSTITUTION")
+			execStoredValues(c, target, "INSERT INTO t VALUES (1, 'abcd')")
+			c.Assert(readStoredScalar(c, target, "SELECT code FROM t WHERE id = 1"), qt.Equals, "abcd-")
+		})
+	}
+}
+
+// storedValuesTestEntities writes the Go schema `ptah schema test` provisions,
+// table c with a VARCHAR(3) column n, and returns its directory.
+func storedValuesTestEntities(c *qt.C) string {
+	c.Helper()
+	dir := c.TempDir()
+	content := `package models
+
+//ptah:schema:table name="c"
+type C struct {
+	//ptah:schema:field name="id" type="INT" primary="true"
+	ID int64
+
+	//ptah:schema:field name="n" type="VARCHAR(3)"
+	N string
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "entity.go"), []byte(content), 0o600), qt.IsNil)
+	return dir
+}
+
+// storedValuesTestCase writes a schema test case that widens column n, stores
+// value, and applies the desired schema again, which narrows the column back,
+// and returns its directory.
+func storedValuesTestCase(c *qt.C, value string) string {
+	c.Helper()
+	dir := c.TempDir()
+	content := `cases:
+  - name: narrow the column again
+    steps:
+      - name: widen the column
+        exec: ALTER TABLE c MODIFY n VARCHAR(10)
+      - name: store a value
+        exec: INSERT INTO c VALUES (1, '` + value + `')
+      - name: apply desired schema
+        apply_schema: true
+`
+	c.Assert(os.WriteFile(filepath.Join(dir, "cases.yaml"), []byte(content), 0o600), qt.IsNil)
+	return dir
+}
+
+// TestSchemaTestRefusesToRewriteStoredValuesOnALooseSessionE2E runs a case
+// whose apply_schema step narrows a column below a string a row holds. The
+// step runs Ptah's plan on a strict session, as `schema apply` does, so the
+// server refuses the statement, the step fails naming the column, and the row
+// keeps its string.
+func TestSchemaTestRefusesToRewriteStoredValuesOnALooseSessionE2E(t *testing.T) {
+	for _, engine := range storedValueEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := looseStoredValuesTarget(c, engine.engine, "SELECT 1;")
+
+			tested := runPtahIn(c, "schema", "test", "--dir", storedValuesTestCase(c, "abcdefghij"),
+				"--root-dir", storedValuesTestEntities(c), "--db-url", target)
+
+			c.Assert(tested.ExitCode, qt.Equals, 1, historyComment(tested))
+			c.Assert(tested.Stdout+tested.Stderr, qt.Contains, `step "apply desired schema" — apply_schema failed: `+storedValuesRefusal)
+			c.Assert(readStoredScalar(c, target, "SELECT n FROM c WHERE id = 1"), qt.Equals, "abcdefghij")
+		})
+	}
+}
+
+// TestSchemaTestNarrowsAColumnEveryStoredValueFitsOnALooseSessionE2E is the
+// control: where the row fits the narrower column, the same step applies on
+// the same loose session and the case passes.
+func TestSchemaTestNarrowsAColumnEveryStoredValueFitsOnALooseSessionE2E(t *testing.T) {
+	for _, engine := range storedValueEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := looseStoredValuesTarget(c, engine.engine, "SELECT 1;")
+
+			tested := runPtahIn(c, "schema", "test", "--dir", storedValuesTestCase(c, "ab"),
+				"--root-dir", storedValuesTestEntities(c), "--db-url", target)
+
+			c.Assert(tested.ExitCode, qt.Equals, 0, historyComment(tested))
+			c.Assert(readStoredScalar(c, target,
+				"SELECT CONCAT(n, ';', COLUMN_TYPE) FROM c, information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"),
+				qt.Equals, "ab;varchar(3)")
 		})
 	}
 }

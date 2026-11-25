@@ -234,8 +234,11 @@ func applyDesiredSchema(
 	}
 	// One session, because a MySQL-family plan that replaces a trigger holds
 	// LOCK TABLES across statements, and on a pool the next statement can wait
-	// behind the lock another connection holds.
-	err = conn.WithSessionOrCurrent(ctx, func(session *dbschema.DatabaseConnection) error {
+	// behind the lock another connection holds. The plan is Ptah's, so the
+	// session refuses a statement that would change a value to fit its
+	// column, as `schema apply` does; see
+	// [dbschema.DatabaseConnection.WithStoredValuesKept].
+	err = conn.WithStoredValuesKept(ctx, func(session *dbschema.DatabaseConnection) error {
 		for _, stmt := range sqlutil.SplitStatementsForDialect(session.Info().Dialect, sql) {
 			if strings.TrimSpace(stmt) == "" {
 				continue

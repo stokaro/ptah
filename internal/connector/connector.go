@@ -133,19 +133,18 @@ type Service interface {
 	// trust.
 	RestrictUntrustedSQL(ctx context.Context, session *sql.Conn) error
 	// StoredValuesBySession reports whether a setting of the session decides
-	// that the server changes a value a table stores to fit a new definition
-	// and warns, rather than refusing the statement. A plan Ptah rendered then
-	// runs on a session [Service.KeepStoredValues] set up.
+	// that the server changes a value to fit its column and warns, rather
+	// than refusing the statement. A plan Ptah rendered then runs on a
+	// session [Service.KeepStoredValues] set up.
 	StoredValuesBySession() bool
 	// KeepStoredValues sets, on a pinned session that will run a plan Ptah
 	// rendered, whatever makes the server refuse a statement that would
-	// change a value a table stores to fit a new definition. It returns the
-	// function that gives the session back the setting it had, or nil when
+	// change a value to fit its column. It returns what it set, or nil when
 	// the session needed nothing.
-	KeepStoredValues(ctx context.Context, session *sql.Conn) (restore func(context.Context) error, err error)
+	KeepStoredValues(ctx context.Context, session *sql.Conn) (StoredValuesWindow, error)
 	// StoredValueRefusal reports whether err is the server refusing a
-	// statement because it would change a stored value, and the column the
-	// server names, which is empty where it names none.
+	// statement because it would change a value to fit its column, and the
+	// column the server names, which is empty where it names none.
 	StoredValueRefusal(err error) (column string, refused bool)
 
 	// MarkRead records on a schema the reader read what the read cannot
@@ -165,6 +164,27 @@ type Service interface {
 	// do not run as split statements in one transaction
 	// (descriptor.Seeds.ByOwner), and nil for every other engine.
 	Seeds() dataext.Seeds
+}
+
+// StoredValuesWindow is what [Service.KeepStoredValues] set on a session.
+type StoredValuesWindow interface {
+	// Restore gives the session back the settings it had.
+	Restore(ctx context.Context) error
+	// StoredWith reports whether the server keeps the session's settings with
+	// the object statement defines and applies them each time the object
+	// runs, as MySQL does with the sql_mode of a trigger, a stored routine and
+	// an event. For such a statement it returns the statement that gives the
+	// session the settings it had before the window, and the one that sets
+	// the window's settings again. The caller runs statement between them on
+	// the same session, so the object keeps the settings the session had.
+	StoredWith(statement string) (own, window SessionStatement, stored bool)
+}
+
+// SessionStatement is a statement that changes a session's settings, and the
+// arguments it binds.
+type SessionStatement struct {
+	SQL  string
+	Args []any
 }
 
 // Base is the answer of an engine with nothing to add. Its Open opens
@@ -242,7 +262,7 @@ func (Base) RestrictUntrustedSQL(context.Context, *sql.Conn) error { return nil 
 func (Base) StoredValuesBySession() bool { return false }
 
 // KeepStoredValues sets nothing.
-func (Base) KeepStoredValues(context.Context, *sql.Conn) (func(context.Context) error, error) {
+func (Base) KeepStoredValues(context.Context, *sql.Conn) (StoredValuesWindow, error) {
 	return nil, nil
 }
 

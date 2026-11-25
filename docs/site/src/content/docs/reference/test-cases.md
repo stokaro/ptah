@@ -70,6 +70,10 @@ concurrent runners are not serialized and arbitrary SQL is not rolled back.
 `apply_schema` preserves unrelated objects, uses live dialect capabilities and
 identifier semantics, and can repair supported drift. Roles and grants are
 rejected because their effects can escape the database-local test lifecycle.
+On MySQL and MariaDB the step runs its plan on a strict session, as
+`schema apply` does, so a change that a row a test stored does not fit fails
+the step rather than rewriting the row; see
+[A session without a strict SQL mode](../../databases/mysql/#a-session-without-a-strict-sql-mode).
 
 `--schema` counts an object the desired schema leaves unqualified in the schema
 the throwaway database creates it in, and `--db-url` names that schema:

@@ -3,6 +3,7 @@ package mysqlreplay
 import (
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlbody"
 )
 
 // mysqlServerWideOperation names a MySQL or MariaDB statement whose only reason
@@ -25,7 +26,7 @@ func mysqlServerWideOperation(tokens []lexer.Token) string {
 	case "GRANT", "REVOKE":
 		return "privilege or role mutation"
 	case "CREATE", "ALTER", "DROP":
-		switch mysqlExecutableBodyKind(tokens) {
+		switch mysqlbody.Kind(tokens) {
 		case "":
 		case "EVENT":
 			return ""

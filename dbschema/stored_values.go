@@ -2,16 +2,23 @@ package dbschema
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+
+	"ptah.run/catalog"
+	"ptah.run/internal/connector"
+	"ptah.run/internal/sqlrunner"
 )
 
-// ErrStoredValuesRewritten is the error a statement run by
+// ErrValueChangedToFit is the error a statement run by
 // [DatabaseConnection.WithStoredValuesKept] fails with when the server refuses
-// it because it would change values a table stores to fit a new definition.
-// The error that wraps it also wraps the server's own error.
-var ErrStoredValuesRewritten = errors.New("the change would rewrite stored values")
+// it because it would change a value to fit its column: a value a table
+// stores, under an ALTER TABLE that changes the column, or a value the
+// statement writes. The error that wraps it also wraps the server's own
+// error.
+var ErrValueChangedToFit = errors.New("the server would change a value to fit its column")
 
 // storedValuesRestoreTimeout bounds giving a session back the settings
 // [DatabaseConnection.WithStoredValuesKept] changed, which runs after the
@@ -19,13 +26,13 @@ var ErrStoredValuesRewritten = errors.New("the change would rewrite stored value
 const storedValuesRestoreTimeout = 5 * time.Second
 
 // WithStoredValuesKept calls use with one physical database session on which
-// the server refuses a statement that would change a value a table stores to
-// fit a new definition, where a setting of the session would let the server
-// make that change and warn. On MySQL and MariaDB that is a session whose
-// sql_mode names no strict mode: there an ALTER TABLE that drops an ENUM or SET
-// member some row holds, or narrows a column below a value some row holds,
-// succeeds and rewrites the rows. Other engines refuse such a statement
-// whatever the session says, and use runs on the session unchanged.
+// the server refuses a statement that would change a value to fit its column,
+// where a setting of the session would let the server make that change and
+// warn. On MySQL and MariaDB that is a session whose sql_mode names no strict
+// mode: there an ALTER TABLE that drops an ENUM or SET member some row holds,
+// or narrows a column below a value some row holds, succeeds and rewrites the
+// rows. Other engines refuse such a statement whatever the session says, and
+// use runs on the session unchanged.
 //
 // Run Ptah's own plan through it, never SQL the user wrote: a migration file
 // may depend on the server's settings, and runs as written.
@@ -34,9 +41,20 @@ const storedValuesRestoreTimeout = 5 * time.Second
 // afterward, where the engine decides by a setting of the session, and a
 // pinned one runs use on its own session. Either way the session has the
 // settings it started with again when WithStoredValuesKept returns, and an
-// error setting them back is joined to the result. An error from use that the
-// server gives for a statement it refuses this way wraps
-// [ErrStoredValuesRewritten] and names the column the server names.
+// error setting them back is joined to the result.
+//
+// The server keeps the session's settings with some objects and applies them
+// each time the object runs: MySQL keeps the sql_mode of a trigger, a stored
+// routine and an event. A statement that defines one runs under the settings
+// the session started with, so the object keeps them, and the session's
+// settings for the rest of use are set again after it. This holds for a
+// statement use sends through the session's writer, a transaction the writer
+// begins, the session's executor, or [DatabaseConnection.ExecContext].
+//
+// An error from use that the server gives for a statement it refuses this way
+// wraps [ErrValueChangedToFit] and names the column the server names. A
+// session that refuses such a statement already is left as it is, and the
+// server's error comes back unchanged.
 func (dc *DatabaseConnection) WithStoredValuesKept(
 	ctx context.Context,
 	use func(*DatabaseConnection) error,
@@ -58,18 +76,19 @@ func (dc *DatabaseConnection) WithStoredValuesKept(
 			return fmt.Errorf("stored values session requires a pinned SQL session")
 		}
 		engine := session.engine()
-		restore, err := engine.KeepStoredValues(ctx, session.session)
+		window, err := engine.KeepStoredValues(ctx, session.session)
 		if err != nil {
 			return fmt.Errorf("keep stored values on the session: %w", err)
 		}
-		if restore != nil {
-			defer func() {
-				restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storedValuesRestoreTimeout)
-				defer cancel()
-				resultErr = errors.Join(resultErr, restore(restoreCtx))
-			}()
+		if window == nil {
+			return use(session)
 		}
-		err = use(session)
+		defer func() {
+			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storedValuesRestoreTimeout)
+			defer cancel()
+			resultErr = errors.Join(resultErr, window.Restore(restoreCtx))
+		}()
+		err = use(session.inStoredValuesWindow(window))
 		if column, refused := engine.StoredValueRefusal(err); refused {
 			return storedValuesError(column, err)
 		}
@@ -77,11 +96,167 @@ func (dc *DatabaseConnection) WithStoredValuesKept(
 	})
 }
 
-// storedValuesError is err, refused by the server because it would rewrite
-// the values column stores, with the column in front of the reason.
+// storedValuesError is err, refused by the server because it would change a
+// value to fit column, with the column in front of the reason.
 func storedValuesError(column string, err error) error {
 	if column == "" {
-		return fmt.Errorf("%w: %w", ErrStoredValuesRewritten, err)
+		return fmt.Errorf("%w: %w", ErrValueChangedToFit, err)
 	}
-	return fmt.Errorf("column %q: %w: %w", column, ErrStoredValuesRewritten, err)
+	return fmt.Errorf("column %q: %w: %w", column, ErrValueChangedToFit, err)
+}
+
+// inStoredValuesWindow is the session with every path a statement takes to
+// the server running through window: the writer and the transactions it
+// begins, the executor, and the runner [DatabaseConnection.ExecContext]
+// reads. The reader is the session's own, since a read stores nothing.
+func (dc *DatabaseConnection) inStoredValuesWindow(window connector.StoredValuesWindow) *DatabaseConnection {
+	scoped := *dc
+	if dc.writer != nil {
+		scoped.writer = windowWriter{SchemaWriter: dc.writer, window: window}
+	}
+	switch executor := dc.executor.(type) {
+	case nil:
+	case catalog.SchemaTransaction:
+		scoped.executor = windowTransaction{SchemaTransaction: executor, window: window}
+	default:
+		scoped.executor = windowExecutor{SchemaExecutor: executor, window: window}
+	}
+	if dc.runner != nil {
+		scoped.runner = windowRunner{Runner: dc.runner, window: window}
+	}
+	return &scoped
+}
+
+// windowWriter is a schema writer whose statements run through window.
+type windowWriter struct {
+	catalog.SchemaWriter
+	window connector.StoredValuesWindow
+}
+
+// ExecuteSQL runs statement through the window.
+func (w windowWriter) ExecuteSQL(ctx context.Context, statement string, args ...any) error {
+	return executeInWindow(ctx, w.SchemaWriter, w.window, statement, args)
+}
+
+// BeginTransaction begins a transaction whose statements run through the
+// window.
+func (w windowWriter) BeginTransaction(ctx context.Context) (catalog.SchemaTransaction, error) {
+	tx, err := w.SchemaWriter.BeginTransaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return windowTransaction{SchemaTransaction: tx, window: w.window}, nil
+}
+
+// windowTransaction is a schema transaction whose statements run through
+// window. It reports no rollback evidence of its own, as
+// [catalog.CancellationRollback] allows, since no caller in a window reads
+// any.
+type windowTransaction struct {
+	catalog.SchemaTransaction
+	window connector.StoredValuesWindow
+}
+
+// ExecuteSQL runs statement through the window.
+func (t windowTransaction) ExecuteSQL(ctx context.Context, statement string, args ...any) error {
+	return executeInWindow(ctx, t.SchemaTransaction, t.window, statement, args)
+}
+
+// windowExecutor is a schema executor whose statements run through window.
+type windowExecutor struct {
+	catalog.SchemaExecutor
+	window connector.StoredValuesWindow
+}
+
+// ExecuteSQL runs statement through the window.
+func (e windowExecutor) ExecuteSQL(ctx context.Context, statement string, args ...any) error {
+	return executeInWindow(ctx, e.SchemaExecutor, e.window, statement, args)
+}
+
+// windowRunner is a SQL runner whose statements run through window.
+type windowRunner struct {
+	sqlrunner.Runner
+	window connector.StoredValuesWindow
+}
+
+// ExecContext runs query through the window.
+func (r windowRunner) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	var result sql.Result
+	err := runInWindow(ctx, r.window, query,
+		func(ctx context.Context, settings connector.SessionStatement) error {
+			_, err := r.Runner.ExecContext(ctx, settings.SQL, settings.Args...)
+			return err
+		},
+		func(ctx context.Context) error {
+			var err error
+			result, err = r.Runner.ExecContext(ctx, query, args...)
+			return err
+		},
+	)
+	return result, err
+}
+
+// Exec runs query through the window, with the context the runner binds.
+func (r windowRunner) Exec(query string, args ...any) (sql.Result, error) {
+	var result sql.Result
+	err := runInWindow(context.Background(), r.window, query,
+		func(_ context.Context, settings connector.SessionStatement) error {
+			_, err := r.Runner.Exec(settings.SQL, settings.Args...)
+			return err
+		},
+		func(context.Context) error {
+			var err error
+			result, err = r.Runner.Exec(query, args...)
+			return err
+		},
+	)
+	return result, err
+}
+
+// executeInWindow runs statement on executor through window. The settings
+// go through executor too, so a dry run sends none of them.
+func executeInWindow(
+	ctx context.Context,
+	executor catalog.SchemaExecutor,
+	window connector.StoredValuesWindow,
+	statement string,
+	args []any,
+) error {
+	return runInWindow(ctx, window, statement,
+		func(ctx context.Context, settings connector.SessionStatement) error {
+			return executor.ExecuteSQL(ctx, settings.SQL, settings.Args...)
+		},
+		func(ctx context.Context) error {
+			return executor.ExecuteSQL(ctx, statement, args...)
+		},
+	)
+}
+
+// runInWindow runs statement with run. A statement whose settings the server
+// keeps with the object it defines runs between set giving the session its
+// own settings and set giving it the window's again. The second runs even when
+// the statement fails, on a context that outlives the caller's, since the rest
+// of the session's statements need it; its error is joined to the result.
+func runInWindow(
+	ctx context.Context,
+	window connector.StoredValuesWindow,
+	statement string,
+	set func(context.Context, connector.SessionStatement) error,
+	run func(context.Context) error,
+) (resultErr error) {
+	own, kept, stored := window.StoredWith(statement)
+	if !stored {
+		return run(ctx)
+	}
+	if err := set(ctx, own); err != nil {
+		return fmt.Errorf("give the session its own settings for a statement that keeps them: %w", err)
+	}
+	defer func() {
+		keptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storedValuesRestoreTimeout)
+		defer cancel()
+		if err := set(keptCtx, kept); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("set the session's settings again after a statement that keeps them: %w", err))
+		}
+	}()
+	return run(ctx)
 }

@@ -2418,13 +2418,20 @@ database, and the plan removed the member `'ok'` that one row held:
 | Step | Binary | `ptah-compat` |
 | --- | --- | --- |
 | the statement | ``ALTER TABLE `c` MODIFY COLUMN `n` enum('happy','sad') NULL`` | the same statement |
-| exit status | `0` | `1`, with `column "n": the change would rewrite stored values` in front of the server's error 1265 |
+| exit status | `0` | `1`, with `column "n": the server would change a value to fit its column` in front of the server's error 1265 |
 | the row after the run | `''` | `'ok'` |
 
 A removed `SET` member and a narrower `VARCHAR` behave the same way. The
 rows a session without a strict mode stores are kept as they are; see
 [MySQL](../../databases/mysql/#a-session-without-a-strict-sql-mode). Migration
 files run under the session's mode as written, on both binaries.
+
+A trigger, a stored routine or an event the plan defines runs under the
+session's own mode, so the object keeps the mode the session had, as it
+would with no strict session. A change that rounds a value, such as
+`DECIMAL(8,3)` to `DECIMAL(8,1)`, is not refused (stokaro/ptah#6644). The
+strict session refuses `VARCHAR(20000)` in a `utf8mb4` table with error
+1074, where a session without a strict mode builds `mediumtext`.
 
 **Evidence.** `integration/mysql_stored_values_e2e_test.go`,
 `integration/dbschema/mysql_stored_values_live_test.go`

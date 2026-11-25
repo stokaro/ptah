@@ -1694,8 +1694,8 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution) error {
 // serves exposes no database/sql operations, so a statement sent through
 // ExecContext is refused there before it reaches the provider. The plan is
 // Ptah's, not a file the user wrote, so it runs on a session that refuses a
-// statement that would rewrite stored values, as `schema apply` does; see
-// [dbschema.DatabaseConnection.WithStoredValuesKept].
+// statement that would change a value to fit its column, as `schema apply`
+// does; see [dbschema.DatabaseConnection.WithStoredValuesKept].
 func applyDerivedStatements(ctx context.Context, conn *dbschema.DatabaseConnection, statements []string) error {
 	return conn.WithStoredValuesKept(ctx, func(session *dbschema.DatabaseConnection) error {
 		for _, statement := range statements {
