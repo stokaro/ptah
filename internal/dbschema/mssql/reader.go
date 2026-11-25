@@ -1040,7 +1040,8 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // measured on SQL Server 2019, 2022 and 2025, a member of the role then gets
 // Msg 230 for a statement that reads c. Either row is reported with
 // IsPartialRevoke set rather than dropped, which keeps the comparison from
-// reading it as a privilege the role holds.
+// reading it as a privilege the role holds, and a DENY row with Denied set as
+// well: a schema declares it as a DENY.
 //
 // A permission on one column of a table or a view is its own row, with the
 // column_id in minor_id, and the reader names the column the way the catalog
@@ -1124,6 +1125,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		grant.ObjectType = grantObjectTypeFor(class)
 		grant.WithOption = state == "GRANT_WITH_GRANT_OPTION"
 		grant.IsPartialRevoke = state == "DENY" || state == "REVOKE"
+		grant.Denied = state == "DENY"
 		grants = append(grants, grant)
 	}
 	if err := rows.Err(); err != nil {

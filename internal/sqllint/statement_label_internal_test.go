@@ -35,7 +35,7 @@ func TestStatementLabel_EveryNodeKindWouldReadAsSQL(t *testing.T) {
 	// Verbs a statement label may open with. Short and stable on purpose: this
 	// is the vocabulary of SQL statements, not of this package.
 	verbs := []string{
-		"CREATE", "ALTER", "DROP", "COMMENT", "TRUNCATE", "GRANT", "REVOKE",
+		"CREATE", "ALTER", "DROP", "COMMENT", "TRUNCATE", "GRANT", "REVOKE", "DENY",
 		"REFRESH", "DO", "RAW", "SET", "UPSERT", "EXTENDED PROPERTY",
 	}
 	// Node types that are parts of a statement rather than statements, so the

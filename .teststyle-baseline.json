@@ -106,7 +106,7 @@
       "path": "core/goschema/walker_test.go",
       "function": "TestParseDir_ReflectionGuard",
       "kind": "if",
-      "count": 3
+      "count": 2
     },
     {
       "path": "core/goschema/walker_test.go",

@@ -294,6 +294,7 @@ var extractionBaseline = []BaselineKind{
 	{Name: "CreateTypeNode", Marker: Unmarked},
 	{Name: "CreateViewNode", Marker: Unmarked},
 	{Name: "DefaultPrivilegeNode", Marker: Unmarked},
+	{Name: "DenyPrivilegeNode", Marker: Unmarked},
 	{Name: "DoBlockNode", Marker: Unmarked},
 	{Name: "DomainConstraintOperation", Marker: TypeOperationMarker},
 	{Name: "DomainDefaultOperation", Marker: TypeOperationMarker},

@@ -436,6 +436,7 @@ func excludeGenerated(
 	excluded := excludedObjects(schema.FeatureObjects, filtered.FeatureObjects)
 	filtered.Grants = state.filterGeneratedGrants(filtered.Grants, excluded)
 	filtered.RevokedGrants = state.filterGeneratedGrants(filtered.RevokedGrants, excluded)
+	filtered.DeniedGrants = state.filterGeneratedGrants(filtered.DeniedGrants, excluded)
 	filtered.Dependencies = nil
 	filtered.FunctionDependencies = nil
 	filtered.SelfReferencingForeignKeys = nil
@@ -2501,6 +2502,7 @@ func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {
 	filtered.Roles = slices.Clone(schema.Roles)
 	filtered.Grants = slices.Clone(schema.Grants)
 	filtered.RevokedGrants = slices.Clone(schema.RevokedGrants)
+	filtered.DeniedGrants = slices.Clone(schema.DeniedGrants)
 	// A shallow struct copy carries a slice header, so a field left out here is
 	// not dropped -- it is ALIASED, and the filter below then writes through the
 	// caller's own state.

@@ -267,6 +267,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Constraint.Type", Disposition: DDL},
 	{Field: "schemamodel.Constraint.UsingMethod", Disposition: DDL},
 	{Field: "schemamodel.Database.Constraints", Disposition: DDL},
+	{Field: "schemamodel.Database.DeniedGrants", Disposition: DDL},
 	{Field: "schemamodel.Database.Dependencies", Disposition: Derived, Reason: "table creation order, derived by Finalize from the declared foreign keys"},
 	{Field: "schemamodel.Database.EmbeddedFields", Disposition: DDL},
 	{Field: "schemamodel.Database.EmbeddedSources", Disposition: DDL},

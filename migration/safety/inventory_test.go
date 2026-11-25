@@ -156,7 +156,7 @@ func TestInventory_NilDiff(t *testing.T) {
 // inventoryKinds are the category stems the inventory reports. Each counts a
 // kind of object the comparison pairs one by one.
 var inventoryKinds = []string{
-	"columns", "constraints", "enum_values", "enums", "functions", "grants", "indexes",
+	"columns", "constraints", "denies", "enum_values", "enums", "functions", "grants", "indexes",
 	"materialized_views", "rls_enabled_tables", "rls_policies", "role_memberships", "roles",
 	"schemas", "sequences", "tables", "triggers", "views",
 }

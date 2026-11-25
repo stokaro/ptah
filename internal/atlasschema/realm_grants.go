@@ -33,7 +33,7 @@ func omitRealmRootGrants(info catalog.ServerInfo, target *schemamodel.Database, 
 	}
 	keptDev, keptTarget := devclean.WithoutDatabaseGrants(dev, target)
 	if target != nil {
-		target.Grants, target.RevokedGrants = keptTarget.Grants, keptTarget.RevokedGrants
+		target.Grants, target.RevokedGrants, target.DeniedGrants = keptTarget.Grants, keptTarget.RevokedGrants, keptTarget.DeniedGrants
 	}
 	if dev != nil {
 		dev.Grants = keptDev.Grants

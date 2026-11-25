@@ -1,5 +1,5 @@
-// Package privilegefold composes GRANT and REVOKE declarations in the order a
-// SQL schema reads them.
+// Package privilegefold composes GRANT, REVOKE and DENY declarations in the
+// order a SQL schema reads them.
 //
 // A SQL schema file is a script, and so is a schema directory read file by
 // file. The privileges it declares are the ones the script leaves behind: a
@@ -50,6 +50,17 @@ import (
 // OPTION FOR took ([schemamodel.Grant.GrantOptionRevoked]): the record leaves
 // the privileges it names. Kept beside the later grant, it would ask a
 // comparison to take an option the script ends up granting.
+//
+// A denied privilege ([schemamodel.Database.DeniedGrants]) takes the place of
+// a grant and of a revoke of it, and a later grant or revoke takes the place
+// of a denied one, as SQL Server keeps one state for a privilege of one
+// grantee on one object. A privilege granted or denied on the whole table
+// also takes the place of the grants and denies of it on the table's columns:
+// measured on SQL Server 2025, `DENY SELECT ON t` after `GRANT SELECT (c) ON
+// t`, and `GRANT SELECT ON t` after `DENY SELECT (c) ON t`, each leave one row
+// for the table. A grant on a column after a DENY on its table keeps both, as
+// the server does, and a DENY on a column under a DENY on its table adds
+// nothing, as on the server.
 func Merge(dst, src *schemamodel.Database) {
 	for _, declared := range src.RevokedGrants {
 		if len(declared.Privileges) == 0 {
@@ -68,14 +79,46 @@ func Merge(dst, src *schemamodel.Database) {
 			mergeGrant(dst, grant)
 		}
 	}
+	for _, declared := range src.DeniedGrants {
+		if len(declared.Privileges) == 0 {
+			dst.DeniedGrants = append(dst.DeniedGrants, declared)
+			continue
+		}
+		for _, denied := range declared.ByColumn() {
+			mergeDeny(dst, denied)
+		}
+	}
+}
+
+func mergeDeny(dst *schemamodel.Database, denied schemamodel.Grant) {
+	target := denied.TargetKey()
+	for _, privilege := range denied.Privileges {
+		dst.Grants = Without(dst.Grants, denied.Role, target, privilege)
+		dst.RevokedGrants = slices.DeleteFunc(dst.RevokedGrants, func(revoked schemamodel.Grant) bool {
+			return revoked.Role == denied.Role && revoked.TargetKey() == target && revokedPrivilege(revoked) == privilege
+		})
+		if tableWide(denied) {
+			dst.Grants = withoutColumns(dst.Grants, denied.Role, denied.OnTable, privilege)
+			dst.DeniedGrants = withoutColumns(dst.DeniedGrants, denied.Role, denied.OnTable, privilege)
+		}
+		wholeTable := schemamodel.Grant{OnTable: denied.OnTable}.TargetKey()
+		underTable := len(denied.Columns) > 0 && isRevoked(dst.DeniedGrants, denied.Role, wholeTable, privilege)
+		if !underTable && !isRevoked(dst.DeniedGrants, denied.Role, target, privilege) {
+			entry := denied
+			entry.Privileges = []string{privilege}
+			dst.DeniedGrants = append(dst.DeniedGrants, entry)
+		}
+	}
 }
 
 func mergeRevoke(dst *schemamodel.Database, revoked schemamodel.Grant) {
 	target := revoked.TargetKey()
 	for _, privilege := range revoked.Privileges {
 		dst.Grants = Without(dst.Grants, revoked.Role, target, privilege)
+		dst.DeniedGrants = Without(dst.DeniedGrants, revoked.Role, target, privilege)
 		if tableWide(revoked) {
 			dst.Grants = withoutColumns(dst.Grants, revoked.Role, revoked.OnTable, privilege)
+			dst.DeniedGrants = withoutColumns(dst.DeniedGrants, revoked.Role, revoked.OnTable, privilege)
 		}
 		if !isRevoked(dst.RevokedGrants, revoked.Role, target, privilege) {
 			entry := revoked
@@ -93,6 +136,12 @@ func mergeGrant(dst *schemamodel.Database, grant schemamodel.Grant) {
 			(tableWide(grant) && revoked.OnTable == grant.OnTable && len(revoked.Columns) > 0)
 		return revoked.Role == grant.Role && sameTarget &&
 			(all || slices.Contains(grant.Privileges, revokedPrivilege(revoked)))
+	})
+	dst.DeniedGrants = slices.DeleteFunc(dst.DeniedGrants, func(denied schemamodel.Grant) bool {
+		sameTarget := denied.TargetKey() == target ||
+			(tableWide(grant) && denied.OnTable == grant.OnTable && len(denied.Columns) > 0)
+		return denied.Role == grant.Role && sameTarget &&
+			(all || slices.Contains(grant.Privileges, revokedPrivilege(denied)))
 	})
 	if grant.WithOption {
 		dst.Grants = withoutRevokedOptions(dst.Grants, grant)

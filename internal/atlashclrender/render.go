@@ -679,6 +679,7 @@ func (r *renderer) renderBody() {
 	r.renderOwnerBlocks(hclext.AfterTriggers, nil)
 	r.renderGrants()
 	r.renderRevokedGrants()
+	r.reportDeniedGrants()
 	// After the grants: a grant is about an object the document already declares,
 	// a default privilege about objects that do not exist yet.
 	r.renderManagedData()

@@ -303,6 +303,7 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 		validator.roles,
 		validator.managedData,
 		func() error { return ValidateRevokedGrants(r) },
+		func() error { return ValidateDeniedGrants(r) },
 	}
 	for _, validate := range validations {
 		if err := validate(); err != nil {
@@ -830,6 +831,104 @@ func ValidateRevokedGrants(db *Database) error {
 		}
 	}
 	return nil
+}
+
+// ValidateDeniedGrants refuses a denied privilege db also grants or revokes to
+// one grantee on one object for a dialect both declarations reach, a denied
+// grant that names no privilege, and one that carries WITH GRANT OPTION.
+//
+// On the server a GRANT, a DENY and a REVOKE of one privilege replace each
+// other, so a declarative source, which has no statement order, cannot say
+// both. A grant spelling ALL contradicts a denied privilege on its object. A
+// revoke of ALL does not: the pair says the grantee holds nothing there and is
+// denied the one privilege, which REVOKE ALL followed by the DENY leaves in a
+// SQL script. Targets are compared by [Grant.TargetKey] after the table names
+// are resolved, as [ValidateRevokedGrants] compares them.
+func ValidateDeniedGrants(db *Database) error {
+	if db == nil {
+		return nil
+	}
+	for _, declared := range db.DeniedGrants {
+		declared.Canonicalize()
+		if len(declared.Privileges) == 0 {
+			return fmt.Errorf("a DENY to %q on %s names no privilege", declared.Role, declared.TargetKey())
+		}
+		if declared.WithOption {
+			return fmt.Errorf("a DENY to %q on %s carries WITH GRANT OPTION, which a DENY has not",
+				declared.Role, declared.TargetKey())
+		}
+		for _, denied := range declared.ByColumn() {
+			if err := deniedUnderTheTable(denied, db); err != nil {
+				return err
+			}
+			for _, other := range []struct {
+				verbs    string
+				declared declaredPrivileges
+			}{
+				{"denied and granted to", declaredPrivileges{grants: db.Grants, all: true}},
+				{"denied to and revoked from", declaredPrivileges{grants: db.RevokedGrants}},
+			} {
+				if privilege, clash := other.declared.name(denied); clash {
+					return fmt.Errorf("%s on %s is both %s %q; declare one or the other",
+						privilege, denied.TargetKey(), other.verbs, denied.Role)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// deniedUnderTheTable refuses a DENY on a column of a privilege the schema
+// grants or denies on the whole table to the same grantee.
+//
+// Measured on SQL Server 2025, a DENY on a column under a DENY on its table
+// adds no row, so the comparison would plan the column DENY on every run. A
+// DENY on a column under a GRANT on the table adds a row, and the reader
+// reports the table grant as a grant on each other column, which no
+// declaration of the whole table matches.
+func deniedUnderTheTable(denied Grant, db *Database) error {
+	if len(denied.Columns) == 0 {
+		return nil
+	}
+	table := Grant{Role: denied.Role, OnTable: denied.OnTable, Privileges: denied.Privileges, Dialects: denied.Dialects}
+	if privilege, clash := (declaredPrivileges{grants: db.Grants, all: true}).name(table); clash {
+		return fmt.Errorf("%s on %s is denied on column %s and granted on the whole table to %q; "+
+			"grant it on the columns that keep it instead", privilege, denied.OnTable, denied.Columns[0], denied.Role)
+	}
+	if privilege, clash := (declaredPrivileges{grants: db.DeniedGrants}).name(table); clash {
+		return fmt.Errorf("%s on %s is denied to %q on the whole table, so a DENY on column %s adds nothing; "+
+			"declare one or the other", privilege, denied.OnTable, denied.Role, denied.Columns[0])
+	}
+	return nil
+}
+
+// declaredPrivileges is a list of declarations, and whether a declaration of
+// ALL in it counts as naming every privilege.
+type declaredPrivileges struct {
+	grants []Grant
+	all    bool
+}
+
+// name reports the privilege of denied, a denied grant of one column or of the
+// whole object, that one of the declarations also names for the same grantee
+// on the same target.
+func (d declaredPrivileges) name(denied Grant) (string, bool) {
+	grants, all := d.grants, d.all
+	target := denied.TargetKey()
+	for _, declared := range grants {
+		declared.Canonicalize()
+		for _, grant := range declared.ByColumn() {
+			if grant.Role != denied.Role || grant.TargetKey() != target || !dialectScopesOverlap(grant.Dialects, denied.Dialects) {
+				continue
+			}
+			for _, privilege := range denied.Privileges {
+				if slices.Contains(grant.Privileges, privilege) || (all && slices.Contains(grant.Privileges, "ALL")) {
+					return privilege, true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 // contradictedRevoke reports a grant of a privilege revoked names, column by

@@ -181,6 +181,7 @@ func corpus() []Fixture {
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
 		{Name: "grant-routine", Schema: grantRoutineFixture()},
 		{Name: "revoked-grant", Schema: revokedGrantFixture()},
+		{Name: "denied-grant", Schema: deniedGrantFixture()},
 		{Name: "grant-columns", Schema: grantColumnsFixture()},
 		{Name: "default-privilege-tables", Schema: defaultPrivilegeTablesFixture()},
 		{Name: "default-privilege-sequences", Schema: defaultPrivilegeSequencesFixture()},
@@ -1643,6 +1644,19 @@ func revokedGrantFixture() schemamodel.Database {
 	db.RevokedGrants = []schemamodel.Grant{{
 		StructName: "RG", Role: "app_reader", Privileges: []string{"INSERT"}, OnTable: "t",
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb"},
+	}}
+	return db
+}
+
+// deniedGrantFixture denies a privilege. Only SQL Server writes a DENY, and
+// every other target refuses the fixture rather than leave the privilege
+// granted, so the deny names no dialect. The role declares no LOGIN, which a
+// SQL Server database role does not have.
+func deniedGrantFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app_reader"}}
+	db.DeniedGrants = []schemamodel.Grant{{
+		StructName: "DG", Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "t",
 	}}
 	return db
 }

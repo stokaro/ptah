@@ -215,7 +215,7 @@ func GrantsWithOptions(
 	read := grantRead{
 		database: database, sequences: sequences, semantics: semantics, target: target,
 		managedRoles: managedRoles, generatedRoles: generatedGrantRoles,
-		revoked: revokedGrants, respellings: respellings, removable: removable,
+		revoked: revokedGrants, respellings: respellings, removable: removable, complete: options.DesiredComplete,
 		coverage: removalCoverage(desired, semantics), objects: objects, lists: lists,
 	}
 	databaseGrantMapForAdditions, databaseGrantMapForRemovals := read.maps()
@@ -236,11 +236,68 @@ func GrantsWithOptions(
 	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, lists,
 		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target},
 		diff, semantics)
+	read.planDenies(desired, diff)
 
 	sortGrantRefs(diff.GrantsAdded)
 	sortGrantRefs(diff.GrantsRemoved)
 	sortGrantRefs(diff.GrantOptionsAdded)
 	sortGrantRefs(diff.GrantOptionsRevoked)
+	sortGrantRefs(diff.DeniesAdded)
+	sortGrantRefs(diff.DeniesRemoved)
+}
+
+// planDenies compares the privileges desired denies
+// ([schemamodel.Database.DeniedGrants]) with the DENY rows of the database
+// ([catalog.Grant.Denied]).
+//
+// A DENY the database lacks is planned for any grantee, as a declared revoke
+// is: a DENY is a statement of its own, and a role the schema does not create
+// is withheld the privilege as much as one it does. A grant the database holds
+// of a privilege the schema denies is left to the grant comparison, which
+// plans its removal from a role the schema manages; on SQL Server the DENY
+// takes the place of the grant of another role.
+//
+// A DENY the database holds and the desired state does not declare is taken
+// away only where the desired state holds every grant
+// ([GrantOptions.DesiredComplete]), as a read of another database does, and
+// then on the rule that removes a grant: from a role the schema manages, on an
+// object the desired state describes. A SQL schema file can declare a DENY,
+// and a Go annotation, a YAML document or an HCL document cannot, so a removal
+// planned from a schema that leaves one out would give a role what an
+// administrator denied it. The DENY stays, and access stays as narrow as it
+// is.
+func (read grantRead) planDenies(desired *schemamodel.Database, diff *difftypes.SchemaDiff) {
+	declared := make(map[grantIdentity]difftypes.GrantRef)
+	for _, denied := range desired.DeniedGrants {
+		for _, ref := range grantRefsFromGenerated(denied) {
+			ref.WithOption = false
+			declared[read.sequences.desiredKey(newGrantIdentity(ref, read.semantics))] = ref
+		}
+	}
+	held := make(map[grantIdentity]bool)
+	for _, grant := range read.database.Grants {
+		if !grant.Denied || grant.Privilege == "" {
+			continue
+		}
+		ref := grantRefFromDatabase(grant)
+		key := read.sequences.databaseKey(newGrantIdentity(ref, read.semantics))
+		if held[key] {
+			continue
+		}
+		held[key] = true
+		if _, wanted := declared[key]; wanted {
+			diff.Matched.Denies++
+			continue
+		}
+		if read.complete && read.removable(ref) && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant) {
+			diff.DeniesRemoved = append(diff.DeniesRemoved, ref)
+		}
+	}
+	for key, ref := range declared {
+		if !held[key] {
+			diff.DeniesAdded = append(diff.DeniesAdded, ref)
+		}
+	}
 }
 
 type grantRead struct {
@@ -258,9 +315,11 @@ type grantRead struct {
 	// its own spelling; see [GrantOptions.ColumnsBySpelling].
 	respellings map[grantIdentity]difftypes.GrantRef
 	removable   func(difftypes.GrantRef) bool
-	coverage    Coverage
-	objects     OwnedObjects
-	lists       allPrivilegeLists
+	// complete is [GrantOptions.DesiredComplete].
+	complete bool
+	coverage Coverage
+	objects  OwnedObjects
+	lists    allPrivilegeLists
 }
 
 func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.GrantRef) {

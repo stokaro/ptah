@@ -1348,6 +1348,17 @@ type SchemaDiff struct {
 	// GrantOptionsRevoked contains PostgreSQL privileges whose WITH GRANT OPTION
 	// flag exists in the database but not in the target schema.
 	GrantOptionsRevoked []GrantRef `json:"grant_options_revoked"`
+
+	// DeniesAdded contains SQL Server DENY rows the target schema declares and
+	// the database lacks, for any grantee; see
+	// [ptah.run/core/schemamodel.Database.DeniedGrants]. WithOption is never
+	// set on one.
+	DeniesAdded []GrantRef `json:"denies_added,omitempty"`
+
+	// DeniesRemoved contains SQL Server DENY rows the database holds for a
+	// managed role and the target schema does not declare. A plan takes each
+	// with a REVOKE.
+	DeniesRemoved []GrantRef `json:"denies_removed,omitempty"`
 	// ConnectedRole is the role used to read a live PostgreSQL database. The
 	// planner checks it before revoking grants made by another role. An offline
 	// comparison leaves it empty, and it is not part of a report or saved plan.
@@ -1838,7 +1849,9 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.GrantsAdded) > 0 ||
 		len(d.GrantsRemoved) > 0 ||
 		len(d.GrantOptionsAdded) > 0 ||
-		len(d.GrantOptionsRevoked) > 0
+		len(d.GrantOptionsRevoked) > 0 ||
+		len(d.DeniesAdded) > 0 ||
+		len(d.DeniesRemoved) > 0
 }
 
 // hasConstraintChanges returns true if there are any constraint-related changes.

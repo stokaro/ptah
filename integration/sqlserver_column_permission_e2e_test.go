@@ -204,11 +204,11 @@ func TestSchemaApplySQLServerColumnPermissionsE2E_FailurePath(t *testing.T) {
 	c.Assert(sqlServerPermissionsOf(c, db, "cp_reader"), qt.DeepEquals, []string{"SELECT GRANT id"})
 }
 
-// `ptah db read` prints a column permission on its column, and leaves out the
-// rows that withhold one: a DENY, and the REVOKE row a column revoke leaves
-// under a grant on the whole table. That grant prints as the permission on
-// each other column. Printed as the whole table, the output would give a role
-// that replays it the column the source database keeps from it.
+// `ptah db read` prints a column permission on its column and a DENY as a
+// DENY, and leaves out the REVOKE row a column revoke leaves under a grant on
+// the whole table. That grant prints as the permission on each other column.
+// Printed as the whole table, the output would give a role that replays it the
+// column the source database keeps from it.
 func TestDBReadSQLServerColumnPermissionsE2E(t *testing.T) {
 	c := qt.New(t)
 	target, _ := sqlServerColumnDatabase(c,
@@ -229,5 +229,6 @@ func TestDBReadSQLServerColumnPermissionsE2E(t *testing.T) {
 		"GRANT SELECT ([id]) ON [dbo].[t] TO [cp_reader];",
 		"GRANT SELECT ([name]) ON [dbo].[t] TO [cp_reader];",
 		"GRANT UPDATE ([name]) ON [dbo].[t] TO [cp_reader] WITH GRANT OPTION;",
+		"DENY SELECT ([secret]) ON [dbo].[t] TO [cp_reader];",
 	})
 }

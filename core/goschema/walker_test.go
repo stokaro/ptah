@@ -1646,20 +1646,38 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 
 	fvMerged := reflect.ValueOf(merged)
 	fvDir := reflect.ValueOf(dirMerged)
-	typ := fvMerged.Type()
-	for i := 0; i < fvMerged.NumField(); i++ {
-		if fvMerged.Field(i).Kind() != reflect.Slice {
-			continue
-		}
-		name := typ.Field(i).Name
-		mLen := fvMerged.Field(i).Len()
+	for _, name := range annotatedSliceFields(fvMerged.Type()) {
+		mLen := fvMerged.FieldByName(name).Len()
 		if mLen == 0 {
 			c.Fatalf("%s is not exercised by the fixtures; add it to 023-go-annotations-objects, or to the "+
 				"YDB fixture of its family for a kind only YDB renders, so the walker append stays covered", name)
 		}
-		dLen := fvDir.Field(i).Len()
+		dLen := fvDir.FieldByName(name).Len()
 		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))
 	}
+	// A field no annotation fills stays empty; an annotation that starts to
+	// fill one takes it off notAnnotated.
+	c.Assert(merged.DeniedGrants, qt.HasLen, 0)
+	c.Assert(dirMerged.DeniedGrants, qt.HasLen, 0)
+}
+
+// notAnnotated names the slice fields of schemamodel.Database that no Go
+// annotation fills, each with the reason.
+var notAnnotated = map[string]string{
+	"DeniedGrants": "no annotation declares a SQL Server DENY; a SQL schema file does",
+}
+
+// annotatedSliceFields is the name of each slice field of typ that a Go
+// annotation fills.
+func annotatedSliceFields(typ reflect.Type) []string {
+	var names []string
+	for field := range typ.Fields() {
+		if _, skipped := notAnnotated[field.Name]; skipped || field.Type.Kind() != reflect.Slice {
+			continue
+		}
+		names = append(names, field.Name)
+	}
+	return names
 }
 
 // appendSlices appends every slice field of src to the same field of dst.

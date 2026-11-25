@@ -27,6 +27,7 @@ const (
 	dropFunctionReason         = "DROP FUNCTION removes executable database behavior"
 	dropProcedureReason        = "DROP PROCEDURE removes executable database behavior, and every caller of the procedure fails"
 	revokeReason               = "REVOKE takes away access a role may rely on"
+	denyReason                 = "DENY withholds a privilege from the grantee and every member of it, whatever grant gives it"
 	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
 	replacedViewReason         = "DROP VIEW is followed by CREATE VIEW of the same view: the plan replaces the view rather than removing it"
 	replacedTriggerReason      = "DROP TRIGGER is followed by CREATE TRIGGER of the same trigger: the plan replaces the trigger rather than removing it"
@@ -122,6 +123,7 @@ func TestAssessRendered_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "mysql", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
 		{dialect: "mariadb", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
 		{dialect: "sqlserver", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
+		{dialect: "sqlserver", node: ast.NewDenyPrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, denyReason}}},
 	}
 	runtime := must.Must(builtin.New())
 
@@ -406,6 +408,21 @@ var unplannedRemovals = map[string]string{
 	"unique_protections_removed": "a qualifier of indexes_removed, which a row above plans",
 	"column_identities_removed":  "a qualifier of columns_modified, which TestPlanCheck_RatesARemovedIdentityAsTheDriftReportDoes plans",
 	"table_constraints_removed":  "a table's own constraint lists, which only a diff assembled by hand fills",
+	"denies_removed":             "a comparison of two documents takes no DENY away; TestPlanCheck_ADocumentLeavesADenyInPlace holds that, and a down migration of an added DENY plans the REVOKE the plan check rates a warning",
+}
+
+// TestPlanCheck_ADocumentLeavesADenyInPlace compares a schema with a SQL Server
+// database that denies its role a privilege the schema does not mention. A
+// schema file can declare a DENY and a Go annotation or a YAML document
+// cannot, so the comparison plans no REVOKE of it, which would give the role
+// what the DENY withholds.
+func TestPlanCheck_ADocumentLeavesADenyInPlace(t *testing.T) {
+	c := qt.New(t)
+
+	findings, assessments := planChange(c, must.Must(builtin.New()), changeRow{dialect: "sqlserver", both: withReader, current: withDeny})
+
+	c.Assert(findings, qt.HasLen, 0)
+	c.Assert(assessments, qt.HasLen, 0)
 }
 
 // TestPlanCheck_RatesEachRemovalAsTheDriftReportDoes holds the two readings of
@@ -569,6 +586,11 @@ func withTrigger(body string) func(*schemamodel.Database) {
 }
 
 func withReader(d *schemamodel.Database) { d.Roles = []schemamodel.Role{{Name: "app_reader"}} }
+
+// withDeny denies the reader SELECT on the table, as SQL Server writes it.
+func withDeny(d *schemamodel.Database) {
+	d.DeniedGrants = []schemamodel.Grant{{Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "users"}}
+}
 
 func withGrant(option bool) func(*schemamodel.Database) {
 	return func(d *schemamodel.Database) {

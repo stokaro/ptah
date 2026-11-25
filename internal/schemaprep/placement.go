@@ -177,6 +177,7 @@ func placeReferences(placed *schemamodel.Database, by referenceMaps) {
 	}
 	placed.Grants = mapSlice(placed.Grants, placeGrant)
 	placed.RevokedGrants = mapSlice(placed.RevokedGrants, placeGrant)
+	placed.DeniedGrants = mapSlice(placed.DeniedGrants, placeGrant)
 	placed.Dependencies = placedDependencies(placed.Dependencies, by.relation)
 	placed.FunctionDependencies = placedDependencies(placed.FunctionDependencies, by.anyDeclared)
 	placed.SelfReferencingForeignKeys = placedSelfReferences(placed.SelfReferencingForeignKeys, by.relation)

@@ -121,6 +121,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderGrantPrivilege(n)
 	case *ast.RevokePrivilegeNode:
 		return r.renderRevokePrivilege(n)
+	case *ast.DenyPrivilegeNode:
+		return nodedispatch.RefuseDeny(DialectName, n)
 	case *ast.GrantRoleMembershipNode:
 		return r.renderGrantRoleMembership(n)
 	case *ast.RevokeRoleMembershipNode:

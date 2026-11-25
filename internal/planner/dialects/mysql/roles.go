@@ -83,8 +83,13 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 		return nil, err
 	}
 	result = append(result, givenBack...)
+	deniedOnObjects, deniedOnColumns, err := p.planDenies(diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, deniedOnObjects...)
 	_, added := p.grantsAdded(diff)
-	result = p.grantPrivileges(result, diff, added)
+	result = p.grantPrivileges(result, diff, slices.Concat(added, p.columnGrantsDeniesTake(diff)))
 	spellings := newColumnSpellings(diff, p.targetDialect())
 	for _, grant := range diff.GrantOptionsAdded {
 		result = append(result, ast.NewGrantPrivilege(
@@ -92,7 +97,7 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 			SetColumns(spellings.columns(grant)).
 			SetWithOption(true))
 	}
-	return result, nil
+	return append(result, deniedOnColumns...), nil
 }
 
 // planRevokesFirst emits the REVOKE statements at the start of the plan on
@@ -301,7 +306,7 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, dr
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetColumns(spellings.columns(grant)))
 	}
-	return result
+	return p.revokeDenies(result, diff, dropped)
 }
 
 // withoutColumnRevokesTheirTableTakes answers removed without the column
@@ -425,9 +430,19 @@ type keptColumnGrant struct {
 // A column privilege the diff removes is left revoked, whether or not the
 // plan names it in a statement of its own; see
 // [withoutColumnRevokesTheirTableTakes].
+//
+// On SQL Server a REVOKE that takes a DENY on the whole table
+// ([difftypes.SchemaDiff.DeniesRemoved]) takes the column grants of the
+// permission too, measured on SQL Server 2025, so it counts as a table revoke
+// here.
 func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings columnSpellings) []keptColumnGrant {
 	tableRevokes := make(map[revokedPrivilege]bool)
 	columnRevokes := make(map[columnGrant]bool)
+	for _, denied := range diff.DeniesRemoved {
+		if denied.Column == "" && !strings.EqualFold(denied.ObjectType, "SCHEMA") {
+			tableRevokes[spellings.revokedPrivilege(denied)] = true
+		}
+	}
 	for _, grant := range diff.GrantsRemoved {
 		switch {
 		case grant.Column != "":

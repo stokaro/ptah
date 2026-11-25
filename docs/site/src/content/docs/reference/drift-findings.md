@@ -47,6 +47,7 @@ one it does not report, or when the two give a category different severities.
 | --- | --- | --- | --- |
 | `columns` | warning | destructive | warning |
 | `constraints` | warning | destructive | |
+| `denies` | warning | warning | |
 | `enum_values` | warning | destructive | |
 | `enums` | safe | destructive | |
 | `functions` | safe | destructive | warning |
@@ -72,7 +73,9 @@ give back: a table's or a materialized view's rows, a sequence's position, the
 definition of a view, a function or a trigger that readers and writers rely on.
 Removing an index, a privilege or a membership is a warning: nothing stored goes
 with it, and a reader or a writer that relied on it slows down or is refused
-until it is restored. A modified materialized
+until it is restored. A SQL Server `DENY` is a warning in both directions:
+adding one refuses a role what it relied on, and taking one away gives the
+privilege to every member a grant or a membership reaches. A modified materialized
 view is destructive because the plan drops it and creates it again; one whose
 only change is a setting its owner changes in place keeps its rows and is a
 warning.

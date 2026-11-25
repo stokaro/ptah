@@ -338,17 +338,18 @@ func (p *Planner) refuseUnreadRoutinePrivileges(diff *difftypes.SchemaDiff) erro
 // whichever grantee it was denied to.
 //
 // The DROP takes a DENY with the routine, measured on SQL Server 2025, and the
-// comparison plans none, because Ptah declares no DENY. Without these a body
+// comparison plans no DENY the database already holds. Without these a body
 // change widens access in silence: a role granted EXECUTE on the schema and
 // denied it on the routine runs the routine after the apply, and the next plan
 // reports the schema synced.
 //
 // Only a target whose partial revoke on an object is a DENY
-// ([Planner.deniesOnObjects]) has one to write. A plan the comparison runs
-// revokes no DENY: a REVOKE of a privilege the grantee is denied is a
-// declared absence, which the DENY keeps. A privilege name is written as the
-// catalog spells it, and one that is not a run of words is refused rather
-// than written into the statement.
+// ([Planner.deniesOnObjects]) has one to write. A DENY the diff takes away
+// ([difftypes.SchemaDiff.DeniesRemoved]) is revoked at the start of the plan
+// and does not come back; a REVOKE the schema declares for a privilege the
+// grantee is denied is a declared absence, which the DENY keeps. A privilege
+// name is written as the catalog spells it, and one that is not a run of words
+// is refused rather than written into the statement.
 func (p *Planner) deniesGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if !p.deniesOnObjects() || !p.capabilities().Has(capability.RoleManagement) || len(diff.CurrentPartialRevokes) == 0 {
 		return nil, nil
@@ -358,7 +359,7 @@ func (p *Planner) deniesGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error
 	var nodes []ast.Node
 	for _, denied := range diff.CurrentPartialRevokes {
 		_, onReplaced := replaced[semantics.QualifiedTableIdentityKey(denied.ObjectName)]
-		if !strings.EqualFold(denied.ObjectType, "TABLE") || denied.Column != "" || !onReplaced {
+		if !strings.EqualFold(denied.ObjectType, "TABLE") || denied.Column != "" || !onReplaced || removes(diff.DeniesRemoved, denied) {
 			continue
 		}
 		statement, err := denyStatement(denied)

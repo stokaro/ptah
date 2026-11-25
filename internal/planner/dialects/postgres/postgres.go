@@ -1986,6 +1986,9 @@ func (p *Planner) refuseUnplannedChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
 		return err
 	}
+	if err := schemaprecondition.RefuseDenies(p.targetDialect(), diff); err != nil {
+		return err
+	}
 	return schemaprecondition.RefuseRoleMemberships(p.targetDialect(), p.capabilities(), diff)
 }
 

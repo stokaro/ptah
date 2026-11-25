@@ -30,7 +30,7 @@ func answeringPermissions(rows [][]driver.Value) dbtest.QueryHandler {
 // as a grant limited to that column, and a column REVOKE row under a table
 // grant as what it is, a row that withholds the column: read as a grant, it
 // would say the role holds SELECT on secret, which a member of the role is
-// refused.
+// refused. A DENY row is marked denied as well, and the REVOKE row is not.
 func TestReader_ReadsColumnPermissions_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringPermissions([][]driver.Value{
@@ -47,7 +47,7 @@ func TestReader_ReadsColumnPermissions_HappyPath(t *testing.T) {
 	c.Assert(live.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", GrantedBy: "dbo"},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", Column: "secret", IsPartialRevoke: true, GrantedBy: "dbo"},
-		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "dbo", ObjectName: "u", Column: "name", IsPartialRevoke: true, GrantedBy: "dbo"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "dbo", ObjectName: "u", Column: "name", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo"},
 		{Role: "reader", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "u", Column: "id", GrantedBy: "dbo"},
 		{Role: "reader", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "u", Column: "name", WithOption: true, GrantedBy: "dbo"},
 	})

@@ -53,6 +53,17 @@ func RefuseSerialSequence(dialect string, node *ast.AlterSerialSequenceNode) err
 	}
 }
 
+// RefuseDeny refuses node, a DENY, on dialect, a target whose grammar has none
+// ([ptah.run/core/platform/descriptor.StatementForms.Deny]). Only SQL Server
+// writes a DENY. Written as a REVOKE, the statement would take away a grant
+// the role holds rather than withhold the privilege a grant on the schema or a
+// membership gives it, and left out, the plan would report the privilege
+// denied while the role keeps it.
+func RefuseDeny(dialect string, node *ast.DenyPrivilegeNode) error {
+	return fmt.Errorf("%w: %s: DENY %s ON %s TO %s: the target has no DENY",
+		ptaherr.ErrUnsupportedFeature, dialect, strings.Join(node.Privileges, ", "), node.ObjectName, node.Role)
+}
+
 // RefuseOwner refuses node, a change of the owner of a view or a materialized
 // view, on dialect, a target whose descriptor manages no such owner. A plan
 // that left the statement out would report the owner changed while the object

@@ -21,6 +21,7 @@ func NewDatabase() *Database {
 		Roles:             make([]Role, 0),
 		Grants:            make([]Grant, 0),
 		RevokedGrants:     make([]Grant, 0),
+		DeniedGrants:      make([]Grant, 0),
 		ManagedData:       make([]ManagedData, 0),
 		EmbeddedSources: EmbeddedSources{
 			Fields:      make([]Field, 0),
@@ -77,6 +78,7 @@ func AppendDatabase(dst, src *Database) error {
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
 	dst.RevokedGrants = append(dst.RevokedGrants, src.RevokedGrants...)
+	dst.DeniedGrants = append(dst.DeniedGrants, src.DeniedGrants...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	return nil
 }

@@ -98,6 +98,13 @@ func Render(requestContext context.Context, db *schemamodel.Database, opts Optio
 	if unvalidated := schemaprep.UnvalidatedConstraints(db); len(unvalidated) > 0 {
 		return nil, fmt.Errorf("%s is NOT VALID, which a Go annotation cannot represent", unvalidated[0])
 	}
+	// No annotation writes a DENY, and an export that left it out would give
+	// the grantee what the database withholds.
+	if len(db.DeniedGrants) > 0 {
+		denied := db.DeniedGrants[0]
+		return nil, fmt.Errorf("%w: the schema denies %s on %s to %q, which a Go annotation cannot represent",
+			ptaherr.ErrUnsupportedFeature, strings.Join(denied.Privileges, ", "), denied.TargetKey(), denied.Role)
+	}
 
 	ctx := newRenderContext(db, opts)
 	if err := ctx.captureFeatureObjects(requestContext); err != nil {

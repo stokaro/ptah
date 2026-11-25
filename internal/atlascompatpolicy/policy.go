@@ -790,6 +790,7 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
+		{name: "denied grants", present: len(database.DeniedGrants) > 0},
 		{name: "default privileges", present: hasDefaultPrivileges(database)},
 		// Measured on v1.3.0 against PostgreSQL 18: a desired SQL file's
 		// CREATE PUBLICATION plans nothing and stays on the dev database, and
@@ -882,6 +883,7 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
+		{name: "denied grants", present: len(database.DeniedGrants) > 0},
 		// A default privilege is not one of the named objects a cleanup plan
 		// lists, so without this entry strict `schema clean` would destroy an
 		// object the desired-schema list above claims strict mode does not

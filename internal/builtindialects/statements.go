@@ -165,6 +165,8 @@ func sqlServerStatementForms() descriptor.StatementForms {
 		// The reader reads a permission on a schema, which a GRANT names
 		// ON SCHEMA::app.
 		GrantClasses: []string{"SCHEMA"},
+		// The reader reads a DENY row of sys.database_permissions as one.
+		Deny: true,
 		Drops: []descriptor.Drop{
 			{Kind: descriptor.DropKindView, IfExists: true, List: true},
 			{Kind: descriptor.DropKindTrigger, IfExists: true, List: true},

@@ -91,6 +91,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.AlterViewOptionsNode{}},
 	{node: &ast.AlterOwnerNode{}},
 	{node: &ast.RevokePrivilegeNode{}},
+	{node: &ast.DenyPrivilegeNode{}},
 	{node: &ast.RevokeRoleMembershipNode{}},
 	{node: &ast.UpsertNode{}},
 

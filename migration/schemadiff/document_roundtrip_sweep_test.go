@@ -197,6 +197,32 @@ func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
 	c.Assert(rangeChangesOf(diff), qt.HasLen, 1)
 }
 
+// hclUnwritableFields are the object families an HCL document has no block
+// for, each with the reason. The document reports each object it leaves out;
+// TestHCLDocument_ReportsADenyItLeavesOut holds it to that.
+var hclUnwritableFields = map[string]string{
+	"DeniedGrants": "only SQL Server has a DENY, and the comparison takes away no DENY a document leaves out",
+}
+
+// TestHCLDocument_ReportsADenyItLeavesOut renders a schema holding a SQL Server
+// DENY as HCL: the document has no block for it, so the render warns, and the
+// document read back denies nothing.
+func TestHCLDocument_ReportsADenyItLeavesOut(t *testing.T) {
+	c := qt.New(t)
+	db := roundTripFixture()
+	db.Roles = append(db.Roles, schemamodel.Role{StructName: "R", Name: "app"})
+	db.DeniedGrants = []schemamodel.Grant{{StructName: "DG", Role: "app", Privileges: []string{"SELECT"}, OnTable: "users"}}
+
+	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{{
+		Severity: atlashclrender.SeverityWarning, Path: "denied_grants.app",
+		Message: `DENY SELECT ON TABLE users TO "app" cannot be represented in an HCL schema, so the document leaves it out`,
+	}})
+	c.Assert(loadPostgresDocument(c, result.Data).DeniedGrants, qt.HasLen, 0)
+}
+
 // yamlUnwritableFields are the object families the YAML surface has no
 // top-level key for, and the coverage kind each one is recorded under.
 //
@@ -411,6 +437,9 @@ func TestRoundTrip_SweepCoversEveryObjectFamily(t *testing.T) {
 		covered = append(covered, row.field)
 	}
 	covered = append(covered, nonObjectDatabaseFields...)
+	for field := range hclUnwritableFields {
+		covered = append(covered, field)
+	}
 	slices.Sort(covered)
 
 	c.Assert(covered, qt.DeepEquals, databaseSliceFields())

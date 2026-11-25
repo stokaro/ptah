@@ -412,7 +412,7 @@ func prepareNode(
 		return prepareCreateMaterializedViewNode(dialect, typed)
 	case *ast.CreateRoleNode:
 		return prepareCreateRoleNode(dialect, caps, typed)
-	case *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+	case *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode, *ast.DenyPrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
@@ -490,7 +490,7 @@ func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Nod
 		subject string
 	)
 	switch typed := node.(type) {
-	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode, *ast.DenyPrivilegeNode:
 		target := privilegeTargetOf(typed)
 		objectKey, owned := accessscope.ObjectCapability(target.objectType)
 		switch {
@@ -534,10 +534,13 @@ type privilegeTarget struct {
 	objectType, objectName, verb, grantee string
 }
 
-// privilegeTargetOf is the target of node, a GRANT or a REVOKE.
+// privilegeTargetOf is the target of node, a GRANT, a REVOKE or a DENY.
 func privilegeTargetOf(node ast.Node) privilegeTarget {
 	if revoke, ok := node.(*ast.RevokePrivilegeNode); ok {
 		return privilegeTarget{revoke.ObjectType, revoke.ObjectName, "REVOKE", " from " + revoke.Role}
+	}
+	if deny, ok := node.(*ast.DenyPrivilegeNode); ok {
+		return privilegeTarget{deny.ObjectType, deny.ObjectName, "DENY", " to " + deny.Role}
 	}
 	grant, _ := node.(*ast.GrantPrivilegeNode)
 	return privilegeTarget{grant.ObjectType, grant.ObjectName, "GRANT", " to " + grant.Role}

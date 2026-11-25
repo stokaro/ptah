@@ -904,6 +904,14 @@ func appendPrivilegeDeclaration(
 		}
 		resolved.ObjectType = kind
 		return true, appendRevoke(database, &resolved, sourcePlatform)
+	case *ast.DenyPrivilegeNode:
+		resolved := *node
+		kind, err := declaredTargetKind(database, document.base, "DENY", node.ObjectType, node.ObjectName, node.Columns, sourcePlatform)
+		if err != nil {
+			return true, err
+		}
+		resolved.ObjectType = kind
+		return true, appendDeny(database, &resolved, sourcePlatform)
 	default:
 		return false, nil
 	}

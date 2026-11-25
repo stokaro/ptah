@@ -544,6 +544,12 @@ type StatementForms struct {
 	// before `::`, in upper case, as T-SQL names SCHEMA in `ON SCHEMA::app`.
 	// Another kind is not followed by `::`.
 	GrantClasses []string `json:"grant_classes,omitempty"`
+	// Deny reports that DENY withholds privileges from a grantee, as T-SQL's
+	// does, whatever grant, schema permission or role membership gives them
+	// otherwise. The statement names its privileges and its target as GRANT
+	// does and its grantees after TO, and a SQL schema file declares a denied
+	// privilege with it. Without it DENY is refused.
+	Deny bool `json:"deny,omitempty"`
 	// ManagedOwners states the kinds of OwnerTo whose owner a desired schema
 	// declares and Ptah reconciles: the engine changes the owner with that
 	// statement, a read reports it, and an object the engine creates belongs

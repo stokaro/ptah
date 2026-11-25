@@ -24,6 +24,7 @@ type familyCount struct {
 // triggers (1)" tells them exactly.
 func CommonFamilies(db *schemamodel.Database) []string {
 	families := []familyCount{
+		{"denied grants", len(db.DeniedGrants)},
 		{"functions", len(db.Functions)},
 		{"grants", len(db.Grants)},
 		{"managed data", len(db.ManagedData)},

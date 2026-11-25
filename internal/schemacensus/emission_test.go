@@ -156,6 +156,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"COMMENT ON TRIGGER",
 		"COMMENT ON TYPE",
 		"COMMENT ON VIEW",
+		// A privilege denied, which creates no object.
+		"DENY SELECT ON",
 		// The third tail of a split function body.
 		"END",
 		// SQL Server's spelling of a comment.

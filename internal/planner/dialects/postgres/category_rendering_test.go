@@ -117,6 +117,14 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "FORCE is one of the switches the owner holds",
 		diff: &difftypes.SchemaDiff{RLSForceChanged: difftypes.RLSForceChanges{{Table: "t", Forced: true}}},
 	},
+	"DeniesAdded": {
+		why:  "PostgreSQL has no DENY, and a declared one is refused before anything is compared, so a DENY reaches this planner only in a diff built by hand, and planning nothing would leave the privilege granted",
+		diff: &difftypes.SchemaDiff{DeniesAdded: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}}},
+	},
+	"DeniesRemoved": {
+		why:  "no PostgreSQL read reports a DENY, so one taken away reaches this planner only in a diff built by hand too",
+		diff: &difftypes.SchemaDiff{DeniesRemoved: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}}},
+	},
 }
 
 // TestEveryRefusedDiffCategoryIsRefused is the control for the exemption above.

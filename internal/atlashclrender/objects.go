@@ -648,6 +648,20 @@ func (r *renderer) renderRevokedGrants() {
 	}
 }
 
+// reportDeniedGrants warns about each SQL Server DENY the schema holds. HCL has
+// no block for one, so the document leaves it out, and an apply of the
+// document to another database leaves the privilege to whatever grant, schema
+// permission or membership gives it there. An apply to the database the schema
+// was read from keeps the DENY: the comparison takes away only a DENY a desired
+// state that holds every grant leaves out.
+func (r *renderer) reportDeniedGrants() {
+	for _, denied := range r.db.DeniedGrants {
+		denied.Canonicalize()
+		r.warn("denied_grants."+denied.Role, fmt.Sprintf("DENY %s ON %s TO %q cannot be represented in an HCL schema, "+
+			"so the document leaves it out", strings.Join(denied.Privileges, ", "), denied.TargetKey(), denied.Role))
+	}
+}
+
 // renderableGrants returns the grants a `permission` or `revoke` block can
 // write, sorted, and reports each one it leaves out.
 //

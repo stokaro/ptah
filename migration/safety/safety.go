@@ -758,6 +758,9 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.RevokePrivilegeNode:
 		assessment.Severity = Warning
 		assessment.Reason = revokeReason
+	case *ast.DenyPrivilegeNode:
+		assessment.Severity = Warning
+		assessment.Reason = denyReason
 	case *ast.AlterOwnerNode, *ast.CreateViewNode, *ast.CreateMaterializedViewNode:
 		assessment = assessOwnerChange(n, assessment)
 	case *ast.RevokeRoleMembershipNode:
@@ -1667,6 +1670,7 @@ const (
 	dropMaterializedViewReason = "DROP MATERIALIZED VIEW removes the view and the rows it holds"
 	dropTriggerReason          = "DROP TRIGGER removes executable behavior from every write to its table"
 	revokeReason               = "REVOKE takes away access a role may rely on"
+	denyReason                 = "DENY withholds a privilege from the grantee and every member of it, whatever grant gives it"
 	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
 	ownerReason                = "OWNER TO gives the object to another role: the role that owned it loses an owner's privileges, " +
 		"and a view then reads its tables with the new owner's privileges"

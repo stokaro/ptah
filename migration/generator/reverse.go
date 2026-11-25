@@ -257,6 +257,10 @@ func reverseSchemaDiffWithPrior(
 		GrantsRemoved:       append(slices.Clone(diff.GrantsAdded), routineGrants.revoked...),
 		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
 		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
+		// A DENY the change adds is taken again, and one it takes is denied
+		// again.
+		DeniesAdded:   diff.DeniesRemoved,
+		DeniesRemoved: diff.DeniesAdded,
 
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete

@@ -532,6 +532,7 @@ const (
 	refresh
 	grant
 	revoke
+	deny
 	addColumn
 	dropColumn
 )
@@ -571,7 +572,7 @@ func (c change) inverse() change {
 		c.verb = create
 	case rename:
 		c.from, c.to = c.to, c.from
-	case grant:
+	case grant, deny:
 		c.verb = revoke
 	case revoke:
 		c.verb = grant
@@ -621,6 +622,8 @@ func (c change) String() string {
 		return fmt.Sprintf("grant %s to %q", c.name, c.to)
 	case revoke:
 		return fmt.Sprintf("revoke %s from %q", c.name, c.to)
+	case deny:
+		return fmt.Sprintf("deny %s to %q", c.name, c.to)
 	default:
 		return fmt.Sprintf("modify %q %s", c.name, c.kind)
 	}
@@ -927,6 +930,8 @@ func describeAccess(node ast.Node) (change, bool) {
 		return change{verb: grant, name: privileges(n.Privileges, n.ObjectName), to: n.Role}, true
 	case *ast.RevokePrivilegeNode:
 		return change{verb: revoke, name: privileges(n.Privileges, n.ObjectName), to: n.Role}, true
+	case *ast.DenyPrivilegeNode:
+		return change{verb: deny, name: privileges(n.Privileges, n.ObjectName), to: n.Role}, true
 	case *ast.GrantRoleMembershipNode:
 		return change{verb: grant, name: fmt.Sprintf("role %q", n.Role), to: n.Member}, true
 	case *ast.RevokeRoleMembershipNode:

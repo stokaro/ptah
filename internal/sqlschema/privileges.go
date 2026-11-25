@@ -173,6 +173,48 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 	return nil
 }
 
+// appendDeny records a DENY ([schemamodel.Database.DeniedGrants]), one
+// privilege per entry, taking the privileges it names out of every earlier
+// grant and revoke of them to the same grantee on the same object.
+//
+// A DENY of ALL is refused: what ALL names differs from one kind of object to
+// the next, and SQL Server marks it deprecated. A DENY on columns of a
+// privilege an earlier statement grants on the whole table is refused as well.
+// Measured on SQL Server 2025, the server keeps both rows, and a read reports
+// the table grant as a grant on each other column, which the file does not
+// declare, so every plan would grant the table again and take the DENY with
+// it.
+func appendDeny(database *schemamodel.Database, node *ast.DenyPrivilegeNode, sourcePlatform string) error {
+	denied := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
+	setGrantTarget(&denied, node.ObjectType, node.ObjectName, "", sourcePlatform)
+	denied.Columns = normalizeColumns(sourcePlatform, node.Columns)
+	denied.Canonicalize()
+	privileges := make([]string, 0, len(node.Privileges))
+	for _, privilege := range node.Privileges {
+		privileges = append(privileges, strings.ToUpper(strings.TrimSpace(privilege)))
+	}
+	if slices.Contains(privileges, allPrivileges) {
+		return fmt.Errorf("DENY ALL ON %s TO %s: ALL names different permissions on each kind of object; "+
+			"name the permissions to deny", denied.TargetKey(), denied.Role)
+	}
+	if len(denied.Columns) > 0 {
+		for _, privilege := range privileges {
+			table, held := privilegefold.TableGrantOf(database.Grants, denied.Role, privilege, oneTableWith(denied.OnTable))
+			if !held {
+				continue
+			}
+			return fmt.Errorf(
+				"DENY %s (%s) ON %s TO %s follows a GRANT of %s on the whole table, which the server reads back "+
+					"as a grant on each other column; grant it on the columns that keep it instead%s",
+				privilege, strings.Join(denied.Columns, ", "), denied.OnTable, denied.Role, privilege,
+				qualifyBoth(denied.OnTable, table.OnTable))
+		}
+	}
+	denied.Privileges = privileges
+	privilegefold.Merge(database, &schemamodel.Database{DeniedGrants: []schemamodel.Grant{denied}})
+	return nil
+}
+
 // refuseGrantOptionRevoke refuses a REVOKE GRANT OPTION FOR read for a
 // server that has no statement taking the grant option alone; see
 // [descriptor.Descriptor.GrantOptionRevokedWithPrivilege].

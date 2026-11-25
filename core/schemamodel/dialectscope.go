@@ -46,6 +46,7 @@ func ScopeToTarget(db *Database, target schemaext.TargetSelection) (*Database, e
 	scoped.Roles = keepScoped(db.Roles, target, func(v Role) []string { return v.Dialects })
 	scoped.Grants = keepScoped(db.Grants, target, func(v Grant) []string { return v.Dialects })
 	scoped.RevokedGrants = keepScoped(db.RevokedGrants, target, func(v Grant) []string { return v.Dialects })
+	scoped.DeniedGrants = keepScoped(db.DeniedGrants, target, func(v Grant) []string { return v.Dialects })
 	objects, err := db.FeatureObjects.ForTarget(target)
 	if err != nil {
 		return nil, err
@@ -177,6 +178,9 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 	for _, v := range db.RevokedGrants {
 		collect("revoked grant", v.Role, v.Dialects)
 	}
+	for _, v := range db.DeniedGrants {
+		collect("denied grant", v.Role, v.Dialects)
+	}
 	found = append(found, scopedFeatureObjects(db.FeatureObjects, want)...)
 	sort.SliceStable(found, func(i, j int) bool {
 		if found[i].Kind != found[j].Kind {
@@ -198,7 +202,8 @@ func hasDialectScope(db *Database) bool {
 		anyScoped(db.RLSEnabledTables, func(v RLSEnabledTable) []string { return v.Dialects }) ||
 		anyScoped(db.Roles, func(v Role) []string { return v.Dialects }) ||
 		anyScoped(db.Grants, func(v Grant) []string { return v.Dialects }) ||
-		anyScoped(db.RevokedGrants, func(v Grant) []string { return v.Dialects })
+		anyScoped(db.RevokedGrants, func(v Grant) []string { return v.Dialects }) ||
+		anyScoped(db.DeniedGrants, func(v Grant) []string { return v.Dialects })
 }
 
 func anyScoped[T any](values []T, scopeOf func(T) []string) bool {
