@@ -1,6 +1,10 @@
 package atlasargs
 
-import "strings"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // Arg is one flag argument as pflag reads it.
 type Arg struct {
@@ -20,6 +24,20 @@ func (a Arg) Spelling() string {
 		return "-" + a.Name
 	}
 	return "--" + a.Name
+}
+
+// boolValue reads the argument as pflag reads a boolean flag: true without a
+// value, else what [strconv.ParseBool] reads, and pflag's refusal of a value
+// that reads as no boolean.
+func (a Arg) boolValue() (bool, error) {
+	if !a.HasValue {
+		return true, nil
+	}
+	value, err := strconv.ParseBool(a.Value)
+	if err != nil {
+		return false, fmt.Errorf("invalid argument %q for %q flag: %w", a.Value, a.Spelling(), err)
+	}
+	return value, nil
 }
 
 // ParseArg reads arg as pflag reads one flag argument. It is the one reader

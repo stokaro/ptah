@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -392,7 +393,16 @@ type atlasParser struct {
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
 	ignored     *[]IgnoredAtlasConstruct
-	ignoredSeen map[ignoredAtlasConstructKey]struct{}
+	ignoredSeen map[ignoredAtlasConstructKey]int
+	// ignoredEvaluated marks the index of each construct of ignored the parse
+	// evaluated, so [atlasParser.noteIgnored] can tell the first value from a
+	// second one that disagrees. A plain map for the reason hclSchemaScopes is
+	// one.
+	ignoredEvaluated map[int]bool
+	// ignoredAt holds where each construct of ignored starts, at the same
+	// index, so [atlasParser.ignoredConstructs] can say which sit in a
+	// selected env block.
+	ignoredAt *[]hcl.Pos
 	// hclSchemaScopes records, per data "hcl_schema" name, the variable values
 	// that block scopes to its files and the file:// URLs it minted, so
 	// [atlasParser.schemaSourceVarScopes] can attribute an evaluated `src` list
@@ -441,10 +451,54 @@ type IgnoredAtlasConstruct struct {
 	Name string
 	// Kind is "block" or "attribute".
 	Kind string
+	// Path is the dotted path of the construct below its env block, or below
+	// the top of the file for one outside every env: `migration.skip_lock`
+	// for `env { migration { skip_lock = true } }`, `format.migrate.drift`
+	// for a template under `format { migrate { ... } }`. A construct written
+	// directly in an env or at the top of the file has its name as its path.
+	// A command that reads a name Atlas CE ignores matches the path, because
+	// the same name can sit in several blocks.
+	Path string
+	// InSelectedEnv reports whether the construct sits inside an env block the
+	// parse selected. The list holds the tolerated names of every env in the
+	// file, so a construct in another env is listed with InSelectedEnv false,
+	// as is one outside every env.
+	InSelectedEnv bool
+	// Value is what an attribute holds where the parse evaluated it, in a
+	// selected env or at the top of the file, when that value is a boolean or
+	// a number: "true", "false", or the number in decimal. A caller tells a
+	// setting that asks for a behavior from one that turns it off by it:
+	// `skip_lock = false` asks for the lock a command takes anyway. Value is
+	// empty for a block, for an attribute in another env, and for any other
+	// value. A string is left out because it may carry a secret, which the
+	// parser keeps out of what it reports. The instances of a for_each env
+	// share one record of each construct, so where they evaluate it to
+	// different values, Value is empty too, and where one of those values is
+	// a boolean or a number, Disagrees says so.
+	Value string
+	// Disagrees reports that two instances of a for_each env give the
+	// attribute different values where one of them is a boolean or a number,
+	// so no one Value stands for the env.
+	Disagrees bool
 	// Filename and Line locate it. The position matters because the same name
 	// is tolerated in one place and fatal in another.
 	Filename string
 	Line     int
+}
+
+// ignoredConstructPath is the [IgnoredAtlasConstruct.Path] of name in the
+// body scope names: scope without the env block or the top of the file it
+// starts from, then name.
+func ignoredConstructPath(scope, name string) string {
+	for _, root := range []string{atlasTopLevelScope, "env"} {
+		if scope == root {
+			return name
+		}
+		if rest, found := strings.CutPrefix(scope, root+"."); found {
+			return rest + "." + name
+		}
+	}
+	return scope + "." + name
 }
 
 func newAtlasParser(
@@ -469,6 +523,7 @@ func newAtlasParser(
 	sensitiveNames := make(map[string]struct{})
 	ignored := make([]IgnoredAtlasConstruct, 0)
 	instanceContexts := make([]instanceContext, 0)
+	ignoredAt := make([]hcl.Pos, 0)
 	return atlasParser{
 		runContext:       runContext,
 		fsys:             fsys,
@@ -476,7 +531,9 @@ func newAtlasParser(
 		instanceContexts: &instanceContexts,
 		sensitiveNames:   &sensitiveNames,
 		ignored:          &ignored,
-		ignoredSeen:      make(map[ignoredAtlasConstructKey]struct{}),
+		ignoredSeen:      make(map[ignoredAtlasConstructKey]int),
+		ignoredEvaluated: make(map[int]bool),
+		ignoredAt:        &ignoredAt,
 		ctx: &hcl.EvalContext{
 			Variables: make(map[string]cty.Value),
 			Functions: atlasProjectFunctions(fsys),
@@ -557,7 +614,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		if err := checkAtlasToleratedValue(atlasTopLevelScope, name, attr, value); err != nil {
 			return nil, err
 		}
-		p.noteIgnored("attribute", name, attr.NameRange)
+		p.noteIgnored("attribute", name, ignoredConstructPath(atlasTopLevelScope, name), attr.NameRange, value)
 	}
 	// Exporters are top-level and env-independent: an exporter names an output
 	// format, and a format does not change because a different database was
@@ -583,7 +640,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	if len(selected) == 0 {
 		base.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
 		base.compositeSchemas = mergeCompositeSchemas(p.compositeSchemas, nil)
-		base.IgnoredConstructs = p.ignoredConstructs()
+		base.IgnoredConstructs = p.ignoredConstructs(nil)
 		return []Config{base}, nil
 	}
 
@@ -606,7 +663,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	if len(configs) == 0 {
 		return nil, fmt.Errorf("atlas env %q not found", envName)
 	}
-	ignored := p.ignoredConstructs()
+	ignored := p.ignoredConstructs(selected)
 	for i := range configs {
 		configs[i].IgnoredConstructs = slices.Clone(ignored)
 	}
@@ -645,13 +702,20 @@ func atlasBlockNotSupported(block *hclsyntax.Block) error {
 	return fmt.Errorf("atlas block is not supported by the community version of Atlas")
 }
 
-// ignoredConstructs returns the tolerated constructs recorded so far.
-func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
+// ignoredConstructs returns the constructs the parse tolerated, each marked
+// with whether it sits in one of the selected env blocks.
+func (p atlasParser) ignoredConstructs(selected []atlasEnvBlock) []IgnoredAtlasConstruct {
 	if p.ignored == nil || len(*p.ignored) == 0 {
 		return nil
 	}
 	out := make([]IgnoredAtlasConstruct, len(*p.ignored))
 	copy(out, *p.ignored)
+	for i, start := range *p.ignoredAt {
+		out[i].InSelectedEnv = slices.ContainsFunc(selected, func(env atlasEnvBlock) bool {
+			body := env.block.Range()
+			return body.Filename == out[i].Filename && body.ContainsPos(start)
+		})
+	}
 	return out
 }
 
@@ -759,7 +823,7 @@ func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Att
 	if err := checkAtlasToleratedValue(scope, name, attr, value); err != nil {
 		return err
 	}
-	p.noteIgnored("attribute", name, attr.NameRange)
+	p.noteIgnored("attribute", name, ignoredConstructPath(scope, name), attr.NameRange, value)
 	return nil
 }
 
@@ -772,7 +836,7 @@ func (p atlasParser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) 
 	if err := p.evaluateIgnoredBody(scope+"."+block.Type, block.Body); err != nil {
 		return err
 	}
-	p.noteIgnored("block", block.Type, block.TypeRange)
+	p.noteIgnored("block", block.Type, ignoredConstructPath(scope, block.Type), block.TypeRange, cty.NilVal)
 	return nil
 }
 
@@ -780,7 +844,7 @@ func (p atlasParser) recordIgnoredAttr(scope, name string, attr *hclsyntax.Attri
 	if err := rejectEnforcedConstruct(scope, name, attr.NameRange); err != nil {
 		return err
 	}
-	p.noteIgnored("attribute", name, attr.NameRange)
+	p.noteIgnored("attribute", name, ignoredConstructPath(scope, name), attr.NameRange, cty.NilVal)
 	return nil
 }
 
@@ -788,7 +852,7 @@ func (p atlasParser) recordIgnoredBlock(scope string, block *hclsyntax.Block) er
 	if err := rejectEnforcedConstruct(scope, block.Type, block.TypeRange); err != nil {
 		return err
 	}
-	p.noteIgnored("block", block.Type, block.TypeRange)
+	p.noteIgnored("block", block.Type, ignoredConstructPath(scope, block.Type), block.TypeRange, cty.NilVal)
 	return nil
 }
 
@@ -800,7 +864,14 @@ func rejectEnforcedConstruct(scope, name string, rng hcl.Range) error {
 }
 
 // noteIgnored records a construct tolerated under the unknown-name policy.
-func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
+// path is its [IgnoredAtlasConstruct.Path], and value what the parse
+// evaluated it to, or [cty.NilVal] where it evaluated nothing.
+//
+// The structure pass records a construct before the tolerance path evaluates
+// it, and each instance of a for_each env evaluates it again, so a construct
+// seen again keeps its first record. Its first value is kept, and a value that
+// disagrees with it empties it: one record cannot say what two instances hold.
+func (p atlasParser) noteIgnored(kind, name, path string, rng hcl.Range, value cty.Value) {
 	if p.ignored == nil {
 		return
 	}
@@ -809,14 +880,53 @@ func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
 		line: rng.Start.Line, column: rng.Start.Column,
 	}
 	if p.ignoredSeen != nil {
-		if _, ok := p.ignoredSeen[key]; ok {
+		if index, ok := p.ignoredSeen[key]; ok {
+			p.noteIgnoredValue(index, value)
 			return
 		}
-		p.ignoredSeen[key] = struct{}{}
+		p.ignoredSeen[key] = len(*p.ignored)
 	}
 	*p.ignored = append(*p.ignored, IgnoredAtlasConstruct{
-		Name: name, Kind: kind, Filename: rng.Filename, Line: rng.Start.Line,
+		Name: name, Kind: kind, Path: path, Filename: rng.Filename, Line: rng.Start.Line,
 	})
+	*p.ignoredAt = append(*p.ignoredAt, rng.Start)
+	p.noteIgnoredValue(len(*p.ignored)-1, value)
+}
+
+// noteIgnoredValue records value, what the parse evaluated the construct at
+// index to, and does nothing for [cty.NilVal]: the first value is kept, and a
+// later one that differs empties it.
+func (p atlasParser) noteIgnoredValue(index int, value cty.Value) {
+	if value == cty.NilVal {
+		return
+	}
+	text := ignoredConstructValue(value)
+	construct := &(*p.ignored)[index]
+	switch {
+	case p.ignoredEvaluated == nil:
+		construct.Value = text
+	case !p.ignoredEvaluated[index]:
+		construct.Value = text
+		p.ignoredEvaluated[index] = true
+	case construct.Value != text:
+		construct.Value = ""
+		construct.Disagrees = true
+	}
+}
+
+// ignoredConstructValue is the [IgnoredAtlasConstruct.Value] of value.
+func ignoredConstructValue(value cty.Value) string {
+	if value == cty.NilVal || value.IsNull() || !value.IsKnown() {
+		return ""
+	}
+	switch value.Type() {
+	case cty.Bool:
+		return strconv.FormatBool(value.True())
+	case cty.Number:
+		return value.AsBigFloat().Text('f', -1)
+	default:
+		return ""
+	}
 }
 
 // evaluateIgnoredBody evaluates every expression inside a construct whose NAME
@@ -903,7 +1013,7 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 		if err := p.evaluateIgnoredBody(atlasTopLevelScope+"."+block.Type, block.Body); err != nil {
 			return err
 		}
-		p.noteIgnored("block", block.Type, block.TypeRange)
+		p.noteIgnored("block", block.Type, ignoredConstructPath(atlasTopLevelScope, block.Type), block.TypeRange, cty.NilVal)
 	}
 	return nil
 }
@@ -1274,7 +1384,7 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 			return err
 		}
 		if p.ignoreEnvSchemas {
-			p.noteIgnored("attribute", attrName, attr.NameRange)
+			p.noteIgnored("attribute", attrName, ignoredConstructPath("env", attrName), attr.NameRange, cty.NilVal)
 			return nil
 		}
 		// An empty list is not a selection. Measured on the pinned binary:
@@ -1450,7 +1560,7 @@ func (p atlasParser) parseMigrationRepo(block *hclsyntax.Block) error {
 		if _, err := p.stringAttr(attrName, attr); err != nil {
 			return err
 		}
-		p.noteIgnored("attribute", attrName, attr.NameRange)
+		p.noteIgnored("attribute", attrName, ignoredConstructPath("env.migration.repo", attrName), attr.NameRange, cty.NilVal)
 	}
 	if len(block.Body.Blocks) > 0 {
 		return unsupportedBlock(block.Body.Blocks[0])
@@ -2093,7 +2203,7 @@ func (p atlasParser) parseDialectDiff(block *hclsyntax.Block, cfg *Config, level
 		if err := p.evaluateIgnoredBody("diff", block.Body); err != nil {
 			return err
 		}
-		p.noteIgnored("block", block.Type, block.TypeRange)
+		p.noteIgnored("block", block.Type, block.Type, block.TypeRange, cty.NilVal)
 		return nil
 	}
 	dialect := platform.NormalizeDialect(block.Labels[0])

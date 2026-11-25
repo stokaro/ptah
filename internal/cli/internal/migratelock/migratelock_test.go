@@ -2,6 +2,7 @@ package migratelock_test
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -425,4 +426,31 @@ func TestRequestsDecideFromURL_HappyPath(t *testing.T) {
 
 	c.Assert(migratelock.Requests{}.DecideFromURL(), qt.IsNil)
 	c.Assert(migratelock.Requests{}.DecideConnected("sqlite"), qt.IsNil)
+}
+
+// A dialect without an advisory lock gets the note, in the words the subject
+// gives it, so a lock name the run accepted does not read as serialization.
+func TestNoteUnlocked_HappyPathNotesADialectWithoutALock(t *testing.T) {
+	c := qt.New(t)
+	var out strings.Builder
+
+	migratelock.NoteUnlocked(&out, "sqlite", "drift_named", "the report runs")
+
+	c.Assert(out.String(), qt.Equals, `note: migration locking is not supported for dialect "sqlite"; `+
+		`the advisory lock "drift_named" is not acquired and the report runs without a database lock`+"\n")
+}
+
+// The control: a dialect that takes the lock gets no note, so the test above
+// cannot pass on a helper that writes the note for every dialect.
+func TestNoteUnlocked_HappyPathWritesNothingWhereTheLockIsTaken(t *testing.T) {
+	for _, dialect := range []string{"postgres", "mysql", "postgresql"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			var out strings.Builder
+
+			migratelock.NoteUnlocked(&out, dialect, "drift_named", "the report runs")
+
+			c.Assert(out.String(), qt.Equals, "")
+		})
+	}
 }

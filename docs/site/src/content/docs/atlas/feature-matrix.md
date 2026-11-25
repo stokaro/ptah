@@ -111,8 +111,8 @@ Across the 216 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 197 |
-| Ptah supports it with a stated limitation | 7 |
+| Ptah supports it fully | 198 |
+| Ptah supports it with a stated limitation | 6 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
@@ -280,7 +280,7 @@ seven of them as open capabilities regardless.
 | Custom lint rules and check-level policy | ✅ | ❌ | ✅ | A rule is declared in `.ptah-lint.yaml` or an atlas.hcl `rule` block as an expression over the statement; a `naming` block on either surface drives the NM rules. review, non_linear, force do nothing. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
 | Dev-URL schema scope on `migrate lint` | ✅ | ✅ | ✅ | `ptah-compat migrate lint` reviews only the schema the dev URL's search_path names, matching the pinned CE binary. Native `ptah migrations lint` reads SQL text and deliberately does not scope. |
-| Drift report against the applied migration history (`migrate drift`) | 🟡 | ❌ | ✅ | Native `ptah migrations drift` reports drift from the applied history, with the diff and the statements that undo it, for each target of a for_each env. Not yet: the compat `migrate drift`. |
+| Drift report against the applied migration history (`migrate drift`) | ✅ | ❌ | ✅ | Native `ptah migrations drift`, and `ptah-compat migrate drift` under `PTAH_ATLAS_MIGRATE_DRIFT=1`, report drift from the applied history for each target of a for_each env. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
 | Inline nolint suppression | ✅ | ✅ | ✅ | ptah-compat reads atlas:nolint: an Atlas code or analyzer name silences its rules. Native Ptah refuses it and reads ptah:nolint with a name. A blank line detaches it; unknown selectors pass, as on CE. |
 | Lint enforcement per surface | ✅ | 🟡 | ✅ | The lint guide's enforcement table says, per surface, which rules run and whether a finding is reported, exits non-zero at a threshold, or refuses the apply; a `gate` section widens the apply gate. |

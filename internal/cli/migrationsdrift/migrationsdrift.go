@@ -255,6 +255,25 @@ func parseSettings(cmd *cobra.Command, opts options, projectCfg projectconfig.Co
 	}, nil
 }
 
+// noteUnacquiredLockName says on w that the lock name the run was given is
+// not acquired, where conn takes no migration advisory lock: a SQL session on
+// a dialect that has none. Only a run forwarded from `ptah-compat migrate
+// drift` gets here with such a name. A native run that names the lock is
+// refused before ([migratelock.Request.Decide]), and the compatibility
+// surface accepts the name, as `migrate apply` does, so the report says it ran
+// without the lock rather than let --lock-name read as a wait it did not make.
+func noteUnacquiredLockName(w io.Writer, name migratelock.Name, conn *dbschema.DatabaseConnection) {
+	if !name.Explicit() {
+		return
+	}
+	// A provider session takes the lock through its own service, or refuses
+	// the acquisition, which reports itself.
+	if service, err := conn.SessionLocker(); err != nil || service != nil {
+		return
+	}
+	migratelock.NoteUnlocked(w, conn.Info().Dialect, name.Value, "the report runs")
+}
+
 func runDrift(cmd *cobra.Command, raw options, out *report) error {
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
@@ -416,6 +435,7 @@ func (r driftRun) target(ctx context.Context, projectCfg projectconfig.Config) (
 	if err := set.lockRequests.DecideSession(conn); err != nil {
 		return result, err
 	}
+	noteUnacquiredLockName(cmd.ErrOrStderr(), set.lockName, conn)
 
 	mig, err := migrator.NewFSMigrator(
 		conn,

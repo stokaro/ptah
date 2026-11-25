@@ -67,6 +67,6 @@ func TestLoadPreservesIgnoredAtlasConstructsAfterMerge(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://atlas.db")
 	c.Assert(cfg.IgnoredConstructs, qt.DeepEquals, []projectconfig.IgnoredAtlasConstruct{
-		{Name: "project", Kind: "attribute", Filename: atlasPath, Line: 3},
+		{Name: "project", Kind: "attribute", Path: "project", InSelectedEnv: true, Filename: atlasPath, Line: 3},
 	})
 }

@@ -2303,6 +2303,26 @@ Read the columns as follows.
 
 </div>
 
+**`ptah-compat migrate drift`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--no-cache` | `bool` | `false` | `PTAH_NO_CACHE` | — |
+| `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
+| `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+</div>
+
 **`ptah-compat migrate edit`**
 
 <div class="ptah-wide-table">

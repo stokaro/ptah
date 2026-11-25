@@ -55,8 +55,13 @@ type Flag struct {
 	// permanently out-of-scope flags (for example registry-bound ones) do not
 	// read as pending work.
 	UnsupportedReason string
-	MapValue          func(string) (string, error)
-	EnvDisabled       bool
+	// AcceptsFalse, on an Unsupported [BoolFlag], refuses only the value true.
+	// A value that reads as false asks for what Ptah does without the flag, so
+	// the occurrence is accepted and forwards nothing; the bare flag and a
+	// value that reads as true are refused as on any Unsupported flag.
+	AcceptsFalse bool
+	MapValue     func(string) (string, error)
+	EnvDisabled  bool
 	// NativeEnv, on a flag with a NativeName, reads the native flag's PTAH_*
 	// variable as a value of this flag when the flag's own variable is absent
 	// or empty, so that value goes through MapValue like any other. Without it
@@ -74,6 +79,11 @@ type Flag struct {
 	// database URLs become one URL that names neither. A value is forwarded as
 	// written, an empty one included, so the native flag judges it.
 	ForwardEach bool
+	// TargetEnvDisabled says the forwarded target reads no PTAH_* variable
+	// for NativeName: the caller disabled that binding on the target. The
+	// native variable then sets nothing, so it does not keep Default from
+	// being forwarded.
+	TargetEnvDisabled bool
 }
 
 // String creates an Atlas string flag descriptor.
@@ -197,6 +207,18 @@ func UnsupportedStringReason(name, shorthand, usage, reason string) Flag {
 func UnsupportedBoolReason(name, shorthand, usage, reason string) Flag {
 	flag := UnsupportedBool(name, shorthand, usage)
 	flag.UnsupportedReason = reason
+	return flag
+}
+
+// UnsupportedTrueBoolReason is [UnsupportedBoolReason] for a waiver whose
+// false value asks for what Ptah does anyway, as `--skip-lock=false` asks for
+// the lock a verb takes on every run. It refuses the bare flag and a value
+// that reads as true with reason, and accepts a value that reads as false
+// ([Flag.AcceptsFalse]). Its PTAH_<FLAG> variable reads the same way: false
+// asks for nothing, and true is refused.
+func UnsupportedTrueBoolReason(name, shorthand, usage, reason string) Flag {
+	flag := UnsupportedBoolReason(name, shorthand, usage, reason)
+	flag.AcceptsFalse = true
 	return flag
 }
 
@@ -359,7 +381,7 @@ func mapOneArg(
 	}
 	displayName := parsed.Spelling()
 	if flag.Unsupported {
-		return nil, 0, UnsupportedFlagError(group, use, flag, displayName)
+		return unsupportedOccurrence(group, use, flag, parsed)
 	}
 	if flag.Kind != BoolFlag && !parsed.HasValue && index+1 >= len(args) {
 		return nil, 0, missingValueError(parsed)
@@ -370,6 +392,24 @@ func mapOneArg(
 		return nil, 0, fmt.Errorf("atlas %s %s %s: %w", group, use, displayName, err)
 	}
 	return emitted, consumed, nil
+}
+
+// unsupportedOccurrence answers one occurrence of an Unsupported flag: it is
+// refused, except that a flag marked [Flag.AcceptsFalse] takes a value that
+// reads as false and forwards nothing for it. A value that reads as no boolean
+// is refused as pflag refuses it.
+func unsupportedOccurrence(group, use string, flag Flag, parsed Arg) (emitted []string, consumed int, err error) {
+	if !flag.AcceptsFalse || flag.Kind != BoolFlag {
+		return nil, 0, UnsupportedFlagError(group, use, flag, parsed.Spelling())
+	}
+	value, err := parsed.boolValue()
+	if err != nil {
+		return nil, 0, err
+	}
+	if value {
+		return nil, 0, UnsupportedFlagError(group, use, flag, parsed.Spelling())
+	}
+	return nil, 1, nil
 }
 
 // mapFlagOccurrence emits the native spelling of one recognized flag.
@@ -509,7 +549,7 @@ func withDefaultArgs(flags []Flag, args []string) []string {
 }
 
 func nativeEnvironmentPresent(flag Flag) bool {
-	if flag.EnvDisabled || flag.NativeName == "" || flag.NativeName == flag.Name {
+	if flag.EnvDisabled || flag.TargetEnvDisabled || flag.NativeName == "" || flag.NativeName == flag.Name {
 		return false
 	}
 	value, ok := os.LookupEnv(envName("PTAH", flag.NativeName))

@@ -28,8 +28,8 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migraterun"
-	"ptah.run/internal/dblock"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
@@ -660,12 +660,7 @@ func noteAtlasMigrateApplyLockUnsupported(
 	if strings.TrimSpace(lockOpts.name) == "" || plan.MigrationLockSkipped() {
 		return
 	}
-	if dblock.Supported(dialect) {
-		return
-	}
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"note: migration locking is not supported for dialect %q; the advisory lock %q is not acquired and the migrations run without a database lock\n",
-		dialect, plan.MigrationLockName())
+	migratelock.NoteUnlocked(cmd.ErrOrStderr(), dialect, plan.MigrationLockName(), "the migrations run")
 }
 
 // emitAtlasMigrateApplyDeferredChecks names the pre-migration checks a dry run

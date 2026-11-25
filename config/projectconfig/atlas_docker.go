@@ -96,7 +96,7 @@ func (e *atlasEvaluator) ignoreUnresolvedDockerBlocks() error {
 		if err := e.parser.evaluateIgnoredBody(atlasTopLevelScope+"."+block.Type, block.Body); err != nil {
 			return err
 		}
-		e.parser.noteIgnored("block", block.Type, block.TypeRange)
+		e.parser.noteIgnored("block", block.Type, ignoredConstructPath(atlasTopLevelScope, block.Type), block.TypeRange, cty.NilVal)
 	}
 	return nil
 }

@@ -351,6 +351,17 @@ func compatDockerRows() []compatDockerRow {
 			checkWhitespace: notADockerURL,
 		},
 		{
+			// The dev database the applied history replays on. The verb runs
+			// only under PTAH_ATLAS_MIGRATE_DRIFT, which the tests below set.
+			name: "migrate drift reaches the provisioner",
+			verb: "migrate drift",
+			args: func(fx compatDockerFixture) []string {
+				return []string{"migrate", "drift", "--dir", "file://" + fx.dir, "--url", fx.appliedTarget}
+			},
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
+		},
+		{
 			// Between two local files no dev database is opened, and the URL
 			// pins the dialect. The pin refuses an engine Ptah does not start
 			// in the provisioner's words, and so does the pinned binary, which
@@ -372,6 +383,8 @@ func compatDockerRows() []compatDockerRow {
 
 func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 	c := qt.New(t)
+	// `migrate drift` answers as its group without it; see compatDockerRows.
+	c.Setenv("PTAH_ATLAS_MIGRATE_DRIFT", "1")
 	fx := newCompatDockerFixture(c)
 
 	for _, tt := range compatDockerRows() {
@@ -412,6 +425,8 @@ func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 // refusal is a sentence only the provisioner produces.
 func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testing.T) {
 	c := qt.New(t)
+	// `migrate drift` answers as its group without it; see compatDockerRows.
+	c.Setenv("PTAH_ATLAS_MIGRATE_DRIFT", "1")
 	fx := newCompatDockerFixture(c)
 
 	for _, tt := range compatDockerRows() {

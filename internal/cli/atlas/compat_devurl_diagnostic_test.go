@@ -582,14 +582,18 @@ func TestCompatDevURLDiagnostics_LeaveAnImageURLToTheProvisioner(t *testing.T) {
 // on them at all, and `migrate checkpoint` additionally reports the whole verb
 // as unavailable. `schema plan lint` and `schema plan test` are the other two
 // and need no separate measurement: both are sub-verbs of `schema plan`, which
-// that binary refuses as a whole (stokaro/ptah#1211). Ptah registers --dev-url
-// on all eight as capabilities that binary does not have, so there is no
+// that binary refuses as a whole (stokaro/ptah#1211). `migrate drift` is not a
+// verb there at all: the group reads the word as a request for its help, and
+// `atlas migrate drift --dev-url ...` answers `Error: unknown flag: --dev-url`
+// from the group. Ptah registers --dev-url on all nine as capabilities that
+// binary does not have, so there is no
 // wording to copy and their own diagnostics are left alone. Rewording them would be inventing an oracle rather than matching
 // one; deleting the flags would remove a capability (AGENTS.md rule (c)).
 func compatDevURLVerbsWithoutOracleRow() []string {
 	return []string{
 		"migrate checkpoint",
 		"migrate down",
+		"migrate drift",
 		"migrate test",
 		"schema plan lint",
 		"schema plan new",

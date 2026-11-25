@@ -17,6 +17,7 @@ package migratelock
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,6 +62,24 @@ func RegisterNameFlag(flags *pflag.FlagSet, dst *string) {
 	if err := cmdflags.RefuseEmptyEnv(flags, NameFlag, envbinding.EmptyRule{Omitted: OmittedName}); err != nil {
 		panic(err) // the flag is registered above, and the rule names what leaving it out does
 	}
+}
+
+// NoteUnlocked writes to w, when dialect takes no session advisory lock, that
+// the lock name an operator chose is not acquired and that subject runs
+// without a database lock; subject names what runs, such as "the migrations
+// run" or "the report runs". For a dialect that takes the lock it writes
+// nothing. The dialect set is [dblock.Supported]'s.
+//
+// It is the answer of the compatibility surface, which accepts a lock name on
+// such a dialect where a native verb refuses it ([Request.Decide] leaves a
+// forwarded run alone). Taken in silence, the name would read as
+// serialization the run did not get.
+func NoteUnlocked(w io.Writer, dialect, name, subject string) {
+	if dblock.Supported(dialect) {
+		return
+	}
+	fmt.Fprintf(w, "note: migration locking is not supported for dialect %q; "+
+		"the advisory lock %q is not acquired and %s without a database lock\n", dialect, name, subject)
 }
 
 // UnsupportedError reports that a caller asked for the migration advisory lock
@@ -324,12 +343,22 @@ func (n Name) Explicit() bool { return n.Spelling != "" }
 // the binding refuses both, as [RegisterNameFlag] declares, so the refusal
 // here is of a blank --migration-lock-name or [NameConfigKey].
 //
-// A forwarded run selects no name. `ptah-compat migrate down` reaches the
-// native command through the adapter, and the compatibility surface has no
-// lock-name flag there, so the setting belongs to the native commands only.
+// A forwarded run selects the name the adapter wrote on the native command
+// line, and nothing else. `ptah-compat migrate drift --lock-name` maps the
+// Atlas spelling onto the native flag, and the run waits on that lock.
+// `ptah-compat migrate down` has no lock-name flag and writes none, so the
+// native variable and the project setting belong to the native commands only.
+// The adapter refuses a blank name in the spelling the operator typed before
+// it forwards one.
 func ResolveName(request Request, value string) (Name, error) {
-	if request.Cmd == nil || cmdadapter.Forwarded(request.Cmd) {
+	if request.Cmd == nil {
 		return Name{}, nil
+	}
+	if cmdadapter.Forwarded(request.Cmd) {
+		if !cmdflags.SetOnCommandLine(request.Cmd.Flags(), request.FlagName) {
+			return Name{}, nil
+		}
+		return Name{Value: strings.TrimSpace(value), Spelling: "--" + request.FlagName}, nil
 	}
 	spelling, asked := request.Spelling()
 	if !asked {

@@ -78,6 +78,17 @@ type atlasVerb struct {
 	// and lint adapters. A directory named by atlas.hcl remains separate work in
 	// stokaro/ptah#1186.
 	writesDir bool
+	// eachInstance marks a verb whose native command runs once per instance of
+	// the selected env and reads each instance's database and dev database out
+	// of the config it is handed, so the adapter hands over every instance
+	// rather than one; see [resolveAtlasVerbInstances].
+	eachInstance bool
+	// refuseProjectSettings, on a verb marked eachInstance, refuses settings
+	// of the selected env that the verb's Atlas contract gives an effect and
+	// the native command does not carry out. It reads the configs as loaded,
+	// before any is merged with ptah.yaml, and given reports whether a flag of
+	// the verb is set, on the command line or through its PTAH_* variable.
+	refuseProjectSettings func(configs []*projectconfig.Config, given func(flag string) bool) error
 }
 
 type atlasPositionalArg struct {
@@ -329,15 +340,19 @@ func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *
 	}
 	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
+	var gated []atlasGatedCommand
 	if securityCommand != nil {
 		gateAtlasSecurityHelp(securityCommand)
+		gated = append(gated, atlasGatedCommand{command: securityCommand, variable: atlasSecurityScan})
+	}
+	if drift, _, err := migrateCommand.Find([]string{"drift"}); err == nil && drift != migrateCommand {
+		gateAtlasMigrateDriftHelp(drift)
+		gated = append(gated, atlasGatedCommand{command: drift, variable: atlasMigrateDrift})
 	}
 	installAtlasProjectFlagResetTree(schemaCommand)
 	installAtlasProjectFlagResetTree(migrateCommand)
 	installAtlasProjectFlagResetRoot(cmd, schemaCommand, migrateCommand)
-	if securityCommand != nil {
-		gateAtlasSecurityRequests(cmd, securityCommand)
-	}
+	gateAtlasRequests(cmd, gated...)
 	return cmd
 }
 
@@ -438,6 +453,7 @@ func newAtlasMigrateCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 		})
 	} else {
 		cmd.AddCommand(newAtlasMigrateDownCommand(policy))
+		cmd.AddCommand(newAtlasMigrateDriftCommand())
 		for _, verb := range atlasMigrateForwardVerbs() {
 			cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 		}
@@ -1655,8 +1671,12 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
+		verbFlags = atlasInstanceDirFlags(verbFlags, project)
 		mapped, err := atlasargs.Map(group, verb.use, verbFlags, args)
 		if err != nil {
+			return nil, nil, err
+		}
+		if err := refuseOneDatabaseForEveryInstance(project, mapped); err != nil {
 			return nil, nil, err
 		}
 		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
@@ -1699,6 +1719,13 @@ type atlasVerbArgs struct {
 	// adapter loads one only when -c or --env names it, so a bare run has no
 	// environment for an env:// reference to be read out of.
 	projectLoaded bool
+	// instances are the configs a verb marked [atlasVerb.eachInstance] hands
+	// over, one per instance of the selected env; nil for every other verb.
+	instances []projectconfig.Config
+	// instanceDirs reports that each of instances carries its own migration
+	// directory, so no --dir is forwarded; see
+	// [atlasInstancesNameTheirDirectories].
+	instanceDirs bool
 }
 
 // resolveAtlasVerbProject merges the Atlas project selection flags reachable
@@ -1736,6 +1763,9 @@ func resolveAtlasVerbProject(
 	resolved.context = dbcli.WithProjectConfig(resolved.context, projectconfig.Config{})
 
 	compatibilityPolicy := atlasCompatibilityPolicy(cmd)
+	if verb.eachInstance {
+		return resolveAtlasVerbInstances(resolved, verb, project.flags, compatibilityPolicy, cleanup)
+	}
 	var selected selectedAtlasProject
 	if project.flags.readsProject() {
 		selected, err = loadAtlasAdapterProjectConfig(

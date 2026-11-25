@@ -409,10 +409,13 @@ func TestCompatURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 // could produce wording to copy, and a row pinning one would be pinning an
 // answer no binary gives (stokaro/ptah#1017). `security scan` is absent from
 // the pinned binary for the same reason: every spelling of `security` answers
-// `unknown command`.
+// `unknown command`. `migrate drift` is absent from it too: the group reads the
+// word as a request for its help, so `atlas migrate drift --url ...` answers
+// `Error: unknown flag: --url` from the group, not from a verb.
 func compatURLVerbsWithoutOracleRow() []string {
 	return []string{
 		"migrate down",
+		"migrate drift",
 		"schema test",
 		"script exec",
 		"script loop",

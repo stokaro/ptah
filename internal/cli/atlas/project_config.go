@@ -1575,7 +1575,7 @@ func atlasFlagEnvironmentPresent(flags []atlasargs.Flag, name string) bool {
 		if nonEmptyEnvironmentVariable(cmdflags.EnvName("PTAH", flag.Name)) {
 			return true
 		}
-		if flag.NativeName != "" &&
+		if flag.NativeName != "" && !flag.TargetEnvDisabled &&
 			nonEmptyEnvironmentVariable(cmdflags.EnvName("PTAH", flag.NativeName)) {
 			return true
 		}

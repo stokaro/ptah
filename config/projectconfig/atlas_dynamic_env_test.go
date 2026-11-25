@@ -374,7 +374,53 @@ func TestParseAtlasCollectionSharesIgnoredConstructsAcrossInstances(t *testing.T
 	c.Assert(err, qt.IsNil)
 	c.Assert(configs, qt.HasLen, 2)
 	want := []projectconfig.IgnoredAtlasConstruct{
-		{Name: "custom", Kind: "attribute", Filename: "atlas.hcl", Line: 5},
+		{Name: "custom", Kind: "attribute", Path: "custom", InSelectedEnv: true, Disagrees: true, Filename: "atlas.hcl", Line: 5},
+	}
+	c.Assert(configs[0].IgnoredConstructs, qt.DeepEquals, want)
+	c.Assert(configs[1].IgnoredConstructs, qt.DeepEquals, want)
+}
+
+// An ignored attribute carries its value where it is a boolean or a number,
+// so a command can tell `skip_lock = false` from `skip_lock = true`. The
+// instances of an env share one record, so a value they disagree on is left
+// out, as a string is. Disagrees marks a disagreement where a value is a
+// boolean or a number; two strings that differ leave it unset.
+func TestParseAtlasCollectionRecordsTheValueOfAnIgnoredAttribute(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env {
+  for_each = ["first", "second"]
+  name     = atlas.env
+  url      = each.value
+  agreed   = false
+  count    = 2.5
+  differs  = each.key
+  text     = "secret"
+  values   = each.value
+  migration {
+    skip_lock = true
+  }
+}
+env "other" {
+  migration {
+    skip_lock = false
+  }
+}
+`)
+
+	configs, err := projectconfig.ParseAtlasCollectionWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(configs, qt.HasLen, 2)
+	want := []projectconfig.IgnoredAtlasConstruct{
+		{Name: "agreed", Kind: "attribute", Path: "agreed", InSelectedEnv: true, Value: "false", Filename: "atlas.hcl", Line: 5},
+		{Name: "count", Kind: "attribute", Path: "count", InSelectedEnv: true, Value: "2.5", Filename: "atlas.hcl", Line: 6},
+		{Name: "differs", Kind: "attribute", Path: "differs", InSelectedEnv: true, Disagrees: true, Filename: "atlas.hcl", Line: 7},
+		{Name: "text", Kind: "attribute", Path: "text", InSelectedEnv: true, Filename: "atlas.hcl", Line: 8},
+		{Name: "values", Kind: "attribute", Path: "values", InSelectedEnv: true, Filename: "atlas.hcl", Line: 9},
+		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", InSelectedEnv: true, Value: "true", Filename: "atlas.hcl", Line: 11},
+		{Name: "skip_lock", Kind: "attribute", Path: "migration.skip_lock", Filename: "atlas.hcl", Line: 16},
 	}
 	c.Assert(configs[0].IgnoredConstructs, qt.DeepEquals, want)
 	c.Assert(configs[1].IgnoredConstructs, qt.DeepEquals, want)

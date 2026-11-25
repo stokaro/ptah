@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 )
 
 // Exporter is a named output template declared by an atlas.hcl `exporter`
@@ -118,7 +119,7 @@ func (p atlasParser) parseAtlasExporterBlock(block *hclsyntax.Block, cfg *Config
 			if err := checkAtlasToleratedValue(scope, attrName, attr, value); err != nil {
 				return err
 			}
-			p.noteIgnored("attribute", scope+"."+attrName, attr.NameRange)
+			p.noteIgnored("attribute", scope+"."+attrName, ignoredConstructPath(scope, attrName), attr.NameRange, value)
 		}
 	}
 	if !found {
@@ -145,7 +146,8 @@ func (p atlasParser) parseAtlasExporterBlock(block *hclsyntax.Block, cfg *Config
 			atlasTopLevelScope+".exporter."+name+"."+child.Type, child.Body); err != nil {
 			return err
 		}
-		p.noteIgnored("block", atlasTopLevelScope+".exporter."+name+"."+child.Type, child.TypeRange)
+		p.noteIgnored("block", atlasTopLevelScope+".exporter."+name+"."+child.Type,
+			ignoredConstructPath(atlasTopLevelScope+".exporter."+name, child.Type), child.TypeRange, cty.NilVal)
 	}
 	if cfg.exporters == nil {
 		cfg.exporters = make(map[string]string)

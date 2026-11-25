@@ -67,6 +67,7 @@ listed.
 | `ptah-compat migrate checkpoint` | Squash migration history into a cumulative-schema checkpoint | — |
 | `ptah-compat migrate diff` | Compute migration diff against a desired schema | — |
 | `ptah-compat migrate down` | Roll back migrations | — |
+| `ptah-compat migrate drift` | Report drift between a database and its applied migration history | hidden |
 | `ptah-compat migrate edit` | Edit a migration file and update the directory checksum | — |
 | `ptah-compat migrate hash` | Write or update the migration directory checksum | — |
 | `ptah-compat migrate import` | Import migrations from another tool | — |
@@ -208,8 +209,8 @@ place cannot read. The refused forms include:
 `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas Community Edition policy,
 which constructs a smaller command tree before dispatch. The
 [Atlas compatibility overview](../../atlas/overview/) states what that selector
-is for and what else it narrows. This section is the command-level answer: 30
-of the 54 paths above leave the surface, and they do not all answer the same
+is for and what else it narrows. This section is the command-level answer: 31
+of the 55 paths above leave the surface, and they do not all answer the same
 way.
 
 - **refused** — 12 paths stay registered and hidden, so each one's own gate
@@ -217,14 +218,15 @@ way.
 - **refused by its group** — 10 paths sit below a group that is itself refused.
   The group's gate answers and names **the group**, never the path invoked, so
   a script searching the message for its own verb finds nothing.
-- **absorbed by the group** — 2 paths are unregistered below a group cobra will
+- **absorbed by the group** — 3 paths are unregistered below a group cobra will
   run, so that group runs in their place.
 - **unknown command** — 6 paths are unregistered below the root, which cobra
   cannot run, so it reports the first segment it could not resolve.
 
-Two paths exit `0`, and they are the ones worth knowing about.
-`ptah-compat migrate ls` and `ptah-compat migrate show` are not registered
-under `PTAH_ATLAS_STRICT_COMPAT=1`, so the `migrate` group runs in their place:
+Three paths exit `0`, and they are the ones worth knowing about.
+`ptah-compat migrate drift`, `ptah-compat migrate ls` and
+`ptah-compat migrate show` are not registered under
+`PTAH_ATLAS_STRICT_COMPAT=1`, so the `migrate` group runs in their place:
 it writes its own help to standard output, writes nothing to standard error,
 and exits `0`. A caller testing only the exit code cannot tell that from the
 verb having run and found nothing. Test for the output the verb produces, or
@@ -257,6 +259,7 @@ the file name it was installed as.
 | --- | --- | --- | --- | --- |
 | `ptah-compat migrate checkpoint` | refused | `1` | stderr | `ptah-compat migrate checkpoint` |
 | `ptah-compat migrate down` | refused | `1` | stderr | `ptah-compat migrate down` |
+| `ptah-compat migrate drift` | absorbed by the group | `0` | stdout | `ptah-compat migrate` |
 | `ptah-compat migrate edit` | refused | `1` | stderr | `ptah-compat migrate edit` |
 | `ptah-compat migrate ls` | absorbed by the group | `0` | stdout | `ptah-compat migrate` |
 | `ptah-compat migrate push` | refused | `1` | stderr | `ptah-compat migrate push` |
@@ -910,6 +913,47 @@ A derived plan is an inference about structure, while a down file is a statement
 of intent. A down body can preserve data a derived `DROP` will not, and can order
 operations in a way a structural comparison has no reason to choose. That is why
 `--plan` is opt-in and the authored bodies stay the default.
+
+### `ptah-compat migrate drift`
+
+Forwards to [`ptah migrations drift`](../../versioned/drift/#from-ptah-compat)
+with mapped Atlas flags while
+[`PTAH_ATLAS_MIGRATE_DRIFT=1`](../extension-variables/#ptah_atlas_migrate_drift)
+is set. The verb is hidden. Until the variable is set, every spelling of it
+answers as the community CLI does: `migrate drift` prints the `migrate` group
+help at exit 0, a flag after it is refused as unknown, `help migrate drift`
+prints the group help, and shell completion offers neither the verb nor its
+flags. Strict mode removes the verb and refuses the variable.
+
+The report reads `atlas_schema_revisions` and a directory in the Atlas layout,
+as `migrate apply` writes them. With `--env`, it reads `url`, `dev` and the
+`migration` block from `atlas.hcl`, and an env with `for_each` is reported
+target by target. The run exits 1 when any target drifted or could not be
+compared, and 0 otherwise. The community binary has no `migrate drift`, so the
+flags follow the [Atlas documentation](https://atlasgo.io/versioned/drift-detection),
+and the output is Ptah's text report.
+
+| Flag | Behavior |
+| --- | --- |
+| `-u`, `--url` | The database to check (native `--db-url`). Refused over an env with `for_each`, as `PTAH_URL` is. |
+| `--dev-url` | The dev database the applied migrations replay on (native `--shadow-db`). |
+| `--dir`, `--dir-format` | The migration directory, read relative to the directory that holds `atlas.hcl`, and its layout. `--dir` is the one directory every target reads. |
+| `--revisions-schema` | The schema that holds `atlas_schema_revisions`. |
+| `--exclude` | Leaves matching objects out of the comparison; repeats. |
+| `--lock-timeout`, `--lock-name` | The migration lock wait and name (native `--migration-lock-timeout`, `--migration-lock-name`). On a dialect with no advisory lock, a stderr note names the lock the report did not acquire. |
+| `--no-cache` | Accepted; every run computes the expected state. |
+| `--format` | Refused, as `format.migrate.drift` in `atlas.hcl` is: the report has no template data in the shape Atlas documents. |
+| `--skip-lock` | Refused, as `migration.skip_lock = true` is: the report reads the history under the migration lock. `--skip-lock=false`, `PTAH_SKIP_LOCK=false` and `skip_lock = false` are accepted. |
+
+Over an env with `for_each`, each target reads the `dir` its instance names.
+The `migration` block's `format`, `revisions_schema` and `lock_timeout` must be
+the same on every target or be given as a flag, because this surface forwards
+each once for the run. `migration.exclude` and `migration.lock_name` are
+refused, because the report does not read them yet; pass `--exclude` and
+`--lock-name`, which take precedence: with the flag or its variable given, the
+setting is not refused and the flag's value is used. The native flags, such as `--db-url`, `--shadow-db` and
+`--json`, are refused, and their variables, such as `PTAH_DB_URL`, are not
+read.
 
 ### `ptah-compat migrate diff`
 

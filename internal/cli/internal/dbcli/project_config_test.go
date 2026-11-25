@@ -680,3 +680,54 @@ func TestLoadProjectConfigAcceptsTheSameAtlasConfigTwice(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named/db")
 }
+
+// snapshotConfigs parses one ptah.yaml config per url.
+func snapshotConfigs(c *qt.C, urls ...string) []projectconfig.Config {
+	c.Helper()
+	configs := make([]projectconfig.Config, 0, len(urls))
+	for _, url := range urls {
+		config, err := projectconfig.ParsePtah([]byte("url: "+url+"\n"), "snapshot.yaml", "")
+		c.Assert(err, qt.IsNil)
+		configs = append(configs, config)
+	}
+	return configs
+}
+
+func TestLoadProjectConfigs_HappyPathReturnsEveryConfigOfTheSnapshot(t *testing.T) {
+	c := qt.New(t)
+	configs := snapshotConfigs(c, "postgres://first/db", "postgres://second/db")
+	cmd := &cobra.Command{Use: "test"}
+	cmd.SetContext(dbcli.WithProjectConfigs(cmd.Context(), configs))
+	configs[0].DatabaseURL = "postgres://mutated/db"
+
+	got, err := dbcli.LoadProjectConfigs(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 2)
+	c.Assert(got[0].DatabaseURL, qt.Equals, "postgres://first/db")
+	c.Assert(got[1].DatabaseURL, qt.Equals, "postgres://second/db")
+}
+
+func TestLoadProjectConfigs_FailurePathRefusesAnEmptySnapshot(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.SetContext(dbcli.WithProjectConfigs(cmd.Context(), nil))
+
+	got, err := dbcli.LoadProjectConfigs(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
+
+	c.Assert(err, qt.ErrorMatches, "test: the forwarded project config names no instance")
+	c.Assert(got, qt.IsNil)
+}
+
+// A command that runs against one database takes no snapshot of several,
+// rather than the first of them.
+func TestLoadProjectConfig_FailurePathRefusesASnapshotOfSeveralConfigs(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.SetContext(dbcli.WithProjectConfigs(cmd.Context(), snapshotConfigs(c, "postgres://first/db", "postgres://second/db")))
+
+	got, err := dbcli.LoadProjectConfig(cmd, filepath.Join(t.TempDir(), "missing.yaml"))
+
+	c.Assert(err, qt.ErrorMatches, "test runs against one database, and the forwarded project config names 2")
+	c.Assert(got.DatabaseURL, qt.Equals, "")
+}
