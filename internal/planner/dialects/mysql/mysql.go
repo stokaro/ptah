@@ -2139,7 +2139,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 00. On MySQL, MariaDB and SQL Server every revoke runs first, before a
 	// database, a table or a column is created. See [Planner.planRevokesFirst].
-	result = p.planRevokesFirst(result, diff)
+	result, err = p.planRevokesFirst(result, diff)
+	if err != nil {
+		return nil, err
+	}
 
 	// 0. The schemas the added objects live in are created before any of
 	// them, by guards put in front of the finished plan; see the end of this

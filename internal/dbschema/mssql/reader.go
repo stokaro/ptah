@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/internal/revisiontable"
@@ -853,7 +854,12 @@ func (f sequenceCacheFacts) managedOption() *int64 {
 // db_owner and its siblings, which ship with every database. And `public` has
 // to go on top of that: it reports is_fixed_role = 0, exists in every database,
 // and cannot be dropped -- a plan naming it would emit a DROP ROLE the engine
-// refuses.
+// refuses. It is the principal with principal_id 0, not every principal named
+// public: a case-sensitive database accepts CREATE ROLE [PUBLIC] beside it, and
+// any database a name with a space before it.
+//
+// A role named PUBLIC, and one with white space around its name that the
+// server keeps, is refused ([refuseAmbiguousPrincipal]).
 //
 // Attributes are deliberately absent. A database role has none of PostgreSQL's
 // -- no login, no password, no superuser -- so reporting false for each is not
@@ -863,7 +869,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	query := `
 		SELECT p.name
 		FROM sys.database_principals AS p
-		WHERE p.type = 'R' AND p.is_fixed_role = 0 AND p.name <> 'public'
+		WHERE p.type = 'R' AND p.is_fixed_role = 0 AND p.principal_id <> 0
 		ORDER BY p.name`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -875,6 +881,9 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	for rows.Next() {
 		var role catalog.Role
 		if err := rows.Scan(&role.Name); err != nil {
+			return nil, err
+		}
+		if err := refuseAmbiguousPrincipal(role.Name); err != nil {
 			return nil, err
 		}
 		// Inherit is the one attribute whose T-SQL answer is not false: a
@@ -923,7 +932,7 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 			ON role_principal.principal_id = rm.role_principal_id
 		JOIN sys.database_principals AS member_principal
 			ON member_principal.principal_id = rm.member_principal_id
-		WHERE role_principal.is_fixed_role = 0 AND role_principal.name <> 'public'
+		WHERE role_principal.is_fixed_role = 0 AND role_principal.principal_id <> 0
 		ORDER BY role_principal.name, member_principal.name`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -1068,6 +1077,12 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // column, the table grant a schema declares never matches, and a plan that
 // grants it again takes the DENY with it.
 //
+// The fixed role public is the principal with principal_id 0, and the read
+// names it PUBLIC, as every other reader names the keyword and as a schema
+// file's PUBLIC is recorded, so a grant to it compares with a declared one by
+// name alone. Another principal named PUBLIC, and one with white space around
+// its name that the server keeps, is refused ([refuseAmbiguousPrincipal]).
+//
 // Each row names its grantor, and the server keeps a row per grantor: measured
 // on SQL Server 2025, a user granted SELECT by dbo and again by q2, who holds
 // it WITH GRANT OPTION, has two rows, and `REVOKE GRANT OPTION FOR SELECT ...
@@ -1100,7 +1115,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 				  AND own.grantee_principal_id = p.grantee_principal_id AND own.permission_name = p.permission_name
 			)
 		)
-		SELECT grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
+		SELECT grantee.principal_id, grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
 			   COALESCE(s.name, ''), COALESCE(OBJECT_NAME(pe.major_id), SCHEMA_NAME(pe.major_id), ''),
 			   CASE WHEN pe.class = 1 AND pe.minor_id <> 0 THEN COALESCE(COL_NAME(pe.major_id, pe.minor_id), '') ELSE '' END,
 			   COALESCE(grantor.name, '')
@@ -1110,7 +1125,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		LEFT JOIN sys.objects AS o ON o.object_id = pe.major_id AND pe.class = 1
 		LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 		WHERE grantee.is_fixed_role = 0 AND (
-			(grantee.type = 'R' AND grantee.name <> 'public')
+			(grantee.type = 'R' AND grantee.principal_id <> 0)
 			OR (pe.class = 1 AND o.is_ms_shipped = 0)
 			OR pe.class = 3
 		)
@@ -1124,9 +1139,15 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	var grants []catalog.Grant
 	for rows.Next() {
 		var grant catalog.Grant
+		var grantee int64
 		var state, class string
-		if err := rows.Scan(&grant.Role, &grant.Privilege, &state, &class,
+		if err := rows.Scan(&grantee, &grant.Role, &grant.Privilege, &state, &class,
 			&grant.Schema, &grant.ObjectName, &grant.Column, &grant.GrantedBy); err != nil {
+			return nil, err
+		}
+		if grantee == publicPrincipalID {
+			grant.Role = publicGrantee
+		} else if err := refuseAmbiguousPrincipal(grant.Role); err != nil {
 			return nil, err
 		}
 		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))
@@ -1140,6 +1161,39 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		return nil, err
 	}
 	return grants, nil
+}
+
+// publicPrincipalID is the principal_id of the fixed role public in every
+// database.
+const publicPrincipalID = 0
+
+// publicGrantee is how a read names the fixed role public: as every reader
+// names the keyword PUBLIC, and as a schema file records it.
+const publicGrantee = "PUBLIC"
+
+// refuseAmbiguousPrincipal refuses a principal other than the fixed role
+// public that a comparison would take for another principal. A comparison
+// trims the white space around a grantee's name, and measured on SQL Server
+// 2025 any database accepts CREATE ROLE [ r], so read as itself such a
+// principal keys as r: its grants read as r's, a statement the plan writes
+// for it addresses [r], and a DENY declared for r that landed on it reads as
+// applied. The server compares names with trailing spaces ignored, so [r ] is
+// [r] to the server as well, and is read. A case-sensitive database also
+// accepts CREATE ROLE [PUBLIC], which keys as the fixed role, so a replay of
+// the read would give public what that role holds.
+func refuseAmbiguousPrincipal(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == publicGrantee {
+		return fmt.Errorf("%w: the database principal %q has the name a schema gives the fixed role public, "+
+			"so a grant to one cannot be told from a grant to the other; rename the principal",
+			ptaherr.ErrUnsupportedFeature, name)
+	}
+	if trimmed != strings.TrimRight(name, " ") {
+		return fmt.Errorf("%w: the database principal %q has white space around its name that the server keeps "+
+			"and a grant does not, so its grants would read as those of %q; rename the principal",
+			ptaherr.ErrUnsupportedFeature, name, trimmed)
+	}
+	return nil
 }
 
 // grantObjectTypeFor maps a permission's class onto the object type the shared

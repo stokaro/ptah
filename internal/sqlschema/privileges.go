@@ -47,7 +47,35 @@ var routineObjectTypes = map[string]bool{"FUNCTION": true, "PROCEDURE": true, "R
 // On the PostgreSQL family that is every spelling [roleName] folds to
 // `public`, which also covers CockroachDB 26.3.2 reading GRANT ... TO "PUBLIC"
 // as the keyword. Any other name there is the role [roleName] resolves.
-func normalizeGrantee(sourcePlatform, role string) string {
+//
+// A bracketed name is quoted too, on SQL Server. Measured on SQL Server 2025,
+// [public] reaches the fixed role public under any collation, and on a
+// case-sensitive database [Public] names a role of its own, which that
+// database accepts beside public. [PUBLIC] keeps its meaning as PUBLIC: it
+// names public on a case-insensitive database, and the read refuses a
+// database that holds a role of that name.
+//
+// A quoted name with white space around it is refused: a grant keeps its
+// grantee without it ([schemamodel.Grant.Canonicalize]), so where the server
+// keeps the white space the statement would address another principal.
+// Measured on SQL Server 2025, a database accepts CREATE ROLE [ public], and a
+// DENY to it read with the space dropped is a DENY to the fixed role public.
+// SQL Server ignores trailing spaces when it compares names, and PostgreSQL
+// does not, so a trailing space is refused on every dialect, and the name
+// written without it is the fix where the server ignores it.
+func normalizeGrantee(sourcePlatform, role string) (string, error) {
+	name := granteeName(sourcePlatform, role)
+	if trimmed := strings.TrimSpace(name); trimmed != name {
+		return "", fmt.Errorf("%w: the grantee %s has white space around its name, which a grant does not keep, "+
+			"so it cannot be told from %q; write the name without it, or rename the principal",
+			ptaherr.ErrUnsupportedFeature, strings.TrimSpace(role), trimmed)
+	}
+	return name, nil
+}
+
+// granteeName is the grantee role names, with PUBLIC spelled as
+// [normalizeGrantee] says.
+func granteeName(sourcePlatform, role string) string {
 	if factsOf(sourcePlatform).names.PublicKeyword {
 		name := roleName(sourcePlatform, role)
 		if name == "public" {
@@ -56,7 +84,8 @@ func normalizeGrantee(sourcePlatform, role string) string {
 		return name
 	}
 	normalized := normalizeSQLIdentifier(sourcePlatform, role)
-	quoted := strings.HasPrefix(strings.TrimSpace(role), `"`)
+	trimmed := strings.TrimSpace(role)
+	quoted := strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, "[")
 	if (!quoted && strings.EqualFold(normalized, "PUBLIC")) || (quoted && normalized == "public") {
 		return "PUBLIC"
 	}
@@ -80,9 +109,13 @@ func setGrantTarget(grant *schemamodel.Grant, objectType, objectName, arguments,
 	}
 }
 
-func toGrant(node *ast.GrantPrivilegeNode, sourcePlatform string) schemamodel.Grant {
+func toGrant(node *ast.GrantPrivilegeNode, sourcePlatform string) (schemamodel.Grant, error) {
+	role, err := normalizeGrantee(sourcePlatform, node.Role)
+	if err != nil {
+		return schemamodel.Grant{}, err
+	}
 	grant := schemamodel.Grant{
-		Role:       normalizeGrantee(sourcePlatform, node.Role),
+		Role:       role,
 		Privileges: expandGrantedAll(node.Privileges, node.ObjectType),
 		WithOption: node.WithOption,
 		Comment:    node.Comment,
@@ -90,7 +123,7 @@ func toGrant(node *ast.GrantPrivilegeNode, sourcePlatform string) schemamodel.Gr
 	setGrantTarget(&grant, node.ObjectType, node.ObjectName, node.Arguments, sourcePlatform)
 	grant.Columns = normalizeColumns(sourcePlatform, node.Columns)
 	grant.Canonicalize()
-	return grant
+	return grant, nil
 }
 
 // normalizeColumns unquotes a column list, as a column name is compared with
@@ -109,8 +142,13 @@ func normalizeColumns(sourcePlatform string, columns []string) []string {
 // appendGrant records a GRANT, taking the privileges it names out of the
 // revoked set first: a GRANT after a REVOKE of the same privilege leaves it
 // held.
-func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, sourcePlatform string) {
-	privilegefold.Merge(database, &schemamodel.Database{Grants: []schemamodel.Grant{toGrant(node, sourcePlatform)}})
+func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, sourcePlatform string) error {
+	grant, err := toGrant(node, sourcePlatform)
+	if err != nil {
+		return err
+	}
+	privilegefold.Merge(database, &schemamodel.Database{Grants: []schemamodel.Grant{grant}})
+	return nil
 }
 
 // appendRevoke records a REVOKE.
@@ -133,7 +171,11 @@ func appendGrant(database *schemamodel.Database, node *ast.GrantPrivilegeNode, s
 // 8.4.13. The comparison matches it against whatever the database reports on
 // the object, so the list is never needed.
 func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode, sourcePlatform string) error {
-	revoked := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
+	role, err := normalizeGrantee(sourcePlatform, node.Role)
+	if err != nil {
+		return err
+	}
+	revoked := schemamodel.Grant{Role: role, Comment: node.Comment}
 	setGrantTarget(&revoked, node.ObjectType, node.ObjectName, node.Arguments, sourcePlatform)
 	revoked.Columns = normalizeColumns(sourcePlatform, node.Columns)
 	revoked.Canonicalize()
@@ -182,7 +224,11 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 // privilege an earlier statement grants on the whole table keeps both, as the
 // server does, and the read reports both.
 func appendDeny(database *schemamodel.Database, node *ast.DenyPrivilegeNode, sourcePlatform string) error {
-	denied := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
+	role, err := normalizeGrantee(sourcePlatform, node.Role)
+	if err != nil {
+		return err
+	}
+	denied := schemamodel.Grant{Role: role, Comment: node.Comment}
 	setGrantTarget(&denied, node.ObjectType, node.ObjectName, "", sourcePlatform)
 	denied.Columns = normalizeColumns(sourcePlatform, node.Columns)
 	denied.Canonicalize()

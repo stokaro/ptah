@@ -297,7 +297,8 @@ func grantsHeldBy(grants []catalog.Grant, role string) (held, withOption map[str
 
 // TestSQLServerLiveReaderReadsUsersAndPublicOnTheSchemasObjects pins the
 // grantees the reader reports beyond the roles: a database user and public, on
-// the schema's own objects. A plan that drops an object and creates it again
+// the schema's own objects. The read names public PUBLIC, as a schema file
+// records the fixed role. A plan that drops an object and creates it again
 // gives back only what was read, so a grant to either, and a DENY to either,
 // that the read missed would be lost to the drop.
 //
@@ -342,9 +343,9 @@ func TestSQLServerLiveReaderReadsUsersAndPublicOnTheSchemasObjects(t *testing.T)
 
 	c.Assert(grantsOn(live.Grants, user, table), qt.DeepEquals, []string{"DELETE DENY", "SELECT GRANT"})
 	c.Assert(grantsOn(live.Grants, user, "dbo"), qt.DeepEquals, []string{"VIEW DEFINITION GRANT"})
-	c.Assert(grantsOn(live.Grants, "public", table), qt.DeepEquals, []string{"INSERT GRANT", "UPDATE DENY"})
+	c.Assert(grantsOn(live.Grants, "PUBLIC", table), qt.DeepEquals, []string{"INSERT GRANT", "UPDATE DENY"})
 	c.Assert(grantsBeyond(live.Grants, user, table, "dbo"), qt.DeepEquals, make([]string, 0))
-	c.Assert(grantsBeyond(live.Grants, "public", table), qt.DeepEquals, make([]string, 0))
+	c.Assert(grantsBeyond(live.Grants, "PUBLIC", table), qt.DeepEquals, make([]string, 0))
 }
 
 // grantsOn lists what grantee holds on the table named table, each as

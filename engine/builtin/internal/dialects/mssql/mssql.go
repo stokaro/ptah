@@ -972,7 +972,7 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	statement := fmt.Sprintf("GRANT %s ON %s TO %s",
 		permissionList(privileges, node.Columns),
 		grantTargetIdentifier(node.ObjectType, node.ObjectName),
-		escapeIdentifier(unquoteIdentifier(node.Role)))
+		granteeIdentifier(node.Role))
 	if node.WithOption {
 		statement += " WITH GRANT OPTION"
 	}
@@ -1016,12 +1016,26 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	}
 	parts = append(parts, permissionList(privileges, node.Columns),
 		"ON", grantTargetIdentifier(node.ObjectType, node.ObjectName),
-		"FROM", escapeIdentifier(unquoteIdentifier(node.Role)))
+		"FROM", granteeIdentifier(node.Role))
 	if node.GrantOptionFor {
 		parts = append(parts, "CASCADE")
 	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// granteeIdentifier spells the grantee of a GRANT, a REVOKE or a DENY. PUBLIC,
+// the name a schema file and a read give the fixed role public, is written
+// [public]. Measured on SQL Server 2025, [public] and PUBLIC without brackets
+// in any case reach the fixed role whatever the database's collation, while
+// [PUBLIC] on a case-sensitive database reaches a role of that name, or
+// nothing (Msg 15151).
+func granteeIdentifier(role string) string {
+	name := unquoteIdentifier(role)
+	if name == "PUBLIC" {
+		return "[public]"
+	}
+	return escapeIdentifier(name)
 }
 
 // renderDenyPrivilege renders a T-SQL DENY.
@@ -1055,7 +1069,7 @@ func (r *Renderer) renderDenyPrivilege(node *ast.DenyPrivilegeNode) error {
 	statement := fmt.Sprintf("DENY %s ON %s TO %s",
 		permissionList(privileges, node.Columns),
 		grantTargetIdentifier(node.ObjectType, node.ObjectName),
-		escapeIdentifier(unquoteIdentifier(node.Role)))
+		granteeIdentifier(node.Role))
 	if node.Cascade {
 		statement += " CASCADE"
 	}

@@ -46,12 +46,29 @@ func heldDeny(privilege, column string) difftypes.GrantRef {
 // desired state leaves out is taken away only where the desired state holds
 // every grant: a Go annotation or a YAML document has no DENY, so a removal
 // planned from one would give a role what an administrator denied it. The
-// DENY it keeps is reported. PUBLIC matches in any case, as SQL Server spells
-// it public and a statement may write PUBLIC.
+// DENY it keeps is reported. A grantee matches by its name as written: the
+// SQL Server read names the fixed role PUBLIC, as a schema file does, and a
+// role a case-sensitive database holds as Public is another principal.
 func TestGrantsWithOptions_ComparesDenies_HappyPath(t *testing.T) {
 	managed := []schemamodel.Role{{Name: "reader"}}
-	toPublic := deniedRow("DELETE", "")
-	toPublic.Role = "public"
+	to := func(role string) catalog.Grant {
+		row := deniedRow("DELETE", "")
+		row.Role = role
+		return row
+	}
+	toRef := func(role string) difftypes.GrantRef {
+		ref := tReader("DELETE", "")
+		ref.Role = role
+		return ref
+	}
+	heldTo := func(role string) difftypes.GrantRef {
+		ref := toRef(role)
+		ref.GrantedBy = "dbo"
+		return ref
+	}
+	declaredPublic := &schemamodel.Database{DeniedGrants: []schemamodel.Grant{
+		{Role: "PUBLIC", Privileges: []string{"DELETE"}, OnTable: "dbo.t"},
+	}}
 	tests := []struct {
 		name          string
 		desired       *schemamodel.Database
@@ -94,12 +111,17 @@ func TestGrantsWithOptions_ComparesDenies_HappyPath(t *testing.T) {
 			wantUnmanaged: []difftypes.GrantRef{heldDeny("UPDATE", "secret")},
 		},
 		{
-			name: "a deny to PUBLIC the catalog spells public",
-			desired: &schemamodel.Database{DeniedGrants: []schemamodel.Grant{
-				{Role: "PUBLIC", Privileges: []string{"DELETE"}, OnTable: "dbo.t"},
-			}},
-			held:        []catalog.Grant{toPublic},
+			name:        "a deny to PUBLIC the database holds",
+			desired:     declaredPublic,
+			held:        []catalog.Grant{to("PUBLIC")},
 			wantMatched: 1,
+		},
+		{
+			name:          "a deny to PUBLIC beside one a role named Public holds",
+			desired:       declaredPublic,
+			held:          []catalog.Grant{to("Public")},
+			wantAdded:     []difftypes.GrantRef{toRef("PUBLIC")},
+			wantUnmanaged: []difftypes.GrantRef{heldTo("Public")},
 		},
 		{
 			name:        "a deny a complete desired state leaves out",
@@ -212,16 +234,34 @@ func TestGrantsWithOptions_GrantsDeniesTake_HappyPath(t *testing.T) {
 }
 
 // TestGrantsWithOptions_GrantToPublic_HappyPath pins that a grant to PUBLIC
-// matches the row SQL Server reports for public, so a schema that grants it
-// plans nothing on the next run.
+// matches the row the SQL Server read names PUBLIC, so a schema that grants
+// it plans nothing on the next run, and no row of a role whose name differs
+// from it by case: on a case-sensitive database that is another principal.
 func TestGrantsWithOptions_GrantToPublic_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{}
-	desired := &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "dbo.t"}}}
+	tests := []struct {
+		name        string
+		held        string
+		wantAdded   []difftypes.GrantRef
+		wantMatched int
+	}{
+		{name: "the fixed role", held: "PUBLIC", wantMatched: 1},
+		{
+			name:      "a role named Public",
+			held:      "Public",
+			wantAdded: []difftypes.GrantRef{{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "dbo.t"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+			desired := &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "dbo.t"}}}
 
-	compare.GrantsWithOptions(desired, &catalog.Database{Grants: []catalog.Grant{grantRow("public", "SELECT", "")}}, diff,
-		identifier.ForDialect("sqlserver"), compare.GrantOptions{})
+			compare.GrantsWithOptions(desired, &catalog.Database{Grants: []catalog.Grant{grantRow(test.held, "SELECT", "")}}, diff,
+				identifier.ForDialect("sqlserver"), compare.GrantOptions{})
 
-	c.Assert(diff.GrantsAdded, qt.IsNil)
-	c.Assert(diff.Matched.Grants, qt.Equals, 1)
+			c.Assert(diff.GrantsAdded, qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.Matched.Grants, qt.Equals, test.wantMatched)
+		})
+	}
 }

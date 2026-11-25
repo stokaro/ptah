@@ -26,9 +26,9 @@ func TestReportUnmanagedDenies_HappyPath(t *testing.T) {
 
 		c.Assert(out.String(), qt.Equals,
 			`UNMANAGED: the database denies SELECT on TABLE dbo.t to "r", and the schema does not declare the DENY, `+
-				"so the plan keeps it; declare it to manage it, or take it away with REVOKE by hand\n"+
+				"so the plan does not revoke it; declare it to manage it, or revoke it by hand\n"+
 				`UNMANAGED: the database denies UPDATE on TABLE dbo.t (secret) to "public", and the schema does not declare the DENY, `+
-				"so the plan keeps it; declare it to manage it, or take it away with REVOKE by hand\n")
+				"so the plan does not revoke it; declare it to manage it, or revoke it by hand\n")
 	})
 	t.Run("no writer", func(t *testing.T) {
 		c := qt.New(t)

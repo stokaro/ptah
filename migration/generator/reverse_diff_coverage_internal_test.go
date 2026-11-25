@@ -144,12 +144,15 @@ func assertReverseCoverageField(
 		return
 	}
 	if field.Name == "GrantsDeniesTake" {
-		// An OUTPUT of the reverse. The forward value is the column grants the
-		// document declares under a DENY the change adds, and the rollback
-		// takes that DENY away; the grants a rollback gives back are the ones
-		// the PRE-CHANGE database held under a DENY the change took.
+		// Left empty by the reverse. The forward value is the column grants
+		// the document declares under a DENY the change adds, and the rollback
+		// takes that DENY away. A rollback writes a DENY again only for one
+		// the change took (DeniesRemoved), and only a comparison that reads
+		// the desired side from a server takes one; `schema diff` writes no
+		// down file, and the comparisons that write one never read the
+		// desired side as complete.
 		//
-		// TestReverseSchemaDiff_ARolledBackDenyGrantsBackTheColumnGrantsUnderIt
+		// TestReverseSchemaDiff_ARolledBackDenyLeavesTheForwardColumnGrants
 		// is what holds that, since this gate structurally cannot.
 		return
 	}
@@ -1253,38 +1256,25 @@ func TestReverseSchemaDiff_ARollbackHoldsWhatTheForwardPlanLeaves(t *testing.T) 
 	}
 }
 
-// TestReverseSchemaDiff_ARolledBackDenyGrantsBackTheColumnGrantsUnderIt pins
-// which column grants a rollback gives back after a DENY on a whole table it
-// writes again: the ones the pre-change database held on that table. A
-// column grant written after a DENY on its table is a row of its own, and the
-// DENY takes it, so a rollback that denied again without them would leave the
-// grantee without columns the database it returns to granted. The forward
-// change's own list names grants under a DENY the rollback takes away, and
-// reaches no step of the rollback, and a DENY on a column takes no grant on
-// another.
-func TestReverseSchemaDiff_ARolledBackDenyGrantsBackTheColumnGrantsUnderIt(t *testing.T) {
+// TestReverseSchemaDiff_ARolledBackDenyLeavesTheForwardColumnGrants pins
+// that the column grants a forward change grants again under a DENY it adds
+// reach no step of its rollback: the rollback takes that DENY away, and a
+// grant it named stays a grant the database holds.
+func TestReverseSchemaDiff_ARolledBackDenyLeavesTheForwardColumnGrants(t *testing.T) {
 	c := qt.New(t)
 
 	schema, dbSchema := reverseCoverageContext()
 	on := func(table, column string) difftypes.GrantRef {
 		return difftypes.GrantRef{Role: "r", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: table, Column: column}
 	}
-	otherPrivilege := on("dbo.u", "name")
-	otherPrivilege.Privilege = "UPDATE"
-	otherRole := on("dbo.u", "name")
-	otherRole.Role = "other"
 	forward := &difftypes.SchemaDiff{
-		DeniesAdded:   []difftypes.GrantRef{on("dbo.t", "")},
-		DeniesRemoved: []difftypes.GrantRef{on("dbo.u", ""), on("dbo.v", "secret")},
-		CurrentGrants: []difftypes.GrantRef{
-			on("dbo.t", "name"), on("dbo.u", "name"), on("dbo.u", ""), on("dbo.v", "name"), otherPrivilege, otherRole,
-		},
+		DeniesAdded:      []difftypes.GrantRef{on("dbo.t", "")},
+		CurrentGrants:    []difftypes.GrantRef{on("dbo.t", "name")},
 		GrantsDeniesTake: []difftypes.GrantRef{on("dbo.t", "name")},
 	}
 
 	reversed := reverseForTest(t, forward, schema, dbSchema, "sqlserver")
 
-	c.Assert(reversed.DeniesAdded, qt.DeepEquals, []difftypes.GrantRef{on("dbo.u", ""), on("dbo.v", "secret")})
 	c.Assert(reversed.DeniesRemoved, qt.DeepEquals, []difftypes.GrantRef{on("dbo.t", "")})
-	c.Assert(reversed.GrantsDeniesTake, qt.DeepEquals, []difftypes.GrantRef{on("dbo.u", "name")})
+	c.Assert(reversed.GrantsDeniesTake, qt.IsNil)
 }

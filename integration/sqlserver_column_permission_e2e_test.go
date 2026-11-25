@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,18 +16,23 @@ import (
 const sqlServerColumnBase = "CREATE TABLE dbo.t (id INT PRIMARY KEY, name NVARCHAR(50), secret NVARCHAR(50));\n" +
 	"CREATE ROLE cp_reader;\n"
 
+// sqlServerColumnFixture is the statements that give a scratch database the
+// table and the role of [sqlServerColumnBase], and a user cp_member in the
+// role.
+var sqlServerColumnFixture = []string{
+	"CREATE TABLE dbo.t (id INT PRIMARY KEY, name NVARCHAR(50), secret NVARCHAR(50))",
+	"INSERT INTO dbo.t VALUES (1, N'a', N's')",
+	"CREATE ROLE cp_reader",
+	"CREATE USER cp_member WITHOUT LOGIN",
+	"ALTER ROLE cp_reader ADD MEMBER cp_member",
+}
+
 // sqlServerColumnDatabase is a scratch database holding the table and the role
 // of [sqlServerColumnBase], a user cp_member in the role, and held.
 func sqlServerColumnDatabase(c *qt.C, held ...string) (string, *sql.DB) {
 	c.Helper()
 	target, db := declaredSQLServerDatabase(c)
-	declaredSQLServerExec(c, db, append([]string{
-		"CREATE TABLE dbo.t (id INT PRIMARY KEY, name NVARCHAR(50), secret NVARCHAR(50))",
-		"INSERT INTO dbo.t VALUES (1, N'a', N's')",
-		"CREATE ROLE cp_reader",
-		"CREATE USER cp_member WITHOUT LOGIN",
-		"ALTER ROLE cp_reader ADD MEMBER cp_member",
-	}, held...)...)
+	declaredSQLServerExec(c, db, append(slices.Clone(sqlServerColumnFixture), held...)...)
 	return target, db
 }
 

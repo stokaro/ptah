@@ -3,13 +3,13 @@ package compare
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/grantee"
 )
 
 // Roles performs PostgreSQL role comparison between generated and database schemas.
@@ -205,10 +205,9 @@ func managedRoles(database *catalog.Database, semantics identifier.Semantics) ma
 // catalog reports. Compared as written, the role is planned as a CREATE ROLE
 // on every run after the first, which Oracle refuses with ORA-01921, and every
 // grant to it is planned again. A quoted "reader" is stored as reader and
-// stays a different role. PUBLIC keys alike in every case ([grantee.Key]):
-// SQL Server reports it as public, and a statement may write it in any case.
+// stays a different role.
 func roleKey(name string, semantics identifier.Semantics) string {
-	return semantics.StoredName(grantee.Key(name))
+	return semantics.StoredName(strings.TrimSpace(name))
 }
 
 // RoleDefinitions compares individual role definitions and returns detailed differences.

@@ -679,7 +679,9 @@ and the plan keeps. A revoke of the grant option alone leaves the column
 
 A `DENY` of a permission the grantee holds `WITH GRANT OPTION`, on the object
 or on a column a `DENY` on the object reaches, carries `CASCADE`, because the
-server answers `Msg 4611` without it. `CASCADE` also takes the permission from
+server answers `Msg 4611` without it. A column `DENY` carries it too where the
+plan grants the option before it, on that column or on the whole object.
+`CASCADE` also takes the permission from
 every principal the grantee granted it to on the whole object or on the denied
 column, and leaves a grant on another column. So a plan where the schema keeps
 a grant `CASCADE` takes is refused:
@@ -690,14 +692,33 @@ sqlserver: cannot deny SELECT on dbo.t to "r": "r" holds it WITH GRANT OPTION, s
 
 A schema file is refused where it writes `DENY ... CASCADE`, `DENY ... AS`,
 `DENY ALL`, or a permission it also grants or revokes to the same grantee.
-Every other target refuses a `DENY` by name. The role `public` matches in any
-case: the catalog names it `public`, and a statement may write `PUBLIC`.
+Every other target refuses a `DENY` by name.
+
+`PUBLIC` without brackets, in any case, and `[public]` name the fixed role
+`public`, the principal with `principal_id` 0. The read names that principal
+`PUBLIC` too, and a plan writes it as `[public]`. Measured on SQL Server 2025,
+a case-sensitive database refuses `[PUBLIC]` with `Msg 15151` unless a role of
+that name exists, and it accepts a role named `[Public]` beside `public`, which
+stays a role of its own. A database that holds a role or a user named `PUBLIC`,
+spaces aside, is refused before anything runs, because its grants could not be
+told from those of `public`:
+
+```text
+sqlserver: read roles: unsupported feature: the database principal "PUBLIC" has the name a schema gives the fixed role public, so a grant to one cannot be told from a grant to the other; rename the principal
+```
+
+A principal whose name starts with a space, such as `[ public]`, is refused
+the same way, and so is a grantee in a schema file with white space around its
+name. A grant does not keep that white space, so a statement for the principal
+would address another one. The server ignores trailing spaces when it compares
+names, so a principal named `[r ]` is read as `r`, and a schema file writes it
+as `r`.
 
 A `DENY` the database holds and the schema leaves out stays, and the run names
 it on standard error:
 
 ```text
-UNMANAGED: the database denies SELECT on TABLE dbo.t (secret) to "reader", and the schema does not declare the DENY, so the plan keeps it; declare it to manage it, or take it away with REVOKE by hand
+UNMANAGED: the database denies SELECT on TABLE dbo.t (secret) to "reader", and the schema does not declare the DENY, so the plan does not revoke it; declare it to manage it, or revoke it by hand
 ```
 
 A Go annotation, a YAML document and an HCL document cannot declare one, so

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -140,6 +141,82 @@ func TestRead_Deny_FailurePath(t *testing.T) {
 			database, _, err := sqlschema.Read([]byte(test.sql), test.dialect)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(database.DeniedGrants, qt.IsNil)
+		})
+	}
+}
+
+// TestRead_SQLServerPublicGrantee_HappyPath pins which grantee spellings of a
+// SQL Server schema file name the fixed role public, recorded as PUBLIC, and
+// which name a role of their own. Measured on SQL Server 2025, PUBLIC without
+// brackets in any case and [public] reach the fixed role on a case-sensitive
+// database, which also accepts CREATE ROLE [Public] and CREATE ROLE [PUBLIC]
+// beside it. [PUBLIC] stays PUBLIC: the read refuses a database holding a
+// role of that name.
+func TestRead_SQLServerPublicGrantee_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []privilege
+	}{
+		{name: "PUBLIC without brackets", sql: "DENY SELECT ON dbo.t TO PUBLIC;", want: []privilege{{Role: "PUBLIC", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}}},
+		{name: "mixed case without brackets", sql: "DENY SELECT ON dbo.t TO Public;", want: []privilege{{Role: "PUBLIC", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}}},
+		{name: "bracketed in lower case", sql: "DENY SELECT ON dbo.t TO [public];", want: []privilege{{Role: "PUBLIC", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}}},
+		{name: "bracketed in upper case", sql: "DENY SELECT ON dbo.t TO [PUBLIC];", want: []privilege{{Role: "PUBLIC", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}}},
+		{name: "bracketed in mixed case", sql: "DENY SELECT ON dbo.t TO [Public];", want: []privilege{{Role: "Public", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), platform.SQLServer)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(privileges(database.DeniedGrants), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestRead_GranteeNamedWithASpace_FailurePath refuses a quoted grantee with
+// white space around its name, on every statement that names one: a grant
+// keeps its grantee without it, so where the server keeps it the statement
+// would address another principal. Measured on SQL Server 2025, a database accepts CREATE
+// ROLE [ public], and a DENY to it read as one to public would deny the fixed
+// role.
+func TestRead_GranteeNamedWithASpace_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		platform string
+		wantErr  string
+	}{
+		{
+			name: "a deny to a bracketed name", sql: "DENY SELECT ON dbo.t TO [ public];", platform: platform.SQLServer,
+			wantErr: `.*the grantee \[ public\] has white space around its name, which a grant does not keep, so it cannot be told from "public"; write the name without it, or rename the principal`,
+		},
+		{
+			name: "a grant to a bracketed name", sql: "GRANT SELECT ON dbo.t TO [r ];", platform: platform.SQLServer,
+			wantErr: `.*the grantee \[r \] has white space around its name, .* cannot be told from "r"; .*`,
+		},
+		{
+			name: "a revoke from a bracketed name", sql: "REVOKE SELECT ON dbo.t FROM [ r];", platform: platform.SQLServer,
+			wantErr: `.*the grantee \[ r\] has white space around its name, .* cannot be told from "r"; .*`,
+		},
+		{
+			name: "a grant to a quoted name", sql: "GRANT SELECT ON t TO \" r\";", platform: platform.Postgres,
+			wantErr: `.*the grantee " r" has white space around its name, .* cannot be told from "r"; .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), test.platform)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(database.Grants, qt.IsNil)
+			c.Assert(database.RevokedGrants, qt.IsNil)
 			c.Assert(database.DeniedGrants, qt.IsNil)
 		})
 	}

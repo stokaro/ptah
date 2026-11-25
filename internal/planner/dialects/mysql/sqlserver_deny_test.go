@@ -45,8 +45,10 @@ func onT1To(role, privilege, column string) difftypes.GrantRef {
 // on SQL Server 2025. So a DENY on the table runs before the grants on its
 // columns and a DENY on a column after the grant on its table, and a column
 // grant a DENY on its table takes is granted again. A DENY of a permission the
-// grantee holds WITH GRANT OPTION, on the securable or on a column a DENY on
-// the table reaches, needs CASCADE, and one on another column does not.
+// grantee holds WITH GRANT OPTION when it runs, on the securable or on a
+// column a DENY on the table reaches, needs CASCADE, and one on another column
+// does not; a grant the plan runs before a column DENY counts, and a DENY on
+// the table runs before the grants.
 //
 // A GRANT or a REVOKE on the table takes the column DENY rows of its
 // permission, so the plan denies again the ones the database holds and the
@@ -108,6 +110,35 @@ func TestPlan_SQLServerDenies_HappyPath(t *testing.T) {
 				DeniesAdded: []difftypes.GrantRef{onT1("REFERENCES", "secret")}, CurrentGrants: []difftypes.GrantRef{grantable(onT1("REFERENCES", ""))},
 			},
 			want: []string{"DENY REFERENCES ([secret]) ON [dbo].[t1] TO [reader] CASCADE"},
+		},
+		{
+			name: "a deny on a column under a grantable table grant the plan adds",
+			diff: &difftypes.SchemaDiff{
+				GrantsAdded: []difftypes.GrantRef{grantable(onT1("SELECT", ""))}, DeniesAdded: []difftypes.GrantRef{onT1("SELECT", "secret")},
+			},
+			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader] CASCADE"},
+		},
+		{
+			name: "a deny on a column under a table grant the plan adds the option to",
+			diff: &difftypes.SchemaDiff{
+				GrantOptionsAdded: []difftypes.GrantRef{onT1("SELECT", "")}, CurrentGrants: []difftypes.GrantRef{onT1("SELECT", "")},
+				DeniesAdded: []difftypes.GrantRef{onT1("SELECT", "secret")},
+			},
+			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader] CASCADE"},
+		},
+		{
+			name: "a deny on a column beside a grantable grant the plan adds on another column",
+			diff: &difftypes.SchemaDiff{
+				GrantsAdded: []difftypes.GrantRef{grantable(onT1("SELECT", "name"))}, DeniesAdded: []difftypes.GrantRef{onT1("SELECT", "secret")},
+			},
+			want: []string{"GRANT SELECT ([name]) ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader]"},
+		},
+		{
+			name: "a deny on a table before a grantable column grant the plan adds",
+			diff: &difftypes.SchemaDiff{
+				DeniesAdded: []difftypes.GrantRef{onT1("SELECT", "")}, GrantsAdded: []difftypes.GrantRef{grantable(onT1("SELECT", "name"))},
+			},
+			want: []string{"DENY SELECT ON [dbo].[t1] TO [reader]", "GRANT SELECT ([name]) ON [dbo].[t1] TO [reader] WITH GRANT OPTION"},
 		},
 		{
 			name: "a deny on a column beside a grantable grant on another column",
@@ -181,7 +212,7 @@ func TestPlan_SQLServerDenies_HappyPath(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				GrantsAdded: []difftypes.GrantRef{grantable(onT1("SELECT", ""))}, CurrentPartialRevokes: []difftypes.GrantRef{deniedRow(onT1("SELECT", "secret"))},
 			},
-			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader]"},
+			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader] CASCADE"},
 		},
 		{
 			name: "a grant option added on a table over a column deny the database holds",
@@ -189,7 +220,7 @@ func TestPlan_SQLServerDenies_HappyPath(t *testing.T) {
 				GrantOptionsAdded: []difftypes.GrantRef{grantable(onT1("SELECT", ""))}, CurrentGrants: []difftypes.GrantRef{onT1("SELECT", "")},
 				CurrentPartialRevokes: []difftypes.GrantRef{deniedRow(onT1("SELECT", "secret"))},
 			},
-			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader]"},
+			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader] WITH GRANT OPTION", "DENY SELECT ([secret]) ON [dbo].[t1] TO [reader] CASCADE"},
 		},
 		{
 			name: "a revoke on a table over a column deny the database holds",
@@ -230,12 +261,20 @@ func TestPlan_SQLServerDenies_HappyPath(t *testing.T) {
 			want: []string{"GRANT SELECT ON [dbo].[t1] TO [reader]"},
 		},
 		{
-			name: "a grant to PUBLIC over a column deny the catalog spells public",
+			name: "a grant to PUBLIC over a column deny the database holds",
 			diff: &difftypes.SchemaDiff{
 				GrantsAdded:           []difftypes.GrantRef{onT1To("PUBLIC", "SELECT", "")},
-				CurrentPartialRevokes: []difftypes.GrantRef{deniedRow(onT1To("public", "SELECT", "secret"))},
+				CurrentPartialRevokes: []difftypes.GrantRef{deniedRow(onT1To("PUBLIC", "SELECT", "secret"))},
 			},
-			want: []string{"GRANT SELECT ON [dbo].[t1] TO [PUBLIC]", "DENY SELECT ([secret]) ON [dbo].[t1] TO [public]"},
+			want: []string{"GRANT SELECT ON [dbo].[t1] TO [public]", "DENY SELECT ([secret]) ON [dbo].[t1] TO [public]"},
+		},
+		{
+			name: "a grant to PUBLIC over a column deny of a role named Public",
+			diff: &difftypes.SchemaDiff{
+				GrantsAdded:           []difftypes.GrantRef{onT1To("PUBLIC", "SELECT", "")},
+				CurrentPartialRevokes: []difftypes.GrantRef{deniedRow(onT1To("Public", "SELECT", "secret"))},
+			},
+			want: []string{"GRANT SELECT ON [dbo].[t1] TO [public]"},
 		},
 		{
 			name: "a deny on a column beside a grant the grantee gave on another column",
@@ -265,7 +304,8 @@ func TestPlan_SQLServerDenies_HappyPath(t *testing.T) {
 
 // TestPlan_SQLServerDenies_FailurePath refuses a DENY whose CASCADE would take
 // a grant the schema keeps -- on the whole table, or on the column a column
-// DENY names -- and a DENY on a target without one.
+// DENY names -- whether the diff adds the DENY or the plan denies a column
+// again after a grant on its table, and a DENY on a target without one.
 func TestPlan_SQLServerDenies_FailurePath(t *testing.T) {
 	onward := difftypes.GrantRef{Role: "auditor", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "dbo.t1", Column: "name", GrantedBy: "reader"}
 	onwardTable := difftypes.GrantRef{Role: "auditor", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "dbo.t1", GrantedBy: "reader"}
@@ -300,6 +340,15 @@ func TestPlan_SQLServerDenies_FailurePath(t *testing.T) {
 				DeniesAdded: []difftypes.GrantRef{onT1("SELECT", "secret")}, CurrentGrants: []difftypes.GrantRef{grantable(onT1("SELECT", "")), onwardSecret},
 			},
 			wantErr: `.*cannot deny SELECT on dbo\.t1 to "reader": .* which also takes the SELECT that "reader" granted to "auditor" \(secret\), and the schema does not revoke those grants.*`,
+		},
+		{
+			name:    "a column deny given back over a grant the grantee gave on the whole table",
+			dialect: "sqlserver",
+			diff: &difftypes.SchemaDiff{
+				GrantsAdded: []difftypes.GrantRef{grantable(onT1("SELECT", ""))}, CurrentGrants: []difftypes.GrantRef{onwardTable},
+				CurrentPartialRevokes: []difftypes.GrantRef{deniedRow(onT1("SELECT", "secret"))},
+			},
+			wantErr: `.*cannot deny SELECT on dbo\.t1 to "reader": .* which also takes the SELECT that "reader" granted to "auditor", and the schema does not revoke those grants.*`,
 		},
 		{
 			name:    "a deny on PostgreSQL",

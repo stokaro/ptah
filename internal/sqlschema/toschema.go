@@ -895,7 +895,7 @@ func appendPrivilegeDeclaration(
 			return true, err
 		}
 		resolved.ObjectType = kind
-		appendGrant(database, &resolved, sourcePlatform)
+		return true, appendGrant(database, &resolved, sourcePlatform)
 	case *ast.RevokePrivilegeNode:
 		resolved := *node
 		kind, err := declaredTargetKind(database, document.base, "REVOKE", node.ObjectType, node.ObjectName, node.Columns, sourcePlatform)
@@ -915,7 +915,6 @@ func appendPrivilegeDeclaration(
 	default:
 		return false, nil
 	}
-	return true, nil
 }
 
 func appendCreateTable(

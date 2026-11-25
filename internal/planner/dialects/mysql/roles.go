@@ -97,7 +97,10 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 			SetColumns(spellings.columns(grant)).
 			SetWithOption(true))
 	}
-	_, deniedAgain := p.columnDeniesGrantsTake(diff)
+	_, deniedAgain, err := p.columnDeniesGrantsTake(diff)
+	if err != nil {
+		return nil, err
+	}
 	result = append(result, deniedAgain...)
 	return append(result, deniedOnColumns...), nil
 }
@@ -155,17 +158,20 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 // the column exists: placed after the tables, a statement that fails in
 // between leaves the role without the column, measured on MySQL 8.4 and
 // 26.10 with a UNIQUE key failing on duplicate rows.
-func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if !p.capabilities().Has(capability.RoleManagement) || !p.revokesFirst() {
-		return result
+		return result, nil
 	}
 	result = p.revokeGrants(result, diff, droppedObjects{})
 	now, _ := p.columnGrantsGivenBack(diff)
 	result = append(result, now...)
-	deniedAgain, _ := p.columnDeniesGrantsTake(diff)
+	deniedAgain, _, err := p.columnDeniesGrantsTake(diff)
+	if err != nil {
+		return nil, err
+	}
 	result = append(result, deniedAgain...)
 	respelled, _ := p.grantsAdded(diff)
-	return p.grantPrivileges(result, diff, respelled)
+	return p.grantPrivileges(result, diff, respelled), nil
 }
 
 // grantPrivileges emits a GRANT for each of grants, naming the column as

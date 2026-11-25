@@ -1221,12 +1221,16 @@ func keepsCollation(node ast.Node) bool {
 }
 
 // accessChangeReason is why a raw statement that changes who may reach an
-// object is a warning: a REVOKE, an OWNER TO, or an ALTER GROUP ... DROP USER.
+// object is a warning: a REVOKE, a DENY, an OWNER TO, or an ALTER GROUP ...
+// DROP USER. A saved plan file reaches the check as text, so a DENY there is
+// rated as the node the plan built it from is.
 // It is empty for any other statement.
 func accessChangeReason(words []string) string {
 	switch {
 	case hasWordPrefix(words, "REVOKE"):
 		return revokeReason
+	case hasWordPrefix(words, "DENY"):
+		return denyReason
 	case hasWordPrefix(words, "ALTER") && hasWordSequence(words, "OWNER", "TO"):
 		return ownerReason
 	case hasWordPrefix(words, "ALTER", "GROUP") && hasWordSequence(words, "DROP", "USER"):

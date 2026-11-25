@@ -168,6 +168,8 @@ func TestAssessSQL_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "postgres", statement: `REVOKE "readers" FROM "app"`, want: verdict{safety.Warning, revokeReason}},
 		{dialect: "postgres", statement: `ALTER GROUP "readers" DROP USER "app"`, want: verdict{safety.Warning, revokeMembershipReason}},
 		{dialect: "mysql", statement: "REVOKE SELECT ON `app`.`users` FROM `reader`", want: verdict{safety.Warning, revokeReason}},
+		{dialect: "sqlserver", statement: "DENY SELECT ON [dbo].[t] TO [r]", want: verdict{safety.Warning, denyReason}},
+		{dialect: "sqlserver", statement: "deny select ([secret]) on [dbo].[t] to [r] cascade", want: verdict{safety.Warning, denyReason}},
 	}
 	runtime := must.Must(builtin.New())
 
