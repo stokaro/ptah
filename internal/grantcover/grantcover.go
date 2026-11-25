@@ -23,10 +23,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/grantee"
 )
-
-// publicGrantee is the grantee whose privileges every role holds.
-const publicGrantee = "PUBLIC"
 
 // Cover is a grant wider than one table that gives a role a privilege a
 // REVOKE on the table names.
@@ -88,8 +86,8 @@ func Find(desired *schemamodel.Database, current *catalog.Database, role string,
 	}
 	role = strings.TrimSpace(role)
 	privileges = onTable(privileges, all.All("TABLE"))
-	held := func(grantee string) bool {
-		return sameGrantee(grantee, role) || strings.EqualFold(grantee, publicGrantee)
+	held := func(name string) bool {
+		return sameGrantee(name, role) || sameGrantee(name, grantee.Public)
 	}
 	scope := scopeOf(current, table)
 	for _, grant := range current.Grants {
@@ -147,19 +145,19 @@ func (s tableScope) reaches(name string) bool {
 // for a grantee held names, spelled with the privileges the plan adds.
 func declaredCovers(
 	desired *schemamodel.Database, current *catalog.Database, privileges []string, all descriptor.AllPrivileges,
-	scope tableScope, held func(grantee string) bool,
+	scope tableScope, held func(role string) bool,
 ) []Cover {
 	if desired == nil {
 		return nil
 	}
 	var covers []Cover
 	for _, declared := range desired.Grants {
-		grantee := strings.TrimSpace(declared.Role)
-		if declared.OnSchema == "" || !scope.reaches(declared.OnSchema) || !held(grantee) {
+		role := strings.TrimSpace(declared.Role)
+		if declared.OnSchema == "" || !scope.reaches(declared.OnSchema) || !held(role) {
 			continue
 		}
 		if granted := planned(declared, current, privileges, all); granted != "" {
-			covers = append(covers, Cover{Grantee: grantee, Grant: granted + " ON " + declared.OnSchema + ".*", Declared: true})
+			covers = append(covers, Cover{Grantee: role, Grant: granted + " ON " + declared.OnSchema + ".*", Declared: true})
 		}
 	}
 	return covers
@@ -176,12 +174,12 @@ func isSchema(objectType string) bool {
 // grant adds nothing to the database's tables, nor does one current holds
 // there already.
 func planned(declared schemamodel.Grant, current *catalog.Database, privileges []string, all descriptor.AllPrivileges) string {
-	grantee := strings.TrimSpace(declared.Role)
+	role := strings.TrimSpace(declared.Role)
 	onSchema := all.All("SCHEMA")
 	adds := func(privilege string) bool {
 		reaches := len(all.Kinds) == 0 || slices.ContainsFunc(onSchema, func(name string) bool { return strings.EqualFold(name, privilege) })
 		return reaches && names(privileges, privilege) && !slices.ContainsFunc(current.Grants, func(grant catalog.Grant) bool {
-			return strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") && sameGrantee(grant.Role, grantee) &&
+			return strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") && sameGrantee(grant.Role, role) &&
 				grant.ObjectName == declared.OnSchema && strings.EqualFold(strings.TrimSpace(grant.Privilege), privilege)
 		})
 	}
@@ -275,9 +273,9 @@ func names(privileges []string, privilege string) bool {
 
 // sameGrantee reports whether two grantees are one: a role by its exact name,
 // and PUBLIC in any case, as MariaDB reports it in upper case whatever the
-// GRANT wrote.
+// GRANT wrote ([grantee.Key]).
 func sameGrantee(a, b string) bool {
-	return a == b || (strings.EqualFold(a, publicGrantee) && strings.EqualFold(b, publicGrantee))
+	return grantee.Key(a) == grantee.Key(b)
 }
 
 // isAll reports whether privilege is the keyword ALL, in either spelling.

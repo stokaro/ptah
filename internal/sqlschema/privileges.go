@@ -179,11 +179,8 @@ func appendRevoke(database *schemamodel.Database, node *ast.RevokePrivilegeNode,
 //
 // A DENY of ALL is refused: what ALL names differs from one kind of object to
 // the next, and SQL Server marks it deprecated. A DENY on columns of a
-// privilege an earlier statement grants on the whole table is refused as well.
-// Measured on SQL Server 2025, the server keeps both rows, and a read reports
-// the table grant as a grant on each other column, which the file does not
-// declare, so every plan would grant the table again and take the DENY with
-// it.
+// privilege an earlier statement grants on the whole table keeps both, as the
+// server does, and the read reports both.
 func appendDeny(database *schemamodel.Database, node *ast.DenyPrivilegeNode, sourcePlatform string) error {
 	denied := schemamodel.Grant{Role: normalizeGrantee(sourcePlatform, node.Role), Comment: node.Comment}
 	setGrantTarget(&denied, node.ObjectType, node.ObjectName, "", sourcePlatform)
@@ -196,19 +193,6 @@ func appendDeny(database *schemamodel.Database, node *ast.DenyPrivilegeNode, sou
 	if slices.Contains(privileges, allPrivileges) {
 		return fmt.Errorf("DENY ALL ON %s TO %s: ALL names different permissions on each kind of object; "+
 			"name the permissions to deny", denied.TargetKey(), denied.Role)
-	}
-	if len(denied.Columns) > 0 {
-		for _, privilege := range privileges {
-			table, held := privilegefold.TableGrantOf(database.Grants, denied.Role, privilege, oneTableWith(denied.OnTable))
-			if !held {
-				continue
-			}
-			return fmt.Errorf(
-				"DENY %s (%s) ON %s TO %s follows a GRANT of %s on the whole table, which the server reads back "+
-					"as a grant on each other column; grant it on the columns that keep it instead%s",
-				privilege, strings.Join(denied.Columns, ", "), denied.OnTable, denied.Role, privilege,
-				qualifyBoth(denied.OnTable, table.OnTable))
-		}
 	}
 	denied.Privileges = privileges
 	privilegefold.Merge(database, &schemamodel.Database{DeniedGrants: []schemamodel.Grant{denied}})

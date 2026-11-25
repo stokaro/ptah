@@ -70,10 +70,17 @@ func sqlServerPermissionStatements(rendered string) []string {
 // permission of its own, and answers what the server says.
 func sqlServerAsMember(c *qt.C, db *sql.DB, statement string) error {
 	c.Helper()
+	return sqlServerAs(c, db, "cp_member", statement)
+}
+
+// sqlServerAs runs statement as the database user named, and answers what the
+// server says.
+func sqlServerAs(c *qt.C, db *sql.DB, user, statement string) error {
+	c.Helper()
 	conn, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(conn.Close(), qt.IsNil) }()
-	_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = 'cp_member'; "+statement+"; REVERT;")
+	_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = '"+user+"'; "+statement+"; REVERT;")
 	return err
 }
 
@@ -90,10 +97,9 @@ func sqlServerAsMember(c *qt.C, db *sql.DB, statement string) error {
 // declaration spells another way than the catalog is one column under the
 // database's case-insensitive collation.
 //
-// A table permission with a column row of another state under it holds for
-// the other columns only. Read as the whole table, the declaration of the
-// whole table would compare equal and the plan would leave the member without
-// the column.
+// A table permission with a column revoked under it holds for the other
+// columns only. Read as the whole table, the declaration of the whole table
+// would compare equal and the plan would leave the member without the column.
 func TestSchemaApplySQLServerColumnPermissionsE2E_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -133,15 +139,6 @@ func TestSchemaApplySQLServerColumnPermissionsE2E_HappyPath(t *testing.T) {
 		{
 			name:     "a table permission with a column revoked under it",
 			held:     []string{"GRANT SELECT ON dbo.t TO cp_reader", "REVOKE SELECT (secret) ON dbo.t FROM cp_reader"},
-			declared: "GRANT SELECT ON dbo.t TO cp_reader;\n",
-			want:     []string{"SELECT GRANT"},
-			reads:    "SELECT id, name, secret FROM dbo.t",
-			denied:   "UPDATE dbo.t SET name = N'b'",
-			refusal:  `(?s).*The UPDATE permission was denied on the object 't'.*`,
-		},
-		{
-			name:     "a table permission with a column denied under it",
-			held:     []string{"GRANT SELECT ON dbo.t TO cp_reader", "DENY SELECT (secret) ON dbo.t TO cp_reader"},
 			declared: "GRANT SELECT ON dbo.t TO cp_reader;\n",
 			want:     []string{"SELECT GRANT"},
 			reads:    "SELECT id, name, secret FROM dbo.t",

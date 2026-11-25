@@ -30,7 +30,16 @@ import (
 // revoked set once; one src grants leaves dst's revoked set. A GRANT spelling
 // ALL takes every revoked privilege of its grantee on its object back out. src
 // is expected to be folded already, so no privilege is both granted and revoked
-// in it, and the order the two lists are applied in cannot change the result.
+// in it.
+//
+// src's statements on whole objects are merged before its statements on
+// columns. A statement on a whole object takes the ones of its privilege on
+// the object's columns, so in a folded src every column statement beside one
+// on its object came after it: `DENY SELECT ON t` then `GRANT SELECT (c) ON
+// t`, or `GRANT SELECT ON t` then `DENY SELECT (c) ON t`. Merged by list
+// rather than in that order, the statement on the object takes the column
+// statement src keeps, and a schema directory folds a file differently from
+// the file read alone.
 //
 // Column grants are folded one column at a time, each kept as a grant of one
 // column. A revoke of a table privilege also takes that privilege off every
@@ -68,24 +77,41 @@ func Merge(dst, src *schemamodel.Database) {
 			// declaration that names no privilege still reaches the validation
 			// that refuses it rather than vanishing here.
 			dst.RevokedGrants = append(dst.RevokedGrants, declared)
-			continue
-		}
-		for _, revoked := range declared.ByColumn() {
-			mergeRevoke(dst, revoked)
 		}
 	}
-	for _, declared := range src.Grants {
-		for _, grant := range declared.ByColumn() {
-			mergeGrant(dst, grant)
+	for _, denied := range src.DeniedGrants {
+		if len(denied.Privileges) == 0 {
+			dst.DeniedGrants = append(dst.DeniedGrants, denied)
 		}
 	}
-	for _, declared := range src.DeniedGrants {
-		if len(declared.Privileges) == 0 {
-			dst.DeniedGrants = append(dst.DeniedGrants, declared)
+	for _, granted := range src.Grants {
+		if len(granted.Privileges) == 0 {
+			dst.Grants = append(dst.Grants, granted)
+		}
+	}
+	for _, scope := range []func(schemamodel.Grant) bool{onWholeObject, onColumns} {
+		merge(dst, src.RevokedGrants, scope, mergeRevoke)
+		merge(dst, src.Grants, scope, mergeGrant)
+		merge(dst, src.DeniedGrants, scope, mergeDeny)
+	}
+}
+
+// onWholeObject reports a statement on a whole object, one that names no
+// column.
+func onWholeObject(grant schemamodel.Grant) bool { return len(grant.Columns) == 0 }
+
+// onColumns reports a statement on columns.
+func onColumns(grant schemamodel.Grant) bool { return len(grant.Columns) > 0 }
+
+// merge folds each of declared that names a privilege and is in scope into
+// dst with fold, one column at a time.
+func merge(dst *schemamodel.Database, declared []schemamodel.Grant, scope func(schemamodel.Grant) bool, fold func(*schemamodel.Database, schemamodel.Grant)) {
+	for _, grant := range declared {
+		if len(grant.Privileges) == 0 || !scope(grant) {
 			continue
 		}
-		for _, denied := range declared.ByColumn() {
-			mergeDeny(dst, denied)
+		for _, column := range grant.ByColumn() {
+			fold(dst, column)
 		}
 	}
 }

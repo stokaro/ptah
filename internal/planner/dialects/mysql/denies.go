@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/internal/grantee"
 	"ptah.run/internal/tableref"
 )
 
@@ -29,9 +30,17 @@ import (
 //     leaves no row;
 //   - `GRANT SELECT (c) ON t` after `DENY SELECT ON t` keeps both rows, as does
 //     `DENY SELECT (c) ON t` after `GRANT SELECT ON t`;
+//   - `GRANT SELECT ON t`, with the grant option or without, and `REVOKE
+//     SELECT ON t` after `DENY SELECT (c) ON t` leave no DENY row for c, and
+//     `REVOKE GRANT OPTION FOR SELECT ON t` keeps it;
+//   - `REVOKE SELECT (c) ON t` of a DENY on c under `GRANT SELECT ON t` leaves
+//     a REVOKE row for c, and `GRANT SELECT (c) ON t` with the table grant's
+//     option leaves the table's row alone;
 //   - a DENY of a permission the grantee holds WITH GRANT OPTION on the
 //     securable, or on one of the columns a DENY on the whole object reaches,
-//     answers Msg 4611 without CASCADE.
+//     answers Msg 4611 without CASCADE, and CASCADE takes what the grantee
+//     granted on the securable as a whole and on the columns the DENY
+//     reaches, and leaves what it granted on another column.
 type denies struct {
 	semantics     identifier.Semantics
 	defaultSchema string
@@ -62,7 +71,7 @@ func (d denies) key(ref difftypes.GrantRef) deniedKey {
 		object = d.semantics.QualifiedTableIdentityKey(parsed.Name)
 	}
 	return deniedKey{
-		role:       strings.TrimSpace(ref.Role),
+		role:       grantee.Key(ref.Role),
 		privilege:  strings.ToUpper(strings.TrimSpace(ref.Privilege)),
 		objectType: objectType,
 		object:     object,
@@ -76,20 +85,54 @@ func (k deniedKey) onWholeObject() deniedKey {
 	return k
 }
 
+// reaches reports whether a statement on k reaches the row other keys on the
+// same object: every row of the permission for a statement on the whole
+// object, and the object's row and its own column's for one on a column.
+func (k deniedKey) reaches(other deniedKey) bool {
+	return k.column == "" || other.column == "" || other.column == k.column
+}
+
 // revokeDenies emits a REVOKE for each DENY the diff takes away. It runs with
 // the other revokes, at the start of the plan; a REVOKE of a DENY on the whole
 // object takes the permission's column rows too, and the column grants the
 // diff keeps come back after them ([columnGrantsRevokedWithTheirTable]). A
 // DENY on an object dropped holds goes with the object.
+//
+// A DENY on a column whose grantee keeps the permission on the whole object
+// is taken with a GRANT on the column instead, with the grant option the
+// object's grant keeps: a REVOKE there leaves a row that withholds the
+// column, and the GRANT leaves the object's row alone.
 func (p *Planner) revokeDenies(result []ast.Node, diff *difftypes.SchemaDiff, dropped droppedObjects) []ast.Node {
+	d := p.newDenies(diff)
 	for _, denied := range diff.DeniesRemoved {
 		if dropped.holds(denied) {
+			continue
+		}
+		if held, kept := d.keptOnWholeObject(diff, denied, dropped); kept {
+			result = append(result, ast.NewGrantPrivilege(denied.Role, denied.ObjectType, denied.ObjectName, []string{denied.Privilege}).
+				SetColumns(grantColumns(denied)).
+				SetWithOption(held.WithOption && !removes(diff.GrantOptionsRevoked, held)))
 			continue
 		}
 		result = append(result, ast.NewRevokePrivilege(denied.Role, denied.ObjectType, denied.ObjectName, []string{denied.Privilege}).
 			SetColumns(grantColumns(denied)))
 	}
 	return result
+}
+
+// keptOnWholeObject is the grant of denied's permission on its whole object
+// the grantee holds and the diff keeps, for a DENY on a column.
+func (d denies) keptOnWholeObject(diff *difftypes.SchemaDiff, denied difftypes.GrantRef, dropped droppedObjects) (difftypes.GrantRef, bool) {
+	if denied.Column == "" {
+		return difftypes.GrantRef{}, false
+	}
+	want := d.key(denied).onWholeObject()
+	for _, held := range diff.CurrentGrants {
+		if d.key(held) == want && !dropped.holds(held) && !removes(diff.GrantsRemoved, held) {
+			return held, true
+		}
+	}
+	return difftypes.GrantRef{}, false
 }
 
 // planDenies is the DENY of each permission the diff adds, split by where the
@@ -129,8 +172,10 @@ func (p *Planner) planDenies(diff *difftypes.SchemaDiff) (onObjects, onColumns [
 // cascades reports whether the DENY of denied needs CASCADE: the grantee
 // holds the permission WITH GRANT OPTION on the securable once the revokes
 // have run, on the whole object or on a column the DENY reaches. It refuses
-// the DENY where someone holds the permission from the grantee and the diff
-// keeps it.
+// the DENY where someone holds the permission from the grantee where the
+// DENY reaches and the diff keeps it: a DENY on a column takes what the
+// grantee granted on the whole object and on that column, and leaves what it
+// granted on another column.
 func (d denies) cascades(diff *difftypes.SchemaDiff, denied difftypes.GrantRef, dropped droppedObjects) (bool, error) {
 	want := d.key(denied)
 	kept := func(held difftypes.GrantRef) bool {
@@ -148,10 +193,10 @@ func (d denies) cascades(diff *difftypes.SchemaDiff, denied difftypes.GrantRef, 
 	for _, held := range diff.CurrentGrants {
 		key := d.key(held)
 		if held.GrantedBy != denied.Role || held.Role == denied.Role || key.privilege != want.privilege ||
-			key.objectType != want.objectType || key.object != want.object || !kept(held) {
+			key.objectType != want.objectType || key.object != want.object || !want.reaches(key) || !kept(held) {
 			continue
 		}
-		dependents = append(dependents, grantee(held))
+		dependents = append(dependents, granteeLabel(held))
 	}
 	if len(dependents) == 0 {
 		return true, nil
@@ -167,28 +212,56 @@ func (d denies) cascades(diff *difftypes.SchemaDiff, denied difftypes.GrantRef, 
 }
 
 // columnGrantsDeniesTake is the grant of each column permission a DENY on the
-// whole object takes and the diff keeps, which the plan grants again after the
-// DENY. The server keeps a column grant written after a DENY on its object, so
-// the schema that holds both reads back as itself.
+// whole object takes and the schema declares
+// ([difftypes.SchemaDiff.GrantsDeniesTake]), which the plan grants again
+// after the DENY. The server keeps a column grant written after a DENY on its
+// object, so the schema that holds both reads back as itself. A column grant
+// the schema does not declare stays taken, as a DENY run by hand takes it.
 func (p *Planner) columnGrantsDeniesTake(diff *difftypes.SchemaDiff) []difftypes.GrantRef {
-	d := p.newDenies(diff)
-	onObjects := make(map[deniedKey]bool)
-	for _, denied := range diff.DeniesAdded {
-		if denied.Column == "" {
-			onObjects[d.key(denied)] = true
-		}
-	}
-	if len(onObjects) == 0 {
+	if len(diff.GrantsDeniesTake) == 0 {
 		return nil
 	}
 	dropped := p.droppedObjects(diff)
-	var taken []difftypes.GrantRef
-	for _, held := range diff.CurrentGrants {
-		if held.Column == "" || !onObjects[d.key(held).onWholeObject()] || dropped.holds(held) || removes(diff.GrantsRemoved, held) {
+	return slices.DeleteFunc(slices.Clone(diff.GrantsDeniesTake), dropped.holds)
+}
+
+// columnDeniesGrantsTake is the DENY of each column permission the database
+// holds and the diff keeps that a GRANT or a REVOKE the diff plans on the
+// whole object takes, split by where the plan denies it again: afterRevokes
+// right after the revokes that take it, afterGrants after the grants. A DENY
+// on a column after a grant on its object keeps both rows, and the read
+// reports both, so a DENY the database holds stays whatever the plan grants
+// or revokes beside it. Without them a plan that grants SELECT on a table
+// gives a column back that an administrator denied, and the next plan reads
+// as synced. A revoke of the grant option alone keeps the DENY row and needs
+// none.
+func (p *Planner) columnDeniesGrantsTake(diff *difftypes.SchemaDiff) (afterRevokes, afterGrants []ast.Node) {
+	if !p.deniesOnObjects() || len(diff.CurrentPartialRevokes) == 0 {
+		return nil, nil
+	}
+	d := p.newDenies(diff)
+	dropped := p.droppedObjects(diff)
+	takes := func(statements []difftypes.GrantRef, denied deniedKey) bool {
+		return slices.ContainsFunc(statements, func(statement difftypes.GrantRef) bool {
+			key := d.key(statement)
+			key.privilege = denied.privilege
+			return statement.Column == "" && !dropped.holds(statement) && key == denied.onWholeObject() &&
+				(strings.EqualFold(strings.TrimSpace(statement.Privilege), denied.privilege) || strings.EqualFold(strings.TrimSpace(statement.Privilege), "ALL"))
+		})
+	}
+	for _, held := range diff.CurrentPartialRevokes {
+		if !held.Denied || held.Column == "" || dropped.holds(held) || removes(diff.DeniesRemoved, held) {
 			continue
 		}
-		held.WithOption = held.WithOption && !removes(diff.GrantOptionsRevoked, held)
-		taken = append(taken, held)
+		key := d.key(held)
+		node := ast.NewDenyPrivilege(held.Role, held.ObjectType, held.ObjectName, []string{held.Privilege}).
+			SetColumns(grantColumns(held))
+		switch {
+		case takes(diff.GrantsRemoved, key):
+			afterRevokes = append(afterRevokes, node)
+		case takes(diff.GrantsAdded, key) || takes(diff.GrantOptionsAdded, key):
+			afterGrants = append(afterGrants, node)
+		}
 	}
-	return taken
+	return afterRevokes, afterGrants
 }

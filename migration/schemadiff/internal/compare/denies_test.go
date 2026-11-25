@@ -45,17 +45,22 @@ func heldDeny(privilege, column string) difftypes.GrantRef {
 // not. One the database holds is a match. One the database holds and the
 // desired state leaves out is taken away only where the desired state holds
 // every grant: a Go annotation or a YAML document has no DENY, so a removal
-// planned from one would give a role what an administrator denied it.
+// planned from one would give a role what an administrator denied it. The
+// DENY it keeps is reported. PUBLIC matches in any case, as SQL Server spells
+// it public and a statement may write PUBLIC.
 func TestGrantsWithOptions_ComparesDenies_HappyPath(t *testing.T) {
 	managed := []schemamodel.Role{{Name: "reader"}}
+	toPublic := deniedRow("DELETE", "")
+	toPublic.Role = "public"
 	tests := []struct {
-		name        string
-		desired     *schemamodel.Database
-		held        []catalog.Grant
-		complete    bool
-		wantAdded   []difftypes.GrantRef
-		wantRemoved []difftypes.GrantRef
-		wantMatched int
+		name          string
+		desired       *schemamodel.Database
+		held          []catalog.Grant
+		complete      bool
+		wantAdded     []difftypes.GrantRef
+		wantRemoved   []difftypes.GrantRef
+		wantUnmanaged []difftypes.GrantRef
+		wantMatched   int
 	}{
 		{
 			name:      "a declared deny the database lacks",
@@ -67,6 +72,8 @@ func TestGrantsWithOptions_ComparesDenies_HappyPath(t *testing.T) {
 			desired:   &schemamodel.Database{Roles: managed, DeniedGrants: []schemamodel.Grant{denyOf("SELECT", "secret")}},
 			held:      []catalog.Grant{deniedRow("SELECT", "")},
 			wantAdded: []difftypes.GrantRef{tReader("SELECT", "secret")},
+			// The DENY on the table the schema leaves out stays, and is named.
+			wantUnmanaged: []difftypes.GrantRef{heldDeny("SELECT", "")},
 		},
 		{
 			name:        "a declared deny the database holds",
@@ -75,9 +82,24 @@ func TestGrantsWithOptions_ComparesDenies_HappyPath(t *testing.T) {
 			wantMatched: 1,
 		},
 		{
-			name:    "a deny the schema leaves out from a role it manages",
-			desired: &schemamodel.Database{Roles: managed},
-			held:    []catalog.Grant{deniedRow("SELECT", "")},
+			name:          "a deny the schema leaves out from a role it manages",
+			desired:       &schemamodel.Database{Roles: managed},
+			held:          []catalog.Grant{deniedRow("SELECT", "")},
+			wantUnmanaged: []difftypes.GrantRef{heldDeny("SELECT", "")},
+		},
+		{
+			name:          "a deny the schema leaves out from a role it does not manage",
+			desired:       &schemamodel.Database{},
+			held:          []catalog.Grant{deniedRow("UPDATE", "secret")},
+			wantUnmanaged: []difftypes.GrantRef{heldDeny("UPDATE", "secret")},
+		},
+		{
+			name: "a deny to PUBLIC the catalog spells public",
+			desired: &schemamodel.Database{DeniedGrants: []schemamodel.Grant{
+				{Role: "PUBLIC", Privileges: []string{"DELETE"}, OnTable: "dbo.t"},
+			}},
+			held:        []catalog.Grant{toPublic},
+			wantMatched: 1,
 		},
 		{
 			name:        "a deny a complete desired state leaves out",
@@ -106,9 +128,100 @@ func TestGrantsWithOptions_ComparesDenies_HappyPath(t *testing.T) {
 
 			c.Assert(diff.DeniesAdded, qt.DeepEquals, test.wantAdded)
 			c.Assert(diff.DeniesRemoved, qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.UnmanagedDenies, qt.DeepEquals, test.wantUnmanaged)
 			c.Assert(diff.Matched.Denies, qt.Equals, test.wantMatched)
 			c.Assert(diff.GrantsAdded, qt.IsNil)
 			c.Assert(diff.GrantsRemoved, qt.IsNil)
 		})
 	}
+}
+
+// grantRow is a grant of privilege on dbo.t to role as the SQL Server reader
+// reports one, on column where one is named.
+func grantRow(role, privilege, column string) catalog.Grant {
+	return catalog.Grant{Role: role, Privilege: privilege, ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", Column: column, GrantedBy: "dbo"}
+}
+
+// splitTable is a grant of SELECT on the whole of dbo.t to role as the reader
+// reports it where a column row of SELECT sits under it: a grant on each
+// column without a row of its own, here id and secret beside a grantable row
+// for name.
+func splitTable(role string) []catalog.Grant {
+	name := grantRow(role, "SELECT", "name")
+	name.WithOption = true
+	return []catalog.Grant{grantRow(role, "SELECT", "id"), name, grantRow(role, "SELECT", "secret")}
+}
+
+// TestGrantsWithOptions_GrantsDeniesTake_HappyPath pins which column grants a
+// DENY the diff adds on dbo.t takes and the plan grants again: the ones the
+// desired state declares and the database holds, as declared. A grant the
+// read reports on each column of a table grant, and one held by a grantee the
+// schema does not manage, stays taken unless the schema declares it.
+func TestGrantsWithOptions_GrantsDeniesTake_HappyPath(t *testing.T) {
+	declaredName := schemamodel.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "dbo.t", Columns: []string{"name"}}
+	tests := []struct {
+		name      string
+		desired   *schemamodel.Database
+		held      []catalog.Grant
+		wantTaken []difftypes.GrantRef
+	}{
+		{
+			name:    "a table grant read on each column, to a role the schema does not manage",
+			desired: &schemamodel.Database{DeniedGrants: []schemamodel.Grant{denyOf("SELECT")}},
+			held:    splitTable("reader"),
+		},
+		{
+			name:    "a table grant read on each column, to a database user",
+			desired: &schemamodel.Database{DeniedGrants: []schemamodel.Grant{{Role: "u", Privileges: []string{"SELECT"}, OnTable: "dbo.t"}}},
+			held:    []catalog.Grant{grantRow("u", "SELECT", "id"), grantRow("u", "SELECT", "name")},
+		},
+		{
+			name:      "a declared column grant to a role the schema does not manage",
+			desired:   &schemamodel.Database{DeniedGrants: []schemamodel.Grant{denyOf("SELECT")}, Grants: []schemamodel.Grant{declaredName}},
+			held:      splitTable("reader"),
+			wantTaken: []difftypes.GrantRef{tReader("SELECT", "name")},
+		},
+		{
+			name: "a declared column grant to a role the schema manages",
+			desired: &schemamodel.Database{
+				Roles: []schemamodel.Role{{Name: "reader"}}, DeniedGrants: []schemamodel.Grant{denyOf("SELECT")}, Grants: []schemamodel.Grant{declaredName},
+			},
+			held:      []catalog.Grant{grantRow("reader", "SELECT", "name")},
+			wantTaken: []difftypes.GrantRef{tReader("SELECT", "name")},
+		},
+		{
+			name:    "a declared column grant the database lacks",
+			desired: &schemamodel.Database{DeniedGrants: []schemamodel.Grant{denyOf("SELECT")}, Grants: []schemamodel.Grant{declaredName}},
+		},
+		{
+			name:    "a column deny takes no column grant",
+			desired: &schemamodel.Database{DeniedGrants: []schemamodel.Grant{denyOf("SELECT", "secret")}, Grants: []schemamodel.Grant{declaredName}},
+			held:    []catalog.Grant{grantRow("reader", "SELECT", "name")},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+
+			compare.GrantsWithOptions(test.desired, &catalog.Database{Grants: test.held}, diff, identifier.ForDialect("sqlserver"), compare.GrantOptions{})
+
+			c.Assert(diff.GrantsDeniesTake, qt.DeepEquals, test.wantTaken)
+		})
+	}
+}
+
+// TestGrantsWithOptions_GrantToPublic_HappyPath pins that a grant to PUBLIC
+// matches the row SQL Server reports for public, so a schema that grants it
+// plans nothing on the next run.
+func TestGrantsWithOptions_GrantToPublic_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+	desired := &schemamodel.Database{Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "dbo.t"}}}
+
+	compare.GrantsWithOptions(desired, &catalog.Database{Grants: []catalog.Grant{grantRow("public", "SELECT", "")}}, diff,
+		identifier.ForDialect("sqlserver"), compare.GrantOptions{})
+
+	c.Assert(diff.GrantsAdded, qt.IsNil)
+	c.Assert(diff.Matched.Grants, qt.Equals, 1)
 }

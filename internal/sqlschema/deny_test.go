@@ -15,7 +15,8 @@ import (
 // table reaches the rows of its columns, measured on SQL Server 2025: a DENY
 // takes the place of the GRANT before it, a GRANT or a REVOKE takes the DENY,
 // and a DENY on the table takes the column grants and denies of the
-// permission. A column grant after a DENY on its table keeps both rows.
+// permission. A column grant after a DENY on its table keeps both rows, and
+// so does a column DENY after a grant on its table.
 func TestRead_Deny_HappyPath(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -71,6 +72,12 @@ func TestRead_Deny_HappyPath(t *testing.T) {
 			wantDenied: []privilege{{Role: "app", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}},
 		},
 		{
+			name:       "a column deny after a grant on its table",
+			sql:        "GRANT SELECT ON dbo.t TO app;\nDENY SELECT (secret) ON dbo.t TO app;",
+			wantDenied: []privilege{{Role: "app", Target: "TABLE dbo.t (secret)", Privileges: []string{"SELECT"}}},
+			wantGrants: []privilege{{Role: "app", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}},
+		},
+		{
 			name:       "a grant on a table takes the column denies",
 			sql:        "DENY SELECT (secret) ON dbo.t TO app;\nGRANT SELECT ON dbo.t TO app;",
 			wantGrants: []privilege{{Role: "app", Target: "TABLE dbo.t", Privileges: []string{"SELECT"}}},
@@ -92,9 +99,8 @@ func TestRead_Deny_HappyPath(t *testing.T) {
 
 // TestRead_Deny_FailurePath refuses a DENY the schema cannot keep: on a target
 // with no DENY, one whose CASCADE takes grants the file does not name, one
-// keyed by a grantor, one of ALL, which names different permissions on each
-// kind of object, and a column DENY under a grant on the whole table, which
-// the server reads back as a grant on each other column.
+// keyed by a grantor, and one of ALL, which names different permissions on
+// each kind of object.
 func TestRead_Deny_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -125,12 +131,6 @@ func TestRead_Deny_FailurePath(t *testing.T) {
 			dialect: platform.SQLServer,
 			sql:     "DENY ALL ON dbo.t TO app;",
 			wantErr: `line 1, column 1: DENY ALL ON TABLE dbo\.t TO app: ALL names different permissions on each kind of object; name the permissions to deny`,
-		},
-		{
-			name:    "a column deny under a grant on the table",
-			dialect: platform.SQLServer,
-			sql:     "GRANT SELECT ON dbo.t TO app;\nDENY SELECT (secret) ON dbo.t TO app;",
-			wantErr: `line 2, column 1: DENY SELECT \(secret\) ON dbo\.t TO app follows a GRANT of SELECT on the whole table, which the server reads back as a grant on each other column; grant it on the columns that keep it instead`,
 		},
 	}
 	for _, test := range tests {

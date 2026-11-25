@@ -237,6 +237,7 @@ func GrantsWithOptions(
 		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target},
 		diff, semantics)
 	read.planDenies(desired, diff)
+	read.grantsDeniesTake(generatedGrantMap, databaseGrantMapForAdditions, diff)
 
 	sortGrantRefs(diff.GrantsAdded)
 	sortGrantRefs(diff.GrantsRemoved)
@@ -244,6 +245,8 @@ func GrantsWithOptions(
 	sortGrantRefs(diff.GrantOptionsRevoked)
 	sortGrantRefs(diff.DeniesAdded)
 	sortGrantRefs(diff.DeniesRemoved)
+	sortGrantRefs(diff.GrantsDeniesTake)
+	sortGrantRefs(diff.UnmanagedDenies)
 }
 
 // planDenies compares the privileges desired denies
@@ -265,7 +268,9 @@ func GrantsWithOptions(
 // and a Go annotation, a YAML document or an HCL document cannot, so a removal
 // planned from a schema that leaves one out would give a role what an
 // administrator denied it. The DENY stays, and access stays as narrow as it
-// is.
+// is. A DENY that stays on what the desired state describes is reported
+// ([difftypes.SchemaDiff.UnmanagedDenies]), so a schema that drops a DENY it
+// declared sees why the plan leaves it.
 func (read grantRead) planDenies(desired *schemamodel.Database, diff *difftypes.SchemaDiff) {
 	declared := make(map[grantIdentity]difftypes.GrantRef)
 	for _, denied := range desired.DeniedGrants {
@@ -289,13 +294,49 @@ func (read grantRead) planDenies(desired *schemamodel.Database, diff *difftypes.
 			diff.Matched.Denies++
 			continue
 		}
-		if read.complete && read.removable(ref) && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant) {
+		described := grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant)
+		switch {
+		case read.complete && read.removable(ref) && described:
 			diff.DeniesRemoved = append(diff.DeniesRemoved, ref)
+		case described:
+			diff.UnmanagedDenies = append(diff.UnmanagedDenies, ref)
 		}
 	}
 	for key, ref := range declared {
 		if !held[key] {
 			diff.DeniesAdded = append(diff.DeniesAdded, ref)
+		}
+	}
+}
+
+// grantsDeniesTake fills [difftypes.SchemaDiff.GrantsDeniesTake]: each
+// column grant declared holds and database holds of a permission a DENY the
+// diff adds takes on the whole object, as declared. A DENY on an object takes
+// the grants of its permission on the object's columns, and a column grant
+// written after it keeps both rows, measured on SQL Server 2025.
+//
+// Only a declared grant comes back. The read reports a grant on a whole
+// table as a grant on each column that has no row of its own where a column
+// row of the permission sits under it, and a grantee the schema does not
+// manage keeps every grant the comparison leaves alone. Granted again from
+// the read, a DENY on the table to such a grantee gives every column back,
+// and a member reads the table the schema denies.
+func (read grantRead) grantsDeniesTake(declared, held map[grantIdentity]difftypes.GrantRef, diff *difftypes.SchemaDiff) {
+	onObjects := make(map[grantIdentity]bool)
+	for _, denied := range diff.DeniesAdded {
+		if denied.Column == "" {
+			onObjects[read.sequences.desiredKey(newGrantIdentity(denied, read.semantics)).onWholeObject()] = true
+		}
+	}
+	if len(onObjects) == 0 {
+		return
+	}
+	for key, ref := range declared {
+		if key.column == "" || !onObjects[key.onWholeObject()] {
+			continue
+		}
+		if _, exists := held[key]; exists {
+			diff.GrantsDeniesTake = append(diff.GrantsDeniesTake, ref)
 		}
 	}
 }
@@ -1011,7 +1052,9 @@ func CurrentPartialRevokes(database *catalog.Database) []difftypes.GrantRef {
 	var refs []difftypes.GrantRef
 	for _, grant := range database.Grants {
 		if grant.IsPartialRevoke && !grant.Implicit && grant.Privilege != "" {
-			refs = append(refs, grantRefFromDatabase(grant))
+			ref := grantRefFromDatabase(grant)
+			ref.Denied = grant.Denied
+			refs = append(refs, ref)
 		}
 	}
 	sortGrantRefs(refs)

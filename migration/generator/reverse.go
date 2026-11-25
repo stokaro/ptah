@@ -261,6 +261,9 @@ func reverseSchemaDiffWithPrior(
 		// again.
 		DeniesAdded:   diff.DeniesRemoved,
 		DeniesRemoved: diff.DeniesAdded,
+		// The column grants the pre-change database held under a DENY the
+		// rollback writes again come back after it.
+		GrantsDeniesTake: grantsUnderDenies(diff.CurrentGrants, diff.DeniesRemoved),
 
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete
@@ -343,6 +346,27 @@ func reverseSchemaDiffWithPrior(
 	reversed.DeclaredViewLikes = withReversedOwners(reversed.DeclaredViewLikes,
 		reversed.ViewsModified, reversed.MaterializedViewsModified, semantics)
 	return reversed
+}
+
+// grantsUnderDenies is each column grant of held whose permission one of
+// denies denies on the grant's whole object. A column grant beside a DENY on
+// its object is a row of its own, kept where the DENY was written before it,
+// so a rollback that denies again grants it again after the DENY. Both lists
+// come from one read and name an object alike.
+func grantsUnderDenies(held, denies []difftypes.GrantRef) []difftypes.GrantRef {
+	var under []difftypes.GrantRef
+	for _, grant := range held {
+		if grant.Column == "" {
+			continue
+		}
+		if slices.ContainsFunc(denies, func(denied difftypes.GrantRef) bool {
+			return denied.Column == "" && denied.Role == grant.Role && denied.Privilege == grant.Privilege &&
+				denied.ObjectType == grant.ObjectType && denied.ObjectName == grant.ObjectName
+		}) {
+			under = append(under, grant)
+		}
+	}
+	return under
 }
 
 func uniqueStringsPreserveOrder(values []string) []string {

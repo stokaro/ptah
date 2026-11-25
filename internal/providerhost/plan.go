@@ -202,14 +202,14 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 	// the account the read ran as, which every comparison against a database
 	// records; the host's definer rules read it, and a provider plans its own
 	// statements, so refusing it would refuse every plan made from a read.
-	// UnmanagedOwnerPrivileges and UnmanagedRoleMemberships are diagnostics a
-	// report prints beside its result: Ptah plans nothing for them on any
-	// target, so refusing them would refuse a plan that has nothing to do with
-	// them.
+	// UnmanagedOwnerPrivileges, UnmanagedRoleMemberships and UnmanagedDenies
+	// are diagnostics a report prints beside its result: Ptah plans nothing
+	// for them on any target, so refusing them would refuse a plan that has
+	// nothing to do with them.
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "HeldSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
 		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "CurrentOutOfScope", "Matched", "FeatureCounts",
-		"ConnectedAccount", "UnmanagedOwnerPrivileges", "UnmanagedRoleMemberships"}
+		"ConnectedAccount", "UnmanagedOwnerPrivileges", "UnmanagedRoleMemberships", "UnmanagedDenies"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
 	}

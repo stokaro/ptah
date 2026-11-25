@@ -64,7 +64,7 @@ func refuseCascadedGrants(revokes []difftypes.GrantRef, diff *difftypes.SchemaDi
 			if !grantedOnwardFrom(held, revoke) || dropped.holds(held) || removes(diff.GrantsRemoved, held) {
 				continue
 			}
-			dependents = append(dependents, grantee(held))
+			dependents = append(dependents, granteeLabel(held))
 		}
 		if len(dependents) == 0 {
 			continue
@@ -99,9 +99,9 @@ func removes(removed []difftypes.GrantRef, held difftypes.GrantRef) bool {
 	})
 }
 
-// grantee is how a refusal names the principal a grant is to: with its
+// granteeLabel is how a refusal names the principal a grant is to: with its
 // column, for a grant on one.
-func grantee(grant difftypes.GrantRef) string {
+func granteeLabel(grant difftypes.GrantRef) string {
 	if grant.Column == "" {
 		return fmt.Sprintf("%q", grant.Role)
 	}

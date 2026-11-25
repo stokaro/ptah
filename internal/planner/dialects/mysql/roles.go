@@ -97,6 +97,8 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 			SetColumns(spellings.columns(grant)).
 			SetWithOption(true))
 	}
+	_, deniedAgain := p.columnDeniesGrantsTake(diff)
+	result = append(result, deniedAgain...)
 	return append(result, deniedOnColumns...), nil
 }
 
@@ -139,10 +141,13 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 // the column rows too, and `REVOKE SELECT (id) ON t` under a table grant
 // leaves a REVOKE row, so a member of the role gets Msg 230 reading id. A plan
 // that widens `SELECT (id)` to `SELECT ON t` and grants first leaves the role
-// unable to read id. The reader reports a table permission with column rows
-// of the same name under it as the permission on each column, so a diff never
-// holds both and nothing comes back after the revokes there. A permission
-// goes with its column or table when either is dropped.
+// unable to read id. The reader reports a table permission with column grant
+// or REVOKE rows of the same name under it as the permission on each column,
+// so a diff never holds both and nothing comes back after the revokes there.
+// A DENY row on a column is read beside the table permission instead, and a
+// revoke on the table takes it, so the DENY rows the diff keeps are denied
+// again right after the revokes ([Planner.columnDeniesGrantsTake]). A
+// permission goes with its column or table when either is dropped.
 //
 // On MySQL a column privilege serves only the spelling it was granted under,
 // so a privilege the declaration spells another way is revoked and granted
@@ -157,6 +162,8 @@ func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff
 	result = p.revokeGrants(result, diff, droppedObjects{})
 	now, _ := p.columnGrantsGivenBack(diff)
 	result = append(result, now...)
+	deniedAgain, _ := p.columnDeniesGrantsTake(diff)
+	result = append(result, deniedAgain...)
 	respelled, _ := p.grantsAdded(diff)
 	return p.grantPrivileges(result, diff, respelled)
 }

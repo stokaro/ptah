@@ -879,22 +879,17 @@ func ValidateDeniedGrants(db *Database) error {
 }
 
 // deniedUnderTheTable refuses a DENY on a column of a privilege the schema
-// grants or denies on the whole table to the same grantee.
+// denies on the whole table to the same grantee.
 //
 // Measured on SQL Server 2025, a DENY on a column under a DENY on its table
 // adds no row, so the comparison would plan the column DENY on every run. A
-// DENY on a column under a GRANT on the table adds a row, and the reader
-// reports the table grant as a grant on each other column, which no
-// declaration of the whole table matches.
+// DENY on a column under a GRANT on the table adds a row, and the read
+// reports both, so the two are declared together.
 func deniedUnderTheTable(denied Grant, db *Database) error {
 	if len(denied.Columns) == 0 {
 		return nil
 	}
 	table := Grant{Role: denied.Role, OnTable: denied.OnTable, Privileges: denied.Privileges, Dialects: denied.Dialects}
-	if privilege, clash := (declaredPrivileges{grants: db.Grants, all: true}).name(table); clash {
-		return fmt.Errorf("%s on %s is denied on column %s and granted on the whole table to %q; "+
-			"grant it on the columns that keep it instead", privilege, denied.OnTable, denied.Columns[0], denied.Role)
-	}
 	if privilege, clash := (declaredPrivileges{grants: db.DeniedGrants}).name(table); clash {
 		return fmt.Errorf("%s on %s is denied to %q on the whole table, so a DENY on column %s adds nothing; "+
 			"declare one or the other", privilege, denied.OnTable, denied.Role, denied.Columns[0])

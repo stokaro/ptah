@@ -1053,13 +1053,20 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // with the column when it is dropped.
 //
 // A column row of another state may sit under an object permission: a REVOKE
-// or DENY row, `GRANT SELECT (c) ... WITH GRANT OPTION` under a plain grant,
-// or the option revoked from c under a grantable one. The object row then
-// holds for the columns without a row of their own and not for the others,
-// so the reader reports it as that permission on each such column. Read as a
+// row, `GRANT SELECT (c) ... WITH GRANT OPTION` under a plain grant, or the
+// option revoked from c under a grantable one. The object row then holds for
+// the columns without a row of their own and not for the others, so the
+// reader reports it as that permission on each such column. Read as a
 // permission on the whole object, a declaration of the whole object would
 // compare equal while a member cannot read c, and `ptah db read` would print
 // a grant that gives c back on replay.
+//
+// A DENY row on a column is the exception, and the object row is read as it
+// is beside it. A schema declares the DENY, `DENY SELECT (c) ON t` after
+// `GRANT SELECT ON t` keeps both rows, and `ptah db read` writes the grant
+// before the DENY, so the replay holds both. Read as a grant on each other
+// column, the table grant a schema declares never matches, and a plan that
+// grants it again takes the DENY with it.
 //
 // Each row names its grantor, and the server keeps a row per grantor: measured
 // on SQL Server 2025, a user granted SELECT by dbo and again by q2, who holds
@@ -1075,6 +1082,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 					   SELECT 1 FROM sys.database_permissions AS col
 					   WHERE col.class = 1 AND col.major_id = pe.major_id AND col.minor_id <> 0
 						 AND col.grantee_principal_id = pe.grantee_principal_id AND col.permission_name = pe.permission_name
+						 AND col.state_desc <> 'DENY'
 				   ) THEN 1 ELSE 0 END AS per_column
 			FROM sys.database_permissions AS pe
 		), effective AS (

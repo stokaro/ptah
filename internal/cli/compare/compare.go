@@ -549,4 +549,5 @@ func reportSkipped(errOut io.Writer, diff *difftypes.SchemaDiff) {
 	}
 	atlasschema.ReportUnmanagedOwnerPrivileges(errOut, diff.UnmanagedOwnerPrivileges)
 	atlasschema.ReportUnmanagedRoleMemberships(errOut, diff.UnmanagedRoleMemberships)
+	atlasschema.ReportUnmanagedDenies(errOut, diff.UnmanagedDenies)
 }

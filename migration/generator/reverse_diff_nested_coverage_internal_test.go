@@ -47,6 +47,9 @@ var nestedCoverageExempt = map[string]string{
 	// TestForeignKeyIndexOrderE2E_AKeyThePlanAddsTakesOverABuiltIndex reads that
 	// rollback back.
 	"ConstraintAdditionInfo.Replaces": "a rollback adds the removed index ahead of this removal, so no statement has to carry both",
+	// Set only on the read's partial revokes, which a rollback carries as the
+	// forward diff holds them: it runs against the same database.
+	"GrantRef.Denied": "the read's partial revokes reach a rollback as they are, marker included",
 }
 
 // TestReverseSchemaDiff_NamesEveryFieldOfEveryDiffElement is the half of the

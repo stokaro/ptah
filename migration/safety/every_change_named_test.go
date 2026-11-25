@@ -25,6 +25,8 @@ var notChanges = map[string]string{
 	"ConnectedAccount":             "a planner input off the wire: the account the read of the current database ran as",
 	"UnmanagedOwnerPrivileges":     "owner privileges the desired state does not manage, a diagnostic a report names beside its result",
 	"UnmanagedRoleMemberships":     "memberships whose member states no member_of, a diagnostic a report names beside its result",
+	"UnmanagedDenies":              "SQL Server DENY rows the plan keeps, a diagnostic a report names beside its result",
+	"GrantsDeniesTake":             "a planner input off the wire: the declared column grants a DENY in denies_added takes, which the plan grants again",
 	"RLSPolicyIdentityConflicts":   "two declared policies with one identity, a defect in the declaration a planner refuses",
 	"DeclaredTables":               "a planner input off the wire: every table the declaration holds",
 	"HeldSchemas":                  "a planner input off the wire: the schemas the read of the current database found",

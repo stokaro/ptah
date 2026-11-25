@@ -14,9 +14,9 @@ func deny(privilege string, columns ...string) schemamodel.Grant {
 }
 
 // TestValidateDeniedGrants_HappyPath pins the denies that hold beside the
-// grants and revokes of a schema: a different privilege, grantee or column, and
-// a grant on a column under a DENY on its table, which SQL Server keeps as two
-// rows.
+// grants and revokes of a schema: a different privilege, grantee or column, a
+// grant on a column under a DENY on its table, and a DENY on a column under a
+// grant on its table, which SQL Server keeps as two rows.
 func TestValidateDeniedGrants_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -33,6 +33,9 @@ func TestValidateDeniedGrants_HappyPath(t *testing.T) {
 		{name: "a deny on a table and a grant on its column", db: &schemamodel.Database{
 			DeniedGrants: []schemamodel.Grant{deny("SELECT")}, Grants: []schemamodel.Grant{deny("SELECT", "name")},
 		}},
+		{name: "a deny on a column and a grant on its table", db: &schemamodel.Database{
+			DeniedGrants: []schemamodel.Grant{deny("SELECT", "secret")}, Grants: []schemamodel.Grant{deny("SELECT")},
+		}},
 		{name: "a deny on one column and a grant on another", db: &schemamodel.Database{
 			DeniedGrants: []schemamodel.Grant{deny("SELECT", "secret")}, Grants: []schemamodel.Grant{deny("SELECT", "name")},
 		}},
@@ -47,8 +50,8 @@ func TestValidateDeniedGrants_HappyPath(t *testing.T) {
 
 // TestValidateDeniedGrants_FailurePath pins the denies a schema cannot keep:
 // one that names no privilege or carries a grant option, one the schema also
-// grants or revokes, and a DENY on a column under a grant or a DENY on the
-// whole table, which SQL Server reads back as something else.
+// grants or revokes, and a DENY on a column under a DENY on the whole table,
+// which adds no row on SQL Server.
 func TestValidateDeniedGrants_FailurePath(t *testing.T) {
 	withOption := deny("SELECT")
 	withOption.WithOption = true
@@ -83,13 +86,6 @@ func TestValidateDeniedGrants_FailurePath(t *testing.T) {
 			name:    "also revoked",
 			db:      &schemamodel.Database{DeniedGrants: []schemamodel.Grant{deny("SELECT")}, RevokedGrants: []schemamodel.Grant{deny("SELECT")}},
 			wantErr: `SELECT on TABLE t is both denied to and revoked from "app"; declare one or the other`,
-		},
-		{
-			name: "a column deny under a grant on the table",
-			db: &schemamodel.Database{
-				DeniedGrants: []schemamodel.Grant{deny("SELECT", "secret")}, Grants: []schemamodel.Grant{deny("SELECT")},
-			},
-			wantErr: `SELECT on t is denied on column secret and granted on the whole table to "app"; grant it on the columns that keep it instead`,
 		},
 		{
 			name: "a column deny under a deny on the table",
