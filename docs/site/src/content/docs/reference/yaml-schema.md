@@ -357,7 +357,8 @@ declares nothing and is left out.
 MySQL and MariaDB keep a leading space and remove the trailing spaces of a value
 when they build the column, so `ENUM('ok ')` holds `ok`. A value that ends in a
 space would never match the column, and Ptah refuses it on those engines:
-declare `ok`.
+declare `ok`. A member of a `SET` column type is read the same way, so
+`type: "SET('a ', 'b')"` is refused too.
 
 API names resolve from the target-specific key, then `api_name`, then the
 database name. GraphQL and Protobuf table values are stems that Ptah

@@ -49,6 +49,12 @@ func TestRenderEnumTrailingSpace_HappyPath(t *testing.T) {
 			want:     "'ok\t'",
 		},
 		{
+			name:     "a SET member with a leading space on MySQL",
+			dialect:  platform.MySQL,
+			database: enumColumnDatabase(schemamodel.Field{Type: "SET('a',' b')"}),
+			want:     "SET('a',' b')",
+		},
+		{
 			name:    "a trailing space on PostgreSQL",
 			dialect: platform.Postgres,
 			database: enumColumnDatabase(schemamodel.Field{Type: "mood"},
@@ -107,6 +113,20 @@ func TestRenderEnumTrailingSpace_FailurePath(t *testing.T) {
 			database: enumColumnDatabase(schemamodel.Field{Type: "mood"},
 				schemamodel.Enum{Name: "mood", Values: []string{"happy", "ok "}}),
 			want: okOnMySQL,
+		},
+		{
+			name:     "the members of a SET type on MySQL",
+			dialect:  platform.MySQL,
+			database: enumColumnDatabase(schemamodel.Field{Type: "SET('a ','b')"}),
+			want: `column "n" of table "c" declares the SET member "a ", and mysql removes the trailing spaces ` +
+				`of a SET member, so the column would never match its declaration: declare "a"`,
+		},
+		{
+			name:     "the members of an HCL set type on MariaDB",
+			dialect:  platform.MariaDB,
+			database: enumColumnDatabase(schemamodel.Field{Type: `set("a", "b ")`}),
+			want: `column "n" of table "c" declares the SET member "b ", and mariadb removes the trailing spaces ` +
+				`of a SET member, so the column would never match its declaration: declare "b"`,
 		},
 		{
 			name:     "a value of spaces alone",

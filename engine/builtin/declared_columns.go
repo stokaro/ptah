@@ -105,16 +105,17 @@ func validateUndeclaredEnum(dialect string, database *schemamodel.Database, fiel
 	}
 }
 
-// validateEnumTrailingSpaces refuses an enum value that ends in a space, on a
-// target whose server removes the space when it creates the column
-// ([descriptor.InlineEnum.TrailingSpacesRemoved]).
+// validateEnumTrailingSpaces refuses an enum value or a SET member that ends
+// in a space, on a target whose server removes the space when it creates the
+// column ([descriptor.InlineEnum.TrailingSpacesRemoved]).
 //
 // The column built from 'ok ' holds 'ok', so every plan finds the declared
 // value missing from the column and proposes the same MODIFY COLUMN again. A
 // value of spaces alone is stored as the empty value, which a read of the
 // column leaves out, so it is proposed again too. Refused before a plan
 // exists, the author declares the value the server keeps. A named enum's
-// values reach the column the same way, so they are read too.
+// values reach the column the same way, so they are read too, and so do the
+// members of a SET type, which no reader states as values.
 func validateEnumTrailingSpaces(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
 	described, _ := platform.Lookup(dialect)
 	if !described.InlineEnum.TrailingSpacesRemoved {
@@ -123,6 +124,18 @@ func validateEnumTrailingSpaces(dialect string, database *schemamodel.Database, 
 	// An HCL document states the values in the column's type text, as
 	// enum("happy", "ok "), and the Go and YAML readers state them as values.
 	values := append(schemaprep.InlineEnumValues(field, database.Enums, dialect), mysqlenum.Values(field.Type)...)
+	if err := refuseTrailingSpace(dialect, database, field, "enum value", "an ENUM value", values); err != nil {
+		return err
+	}
+	return refuseTrailingSpace(dialect, database, field, "SET member", "a SET member", mysqlenum.SetValues(field.Type))
+}
+
+// refuseTrailingSpace refuses the first of values, each of them a what of the
+// column field, that ends in a space, which the server removes from each one
+// of kind.
+func refuseTrailingSpace(dialect string, database *schemamodel.Database, field schemamodel.Field, what, kind string,
+	values []string,
+) error {
 	for _, value := range values {
 		if !strings.HasSuffix(value, " ") {
 			continue
@@ -140,9 +153,9 @@ func validateEnumTrailingSpaces(dialect string, database *schemamodel.Database, 
 			Dialect: dialect,
 			Err:     ptaherr.ErrUnsupportedFeature,
 			Message: fmt.Sprintf(
-				"column %q of table %q declares the enum value %q, and %s removes the trailing spaces of an "+
-					"ENUM value, so the column would never match its declaration: %s",
-				field.Name, tableName, value, target, remedy,
+				"column %q of table %q declares the %s %q, and %s removes the trailing spaces of %s, "+
+					"so the column would never match its declaration: %s",
+				field.Name, tableName, what, value, target, kind, remedy,
 			),
 		}
 	}

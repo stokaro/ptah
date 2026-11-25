@@ -171,6 +171,12 @@ func TestYAMLEnumValueBytesE2E(t *testing.T) {
 // enumTrailingSpaceHCLDocument declares, in Atlas HCL, the column n of the
 // table c in the database schema with the values of the type text.
 func enumTrailingSpaceHCLDocument(schema, values string) string {
+	return trailingSpaceHCLDocument(schema, "enum("+values+")")
+}
+
+// trailingSpaceHCLDocument declares, in Atlas HCL, the column n of the table c
+// in the database schema, typed columnType.
+func trailingSpaceHCLDocument(schema, columnType string) string {
 	return `schema "` + schema + `" {}
 table "c" {
   schema = schema.` + schema + `
@@ -178,7 +184,7 @@ table "c" {
     type = int
   }
   column "n" {
-    type = enum(` + values + `)
+    type = ` + columnType + `
     null = true
   }
   primary_key {
@@ -245,6 +251,68 @@ func TestEnumTrailingSpaceE2E_FailurePath(t *testing.T) {
 					"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"),
 					qt.Equals, "enum('happy',' sad','ok')")
 				c.Assert(enumBytesQuery(c, database, "SELECT CONCAT('[', n, ']') FROM c"), qt.Equals, "[ sad]")
+			})
+		}
+	}
+}
+
+// TestSetTrailingSpaceE2E_FailurePath declares 'c ' beside the column the
+// server built from SET('a', ' b', 'c ') and holds as set('a',' b','c'):
+// measured on MySQL 8.4.13 and MariaDB 11.8.9, the server removes the trailing
+// space of a member and keeps a leading one, as it does for an ENUM value.
+// Built as declared, the column would never match its declaration, and every
+// apply would run the same MODIFY COLUMN, so the apply is refused, and the
+// column and its row are left as they were.
+func TestSetTrailingSpaceE2E_FailurePath(t *testing.T) {
+	engines := []struct {
+		name    string
+		admin   dbtarget.Engine
+		dialect string
+	}{
+		{name: "MySQL", admin: dbtarget.MySQLAdmin, dialect: "mysql"},
+		{name: "MariaDB", admin: dbtarget.MariaDBAdmin, dialect: "mariadb"},
+	}
+	documents := []struct {
+		name, file      string
+		document, table func(schema string) string
+	}{
+		{
+			name: "YAML", file: "schema.yaml",
+			document: func(string) string {
+				return "tables:\n  c:\n    columns:\n      id:\n        type: INTEGER\n        primary: true\n" +
+					"        not_null: true\n      n:\n        type: \"SET('a',' b','c ')\"\n"
+			},
+			table: func(string) string { return "c" },
+		},
+		{
+			name: "HCL", file: "schema.hcl",
+			document: func(schema string) string {
+				return trailingSpaceHCLDocument(schema, `set("a", " b", "c ")`)
+			},
+			table: func(schema string) string { return schema + ".c" },
+		},
+	}
+	for _, engine := range engines {
+		for _, document := range documents {
+			t.Run(engine.name+"/"+document.name, func(t *testing.T) {
+				c := qt.New(t)
+				name, database := newMySQLFamilyScratch(c, engine.admin).builtFrom(c,
+					"CREATE TABLE c (id INTEGER PRIMARY KEY NOT NULL, n SET('a', ' b', 'c '));\n"+
+						"INSERT INTO c VALUES (1, ' b,c');")
+				schema := filepath.Join(c.TempDir(), document.file)
+				c.Assert(os.WriteFile(schema, []byte(document.document(name)), 0o600), qt.IsNil)
+
+				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+					"schema", "apply", "--db-url", database, "--schema-file", schema, "--auto-approve")
+
+				c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s", got.Stdout))
+				c.Assert(got.Stderr, qt.Contains, `column "n" of table "`+document.table(name)+`" declares the SET member "c ", and `+
+					engine.dialect+` removes the trailing spaces of a SET member, so the column would never `+
+					`match its declaration: declare "c"`)
+				c.Assert(enumBytesQuery(c, database, "SELECT COLUMN_TYPE FROM information_schema.COLUMNS "+
+					"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'c' AND COLUMN_NAME = 'n'"),
+					qt.Equals, "set('a',' b','c')")
+				c.Assert(enumBytesQuery(c, database, "SELECT CONCAT('[', n, ']') FROM c"), qt.Equals, "[ b,c]")
 			})
 		}
 	}

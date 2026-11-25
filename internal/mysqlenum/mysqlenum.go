@@ -1,5 +1,6 @@
 // Package mysqlenum reads the values of a MySQL-family ENUM column type, such
-// as enum('a','b'). The MySQL catalog reader reads a column type the server
+// as enum('a','b'), and the members of a SET column type, such as
+// set('a','b'). The MySQL catalog reader reads a column type the server
 // reports with it, and the renderer reads a column type a schema declares,
 // such as the one an Atlas HCL schema writes as enum("a", "b"), so both read a
 // value the same way.
@@ -25,7 +26,18 @@ import (
 // is not an ENUM, or a list that is not literals separated by commas, reads as
 // no values.
 func Values(columnType string) []string {
-	const keyword = "enum"
+	return literals(columnType, "enum")
+}
+
+// SetValues reads the members of a SET column type, such as set('a','b'), as
+// [Values] reads the values of an ENUM type. A type that is not a SET reads as
+// no members.
+func SetValues(columnType string) []string {
+	return literals(columnType, "set")
+}
+
+// literals reads the list of string literals of the column type keyword(...).
+func literals(columnType, keyword string) []string {
 	if len(columnType) < len(keyword) || !strings.EqualFold(columnType[:len(keyword)], keyword) {
 		return nil
 	}

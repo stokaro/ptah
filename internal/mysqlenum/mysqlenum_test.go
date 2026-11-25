@@ -42,6 +42,43 @@ func TestValues_HappyPath(t *testing.T) {
 	}
 }
 
+func TestSetValues_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		want       []string
+	}{
+		{name: "the type a catalog reports", columnType: "set('a',' b')", want: []string{"a", " b"}},
+		{name: "a declared type", columnType: `SET ("a ", "b")`, want: []string{"a ", "b"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(mysqlenum.SetValues(test.columnType), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// An ENUM type has no SET members and a SET type no ENUM values, so the
+// catalog reader, which reads a column's ENUM values, never reads a SET
+// column as an enum.
+func TestSetValues_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		got  []string
+	}{
+		{name: "an enum read as a set", got: mysqlenum.SetValues("enum('a','b')")},
+		{name: "a set read as an enum", got: mysqlenum.Values("set('a','b')")},
+		{name: "a longer keyword", got: mysqlenum.SetValues("settings('a')")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.got, qt.IsNil)
+		})
+	}
+}
+
 func TestValues_FailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
