@@ -1554,6 +1554,24 @@ func FromRevokedGrant(grant schemamodel.Grant) *ast.RevokePrivilegeNode {
 		SetComment(grant.Comment)
 }
 
+// FromDeniedGrant converts a privilege the schema denies a grantee to an
+// ast.DenyPrivilegeNode.
+func FromDeniedGrant(grant schemamodel.Grant) *ast.DenyPrivilegeNode {
+	grant.Canonicalize()
+	objectType, objectName, _ := grantObject(grant)
+	return ast.NewDenyPrivilege(grant.Role, objectType, objectName, grant.Privileges).
+		SetColumns(grant.Columns).
+		SetComment(grant.Comment)
+}
+
+// fromDeniedGrantNamed is [FromDeniedGrant] with its object named by the name
+// [grantName] gives it.
+func fromDeniedGrantNamed(grant schemamodel.Grant, name grantName) *ast.DenyPrivilegeNode {
+	node := FromDeniedGrant(grant)
+	node.ObjectName = name.rename(node.ObjectType, node.ObjectName)
+	return node
+}
+
 // grantObject is the object a grant or a revoked grant is about, as the AST
 // spells it.
 func grantObject(grant schemamodel.Grant) (objectType, objectName, arguments string) {
@@ -2227,6 +2245,20 @@ func appendPostTableObjectStatements(
 			return err
 		}
 	}
+	if err := appendPrivilegeStatements(visit, database, names); err != nil {
+		return err
+	}
+	for _, trigger := range database.Triggers {
+		if err := visit(FromTrigger(trigger)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// appendPrivilegeStatements appends the declared revokes, denies and grants in
+// the order the server keeps each of them.
+func appendPrivilegeStatements(visit func(ast.Node) error, database schemamodel.Database, names grantName) error {
 	// Before the grants. The two never name the same privilege -- the schema
 	// reader folds a later GRANT and REVOKE of one into one of the two -- but
 	// a REVOKE of a table privilege also takes it off every column, measured
@@ -2238,13 +2270,30 @@ func appendPostTableObjectStatements(
 			return err
 		}
 	}
+	// A DENY on a whole object goes before the grants and one on columns after
+	// them. Measured on SQL Server 2025, a DENY on a table takes the grants of
+	// the privilege on its columns, and a GRANT on a table takes the denies of
+	// it on its columns, so the other order loses the column rows. The schema
+	// reader folds statements the same way, so a file written in this order
+	// reads back as the schema it was written from.
+	for _, denied := range database.DeniedGrants {
+		if len(denied.Columns) > 0 {
+			continue
+		}
+		if err := visit(fromDeniedGrantNamed(denied, names)); err != nil {
+			return err
+		}
+	}
 	for _, grant := range database.Grants {
 		if err := visit(withGrantPath(FromGrant(grant), names)); err != nil {
 			return err
 		}
 	}
-	for _, trigger := range database.Triggers {
-		if err := visit(FromTrigger(trigger)); err != nil {
+	for _, denied := range database.DeniedGrants {
+		if len(denied.Columns) == 0 {
+			continue
+		}
+		if err := visit(fromDeniedGrantNamed(denied, names)); err != nil {
 			return err
 		}
 	}

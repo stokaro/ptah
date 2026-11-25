@@ -154,6 +154,8 @@ func grantedNodeSubject(node ast.Node) (string, bool) {
 		return n.ObjectName, true
 	case *ast.RevokePrivilegeNode:
 		return n.ObjectName, true
+	case *ast.DenyPrivilegeNode:
+		return n.ObjectName, true
 	case *ast.GrantRoleMembershipNode:
 		return n.Role, true
 	case *ast.RevokeRoleMembershipNode:

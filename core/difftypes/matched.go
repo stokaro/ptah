@@ -77,6 +77,10 @@ type MatchedCounts struct {
 	// privileges the moment the object exists, so the database side counts it
 	// as well.
 	Grants int
+	// Denies counts the privileges the desired schema denies and the database
+	// holds denied, one per grantee, privilege and object, or column of an
+	// object.
+	Denies int
 	// RoleMemberships counts the memberships of a role in another that the
 	// desired schema declares and the database holds.
 	RoleMemberships int

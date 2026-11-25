@@ -231,11 +231,11 @@ func NewDeclaredObjects(objects []schemaext.Object) DeclaredObjects {
 	return declared
 }
 
-// Permits reports whether node is a GRANT or a REVOKE whose effects read one
-// of the declared objects.
+// Permits reports whether node is a GRANT, a REVOKE or a DENY whose effects
+// read one of the declared objects.
 func (d DeclaredObjects) Permits(node ast.Node, effects []plangraph.Effect) bool {
 	switch node.(type) {
-	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode, *ast.DenyPrivilegeNode:
 	default:
 		return false
 	}

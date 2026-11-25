@@ -261,6 +261,19 @@ var objectKinds = []objectKind{
 		removed:       func(d *difftypes.SchemaDiff) int { return len(d.GrantsRemoved) },
 		addedSeverity: Safe, removedSeverity: Warning,
 	},
+	// A DENY on SQL Server withholds a privilege, so adding one is rated as a
+	// removed grant is: a role loses what it relied on. Taking one away is a
+	// warning too. The REVOKE that does it also takes the grants of the
+	// privilege on the object's columns until the plan grants them again, and
+	// the plan check rates every REVOKE a warning. It also gives the privilege
+	// to every member of the role a grant or a membership reaches.
+	{
+		stem:          "denies",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.Denies },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.DeniesAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.DeniesRemoved) },
+		addedSeverity: Warning, removedSeverity: Warning,
+	},
 	{
 		stem:          "role_memberships",
 		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.RoleMemberships },

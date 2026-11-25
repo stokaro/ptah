@@ -621,15 +621,15 @@ and a role such as `db_datareader` still reach `t`.
 Permissions of users, application roles and `public` on the schema's objects
 are read, as a role's are. Measured on SQL Server 2025:
 
-- `ptah db read` and `ptah schema inspect --format sql` write their grants, but
-  do not create the user or the application role, and write no `DENY`.
-  A principal granted a permission on a schema and denied it on one object
-  reads as holding it there too, as a role does.
+- `ptah db read` and `ptah schema inspect --format sql` write their grants and
+  their `DENY`s, but do not create the user or the application role. See
+  [Denying a permission](#denying-a-permission).
 - `ptah schema security` reports them: a grant to `public` raises the warning
   `PRV03`, and a grant on a routine raises `PRV01`, so `--fail-on any` can
   fail on a database it passed.
 - `ptah schema diff` between two databases reads `--to` as complete, so it
-  revokes a grant of a user or of `public` that `--to` lacks.
+  revokes a grant of a user or of `public` that `--to` lacks, and takes away a
+  `DENY` that `--to` lacks.
 
 ## Permissions on a schema
 
@@ -641,8 +641,98 @@ schema and on an object alike. So what `ptah db read` writes for them reads
 back, and a plan against the database it came from is empty. Measured on SQL
 Server 2025.
 
-A SQL schema file that writes a `DENY` is refused with
-`unsupported SQL statement: DENY`, so a deny is not managed.
+## Denying a permission
+
+`DENY SELECT ON dbo.t TO reader` withholds a permission from the grantee and
+every member of it, whatever grant on the schema or membership gives it. A SQL
+schema file declares one on an object, on columns (`DENY SELECT (secret) ON
+dbo.t TO reader`) or on a schema (`DENY DELETE ON SCHEMA::app TO reader`). The
+reader reads each row of `sys.database_permissions` with state `D`, so
+`ptah db read` writes it, and its output applied to another database denies
+what the source denies.
+
+The server keeps one row for a permission of one grantee on one securable, and
+a statement on a whole object reaches the rows of the permission on its
+columns. A schema file, and a schema directory read file by file, follow the
+same order, measured on SQL Server 2025:
+
+- a `DENY` takes the place of a `GRANT` before it, and a `GRANT` or a `REVOKE`
+  after it takes the `DENY`;
+- a `DENY` on a table takes the column grants and column denies of the
+  permission, and a `GRANT` or a `REVOKE` on a table takes its column denies;
+- a column grant after a `DENY` on its table keeps both rows, and a member
+  reads that column;
+- a column `DENY` after a grant on its table keeps both rows, and a member
+  reads every other column;
+- a column `DENY` under a `DENY` on its table adds nothing.
+
+So a schema that keeps a column grant under a `DENY` on its table writes the
+`GRANT` after the `DENY`, and one that denies a column under a grant on its
+table writes the `DENY` after the `GRANT`. A plan runs a `DENY` on an object
+before the grants it adds and a `DENY` on a column after them. After a `DENY`
+on a table it grants again each column grant the schema declares, and nothing
+else: a grant the database holds and the schema does not declare stays
+taken. Where a plan grants or revokes a permission on a whole table, it
+denies again each column `DENY` of that permission that the database holds
+and the plan keeps. A revoke of the grant option alone leaves the column
+`DENY` in place.
+
+A `DENY` of a permission the grantee holds `WITH GRANT OPTION`, on the object
+or on a column a `DENY` on the object reaches, carries `CASCADE`, because the
+server answers `Msg 4611` without it. A column `DENY` carries it too where the
+plan grants the option before it, on that column or on the whole object.
+`CASCADE` also takes the permission from
+every principal the grantee granted it to on the whole object or on the denied
+column, and leaves a grant on another column. So a plan where the schema keeps
+a grant `CASCADE` takes is refused:
+
+```text
+sqlserver: cannot deny SELECT on dbo.t to "r": "r" holds it WITH GRANT OPTION, so SQL Server denies it with CASCADE, which also takes the SELECT that "r" granted to "r_v" (name), and the schema does not revoke those grants; revoke them first, or declare their REVOKE in the schema
+```
+
+A schema file is refused where it writes `DENY ... CASCADE`, `DENY ... AS`,
+`DENY ALL`, or a permission it also grants or revokes to the same grantee.
+Every other target refuses a `DENY` by name.
+
+`PUBLIC` without brackets, in any case, and `[public]` name the fixed role
+`public`, the principal with `principal_id` 0. The read names that principal
+`PUBLIC` too, and a plan writes it as `[public]`. Measured on SQL Server 2025,
+a case-sensitive database refuses `[PUBLIC]` with `Msg 15151` unless a role of
+that name exists, and it accepts a role named `[Public]` beside `public`, which
+stays a role of its own. On a case-insensitive database `[Public]`, and every
+bracketed spelling but `[public]` and `[PUBLIC]`, reaches `public` as well, but
+a schema file records it as a role named `Public`, so a plan never settles
+there; write `PUBLIC` or `[public]`. A database that holds a role or a user named `PUBLIC`,
+spaces aside, is refused before anything runs, because its grants could not be
+told from those of `public`:
+
+```text
+sqlserver: read roles: unsupported feature: the database principal "PUBLIC" has the name a schema gives the fixed role public, so a grant to one cannot be told from a grant to the other; rename the principal
+```
+
+A principal whose name starts with a space, such as `[ public]`, is refused
+the same way, in the database and as a grantee in a schema file. A grant does
+not keep that white space, so a statement for the principal would address
+another one. The server ignores trailing spaces when it compares names, so
+`[r ]` names `r` in the database and in a schema file, and is read as `r`.
+
+A `DENY` the database holds and the schema leaves out stays, and the run names
+it on standard error:
+
+```text
+UNMANAGED: the database denies SELECT on TABLE dbo.t (secret) to "reader", and the schema does not declare the DENY, so the plan does not revoke it; declare it to manage it, or revoke it by hand
+```
+
+A Go annotation, a YAML document and an HCL document cannot declare one, so
+taking it away would give the role what an administrator denied it. A
+comparison of two databases reads the desired side as complete, so it takes
+away a `DENY` that side lacks, as it revokes a grant. A column `DENY` under a
+grant on its table that the plan keeps goes with a `GRANT` on the column,
+because a `REVOKE` there leaves a row that still withholds the column.
+`ptah introspect` refuses a database that holds a `DENY`, because no
+annotation writes one, and `ptah schema inspect --format hcl` leaves it out
+and reports it. The plan check and the drift report rate a `DENY` added or
+taken away a warning.
 
 ## Permissions on columns
 
@@ -653,11 +743,13 @@ is refused by name, as the server refuses it with `Msg 1020`.
 
 A table permission replaces the column rows of the same permission, and a
 column revoke under one withholds the column, so a plan runs every revoke
-before any grant. A table permission with a column row of another state under
-it, such as a `REVOKE SELECT (secret)`, reads as the permission on each other
-column. It also covers a column added later: measured on SQL Server 2025, a
-member reads that column until the next plan revokes it, and nothing revokes it
-from a role the schema does not create.
+before any grant. A table permission with a column revoked under it, such as
+by `REVOKE SELECT (secret)`, reads as the permission on each other column. It
+also covers a column added later: measured on SQL Server 2025, a member reads
+that column until the next plan revokes it, and nothing revokes it from a role
+the schema does not create. A table permission with a column `DENY` under it
+reads as the permission on the table and the `DENY`; see
+[Denying a permission](#denying-a-permission).
 
 A grantable permission loses its option first, with `REVOKE GRANT OPTION FOR
 ... CASCADE`, because the server refuses the revoke otherwise (`Msg 4611`).

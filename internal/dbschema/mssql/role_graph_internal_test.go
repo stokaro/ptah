@@ -28,7 +28,7 @@ func TestReadRoleMemberships_ExcludesTheRolesEveryDatabaseShips(t *testing.T) {
 	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		c.Assert(query, qt.Contains, "sys.database_role_members")
 		c.Assert(query, qt.Contains, "role_principal.is_fixed_role = 0")
-		c.Assert(query, qt.Contains, "role_principal.name <> 'public'")
+		c.Assert(query, qt.Contains, "role_principal.principal_id <> 0")
 		return dbtest.QueryResult{
 			Columns: []string{"role_name", "member_name"},
 			Rows: [][]driver.Value{

@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-515 fields are reachable from the desired schema, and each one carries
+516 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 409 | reaches rendered SQL on at least one target |
+| `ddl` | 410 | reaches rendered SQL on at least one target |
 | `comparison` | 40 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 15 | computed from other fields rather than authored |
@@ -491,6 +491,7 @@ migration nobody asked for.
 | `schemamodel.Constraint.UsingMethod` | `ddl` | — |
 | `schemamodel.Constraint.WithoutOverlaps` | `ddl` | — |
 | `schemamodel.Database.Constraints` | `ddl` | — |
+| `schemamodel.Database.DeniedGrants` | `ddl` | — |
 | `schemamodel.Database.Dependencies` | `derived` | table creation order, derived by Finalize from the declared foreign keys |
 | `schemamodel.Database.EmbeddedFields` | `ddl` | — |
 | `schemamodel.Database.EmbeddedSources` | `ddl` | — |

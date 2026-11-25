@@ -14,9 +14,12 @@ package schemaprecondition
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -123,6 +126,25 @@ func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error
 	return fmt.Errorf("%w: the diff writes the comment of index %q of table %q apart from the index, which only "+
 		"a PostgreSQL-family plan or an executable provider's does; the %s planner plans none",
 		ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
+}
+
+// RefuseDenies refuses a diff that adds or takes away a DENY
+// ([difftypes.SchemaDiff.DeniesAdded], [difftypes.SchemaDiff.DeniesRemoved])
+// for a planner of dialect, unless the dialect's grammar has a DENY
+// ([ptah.run/core/platform/descriptor.StatementForms.Deny]). Only SQL Server's
+// reader reads a DENY row, and a declared one is refused on another target
+// before anything is compared, so such a diff was built by hand or for another
+// target, and planning nothing would leave the permission as it is.
+func RefuseDenies(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil || len(diff.DeniesAdded)+len(diff.DeniesRemoved) == 0 {
+		return nil
+	}
+	if described, ok := platform.Lookup(dialect); ok && described.Grammar.Forms.Deny {
+		return nil
+	}
+	denied := slices.Concat(diff.DeniesAdded, diff.DeniesRemoved)[0]
+	return fmt.Errorf("%w: the diff changes the DENY of %s on %s %q to %q, and the %s target has no DENY",
+		ptaherr.ErrUnsupportedFeature, denied.Privilege, strings.ToLower(denied.ObjectType), denied.ObjectName, denied.Role, dialect)
 }
 
 // RefuseIndexRenames is the rename half of [RefuseIndexChangesInPlace], for a

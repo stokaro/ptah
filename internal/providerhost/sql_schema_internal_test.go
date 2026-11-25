@@ -46,6 +46,7 @@ var sqlSchemaFieldHomes = map[string]struct {
 	"Roles":                      {"roles", true},
 	"Grants":                     {"grants", true},
 	"RevokedGrants":              {"grants with revoked set", true},
+	"DeniedGrants":               {"none: only SQL Server has a DENY, and no provider engine reads one", false},
 	"FeatureObjects":             {"native_objects, normalized by the provider", false},
 	"FeatureCoverage":            {"coverage, the claim of the same reading", false},
 	"NotDescribed":               {"filled by the reader from each document's header, not by the reply", false},

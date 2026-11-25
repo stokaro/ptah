@@ -114,6 +114,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 		revokedPublicExecute(dbSchema.Grants),
 		revokedOwnerPrivileges(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))...,
 	)
+	database.DeniedGrants = convertDeniedGrants(dbSchema.Grants)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
 	// What the read did not look at is part of what the read said. Dropping it
 	// here would turn the reader's silence back into desired absence one
@@ -225,6 +226,7 @@ func newDatabase() *schemamodel.Database {
 		Roles:             make([]schemamodel.Role, 0),
 		Grants:            make([]schemamodel.Grant, 0),
 		RevokedGrants:     make([]schemamodel.Grant, 0),
+		DeniedGrants:      make([]schemamodel.Grant, 0),
 		Dependencies:      make(map[string][]string),
 	}
 }
@@ -1184,6 +1186,25 @@ func convertGrants(dbGrants []catalog.Grant, replayed map[string]string) []schem
 		grants = append(grants, describedGrant(dbGrant, replayed))
 	}
 	return grants
+}
+
+// convertDeniedGrants describes the DENY rows of a read
+// ([catalog.Grant.Denied]) as denied grants, so a description withholds what
+// the database withholds. Left out, a description applied to another database
+// gives a role every privilege a grant on the schema or a role membership
+// carries there, the denied ones included.
+func convertDeniedGrants(dbGrants []catalog.Grant) []schemamodel.Grant {
+	denied := make([]schemamodel.Grant, 0)
+	for _, dbGrant := range dbGrants {
+		if !dbGrant.Denied {
+			continue
+		}
+		grant := describedGrant(dbGrant, nil)
+		grant.WithOption = false
+		grant.GrantedBy = ""
+		denied = append(denied, grant)
+	}
+	return denied
 }
 
 // describedGrant is the row of a read as a grant of the description.

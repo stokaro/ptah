@@ -139,6 +139,16 @@ func scopedKinds() []scopedKind {
 			},
 			count: func(db *schemamodel.Database) int { return len(db.RevokedGrants) },
 		},
+		{
+			name: "DeniedGrants",
+			declare: func(db *schemamodel.Database, scope []string) {
+				db.DeniedGrants = []schemamodel.Grant{{
+					StructName: "DG", Role: "app_reader",
+					Privileges: []string{"UPDATE"}, OnTable: "tenants", Dialects: scope,
+				}}
+			},
+			count: func(db *schemamodel.Database) int { return len(db.DeniedGrants) },
+		},
 	}
 }
 

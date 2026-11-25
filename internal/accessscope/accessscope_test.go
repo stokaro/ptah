@@ -105,6 +105,26 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 	}
 }
 
+// TestValidateDeclared_Deny pins that a DENY is accepted on SQL Server and
+// refused on a target whose grammar has none, naming the first grantee: a plan
+// there has no statement that withholds the privilege.
+func TestValidateDeclared_Deny(t *testing.T) {
+	database := &schemamodel.Database{DeniedGrants: []schemamodel.Grant{
+		{Role: "zeta", Privileges: []string{"SELECT"}, OnTable: "t"},
+		{Role: "alpha", Privileges: []string{"UPDATE"}, OnTable: "t"},
+	}}
+	t.Run("SQL Server", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(accessscope.ValidateDeclared("sqlserver", capability.SQLServer2022(), database), qt.IsNil)
+	})
+	t.Run("PostgreSQL", func(t *testing.T) {
+		c := qt.New(t)
+		err := accessscope.ValidateDeclared("postgres", capability.Postgres17(), database)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(err, qt.ErrorMatches, `unsupported feature: the schema denies a privilege to "alpha", and the postgres target has no DENY`)
+	})
+}
+
 // TestValidateDeclared_RefusesAnObjectKindNoTargetHolds pins that a grant on
 // a kind of object no target has is refused on every target rather than
 // rendered as a statement nothing takes.

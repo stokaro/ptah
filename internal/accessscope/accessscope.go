@@ -1,8 +1,8 @@
 // Package accessscope refuses the access-control declarations a target cannot
 // hold, before anything is rendered, compared or planned: a group declared as
 // a principal of its own kind, a membership of one role in another, a grant on
-// the database itself, and a grant on a scheme object such as a topic. Each is
-// gated by its capability key.
+// the database itself, a grant on a scheme object such as a topic, and a DENY.
+// Each is gated by its capability key, and the DENY by the target's grammar.
 //
 // The renderer and the schema comparison both call [ValidateDeclared], so a
 // declaration one accepts the other cannot refuse.
@@ -26,8 +26,9 @@ import (
 // A target without [capability.GroupPrincipals] refuses a role declared as a
 // group, one without [capability.RoleMembership] a role's member_of, one
 // without [capability.RoleMembershipAdmin] or [capability.RoleMembershipInheritSet]
-// a membership that states the admin option or the inherit or set option, and
-// one without [capability.DatabaseGrants] a grant or revoke on the database. Each
+// a membership that states the admin option or the inherit or set option, one
+// without [capability.DatabaseGrants] a grant, revoke or deny on the database,
+// and one whose grammar has no DENY a denied privilege. Each
 // refusal names the first offender by name, so two runs over one schema name
 // the same one. None is skipped instead: a skipped group would leave the
 // grants that name it without a principal, a skipped membership would leave a
@@ -64,7 +65,32 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *sc
 				"unavailable on this %s target", first, gate.key, normalized),
 		}
 	}
+	if err := deniedGrants(dialect, database); err != nil {
+		return err
+	}
 	return objectGrants(dialect, caps, database)
+}
+
+// deniedGrants refuses a denied privilege ([schemamodel.Database.DeniedGrants])
+// on a target whose grammar has no DENY
+// ([ptah.run/core/platform/descriptor.StatementForms.Deny]), naming the first
+// grantee. A plan for such a target has no statement that withholds the
+// privilege, so leaving the DENY out would give the grantee what the schema
+// withholds wherever a grant or a membership carries it.
+func deniedGrants(dialect string, database *schemamodel.Database) error {
+	if len(database.DeniedGrants) == 0 {
+		return nil
+	}
+	if described, ok := platform.Lookup(dialect); ok && described.Grammar.Forms.Deny {
+		return nil
+	}
+	names := make([]string, 0, len(database.DeniedGrants))
+	for _, denied := range database.DeniedGrants {
+		names = append(names, denied.Role)
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return fmt.Errorf("%w: the schema denies a privilege to %q, and the %s target has no DENY",
+		ptaherr.ErrUnsupportedFeature, slices.MinFunc(names, cmp.Compare), normalized)
 }
 
 // ObjectCapability returns the capability under which a target holds objects
@@ -161,7 +187,7 @@ func optionMembers(roles []schemamodel.Role, stated func(schemamodel.RoleMembers
 
 func databaseGrantees(database *schemamodel.Database) []string {
 	var names []string
-	for _, grant := range slices.Concat(database.Grants, database.RevokedGrants) {
+	for _, grant := range slices.Concat(database.Grants, database.RevokedGrants, database.DeniedGrants) {
 		if grant.OnDatabase {
 			names = append(names, grant.Role)
 		}

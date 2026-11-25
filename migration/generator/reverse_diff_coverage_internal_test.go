@@ -136,11 +136,24 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
-	if field.Name == "UnmanagedOwnerPrivileges" || field.Name == "UnmanagedRoleMemberships" {
+	if field.Name == "UnmanagedOwnerPrivileges" || field.Name == "UnmanagedRoleMemberships" || field.Name == "UnmanagedDenies" {
 		// A diagnostic of the forward comparison, never a change: Ptah plans
-		// nothing for an owner privilege or a membership the desired state
-		// does not manage, in either direction, so there is nothing for a
-		// rollback to undo (stokaro/ptah#5765).
+		// nothing for an owner privilege, a membership or a DENY the desired
+		// state does not manage, in either direction, so there is nothing for
+		// a rollback to undo (stokaro/ptah#5765).
+		return
+	}
+	if field.Name == "GrantsDeniesTake" {
+		// Left empty by the reverse. The forward value is the column grants
+		// the document declares under a DENY the change adds, and the rollback
+		// takes that DENY away. A rollback writes a DENY again only for one
+		// the change took (DeniesRemoved), and only a comparison that reads
+		// the desired side from a server takes one; `schema diff` writes no
+		// down file, and the comparisons that write one never read the
+		// desired side as complete.
+		//
+		// TestReverseSchemaDiff_ARolledBackDenyLeavesTheForwardColumnGrants
+		// is what holds that, since this gate structurally cannot.
 		return
 	}
 	if field.Name == "DeclaredFunctions" {
@@ -1241,4 +1254,27 @@ func TestReverseSchemaDiff_ARollbackHoldsWhatTheForwardPlanLeaves(t *testing.T) 
 			c.Assert(got.HeldSchemas, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestReverseSchemaDiff_ARolledBackDenyLeavesTheForwardColumnGrants pins
+// that the column grants a forward change grants again under a DENY it adds
+// reach no step of its rollback: the rollback takes that DENY away, and a
+// grant it named stays a grant the database holds.
+func TestReverseSchemaDiff_ARolledBackDenyLeavesTheForwardColumnGrants(t *testing.T) {
+	c := qt.New(t)
+
+	schema, dbSchema := reverseCoverageContext()
+	on := func(table, column string) difftypes.GrantRef {
+		return difftypes.GrantRef{Role: "r", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: table, Column: column}
+	}
+	forward := &difftypes.SchemaDiff{
+		DeniesAdded:      []difftypes.GrantRef{on("dbo.t", "")},
+		CurrentGrants:    []difftypes.GrantRef{on("dbo.t", "name")},
+		GrantsDeniesTake: []difftypes.GrantRef{on("dbo.t", "name")},
+	}
+
+	reversed := reverseForTest(t, forward, schema, dbSchema, "sqlserver")
+
+	c.Assert(reversed.DeniesRemoved, qt.DeepEquals, []difftypes.GrantRef{on("dbo.t", "")})
+	c.Assert(reversed.GrantsDeniesTake, qt.IsNil)
 }

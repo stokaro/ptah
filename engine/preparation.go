@@ -202,7 +202,8 @@ func sameCommonObjects(declared, spelled *schemamodel.Database) error {
 		slices.Equal(names(len(declared.Sequences), func(i int) string { return declared.Sequences[i].QualifiedName() }),
 			names(len(spelled.Sequences), func(i int) string { return spelled.Sequences[i].QualifiedName() })) &&
 		slices.Equal(names(len(declared.Roles), func(i int) string { return declared.Roles[i].Name }), names(len(spelled.Roles), func(i int) string { return spelled.Roles[i].Name })) &&
-		len(declared.Grants) == len(spelled.Grants) && len(declared.RevokedGrants) == len(spelled.RevokedGrants)
+		len(declared.Grants) == len(spelled.Grants) && len(declared.RevokedGrants) == len(spelled.RevokedGrants) &&
+		len(declared.DeniedGrants) == len(spelled.DeniedGrants)
 	if !same {
 		return errors.New("changed which common objects the declaration holds")
 	}

@@ -972,7 +972,7 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	statement := fmt.Sprintf("GRANT %s ON %s TO %s",
 		permissionList(privileges, node.Columns),
 		grantTargetIdentifier(node.ObjectType, node.ObjectName),
-		escapeIdentifier(unquoteIdentifier(node.Role)))
+		granteeIdentifier(node.Role))
 	if node.WithOption {
 		statement += " WITH GRANT OPTION"
 	}
@@ -1016,11 +1016,64 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	}
 	parts = append(parts, permissionList(privileges, node.Columns),
 		"ON", grantTargetIdentifier(node.ObjectType, node.ObjectName),
-		"FROM", escapeIdentifier(unquoteIdentifier(node.Role)))
+		"FROM", granteeIdentifier(node.Role))
 	if node.GrantOptionFor {
 		parts = append(parts, "CASCADE")
 	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// granteeIdentifier spells the grantee of a GRANT, a REVOKE or a DENY. PUBLIC,
+// the name a schema file and a read give the fixed role public, is written
+// [public]. Measured on SQL Server 2025, [public] and PUBLIC without brackets
+// in any case reach the fixed role whatever the database's collation, while
+// [PUBLIC] on a case-sensitive database reaches a role of that name, or
+// nothing (Msg 15151).
+func granteeIdentifier(role string) string {
+	name := unquoteIdentifier(role)
+	if name == "PUBLIC" {
+		return "[public]"
+	}
+	return escapeIdentifier(name)
+}
+
+// renderDenyPrivilege renders a T-SQL DENY.
+//
+// A DENY names its target as a GRANT does, and CASCADE where the node asks for
+// it: measured on SQL Server 2025, a DENY of a privilege the grantee holds
+// WITH GRANT OPTION answers Msg 4611 without it. A privilege T-SQL has no name
+// for is refused rather than written into a comment, since a comment in its
+// place would leave the privilege held.
+func (r *Renderer) renderDenyPrivilege(node *ast.DenyPrivilegeNode) error {
+	if err := grantrefusal.Path("sqlserver", "DENY", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := grantrefusal.Routine("sqlserver", "DENY", node.ObjectType, node.ObjectName); err != nil {
+		return err
+	}
+	if err := refuseColumnPermissions("DENY", node.ObjectType, node.ObjectName, node.Privileges, node.Columns); err != nil {
+		return err
+	}
+	if r.refuses(capability.RoleManagement, "DENY", node.Role) {
+		return nil
+	}
+	privileges, unsupported := splitTSQLPrivileges(node.Privileges)
+	if len(unsupported) > 0 {
+		return fmt.Errorf("%w: sqlserver: DENY %s ON %s TO %s: T-SQL has no permission of that name",
+			ptaherr.ErrUnsupportedFeature, strings.Join(unsupported, ", "), node.ObjectName, node.Role)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	statement := fmt.Sprintf("DENY %s ON %s TO %s",
+		permissionList(privileges, node.Columns),
+		grantTargetIdentifier(node.ObjectType, node.ObjectName),
+		granteeIdentifier(node.Role))
+	if node.Cascade {
+		statement += " CASCADE"
+	}
+	r.w.WriteLinef("%s;", statement)
 	return nil
 }
 

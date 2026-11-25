@@ -756,6 +756,7 @@ func reviewApplyDiff(
 	// never a change, with or without one, so its line is written either way.
 	ReportUnmanagedOwnerPrivileges(opts.Diagnostics, diff.UnmanagedOwnerPrivileges)
 	ReportUnmanagedRoleMemberships(opts.Diagnostics, diff.UnmanagedRoleMemberships)
+	ReportUnmanagedDenies(opts.Diagnostics, diff.UnmanagedDenies)
 	return nil
 }
 
@@ -1691,6 +1692,29 @@ func ReportUnmanagedRoleMemberships(diagnostics io.Writer, memberships []difftyp
 				"so the plan keeps the membership; state member_of on %q to manage its memberships, "+
 				"or an empty list to revoke them all\n",
 			membership.Member, membership.Role, membership.Member)
+	}
+}
+
+// ReportUnmanagedDenies writes one line for each SQL Server DENY the database
+// holds and the desired state does not declare. A comparison with a schema
+// revokes no DENY, and the line says so beside a result that would otherwise
+// read as synced to someone who took the DENY out of a schema file. It says
+// the plan does not revoke the DENY rather than that the row stays: a DENY
+// the plan adds on the whole object takes the row of a column DENY of the same
+// permission, and the column stays denied through it.
+func ReportUnmanagedDenies(diagnostics io.Writer, denies []difftypes.GrantRef) {
+	if diagnostics == nil {
+		return
+	}
+	for _, denied := range denies {
+		target := denied.ObjectType + " " + denied.ObjectName
+		if denied.Column != "" {
+			target += " (" + denied.Column + ")"
+		}
+		_, _ = fmt.Fprintf(diagnostics,
+			"UNMANAGED: the database denies %s on %s to %q, and the schema does not declare the DENY, "+
+				"so the plan does not revoke it; declare it to manage it, or revoke it by hand\n",
+			denied.Privilege, target, denied.Role)
 	}
 }
 

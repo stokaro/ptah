@@ -288,6 +288,7 @@ func preserveUnmanagedObjects(ctx context.Context, diff *difftypes.SchemaDiff, d
 	diff.RolesRemoved = nil
 	diff.GrantsRemoved = nil
 	diff.GrantOptionsRevoked = nil
+	diff.DeniesRemoved = nil
 	diff.ConstraintsRemoved = matchingConstraintRemovals(
 		diff.ConstraintsRemoved,
 		diff.ConstraintsAdded,
@@ -433,7 +434,7 @@ func constraintRefsEqual(
 }
 
 func validateTestSchema(schema *schemamodel.Database) error {
-	if len(schema.Roles) > 0 || len(schema.Grants) > 0 || len(schema.RevokedGrants) > 0 {
+	if len(schema.Roles) > 0 || len(schema.Grants) > 0 || len(schema.RevokedGrants) > 0 || len(schema.DeniedGrants) > 0 {
 		return fmt.Errorf(
 			"database tests do not support roles or grants because they can mutate cluster-scoped security state",
 		)

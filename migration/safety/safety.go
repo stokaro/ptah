@@ -758,6 +758,9 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.RevokePrivilegeNode:
 		assessment.Severity = Warning
 		assessment.Reason = revokeReason
+	case *ast.DenyPrivilegeNode:
+		assessment.Severity = Warning
+		assessment.Reason = denyReason
 	case *ast.AlterOwnerNode, *ast.CreateViewNode, *ast.CreateMaterializedViewNode:
 		assessment = assessOwnerChange(n, assessment)
 	case *ast.RevokeRoleMembershipNode:
@@ -1218,12 +1221,16 @@ func keepsCollation(node ast.Node) bool {
 }
 
 // accessChangeReason is why a raw statement that changes who may reach an
-// object is a warning: a REVOKE, an OWNER TO, or an ALTER GROUP ... DROP USER.
+// object is a warning: a REVOKE, a DENY, an OWNER TO, or an ALTER GROUP ...
+// DROP USER. A saved plan file reaches the check as text, so a DENY there is
+// rated as the node the plan built it from is.
 // It is empty for any other statement.
 func accessChangeReason(words []string) string {
 	switch {
 	case hasWordPrefix(words, "REVOKE"):
 		return revokeReason
+	case hasWordPrefix(words, "DENY"):
+		return denyReason
 	case hasWordPrefix(words, "ALTER") && hasWordSequence(words, "OWNER", "TO"):
 		return ownerReason
 	case hasWordPrefix(words, "ALTER", "GROUP") && hasWordSequence(words, "DROP", "USER"):
@@ -1667,6 +1674,7 @@ const (
 	dropMaterializedViewReason = "DROP MATERIALIZED VIEW removes the view and the rows it holds"
 	dropTriggerReason          = "DROP TRIGGER removes executable behavior from every write to its table"
 	revokeReason               = "REVOKE takes away access a role may rely on"
+	denyReason                 = "DENY withholds a privilege from the grantee and every member of it, whatever grant gives it"
 	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
 	ownerReason                = "OWNER TO gives the object to another role: the role that owned it loses an owner's privileges, " +
 		"and a view then reads its tables with the new owner's privileges"

@@ -29,9 +29,19 @@ func grantable(role, table string, privileges ...string) schemamodel.Grant {
 	return held
 }
 
+// onColumn is a grant of privilege on one column of table.
+func onColumn(role, table, column, privilege string) schemamodel.Grant {
+	return schemamodel.Grant{Role: role, OnTable: table, Columns: []string{column}, Privileges: []string{privilege}}
+}
+
 // TestMerge_HappyPath pins the fold of one source onto another as though its
 // statements ran later: what src revokes leaves dst's grants, and what src
 // grants leaves dst's revoked set.
+//
+// A folded src that holds a statement on a table and one on its column keeps
+// both, as the server keeps the two rows of the script src was folded from:
+// a statement on a whole table takes the column statements of its privilege,
+// so the column one can only have come after it.
 func TestMerge_HappyPath(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -39,7 +49,43 @@ func TestMerge_HappyPath(t *testing.T) {
 		src         schemamodel.Database
 		wantGrants  []schemamodel.Grant
 		wantRevoked []schemamodel.Grant
+		wantDenied  []schemamodel.Grant
 	}{
+		{
+			name: "a folded deny on a table and a grant on its column keep both",
+			src: schemamodel.Database{
+				Grants: []schemamodel.Grant{onColumn("r", "t", "name", "SELECT")}, DeniedGrants: []schemamodel.Grant{grant("r", "t", "SELECT")},
+			},
+			wantGrants: []schemamodel.Grant{onColumn("r", "t", "name", "SELECT")},
+			wantDenied: []schemamodel.Grant{grant("r", "t", "SELECT")},
+		},
+		{
+			name: "a folded grant on a table and a deny on its column keep both",
+			src: schemamodel.Database{
+				Grants: []schemamodel.Grant{grant("r", "t", "SELECT")}, DeniedGrants: []schemamodel.Grant{onColumn("r", "t", "secret", "SELECT")},
+			},
+			wantGrants: []schemamodel.Grant{grant("r", "t", "SELECT")},
+			wantDenied: []schemamodel.Grant{onColumn("r", "t", "secret", "SELECT")},
+		},
+		{
+			name:       "a later deny on a column keeps an earlier grant on its table",
+			dst:        schemamodel.Database{Grants: []schemamodel.Grant{grant("r", "t", "SELECT")}},
+			src:        schemamodel.Database{DeniedGrants: []schemamodel.Grant{onColumn("r", "t", "secret", "SELECT")}},
+			wantGrants: []schemamodel.Grant{grant("r", "t", "SELECT")},
+			wantDenied: []schemamodel.Grant{onColumn("r", "t", "secret", "SELECT")},
+		},
+		{
+			name:       "a later grant on a table takes an earlier deny on its column",
+			dst:        schemamodel.Database{DeniedGrants: []schemamodel.Grant{onColumn("r", "t", "secret", "SELECT")}},
+			src:        schemamodel.Database{Grants: []schemamodel.Grant{grant("r", "t", "SELECT")}},
+			wantGrants: []schemamodel.Grant{grant("r", "t", "SELECT")},
+		},
+		{
+			name:       "a later deny on a table takes an earlier grant on its column",
+			dst:        schemamodel.Database{Grants: []schemamodel.Grant{onColumn("r", "t", "name", "SELECT")}},
+			src:        schemamodel.Database{DeniedGrants: []schemamodel.Grant{grant("r", "t", "SELECT")}},
+			wantDenied: []schemamodel.Grant{grant("r", "t", "SELECT")},
+		},
 		{
 			name:        "a later revoke takes one privilege out of an earlier grant",
 			dst:         schemamodel.Database{Grants: []schemamodel.Grant{grant("r", "t", "SELECT", "INSERT")}},
@@ -144,6 +190,7 @@ func TestMerge_HappyPath(t *testing.T) {
 			// everything leaves a slice behind is not what these rows are about.
 			c.Assert(dst.Grants, qt.CmpEquals(cmpopts.EquateEmpty()), test.wantGrants)
 			c.Assert(dst.RevokedGrants, qt.CmpEquals(cmpopts.EquateEmpty()), test.wantRevoked)
+			c.Assert(dst.DeniedGrants, qt.CmpEquals(cmpopts.EquateEmpty()), test.wantDenied)
 		})
 	}
 }

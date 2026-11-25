@@ -36,6 +36,7 @@ func WithoutDatabaseGrants(current *catalog.Database, desired *schemamodel.Datab
 		kept := *desired
 		kept.Grants = slices.DeleteFunc(slices.Clone(desired.Grants), onDatabase)
 		kept.RevokedGrants = slices.DeleteFunc(slices.Clone(desired.RevokedGrants), onDatabase)
+		kept.DeniedGrants = slices.DeleteFunc(slices.Clone(desired.DeniedGrants), onDatabase)
 		desired = &kept
 	}
 	return current, desired

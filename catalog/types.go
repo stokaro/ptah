@@ -1941,6 +1941,15 @@ type Grant struct {
 	// Ptah manages that shape, as a revoke.
 	IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
 
+	// Denied marks a SQL Server DENY row, which IsPartialRevoke marks too. A
+	// DENY withholds the privilege from the grantee and from every member of
+	// it, whatever grant, schema permission or role membership gives it
+	// otherwise. Ptah manages it as
+	// [ptah.run/core/schemamodel.Database.DeniedGrants]. The REVOKE row SQL
+	// Server keeps for a column revoked under a grant on its whole table is a
+	// partial revoke and not a DENY.
+	Denied bool `json:"denied,omitempty"`
+
 	// Column names the column of the table target this privilege is limited
 	// to, as pg_attribute.attacl, the MySQL family's
 	// information_schema.COLUMN_PRIVILEGES or SQL Server's

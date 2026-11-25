@@ -93,6 +93,7 @@ var namedSubjects = []subjectRow{
 	{node: &ast.ObjectCommentNode{Object: ast.CommentedIndex, Name: "users_email_idx"}, subject: "users_email_idx"},
 	{node: &ast.RefreshMaterializedViewNode{Name: "daily"}, subject: "daily"},
 	{node: &ast.RevokePrivilegeNode{Role: "reader", ObjectName: "users"}, subject: "users"},
+	{node: &ast.DenyPrivilegeNode{Role: "reader", ObjectName: "users"}, subject: "users"},
 	{node: &ast.RevokeRoleMembershipNode{Role: "readers", Member: "app"}, subject: "readers"},
 	{node: &ast.RoutineNode{Name: "archive"}, subject: "archive"},
 	{node: &ast.UpsertNode{Table: "settings"}, subject: "settings"},

@@ -74,6 +74,21 @@ type Database struct {
 	// [ValidateRevokedGrants].
 	RevokedGrants []Grant `json:",omitempty"`
 
+	// DeniedGrants are privileges the schema denies a grantee, one privilege
+	// per entry. A SQL schema file writes them as DENY, which SQL Server alone
+	// has. A denied privilege is withheld from the grantee and from every
+	// member of it, whatever grant, schema permission or role membership gives
+	// it otherwise, so it is a statement of its own, as a revoked one is. A
+	// denied privilege is never in Grants or RevokedGrants: on the server a
+	// GRANT, a DENY and a REVOKE of one privilege replace each other, and a
+	// SQL schema file composes them in statement order. A source with no
+	// statement order that grants and denies one privilege is refused, see
+	// [ValidateDeniedGrants]. WithOption is never set on one.
+	//
+	// A comparison plans a DENY a database lacks, for any grantee, and takes a
+	// DENY the schema does not declare from a role the schema manages only.
+	DeniedGrants []Grant `json:",omitempty"`
+
 	// EmbeddedSources retains source-only helper declarations needed to
 	// materialize embedded columns again after a schema is merged or finalized.
 	EmbeddedSources EmbeddedSources

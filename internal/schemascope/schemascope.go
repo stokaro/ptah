@@ -148,6 +148,9 @@ func FilterGeneratedWithDefaultSchema(
 	filtered.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
 		return grantAllowed(allowed, keptRelations, grant, defaultSchema)
 	})
+	filtered.DeniedGrants = keep(db.DeniedGrants, func(grant schemamodel.Grant) bool {
+		return grantAllowed(allowed, keptRelations, grant, defaultSchema)
+	})
 	filtered.Enums = keepReferencedGeneratedEnums(db.Enums, filtered.Fields)
 	filtered.Dependencies = filterDependencies(db.Dependencies, keptTables)
 	filtered.FunctionDependencies = filterNamedDependencies(db.FunctionDependencies, allowed, defaultSchema)

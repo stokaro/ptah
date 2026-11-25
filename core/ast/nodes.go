@@ -3381,6 +3381,65 @@ func (n *RevokePrivilegeNode) SetComment(comment string) *RevokePrivilegeNode {
 // Accept implements the Node interface for RevokePrivilegeNode.
 func (n *RevokePrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
+// DenyPrivilegeNode represents a SQL Server DENY statement, which withholds
+// privileges from a grantee and from every member of it, whatever grant, schema
+// permission or role membership gives them otherwise. A REVOKE of the same
+// privilege takes a DENY away. Only the SQL Server renderer writes one; every
+// other renderer refuses it.
+type DenyPrivilegeNode struct {
+	// DatabasePath is the captured target database; see [GrantPrivilegeNode.DatabasePath].
+	DatabasePath string
+	// Role is the grantee denied the privileges.
+	Role string
+	// Privileges contains one or more privileges, e.g. SELECT, VIEW DEFINITION.
+	Privileges []string
+	// ObjectType is the target kind: TABLE for an object or a column, or SCHEMA.
+	ObjectType string
+	// ObjectName is the target object or schema name.
+	ObjectName string
+	// Columns limits every privilege of the node to these columns of a table
+	// target; see [GrantPrivilegeNode.Columns].
+	Columns []string
+	// Cascade denies the privileges to everyone the grantee granted them to as
+	// well, as DENY ... CASCADE does. SQL Server requires it where the grantee
+	// holds a privilege WITH GRANT OPTION.
+	Cascade bool
+	// Comment is an optional comment for the deny operation.
+	Comment string
+}
+
+// NewDenyPrivilege creates a new DENY node.
+func NewDenyPrivilege(role, objectType, objectName string, privileges []string) *DenyPrivilegeNode {
+	return &DenyPrivilegeNode{
+		Role:       role,
+		Privileges: privileges,
+		ObjectType: objectType,
+		ObjectName: objectName,
+	}
+}
+
+// SetColumns limits the node's privileges to columns of its table target and
+// returns the node for chaining.
+func (n *DenyPrivilegeNode) SetColumns(columns []string) *DenyPrivilegeNode {
+	n.Columns = columns
+	return n
+}
+
+// SetCascade enables or disables DENY ... CASCADE.
+func (n *DenyPrivilegeNode) SetCascade(cascade bool) *DenyPrivilegeNode {
+	n.Cascade = cascade
+	return n
+}
+
+// SetComment sets a comment for the DENY operation.
+func (n *DenyPrivilegeNode) SetComment(comment string) *DenyPrivilegeNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DenyPrivilegeNode.
+func (n *DenyPrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
 // RoleOperation represents an operation that can be performed on a role during ALTER ROLE.
 //
 // This interface allows for different types of role modifications to be represented

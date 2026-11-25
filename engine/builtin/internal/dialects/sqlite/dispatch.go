@@ -118,6 +118,8 @@ func (r *Renderer) VisitNode(node ast.Node) error { //nolint:gocyclo // one case
 		return r.renderGrantPrivilege(n)
 	case *ast.RevokePrivilegeNode:
 		return r.renderRevokePrivilege(n)
+	case *ast.DenyPrivilegeNode:
+		return nodedispatch.RefuseDeny(r.Dialect(), n)
 	case *ast.GrantRoleMembershipNode:
 		return grantrefusal.Membership(r.Dialect(), r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
 	case *ast.RevokeRoleMembershipNode:

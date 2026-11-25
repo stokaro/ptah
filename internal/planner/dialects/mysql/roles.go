@@ -83,8 +83,13 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 		return nil, err
 	}
 	result = append(result, givenBack...)
+	deniedOnObjects, deniedOnColumns, err := p.planDenies(diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, deniedOnObjects...)
 	_, added := p.grantsAdded(diff)
-	result = p.grantPrivileges(result, diff, added)
+	result = p.grantPrivileges(result, diff, slices.Concat(added, p.columnGrantsDeniesTake(diff)))
 	spellings := newColumnSpellings(diff, p.targetDialect())
 	for _, grant := range diff.GrantOptionsAdded {
 		result = append(result, ast.NewGrantPrivilege(
@@ -92,7 +97,12 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 			SetColumns(spellings.columns(grant)).
 			SetWithOption(true))
 	}
-	return result, nil
+	_, deniedAgain, err := p.columnDeniesGrantsTake(diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, deniedAgain...)
+	return append(result, deniedOnColumns...), nil
 }
 
 // planRevokesFirst emits the REVOKE statements at the start of the plan on
@@ -134,10 +144,13 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 // the column rows too, and `REVOKE SELECT (id) ON t` under a table grant
 // leaves a REVOKE row, so a member of the role gets Msg 230 reading id. A plan
 // that widens `SELECT (id)` to `SELECT ON t` and grants first leaves the role
-// unable to read id. The reader reports a table permission with column rows
-// of the same name under it as the permission on each column, so a diff never
-// holds both and nothing comes back after the revokes there. A permission
-// goes with its column or table when either is dropped.
+// unable to read id. The reader reports a table permission with column grant
+// or REVOKE rows of the same name under it as the permission on each column,
+// so a diff never holds both and nothing comes back after the revokes there.
+// A DENY row on a column is read beside the table permission instead, and a
+// revoke on the table takes it, so the DENY rows the diff keeps are denied
+// again right after the revokes ([Planner.columnDeniesGrantsTake]). A
+// permission goes with its column or table when either is dropped.
 //
 // On MySQL a column privilege serves only the spelling it was granted under,
 // so a privilege the declaration spells another way is revoked and granted
@@ -145,15 +158,20 @@ func (p *Planner) planGrants(result []ast.Node, diff *difftypes.SchemaDiff) ([]a
 // the column exists: placed after the tables, a statement that fails in
 // between leaves the role without the column, measured on MySQL 8.4 and
 // 26.10 with a UNIQUE key failing on duplicate rows.
-func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) planRevokesFirst(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if !p.capabilities().Has(capability.RoleManagement) || !p.revokesFirst() {
-		return result
+		return result, nil
 	}
 	result = p.revokeGrants(result, diff, droppedObjects{})
 	now, _ := p.columnGrantsGivenBack(diff)
 	result = append(result, now...)
+	deniedAgain, _, err := p.columnDeniesGrantsTake(diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, deniedAgain...)
 	respelled, _ := p.grantsAdded(diff)
-	return p.grantPrivileges(result, diff, respelled)
+	return p.grantPrivileges(result, diff, respelled), nil
 }
 
 // grantPrivileges emits a GRANT for each of grants, naming the column as
@@ -301,7 +319,7 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, dr
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetColumns(spellings.columns(grant)))
 	}
-	return result
+	return p.revokeDenies(result, diff, dropped)
 }
 
 // withoutColumnRevokesTheirTableTakes answers removed without the column
@@ -425,9 +443,19 @@ type keptColumnGrant struct {
 // A column privilege the diff removes is left revoked, whether or not the
 // plan names it in a statement of its own; see
 // [withoutColumnRevokesTheirTableTakes].
+//
+// On SQL Server a REVOKE that takes a DENY on the whole table
+// ([difftypes.SchemaDiff.DeniesRemoved]) takes the column grants of the
+// permission too, measured on SQL Server 2025, so it counts as a table revoke
+// here.
 func columnGrantsRevokedWithTheirTable(diff *difftypes.SchemaDiff, spellings columnSpellings) []keptColumnGrant {
 	tableRevokes := make(map[revokedPrivilege]bool)
 	columnRevokes := make(map[columnGrant]bool)
+	for _, denied := range diff.DeniesRemoved {
+		if denied.Column == "" && !strings.EqualFold(denied.ObjectType, "SCHEMA") {
+			tableRevokes[spellings.revokedPrivilege(denied)] = true
+		}
+	}
 	for _, grant := range diff.GrantsRemoved {
 		switch {
 		case grant.Column != "":

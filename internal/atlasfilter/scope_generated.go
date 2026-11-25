@@ -115,6 +115,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *schemamodel.Database,
 	out.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
 		return s.generatedGrantSelected(out, columnSequences, grant)
 	})
+	out.DeniedGrants = keep(db.DeniedGrants, func(grant schemamodel.Grant) bool {
+		return s.generatedGrantSelected(out, columnSequences, grant)
+	})
 	out.Roles = keep(db.Roles, func(role schemamodel.Role) bool {
 		if s.selectedNames(typeList("role"), role.Name) {
 			return true

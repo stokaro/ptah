@@ -106,6 +106,22 @@
       "qualified": false
     },
     {
+      "category": "denies_added",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "denies_removed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
       "category": "enum_values_added",
       "severities": [
         "warning"

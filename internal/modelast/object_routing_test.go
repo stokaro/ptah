@@ -93,6 +93,63 @@ func routingFixture() schemamodel.Database {
 	}
 }
 
+// deniedGrantsFixture denies a privilege on a whole table and on one column.
+// It stays out of routingFixture, which every PostgreSQL-family render reads,
+// because only SQL Server writes a DENY.
+func deniedGrantsFixture() schemamodel.Database {
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "table_probe"}},
+		Fields: []schemamodel.Field{
+			{StructName: "T", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "T", Name: "secret", Type: "TEXT"},
+		},
+		Roles: []schemamodel.Role{{StructName: "R", Name: "role_probe"}},
+		Grants: []schemamodel.Grant{{
+			StructName: "G", Role: "role_probe", Privileges: []string{"SELECT"}, OnTable: "table_probe",
+		}},
+		DeniedGrants: []schemamodel.Grant{
+			{StructName: "DG", Role: "role_probe", Privileges: []string{"UPDATE"}, OnTable: "table_probe"},
+			{StructName: "DC", Role: "role_probe", Privileges: []string{"SELECT"}, OnTable: "table_probe", Columns: []string{"secret"}},
+		},
+	}
+}
+
+// TestCollectDatabase_DeniesAroundTheGrants places a DENY on a whole table
+// before the grants and a DENY on a column after them. SQL Server keeps a
+// column grant written after a DENY on its table, and a GRANT on a whole table
+// takes the denies on its columns, so this order keeps every row the schema
+// declares.
+func TestCollectDatabase_DeniesAroundTheGrants(t *testing.T) {
+	c := qt.New(t)
+
+	statements := must.Must(modelast.CollectDatabase(deniedGrantsFixture(), "sqlserver", modelast.Lowering{Context: context.Background()})).Statements
+
+	c.Assert(privilegeOrder(statements), qt.DeepEquals, []string{"DENY UPDATE ON table_probe", "GRANT SELECT ON table_probe", "DENY SELECT (secret) ON table_probe"})
+}
+
+// privilegeOrder names each GRANT and DENY of statements, in order.
+func privilegeOrder(statements []ast.Node) []string {
+	var order []string
+	for _, statement := range statements {
+		switch node := statement.(type) {
+		case *ast.GrantPrivilegeNode:
+			order = append(order, "GRANT "+privilegeTarget(node.Privileges, node.Columns, node.ObjectName))
+		case *ast.DenyPrivilegeNode:
+			order = append(order, "DENY "+privilegeTarget(node.Privileges, node.Columns, node.ObjectName))
+		}
+	}
+	return order
+}
+
+// privilegeTarget spells privileges on object, and on its columns where there are some.
+func privilegeTarget(privileges, columns []string, object string) string {
+	spelled := strings.Join(privileges, ", ")
+	if len(columns) > 0 {
+		spelled += " (" + strings.Join(columns, ", ") + ")"
+	}
+	return spelled + " ON " + object
+}
+
 // TestCollectDatabase_EveryDialectGetsEveryDeclaredObject is this converter's half
 // of stokaro/ptah#929 item 5: whether an object is converted is not a question
 // the dialect name answers.
@@ -179,6 +236,7 @@ func TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testi
 		{field: "FeatureObjects", fixture: loweringFeatureFixture("postgres")},
 		{field: "FeatureCoverage", fixture: loweringFeatureFixture("postgres")},
 		{field: "Facets", fixture: unloweredFacetsFixture()},
+		{field: "DeniedGrants", fixture: deniedGrantsFixture()},
 	} {
 		c.Assert(declaredCollectionNames(feature.fixture), qt.Contains, feature.field)
 		declared = append(declared, feature.field)

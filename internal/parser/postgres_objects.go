@@ -445,6 +445,58 @@ func (p *Parser) parseRevokeStatement() (*ast.RevokePrivilegeNode, error) {
 	return revoke.SetGrantOptionFor(grantOptionFor), nil
 }
 
+// parseDenyStatement parses T-SQL's DENY priv[, ...] [(columns)] ON target TO
+// grantee[, ...], on a dialect whose grammar has it
+// ([descriptor.StatementForms.Deny]). It reads the privileges and the target
+// as GRANT does, and gives one node per grantee.
+//
+// Two forms T-SQL accepts are refused. CASCADE also denies the privileges to
+// whoever the grantee granted them to, which a desired-state file cannot see.
+// AS names the principal the DENY runs as, which grants are not keyed by here.
+// A DENY with no ON denies a permission on the database, which is refused as
+// the GRANT of one is.
+func (p *Parser) parseDenyStatement() (ast.Node, error) {
+	if err := p.expect(lexer.TokenIdentifier, "DENY"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	privileges, columns, err := p.parseObjectPrivileges("DENY")
+	if err != nil {
+		return nil, err
+	}
+	target, err := p.parseGrantTarget("DENY")
+	if err != nil {
+		return nil, err
+	}
+	if err := requireColumnTarget("DENY", target, columns); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
+		return nil, fmt.Errorf("expected TO after DENY target: %w", err)
+	}
+	roles, err := p.parseGrantRoles()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	switch {
+	case p.current.MatchIdentifierValue("CASCADE"):
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"DENY ... CASCADE is not supported: it also denies the privileges to whoever the grantee granted "+
+				"them to, which a desired-state file cannot see"))
+	case p.current.MatchIdentifierValue("AS"):
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"DENY ... AS is not supported: grants are not keyed by grantor here"))
+	}
+	denies := &ast.StatementList{}
+	for _, role := range roles {
+		denies.Statements = append(denies.Statements,
+			ast.NewDenyPrivilege(role, target.objectType, target.objectName, privileges).SetColumns(columns))
+	}
+	return denies, nil
+}
+
 // parseRevokeSuffix reads what may follow the grantee of a REVOKE. RESTRICT is
 // PostgreSQL's default and changes nothing; see [Parser.parseRevokeStatement]
 // for the rest.

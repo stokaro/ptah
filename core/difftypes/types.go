@@ -1333,6 +1333,15 @@ type SchemaDiff struct {
 	// UnmanagedOwnerPrivileges it is not on the wire.
 	UnmanagedRoleMemberships []RoleMembershipRef `json:"-"`
 
+	// UnmanagedDenies is every SQL Server DENY the database holds on what the
+	// target schema describes and does not declare, where the comparison
+	// leaves it in place: only a target that holds every grant takes one away
+	// ([SchemaDiff.DeniesRemoved]). They are diagnostics, not changes: a
+	// report writes one line for each beside its result, and
+	// [SchemaDiff.HasChanges] does not count them. Like
+	// UnmanagedOwnerPrivileges they are not on the wire.
+	UnmanagedDenies []GrantRef `json:"-"`
+
 	// GrantsAdded contains PostgreSQL privilege grants that exist in the target
 	// schema but not in the current database schema.
 	GrantsAdded []GrantRef `json:"grants_added"`
@@ -1348,6 +1357,31 @@ type SchemaDiff struct {
 	// GrantOptionsRevoked contains PostgreSQL privileges whose WITH GRANT OPTION
 	// flag exists in the database but not in the target schema.
 	GrantOptionsRevoked []GrantRef `json:"grant_options_revoked"`
+
+	// DeniesAdded contains SQL Server DENY rows the target schema declares and
+	// the database lacks, for any grantee; see
+	// [ptah.run/core/schemamodel.Database.DeniedGrants]. WithOption is never
+	// set on one.
+	DeniesAdded []GrantRef `json:"denies_added,omitempty"`
+
+	// DeniesRemoved contains SQL Server DENY rows the database holds and the
+	// target schema does not declare, where the target holds every grant
+	// ([ptah.run/config.CompareOptions.DesiredGrantsComplete]), as a read of
+	// another database does. A plan takes each with a REVOKE, and a DENY on a
+	// column whose grantee holds the permission on the whole object with a
+	// GRANT on the column, which the server answers by keeping the object's
+	// row alone where a REVOKE would leave a row that withholds the column.
+	DeniesRemoved []GrantRef `json:"denies_removed,omitempty"`
+
+	// GrantsDeniesTake is the column grants the target schema declares and the
+	// database holds, of a permission that a DENY in DeniesAdded takes on
+	// their whole object. A DENY on an object takes the grants of its
+	// permission on the object's columns, and the server keeps a column grant
+	// written after it, so a plan grants each one again after the DENY. A
+	// column grant the target does not declare stays taken, whoever holds it,
+	// as a DENY run by hand takes it. Like CurrentGrants it is planning
+	// context and not on the wire.
+	GrantsDeniesTake []GrantRef `json:"-"`
 	// ConnectedRole is the role used to read a live PostgreSQL database. The
 	// planner checks it before revoking grants made by another role. An offline
 	// comparison leaves it empty, and it is not part of a report or saved plan.
@@ -1838,7 +1872,9 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.GrantsAdded) > 0 ||
 		len(d.GrantsRemoved) > 0 ||
 		len(d.GrantOptionsAdded) > 0 ||
-		len(d.GrantOptionsRevoked) > 0
+		len(d.GrantOptionsRevoked) > 0 ||
+		len(d.DeniesAdded) > 0 ||
+		len(d.DeniesRemoved) > 0
 }
 
 // hasConstraintChanges returns true if there are any constraint-related changes.
@@ -3776,6 +3812,14 @@ type GrantRef struct {
 	// ObjectOwner is the target owner's role in the live read. It is planning
 	// context and is absent from an offline declaration.
 	ObjectOwner string `json:"-"`
+
+	// Denied marks a row of [SchemaDiff.CurrentPartialRevokes] that is a SQL
+	// Server DENY; the others there are the REVOKE rows SQL Server keeps for a
+	// column revoked under a grant on its whole table. A GRANT or a REVOKE of
+	// a permission on a whole object takes the DENY rows of it on the object's
+	// columns, and a plan denies again the ones the diff keeps. It is set
+	// nowhere else and is not on the wire.
+	Denied bool `json:"-"`
 }
 
 // OnRelation reports a grant on a table or a view: an engine names a view as

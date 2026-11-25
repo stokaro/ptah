@@ -253,6 +253,8 @@ func collectAccessControlMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	mismatches = append(mismatches, grantMismatches(diff.GrantsRemoved, "extra_grant", "extra grant")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantOptionsAdded, "missing_grant_option", "missing grant option")...)
 	mismatches = append(mismatches, grantMismatches(diff.GrantOptionsRevoked, "extra_grant_option", "extra grant option")...)
+	mismatches = append(mismatches, grantMismatches(diff.DeniesAdded, "missing_deny", "missing deny")...)
+	mismatches = append(mismatches, grantMismatches(diff.DeniesRemoved, "extra_deny", "extra deny")...)
 	return mismatches
 }
 

@@ -1968,9 +1968,9 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 
 // refuseUnplannableChanges refuses, before the diff is read further, the
 // changes this planner cannot write for its target: an index changed in place,
-// a feature the target does not host, a role membership, a change of a
-// serial column's sequence, and, on Oracle, a collation change on a column an
-// index, key or CHECK uses.
+// a feature the target does not host, a role membership, a DENY on a target
+// other than SQL Server, a change of a serial column's sequence, and, on
+// Oracle, a collation change on a column an index, key or CHECK uses.
 func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return err
@@ -1984,6 +1984,9 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 		}
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), p.capabilities(), diff); err != nil {
+		return err
+	}
+	if err := schemaprecondition.RefuseDenies(p.targetDialect(), diff); err != nil {
 		return err
 	}
 	// A nil diff is refused as invalid further on, where every planner refuses it.
@@ -2136,7 +2139,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 00. On MySQL, MariaDB and SQL Server every revoke runs first, before a
 	// database, a table or a column is created. See [Planner.planRevokesFirst].
-	result = p.planRevokesFirst(result, diff)
+	result, err = p.planRevokesFirst(result, diff)
+	if err != nil {
+		return nil, err
+	}
 
 	// 0. The schemas the added objects live in are created before any of
 	// them, by guards put in front of the finished plan; see the end of this

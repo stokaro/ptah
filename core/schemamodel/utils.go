@@ -353,7 +353,7 @@ func NormalizeTableScopedNames(r *Database) {
 			rlsEnabled.Table = table.QualifiedName()
 		}
 	}
-	for _, grants := range [][]Grant{r.Grants, r.RevokedGrants} {
+	for _, grants := range [][]Grant{r.Grants, r.RevokedGrants, r.DeniedGrants} {
 		for i := range grants {
 			grant := &grants[i]
 			grant.Canonicalize()
@@ -1724,6 +1724,7 @@ func deduplicateSchemaObjects(r *Database) {
 	r.Constraints = deduplicateConstraints(r.Constraints)
 	r.Grants = deduplicateGrants(r.Grants)
 	r.RevokedGrants = deduplicateGrants(r.RevokedGrants)
+	r.DeniedGrants = deduplicateGrants(r.DeniedGrants)
 	r.Roles = deduplicateRoles(r.Roles)
 }
 

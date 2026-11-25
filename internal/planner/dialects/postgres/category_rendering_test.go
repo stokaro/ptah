@@ -48,6 +48,8 @@ var supplementalDiffCategories = map[string]string{
 	"SkippedFeatures":                 "the objects the comparison left out because the target does not serve their model; PostgreSQL serves every model a skip names, and the plan's comment for one is written by the planner host for every dialect, which TestOffFamilyTargetsSkipADeclaredExtension drives",
 	"UnmanagedOwnerPrivileges":        "a diagnostic of the comparison: owner privileges the desired state does not manage, for which Ptah plans nothing by design, so no statement renders from it (stokaro/ptah#5765)",
 	"UnmanagedRoleMemberships":        "a diagnostic of the comparison: memberships whose member states no member_of, for which Ptah plans nothing by design, so no statement renders from it",
+	"UnmanagedDenies":                 "a diagnostic of the comparison: SQL Server DENY rows the plan keeps, for which Ptah plans nothing by design, so no statement renders from it",
+	"GrantsDeniesTake":                "the declared column grants a SQL Server DENY in DeniesAdded takes, which the SQL Server plan grants again after the DENY. It holds an entry only beside a DENY, which this planner refuses by name (the DeniesAdded fixture), so it reads the field nowhere",
 	"CurrentOwners":                   "the owner the read reported for every view and materialized view, which a view rebuild reads to give a view it drops and creates again back to its owner. It renders only beside the rebuild that reads it; TestViewRebuild_KeepsTheOwnerItFound_HappyPath drives it",
 	"DeclaredIndexes":                 "every declared index with its relation resolved, which a view rebuild reads to put back the indexes of a materialized view it drops and creates again. It renders only beside the rebuild that reads it; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4976)",
 	"DeclaredTriggers":                "every declared trigger, which a view rebuild reads to put back the triggers of a view it drops and creates again. It renders only beside the rebuild that reads it; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4976)",
@@ -116,6 +118,14 @@ var refusedDiffCategories = map[string]refusedFixture{
 	"RLSForceChanged": {
 		why:  "FORCE is one of the switches the owner holds",
 		diff: &difftypes.SchemaDiff{RLSForceChanged: difftypes.RLSForceChanges{{Table: "t", Forced: true}}},
+	},
+	"DeniesAdded": {
+		why:  "PostgreSQL has no DENY, and a declared one is refused before anything is compared, so a DENY reaches this planner only in a diff built by hand, and planning nothing would leave the privilege granted",
+		diff: &difftypes.SchemaDiff{DeniesAdded: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}}},
+	},
+	"DeniesRemoved": {
+		why:  "no PostgreSQL read reports a DENY, so one taken away reaches this planner only in a diff built by hand too",
+		diff: &difftypes.SchemaDiff{DeniesRemoved: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}}},
 	},
 }
 

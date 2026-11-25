@@ -332,6 +332,11 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseGrantStatement()
 	case "REVOKE":
 		return p.parseRevokeStatement()
+	case "DENY":
+		if !p.target.grammar.Forms.Deny {
+			return nil, p.refuseHead(p.current.Start, "", keyword, "unsupported SQL statement: %s")
+		}
+		return p.parseDenyStatement()
 	case "DO":
 		return p.parseDoStatement()
 	case "GO":

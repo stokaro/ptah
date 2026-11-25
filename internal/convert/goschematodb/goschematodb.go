@@ -1014,56 +1014,73 @@ func toDBRoleMemberships(roles []schemamodel.Role) []catalog.RoleMembership {
 	return out
 }
 
+// toDBGrants describes the grants and the denied grants of db as the rows a
+// read reports: one per privilege and column. A denied grant is a DENY row,
+// marked as SQL Server's reader marks one ([catalog.Grant.Denied]).
 func toDBGrants(db *schemamodel.Database, dialect string) []catalog.Grant {
 	var out []catalog.Grant
 	for _, grant := range db.Grants {
-		grant.Canonicalize()
-		for _, privilege := range grant.Privileges {
-			objectType := "TABLE"
-			objectName := grant.OnTable
-			objectSchema := ""
-			arguments := ""
-			switch {
-			case grant.OnDatabase:
-				objectType = "DATABASE"
-				objectName = ""
-			case grant.OnObject != "":
-				objectType = grant.ObjectKind
-				objectName, objectSchema = splitTableIdentity(grant.OnObject)
-			case grant.OnSchema != "":
-				objectType = "SCHEMA"
-				objectName = grant.OnSchema
-			case grant.OnSequence != "":
-				objectType = "SEQUENCE"
-				objectName, objectSchema = splitTableIdentity(grant.OnSequence)
-			case grant.OnRoutine != "":
-				objectType = grant.RoutineKind
-				objectName, objectSchema = splitTableIdentity(grant.OnRoutine)
-				arguments = grant.RoutineArguments
-			default:
-				objectName, objectSchema = splitTableIdentity(objectName)
-			}
-			columns := grant.Columns
-			if len(columns) == 0 {
-				columns = []string{""}
-			}
-			for _, column := range columns {
-				out = append(out, catalog.Grant{
-					Role:       grant.Role,
-					Privilege:  privilege,
-					ObjectType: objectType,
-					Schema:     objectSchema,
-					ObjectName: objectName,
-					Arguments:  arguments,
-					Column:     column,
-					WithOption: grant.WithOption,
-					GrantedBy:  grant.GrantedBy,
-				})
-			}
+		out = append(out, grantRows(grant)...)
+	}
+	for _, denied := range db.DeniedGrants {
+		for _, row := range grantRows(denied) {
+			row.WithOption, row.GrantedBy = false, ""
+			row.IsPartialRevoke, row.Denied = true, true
+			out = append(out, row)
 		}
 	}
 	if described, _ := platform.Lookup(dialect); described.Conversion.ImplicitRoutineGrants {
 		out = append(out, implicitRoutineGrants(db)...)
+	}
+	return out
+}
+
+// grantRows is the row of each privilege and column grant names.
+func grantRows(grant schemamodel.Grant) []catalog.Grant {
+	var out []catalog.Grant
+	grant.Canonicalize()
+	for _, privilege := range grant.Privileges {
+		objectType := "TABLE"
+		objectName := grant.OnTable
+		objectSchema := ""
+		arguments := ""
+		switch {
+		case grant.OnDatabase:
+			objectType = "DATABASE"
+			objectName = ""
+		case grant.OnObject != "":
+			objectType = grant.ObjectKind
+			objectName, objectSchema = splitTableIdentity(grant.OnObject)
+		case grant.OnSchema != "":
+			objectType = "SCHEMA"
+			objectName = grant.OnSchema
+		case grant.OnSequence != "":
+			objectType = "SEQUENCE"
+			objectName, objectSchema = splitTableIdentity(grant.OnSequence)
+		case grant.OnRoutine != "":
+			objectType = grant.RoutineKind
+			objectName, objectSchema = splitTableIdentity(grant.OnRoutine)
+			arguments = grant.RoutineArguments
+		default:
+			objectName, objectSchema = splitTableIdentity(objectName)
+		}
+		columns := grant.Columns
+		if len(columns) == 0 {
+			columns = []string{""}
+		}
+		for _, column := range columns {
+			out = append(out, catalog.Grant{
+				Role:       grant.Role,
+				Privilege:  privilege,
+				ObjectType: objectType,
+				Schema:     objectSchema,
+				ObjectName: objectName,
+				Arguments:  arguments,
+				Column:     column,
+				WithOption: grant.WithOption,
+				GrantedBy:  grant.GrantedBy,
+			})
+		}
 	}
 	return out
 }

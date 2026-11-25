@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,18 +16,23 @@ import (
 const sqlServerColumnBase = "CREATE TABLE dbo.t (id INT PRIMARY KEY, name NVARCHAR(50), secret NVARCHAR(50));\n" +
 	"CREATE ROLE cp_reader;\n"
 
+// sqlServerColumnFixture is the statements that give a scratch database the
+// table and the role of [sqlServerColumnBase], and a user cp_member in the
+// role.
+var sqlServerColumnFixture = []string{
+	"CREATE TABLE dbo.t (id INT PRIMARY KEY, name NVARCHAR(50), secret NVARCHAR(50))",
+	"INSERT INTO dbo.t VALUES (1, N'a', N's')",
+	"CREATE ROLE cp_reader",
+	"CREATE USER cp_member WITHOUT LOGIN",
+	"ALTER ROLE cp_reader ADD MEMBER cp_member",
+}
+
 // sqlServerColumnDatabase is a scratch database holding the table and the role
 // of [sqlServerColumnBase], a user cp_member in the role, and held.
 func sqlServerColumnDatabase(c *qt.C, held ...string) (string, *sql.DB) {
 	c.Helper()
 	target, db := declaredSQLServerDatabase(c)
-	declaredSQLServerExec(c, db, append([]string{
-		"CREATE TABLE dbo.t (id INT PRIMARY KEY, name NVARCHAR(50), secret NVARCHAR(50))",
-		"INSERT INTO dbo.t VALUES (1, N'a', N's')",
-		"CREATE ROLE cp_reader",
-		"CREATE USER cp_member WITHOUT LOGIN",
-		"ALTER ROLE cp_reader ADD MEMBER cp_member",
-	}, held...)...)
+	declaredSQLServerExec(c, db, append(slices.Clone(sqlServerColumnFixture), held...)...)
 	return target, db
 }
 
@@ -70,10 +76,17 @@ func sqlServerPermissionStatements(rendered string) []string {
 // permission of its own, and answers what the server says.
 func sqlServerAsMember(c *qt.C, db *sql.DB, statement string) error {
 	c.Helper()
+	return sqlServerAs(c, db, "cp_member", statement)
+}
+
+// sqlServerAs runs statement as the database user named, and answers what the
+// server says.
+func sqlServerAs(c *qt.C, db *sql.DB, user, statement string) error {
+	c.Helper()
 	conn, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(conn.Close(), qt.IsNil) }()
-	_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = 'cp_member'; "+statement+"; REVERT;")
+	_, err = conn.ExecContext(c.Context(), "EXECUTE AS USER = '"+user+"'; "+statement+"; REVERT;")
 	return err
 }
 
@@ -90,10 +103,9 @@ func sqlServerAsMember(c *qt.C, db *sql.DB, statement string) error {
 // declaration spells another way than the catalog is one column under the
 // database's case-insensitive collation.
 //
-// A table permission with a column row of another state under it holds for
-// the other columns only. Read as the whole table, the declaration of the
-// whole table would compare equal and the plan would leave the member without
-// the column.
+// A table permission with a column revoked under it holds for the other
+// columns only. Read as the whole table, the declaration of the whole table
+// would compare equal and the plan would leave the member without the column.
 func TestSchemaApplySQLServerColumnPermissionsE2E_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -133,15 +145,6 @@ func TestSchemaApplySQLServerColumnPermissionsE2E_HappyPath(t *testing.T) {
 		{
 			name:     "a table permission with a column revoked under it",
 			held:     []string{"GRANT SELECT ON dbo.t TO cp_reader", "REVOKE SELECT (secret) ON dbo.t FROM cp_reader"},
-			declared: "GRANT SELECT ON dbo.t TO cp_reader;\n",
-			want:     []string{"SELECT GRANT"},
-			reads:    "SELECT id, name, secret FROM dbo.t",
-			denied:   "UPDATE dbo.t SET name = N'b'",
-			refusal:  `(?s).*The UPDATE permission was denied on the object 't'.*`,
-		},
-		{
-			name:     "a table permission with a column denied under it",
-			held:     []string{"GRANT SELECT ON dbo.t TO cp_reader", "DENY SELECT (secret) ON dbo.t TO cp_reader"},
 			declared: "GRANT SELECT ON dbo.t TO cp_reader;\n",
 			want:     []string{"SELECT GRANT"},
 			reads:    "SELECT id, name, secret FROM dbo.t",
@@ -204,11 +207,11 @@ func TestSchemaApplySQLServerColumnPermissionsE2E_FailurePath(t *testing.T) {
 	c.Assert(sqlServerPermissionsOf(c, db, "cp_reader"), qt.DeepEquals, []string{"SELECT GRANT id"})
 }
 
-// `ptah db read` prints a column permission on its column, and leaves out the
-// rows that withhold one: a DENY, and the REVOKE row a column revoke leaves
-// under a grant on the whole table. That grant prints as the permission on
-// each other column. Printed as the whole table, the output would give a role
-// that replays it the column the source database keeps from it.
+// `ptah db read` prints a column permission on its column and a DENY as a
+// DENY, and leaves out the REVOKE row a column revoke leaves under a grant on
+// the whole table. That grant prints as the permission on each other column.
+// Printed as the whole table, the output would give a role that replays it the
+// column the source database keeps from it.
 func TestDBReadSQLServerColumnPermissionsE2E(t *testing.T) {
 	c := qt.New(t)
 	target, _ := sqlServerColumnDatabase(c,
@@ -229,5 +232,6 @@ func TestDBReadSQLServerColumnPermissionsE2E(t *testing.T) {
 		"GRANT SELECT ([id]) ON [dbo].[t] TO [cp_reader];",
 		"GRANT SELECT ([name]) ON [dbo].[t] TO [cp_reader];",
 		"GRANT UPDATE ([name]) ON [dbo].[t] TO [cp_reader] WITH GRANT OPTION;",
+		"DENY SELECT ([secret]) ON [dbo].[t] TO [cp_reader];",
 	})
 }
