@@ -2018,7 +2018,11 @@ each time. A statement of the plan that defines one runs under the session's
 own mode, as mysqldump writes each body, and the strict mode is set again
 after it. So a trigger keeps the mode the session had, and a later insert
 from the application's loose session runs the trigger as it would without
-the strict session.
+the strict session. The window recognizes the spellings Ptah renders. A body
+that an edited or hand-written plan spells with a `DEFINER` host of several
+dotted parts, an `ALTER EVENT` with a `DEFINER`, a MariaDB package, or a body
+inside an executable comment is not recognized and keeps the strict mode
+(stokaro/ptah#6660).
 
 Migration files run under the session's mode as written, since a file may
 depend on it. To change a column that a row no longer fits, update or delete
