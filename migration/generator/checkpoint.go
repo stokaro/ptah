@@ -455,9 +455,9 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: no migrations found in %s", opts.MigrationsDir)
 	}
 
-	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
+	mig := shadowdb.GuardedMigrator(lease, migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
-		WithAppliedHistoryReplay()
+		WithAppliedHistoryReplay())
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

@@ -387,10 +387,10 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 	}
 
 	provider := migrator.NewRegisteredMigrationProvider(migrations...)
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, provider))
+	mig := shadowdb.ReplayMigrator(lease, migrator.NewMigrator(conn, provider))
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	previousVersion := latestMigrationVersion(prior)
-	if err := replayVerified(ctx, conn, provider, mig, previousVersion); err != nil {
+	if err := replayVerified(ctx, conn, lease, provider, mig, previousVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return newVerificationError("replay", "replay_error", description, err)
 		}
@@ -418,12 +418,13 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 func replayVerified(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	lease *shadowdb.Lease,
 	provider migrator.MigrationProvider,
 	mig *migrator.Migrator,
 	previousVersion int64,
 ) error {
 	if previousVersion > 0 {
-		history := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, provider).WithAppliedHistoryReplay())
+		history := shadowdb.ReplayMigrator(lease, migrator.NewMigrator(conn, provider).WithAppliedHistoryReplay())
 		if err := history.MigrateTo(ctx, previousVersion); err != nil {
 			return err
 		}

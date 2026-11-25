@@ -142,6 +142,14 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
+	// The forwarded rollback reads PTAH_TRUST_REPLAY_SQL through the native
+	// --trust-replay-sql binding and PTAH_DEV_SERVER_DISPOSABLE itself. This
+	// path replays the rollback on the dev database on its own, so it reads
+	// both for the dev replay guard.
+	devReplay, err := dbcli.DevReplayOptionsDeclared(cmd)
+	if err != nil {
+		return err
+	}
 	// A golang-migrate file runs the way golang-migrate runs it, which opens no
 	// transaction around a file, on the target and on the dev database alike.
 	ownTransactions := runner.TransactionOwner() == lintext.TransactionOwnerFile
@@ -296,7 +304,7 @@ func runAtlasMigrateDownFormat(
 	if opts.devURL != "" && !plan.Noop() {
 		// Inside the guard on purpose: a rollback with nothing to replay must
 		// not pay for a container it will not use.
-		devURL, releaseDev, resolveErr := devdocker.Resolve(cmd.Context(), opts.devURL, devdocker.Options{})
+		devURL, releaseDev, resolveErr := devdocker.Resolve(cmd.Context(), opts.devURL, devReplay)
 		if resolveErr != nil {
 			return resolveErr
 		}

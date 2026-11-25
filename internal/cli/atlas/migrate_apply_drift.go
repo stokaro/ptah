@@ -63,6 +63,7 @@ func prepareAtlasApplyDrift(
 	cmd *cobra.Command,
 	config projectconfig.Config,
 	targetURL, devURL string,
+	devReplay devdocker.Options,
 	conn *dbschema.DatabaseConnection,
 	plan atlasmigrate.ApplyPlan,
 ) (*driftgate.Check, func(), error) {
@@ -81,7 +82,7 @@ func prepareAtlasApplyDrift(
 	if err != nil {
 		return nil, func() {}, err
 	}
-	shadowURL, release, err := devdocker.Resolve(ctx, devURL, devdocker.Options{})
+	shadowURL, release, err := devdocker.Resolve(ctx, devURL, devReplay)
 	if err != nil {
 		return nil, func() {}, err
 	}

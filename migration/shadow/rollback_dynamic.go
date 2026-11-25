@@ -169,7 +169,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: register migrations: %w", err)
 	}
-	mig = shadowdb.ReplayMigrator(mig.WithAppliedHistoryReplay())
+	mig = shadowdb.ReplayMigrator(lease, mig.WithAppliedHistoryReplay())
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateTo(ctx, opts.TargetVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

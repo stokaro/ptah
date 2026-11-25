@@ -19,10 +19,14 @@ import (
 // keep. The claim needs the release: a verification that left its replay
 // behind, revision table included, would find it on the next run and refuse
 // the database it had filled itself (stokaro/ptah#3811).
+//
+// A lease also carries the guard every replay into the database runs through,
+// installed by [ReplayMigrator] and [GuardedMigrator].
 type Lease struct {
 	conn     *dbschema.DatabaseConnection
 	baseline devclean.Baseline
 	metadata []string
+	guard    *devclean.ReplayGuard
 }
 
 // Claim refuses a database that holds anything the reset would drop, before
@@ -35,6 +39,11 @@ type Lease struct {
 //
 // It belongs before the verification's first reset, and before the caller
 // defers Release: deferred first, the release would run on the refusal too.
+//
+// The claim also builds the lease's replay guard, so a session the guard
+// refuses, such as a MySQL client character set it cannot read statements in,
+// refuses the claim before anything resets the database; see
+// [devclean.NewDevReplayGuardFor].
 func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (*Lease, error) {
 	baseline, err := devclean.Claim(ctx, conn)
 	if notClean, ok := errors.AsType[*migrateclean.NotCleanError](err); ok {
@@ -43,7 +52,31 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (*Lease, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Lease{conn: conn, baseline: baseline}, nil
+	guard, err := replayGuard(ctx, conn, baseline)
+	if err != nil {
+		return nil, err
+	}
+	return &Lease{conn: conn, baseline: baseline, guard: guard}, nil
+}
+
+// replayGuard is the guard of a replay into conn, a database claimed with
+// baseline: the dev replay guard every replay of a migration history on a dev
+// database runs through, with the realm, the session reading and the trust
+// [devclean.NewDevReplayGuardFor] gives it.
+//
+// The lease's release resets the database with baseline, so the guard accepts
+// what that reset takes back: a comment on a schema it returns to its recorded
+// state, and a publication the claim did not find. A body the migrator runs
+// with the transactions it opens itself, as golang-migrate sends it, has its
+// transaction control read the way that runner reads it; the migrator asks
+// for that reading of no other body.
+func replayGuard(ctx context.Context, conn *dbschema.DatabaseConnection, baseline devclean.Baseline) (*devclean.ReplayGuard, error) {
+	guard, err := devclean.NewDevReplayGuardFor(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	return guard.WithOwnTransactions().WithUnwrappedTransactions().
+		WithSchemaCommentReturned(baseline.ReturnsSchemaState).WithPublications(baseline.Publications), nil
 }
 
 // DropsMetadata names revision tables Release drops as well. A reset keeps a

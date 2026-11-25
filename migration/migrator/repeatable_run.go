@@ -342,8 +342,9 @@ func (m *Migrator) refuseBoundedRepeatables(
 // refuseRepeatablesWhatFilesRefuse asks every selected repeatable migration,
 // before anything runs, what the versioned path asks of a file before it
 // marks anything: a check directive, which a repeatable migration does not
-// take, a directive or statement the installed hooks refuse, and a statement
-// that cannot run inside the transaction the file would run in.
+// take, a directive or statement the installed hooks or the run's validator
+// refuse, and a statement that cannot run inside the transaction the file
+// would run in.
 func (m *Migrator) refuseRepeatablesWhatFilesRefuse(state *repeatableState, work []RepeatableWork) error {
 	for _, item := range work {
 		repeatable := state.repeatable(item.Identity)
@@ -365,6 +366,11 @@ func (m *Migrator) refuseRepeatablesWhatFilesRefuse(state *repeatableState, work
 			if err := refuse(m.conn); err != nil {
 				return err
 			}
+		}
+		// A repeatable migration runs in a transaction Ptah opens, so none of
+		// its statements is transaction control of its own.
+		if err := m.refuseWhatTheValidatorRefuses(repeatable.migration, MigrationDirectionUp, ownTransactionRun{}); err != nil {
+			return err
 		}
 		transactional, err := m.repeatableRunsInTransaction(repeatable)
 		if err != nil {

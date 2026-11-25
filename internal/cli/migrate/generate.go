@@ -490,7 +490,8 @@ func planGeneratedMigrationByReplay(
 type generateVariables struct {
 	integrity migrationintegrity.Policy
 	// devServerDisposable is what [devdocker.DisposableServerDeclared]
-	// resolved; only a --replay run reads it.
+	// resolved; a --replay run reads it for the dev database, and a shadow
+	// verification for the shadow database.
 	devServerDisposable bool
 }
 
@@ -522,9 +523,9 @@ type generateDatabases struct {
 }
 
 // resolveGenerateDatabases provisions a `docker://` dev and shadow database and
-// passes any other URL through, recording the dev server as the run's own when
-// the operator declared it disposable. On a failed second resolution the first
-// is released before returning.
+// passes any other URL through, recording the dev and the shadow server as the
+// run's own when the operator declared it disposable. On a failed second
+// resolution the first is released before returning.
 func resolveGenerateDatabases(
 	ctx context.Context,
 	devURL, shadowDB string,
@@ -536,7 +537,9 @@ func resolveGenerateDatabases(
 	if err != nil {
 		return generateDatabases{}, err
 	}
-	resolvedShadowDB, releaseShadow, err := devdocker.Resolve(ctx, shadowDB, devdocker.Options{})
+	resolvedShadowDB, releaseShadow, err := devdocker.Resolve(ctx, shadowDB, devdocker.Options{
+		DeclaredDisposable: devServerDisposable,
+	})
 	if err != nil {
 		releaseDev()
 		return generateDatabases{}, err

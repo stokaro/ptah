@@ -81,7 +81,7 @@ func prepareDriftCheck(
 	selection := atlasschema.LiveSelection{Exclude: exclude, ExcludeSources: sources, Diagnostics: cmd.ErrOrStderr()}
 	// Before the migration lock, so the lock is not held while a container
 	// starts.
-	shadowURL, release, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	shadowURL, release, err := devdocker.Resolve(ctx, opts.shadowDB, opts.devReplay)
 	if err != nil {
 		return nil, func() {}, err
 	}

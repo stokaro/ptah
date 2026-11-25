@@ -52,6 +52,7 @@ const (
 type options struct {
 	migrationsDir        string
 	shadowDB             string
+	trustReplaySQL       bool
 	dialect              string
 	description          string
 	version              string
@@ -99,6 +100,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "./migrations", "Directory containing migration files")
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Ephemeral shadow database URL the directory is replayed into (required)")
+	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect; inferred from the shadow database when omitted")
 	flags.StringVar(&opts.description, descriptionFlag, "checkpoint", "Checkpoint description used in the file name")
 	flags.StringVar(&opts.version, versionFlag, "", "Checkpoint version; defaults to one above the newest migration")
@@ -114,6 +116,11 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) error {
+	// First, because it attaches trust to the context every later step reads.
+	devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	integrityPolicy, err := migrationintegrity.Resolve()
@@ -207,7 +214,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	// Provisioned here, after every refusal decidable from the flags and the
 	// directory, so a run that was going to be refused never starts a
 	// container. A directly connectable URL passes through untouched.
-	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devReplay)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

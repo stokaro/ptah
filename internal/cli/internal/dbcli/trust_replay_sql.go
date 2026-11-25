@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/replaytrust"
 )
 
@@ -46,4 +47,38 @@ func TrustReplaySQLDeclared(cmd *cobra.Command) error {
 	}
 	TrustReplaySQL(cmd, trusted)
 	return nil
+}
+
+// DevReplayOptions resolves the declarations that decide how the dev replay
+// guard treats the dev database a native command replays SQL on, for a
+// command that takes --trust-replay-sql: it attaches trusted to cmd's context
+// as [TrustReplaySQL] does, and returns the options the command passes to
+// [devdocker.Resolve] for that database, which record it as the run's own when
+// the operator declared its server disposable
+// ([devdocker.DisposableServerDeclared]).
+//
+// A command calls it before its first early return, so a malformed
+// PTAH_DEV_SERVER_DISPOSABLE refuses every run and not only the one that would
+// have replayed.
+func DevReplayOptions(cmd *cobra.Command, trusted bool) (devdocker.Options, error) {
+	disposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return devdocker.Options{}, err
+	}
+	TrustReplaySQL(cmd, trusted)
+	return devdocker.Options{DeclaredDisposable: disposable}, nil
+}
+
+// DevReplayOptionsDeclared is [DevReplayOptions] for a command that takes no
+// flag for trust, as a ptah-compat command does: it reads trust from
+// [replaytrust.EnvVar] as [TrustReplaySQLDeclared] does.
+func DevReplayOptionsDeclared(cmd *cobra.Command) (devdocker.Options, error) {
+	disposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return devdocker.Options{}, err
+	}
+	if err := TrustReplaySQLDeclared(cmd); err != nil {
+		return devdocker.Options{}, err
+	}
+	return devdocker.Options{DeclaredDisposable: disposable}, nil
 }

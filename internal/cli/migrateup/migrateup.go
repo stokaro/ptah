@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/driftgate"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/migrationintegrity"
@@ -124,7 +125,11 @@ type options struct {
 	expectSequence       string
 	checkDrift           bool
 	shadowDB             string
+	trustReplaySQL       bool
 	driftExclude         []string
+	// devReplay is how the shadow database the drift check replays on is
+	// resolved: what [dbcli.DevReplayOptions] returned.
+	devReplay devdocker.Options
 	// driftDeclared is the drift check the selected atlas.hcl env declares,
 	// which runs when --check-drift was not given; see
 	// [resolveDriftRequest].
@@ -306,6 +311,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Disposable database the applied history is replayed on for --"+checkDriftFlag+"; it must be empty and "+
 			"distinct from the target, and it is emptied again afterwards",
 	)
+	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringArrayVar(
 		&opts.driftExclude,
 		driftExcludeFlag,
@@ -566,6 +572,11 @@ func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
 }
 
 func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
+	devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
+	if err != nil {
+		return err
+	}
+	opts.devReplay = devReplay
 	// --limit and --to-version select different prefixes of the pending list and
 	// neither outranks the other, so the pair is refused here rather than deep
 	// in the migrator, whose own refusal names an operand ("amount") that no

@@ -727,6 +727,7 @@ Read the columns as follows.
 | `--root-dir` | `string` | `./` | `PTAH_ROOT_DIR` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
 </div>
@@ -753,6 +754,7 @@ Read the columns as follows.
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
 </div>
@@ -841,6 +843,7 @@ Read the columns as follows.
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
 | `--target` | `string` | — | `PTAH_TARGET` | — |
 | `--to-tag` | `string` | — | `PTAH_TO_TAG` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
@@ -874,6 +877,7 @@ Read the columns as follows.
 | `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -1415,6 +1419,7 @@ Read the columns as follows.
 | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
 | `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |

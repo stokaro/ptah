@@ -81,6 +81,7 @@ type options struct {
 	dirFormat            string
 	atlasEnv             string
 	shadowDB             string
+	trustReplaySQL       bool
 	exclude              []string
 	jsonOutput           bool
 	plainHTTP            bool
@@ -93,6 +94,9 @@ type options struct {
 	revisionTableFormat  string
 	migrationLockTimeout string
 	migrationLockName    string
+	// devReplay is how the shadow database is resolved: what
+	// [dbcli.DevReplayOptions] returned.
+	devReplay devdocker.Options
 }
 
 // NewMigrationsDriftCommand returns `ptah migrations drift`.
@@ -157,6 +161,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Disposable database the applied history is replayed on (required, or the project's dev_url); "+
 			"it must be empty and distinct from the target, and it is emptied again afterwards. "+
 			"A docker:// URL starts a container for the run")
+	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringArrayVar(&opts.exclude, excludeFlag, nil,
 		"Schema objects the comparison leaves out, written as schema diff --exclude takes them (repeatable)")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false,
@@ -275,6 +280,11 @@ func noteUnacquiredLockName(w io.Writer, name migratelock.Name, conn *dbschema.D
 }
 
 func runDrift(cmd *cobra.Command, raw options, out *report) error {
+	devReplay, err := dbcli.DevReplayOptions(cmd, raw.trustReplaySQL)
+	if err != nil {
+		return err
+	}
+	raw.devReplay = devReplay
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
@@ -419,7 +429,7 @@ func (r driftRun) target(ctx context.Context, projectCfg projectconfig.Config) (
 	}
 	// Before the migration lock, so the lock is not held while a container
 	// starts.
-	shadowURL, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	shadowURL, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, opts.devReplay)
 	if err != nil {
 		return result, err
 	}
