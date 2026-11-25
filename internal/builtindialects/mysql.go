@@ -192,6 +192,10 @@ func mysql() descriptor.Dialect {
 		// covers: the server applies the policy the capabilities state at CREATE
 		// TABLE.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Measured on MySQL 8.4 under a strict sql_mode: MODIFY COLUMN rounds a
+		// decimal, a decimal under an integer, and a datetime, timestamp or time to
+		// the new digits, with a note at most.
+		Rounding: mysqlFamilyRounding,
 		// Comparison: what comparing a declaration with a catalog reads.
 		// MySQL creates an index for every foreign key unasked, and a
 		// database is the schema, so a key into another database is accepted
@@ -609,4 +613,25 @@ func mysqlFamilyQuery() descriptor.Query {
 		OffsetOnlyLimit:  "18446744073709551615",
 		Upsert:           descriptor.UpsertOnDuplicateKey,
 	}
+}
+
+// mysqlFamilyRounding reads a value the MySQL family's conversion would change, with
+// the server's own CAST: measured on MySQL 8.4 and MariaDB 11.8, CAST reads back what
+// MODIFY COLUMN stores. MySQL rounds 1234.567 to 1234.6 and 10:00:00.987654 to 10:00:01,
+// and cuts both under TIME_TRUNCATE_FRACTIONAL, in CAST and the ALTER alike; MariaDB
+// rounds the decimal and cuts the temporal value. CAST takes no TIMESTAMP and no INT,
+// so a timestamp is converted as a DATETIME of its digits and an integer as SIGNED or
+// UNSIGNED, which rounds a decimal as MODIFY COLUMN does. SERIAL is BIGINT UNSIGNED. A CAST in a SELECT cuts a value that overflows
+// the decimal with a warning where the strict ALTER fails, which counts the row too.
+var mysqlFamilyRounding = descriptor.Rounding{
+	Decimal:  "{column} <> CAST({column} AS {type})",
+	Temporal: "{column} <> CAST({column} AS {type})",
+	CastTypes: map[string]string{
+		"tinyint": "SIGNED", "smallint": "SIGNED", "mediumint": "SIGNED", "int": "SIGNED", "integer": "SIGNED",
+		"bigint": "SIGNED", "serial": "UNSIGNED",
+		"tinyint unsigned": "UNSIGNED", "smallint unsigned": "UNSIGNED", "mediumint unsigned": "UNSIGNED",
+		"int unsigned": "UNSIGNED", "integer unsigned": "UNSIGNED", "bigint unsigned": "UNSIGNED",
+		"decimal": "DECIMAL{args}", "dec": "DECIMAL{args}", "numeric": "DECIMAL{args}", "fixed": "DECIMAL{args}",
+		"datetime": "DATETIME{args}", "timestamp": "DATETIME{args}", "time": "TIME{args}",
+	},
 }

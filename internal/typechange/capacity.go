@@ -294,7 +294,7 @@ func numericNarrows(old, updated numericType) bool {
 		// a four-byte mantissa either way, and the next width does not.
 		return old.integer.bits-1 > updated.mantissa
 	case old.kind == numericDecimal && updated.kind == numericInteger:
-		return old.decimal.unlimited || old.decimal.scale > 0 || updated.integer.unsigned ||
+		return fewerScaleDigits(old.decimal, integerScale) || updated.integer.unsigned ||
 			old.decimal.precision >= updated.integer.decimalDigits()
 	case old.kind == numericDecimal && updated.kind == numericDecimal:
 		return decimalSizeNarrows(old.decimal, updated.decimal)

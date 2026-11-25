@@ -176,6 +176,7 @@ own measurement conditions.
 | [A MariaDB table changed to a UCA 14.0.0 collation](#a-mariadb-table-changed-to-a-uca-1400-collation) | writes the character set the collation names on the table, restates a column that takes it without one, and converges in one apply | writes the dev database's character set beside a collation of another, which MariaDB refuses, and gives such a column the character set's default collation |
 | [A backslash on a `NO_BACKSLASH_ESCAPES` session](#a-backslash-on-a-no_backslash_escapes-session) | writes a literal for the session that runs it, so the server stores the declared value | stores four backslashes where the declaration holds one |
 | [A column change a row does not fit, on a MySQL session without a strict mode](#a-column-change-a-row-does-not-fit-on-a-mysql-session-without-a-strict-mode) | runs the plan under a strict mode, so the server refuses the change, the row keeps its value, and the run exits `1` naming the column | applies the change, the server rewrites the row, and the run exits `0` |
+| [A type change that rounds stored values](#a-type-change-that-rounds-stored-values) | refuses a type change that keeps fewer digits after the point while a row holds a value it would change, and names each column, unless `PTAH_ALLOW_VALUE_ROUNDING=1` | applies the change, the server rounds each value, and the run exits `0` |
 
 ## A `--config` selection naming more than one file
 
@@ -2428,13 +2429,50 @@ files run under the session's mode as written, on both binaries.
 
 A trigger, a stored routine or an event the plan defines runs under the
 session's own mode, so the object keeps the mode the session had, as it
-would with no strict session. A change that rounds a value, such as
-`DECIMAL(8,3)` to `DECIMAL(8,1)`, is not refused (stokaro/ptah#6644). The
-strict session refuses `VARCHAR(20000)` in a `utf8mb4` table with error
+would with no strict session. The strict session does not refuse a change
+that rounds a value, such as `DECIMAL(8,3)` to `DECIMAL(8,1)`; the plan reads
+such a column before it runs, as
+[A type change that rounds stored values](#a-type-change-that-rounds-stored-values)
+says. The strict session refuses `VARCHAR(20000)` in a `utf8mb4` table with error
 1074, where a session without a strict mode builds `mediumtext`.
 
 **Evidence.** `integration/mysql_stored_values_e2e_test.go`,
 `integration/dbschema/mysql_stored_values_live_test.go`
+
+## A type change that rounds stored values
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A decimal with a lower scale or declared as an integer, or
+a temporal type with a lower fractional-second precision, keeps fewer digits after
+the point, and the server rounds or cuts each stored value without an error.
+`ptah-compat schema apply` and `schema plan new` count the rows whose value the
+server's `CAST` to the declared type changes, and refuse while any row would. The
+refusal names each column, both types and the count, and the table is unchanged.
+An empty table, and values whose extra digits are zero, plan as usual.
+
+A `.plan.hcl` records no such change, so `schema apply --plan` reads them from the
+`--to` state and counts the rows before it runs.
+
+Measured on 2026-11-25 with the community binary v1.4.0 on PostgreSQL 18.6, a
+`--dev-url` naming an empty database, and one row holding
+`1234.567` in `numeric(8,3)` and `10:00:00.987654` in `timestamp(6)`, declared as
+`numeric(8,1)` and `timestamp(0)`:
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `--auto-approve` | exit `0`, the row reads `1234.6` and `10:00:01` | exit `1`, both columns named, the row unchanged |
+| `--auto-approve`, `PTAH_ALLOW_VALUE_ROUNDING=1` | not read | exit `0`, the row reads `1234.6` and `10:00:01` |
+
+The variable restores the binary's behavior, so strict mode keeps it. Native
+`ptah schema apply` refuses the same way, and `--allow-value-rounding` asks for
+the change; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
+The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
+exits `0`, never the reverse.
+
+**Evidence.** `integration/valuerounding/rounding_e2e_test.go`
 
 ## Not on this page
 

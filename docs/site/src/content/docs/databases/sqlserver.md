@@ -352,6 +352,20 @@ accepts it. Ptah compares the names exactly and refuses only what holds under
 every collation, so a pair that differs in case reaches the server, which
 decides.
 
+## A lower scale or precision
+
+`ALTER COLUMN` rounds each value to the new digits and succeeds: `999.95` under
+`decimal(5,1)` reads `1000.0`, and `10:00:00.9876543` under `datetime2(0)` reads
+`10:00:01`. `time`, `datetimeoffset` and `money` round the same way, `smalldatetime`
+rounds to the minute, and `datetime` rounds to 1/300 of a second, so
+`10:00:00.001` under `datetime` reads `10:00:00.000`, and `10:00:00.123` is stored as
+`10:00:00.1233333`, which counts as a change. A decimal under an integer is cut:
+`1234.567` under `int` reads `1234`. A `datetimeoffset` under `datetime2`, `datetime` or
+`smalldatetime` keeps its clock time and drops the offset, and only the digits count.
+While a row holds a value the change would alter, `ptah schema plan` and
+`ptah schema apply` refuse the change; see
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
 ## Column defaults
 
 SQL Server keeps a column default as a constraint of its own, so `ALTER

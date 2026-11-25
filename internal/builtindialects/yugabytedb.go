@@ -136,6 +136,8 @@ func yugabyteDB() descriptor.Dialect {
 		// Measured on YugabyteDB 2026.1.2.0: a foreign key to a column no unique key
 		// covers fails at CREATE TABLE, indexed or not, as on PostgreSQL.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// The PostgreSQL conversion, which rounds, and the PostgreSQL functions.
+		Rounding: postgresFamilyRounding,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			// A bare name folds to lower case and a quoted one keeps its case,
@@ -144,7 +146,7 @@ func yugabyteDB() descriptor.Dialect {
 
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
-			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},
+			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24, MoneyScale: 2},
 			ExpressionProbes:   "pg-catalog",
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",

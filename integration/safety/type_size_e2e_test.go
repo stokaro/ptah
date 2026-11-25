@@ -179,7 +179,11 @@ func TestSchemaPlanE2E_AServerRefusesAValueTheSizeCannotHold(t *testing.T) {
 			plan := planOf(c, address, schema)
 			c.Assert(plan.Plan.Destructive, qt.IsTrue, qt.Commentf("%+v", plan.Plan.Statements))
 
-			run := clirun.Run(c, clirun.Ptah, clirun.Options{}, "schema", "apply", "--db-url", address, "--schema-file", schema, "--auto-approve")
+			// The server's refusal is the measurement, so the plan runs without the
+			// scan that refuses a decimal value the new size rounds or cannot hold.
+			run := clirun.Run(c, clirun.Ptah, clirun.Options{},
+				"schema", "apply", "--db-url", address, "--schema-file", schema, "--auto-approve", "--allow-value-rounding",
+			)
 			c.Assert(run.ExitCode, qt.Not(qt.Equals), 0)
 			c.Assert(run.Stdout+run.Stderr, qt.Contains, row.wantRefusal)
 			c.Assert(heldValue(c, conn, row.engine), qt.Equals, row.wantHeld)

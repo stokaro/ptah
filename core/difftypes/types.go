@@ -2023,6 +2023,19 @@ func (d *TableDiff) HasChanges() bool {
 		len(d.FeatureChanges) > 0)
 }
 
+// Rounding is a column type change that keeps fewer digits after the point
+// than the type the column holds; see [ColumnDiff.Rounding].
+type Rounding struct {
+	// Temporal reports a temporal type. False reports a decimal, under a
+	// decimal or an integer.
+	Temporal bool `json:"temporal,omitempty"`
+	// HeldType is the type the database holds, as its catalog spells it.
+	HeldType string `json:"held_type"`
+	// DeclaredType is the type the plan converts the column to, as the plan's
+	// statement spells it.
+	DeclaredType string `json:"declared_type"`
+}
+
 // ColumnDiff represents specific property changes within a database column.
 //
 // This structure captures the detailed differences between the current column
@@ -2073,6 +2086,16 @@ type ColumnDiff struct {
 	// TypeNarrows for this engine, including a false answer; safety uses the
 	// displayed transition only when no such answer is available.
 	PreviousType string `json:"previous_type,omitempty"`
+
+	// Rounding is set when the column's new type keeps fewer digits after the
+	// point than the type it holds, as the engine reads the two: a decimal
+	// with a lower scale, a decimal under an integer, or a temporal type of
+	// the same kind with a lower fractional-second precision or, for an
+	// interval, a coarser last field. Converting the column stores each value
+	// at the new type's digits, and most servers round or cut the value
+	// without an error. It is nil for every other change, an array included,
+	// and where the comparison cannot read the digits of both types.
+	Rounding *Rounding `json:"rounding,omitempty"`
 
 	// CharsetChange carries the change of the column's character set that a
 	// change of its collation makes, and is nil where the character set stays

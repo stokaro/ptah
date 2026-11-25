@@ -53,6 +53,7 @@ community CLI does on the same input.
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
 | [`PTAH_ALLOW_TABLE_REBUILD`](#ptah_allow_table_rebuild) | Plan a change the target cannot make in place as a table rebuild |
 | [`PTAH_SKIP_CHECK_SCAN`](#ptah_skip_check_scan) | Add a ClickHouse `CHECK` without scanning the rows the table holds |
+| [`PTAH_ALLOW_VALUE_ROUNDING`](#ptah_allow_value_rounding) | Give a column fewer digits after the point without reading the stored values |
 | [`PTAH_ALLOW_SERVER_CLEAN`](#ptah_allow_server_clean) | Clean a whole MySQL or MariaDB server |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
 | [`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`](#ptah_atlas_diff_without_dev_url) | Diff a schema file with a database, no dev database |
@@ -228,6 +229,24 @@ row the `CHECK` refuses stays in the table. See
 
 The native `--skip-check-scan` flag reads the same variable. The community CLI has
 no ClickHouse driver and writes no scan, so the strict profile refuses the variable.
+
+## `PTAH_ALLOW_VALUE_ROUNDING`
+
+By default, `ptah-compat schema apply` and `schema plan new` read each column whose
+type change keeps fewer digits after the point, such as a decimal with a lower scale
+or a temporal type with a lower fractional-second precision, and refuse the plan while
+a row holds a value the server would round or cut. `schema apply --plan` reads them
+from the `--to` state for a `.plan.hcl` file, which records none. The refusal names
+each column and this variable. An empty table, and values whose extra digits are zero,
+plan as usual.
+
+Set it to `1` and the plan reads no rows. The run warns once for each column, and the
+server rounds or cuts each value to the new digits. See
+[A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+
+The variable matches the native `--allow-value-rounding` flag, which reads no
+variable. The community CLI reads no rows and converts the column, so the variable
+restores what it does, and the strict profile keeps it.
 
 ## `PTAH_ATLAS_LINT_WITHOUT_DEV_URL`
 

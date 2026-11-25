@@ -131,3 +131,43 @@ func (e *GeneratedKindError) Error() string { return e.Err.Error() }
 
 // Unwrap returns the wrapped refusal.
 func (e *GeneratedKindError) Unwrap() error { return e.Err }
+
+// RoundedValue is one column a plan would convert to a type that keeps fewer
+// digits after the point while the table holds values the conversion changes.
+type RoundedValue struct {
+	// Table is the column's table, as the comparison names it.
+	Table string `json:"table"`
+	// Column is the column, as the schema spells it.
+	Column string `json:"column"`
+	// HeldType is the type the database holds.
+	HeldType string `json:"held_type"`
+	// DeclaredType is the type the schema declares.
+	DeclaredType string `json:"declared_type"`
+	// Rows is how many rows hold a value the conversion would change.
+	Rows int64 `json:"rows"`
+	// Unconvertible is the server's error where it cannot convert a value the
+	// column holds to the declared type at all, and empty otherwise; Rows is
+	// then zero, as the server counts no row.
+	Unconvertible string `json:"unconvertible,omitempty"`
+}
+
+// RoundedValuesError is the refusal of a plan that would convert a column to a
+// type that keeps fewer digits after the point, a decimal with a lower scale or
+// under an integer, or a temporal type with a lower fractional-second
+// precision, while the table holds a value with digits the new type has no
+// room for. The server rounds or cuts each such value without an error, so
+// the refusal is raised before any statement runs. A value the new type
+// cannot hold at all is refused the same way, with the server's error.
+type RoundedValuesError struct {
+	// Columns are the columns whose values would change, in the order the
+	// comparison lists the tables and each table's columns.
+	Columns []RoundedValue
+	// Err is the refusal as the command reports it, naming every column.
+	Err error
+}
+
+// Error returns the message of the wrapped refusal.
+func (e *RoundedValuesError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped refusal.
+func (e *RoundedValuesError) Unwrap() error { return e.Err }

@@ -302,6 +302,29 @@ func TestMarshalPlanFileHCLEndsANoteWithoutASemicolon(t *testing.T) {
 	c.Assert(read.Statements, qt.DeepEquals, plan.Statements)
 }
 
+// TestMarshalPlanFileHCLLeavesRoundingsToTheApply writes a plan whose type changes
+// keep fewer digits after the point. The Atlas format records no such change, and
+// applying the file reads them from the desired state instead, so the planning has no
+// reason to refuse the format for a change no row holds.
+func TestMarshalPlanFileHCLLeavesRoundingsToTheApply(t *testing.T) {
+	c := qt.New(t)
+	plan := goldenPlan()
+	plan.Roundings = []atlasschema.PlanRounding{{
+		Table: "prices", Column: "amount", HeldType: "decimal(8,3)", DeclaredType: "decimal(8,1)",
+	}}
+	path := filepath.Join(t.TempDir(), "roundings.plan.hcl")
+
+	document, err := atlasschema.MarshalPlanFileHCL(plan)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(document), qt.Not(qt.Contains), "amount")
+
+	c.Assert(os.WriteFile(path, document, 0o600), qt.IsNil)
+	read, _, err := readPlanDocument(c, path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(read.Roundings, qt.HasLen, 0)
+	c.Assert(read.StatementSQL(), qt.DeepEquals, plan.StatementSQL())
+}
+
 func TestMarshalPlanFileHCLRefusesUnrepresentablePlans(t *testing.T) {
 	tests := []struct {
 		name   string

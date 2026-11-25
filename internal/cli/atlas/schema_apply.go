@@ -543,7 +543,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 	}
 	if strings.TrimSpace(opts.planURL) != "" {
-		return runAtlasSchemaApplyPlanFile(cmd, opts)
+		return runAtlasSchemaApplyPlanFile(cmd, opts, policy)
 	}
 	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) &&
 		atlasExpandedDesiredState(projectCfg) != "" {
@@ -841,7 +841,7 @@ func atlasSchemaFileSourceURLs(sources []schemafile.Source) []string {
 // the target's current schema and must reach exactly the desired state.
 // Whenever a desired state is available, the end state is verified again on
 // the target after the apply.
-func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions, policy atlasschema.DiffPolicy) error {
 	if err := validateAtlasSchemaApplyPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -961,6 +961,15 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		if !plan.HasChanges() {
 			atlasschema.WriteUnitReports(cmd.OutOrStdout(), nil, plan.Annotations)
 			return nothingPlannedMessage(len(plan.Annotations)), nil
+		}
+		// The Atlas plan format records no column type change whose rows the
+		// planning read, so they are read from the desired state here, and
+		// again before the first statement runs.
+		if planFormat == atlasschema.PlanFormatHCL {
+			plan, err = atlasschema.ReviewPlanRoundings(cmd.Context(), conn, desired, plan, opts.devURL, opts.runtime, policy)
+			if err != nil {
+				return "", err
+			}
 		}
 		if plan.HasNative() || plan.HasInputReferences() {
 			return applyAtlasNativePlanFile(cmd, opts, conn, plan, txMode, desired)

@@ -45,6 +45,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolepassword"
+	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
@@ -181,6 +182,12 @@ type ApplyOptions struct {
 	// for the session it was planned on: a saved plan runs later, on a session
 	// the plan cannot name. See [backslashmode.ForLater].
 	forLater bool
+	// roundingsOnly stops the computation once the comparison has been read
+	// for the column changes that keep fewer digits after the point, and their
+	// rows counted: no statement is planned, rehearsed or reported. A saved
+	// plan whose format records no such change reads them this way; see
+	// [ReviewPlanRoundings].
+	roundingsOnly bool
 	// naming is where a desired name written without a schema is placed; see
 	// [namingFor]. Unresolved, it is decided from the connection and DevURL.
 	// A comparison on the dev database carries the target's, so both place a
@@ -219,6 +226,14 @@ type ApplyPlan struct {
 	// the objects it changes; see [planeffect.Describe]. It is nil when no unit
 	// is described.
 	effects [][]planeffect.Effect
+	// roundings are the column type changes keeping fewer digits after the
+	// point whose rows the planning read and found no value to change.
+	// [ApplyPlan.Execute] reads them again before the first statement, since a
+	// row can be written between the planning and the approval.
+	roundings []roundingscan.Change
+	// roundingRequest is how the caller asks for those changes without the
+	// scan, which a refusal names.
+	roundingRequest string
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -451,6 +466,13 @@ type applyComputation struct {
 	// reads them again, so a row that moved after planning makes the plan stale
 	// the way a moved column does.
 	rowSets []PlanRowSet
+	// roundings are the column type changes keeping fewer digits after the
+	// point whose rows the planning read and found no value to change. A
+	// saved plan records them, and [VerifyPlanTarget] reads the rows again.
+	roundings []roundingscan.Change
+	// roundingRequest is how the caller asks for the changes in roundings
+	// without the scan; see [DiffPolicy.ValueRoundingRequest].
+	roundingRequest string
 	// naming is where the comparison placed a desired name written without a
 	// schema. A saved plan records its schema.
 	naming desiredNaming
@@ -662,53 +684,16 @@ func computeApplyPlan(
 	if err := opts.Policy.ReviewOtherDialects(opts.Diagnostics, compared, info.Dialect, info.Capabilities); err != nil {
 		return applyComputation{}, err
 	}
-	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
-	if err := reviewApplyDiff(info, desired, diff, omitted, opts, placed); err != nil {
+	diff, roundings, err := reviewedApplyDiff(ctx, conn, info, desired, compared, opts, placed)
+	if err != nil {
 		return applyComputation{}, err
 	}
-	if diff.HasChanges() {
-		// The planner is handed the comparison as it came back, with the
-		// kinds the policy skips: it removes the same changes the filter
-		// above did, and the plan opens with a comment for each of them, as
-		// a generated migration does. Everything above decided on that
-		// filter's answer.
-		planOptions := planext.Options{
-			Capabilities:         info.Capabilities,
-			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-			OnlineAlter:          opts.Policy.OnlineAlter,
-			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-				opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
-			),
-			OmitNullBackfill:    opts.OmitNullBackfill,
-			AllowTableRebuild:   opts.Policy.AllowsTableRebuild(info.Dialect),
-			TableRebuildRequest: opts.Policy.TableRebuildRequest,
-			SkipCheckScan:       opts.Policy.SkipCheckScan,
-			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
-			Statements:          planstyle.Statements,
-			Shape:               opts.Shape,
-		}
-		plan, err := planner.GenerateSchemaDiffRenderedPlan(
-			ctx, opts.Runtime,
-			compared, info.Dialect, planOptions,
-		)
-		if err != nil {
-			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
-		}
-		omissionnote.Report(ctx, rundiag.Stream(ctx), plan.Result.Omissions)
-		computation.omissions = plan.Result.Omissions
-		effects := planeffect.Target{
-			Current:       current,
-			DefaultSchema: defaultSchemaOf(info),
-			Semantics:     compared.EffectiveIdentifierSemantics(info.Dialect),
-			ViewOptions:   info.Capabilities.Has(capability.ViewOptions),
-			// The descriptor says whether a view runs with its definer's or
-			// its invoker's privileges, which the comparison reads too.
-			ViewSQLSecurity: described(info.Dialect).Comparison.ViewSQLSecurity,
-		}
-		if err := computation.captureRenderedUnits(ctx, opts.Runtime, info, plan, effects); err != nil {
-			return applyComputation{}, err
-		}
+	computation.roundings, computation.roundingRequest = roundings, opts.Policy.ValueRoundingRequest
+	if opts.roundingsOnly {
+		return computation, nil
+	}
+	if err := computation.planStatements(ctx, opts, info, compared, diff, desired, current); err != nil {
+		return applyComputation{}, err
 	}
 	// The data stage runs whether or not the schema changed. A release that
 	// only edits a reference row changes no DDL, and a planner that returned
@@ -718,6 +703,84 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	return computation, nil
+}
+
+// planStatements renders the statements of diff, the comparison after the diff
+// policy, into c. A diff with no change plans none.
+func (c *applyComputation) planStatements(
+	ctx context.Context,
+	opts ApplyOptions,
+	info catalog.ServerInfo,
+	compared, diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+) error {
+	if !diff.HasChanges() {
+		return nil
+	}
+	// The planner is handed the comparison as it came back, with the
+	// kinds the policy skips: it removes the same changes the diff policy
+	// removed from diff, and the plan opens with a comment for each of
+	// them, as a generated migration does. Every review before this one
+	// decided on diff.
+	planOptions := planext.Options{
+		Capabilities:         info.Capabilities,
+		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+		OnlineAlter:          opts.Policy.OnlineAlter,
+		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+		ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+			opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
+		),
+		OmitNullBackfill:    opts.OmitNullBackfill,
+		AllowTableRebuild:   opts.Policy.AllowsTableRebuild(info.Dialect),
+		TableRebuildRequest: opts.Policy.TableRebuildRequest,
+		SkipCheckScan:       opts.Policy.SkipCheckScan,
+		SkipChangeKinds:     opts.Policy.SkipChangeKinds,
+		Statements:          planstyle.Statements,
+		Shape:               opts.Shape,
+	}
+	plan, err := planner.GenerateSchemaDiffRenderedPlan(
+		ctx, opts.Runtime,
+		compared, info.Dialect, planOptions,
+	)
+	if err != nil {
+		return fmt.Errorf("generate schema apply operations: %w", err)
+	}
+	omissionnote.Report(ctx, rundiag.Stream(ctx), plan.Result.Omissions)
+	c.omissions = plan.Result.Omissions
+	effects := planeffect.Target{
+		Current:       current,
+		DefaultSchema: defaultSchemaOf(info),
+		Semantics:     compared.EffectiveIdentifierSemantics(info.Dialect),
+		ViewOptions:   info.Capabilities.Has(capability.ViewOptions),
+		// The descriptor says whether a view runs with its definer's or
+		// its invoker's privileges, which the comparison reads too.
+		ViewSQLSecurity: described(info.Dialect).Comparison.ViewSQLSecurity,
+	}
+	return c.captureRenderedUnits(ctx, opts.Runtime, info, plan, effects)
+}
+
+// reviewedApplyDiff is the comparison after the diff policy, once every review
+// that refuses or reports what it holds has read it, and the type changes whose
+// stored values the rounding review read.
+func reviewedApplyDiff(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	info catalog.ServerInfo,
+	desired *schemamodel.Database,
+	compared *difftypes.SchemaDiff,
+	opts ApplyOptions,
+	placed placedDesired,
+) (*difftypes.SchemaDiff, []roundingscan.Change, error) {
+	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
+	if err := reviewApplyDiff(info, desired, diff, omitted, opts, placed); err != nil {
+		return nil, nil, err
+	}
+	roundings, err := reviewRoundedValues(ctx, conn, info.Dialect, diff, opts.Policy)
+	if err != nil {
+		return nil, nil, err
+	}
+	return diff, roundings, nil
 }
 
 // reviewApplyDiff refuses or reports what diff, the comparison after the diff
@@ -758,6 +821,32 @@ func reviewApplyDiff(
 	ReportUnmanagedRoleMemberships(opts.Diagnostics, diff.UnmanagedRoleMemberships)
 	ReportUnmanagedDenies(opts.Diagnostics, diff.UnmanagedDenies)
 	return nil
+}
+
+// reviewRoundedValues refuses a plan that converts a column to a type keeping
+// fewer digits after the point while the table holds a value the conversion
+// would change, or, where the policy asks for the conversion anyway, warns of
+// each such column. It reads diff after the policy, so a change the plan will
+// not make reads no row.
+//
+// It returns the changes it read the rows of, which a saved plan records so
+// that applying it reads them again; see [PlanFile.Roundings].
+func reviewRoundedValues(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	dialect string,
+	diff *difftypes.SchemaDiff,
+	policy DiffPolicy,
+) ([]roundingscan.Change, error) {
+	changes := roundingscan.Changes(diff, dialect)
+	if policy.AllowValueRounding {
+		roundingscan.Warn(ctx, changes)
+		return nil, nil
+	}
+	if err := roundingscan.Refuse(ctx, conn, changes, policy.ValueRoundingRequest); err != nil {
+		return nil, err
+	}
+	return changes, nil
 }
 
 // renderCapabilities is the capability set the plan's statements are spelled
@@ -1734,6 +1823,7 @@ func (c applyComputation) executionPlan() ApplyPlan {
 	plan.texts = c.executionTexts()
 	plan.changes = c.executionChanges()
 	plan.effects = c.executionEffects()
+	plan.roundings, plan.roundingRequest = c.roundings, c.roundingRequest
 	return plan
 }
 

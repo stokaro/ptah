@@ -183,6 +183,10 @@ func postgres() descriptor.Dialect {
 		// Measured on PostgreSQL 18: a foreign key to a column no unique key covers
 		// fails at CREATE TABLE with 42830, indexed or not.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Measured on PostgreSQL 18.6: ALTER COLUMN TYPE rounds numeric, money,
+		// timestamp, timestamptz, time, timetz and interval to the new digits, and
+		// numeric under an integer, and succeeds.
+		Rounding: postgresFamilyRounding,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			// A bare name folds to lower case and a quoted one keeps its case,
@@ -191,7 +195,7 @@ func postgres() descriptor.Dialect {
 
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
-			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},
+			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24, MoneyScale: 2},
 			ForeignKeysOutside: true,
 			// pg_constraint.conindid names the index, and `DROP CONSTRAINT`
 			// on it answers `cannot drop constraint parent_pkey on table
@@ -387,4 +391,28 @@ func postgresAtlasColumnTypes() []string {
 		"real", "regclass", "serial", "smallint", "smallserial", "text", "time", "timestamp", "timestamptz", "timetz",
 		"tsquery", "tsrange", "tstzrange", "tsvector", "uuid", "varchar", "xml",
 	}
+}
+
+// postgresFamilyRounding reads a value the PostgreSQL family's conversion would
+// change, with the server's own CAST, which rounds as ALTER COLUMN TYPE does: measured
+// on PostgreSQL 18.6, YugabyteDB 2026.1 and CockroachDB 26.4, CAST and the ALTER read
+// 1234.6, -1234.6 and 1235 back for 1234.567, -1234.567 and an integer, 10:00:01 for
+// 10:00:00.987654, '1 day 02:00:00' for '1 day 02:03:04' under interval hour, and
+// infinity for infinity. A decimal is compared as an unlimited numeric, since money
+// has no comparison with numeric. A serial is not a type CAST takes.
+//
+// A temporal value is compared in the declared type with no precision: a timetz or a
+// timestamptz under a time or a timestamp compares the time of day the new column
+// keeps. Compared with the column itself, the new value is read back in the session's
+// time zone, so `10:00:00+02` under time(0) and the repeated hour of a DST change
+// under timestamp(0) count as changed with no digit lost. An interval compares as an
+// interval with no field, so a coarser last field reads as a change.
+var postgresFamilyRounding = descriptor.Rounding{
+	Decimal:  "CAST({column} AS numeric) IS DISTINCT FROM CAST({column} AS {type})",
+	Temporal: "CAST({column} AS {domain}) IS DISTINCT FROM CAST({column} AS {type})",
+	CastTypes: map[string]string{
+		"serial": "integer", "serial4": "integer", "bigserial": "bigint", "serial8": "bigint",
+		"smallserial": "smallint", "serial2": "smallint",
+	},
+	Domains: map[string]string{"interval": "interval"},
 }

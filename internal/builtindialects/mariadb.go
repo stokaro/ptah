@@ -178,6 +178,10 @@ func mariaDB() descriptor.Dialect {
 		// fails at CREATE TABLE with errno 150, and one to an indexed column no
 		// unique key covers is created, as the indexed-reference policy says.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Measured on MariaDB 11.8 under a strict sql_mode: MODIFY COLUMN rounds a
+		// decimal and a decimal under an integer, and cuts a datetime, timestamp or
+		// time to the new digits.
+		Rounding: mysqlFamilyRounding,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			ColumnCheckDropByModify:        true,

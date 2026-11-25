@@ -184,6 +184,9 @@ END;`,
 
 		// How the common model is lowered for the engine.
 		InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted},
+		// No rounding condition: measured on Oracle 23.26, ALTER TABLE MODIFY refuses
+		// a lower NUMBER scale (ORA-01440) and a lower TIMESTAMP or INTERVAL precision
+		// (ORA-30082) while the column holds a row, whatever the value.
 		// Comparison: what comparing a declaration with a catalog reads.
 		// Oracle stores a generated column's expression in a form of its own
 		// (stokaro/ptah#1915).

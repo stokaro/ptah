@@ -26,6 +26,7 @@ func plannerRefusals() []struct {
 	options := []planrefusal.ViewOption{{View: "v", Option: "security_invoker"}}
 	definers := []planrefusal.ViewDefiner{{View: "v", Definer: "owner@%", Account: "app@%"}}
 	generated := []planrefusal.GeneratedKind{{Table: "public.items", Column: "total", HeldKind: "VIRTUAL", DeclaredKind: "STORED"}}
+	rounded := []planrefusal.RoundedValue{{Table: "prices", Column: "amount", HeldType: "decimal(8,3)", DeclaredType: "decimal(8,1)", Rows: 2}}
 	return []struct {
 		name string
 		err  error
@@ -50,6 +51,11 @@ func plannerRefusals() []struct {
 			name: "a generated column's kind",
 			err:  fmt.Errorf("generate schema apply operations: %w", &planrefusal.GeneratedKindError{Columns: generated, Err: cause}),
 			want: &atlasschema.Refusal{Code: atlasschema.RefusalGeneratedKind, GeneratedColumns: generated},
+		},
+		{
+			name: "values a type change would round",
+			err:  &planrefusal.RoundedValuesError{Columns: rounded, Err: cause},
+			want: &atlasschema.Refusal{Code: atlasschema.RefusalRoundedValues, RoundedColumns: rounded},
 		},
 		{
 			name: "a declaration the comparison refused",

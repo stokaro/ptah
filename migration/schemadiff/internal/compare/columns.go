@@ -586,6 +586,7 @@ func columnsWithDesiredDomains(
 		!storedAs(ctx.storedType, dbRawType, dialect) && !generatedTypeDerived(genCol, dbCol, dialect) {
 		colDiff.Changes["type"] = change
 		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
+		colDiff.Rounding = typeChangeRounding(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
 		colDiff.PreviousType = strings.TrimSpace(dbRawType)
 	}
 
@@ -1672,11 +1673,37 @@ func typeChangeNarrows(change, dbRawType, renderedType, dialect string) bool {
 		typechange.IsInteger(dbRawType) {
 		return true
 	}
-	if comparisonOf(dialect).NullableTypes {
-		before, after, _ := strings.Cut(change, " -> ")
-		return typeEngineOf(dialect).Narrows(before, after)
+	before, after := typeChangeOperands(change, dbRawType, renderedType, dialect)
+	return typeEngineOf(dialect).Narrows(before, after)
+}
+
+// typeChangeRounding marks a change whose new type keeps fewer digits after the point
+// than the type the column holds, and is nil for every other change. It reads the
+// operands [typeChangeNarrows] reads, so the two judge one pair of spellings, and records
+// them, since the scan of the rows converts each value to the declared type as the
+// plan's statement spells it.
+func typeChangeRounding(change, dbRawType, renderedType, dialect string) *difftypes.Rounding {
+	before, after := typeChangeOperands(change, dbRawType, renderedType, dialect)
+	rounding, rounds := typeEngineOf(dialect).Rounds(before, after)
+	if !rounds {
+		return nil
 	}
-	return typeEngineOf(dialect).Narrows(dbRawType, renderedType)
+	return &difftypes.Rounding{
+		Temporal:     rounding.Temporal,
+		HeldType:     strings.TrimSpace(before),
+		DeclaredType: strings.TrimSpace(after),
+	}
+}
+
+// typeChangeOperands are the spellings a rule about a type change compares: the raw ones
+// rather than change, which may hold a normalized spelling with the precision gone, except
+// on ClickHouse, whose change holds the canonical types where the raw ones may not be.
+func typeChangeOperands(change, dbRawType, renderedType, dialect string) (before, after string) {
+	if comparisonOf(dialect).NullableTypes {
+		before, after, _ = strings.Cut(change, " -> ")
+		return before, after
+	}
+	return dbRawType, renderedType
 }
 
 // renderedDeclaredType is the type the renderer writes for a declaration, on an engine
@@ -1746,8 +1773,7 @@ func writtenColumnTypeChange(genCol schemamodel.Field, written, dbRawType, diale
 
 // typeEngineOf is what dialect's descriptor says a type that declares no size holds.
 func typeEngineOf(dialect string) typechange.Engine {
-	comparison := comparisonOf(dialect)
-	return typechange.Engine{TimeDigits: comparison.TimePrecision.Default, Bare: comparison.BareTypes}
+	return typechange.EngineOf(comparisonOf(dialect))
 }
 
 // timeTypeRe matches a temporal type with its precision: the name, the precision, and

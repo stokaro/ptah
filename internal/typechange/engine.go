@@ -18,6 +18,14 @@ type Engine struct {
 	Bare descriptor.BareTypes
 }
 
+// EngineOf is the engine a dialect descriptor's comparison states: the digits of a
+// temporal type that declares none, and what every other bare type holds. The
+// comparison and a plan file's rounding records read a transition through it, so the
+// two cannot answer one transition differently.
+func EngineOf(comparison descriptor.Comparison) Engine {
+	return Engine{TimeDigits: comparison.TimePrecision.Default, Bare: comparison.BareTypes}
+}
+
 // Narrows is [IsNarrowing], as the engine reads a type that declares no size. It also
 // answers a transition that declares a size on one side only, which [IsNarrowing] cannot.
 func (e Engine) Narrows(oldType, newType string) bool {

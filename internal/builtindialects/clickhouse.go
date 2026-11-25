@@ -152,6 +152,15 @@ func clickHouse() descriptor.Dialect {
 			// reads.
 			HeredocDollarTags: true,
 		},
+		// Measured on ClickHouse 26.10: MODIFY COLUMN cuts a Decimal, a Decimal under
+		// an integer, a DateTime64 and a Time64 to the new digits and succeeds, and
+		// CAST reads back what it stores. assumeNotNull lets the CAST read a NULL,
+		// which it refuses to convert to a type that is not Nullable; the comparison
+		// with the NULL is NULL, so the row is not counted.
+		Rounding: descriptor.Rounding{
+			Decimal:  "{column} != CAST(assumeNotNull({column}) AS {type})",
+			Temporal: "{column} != CAST(assumeNotNull({column}) AS {type})",
+		},
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			NullableTypes: true,

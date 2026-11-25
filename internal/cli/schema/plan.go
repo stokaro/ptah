@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemaroot"
@@ -134,6 +135,7 @@ environment variable.`,
 	cmd.MarkFlagsMutuallyExclusive(planOutputFlag, planDryRunFlag)
 	tablerebuild.Register(cmd)
 	checkscan.Register(cmd)
+	valuerounding.Register(cmd)
 	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd

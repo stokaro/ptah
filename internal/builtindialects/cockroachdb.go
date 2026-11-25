@@ -147,6 +147,12 @@ func cockroachDB() descriptor.Dialect {
 		// Measured on CockroachDB v26.4.0: a foreign key to a column no unique key
 		// covers fails at CREATE TABLE with 23503, indexed or not.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Measured on CockroachDB 26.4: ALTER COLUMN TYPE rounds a sized decimal,
+		// timestamp, timestamptz, time and interval to the new digits, and a decimal
+		// under an integer, and succeeds. An unsized decimal under a sized one is
+		// refused with SQLSTATE 23514 where a value would change, which the scan
+		// refuses first.
+		Rounding: postgresFamilyRounding,
 		// Comparison: what comparing a declaration with a catalog reads.
 		// A probe's view goes in a schema, and a routine body is stored
 		// reflowed and qualified: measured on v26.3.2, `SELECT * FROM

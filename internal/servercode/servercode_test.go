@@ -135,3 +135,41 @@ func TestRefusedInATransaction(t *testing.T) {
 		})
 	}
 }
+
+// TestConversionRefused reads a server's refusal to convert a value, which a
+// rounding scan names as the type's to answer for, apart from an error that
+// says nothing about the value: a canceled statement, a lock timeout and a lost
+// connection are reported as what they are.
+func TestConversionRefused(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "PostgreSQL numeric_value_out_of_range", err: &pgconn.PgError{Code: "22003"}, want: true},
+		{name: "PostgreSQL datetime_field_overflow", err: &pgconn.PgError{Code: "22008"}, want: true},
+		{name: "a wrapped refusal", err: fmt.Errorf("read: %w", &pgconn.PgError{Code: "22003"}), want: true},
+		{name: "PostgreSQL query_canceled", err: &pgconn.PgError{Code: "57014"}},
+		{name: "PostgreSQL lock_not_available", err: &pgconn.PgError{Code: "55P03"}},
+		{name: "PostgreSQL insufficient privilege", err: &pgconn.PgError{Code: "42501"}},
+		{name: "MySQL out of range", err: &mysqldriver.MySQLError{Number: 1264, SQLState: [5]byte{'2', '2', '0', '0', '3'}}, want: true},
+		{name: "MySQL query interrupted", err: &mysqldriver.MySQLError{Number: 1317, SQLState: [5]byte{'7', '0', '1', '0', '0'}}},
+		{name: "MySQL with no SQLSTATE", err: &mysqldriver.MySQLError{Number: 1264}},
+		{name: "SQL Server arithmetic overflow converting", err: mssql.Error{Number: 8115}, want: true},
+		{name: "SQL Server datetime out of range", err: mssql.Error{Number: 242}, want: true},
+		{name: "SQL Server datetime overflow", err: mssql.Error{Number: 517}, want: true},
+		{name: "SQL Server lock request timeout", err: mssql.Error{Number: 1222}},
+		{name: "SQL Server deadlock victim", err: mssql.Error{Number: 1205}},
+		{name: "ClickHouse decimal overflow", err: &clickhousedriver.Exception{Code: 407}, want: true},
+		{name: "ClickHouse cannot convert type", err: &clickhousedriver.Exception{Code: 70}, want: true},
+		{name: "ClickHouse timeout exceeded", err: &clickhousedriver.Exception{Code: 159}},
+		{name: "an error no server wrote", err: errors.New("numeric field overflow")},
+		{name: "no error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(servercode.ConversionRefused(test.err), qt.Equals, test.want)
+		})
+	}
+}

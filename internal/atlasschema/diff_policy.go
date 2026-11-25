@@ -69,6 +69,17 @@ type DiffPolicy struct {
 	// native commands set it from --skip-check-scan, and the compatibility
 	// surface from PTAH_SKIP_CHECK_SCAN.
 	SkipCheckScan bool
+	// AllowValueRounding plans a column type change that keeps fewer digits
+	// after the point without reading the values the table holds, so the
+	// server rounds or cuts each one to the new digits. Without it such a
+	// plan is refused while a row holds a value the change would alter; see
+	// [ptah.run/internal/roundingscan]. The native commands set it from
+	// --allow-value-rounding, and the compatibility surface from
+	// PTAH_ALLOW_VALUE_ROUNDING.
+	AllowValueRounding bool
+	// ValueRoundingRequest is how the caller asks for AllowValueRounding, and
+	// the refusal names it.
+	ValueRoundingRequest string
 
 	// Dialects holds, by dialect, the values the labeled `diff "<dialect>"`
 	// blocks of an Atlas project file set. A plan for the dialect follows them
