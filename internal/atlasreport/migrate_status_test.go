@@ -250,6 +250,34 @@ func TestWriteMigrateStatusFormat_KeepsAFlagNamedForAKey(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "sqlite://x.db?_foreign_keys=false&token=xxxxx")
 }
 
+// Each value of a repeated parameter is judged by its own value, so a flag
+// keeps its text beside a secret of the same name in either order.
+func TestWriteMigrateStatusFormat_JudgesEachValueOfARepeatedParameter(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a flag before a secret", url: "sqlite://x.db?sslkey=true&sslkey=/srv/k.pem", want: "sqlite://x.db?sslkey=true&sslkey=xxxxx"},
+		{name: "a secret before a flag", url: "sqlite://x.db?sslkey=/srv/k.pem&sslkey=true", want: "sqlite://x.db?sslkey=xxxxx&sslkey=true"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			err := atlasreport.WriteMigrateStatusFormat(&out, `{{ .Env.URL }}`, atlasreport.MigrateStatusOptions{
+				URL:    test.url,
+				FS:     fstest.MapFS{},
+				Status: &migrator.MigrationStatus{CurrentVersion: 1},
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
+}
+
 func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{

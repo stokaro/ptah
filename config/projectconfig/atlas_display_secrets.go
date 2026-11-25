@@ -791,7 +791,9 @@ func (p atlasParser) addressSecrets() (secret, possible []string) {
 
 // slotSecrets returns what the values the slot at i of template may hold give,
 // by the slot's place, and apart from it what they may give: itself whole in
-// the password or a secret query parameter; in a user info the slot fills
+// the password or a secret query parameter, apart from a flag value the
+// address with it written in does not hold as a secret, since the place was
+// read with a value that is no flag; in a user info the slot fills
 // whole, the text after its first ":", and itself whole as a value that may be
 // a secret where it has none and the slot does not evaluate, since then which
 // part it fills is unknown; in a place that is unknown, itself whole as a
@@ -809,7 +811,13 @@ func (p atlasParser) slotSecrets(template addressTemplate, i int) (secret, possi
 	values := p.expressionStrings(slot, contexts, make(map[string]struct{}))
 	switch template.place(i) {
 	case placeSecret:
-		return values, nil
+		for _, value := range values {
+			if secretmask.IsFlagValue(value) && !slices.Contains(dburldisplay.Secrets(template.written(i, value, otherSlot)), value) {
+				continue
+			}
+			secret = append(secret, value)
+		}
+		return secret, nil
 	case placeUnknown:
 		return nil, values
 	case placeUserInfo:

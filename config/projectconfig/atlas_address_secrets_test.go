@@ -293,6 +293,55 @@ func TestParseAtlas_KeepsWhatReachesNoPassword_FailurePath(t *testing.T) {
 	}
 }
 
+// A flag value a variable gives a parameter named for a secret keeps its text,
+// as the same flag written in the address does: the place of the slot reads
+// as a secret's, but a flag holds none.
+func TestParseAtlas_KeepsAFlagAVariableGives_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		pw   string
+	}{
+		{name: "a SQLite foreign keys flag", url: `"sqlite://x.db?_foreign_keys=${tonumber(var.pw)}"`, pw: "false"},
+		{name: "a MySQL public key flag", url: `"mysql://app@127.0.0.1:1/db?allowPublicKeyRetrieval=${tonumber(var.pw)}"`, pw: "true"},
+		{name: "a token flag in upper case", url: `"postgres://app@127.0.0.1:1/db?token=${tonumber(var.pw)}"`, pw: "YES"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := projectconfig.ParseAtlasWithOptions(addressSecretsProject(test.url), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=" + test.pw}})
+
+			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*cannot convert "`+test.pw+`" to number.*`)
+			c.Assert(got.DatabaseURL, qt.Equals, "")
+		})
+	}
+}
+
+// The control for the test above: a flag spelling in a password is still the
+// password, so it is masked.
+func TestParseAtlas_MasksAPasswordSpelledAsAFlag_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "the user info password", url: `"postgres://app:${tonumber(var.pw)}@127.0.0.1:1/db"`},
+		{name: "a password query parameter", url: `"sqlserver://app@127.0.0.1:1?database=db&password=${tonumber(var.pw)}"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := projectconfig.ParseAtlasWithOptions(addressSecretsProject(test.url), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=true"}})
+
+			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*cannot convert "redacted" to number.*`)
+			c.Assert(got.DatabaseURL, qt.Equals, "")
+		})
+	}
+}
+
 // A sensitive value a data source is given as a bare value, with no name or
 // address beside it, is masked in the error the data source fails with.
 func TestParseAtlas_MasksASensitiveValueADataSourceQuotes_FailurePath(t *testing.T) {

@@ -204,6 +204,13 @@ var secretParameterWords = []string{"credential", "jwt", "key", "secret", "token
 // whatever its name holds.
 var flagValues = []string{"0", "1", "false", "no", "off", "on", "true", "yes"}
 
+// IsFlagValue reports whether value is one of [flagValues], in any letter
+// case: the value of a driver's flag, which holds no secret whatever the
+// flag's name holds.
+func IsFlagValue(value string) bool {
+	return slices.ContainsFunc(flagValues, func(flag string) bool { return strings.EqualFold(value, flag) })
+}
+
 // IsSecretParameter reports whether a query parameter, connection-string
 // keyword or setting named key holds a secret, or says where one is, in value.
 // The name is compared without case or punctuation. A name that names a
@@ -215,7 +222,7 @@ func IsSecretParameter(key, value string) bool {
 	switch {
 	case name == "oshash", strings.HasSuffix(name, "pass"), holdsAnyOf(name, passwordParameterWords):
 		return true
-	case slices.ContainsFunc(flagValues, func(flag string) bool { return strings.EqualFold(value, flag) }):
+	case IsFlagValue(value):
 		return false
 	default:
 		return name == "sslcert" || holdsAnyOf(name, secretParameterWords)
