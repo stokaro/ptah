@@ -706,6 +706,7 @@ than a silent narrowing:
 | `assert` | exactly one read-only top-level `SELECT` returning one column and one row |
 | `on_fail` | `abort` only — there is no `warn`, `skip` or `continue` |
 | `phase` | `before` (the default) or `after` the migration body |
+| `kind` | `rounded-values` only, or no `kind` for an ordinary check |
 
 An assertion of any other shape fails closed before the migration runs, and so
 does a write-shaped one. On SQL Server, `NEXT VALUE FOR` is refused statically
@@ -733,6 +734,58 @@ Atlas registers no `--skip-checks` on `migrate apply` and `ptah-compat` adds no
 flags Atlas does not have. This is the open, local half of Atlas Pro's
 pre-migration checks; the Cloud approval-policy half is intentionally out of
 scope.
+
+### A check a generated file carries
+
+A column type change that keeps fewer digits after the point, such as a decimal
+with a lower scale or a timestamp with a lower fractional-second precision, is
+converted by most servers without an error: each stored value is rounded or cut.
+`ptah migrations generate` reads the rows of the database it compares with and
+refuses while a row would change; see
+[a change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+The file runs later, often on another database, so the up file carries one check
+for each such column, above the statements:
+
+```sql
+-- column "amount" of table "prices" goes from numeric(8,3) to numeric(8,1), which keeps fewer digits after the point; the check refuses the migration while a row holds a value the server would round or cut
+-- +ptah check kind=rounded-values name="prices.amount" assert="SELECT CASE WHEN EXISTS (SELECT 1 FROM ""prices"" WHERE CAST(""amount"" AS numeric) IS DISTINCT FROM CAST(""amount"" AS numeric(8,1))) THEN 0 ELSE 1 END"
+ALTER TABLE "prices" ALTER COLUMN "amount" TYPE numeric(8,1);
+```
+
+The assertion is the comparison `ptah migrations generate` counted, the server's own
+`CAST` against the stored value. With `--replay`, `ptah migrations generate` counts the
+rows of the dev database the directory was replayed on, which holds only the rows the
+migrations insert; the check reads the database the file runs on either way. `ptah migrations up` and `ptah-compat migrate apply`
+evaluate it before the body like any other check, so a row written after the file was
+generated stops the migration with nothing applied:
+
+```text
+error: pre-migration check prices.amount for migration 1795620874 was not satisfied:
+the migration converts a column to a type that keeps fewer digits after the point
+while the table holds a value with more digits, which the server rounds or cuts
+without an error; store values the new type keeps, or ask for the change with
+--allow-value-rounding (assert: SELECT CASE WHEN EXISTS ...)
+```
+
+To apply the file and round the values, pass `--allow-value-rounding` to
+`ptah migrations up`, or set `PTAH_ALLOW_VALUE_ROUNDING=1` for
+`ptah-compat migrate apply`. Either skips the checks of kind `rounded-values` alone,
+warns once for each one skipped, and evaluates every other check; `--skip-checks` and
+`PTAH_SKIP_CHECKS=1` skip them all. The flag reads no environment variable.
+
+`ptah migrations generate --allow-value-rounding` reads no rows and writes the file
+without the checks. Each column gets a comment in place of its check, saying that the
+rounding was allowed when the file was generated, so the file rounds the values
+wherever it runs. Edit the file to add a check, or generate it again without the flag,
+to have it read the rows where it runs.
+
+A check of kind `rounded-values` reads the rows before the body and refuses
+`phase=after`. The down file widens the column back and carries no such check. Under
+`PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah directive, so `ptah-compat migrate
+apply` refuses the file, as it refuses every other check; `migrate hash`,
+`migrate status` and `migrate validate` without `--dev-url` read the bytes and keep
+them. An engine whose conversion Ptah does not read, such as SQLite or Oracle, gets
+no check.
 
 ### What a migration produced
 

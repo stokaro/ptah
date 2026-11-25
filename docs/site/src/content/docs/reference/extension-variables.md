@@ -244,8 +244,14 @@ Set it to `1` and the plan reads no rows. The run warns once for each column, an
 server rounds or cuts each value to the new digits. See
 [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
-The variable matches the native `--allow-value-rounding` flag, which reads no
-variable. The community CLI reads no rows and converts the column, so the variable
+`ptah-compat migrate apply` evaluates the `-- +ptah check kind=rounded-values` a file
+from `ptah migrations generate` carries for each such column, and refuses the migration
+while a row would change, with nothing applied. Set the variable to `1` and the run
+skips those checks alone, warns once for each, and evaluates every other check. See
+[A check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
+
+The variable matches the native `--allow-value-rounding` flag of `ptah schema plan`,
+`ptah schema apply` and `ptah migrations up`, which reads no variable. The community CLI reads no rows and converts the column, so the variable
 restores what it does, and the strict profile keeps it.
 
 ## `PTAH_ATLAS_LINT_WITHOUT_DEV_URL`

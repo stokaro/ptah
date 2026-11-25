@@ -1936,8 +1936,9 @@ nothing, and `datetime(6)` declared `datetime` plans a `MODIFY COLUMN` that drop
 digits: MySQL rounds `10:00:00.987654` to `10:00:01` and MariaDB cuts it to
 `10:00:00`, both under a strict `sql_mode`. The plan rates that destructive. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
-While a row holds a value the change would alter, `ptah schema plan` and
-`ptah schema apply` refuse the change; see
+While a row holds a value the change would alter, `ptah schema plan`,
+`ptah schema apply`, `ptah migrations plan` and `ptah migrations generate` refuse the
+change, and a generated migration file reads the rows again where it runs; see
 [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 ## A column's size
@@ -2001,8 +2002,8 @@ changed to `DECIMAL(8,1)` turns `1234.567` into `1234.6`, and changed to `INT`
 into `1235`. `DATETIME(6)`
 changed to `DATETIME` turns `10:00:00.987654` into `10:00:01` on MySQL and
 into `10:00:00` on MariaDB. Both statements succeed on the strict session too,
-so `ptah schema plan` and `ptah schema apply` read such a column before the plan
-runs; see [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
+so `ptah schema plan`, `ptah schema apply`, `ptah migrations plan` and
+`ptah migrations generate` read such a column before the plan runs; see [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 A strict mode also refuses a definition that a session without one adjusts.
 In a `utf8mb4` table, `VARCHAR(20000)` becomes `mediumtext` on a loose

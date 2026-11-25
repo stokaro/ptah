@@ -4813,6 +4813,16 @@ check file in which no assertion returned a truthy result, including an empty
 group. Callers can distinguish a group-level precondition failure from an
 assertion execution or result-shape failure with `errors.As`.
 
+`migration/migrator.Check.Kind` names a class of check a run may waive with the
+others of its kind; the one kind is `CheckKindRoundedValues`, which
+`migration/generator` writes before a column type change that keeps fewer digits
+after the point. `Migrator.WithValueRounding` with `ValueRounding.Allowed` skips the
+checks of that kind alone and warns once for each, and `ValueRounding.Waives` is the
+predicate it applies. `CheckFailedError.Kind` carries the kind of a failed check, and
+its message for `CheckKindRoundedValues` names `ValueRounding.Request` when it is not
+empty. `Check.Directive` writes the one-line directive `ParseChecks` reads back as the
+check, and refuses a name or an assertion holding a line break.
+
 `migration/migrator.PostMigrationCheckFailedError` wraps the check failure of a
 `phase=after` assertion, and is a type of its own because the outcome it names
 has no equivalent on the precondition path: the body is committed. On the up
@@ -4846,6 +4856,13 @@ checks, and optional shadow verification without publishing files. Its
 plan records the migration-directory snapshot used during planning and refuses
 publication with `generator.ErrMigrationDirectoryChanged` if that history
 changed.
+
+Unless `DiffPolicy.AllowValueRounding` is set, `PlanMigration` reads the rows of each
+column whose type change keeps fewer digits after the point and refuses while a row
+would change, with an error that names each column and `DiffPolicy.ValueRoundingRequest`; the up migration then carries a `-- +ptah check` of kind
+`migrator.CheckKindRoundedValues` for each such column. With the field set, it reads
+no rows and writes a comment in place of each check. The down migration carries no
+such check.
 
 When its URL or connection selects SQLite, `PlanMigration` validates
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before resolving `OutputDir`. A malformed

@@ -1630,8 +1630,12 @@ field drops what lies below it: `1 day 02:03:04` under `interval hour` reads
 `1 day 02:00:00`. `money` keeps the digits `lc_monetary` gives it, two in the usual
 locales, so `money` under `numeric(12,1)` rounds as well. `timetz` under `time` keeps
 the time of day, `timestamptz` under `timestamp` keeps it as the session's time zone
-reads it, and only the digits count. While a row holds a value the change would alter,
-`ptah schema plan` and `ptah schema apply` refuse the change; see
+reads it, and only the digits count.
+
+While a row holds a value the change would alter,
+`ptah schema plan`, `ptah schema apply`, `ptah migrations plan` and
+`ptah migrations generate` refuse the change, and a generated migration file reads the
+rows again where it runs; see
 [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
 ## The kind of a generated column
