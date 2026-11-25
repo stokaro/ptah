@@ -167,7 +167,15 @@ before running down migrations in production.`,
 				Direction:     migrator.MigrationDirectionDown,
 				ServerDetails: migraterun.NewServerDetails(cmd.Context(), opts.serverDetails),
 			}
-			if err := migrateDownCommand(cmd, &opts, document); err != nil {
+			// Every run reads how the shadow database is resolved, so a
+			// malformed PTAH_DEV_SERVER_DISPOSABLE or PTAH_TRUST_REPLAY_SQL
+			// fails a run that replays nothing too.
+			devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
+			if err != nil {
+				return document.FailBeforeRun(err, opts.dryRun)
+			}
+			opts.devReplay = devReplay
+			if err = migrateDownCommand(cmd, &opts, document); err != nil {
 				return document.FailBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
@@ -454,11 +462,6 @@ var errJSONNeedsConfirmation = fmt.Errorf("--%s needs --%s or --%s: a run that p
 	jsonFlag, confirmFlag, dryRunFlag)
 
 func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
-	devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
-	if err != nil {
-		return err
-	}
-	opts.devReplay = devReplay
 	if err := refuseFlagCombinations(cmd.Flags(), opts); err != nil {
 		return err
 	}

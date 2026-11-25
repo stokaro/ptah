@@ -223,7 +223,15 @@ whole pending up batch in one transaction on supported dialects, or
 				Direction:     migrator.MigrationDirectionUp,
 				ServerDetails: migraterun.NewServerDetails(cmd.Context(), opts.serverDetails),
 			}
-			if err := migrateUpCommand(cmd, &opts, document); err != nil {
+			// Every run reads how the shadow database is resolved, so a
+			// malformed PTAH_DEV_SERVER_DISPOSABLE or PTAH_TRUST_REPLAY_SQL
+			// fails a run that replays nothing too.
+			devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
+			if err != nil {
+				return document.FailBeforeRun(err, opts.dryRun)
+			}
+			opts.devReplay = devReplay
+			if err = migrateUpCommand(cmd, &opts, document); err != nil {
 				return document.FailBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
@@ -572,11 +580,6 @@ func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
 }
 
 func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
-	devReplay, err := dbcli.DevReplayOptions(cmd, opts.trustReplaySQL)
-	if err != nil {
-		return err
-	}
-	opts.devReplay = devReplay
 	// --limit and --to-version select different prefixes of the pending list and
 	// neither outranks the other, so the pair is refused here rather than deep
 	// in the migrator, whose own refusal names an operand ("amount") that no
