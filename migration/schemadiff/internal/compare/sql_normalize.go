@@ -116,10 +116,14 @@ func stripSQLQualifiers(value, schema string, authored map[string]struct{}, quot
 // ClickHouse that reads as a body change and is planned as a drop and a create,
 // which discards the view's accumulated rows.
 //
-// The schema is matched bare, lowered, and quoted, as [copyIdentifierQuote]
-// writes a name no bare spelling reaches: exactly.
+// The schema is matched as [copyIdentifierQuote] writes it. A schema some bare
+// spelling reaches is matched bare and lowered, and only then: where quoting
+// says a quoted name keeps its case, a bare a. names a and never "A", so the
+// body of a view in "A" that reads a.src reads another schema's table, and
+// stripped it would compare equal to a declared src. A schema no bare spelling
+// reaches is matched quoted, exactly.
 func stripMatchingSchemaQualifiers(value, schema string, quoting normalize.Quoting) string {
-	bare := strings.ToLower(schema)
+	bare, bareReaches := bareSpelling(schema, quoting)
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '"' {
@@ -134,7 +138,7 @@ func stripMatchingSchemaQualifiers(value, schema string, quoting normalize.Quoti
 			i = copyQuotedSQL(&b, value, i, quoting)
 			continue
 		}
-		if strings.HasPrefix(value[i:], bare+".") &&
+		if bareReaches && strings.HasPrefix(value[i:], bare+".") &&
 			startsIdentifierAt(value, i) &&
 			qualifiesRelationAt(value, i, i+len(bare)) {
 			i += len(bare)
@@ -418,6 +422,22 @@ func identifierKeepsQuotes(name string, quote byte, quoting normalize.Quoting) b
 		return true
 	}
 	return quote == '"' && quoting.QuotedNamesKeepCase && strings.ContainsFunc(name, isASCIIUpper)
+}
+
+// bareSpelling returns the spelling [copyIdentifierQuote] writes for name
+// quoted, and whether it is a bare one: false for a name that keeps its quotes,
+// which no bare spelling reaches. It reads [identifierKeepsQuotes], so the
+// qualifier a body writes and the qualifier the strip looks for cannot be read
+// by two rules.
+func bareSpelling(name string, quoting normalize.Quoting) (string, bool) {
+	if identifierKeepsQuotes(name, '"', quoting) {
+		return "", false
+	}
+	lowered := []byte(name)
+	for i := range lowered {
+		lowered[i] = lowerASCII(lowered[i])
+	}
+	return string(lowered), true
 }
 
 func isASCIIUpper(r rune) bool {

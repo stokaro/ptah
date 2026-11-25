@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -17,64 +18,82 @@ import (
 // to the second is read as one to the first: the qualifier of a view body, and
 // a grant on " public".
 
-// spacedQualifierSQL builds a view in " a" that reads the table src of the
-// other schema, a.
-const spacedQualifierSQL = `CREATE SCHEMA a;
+// spacedQualifierSQL builds a view in the schema quoted, " a" or "A", that
+// reads the table src of the other schema, a, which a bare a. names.
+func spacedQualifierSQL(quoted string) string {
+	return fmt.Sprintf(`CREATE SCHEMA a;
 CREATE TABLE a.src (id integer);
-CREATE SCHEMA " a";
-CREATE TABLE " a".src (id integer);
-CREATE VIEW " a".v AS SELECT id FROM a.src;`
+CREATE SCHEMA %[1]s;
+CREATE TABLE %[1]s.src (id integer);
+CREATE VIEW %[1]s.v AS SELECT id FROM a.src;`, quoted)
+}
 
-// spacedQualifierHCL declares the view to read the src of its own schema.
-const spacedQualifierHCL = `schema " a" {}
+// spacedQualifierHCL declares the view to read the src of its own schema,
+// quoted.
+func spacedQualifierHCL(quoted string) string {
+	return fmt.Sprintf(`schema %[1]s {}
 table "src" {
-  schema = schema[" a"]
+  schema = schema[%[1]s]
   column "id" {
     null = true
     type = integer
   }
 }
 view "v" {
-  schema = schema[" a"]
+  schema = schema[%[1]s]
   column "id" {}
   as = "SELECT id FROM src"
 }
-`
+`, quoted)
+}
 
-// spacedQualifierSource names the schema of the src the view " a".v reads, as
-// the server's dependency record holds it.
-const spacedQualifierSource = `SELECT string_agg(DISTINCT n.nspname, ',')
+// spacedQualifierSource names the schema of the src the view v of the schema
+// quoted reads, as the server's dependency record holds it.
+func spacedQualifierSource(quoted string) string {
+	return fmt.Sprintf(`SELECT string_agg(DISTINCT n.nspname, ',')
 	FROM pg_depend d
 	JOIN pg_rewrite r ON r.oid = d.objid
 	JOIN pg_class c ON c.oid = d.refobjid
 	JOIN pg_namespace n ON n.oid = c.relnamespace
-	WHERE r.ev_class = '" a".v'::regclass AND c.relname = 'src'`
+	WHERE r.ev_class = '%s.v'::regclass AND c.relname = 'src'`, quoted)
+}
 
 // TestSpacedSchemaViewQualifierE2E applies the declared view through a URL
-// whose search_path is " a". The server reads the live body back as
-// `SELECT id FROM a.src`, qualified because a is not on the path. The
-// qualifier names the other schema, so the body differs from the declared one:
-// the apply replaces the view, which then reads " a".src, and a second run
-// plans nothing.
+// whose search_path is the view's schema, one no bare spelling names. The
+// server reads the live body back as `SELECT id FROM a.src`, qualified because
+// a is not on the path. The qualifier names the other schema, so the body
+// differs from the declared one: the apply replaces the view, which then reads
+// the src of its own schema, and a second run plans nothing.
 func TestSpacedSchemaViewQualifierE2E(t *testing.T) {
-	c := qt.New(t)
-	database := newEmptyReadScopeDatabase(c, "spaced_qualifier")
-	execPostgresFamilySQL(c, c.Context(), database, spacedQualifierSQL)
-	target := withURLParameter(database, "search_path", "%22%20a%22")
-	schema := writeSpacedSchemaFile(c, "schema.hcl", spacedQualifierHCL)
-	args := []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve"}
-	c.Assert(spacedSchemaScalar(c, database, spacedQualifierSource), qt.Equals, "a")
+	tests := []struct {
+		name, schema, searchPath string
+	}{
+		{name: "a schema that begins with a space", schema: " a", searchPath: "%22%20a%22"},
+		{name: "an upper-case schema", schema: "A", searchPath: "%22A%22"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			quoted := `"` + test.schema + `"`
+			database := newEmptyReadScopeDatabase(c, "spaced_qualifier")
+			execPostgresFamilySQL(c, c.Context(), database, spacedQualifierSQL(quoted))
+			target := withURLParameter(database, "search_path", test.searchPath)
+			schema := writeSpacedSchemaFile(c, "schema.hcl", spacedQualifierHCL(quoted))
+			args := []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve"}
+			c.Assert(spacedSchemaScalar(c, database, spacedQualifierSource(quoted)), qt.Equals, "a")
 
-	applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, args...)
+			applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, args...)
 
-	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stdout, qt.Contains, `CREATE VIEW " a"."v"`)
-	c.Assert(spacedSchemaScalar(c, database, spacedQualifierSource), qt.Equals, " a")
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(applied.Stdout, qt.Contains, `CREATE VIEW `+quoted+`."v"`)
+			c.Assert(spacedSchemaScalar(c, database, spacedQualifierSource(quoted)), qt.Equals, test.schema)
 
-	again := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, args...)
+			again := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, args...)
 
-	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
-	c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+		})
+	}
 }
 
 // spacedPublicGrantSQL gives the schema " public" the owner and the grant

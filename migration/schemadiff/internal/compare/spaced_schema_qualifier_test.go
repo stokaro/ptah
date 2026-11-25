@@ -12,35 +12,58 @@ import (
 )
 
 // TestViewDefinitionsWithDialect_AQualifierOfAnotherSchemaIsAChange compares a
-// view of the schema " a" whose stored body reads a.src. The qualifier names
-// the schema a, not the view's own " a", so it is not the one a catalog adds
-// and the comparison keeps it: the body differs from one that reads the src
-// of its own schema.
+// view whose stored body reads a.src from a schema no bare spelling names: " a",
+// or "A" where a quoted name keeps its case. The bare qualifier names the
+// schema a, not the view's own schema, so it is not the one a catalog adds and
+// the comparison keeps it: the body differs from one that reads the src of its
+// own schema.
 func TestViewDefinitionsWithDialect_AQualifierOfAnotherSchemaIsAChange(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name, schema string
+	}{
+		{name: "a schema that begins with a space", schema: " a"},
+		{name: "an upper-case schema", schema: "A"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	diff := compare.ViewDefinitionsWithDialect(
-		schemamodel.View{Name: "v", Body: "SELECT id FROM src"},
-		catalog.View{Name: "v", Schema: " a", Body: "SELECT id FROM a.src"},
-		platform.Postgres,
-	)
+			diff := compare.ViewDefinitionsWithDialect(
+				schemamodel.View{Name: "v", Body: "SELECT id FROM src"},
+				catalog.View{Name: "v", Schema: test.schema, Body: "SELECT id FROM a.src"},
+				platform.Postgres,
+			)
 
-	c.Assert(diff.Changes["body"], qt.Equals, "SELECT id FROM a.src -> SELECT id FROM src")
+			c.Assert(diff.Changes["body"], qt.Equals, "SELECT id FROM a.src -> SELECT id FROM src")
+		})
+	}
 }
 
 // TestViewDefinitionsWithDialect_AQualifierOfItsOwnSchemaIsNoChange is the
-// control: the qualifier a catalog adds for the view's own schema a is still
-// removed, so the test above cannot pass on a comparison that strips nothing.
+// control: the qualifier a catalog adds for the view's own schema is still
+// removed where a bare spelling names that schema, so the test above cannot
+// pass on a comparison that strips nothing. MySQL does not keep the case of a
+// quoted name, so there a bare qualifier names a schema of any case.
 func TestViewDefinitionsWithDialect_AQualifierOfItsOwnSchemaIsNoChange(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name, dialect, schema, live string
+	}{
+		{name: "a lower-case schema", dialect: platform.Postgres, schema: "a", live: "SELECT id FROM a.src"},
+		{name: "a MySQL schema in another case", dialect: platform.MySQL, schema: "App", live: "SELECT id FROM App.src"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	diff := compare.ViewDefinitionsWithDialect(
-		schemamodel.View{Name: "v", Body: "SELECT id FROM src"},
-		catalog.View{Name: "v", Schema: "a", Body: "SELECT id FROM a.src"},
-		platform.Postgres,
-	)
+			diff := compare.ViewDefinitionsWithDialect(
+				schemamodel.View{Name: "v", Body: "SELECT id FROM src"},
+				catalog.View{Name: "v", Schema: test.schema, Body: test.live},
+				test.dialect,
+			)
 
-	c.Assert(diff.Changes["body"], qt.Equals, "")
+			c.Assert(diff.Changes["body"], qt.Equals, "")
+		})
+	}
 }
 
 // TestViewDefinitionsWithDialect_AQuotedQualifierNoBareSpellingReachesIsAChange
@@ -76,6 +99,13 @@ func TestViewDefinitionsWithDialect_AQuotedQualifierNoBareSpellingReachesIsAChan
 			schema:   "public",
 			live:     `SELECT id FROM "A".src`,
 			want:     `SELECT id FROM "A".src -> SELECT id FROM a.src`,
+		},
+		{
+			name:     "a view of a reading the src of \"A\"",
+			declared: "SELECT id FROM src",
+			schema:   "a",
+			live:     `SELECT id FROM "A".src`,
+			want:     `SELECT id FROM "A".src -> SELECT id FROM src`,
 		},
 		{
 			name:     "a quoted column with a space",
