@@ -265,14 +265,20 @@ func ParseAtlasFSCollectionWithOptions(
 	p.addressCandidates = addressCandidates(body)
 	p.locals = localExpressions(body)
 	configs, err := p.parseCollection(body, opts.EnvName)
+	// The secrets are read once, after every instance is expanded, so reading
+	// them costs one evaluation of each slot per context it evaluates in.
+	held := p.heldSecrets()
 	// The command that loads the file masks its later errors against what the
 	// file holds secret: a schema file a data "hcl_schema" block passes a
 	// sensitive value to quotes it when a call on it fails, long after this
-	// parser is gone.
-	dburldisplay.RecordErrorSecrets(p.runContext, p.displaySecrets())
+	// parser is gone. A value that only may be a secret is left out: masked in
+	// every error of the command, the argument of a format() that takes its
+	// arguments by index would take its text out of a directory name.
+	dburldisplay.RecordErrorSecrets(p.runContext, held.secret)
 	if err != nil {
-		return nil, p.maskError(err)
+		return nil, p.maskError(err, held.display())
 	}
+	withProgramSecrets(configs, held.secret)
 	for i := range configs {
 		if configs[i].presence.has(fieldExclude) {
 			configs[i].ExcludeOrigin = filename
@@ -378,9 +384,10 @@ type atlasParser struct {
 	addressCandidates []hclsyntax.Expression
 	locals            map[string]hclsyntax.Expression
 	// instanceContexts holds the context of each env instance a for_each
-	// expanded, so an error masked after the instance is gone still reads
-	// what `each` gave it. Pointer for the same reason as sensitiveValues.
-	instanceContexts *[]*hcl.EvalContext
+	// expanded, with the range of the block that declares it, so an error
+	// masked after the instance is gone still reads what `each` gave an
+	// expression of that block. Pointer for the same reason as sensitiveValues.
+	instanceContexts *[]instanceContext
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
@@ -461,7 +468,7 @@ func newAtlasParser(
 	sensitiveValues := make([]string, 0)
 	sensitiveNames := make(map[string]struct{})
 	ignored := make([]IgnoredAtlasConstruct, 0)
-	instanceContexts := make([]*hcl.EvalContext, 0)
+	instanceContexts := make([]instanceContext, 0)
 	return atlasParser{
 		runContext:       runContext,
 		fsys:             fsys,
@@ -989,7 +996,7 @@ func (p atlasParser) parseAtlasEnvInstances(env atlasEnvBlock, selectedName stri
 			}),
 		}
 		if p.instanceContexts != nil {
-			*p.instanceContexts = append(*p.instanceContexts, child)
+			*p.instanceContexts = append(*p.instanceContexts, instanceContext{block: env.block.Range(), ctx: child})
 		}
 		instanceParser := p
 		instanceParser.ctx = child
@@ -2243,7 +2250,7 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		}
 		if variable.sensitive {
 			if p.sensitiveValues != nil {
-				appendSensitiveStrings(p.sensitiveValues, value)
+				appendStringLeaves(p.sensitiveValues, value)
 			}
 			if p.sensitiveNames != nil {
 				(*p.sensitiveNames)[name] = struct{}{}
@@ -2292,27 +2299,6 @@ func appendAtlasVarValue(existing, value cty.Value) cty.Value {
 		return cty.ListVal(append(existing.AsValueSlice(), value))
 	}
 	return cty.ListVal([]cty.Value{existing, value})
-}
-
-func appendSensitiveStrings(target *[]string, value cty.Value) {
-	if value.IsNull() || !value.IsWhollyKnown() {
-		return
-	}
-	if value.Type() == cty.String {
-		if raw := value.AsString(); raw != "" {
-			*target = append(*target, raw)
-		}
-		return
-	}
-	if !value.CanIterateElements() {
-		return
-	}
-	iterator := value.ElementIterator()
-	for iterator.Next() {
-		key, element := iterator.Element()
-		appendSensitiveStrings(target, key)
-		appendSensitiveStrings(target, element)
-	}
 }
 
 // atlasVariable is one parsed atlas.hcl variable block.
@@ -2718,7 +2704,6 @@ func (p atlasParser) applyExternalSchemaSource(cfg *Config, source externalSchem
 		WorkingDir: p.resolveExternalSchemaWorkingDir(source.workingDir),
 		Env:        slices.Clone(source.env),
 		Origin:     AtlasFileName,
-		Secrets:    p.displaySecrets(),
 	}
 	cfg.presence.mark(fieldExternalSchemaProgram)
 	cfg.presence.mark(fieldExternalSchemaFormat)

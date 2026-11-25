@@ -2,8 +2,11 @@ package projectconfig_test
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -12,11 +15,16 @@ import (
 )
 
 // addressSecretsProject is a project whose env "dev" takes url, with the
-// variables pw, cred and pre, a local that converts pw to a number, a local
-// that writes a user info around that conversion, and a local that writes the
-// scheme and the user of an address.
+// variables pw, cred, pre and base, a local that converts pw to a number, a
+// local that writes a user info around that conversion, and a local that
+// writes the scheme and the user of an address.
 func addressSecretsProject(url string) []byte {
 	return []byte(`variable "pw" {
+  type    = string
+  default = "x"
+}
+
+variable "base" {
   type    = string
   default = "x"
 }
@@ -173,6 +181,24 @@ func TestParseAtlas_MasksWhatReachesAPassword_FailurePath(t *testing.T) {
 			vars: []string{"pw=Pa55wordX9"},
 			want: `cannot convert "redacted" to number`,
 		},
+		{
+			name: "a password after an address a value gives",
+			url:  `"${var.base}&password=${tonumber(var.pw)}"`,
+			vars: []string{"pw=Pa55wordX9", "base=postgres://app@127.0.0.1:1/app?sslmode=disable"},
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password urlqueryset() sets on an address a value gives",
+			url:  `urlqueryset(var.base, "password", tonumber(var.pw))`,
+			vars: []string{"pw=Pa55wordX9", "base=postgres://app@127.0.0.1:1/app?sslmode=disable"},
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a password replace() names in the query parameter urlqueryset() sets",
+			url:  `replace(urlqueryset("postgres://app@127.0.0.1:1/db", "app_name", tonumber(var.pw)), "app_name=", "password=")`,
+			vars: []string{"pw=Pa55wordX9"},
+			want: `cannot convert "redacted" to number`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -242,13 +268,16 @@ func TestParseAtlas_KeepsWhatReachesNoPassword_FailurePath(t *testing.T) {
 		{name: "a port replace() writes", url: `replace("postgres://app:x@127.0.0.1:PORT/db", "PORT", tonumber(var.pw))`},
 		{name: "a port with no user info", url: `"postgres://127.0.0.1:${tonumber(var.pw)}/db"`},
 		{name: "a query parameter after a port another value fills", url: `"postgres://127.0.0.1:${var.pre}/db?application_name=${tonumber(var.pw)}"`},
+		{name: "a query parameter after an address a value gives", url: `"${var.base}&application_name=${tonumber(var.pw)}"`},
+		{name: "a whole user info whose value evaluates", url: `"postgres://${var.pw}@127.0.0.1:1/db?application_name=${tonumber(var.pw)}"`},
+		{name: "a query parameter urlqueryset() sets on an address a value gives", url: `urlqueryset(var.base, "application_name", tonumber(var.pw))`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			got, err := projectconfig.ParseAtlasWithOptions(addressSecretsProject(test.url), "atlas.hcl",
-				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Visib1eValue"}})
+				projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"pw=Visib1eValue", "base=postgres://app@127.0.0.1:1/app?sslmode=disable"}})
 
 			c.Assert(err, qt.ErrorMatches, `cannot evaluate atlas\.hcl "url" .*cannot convert "Visib1eValue" to number.*`)
 			c.Assert(got.DatabaseURL, qt.Equals, "")
@@ -367,6 +396,40 @@ func TestParseAtlas_CompositeExternalSchemaCarriesItsSecrets_HappyPath(t *testin
 	c.Assert(composite.Parts[0].ExternalSchema.Secrets, qt.Contains, "Tok3nValueX9")
 }
 
+// An external_schema program carries what the project holds secret and
+// nothing else: the values of a sensitive map, not the names of its items, and
+// not the argument of a format() that takes its arguments by index, which may
+// reach a password but is not known to.
+func TestParseAtlas_ExternalSchemaCarriesOnlyItsSecrets_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "db" {
+  type      = map(string)
+  sensitive = true
+  default   = { username = "app", password = "S3cretPassQ" }
+}
+
+variable "name" {
+  type    = string
+  default = "x"
+}
+
+data "external_schema" "app" {
+  program = ["./export.sh"]
+}
+
+env "dev" {
+  src = data.external_schema.app.url
+  url = format("sqlite://%[1]s.db", var.name)
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl",
+		projectconfig.AtlasLoadOptions{EnvName: "dev", Vars: []string{"name=inventory"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.ExternalSchema.Secrets, qt.DeepEquals, []string{"S3cretPassQ", "app"})
+}
+
 // objectLocalProject is a project whose local db is an object holding a
 // password beside a user, a host, a database name and a label, with env "dev"
 // writing them into its url and passing field, a traversal of local.db, to a
@@ -464,28 +527,278 @@ func TestParseAtlas_MasksAValueEachGivesAPassword_FailurePath(t *testing.T) {
 	c.Assert(got.DatabaseURL, qt.Equals, "")
 }
 
-// The command that loads a project masks its later errors against what the
-// project holds secret: a sensitive value a data "hcl_schema" block passes to
-// its schema file is quoted by the schema file's parser, which runs long after
-// the project's own parser is gone.
-func TestParseAtlas_RecordsItsSecretsForTheCommand_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	ctx := dburldisplay.WithErrorRedaction(context.Background())
-	raw := []byte(`variable "token" {
+// recordedSecretsProject is a project with the sensitive variable token, the
+// sensitive map db whose items hold a user name and a password, the variables
+// pw, name and base, and a local that writes a user info around a conversion
+// of pw, with env "dev" taking url and env "other", which a command for "dev"
+// does not evaluate, taking other.
+func recordedSecretsProject(url, other string) []byte {
+	return []byte(`variable "token" {
   type      = string
+  default   = "x"
   sensitive = true
 }
 
+variable "db" {
+  type      = map(string)
+  sensitive = true
+  default   = { username = "app", password = "S3cretPassQ" }
+}
+
+variable "pw" {
+  type    = string
+  default = "x"
+}
+
+variable "name" {
+  type    = string
+  default = "x"
+}
+
+variable "base" {
+  type    = string
+  default = "x"
+}
+
+locals {
+  ui = "app:${tonumber(var.pw)}"
+}
+
 env "dev" {
-  url = "sqlite://file?mode=memory"
+  url = ` + url + `
+}
+
+env "other" {
+  url = ` + other + `
 }
 `)
+}
 
-	_, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl",
-		projectconfig.AtlasLoadOptions{Context: ctx, EnvName: "dev", Vars: []string{"token=Tok3nValueX9"}})
+// The command that loads a project masks its later errors against what the
+// project holds secret: a sensitive value a data "hcl_schema" block passes to
+// its schema file is quoted by the schema file's parser, which runs long after
+// the project's own parser is gone. What it holds secret is a sensitive value,
+// the value of an item of a sensitive map, and what reaches a password, of an
+// address the file writes or of one a value gives it. A password the file
+// writes through a format() argument or a local is known to be one though it
+// does not evaluate, in an env the command does not evaluate too.
+func TestParseAtlas_RecordsItsSecretsForTheCommand_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		url   string
+		other string
+		vars  []string
+		text  string
+		want  string
+	}{
+		{
+			name:  "a sensitive value",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `"sqlite://other?mode=memory"`,
+			vars:  []string{"token=Tok3nValueX9"},
+			text:  `cannot convert "Tok3nValueX9" to number`,
+			want:  `cannot convert "***" to number`,
+		},
+		{
+			name:  "the value of an item of a sensitive map",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `"sqlite://other?mode=memory"`,
+			text:  `denied for S3cretPassQ`,
+			want:  `denied for ***`,
+		},
+		{
+			name:  "a password the address takes",
+			url:   `"postgres://app:${var.pw}@127.0.0.1:1/db?sslmode=disable"`,
+			other: `"sqlite://other?mode=memory"`,
+			vars:  []string{"pw=Pa55wordX9"},
+			text:  `cannot convert "Pa55wordX9" to number`,
+			want:  `cannot convert "***" to number`,
+		},
+		{
+			name:  "a password after an address a value gives",
+			url:   `"${var.base}&password=${var.pw}"`,
+			other: `"sqlite://other?mode=memory"`,
+			vars:  []string{"pw=Pa55wordX9", "base=postgres://app@127.0.0.1:1/app?sslmode=disable"},
+			text:  `cannot convert "Pa55wordX9" to number`,
+			want:  `cannot convert "***" to number`,
+		},
+		{
+			name:  "the password of an address a value gives",
+			url:   `"${var.base}&application_name=x"`,
+			other: `"sqlite://other?mode=memory"`,
+			vars:  []string{"base=postgres://app:Bas3PassX9@127.0.0.1:1/app?sslmode=disable"},
+			text:  `cannot convert "Bas3PassX9" to number`,
+			want:  `cannot convert "***" to number`,
+		},
+		{
+			name:  "a password a format() argument writes in a user info",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `format("postgres://%s@127.0.0.1:1/db", "app:${tonumber(var.pw)}")`,
+			vars:  []string{"pw=Pa55wordX9"},
+			text:  `cannot convert "Pa55wordX9" to number`,
+			want:  `cannot convert "***" to number`,
+		},
+		{
+			name:  "a password a local writes in a user info",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `"postgres://${local.ui}@127.0.0.1:1/db"`,
+			vars:  []string{"pw=Pa55wordX9"},
+			text:  `cannot convert "Pa55wordX9" to number`,
+			want:  `cannot convert "***" to number`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := dburldisplay.WithErrorRedaction(context.Background())
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(dburldisplay.RedactRecordedText(ctx, `cannot convert "Tok3nValueX9" to number`), qt.Equals, `cannot convert "***" to number`)
+			_, err := projectconfig.ParseAtlasWithOptions(recordedSecretsProject(test.url, test.other), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{Context: ctx, EnvName: "dev", Vars: test.vars})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(dburldisplay.RedactRecordedText(ctx, test.text), qt.Equals, test.want)
+		})
+	}
+}
+
+// The control for the test above: the command masks its later errors against
+// what the project holds secret and nothing else. The name of an item of a
+// sensitive map names a value and is not one. A value whose place in an
+// address is unknown may reach a password but is not known to: the argument of
+// a format() that takes its arguments by index, the value urlqueryset() sets
+// under a key the file does not write out, and the value of a whole user info
+// that does not evaluate. So a server's line and a directory name that hold
+// one keep their text.
+func TestParseAtlas_RecordsNothingTheProjectDoesNotHoldSecret_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		url   string
+		other string
+		text  string
+	}{
+		{
+			name:  "the name of an item of a sensitive map in a server's line",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `"sqlite://other?mode=memory"`,
+			text:  `FATAL: password authentication failed for user app`,
+		},
+		{
+			name:  "the name of an item of a sensitive map in a directory name",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `"sqlite://other?mode=memory"`,
+			text:  `openat username-migrations: no such file or directory`,
+		},
+		{
+			name:  "the argument of a format() that takes it by index",
+			url:   `format("sqlite://%[1]s.db", var.name)`,
+			other: `"sqlite://other?mode=memory"`,
+			text:  `openat inventory-migrations: no such file or directory`,
+		},
+		{
+			name:  "the value urlqueryset() sets under a key the file does not write out",
+			url:   `urlqueryset("sqlite://file?mode=memory", lower("X"), var.name)`,
+			other: `"sqlite://other?mode=memory"`,
+			text:  `openat inventory-migrations: no such file or directory`,
+		},
+		{
+			name:  "the value of a whole user info that does not evaluate",
+			url:   `"sqlite://file?mode=memory"`,
+			other: `"postgres://${tonumber(var.name)}@127.0.0.1:1/db"`,
+			text:  `openat inventory-migrations: no such file or directory`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := dburldisplay.WithErrorRedaction(context.Background())
+
+			_, err := projectconfig.ParseAtlasWithOptions(recordedSecretsProject(test.url, test.other), "atlas.hcl",
+				projectconfig.AtlasLoadOptions{Context: ctx, EnvName: "dev", Vars: []string{"name=inventory"}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(dburldisplay.RedactRecordedText(ctx, test.text), qt.Equals, test.text)
+		})
+	}
+}
+
+// countingFS is a project directory that counts the opens of each file. It
+// offers Open alone, so every read of a file opens it.
+type countingFS struct {
+	files fstest.MapFS
+	opens map[string]int
+}
+
+func (f countingFS) Open(name string) (fs.File, error) {
+	f.opens[name]++
+	return f.files.Open(name)
+}
+
+// instancesProject is a project whose env "app" a for_each expands to one
+// instance for each of count names, each reading its desired state from a data
+// "external_schema" program and the password of its url and of its dev from
+// a file named for it: the url writes it after an address base.txt gives, and
+// the dev writes it in an address of its own. Its env "other", which no
+// for_each expands, reads the password of its url from other.txt. It returns
+// the project and its directory.
+func instancesProject(count int) ([]byte, countingFS) {
+	dir := countingFS{
+		files: fstest.MapFS{
+			"other.txt": {Data: []byte("Oth3rPassX9")},
+			"base.txt":  {Data: []byte("postgres://app@127.0.0.1:1/app?sslmode=disable")},
+		},
+		opens: make(map[string]int),
+	}
+	names := make([]string, 0, count)
+	for i := range count {
+		name := fmt.Sprintf("n%02d", i)
+		names = append(names, `"`+name+`"`)
+		dir.files["pw-"+name+".txt"] = &fstest.MapFile{Data: []byte("Pa55wordX9")}
+	}
+	raw := `data "external_schema" "app" {
+  program = ["./export.sh"]
+}
+
+env "app" {
+  for_each = toset([` + strings.Join(names, ", ") + `])
+  src      = data.external_schema.app.url
+  url      = "${file("base.txt")}&password=${file("pw-${each.value}.txt")}"
+  dev      = "postgres://app:${file("pw-${each.value}.txt")}@127.0.0.1:1/${each.value}?sslmode=disable"
+}
+
+env "other" {
+  url = "postgres://app:${file("other.txt")}@127.0.0.1:1/other?sslmode=disable"
+}
+`
+	return []byte(raw), dir
+}
+
+// Reading what a project holds secret evaluates each slot of an address once
+// for each context the slot evaluates in, after every instance is expanded,
+// rather than for each instance in the context of every instance before it;
+// and a slot after an address a value gives is evaluated in the context that
+// gave the address alone. So the file the password of an instance comes from
+// is opened as often when a for_each expands one instance as when it expands
+// twelve, the last instance's as often as the first's, and the file of an env
+// no for_each expands as often too.
+func TestParseAtlasFSCollection_EvaluatesEachSlotOncePerInstance_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	oneRaw, one := instancesProject(1)
+	manyRaw, many := instancesProject(12)
+	opts := projectconfig.AtlasLoadOptions{EnvName: "app"}
+
+	oneConfigs, oneErr := projectconfig.ParseAtlasFSCollectionWithOptions(oneRaw, "atlas.hcl", one, opts)
+	manyConfigs, manyErr := projectconfig.ParseAtlasFSCollectionWithOptions(manyRaw, "atlas.hcl", many, opts)
+
+	c.Assert(oneErr, qt.IsNil)
+	c.Assert(manyErr, qt.IsNil)
+	c.Assert(oneConfigs, qt.HasLen, 1)
+	c.Assert(manyConfigs, qt.HasLen, 12)
+	c.Assert(manyConfigs[11].ExternalSchema.Secrets, qt.Contains, "Pa55wordX9")
+	c.Assert(one.opens["pw-n00.txt"], qt.Not(qt.Equals), 0)
+	c.Assert(one.opens["other.txt"], qt.Not(qt.Equals), 0)
+	c.Assert(many.opens["pw-n00.txt"], qt.Equals, one.opens["pw-n00.txt"])
+	c.Assert(many.opens["pw-n11.txt"], qt.Equals, one.opens["pw-n00.txt"])
+	c.Assert(many.opens["other.txt"], qt.Equals, one.opens["other.txt"])
 }
 
 // The control for a password read from a local the file does not write out
@@ -501,7 +814,7 @@ func TestParseAtlas_KeepsWhatALocalReadByItsValueHolds_FailurePath(t *testing.T)
 	}{
 		{
 			name:   "the user of a local merge() builds",
-			locals: `db = merge({ user = "appuser" }, { password = var.pw })`,
+			locals: `db = merge({ user = lower("APPUSER") }, { password = var.pw })`,
 			url:    `"postgres://${local.db.user}:${local.db.password}@127.0.0.1:1/db?application_name=${tonumber(local.db.user)}"`,
 			want:   `cannot convert "appuser" to number`,
 		},

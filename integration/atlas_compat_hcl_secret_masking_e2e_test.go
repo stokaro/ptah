@@ -42,8 +42,9 @@ env "dev" {
 // over a project whose evaluation fails on a secret, and reads stderr. Each
 // error quotes the value it failed on, and each value is a secret: a --var
 // value that reaches the password of the env's url, which no variable declares
-// sensitive, and a sensitive variable a data source quotes with no name or
-// address beside it. Both fail before anything connects.
+// sensitive, written in an address of the file's own or after one a variable
+// gives, and a sensitive variable a data source quotes with no name or address
+// beside it. Each fails before anything connects.
 func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -54,6 +55,16 @@ func TestCompatMasksASecretInAnAtlasHCLErrorE2E(t *testing.T) {
 		{
 			name: "a call in the password of the url",
 			url:  `"postgres://app:${tonumber(var.pw)}@127.0.0.1:1/db?sslmode=disable"`,
+			want: `cannot convert "redacted" to number`,
+		},
+		{
+			name: "a call in a password parameter after an address a variable gives",
+			preamble: `variable "base" {
+  type    = string
+  default = "postgres://app@127.0.0.1:1/app?sslmode=disable"
+}
+`,
+			url:  `"${var.base}&password=${tonumber(var.pw)}"`,
 			want: `cannot convert "redacted" to number`,
 		},
 		{
@@ -95,6 +106,70 @@ func TestCompatKeepsAValueThatReachesNoPasswordInAnAtlasHCLErrorE2E(t *testing.T
 
 	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stderr, qt.Contains, `cannot convert "Visib1eValue" to number`)
+}
+
+// TestCompatKeepsWhatAProjectDoesNotHoldSecretInALaterErrorE2E runs
+// `ptah-compat migrate status` over a project whose migration directory is
+// missing, and reads stderr. The command masks its later errors against what
+// the project holds secret and nothing else, so the directory's name keeps a
+// word that names an item of a sensitive map, and a value a format() takes by
+// index, which may reach a password but is not known to.
+func TestCompatKeepsWhatAProjectDoesNotHoldSecretInALaterErrorE2E(t *testing.T) {
+	tests := []struct {
+		name    string
+		project string
+		want    string
+	}{
+		{
+			name: "the name of an item of a sensitive map",
+			project: `variable "db" {
+  type      = map(string)
+  sensitive = true
+  default   = { username = "app", password = "S3cretPassQ" }
+}
+
+env "dev" {
+  url = "sqlite://file?mode=memory"
+  dev = "sqlite://dev?mode=memory"
+  migration {
+    dir = "file://username-migrations"
+  }
+}
+`,
+			want: "username-migrations",
+		},
+		{
+			name: "a value a format() takes by index",
+			project: `variable "name" {
+  type    = string
+  default = "x"
+}
+
+env "dev" {
+  url = format("sqlite://%[1]s.db", var.name)
+  dev = "sqlite://dev?mode=memory"
+  migration {
+    dir = "file://${var.name}-migrations"
+  }
+}
+`,
+			want: "inventory-migrations",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(test.project), 0o600), qt.IsNil)
+
+			got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir},
+				"migrate", "status", "--env", "dev", "--var", "name=inventory")
+
+			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, "open migrations directory: ")
+			c.Assert(got.Stderr, qt.Contains, test.want)
+		})
+	}
 }
 
 // hclSchemaSecretProject writes an atlas.hcl whose env "dev" takes its desired

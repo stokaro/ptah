@@ -189,7 +189,6 @@ func (p atlasParser) compositeSchemaPart(name string, block *hclsyntax.Block) (C
 			WorkingDir: p.resolveExternalSchemaWorkingDir(source.workingDir),
 			Env:        slices.Clone(source.env),
 			Origin:     AtlasFileName,
-			Secrets:    p.displaySecrets(),
 		}
 		return part, nil
 	}

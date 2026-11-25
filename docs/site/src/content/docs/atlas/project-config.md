@@ -624,13 +624,20 @@ The addresses read are those written by:
 
 A local the address names is read through its expression, down to the item
 the traversal names, so `local.db.password` reads that item of the object and
-nothing else of it. An address built any other way, such as a `join()` over a
-variable list or over a `concat()`, is not read, and a value in its password
-shows in full (stokaro/ptah#6645).
+nothing else of it. One that writes no `://` of its own is read with the
+address a value in it evaluates to: with
+`url = "${var.base}&password=${tonumber(var.pw)}"`, the password parameter is
+read as part of the address `var.base` holds, and so is the one
+`urlqueryset(var.base, "password", var.pw)` sets. An address built any other
+way, such as a `join()` over a variable list or over a `concat()`, is not
+read, and a value in its password shows in full (stokaro/ptah#6645).
 
 The secret parts are the password, a query parameter whose name says it holds a
 secret, and a user info a single value fills: there, the text after the
-value's first `:`, or the whole value when it has none and does not evaluate.
+value's first `:`. Where the part a value fills cannot be read, the whole value
+counts as a secret: a user info value with no `:` that does not evaluate, each
+argument of a `format()` that takes its arguments by index, and the value
+`urlqueryset()` sets under a key the file does not write out.
 The values read are what an expression in such a part evaluates to, in each
 `for_each` instance too, the `--var` value of a variable it names, and a
 `getenv()` value.
@@ -642,11 +649,17 @@ A sensitive value passed to a program or a data source alone, with no name
 beside it, is masked in what that source fails with too:
 `program = ["./loader", var.token]` shows `redacted` for the token in the
 error and in the standard-error tail it prints. The same holds for a value that
-reaches a secret part of an address.
+reaches a secret part of an address. The values of a sensitive map or object
+are sensitive values; the names of its items are not, so a server's line that
+says `password authentication failed` keeps the word.
 
-The command that loads the file masks its later errors against the same
-values. A schema file that a `data "hcl_schema"` block passes a sensitive value
-to through `vars` shows `***` in its place when a call on it fails.
+The command that loads the file masks its later errors against the sensitive
+values and what reaches a secret part of an address. A schema file that a
+`data "hcl_schema"` block passes a sensitive value to through `vars` shows
+`***` in its place when a call on it fails. A value counted as a secret only
+because the part it fills cannot be read is masked in `atlas.hcl` errors
+alone, so a migration directory named after it keeps its name in a later
+error.
 
 ## Reading files with file() and fileset()
 
