@@ -480,11 +480,19 @@ func (m *Migrator) WithValueRounding(rounding ValueRounding) *Migrator {
 	return &tmp
 }
 
-// warnWaivedChecks raises one warning for each check of migration's body in
-// direction that the run skips by its kind, before the body runs. A body
-// whose directives do not parse raises none: the checks refuse it.
+// warnWaivedChecks raises one warning for each check of kind
+// [CheckKindRoundedValues] in migration's body in direction that the run
+// skips, before the body runs: every such check when the run allows the
+// rounding or skips every check. A skipped check of that kind is a column whose
+// values the server rounds without a word, so a run that skips one says so
+// whichever opt-in skipped it. A body whose directives do not parse raises
+// none: the checks refuse it.
+//
+// Every path that runs a body calls it, including a tx-mode all batch, which
+// evaluates no check outside a dry run: there the rounding check is the one a
+// waiver lets through, and nothing else would say that it was not read.
 func (m *Migrator) warnWaivedChecks(ctx context.Context, migration *Migration, direction MigrationDirection) {
-	if m.skipChecks || !m.valueRounding.Allowed {
+	if !m.skipChecks && !m.valueRounding.Allowed {
 		return
 	}
 	body := migration.UpSQL
@@ -497,7 +505,7 @@ func (m *Migrator) warnWaivedChecks(ctx context.Context, migration *Migration, d
 	}
 	version := m.versionText(migration.Version)
 	for _, check := range checks {
-		if !m.valueRounding.Waives(check) {
+		if check.Kind != CheckKindRoundedValues {
 			continue
 		}
 		line := fmt.Sprintf("pre-migration check %s of migration %d is skipped, so migration %d converts a column to a "+
@@ -739,8 +747,8 @@ func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
 	return !observesApplyState && m.conn.Writer().IsDryRun()
 }
 
-// txModeAllExclusionAdvice is the one place the two --tx-mode all exclusions
-// are explained.
+// txModeAllTimeoutAdvice and txModeAllCheckAdvice explain the two --tx-mode
+// all exclusions.
 //
 // A timeout and a pre-migration check are both scoped to one migration, and
 // `--tx-mode all` deliberately has no such scope: one transaction spans every
@@ -749,13 +757,19 @@ func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
 // pre-batch state and evaluate its precondition against a database the earlier
 // migrations in the same transaction have already changed.
 //
-// Both refusals name the migration and the feature and point here, because a
-// user who adopts tx-mode all for atomicity otherwise discovers the two
-// incompatibilities one migration at a time (stokaro/ptah#1713).
-const txModeAllExclusionAdvice = "tx-mode all runs every migration in one transaction, " +
-	"so a per-migration timeout would bound the whole batch and a per-migration check would " +
-	"read state the batch has already changed; use the default per-file transaction mode, or " +
-	"remove the directive from this migration"
+// Each refusal names the migration and the feature, because a user who adopts
+// tx-mode all for atomicity otherwise discovers the two incompatibilities one
+// migration at a time (stokaro/ptah#1713). Each gives the reason of its own
+// feature only: a file whose one directive is a check is told nothing about
+// timeouts.
+const (
+	txModeAllTimeoutAdvice = "tx-mode all runs every migration in one transaction, " +
+		"so a per-migration timeout would bound the whole batch; use the default per-file transaction mode, or " +
+		"remove the timeout directives from this migration"
+	txModeAllCheckAdvice = "tx-mode all runs every migration in one transaction, " +
+		"so a per-migration check would read state the batch has already changed; use the default per-file " +
+		"transaction mode, or remove the checks from this migration"
+)
 
 // rejectChecksUnderTxModeAll refuses a migration that declares pre-migration
 // checks when running with tx-mode all. Under a single shared transaction a
@@ -784,7 +798,7 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration, direction Mi
 	if len(groups) > 0 {
 		return fmt.Errorf(
 			"migration %d declares pre-migration checks, which cannot run with tx-mode all: "+
-				"%s", m.versionText(migration.Version), txModeAllExclusionAdvice)
+				"%s", m.versionText(migration.Version), txModeAllCheckAdvice)
 	}
 	return nil
 }
@@ -3120,13 +3134,19 @@ func (m *Migrator) logBatchOutcome(
 // runBatchPreMigrationChecks evaluates pre-migration checks for a tx-mode all
 // run under the same rule as every other up path.
 //
-// It has work to do only in a dry run. A real batch never reaches here with
-// checks, because [Migrator.rejectChecksUnderTxModeAll] refuses a checked
-// directory before any migration is examined; a dry run is exempt from that
-// refusal, because it opens no batch transaction whose uncommitted state a
-// check could miss.
+// It evaluates checks only in a dry run. A real batch never reaches here with
+// a check to run, because [Migrator.rejectChecksUnderTxModeAll] refuses a
+// checked directory before any migration is examined; a dry run is exempt from
+// that refusal, because it opens no batch transaction whose uncommitted state a
+// check could miss. What a real batch does reach here with is a check the run
+// skips, which that refusal lets through, so it warns of each check of kind
+// [CheckKindRoundedValues] the run skips, as [Migrator.runPreMigrationChecks]
+// does on every other up path.
 func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []*Migration) ([]int64, error) {
 	if !m.conn.Writer().IsDryRun() {
+		for _, migration := range migrations {
+			m.warnWaivedChecks(ctx, migration, MigrationDirectionUp)
+		}
 		return nil, nil
 	}
 	var checksDeferred []int64
@@ -3187,7 +3207,7 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 		if !resolvedTimeouts[migration].IsZero() {
 			return fmt.Errorf(
 				"migration %d declares timeouts, which cannot run with tx-mode all: "+
-					"%s", m.versionText(migration.Version), txModeAllExclusionAdvice)
+					"%s", m.versionText(migration.Version), txModeAllTimeoutAdvice)
 		}
 		if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
 			return err

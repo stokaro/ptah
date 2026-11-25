@@ -53,7 +53,7 @@ community CLI does on the same input.
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
 | [`PTAH_ALLOW_TABLE_REBUILD`](#ptah_allow_table_rebuild) | Plan a change the target cannot make in place as a table rebuild |
 | [`PTAH_SKIP_CHECK_SCAN`](#ptah_skip_check_scan) | Add a ClickHouse `CHECK` without scanning the rows the table holds |
-| [`PTAH_ALLOW_VALUE_ROUNDING`](#ptah_allow_value_rounding) | Give a column fewer digits after the point without reading the stored values |
+| [`PTAH_ALLOW_VALUE_ROUNDING`](#ptah_allow_value_rounding) | Give a column fewer digits after the point without reading the stored values, in a plan or a migration apply |
 | [`PTAH_ALLOW_SERVER_CLEAN`](#ptah_allow_server_clean) | Clean a whole MySQL or MariaDB server |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
 | [`PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`](#ptah_atlas_diff_without_dev_url) | Diff a schema file with a database, no dev database |
@@ -251,8 +251,10 @@ skips those checks alone, warns once for each, and evaluates every other check. 
 [A check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
 
 The variable matches the native `--allow-value-rounding` flag of `ptah schema plan`,
-`ptah schema apply` and `ptah migrations up`, which reads no variable. The community CLI reads no rows and converts the column, so the variable
-restores what it does, and the strict profile keeps it.
+`ptah schema apply`, `ptah migrations plan`, `ptah migrations generate` and
+`ptah migrations up`, which reads no variable. The community CLI reads no rows and
+converts the column, so the variable restores what it does, and the strict profile
+keeps it.
 
 ## `PTAH_ATLAS_LINT_WITHOUT_DEV_URL`
 

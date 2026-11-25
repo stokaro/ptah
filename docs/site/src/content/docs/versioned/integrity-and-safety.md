@@ -772,7 +772,16 @@ To apply the file and round the values, pass `--allow-value-rounding` to
 `ptah migrations up`, or set `PTAH_ALLOW_VALUE_ROUNDING=1` for
 `ptah-compat migrate apply`. Either skips the checks of kind `rounded-values` alone,
 warns once for each one skipped, and evaluates every other check; `--skip-checks` and
-`PTAH_SKIP_CHECKS=1` skip them all. The flag reads no environment variable.
+`PTAH_SKIP_CHECKS=1` skip them all, and warn the same way for each check of this kind.
+The flag reads no environment variable. Under `--tx-mode all` a migration with a check
+is refused, as every check is; a check one of these opt-ins skips is not evaluated, so
+the batch runs and warns once for each one.
+
+`ptah migrations rollout` passes no `--allow-value-rounding` to the run of a target,
+so the check refuses each target that holds a row the change would round. To roll out
+such a change after review, generate the file with
+`ptah migrations generate --allow-value-rounding`, which writes no check. An opt-in for
+each target is not available (stokaro/ptah#6672).
 
 `ptah migrations generate --allow-value-rounding` reads no rows and writes the file
 without the checks. Each column gets a comment in place of its check, saying that the

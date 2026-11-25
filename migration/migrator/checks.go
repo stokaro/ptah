@@ -266,8 +266,12 @@ func (e *CheckFailedError) Error() string {
 		kind = "post-migration check"
 	}
 	if e.Err != nil {
-		return fmt.Sprintf("%s %s for migration %d could not run: %v (assert: %s)",
-			kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Err, e.Assert)
+		how := ""
+		if e.Kind == CheckKindRoundedValues && e.request != "" {
+			how = "; ask for the change with " + e.request + " to apply the migration without the check"
+		}
+		return fmt.Sprintf("%s %s for migration %d could not run: %v%s (assert: %s)",
+			kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Err, how, e.Assert)
 	}
 	if e.Kind == CheckKindRoundedValues {
 		how := "store values the new type keeps"
@@ -590,7 +594,9 @@ func validateCheckGroups(groups []checkGroup, rule assertionRule, version versio
 					Name:         check.Name,
 					Assert:       check.Assert,
 					Phase:        check.Phase,
+					Kind:         check.Kind,
 					Err:          err,
+					request:      group.roundingRequest,
 				}
 			}
 		}

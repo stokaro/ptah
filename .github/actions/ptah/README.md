@@ -58,6 +58,7 @@ jobs:
 | `lint-git-base` | empty | Base Git ref for lint, passed through as `--git-base`: only the migrations the pull request adds are linted. Needs `fetch-depth: 0`. Empty lints the whole directory. |
 | `lint-latest` | empty | Lint only the newest N migrations, passed through as `--latest`. Ignored when `lint-git-base` is set. |
 | `allow-destructive` | `false` | Allows destructive plans after review. |
+| `allow-value-rounding` | `false` | Plans and generates a column type change that keeps fewer digits after the point without reading the stored values. |
 | `output-dir` | temporary | Directory for generated reports. |
 | `generate` | `false` | Write the migration files the plan describes into `migration-dir`. |
 | `generate-name` | empty | Name passed to `ptah migrations generate`. Empty lets Ptah name it. |
@@ -113,6 +114,15 @@ ptah migrations lint --format json
 The text plan is generated without `--check-destructive` so the pull request
 comment still contains SQL for review. The separate JSON safety command drives
 the destructive-change failure gate and Check Run.
+
+A column type change that keeps fewer digits after the point, such as a decimal
+with a lower scale, makes both plan commands and `ptah migrations generate` read
+the rows of the column. While a row holds a value the server would round, they
+exit `2`: the plan report holds the refusal, the safety report is empty, and no
+file is written. After review,
+`allow-value-rounding: "true"` passes `--allow-value-rounding` to all three, and
+the generated file then carries a note in place of the check that reads the rows
+where it runs.
 
 ## Linting a changeset rather than all of history
 

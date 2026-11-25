@@ -126,3 +126,51 @@ func TestPlanGeneratedMigrationSpecs_NoRoundingWritesNoCheck(t *testing.T) {
 	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "+ptah check")
 	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "fewer digits after the point")
 }
+
+// planSplitRoundingSpecs plans the rounding change beside a PostgreSQL enum value
+// addition, which leads in a file of its own, so the column type change lands in
+// the transactional file of a split plan.
+func planSplitRoundingSpecs(c *qt.C, policy DiffPolicy) []generatedMigrationSpec {
+	diff := roundingDiff(c)
+	diff.EnumsModified = []difftypes.EnumDiff{{EnumName: "status", ValuesAdded: []string{"archived"}}}
+	desired := roundingDeclaration()
+	desired.Enums = []schemamodel.Enum{{Name: "status", Values: []string{"active", "archived"}}}
+	specs, _, err := planGeneratedMigrationSpecs(c.Context(), must.Must(builtin.New()),
+		diff, desired, roundingRead(), postgresInfo(capability.Postgres16()), 100, "lower_scale", policy,
+		atlasmigrate.Qualifier{},
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(specs, qt.HasLen, 2)
+	c.Assert(specs[0].Name, qt.Equals, "lower_scale_enum_values")
+	c.Assert(specs[1].Name, qt.Equals, "lower_scale_transactional")
+	return specs
+}
+
+// TestPlanGeneratedMigrationSpecs_SplitPlanChecksTheTransactionalFile writes the check
+// into the file that converts the column, the transactional one, and none into the
+// enum file that leads it.
+func TestPlanGeneratedMigrationSpecs_SplitPlanChecksTheTransactionalFile(t *testing.T) {
+	c := qt.New(t)
+
+	specs := planSplitRoundingSpecs(c, DiffPolicy{})
+
+	c.Assert(specs[0].UpSQL, qt.Contains, `ALTER TYPE "status" ADD VALUE 'archived';`)
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "+ptah check")
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "fewer digits after the point")
+	c.Assert(specs[1].UpSQL, qt.Contains, roundingCheckLine+"\n")
+	c.Assert(specs[1].UpSQL, qt.Contains, `ALTER TABLE "prices" ALTER COLUMN "amount" TYPE`)
+}
+
+// TestPlanGeneratedMigrationSpecs_SplitPlanWritesTheNoteUnderTheOptIn holds the split
+// plan to the opt-in: with the rounding allowed, the transactional file carries the
+// note in place of the check, and the enum file carries neither.
+func TestPlanGeneratedMigrationSpecs_SplitPlanWritesTheNoteUnderTheOptIn(t *testing.T) {
+	c := qt.New(t)
+
+	specs := planSplitRoundingSpecs(c, DiffPolicy{AllowValueRounding: true})
+
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "fewer digits after the point")
+	c.Assert(specs[1].UpSQL, qt.Contains, "the rounding was allowed when this file was generated, so no check reads "+
+		"the rows and the server rounds or cuts each value to the new digits\n")
+	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), "+ptah check")
+}

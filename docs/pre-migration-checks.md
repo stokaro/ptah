@@ -36,7 +36,8 @@ Keys:
   column type change that keeps fewer digits after the point. A run asked to round
   the values (`ptah migrations up --allow-value-rounding`,
   `PTAH_ALLOW_VALUE_ROUNDING=1` on `ptah-compat migrate apply`) skips this kind
-  alone and warns once for each check skipped. The kind refuses `phase=after`.
+  alone and warns once for each check skipped; `--skip-checks` skips it with
+  every other check and warns the same way. The kind refuses `phase=after`.
 - `assert` is a single top-level `SELECT` returning exactly one column and one
   row. A boolean result uses its value; a number passes when non-zero; a
   text/`bytea` result accepts the common

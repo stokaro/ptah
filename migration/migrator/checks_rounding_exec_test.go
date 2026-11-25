@@ -162,3 +162,81 @@ func TestMigrateDown_RoundedValuesCheckRefuses(t *testing.T) {
 	c.Assert(checkErr.Kind, qt.Equals, migrator.CheckKindRoundedValues)
 	c.Assert(tableExists(c, conn, "converted"), qt.IsTrue)
 }
+
+// TestMigrateUp_WarnsOfEverySkippedRoundingCheck holds every way a run skips a check
+// of kind rounded-values to the warning that names it: the waiver and --skip-checks,
+// on the per-file path and on a tx-mode all batch, which evaluates no check outside a
+// dry run. The body runs, and an ordinary check beside it, which --skip-checks skips,
+// raises no warning of its own. A tx-mode all batch that only allows the rounding
+// carries no ordinary check, which it would refuse.
+func TestMigrateUp_WarnsOfEverySkippedRoundingCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		up       string
+		txMode   migrator.MigrationTxMode
+		rounding migrator.ValueRounding
+		skip     bool
+	}{
+		{name: "tx-mode all, rounding allowed", up: roundedValuesCheck + "DROP TABLE users;\n",
+			txMode: migrator.MigrationTxModeAll, rounding: migrator.ValueRounding{Allowed: true}},
+		{name: "tx-mode all, checks skipped", up: roundedValuesCheck + ordinaryCheck + "DROP TABLE users;\n",
+			txMode: migrator.MigrationTxModeAll, skip: true},
+		{name: "per-file, checks skipped", up: roundedValuesCheck + ordinaryCheck + "DROP TABLE users;\n",
+			txMode: migrator.MigrationTxModeFile, skip: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, m := roundingFixture{usersRows: 1, auditRows: 1, up: test.up}.open(c)
+			var log bytes.Buffer
+
+			err := m.WithTransactionMode(test.txMode).WithValueRounding(test.rounding).WithSkipChecks(test.skip).
+				WithLogger(slog.New(slog.NewTextHandler(&log, nil))).
+				MigrateUp(context.Background())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(tableExists(c, conn, "users"), qt.IsFalse)
+			c.Assert(log.String(), qt.Contains, "pre-migration check users.id of migration 1 is skipped, so migration 1 "+
+				"converts a column to a type that keeps fewer digits after the point without a scan of the values the table holds")
+			c.Assert(log.String(), qt.Not(qt.Contains), "audit_empty")
+		})
+	}
+}
+
+// TestMigrateUp_TxModeAllRefusesARoundingCheck is the control on the tx-mode all
+// warning: without a waiver the batch refuses the check before any body runs, with the
+// reason that belongs to a check and nothing about timeouts.
+func TestMigrateUp_TxModeAllRefusesARoundingCheck(t *testing.T) {
+	c := qt.New(t)
+	conn, m := roundingFixture{usersRows: 1, up: roundedValuesCheck + "DROP TABLE users;\n"}.open(c)
+
+	err := m.WithTransactionMode(migrator.MigrationTxModeAll).MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `migration 1 declares pre-migration checks, which cannot run with tx-mode all: `+
+		`tx-mode all runs every migration in one transaction, so a per-migration check would read state the batch has `+
+		`already changed; use the default per-file transaction mode, or remove the checks from this migration`)
+	c.Assert(tableExists(c, conn, "users"), qt.IsTrue)
+}
+
+// invalidRoundingCheck is a check of kind rounded-values whose assertion writes, which
+// static validation refuses whatever the database holds.
+const invalidRoundingCheck = `-- +ptah check kind=rounded-values name="users.name" assert="UPDATE users SET name = 'x'"` + "\n" +
+	"ALTER TABLE users ADD COLUMN email TEXT;\n"
+
+// TestMigrateUp_DryRunNamesTheRequestOfAnInvalidRoundingCheck validates a check of kind
+// rounded-values that a dry run defers, as the second migration of the run, and refuses
+// it with its kind and the way the run asks for the change, as an evaluated check of the
+// kind is refused.
+func TestMigrateUp_DryRunNamesTheRequestOfAnInvalidRoundingCheck(t *testing.T) {
+	c := qt.New(t)
+	_, m := newSQLiteDryRunMigrator(c, dryRunCreateUsers, invalidRoundingCheck)
+
+	err := m.WithValueRounding(migrator.ValueRounding{Request: "--allow-value-rounding"}).MigrateUp(context.Background())
+
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr)
+	c.Assert(checkErr.Kind, qt.Equals, migrator.CheckKindRoundedValues)
+	c.Assert(checkErr, qt.ErrorMatches, `pre-migration check users\.name for migration 2 could not run: check assertion `+
+		`must be a read-only SELECT statement; ask for the change with --allow-value-rounding to apply the migration `+
+		`without the check \(assert: UPDATE users SET name = 'x'\)`)
+}

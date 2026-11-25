@@ -344,6 +344,13 @@ it, and set the per-target key where one target needs it.
   out the artifact.
 - Stages run one at a time. Two stages that depend on the same canary run in
   the order the definition declares them, not side by side.
+- The rollout passes no `--allow-value-rounding` to a target's run. A file
+  `ptah migrations generate` wrote for a column type change that keeps fewer
+  digits after the point carries a check that refuses each target holding a row
+  the change would round; see
+  [A check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
+  Generate the file with `--allow-value-rounding` to roll out such a change
+  after review (stokaro/ptah#6672).
 - The rollout passes no `--provider-config` or `--provider-engine` to a target's
   run, so a target that needs either is not covered. A provider installed with
   `ptah providers install` serves a target from its URL, as it serves

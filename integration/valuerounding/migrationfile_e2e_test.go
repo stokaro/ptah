@@ -257,7 +257,7 @@ func TestCompatMigrateApplyRefusesARowInsertedAfterGenerationE2E(t *testing.T) {
 			args := []string{"migrate", "apply", "--url", target, "--dir", hashed(c, dir), "--allow-dirty"}
 
 			refused := compat(c, nil, args...)
-			c.Assert(refused.ExitCode, qt.Equals, 1, outcome(refused))
+			c.Assert(refused.ExitCode, qt.Equals, 2, outcome(refused))
 			c.Assert(refused.Stderr, qt.Contains, checkRefusal)
 			c.Assert(refused.Stderr, qt.Contains, "or ask for the change with PTAH_ALLOW_VALUE_ROUNDING=1")
 			c.Assert(read(c, target, engine.readBack), qt.Equals, engine.held)
@@ -334,4 +334,69 @@ func TestStrictCompatRefusesTheRoundingCheckE2E(t *testing.T) {
 	c.Assert(validated.ExitCode, qt.Equals, 0, outcome(validated))
 	c.Assert(status.ExitCode, qt.Equals, 0, outcome(status))
 	c.Assert(status.Stdout, qt.Contains, "PENDING")
+}
+
+// withoutTimeouts removes the timeout directives from the up file of dir, which
+// --tx-mode all refuses on their own, and leaves the check.
+func withoutTimeouts(c *qt.C, dir string) {
+	c.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(os.WriteFile(files[0], []byte(timeouts.ReplaceAllString(upFile(c, dir), "")), 0o600), qt.IsNil)
+}
+
+// checkedTarget is a database of engine holding rows with digits, and the
+// directory `migrations generate` wrote for it while its rows fit, with the
+// timeout directives removed.
+func checkedTarget(c *qt.C, engine roundingEngine) (target, dir string) {
+	c.Helper()
+	target = engine.server.scratch(c, engine.table, engine.fits)
+	dir, _ = generated(c, engine, target)
+	withoutTimeouts(c, dir)
+	holdDigits(c, engine, target)
+	return target, dir
+}
+
+// skippedCheck is how a run says it skipped a check of kind rounded-values.
+const skippedCheck = "is skipped, so migration"
+
+// TestSkippedRoundingCheckWarnsOnEveryPathE2E applies a generated file over rows
+// with digits on the paths that skip its check without evaluating it: a tx-mode
+// all batch, which evaluates no check, with the rounding allowed on the native
+// and the compatibility surface, and --skip-checks. Each run applies, warns of
+// the skipped check, and rounds the values. Without an opt-in the batch refuses
+// the check and the values are kept, which is the control.
+func TestSkippedRoundingCheckWarnsOnEveryPathE2E(t *testing.T) {
+	c := qt.New(t)
+	engine := engineNamed(c, "postgres")
+	nativeTarget, nativeDir := checkedTarget(c, engine)
+	rehashed := ptah(c, "migrations", "hash", "--dir", nativeDir)
+	c.Assert(rehashed.ExitCode, qt.Equals, 0, outcome(rehashed))
+	compatTarget, compatDir := checkedTarget(c, engine)
+	address := hashed(c, compatDir)
+	skipTarget, skipDir := checkedTarget(c, engine)
+	rehashedSkip := ptah(c, "migrations", "hash", "--dir", skipDir)
+	c.Assert(rehashedSkip.ExitCode, qt.Equals, 0, outcome(rehashedSkip))
+
+	refused := up(c, nativeTarget, nativeDir, "--tx-mode", "all")
+	kept := read(c, nativeTarget, engine.readBack)
+	native := up(c, nativeTarget, nativeDir, "--tx-mode", "all", "--allow-value-rounding")
+	compatRun := compat(c, []string{"PTAH_ALLOW_VALUE_ROUNDING=1"},
+		"migrate", "apply", "--url", compatTarget, "--dir", address, "--allow-dirty", "--tx-mode", "all")
+	skipped := up(c, skipTarget, skipDir, "--skip-checks")
+
+	c.Assert(refused.ExitCode, qt.Equals, 2, outcome(refused))
+	c.Assert(refused.Stderr, qt.Contains, "declares pre-migration checks, which cannot run with tx-mode all")
+	c.Assert(refused.Stderr, qt.Not(qt.Contains), "timeout")
+	c.Assert(kept, qt.Equals, engine.held)
+	c.Assert(native.ExitCode, qt.Equals, 0, outcome(native))
+	c.Assert(native.Stderr, qt.Contains, skippedCheck)
+	c.Assert(read(c, nativeTarget, engine.readBack), qt.Equals, engine.rounded)
+	c.Assert(compatRun.ExitCode, qt.Equals, 0, outcome(compatRun))
+	c.Assert(compatRun.Stderr, qt.Contains, skippedCheck)
+	c.Assert(read(c, compatTarget, engine.readBack), qt.Equals, engine.rounded)
+	c.Assert(skipped.ExitCode, qt.Equals, 0, outcome(skipped))
+	c.Assert(skipped.Stderr, qt.Contains, skippedCheck)
+	c.Assert(read(c, skipTarget, engine.readBack), qt.Equals, engine.rounded)
 }

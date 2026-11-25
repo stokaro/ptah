@@ -22,19 +22,22 @@ const atlasCheckScanEnvVar = "PTAH_SKIP_CHECK_SCAN"
 // [ptah.run/internal/envbool.Retained] is for, so strict mode refuses it.
 var atlasCheckScan = envbool.New(atlasCheckScanEnvVar, false, envbool.Gated)
 
-// atlasValueRoundingEnvVar asks the verbs of this surface that plan a schema
-// change to convert a column to a type that keeps fewer digits after the point
-// without reading the values its table holds. Without it such a plan is
-// refused while a row holds a value the conversion would round or cut. Native
-// commands ask with --allow-value-rounding; this surface takes no flag the
-// pinned binary lacks, so it reads a variable instead.
+// atlasValueRoundingEnvVar asks two kinds of verb of this surface to convert a
+// column to a type that keeps fewer digits after the point without reading the
+// values its table holds. A verb that plans a schema change refuses such a plan
+// while a row holds a value the conversion would round or cut, and `migrate
+// apply` refuses a migration whose check of kind rounded-values finds such a
+// row; with the variable the plan reads no rows and the apply skips those
+// checks. Native commands ask with --allow-value-rounding; this surface takes
+// no flag the pinned binary lacks, so it reads a variable instead.
 const atlasValueRoundingEnvVar = "PTAH_ALLOW_VALUE_ROUNDING"
 
 // atlasValueRounding is the declaration of the variable, made once, on the
-// verbs that own it. See [ptah.run/internal/envbool]. It is
-// [ptah.run/internal/envbool.Retained]: the pinned community binary plans the
-// conversion and the server rounds the values, so the variable restores what
-// that binary does, and strict mode keeps it.
+// verbs that own it: those that plan a schema change and `migrate apply`. See
+// [ptah.run/internal/envbool]. It is [ptah.run/internal/envbool.Retained]: the
+// pinned community binary plans the conversion, applies a migration file
+// without reading a Ptah check, and the server rounds the values, so the
+// variable restores what that binary does, and strict mode keeps it.
 var atlasValueRounding = envbool.New(atlasValueRoundingEnvVar, false, envbool.Retained)
 
 // atlasPlanningRequests are the PTAH_* planning toggles every verb of this

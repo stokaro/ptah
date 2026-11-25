@@ -241,6 +241,12 @@ jobs:
           scripts/check-action-install.sh
           scripts/check-action-install-selftest.sh
 
+      - name: Check what the action passes to each command
+        run: |
+          set -euo pipefail
+          scripts/check-action-run.sh
+          scripts/check-action-run-selftest.sh
+
   readme-example:
     name: README example
     needs: scope
