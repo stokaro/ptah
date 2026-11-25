@@ -360,9 +360,15 @@ when they build the column, so `ENUM('ok ')` holds `ok`. A column of the
 value that ends in a space would never match the column, so on those engines
 Ptah refuses it when it validates, renders or plans the schema. Declare `ok`,
 or give the column the binary character set with `charset: binary` in its
-`mysql` or `mariadb` platform group. A member of a `SET` column type is read
-the same way, so `type: "SET('a ', 'b')"` is refused too. A character set or a
-collation written after the list is not part of the last value, so
+`mysql` or `mariadb` platform group. A binary default of the table counts. A
+binary default of the schema does not, because a plan does not change the
+default of a schema that exists
+([#6665](https://github.com/stokaro/ptah/issues/6665)), so the column takes
+the default the server already has.
+
+A member of a `SET` column type is read the same way, so
+`type: "SET('a ', 'b')"` is refused too. A character set or a collation written
+after the list is not part of the last value, so
 `type: "ENUM('ok ') CHARACTER SET utf8mb4"` is refused as well. Reading a
 database does not refuse such a value: `ptah db read` and `ptah schema inspect`
 describe a binary column that holds `ok ` with its character set.
