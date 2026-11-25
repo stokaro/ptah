@@ -89,7 +89,7 @@ func TestSchemaApplyMariaDBKeepsPrincipalNamesE2E(t *testing.T) {
 				_, dropErr := run.scratch.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+quoted)
 				c.Check(dropErr, qt.IsNil)
 			})
-			_, err = run.scratch.admin.ExecContext(c.Context(), "GRANT SELECT ON "+sqlident.Quote("mariadb", run.database)+".t1 TO "+quoted)
+			_, err = run.scratch.admin.ExecContext(c.Context(), fmt.Sprintf("GRANT SELECT ON %s.t1 TO %s", sqlident.Quote("mariadb", run.database), quoted))
 			c.Assert(err, qt.IsNil)
 			paddedRun := run
 			paddedRun.role = padded
