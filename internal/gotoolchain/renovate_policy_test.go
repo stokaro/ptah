@@ -3,7 +3,9 @@ package gotoolchain_test
 import (
 	"encoding/json"
 	"os"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -31,10 +33,12 @@ const indirectDepType = "indirect"
 
 // renovateRule is one packageRules entry, read for what it does to go.mod.
 type renovateRule struct {
-	MatchManagers    []string `json:"matchManagers"`
-	MatchDepTypes    []string `json:"matchDepTypes"`
-	MatchUpdateTypes []string `json:"matchUpdateTypes"`
-	Enabled          *bool    `json:"enabled"`
+	MatchManagers     []string `json:"matchManagers"`
+	MatchDepTypes     []string `json:"matchDepTypes"`
+	MatchUpdateTypes  []string `json:"matchUpdateTypes"`
+	MatchPackageNames []string `json:"matchPackageNames"`
+	AllowedVersions   string   `json:"allowedVersions"`
+	Enabled           *bool    `json:"enabled"`
 }
 
 // TestRenovate_LeavesTheCompatibilityFloorToAHuman keeps a bot off the released
@@ -110,9 +114,70 @@ func TestRenovate_StillMovesAnIndirectPatch(t *testing.T) {
 			"transitive requirement has to be cleared by hand", renovateConfig, indirectDepType))
 }
 
-// rulesDisabling returns the gomod rules that turn updates off for one depType,
-// whatever the update is.
-func rulesDisabling(c *qt.C, depType string) []renovateRule {
+// TestRenovate_ProposesNoDevelopmentBuild keeps go.mod off a module's
+// development branch.
+//
+// A Go module version ending in -dev is a build of that module's development
+// branch. stokaro/ptah#3399 pinned google.golang.org/grpc to a v1.85.0-dev
+// pseudo-version on purpose, to clear an advisory no release had fixed yet.
+// Renovate reads an unstable current version as consent to more unstable ones:
+// stokaro/ptah#3595 moved it to v1.86.0-dev, and every module that requires
+// ptah.run inherited an unreleased grpc. The rows are the two shapes: the -dev
+// tag itself, and the pseudo-version of a commit after it.
+func TestRenovate_ProposesNoDevelopmentBuild(t *testing.T) {
+	for _, version := range []string{
+		"v1.86.0-dev",
+		"v1.85.0-dev.0.20260924231546-c0ef4986f448",
+	} {
+		t.Run(version, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(goVersionRefused(c, version), qt.IsTrue,
+				qt.Commentf("%s lets Renovate propose the development build %s for every Go module",
+					renovateConfig, version))
+		})
+	}
+}
+
+// TestRenovate_StillProposesReleases is the other half.
+//
+// A rule refusing every version with a suffix would satisfy the test above
+// while freezing the modules that publish no tags and move by pseudo-version,
+// such as golang.org/x/exp, and the release that supersedes a deliberate pin.
+func TestRenovate_StillProposesReleases(t *testing.T) {
+	for _, version := range []string{
+		"v1.85.0",
+		"v0.0.0-20261124000051-d6646c509b6d",
+	} {
+		t.Run(version, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(goVersionRefused(c, version), qt.IsFalse,
+				qt.Commentf("%s refuses %s for every Go module, so Renovate stops proposing it",
+					renovateConfig, version))
+		})
+	}
+}
+
+// goVersionRefused reports whether a gomod rule that applies to every module
+// excludes the version through a negated allowedVersions pattern, the form
+// Renovate spells "!/pattern/".
+func goVersionRefused(c *qt.C, version string) bool {
+	c.Helper()
+
+	for _, rule := range packageRules(c) {
+		pattern, negated := strings.CutPrefix(rule.AllowedVersions, "!/")
+		pattern, closed := strings.CutSuffix(pattern, "/")
+		everyModule := slices.Contains(rule.MatchManagers, "gomod") && len(rule.MatchPackageNames) == 0
+		if negated && closed && everyModule && regexp.MustCompile(pattern).MatchString(version) {
+			return true
+		}
+	}
+	return false
+}
+
+// packageRules reads the policy's package rules.
+func packageRules(c *qt.C) []renovateRule {
 	c.Helper()
 
 	body, err := os.ReadFile(renovateConfig)
@@ -124,9 +189,17 @@ func rulesDisabling(c *qt.C, depType string) []renovateRule {
 	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
 	c.Assert(len(config.PackageRules) > 0, qt.IsTrue,
 		qt.Commentf("%s carries no package rules, so every assertion here would be vacuous", renovateConfig))
+	return config.PackageRules
+}
 
-	matching := make([]renovateRule, 0, len(config.PackageRules))
-	for _, rule := range config.PackageRules {
+// rulesDisabling returns the gomod rules that turn updates off for one depType,
+// whatever the update is.
+func rulesDisabling(c *qt.C, depType string) []renovateRule {
+	c.Helper()
+
+	rules := packageRules(c)
+	matching := make([]renovateRule, 0, len(rules))
+	for _, rule := range rules {
 		disabled := rule.Enabled != nil && !*rule.Enabled
 		if disabled && slices.Contains(rule.MatchManagers, "gomod") && slices.Contains(rule.MatchDepTypes, depType) {
 			matching = append(matching, rule)
