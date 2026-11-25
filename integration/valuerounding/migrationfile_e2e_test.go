@@ -122,6 +122,7 @@ func TestMigrationsPlanRefusesToRoundStoredValuesE2E(t *testing.T) {
 			for _, column := range engine.refused {
 				c.Assert(refused.Stderr, qt.Contains, unqualified(column))
 			}
+			c.Assert(refused.Stderr, qt.Contains, "or ask for the change with --allow-value-rounding")
 			c.Assert(refused.Stdout, qt.Not(qt.Contains), "=== MIGRATION SQL ===")
 			c.Assert(allowed.ExitCode, qt.Equals, 0, outcome(allowed))
 			c.Assert(allowed.Stderr, qt.Contains, "which keeps fewer digits after the point, without a scan of the values the table holds")
@@ -147,6 +148,7 @@ func TestMigrationsGenerateRefusesToRoundStoredValuesE2E(t *testing.T) {
 			for _, column := range engine.refused {
 				c.Assert(result.Stderr, qt.Contains, unqualified(column))
 			}
+			c.Assert(result.Stderr, qt.Contains, "or ask for the change with --allow-value-rounding")
 			written, err := os.ReadDir(dir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(written, qt.HasLen, 0)
