@@ -330,13 +330,16 @@ const patternSourceSuggestion = "first take away what detail.reach.sources names
 
 // TestAnalyzeReach_SuggestsTheSourceBeforeTheGrants reads a superuser and a
 // role reaching as much through grants: a revoke narrows the second, and
-// nothing on a relation narrows the first.
+// nothing on a relation narrows the first. A role that reads everything
+// through pg_read_all_data and writes through grants is told to take the
+// source away for reading alone.
 func TestAnalyzeReach_SuggestsTheSourceBeforeTheGrants(t *testing.T) {
 	c := qt.New(t)
 	reach := defaultThresholds(schemasecurity.Reach{
 		Relations:  relations("a", "b"),
-		Grants:     granted("reader", true, false, "a", "b"),
-		Principals: append(principals("reader"), schemasecurity.ReachPrincipal{Name: "admin", Superuser: true}),
+		Grants:     append(granted("reader", true, false, "a", "b"), granted("both", false, true, "a", "b")...),
+		Principals: append(principals("both", "reader"), schemasecurity.ReachPrincipal{Name: "admin", Superuser: true}),
+		WideAccess: []catalog.WideAccess{{Role: "both", Read: true, Source: "pg_read_all_data"}},
 	})
 
 	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
@@ -347,9 +350,12 @@ func TestAnalyzeReach_SuggestsTheSourceBeforeTheGrants(t *testing.T) {
 
 	c.Assert(suggestions, qt.DeepEquals, []string{
 		"roles/read-reach admin: " + sourceSuggestion,
+		"roles/read-reach both: " + sourceSuggestion,
 		"roles/read-reach reader: grant the role only the relations it needs, or split it into narrower roles; " +
 			"detail.reach.through names the roles it reaches them through",
 		"roles/write-reach admin: " + sourceSuggestion,
+		"roles/write-reach both: grant the role only the relations it needs, or split it into narrower roles; " +
+			"detail.reach.through names the roles it reaches them through",
 	})
 }
 
@@ -695,4 +701,22 @@ func TestReachFromCatalog_ReadsSchemaGrantsFromTheWideAccess(t *testing.T) {
 			c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "app", 50, 75)), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestReachFromCatalog_AddsPUBLICsDatabaseAccessToEveryRole reads a MariaDB
+// shape: the server looks PUBLIC's database-level rows up apart from a role's
+// and adds what each applies, so the access the read decided for PUBLIC counts
+// toward every role. A role whose own grant adds to it reaches more than
+// PUBLIC does, and the finding names PUBLIC's grant among its sources.
+func TestReachFromCatalog_AddsPUBLICsDatabaseAccessToEveryRole(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("t1", "t2")
+	live.Tables = append(live.Tables, catalog.Table{Schema: "other", Name: "t3"}, catalog.Table{Schema: "other", Name: "t4"})
+	live.Roles = []catalog.Role{{Name: "reader"}}
+	live.Grants = []catalog.Grant{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "other", ObjectName: "t3"}}
+	live.WideAccess = []catalog.WideAccess{{Role: "PUBLIC", Subject: "PUBLIC", Read: true, Source: "SELECT ON `ab%`.*", Schema: "ab_c"}}
+
+	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "ab_c", 50, 80)), qt.DeepEquals, []string{
+		"roles/read-reach warning reader 3/4 over 50% through=[] sources=[SELECT ON `ab%`.* held by PUBLIC]",
+	})
 }

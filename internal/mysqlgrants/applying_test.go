@@ -106,3 +106,28 @@ func TestOptions_ApplyingRows_LongMariaDBPattern(t *testing.T) {
 
 	c.Assert(got, qt.DeepEquals, []string{"%x", long + "%"})
 }
+
+// TestOptions_ApplyingRows_EscapedWildcard asks about the database qa_c, whose
+// own row is a pattern to the server, beside the same name with the "_"
+// escaped, which matches qa_c alone: both engines apply the escaped name,
+// MySQL because it sorts first byte for byte and MariaDB because it matches
+// fewer names. integration/schema_security_reach_e2e_test.go measures the
+// shape on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9 and 12.3.3.
+func TestOptions_ApplyingRows_EscapedWildcard(t *testing.T) {
+	tests := []struct {
+		name    string
+		options mysqlgrants.Options
+	}{
+		{name: "MySQL", options: mysqlgrants.Options{}},
+		{name: "MariaDB", options: mysqlgrants.Options{MariaDB: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := test.options.ApplyingRows(mysqlgrants.RoleLookup, "qa_c", []string{"qa_c", `qa\_c`})
+
+			c.Assert(got, qt.DeepEquals, []string{`qa\_c`})
+		})
+	}
+}
