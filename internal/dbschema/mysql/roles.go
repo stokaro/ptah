@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -277,18 +278,6 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	}
 	schema.RoleMemberships = memberships
 
-	wide, err := r.readWideAccess(ctx)
-	if err != nil {
-		if !isRoleReadDenied(err) {
-			return fmt.Errorf("failed to read global privileges: %w", err)
-		}
-		// Left nil: the security analysis then says it could not measure a
-		// role's reach, rather than measuring it without what is granted on
-		// every database.
-		wide = nil
-	}
-	schema.WideAccess = wide
-
 	everywhere, err := r.readWideGrants(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
@@ -306,7 +295,46 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		patterns = nil
 	}
 	schema.WideGrants, schema.WideGrantsPartial = joinWideGrants(everywhere, patterns)
+	schema.WideAccess = wideAccessOf(everywhere, patterns)
 	return r.readConnectedRole(ctx, schema)
+}
+
+// wideAccessOf is the access to the rows of every table that the grants on
+// every database and the grants on a database name pattern give, which the
+// security analysis reads to measure a role's reach. A description of one
+// database leaves both out, because a statement that grants them is not part
+// of that database, but the role still reaches every table there: without
+// this, a role holding SELECT ON *.* or SELECT ON `ab%`.* reads the whole
+// database while its grants say it reads nothing.
+//
+// The access is read from the rows the revoke refusal reads, so the two agree
+// on which pattern reaches a database: [Reader.readPatternGrants] decides it
+// once, with [mysqlgrants.Options.MatchesDatabase]. A grant on a pattern gives
+// access to the database it reaches and to no other, and the access names
+// that database. SELECT is read access, and INSERT, UPDATE and DELETE are
+// write access; the other table privileges change no rows and give none.
+//
+// It is nil where either read did not establish its grants: the security
+// analysis then says it could not measure a role's reach, rather than
+// measuring it without them.
+func wideAccessOf(everywhere, patterns []catalog.WideGrant) []catalog.WideAccess {
+	if everywhere == nil || patterns == nil {
+		return nil
+	}
+	access := make([]catalog.WideAccess, 0, len(everywhere)+len(patterns))
+	for _, grant := range slices.Concat(everywhere, patterns) {
+		held := catalog.WideAccess{Role: grant.Role, Source: grant.Grant, Schema: grant.Schema}
+		switch grant.Privilege {
+		case "SELECT":
+			held.Read = true
+		case "INSERT", "UPDATE", "DELETE":
+			held.Write = true
+		default:
+			continue
+		}
+		access = append(access, held)
+	}
+	return access
 }
 
 // joinWideGrants is the grants on every database and those on a database
@@ -549,47 +577,6 @@ func (r *Reader) userColumns(ctx context.Context) (map[string]bool, error) {
 		return nil, err
 	}
 	return present, nil
-}
-
-// readWideAccess reads the privileges each role holds on every database, the
-// `GRANT SELECT ON *.*` kind. A description of one database leaves them out,
-// because a statement that grants them is not part of that database, but the
-// role still reaches every table in it: without this, a role holding global
-// SELECT reads the whole database while the grants say it reads nothing.
-//
-// SELECT is read access, and INSERT, UPDATE or DELETE is write access. Other
-// global privileges change no rows and are not reported. The privilege columns
-// of mysql.user are read rather than information_schema.USER_PRIVILEGES,
-// which on MariaDB lists no role.
-func (r *Reader) readWideAccess(ctx context.Context) ([]catalog.WideAccess, error) {
-	predicate, err := r.rolePredicate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT user, Select_priv = 'Y', Insert_priv = 'Y' OR Update_priv = 'Y' OR Delete_priv = 'Y'
-		FROM mysql.user
-		WHERE `+predicate+`
-			  AND user NOT LIKE 'mysql.%'
-			  AND (Select_priv = 'Y' OR Insert_priv = 'Y' OR Update_priv = 'Y' OR Delete_priv = 'Y')
-		ORDER BY user`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	access := make([]catalog.WideAccess, 0)
-	for rows.Next() {
-		held := catalog.WideAccess{Source: "global privileges"}
-		if err := rows.Scan(&held.Role, &held.Read, &held.Write); err != nil {
-			return nil, err
-		}
-		access = append(access, held)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return access, nil
 }
 
 // readConnectedRole records the role this connection runs as. CURRENT_USER()

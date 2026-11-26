@@ -1535,6 +1535,11 @@ Ptah refuses a declared revoke on a table, existing or created, that such a
 grant keeps, and names the grant: revoke it where it was granted, or grant the
 privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
+[`ptah schema security`](../../schema/security/#measure-how-much-of-the-database-a-role-reaches)
+counts the same grants toward a role's reach: a grant on a pattern that
+matches the database reaches every relation in it, and the finding names the
+grant.
+
 A pattern matches a database name as the server's privilege check reads it,
 which is not how SQL `LIKE` reads it. `%` is any run of bytes and `_` is one
 byte, so `` `nx__d` `` reaches `nxéd`, where `é` is two bytes. A backslash takes

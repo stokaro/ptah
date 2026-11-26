@@ -13,6 +13,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
@@ -181,11 +182,175 @@ func TestSchemaSecurityReachE2E_MySQLFamily(t *testing.T) {
 			target := replaceMySQLDatabaseName(c, dbtarget.URL(c, test.engine), database)
 
 			c.Assert(reachFindingLines(c, target, suffix), qt.DeepEquals, []string{
-				"roles/read-reach error gl 4/4 through=[] sources=[global privileges held by gl]",
+				"roles/read-reach error gl 4/4 through=[] sources=[SELECT ON *.* held by gl]",
 				"roles/read-reach warning mb 3/4 through=[rd] sources=[]",
 				"roles/read-reach warning rd 3/4 through=[] sources=[]",
 				"roles/write-reach error sw 4/4 through=[] sources=[]",
 			})
 		})
 	}
+}
+
+// TestSchemaSecurityReachE2E_MySQLFamilyPatternGrants grants on database name
+// patterns and reads back how much of the database each role reaches. A
+// pattern that reaches the database counts as a grant on it does, for reading
+// and, through a "_" that stands for another character, for writing, and the
+// finding names the grant, which the database's own grants do not show. A
+// pattern that needs other characters reaches nothing, and neither does the
+// name with that "_" escaped, which matches only a "_" where the database has
+// an "x". A session of each role agrees: it reads or writes where a finding
+// says it reaches, and is refused where none does.
+func TestSchemaSecurityReachE2E_MySQLFamilyPatternGrants(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newPatternReachRun(c, engine.admin)
+			reader, writer, escaped, other := run.role(c, "pt"), run.role(c, "pw"), run.role(c, "pe"), run.role(c, "pn")
+			run.exec(c,
+				fmt.Sprintf("GRANT SELECT ON `%sab%%`.* TO %s", run.prefix, reader),
+				fmt.Sprintf("GRANT INSERT ON `%sab_c`.* TO %s", run.prefix, writer),
+				fmt.Sprintf("GRANT SELECT ON `%sab\\_c`.* TO %s", run.prefix, escaped),
+				fmt.Sprintf("GRANT SELECT ON `%sxy%%`.* TO %s", run.prefix, other),
+			)
+
+			c.Assert(run.findings(c), qt.DeepEquals, []string{
+				"roles/read-reach error pt 2/2 through=[] sources=[SELECT ON `prab%`.* held by pt]",
+				"roles/write-reach error pw 2/2 through=[] sources=[INSERT ON `prab_c`.* held by pw]",
+			})
+			_, err := run.session(c, reader).ExecContext(c.Context(), "SELECT id FROM "+run.table())
+			c.Assert(err, qt.IsNil)
+			_, err = run.session(c, writer).ExecContext(c.Context(), "INSERT INTO "+run.table()+" VALUES (1)")
+			c.Assert(err, qt.IsNil)
+			var refused *mysqldriver.MySQLError
+			_, err = run.session(c, escaped).ExecContext(c.Context(), "SELECT id FROM "+run.table())
+			c.Assert(err, qt.ErrorAs, &refused)
+			c.Assert(refused.Number, qt.Equals, uint16(errTableAccessDenied))
+			_, err = run.session(c, other).ExecContext(c.Context(), "SELECT id FROM "+run.table())
+			c.Assert(err, qt.ErrorAs, &refused)
+			c.Assert(refused.Number, qt.Equals, uint16(errTableAccessDenied))
+		})
+	}
+}
+
+// TestSchemaSecurityReachE2E_MySQLPatternGrantThroughAMembership reads a role
+// granted a role that holds a grant on a database name pattern: it reaches what
+// the pattern reaches, through the role, and the finding names the grant and
+// the role that holds it.
+//
+// MariaDB is left out. Its privilege views list what a role holds through a
+// granted role as the role's own row, so the read reports the member as
+// holding the pattern grant too, and the finding names it held by both roles.
+// Measured on MariaDB 11.8.9 and 12.3.3, SHOW GRANTS lists no such grant for
+// the member, and REVOKE of it from the member fails with Error 1141. The reach
+// counts the same relations either way.
+func TestSchemaSecurityReachE2E_MySQLPatternGrantThroughAMembership(t *testing.T) {
+	c := qt.New(t)
+	run := newPatternReachRun(c, dbtarget.MySQLAdmin)
+	reader, member := run.role(c, "pt"), run.role(c, "pm")
+	run.exec(c,
+		fmt.Sprintf("GRANT SELECT ON `%sab%%`.* TO %s", run.prefix, reader),
+		fmt.Sprintf("GRANT %s TO %s", reader, member),
+	)
+
+	c.Assert(run.findings(c), qt.DeepEquals, []string{
+		"roles/read-reach error pm 2/2 through=[pt] sources=[SELECT ON `prab%`.* held by pt]",
+		"roles/read-reach error pt 2/2 through=[] sources=[SELECT ON `prab%`.* held by pt]",
+	})
+	_, err := run.session(c, member).ExecContext(c.Context(), "SELECT id FROM "+run.table())
+	c.Assert(err, qt.IsNil)
+}
+
+// errTableAccessDenied is the error a server answers a statement on a table
+// the session holds no privilege on with: ER_TABLEACCESS_DENIED_ERROR.
+const errTableAccessDenied = 1142
+
+// patternReachRun is a database on one server whose name ends in "abxc",
+// holding tables t1 and t2, and the suffix that every role and pattern of the
+// test carries. The patterns begin with prefix.
+type patternReachRun struct {
+	admin    *sql.DB
+	engine   dbtarget.Engine
+	suffix   string
+	prefix   string
+	database string
+}
+
+// newPatternReachRun creates the database on engine's server. It is dropped
+// when the test ends.
+func newPatternReachRun(c *qt.C, engine dbtarget.Engine) patternReachRun {
+	c.Helper()
+	admin, err := sql.Open("mysql", dbtarget.DriverDSN(c, engine))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
+	suffix := fmt.Sprintf("_%d", time.Now().UnixNano())
+	run := patternReachRun{admin: admin, engine: engine, suffix: suffix, prefix: "pr" + suffix}
+	run.database = run.prefix + "abxc"
+	createMySQLDatabase(c, c.Context(), admin, run.database)
+	c.Cleanup(func() { dropMySQLDatabase(c, context.Background(), admin, run.database) })
+	run.exec(c,
+		fmt.Sprintf("CREATE TABLE `%s`.t1 (id int PRIMARY KEY)", run.database),
+		fmt.Sprintf("CREATE TABLE `%s`.t2 (id int PRIMARY KEY)", run.database),
+	)
+	return run
+}
+
+// role creates a role named name and the suffix, and returns its name. MySQL
+// caps a role name at 32 characters, and the suffix takes 20. The role is
+// dropped when the test ends, and its grants with it.
+func (r patternReachRun) role(c *qt.C, name string) string {
+	c.Helper()
+	role := name + r.suffix
+	r.exec(c, "CREATE ROLE "+role)
+	c.Cleanup(func() {
+		_, err := r.admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(err, qt.IsNil)
+	})
+	return role
+}
+
+// exec runs each of statements as the administrator.
+func (r patternReachRun) exec(c *qt.C, statements ...string) {
+	c.Helper()
+	for _, statement := range statements {
+		_, err := r.admin.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
+}
+
+// table is t2, qualified with the database.
+func (r patternReachRun) table() string {
+	return "`" + r.database + "`.t2"
+}
+
+// findings are the reach findings `ptah schema security` reports on the
+// database about the test's roles, as [reachFindingLines] states them.
+func (r patternReachRun) findings(c *qt.C) []string {
+	c.Helper()
+	return reachFindingLines(c, replaceMySQLDatabaseName(c, dbtarget.URL(c, r.engine), r.database), r.suffix)
+}
+
+// session is a session of a user role is granted to, with the role active, on
+// no database: what it may do is what the role gives, as the server reads its
+// grants. The user is dropped when the test ends.
+func (r patternReachRun) session(c *qt.C, role string) *sql.Conn {
+	c.Helper()
+	user := role + "_u"
+	// #nosec G202 -- the user, the role and the password are names this test generates.
+	r.exec(c, "CREATE USER "+user+" IDENTIFIED BY 'reach_member_pw'", "GRANT "+role+" TO "+user)
+	c.Cleanup(func() {
+		_, err := r.admin.ExecContext(context.Background(), "DROP USER IF EXISTS "+user)
+		c.Check(err, qt.IsNil)
+	})
+	config, err := mysqldriver.ParseDSN(dbtarget.DriverDSN(c, r.engine))
+	c.Assert(err, qt.IsNil)
+	config.User, config.Passwd, config.DBName = user, "reach_member_pw", ""
+	db, err := sql.Open("mysql", config.FormatDSN())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	conn, err := db.Conn(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	_, err = conn.ExecContext(c.Context(), "SET ROLE "+role)
+	c.Assert(err, qt.IsNil)
+	return conn
 }

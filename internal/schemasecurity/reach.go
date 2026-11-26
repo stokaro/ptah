@@ -48,7 +48,7 @@ type Reach struct {
 	// Relations are the tables, views and materialized views counted.
 	Relations []ReachRelation
 	// Grants are the read and write privileges on relations and on whole
-	// schemas.
+	// schemas, the access to every relation of one schema among them.
 	Grants []ReachGrant
 	// Principals are the roles whose reach is measured: every role the read
 	// found, whether the description defines it or not.
@@ -56,7 +56,9 @@ type Reach struct {
 	// Memberships are the role-in-role edges a member can use, by inheriting
 	// the role's privileges or by switching to it.
 	Memberships []ReachMembership
-	// WideAccess is the access to every relation that no grant states.
+	// WideAccess is the access to every relation that no grant states. An
+	// access to every relation of one schema is in Grants, which names its
+	// source.
 	WideAccess []catalog.WideAccess
 	// ReadOnly are the counted relations whose rows no role can change, the
 	// materialized views: the write rule leaves them out of its count.
@@ -90,6 +92,11 @@ type ReachGrant struct {
 	// Owned reports a privilege the role holds because it owns the relation,
 	// which no revoke narrows for good: the owner can grant it back.
 	Owned bool
+	// Source names a grant that the schema's own grants do not state and a
+	// revoke on a relation does not narrow, such as a MySQL grant on a
+	// database name pattern, "SELECT ON `ab%`.*". A finding names it in
+	// detail.reach.sources. It is empty for every other grant.
+	Source string
 	// Read and Write classify the privilege.
 	Read, Write bool
 }
@@ -143,6 +150,10 @@ type ReachDetail struct {
 // reaching nothing. defaultSchema is the schema or database the connection
 // resolved: a relation the read reports with no schema belongs to it, and a
 // grant that names it names the same relation.
+//
+// An access to every relation of one schema, such as a MySQL grant on a
+// database name pattern that reaches the database, counts as a grant on that
+// schema that names its source.
 func ReachFromCatalog(live *catalog.Database, defaultSchema string, warnPercent, errorPercent int) *Reach {
 	if live == nil || live.WideAccess == nil || live.RoleMemberships == nil {
 		return nil
@@ -150,9 +161,19 @@ func ReachFromCatalog(live *catalog.Database, defaultSchema string, warnPercent,
 	reach := &Reach{
 		Grants:       reachGrants(live.Grants, defaultSchema),
 		Memberships:  reachMemberships(live.RoleMemberships),
-		WideAccess:   live.WideAccess,
+		WideAccess:   make([]catalog.WideAccess, 0, len(live.WideAccess)),
 		WarnPercent:  warnPercent,
 		ErrorPercent: errorPercent,
+	}
+	for _, held := range live.WideAccess {
+		if held.Schema == "" {
+			reach.WideAccess = append(reach.WideAccess, held)
+			continue
+		}
+		reach.Grants = append(reach.Grants, ReachGrant{
+			Role: held.Role, Relation: ReachRelation{Schema: schemaKey(held.Schema, defaultSchema)}, OnSchema: true,
+			Source: held.Source, Read: held.Read, Write: held.Write,
+		})
 	}
 	for _, table := range live.Tables {
 		reach.Relations = append(reach.Relations, ReachRelation{Schema: schemaKey(table.Schema, defaultSchema), Name: table.Name})
@@ -255,13 +276,15 @@ func classifyPrivilege(privilege string) (read, write bool) {
 // A role reaches a relation when a role it can use holds a read or write
 // privilege on the whole relation or on its schema, owns it, or holds access
 // to every relation: superuser, a predefined role that reads or writes all
-// data, a server-wide privilege. PUBLIC's privileges are every role's. A role
-// can use itself, the roles it can switch to with SET ROLE through a chain of
-// memberships that each allow it, and the roles any of those inherits from
-// through a chain of memberships that each pass privileges on; a chain that
-// mixes the two reaches no further than its first link of the other kind,
-// which is how PostgreSQL 16 reads the options. A superuser bit counts only on
-// a role the subject can switch to, since PostgreSQL does not pass it on.
+// data, a server-wide privilege. A privilege on a schema includes one granted
+// on a database name pattern that reaches it. PUBLIC's privileges are every
+// role's. A role can use itself, the roles it can switch to with SET ROLE
+// through a chain of memberships that each allow it, and the roles any of
+// those inherits from through a chain of memberships that each pass
+// privileges on; a chain that mixes the two reaches no further than its first
+// link of the other kind, which is how PostgreSQL 16 reads the options. A
+// superuser bit counts only on a role the subject can switch to, since
+// PostgreSQL does not pass it on.
 //
 // Every role holds what PUBLIC holds, so a role that reaches no more than
 // PUBLIC is not reported: the PUBLIC finding already names that reach, and one
@@ -312,12 +335,14 @@ func findBroadReach(reach *Reach) []Finding {
 			rule      string
 			verb      string
 			relations map[ReachRelation]bool
+			sourced   map[ReachRelation]bool
 			public    map[ReachRelation]bool
 			total     int
 		}{
-			{rule: ReadReachRule, verb: "read", relations: reached.read, public: public.read, total: len(index.counted)},
-			{rule: WriteReachRule, verb: "change the rows of", relations: reached.write, public: public.write,
-				total: len(index.counted) - len(readOnly)},
+			{rule: ReadReachRule, verb: "read", relations: reached.read, sourced: reached.sourcedRead, public: public.read,
+				total: len(index.counted)},
+			{rule: WriteReachRule, verb: "change the rows of", relations: reached.write, sourced: reached.sourcedWrite,
+				public: public.write, total: len(index.counted) - len(readOnly)},
 		} {
 			// The usable roles include PUBLIC, so the set only grows from
 			// PUBLIC's, and an equal size is an equal set.
@@ -330,11 +355,11 @@ func findBroadReach(reach *Reach) []Finding {
 			}
 			finding.Detail.Reach.Through = through
 			finding.Detail.Reach.Sources = reached.sources
-			if reached.sourceDominates(measured.relations) {
+			if reached.sourceDominates(measured.relations, measured.sourced) {
 				finding.Suggestion = "first take away what detail.reach.sources names, since a revoke on a relation " +
 					"does not narrow it: remove superuser, a role that reads or writes all data and a privilege on " +
-					"every database, and give the relations to an owner the application does not connect as; " +
-					"then grant the role only the relations it needs"
+					"every database or on a database name pattern, and give the relations to an owner the " +
+					"application does not connect as; then grant the role only the relations it needs"
 			}
 			findings = append(findings, finding)
 		}
@@ -388,23 +413,26 @@ type relationReach struct {
 	wide bool
 	// owned are the relations a usable role owns.
 	owned map[ReachRelation]bool
+	// sourcedRead and sourcedWrite are the relations a usable role reads and
+	// writes through a grant that names its source.
+	sourcedRead, sourcedWrite map[ReachRelation]bool
 }
 
 // sourceDominates reports whether the sources explain most of measured: access
-// to every relation always does, and ownership does when the role owns more
-// than half of what it reaches. Otherwise the grants are the cause, and the
-// suggestion names them.
-func (r relationReach) sourceDominates(measured map[ReachRelation]bool) bool {
+// to every relation always does, and ownership and the grants in sourced that
+// name a source do when they reach more than half of it. Otherwise the other
+// grants are the cause, and the suggestion names them.
+func (r relationReach) sourceDominates(measured, sourced map[ReachRelation]bool) bool {
 	if r.wide {
 		return true
 	}
-	owned := 0
+	fixed := 0
 	for relation := range measured {
-		if r.owned[relation] {
-			owned++
+		if r.owned[relation] || sourced[relation] {
+			fixed++
 		}
 	}
-	return owned*2 > len(measured)
+	return fixed*2 > len(measured)
 }
 
 // reachedRelations is what the roles access can use reach among the counted
@@ -416,9 +444,10 @@ func reachedRelations(
 ) relationReach {
 	result := relationReach{
 		read: make(map[ReachRelation]bool), write: make(map[ReachRelation]bool), owned: make(map[ReachRelation]bool),
+		sourcedRead: make(map[ReachRelation]bool), sourcedWrite: make(map[ReachRelation]bool),
 	}
 	sourceSet := result.addWideAccess(reach, access, superusers, readOnly)
-	for owner, relations := range result.addGrants(reach, index, access, readOnly) {
+	for owner, relations := range result.addGrants(reach, index, access, readOnly, sourceSet) {
 		sourceSet[ownershipSource(len(relations), owner)] = true
 	}
 	result.sources = sortedKeys(sourceSet)
@@ -458,9 +487,10 @@ func (r *relationReach) addWideAccess(
 }
 
 // addGrants adds the counted relations the grants of the roles access can use
-// reach, and returns, by owner, the relations a usable role owns.
+// reach, names in sourceSet each grant naming a source that reaches one, and
+// returns, by owner, the relations a usable role owns.
 func (r *relationReach) addGrants(
-	reach *Reach, index relationIndex, access roleAccess, readOnly map[ReachRelation]bool,
+	reach *Reach, index relationIndex, access roleAccess, readOnly map[ReachRelation]bool, sourceSet map[string]bool,
 ) map[string]map[ReachRelation]bool {
 	ownedBy := make(map[string]map[ReachRelation]bool)
 	for _, grant := range reach.Grants {
@@ -468,12 +498,18 @@ func (r *relationReach) addGrants(
 		if !held {
 			continue
 		}
-		for _, relation := range index.reachedBy(grant) {
+		reached := index.reachedBy(grant)
+		if grant.Source != "" && len(reached) > 0 {
+			sourceSet[grant.Source+" held by "+grant.Role] = true
+		}
+		for _, relation := range reached {
 			if grant.Read {
 				r.read[relation] = true
+				r.sourcedRead[relation] = r.sourcedRead[relation] || grant.Source != ""
 			}
 			if grant.Write && !readOnly[relation] {
 				r.write[relation] = true
+				r.sourcedWrite[relation] = r.sourcedWrite[relation] || grant.Source != ""
 			}
 			if grant.Owned {
 				if ownedBy[grant.Role] == nil {

@@ -129,9 +129,9 @@ Suggested:
   PRV01 orders: enable row-level security and declare a policy, or record that the whole table is meant to be readable by these roles
   PRV02 bump: qualify the object names in its body or pin search_path, and grant EXECUTE only to roles that should act as the owner
   PRV03 customers: grant to a named role and let members inherit it, so the grant names who holds it
-  roles/read-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
+  roles/read-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database or on a database name pattern, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
   roles/read-reach reporting: grant the role only the relations it needs, or split it into narrower roles; detail.reach.through names the roles it reaches them through
-  roles/write-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
+  roles/write-reach ptah: first take away what detail.reach.sources names, since a revoke on a relation does not narrow it: remove superuser, a role that reads or writes all data and a privilege on every database or on a database name pattern, and give the relations to an owner the application does not connect as; then grant the role only the relations it needs
 
 0 error, 4 warning, 4 info
 
@@ -239,10 +239,19 @@ of all of them. A role reaches a relation through:
   one the owner revoked from itself, since it can grant that back;
 - a grant on the whole database, on MySQL and MariaDB;
 - access no grant on a relation states: superuser, membership in
-  `pg_read_all_data` or `pg_write_all_data`, or a privilege on every database
-  such as `GRANT SELECT ON *.*`. A member reaches what a superuser role reaches
+  `pg_read_all_data` or `pg_write_all_data`, a privilege on every database
+  such as `GRANT SELECT ON *.*`, or, on MySQL and MariaDB, a privilege on a
+  database name pattern that reaches the database, such as
+  ``GRANT SELECT ON `ab%`.*``. A member reaches what a superuser role reaches
   only if it can switch to that role, because PostgreSQL does not pass the
   superuser bit on through inheritance.
+
+A pattern reaches a database as the server's privilege check decides it, the
+way [the MySQL page](../../databases/mysql/#roles-and-grants) describes for a revoke under such a
+grant: `%` and `_` are wildcards, `\_` and `\%` match the character itself, and
+case counts where `lower_case_table_names` is `0`. A pattern that does not reach
+the database counts nothing, and so does every pattern on MySQL with
+`partial_revokes` on.
 
 `SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
 access. The write rule leaves materialized views out of its count, since no
@@ -267,8 +276,9 @@ A role that reaches no more than `PUBLIC` does is not reported, because the
 `PUBLIC` finding already names that reach. In `--format json`,
 `detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
 the reach passes through under `through`, and under `sources` the access a
-revoke on a relation does not narrow, such as `superuser held by ptah` or
-`ownership of 2 relations held by ptah`. An owner can grant itself back what a
+revoke on a relation does not narrow, such as `superuser held by ptah`,
+`ownership of 2 relations held by ptah` or, on MySQL and MariaDB,
+``SELECT ON `ab%`.* held by reporting``. An owner can grant itself back what a
 revoke takes, so the suggestion for such a role is to give the relations to an
 owner the application does not connect as.
 
@@ -316,6 +326,11 @@ across native commands.
   not the view is updatable.
 - On MySQL and MariaDB the rules measure roles, the principals the role read
   covers. A user account that holds broad grants directly is not measured.
+- On MariaDB, a role granted a role that holds a grant on a database name
+  pattern is named in `detail.reach.sources` as holding that grant as well,
+  because MariaDB's privilege views list the grant under both roles. The
+  member reaches the same relations either way, and `REVOKE` of the grant from
+  the member fails, since it holds the grant only through the other role.
 - PostgreSQL's bootstrap superuser is read only when it is not named
   `postgres`: a role read leaves the name `postgres` out, so that role is not
   measured, while a superuser under any other name is. A role that can switch

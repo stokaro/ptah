@@ -310,8 +310,9 @@ func TestReachFromCatalog_CountsOnlyPrivilegesOverRows(t *testing.T) {
 
 // sourceSuggestion is the suggestion of a finding that names a source.
 const sourceSuggestion = "first take away what detail.reach.sources names, since a revoke on a relation does not " +
-	"narrow it: remove superuser, a role that reads or writes all data and a privilege on every database, and give " +
-	"the relations to an owner the application does not connect as; then grant the role only the relations it needs"
+	"narrow it: remove superuser, a role that reads or writes all data and a privilege on every database or on a " +
+	"database name pattern, and give the relations to an owner the application does not connect as; then grant the " +
+	"role only the relations it needs"
 
 // TestAnalyzeReach_SuggestsTheSourceBeforeTheGrants reads a superuser and a
 // role reaching as much through grants: a revoke narrows the second, and
@@ -515,5 +516,98 @@ func TestReachFromCatalog_SuggestsWhatExplainsMostOfTheReach(t *testing.T) {
 		"granted: grant the role only the relations it needs, or split it into narrower roles; " +
 			"detail.reach.through names the roles it reaches them through",
 		"owner: " + sourceSuggestion,
+	})
+}
+
+// TestReachFromCatalog_CountsAGrantOnADatabasePattern reads the MySQL shape of
+// a grant on a database name pattern that reaches the database the connection
+// selected: access to every relation of that database, which the read names
+// by the database. It counts as a grant on the database does, for the role
+// and for a member of it, and the finding names the grant, which the
+// database's own grants do not show. An access to another database reaches
+// nothing here.
+func TestReachFromCatalog_CountsAGrantOnADatabasePattern(t *testing.T) {
+	reads := catalog.WideAccess{Role: "pattern", Read: true, Source: "SELECT ON `ab%`.*", Schema: "ab_c"}
+	tests := []struct {
+		name        string
+		access      []catalog.WideAccess
+		memberships []catalog.RoleMembership
+		want        []string
+	}{
+		{
+			name:   "read access",
+			access: []catalog.WideAccess{reads},
+			want:   []string{"roles/read-reach error pattern 2/2 over 75% through=[] sources=[SELECT ON `ab%`.* held by pattern]"},
+		},
+		{
+			name:   "write access",
+			access: []catalog.WideAccess{{Role: "pattern", Write: true, Source: "INSERT ON `a_%`.*", Schema: "ab_c"}},
+			want:   []string{"roles/write-reach error pattern 2/2 over 75% through=[] sources=[INSERT ON `a_%`.* held by pattern]"},
+		},
+		{
+			name:        "a member of the role",
+			access:      []catalog.WideAccess{reads},
+			memberships: []catalog.RoleMembership{{Role: "pattern", Member: "member"}},
+			want: []string{
+				"roles/read-reach error member 2/2 over 75% through=[pattern] sources=[SELECT ON `ab%`.* held by pattern]",
+				"roles/read-reach error pattern 2/2 over 75% through=[] sources=[SELECT ON `ab%`.* held by pattern]",
+			},
+		},
+		{
+			name:   "access to another database",
+			access: []catalog.WideAccess{{Role: "pattern", Read: true, Source: "SELECT ON `xy%`.*", Schema: "xy_z"}},
+			want:   make([]string, 0),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			live := readCatalog("t1", "t2")
+			live.Roles = []catalog.Role{{Name: "member"}, {Name: "pattern"}}
+			live.WideAccess = test.access
+			live.RoleMemberships = append(live.RoleMemberships, test.memberships...)
+
+			c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "ab_c", 50, 75)), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReachFromCatalog_AGrantOnADatabasePatternReachesItsDatabaseAlone reads a
+// whole server, where the pattern reaches one of two databases: it counts the
+// relations of that database and no other. The suggestion asks to take the
+// grant away where it explains the reach, for reading, and names the role's
+// grants where they do, for writing, though the pattern reaches the same
+// relations for reading.
+func TestReachFromCatalog_AGrantOnADatabasePatternReachesItsDatabaseAlone(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog()
+	live.Roles = []catalog.Role{{Name: "mixed"}, {Name: "pattern"}}
+	live.WideAccess = []catalog.WideAccess{
+		{Role: "mixed", Read: true, Source: "SELECT ON `ab%`.*", Schema: "ab_c"},
+		{Role: "pattern", Read: true, Source: "SELECT ON `ab%`.*", Schema: "ab_c"},
+	}
+	for _, name := range []string{"t1", "t2", "t3"} {
+		live.Tables = append(live.Tables, catalog.Table{Schema: "ab_c", Name: name})
+		live.Grants = append(live.Grants, catalog.Grant{Role: "mixed", Privilege: "INSERT", ObjectType: "TABLE", Schema: "ab_c", ObjectName: name})
+	}
+	live.Tables = append(live.Tables, catalog.Table{Schema: "other", Name: "t4"})
+	reach := schemasecurity.ReachFromCatalog(live, "", 50, 75)
+
+	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
+	suggestions := make([]string, 0)
+	for _, finding := range report.Findings {
+		suggestions = append(suggestions, finding.Code+" "+finding.Subject.Name+": "+finding.Suggestion)
+	}
+
+	c.Assert(reachLines(reach), qt.DeepEquals, []string{
+		"roles/read-reach warning mixed 3/4 over 50% through=[] sources=[SELECT ON `ab%`.* held by mixed]",
+		"roles/read-reach warning pattern 3/4 over 50% through=[] sources=[SELECT ON `ab%`.* held by pattern]",
+		"roles/write-reach warning mixed 3/4 over 50% through=[] sources=[SELECT ON `ab%`.* held by mixed]",
+	})
+	c.Assert(suggestions, qt.DeepEquals, []string{
+		"roles/read-reach mixed: " + sourceSuggestion,
+		"roles/read-reach pattern: " + sourceSuggestion,
+		"roles/write-reach mixed: grant the role only the relations it needs, or split it into narrower roles; " +
+			"detail.reach.through names the roles it reaches them through",
 	})
 }

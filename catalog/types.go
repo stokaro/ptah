@@ -106,10 +106,10 @@ type Database struct {
 	// saved plan's source fingerprint covers the part its plan depends on.
 	RoleMemberships []RoleMembership `json:"role_memberships,omitempty"`
 
-	// WideAccess is the access to every relation that no object grant states,
-	// which the security analysis reads to measure a role's reach. Nil means
-	// the reader does not establish it, and an empty non-nil slice means it
-	// read it and found none.
+	// WideAccess is the access to every relation, or to every relation of one
+	// schema, that no object grant states, which the security analysis reads
+	// to measure a role's reach. Nil means the reader does not establish it,
+	// and an empty non-nil slice means it read it and found none.
 	WideAccess []WideAccess `json:"-"`
 
 	// WideGrants are the table privileges a role holds on every table, or on
@@ -1873,9 +1873,10 @@ type RoutineGrant struct {
 
 // WideAccess is a role's access to every relation of a database that no grant
 // on an object states: membership in a PostgreSQL role that reads or writes
-// all data, or a privilege MySQL grants on every database. It is read for the
-// security analysis, which measures how much of a database a role reaches, and
-// no comparison or plan reads it.
+// all data, or a privilege MySQL or MariaDB grants on every database or on a
+// database name pattern that reaches the database. It is read for the security
+// analysis, which measures how much of a database a role reaches, and no
+// comparison or plan reads it.
 type WideAccess struct {
 	// Role is the role that holds the access.
 	Role string `json:"role"`
@@ -1883,9 +1884,16 @@ type WideAccess struct {
 	Read bool `json:"read,omitempty"`
 	// Write reports access to change the rows of every relation.
 	Write bool `json:"write,omitempty"`
-	// Source names where the access comes from, such as pg_read_all_data or
-	// "global privileges".
-	Source string `json:"source"` // SwitchOnly reports access Role holds only after it switches to the
+	// Source names where the access comes from, such as pg_read_all_data, or
+	// a grant in the words a REVOKE of it uses, such as "SELECT ON *.*" or
+	// "SELECT ON `ab%`.*".
+	Source string `json:"source"`
+	// Schema is the one schema or database whose relations the access
+	// covers, in the read's spelling, such as the database a grant on a
+	// database name pattern reaches. It is empty when the access covers every
+	// relation the read describes.
+	Schema string `json:"schema,omitempty"`
+	// SwitchOnly reports access Role holds only after it switches to the
 	// predefined role, which a PostgreSQL 16 membership with INHERIT FALSE
 	// states. A member of Role that can only inherit from it does not reach
 	// it.
