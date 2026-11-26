@@ -130,12 +130,14 @@ func TestGuard_CreatedNameInProtectedCreationSchema_FailurePath(t *testing.T) {
 }
 
 // A name written with the user's schema is created there whatever the path.
-// An index is created in its table's schema, and the table is named.
+// An index is created in its table's schema, and the table after ON is a
+// reference the catalog's names decide, not the creation schema.
 func TestGuard_CreatedNameInProtectedCreationSchema_HappyPath(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE app.events (id int)`,
 		`CREATE TYPE app."point" AS (x float8, y float8)`,
 		`CREATE INDEX events_id ON app.events (id)`,
+		`CREATE INDEX events_id ON events (id)`,
 	} {
 		t.Run(statement, func(t *testing.T) {
 			c := qt.New(t)
