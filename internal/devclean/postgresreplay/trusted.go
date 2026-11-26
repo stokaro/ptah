@@ -45,9 +45,10 @@ import (
 //     transaction), SET ROLE and SET SESSION AUTHORIZATION, LOCK outside the
 //     form the guard reads, and a session advisory lock: the rest of the
 //     replay runs in that session;
-//   - a mutation of a protected namespace such as pg_catalog, and a TEMP
-//     object outside a session scope: the catalogs the run reads, and objects
-//     neither the reads nor the cleanup see;
+//   - a mutation of a protected namespace such as pg_catalog, written with
+//     the namespace or through a name the session's catalog holds there, and
+//     a TEMP object outside a session scope: the catalogs the run reads, and
+//     objects neither the reads nor the cleanup see;
 //   - ALTER SYSTEM, LOAD, ALTER DATABASE, ALTER ROLE or ALTER USER with SET or
 //     RESET, and the cluster control functions: they configure the server and
 //     the sessions the run opens after the statement;

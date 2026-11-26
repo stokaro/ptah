@@ -79,8 +79,8 @@ func TestReplayGuardSetting_HappyPath(t *testing.T) {
 
 // TestReplayGuardSetting_FailurePath is the control for the test above, in
 // every scope a setting can have. A search_path that names a schema decides
-// where a later unqualified name lands, and the guard reads only qualified
-// ones. A standard_conforming_strings or client_encoding other than on and
+// where a later unqualified name lands, and the guard reads one by the
+// catalog of the path the session started with. A standard_conforming_strings or client_encoding other than on and
 // UTF-8 makes the server read a later statement's bytes by rules the guard
 // does not, and DEFAULT or RESET gives back a value the guard did not read.
 // role and session_authorization change who the rest runs as. A set_config

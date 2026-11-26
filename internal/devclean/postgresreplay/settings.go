@@ -47,7 +47,8 @@ const (
 // as it is:
 //
 //   - name resolution. search_path decides where an unqualified name lands,
-//     and the guard's protected-namespace check reads only qualified names:
+//     and the guard reads one by the names the session's catalog held under
+//     the path the session started with ([protection.unqualifiedNamespace]):
 //     `SET LOCAL search_path = pg_catalog` followed by an unqualified CREATE
 //     FUNCTION creates the function in pg_catalog. The empty path, one empty
 //     string literal, is accepted: under it an unqualified CREATE has no
@@ -79,7 +80,7 @@ const (
 //     19 refuses standard_conforming_strings off itself, with SQLSTATE 0A000;
 //     PostgreSQL 18 and YugabyteDB accept it. DEFAULT and RESET are refused
 //     for both. They give back the value the session started with, which only
-//     [guard.ValidateSession] reads, and it reads nothing under trust, where
+//     [guard.ValidateSession] checks, and it checks neither under trust, where
 //     these refusals stay.
 //   - the catalogs the guard protects. allow_system_table_mods lets a
 //     superuser change the structure of pg_catalog.
@@ -379,33 +380,37 @@ func utf8EncodingName(name string) bool {
 	return cleaned == "UTF8" || cleaned == "UNICODE"
 }
 
-// ValidateSession refuses a session that does not read a statement's bytes
-// the way the guard does, and otherwise returns the guard unchanged: it reads
-// a statement the same way on every session it accepts. The guard reads as
-// UTF-8, with standard-conforming strings. A dev URL's options, a database's
-// or a role's defaults, or the server's configuration can start a session
-// otherwise, and the server then reads the same bytes by other rules and can
-// run what the guard reads as a string; see [postgresSettingReach] for the
-// measurement. CockroachDB accepts no other values, and is asked all the same.
+// ValidateSession reads the dev session once, refuses one that does not read
+// a statement's bytes the way the guard does, and returns the guard that reads
+// the run's statements by the names the session's catalog holds.
 //
-// A run that trusts its SQL is not refused, and the session is not read:
-// trust lifts a DO block, which can change either setting as well as a SET
-// can, so the refusal would protect nothing there. What trust gives up is that
-// the guard reads the statements it still refuses under trust as the server
-// reads them.
+// The guard reads as UTF-8, with standard-conforming strings. A dev URL's
+// options, a database's or a role's defaults, or the server's configuration
+// can start a session otherwise, and the server then reads the same bytes by
+// other rules and can run what the guard reads as a string; see
+// [postgresSettingReach] for the measurement. CockroachDB accepts no other
+// values, and is asked all the same. A run that trusts its SQL is not refused
+// for them: trust lifts a DO block, which can change either setting as well as
+// a SET can, so the refusal would protect nothing there. What trust gives up
+// is that the guard reads the statements it still refuses under trust as the
+// server reads them.
+//
+// The names are read in every scope, trusted included, because the mutation
+// of a namespace the server owns stays refused in every scope, written with
+// the namespace or without it ([protection.unqualifiedNamespace]).
 func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) (replay.Guard, error) {
-	if scope.TrustedSQL {
-		return g, nil
-	}
-	var encoding, conforming string
-	err := session.QueryRowContext(ctx,
-		"SELECT current_setting('client_encoding'), current_setting('standard_conforming_strings')",
-	).Scan(&encoding, &conforming)
+	var encoding, conforming, names string
+	err := session.QueryRowContext(ctx, sessionCatalogQuery).Scan(&encoding, &conforming, &names)
 	if err != nil {
-		return nil, fmt.Errorf("read the dev session's client_encoding and standard_conforming_strings: %w", err)
+		return nil, fmt.Errorf("read the dev session's client_encoding, standard_conforming_strings and catalog names: %w", err)
 	}
-	if utf8EncodingName(encoding) && strings.EqualFold(conforming, "on") {
-		return g, nil
+	catalog, err := readCatalogNames(g.dialect, names)
+	if err != nil {
+		return nil, err
+	}
+	bound := guard{dialect: g.dialect, catalog: &catalog}
+	if scope.TrustedSQL || utf8EncodingName(encoding) && strings.EqualFold(conforming, "on") {
+		return bound, nil
 	}
 	return nil, &replay.SessionRefusal{Reason: fmt.Sprintf(
 		"the dev session reads statements with client_encoding %q and standard_conforming_strings %q, and the %s "+

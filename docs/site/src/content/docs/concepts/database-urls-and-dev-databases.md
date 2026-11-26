@@ -516,8 +516,7 @@ it, and the reset drops it with its comment. `pg_dump` writes such a comment
 after each extension it dumps, and Ptah renders one for a declared extension.
 A comment on an extension the dev database held is refused, since the reset
 keeps the extension and the comment would outlive the run. The name is compared
-as the server stores it, so an unquoted name is read in lower case, and a
-Unicode-escaped name is refused.
+as the server stores it, so an unquoted name is read in lower case.
 
 Replay runs each migration the way `migrations up` does, in one transaction
 unless the file opts out with `-- +ptah no_transaction` or
@@ -574,6 +573,22 @@ as one `SELECT` run a `CREATE ROLE`. PostgreSQL 19 refuses
 for both, since they give back the value the session started with. A dev
 session that starts with either setting, such as one whose URL sets
 `client_encoding=GBK`, is refused before the replay.
+
+A name written without a schema is read the way the server reads it. The
+server looks such a name up in `pg_catalog` before any schema of the search
+path, so `UPDATE pg_settings` writes the catalog's view, and sets the parameter
+of the row it changes, as `SET` would. Before the replay the guard reads the
+names the dev session's catalog holds in its protected namespaces: relations,
+routines, types, operators and the other objects a statement can name. A
+statement that writes, alters, drops, locks, comments on or grants on one of
+them under its bare name is refused, as it is with the schema written, and the
+refusal says to qualify the name. On CockroachDB the same holds for the names
+in `pg_extension`. A table of your own that has a catalog's name, such as
+`app.pg_settings`, is accepted when its schema is written.
+
+A Unicode-escaped identifier, such as `U&"pg\005fcatalog"`, is decoded before
+the guard reads the statement, so it counts as the name it spells. One whose
+escapes the guard cannot decode is refused.
 
 The rejection happens while Ptah validates the whole migration, before its
 first statement executes. Realm-local removals Ptah can classify without

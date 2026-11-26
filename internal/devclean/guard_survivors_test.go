@@ -31,7 +31,8 @@ func survivorGuard(realm devclean.ReplayRealm, survivors replay.CleanupSurvivors
 // TestReplayGuardSurvivors_HappyPath pins the comments a replay accepts on an
 // extension or a schema the claim did not find: the run created it, and every
 // cleanup drops it with its comment. Ptah renders the quoted spelling, and
-// pg_dump the unquoted one; the name is compared as the server stores it.
+// pg_dump the unquoted one; the name is compared as the server stores it, and
+// a Unicode escape as the name it spells.
 func TestReplayGuardSurvivors_HappyPath(t *testing.T) {
 	statements := []string{
 		`COMMENT ON EXTENSION "pg_trgm" IS 'Fixture extension'`,
@@ -40,6 +41,7 @@ func TestReplayGuardSurvivors_HappyPath(t *testing.T) {
 		`COMMENT ON SCHEMA "app" IS 'Application schema'`,
 		`COMMENT ON SCHEMA App IS 'Application schema'`,
 		`COMMENT ON SCHEMA "Public" IS 'not the public schema'`,
+		`COMMENT ON EXTENSION U&"pg\005ftrgm" IS 'Fixture extension'`,
 	}
 	realms := []struct {
 		name  string
@@ -73,9 +75,8 @@ func TestReplayGuardSurvivors_HappyPathTrusted(t *testing.T) {
 // TestReplayGuardSurvivors_FailurePath is the control for the tests above. A
 // comment on an extension or a schema the claim found outlives the run, and
 // so does one on a run whose claim recorded nothing. A schema the server owns
-// is refused whatever the claim found, a Unicode escape is a name the guard
-// cannot compare, and a comment on another kind of object is not one the rule
-// reads.
+// is refused whatever the claim found, a Unicode escape is the name it spells,
+// and a comment on another kind of object is not one the rule reads.
 func TestReplayGuardSurvivors_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -97,8 +98,8 @@ func TestReplayGuardSurvivors_FailurePath(t *testing.T) {
 			statement: `COMMENT ON SCHEMA pg_temp_3 IS 'x'`, wantErr: `.*rejects protected namespace "pg_temp_3" mutation .*`},
 		{name: "a catalog schema", survivors: claimedSurvivors(),
 			statement: `COMMENT ON SCHEMA pg_catalog IS 'x'`, wantErr: `.*rejects protected namespace "pg_catalog" mutation .*`},
-		{name: "a Unicode escape", survivors: claimedSurvivors(),
-			statement: `COMMENT ON EXTENSION U&"pg_trgm" IS 'x'`, wantErr: `.*rejects COMMENT ON global metadata .*`},
+		{name: "an extension the claim found, written with a Unicode escape", survivors: claimedSurvivors(),
+			statement: `COMMENT ON EXTENSION U&"plpgsq\006c" IS 'x'`, wantErr: `.*rejects COMMENT ON global metadata .*`},
 		{name: "a role", survivors: claimedSurvivors(),
 			statement: `COMMENT ON ROLE app_owner IS 'x'`, wantErr: `.*rejects COMMENT ON global metadata .*`},
 		{name: "a database", survivors: claimedSurvivors(),

@@ -11,7 +11,7 @@ import (
 	"ptah.run/internal/pgsystemschema"
 )
 
-func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope replay.Scope) error {
+func validatePostgresReplayStatement(dialect string, catalog catalogNames, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -20,6 +20,8 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 		sessionTables: scope.Session && dialect == platform.Postgres,
 		trustedSQL:    scope.TrustedSQL,
 		publications:  scope.Publications,
+		catalog:       catalog,
+		unqualified:   new(string),
 	}
 
 	first := replay.NormalizedIdentifier(tokens[0])
@@ -33,10 +35,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 		return replay.Refuse(dialect, first+" routine definition")
 	}
 	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {
-		return replay.Refuse(
-			dialect,
-			fmt.Sprintf("protected namespace %q mutation", namespace),
-		)
+		return refuseProtectedNamespace(dialect, fmt.Sprintf("protected namespace %q mutation", namespace), *policy.unqualified)
 	}
 	// It reads a remote server's catalog into foreign tables of the dev
 	// database, which the cleanup drops; only the read reaches past the server.
@@ -55,7 +54,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	}
 	if first == "LOCK" {
 		if operation := policy.transactionScopedLockRefusal(tokens); operation != "" {
-			return replay.Refuse(dialect, operation)
+			return refuseProtectedNamespace(dialect, operation, *policy.unqualified)
 		}
 	} else if operation := postgresSessionOrControlOperation(tokens); operation != "" {
 		return replay.Refuse(dialect, operation)
@@ -80,15 +79,35 @@ type protection struct {
 	trustedSQL bool
 	// publications is [replay.Scope.Publications]; see confinedPublicationDDL.
 	publications replay.PublicationScope
+	// catalog is what an unqualified name reaches in the namespaces the server
+	// owns, as the dev session's catalog names it; see
+	// [protection.unqualifiedNamespace].
+	catalog catalogNames
+	// unqualified receives the first name written without a schema that
+	// reached a namespace the server owns, so the refusal can say to qualify
+	// it. Every reader returns its first protected namespace at once, so the
+	// name is the one that refusal names. Nil records none.
+	unqualified *string
 }
 
 func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) string {
 	if namespace := p.protectedPostgresSelectIntoNamespace(tokens); namespace != "" {
 		return namespace
 	}
-	for _, target := range postgresMutationTargets(tokens) {
-		if namespace := p.protectedNamespaceFromMutationTarget(tokens, target); namespace != "" {
+	class := mutationTargetClass(tokens)
+	for _, target := range replay.MutationTargets(tokens) {
+		if namespace := p.protectedNamespaceFromMutationTarget(tokens, target, class); namespace != "" {
 			return namespace
+		}
+	}
+	for index := 1; index < len(tokens); index++ {
+		switch replay.NormalizedIdentifier(tokens[index]) {
+		case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
+			for _, target := range replay.MutationTargets(tokens[index:]) {
+				if namespace := p.protectedNamespaceFromMutationTarget(tokens, target, classRelation); namespace != "" {
+					return namespace
+				}
+			}
 		}
 	}
 	if namespace := p.protectedPostgresMutationListNamespace(tokens); namespace != "" {
@@ -103,6 +122,8 @@ func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) str
 		if replay.TokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") {
 			return p.protectedPostgresSchemaClause(tokens)
 		}
+	case "COPY":
+		return p.copyTargetNamespace(tokens)
 	case "COMMENT", "SECURITY":
 		return p.protectedPostgresObjectTarget(tokens)
 	case "GRANT", "REVOKE":
@@ -129,7 +150,7 @@ func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) s
 			case "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "TABLE":
 				targetIndex++
 			default:
-				return p.protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+				return p.protectedNameAt(classRelation)(tokens, targetIndex)
 			}
 		}
 		return ""
@@ -137,18 +158,35 @@ func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) s
 	return ""
 }
 
-func postgresMutationTargets(tokens []lexer.Token) [][]string {
-	targets := replay.MutationTargets(tokens)
-	for index := 1; index < len(tokens); index++ {
-		switch replay.NormalizedIdentifier(tokens[index]) {
-		case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
-			targets = append(targets, replay.MutationTargets(tokens[index:])...)
+// mutationTargetClass returns the class of the objects [replay.MutationTargets]
+// reads off a statement: the table a DML statement writes, and the object of
+// the kind a CREATE, ALTER or DROP names. It is "" for a statement whose
+// targets are no object of a namespace, a trigger's name among them.
+func mutationTargetClass(tokens []lexer.Token) catalogClass {
+	switch replay.NormalizedIdentifier(tokens[0]) {
+	case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
+		return classRelation
+	case "ALTER", "CREATE", "DROP":
+		kindIndex := replay.StatementObjectKindIndex(tokens)
+		if kindIndex == replay.MutationTargetNotFound {
+			return ""
+		}
+		if class, ok := objectKindClass(tokens, kindIndex); ok {
+			return class
 		}
 	}
-	return targets
+	return ""
 }
 
-func (p protection) protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string) string {
+// protectedNamespaceFromMutationTarget returns the namespace the server owns
+// that target is in: the one its first part names, or for a name of class
+// written without a schema, the one the server finds it in. A class of ""
+// reads no name without a schema.
+func (p protection) protectedNamespaceFromMutationTarget(
+	tokens []lexer.Token,
+	target []string,
+	class catalogClass,
+) string {
 	if len(target) >= 2 && p.isProtectedPostgresNamespace(target[0]) {
 		if !p.sessionTables || target[0] != "pg_temp" {
 			return target[0]
@@ -156,6 +194,11 @@ func (p protection) protectedNamespaceFromMutationTarget(tokens []lexer.Token, t
 	}
 	if len(target) == 0 {
 		return ""
+	}
+	if class != "" && len(target) == 1 {
+		if namespace := p.unqualifiedNamespace(class, target[0]); namespace != "" {
+			return namespace
+		}
 	}
 
 	kindIndex := replay.StatementObjectKindIndex(tokens)
@@ -203,6 +246,9 @@ func (p protection) protectedPostgresMutationListNamespace(tokens []lexer.Token)
 			return ""
 		}
 		targetAt := p.protectedPostgresQualifiedNamespaceAt
+		if class, ok := objectKindClass(tokens, kindIndex); ok {
+			targetAt = p.protectedNameAt(class)
+		}
 		if kind == "SCHEMA" {
 			targetAt = p.protectedPostgresNamespaceObjectAt
 		}
@@ -224,7 +270,7 @@ func (p protection) protectedPostgresMutationListNamespace(tokens []lexer.Token)
 			tokens,
 			index,
 			"",
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
 		)
 	default:
 		return ""
@@ -266,7 +312,7 @@ func (p protection) protectedPostgresSpecialMutationNamespace(tokens []lexer.Tok
 			if replay.TokenSequenceAt(tokens, index, "CONCURRENTLY") {
 				index++
 			}
-			return p.protectedPostgresQualifiedNamespaceAt(tokens, index)
+			return p.protectedNameAt(classRelation)(tokens, index)
 		}
 	case "REINDEX":
 		return p.protectedPostgresReindexNamespace(tokens)
@@ -283,6 +329,13 @@ func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) s
 	switch kind {
 	case "AGGREGATE", "COLLATION", "CONVERSION", "OPERATOR", "STATISTICS":
 		return p.protectedPostgresNamedSpecialDDLNamespace(tokens, kindIndex, kind)
+	case "INDEX":
+		// CREATE INDEX names the table after ON, which the mutation targets
+		// read; ALTER INDEX names the index itself.
+		if replay.NormalizedIdentifier(tokens[0]) != "ALTER" {
+			return ""
+		}
+		return p.protectedNameAt(classRelation)(tokens, replay.ObjectNameIndex(tokens, kindIndex))
 	case "EXTENSION":
 		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
@@ -290,12 +343,22 @@ func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) s
 			kindIndex+1,
 			p.protectedPostgresNamespaceObjectAt,
 		)
-	case "POLICY":
+	case "POLICY", "TRIGGER":
 		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
 			"ON",
 			kindIndex+1,
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
+		)
+	case "CONSTRAINT":
+		if !replay.TokenSequenceAt(tokens, kindIndex, "CONSTRAINT", "TRIGGER") {
+			return ""
+		}
+		return p.protectedPostgresNamespaceAfterKeyword(
+			tokens,
+			"ON",
+			kindIndex+2,
+			p.protectedNameAt(classRelation),
 		)
 	case "RULE":
 		keyword := "ON"
@@ -306,7 +369,7 @@ func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) s
 			tokens,
 			keyword,
 			kindIndex+1,
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
 		)
 	default:
 		return ""
@@ -334,11 +397,12 @@ func (p protection) protectedPostgresNamedSpecialDDLNamespace(
 		nameIndex++
 	}
 	nameIndex = replay.SkipNameModifiers(tokens, nameIndex)
+	class, _ := objectKindClass(tokens, kindIndex)
 	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
 		nameIndex,
 		"",
-		p.protectedPostgresQualifiedNamespaceAt,
+		p.protectedNameAt(class),
 	); namespace != "" {
 		return namespace
 	}
@@ -347,7 +411,7 @@ func (p protection) protectedPostgresNamedSpecialDDLNamespace(
 			tokens,
 			"FROM",
 			nameIndex,
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
 		)
 	}
 	return ""
@@ -360,7 +424,7 @@ func (p protection) protectedPostgresReindexNamespace(tokens []lexer.Token) stri
 			return ""
 		case "INDEX", "TABLE":
 			targetIndex := replay.SkipNameModifiers(tokens, index+1)
-			return p.protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+			return p.protectedNameAt(classRelation)(tokens, targetIndex)
 		case "SCHEMA":
 			targetIndex := replay.SkipNameModifiers(tokens, index+1)
 			return p.protectedPostgresNamespaceObjectAt(tokens, targetIndex)
@@ -392,8 +456,15 @@ func (p protection) protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	classWidth := postgresObjectClassWidth(tokens, targetIndex)
 	targetIndex += classWidth
 	targetAt := p.protectedPostgresQualifiedNamespaceAt
-	if classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "SCHEMA" {
+	switch class, ok := objectKindClass(tokens, onIndex+1); {
+	case classWidth == 0:
+		targetAt = p.protectedNameAt(classRelation)
+	case classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "SCHEMA":
 		targetAt = p.protectedPostgresNamespaceObjectAt
+	case classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "COLUMN":
+		targetAt = p.protectedColumnAt
+	case ok:
+		targetAt = p.protectedNameAt(class)
 	}
 	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
@@ -412,7 +483,21 @@ func (p protection) protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	if relationOnIndex == replay.MutationTargetNotFound {
 		return ""
 	}
-	return p.protectedPostgresQualifiedNamespaceAt(tokens, relationOnIndex+1)
+	return p.protectedNameAt(classRelation)(tokens, relationOnIndex+1)
+}
+
+// protectedColumnAt reads the column a COMMENT or a SECURITY LABEL names:
+// schema.table.column, whose first part is a namespace, or table.column,
+// whose first part is a table written without a schema.
+func (p protection) protectedColumnAt(tokens []lexer.Token, index int) string {
+	parts, _ := replay.QualifiedIdentifierAt(tokens, index)
+	switch len(parts) {
+	case 0, 1:
+		return ""
+	case 2:
+		return p.unqualifiedNamespace(classRelation, parts[0])
+	}
+	return p.protectedPostgresQualifiedNamespaceAt(tokens, index)
 }
 
 func (p protection) protectedPostgresObjectListNamespace(
@@ -624,8 +709,9 @@ func postgresSchemaStateStatement(tokens []lexer.Token) bool {
 // that declares a comment.
 //
 // The name is compared as the server stores it ([storedName]). A Unicode
-// escape is refused, as the guard does not decode it, and a schema the server
-// owns is refused whatever the claim found: the server creates pg_temp and
+// escape reaches it decoded, as the quoted identifier it spells
+// ([decodedUnicodeIdentifiers]), and a schema the server owns is refused
+// whatever the claim found: the server creates pg_temp and
 // pg_toast_temp schemas as sessions need them and keeps them afterwards, so
 // one the run's own session created is missing from the claim and outlives
 // the run.

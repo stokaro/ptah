@@ -28,20 +28,31 @@ func Services() []replay.Service {
 
 type guard struct {
 	dialect string
+	// catalog is what an unqualified name reaches in the namespaces the server
+	// owns, read by [guard.ValidateSession]. Nil is a guard that read no
+	// session; see [fallbackCatalogNamespace].
+	catalog *catalogNames
 }
 
 // Validate refuses a statement whose effects cannot be confined to scope, and
 // under [replay.Scope.TrustedSQL] one that would mislead the run or its
 // cleanup; see [postgresUnconfinedOperation].
 func (g guard) Validate(stmt string, scope replay.Scope) error {
-	tokens := replay.Tokens(stmt, lexerOptions())
+	tokens, ok := decodedUnicodeIdentifiers(stmt, replay.Tokens(stmt, lexerOptions()))
+	if !ok {
+		return replay.Refuse(g.dialect, `a U&"..." identifier whose escapes the guard cannot decode`)
+	}
+	var catalog catalogNames
+	if g.catalog != nil {
+		catalog = *g.catalog
+	}
 	if scope.Server && postgresServerWideOperation(stmt, tokens, scope) != "" {
-		return validatePostgresServerWideStatement(g.dialect, tokens, scope)
+		return validatePostgresServerWideStatement(g.dialect, catalog, tokens, scope)
 	}
 	if scope.TrustedSQL && postgresUnconfinedOperation(stmt, tokens) != "" {
-		return validatePostgresServerWideStatement(g.dialect, tokens, scope)
+		return validatePostgresServerWideStatement(g.dialect, catalog, tokens, scope)
 	}
-	return validatePostgresReplayStatement(g.dialect, tokens, scope)
+	return validatePostgresReplayStatement(g.dialect, catalog, tokens, scope)
 }
 
 // lexerOptions is how PostgreSQL reads its text: standard-conforming string

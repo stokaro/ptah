@@ -136,7 +136,6 @@ func TestReplayGuardProvisionedServer_PostgresRefusesOtherExtensionChanges(t *te
 		// refused, so the replay never runs an install lint did not assess.
 		`ALTER EXTENSION pgcrypto UPDATE TO 1.3`,
 		`ALTER EXTENSION pgcrypto UPDATE TO '1.2' TO '1.3'`,
-		`ALTER EXTENSION U&"\zz" UPDATE`,
 		"ALTER EXTENSION pgcrypto UPDATE -- \x00\n",
 		`ALTER EXTENSION pgcrypto UPDATE; LOAD 'x'`,
 	} {
@@ -146,6 +145,13 @@ func TestReplayGuardProvisionedServer_PostgresRefusesOtherExtensionChanges(t *te
 				`postgres migration replay rejects ALTER EXTENSION because its effects cannot be confined to the disposable database realm`)
 		})
 	}
+	// An escape the server refuses is a name neither lint nor the guard can
+	// read, and it is refused before the statement is read at all.
+	t.Run(`ALTER EXTENSION U&"\zz" UPDATE`, func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(guard.ValidateStatement(`ALTER EXTENSION U&"\zz" UPDATE`), qt.ErrorMatches,
+			`postgres migration replay rejects a U&"\.\.\." identifier whose escapes the guard cannot decode because .*`)
+	})
 }
 
 // TestReplayGuardDatabaseRealm_PostgresRefusesServerWideStatements is the

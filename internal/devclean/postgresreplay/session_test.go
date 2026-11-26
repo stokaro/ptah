@@ -1,6 +1,7 @@
 package postgresreplay_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"testing"
@@ -12,12 +13,12 @@ import (
 )
 
 // reportedSession is a dev session that answers every query with its client
-// encoding and standard_conforming_strings, and counts the queries it is
-// asked.
+// encoding, its standard_conforming_strings and the names of its catalog, and
+// counts the queries it is asked. A zero catalog names nothing.
 type reportedSession struct {
-	encoding, conforming string
-	err                  error
-	asked                *int
+	encoding, conforming, catalog string
+	err                           error
+	asked                         *int
 }
 
 func (s reportedSession) QueryRowContext(context.Context, string, ...any) dataext.Row {
@@ -30,6 +31,7 @@ type sessionRow reportedSession
 func (r sessionRow) Scan(dest ...any) error {
 	*dest[0].(*string) = r.encoding
 	*dest[1].(*string) = r.conforming
+	*dest[2].(*string) = cmp.Or(r.catalog, "[]")
 	return r.err
 }
 
@@ -46,9 +48,9 @@ func sessionGuardFor(c *qt.C, dialect string) replay.SessionGuard {
 var postgresFamily = []string{"postgres", "cockroachdb", "yugabytedb"}
 
 // A session that reads statements as UTF-8 with standard-conforming strings
-// reads them as the guard does, in any realm, and the guard comes back as it
-// was. The server reports the encoding as UTF8; the spellings it accepts for
-// it are read the same.
+// reads them as the guard does, in any realm, and is asked once. The server
+// reports the encoding as UTF8; the spellings it accepts for it are read the
+// same.
 func TestGuard_ValidateSession_HappyPath(t *testing.T) {
 	for _, dialect := range postgresFamily {
 		for _, encoding := range []string{"UTF8", "utf8", "UTF-8", "UNICODE"} {
@@ -60,25 +62,29 @@ func TestGuard_ValidateSession_HappyPath(t *testing.T) {
 				got, err := sessionGuardFor(c, dialect).ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev"})
 
 				c.Assert(err, qt.IsNil)
-				c.Assert(got, qt.Equals, guardFor(c, dialect))
+				c.Assert(got, qt.IsNotNil)
 				c.Assert(*asked, qt.Equals, 1)
 			})
 		}
 	}
 }
 
-// A run that trusts its SQL is not refused, and its session is not read:
-// trust lifts a DO block, which can change either setting.
+// A run that trusts its SQL is not refused for its encoding or its strings:
+// trust lifts a DO block, which can change either setting. The session is read
+// all the same, for the catalog's names, and the guard it returns reads them:
+// a mutation of pg_catalog stays refused under trust.
 func TestGuard_ValidateSession_HappyPathTrusted(t *testing.T) {
 	c := qt.New(t)
 	asked := new(int)
-	session := reportedSession{encoding: "GBK", conforming: "off", asked: asked}
+	session := reportedSession{encoding: "GBK", conforming: "off", catalog: `[["f", "pg_catalog", ["now"]]]`, asked: asked}
+	trusted := replay.Scope{Database: "ptah_dev", TrustedSQL: true}
 
-	got, err := sessionGuardFor(c, "postgres").ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev", TrustedSQL: true})
+	got, err := sessionGuardFor(c, "postgres").ValidateSession(c.Context(), session, trusted)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, guardFor(c, "postgres"))
-	c.Assert(*asked, qt.Equals, 0)
+	c.Assert(*asked, qt.Equals, 1)
+	c.Assert(got.Validate(`COMMENT ON FUNCTION now() IS 'x'`, trusted), qt.ErrorMatches,
+		`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "now" because .*`)
 }
 
 // A session that reads statements in another encoding, or with backslash
@@ -137,7 +143,20 @@ func TestGuard_ValidateSession_FailurePathUnreadableSession(t *testing.T) {
 
 	c.Assert(got, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, errSessionGone)
-	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding and standard_conforming_strings: session gone`)
+	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding, standard_conforming_strings and catalog names: session gone`)
 	var refusal *replay.SessionRefusal
 	c.Assert(err, qt.Not(qt.ErrorAs), &refusal)
+}
+
+// A catalog answer the guard cannot read is an error, not a catalog that names
+// nothing: a guard that took it for one would fall back to the rule it reads
+// without a session.
+func TestGuard_ValidateSession_FailurePathUnreadableCatalog(t *testing.T) {
+	c := qt.New(t)
+	session := reportedSession{encoding: "UTF8", conforming: "on", catalog: `{"r": []}`, asked: new(int)}
+
+	got, err := sessionGuardFor(c, "postgres").ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev"})
+
+	c.Assert(got, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `read the dev session's catalog names: json: cannot unmarshal object .*`)
 }
