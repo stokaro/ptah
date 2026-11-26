@@ -72,6 +72,7 @@ func TestRules(t *testing.T) {
 	c.Assert(rules.GeneratedExpressions, qt.Equals, schemacomparison.GeneratedExpressions(clickhousecomparison.GeneratedExpressions{}))
 	c.Assert(rules.Columns, qt.IsNil)
 	c.Assert(rules.Views, qt.IsNil)
+	c.Assert(rules.ViewQueries, qt.Equals, schemacomparison.ViewQueries(clickhousecomparison.ViewQueries{}))
 	c.Assert(rules.Routines, qt.IsNil)
 }
 

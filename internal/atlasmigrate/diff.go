@@ -850,7 +850,7 @@ func compareReplayedState(
 		return replayedComparison{}, err
 	}
 	if readNamesTheDevDatabase(replayConn.Info().Dialect) {
-		devqualifier.Remove(replayed, defaultSchema, readNames)
+		devqualifier.Remove(replayed, replayConn.Info().Dialect, defaultSchema, readNames)
 	}
 	// The extensions and publications the dev database held before the
 	// replay are its environment, not something the directory built; see

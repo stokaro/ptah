@@ -133,8 +133,7 @@ func TestReaderReadSchema_LoadsPlainViews(t *testing.T) {
 	c.Assert(db.QueryCount(), qt.Equals, 10)
 	c.Assert(schema.Views, qt.DeepEquals, []catalog.View{{
 		Name:        "active_users",
-		Schema:      "analytics",
-		Body:        "SELECT id, name FROM analytics.users WHERE active = true",
+		Body:        "SELECT id, name FROM users WHERE active = true",
 		CheckOption: "NONE",
 		Comment:     "Current active users",
 	}})
@@ -154,8 +153,7 @@ func TestReaderReadSchema_LoadsMaterializedViews(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.MatViews, qt.DeepEquals, []catalog.MaterializedView{{
 		Name:    "user_counts",
-		Schema:  "analytics",
-		Body:    "SELECT count() AS c FROM analytics.users",
+		Body:    "SELECT count() AS c FROM users",
 		Comment: "Rolled up per user",
 	}})
 	c.Assert(schema.Views, qt.HasLen, 1)
@@ -265,7 +263,7 @@ func TestReaderReadSchema_ReadsAScheduleOnlyForAViewTheServerSchedules(t *testin
 }
 
 func matViewSubject(name string) objectidentity.ID {
-	return objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "analytics", name)
+	return objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", name)
 }
 
 // unreadableRefreshQuery lists a refreshable view whose stored statement has a

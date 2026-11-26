@@ -50,7 +50,7 @@ func (b coverageBinder) scope(scope schemaext.NamespaceScope, kind objectidentit
 	if mode != ownedCoverage && (scope.Catalog == nil || !scope.Catalog.Empty()) {
 		return schemaext.NamespaceScope{}, scopeBindingError()
 	}
-	if mode == tableCoverage || mode == routineCoverage || (mode == indexCoverage && b.semantics.IndexNamespace == identifier.IndexNamespaceSchema) {
+	if mode == tableCoverage || mode == schemaCoverage || (mode == indexCoverage && b.semantics.IndexNamespace == identifier.IndexNamespaceSchema) {
 		if scope.Parent != nil && !scope.Parent.Empty() {
 			return schemaext.NamespaceScope{}, scopeBindingError()
 		}

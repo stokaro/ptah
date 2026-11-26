@@ -8,9 +8,11 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/chrefresh"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -369,9 +371,13 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 
 	var views []catalog.View
 	for rows.Next() {
-		view := catalog.View{Schema: dbName, CheckOption: "NONE"}
+		view := catalog.View{CheckOption: "NONE"}
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
 			return nil, err
+		}
+		view.Body, err = sqlqualifier.LocalViewBody(view.Body, "clickhouse", dbName, chcolumn.UnquoteIdentifier)
+		if err != nil {
+			return nil, fmt.Errorf("view %q: %w", view.Name, err)
 		}
 		views = append(views, view)
 	}
@@ -385,9 +391,9 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 //
 // The definition comes from system.tables.as_select, the same column the plain
 // view read uses. Measured on server 26.7.3.19, as_select carries the SELECT
-// alone -- no storage clause and no POPULATE -- and a body written with
-// qualified names comes back byte for byte, so the desired body and the read
-// body compare directly.
+// alone -- no storage clause and no POPULATE. Local database qualifiers are
+// removed from it, as they are from a plain view, so a description can be
+// applied on another database with the same schema.
 //
 // A refreshable view's REFRESH EVERY|AFTER schedule is read as the
 // ClickHouse owner's observation, attached as a facet. It comes from
@@ -456,10 +462,14 @@ func (r *Reader) readMaterializedViewRows(ctx context.Context, dbName string) ([
 	var views []catalog.MaterializedView
 	var statements []string
 	for rows.Next() {
-		view := catalog.MaterializedView{Schema: dbName}
+		var view catalog.MaterializedView
 		var statement string
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment, &statement); err != nil {
 			return nil, nil, err
+		}
+		view.Body, err = sqlqualifier.LocalViewBody(view.Body, "clickhouse", dbName, chcolumn.UnquoteIdentifier)
+		if err != nil {
+			return nil, nil, fmt.Errorf("materialized view %q: %w", view.Name, err)
 		}
 		views = append(views, view)
 		statements = append(statements, statement)

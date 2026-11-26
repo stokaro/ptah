@@ -1106,6 +1106,32 @@ qualified names and query bodies, and reads ordinary views from
 `system.tables`. An empty query body, `WITH CHECK OPTION`, or
 `DROP VIEW ... CASCADE` fails instead of being ignored.
 
+A read of one database reports its views and materialized views without that
+database's name, as it does for tables. References to that database inside a view
+query become local references too. For example, a view read from `app` with
+`SELECT app.id FROM app.events AS app` is described as
+`SELECT app.id FROM events AS app`: the alias stays, and the source follows the
+database where the SQL runs. References to another database, string literals and
+comments keep their text.
+
+This scope applies to `schema diff` and to migration files, including the down
+files that restore a view. A diff between database URLs changes the database
+selected by `--from` when its SQL is applied there. A migration generated from
+one database can run on another with the same starting schema; explicit references
+to a foreign database still require that database. A declaration that explicitly
+names the connection's current database matches its local catalog query when
+the remaining SQL tokens agree.
+
+A database-qualified column expression such as `app.events.id` can mean
+something different after removing `app`: ClickHouse may read `events.id` as a
+tuple field instead of a table column. Ptah refuses any expression with three or
+more parts that starts with the current database name, even when an explicit
+alias has that name. The diagnostic names the view and asks for a table alias
+different from the database name. For example, write
+`SELECT e.id FROM app.events AS e`, or `SELECT e.payload.id FROM app.events AS e`
+for a tuple field. The same refusal covers scalar aliases with that name in
+multipart expressions. Two-part column and tuple expressions keep their meanings.
+
 Add these declarations to the selected schema source from the table example:
 
 <Tabs syncKey="schema-source">

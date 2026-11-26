@@ -11,7 +11,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	clickhousedb "ptah.run/internal/dbschema/clickhouse"
@@ -53,10 +55,10 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		Name:       viewName,
 		Body:       "SELECT id FROM " + sourceTable + " WHERE active = true",
 	}}}
-	creationDiff := must.Must(schemadiff.CompareWithDialect(
+	creationDiff := must.Must(schemadiff.CompareWithOptions(
 		t.Context(), created,
 		readClickHouseViews(t, db, database),
-		platform.ClickHouse, must.Must(builtin.New()),
+		clickHouseViewOptions(database), must.Must(builtin.New()),
 	))
 	c.Assert(creationDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
@@ -75,7 +77,7 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(createdReadback.Views, qt.HasLen, 1)
 	c.Assert(createdReadback.Views[0].Body, qt.Contains, "users")
 	c.Assert(
-		must.Must(schemadiff.CompareWithDialect(t.Context(), created, createdReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
+		must.Must(schemadiff.CompareWithOptions(t.Context(), created, createdReadback, clickHouseViewOptions(database), must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
@@ -84,10 +86,10 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 		Name:       viewName,
 		Body:       "SELECT id FROM " + sourceTable + " WHERE active = false",
 	}}}
-	replacementDiff := must.Must(schemadiff.CompareWithDialect(
+	replacementDiff := must.Must(schemadiff.CompareWithOptions(
 		t.Context(), replaced,
 		createdReadback,
-		platform.ClickHouse, must.Must(builtin.New()),
+		clickHouseViewOptions(database), must.Must(builtin.New()),
 	))
 	c.Assert(replacementDiff.ViewsModified, qt.HasLen, 1)
 	replaceStatements, err := planner.GenerateSchemaDiffSQLStatements(
@@ -104,16 +106,16 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 
 	replacedReadback := readClickHouseViews(t, db, database)
 	c.Assert(
-		must.Must(schemadiff.CompareWithDialect(t.Context(), replaced, replacedReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
+		must.Must(schemadiff.CompareWithOptions(t.Context(), replaced, replacedReadback, clickHouseViewOptions(database), must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
 
-	removalDiff := must.Must(schemadiff.CompareWithDialect(
+	removalDiff := must.Must(schemadiff.CompareWithOptions(
 		t.Context(), &schemamodel.Database{},
 		replacedReadback,
-		platform.ClickHouse, must.Must(builtin.New()),
+		clickHouseViewOptions(database), must.Must(builtin.New()),
 	))
-	c.Assert(removalDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
+	c.Assert(removalDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{"active_users"})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		context.Background(), must.Must(builtin.New()),
 		removalDiff,
@@ -129,7 +131,14 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	removedReadback := readClickHouseViews(t, db, database)
 	c.Assert(removedReadback.Views, qt.HasLen, 0)
 	c.Assert(
-		must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, removedReadback, platform.ClickHouse, must.Must(builtin.New()))).HasChanges(),
+		must.Must(schemadiff.CompareWithOptions(t.Context(), &schemamodel.Database{}, removedReadback, clickHouseViewOptions(database), must.Must(builtin.New()))).HasChanges(),
 		qt.IsFalse,
 	)
+}
+
+// The connection binds local reader identities to qualified declarations.
+func clickHouseViewOptions(database string) *config.CompareOptions {
+	semantics := identifier.ForDialect(platform.ClickHouse)
+	semantics.DefaultSchema = database
+	return &config.CompareOptions{Dialect: platform.ClickHouse, IdentifierSemantics: &semantics}
 }
