@@ -341,7 +341,9 @@ func writeStoredTriggerMigrations(c *qt.C) string {
 // TRIGGER from the database rather than running the down file. The derived
 // statement runs on the strict session under the mode the session had, so
 // the trigger keeps that mode, and the application's loose session inserts
-// through it as it did before version 2.
+// through it as it did before version 2. The history defines a trigger, which
+// the replay guard refuses on a shadow database the run does not own, so the
+// rollback passes --trust-replay-sql, as the operator who wrote it would.
 func TestMigrationsDownPlanGivesARecreatedTriggerTheSessionsModeE2E(t *testing.T) {
 	for _, engine := range storedValueEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -355,7 +357,7 @@ func TestMigrationsDownPlanGivesARecreatedTriggerTheSessionsModeE2E(t *testing.T
 
 			down := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables(), Timeout: 2 * time.Minute},
 				"migrations", "down", "--db-url", target, "--migrations-dir", migrations,
-				"--target", "1", "--plan", "--shadow-db", dev, "--confirm")
+				"--target", "1", "--plan", "--shadow-db", dev, "--trust-replay-sql", "--confirm")
 
 			c.Assert(down.ExitCode, qt.Equals, 0, historyComment(down))
 			c.Assert(readStoredScalar(c, target, storedTriggerMode), qt.Equals, "NO_ENGINE_SUBSTITUTION")

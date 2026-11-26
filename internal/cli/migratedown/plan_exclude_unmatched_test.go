@@ -69,9 +69,8 @@ func runPlanDownAnswering(c *qt.C, dir, dbPath, answer string) (string, error) {
 }
 
 // leavingReplayDir is planExcludeDir whose first migration also creates a
-// TEMP view. The view lives on the connection the replay ran on, and the
-// cleanup of the dev database refuses a connection that holds one, so the
-// planner fails to empty the dev database after it compared the schemas.
+// TEMP view. Replayed, the view would live on the connection the replay ran
+// on, and the cleanup of the dev database refuses a connection that holds one.
 func leavingReplayDir(c *qt.C, project string) (dir, dbPath string) {
 	c.Helper()
 	root := c.TempDir()
@@ -237,19 +236,24 @@ func TestMigrateDownPlanAllowUnmatchedExclude_FailurePath(t *testing.T) {
 	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
 }
 
-// TestMigrateDownPlanUnmatchedExcludeKeepsAFailedCleanup_FailurePath fails
-// the cleanup of the dev database after the comparison refused. The run
-// reports both: the refusal in the words `schema apply` uses, and the
-// database it could not empty.
-func TestMigrateDownPlanUnmatchedExcludeKeepsAFailedCleanup_FailurePath(t *testing.T) {
+// TestMigrateDownPlanRefusesWhatTheCleanupCannotEmpty_FailurePath replays a
+// history whose TEMP view the cleanup of the dev database could not take back.
+// The dev replay guard refuses the view before the first statement of the
+// replay runs, so the run stops on the refusal rather than on the selector
+// that names nothing, and leaves the target where it was. Without the guard
+// the replay runs, the comparison refuses the selector, and the cleanup fails
+// on the view.
+func TestMigrateDownPlanRefusesWhatTheCleanupCannotEmpty_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir, dbPath := leavingReplayDir(c, "exclude: [external_audt]\n")
 
 	out, err := runPlanDown(c, dir, dbPath)
 
-	c.Assert(err, qt.ErrorIs, shadow.ErrUnmatchedExclude, qt.Commentf("%s", out))
-	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(refusedUnmatchedAudit+"\n"+
-		`dynamic rollback planning failed: empty the database after the replay: `)+`.*TEMP views exist.*`)
+	c.Assert(err, qt.ErrorMatches, `dynamic rollback planning failed: replay migrations: `+
+		`failed to validate migration SQL in 1_parent\.sql: sqlite migration replay rejects TEMP object `+
+		`because its effects cannot be confined to the disposable database realm\nSQL: CREATE TEMP VIEW replay_scratch AS SELECT 1`,
+		qt.Commentf("%s", out))
+	c.Assert(err, qt.Not(qt.ErrorIs), shadow.ErrUnmatchedExclude)
 	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
 }
 

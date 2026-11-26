@@ -15,7 +15,6 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/driftgate"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
@@ -81,7 +80,7 @@ func prepareDriftCheck(
 	selection := atlasschema.LiveSelection{Exclude: exclude, ExcludeSources: sources, Diagnostics: cmd.ErrOrStderr()}
 	// Before the migration lock, so the lock is not held while a container
 	// starts.
-	shadowURL, release, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	shadowURL, release, err := dbcli.ResolveShadowDB(ctx, opts.shadowDB)
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -94,16 +93,21 @@ func prepareDriftCheck(
 		History:        mig,
 		MetadataTables: revisiontable.Configured(string(settings.revisionFormat), opts.migrationsTable),
 		OnDrift:        opts.driftOnDrift,
+		Trust:          dbcli.ShadowReplayTrust(cmd.Context()),
 	}), release, nil
 }
 
 // validateDriftFlags refuses a drift setting that would be silently ignored:
-// a shadow database or an exclusion typed without --check-drift, and the
-// check without a shadow database to replay into. shadowURL is the resolved
+// a shadow database, an exclusion or trust in the replayed SQL typed without
+// --check-drift, and the check without a shadow database to replay into. shadowURL is the resolved
 // value, which a project's dev_url may supply. declared is the drift check the
 // atlas.hcl env declares, named in the refusal when it is what asked for the
 // check.
-func validateDriftFlags(checkDrift, shadowTyped, excludeTyped bool, shadowURL string, declared *projectconfig.PreApplyDrift) error {
+func validateDriftFlags(
+	checkDrift, shadowTyped, excludeTyped, trustTyped bool,
+	shadowURL string,
+	declared *projectconfig.PreApplyDrift,
+) error {
 	switch {
 	case checkDrift && strings.TrimSpace(shadowURL) == "" && declared != nil:
 		return fmt.Errorf("%s needs the env's dev database, or --%s: the applied history is replayed on it",
@@ -115,6 +119,9 @@ func validateDriftFlags(checkDrift, shadowTyped, excludeTyped bool, shadowURL st
 		return fmt.Errorf("--%s is used only by --%s", shadowDBFlag, checkDriftFlag)
 	case !checkDrift && excludeTyped:
 		return fmt.Errorf("--%s is used only by --%s", driftExcludeFlag, checkDriftFlag)
+	case !checkDrift && trustTyped:
+		return fmt.Errorf("--%s is used only by --%s: no other step of the run replays SQL",
+			dbcli.TrustReplaySQLFlagName, checkDriftFlag)
 	}
 	return nil
 }

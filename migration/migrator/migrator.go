@@ -308,8 +308,11 @@ type Migrator struct {
 	actorOrigin string
 	// runReference is the caller's identifier for this run, stored on every
 	// log entry beside migrationLogRunID. See [Migrator.WithRunReference].
-	runReference             string
-	observer                 Observer
+	runReference string
+	observer     Observer
+	// statementValidator reads every body a run executes; see
+	// [Migrator.WithStatementValidator].
+	statementValidator       StatementValidator
 	skipChecks               bool
 	valueRounding            ValueRounding
 	metadataAvailable        bool
@@ -4417,7 +4420,9 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 // it reject ([refuseWhatTheHooksRefuse]), and what the transaction around it
 // would refuse ([Migrator.refuseWhatATransactionRefuses]). A run asks it of
 // every file before the first of them runs: [Migrator.validateUpTransactionMode]
-// for an up run and [Migrator.validateDownMigrations] for a rollback.
+// for an up run and [Migrator.validateDownMigrations] for a rollback. It also
+// asks what the run's validator rejects
+// ([Migrator.refuseWhatTheValidatorRefuses]), which only this pass asks.
 //
 // Without it a run reaches the refusal once the files before the refused one
 // have run, and an invalid directive or a refused statement comes after the
@@ -4442,6 +4447,9 @@ func (m *Migrator) refuseWhatAFileRefuses(
 		if err := refuse(m.conn); err != nil {
 			return err
 		}
+	}
+	if err := m.refuseWhatTheValidatorRefuses(migration, direction, own); err != nil {
+		return err
 	}
 	return m.refuseWhatATransactionRefuses(migration, direction, own)
 }

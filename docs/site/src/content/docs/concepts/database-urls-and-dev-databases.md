@@ -191,7 +191,15 @@ verify the rollback plan before changing the target.
 
 The shadow database must meet the same rule and must not be the target's live
 database realm. Ptah checks both before changing either database, and empties
-the shadow database again after each run.
+the shadow database again after each run. A replay on the shadow database
+refuses the same statements as a replay on a dev database (see
+[statement forms that fail closed](#statement-forms-that-fail-closed)). A
+docker URL and [trust in the SQL](#sql-you-trust) lift those refusals there.
+`PTAH_DEV_SERVER_DISPOSABLE` does not: a shadow database is often a database on
+the target's own server, and the cleanup of a server the run owns drops roles
+the target may use. A replay on the shadow database does not keep one session
+from migration to migration, so a temporary table, which a dev database replay
+on PostgreSQL or SQLite may stage data in, is refused there.
 
 **A throwaway test database** is what `ptah migrations test` and
 `ptah schema test` run cases against: by default a fresh ephemeral SQLite
@@ -582,6 +590,14 @@ command that replays the same directory on the same server meets it, so a
 migration that creates one without checking for it first fails the second
 time. Declare only a server that nothing else uses.
 
+The declaration names the server of a dev database and never a shadow
+database's. The commands that replay a history only to verify it do not read
+it: `ptah migrations down`, `migrations up`, `migrations drift`,
+`migrations baseline` and `migrations checkpoint`, and `ptah-compat migrate
+down`, `migrate apply`, `migrate drift` and `migrate checkpoint`.
+`ptah migrations generate` reads it for its `--dev-url` and not for its
+`--shadow-db`.
+
 Every command that replays a migration directory or rehearses a plan on a dev
 database reads the variable, on both binaries, and refuses a non-boolean value
 before any work, whether or not it replays. Strict Atlas
@@ -700,17 +716,31 @@ statement that changes the session, such as `PRAGMA TablePathPrefix` or `USE`,
 refused, inside the body of an action or a `DO` block too.
 
 Trust covers the SQL a run executes on its dev database: a migration directory
-it replays, a desired schema file it loads there, and the baseline and plan a
-rehearsal writes. An apply to the target never needs it, and a command that
-parses or compares its input without executing it runs no input SQL. The
-native commands that take `--trust-replay-sql` are `migrations validate`,
-`migrations lint`, `migrations generate`, `schema inspect`, `schema diff` and
-`schema apply`. On `ptah-compat`, `migrate validate`, `migrate diff`,
-`migrate lint`, `schema inspect`, `schema diff`, `schema apply`,
-`schema plan lint` and `schema plan validate` read the variable. Each of them
-refuses a value that is not a boolean before any work. Strict Atlas
-compatibility keeps the variable, because the pinned community binary runs
-these statements on any dev database.
+it replays there or on a shadow database, a desired schema file it loads there,
+and the baseline and plan a rehearsal writes. An apply to the target never
+needs it, and a command that parses or compares its input without executing it
+runs no input SQL. These commands read the setting, and each refuses a value
+that is not a boolean before any work:
+
+- `ptah`, with `--trust-replay-sql`: `migrations validate`, `migrations lint`,
+  `migrations generate`, `migrations down`, `migrations baseline`,
+  `migrations up`, `migrations drift`, `migrations checkpoint`,
+  `schema inspect`, `schema diff` and `schema apply`.
+- `ptah-compat`, through the variable: `migrate validate`, `migrate diff`,
+  `migrate lint`, `migrate down`, `migrate apply`, `migrate drift`,
+  `migrate checkpoint`, `schema inspect`, `schema diff`, `schema apply`,
+  `schema plan lint` and `schema plan validate`.
+
+`migrations up` and `migrations down` replay SQL only on a shadow database, so
+each refuses a typed `--trust-replay-sql` that its run cannot use: `up` without
+the drift check, and `down` without a shadow database. The variable is not
+refused there, so a CI job can set it for every command it runs. A refusal on a
+shadow database names the variable alone, and a server-level refusal there
+names a docker URL as the remedy. A Go program that calls `migration/shadow`
+reads no variable and passes trust in the options, as `shadow.ReplayTrust`.
+
+Strict Atlas compatibility keeps the variable, because the pinned community
+binary runs these statements on any dev database.
 
 There is no `ptah.yaml` key for trust, and a `ptah.yaml` that sets
 `trust_replay_sql` is refused as an unknown key. A command discovers

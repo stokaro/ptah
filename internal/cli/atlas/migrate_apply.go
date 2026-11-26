@@ -218,6 +218,11 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	// Resolved on every run, as the drift check the env declares replays the
+	// applied history on its dev database.
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
+		return err
+	}
 	runOpts := atlasMigrateApplyRunOptions{
 		amount:             amount,
 		baselineSource:     atlasMigrateApplyFlagSource(cmd, "baseline"),

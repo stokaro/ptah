@@ -498,7 +498,10 @@ The check is the one `ptah migrations up --check-drift` runs, and
 [Check the schema against its history](../../versioned/apply/#check-the-schema-against-its-history)
 describes what it compares and when it cannot decide. Under the migration lock,
 it replays the migrations the revision table records as applied on the env's
-`dev` database and compares that schema with the target's.
+`dev` database and compares that schema with the target's. The replay runs
+through the dev replay guard, and `PTAH_TRUST_REPLAY_SQL=1` trusts the SQL it
+refuses; `PTAH_DEV_SERVER_DISPOSABLE` is not read for it. See
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
 
 | Setting | Behavior |
 | --- | --- |

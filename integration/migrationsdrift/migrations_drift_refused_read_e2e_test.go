@@ -76,18 +76,24 @@ func newRefusedRoleRead(c *qt.C, outOfBand ...string) refusedRoleRead {
 	return read
 }
 
+// report runs the report through the restricted account. The history creates
+// a role, which the replay guard refuses on a shadow database the run does not
+// own, so the run trusts the history: the role is the one migration 3 already
+// created on this server, and the test drops it when it ends.
 func (r refusedRoleRead) report(c *qt.C) (document, clirun.Result) {
 	c.Helper()
 	reader := r.run
 	reader.target = r.restricted
-	return reader.report(c)
+	return reader.report(c, "--trust-replay-sql")
 }
 
 // text runs the report as report does, as the text a person reads.
 func (r refusedRoleRead) text(c *qt.C) clirun.Result {
 	c.Helper()
 	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: time.Minute},
-		"migrations", "drift", "--db-url", r.restricted, "--migrations-dir", r.run.dir, "--shadow-db", r.run.shadow)
+		"migrations", "drift", "--db-url", r.restricted, "--migrations-dir", r.run.dir, "--shadow-db", r.run.shadow,
+		"--trust-replay-sql",
+	)
 }
 
 // undecidedRole is the finding the report gives for the role the read could

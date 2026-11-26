@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing/fstest"
 
 	"github.com/go-extras/go-kit/must"
@@ -277,4 +278,57 @@ func ExamplePlanDynamicRollback_unmatchedExclude() {
 	// Output:
 	// dynamic rollback planning failed: compare the schemas: the exclude selection from ptah.yaml matched no objects: "audit_logs"
 	// statements: 0
+}
+
+// ExampleReplayTrust shows the replay guard's refusal and the trust that lifts
+// it. Migration 1 copies the database to a file outside it with VACUUM INTO,
+// an effect the reset of the shadow database cannot take back, so the first
+// verification is refused before the statement runs. The error matches
+// ErrReplayRefused with errors.Is and ends with the remedy the caller named.
+// The second verification trusts the SQL, and the history replays.
+func ExampleReplayTrust() {
+	ctx := context.Background()
+	dir := must.Must(os.MkdirTemp("", "shadow-example"))
+	defer os.RemoveAll(dir)
+
+	target := must.Must(dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(dir, "target.db")))
+	defer dbschema.CloseAndWarn(target)
+	must.Must(target.ExecContext(ctx, "CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+
+	// VACUUM runs outside a transaction, which the directive asks for.
+	history := fstest.MapFS{
+		"0000000001_users.up.sql": {Data: []byte("-- atlas:txmode none\n" +
+			"CREATE TABLE users (id INTEGER PRIMARY KEY);\n" +
+			"VACUUM INTO '" + filepath.ToSlash(filepath.Join(dir, "copy.db")) + "';\n")},
+		"0000000001_users.down.sql": {Data: []byte("DROP TABLE users;")},
+	}
+	verify := func(trust shadow.ReplayTrust) error {
+		return shadow.VerifyBaseline(ctx, shadow.BaselineVerifyOptions{
+			ShadowDatabaseURL: "sqlite://" + filepath.Join(dir, "shadow.db"),
+			TargetConn:        target,
+			MigrationsFS:      history,
+			Version:           1,
+			Dialect:           "sqlite",
+			Runtime:           must.Must(builtin.New()),
+			Trust:             trust,
+		})
+	}
+
+	remedy := "pass --trust-sql if you wrote this history"
+	err := verify(shadow.ReplayTrust{Remedy: remedy})
+	if !errors.Is(err, shadow.ErrReplayRefused) {
+		fmt.Println("not refused:", err)
+		return
+	}
+	fmt.Println("refused, naming the remedy:", strings.Contains(err.Error(), remedy))
+
+	if err := verify(shadow.ReplayTrust{Trusted: true}); err != nil {
+		fmt.Println("trusted verification failed:", err)
+		return
+	}
+	fmt.Println("trusted: version 1 reproduces the target schema")
+
+	// Output:
+	// refused, naming the remedy: true
+	// trusted: version 1 reproduces the target schema
 }

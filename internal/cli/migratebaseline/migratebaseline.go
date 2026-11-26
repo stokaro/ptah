@@ -22,7 +22,6 @@ import (
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/dburldisplay"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/migrationsnapshot"
@@ -54,6 +53,7 @@ type options struct {
 	force               bool
 	dryRun              bool
 	shadowDB            string
+	trustReplaySQL      bool
 	rootDir             string
 	dirFormat           string
 	atlasEnv            string
@@ -95,6 +95,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.force, forceFlag, false, "Proceed despite existing migration metadata or verification drift")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show the metadata rows that would be inserted without writing them")
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Disposable shadow database URL used to verify baselined migrations reproduce the target schema")
+	dbcli.RegisterShadowTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities when --shadow-db is not set")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
@@ -116,6 +117,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error {
+	// First, because it attaches trust to the context every later step reads.
+	dbcli.TrustReplaySQL(cmd, opts.trustReplaySQL)
 	ctx := cmd.Context()
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
@@ -244,7 +247,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	// (stokaro/ptah#1701). It comes after the dry-run return above, so a run
 	// that prints a plan and stops never starts a container; a directly
 	// connectable URL passes through untouched.
-	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	shadowDB, releaseShadow, err := dbcli.ResolveShadowDB(ctx, opts.shadowDB)
 	if err != nil {
 		return err
 	}
@@ -268,6 +271,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		migrationsDir:  opts.migrationsDir,
 		migrationsFS:   migrationsFS,
 		providerOpts:   providerOpts,
+		trust:          dbcli.ShadowReplayTrust(cmd.Context()),
 	}); err != nil {
 		return err
 	}
@@ -296,6 +300,8 @@ type baselineVerifyOptions struct {
 	migrationsDir  string
 	migrationsFS   fs.FS
 	providerOpts   []migrator.FSProviderOption
+	// trust is the run's trust in the SQL the shadow replay runs.
+	trust shadow.ReplayTrust
 }
 
 func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
@@ -316,6 +322,7 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 			Schemas:           opts.schemas,
 			ProviderOptions:   opts.providerOpts,
 			ConnectTimeout:    opts.connectTimeout,
+			Trust:             opts.trust,
 		})
 		handler.kind = "shadow"
 		return handler.handle(err)

@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlitevirtual"
@@ -24,6 +25,7 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/shadow"
 )
 
 // generateCheckpoint renders a full cumulative schema as a checkpoint migration
@@ -373,6 +375,10 @@ type CheckpointFromShadowOptions struct {
 	// a generated migration. It applies to a single-schema checkpoint only, and
 	// an unqualifiable statement kind is refused rather than emitted unqualified.
 	SchemaQualifier string
+	// Trust is the caller's trust in the SQL the replay runs on the shadow
+	// database, and the remedies a refusal ends with; see
+	// [ptah.run/migration/shadow.ReplayTrust]. The zero value trusts nothing.
+	Trust shadow.ReplayTrust
 }
 
 // GenerateCheckpointFromShadow replays the entire migration directory on a fresh
@@ -404,6 +410,8 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 			err,
 		)
 	}
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, checkpointTrust(opts.Trust))
+	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
@@ -413,6 +421,11 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 	defer dbschema.CloseAndWarn(shadowConn)
 
 	return generateCheckpointFromConn(ctx, shadowConn, opts)
+}
+
+// checkpointTrust is the caller's trust in the form the shadow claim takes.
+func checkpointTrust(trust shadow.ReplayTrust) devclean.ShadowTrust {
+	return shadowdb.Trust(trust.Trusted, trust.Remedy, trust.ServerRemedy)
 }
 
 // generateCheckpointFromConn holds the database-facing core of checkpoint
@@ -430,7 +443,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		)
 	}
 
-	lease, err := shadowdb.Claim(ctx, shadowConn)
+	lease, err := shadowdb.Claim(ctx, shadowConn, checkpointTrust(opts.Trust))
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}
@@ -455,9 +468,9 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: no migrations found in %s", opts.MigrationsDir)
 	}
 
-	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
+	mig := shadowdb.GuardedMigrator(lease, migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
-		WithAppliedHistoryReplay()
+		WithAppliedHistoryReplay())
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

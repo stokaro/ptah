@@ -4599,6 +4599,14 @@ earlier statement or migration of the run applied. Validators inspect SQL but do
 not replace the migrator's execution path; use `WithStatementInterceptor` only
 when an external executor must take over accepted statements.
 
+`Migrator.WithStatementValidator` installs the same gate on a migrator instead,
+so it also reads migrations no filesystem provider loaded: a migration built
+with `CreateMigrationFromSQL`, or one an `AppliedHistory` carries. A run asks it
+of every SQL body it selected, repeatable migrations included, in the direction
+it runs the body, before the run's first statement. It is asked beside a
+provider's validator, and a nil validator removes the one an earlier call
+installed.
+
 `dbschema.ReadRehearsalSchemaContext` uses a private reader and selects its
 optional `catalog.RehearsalSchemaReader` service. This service can include
 observed environment objects outside the reader's writable scope for baseline
@@ -4883,10 +4891,25 @@ error matching `shadow.ErrUnmatchedExclude` and returns no statement; the
 `ptah schema apply` and `ptah migrations down --plan` refusals match the same
 sentinel.
 
+Every replay into a `migration/shadow` shadow database, of the history and of a
+candidate, runs through the dev replay guard `ptah migrations validate` runs.
+The guard refuses a statement whose effect the reset cannot take back, such as
+a write to another database or a role, and the error matches
+`shadow.ErrReplayRefused` with `errors.Is`. Its realm is the one database the
+URL names; a MySQL-family URL that names no database is refused when the entry
+point connects. The package reads no environment variable. An embedder that
+trusts the replayed SQL sets `Trusted` in the `Trust` field of the options, a
+`shadow.ReplayTrust`, and names its own remedies there; the zero value trusts
+nothing and its refusal names that field. The same field is
+`ShadowTrust` on `migration/generator.GenerateMigrationOptions` and `Trust` on
+`migration/generator.CheckpointFromShadowOptions`.
+
 `migration/generator.GenerateCheckpointFromShadow` and
 `migration/shadow.VerifyBaseline` apply the same SQLite-only validation before
 connecting to or mutating a shadow database. The checkpoint path therefore
 cannot drop and replay a shadow database before reporting a malformed value.
+The checkpoint replay runs through the same dev replay guard as the
+`migration/shadow` entry points.
 
 `migration/generator.PlanBidirectionalSchemaDiff` is the lower-level planning
 boundary for callers that already hold a schema diff. Its input binds the diff,

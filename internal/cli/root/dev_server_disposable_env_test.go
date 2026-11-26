@@ -1,7 +1,9 @@
 package root_test
 
 import (
+	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -98,4 +100,97 @@ func TestNativeCommandsThatDoNotReplayIgnoreTheDisposableDeclaration(t *testing.
 	stdout, stderr, err := executeRootCommand("migrations", "hash", "--dir", dir)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+}
+
+// shadowReplayNativeCases are the native commands that replay a migration
+// history on a shadow database and on no dev database. Each runs to
+// completion on SQLite, its shadow replay included: setup prepares the target
+// in dir, and args is the run.
+var shadowReplayNativeCases = []struct {
+	name  string
+	setup [][]string
+	args  []string
+	// tables are created on the target outside any migration.
+	tables []string
+}{
+	{
+		name: "migrations up --check-drift",
+		args: []string{"migrations", "up", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations",
+			"--check-drift", "--shadow-db", "sqlite://shadow.db"},
+	},
+	{
+		name:  "migrations drift",
+		setup: [][]string{{"migrations", "up", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations"}},
+		args: []string{"migrations", "drift", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations",
+			"--shadow-db", "sqlite://shadow.db"},
+	},
+	{
+		name:  "migrations down --shadow-db",
+		setup: [][]string{{"migrations", "up", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations"}},
+		args: []string{"migrations", "down", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations",
+			"--shadow-db", "sqlite://shadow.db", "--target", "0", "--confirm"},
+	},
+	{
+		name:  "migrations down --plan",
+		setup: [][]string{{"migrations", "up", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations"}},
+		args: []string{"migrations", "down", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations",
+			"--shadow-db", "sqlite://shadow.db", "--plan", "--target", "0", "--confirm"},
+	},
+	{
+		name:   "migrations baseline --shadow-db",
+		tables: []string{"CREATE TABLE items (id integer PRIMARY KEY)"},
+		args: []string{"migrations", "baseline", "--db-url", "sqlite://target.db", "--migrations-dir", "migrations",
+			"--shadow-db", "sqlite://shadow.db"},
+	},
+	{
+		name: "migrations checkpoint",
+		args: []string{"migrations", "checkpoint", "--migrations-dir", "migrations", "--shadow-db", "sqlite://shadow.db"},
+	},
+}
+
+// TestNativeShadowReplayCommandsIgnoreTheDisposableDeclaration pins that a
+// command which replays only on a shadow database does not own
+// PTAH_DEV_SERVER_DISPOSABLE: the variable declares a dev server disposable and
+// never a shadow database's, so a malformed value leaves each run, replay
+// included, to succeed. A command that read the variable would refuse here, as
+// the commands of TestNativeReplayCommandsRefuseAMalformedDisposableDeclaration
+// do.
+func TestNativeShadowReplayCommandsIgnoreTheDisposableDeclaration(t *testing.T) {
+	for _, test := range shadowReplayNativeCases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Set(devdocker.DisposableServerEnvVar, "maybe")(t)
+			t.Chdir(t.TempDir())
+			writeShadowReplayHistory(c, test.tables)
+			for _, args := range test.setup {
+				stdout, stderr, err := executeRootCommand(args...)
+				c.Assert(err, qt.IsNil, qt.Commentf("setup %v\nstdout:\n%s\nstderr:\n%s", args, stdout, stderr))
+			}
+
+			stdout, stderr, err := executeRootCommand(test.args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout+stderr, qt.Not(qt.Contains), devdocker.DisposableServerEnvVar)
+		})
+	}
+}
+
+// writeShadowReplayHistory writes a one-migration history to ./migrations
+// and creates tables on ./target.db outside any migration.
+func writeShadowReplayHistory(c *qt.C, tables []string) {
+	c.Helper()
+	c.Assert(os.Mkdir("migrations", 0o750), qt.IsNil)
+	for name, body := range map[string]string{
+		"0000000001_items.up.sql":   "CREATE TABLE items (id integer PRIMARY KEY);\n",
+		"0000000001_items.down.sql": "DROP TABLE items;\n",
+	} {
+		c.Assert(os.WriteFile(filepath.Join("migrations", name), []byte(body), 0o600), qt.IsNil)
+	}
+	db, err := sql.Open("sqlite", "target.db")
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	for _, statement := range tables {
+		_, err := db.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil)
+	}
 }

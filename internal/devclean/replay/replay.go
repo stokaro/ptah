@@ -11,6 +11,7 @@
 package replay
 
 import (
+	"errors"
 	"fmt"
 
 	"ptah.run/internal/lexer"
@@ -136,6 +137,11 @@ func RefuseWithRemedy(dialect, operation, remedy string) error {
 	return &Refusal{Dialect: dialect, Operation: operation, Remedy: remedy}
 }
 
+// ErrRefused is what every refusal of a replay guard matches with
+// [errors.Is]: a [*Refusal] of a statement and a [*SessionRefusal] of a
+// session. A failure to read the statement or the session does not match it.
+var ErrRefused = errors.New("the replay guard refused the SQL")
+
 // Refusal is the error [Refuse] returns. A caller that rehearses a baseline
 // rather than replaying a migration sets Baseline on a copy, and the refusal
 // says it is the baseline's.
@@ -150,6 +156,9 @@ type Refusal struct {
 	// accepts it, and is empty where the guard has nothing to suggest.
 	Remedy string
 }
+
+// Is reports whether target is [ErrRefused].
+func (e *Refusal) Is(target error) bool { return target == ErrRefused }
 
 func (e *Refusal) Error() string {
 	var refusal string

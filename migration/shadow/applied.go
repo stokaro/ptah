@@ -74,6 +74,10 @@ type AppliedVerifyOptions struct {
 	// ConnectTimeout bounds the shadow database connection attempt; zero or
 	// negative means no bound beyond the caller's context.
 	ConnectTimeout time.Duration
+	// Trust is the caller's trust in the SQL the verification replays on the
+	// shadow database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // AppliedResult is what [VerifyApplied] found when it could compare the target
@@ -122,6 +126,8 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	if err != nil {
 		return AppliedResult{}, appliedError("configuration", "replay_error", "assemble the applied migrations", err)
 	}
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.guardTrust())
+	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
@@ -147,7 +153,7 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 		return AppliedResult{}, wrapAppliedError(verr)
 	}
 
-	lease, err := shadowdb.Claim(ctx, shadowConn)
+	lease, err := shadowdb.Claim(ctx, shadowConn, opts.Trust.guardTrust())
 	if err != nil {
 		return AppliedResult{}, appliedErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
 	}
@@ -236,7 +242,7 @@ func replayApplied(
 	lease *shadowdb.Lease,
 	replay migrator.MigrationProvider,
 ) error {
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, replay).WithAppliedHistoryReplay())
+	mig := shadowdb.ReplayMigrator(lease, migrator.NewMigrator(shadowConn, replay).WithAppliedHistoryReplay())
 	metadata := []string{mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(), mig.RepeatableTableIdentifier()}
 	lease.DropsMetadata(metadata...)
 	if err := mig.MigrateUp(ctx); err != nil {

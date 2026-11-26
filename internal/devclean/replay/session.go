@@ -35,3 +35,6 @@ type SessionRefusal struct {
 }
 
 func (e *SessionRefusal) Error() string { return e.Reason }
+
+// Is reports whether target is [ErrRefused].
+func (e *SessionRefusal) Is(target error) bool { return target == ErrRefused }

@@ -241,7 +241,10 @@ func atlasMigrateDriftVerb() atlasVerb {
 		prefixArgs:            []string{"--" + dbcli.RevisionTableFormatFlagName, "atlas", "--dir-format", atlasDirFormatDefault},
 		finishNativeArgs:      atlasMigrateDriftNativeArgs,
 		refuseProjectSettings: refuseUnreadDriftSettings,
-		nativeOnlyFlags:       atlasDriftNativeOnlyFlags,
+		// --trust-replay-sql is refused beside them, but its environment
+		// binding stays live on the target: this surface trusts replayed SQL
+		// through PTAH_TRUST_REPLAY_SQL alone.
+		nativeOnlyFlags: append(slices.Clone(atlasDriftNativeOnlyFlags), dbcli.TrustReplaySQLFlagName),
 		flags: atlasTargetEnvDisabled(atlasDriftNativeOnlyFlags, []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "URL of the database to check", "db-url"),
 			atlasargs.NativeString("dev-url", "",

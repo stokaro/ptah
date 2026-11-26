@@ -279,6 +279,10 @@ type MigrationVerifyOptions struct {
 	// plan may drop every object it selects, and the plan itself refuses a
 	// selection of nothing before it writes a candidate.
 	Include []string
+	// Trust is the caller's trust in the SQL the verification replays on the
+	// shadow database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // Candidate is one migration under verification: a version, a name, and the
@@ -323,6 +327,8 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 	if err != nil {
 		return newVerificationError("configuration", "include_error", "apply include selectors", err)
 	}
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.guardTrust())
+	defer forgetTrust()
 	database, err := shadowdb.Open(ctx, opts.ShadowDatabaseURL, "")
 	if err != nil {
 		return newVerificationError("connect", "connect_error", "connect to shadow database", err)
@@ -363,7 +369,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		)
 	}
 
-	lease, err := shadowdb.Claim(ctx, conn)
+	lease, err := shadowdb.Claim(ctx, conn, opts.Trust.guardTrust())
 	if err != nil {
 		return newVerificationErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
 	}
@@ -387,10 +393,10 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 	}
 
 	provider := migrator.NewRegisteredMigrationProvider(migrations...)
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, provider))
+	mig := shadowdb.ReplayMigrator(lease, migrator.NewMigrator(conn, provider))
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	previousVersion := latestMigrationVersion(prior)
-	if err := replayVerified(ctx, conn, provider, mig, previousVersion); err != nil {
+	if err := replayVerified(ctx, conn, lease, provider, mig, previousVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {
 			return newVerificationError("replay", "replay_error", description, err)
 		}
@@ -418,12 +424,13 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 func replayVerified(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	lease *shadowdb.Lease,
 	provider migrator.MigrationProvider,
 	mig *migrator.Migrator,
 	previousVersion int64,
 ) error {
 	if previousVersion > 0 {
-		history := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, provider).WithAppliedHistoryReplay())
+		history := shadowdb.ReplayMigrator(lease, migrator.NewMigrator(conn, provider).WithAppliedHistoryReplay())
 		if err := history.MigrateTo(ctx, previousVersion); err != nil {
 			return err
 		}

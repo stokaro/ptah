@@ -66,6 +66,10 @@ type BaselineVerifyOptions struct {
 	// ConnectTimeout bounds the shadow database connection attempt; zero or
 	// negative means no bound beyond the caller's context.
 	ConnectTimeout time.Duration
+	// Trust is the caller's trust in the SQL the verification replays on the
+	// shadow database, and the remedies a refusal ends with; see
+	// [ReplayTrust]. The zero value trusts nothing.
+	Trust ReplayTrust
 }
 
 // VerifyBaseline replays migrations up to Version on the shadow database
@@ -82,6 +86,8 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 	if err := validateBaselineOptions(ctx, opts); err != nil {
 		return err
 	}
+	forgetTrust := shadowdb.RecordTrust(opts.ShadowDatabaseURL, opts.Trust.guardTrust())
+	defer forgetTrust()
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
@@ -109,7 +115,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 	if err != nil {
 		return err
 	}
-	lease, err := shadowdb.Claim(ctx, shadowConn)
+	lease, err := shadowdb.Claim(ctx, shadowConn, opts.Trust.guardTrust())
 	if err != nil {
 		return baselineErrorWithDisplayMessage("claim", "not_clean", err.Error(), err)
 	}
@@ -137,7 +143,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 		)
 	}
 
-	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
+	mig := shadowdb.ReplayMigrator(lease, migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...)).
 		WithAppliedHistoryReplay())
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {

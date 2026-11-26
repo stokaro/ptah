@@ -37,7 +37,6 @@ import (
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
-	"ptah.run/internal/devdocker"
 	"ptah.run/internal/driftgate"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featurejson"
@@ -81,6 +80,7 @@ type options struct {
 	dirFormat            string
 	atlasEnv             string
 	shadowDB             string
+	trustReplaySQL       bool
 	exclude              []string
 	jsonOutput           bool
 	plainHTTP            bool
@@ -157,6 +157,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Disposable database the applied history is replayed on (required, or the project's dev_url); "+
 			"it must be empty and distinct from the target, and it is emptied again afterwards. "+
 			"A docker:// URL starts a container for the run")
+	dbcli.RegisterShadowTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	flags.StringArrayVar(&opts.exclude, excludeFlag, nil,
 		"Schema objects the comparison leaves out, written as schema diff --exclude takes them (repeatable)")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false,
@@ -275,6 +276,7 @@ func noteUnacquiredLockName(w io.Writer, name migratelock.Name, conn *dbschema.D
 }
 
 func runDrift(cmd *cobra.Command, raw options, out *report) error {
+	dbcli.TrustReplaySQL(cmd, raw.trustReplaySQL)
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
@@ -419,7 +421,7 @@ func (r driftRun) target(ctx context.Context, projectCfg projectconfig.Config) (
 	}
 	// Before the migration lock, so the lock is not held while a container
 	// starts.
-	shadowURL, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	shadowURL, releaseShadow, err := dbcli.ResolveShadowDB(ctx, opts.shadowDB)
 	if err != nil {
 		return result, err
 	}
@@ -467,6 +469,7 @@ func (r driftRun) target(ctx context.Context, projectCfg projectconfig.Config) (
 		History:        mig,
 		MetadataTables: metadataTables,
 		OnDrift:        driftgate.Continue,
+		Trust:          dbcli.ShadowReplayTrust(cmd.Context()),
 	})
 
 	var (

@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/shadow"
 )
 
 // GenerateMigrationOptions contains options for migration generation
@@ -165,6 +166,10 @@ type GenerateMigrationOptions struct {
 	// applies the candidate migration, re-introspects the result, and aborts if
 	// it differs from the Go schema.
 	ShadowDatabaseURL string
+	// ShadowTrust is the caller's trust in the SQL the shadow verification
+	// replays, and the remedies a refusal ends with; see
+	// [ptah.run/migration/shadow.ReplayTrust]. The zero value trusts nothing.
+	ShadowTrust shadow.ReplayTrust
 	// ShadowGenerated is the desired schema the shadow verification compares
 	// with, for a target that binds a declared value to the database it names.
 	// A value bound to the database the plan reads cannot be bound again, so a

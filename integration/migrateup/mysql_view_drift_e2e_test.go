@@ -50,6 +50,12 @@ func mysqlViewDriftDatabase(c *qt.C, engine dbtarget.Engine, name string) string
 // mysqlViewDriftRun writes files into a fresh migrations directory, applies it,
 // runs each statement of outOfBand on the target, adds one pending migration,
 // and runs the drift check with the shadow.
+//
+// The drift check trusts the replayed SQL. The histories these tests compare
+// create roles, grants, stored bodies and views over another database, which
+// the replay guard refuses on a shadow database the run does not own; what
+// they measure is the comparison after the replay, and each test drops what
+// its history leaves on a server.
 func mysqlViewDriftRun(
 	c *qt.C, engine mysqlViewDriftEngine, files map[string]string, outOfBand ...string,
 ) (clirun.Result, migrator.RunResult) {
@@ -79,7 +85,7 @@ func mysqlViewDriftRun(
 		[]byte("DROP TABLE view_drift_pending;\n"), 0o600), qt.IsNil)
 	result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
 		"migrations", "up", "--db-url", target, "--migrations-dir", dir,
-		"--check-drift", "--shadow-db", shadow, "--json")
+		"--check-drift", "--shadow-db", shadow, "--trust-replay-sql", "--json")
 	var document migrator.RunResult
 	c.Assert(json.Unmarshal([]byte(result.Stdout), &document), qt.IsNil,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
