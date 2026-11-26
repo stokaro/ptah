@@ -591,11 +591,13 @@ Before the replay the guard reads the names the dev session's catalog holds in
 its protected namespaces: relations, routines, types, operators and the other
 objects a statement can name. A statement that writes, alters, drops, locks,
 comments on or grants on one of them under its bare name is refused, as it is
-with the schema written, and the refusal says to qualify the name. The table
-after `ON` in `CREATE INDEX`, `CREATE TRIGGER` and `CREATE POLICY`, after `TO`
-in `CREATE RULE` and after `FROM` in `CREATE STATISTICS` is such a reference.
-On CockroachDB the same holds for the names in `pg_extension`. A table of your
-own that has a catalog's name, such as `app.pg_settings`, is accepted when its
+with the schema written, and the refusal says to qualify the name. On
+CockroachDB the same holds for the names in `pg_extension`.
+
+A `CREATE` can hold such a reference too: the table after `ON` in
+`CREATE INDEX`, `CREATE TRIGGER` and `CREATE POLICY`, after `TO` in
+`CREATE RULE` and after `FROM` in `CREATE STATISTICS`. A table of your own
+that has a catalog's name, such as `app.pg_settings`, is accepted when its
 schema is written.
 
 A `CREATE` is judged by where it creates, not by what its name reaches. The
