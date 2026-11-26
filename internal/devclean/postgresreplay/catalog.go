@@ -175,7 +175,8 @@ func fallbackCatalogNamespace(dialect, name string) string {
 // name the catalog holds there reaches the catalog's object, whatever schema
 // the author meant. The guard accepts no search path but the empty one and the
 // one the session starts with ([postgresSettingReach]), and the names were
-// read under the latter, which searches every schema the former does.
+// read under the latter, which searches every schema the former does. The name
+// a CREATE gives its object is not looked up; see [protection.creationNamespace].
 func (p protection) unqualifiedNamespace(class catalogClass, name string) string {
 	folded := strings.ToLower(name)
 	var namespace string

@@ -48,7 +48,9 @@ const (
 //
 //   - name resolution. search_path decides where an unqualified name lands,
 //     and the guard reads one by the names the session's catalog held under
-//     the path the session started with ([protection.unqualifiedNamespace]):
+//     the path the session started with ([protection.unqualifiedNamespace]),
+//     and a CREATE by the schema that path creates in
+//     ([protection.creationNamespace]):
 //     `SET LOCAL search_path = pg_catalog` followed by an unqualified CREATE
 //     FUNCTION creates the function in pg_catalog. The empty path, one empty
 //     string literal, is accepted: under it an unqualified CREATE has no
@@ -382,7 +384,8 @@ func utf8EncodingName(name string) bool {
 
 // ValidateSession reads the dev session once, refuses one that does not read
 // a statement's bytes the way the guard does, and returns the guard that reads
-// the run's statements by the names the session's catalog holds.
+// the run's statements by the names the session's catalog holds and the
+// schema its search path creates in.
 //
 // The guard reads as UTF-8, with standard-conforming strings. A dev URL's
 // options, a database's or a role's defaults, or the server's configuration
@@ -395,9 +398,10 @@ func utf8EncodingName(name string) bool {
 // is that the guard reads the statements it still refuses under trust as the
 // server reads them.
 //
-// The names are read in every scope, trusted included, because the mutation
-// of a namespace the server owns stays refused in every scope, written with
-// the namespace or without it ([protection.unqualifiedNamespace]).
+// The names and the creation schema are read in every scope, trusted
+// included, because the mutation of a namespace the server owns stays refused
+// in every scope, written with the namespace or without it
+// ([protection.unqualifiedNamespace], [protection.creationNamespace]).
 func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) (replay.Guard, error) {
 	var encoding, conforming, names, creation string
 	err := session.QueryRowContext(ctx, sessionCatalogQuery).Scan(&encoding, &conforming, &names, &creation)

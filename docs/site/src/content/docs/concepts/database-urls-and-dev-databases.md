@@ -583,17 +583,38 @@ for both, since they give back the value the session started with. A dev
 session that starts with either setting, such as one whose URL sets
 `client_encoding=GBK`, is refused before the replay.
 
-A name written without a schema is read the way the server reads it. The
-server looks such a name up in `pg_catalog` before any schema of the search
-path, so `UPDATE pg_settings` writes the catalog's view, and sets the parameter
-of the row it changes, as `SET` would. Before the replay the guard reads the
-names the dev session's catalog holds in its protected namespaces: relations,
-routines, types, operators and the other objects a statement can name. A
-statement that writes, alters, drops, locks, comments on or grants on one of
-them under its bare name is refused, as it is with the schema written, and the
-refusal says to qualify the name. On CockroachDB the same holds for the names
-in `pg_extension`. A table of your own that has a catalog's name, such as
-`app.pg_settings`, is accepted when its schema is written.
+A name written without a schema is read the way the server reads it. A
+statement that refers to an existing object looks its name up in `pg_catalog`
+before any schema of the search path, so `UPDATE pg_settings` writes the
+catalog's view, and sets the parameter of the row it changes, as `SET` would.
+Before the replay the guard reads the names the dev session's catalog holds in
+its protected namespaces: relations, routines, types, operators and the other
+objects a statement can name. A statement that writes, alters, drops, locks,
+comments on or grants on one of them under its bare name is refused, as it is
+with the schema written, and the refusal says to qualify the name. The table
+after `ON` in `CREATE INDEX`, `CREATE TRIGGER` and `CREATE POLICY`, after `TO`
+in `CREATE RULE` and after `FROM` in `CREATE STATISTICS` is such a reference.
+On CockroachDB the same holds for the names in `pg_extension`. A table of your
+own that has a catalog's name, such as `app.pg_settings`, is accepted when its
+schema is written.
+
+A `CREATE` is judged by where it creates, not by what its name reaches. The
+server puts an object whose name has no schema in the first schema of the
+search path, so `CREATE TYPE point` makes `public.point` beside
+`pg_catalog.point`, and the guard accepts it, as it accepts `CREATE OR REPLACE`.
+Under a search path that starts with a protected namespace such a `CREATE`
+would land there, so it is refused; Ptah refuses a dev database whose search
+path starts with `pg_catalog` before the replay. A later statement that names
+the object without its schema is a reference again: `DROP TYPE point` reaches
+`pg_catalog.point`, so the guard refuses it, as the server does; write
+`public.point`.
+
+A direct write to a protected namespace is refused in every spelling the guard
+reads: with the schema written, bare, quoted or Unicode-escaped. A write
+carried through an object the replay creates first, such as an auto-updatable
+view over `pg_authid` or `pg_settings`, or an operator whose function is a
+cluster control function, still reaches the catalog; that gap is tracked in
+[issue #6739](https://github.com/stokaro/ptah/issues/6739).
 
 A Unicode-escaped identifier, such as `U&"pg\005fcatalog"`, is decoded before
 the guard reads the statement, so it counts as the name it spells. One whose
