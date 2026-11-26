@@ -26,7 +26,8 @@
 // Where this package cannot tell which of several rows the server uses, it
 // credits only what all of them hold, and a line it cannot read grants nothing.
 // A privilege credited wrongly becomes an object a comparison reads as absent; a
-// privilege not credited becomes a refusal that names it.
+// privilege not credited becomes a refusal that names it. The security
+// analysis settles the same doubt the other way, as a warning must.
 package mysqlgrants
 
 import (

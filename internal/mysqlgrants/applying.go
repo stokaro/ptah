@@ -35,8 +35,10 @@ const (
 // nothing, even where it holds more. Rows that spell the same name are one
 // row, which holds what each of them holds. The result holds each applying
 // name once, sorted. It is empty where no row applies, and holds several names
-// where the order the server tries them in cannot be established; a caller
-// then credits only what all of them hold.
+// where the order the server tries them in cannot be established. The server
+// applies one of those, and a caller settles the doubt toward the mistake it
+// can afford: the security analysis counts what any of them holds, and the
+// session privilege check only what all of them hold.
 //
 // Measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9 and 12.3.3, each
 // with roles holding the rows and a session that activates them:

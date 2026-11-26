@@ -283,6 +283,37 @@ func TestSchemaSecurityReachE2E_MySQLFamilyWildcardDatabaseName(t *testing.T) {
 	}
 }
 
+// TestSchemaSecurityReachE2E_MariaDBEqualPatternsCountEveryRow grants two
+// roles the same two patterns of equal weight, `pr%_xc` and `pr_%xc`, one for
+// reading and one for writing. MariaDB orders such rows by an unstable sort,
+// so a session applies one of them and which one is not known in advance: the
+// finding counts both, and each role's session reads both tables or writes
+// both, never both and never neither.
+func TestSchemaSecurityReachE2E_MariaDBEqualPatternsCountEveryRow(t *testing.T) {
+	c := qt.New(t)
+	run := newPatternReachRun(c, dbtarget.MariaDBAdmin, "abxc")
+	run.grant(c, []patternReachRole{
+		{short: "uo1", grants: []string{"SELECT ON `%s%%_xc`.*", "INSERT ON `%s_%%xc`.*"}},
+		{short: "uo2", grants: []string{"SELECT ON `%s%%_xc`.*", "INSERT ON `%s_%%xc`.*"}},
+	})
+
+	got := run.findings(c)
+	slices.Sort(got)
+	read1, write1 := run.sessionReach(c, "uo1"+run.suffix)
+	read2, write2 := run.sessionReach(c, "uo2"+run.suffix)
+	c.Logf("sessions: uo1 reads %d and writes %d, uo2 reads %d and writes %d", read1, write1, read2, write2)
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"roles/read-reach error uo1 2/2 through=[] sources=[SELECT ON `pr%_xc`.* held by uo1]",
+		"roles/read-reach error uo2 2/2 through=[] sources=[SELECT ON `pr%_xc`.* held by uo2]",
+		"roles/write-reach error uo1 2/2 through=[] sources=[INSERT ON `pr_%xc`.* held by uo1]",
+		"roles/write-reach error uo2 2/2 through=[] sources=[INSERT ON `pr_%xc`.* held by uo2]",
+	})
+	eitherRow := [][2]int{{2, 0}, {0, 2}}
+	c.Assert(eitherRow, qt.Contains, [2]int{read1, write1})
+	c.Assert(eitherRow, qt.Contains, [2]int{read2, write2})
+}
+
 // TestSchemaSecurityReachE2E_MySQLPatternGrantThroughAMembership reads a role
 // granted a role that holds a grant on a database name pattern: it reaches what
 // the pattern reaches, through the role, and the finding names the grant and

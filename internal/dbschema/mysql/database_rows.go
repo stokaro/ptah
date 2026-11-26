@@ -148,8 +148,8 @@ func (d *databaseRows) patternGrants(databases []string) []catalog.WideGrant {
 // rows are no role's, and the read does not measure them.
 //
 // Where the order of the rows cannot be established, every row that may
-// apply is reported with only the privileges all of them hold. Each entry is
-// the read or the write access one row gives. A row on another name is named
+// apply is reported with all it holds, as [databaseRows.subjectAccess] says
+// why. Each entry is the read or the write access one row gives. A row on another name is named
 // by the privileges of that row that give it, in the words a REVOKE of it
 // uses; a row on the database's own name is named by no source, as the grants
 // on the database are not.
@@ -181,20 +181,31 @@ func (d *databaseRows) statesOwnRows() bool {
 
 // subjectAccess is [databaseRows.databaseAccess] for one subject, whose
 // session holds the rows of holders.
+//
+// Where [mysqlgrants.Options.ApplyingRows] returns several rows, the server
+// applies one of them and the read cannot tell which, so every privilege any
+// of them holds counts, each named by its own row. The analysis is a warning,
+// and one that leaves out what the server may grant tells the reader a role
+// is narrower than it may be. MariaDB orders SELECT ON `%_bc`.* and INSERT ON
+// `_%bc`.* by an unstable sort: on MariaDB 11.8.9, of two roles holding both
+// grants, one was measured reading the database and the other writing it.
+//
+// The session privilege check settles the same doubt the other way and
+// credits only what all the rows hold, since a privilege it credits wrongly
+// hides an object from a comparison. The revoke refusal reads every row that
+// matches, applied or not, as [databaseRows.patternGrants] says. Each errs
+// toward the side its caller can afford.
 func (d *databaseRows) subjectAccess(database, subject string, holders []string) []catalog.WideAccess {
 	var names []string
 	for _, holder := range holders {
 		names = slices.AppendSeq(names, maps.Keys(d.held[holder]))
 	}
-	applying := d.options.ApplyingRows(mysqlgrants.RoleLookup, database, names)
-	credited := d.credited(applying, holders)
 	same := mysqlname.NamesOf(d.options.FoldCase)
 	var access []catalog.WideAccess
-	for _, name := range applying {
+	for _, name := range d.options.ApplyingRows(mysqlgrants.RoleLookup, database, names) {
 		own := same.Same(name, database)
 		for _, holder := range holders {
-			privileges := slices.DeleteFunc(slices.Clone(d.held[holder][name]), func(privilege string) bool { return !credited[privilege] })
-			for _, held := range accessOf(holder, quoteMySQLIdentifier(name)+".*", privileges) {
+			for _, held := range accessOf(holder, quoteMySQLIdentifier(name)+".*", slices.Clone(d.held[holder][name])) {
 				held.Schema, held.Subject = database, subject
 				if own {
 					held.Source = ""
@@ -204,26 +215,6 @@ func (d *databaseRows) subjectAccess(database, subject string, holders []string)
 		}
 	}
 	return access
-}
-
-// credited is what every one of the applying rows holds, a row being every
-// row of holders on that name.
-func (d *databaseRows) credited(applying, holders []string) map[string]bool {
-	var credited map[string]bool
-	for _, name := range applying {
-		held := make(map[string]bool)
-		for _, holder := range holders {
-			for _, privilege := range d.held[holder][name] {
-				held[privilege] = true
-			}
-		}
-		if credited == nil {
-			credited = held
-			continue
-		}
-		maps.DeleteFunc(credited, func(privilege string, _ bool) bool { return !held[privilege] })
-	}
-	return credited
 }
 
 // inheritedRoles is subject and every role it holds through memberships,

@@ -193,7 +193,7 @@ func TestDatabaseRows_NotRead(t *testing.T) {
 // holds, and the revoke refusal still counts the shadowed pattern; the e2e
 // test integration/schema_security_reach_e2e_test.go checks each shape against
 // a session. A row on the database's own name names no source, and where the
-// order is unknown only what the tied rows share counts.
+// order is unknown every privilege of each tied row counts, under its row.
 func TestDatabaseRows_DatabaseAccess(t *testing.T) {
 	type held = map[string]map[string][]string
 	mysql := mysqlgrants.Options{}
@@ -267,10 +267,19 @@ func TestDatabaseRows_DatabaseAccess(t *testing.T) {
 			want: []catalog.WideAccess{{Role: "qp", Subject: "qp", Write: true, Source: "INSERT ON `qa%`.*", Schema: "qabc"}},
 		},
 		{
-			name: "rows that tie count what they share", options: mariaDB,
+			name: "rows that tie count what each holds", options: mariaDB,
+			held: held{"uo": {"%_bc": {"SELECT"}, "_%bc": {"INSERT"}}},
+			want: []catalog.WideAccess{
+				{Role: "uo", Subject: "uo", Read: true, Source: "SELECT ON `%_bc`.*", Schema: "qabc"},
+				{Role: "uo", Subject: "uo", Write: true, Source: "INSERT ON `_%bc`.*", Schema: "qabc"},
+			},
+		},
+		{
+			name: "a privilege two tied rows hold, named under each", options: mariaDB,
 			held: held{"qt": {"%_bc": {"SELECT", "INSERT"}, "_%bc": {"SELECT"}}},
 			want: []catalog.WideAccess{
 				{Role: "qt", Subject: "qt", Read: true, Source: "SELECT ON `%_bc`.*", Schema: "qabc"},
+				{Role: "qt", Subject: "qt", Write: true, Source: "INSERT ON `%_bc`.*", Schema: "qabc"},
 				{Role: "qt", Subject: "qt", Read: true, Source: "SELECT ON `_%bc`.*", Schema: "qabc"},
 			},
 		},

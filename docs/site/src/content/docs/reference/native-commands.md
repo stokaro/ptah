@@ -846,7 +846,8 @@ no grant on a relation states. The engines read that access this way:
 - MySQL and MariaDB read the privilege columns of `mysql.user`, the privileges a
   role holds on every database, and the database-level grants. Of those, each
   role counts only the one row the server applies to a session with that role
-  active, a pattern that reaches the database included.
+  active, a pattern that reaches the database included, or every row that may
+  apply where the server's order between them is not established.
 - Every other engine reports both rules skipped, CockroachDB and YugabyteDB
   included, whose `admin` and `yb_superuser` roles give the same access and are
   not read, because a reach measured without that access reports such a role

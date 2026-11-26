@@ -267,8 +267,10 @@ and those of the roles it inherits:
   apart and adds what each applies.
 
 A pattern that does not reach the database counts nothing, and so does every
-pattern on MySQL with `partial_revokes` on. The order was measured on MySQL
-8.4.13 and 26.10.0 and on MariaDB 11.8.9 and 12.3.3.
+pattern on MySQL with `partial_revokes` on. Where Ptah cannot tell which row the
+server applies, the role counts every row that may apply, as the limits below
+say. The order was measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9
+and 12.3.3.
 
 `SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
 access. The write rule leaves materialized views out of its count, since no
@@ -350,12 +352,17 @@ across native commands.
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and
   the roles it inherits active.
-- Where the server's order between two rows is not established, a role counts
-  only the privileges both rows hold. That covers two MariaDB patterns with the
-  same counts of characters and wildcards, such as `` `%_bc` `` and
-  `` `_%bc` ``, which the server orders by an unstable sort, and, on a server
-  with `lower_case_table_names=2`, two MySQL rows whose order changes when the
-  names are folded. No server with `lower_case_table_names=2` was measured.
+- A role named in MySQL's `mandatory_roles` is active for every account, and the
+  rules treat it as an ordinary role. They do not report that it reads or
+  writes for every account, and they do not count that its rows, active beside
+  another role under `SET ROLE ALL`, can shadow that role's pattern.
+- Where Ptah cannot tell which of two rows the server applies, the finding
+  counts every privilege of both, each under its own row, so it may show more
+  than the server allows. That covers two MariaDB patterns with the same counts
+  of characters and wildcards, such as `` `%_bc` `` and `` `_%bc` ``, which the
+  server orders by an unstable sort, and, on a server with
+  `lower_case_table_names=2`, two MySQL rows whose order changes when the names
+  are folded. No server with `lower_case_table_names=2` was measured.
 - On MariaDB, a role granted a role that holds a grant on a database name
   pattern is named in `detail.reach.sources` as holding that grant as well,
   because MariaDB's privilege views list the grant under both roles. The

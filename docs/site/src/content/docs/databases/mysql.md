@@ -1562,10 +1562,10 @@ Case counts on a server with `lower_case_table_names=0` and does not on one
 that folds names, so a grant on `` `D%` `` reaches no table of `d1` there.
 MySQL with `partial_revokes` on reads `%` and `_` as the characters themselves,
 so a pattern grant reaches no other database, and Ptah reports none. Where
-several database rows match, the server applies one of them, and while a role
-is active the row MySQL picks does not follow from the rows. So Ptah reports
-every row that matches, and a revoke under a pattern that another row shadows
-is refused too. Measured on 8.4.13 and 11.8.9.
+several database rows match, the server applies one of them, but a revoke under
+a pattern another row shadows comes back once that row is gone. So Ptah reports
+every row that matches, and that revoke is refused too. Measured on 8.4.13 and
+11.8.9.
 
 A database grant the schema declares under `grants:` with `on_schema` keeps
 the privilege too, before the server holds it, because the plan grants it.
