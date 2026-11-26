@@ -78,6 +78,11 @@ documentation targets, so
 Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
+Role names and the `role` of a grant or revoke keep their exact bytes. For
+example, `role: " reader "` names the principal with both spaces, not
+`reader`. Use the same spelling in the `roles` entry when the document
+manages that principal.
+
 ## Declare API export metadata
 
 YAML can carry the API contract identity without changing the database

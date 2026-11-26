@@ -56,6 +56,13 @@ from the other after the fact:
   into the target's DDL;
 - a lookup uses `Normalized`, because two spellings of one table are one table.
 
+Role and grantee components retain leading and trailing white space. The name
+` reader` is distinct from `reader` on a target that stores both, and ` public`
+must not resolve to the `PUBLIC` grantee. Schema readers apply the target's
+principal restrictions before those names enter the identity model. A target
+whose `Semantics.TrailingSpacesIgnored` is true compares principal names without
+their trailing ASCII spaces while preserving the source spelling.
+
 `ID.Key()` returns the comparison value alone. A map keys on `Key`, never on
 `ID` — an `ID` in a map key would make two spellings of one object two entries.
 

@@ -726,10 +726,11 @@ sqlserver: read roles: unsupported feature: the database principal "PUBLIC" has 
 ```
 
 A principal whose name starts with a space, such as `[ public]`, is refused
-the same way, in the database and as a grantee in a schema file. A grant does
-not keep that white space, so a statement for the principal would address
-another one. The server ignores trailing spaces when it compares names, so
-`[r ]` names `r` in the database and in a schema file, and is read as `r`.
+the same way, in the database and as a grantee in a schema file. This SQL
+Server restriction also covers leading or trailing tabs. Other engines keep
+the complete principal name. SQL Server ignores trailing spaces when it
+compares names, so `[r ]` names `r` in the database and in a schema file, and
+is read as `r`.
 
 A `DENY` the database holds and the schema leaves out stays, and the run names
 it on standard error:

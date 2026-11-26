@@ -607,7 +607,6 @@ func (r *Renderer) escapeFunctionSignature(name, parameters string) string {
 }
 
 func (r *Renderer) escapeRoleTarget(role string) string {
-	role = strings.TrimSpace(role)
 	if isPostgreSQLRoleKeyword(role) {
 		return strings.ToUpper(role)
 	}
@@ -617,13 +616,13 @@ func (r *Renderer) escapeRoleTarget(role string) string {
 func (r *Renderer) escapeRoleTargetList(roles string) string {
 	parts := strings.Split(roles, ",")
 	for i, role := range parts {
-		parts[i] = r.escapeRoleTarget(role)
+		parts[i] = r.escapeRoleTarget(strings.TrimSpace(role))
 	}
 	return strings.Join(parts, ", ")
 }
 
 func isPostgreSQLRoleKeyword(role string) bool {
-	switch strings.ToUpper(strings.TrimSpace(role)) {
+	switch strings.ToUpper(role) {
 	case "PUBLIC", "CURRENT_ROLE", "CURRENT_USER", "SESSION_USER":
 		return true
 	default:

@@ -753,6 +753,17 @@ columns, indexes, constraints, policies, roles, and the object a statement such
 as `GRANT` or `CREATE INDEX` names. Other dialects, and a read with no dialect,
 keep a name as written.
 
+A quoted role name keeps significant white space. On PostgreSQL, MariaDB and
+Oracle, `" reader"` and `reader` name different principals; use
+backticks for the quoted MariaDB name. A grant, revoke, comparison, rollback
+and `ptah db read` keep that distinction. In particular, `" public"` is a role
+name and does not mean the `PUBLIC` grantee. SQL Server keeps its
+[principal-name restrictions](../../databases/sqlserver/#denying-a-permission).
+PostgreSQL and Oracle also preserve trailing spaces. MariaDB preserves
+trailing tabs but refuses trailing ASCII spaces, which its `CREATE ROLE`
+removes. MySQL refuses surrounding white space in principal declarations;
+use the [stored, unpadded name](../../databases/mysql/#roles-and-grants).
+
 An `ALTER TABLE` reaches the table and column its dialect's server would
 find for the names it writes. `"Docs"` and `docs` are two tables on PostgreSQL,
 and a file may declare both: each keeps its own columns, and `ALTER TABLE docs`

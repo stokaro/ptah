@@ -114,11 +114,12 @@ func TestForDialect(t *testing.T) {
 			name:    "sqlserver is conservative offline",
 			dialect: "sqlserver",
 			want: identifier.Semantics{
-				DefaultSchema:  "dbo",
-				IndexNamespace: identifier.IndexNamespaceTable,
-				IndexNames:     identifier.ComparisonCatalogUnknown,
-				TableNames:     identifier.ComparisonCatalogUnknown,
-				ColumnNames:    identifier.ComparisonCatalogUnknown,
+				DefaultSchema:         "dbo",
+				IndexNamespace:        identifier.IndexNamespaceTable,
+				IndexNames:            identifier.ComparisonCatalogUnknown,
+				TableNames:            identifier.ComparisonCatalogUnknown,
+				ColumnNames:           identifier.ComparisonCatalogUnknown,
+				TrailingSpacesIgnored: true,
 			},
 		},
 	}

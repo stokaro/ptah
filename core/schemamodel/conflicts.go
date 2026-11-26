@@ -992,7 +992,7 @@ func ValidateGrantOptionConsistency(db *Database, dialect string) error {
 		if !dialectscope.Includes(grant.Dialects, dialect) {
 			continue
 		}
-		key := objectKey{role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant)}
+		key := objectKey{role: grant.Role, target: grantObjectIdentity(grant)}
 		if !seenKeys[key] {
 			seenKeys[key] = true
 			order = append(order, key)
@@ -1058,7 +1058,7 @@ func ValidateGrantColumnSpellings(db *Database, dialect string) error {
 	}
 	keyOf := func(grant Grant, column string) columnKey {
 		return columnKey{
-			role: strings.TrimSpace(grant.Role), target: grantObjectIdentity(grant),
+			role: grant.Role, target: grantObjectIdentity(grant),
 			column: semantics.ColumnIdentityKey(column),
 		}
 	}

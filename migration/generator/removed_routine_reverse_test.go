@@ -120,6 +120,14 @@ func TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsPrivileges(t 
 		notWant []string
 	}{
 		{
+			name:   "a padded grantee beside PUBLIC",
+			grants: []catalog.Grant{executeGrant(" public", "app_owner", false, false)},
+			want: []string{
+				`GRANT EXECUTE ON FUNCTION "public"."f"(x integer) TO " public";`,
+				`REVOKE EXECUTE ON FUNCTION "public"."f"(x integer) FROM PUBLIC;`,
+			},
+		},
+		{
 			name: "a function revoked from PUBLIC and granted to a role",
 			grants: []catalog.Grant{
 				executeGrant("app_owner", "", false, true),

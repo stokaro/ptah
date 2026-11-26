@@ -204,10 +204,15 @@ func normalizeSQLTableReference(sourcePlatform, value string) string {
 // that creates a role and names it elsewhere names one role.
 func roleName(sourcePlatform, value string) string {
 	value = strings.TrimSpace(value)
-	if fold := factsOf(sourcePlatform).names.Roles; fold != "" {
+	names := factsOf(sourcePlatform).names
+	if fold := names.Roles; fold != "" {
 		return identifier.Comparison(fold).IdentityKey(unquoteSQLIdentifierPart(value))
 	}
-	return identifierPart(sourcePlatform, value)
+	name := identifierPart(sourcePlatform, value)
+	if names.TrailingSpacesIgnored {
+		return strings.TrimRight(name, " ")
+	}
+	return name
 }
 
 func tableStructName(sourcePlatform, value string) string {

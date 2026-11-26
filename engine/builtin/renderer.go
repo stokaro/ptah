@@ -1903,6 +1903,9 @@ func validateDeclaredAccess(
 	caps capability.Capabilities,
 	database *schemamodel.Database,
 ) error {
+	if err := mysqllike.ValidateDeclaredPrincipalNames(dialect, database); err != nil {
+		return err
+	}
 	// ClickHouse roles and grants are real, and a narrower set of declarations
 	// is representable there than in PostgreSQL: a role carries no attributes
 	// at all, and the server absorbs a narrower grant into a broader one, so a

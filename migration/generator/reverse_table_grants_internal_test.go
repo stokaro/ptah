@@ -94,3 +94,18 @@ func TestGenerateDownMigrationSQL_GrantsBackWhatARemovedTableHeld(t *testing.T) 
 		})
 	}
 }
+
+func TestGenerateDownMigrationSQL_KeepsPrincipalNames(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	desired := &schemamodel.Database{}
+	current := grantedTableDatabase()
+	current.Grants = []catalog.Grant{{Role: " reader ", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "docs", GrantedBy: "ptah_user"}}
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.Postgres, runtime))
+	c.Assert(diff.TablesRemoved.Names(), qt.DeepEquals, []string{"docs"})
+
+	down, err := downMigrationSQL(t.Context(), runtime, diff, desired, current, platform.Postgres, capability.Postgres17())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(grantLines(down), qt.DeepEquals, []string{`GRANT SELECT ON TABLE "docs" TO " reader ";`})
+}

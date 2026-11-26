@@ -27,6 +27,12 @@ func TestSemantics_StoredName(t *testing.T) {
 		{name: "a name that is not a plain identifier is stored as written", dialect: "oracle", value: "my-role", want: "my-role"},
 		{name: "a dialect stating no fold keeps a bare name", dialect: "postgres", value: "Reader", want: "Reader"},
 		{name: "a dialect stating no fold keeps the quotes", dialect: "postgres", value: `"reader"`, want: `"reader"`},
+		{name: "SQL Server ignores trailing ASCII spaces", dialect: "sqlserver", value: "reader  ", want: "reader"},
+		{name: "SQL Server keeps leading spaces", dialect: "sqlserver", value: " reader", want: " reader"},
+		{name: "SQL Server keeps trailing tabs", dialect: "sqlserver", value: "reader\t", want: "reader\t"},
+		{name: "PostgreSQL keeps trailing spaces", dialect: "postgres", value: "reader ", want: "reader "},
+		{name: "MariaDB keeps trailing spaces", dialect: "mariadb", value: "reader ", want: "reader "},
+		{name: "Oracle keeps trailing spaces", dialect: "oracle", value: "READER ", want: "READER "},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

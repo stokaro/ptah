@@ -34,9 +34,8 @@ type Names struct {
 	// trailing spaces ignored, as SQL Server does: `[a ]` names `[a]`. A
 	// leading space, and white space other than a trailing space, is part of
 	// the name. A schema file's grantee is read without its trailing spaces,
-	// and one with other white space around its name is refused, because a
-	// grant does not keep it and the statement would address another
-	// principal.
+	// and one with other white space around its name is refused by the
+	// SQL Server schema and catalog readers.
 	TrailingSpacesIgnored bool `json:"trailing_spaces_ignored,omitempty"`
 	// RegclassConstants reports that a string constant the server converts to
 	// regclass names a relation, which the server looks up as it reads the

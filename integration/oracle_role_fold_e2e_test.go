@@ -40,6 +40,13 @@ func TestSchemaApplyOracleLowerCaseRoleConvergesE2E(t *testing.T) {
 		query    string
 	}{
 		{
+			name:     "a role name with surrounding spaces",
+			declared: `CREATE ROLE " PTAH_RF_{stamp} ";` + "\n" + bare + `GRANT SELECT ON t1 TO " PTAH_RF_{stamp} ";` + "\n",
+			role:     " PTAH_RF_{stamp} ",
+			table:    "T1",
+			query:    "SELECT id FROM {account}.t1",
+		},
+		{
 			name:     "a bare role name the schema creates",
 			declared: "CREATE ROLE ptah_rf_{stamp};\n" + bare + "GRANT SELECT ON t1 TO ptah_rf_{stamp};\n",
 			role:     "PTAH_RF_{stamp}",

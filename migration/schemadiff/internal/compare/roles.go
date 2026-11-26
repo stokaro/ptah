@@ -3,7 +3,6 @@ package compare
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -207,7 +206,7 @@ func managedRoles(database *catalog.Database, semantics identifier.Semantics) ma
 // grant to it is planned again. A quoted "reader" is stored as reader and
 // stays a different role.
 func roleKey(name string, semantics identifier.Semantics) string {
-	return semantics.StoredName(strings.TrimSpace(name))
+	return semantics.StoredName(name)
 }
 
 // RoleDefinitions compares individual role definitions and returns detailed differences.

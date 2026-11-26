@@ -466,7 +466,8 @@ func TestSchemaApplySQLServerTrailingSpaceGranteeE2E(t *testing.T) {
 	c := qt.New(t)
 	target, db := sqlServerColumnDatabase(c)
 	file := writeDeclaredSchemaFile(c, "schema.sql",
-		sqlServerColumnBase+"GRANT SELECT ON dbo.t TO [cp_reader  ];\nDENY UPDATE ON dbo.t TO [public ];\n")
+		strings.ReplaceAll(sqlServerColumnBase, "CREATE ROLE cp_reader;", "CREATE ROLE [cp_reader ];")+
+			"GRANT SELECT ON dbo.t TO [cp_reader  ];\nDENY UPDATE ON dbo.t TO [public ];\n")
 
 	applied := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", file, "--auto-approve")
 
@@ -486,9 +487,8 @@ func TestSchemaApplySQLServerTrailingSpaceGranteeE2E(t *testing.T) {
 // A database holding a role the read cannot keep apart from another principal
 // is refused before anything runs, and public holds nothing new. A schema
 // names the fixed role PUBLIC, and a case-sensitive database accepts CREATE
-// ROLE [PUBLIC] beside it. A comparison trims a grantee's spaces, and any
-// database accepts CREATE ROLE [ public], whose DENY read as public's would
-// make a DENY to PUBLIC read as applied.
+// ROLE [PUBLIC] beside it. The SQL Server reader also refuses a leading
+// space in a principal name, such as the role [ public].
 func TestSchemaApplySQLServerPublicIsTheFixedRoleE2E_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -506,7 +506,7 @@ func TestSchemaApplySQLServerPublicIsTheFixedRoleE2E_FailurePath(t *testing.T) {
 			name:      "a case-insensitive database with a role named with a space before public",
 			collation: "SQL_Latin1_General_CP1_CI_AS",
 			held:      []string{"CREATE ROLE [ public]", "DENY DELETE ON dbo.t TO [ public]"},
-			wantErr:   `sqlserver: read roles: unsupported feature: the database principal " public" has white space around its name that the server keeps and a grant does not`,
+			wantErr:   `sqlserver: read roles: unsupported feature: the database principal " public" uses surrounding white space that Ptah does not support on SQL Server`,
 		},
 	}
 	for _, test := range tests {

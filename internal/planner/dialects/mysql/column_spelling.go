@@ -83,7 +83,7 @@ func newColumnSpellings(diff *difftypes.SchemaDiff, dialect string) columnSpelli
 // target is the column grant names.
 func (s columnSpellings) target(grant difftypes.GrantRef) columnTarget {
 	return columnTarget{
-		role:       strings.TrimSpace(grant.Role),
+		role:       grant.Role,
 		objectType: strings.ToUpper(strings.TrimSpace(grant.ObjectType)),
 		object:     s.semantics.QualifiedTableIdentityKey(grant.ObjectName),
 		column:     s.semantics.ColumnIdentityKey(strings.TrimSpace(grant.Column)),

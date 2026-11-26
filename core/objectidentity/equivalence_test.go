@@ -82,9 +82,10 @@ func trimmed(value string) string {
 
 // A table's name given as a component keeps its bytes, and so does the table
 // a column, an index, a constraint, a policy or a grant given as components
-// belongs to: a catalog holds " t" and t as two tables. The name of every
-// other object is trimmed, and so is a part split off one qualified string.
-func TestBuilder_KeepsTheBytesOfATableNameOnly(t *testing.T) {
+// belongs to: a catalog holds " t" and t as two tables. A principal's name
+// keeps its bytes too. Other names are trimmed, as are parts of one qualified
+// string.
+func TestBuilder_KeepsTheBytesOfTableAndPrincipalNames(t *testing.T) {
 	builder := objectidentity.NewBuilder(postgresSemantics())
 	tests := []struct {
 		name string
@@ -103,8 +104,9 @@ func TestBuilder_KeepsTheBytesOfATableNameOnly(t *testing.T) {
 		{name: "policy", id: builder.PolicyParts("public", "t", " p"), want: "p"},
 		{name: "a policy of a qualified table", id: builder.Policy("public.t", " p"), want: "p"},
 		{name: "trigger", id: builder.Trigger("public.t", " g"), want: "g"},
-		{name: "grant", id: builder.GrantParts("public", "t", " r", "SELECT"), want: "r"},
-		{name: "role", id: builder.Role(" r"), want: "r"},
+		{name: "grant", id: builder.GrantParts("public", "t", " r", "SELECT"), want: " r"},
+		{name: "role", id: builder.Role(" r"), want: " r"},
+		{name: "blank role", id: builder.Role(" "), want: " "},
 		{name: "sequence", id: builder.SchemaScopedParts(objectidentity.KindSequence, "public", " s"), want: "s"},
 		{name: "domain", id: builder.Domain("public. d"), want: "d"},
 		{name: "function", id: builder.Function("public. f", ""), want: "f"},
@@ -115,6 +117,19 @@ func TestBuilder_KeepsTheBytesOfATableNameOnly(t *testing.T) {
 			c.Assert(test.id.Name.Source, qt.Equals, test.want)
 		})
 	}
+}
+
+func TestBuilder_SQLServerPrincipalTrailingSpaces(t *testing.T) {
+	c := qt.New(t)
+	builder := objectidentity.NewBuilder(identifier.ForDialect("sqlserver"))
+
+	role := builder.Role("reader ")
+	grant := builder.GrantParts("dbo", "t", "reader ", "SELECT")
+
+	c.Assert(role.Name.Source, qt.Equals, "reader ")
+	c.Assert(grant.Name.Source, qt.Equals, "reader ")
+	c.Assert(role.Equal(builder.Role("reader")), qt.IsTrue)
+	c.Assert(grant.Equal(builder.GrantParts("dbo", "t", "reader", "SELECT")), qt.IsTrue)
 }
 
 // The owner of an object given as components keeps the bytes of the table's

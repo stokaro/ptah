@@ -119,7 +119,7 @@ func revokesUnderDatabaseGrants(desired *schemamodel.Database, current *catalog.
 func keepsTable(revoke schemamodel.Grant, live catalog.Grant) bool {
 	database, _, qualified := strings.Cut(revoke.OnTable, ".")
 	return strings.EqualFold(strings.TrimSpace(live.ObjectType), "SCHEMA") && !live.IsPartialRevoke &&
-		live.Role == strings.TrimSpace(revoke.Role) && (!qualified || live.ObjectName == database) &&
+		live.Role == revoke.Role && (!qualified || live.ObjectName == database) &&
 		revokeNames(revoke.Privileges, live.Privilege)
 }
 

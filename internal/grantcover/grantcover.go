@@ -86,7 +86,6 @@ func Find(desired *schemamodel.Database, current *catalog.Database, role string,
 	if current == nil {
 		return nil, false
 	}
-	role = strings.TrimSpace(role)
 	privileges = onTable(privileges, all.All("TABLE"))
 	held := func(grantee string) bool {
 		return sameGrantee(grantee, role) || strings.EqualFold(grantee, publicGrantee)
@@ -154,7 +153,7 @@ func declaredCovers(
 	}
 	var covers []Cover
 	for _, declared := range desired.Grants {
-		grantee := strings.TrimSpace(declared.Role)
+		grantee := declared.Role
 		if declared.OnSchema == "" || !scope.reaches(declared.OnSchema) || !held(grantee) {
 			continue
 		}
@@ -176,7 +175,7 @@ func isSchema(objectType string) bool {
 // grant adds nothing to the database's tables, nor does one current holds
 // there already.
 func planned(declared schemamodel.Grant, current *catalog.Database, privileges []string, all descriptor.AllPrivileges) string {
-	grantee := strings.TrimSpace(declared.Role)
+	grantee := declared.Role
 	onSchema := all.All("SCHEMA")
 	adds := func(privilege string) bool {
 		reaches := len(all.Kinds) == 0 || slices.ContainsFunc(onSchema, func(name string) bool { return strings.EqualFold(name, privilege) })
@@ -229,7 +228,7 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 // or for a grant the schema declares, that the schema gives the privilege on
 // the whole database.
 func refusal(revoke schemamodel.Grant, cover Cover) error {
-	role := strings.TrimSpace(revoke.Role)
+	role := revoke.Role
 	if cover.Declared && cover.Grantee == role {
 		return fmt.Errorf(
 			"the schema grants %s to role %q, which covers table %s, so a revoke on the table cannot take it: "+
@@ -308,7 +307,7 @@ func onTable(privileges, tableAll []string) []string {
 // database, or ALL, to its grantee on the same database.
 func declares(desired *schemamodel.Database, grant catalog.Grant) bool {
 	return desired != nil && slices.ContainsFunc(desired.Grants, func(declared schemamodel.Grant) bool {
-		return sameGrantee(strings.TrimSpace(declared.Role), grant.Role) && declared.OnSchema == grant.ObjectName &&
+		return sameGrantee(declared.Role, grant.Role) && declared.OnSchema == grant.ObjectName &&
 			names(declared.Privileges, grant.Privilege)
 	})
 }
