@@ -59,7 +59,7 @@ func TestCreateTable_MergeTreeFullEngineSpec(t *testing.T) {
 	c := qt.New(t)
 	out := render(t, makeMergeTreeTable())
 
-	c.Assert(out, qt.Contains, "CREATE TABLE events")
+	c.Assert(out, qt.Contains, "CREATE TABLE `events`")
 	c.Assert(out, qt.Contains, "ENGINE = MergeTree")
 	c.Assert(out, qt.Contains, "PARTITION BY toYYYYMM(created_at)")
 	c.Assert(out, qt.Contains, "ORDER BY (id, created_at)")
@@ -71,9 +71,9 @@ func TestCreateTable_MergeTreeFullEngineSpec(t *testing.T) {
 	// id is PRIMARY -> NOT Nullable; created_at is NOT NULL -> NOT Nullable;
 	// payload is nullable by default -> wrapped. payload must NOT appear in
 	// the sort key for the Nullable(...) assertion to be meaningful.
-	c.Assert(out, qt.Contains, "id Int64")
-	c.Assert(out, qt.Contains, "created_at DateTime64(3)")
-	c.Assert(out, qt.Contains, "payload Nullable(String)")
+	c.Assert(out, qt.Contains, "`id` Int64")
+	c.Assert(out, qt.Contains, "`created_at` DateTime64(3)")
+	c.Assert(out, qt.Contains, "`payload` Nullable(String)")
 }
 
 func TestCreateTable_DefaultsToMergeTreeWithPrimaryKeyOrderBy(t *testing.T) {
@@ -84,7 +84,7 @@ func TestCreateTable_DefaultsToMergeTreeWithPrimaryKeyOrderBy(t *testing.T) {
 	out := render(t, tbl)
 	c.Assert(out, qt.Contains, "ENGINE = MergeTree")
 	// Falls back to the PK as ORDER BY because the user didn't supply one.
-	c.Assert(out, qt.Contains, "ORDER BY (id)")
+	c.Assert(out, qt.Contains, "ORDER BY (`id`)")
 }
 
 func TestCreateTable_MergeTreeMissingOrderByAndPK(t *testing.T) {
@@ -152,8 +152,8 @@ func TestCreateTable_DefaultsAndCommentsRendered(t *testing.T) {
 	tbl.AddColumn(exp)
 
 	out := render(t, tbl)
-	c.Assert(out, qt.Contains, "status String DEFAULT 'active' COMMENT 'lifecycle status'")
-	c.Assert(out, qt.Contains, "created_at Nullable(DateTime64(3)) DEFAULT now()")
+	c.Assert(out, qt.Contains, "`status` String DEFAULT 'active' COMMENT 'lifecycle status'")
+	c.Assert(out, qt.Contains, "`created_at` Nullable(DateTime64(3)) DEFAULT now()")
 }
 
 func TestCreateTable_DefaultValueEscapesQuotes(t *testing.T) {
@@ -176,7 +176,7 @@ func TestCreateTable_CheckConstraintRendered(t *testing.T) {
 	tbl.AddConstraint(&ast.ConstraintNode{Type: ast.CheckConstraint, Name: "qty_pos", Expression: "qty > 0"})
 
 	out := render(t, tbl)
-	c.Assert(out, qt.Contains, "CONSTRAINT qty_pos CHECK (qty > 0)")
+	c.Assert(out, qt.Contains, "CONSTRAINT `qty_pos` CHECK (qty > 0)")
 }
 
 // TestCreateTable_ForeignKeyIsNotEmittedInTheColumnList keeps the half of the
@@ -265,7 +265,7 @@ func TestCreateTable_PrimaryKeyConstraintIsNotRefused(t *testing.T) {
 	})
 
 	out := render(t, tbl)
-	c.Assert(out, qt.Contains, "ORDER BY (id)")
+	c.Assert(out, qt.Contains, "ORDER BY (`id`)")
 }
 
 func TestColumnTypeMapping_HappyPath(t *testing.T) {
@@ -274,20 +274,20 @@ func TestColumnTypeMapping_HappyPath(t *testing.T) {
 		col  *ast.ColumnNode
 		want string
 	}{
-		{name: "varchar to String", col: ast.NewColumn("c", "VARCHAR(255)").SetNotNull(), want: "c String"},
-		{name: "text to String", col: ast.NewColumn("c", "TEXT").SetNotNull(), want: "c String"},
-		{name: "int4 to Int32", col: ast.NewColumn("c", "INTEGER").SetNotNull(), want: "c Int32"},
-		{name: "bigint to Int64", col: ast.NewColumn("c", "BIGINT").SetNotNull(), want: "c Int64"},
-		{name: "smallint to Int16", col: ast.NewColumn("c", "SMALLINT").SetNotNull(), want: "c Int16"},
-		{name: "bool to Bool", col: ast.NewColumn("c", "BOOLEAN").SetNotNull(), want: "c Bool"},
-		{name: "timestamp to DateTime64(3)", col: ast.NewColumn("c", "TIMESTAMP").SetNotNull(), want: "c DateTime64(3)"},
-		{name: "date to Date", col: ast.NewColumn("c", "DATE").SetNotNull(), want: "c Date"},
-		{name: "double to Float64", col: ast.NewColumn("c", "DOUBLE").SetNotNull(), want: "c Float64"},
-		{name: "real to Float32", col: ast.NewColumn("c", "REAL").SetNotNull(), want: "c Float32"},
-		{name: "numeric(p,s) to Decimal", col: ast.NewColumn("c", "NUMERIC(12,4)").SetNotNull(), want: "c Decimal(12,4)"},
-		{name: "bytea to String", col: ast.NewColumn("c", "BYTEA").SetNotNull(), want: "c String"},
-		{name: "nullable wrapping", col: ast.NewColumn("c", "INTEGER"), want: "c Nullable(Int32)"},
-		{name: "native CH type passthrough", col: ast.NewColumn("c", "LowCardinality(String)").SetNotNull(), want: "c LowCardinality(String)"},
+		{name: "varchar to String", col: ast.NewColumn("c", "VARCHAR(255)").SetNotNull(), want: "`c` String"},
+		{name: "text to String", col: ast.NewColumn("c", "TEXT").SetNotNull(), want: "`c` String"},
+		{name: "int4 to Int32", col: ast.NewColumn("c", "INTEGER").SetNotNull(), want: "`c` Int32"},
+		{name: "bigint to Int64", col: ast.NewColumn("c", "BIGINT").SetNotNull(), want: "`c` Int64"},
+		{name: "smallint to Int16", col: ast.NewColumn("c", "SMALLINT").SetNotNull(), want: "`c` Int16"},
+		{name: "bool to Bool", col: ast.NewColumn("c", "BOOLEAN").SetNotNull(), want: "`c` Bool"},
+		{name: "timestamp to DateTime64(3)", col: ast.NewColumn("c", "TIMESTAMP").SetNotNull(), want: "`c` DateTime64(3)"},
+		{name: "date to Date", col: ast.NewColumn("c", "DATE").SetNotNull(), want: "`c` Date"},
+		{name: "double to Float64", col: ast.NewColumn("c", "DOUBLE").SetNotNull(), want: "`c` Float64"},
+		{name: "real to Float32", col: ast.NewColumn("c", "REAL").SetNotNull(), want: "`c` Float32"},
+		{name: "numeric(p,s) to Decimal", col: ast.NewColumn("c", "NUMERIC(12,4)").SetNotNull(), want: "`c` Decimal(12,4)"},
+		{name: "bytea to String", col: ast.NewColumn("c", "BYTEA").SetNotNull(), want: "`c` String"},
+		{name: "nullable wrapping", col: ast.NewColumn("c", "INTEGER"), want: "`c` Nullable(Int32)"},
+		{name: "native CH type passthrough", col: ast.NewColumn("c", "LowCardinality(String)").SetNotNull(), want: "`c` LowCardinality(String)"},
 	}
 
 	for _, tc := range cases {
@@ -333,7 +333,7 @@ func TestColumnTypeMapping_UnknownSQLTypeWarning(t *testing.T) {
 	err := renderErr(tbl)
 	c.Assert(err, qt.IsNil)
 	out := render(t, tbl)
-	c.Assert(out, qt.Contains, "c GEOGRAPHY")
+	c.Assert(out, qt.Contains, "`c` GEOGRAPHY")
 	c.Assert(out, qt.Contains, `unrecognized SQL type "GEOGRAPHY" passed through verbatim`)
 }
 
@@ -368,11 +368,11 @@ func TestAlterTable_Operations(t *testing.T) {
 	}
 
 	out := render(t, addCol, dropCol, modCol, addCheck, dropCheck)
-	c.Assert(out, qt.Contains, "ALTER TABLE events ADD COLUMN source String;")
-	c.Assert(out, qt.Contains, "ALTER TABLE events DROP COLUMN payload;")
-	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN source String;")
-	c.Assert(out, qt.Contains, "ALTER TABLE events ADD CONSTRAINT src_set CHECK (source <> '');")
-	c.Assert(out, qt.Contains, "ALTER TABLE events DROP CONSTRAINT src_set;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD COLUMN `source` String;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` DROP COLUMN `payload`;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` MODIFY COLUMN `source` String;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD CONSTRAINT `src_set` CHECK (source <> '');")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` DROP CONSTRAINT `src_set`;")
 }
 
 func TestAlterTable_RefusesAnUnnamedCheck(t *testing.T) {
@@ -404,27 +404,27 @@ func TestDropTable(t *testing.T) {
 	c := qt.New(t)
 	out := render(t, ast.NewDropTable("events").SetIfExists().SetComment("WARNING: data loss"))
 	c.Assert(out, qt.Contains, "-- WARNING: data loss")
-	c.Assert(out, qt.Contains, "DROP TABLE IF EXISTS events;")
+	c.Assert(out, qt.Contains, "DROP TABLE IF EXISTS `events`;")
 }
 
 func TestDropTable_WithoutIfExists(t *testing.T) {
 	c := qt.New(t)
 	out := render(t, ast.NewDropTable("events"))
-	c.Assert(out, qt.Contains, "DROP TABLE events;")
+	c.Assert(out, qt.Contains, "DROP TABLE `events`;")
 }
 
 func TestVisitIndex_DefaultsToMinmaxSkippingIndex(t *testing.T) {
 	c := qt.New(t)
 	idx := ast.NewIndex("idx_e_src", "events", "source")
 	out := render(t, idx)
-	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 1;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `idx_e_src` `source` TYPE minmax GRANULARITY 1;")
 }
 
 func TestVisitIndex_MultiColumnExpression(t *testing.T) {
 	c := qt.New(t)
 	idx := ast.NewIndex("idx_e_src_ts", "events", "source", "ts")
 	out := render(t, idx)
-	c.Assert(out, qt.Contains, "(source, ts)")
+	c.Assert(out, qt.Contains, "(`source`, `ts`)")
 }
 
 func TestVisitDropIndex_RequiresTable(t *testing.T) {
@@ -604,8 +604,8 @@ func TestColumnTypeMapping_TimestampTZUsesUTC(t *testing.T) {
 		AddColumn(ast.NewColumn("when_tz", "TIMESTAMPTZ").SetNotNull()).
 		AddColumn(ast.NewColumn("when_plain", "TIMESTAMP").SetNotNull())
 	out := render(t, tbl)
-	c.Assert(out, qt.Contains, "when_tz DateTime64(3, 'UTC')")
-	c.Assert(out, qt.Contains, "when_plain DateTime64(3)")
+	c.Assert(out, qt.Contains, "`when_tz` DateTime64(3, 'UTC')")
+	c.Assert(out, qt.Contains, "`when_plain` DateTime64(3)")
 }
 
 func TestColumnTypeMapping_JSONEmitsNotice(t *testing.T) {
@@ -616,7 +616,7 @@ func TestColumnTypeMapping_JSONEmitsNotice(t *testing.T) {
 	out := render(t, tbl)
 	// NOT-NULL JSON column: rendered as String, notice must match.
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"body\" mapped JSON → String")
-	c.Assert(out, qt.Contains, "body String")
+	c.Assert(out, qt.Contains, "`body` String")
 	// Notice must reflect the final emitted type, not the unwrapped form.
 	c.Assert(out, qt.Not(qt.Contains), "mapped JSON → Nullable(String)")
 }
@@ -631,7 +631,7 @@ func TestColumnTypeMapping_JSONEmitsNotice_Nullable(t *testing.T) {
 		AddColumn(ast.NewColumn("body", "JSONB")) // nullable by default
 	out := render(t, tbl)
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"body\" mapped JSON → Nullable(String)")
-	c.Assert(out, qt.Contains, "body Nullable(String)")
+	c.Assert(out, qt.Contains, "`body` Nullable(String)")
 }
 
 // ALTER TABLE MODIFY COLUMN of a JSON column should likewise carry a notice
@@ -652,9 +652,9 @@ func TestAlterTable_ModifyColumnJSONNoticeMatchesFinalType(t *testing.T) {
 	}
 	out := render(t, modNotNull, modNullable)
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"payload\" mapped JSON → String")
-	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN payload String;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` MODIFY COLUMN `payload` String;")
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"payload\" mapped JSON → Nullable(String)")
-	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN payload Nullable(String);")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` MODIFY COLUMN `payload` Nullable(String);")
 }
 
 func TestVisitIndex_UniqueEmitsDowngradeComment(t *testing.T) {
@@ -663,7 +663,7 @@ func TestVisitIndex_UniqueEmitsDowngradeComment(t *testing.T) {
 	idx.Unique = true
 	out := render(t, idx)
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: UNIQUE index \"uq_e_src\" downgraded to a minmax skipping index")
-	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `uq_e_src` source TYPE minmax GRANULARITY 1;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `uq_e_src` `source` TYPE minmax GRANULARITY 1;")
 }
 
 func TestAlterTable_RenameColumn(t *testing.T) {
@@ -675,7 +675,7 @@ func TestAlterTable_RenameColumn(t *testing.T) {
 		},
 	}
 	out := render(t, alter)
-	c.Assert(out, qt.Contains, "ALTER TABLE events RENAME COLUMN payload_old TO payload;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` RENAME COLUMN `payload_old` TO `payload`;")
 }
 
 func TestAlterTable_RenameTable(t *testing.T) {
@@ -687,7 +687,7 @@ func TestAlterTable_RenameTable(t *testing.T) {
 		},
 	}
 	out := render(t, alter)
-	c.Assert(out, qt.Contains, "RENAME TABLE old_events TO events;")
+	c.Assert(out, qt.Contains, "RENAME TABLE `old_events` TO `events`;")
 }
 
 func TestCreateNamespaceStatements(t *testing.T) {
@@ -697,8 +697,8 @@ func TestCreateNamespaceStatements(t *testing.T) {
 		&ast.CreateDatabaseNode{Name: "analytics"},
 	)
 
-	c.Assert(out, qt.Contains, "CREATE DATABASE IF NOT EXISTS events;")
-	c.Assert(out, qt.Contains, "CREATE DATABASE analytics;")
+	c.Assert(out, qt.Contains, "CREATE DATABASE IF NOT EXISTS `events`;")
+	c.Assert(out, qt.Contains, "CREATE DATABASE `analytics`;")
 }
 
 func TestCreateTableSelectTailWithEngine(t *testing.T) {
@@ -710,7 +710,7 @@ func TestCreateTableSelectTailWithEngine(t *testing.T) {
 
 	out := render(t, table)
 
-	c.Assert(out, qt.Contains, "CREATE TABLE IF NOT EXISTS copied_events ENGINE = Memory AS\nSELECT * FROM events\n;")
+	c.Assert(out, qt.Contains, "CREATE TABLE IF NOT EXISTS `copied_events` ENGINE = Memory AS\nSELECT * FROM events\n;")
 }
 
 func TestCreateTableSelectTailRequiresValidEngine(t *testing.T) {
@@ -802,12 +802,12 @@ func TestVisitIndex_AnnotationDrivenTypeAndGranularity(t *testing.T) {
 			name: "bloom_filter with float parameter and custom granularity",
 			typ:  "bloom_filter(0.01)",
 			gran: chschema.GranularitySetting{State: chschema.Explicit, Value: 64},
-			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE bloom_filter(0.01) GRANULARITY 64;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` `payload` TYPE bloom_filter(0.01) GRANULARITY 64;",
 		},
 		{
 			name: "set with explicit max size and default granularity",
 			typ:  "set(100)",
-			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE set(100) GRANULARITY 1;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` `payload` TYPE set(100) GRANULARITY 1;",
 		},
 	}
 

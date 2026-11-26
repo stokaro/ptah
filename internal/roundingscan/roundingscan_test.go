@@ -301,58 +301,81 @@ func TestCheck_FailurePath(t *testing.T) {
 }
 
 // TestNames_HappyPath holds a record to the statement that converts its column, as each
-// engine's plan writes it.
+// engine's plan writes it, and reads a quoted name by the engine's own quoting: a
+// doubled quote on every engine, and a backslash escape on ClickHouse.
 func TestNames_HappyPath(t *testing.T) {
 	tests := []struct {
-		name   string
-		sql    string
-		change roundingscan.Change
+		name    string
+		dialect string
+		sql     string
+		change  roundingscan.Change
 	}{
-		{"PostgreSQL", `ALTER TABLE "public"."prices" ALTER COLUMN "amount" TYPE numeric(8,1)`,
+		{"PostgreSQL", "postgres", `ALTER TABLE "public"."prices" ALTER COLUMN "amount" TYPE numeric(8,1)`,
 			roundingscan.Change{Table: "public.prices", Column: "amount"}},
-		{"SQL Server", "ALTER TABLE [prices] ALTER COLUMN [amount] DECIMAL(8,1) NULL",
+		{"SQL Server", "sqlserver", "ALTER TABLE [prices] ALTER COLUMN [amount] DECIMAL(8,1) NULL",
 			roundingscan.Change{Table: "prices", Column: "amount"}},
-		{"MySQL", "ALTER TABLE `prices` MODIFY COLUMN `amount` DECIMAL(8,1)",
+		{"MySQL", "mysql", "ALTER TABLE `prices` MODIFY COLUMN `amount` DECIMAL(8,1)",
 			roundingscan.Change{Table: "prices", Column: "amount"}},
-		{"ClickHouse", "ALTER TABLE prices MODIFY COLUMN amount Decimal(8, 1)",
+		{"ClickHouse", "clickhouse", "ALTER TABLE `prices` MODIFY COLUMN `amount` Decimal(8, 1)",
 			roundingscan.Change{Table: "prices", Column: "amount"}},
-		{"a name in another case", `ALTER TABLE "public"."Prices" ALTER COLUMN "Amount" TYPE numeric(8,1)`,
+		{"ClickHouse unquoted", "clickhouse", "ALTER TABLE prices MODIFY COLUMN amount Decimal(8, 1)",
+			roundingscan.Change{Table: "prices", Column: "amount"}},
+		{"a name in another case", "postgres", `ALTER TABLE "public"."Prices" ALTER COLUMN "Amount" TYPE numeric(8,1)`,
 			roundingscan.Change{Table: "public.prices", Column: "amount"}},
+		{"a doubled double quote", "postgres", `ALTER TABLE "public"."prices" ALTER COLUMN "a""b" TYPE numeric(8,1)`,
+			roundingscan.Change{Table: "public.prices", Column: `a"b`}},
+		{"a doubled backquote", "mysql", "ALTER TABLE `prices` MODIFY COLUMN `a``b` DECIMAL(8,1)",
+			roundingscan.Change{Table: "prices", Column: "a`b"}},
+		{"a doubled bracket", "sqlserver", "ALTER TABLE [prices] ALTER COLUMN [a]]b] DECIMAL(8,1) NULL",
+			roundingscan.Change{Table: "prices", Column: "a]b"}},
+		{"a MySQL backslash is a character", "mysql", "ALTER TABLE `prices` MODIFY COLUMN `a\\b` DECIMAL(8,1)",
+			roundingscan.Change{Table: "prices", Column: `a\b`}},
+		{"a ClickHouse backslash escape", "clickhouse", "ALTER TABLE `p``q` MODIFY COLUMN `a\\\\b` Decimal(8, 1)",
+			roundingscan.Change{Table: `"p` + "`" + `q"`, Column: `a\b`}},
+		{"a ClickHouse comment marker", "clickhouse", "ALTER TABLE `prices` MODIFY COLUMN `c -- d` Decimal(8, 1)",
+			roundingscan.Change{Table: "prices", Column: "c -- d"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(roundingscan.Names(test.sql, test.change), qt.IsTrue)
+			c.Assert(roundingscan.Names(test.dialect, test.sql, test.change), qt.IsTrue)
 		})
 	}
 }
 
 // TestNames_FailurePath refuses a statement that does not name the record's column and
 // table: a column of its own, a name that only starts with the column's, a column named
-// in a literal, and another table.
+// in a literal or a comment, another table, and a name read by another engine's quoting.
 func TestNames_FailurePath(t *testing.T) {
 	tests := []struct {
-		name   string
-		sql    string
-		change roundingscan.Change
+		name    string
+		dialect string
+		sql     string
+		change  roundingscan.Change
 	}{
-		{"another column", `ALTER TABLE "public"."prices" ALTER COLUMN "amount" TYPE numeric(8,1)`,
+		{"another column", "postgres", `ALTER TABLE "public"."prices" ALTER COLUMN "amount" TYPE numeric(8,1)`,
 			roundingscan.Change{Table: "public.prices", Column: "id"}},
-		{"a longer name", `ALTER TABLE "public"."prices" ALTER COLUMN "amounts" TYPE numeric(8,1)`,
+		{"a longer name", "postgres", `ALTER TABLE "public"."prices" ALTER COLUMN "amounts" TYPE numeric(8,1)`,
 			roundingscan.Change{Table: "public.prices", Column: "amount"}},
-		{"a literal", `COMMENT ON TABLE "public"."prices" IS 'amount'`,
+		{"a literal", "postgres", `COMMENT ON TABLE "public"."prices" IS 'amount'`,
 			roundingscan.Change{Table: "public.prices", Column: "amount"}},
-		{"another table", "ALTER TABLE [orders] ALTER COLUMN [amount] DECIMAL(8,1) NULL",
+		{"a comment", "clickhouse", "ALTER TABLE prices MODIFY COLUMN c -- amount\n Decimal(8, 1)",
 			roundingscan.Change{Table: "prices", Column: "amount"}},
-		{"a table name that does not parse", "ALTER TABLE [prices] ALTER COLUMN [amount] DECIMAL(8,1) NULL",
+		{"another table", "sqlserver", "ALTER TABLE [orders] ALTER COLUMN [amount] DECIMAL(8,1) NULL",
+			roundingscan.Change{Table: "prices", Column: "amount"}},
+		{"a table name that does not parse", "sqlserver", "ALTER TABLE [prices] ALTER COLUMN [amount] DECIMAL(8,1) NULL",
 			roundingscan.Change{Table: "", Column: "amount"}},
+		{"a part of a doubled quote", "mysql", "ALTER TABLE `prices` MODIFY COLUMN `a``b` DECIMAL(8,1)",
+			roundingscan.Change{Table: "prices", Column: "a"}},
+		{"an escaped backslash read as two", "clickhouse", "ALTER TABLE `prices` MODIFY COLUMN `a\\\\b` Decimal(8, 1)",
+			roundingscan.Change{Table: "prices", Column: `a\\b`}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(roundingscan.Names(test.sql, test.change), qt.IsFalse)
+			c.Assert(roundingscan.Names(test.dialect, test.sql, test.change), qt.IsFalse)
 		})
 	}
 }
@@ -440,6 +463,13 @@ func TestAssertion_HappyPath(t *testing.T) {
 			roundingscan.Change{Table: "prices", Column: "amount", HeldType: "Decimal(8, 3)", DeclaredType: "Decimal(8, 1)"},
 			"SELECT CASE WHEN EXISTS (SELECT 1 FROM `prices` WHERE `amount` != CAST(assumeNotNull(`amount`) AS Decimal(8, 1))) " +
 				"THEN 0 ELSE 1 END"},
+		{"ClickHouse a name the server reads an escape in", "clickhouse",
+			roundingscan.Change{Table: "p`q", Column: `a\b -- c`, HeldType: "Decimal(8, 3)", DeclaredType: "Decimal(8, 1)"},
+			"SELECT CASE WHEN EXISTS (SELECT 1 FROM `p``q` WHERE `a\\\\b -- c` != CAST(assumeNotNull(`a\\\\b -- c`) AS Decimal(8, 1))) " +
+				"THEN 0 ELSE 1 END"},
+		{"MySQL a backslash is a character", "mysql",
+			roundingscan.Change{Table: "prices", Column: `a\b`, HeldType: "decimal(8,3)", DeclaredType: "INT"},
+			"SELECT CASE WHEN EXISTS (SELECT 1 FROM `prices` WHERE `a\\b` <> CAST(`a\\b` AS SIGNED)) THEN 0 ELSE 1 END"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

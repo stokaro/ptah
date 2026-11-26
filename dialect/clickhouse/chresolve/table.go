@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/sqlident"
 )
 
 // ErrUnknownCurrent means an omitted setting needs an unavailable observation.
@@ -43,8 +45,9 @@ type Origins struct {
 // a complete, usable observation; callers must check its source coverage before
 // supplying it. Nil means unavailable, never an inspected empty table. Creating
 // establishes that no current table exists and therefore forbids Current.
-// CommonKey contains the ordered SQL column expressions supplied by the common
-// declaration for creation's sorting-key fallback. Inputs remain unchanged.
+// CommonKey contains the ordered column names supplied by the common
+// declaration for creation's sorting-key fallback, written into the key by
+// [ColumnKey]. Inputs remain unchanged.
 type Request struct {
 	Desired   *chschema.DesiredTable
 	Current   *chschema.ObservedTable
@@ -115,7 +118,7 @@ func Table(request Request) (Result, error) {
 	}
 	if IsMergeTree(p.Engine.Value) {
 		if o.OrderBy == CreationRule {
-			p.OrderBy.Value = strings.Join(request.CommonKey, ", ")
+			p.OrderBy.Value = ColumnKey(request.CommonKey)
 			if strings.TrimSpace(p.OrderBy.Value) == "" {
 				return Result{}, ErrMissingSortingKey
 			}
@@ -130,6 +133,18 @@ func Table(request Request) (Result, error) {
 		return Result{}, err
 	}
 	return result, nil
+}
+
+// ColumnKey writes columns as a sorting key: each name quoted, in order,
+// separated by commas. A name is quoted whatever it holds, since a key is SQL
+// text the server parses: a primary-key column named `c -- d` or `not` written
+// bare is a comment or a syntax error. No column gives the empty key.
+func ColumnKey(columns []string) string {
+	quoted := make([]string, len(columns))
+	for i, column := range columns {
+		quoted[i] = sqlident.Quote(platform.ClickHouse, column)
+	}
+	return strings.Join(quoted, ", ")
 }
 
 type property struct {

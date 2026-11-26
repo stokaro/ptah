@@ -12,8 +12,10 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/internal/chsql"
 	"ptah.run/internal/chcolumn"
+	"ptah.run/internal/chkey"
 )
 
 // Handlers returns independent descriptors for the supported operation roles.
@@ -50,12 +52,15 @@ func validateStorage(ctx renderer.ExtensionContext, op *chast.AlterStorage) erro
 // as more of the rule, and MODIFY SETTING followed by a comma reads RESET as
 // a setting name.
 func renderStorage(ctx renderer.ExtensionContext, op *chast.AlterStorage) ([]string, error) {
-	table := ctx.Parent.Name
+	table := quoteTable(ctx.Parent.Name)
 	after, err := op.Change.After.Observed()
 	if err != nil {
 		return nil, err
 	}
 	changed := chsql.Changed(op.Change.Before, after)
+	if err := refuseStorageNot(ctx.Parent.Name, op, after, changed); err != nil {
+		return nil, err
+	}
 	var set []chsql.Setting
 	var reset []string
 	if slices.Contains(changed, chsql.Settings) {
@@ -97,4 +102,30 @@ func renderStorage(ctx renderer.ExtensionContext, op *chast.AlterStorage) ([]str
 		statements = append(statements, fmt.Sprintf("ALTER TABLE %s RESET SETTING %s;", table, strings.Join(reset, ", ")))
 	}
 	return statements, nil
+}
+
+// refuseStorageNot refuses a changed clause, or a column added for a new
+// sorting key, that names a column called not, which the server stores in a
+// form it cannot read back; see [chkey.QuotedNot]. Only a changed clause is
+// read, because only a changed clause is written: a TTL change leaves the
+// sorting key as the server holds it. Every clause has its text here, the
+// engine, PARTITION BY and PRIMARY KEY too, although validation refuses a
+// change to those three before rendering, so the set read is the set
+// [chsql.Changed] reports.
+func refuseStorageNot(table string, op *chast.AlterStorage, after *chschema.ObservedTable, changed []chsql.Clause) error {
+	text := map[chsql.Clause]string{
+		chsql.Engine: after.Engine, chsql.PartitionBy: after.PartitionBy, chsql.PrimaryKey: after.PrimaryKey,
+		chsql.OrderBy: after.OrderBy, chsql.SampleBy: after.SampleBy, chsql.TTL: after.TTL,
+	}
+	for _, clause := range changed {
+		if err := chkey.RefuseQuotedNot(fmt.Sprintf("the %s of table %q", clause, table), text[clause]); err != nil {
+			return err
+		}
+	}
+	for _, column := range op.Columns {
+		if err := chkey.RefuseQuotedNot(fmt.Sprintf("the %s expression of column %q", column.Value, column.Name), column.Expression); err != nil {
+			return err
+		}
+	}
+	return nil
 }

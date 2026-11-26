@@ -8,10 +8,56 @@ package chindexkey
 import (
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlident"
 )
+
+// Written returns parts as they stand in the key ADD INDEX takes: an
+// expression as it is written, and a column name quoted as ClickHouse quotes a
+// name. Written bare, a column named x-y is the expression x - y, which the
+// server builds and reports back as the key, so no later plan sees the
+// difference; and a name holding a backtick or a backslash is refused when
+// the plan runs. Measured on ClickHouse 24.10 and 26.10, the quoted name
+// builds an index on the column, reported as `x-y`. A part with neither stays
+// empty, for the check that refuses a key with no parts to report.
+func Written(parts []schemamodel.IndexPart) []string {
+	written := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch expression := strings.TrimSpace(part.Expr); {
+		case expression != "":
+			written = append(written, expression)
+		case part.Name != "":
+			written = append(written, sqlident.Quote(platform.ClickHouse, part.Name))
+		default:
+			written = append(written, "")
+		}
+	}
+	return written
+}
+
+// Reported returns the key of an index a catalog describes, written as
+// [Written] writes it. The reader reports the server's key as one expression
+// part. A catalog projected from a declaration carries the declared parts, or
+// only the key columns where the declaration names no parts, and those are
+// column names. So a column named x-y compares as the same quoted name on
+// both sides, wherever the catalog came from.
+func Reported(index catalog.Index) []string {
+	parts := make([]schemamodel.IndexPart, 0, max(len(index.Parts), len(index.Columns)))
+	for _, part := range index.Parts {
+		parts = append(parts, schemamodel.IndexPart{Name: part.Name, Expr: part.Expr})
+	}
+	if len(index.Parts) == 0 {
+		for _, column := range index.Columns {
+			parts = append(parts, schemamodel.IndexPart{Name: column})
+		}
+	}
+	return Written(parts)
+}
 
 // Expression joins an index's key parts into the expression ADD INDEX takes.
 // Several parts form one tuple. A single part is used as written unless it is
@@ -58,7 +104,9 @@ func keyForm(expression string) string {
 }
 
 // significantTokens lists the tokens of expression without whitespace or
-// comments, each outside a string literal in lower case.
+// comments, each outside a string literal in lower case. A quoted name is
+// first written the way [chcolumn.ComparableIdentifier] compares it, so the
+// server's spelling of a name and the declaration's agree.
 func significantTokens(expression string) []string {
 	lex := lexer.NewLexerWithOptions(expression, dialectlexer.Options(platform.ClickHouse))
 	var tokens []string
@@ -70,9 +118,9 @@ func significantTokens(expression string) []string {
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			continue
 		case lexer.TokenString:
-			tokens = append(tokens, token.Value)
+			tokens = append(tokens, chcolumn.ComparableIdentifier(token.Value))
 		default:
-			tokens = append(tokens, strings.ToLower(token.Value))
+			tokens = append(tokens, strings.ToLower(chcolumn.ComparableIdentifier(token.Value)))
 		}
 	}
 }

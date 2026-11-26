@@ -157,12 +157,12 @@ func TestRenderSQL_KeepsAnIndexTypeThisRepositoryDoesNotKnow(t *testing.T) {
 }
 
 // TestRenderSQL_WritesACatalogKeyListAsATuple replays a tuple key the way an
-// inspection reports it. system.data_skipping_indices gives the key of
-// `INDEX i (a, b)` as the bare list `a, b`, which ADD INDEX reads as the end of
-// its expression and refuses with a syntax error on 24.10.
+// inspection reports it: one expression part. system.data_skipping_indices
+// gives the key of `INDEX i (a, b)` as the bare list `a, b`, which ADD INDEX
+// reads as the end of its expression and refuses with a syntax error on 24.10.
 func TestRenderSQL_WritesACatalogKeyListAsATuple(t *testing.T) {
 	c := qt.New(t)
-	node := &ast.IndexNode{Name: "idx_ab", Table: "docs", Columns: []string{"a, b"}}
+	node := &ast.IndexNode{Name: "idx_ab", Table: "docs", Columns: []string{"a, b"}, Parts: []ast.IndexPart{{Expr: "a, b"}}}
 
 	sql, err := builtin.RenderSQL(platform.ClickHouse, node)
 

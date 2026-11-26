@@ -41,6 +41,18 @@ func TestQuote(t *testing.T) {
 		{name: "postgres escapes embedded double quote", dialect: "postgres", ident: `a"b`, want: `"a""b"`},
 		{name: "mysql escapes embedded backtick", dialect: "mysql", ident: "a`b", want: "`a``b`"},
 		{name: "sqlserver escapes embedded bracket", dialect: "sqlserver", ident: "a]b", want: "[a]]b]"},
+		// ClickHouse reads a backslash inside backticks as an escape, so one the
+		// name holds is doubled: measured on 26.10, `a\tb` names a, a tab and b,
+		// and `ends\` leaves the quote open. MySQL and MariaDB read the
+		// backslash as itself and keep the spelling they have. The rule is the
+		// descriptor's Lexical.IdentifierBackslashEscapes.
+		{name: "clickhouse doubles a backslash", dialect: "clickhouse", ident: `a\tb`, want: "`a\\\\tb`"},
+		{name: "clickhouse doubles a trailing backslash", dialect: "clickhouse", ident: `ends\`, want: "`ends\\\\`"},
+		{name: "clickhouse doubles a backtick", dialect: "clickhouse", ident: "a`b", want: "`a``b`"},
+		{name: "clickhouse escapes a backslash before a backtick", dialect: "clickhouse", ident: "a\\`b", want: "`a\\\\``b`"},
+		{name: "clickhouse keeps a comment marker inside the quotes", dialect: "clickhouse", ident: "c -- d", want: "`c -- d`"},
+		{name: "mysql keeps a backslash", dialect: "mysql", ident: `a\tb`, want: "`a\\tb`"},
+		{name: "mariadb keeps a backslash", dialect: "mariadb", ident: `a\tb`, want: "`a\\tb`"},
 		// YQL: SELECT 1 AS `a\\b`, 2 AS `c\`d`, 3 AS `e\\\`f` answered the
 		// columns a\b, c`d and e\`f on YDB 26.2.1.14.
 	}
@@ -73,6 +85,33 @@ func TestQualified(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(sqlident.Qualified(tt.dialect, tt.schema, tt.ident), qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestTableReference pins how a table the schema model names is written: the
+// model double-quotes a part holding a dot, a quote or a backtick, and the
+// statement names the table in the dialect's own quotes.
+func TestTableReference(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		table   string
+		want    string
+	}{
+		{name: "bare name", dialect: "clickhouse", table: "events", want: "`events`"},
+		{name: "qualified name", dialect: "clickhouse", table: "db.events", want: "`db`.`events`"},
+		{name: "model quotes a backtick", dialect: "clickhouse", table: "\"t`q\"", want: "`t``q`"},
+		{name: "model quotes a dot", dialect: "clickhouse", table: `"a.b"`, want: "`a.b`"},
+		{name: "backslash in a qualified name", dialect: "clickhouse", table: `db.a\b`, want: "`db`.`a\\\\b`"},
+		{name: "postgres double quotes", dialect: "postgres", table: "app.users", want: `"app"."users"`},
+		{name: "unparsed name is one identifier", dialect: "clickhouse", table: "a.b.c", want: "`a.b.c`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlident.TableReference(tt.dialect, tt.table), qt.Equals, tt.want)
 		})
 	}
 }

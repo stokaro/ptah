@@ -50,7 +50,7 @@ func TestMigrationsClickHouseRollbackRemovesADefaultE2E(t *testing.T) {
 	c.Assert(downs, qt.HasLen, 1)
 	down, err := os.ReadFile(downs[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(down), qt.Contains, "ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT;")
+	c.Assert(string(down), qt.Contains, "ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT;")
 
 	runPtahNative(c, "migrations", "up", "--db-url", url, "--migrations-dir", migrations)
 	c.Assert(clickHouseColumnDefault(c, url), qt.Equals, "DEFAULT '0'")

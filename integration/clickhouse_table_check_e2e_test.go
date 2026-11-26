@@ -77,7 +77,7 @@ func checkInsert(c *qt.C, conn *dbschema.DatabaseConnection, row string) error {
 // heldRowScan is the SELECT that stops the plan when table t holds a row the
 // CHECK name with condition refuses.
 func heldRowScan(name, condition string) string {
-	return fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM t WHERE NOT ifNull((%s), 0);\n", name, condition)
+	return fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM `t` WHERE NOT ifNull((%s), 0);\n", name, condition)
 }
 
 // addedCheck is the plan text that adds the CHECK name with condition to
@@ -86,7 +86,7 @@ func heldRowScan(name, condition string) string {
 func addedCheck(name, condition string) string {
 	return "-- CLICKHOUSE: ADD CONSTRAINT " + name + " checks only the rows written after it; " +
 		"a SELECT ahead of it and one after it scan t for held rows the CHECK refuses\n" +
-		fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s);\n", name, condition) + heldRowScan(name, condition)
+		fmt.Sprintf("ALTER TABLE `t` ADD CONSTRAINT `%s` CHECK (%s);\n", name, condition) + heldRowScan(name, condition)
 }
 
 var (
@@ -239,7 +239,7 @@ func TestApplyClickHouseTableChecks_AnUnnamedCheckKeepsItsName(t *testing.T) {
 			c.Assert(swapped, qt.Equals, "Schema is synced, no changes to be made.\n")
 			c.Assert(again, qt.Equals, "Schema is synced, no changes to be made.\n")
 			c.Assert(plan, qt.Contains, heldRowScan("t_check", "v != 7")+heldRowScan("t_check2", "v < 10")+
-				"ALTER TABLE t DROP CONSTRAINT t_check;\n"+addedCheck("t_check", "v != 7")+addedCheck("t_check2", "v < 10"))
+				"ALTER TABLE `t` DROP CONSTRAINT `t_check`;\n"+addedCheck("t_check", "v != 7")+addedCheck("t_check2", "v < 10"))
 			c.Assert(plan, qt.Not(qt.Contains), "t_check1")
 			c.Assert(catalogReadBack(c, url, []string{checkConstraints}), qt.DeepEquals,
 				[][]string{{"CONSTRAINT t_check1 CHECK, CONSTRAINT t_check CHECK, CONSTRAINT t_check2 CHECK"}})
@@ -266,7 +266,7 @@ func TestApplyClickHouseTableChecks_ACheckOnAColumnInAnotherCaseIsAnotherCheck(t
 			plan, again := checkApply(c, url, tableChecks(upperV, [2]string{"t_check", "V > 0"}))
 
 			c.Assert(again, qt.Equals, "Schema is synced, no changes to be made.\n")
-			c.Assert(plan, qt.Contains, heldRowScan("t_check", "V > 0")+"ALTER TABLE t DROP CONSTRAINT t_check;\n"+addedCheck("t_check", "V > 0"))
+			c.Assert(plan, qt.Contains, heldRowScan("t_check", "V > 0")+"ALTER TABLE `t` DROP CONSTRAINT `t_check`;\n"+addedCheck("t_check", "V > 0"))
 			c.Assert(checkInsert(c, conn, "(1, 1, 'a', 0)"), qt.ErrorMatches, "(?s).*code: 469, message: Constraint `t_check` .*")
 			c.Assert(checkInsert(c, conn, "(1, 0, 'a', 1)"), qt.IsNil)
 		})
@@ -349,7 +349,7 @@ func TestApplyClickHouseTableChecks_AChangedCheckStopsAheadOfItsDrop(t *testing.
 			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0)
 			c.Assert(applied.Stderr, qt.Matches, "(?s).*code: 395, message: t_held is broken by rows t holds.*")
 			c.Assert(applied.Stderr, qt.Contains,
-				"\nSQL: SELECT throwIf(count() > 0, 't_held is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0)\n")
+				"\nSQL: SELECT throwIf(count() > 0, 't_held is broken by rows t holds') FROM `t` WHERE NOT ifNull((v > 5), 0)\n")
 			c.Assert(catalogReadBack(c, url, []string{checkConstraints, "SELECT count() FROM t"}), qt.DeepEquals,
 				[][]string{{"CONSTRAINT t_held CHECK"}, {"1"}})
 			c.Assert(checkInsert(c, conn, "(9, -7, 'b')"), qt.ErrorMatches, "(?s).*code: 469, message: Constraint `t_held` .*")
@@ -378,7 +378,7 @@ const unscannedWarning = "warning: CHECK t_held on t is added without a scan of 
 func TestApplyClickHouseTableChecks_WithoutTheScansAHeldRowStays(t *testing.T) {
 	c := qt.New(t)
 	unscanned := "-- CLICKHOUSE: ADD CONSTRAINT t_held checks only the rows written after it, " +
-		"and the plan has no scan: the rows t already holds are not checked\nALTER TABLE t ADD CONSTRAINT t_held CHECK (v > 0);\n"
+		"and the plan has no scan: the rows t already holds are not checked\nALTER TABLE `t` ADD CONSTRAINT `t_held` CHECK (v > 0);\n"
 	for _, server := range clickHouseServers(c) {
 		for _, test := range []struct {
 			name string
@@ -473,7 +473,7 @@ func TestGenerateClickHouseTableChecks_TheMigrationKeepsOrSkipsTheScans(t *testi
 			strings.TrimSuffix(addedCheck("t_held", "v > 0"), heldRowScan("t_held", "v > 0"))+heldRowScan("t_held", stored[server]), "\n")
 	}
 	unscanned := "-- CLICKHOUSE: ADD CONSTRAINT t_held checks only the rows written after it, " +
-		"and the plan has no scan: the rows t already holds are not checked\nALTER TABLE t ADD CONSTRAINT t_held CHECK (v > 0);"
+		"and the plan has no scan: the rows t already holds are not checked\nALTER TABLE `t` ADD CONSTRAINT `t_held` CHECK (v > 0);"
 	held := tableChecks("", [2]string{"t_held", "v > 0"})
 	for _, server := range clickHouseServers(c) {
 		for _, test := range []struct {

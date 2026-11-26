@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/tableref"
 )
 
 // spelling is how one dialect writes an identifier, read once from its
@@ -33,6 +34,10 @@ type spelling struct {
 	// letterFirst is the descriptor's Identifiers.LetterFirst: an unquoted
 	// name starts with a letter rather than a letter or an underscore.
 	letterFirst bool
+	// backslash is the descriptor's Lexical.IdentifierBackslashEscapes: a
+	// backslash inside a quoted name escapes the character after it, so one
+	// the name holds is written doubled.
+	backslash bool
 }
 
 // spellings caches the spelling of each dialect name a caller has asked
@@ -61,16 +66,27 @@ func spellingOf(dialect string) spelling {
 	if !found {
 		return spelling{}
 	}
-	written := spellingFrom(described.Quoting)
-	written.fold = described.Identifiers.UnquotedFold
-	written.bareChars = described.Identifiers.BareChars
-	written.letterFirst = described.Identifiers.LetterFirst
+	written := spellingFrom(described)
 	spellings.Store(dialect, written)
 	return written
 }
 
-func spellingFrom(quoting descriptor.Quoting) spelling {
-	written := spelling{style: quoting.Style, bare: quoting.Bare, paths: quoting.Paths}
+// spellingFrom reads how described writes an identifier: its Quoting, the
+// Identifiers rules a bare name follows, and Lexical.IdentifierBackslashEscapes.
+// A registered descriptor and one a caller holds for an engine the registry
+// does not describe are read by this one function, so a name is written alike
+// whichever way its dialect reached the process.
+func spellingFrom(described descriptor.Dialect) spelling {
+	quoting := described.Quoting
+	written := spelling{
+		style:       quoting.Style,
+		bare:        quoting.Bare,
+		paths:       quoting.Paths,
+		fold:        described.Identifiers.UnquotedFold,
+		bareChars:   described.Identifiers.BareChars,
+		letterFirst: described.Identifiers.LetterFirst,
+		backslash:   described.Lexical.IdentifierBackslashEscapes,
+	}
 	if len(quoting.Keywords) > 0 {
 		written.keywords = make(map[string]bool, len(quoting.Keywords))
 		for _, keyword := range quoting.Keywords {
@@ -80,11 +96,14 @@ func spellingFrom(quoting descriptor.Quoting) spelling {
 	return written
 }
 
-// IdentWith is [Ident] for a name written with quoting, for a caller that
-// holds the quoting of a dialect the process registry does not describe, such
-// as the query builder rendering a provider's declared spelling.
-func IdentWith(quoting descriptor.Quoting, name string) string {
-	return spellingFrom(quoting).ident(name)
+// IdentWith is [Ident] for a name written by described, for a caller that
+// holds the descriptor of an engine the process registry does not describe,
+// such as the query builder rendering a provider's declared spelling. It reads
+// the fields of described that Ident reads of a registered descriptor, so a
+// described Lexical.IdentifierBackslashEscapes doubles each backslash the name
+// holds here too.
+func IdentWith(described descriptor.Dialect, name string) string {
+	return spellingFrom(described).ident(name)
 }
 
 // Quote returns name as a safely-quoted identifier for dialect. The quote
@@ -93,8 +112,14 @@ func IdentWith(quoting descriptor.Quoting, name string) string {
 // PostgreSQL family, SQLite, Oracle and any unrecognized dialect. Embedded
 // quote characters are doubled per the SQL standard so the value cannot
 // terminate the quoted identifier, except on YDB, where a backslash escapes
-// them; see [sqlutil.QuoteYQLIdentifier]. The dialect is resolved through the
-// dialect registry, so every documented spelling of an engine (`mssql`,
+// them; see [sqlutil.QuoteYQLIdentifier]. Where the descriptor states that a
+// backslash escapes the next character inside a quoted name
+// (Lexical.IdentifierBackslashEscapes), as on ClickHouse, each backslash the
+// name holds is doubled too: measured on ClickHouse 26.10, `a\tb` names a, a
+// tab and b, and a name that ends in a lone backslash leaves the quote open.
+// MySQL and MariaDB read a backslash in a name as itself, so it stays single
+// there. The dialect is resolved through the dialect registry, so every
+// documented spelling of an engine (`mssql`,
 // `tsql`, `sql-server`, `sql_server`; `ch`) picks the same quote style as its
 // canonical name. name itself is quoted verbatim (it is not trimmed).
 func Quote(dialect, name string) string {
@@ -102,9 +127,13 @@ func Quote(dialect, name string) string {
 }
 
 func (w spelling) quote(name string) string {
-	switch w.style {
-	case descriptor.QuoteYQL:
+	if w.style == descriptor.QuoteYQL {
 		return sqlutil.QuoteYQLIdentifier(name)
+	}
+	if w.backslash {
+		name = strings.ReplaceAll(name, `\`, `\\`)
+	}
+	switch w.style {
 	case descriptor.QuoteBacktick:
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	case descriptor.QuoteBracket:
@@ -274,6 +303,25 @@ func QualifiedIdent(dialect, schema, name string) string {
 		return Qualified(dialect, schema, name)
 	}
 	return Ident(dialect, schema) + "." + Ident(dialect, name)
+}
+
+// TableReference returns the spelling that refers to table in dialect, where
+// table is a name as the schema model holds one: `name` or `schema.name`,
+// each part double-quoted where it holds a dot, a quote, a backtick or a
+// bracket, as [tableref.Canonical] writes it. Each part is spelled by
+// [QualifiedIdent]: the model name "t`q" is the table t`q, written in the
+// dialect's quotes rather than as the double-quoted text. A name that does
+// not parse as a reference is spelled whole, as one identifier.
+//
+// A renderer that writes a table it holds as a model name writes it with this
+// function, so the statement that creates the table and the one that alters
+// it name the same table.
+func TableReference(dialect, table string) string {
+	ref, ok := tableref.Parse(table)
+	if !ok {
+		return Ident(dialect, table)
+	}
+	return QualifiedIdent(dialect, ref.Schema, ref.Name)
 }
 
 // Qualified returns a dialect-quoted identifier optionally qualified by schema,

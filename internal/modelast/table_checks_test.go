@@ -45,7 +45,7 @@ func TestFromTable_DeclaredChecksReachTheDDL(t *testing.T) {
 		// ClickHouse refuses an unnamed table CHECK, so its renderer names one
 		// from the table. The declaration carries an expression and no name,
 		// which is the same path a column's `check=` already takes there.
-		{name: "clickhouse", dialect: platform.ClickHouse, want: "CONSTRAINT products_check CHECK (price > 0)"},
+		{name: "clickhouse", dialect: platform.ClickHouse, want: "CONSTRAINT `products_check` CHECK (price > 0)"},
 	}
 
 	for _, test := range tests {

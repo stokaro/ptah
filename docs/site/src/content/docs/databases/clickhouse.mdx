@@ -195,6 +195,75 @@ A read cannot find a table in another database, so without the refusal every run
 plans its `CREATE TABLE` again. Ptah creates no ClickHouse database, so a run
 against a database the server does not hold fails on the server instead.
 
+## Names
+
+Ptah writes every ClickHouse name it puts into a statement in backticks:
+databases, tables, columns, constraints, indexes, views, the sorting key it
+derives from the primary-key columns, and each column a skipping index names
+in its column list. Inside the backticks a backtick is doubled and a backslash
+is written as two, because ClickHouse reads a backslash in a quoted name as an
+escape. Measured on 24.10 and 26.10, `` `a\tb` `` names the three characters
+`a`, a tab and `b`, and `` `a\\tb` `` names `a\tb`.
+
+So a column named `c -- d` is one name. Written bare, `ALTER TABLE tq DROP
+COLUMN c -- d` reads `-- d` as a comment and drops the column `c` with its
+rows. A skipping index declared on the column `x-y` is an index on that column,
+which the server reports back as `` `x-y` ``; written bare, its key would be the
+expression `x - y`.
+
+A quoted name in a SQL schema file is read as the server reads it: `\t` is a
+tab, `\x41` is `A`, `\N` stands for nothing, and a backslash before a byte with
+no escape meaning, as in `` `a\zb` ``, is kept. A quoted name that the server
+refuses, such as `` `a\x4` ``, or that its release lines read differently, such
+as `\x` before a byte that is not a hexadecimal digit, refuses the file:
+
+```text
+error: error parsing schema file: read SQL schema file schema.sql: schema file schema.sql: line 1: the quoted name `a\x4` is not a clickhouse name Ptah reads as the server does: inside quotes a backslash starts an escape, and this escape is incomplete, refused by the server, or read differently by server release; write a backslash the name holds as two
+```
+
+An expression the declaration writes reaches the server as written, so a name
+inside it is quoted by its author. That holds for a `TTL`, a `CHECK`, the key
+expression of a skipping index, an explicit `ORDER BY`, `PRIMARY KEY`,
+`PARTITION BY` or `SAMPLE BY`, and a `DEFAULT`, `MATERIALIZED` or `ALIAS`
+value. The server prints a name back in its own spelling, and the comparison
+reads a quoted name and its bare spelling as one name: a sorting key written
+``(`id`, `a b`)`` reads back as `` id, `a b` `` and plans nothing.
+
+A name spelled `not`, in any case, cannot appear quoted in such an
+expression, in the arguments of a table engine such as
+``ReplacingMergeTree(`not`)``, in the body of a view or a materialized view,
+in the filter of a row policy, or in the sorting key Ptah derives from a
+primary-key column of that name. Measured on 24.10 and 26.10, the server
+stores the name as the bare word `not`, and then `SHOW CREATE` and every read
+of the schema fail with code 62, or, for `` `not` + 1 ``, read back `NOT 1`,
+another expression. A row policy filter fails sooner: the server refuses
+`CREATE ROW POLICY` itself with code 62, after the plan has created the table.
+
+25.8, 26.3, 26.7, 26.8 and 26.9 store a sorting key and a view body the same
+way, and 26.11 keeps the backticks. Ptah renders without knowing the release,
+so it refuses the render or the plan on every release before anything runs,
+and names the clause and the name. A plan that creates a table again names the
+copy it creates, `ptah_rebuild_<table>`:
+
+```text
+error: error rendering clickhouse schema: unsupported feature: ClickHouse: the ORDER BY of table "tq" names `not`; releases before 26.11 store that name as the bare word not, the NOT operator, so the statement or every later read of the schema fails, or the definition means another expression; rename it
+```
+
+A nullable column named `not` cannot be made `NOT NULL`, even with a default.
+Ptah fills its `NULL` rows with `ALTER TABLE ... UPDATE` before the `MODIFY
+COLUMN`, and 25.8 to 26.10 refuse that statement with code 62 for such a
+column, in backticks, in double quotes or escaped. The plan is refused:
+
+```text
+error: generate schema apply operations: column tq.not cannot be made NOT NULL: its NULL rows take the default through ALTER TABLE ... UPDATE, and ClickHouse 25.8 to 26.10 refuse that statement for a column named not, however the name is quoted; rename the column first
+```
+
+Otherwise a column named `not` is created, changed, renamed, dropped and read
+like any other column, measured on 24.10 and 26.10. A data write that names it
+in a mutation is the server's to refuse: 25.8 to 26.10 answer code 62 for an
+`ALTER TABLE ... UPDATE` whose `WHERE` names it, and 24.10 to 26.10 for a
+`DELETE FROM` whose `WHERE` does.
+
 ## Dev-database cleanup
 
 Dev-database replay cleanup requires ClickHouse 24.11 or newer
@@ -302,7 +371,7 @@ expression, the plan adds every new column of the table in the statement that
 changes the key:
 
 ```sql
-ALTER TABLE events ADD COLUMN region String, MODIFY ORDER BY (id, region);
+ALTER TABLE `events` ADD COLUMN `region` String, MODIFY ORDER BY (id, region);
 ```
 
 The primary key stays a prefix of the sorting key. A table created without
@@ -367,7 +436,7 @@ the two with `EXCHANGE TABLES`. The table stays as it is until the swap:
 ```sql
 SELECT throwIf((SELECT count() FROM system.databases WHERE name = currentDatabase() AND engine = 'Atomic') = 0, '...'), throwIf((SELECT count() FROM `events`) != (SELECT ifNull(sum(total_rows), 0) FROM system.tables WHERE database = currentDatabase() AND name = 'events'), '...') SETTINGS apply_deleted_mask = 0;
 SYSTEM START MERGES `ptah_rebuild_events`;
-CREATE TABLE `ptah_rebuild_events` (id UInt64, name String) ENGINE = ReplacingMergeTree ORDER BY (id) PRIMARY KEY (id) SETTINGS index_granularity = 8192;
+CREATE TABLE `ptah_rebuild_events` (`id` UInt64, `name` String) ENGINE = ReplacingMergeTree ORDER BY (id) PRIMARY KEY (id) SETTINGS index_granularity = 8192;
 SELECT throwIf((SELECT arraySort(groupArray((name, compression_codec))) FROM system.columns WHERE ... table = 'ptah_rebuild_events' ...) != (... table = 'events' ...), '...'), throwIf((SELECT arraySort(groupArray((name, query))) FROM system.projections WHERE ... table = 'ptah_rebuild_events') != (... table = 'events'), '...');
 SYSTEM STOP MERGES `ptah_rebuild_events`;
 INSERT INTO `ptah_rebuild_events` (`id`, `name`) SELECT `id`, `name` FROM `events` SETTINGS max_partitions_per_insert_block = 0, optimize_on_insert = 0, insert_deduplicate = 0;
@@ -579,11 +648,11 @@ type T struct {
 ```
 
 ```sql
-CREATE TABLE t (
-  id UInt64,
-  v Int32,
-  CONSTRAINT t_check CHECK (v > 0)
-) ENGINE = MergeTree ORDER BY (id);
+CREATE TABLE `t` (
+  `id` UInt64,
+  `v` Int32,
+  CONSTRAINT `t_check` CHECK (v > 0)
+) ENGINE = MergeTree ORDER BY (`id`);
 ```
 
 The server keeps the constraints of a table only in its `CREATE TABLE` statement, so
@@ -614,10 +683,10 @@ holds that the `CHECK` refuses, once ahead of the `ADD` and again after it, and 
 so in a comment above the `ADD`:
 
 ```sql
-SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM `t` WHERE NOT ifNull((v > 1), 0);
 -- CLICKHOUSE: ADD CONSTRAINT t_check checks only the rows written after it; a SELECT ahead of it and one after it scan t for held rows the CHECK refuses
-ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
-SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 1), 0);
+ALTER TABLE `t` ADD CONSTRAINT `t_check` CHECK (v > 1);
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM `t` WHERE NOT ifNull((v > 1), 0);
 ```
 
 A row the condition answers NULL for is counted, since an `INSERT` of it is refused
@@ -637,11 +706,11 @@ values the new condition reads. A held row the new condition refuses stops the a
 with the old `CHECK` still on the table, refusing the rows written after it:
 
 ```sql
-SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0);
-ALTER TABLE t DROP CONSTRAINT t_check;
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM `t` WHERE NOT ifNull((v > 5), 0);
+ALTER TABLE `t` DROP CONSTRAINT `t_check`;
 -- CLICKHOUSE: ADD CONSTRAINT t_check checks only the rows written after it; a SELECT ahead of it and one after it scan t for held rows the CHECK refuses
-ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 5);
-SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM t WHERE NOT ifNull((v > 5), 0);
+ALTER TABLE `t` ADD CONSTRAINT `t_check` CHECK (v > 5);
+SELECT throwIf(count() > 0, 't_check is broken by rows t holds') FROM `t` WHERE NOT ifNull((v > 5), 0);
 ```
 
 When the plan adds a column or changes a column's type, nullability, default or
@@ -669,7 +738,7 @@ checked, and the run warns once before the plan:
 
 ```sql
 -- CLICKHOUSE: ADD CONSTRAINT t_check checks only the rows written after it, and the plan has no scan: the rows t already holds are not checked
-ALTER TABLE t ADD CONSTRAINT t_check CHECK (v > 1);
+ALTER TABLE `t` ADD CONSTRAINT `t_check` CHECK (v > 1);
 ```
 
 On a table the plan keeps, a held row the `CHECK` refuses then stays, and the
@@ -921,8 +990,8 @@ A default the declaration takes away is removed with its own statement, written
 before the one that states the type:
 
 ```sql
-ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT;
-ALTER TABLE asn MODIFY COLUMN n Int32;
+ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT;
+ALTER TABLE `asn` MODIFY COLUMN `n` Int32;
 ```
 
 `REMOVE DEFAULT` comes first. A type the old default cannot take is refused
@@ -942,8 +1011,8 @@ So a column that declares a default has its NULL rows filled first, on every
 line, by an update that waits for its mutation:
 
 ```sql
-ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2;
-ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7';
+ALTER TABLE `asn` UPDATE `n` = '7' WHERE `n` IS NULL SETTINGS mutations_sync = 2;
+ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT '7';
 ```
 
 A column that declares no default is refused when the plan is made, on every
@@ -960,8 +1029,8 @@ A nullable `MATERIALIZED` column made `NOT NULL` is dropped and added back as
 declared:
 
 ```sql
-ALTER TABLE asn DROP COLUMN x;
-ALTER TABLE asn ADD COLUMN x Int32 MATERIALIZED id + 1;
+ALTER TABLE `asn` DROP COLUMN `x`;
+ALTER TABLE `asn` ADD COLUMN `x` Int32 MATERIALIZED id + 1;
 ```
 
 On 26.3 and later, `MODIFY COLUMN` fails the conversion for such a column and
@@ -1015,9 +1084,9 @@ its kind first, because a `MODIFY COLUMN` that names only a type keeps it:
 
 | Change | Statements |
 | --- | --- |
-| Another kind or expression | `MODIFY COLUMN total Int64 ALIAS price * qty` |
-| `MATERIALIZED` or `ALIAS` to ordinary | `MODIFY COLUMN total REMOVE MATERIALIZED`, then `MODIFY COLUMN total Int64` |
-| `EPHEMERAL` to ordinary | `MODIFY COLUMN raw String DEFAULT defaultValueOfTypeName('String')`, `MODIFY COLUMN raw REMOVE DEFAULT`, then `MODIFY COLUMN raw String` |
+| Another kind or expression | ``MODIFY COLUMN `total` Int64 ALIAS price * qty`` |
+| `MATERIALIZED` or `ALIAS` to ordinary | ``MODIFY COLUMN `total` REMOVE MATERIALIZED``, then ``MODIFY COLUMN `total` Int64`` |
+| `EPHEMERAL` to ordinary | ``MODIFY COLUMN `raw` String DEFAULT defaultValueOfTypeName('String')``, ``MODIFY COLUMN `raw` REMOVE DEFAULT``, then ``MODIFY COLUMN `raw` String`` |
 
 `EPHEMERAL` has no `REMOVE`, and `REMOVE DEFAULT` refuses an `EPHEMERAL`
 column, so the column becomes a `DEFAULT` one first. A column another
@@ -1579,6 +1648,8 @@ refused rather than dropped:
   would filter reads and leave writes open.
 - A command other than `SELECT`. A row policy filters reads only.
 - A comment, which a row policy cannot hold.
+- A filter that names a column `not` quoted, which 24.10 and 26.10 refuse with
+  code 62; see [Names](#names).
 
 The server binds a policy to a table name, not to a table. It keeps the policy
 when the table is dropped, accepts one for a name no table has, and applies it at

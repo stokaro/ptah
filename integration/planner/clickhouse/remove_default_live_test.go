@@ -72,8 +72,8 @@ func TestRemoveDefault_HappyPath(t *testing.T) {
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
-		"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT",
-		"ALTER TABLE asn MODIFY COLUMN n Int32",
+		"ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT",
+		"ALTER TABLE `asn` MODIFY COLUMN `n` Int32",
 	})
 	applyPlan(c, ctx, conn, must.Must(plan.Statements()))
 
@@ -100,8 +100,8 @@ func TestRemoveDefaultWithATypeChange_HappyPath(t *testing.T) {
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
-		"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT",
-		"ALTER TABLE asn MODIFY COLUMN n Int64",
+		"ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT",
+		"ALTER TABLE `asn` MODIFY COLUMN `n` Int64",
 	})
 	applyPlan(c, ctx, conn, must.Must(plan.Statements()))
 

@@ -69,7 +69,7 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 		},
 		{
 			dialect: platform.ClickHouse,
-			want:    "CREATE TABLE t (\n  id Int64,\n  s Nullable(Enum8('draft' = 1, 'live' = 2))\n) ENGINE = MergeTree ORDER BY (id);\n\n",
+			want:    "CREATE TABLE `t` (\n  `id` Int64,\n  `s` Nullable(Enum8('draft' = 1, 'live' = 2))\n) ENGINE = MergeTree ORDER BY (`id`);\n\n",
 		},
 	}
 	for _, test := range tests {

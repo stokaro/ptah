@@ -282,7 +282,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		copied := at("INSERT INTO `ptah_rebuild_events`")
 		order := []int{create, assume, copied}
 		c.Assert(slices.IsSorted(order) && create >= 0, qt.IsTrue, qt.Commentf("%v %q", order, statements))
-		c.Assert(statements[create], qt.Contains, "  CONSTRAINT events_check CHECK (ver > 0),\n  CONSTRAINT named CHECK (length(name) < 10)\n)")
+		c.Assert(statements[create], qt.Contains, "  CONSTRAINT `events_check` CHECK (ver > 0),\n  CONSTRAINT `named` CHECK (length(name) < 10)\n)")
 		c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), " DROP CONSTRAINT ")
 		c.Assert(statements[0], qt.Contains, "Each row copied into ptah_rebuild_events is checked against its CHECK constraints, events_check, named, "+
 			"so a row that breaks one stops the plan before the swap, with code 469.")
@@ -343,7 +343,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements[2], qt.Contains, "CONSTRAINT events_ver_check CHECK")
+		c.Assert(statements[2], qt.Contains, "CONSTRAINT `events_ver_check` CHECK")
 		c.Assert(statements[2], qt.Not(qt.Contains), "ptah_rebuild_events_ver_check")
 	})
 
@@ -384,7 +384,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		c.Assert(joined, qt.Contains, "Columns the table gains take their defaults: note")
 		c.Assert(joined, qt.Contains, "Data of the columns the table loses is not carried over: name. A rename without a rename hint is a drop and an add")
 		c.Assert(joined, qt.Contains, "INSERT INTO `ptah_rebuild_events` (`id`, `ver`) SELECT `id`, `ver` FROM `events` SETTINGS ")
-		c.Assert(joined, qt.Contains, "note String DEFAULT 'n'")
+		c.Assert(joined, qt.Contains, "`note` String DEFAULT 'n'")
 	})
 
 	t.Run("a kept column keeps its default in the new table", func(t *testing.T) {
@@ -397,7 +397,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements[2], qt.Contains, "name String DEFAULT 'x'")
+		c.Assert(statements[2], qt.Contains, "`name` String DEFAULT 'x'")
 	})
 
 	t.Run("a column whose type changes is cast where the value is checked", func(t *testing.T) {
@@ -475,7 +475,7 @@ func TestRebuild_HappyPath(t *testing.T) {
 		statements, err := f.plan(c, allowRebuild())
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(statements, qt.DeepEquals, []string{"ALTER TABLE events MODIFY TTL toDateTime(id) + INTERVAL 1 DAY"})
+		c.Assert(statements, qt.DeepEquals, []string{"ALTER TABLE `events` MODIFY TTL toDateTime(id) + INTERVAL 1 DAY"})
 	})
 }
 
@@ -848,5 +848,5 @@ func TestRebuild_ALeftCopyIsDroppedLikeAnyOtherTable(t *testing.T) {
 	statements, err := f.plan(c, allowRebuild())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.DeepEquals, []string{"DROP TABLE ptah_rebuild_events"})
+	c.Assert(statements, qt.DeepEquals, []string{"DROP TABLE `ptah_rebuild_events`"})
 }

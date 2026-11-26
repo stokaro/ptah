@@ -94,12 +94,12 @@ func TestDefinition(t *testing.T) {
 		column, typ, keyword, expression, notes string
 		want                                    string
 	}{
-		{name: "plain", column: "n", typ: "Int32", want: "n Int32"},
-		{name: "default and comment", column: "s", typ: "String", keyword: "DEFAULT", expression: "'x'", notes: "it's s", want: "s String DEFAULT 'x' COMMENT 'it''s s'"},
-		{name: "ephemeral", column: "e", typ: "Int64", keyword: "EPHEMERAL", expression: "5", want: "e Int64 EPHEMERAL 5"},
+		{name: "plain", column: "n", typ: "Int32", want: "`n` Int32"},
+		{name: "default and comment", column: "s", typ: "String", keyword: "DEFAULT", expression: "'x'", notes: "it's s", want: "`s` String DEFAULT 'x' COMMENT 'it''s s'"},
+		{name: "ephemeral", column: "e", typ: "Int64", keyword: "EPHEMERAL", expression: "5", want: "`e` Int64 EPHEMERAL 5"},
 		{
 			name: "ephemeral without an expression takes the type's default", column: "e", typ: "Nullable(Int64)", keyword: "EPHEMERAL", notes: "c",
-			want: "e Nullable(Int64) EPHEMERAL defaultValueOfTypeName('Nullable(Int64)') COMMENT 'c'",
+			want: "`e` Nullable(Int64) EPHEMERAL defaultValueOfTypeName('Nullable(Int64)') COMMENT 'c'",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

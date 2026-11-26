@@ -1815,7 +1815,8 @@ undecided. These services perform no database I/O or ALTER planning.
 
 `chresolve.Table` retains the declaration beside fully explicit settings and
 records each property's origin. Creation uses `MergeTree` and common ordered
-primary-key columns when the engine and sorting key are omitted. A common engine
+primary-key columns when the engine and sorting key are omitted, each column
+name quoted as `chresolve.ColumnKey` writes it. A common engine
 declaration is a fallback; target-specific engine intent takes precedence. A default
 primary key inherits the resolved sorting key. An explicit empty sorting or
 primary key renders as `tuple()` and stays empty in the table's catalog state.

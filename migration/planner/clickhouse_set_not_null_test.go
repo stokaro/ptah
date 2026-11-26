@@ -60,8 +60,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_HappyPath(t *te
 			desired: schemamodel.Field{Type: "INTEGER", Default: "7"},
 			current: nullable,
 			want: []string{
-				"ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2",
-				"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'",
+				"ALTER TABLE `asn` UPDATE `n` = '7' WHERE `n` IS NULL SETTINGS mutations_sync = 2",
+				"ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT '7'",
 			},
 		},
 		{
@@ -70,8 +70,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_HappyPath(t *te
 			desired: schemamodel.Field{Type: "INTEGER", DefaultExpr: "toInt32(40 + 2)"},
 			current: nullable,
 			want: []string{
-				"ALTER TABLE asn UPDATE n = toInt32(40 + 2) WHERE n IS NULL SETTINGS mutations_sync = 2",
-				"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT toInt32(40 + 2)",
+				"ALTER TABLE `asn` UPDATE `n` = toInt32(40 + 2) WHERE `n` IS NULL SETTINGS mutations_sync = 2",
+				"ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT toInt32(40 + 2)",
 			},
 		},
 		{
@@ -80,8 +80,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_HappyPath(t *te
 			desired: schemamodel.Field{Type: "INTEGER", Default: "7"},
 			current: nullable,
 			want: []string{
-				"ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2",
-				"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'",
+				"ALTER TABLE `asn` UPDATE `n` = '7' WHERE `n` IS NULL SETTINGS mutations_sync = 2",
+				"ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT '7'",
 			},
 		},
 		{
@@ -89,7 +89,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseColumnDefault_HappyPath(t *te
 			caps:    capability.ClickHouse2411(),
 			desired: schemamodel.Field{Type: "INTEGER", Default: "7"},
 			current: schemamodel.Field{Type: "INTEGER"},
-			want:    []string{"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'"},
+			want:    []string{"ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT '7'"},
 		},
 	}
 

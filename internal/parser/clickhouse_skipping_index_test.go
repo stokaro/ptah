@@ -191,14 +191,21 @@ func TestParserStillReadsAnOrdinaryAddColumn(t *testing.T) {
 }
 
 func TestASkippingIndexSurvivesARoundTrip(t *testing.T) {
+	// A key that names one column is written back with the name quoted; an
+	// expression, a tuple among them, is written back as it is.
 	tests := []struct {
 		name  string
 		index string
+		want  string
 	}{
-		{name: "minmax", index: "ADD INDEX `idx_b` b TYPE minmax GRANULARITY 1;"},
-		{name: "set", index: "ADD INDEX `idx_b` b TYPE set(100) GRANULARITY 4;"},
-		{name: "bloom_filter on an expression", index: "ADD INDEX `idx_low` lower(b) TYPE bloom_filter(0.01) GRANULARITY 3;"},
-		{name: "a tuple", index: "ADD INDEX `idx_ab` (a, b) TYPE minmax GRANULARITY 1;"},
+		{name: "minmax", index: "ADD INDEX `idx_b` b TYPE minmax GRANULARITY 1;", want: "ADD INDEX `idx_b` `b` TYPE minmax GRANULARITY 1;"},
+		{name: "set", index: "ADD INDEX `idx_b` b TYPE set(100) GRANULARITY 4;", want: "ADD INDEX `idx_b` `b` TYPE set(100) GRANULARITY 4;"},
+		{
+			name:  "bloom_filter on an expression",
+			index: "ADD INDEX `idx_low` lower(b) TYPE bloom_filter(0.01) GRANULARITY 3;",
+			want:  "ADD INDEX `idx_low` lower(b) TYPE bloom_filter(0.01) GRANULARITY 3;",
+		},
+		{name: "a tuple", index: "ADD INDEX `idx_ab` (a, b) TYPE minmax GRANULARITY 1;", want: "ADD INDEX `idx_ab` (a, b) TYPE minmax GRANULARITY 1;"},
 	}
 
 	for _, tt := range tests {
@@ -214,7 +221,7 @@ func TestASkippingIndexSurvivesARoundTrip(t *testing.T) {
 			second := renderClickHouseSchema(c, first)
 
 			c.Assert(second, qt.Equals, first)
-			c.Assert(first, qt.Contains, tt.index)
+			c.Assert(first, qt.Contains, tt.want)
 		})
 	}
 }
@@ -292,7 +299,7 @@ func TestAnInlineSkippingIndexSurvivesARoundTrip(t *testing.T) {
 	second := renderClickHouseSchema(c, first)
 
 	c.Assert(second, qt.Equals, first)
-	c.Assert(first, qt.Contains, "ADD INDEX `idx_b` b TYPE set(100) GRANULARITY 4;")
+	c.Assert(first, qt.Contains, "ADD INDEX `idx_b` `b` TYPE set(100) GRANULARITY 4;")
 }
 
 // TestAnInlineIndexOnAnotherDialectIsNotASkippingIndex keeps this file's

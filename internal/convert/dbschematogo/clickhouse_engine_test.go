@@ -103,7 +103,9 @@ func TestConvertedClickHouseIndexSettingsReachRenderingAndReports(t *testing.T) 
 	observed := &chschema.ObservedIndex{IndexType: "set(100)", Granularity: 4}
 	runtime := must.Must(builtin.New())
 	source := engineTable(catalog.Table{Facets: must.Must(schemaext.NewFacets(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "id"}))})
-	source.Indexes = []catalog.Index{{Name: "idx_id", TableName: "events", Columns: []string{"id"}, Facets: must.Must(schemaext.NewFacets(observed))}}
+	source.Indexes = []catalog.Index{{
+		Name: "idx_id", TableName: "events", Columns: []string{"id"}, Parts: []catalog.IndexPart{{Expr: "id"}}, Facets: must.Must(schemaext.NewFacets(observed)),
+	}}
 	database, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), source, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Indexes, qt.HasLen, 1)

@@ -2,14 +2,13 @@ package chrender
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/clickhouse/chast"
+	"ptah.run/internal/chkey"
 	"ptah.run/internal/sqlident"
-	"ptah.run/internal/tableref"
 )
 
 func validateIndex(ctx renderer.ExtensionContext, op *chast.AddSkippingIndex) error {
@@ -20,6 +19,9 @@ func validateIndex(ctx renderer.ExtensionContext, op *chast.AddSkippingIndex) er
 }
 
 func renderIndex(ctx renderer.ExtensionContext, op *chast.AddSkippingIndex) ([]string, error) {
+	if err := chkey.RefuseQuotedNot(fmt.Sprintf("the key of index %q on table %q", op.Name, ctx.Parent.Name), op.Expression); err != nil {
+		return nil, err
+	}
 	indexType := op.IndexType
 	if indexType == "" {
 		indexType = "minmax"
@@ -40,21 +42,9 @@ func renderDropIndex(ctx renderer.ExtensionContext, op *chast.DropSkippingIndex)
 	return []string{fmt.Sprintf("ALTER TABLE %s DROP INDEX %s;", quoteTable(ctx.Parent.Name), quoteIndex(op.Name))}, nil
 }
 
-func quoteIndex(name string) string {
-	if strings.HasPrefix(name, "`") && strings.HasSuffix(name, "`") && len(name) >= 2 {
-		name = strings.ReplaceAll(name[1:len(name)-1], "``", "`")
-	}
-	return sqlident.Quote(platform.ClickHouse, name)
-}
+// quoteIndex quotes an index name, as the ClickHouse renderer quotes every
+// name it writes.
+func quoteIndex(name string) string { return sqlident.Quote(platform.ClickHouse, name) }
 
-func quoteTable(name string) string {
-	ref, ok := tableref.Parse(name)
-	if !ok {
-		return quoteIndex(name)
-	}
-	quoted := sqlident.Quote(platform.ClickHouse, ref.Name)
-	if ref.Qualified {
-		quoted = sqlident.Quote(platform.ClickHouse, ref.Schema) + "." + quoted
-	}
-	return quoted
-}
+// quoteTable quotes the model name of the table an operation alters.
+func quoteTable(name string) string { return sqlident.TableReference(platform.ClickHouse, name) }

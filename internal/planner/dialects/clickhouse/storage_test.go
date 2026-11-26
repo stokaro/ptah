@@ -61,9 +61,9 @@ func TestTTLColumnReplacementPlansBothDirections(t *testing.T) {
 	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
-		"ALTER TABLE events ADD COLUMN new_time DateTime",
-		"ALTER TABLE events MODIFY TTL new_time + INTERVAL 7 DAY",
-		"ALTER TABLE events DROP COLUMN old_time",
+		"ALTER TABLE `events` ADD COLUMN `new_time` DateTime",
+		"ALTER TABLE `events` MODIFY TTL new_time + INTERVAL 7 DAY",
+		"ALTER TABLE `events` DROP COLUMN `old_time`",
 	})
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
@@ -71,7 +71,7 @@ func TestTTLColumnReplacementPlansBothDirections(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
-	add, ttl, drop := strings.Index(reverse, "ADD COLUMN old_time"), strings.Index(reverse, "MODIFY TTL old_time"), strings.Index(reverse, "DROP COLUMN new_time")
+	add, ttl, drop := strings.Index(reverse, "ADD COLUMN `old_time`"), strings.Index(reverse, "MODIFY TTL old_time"), strings.Index(reverse, "DROP COLUMN `new_time`")
 	c.Assert(add >= 0 && add < ttl && ttl < drop, qt.IsTrue, qt.Commentf("%s", reverse))
 	c.Assert(reverse, qt.Contains, "cannot recover rows or values")
 	c.Assert(plan.Reverse.Recovery, qt.HasLen, 1)
@@ -111,7 +111,7 @@ func TestSortingKeyColumnPlansBothDirections(t *testing.T) {
 	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
-		"ALTER TABLE events ADD COLUMN k Int32, ADD COLUMN note Nullable(String) DEFAULT 'n', MODIFY ORDER BY (a, u, k)",
+		"ALTER TABLE `events` ADD COLUMN `k` Int32, ADD COLUMN `note` Nullable(String) DEFAULT 'n', MODIFY ORDER BY (a, u, k)",
 	})
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
@@ -119,7 +119,7 @@ func TestSortingKeyColumnPlansBothDirections(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
-	key, dropK, dropNote := strings.Index(reverse, "MODIFY ORDER BY (a, u);"), strings.Index(reverse, "DROP COLUMN k;"), strings.Index(reverse, "DROP COLUMN note;")
+	key, dropK, dropNote := strings.Index(reverse, "MODIFY ORDER BY (a, u);"), strings.Index(reverse, "DROP COLUMN `k`;"), strings.Index(reverse, "DROP COLUMN `note`;")
 	c.Assert(key >= 0 && key < dropK && key < dropNote, qt.IsTrue, qt.Commentf("%s", reverse))
 }
 
@@ -134,7 +134,7 @@ func TestSortingKeyDropWithoutItsColumnHasNoReverse(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(t.Context(), runtime, diff, "clickhouse")
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.DeepEquals, []string{"ALTER TABLE events MODIFY ORDER BY a"})
+	c.Assert(statements, qt.DeepEquals, []string{"ALTER TABLE `events` MODIFY ORDER BY a"})
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
 	})

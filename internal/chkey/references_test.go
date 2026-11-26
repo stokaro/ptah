@@ -28,6 +28,10 @@ func TestPlainColumnReferences(t *testing.T) {
 		{name: "an interval", expression: "toStartOfInterval(ts, INTERVAL 1 HOUR)", want: []string{"ts"}},
 		{name: "member access", expression: "n.size0, m['k']", want: nil},
 		{name: "strings", expression: "JSONExtractString(j, 'k')", want: []string{"j"}},
+		// A quoted name is read with the server's escapes: `a\\b` names a, one
+		// backslash and b, and `a\tb` names a, a tab and b, as the writer
+		// quotes them and the server prints them.
+		{name: "escapes in quoted names", expression: "(`a\\\\b`, lower(`a\\tb`), `x``y`)", want: []string{`a\b`, "a\tb", "x`y"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

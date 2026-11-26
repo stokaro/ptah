@@ -37,7 +37,7 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 		{
 			name:   "a native DateTime named with sql()",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime", TypeRawSQL: true},
-			want:   "created_at DateTime\n",
+			want:   "`created_at` DateTime\n",
 		},
 		{
 			// The same fact reaching the renderer the other way: a type read
@@ -45,12 +45,12 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 			// escape hatch (stokaro/ptah#2142).
 			name:   "a native DateTime read from the catalog",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime", TypeIsDeclaredText: true},
-			want:   "created_at DateTime\n",
+			want:   "`created_at` DateTime\n",
 		},
 		{
 			name:   "a native DateTime64 with its own precision",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime64(6)", TypeRawSQL: true},
-			want:   "created_at DateTime64(6)\n",
+			want:   "`created_at` DateTime64(6)\n",
 		},
 		{
 			// The portable case, and the one a too-wide fix breaks. A bare
@@ -58,19 +58,19 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 			// it still becomes DateTime64(3).
 			name:   "a portable DATETIME",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DATETIME"},
-			want:   "created_at DateTime64(3)\n",
+			want:   "`created_at` DateTime64(3)\n",
 		},
 		{
 			name:   "a portable TIMESTAMP",
 			column: &ast.ColumnNode{Name: "created_at", Type: "TIMESTAMP"},
-			want:   "created_at DateTime64(3)\n",
+			want:   "`created_at` DateTime64(3)\n",
 		},
 		{
 			// A nullable native type is still wrapped: the escape hatch names
 			// the type, not the column's nullability.
 			name:   "a nullable native type",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime", TypeRawSQL: true, Nullable: true},
-			want:   "created_at Nullable(DateTime)\n",
+			want:   "`created_at` Nullable(DateTime)\n",
 		},
 		{
 			// ClickHouse's own names reach the renderer without a marker from a
@@ -79,29 +79,29 @@ func TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands(t *testing.T) {
 			// Int64 (stokaro/ptah#4105).
 			name:   "a native DateTime in a schema file",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime"},
-			want:   "created_at DateTime\n",
+			want:   "`created_at` DateTime\n",
 		},
 		{
 			name:   "a native DateTime with a time zone in a schema file",
 			column: &ast.ColumnNode{Name: "created_at", Type: "DateTime('UTC')"},
-			want:   "created_at DateTime('UTC')\n",
+			want:   "`created_at` DateTime('UTC')\n",
 		},
 		{
 			name:   "a native Int8 in a schema file",
 			column: &ast.ColumnNode{Name: "created_at", Type: "Int8"},
-			want:   "created_at Int8\n",
+			want:   "`created_at` Int8\n",
 		},
 		{
 			name:   "a portable INT8",
 			column: &ast.ColumnNode{Name: "created_at", Type: "INT8"},
-			want:   "created_at Int64\n",
+			want:   "`created_at` Int64\n",
 		},
 		{
 			// ClickHouse refuses a Nullable around LowCardinality, so a type
 			// that already admits NULL is not wrapped again.
 			name:   "a nullable low-cardinality type",
 			column: &ast.ColumnNode{Name: "created_at", Type: "LowCardinality(Nullable(String))", Nullable: true},
-			want:   "created_at LowCardinality(Nullable(String))\n",
+			want:   "`created_at` LowCardinality(Nullable(String))\n",
 		},
 	}
 

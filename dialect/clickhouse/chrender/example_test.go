@@ -26,5 +26,5 @@ func ExampleRegistry() {
 		panic(err)
 	}
 	fmt.Println(statements[0])
-	// Output: ALTER TABLE events REMOVE TTL;
+	// Output: ALTER TABLE `events` REMOVE TTL;
 }

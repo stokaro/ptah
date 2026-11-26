@@ -1,6 +1,7 @@
 package chrender_test
 
 import (
+	"regexp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -83,4 +84,48 @@ func TestRenderRowPolicy_FailurePath(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// A filter that names a column called not quoted, in any case or quote, is
+// refused before any statement is written, on a creation, a change and a
+// command read from SQL: 24.10 and 26.10 refuse the statement with code 62
+// after the statements before it in the plan have run.
+func TestRenderRowPolicy_AFilterThatNamesNotIsRefused(t *testing.T) {
+	observed := &chschema.ObservedRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Permissive}
+	for _, test := range []struct {
+		name    string
+		op      ast.ExtensionPayload
+		written string
+	}{
+		{name: "a creation", written: "`not`", op: &chast.RowPolicy{Table: "orders", Name: "tenant",
+			Change: *chdiff.NewRowPolicy(nil, &chschema.DesiredRowPolicy{Filter: new("`not` > 0")})}},
+		{name: "a change", written: `"NOT"`, op: &chast.RowPolicy{Table: "orders", Name: "tenant",
+			Change: *chdiff.NewRowPolicy(observed, &chschema.DesiredRowPolicy{Filter: new(`"NOT" = 1`)})}},
+		{name: "a command", written: "`Not`", op: &chast.RowPolicyCommand{Action: "CREATE", Table: "orders", Name: "tenant",
+			Values: &chschema.DesiredRowPolicy{Filter: new("abs(`Not`) > 0")}, FilterSet: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := must.Must(chrender.Registry()).Render(renderer.ExtensionContext{Target: "clickhouse", Capabilities: rowPolicyCaps()}, ast.StatementExtension, test.op)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`unsupported feature: ClickHouse: the filter of row policy "tenant" on table "orders" names `+
+				test.written+`; releases before 26.11 store that name as the bare word not, the NOT operator`)+`.*`)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// A filter that names not as the operator, as a string or as a function is
+// written as declared.
+func TestRenderRowPolicy_AFilterWithoutAQuotedNotRenders(t *testing.T) {
+	c := qt.New(t)
+	op := &chast.RowPolicy{Table: "orders", Name: "tenant",
+		Change: *chdiff.NewRowPolicy(nil, &chschema.DesiredRowPolicy{Filter: new("NOT (id < 0) AND s != 'not' AND `not`(0) = 1")})}
+
+	statements, err := renderRowPolicy(c, "clickhouse", rowPolicyCaps(), op)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{"CREATE ROW POLICY `tenant` ON `orders` USING (NOT (id < 0) AND s != 'not' AND `not`(0) = 1) AS PERMISSIVE;"})
 }

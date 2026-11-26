@@ -104,12 +104,12 @@ type selectRenderer struct {
 	dialect     string
 	placeholder descriptor.Placeholder
 	query       descriptor.Query
-	// quoting is how a registered spelling writes a name, nil for a dialect
-	// the process registry describes, which quotes by its name.
-	quoting *descriptor.Quoting
-	caps    capability.Capabilities
-	args    []any
-	buf     strings.Builder
+	// declared is the descriptor a registered spelling writes a name by, nil
+	// for a dialect the process registry describes, which quotes by its name.
+	declared *descriptor.Dialect
+	caps     capability.Capabilities
+	args     []any
+	buf      strings.Builder
 	// nestDepth bounds WITH nesting; see maxNestDepth.
 	nestDepth int
 }
@@ -119,19 +119,19 @@ type selectRenderer struct {
 // is described, with the placeholder style and spellings its descriptor
 // states, and core/query names no dialect.
 func newSelectRenderer(dialect string, caps capability.Capabilities) (*selectRenderer, error) {
-	described, quoting, ok := lookupDialect(dialect)
+	described, declared, ok := lookupDialect(dialect)
 	if !ok {
 		return nil, fmt.Errorf("renderer: SELECT rendering is not supported for dialect %q", dialect)
 	}
-	return newDescribedRenderer(described, quoting, caps), nil
+	return newDescribedRenderer(described, declared, caps), nil
 }
 
-func newDescribedRenderer(described descriptor.Dialect, quoting *descriptor.Quoting, caps capability.Capabilities) *selectRenderer {
+func newDescribedRenderer(described descriptor.Dialect, declared *descriptor.Dialect, caps capability.Capabilities) *selectRenderer {
 	return &selectRenderer{
 		dialect:     described.Name,
 		placeholder: described.Placeholder,
 		query:       described.Query,
-		quoting:     quoting,
+		declared:    declared,
 		caps:        caps,
 	}
 }
@@ -202,8 +202,8 @@ func (r *selectRenderer) bindBound(value int64) string {
 
 // quote returns identifier quoted for the renderer's dialect.
 func (r *selectRenderer) quote(identifier string) string {
-	if r.quoting != nil {
-		return sqlident.IdentWith(*r.quoting, identifier)
+	if r.declared != nil {
+		return sqlident.IdentWith(*r.declared, identifier)
 	}
 	return sqlident.Ident(r.dialect, identifier)
 }

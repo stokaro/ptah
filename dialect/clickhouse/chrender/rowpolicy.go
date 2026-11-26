@@ -10,6 +10,7 @@ import (
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/chkey"
 	"ptah.run/internal/sqlident"
 )
 
@@ -65,6 +66,13 @@ func validateRowPolicyCommand(ctx renderer.ExtensionContext, op *chast.RowPolicy
 	return op.Validate()
 }
 
+// renderRowPolicyCommand writes the statement of one row policy command.
+//
+// A filter that names a column called not quoted is refused before anything
+// runs; see [chkey.QuotedNot]. Measured on 24.10 and 26.10, the server writes
+// the filter back with the bare word not and refuses its own text with code
+// 62, so CREATE and ALTER ROW POLICY fail after every statement of the plan
+// before them has run. 26.11 accepts the filter.
 func renderRowPolicyCommand(_ renderer.ExtensionContext, op *chast.RowPolicyCommand) ([]string, error) {
 	statement := op.Action + " ROW POLICY " + quoteName(op.Name) + " ON " + quotePolicyTable(op.Database, op.Table)
 	if op.Values == nil {
@@ -73,6 +81,9 @@ func renderRowPolicyCommand(_ renderer.ExtensionContext, op *chast.RowPolicyComm
 	if op.FilterSet {
 		using := "NONE"
 		if op.Values.Filter != nil {
+			if err := chkey.RefuseQuotedNot(fmt.Sprintf("the filter of row policy %q on table %q", op.Name, op.Table), *op.Values.Filter); err != nil {
+				return nil, err
+			}
 			using = "(" + *op.Values.Filter + ")"
 		}
 		statement += " USING " + using

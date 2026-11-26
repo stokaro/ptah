@@ -54,6 +54,10 @@ type readingFacts struct {
 	// the grant option alone, so a declared REVOKE GRANT OPTION FOR is
 	// refused; see [appendRevoke].
 	grantOptionRevokedWithPrivilege bool
+	// backslashNames is the descriptor's Lexical.IdentifierBackslashEscapes:
+	// a backslash inside a quoted name starts an escape; see
+	// [refuseUnreadableQuotedNames].
+	backslashNames bool
 	// sequenceGrantsByName is the descriptor's Conversion.SequenceGrantsByName:
 	// a grant on a table name may name a sequence; see
 	// [resolveSequenceGrants].
@@ -106,6 +110,7 @@ func factsOf(sourcePlatform string) readingFacts {
 
 		grantOptionRevokedWithPrivilege: described.GrantOptionRevokedWithPrivilege,
 		sequenceGrantsByName:            described.Conversion.SequenceGrantsByName,
+		backslashNames:                  described.Lexical.IdentifierBackslashEscapes,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

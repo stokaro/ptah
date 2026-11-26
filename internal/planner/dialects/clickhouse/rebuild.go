@@ -21,6 +21,7 @@ import (
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -72,7 +73,7 @@ type tableRebuilds []tableRebuild
 
 // has reports whether the plan creates the named table again.
 func (r tableRebuilds) has(builder objectidentity.Builder, name string) bool {
-	key := builder.Table(name).Key()
+	key := tableID(builder, name).Key()
 	return slices.ContainsFunc(r, func(rebuild tableRebuild) bool { return rebuild.subject.Key() == key })
 }
 
@@ -261,9 +262,9 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 	if merges.copyRemovesRows() {
 		nodes = append(nodes, ast.NewRawSQL(fmt.Sprintf("SYSTEM START MERGES %s;", copyTable)))
 	}
-	// The renderer writes the name of the table it creates as it is, so the
-	// copy's name goes in quoted, like every other statement here names it.
-	create.Name = copyTable
+	// The renderer quotes the model name of the table it creates, as the
+	// statements here quote the copy's name.
+	create.Name = copyName
 	nodes = append(nodes, create)
 	for _, index := range declared.Indexes {
 		nodes = append(nodes, indexNode(index, copyName))
@@ -292,7 +293,7 @@ func (p *Planner) rebuildTable(diff *difftypes.SchemaDiff, builder objectidentit
 	)
 	return tableRebuild{
 		name:    table.TableName,
-		subject: builder.Table(table.TableName),
+		subject: tableID(builder, table.TableName),
 		nodes:   nodes,
 		effect: schemaext.Effect{
 			Impact: schemaext.Destructive,
@@ -462,10 +463,10 @@ func declaredChanges(diff *difftypes.SchemaDiff, table *difftypes.TableDiff) []s
 		}
 	}
 	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(platform.ClickHouse))
-	key := builder.Table(table.TableName).Key()
+	key := tableID(builder, table.TableName).Key()
 	var indexes []string
 	for _, index := range diff.IndexesRemoved {
-		if builder.Table(index.TableName).Key() == key {
+		if tableID(builder, index.TableName).Key() == key {
 			indexes = append(indexes, index.Name)
 		}
 	}
@@ -481,12 +482,12 @@ func declaredChanges(diff *difftypes.SchemaDiff, table *difftypes.TableDiff) []s
 func checkTransitions(diff *difftypes.SchemaDiff, builder objectidentity.Builder, key objectidentity.Key) []string {
 	var added, removed []string
 	for _, addition := range diff.ConstraintsAdded {
-		if isCheck(addition.Type) && builder.Table(addition.TableName).Key() == key {
+		if isCheck(addition.Type) && tableID(builder, addition.TableName).Key() == key {
 			added = append(added, addition.Name)
 		}
 	}
 	for _, removal := range diff.ConstraintsRemoved {
-		if isCheck(removal.Type) && builder.Table(removal.TableName).Key() == key {
+		if isCheck(removal.Type) && tableID(builder, removal.TableName).Key() == key {
 			removed = append(removed, removal.Name)
 		}
 	}
@@ -562,12 +563,9 @@ func droppedColumns(table *difftypes.TableDiff, columns rebuildColumns) []string
 // a table someone else named that way. The server refuses the creation of one
 // the plan does not see, such as a table an exclude selector leaves out.
 func copyTableName(diff *difftypes.SchemaDiff, table string) (string, error) {
-	name := copyPrefix + table
+	name := tableref.Canonical("", copyPrefix+table)
 	if ref, ok := tableref.Parse(table); ok {
-		name = copyPrefix + ref.Name
-		if ref.Qualified {
-			name = ref.Schema + "." + name
-		}
+		name = tableref.Canonical(ref.Schema, copyPrefix+ref.Name)
 	}
 	if slices.Contains(diff.TablesRemoved.Names(), name) {
 		return "", unsupportedRebuild(table, fmt.Sprintf(
@@ -593,20 +591,12 @@ func unsupportedRebuild(table, reason string) error {
 	}
 }
 
-// quoteTable quotes a table name that may carry its database.
-func quoteTable(name string) string {
-	ref, ok := tableref.Parse(name)
-	switch {
-	case !ok:
-		return quoteIdentifier(name)
-	case ref.Qualified:
-		return quoteIdentifier(ref.Schema) + "." + quoteIdentifier(ref.Name)
-	default:
-		return quoteIdentifier(ref.Name)
-	}
-}
+// quoteTable quotes a table name the model holds, which may carry its
+// database, the way the renderer quotes it.
+func quoteTable(name string) string { return sqlident.TableReference(platform.ClickHouse, name) }
 
-func quoteIdentifier(name string) string { return chcolumn.QuoteIdentifier(name) }
+// quoteIdentifier quotes a column name the way the renderer quotes it.
+func quoteIdentifier(name string) string { return sqlident.Quote(platform.ClickHouse, name) }
 
 // followSortingKey gives the new table the primary key of its new sorting key
 // where the declaration leaves the primary key alone and the table's own

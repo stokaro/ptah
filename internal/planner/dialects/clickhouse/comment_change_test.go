@@ -45,8 +45,8 @@ func TestGenerateMigrationAST_PlansACommentChangeAsItsOwnStatement(t *testing.T)
 	got, err := builtin.RenderSQL("clickhouse", nodes...)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "ALTER TABLE notes MODIFY COMMENT 'it''s new';\n"+
-		"ALTER TABLE notes COMMENT COLUMN a 'c\\\\d';\n"+
-		"ALTER TABLE notes COMMENT COLUMN b '';\n"+
-		"ALTER TABLE notes MODIFY COLUMN b Int64;\n")
+	c.Assert(got, qt.Equals, "ALTER TABLE `notes` MODIFY COMMENT 'it''s new';\n"+
+		"ALTER TABLE `notes` COMMENT COLUMN `a` 'c\\\\d';\n"+
+		"ALTER TABLE `notes` COMMENT COLUMN `b` '';\n"+
+		"ALTER TABLE `notes` MODIFY COLUMN `b` Int64;\n")
 }

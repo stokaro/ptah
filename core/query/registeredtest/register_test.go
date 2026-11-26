@@ -60,6 +60,36 @@ func TestRegisterDialect_HappyPath_UpsertInto(t *testing.T) {
 	c.Assert(args, qt.HasLen, 2)
 }
 
+// A spelling whose lexical rules state that a backslash inside a quoted name
+// starts an escape, as ClickHouse's descriptor does, writes each backslash a
+// name holds doubled, as the builder writes a ClickHouse name. Written single,
+// a column named ends\ would leave its quote open and take the next name into
+// it. The same quoting without the rule writes the backslash once.
+func TestRegisterDialect_HappyPath_BackslashEscapes(t *testing.T) {
+	c := qt.New(t)
+	quoting := descriptor.Quoting{Style: descriptor.QuoteBacktick, Bare: descriptor.BareNever}
+	c.Assert(query.RegisterDialect("registered-escapes", query.Spelling{
+		Placeholder: descriptor.PlaceholderQuestion, Quoting: quoting,
+		Lexical: descriptor.Lexical{IdentifierBackslashEscapes: true},
+	}), qt.IsNil)
+	c.Assert(query.RegisterDialect("registered-no-escapes", query.Spelling{Placeholder: descriptor.PlaceholderQuestion, Quoting: quoting}), qt.IsNil)
+	selected := query.Select("ends\\", "id").From("t").Build()
+
+	text, _, err := query.RenderSelect(selected, "registered-escapes")
+	c.Assert(err, qt.IsNil)
+	c.Assert(text, qt.Equals, "SELECT `ends\\\\`, `id` FROM `t`")
+	builtIn, _, err := query.RenderSelect(selected, "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(text, qt.Equals, builtIn)
+
+	text, _, err = query.RenderSelect(selected, "registered-no-escapes")
+	c.Assert(err, qt.IsNil)
+	c.Assert(text, qt.Equals, "SELECT `ends\\`, `id` FROM `t`")
+
+	err = query.RegisterDialect("registered-escapes", query.Spelling{Placeholder: descriptor.PlaceholderQuestion, Quoting: quoting})
+	c.Assert(err, qt.ErrorIs, query.ErrDialectRegistered)
+}
+
 // A clause the spelling cannot express is refused, and so is one the default
 // capabilities do not establish.
 func TestRegisteredDialect_FailurePath(t *testing.T) {

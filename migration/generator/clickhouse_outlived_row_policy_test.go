@@ -71,16 +71,16 @@ func TestClickHouseOutlivedRowPolicyRollbackRunsAfterTheTableDrop(t *testing.T) 
 		up, down []string
 	}{
 		{name: "an undeclared policy",
-			up:   []string{"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE orders ("},
-			down: []string{"DROP TABLE IF EXISTS orders", "CREATE ROW POLICY `leak` ON `orders` USING (1) AS PERMISSIVE TO ALL"}},
+			up:   []string{"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE `orders` ("},
+			down: []string{"DROP TABLE IF EXISTS `orders`", "CREATE ROW POLICY `leak` ON `orders` USING (1) AS PERMISSIVE TO ALL"}},
 		{name: "an undeclared policy beside a declared one", declared: []string{"tenant"},
-			up: []string{"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE orders (",
+			up: []string{"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE `orders` (",
 				"CREATE ROW POLICY `tenant` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL"},
-			down: []string{"DROP ROW POLICY `tenant` ON `orders`", "DROP TABLE IF EXISTS orders",
+			down: []string{"DROP ROW POLICY `tenant` ON `orders`", "DROP TABLE IF EXISTS `orders`",
 				"CREATE ROW POLICY `leak` ON `orders` USING (1) AS PERMISSIVE TO ALL"}},
 		{name: "a declared policy of the same name", declared: []string{"leak"},
-			up:   []string{"ALTER ROW POLICY `leak` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL", "CREATE TABLE orders ("},
-			down: []string{"DROP TABLE IF EXISTS orders", "ALTER ROW POLICY `leak` ON `orders` USING (1) AS PERMISSIVE TO ALL"}},
+			up:   []string{"ALTER ROW POLICY `leak` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL", "CREATE TABLE `orders` ("},
+			down: []string{"DROP TABLE IF EXISTS `orders`", "ALTER ROW POLICY `leak` ON `orders` USING (1) AS PERMISSIVE TO ALL"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

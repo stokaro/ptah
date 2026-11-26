@@ -62,24 +62,24 @@ func TestTypeWidthChange_HappyPath(t *testing.T) {
 		wantValues []string
 	}{
 		{name: "Int32 to Int64", live: "Int32", rows: "(1, 5), (2, -7)", declared: "Int64",
-			want: "ALTER TABLE wid MODIFY COLUMN d Int64", wantType: "Int64", wantValues: []string{"5", "-7"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` Int64", wantType: "Int64", wantValues: []string{"5", "-7"}},
 		{name: "Int8 to Int16", live: "Int8", rows: "(1, -100)", declared: "Int16",
-			want: "ALTER TABLE wid MODIFY COLUMN d Int16", wantType: "Int16", wantValues: []string{"-100"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` Int16", wantType: "Int16", wantValues: []string{"-100"}},
 		{name: "UInt8 to UInt16", live: "UInt8", rows: "(1, 200)", declared: "UInt16",
-			want: "ALTER TABLE wid MODIFY COLUMN d UInt16", wantType: "UInt16", wantValues: []string{"200"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` UInt16", wantType: "UInt16", wantValues: []string{"200"}},
 		{name: "Float32 to Float64", live: "Float32", rows: "(1, 1.5)", declared: "Float64",
-			want: "ALTER TABLE wid MODIFY COLUMN d Float64", wantType: "Float64", wantValues: []string{"1.5"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` Float64", wantType: "Float64", wantValues: []string{"1.5"}},
 		{name: "decimal precision", live: "Decimal(9, 2)", rows: "(1, 12.34)", declared: "Decimal(18, 2)",
-			want: "ALTER TABLE wid MODIFY COLUMN d Decimal(18, 2)", wantType: "Decimal(18, 2)", wantValues: []string{"12.34"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` Decimal(18, 2)", wantType: "Decimal(18, 2)", wantValues: []string{"12.34"}},
 		{name: "DateTime to DateTime64", live: "DateTime", rows: "(1, '2020-01-01 00:00:00')", declared: "DateTime64(3)",
-			want: "ALTER TABLE wid MODIFY COLUMN d DateTime64(3)", wantType: "DateTime64(3)",
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` DateTime64(3)", wantType: "DateTime64(3)",
 			wantValues: []string{"2020-01-01 00:00:00.000"}},
 		{name: "nullable width", live: "Nullable(Int32)", rows: "(1, NULL), (2, 5)", declared: "Nullable(Int64)",
-			want: "ALTER TABLE wid MODIFY COLUMN d Nullable(Int64)", wantType: "Nullable(Int64)", wantValues: []string{"NULL", "5"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` Nullable(Int64)", wantType: "Nullable(Int64)", wantValues: []string{"NULL", "5"}},
 		{name: "low cardinality removed", live: "LowCardinality(String)", rows: "(1, 'a')", declared: "String",
-			want: "ALTER TABLE wid MODIFY COLUMN d String", wantType: "String", wantValues: []string{"a"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` String", wantType: "String", wantValues: []string{"a"}},
 		{name: "Int64 to Int32 in range", live: "Int64", rows: "(1, 5), (2, -7)", declared: "Int32",
-			want: "ALTER TABLE wid MODIFY COLUMN d Int32", wantType: "Int32", wantValues: []string{"5", "-7"}},
+			want: "ALTER TABLE `wid` MODIFY COLUMN `d` Int32", wantType: "Int32", wantValues: []string{"5", "-7"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

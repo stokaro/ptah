@@ -5,28 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/chcolumn"
+	"ptah.run/internal/sqlident"
 )
-
-// The quoted forms are what ClickHouse 24.10 and 26.10 print in SHOW CREATE
-// TABLE for these names, measured, so a name the reader unquotes from the
-// server's text quotes back to the same text.
-func TestQuoteIdentifier(t *testing.T) {
-	for _, test := range []struct {
-		name, want string
-	}{
-		{name: "t", want: "`t`"},
-		{name: "we'ird", want: "`we'ird`"},
-		{name: `sl\x`, want: "`sl\\\\x`"},
-		{name: "a`b", want: "`a\\`b`"},
-		{name: "p q", want: "`p q`"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(chcolumn.QuoteIdentifier(test.name), qt.Equals, test.want)
-		})
-	}
-}
 
 func TestUnquoteIdentifier_HappyPath(t *testing.T) {
 	for _, test := range []struct {
@@ -63,15 +45,48 @@ func TestUnquoteIdentifier_FailurePath(t *testing.T) {
 	}
 }
 
-// A name quoted by QuoteIdentifier reads back as itself, which is what lets a
-// rebuild find a column by the name the reader took out of the server's text.
-func TestUnquoteIdentifier_ReadsWhatQuoteIdentifierWrites(t *testing.T) {
-	for _, name := range []string{"t", "we'ird", `sl\x`, "a`b", "new\nline", `\`, "``"} {
+// A name sqlident quotes for ClickHouse reads back as itself. The renderer
+// writes every name with sqlident.Quote and the reader, the rebuild and the
+// key comparison read names with UnquoteIdentifier, so the two ends have to
+// agree on every byte; a writer that stopped doubling the backslash turns
+// `sl\x` into a malformed escape here.
+func TestUnquoteIdentifier_ReadsWhatSQLIdentWrites(t *testing.T) {
+	for _, name := range []string{"t", "we'ird", `sl\x`, "a`b", "new\nline", `\`, "``", `a\tb`, "c -- d", `\` + "`"} {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
-			got, ok := chcolumn.UnquoteIdentifier(chcolumn.QuoteIdentifier(name))
+			got, ok := chcolumn.UnquoteIdentifier(sqlident.Quote(platform.ClickHouse, name))
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, name)
+		})
+	}
+}
+
+// TestComparableIdentifier pins the spelling a key comparison reads a name in.
+// The server prints a quoted word bare and quotes the rest in its own way
+// (measured on 26.10: a key over id, not and a`b, each written in backticks,
+// reads back as id, not, `a\`b`), so both spellings of one name have to compare
+// the same, and a word the server reads as a literal keeps its quotes.
+func TestComparableIdentifier(t *testing.T) {
+	for _, test := range []struct {
+		identifier, want string
+	}{
+		{identifier: "id", want: "id"},
+		{identifier: "`id`", want: "id"},
+		{identifier: `"id"`, want: "id"},
+		{identifier: "`not`", want: "not"},
+		{identifier: "`a``b`", want: "`a``b`"},
+		{identifier: "`a\\`b`", want: "`a``b`"},
+		{identifier: "`c -- d`", want: "`c -- d`"},
+		{identifier: "`a\\\\b`", want: "`a\\\\b`"},
+		{identifier: "`null`", want: "`null`"},
+		{identifier: "`True`", want: "`True`"},
+		{identifier: "`1a`", want: "`1a`"},
+		{identifier: "'text'", want: "'text'"},
+		{identifier: "`open", want: "`open"},
+	} {
+		t.Run(test.identifier, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(chcolumn.ComparableIdentifier(test.identifier), qt.Equals, test.want)
 		})
 	}
 }

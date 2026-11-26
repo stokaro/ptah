@@ -53,7 +53,7 @@ func TestTableChecks_HappyPath(t *testing.T) {
 		{name: "sqlite", dialect: "sqlite", want: `CONSTRAINT "products_check" CHECK (price > 0)`},
 		{name: "sqlserver", dialect: "sqlserver", want: `CONSTRAINT [products_check] CHECK (price > 0)`},
 		{name: "oracle", dialect: "oracle", want: "CONSTRAINT products_check CHECK (price > 0)"},
-		{name: "clickhouse", dialect: "clickhouse", want: "CONSTRAINT products_check CHECK (price > 0)"},
+		{name: "clickhouse", dialect: "clickhouse", want: "CONSTRAINT `products_check` CHECK (price > 0)"},
 	}
 
 	for _, test := range tests {

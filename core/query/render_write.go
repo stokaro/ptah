@@ -153,14 +153,14 @@ func RenderDeleteWithCapabilities(
 // expression rendering (renderExpr). kind names the statement in the
 // unsupported-dialect error.
 func newWriteRenderer(dialect, kind string, caps capability.Capabilities) (*selectRenderer, error) {
-	described, quoting, ok := lookupDialect(dialect)
+	described, declared, ok := lookupDialect(dialect)
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)
 	}
 	if err := refuseUnportableWrite(described.Query, kind); err != nil {
 		return nil, err
 	}
-	return newDescribedRenderer(described, quoting, caps), nil
+	return newDescribedRenderer(described, declared, caps), nil
 }
 
 // refuseUnportableWrite refuses a verb whose portable spelling the dialect does

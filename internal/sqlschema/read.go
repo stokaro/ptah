@@ -109,6 +109,9 @@ func ReadWith(
 	if err := refuseFeatureCoverageHeader(data); err != nil {
 		return schemamodel.Database{}, nil, err
 	}
+	if err := refuseUnreadableQuotedNames(data, dialect, opts.Source); err != nil {
+		return schemamodel.Database{}, nil, err
+	}
 	allowances, err := readNotValidAllowances(data, dialect, opts.Source)
 	if err != nil {
 		return schemamodel.Database{}, nil, err

@@ -302,12 +302,11 @@ const currentDatabaseCleanupTablesQuery = `
 // dictionaries, live views and window views, and it refuses rather than
 // proceeding when catalog visibility cannot be proven.
 //
-// Identifiers cannot be bound as parameters; quoteIdent doubles any
-// embedded backtick so a name harvested from system.tables cannot break
-// out of the quoted identifier. The explicit "contains backtick" rejection
-// below is defense-in-depth — in a real ClickHouse deployment system.tables
-// will not contain such names, but rejecting them outright keeps parity
-// with the postgres/mysql writers and makes the safety property obvious.
+// Identifiers cannot be bound as parameters; quoteIdent doubles an embedded
+// backtick and backslash, so a name harvested from system.tables is the name
+// the DROP removes and cannot break out of the quoted identifier. ClickHouse
+// holds tables named t`q and a\b, and the renderer creates them, so the
+// cleanup drops them like any other.
 func (w *Writer) DropAllTables(ctx context.Context) error {
 	if w.dryRun {
 		return nil
@@ -355,13 +354,6 @@ func (w *Writer) listCleanupNames(ctx context.Context, query, kind string) ([]st
 
 func (w *Writer) dropCleanupObjects(ctx context.Context, dropKind string, names []string) error {
 	for _, name := range names {
-		if strings.Contains(name, "`") {
-			return fmt.Errorf(
-				"clickhouse: refusing to drop %s %q: name contains a backtick",
-				strings.ToLower(dropKind),
-				name,
-			)
-		}
 		if err := w.ExecuteSQL(
 			ctx,
 			"DROP "+dropKind+" IF EXISTS "+quoteIdent(name)+" SYNC",

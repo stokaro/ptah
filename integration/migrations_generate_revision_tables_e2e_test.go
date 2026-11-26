@@ -70,13 +70,13 @@ var revisionTablesCases = []revisionTablesCase{
 	{
 		name: "ClickHouse native", url: clickHouseScratchURL,
 		first: revisionClickHouseFirst, second: revisionClickHouseSecond,
-		addColumn: "ADD COLUMN m Int32", tables: []string{"schema_migrations", "schema_migrations_log"},
+		addColumn: "ADD COLUMN `m` Int32", tables: []string{"schema_migrations", "schema_migrations_log"},
 	},
 	{
 		name: "ClickHouse Atlas format", url: clickHouseScratchURL,
 		first: revisionClickHouseFirst, second: revisionClickHouseSecond,
 		flags:     []string{"--revision-format", "atlas"},
-		addColumn: "ADD COLUMN m Int32", tables: []string{"atlas_schema_revisions"},
+		addColumn: "ADD COLUMN `m` Int32", tables: []string{"atlas_schema_revisions"},
 	},
 	{
 		name: "Oracle native", url: oracleScratchURL,

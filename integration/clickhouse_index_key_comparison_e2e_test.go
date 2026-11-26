@@ -35,7 +35,7 @@ func TestClickHouseIndexKeyComparisonE2E_HappyPath(t *testing.T) {
 			name:     "a column",
 			from:     "s TYPE minmax GRANULARITY 1",
 			to:       "b TYPE minmax GRANULARITY 1",
-			wantPlan: "ALTER TABLE `t` DROP INDEX `i_k`;\nALTER TABLE `t` ADD INDEX `i_k` b TYPE minmax GRANULARITY 1;\n",
+			wantPlan: "ALTER TABLE `t` DROP INDEX `i_k`;\nALTER TABLE `t` ADD INDEX `i_k` `b` TYPE minmax GRANULARITY 1;\n",
 		},
 		{
 			name:     "a column against an expression of it",
@@ -99,6 +99,44 @@ func writeClickHouseIndexSchema(c *qt.C, name, index string) string {
 	content := fmt.Sprintf("CREATE TABLE t (id UInt64, s String, b Int64, INDEX i_k %s) ENGINE = MergeTree ORDER BY id;\n", index)
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 	return path
+}
+
+// TestClickHouseIndexColumnListFileDiffE2E_HappyPath diffs a YAML schema
+// against itself through a ClickHouse dev database. One side of a file-to-file
+// diff reaches the comparison as a catalog projected from the declaration,
+// which carries an index's key columns and no key parts. Those columns are
+// names, so the diff has to find nothing: read as nothing, the key differs
+// from the declaration and the plan replaces the index, and read as an
+// expression, the column x-y compares as x - y.
+func TestClickHouseIndexColumnListFileDiffE2E_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		columns string
+	}{
+		{name: "a name that is an expression when bare", columns: `["x-y"]`},
+		{name: "two columns", columns: "[s, id]"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(c.Context(), 5*time.Minute)
+			defer cancel()
+			devURL := createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.ClickHouse), "DROP DATABASE IF EXISTS %s", renameInPath)
+			schema := filepath.Join(c.TempDir(), "schema.yaml")
+			content := "tables:\n  t:\n    columns:\n" +
+				"      id: {type: Int32, nullable: false, primary: true}\n" +
+				"      s: {type: String, nullable: false}\n" +
+				"      x-y: {type: Int32, nullable: false}\n" +
+				"    indexes:\n      i: {columns: " + test.columns + "}\n"
+			c.Assert(os.WriteFile(schema, []byte(content), 0o600), qt.IsNil)
+
+			diffed, diffedErr, err := runPtahSplitStreams(ctx, []string{
+				"schema", "diff", "--from", schema, "--to", schema, "--dev-url", devURL,
+			})
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", diffed, diffedErr))
+			c.Assert(diffed, qt.Equals, "Schemas are synced, no changes to be made.\n")
+		})
+	}
 }
 
 // TestClickHouseIndexKeyComparisonE2E_FailurePath declares a key that names a

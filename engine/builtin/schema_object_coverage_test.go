@@ -372,7 +372,7 @@ func TestRender_ClickHouseKeepsAColumnCheckAsANamedConstraint(t *testing.T) {
 	statements, err := builtin.GetOrderedCreateStatements(clickHouseSchema(), platform.ClickHouse)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CONSTRAINT t_n_check CHECK (n > 0)")
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CONSTRAINT `t_n_check` CHECK (n > 0)")
 }
 
 // sequenceSchema declares one standalone sequence and one table.
