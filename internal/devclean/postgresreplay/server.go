@@ -46,10 +46,11 @@ import (
 // disposable outlives the run with the extensions and schemas its reset keeps,
 // so a later run on the same dev database would read a comment, or an
 // extension version, the reset does not return; a provisioned server is
-// discarded. A reset that returns a
-// schema's comment lifts that comment on any server; see
-// [replay.Scope.SchemaCommentReturned]. A comment on a protected namespace such
-// as pg_catalog stays refused, as its mutation is.
+// discarded. A reset that returns a schema's comment lifts that comment on any
+// server; see [replay.Scope.SchemaCommentReturned]. So does a reset that drops
+// the extension or the schema, one the run created; see
+// [replay.Scope.Survivors]. A comment on a protected namespace such as
+// pg_catalog stays refused, as its mutation is.
 func postgresServerWideOperation(stmt string, tokens []lexer.Token, scope replay.Scope) string {
 	if len(tokens) == 0 {
 		return ""

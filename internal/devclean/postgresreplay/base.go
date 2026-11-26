@@ -89,7 +89,7 @@ func (p protection) keptPublication(tokens []lexer.Token) string {
 		if token.Type != lexer.TokenIdentifier && !quotedIdentifier(token) {
 			continue
 		}
-		if name := storedPublicationName(token); slices.Contains(p.publications.Kept, name) {
+		if name := storedName(token); slices.Contains(p.publications.Kept, name) {
 			return name
 		}
 		if !replay.TokenSequenceAt(tokens, 0, "DROP") {
@@ -118,11 +118,11 @@ func unicodeEscapedIdentifier(tokens []lexer.Token) bool {
 	return false
 }
 
-// storedPublicationName is token as PostgreSQL stores the name it spells. An
-// unquoted name is folded to lower case in ASCII only, as the server folds it:
-// Étoile stays Étoile, where a Unicode fold would compare étoile and miss the
-// publication the claim found.
-func storedPublicationName(token lexer.Token) string {
+// storedName is token as PostgreSQL stores the name it spells. An unquoted
+// name is folded to lower case in ASCII only, as the server folds it: Étoile
+// stays Étoile, where a Unicode fold would compare étoile and miss the
+// publication, the extension or the schema the claim found.
+func storedName(token lexer.Token) string {
 	if quotedIdentifier(token) {
 		return replay.IdentifierValue(token)
 	}

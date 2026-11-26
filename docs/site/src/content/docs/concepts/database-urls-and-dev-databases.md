@@ -353,7 +353,8 @@ proven to stay inside the disposable realm:
 
 - PostgreSQL-family `DO`, `CALL`, routine creation or alteration, foreign-table
   creation or alteration, foreign servers, `IMPORT FOREIGN SCHEMA`,
-  `SET search_path`, `SELECT INTO` protected namespaces, and CockroachDB's
+  a `search_path` other than the empty one, `SELECT INTO` protected namespaces,
+  and CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
 - MySQL and MariaDB executable comments, `CALL`, a `CREATE` or `ALTER` of an
   event, a trigger, a routine or a MariaDB package or package body, prepared
@@ -457,13 +458,36 @@ proven to stay inside the disposable realm:
   streaming queries.
 
 Replay runs every migration of a directory on one session, as `migrate apply`
-runs the migrations of one run, so a PostgreSQL `SET` or `RESET` that changes
-the session would carry into the migrations after it, and is refused. A
-setting that ends with its transaction is accepted:
+runs the migrations of one run, so a PostgreSQL `SET`, `RESET` or
+`set_config(name, value, false)` carries into the migrations after it, and into
+the reads and the cleanup Ptah runs on that session. Such a setting is accepted
+where it changes nothing a later statement reaches, how Ptah reads that
+statement, or how Ptah reads the dev database back:
+
+- `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
+  `idle_session_timeout` and `transaction_timeout`, at any value;
+- `client_min_messages`, `check_function_bodies`, `row_security`,
+  `xmloption`, `default_tablespace` and `default_table_access_method`, at any
+  value;
+- `search_path` at the empty path `''`, or given back with `DEFAULT` or
+  `RESET`;
+- `standard_conforming_strings` at `on`, and `client_encoding`, or
+  `SET NAMES`, at UTF-8.
+
+These are what `pg_dump --schema-only` sets around the objects it dumps. In
+`set_config` the name is written as a string, and so is the value of
+`search_path`, `standard_conforming_strings` or `client_encoding`.
+
+A setting of any other parameter is accepted when it ends with its
+transaction:
 
 - `SET LOCAL` and `SET CONSTRAINTS`;
 - `set_config(name, value, true)`, with the name written as a string and `true`
   written as the keyword.
+
+A parameter that changes how the server writes a value out, such as `DateStyle`
+or `TimeZone`, belongs here: set for the session, it would change the text Ptah
+reads a column default back as.
 
 PostgreSQL `CREATE TEMP TABLE` and `CREATE TEMPORARY TABLE` are accepted on the
 replay's pinned physical session. Later statements and migrations can use those
@@ -485,6 +509,15 @@ that state, so there the comment is refused. A privilege on a schema is refused 
 every replay, because it depends on the server's roles, and so is a comment on a
 protected namespace such as `pg_catalog`. The pinned community binary
 replays all of these, so `ptah-compat` is stricter here, deliberately.
+
+A `COMMENT ON EXTENSION` is accepted, under the same condition, on an extension
+the dev database did not hold when the replay claimed it: the history created
+it, and the reset drops it with its comment. `pg_dump` writes such a comment
+after each extension it dumps, and Ptah renders one for a declared extension.
+A comment on an extension the dev database held is refused, since the reset
+keeps the extension and the comment would outlive the run. The name is compared
+as the server stores it, so an unquoted name is read in lower case, and a
+Unicode-escaped name is refused.
 
 Replay runs each migration the way `migrations up` does, in one transaction
 unless the file opts out with `-- +ptah no_transaction` or
@@ -526,10 +559,21 @@ verifies runs each down file on the shadow database the same way, and
 `--plan` builds the target version there by running each up file the same
 way.
 
-Three parameters stay refused even for one transaction. `search_path` (and its
-alias `SET SCHEMA`) decides where an unqualified name lands, which would let a
-`CREATE FUNCTION` reach `pg_catalog`. `role` and `session_authorization` change
-who the rest of the migration runs as.
+Some settings stay refused even for one transaction. A `search_path` that names
+a schema (and its alias `SET SCHEMA`) decides where an unqualified name lands,
+which would let a `CREATE FUNCTION` reach `pg_catalog`; under the empty path an
+unqualified `CREATE` has no schema to land in and fails. `role` and
+`session_authorization` change who the rest of the migration runs as.
+`allow_system_table_mods` is refused as well.
+
+A `standard_conforming_strings` other than `on`, or a `client_encoding` other
+than UTF-8, makes the server read the bytes of a later statement by other rules
+than Ptah does: measured on PostgreSQL 18.6, either lets a statement Ptah reads
+as one `SELECT` run a `CREATE ROLE`. PostgreSQL 19 refuses
+`standard_conforming_strings = off` itself. `DEFAULT` and `RESET` are refused
+for both, since they give back the value the session started with. A dev
+session that starts with either setting, such as one whose URL sets
+`client_encoding=GBK`, is refused before the replay.
 
 The rejection happens while Ptah validates the whole migration, before its
 first statement executes. Realm-local removals Ptah can classify without
@@ -553,8 +597,9 @@ reaches past the dev database:
   `REASSIGN OWNED`, `COMMENT ON` a role, a database, or an extension or
   schema of the dev database, and `ALTER EXTENSION ... UPDATE [TO ...]` whose
   name and version Ptah reads. A server declared disposable lifts all of these
-  except the comment on an extension or a schema and the extension update,
-  because that server outlives the run and its reset keeps them. Replay does
+  except a comment on an extension or a schema the dev database held when the
+  run claimed it and the extension update, because that server outlives the
+  run and its reset keeps them. Replay does
   not read a `DO` block or a routine body; outside one, any other
   `ALTER EXTENSION` stays refused. A
   [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own comment
@@ -612,8 +657,8 @@ A server Ptah did not start can be as disposable: a CI service container
 the job throws away, or a container the operator runs. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
 `--dev-url` names is the run's own. Replay then runs the statements listed
 above on it, as on a server Ptah provisions, except a comment on an extension
-or a schema of the dev database and an extension update, and refuses the same
-rest.
+or a schema the dev database held when the run claimed it and an extension
+update, and refuses the same rest.
 
 ```bash
 PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url "$DEV_URL"
@@ -689,8 +734,8 @@ accepts:
 
 - on PostgreSQL, CockroachDB and YugabyteDB, the statements a
   [server Ptah provisions](#a-server-ptah-provisions) accepts except a comment
-  on an extension or a schema of the dev database and an extension update, and
-  also an external `COPY`,
+  on an extension or a schema the dev database held when the run claimed it
+  and an extension update, and also an external `COPY`,
   `dblink` and `IMPORT FOREIGN SCHEMA`;
 - on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements,
   MariaDB compound statements, users, roles, `GRANT`, `REVOKE`, loadable
@@ -748,6 +793,14 @@ non-UTF-8 dev session too. After such a change the server reads the bytes of
 the statements that follow by other rules, and an event or an executable
 comment the guard does not see can run. Keep a history that trust replays in
 `utf8mb4` for these refusals to hold.
+
+On PostgreSQL, CockroachDB and YugabyteDB the guard reads each statement as
+UTF-8 with standard-conforming strings, and the refusal of a
+`client_encoding` or `standard_conforming_strings` setting that changes that
+reading stays under trust. A `DO` block that trust runs can change either, so
+trust lifts the refusal of a dev session that starts with one. Keep a history
+that trust replays in UTF-8, with `standard_conforming_strings` on, for the
+refusals that stay to hold.
 
 An executable provider, such as the YDB provider, guards its own dev databases
 and decides in its dialect what trust lifts. A provider that declares

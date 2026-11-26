@@ -1,8 +1,6 @@
 package postgresreplay
 
 import (
-	"strings"
-
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
@@ -51,7 +49,7 @@ func (p protection) transactionScopedLockRefusal(tokens []lexer.Token) string {
 func (p protection) lockTargets(tokens []lexer.Token, at int) (int, string, bool) {
 	names := 0
 	for at < len(tokens) {
-		if tokens[at].Type != lexer.TokenIdentifier && !isQuotedIdentifier(tokens[at]) {
+		if tokens[at].Type != lexer.TokenIdentifier && !quotedIdentifier(tokens[at]) {
 			return at, "", false
 		}
 		names++
@@ -102,9 +100,4 @@ func lockModeWidth(tokens []lexer.Token, index int) int {
 		}
 	}
 	return 0
-}
-
-// isQuotedIdentifier reports a double-quoted identifier token.
-func isQuotedIdentifier(token lexer.Token) bool {
-	return token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`)
 }

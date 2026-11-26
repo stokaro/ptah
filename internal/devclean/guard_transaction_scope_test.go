@@ -42,20 +42,22 @@ func TestReplayGuardTransactionScopedSetting_HappyPath(t *testing.T) {
 
 // TestReplayGuardTransactionScopedSetting_FailurePath is the control for the
 // test above. A plain SET, RESET or set_config with is_local false outlives
-// its transaction and reaches the migrations after it. search_path decides
-// where an unqualified name lands, and role and session_authorization decide
-// who the rest of the migration runs as, so those stay refused even when set
-// for one transaction. A set_config whose name or is_local is not a literal
-// cannot be read, and is refused.
+// its transaction and reaches the migrations after it, so a parameter outside
+// the few the guard accepts for the whole session is refused there; DateStyle
+// changes how the run reads a column default back. search_path decides where
+// an unqualified name lands, and role and session_authorization decide who
+// the rest of the migration runs as, so those stay refused even when set for
+// one transaction. A set_config whose name or is_local is not a literal cannot
+// be read, and is refused.
 func TestReplayGuardTransactionScopedSetting_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string
 		statement string
 		wantErr   string
 	}{
-		{name: "plain SET", statement: `SET lock_timeout = '5s'`, wantErr: `.*rejects SET session or transaction state .*`},
-		{name: "SET SESSION", statement: `SET SESSION lock_timeout = '5s'`, wantErr: `.*rejects SET session or transaction state .*`},
-		{name: "RESET", statement: `RESET lock_timeout`, wantErr: `.*rejects RESET session or transaction state .*`},
+		{name: "plain SET", statement: `SET DateStyle = 'ISO, DMY'`, wantErr: `.*rejects SET session or transaction state .*`},
+		{name: "SET SESSION", statement: `SET SESSION DateStyle = 'ISO, DMY'`, wantErr: `.*rejects SET session or transaction state .*`},
+		{name: "RESET", statement: `RESET DateStyle`, wantErr: `.*rejects RESET session or transaction state .*`},
 		{name: "RESET ALL", statement: `RESET ALL`, wantErr: `.*rejects RESET session or transaction state .*`},
 		{name: "SET LOCAL search_path", statement: `SET LOCAL search_path = pg_catalog`, wantErr: `.*rejects SET search_path .*`},
 		{name: "SET LOCAL SCHEMA", statement: `SET LOCAL SCHEMA 'pg_catalog'`, wantErr: `.*rejects SET session or transaction state .*`},
@@ -63,7 +65,7 @@ func TestReplayGuardTransactionScopedSetting_FailurePath(t *testing.T) {
 		{name: "SET LOCAL role parameter", statement: `SET LOCAL role = app_owner`, wantErr: `.*rejects SET ROLE .*`},
 		{name: "SET LOCAL session_authorization", statement: `SET LOCAL session_authorization = app_owner`, wantErr: `.*rejects SET session or transaction state .*`},
 		{name: "SET LOCAL SESSION AUTHORIZATION", statement: `SET LOCAL SESSION AUTHORIZATION app_owner`, wantErr: `.*rejects SET SESSION AUTHORIZATION .*`},
-		{name: "set_config session-wide", statement: `SELECT set_config('lock_timeout', '5s', false)`, wantErr: `.*rejects cluster control function .*`},
+		{name: "set_config session-wide", statement: `SELECT set_config('DateStyle', 'ISO, DMY', false)`, wantErr: `.*rejects cluster control function .*`},
 		{name: "set_config of search_path", statement: `SELECT set_config('search_path', 'pg_catalog', true)`, wantErr: `.*rejects cluster control function .*`},
 		{name: "set_config of role", statement: `SELECT set_config('role', 'app_owner', true)`, wantErr: `.*rejects cluster control function .*`},
 		{name: "set_config of a computed name", statement: `SELECT set_config(current_setting('app.target'), 'x', true)`, wantErr: `.*rejects cluster control function .*`},

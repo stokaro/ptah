@@ -26,6 +26,9 @@ import (
 // leftover in the dev database, not an effect elsewhere. A comment on an
 // extension or a schema of the dev database is lifted only on a server the run
 // provisioned, because the reset keeps those objects and not their comment.
+// One on an extension or a schema the run created is accepted in every scope,
+// trusted or not, since every cleanup drops the object with its comment; see
+// [protection.commentOnDroppedObject].
 //
 // Three refusals are lifted where they are checked rather than here, because
 // they can share a statement with a refusal that stays: an external COPY, a
@@ -35,9 +38,13 @@ import (
 // Every other refusal protects the run rather than the server and stays under
 // trust:
 //
-//   - session and transaction control, SET search_path, SET ROLE and SET
-//     SESSION AUTHORIZATION, LOCK outside the form the guard reads, and a
-//     session advisory lock: the rest of the replay runs in that session;
+//   - session and transaction control, a setting [postgresSettingReach]
+//     refuses (search_path, role, session_authorization,
+//     standard_conforming_strings and client_encoding unless the value leaves
+//     the guard's reading as it is, and a parameter set past its
+//     transaction), SET ROLE and SET SESSION AUTHORIZATION, LOCK outside the
+//     form the guard reads, and a session advisory lock: the rest of the
+//     replay runs in that session;
 //   - a mutation of a protected namespace such as pg_catalog, and a TEMP
 //     object outside a session scope: the catalogs the run reads, and objects
 //     neither the reads nor the cleanup see;

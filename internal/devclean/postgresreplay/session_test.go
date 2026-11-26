@@ -1,0 +1,143 @@
+package postgresreplay_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/dataext"
+	"ptah.run/internal/devclean/replay"
+)
+
+// reportedSession is a dev session that answers every query with its client
+// encoding and standard_conforming_strings, and counts the queries it is
+// asked.
+type reportedSession struct {
+	encoding, conforming string
+	err                  error
+	asked                *int
+}
+
+func (s reportedSession) QueryRowContext(context.Context, string, ...any) dataext.Row {
+	*s.asked++
+	return sessionRow(s)
+}
+
+type sessionRow reportedSession
+
+func (r sessionRow) Scan(dest ...any) error {
+	*dest[0].(*string) = r.encoding
+	*dest[1].(*string) = r.conforming
+	return r.err
+}
+
+func (r sessionRow) Err() error { return r.err }
+
+// sessionGuardFor is the guard of dialect as a guard that reads the session.
+func sessionGuardFor(c *qt.C, dialect string) replay.SessionGuard {
+	c.Helper()
+	reader, ok := guardFor(c, dialect).(replay.SessionGuard)
+	c.Assert(ok, qt.IsTrue)
+	return reader
+}
+
+var postgresFamily = []string{"postgres", "cockroachdb", "yugabytedb"}
+
+// A session that reads statements as UTF-8 with standard-conforming strings
+// reads them as the guard does, in any realm, and the guard comes back as it
+// was. The server reports the encoding as UTF8; the spellings it accepts for
+// it are read the same.
+func TestGuard_ValidateSession_HappyPath(t *testing.T) {
+	for _, dialect := range postgresFamily {
+		for _, encoding := range []string{"UTF8", "utf8", "UTF-8", "UNICODE"} {
+			t.Run(dialect+"/"+encoding, func(t *testing.T) {
+				c := qt.New(t)
+				asked := new(int)
+				session := reportedSession{encoding: encoding, conforming: "on", asked: asked}
+
+				got, err := sessionGuardFor(c, dialect).ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev"})
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(got, qt.Equals, guardFor(c, dialect))
+				c.Assert(*asked, qt.Equals, 1)
+			})
+		}
+	}
+}
+
+// A run that trusts its SQL is not refused, and its session is not read:
+// trust lifts a DO block, which can change either setting.
+func TestGuard_ValidateSession_HappyPathTrusted(t *testing.T) {
+	c := qt.New(t)
+	asked := new(int)
+	session := reportedSession{encoding: "GBK", conforming: "off", asked: asked}
+
+	got, err := sessionGuardFor(c, "postgres").ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev", TrustedSQL: true})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, guardFor(c, "postgres"))
+	c.Assert(*asked, qt.Equals, 0)
+}
+
+// A session that reads statements in another encoding, or with backslash
+// escapes in plain string literals, is refused in every realm, owned and
+// provisioned servers included: the guard would misread what it still refuses
+// there.
+func TestGuard_ValidateSession_FailurePath(t *testing.T) {
+	sessions := []struct {
+		name                 string
+		encoding, conforming string
+	}{
+		{name: "GBK", encoding: "GBK", conforming: "on"},
+		{name: "SQL_ASCII", encoding: "SQL_ASCII", conforming: "on"},
+		{name: "backslash escapes", encoding: "UTF8", conforming: "off"},
+	}
+	scopes := []struct {
+		name  string
+		scope replay.Scope
+	}{
+		{name: "database", scope: replay.Scope{Database: "ptah_dev"}},
+		{name: "server", scope: replay.Scope{Database: "ptah_dev", Server: true}},
+		{name: "provisioned server", scope: replay.Scope{Database: "ptah_dev", Server: true, Provisioned: true}},
+	}
+	for _, dialect := range postgresFamily {
+		for _, reported := range sessions {
+			for _, scope := range scopes {
+				t.Run(dialect+"/"+reported.name+"/"+scope.name, func(t *testing.T) {
+					c := qt.New(t)
+					session := reportedSession{encoding: reported.encoding, conforming: reported.conforming, asked: new(int)}
+
+					got, err := sessionGuardFor(c, dialect).ValidateSession(c.Context(), session, scope.scope)
+
+					c.Assert(got, qt.IsNil)
+					var refusal *replay.SessionRefusal
+					c.Assert(err, qt.ErrorAs, &refusal)
+					c.Assert(err, qt.ErrorIs, replay.ErrRefused)
+					c.Assert(err, qt.ErrorMatches, `the dev session reads statements with client_encoding "`+reported.encoding+
+						`" and standard_conforming_strings "`+reported.conforming+`", and the `+dialect+` replay guard reads `+
+						`each statement as UTF-8 with standard-conforming strings: the server reads the same bytes by other `+
+						`rules and can run what the guard does not see; connect with client_encoding UTF8 and `+
+						`standard_conforming_strings on`)
+				})
+			}
+		}
+	}
+}
+
+var errSessionGone = errors.New("session gone")
+
+// A session the guard cannot read is an error, not a session it accepts.
+func TestGuard_ValidateSession_FailurePathUnreadableSession(t *testing.T) {
+	c := qt.New(t)
+	session := reportedSession{err: errSessionGone, asked: new(int)}
+
+	got, err := sessionGuardFor(c, "postgres").ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev"})
+
+	c.Assert(got, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, errSessionGone)
+	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding and standard_conforming_strings: session gone`)
+	var refusal *replay.SessionRefusal
+	c.Assert(err, qt.Not(qt.ErrorAs), &refusal)
+}

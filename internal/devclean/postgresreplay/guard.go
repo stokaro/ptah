@@ -43,7 +43,8 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") && !scope.TrustedSQL {
 		return replay.Refuse(dialect, "IMPORT FOREIGN SCHEMA")
 	}
-	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" && !postgresSchemaStateReturned(tokens, scope) {
+	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" &&
+		!postgresSchemaStateReturned(tokens, scope) && !policy.commentOnDroppedObject(tokens, scope.Survivors) {
 		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresRoleOrAuthorizationChange(tokens); operation != "" {
@@ -614,6 +615,39 @@ func postgresSchemaStateStatement(tokens []lexer.Token) bool {
 	return false
 }
 
+// commentOnDroppedObject reports a comment on an extension or a schema that
+// every cleanup of the run drops: COMMENT ON EXTENSION or COMMENT ON SCHEMA,
+// a single name and IS, on a run whose survivors were recorded, naming an
+// extension or a schema they do not name. The run created it, and the comment
+// is dropped with it; see [replay.CleanupSurvivors]. pg_dump writes one for
+// every extension it dumps, and Ptah renders one for an extension or a schema
+// that declares a comment.
+//
+// The name is compared as the server stores it ([storedName]). A Unicode
+// escape is refused, as the guard does not decode it, and a schema the server
+// owns is refused whatever the claim found: the server creates pg_temp and
+// pg_toast_temp schemas as sessions need them and keeps them afterwards, so
+// one the run's own session created is missing from the claim and outlives
+// the run.
+func (p protection) commentOnDroppedObject(tokens []lexer.Token, survivors replay.CleanupSurvivors) bool {
+	if !survivors.Recorded || len(tokens) != 6 ||
+		!replay.TokenSequenceAt(tokens, 0, "COMMENT", "ON") || !replay.TokenSequenceAt(tokens, 4, "IS") {
+		return false
+	}
+	name := tokens[3]
+	if name.Type != lexer.TokenIdentifier && !quotedIdentifier(name) {
+		return false
+	}
+	stored := storedName(name)
+	switch replay.NormalizedIdentifier(tokens[2]) {
+	case "EXTENSION":
+		return !slices.Contains(survivors.Extensions, stored)
+	case "SCHEMA":
+		return !p.isProtectedPostgresNamespace(stored) && !slices.Contains(survivors.Schemas, stored)
+	}
+	return false
+}
+
 func postgresGlobalMetadataOperation(tokens []lexer.Token) string {
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
 	if onIndex == replay.MutationTargetNotFound || onIndex+1 >= len(tokens) {
@@ -739,95 +773,16 @@ func postgresSessionOrControlOperation(tokens []lexer.Token) string {
 		(replay.ContainsIdentifier(tokens, "DATABASE") || replay.ContainsIdentifier(tokens, "SYSTEM")) {
 		return "REINDEX database or system"
 	}
-	if first == "SET" && setsPostgresSearchPath(tokens) {
-		return "SET search_path"
-	}
-	if postgresTransactionScopedSetting(tokens) {
-		return ""
+	if first == "SET" || first == "RESET" {
+		return postgresSettingOperation(first, tokens)
 	}
 	switch first {
 	case "ABORT", "BEGIN", "CHECKPOINT", "COMMIT", "DEALLOCATE", "DECLARE",
 		"DISCARD", "END", "EXECUTE", "FETCH", "LISTEN", "LOAD", "LOCK", "MOVE",
-		"NOTIFY", "PREPARE", "RELEASE", "RESET", "ROLLBACK", "SAVEPOINT", "SET",
-		"START", "UNLISTEN":
+		"NOTIFY", "PREPARE", "RELEASE", "ROLLBACK", "SAVEPOINT", "START", "UNLISTEN":
 		return first + " session or transaction state"
 	default:
 		return ""
-	}
-}
-
-// postgresTransactionScopedSetting reports a SET whose effect ends with the
-// transaction it runs in: SET LOCAL of a parameter
-// [postgresTransactionScopedParameter] accepts, and SET CONSTRAINTS.
-//
-// A replay runs every migration of a directory on one session, so a setting
-// that outlives its transaction reaches the migrations after it, and a plain
-// SET or RESET stays refused for that reason. These do not: measured on
-// PostgreSQL 18.6, `lock_timeout` reads `0` after `BEGIN; SET LOCAL
-// lock_timeout = '5s'; COMMIT`, after the same with ROLLBACK, and after a SET
-// LOCAL issued outside a transaction block, which PostgreSQL answers with a
-// warning and ignores. A replay runs a migration the way the executor does, in
-// one transaction unless the file opts out, so the setting is in effect for
-// the rest of that migration and gone before the next.
-func postgresTransactionScopedSetting(tokens []lexer.Token) bool {
-	if len(tokens) < 3 || replay.NormalizedIdentifier(tokens[0]) != "SET" {
-		return false
-	}
-	switch replay.NormalizedIdentifier(tokens[1]) {
-	case "CONSTRAINTS":
-		return true
-	case "LOCAL":
-		// SET LOCAL ROLE and SET LOCAL SESSION AUTHORIZATION never reach here:
-		// postgresRoleOrAuthorizationChange refuses both first.
-		return postgresTransactionScopedParameter(replay.NormalizedIdentifier(tokens[2]))
-	default:
-		return false
-	}
-}
-
-// postgresTransactionScopedSetConfig reports a set_config call, whose opening
-// parenthesis is at open, that names its parameter as a string literal
-// [postgresTransactionScopedParameter] accepts and passes the literal TRUE as
-// is_local. set_config with is_local true is SET LOCAL spelled as a function,
-// and ends with its transaction the same way; with false it is a plain SET.
-//
-// Any other spelling is refused: a parameter name computed at run time cannot
-// be read here, and a string such as 'on' is left out because the one spelling
-// the guard accepts should be the one a reader recognizes.
-func postgresTransactionScopedSetConfig(tokens []lexer.Token, open int) bool {
-	arguments := postgresCallArguments(tokens, open)
-	if len(arguments) != 3 || len(arguments[0]) != 1 || len(arguments[2]) != 1 {
-		return false
-	}
-	name := arguments[0][0]
-	if name.Type != lexer.TokenString {
-		return false
-	}
-	isLocal := arguments[2][0]
-	return isLocal.Type == lexer.TokenIdentifier &&
-		replay.NormalizedIdentifier(isLocal) == "TRUE" &&
-		postgresTransactionScopedParameter(replay.NormalizedIdentifier(name))
-}
-
-// postgresTransactionScopedParameter reports whether a parameter set for one
-// transaction stays inside what the guard checks. It is the one answer both
-// SET LOCAL and set_config read, so the two spellings of the same setting
-// cannot be judged apart.
-//
-// Three names are left out although their effect also ends with the
-// transaction. search_path, and SET SCHEMA which is its alias, decide where an
-// unqualified name lands for the rest of the migration: measured on PostgreSQL
-// 18.6, `SET LOCAL search_path = pg_catalog` followed by an unqualified CREATE
-// FUNCTION creates the function in pg_catalog, and the protected-namespace
-// check reads only qualified names. role and session_authorization change the
-// identity the rest of the migration runs as, which is not a setting the guard
-// can reason about statement by statement.
-func postgresTransactionScopedParameter(name string) bool {
-	switch name {
-	case "", "SEARCH_PATH", "SCHEMA", "ROLE", "SESSION_AUTHORIZATION":
-		return false
-	default:
-		return true
 	}
 }
 
@@ -858,14 +813,6 @@ func postgresCallArguments(tokens []lexer.Token, open int) [][]lexer.Token {
 		current = append(current, token)
 	}
 	return nil
-}
-
-func setsPostgresSearchPath(tokens []lexer.Token) bool {
-	index := 1
-	if replay.TokenSequenceAt(tokens, index, "LOCAL") || replay.TokenSequenceAt(tokens, index, "SESSION") {
-		index++
-	}
-	return replay.TokenSequenceAt(tokens, index, "SEARCH_PATH")
 }
 
 func selectsIntoPostgresTemporaryObject(tokens []lexer.Token) bool {
@@ -909,8 +856,10 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token, scope replay.Scope) str
 		// it is about to send to a live database. The rest below are this
 		// guard's own: they answer what a dev-clean run may execute, which is
 		// a wider question.
-		if name == "SET_CONFIG" && postgresTransactionScopedSetConfig(tokens, index+1) {
-			continue
+		if name == "SET_CONFIG" {
+			if setting, ok := postgresSetConfig(tokens, index+1); ok && setting.accepted() {
+				continue
+			}
 		}
 		if slices.Contains(described.Reach.ControlFunctions.Names, name) {
 			return "cluster control function"

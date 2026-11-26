@@ -165,3 +165,17 @@ const (
 // because it is the server's default user database on a [NamedServer]. The
 // same reset on an [OwnedServer] would have run.
 var ErrServerDefaultDatabase = errors.New("it is the server's default database, which is reset only on a server the run owns")
+
+// Survivors are the names a PostgreSQL-family realm reset of a database leaves
+// in place whether or not a run created them, as the claim found them: every
+// schema the database held, the server's own and an extension's included,
+// with the root schema and "public", which the reset creates again when it
+// drops them; and every extension installed, with the server's own, which the
+// reset never drops. An extension or a schema a run creates under any other
+// name is dropped by every realm reset, and the comment on it with it.
+type Survivors struct {
+	// Schemas are the schema names, sorted.
+	Schemas []string
+	// Extensions are the extension names, sorted.
+	Extensions []string
+}

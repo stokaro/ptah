@@ -9,10 +9,10 @@ import (
 	"ptah.run/internal/devclean"
 )
 
-// replaySession is a dev session of a MySQL or MariaDB server that reads
-// statements as the guard does and runs as 'replay'@'%', an account no
-// statement below names, holding no role. It answers the one query the
-// session guard asks.
+// replaySession is a dev session that reads statements as the guard does. On
+// a MySQL or MariaDB server it runs as 'replay'@'%', an account no statement
+// below names, holding no role. It answers the one query each session guard
+// asks, which it tells apart by the number of values the guard reads.
 type replaySession struct{}
 
 func (replaySession) QueryRowContext(context.Context, string, ...any) dataext.Row {
@@ -21,8 +21,17 @@ func (replaySession) QueryRowContext(context.Context, string, ...any) dataext.Ro
 
 type replaySessionRow struct{}
 
+// replaySessionAnswers are the values of the session guards' queries, by the
+// number of values each reads: a MySQL or MariaDB guard reads the client
+// character set, the account and its roles, and a PostgreSQL-family guard
+// reads client_encoding and standard_conforming_strings.
+var replaySessionAnswers = map[int][]string{
+	3: {"utf8mb4", "replay@%", "[]"},
+	2: {"UTF8", "on"},
+}
+
 func (replaySessionRow) Scan(dest ...any) error {
-	for index, value := range []string{"utf8mb4", "replay@%", "[]"} {
+	for index, value := range replaySessionAnswers[len(dest)] {
 		*dest[index].(*string) = value
 	}
 	return nil

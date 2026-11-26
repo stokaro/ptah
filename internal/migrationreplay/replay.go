@@ -311,7 +311,8 @@ func replayOnLockedConnection(
 			return err
 		}
 		guard = guard.WithSessionScope().WithOwnTransactions().
-			WithSchemaCommentReturned(claim.returnsSchemaState).WithPublications(claim.publications)
+			WithSchemaCommentReturned(claim.returnsSchemaState).WithPublications(claim.publications).
+			WithSurvivors(claim.survivors)
 		if hooks.ownTransactions {
 			guard = guard.WithUnwrappedTransactions()
 		}
@@ -362,6 +363,11 @@ func (c *replayClaim) returnsSchemaState() bool {
 // publications is [devclean.Baseline.Publications] for the claim.
 func (c *replayClaim) publications() replay.PublicationScope {
 	return c.baseline.Publications()
+}
+
+// survivors is [devclean.Baseline.Survivors] for the claim.
+func (c *replayClaim) survivors() replay.CleanupSurvivors {
+	return c.baseline.Survivors()
 }
 
 func replayMigrations(
