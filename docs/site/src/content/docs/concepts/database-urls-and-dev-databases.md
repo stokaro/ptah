@@ -489,6 +489,15 @@ A parameter that changes how the server writes a value out, such as `DateStyle`
 or `TimeZone`, belongs here: set for the session, it would change the text Ptah
 reads a column default back as.
 
+`SET LOCAL session_replication_role = replica` belongs here too. It turns
+triggers off, foreign key checks among them, for the statements of its
+migration, so a migration can load rows in any order. It cannot outlive the
+migration: replay refuses a file that leaves a transaction open, so a
+transaction ends no later than its migration, on commit and on rollback alike,
+and outside a transaction PostgreSQL ignores `SET LOCAL`. Set for the session,
+it would carry into the migrations after it and into the cleanup, so it is
+refused there.
+
 PostgreSQL `CREATE TEMP TABLE` and `CREATE TEMPORARY TABLE` are accepted on the
 replay's pinned physical session. Later statements and migrations can use those
 tables, including through `pg_temp`. Ptah discards that session after success,
