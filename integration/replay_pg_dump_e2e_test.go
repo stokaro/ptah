@@ -346,44 +346,46 @@ func TestReplayPgDumpHeaderE2E_FailurePath(t *testing.T) {
 // pgDumpEscapes are settings under which the server reads a later statement's
 // bytes by other rules than the guard, which reads the SELECT after each as
 // one statement. Each body is a format whose verb is a role name: on a server
-// that runs the setting, the SELECT runs a CREATE ROLE. PostgreSQL 18 and
-// YugabyteDB run both settings; PostgreSQL 19 refuses
-// standard_conforming_strings off itself, and the guard refuses it first.
+// that runs the setting, the SELECT runs a CREATE ROLE. PostgreSQL 19 refuses
+// standard_conforming_strings off itself, with SQLSTATE 0A000, so that row
+// takes its PostgreSQL server from PostgreSQL 16, which runs it.
+const (
+	pgDumpBackslashEscape = "SET LOCAL standard_conforming_strings = off;\nSELECT 'x\\' AS a, ' ; CREATE ROLE %s; -- ';\n"
+	pgDumpGBKEscape       = "SET LOCAL client_encoding = 'GBK';\nSELECT E'\x81\\' ; CREATE ROLE %s; -- ';\n"
+)
+
 var pgDumpEscapes = []struct {
 	name    string
+	engine  dbtarget.Engine
 	body    string
 	wantErr string
 }{
-	{
-		name:    "backslash escapes",
-		body:    "SET LOCAL standard_conforming_strings = off;\nSELECT 'x\\' AS a, ' ; CREATE ROLE %s; -- ';\n",
-		wantErr: "rejects SET standard_conforming_strings because",
-	},
-	{
-		name:    "GBK",
-		body:    "SET LOCAL client_encoding = 'GBK';\nSELECT E'\x81\\' ; CREATE ROLE %s; -- ';\n",
-		wantErr: "rejects SET client_encoding because",
-	},
+	{name: "PostgreSQL 16/backslash escapes", engine: dbtarget.PostgreSQL16, body: pgDumpBackslashEscape,
+		wantErr: "rejects SET standard_conforming_strings because"},
+	{name: "PostgreSQL/GBK", engine: dbtarget.PostgreSQL, body: pgDumpGBKEscape,
+		wantErr: "rejects SET client_encoding because"},
+	{name: "YugabyteDB/backslash escapes", engine: dbtarget.YugabyteDB, body: pgDumpBackslashEscape,
+		wantErr: "rejects SET standard_conforming_strings because"},
+	{name: "YugabyteDB/GBK", engine: dbtarget.YugabyteDB, body: pgDumpGBKEscape,
+		wantErr: "rejects SET client_encoding because"},
 }
 
 // TestReplayLexingSettingE2E_FailurePath pins the refusal of the settings
 // above, and reads the server's roles back: the role the SELECT would create
 // does not exist.
 func TestReplayLexingSettingE2E_FailurePath(t *testing.T) {
-	for _, engine := range pgDumpEngines {
-		for _, escape := range pgDumpEscapes {
-			t.Run(engine.name+"/"+escape.name, func(t *testing.T) {
-				c := qt.New(t)
-				h, dev := newPgDumpHistory(c, engine.engine)
-				role := fmt.Sprintf("ptah_dump_escape_%d", time.Now().UnixNano())
-				c.Cleanup(func() { dropPgDumpRole(c, engine.engine, role) })
+	for _, escape := range pgDumpEscapes {
+		t.Run(escape.name, func(t *testing.T) {
+			c := qt.New(t)
+			h, dev := newPgDumpHistory(c, escape.engine)
+			role := fmt.Sprintf("ptah_dump_escape_%d", time.Now().UnixNano())
+			c.Cleanup(func() { dropPgDumpRole(c, escape.engine, role) })
 
-				got := pgDumpRefused(c, h, dev, fmt.Sprintf(escape.body, role))
+			got := pgDumpRefused(c, h, dev, fmt.Sprintf(escape.body, role))
 
-				c.Assert(got, qt.Contains, escape.wantErr)
-				c.Assert(pgDumpQuery[int](c, dev, "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname = $1", role), qt.Equals, 0)
-			})
-		}
+			c.Assert(got, qt.Contains, escape.wantErr)
+			c.Assert(pgDumpQuery[int](c, dev, "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname = $1", role), qt.Equals, 0)
+		})
 	}
 }
 
@@ -437,25 +439,34 @@ func withPgDumpParameter(c *qt.C, rawURL, key, value string) string {
 // TestReplayDevSessionE2E_FailurePath is the control for a session that
 // starts reading statements by other rules than the guard: the dev URL sets
 // them, no migration does, and the replay refuses the session before it runs
-// the header. PostgreSQL 19 refuses a session that starts with
+// the migration. PostgreSQL 19 refuses a session that starts with
 // standard_conforming_strings off itself, with SQLSTATE 0A000, before Ptah
-// reads it, so that row runs on YugabyteDB, which accepts the value.
+// reads it, so that row takes its PostgreSQL server from PostgreSQL 16. Its
+// migration is a plain SELECT, since the pg_dump 18 header sets
+// transaction_timeout, which PostgreSQL 16 does not have.
 func TestReplayDevSessionE2E_FailurePath(t *testing.T) {
+	const backslashEscapes = "-c standard_conforming_strings=off"
+	fixtures := qt.New(t)
+	postgresHeader := pgDumpHeader(fixtures, "postgres-18.sql")
+	yugabyteHeader := pgDumpHeader(fixtures, "yugabytedb-2026.1.sql")
 	sessions := []struct {
 		name       string
 		engine     dbtarget.Engine
-		dump       string
+		up         string
 		key, value string
 		wantErr    string
 	}{
-		{name: "PostgreSQL/GBK", engine: dbtarget.PostgreSQL, dump: "postgres-18.sql",
+		{name: "PostgreSQL/GBK", engine: dbtarget.PostgreSQL, up: postgresHeader,
 			key: "client_encoding", value: "GBK",
 			wantErr: `client_encoding "GBK" and standard_conforming_strings "on"`},
-		{name: "YugabyteDB/GBK", engine: dbtarget.YugabyteDB, dump: "yugabytedb-2026.1.sql",
+		{name: "PostgreSQL 16/backslash escapes", engine: dbtarget.PostgreSQL16, up: "SELECT 1;\n",
+			key: "options", value: backslashEscapes,
+			wantErr: `client_encoding "UTF8" and standard_conforming_strings "off"`},
+		{name: "YugabyteDB/GBK", engine: dbtarget.YugabyteDB, up: yugabyteHeader,
 			key: "client_encoding", value: "GBK",
 			wantErr: `client_encoding "GBK" and standard_conforming_strings "on"`},
-		{name: "YugabyteDB/backslash escapes", engine: dbtarget.YugabyteDB, dump: "yugabytedb-2026.1.sql",
-			key: "options", value: "-c standard_conforming_strings=off",
+		{name: "YugabyteDB/backslash escapes", engine: dbtarget.YugabyteDB, up: yugabyteHeader,
+			key: "options", value: backslashEscapes,
 			wantErr: `client_encoding "UTF8" and standard_conforming_strings "off"`},
 	}
 	for _, session := range sessions {
@@ -463,7 +474,7 @@ func TestReplayDevSessionE2E_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			h, dev := newPgDumpHistory(c, session.engine)
 
-			got := pgDumpRefused(c, h, withPgDumpParameter(c, dev, session.key, session.value), pgDumpHeader(c, session.dump))
+			got := pgDumpRefused(c, h, withPgDumpParameter(c, dev, session.key, session.value), session.up)
 
 			c.Assert(got, qt.Contains, "the dev session reads statements with "+session.wantErr)
 		})

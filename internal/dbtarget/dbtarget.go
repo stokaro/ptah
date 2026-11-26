@@ -141,7 +141,9 @@ const (
 	// PostgreSQL 16 has no ALTER COLUMN SET EXPRESSION, which arrived in 17,
 	// so a changed generated column takes another path there than on the 18
 	// server PostgreSQL names. A plan that reports a change nobody made shows
-	// as a statement on 18 and as a manual-migration warning on 16.
+	// as a statement on 18 and as a manual-migration warning on 16. It also
+	// accepts standard_conforming_strings off, which PostgreSQL 19 refuses
+	// with SQLSTATE 0A000, so a test that turns the setting off runs here.
 	PostgreSQL16
 	// PostgreSQL13 is a PostgreSQL 13 server, reached with an account that
 	// may create roles and databases.
