@@ -352,10 +352,12 @@ across native commands.
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and
   the roles it inherits active.
-- A role named in MySQL's `mandatory_roles` is active for every account, and the
-  rules treat it as an ordinary role. They do not report that it reads or
-  writes for every account, and they do not count that its rows, active beside
-  another role under `SET ROLE ALL`, can shadow that role's pattern.
+- A role named in MySQL's `mandatory_roles` is granted to every account, and is
+  active in every session that runs `SET ROLE ALL` or logs in with
+  `activate_all_roles_on_login` on. The rules treat it as an ordinary role.
+  They do not report that it reads or writes for every account, and they do not
+  count that its rows, active beside another role under `SET ROLE ALL`, can
+  shadow that role's pattern.
 - Where Ptah cannot tell which of two rows the server applies, the finding
   counts every privilege of both, each under its own row, so it may show more
   than the server allows. That covers two MariaDB patterns with the same counts
