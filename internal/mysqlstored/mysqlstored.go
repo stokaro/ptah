@@ -130,8 +130,22 @@ func Read(statement string, tokens []lexer.Token) (Definition, bool, error) {
 	if start, ok := Wrapped(tokens); ok {
 		return Read(statement, tokens[start:])
 	}
+	read, ok, err := readHead(statement, tokens)
+	return read.definition, ok, err
+}
+
+// head is what [readHead] reads: the definition, and the index of the token
+// after the object's name.
+type head struct {
+	definition Definition
+	next       int
+}
+
+// readHead is [Read] without the wrapper, which also says where the head's
+// name ends.
+func readHead(statement string, tokens []lexer.Token) (head, bool, error) {
 	if !isWord(tokens, 0, "CREATE") && !isWord(tokens, 0, "ALTER") {
-		return Definition{}, false, nil
+		return head{}, false, nil
 	}
 	verb := asciiUpper(tokens[0].Value)
 	definition := Definition{Verb: verb}
@@ -139,12 +153,12 @@ func Read(statement string, tokens []lexer.Token) (Definition, bool, error) {
 	if verb == "CREATE" {
 		at = skipWords(tokens, at, "OR", "REPLACE")
 	}
-	head := at
+	first := at
 	at = skipAssignment(tokens, at, "ALGORITHM")
 	if isWord(tokens, at, "DEFINER") {
 		definer, next, err := readDefiner(statement, tokens, at+1)
 		if err != nil {
-			return Definition{}, false, err
+			return head{}, false, err
 		}
 		definition.Definer, at = &definer, next
 	}
@@ -153,10 +167,10 @@ func Read(statement string, tokens []lexer.Token) (Definition, bool, error) {
 	}
 	kind, next, ok := readKind(tokens, at)
 	switch {
-	case !ok && at == head && keepsNoBody(verb, tokens, at):
-		return Definition{}, false, nil
+	case !ok && at == first && keepsNoBody(verb, tokens, at):
+		return head{}, false, nil
 	case !ok:
-		return Definition{}, false, unreadableDefinition(statement, tokens, at, "no kind of object it knows stands there")
+		return head{}, false, unreadableDefinition(statement, tokens, at, "no kind of object it knows stands there")
 	}
 	definition.Kind = kind
 	at = next
@@ -165,7 +179,7 @@ func Read(statement string, tokens []lexer.Token) (Definition, bool, error) {
 	}
 	definition.Name, at = readName(tokens, at)
 	definition.writesBody = verb == "ALTER" && kind == Event && containsWord(tokens[at:], "DO")
-	return definition, true, nil
+	return head{definition: definition, next: at}, true, nil
 }
 
 // keepsNoBody reports whether the words at at, directly after CREATE [OR

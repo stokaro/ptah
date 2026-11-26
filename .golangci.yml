@@ -244,6 +244,7 @@ linters:
         - example.com/ptah-fixture-provider/backend
         - example.com/ptah-fixture-provider/statements
         - ptah.run/dbschema
+        - ptah.run/integration/dbschema/mysql
         - ptah.run/internal/atlasscript
         - ptah.run/internal/connector
         - ptah.run/internal/dbexprprobe

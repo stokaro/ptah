@@ -18,7 +18,6 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/featureselect"
-	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaselection"
 )
 
@@ -53,11 +52,13 @@ func (s LiveSelection) Validate(selections selectext.Set) error {
 	return atlasfilter.ValidateIncludeSelectors(s.Include, selections)
 }
 
-// ReadContext marks ctx with the object kinds a selector leaves out whole, so a
-// schema read does not have to answer for them. An account that cannot see a
-// MySQL trigger reads the rest of the database under --exclude '*[type=trigger]'.
+// ReadContext marks ctx with what the selectors leave out, as
+// [atlasfilter.ReadScope] does: the object kinds left out whole, so a schema
+// read does not have to answer for them, and each object left out, for which a
+// reader sends no statement of its own. An account that cannot see a MySQL
+// trigger reads the rest of the database under --exclude '*[type=trigger]'.
 func (s LiveSelection) ReadContext(ctx context.Context, selections selectext.Set) context.Context {
-	return readscope.Without(ctx, atlasfilter.KindsLeftOut(selections, s.Exclude, s.Include)...)
+	return atlasfilter.ReadScope(ctx, selections, s.Exclude, s.Include)
 }
 
 // Apply projects a live read and a desired state through the selection, and

@@ -39,6 +39,11 @@ type ExecHandler func(query string, args []driver.NamedValue) (driver.Result, er
 // context a statement ran under.
 type ExecContextHandler func(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error)
 
+// ConnectHandler answers each new connection the pool opens: attempt counts
+// the attempts before this one, refused ones included, and a non-nil error
+// refuses the connection the way a server refusing a session does.
+type ConnectHandler func(attempt int) error
+
 type DB struct {
 	SQL        *sql.DB
 	prepared   *preparedLog
@@ -51,6 +56,12 @@ type DB struct {
 
 func Open(t interface{ Cleanup(func()) }, handler QueryHandler) *DB {
 	return OpenWithExec(t, handler, nil)
+}
+
+// OpenWithConnect is [Open] with each new connection answered by connect
+// first.
+func OpenWithConnect(t interface{ Cleanup(func()) }, handler QueryHandler, connect ConnectHandler) *DB {
+	return open(t, handler, nil, connect)
 }
 
 func OpenWithExec(t interface{ Cleanup(func()) }, queryHandler QueryHandler, execHandler ExecHandler) *DB {
@@ -71,6 +82,11 @@ func OpenWithExecContext(
 	queryHandler QueryHandler,
 	execHandler ExecContextHandler,
 ) *DB {
+	return open(t, queryHandler, execHandler, nil)
+}
+
+// open registers a driver answering with the handlers and opens a pool on it.
+func open(t interface{ Cleanup(func()) }, queryHandler QueryHandler, execHandler ExecContextHandler, connect ConnectHandler) *DB {
 	name := "ptah_dbtest_" + strconv.FormatInt(driverID.Add(1), 10)
 	queryCount := new(atomic.Int64)
 	execCount := new(atomic.Int64)
@@ -79,6 +95,7 @@ func OpenWithExecContext(
 	rollbacks := new(atomic.Int64)
 	prepared := new(preparedLog)
 	sql.Register(name, &countingDriver{
+		connect:      connect,
 		prepared:     prepared,
 		queryHandler: queryHandler,
 		execHandler:  execHandler,
@@ -154,6 +171,8 @@ func (db *DB) RollbackCount() int {
 var driverID atomic.Int64
 
 type countingDriver struct {
+	connect      ConnectHandler
+	attempts     atomic.Int64
 	prepared     *preparedLog
 	queryHandler QueryHandler
 	execHandler  ExecContextHandler
@@ -165,6 +184,12 @@ type countingDriver struct {
 }
 
 func (d *countingDriver) Open(_ string) (driver.Conn, error) {
+	attempt := int(d.attempts.Add(1) - 1)
+	if d.connect != nil {
+		if err := d.connect(attempt); err != nil {
+			return nil, err
+		}
+	}
 	return &countingConn{
 		prepared:     d.prepared,
 		queryHandler: d.queryHandler,

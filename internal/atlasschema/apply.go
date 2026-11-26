@@ -603,7 +603,7 @@ func computeApplyPlan(
 	// Every statement of a realm-scoped plan names its schema, a drop or an
 	// alter of an object read from the target as well as a creation the
 	// desired schema places; see [namingFor].
-	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...))
+	ctx = readscope.Qualified(atlasfilter.ReadScope(ctx, opts.Runtime.Selections(), opts.Exclude, opts.Include))
 	allowUnmatched, err := resolveApplyAllowUnmatched(opts)
 	if err != nil {
 		return applyComputation{}, err

@@ -67,8 +67,8 @@ func (i Inclusion) Includes() bool {
 	return len(i.selectors) != 0
 }
 
-// ReadContext marks ctx with the object kinds the selectors leave out whole,
-// as [LiveSelection.ReadContext] does.
+// ReadContext marks ctx with what the selectors leave out, the object kinds
+// left out whole and each object, as [LiveSelection.ReadContext] does.
 func (i Inclusion) ReadContext(ctx context.Context) context.Context {
 	if !i.Includes() {
 		return ctx

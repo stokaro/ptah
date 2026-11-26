@@ -179,7 +179,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		server.CharsetDefaultCollations, server.CharsetAliases = defaults, aliases
 		return server, nil
 	}
-	schema, err := r.readDatabase(ctx, account, selected.String, referencedOutside(selected.String))
+	schema, err := r.readDatabase(ctx, account, selected.String, selected.String, referencedOutside(selected.String))
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catal
 	server := &catalog.Database{Schemas: databases}
 	names := make([]string, 0, len(databases))
 	for _, database := range databases {
-		part, err := r.readDatabase(ctx, account, database.Name, referencedDatabase)
+		part, err := r.readDatabase(ctx, account, database.Name, "", referencedDatabase)
 		if err != nil {
 			return nil, fmt.Errorf("database %s: %w", database.Name, err)
 		}
@@ -409,10 +409,13 @@ func referencedOutside(database string) foreignSchemaRule {
 
 // readDatabase describes one database, dbName, recording referenced schemas
 // by foreignSchema, and refuses a description the account could not see all of.
+// current is dbName where the connection selected it, so its objects carry no
+// schema, and "" where the read describes the server and names each object's
+// database.
 func (r *Reader) readDatabase(
 	ctx context.Context,
 	account sessionAccount,
-	dbName string,
+	dbName, current string,
 	foreignSchema foreignSchemaRule,
 ) (*catalog.Database, error) {
 	schema := &catalog.Database{}
@@ -495,6 +498,9 @@ func (r *Reader) readDatabase(
 	schema.Sequences = sequences
 
 	if err := r.refuseUnseenObjects(ctx, account, dbName, schema, routines.hidden); err != nil {
+		return nil, err
+	}
+	if err := r.readStoredBodies(ctx, account, dbName, current, schema); err != nil {
 		return nil, err
 	}
 

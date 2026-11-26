@@ -10,7 +10,6 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/mysqlstored"
 	"ptah.run/internal/sqlmode"
@@ -76,14 +75,7 @@ func (Service) KeepStoredValues(ctx context.Context, session *sql.Conn) (connect
 // session's own, that change where a string, a quoted name or a comment
 // ends. The window sets only strict modes, so it keeps those.
 func readFor(sqlMode, version string) mysqlstored.Server {
-	dialect := detectMySQLWireDialect(version)
-	return mysqlstored.Server{
-		Dialect:            dialect,
-		VersionID:          mysqlstored.VersionID(version),
-		NoBackslashEscapes: sqlmode.Has(sqlMode, sqlmode.NoBackslashEscapes),
-		AnsiQuotes:         sqlmode.Has(sqlMode, sqlmode.AnsiQuotes),
-		BracketNames:       dialect == platform.MariaDB && sqlmode.Has(sqlMode, sqlmode.MSSQL),
-	}
+	return mysqlstored.ServerFor(detectMySQLWireDialect(version), mysqlstored.VersionID(version), sqlMode)
 }
 
 // setSQLMode sets the session's sql_mode to the one argument it binds.

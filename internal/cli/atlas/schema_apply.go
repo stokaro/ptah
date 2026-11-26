@@ -40,7 +40,6 @@ import (
 	"ptah.run/internal/mysqldefiner"
 	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/pathguard"
-	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
 	migrationlint "ptah.run/migration/lint"
@@ -1499,7 +1498,7 @@ func checkAtlasApplyTarget(
 	}
 	if opts.policy.IsStrictCE() {
 		if err := atlasschema.PreflightApplyTarget(
-			readscope.Without(cmd.Context(), atlasfilter.KindsLeftOut(opts.runtime.Selections(), opts.exclude, nil)...),
+			atlasfilter.ReadScope(cmd.Context(), opts.runtime.Selections(), opts.exclude, nil),
 			conn,
 			opts.schemas,
 			opts.policy.ValidateInspectedSchema,

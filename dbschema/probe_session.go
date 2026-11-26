@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/probetx"
 	"ptah.run/internal/sessiontx"
+	"ptah.run/internal/sqlrunner"
 )
 
 // WithRolledBackTransaction runs body inside one transaction, and rolls that
@@ -92,7 +93,7 @@ func (dc *DatabaseConnection) WithRolledBackTransaction(
 		return false, fmt.Errorf("%s: pin session: %w", label, err)
 	}
 	defer func() {
-		resultErr = errors.Join(resultErr, discardSQLConnection(session, label+" session"))
+		resultErr = errors.Join(resultErr, sqlrunner.Discard(session, label+" session"))
 	}()
 	return dc.rollBackOn(ctx, session, label, body)
 }

@@ -12,7 +12,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
-	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaselection"
 )
 
@@ -79,15 +78,16 @@ func (e Exclusion) Excludes() bool {
 	return len(e.patterns) != 0
 }
 
-// ReadContext marks ctx with the object kinds the selectors leave out whole,
-// so a schema read under it does not have to answer for them; see
-// [KindsLeftOut]. It is the context every read of a compared state runs
-// under.
+// ReadContext marks ctx with what the selectors leave out, as [ReadScope]
+// does: the object kinds left out whole, so a schema read under it does not
+// have to answer for them, and each object left out, for which a reader sends
+// no statement of its own. It is the context every read of a compared state
+// runs under.
 func (e Exclusion) ReadContext(ctx context.Context) context.Context {
 	if !e.Excludes() {
 		return ctx
 	}
-	return readscope.Without(ctx, KindsLeftOut(e.selections, e.patterns, nil)...)
+	return ReadScope(ctx, e.selections, e.patterns, nil)
 }
 
 // Naming is how one filtered state names its objects to an exclude pattern.

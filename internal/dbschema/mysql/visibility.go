@@ -44,6 +44,8 @@ var (
 type sessionAccount struct {
 	name    string
 	mariaDB bool
+	// version is the server's version, as VERSION() reports it.
+	version string
 	// activeRole reports that the session runs with a role active on MySQL,
 	// where the CREATE after a DROP writes the account's own row on the
 	// routine back only without one ([sessionAccount.isCreator]). It is false
@@ -58,12 +60,11 @@ type sessionAccount struct {
 // complete, and SHOW GRANTS about oneself needs no privilege.
 func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error) {
 	var account sessionAccount
-	var version string
-	if err := r.db.QueryRowContext(ctx, "SELECT CURRENT_USER(), VERSION()").Scan(&account.name, &version); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT CURRENT_USER(), VERSION()").Scan(&account.name, &account.version); err != nil {
 		return sessionAccount{}, fmt.Errorf("failed to read the connecting account: %w", err)
 	}
-	account.mariaDB = capability.BannerPlatform(version) == platform.MariaDB
-	if !account.mariaDB && hasRoles(version) {
+	account.mariaDB = capability.BannerPlatform(account.version) == platform.MariaDB
+	if !account.mariaDB && hasRoles(account.version) {
 		var current string
 		if err := r.db.QueryRowContext(ctx, "SELECT CURRENT_ROLE()").Scan(&current); err != nil {
 			return sessionAccount{}, fmt.Errorf("failed to read the session's active roles: %w", err)
