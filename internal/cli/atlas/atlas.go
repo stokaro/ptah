@@ -839,6 +839,7 @@ func atlasMigrateDownVerb() atlasVerb {
 		// target still reads through the native binding.
 		nativeOnlyFlags: []string{
 			"confirm", "dir-format", "migration-lock-name", atlasMigrateDownLimitFlag, dbcli.TrustReplaySQLFlagName,
+			valuerounding.FlagName,
 		},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{

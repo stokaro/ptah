@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/envbool"
@@ -54,6 +55,13 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 		if cmdadapter.AnswersHelp(cmd, args) {
 			return forward(cmd, args)
 		}
+		allowValueRounding, err := atlasValueRounding.Resolve()
+		if err != nil {
+			return err
+		}
+		cmd.SetContext(valuerounding.WithMigrationPolicy(cmd.Context(), migrator.ValueRounding{
+			Allowed: allowValueRounding, Request: atlasValueRoundingEnvVar + "=1",
+		}))
 		repeatables, err := resolveAtlasRepeatableReading()
 		if err != nil {
 			return err
@@ -278,6 +286,7 @@ func runAtlasMigrateDownFormat(
 		RevisionsSchema:      revisiontable.Schema(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout: migrationLockTimeout,
 		SkipChecks:           opts.skipChecks,
+		ValueRounding:        valuerounding.MigrationPolicy(cmd.Context(), false),
 		OwnTransactions:      ownTransactions,
 	})
 	if err != nil {
@@ -323,6 +332,7 @@ func runAtlasMigrateDownFormat(
 			ProviderOptions:   providerOptions,
 			ConnectTimeout:    dbcli.DefaultConnectTimeout,
 			SkipChecks:        opts.skipChecks,
+			ValueRounding:     valuerounding.MigrationPolicy(cmd.Context(), false),
 			Trust:             dbcli.ShadowReplayTrust(cmd.Context()),
 		})
 		if err != nil {

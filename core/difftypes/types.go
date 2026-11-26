@@ -2117,6 +2117,12 @@ type ColumnDiff struct {
 	// and where the comparison cannot read the digits of both types.
 	Rounding *Rounding `json:"rounding,omitempty"`
 
+	// ReverseRounding describes the same conversion in the rollback direction
+	// when it keeps fewer digits after the point. A widening can have no
+	// Rounding and still need this check once the column holds new values.
+	// It is nil when the comparison finds no rounding in that direction.
+	ReverseRounding *Rounding `json:"reverse_rounding,omitempty"`
+
 	// CharsetChange carries the change of the column's character set that a
 	// change of its collation makes, and is nil where the character set stays
 	// or the comparison cannot name both sides. A server converts every value

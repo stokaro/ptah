@@ -586,7 +586,7 @@ func columnsWithDesiredDomains(
 		!storedAs(ctx.storedType, dbRawType, dialect) && !generatedTypeDerived(genCol, dbCol, dialect) {
 		colDiff.Changes["type"] = change
 		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
-		colDiff.Rounding = typeChangeRounding(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
+		colDiff.Rounding, colDiff.ReverseRounding = typeChangeRounding(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
 		colDiff.PreviousType = strings.TrimSpace(dbRawType)
 	}
 
@@ -1677,13 +1677,15 @@ func typeChangeNarrows(change, dbRawType, renderedType, dialect string) bool {
 	return typeEngineOf(dialect).Narrows(before, after)
 }
 
-// typeChangeRounding marks a change whose new type keeps fewer digits after the point
-// than the type the column holds, and is nil for every other change. It reads the
-// operands [typeChangeNarrows] reads, so the two judge one pair of spellings, and records
-// them, since the scan of the rows converts each value to the declared type as the
-// plan's statement spells it.
-func typeChangeRounding(change, dbRawType, renderedType, dialect string) *difftypes.Rounding {
+// typeChangeRounding reads the same type operands as typeChangeNarrows and
+// records the rounding in each direction. A generated rollback needs the
+// reverse answer because values can be inserted after the forward change.
+func typeChangeRounding(change, dbRawType, renderedType, dialect string) (forward, reverse *difftypes.Rounding) {
 	before, after := typeChangeOperands(change, dbRawType, renderedType, dialect)
+	return roundingForTypes(before, after, dialect), roundingForTypes(after, before, dialect)
+}
+
+func roundingForTypes(before, after, dialect string) *difftypes.Rounding {
 	rounding, rounds := typeEngineOf(dialect).Rounds(before, after)
 	if !rounds {
 		return nil

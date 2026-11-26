@@ -43,6 +43,9 @@ type DownOptions struct {
 	// --skip-checks came to be accepted and ignored on this path
 	// (stokaro/ptah#1621).
 	SkipChecks bool
+	// ValueRounding selects how the rollback treats rounded-values checks.
+	// The zero value evaluates them; see [migrator.Migrator.WithValueRounding].
+	ValueRounding migrator.ValueRounding
 	// OwnTransactions rolls the directory back the way a runner that opens no
 	// transaction around a file runs it, as golang-migrate does; see
 	// [migrator.WithOwnTransactions] and [ApplyOptions.OwnTransactions].
@@ -116,6 +119,7 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 		WithMigrationsEngine(opts.MigrationsEngine).
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
 		WithSkipChecks(opts.SkipChecks).
+		WithValueRounding(opts.ValueRounding).
 		WithLogger(compatMigratorLogger())
 
 	conn.SchemaWriter().SetDryRun(opts.DryRun)

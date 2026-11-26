@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/cli/internal/migraterun"
 	"ptah.run/internal/cli/internal/migratetimeout"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/cli/internal/valuerounding"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/migrationintegrity"
@@ -83,6 +84,8 @@ type options struct {
 	toTag                string
 	limit                uint64
 	skipChecks           bool
+	allowValueRounding   bool
+	valueRounding        migrator.ValueRounding
 	plan                 bool
 	dirFormat            string
 	atlasEnv             string
@@ -200,6 +203,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RefuseEmptyStopEnv(flags, toTagFlag, "stop at --"+targetFlag+" or --"+limitFlag, targetFlag, limitFlag)
 	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false,
 		"Skip the pre-migration checks embedded in the down migrations being rolled back")
+	valuerounding.RegisterApply(cmd, &opts.allowValueRounding)
 	flags.BoolVar(&opts.plan, planFlag, false,
 		"Derive the rollback from the schema difference instead of running the down migrations, "+
 			"requires --"+shadowDBFlag)
@@ -457,6 +461,7 @@ var errJSONNeedsConfirmation = fmt.Errorf("--%s needs --%s or --%s: a run that p
 	jsonFlag, confirmFlag, dryRunFlag)
 
 func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
+	opts.valueRounding = valuerounding.MigrationPolicy(cmd.Context(), opts.allowValueRounding)
 	if err := refuseFlagCombinations(cmd.Flags(), opts); err != nil {
 		return err
 	}
@@ -703,6 +708,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 			atlasEnv:         resolvedOpts.atlasEnv,
 			connectTimeout:   settings.connectTimeout,
 			skipChecks:       resolvedOpts.skipChecks,
+			valueRounding:    resolvedOpts.valueRounding,
 			providerOptions:  settings.providerOptions,
 			trust:            dbcli.ShadowReplayTrust(cmd.Context()),
 		}, emit); err != nil {
@@ -854,6 +860,7 @@ func newDownMigrator(spec downMigratorSpec) (*migrator.Migrator, error) {
 		WithMigrationLog(spec.projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(spec.revisionFormat).
 		WithSkipChecks(spec.resolved.skipChecks).
+		WithValueRounding(spec.resolved.valueRounding).
 		WithDefaultTimeouts(spec.settings.timeouts).
 		WithExecOrder(spec.settings.execOrder).
 		WithMigrationLockTimeout(spec.settings.migrationLockTimeout).
@@ -1360,6 +1367,7 @@ type shadowVerification struct {
 	atlasEnv         string
 	connectTimeout   time.Duration
 	skipChecks       bool
+	valueRounding    migrator.ValueRounding
 	// providerOptions are the rollback's own, so the shadow database runs each
 	// file the way the target will.
 	providerOptions []migrator.FSProviderOption
@@ -1399,6 +1407,7 @@ func verifyRollbackOnShadow(
 		}, v.providerOptions...),
 		ConnectTimeout: v.connectTimeout,
 		SkipChecks:     v.skipChecks,
+		ValueRounding:  v.valueRounding,
 		Trust:          v.trust,
 	})
 	if err != nil {

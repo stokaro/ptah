@@ -56,5 +56,5 @@ func downMigrationSQL(ctx context.Context, runtime Runtime, diff *difftypes.Sche
 	if err != nil {
 		return "", err
 	}
-	return renderGeneratedDownMigrationSQL(ctx, runtime, plan, atlasmigrate.Qualifier{})
+	return renderGeneratedDownMigrationSQL(ctx, runtime, plan, atlasmigrate.Qualifier{}, "")
 }

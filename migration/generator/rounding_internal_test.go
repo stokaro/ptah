@@ -174,3 +174,57 @@ func TestPlanGeneratedMigrationSpecs_SplitPlanWritesTheNoteUnderTheOptIn(t *test
 		"the rows and the server rounds or cuts each value to the new digits\n")
 	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), "+ptah check")
 }
+
+// A widening accepts values the original type cannot keep. Its rollback must
+// read those values when the down file runs, even though the up file is safe.
+func TestPlanGeneratedMigrationSpecs_RoundingChecksTheDownFile(t *testing.T) {
+	tests := []struct {
+		name      string
+		qualifier string
+		table     string
+	}{
+		{"unqualified", "", "prices"},
+		{"qualified", "tenant", "tenant.prices"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			qualifier, err := atlasmigrate.ParseQualifier(test.qualifier)
+			c.Assert(err, qt.IsNil)
+			spec := planWideningSpecs(c, DiffPolicy{}, qualifier)
+
+			c.Assert(spec.UpSQL, qt.Not(qt.Contains), "+ptah check")
+			check := `-- +ptah check kind=rounded-values name="` + test.table + `.amount"`
+			c.Assert(spec.DownSQL, qt.Contains, check)
+			c.Assert(spec.DownSQL, qt.Contains, "AS numeric(8,1)")
+			c.Assert(strings.Index(spec.DownSQL, check) < strings.Index(spec.DownSQL, "ALTER TABLE"), qt.IsTrue)
+		})
+	}
+}
+
+func TestPlanGeneratedMigrationSpecs_AllowedRollbackRoundingWritesANote(t *testing.T) {
+	c := qt.New(t)
+	spec := planWideningSpecs(c, DiffPolicy{AllowValueRounding: true}, atlasmigrate.Qualifier{})
+
+	c.Assert(spec.UpSQL, qt.Not(qt.Contains), "fewer digits after the point")
+	c.Assert(spec.DownSQL, qt.Not(qt.Contains), "+ptah check")
+	c.Assert(spec.DownSQL, qt.Contains, "the rounding was allowed when this file was generated, so no check reads the rows")
+	c.Assert(spec.DownSQL, qt.Contains, `ALTER TABLE "prices" ALTER COLUMN "amount" TYPE`)
+}
+
+func planWideningSpecs(c *qt.C, policy DiffPolicy, qualifier atlasmigrate.Qualifier) generatedMigrationSpec {
+	c.Helper()
+	desired := roundingDeclaration()
+	desired.Fields[0].Type = "numeric(8,3)"
+	current := roundingRead()
+	current.Tables[0].Columns[0].DataType = "numeric(8,1)"
+	current.Tables[0].Columns[0].ColumnType = "numeric(8,1)"
+	diff, err := schemadiff.CompareWithDialect(c.Context(), desired, current, "postgres", builtintest.Runtime())
+	c.Assert(err, qt.IsNil)
+	specs, _, err := planGeneratedMigrationSpecs(c.Context(), must.Must(builtin.New()),
+		diff, desired, current, postgresInfo(capability.Postgres16()), 100, "widen_scale", policy, qualifier,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(specs, qt.HasLen, 1)
+	return specs[0]
+}
