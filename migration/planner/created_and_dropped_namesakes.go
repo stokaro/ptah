@@ -4,9 +4,12 @@ import (
 	"fmt"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/offlinenames"
 	"ptah.run/internal/tableref"
 )
 
@@ -22,50 +25,137 @@ import (
 // reports success (stokaro/ptah#6722). The refusal stops that plan before
 // anything runs.
 //
-// Two names are namesakes when their conflict keys agree under the target's
-// rules, read as [indexscope.ConflictSemantics] reads them, and they are not
-// spelled alike. Two names are spelled alike when they are in one schema and
-// their own names have the same bytes: a PostgreSQL overload dropped while
-// another is created is that, and so is an object a plan drops to create it
-// again, which the planner orders. Without a server to ask, two ASCII names
-// that differ only in case may be one name on SQL Server, so an offline plan
-// for them is refused too. Indexes and constraints belong to a table, and
-// their replacements are planned as a drop before the create; they are not
-// checked here.
+// Two names are namesakes when the target's rules, read as
+// [indexscope.ConflictSemantics] reads them, may make them one name and they
+// are not spelled alike. Two names are spelled alike when they are in one
+// schema and their own names have the same bytes: a PostgreSQL overload
+// dropped while another is created is that, and so is an object a plan drops
+// to create it again, which the planner orders. A routine name is keyed by
+// the routine rule where the target's descriptor states one
+// ([ptah.run/core/platform/descriptor.Comparison.RoutineNamesFold]), since
+// the server folds it whatever its table rule says.
+//
+// The rules may make two names one when their keys agree, or when a part of
+// one of them has no class under those rules and every other part may agree:
+// an accent-insensitive collation reads `café` as `cafe`, and nothing but the
+// server says which collation it has. Under the offline rules of a target
+// whose catalog compares its names (see [offlinenames.Unanswered]), two ASCII
+// names that differ only in case are one name under a case-insensitive
+// collation, and a name with a non-ASCII rune has no class, so the refusal is
+// marked as one a connection would have answered. That is the cost of
+// planning such a target offline: a plan that creates an object and drops
+// another of its kind in the same schema is refused when either name carries
+// a non-ASCII rune, however unrelated the two names are. With a connection,
+// the server resolves every name and no such pair is left.
+//
+// Indexes and constraints belong to a table, and their replacements are
+// planned as a drop before the create; they are not checked here. Triggers
+// are not checked either. A trigger the plan adds is written as CREATE
+// TRIGGER, never as a statement that replaces one in place, so a namesake the
+// planner leaves in place makes the server refuse the create, and nothing is
+// lost. The MySQL-family planner, which plans SQL Server too, creates a
+// trigger after the drop of one whose name differs from it only in case, so
+// that plan runs.
 func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics identifier.Semantics, target string) error {
 	if diff == nil {
 		return nil
 	}
+	unanswered := offlinenames.Unanswered(semantics)
 	semantics = indexscope.ConflictSemantics(semantics)
-	for _, kind := range namesakeKinds(diff, semantics) {
-		dropped := make(map[string][]plannedName, len(kind.dropped))
-		for _, name := range kind.dropped {
-			dropped[name.key] = append(dropped[name.key], name)
+	described, _ := platform.Lookup(target)
+	for _, kind := range namesakeKinds(diff, semantics, described.Comparison.RoutineNamesFold) {
+		if err := refuseNamesakes(kind, target, unanswered); err != nil {
+			return err
 		}
-		for _, created := range kind.created {
-			for _, removed := range dropped[created.key] {
-				if created.spelling == removed.spelling {
-					continue
-				}
-				return fmt.Errorf("%w: the plan creates %s %s and drops %s %s, and %s may read the two names as one, "+
-					"so the drop would remove the object the create makes; declare the object as the database spells it, "+
-					"or plan against the database so that the server says how it compares the names",
-					ptaherr.ErrInvalidSchemaDiff, created.noun, created.name, removed.noun, removed.name, target)
+	}
+	return nil
+}
+
+// refuseNamesakes refuses the first object of kind the plan creates whose
+// name may be the name of one it drops; see [refuseCreatedAndDroppedNamesakes].
+func refuseNamesakes(kind namesakeKind, target string, unanswered bool) error {
+	for _, created := range kind.created {
+		for _, removed := range kind.dropped {
+			if created.spelling != removed.spelling && created.mayBe(removed) {
+				return namesakeError(created, removed, target, unanswered)
 			}
 		}
 	}
 	return nil
 }
 
-// plannedName is one object a plan creates or drops: how a message names it,
-// the key the target's rules give it, and its spelling with the schema
-// written out.
-type plannedName struct {
-	noun     string
-	name     string
-	key      string
-	spelling string
+// namesakeError names a created object and a dropped one the target may read
+// as one; see [refuseCreatedAndDroppedNamesakes] for when each wording is
+// written.
+func namesakeError(created, removed plannedName, target string, unanswered bool) error {
+	pair := fmt.Sprintf("the plan creates %s %s and drops %s %s", created.noun, created.name, removed.noun, removed.name)
+	switch {
+	case unanswered && (created.unresolved() || removed.unresolved()):
+		return offlinenames.Mark(fmt.Errorf(
+			"%w: %s, and without a connection Ptah cannot tell whether they are one name under the database collation",
+			ptaherr.ErrInvalidSchemaDiff, pair,
+		))
+	case unanswered:
+		return offlinenames.Mark(fmt.Errorf(
+			"%w: %s, which differ only in case, so under a case-insensitive collation the drop would remove the object "+
+				"the create makes, and without a connection Ptah cannot tell which collation the database uses; "+
+				"declare the object as the database spells it",
+			ptaherr.ErrInvalidSchemaDiff, pair,
+		))
+	case created.unresolved() || removed.unresolved():
+		return fmt.Errorf(
+			"%w: %s, and %s was not asked whether they are one name, so the drop may remove the object the create makes",
+			ptaherr.ErrInvalidSchemaDiff, pair, target,
+		)
+	}
+	return fmt.Errorf(
+		"%w: %s, and %s reads them as one name, so the drop would remove the object the create makes; "+
+			"declare the object as the database spells it",
+		ptaherr.ErrInvalidSchemaDiff, pair, target,
+	)
 }
+
+// plannedName is one object a plan creates or drops: how a message names it,
+// the key the target's rules give it, the keys of its schema and of its own
+// name, and its spelling with the schema written out. schemaKey is empty for
+// a schema, and for a name whose schema the target's rules do not place.
+type plannedName struct {
+	noun      string
+	name      string
+	key       string
+	schemaKey string
+	nameKey   string
+	spelling  string
+}
+
+// unresolved reports whether the name, or its schema, has no class under the
+// rules its key was made with.
+func (n plannedName) unresolved() bool {
+	return n.schemaKey == unresolvedNameKey || n.nameKey == unresolvedNameKey
+}
+
+// mayBe reports whether the target may read n and other as one name: their
+// keys agree, or each part of one may be the same part of the other because
+// one of the two has no class.
+func (n plannedName) mayBe(other plannedName) bool {
+	if n.key == other.key {
+		return true
+	}
+	if !n.unresolved() && !other.unresolved() {
+		return false
+	}
+	return partsMayAgree(n.schemaKey, other.schemaKey) && partsMayAgree(n.nameKey, other.nameKey)
+}
+
+// partsMayAgree reports whether two parts of a name may be one part: their
+// keys agree, either has no class, or either is not placed.
+func partsMayAgree(a, b string) bool {
+	return a == b || a == "" || b == "" || a == unresolvedNameKey || b == unresolvedNameKey
+}
+
+// unresolvedNameKey is the conflict key of a name the target's rules give no
+// class.
+var unresolvedNameKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 
 // namesakeKind is the objects of one kind a plan creates and drops.
 type namesakeKind struct {
@@ -75,30 +165,34 @@ type namesakeKind struct {
 
 // namesakeKinds lists, for each kind of object a schema holds by name, the
 // objects of it the diff creates and drops. A function and a procedure are one
-// kind, because on SQL Server they share one namespace.
-func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []namesakeKind {
+// kind, because on SQL Server they share one namespace. routinesFold says the
+// target folds the case of a routine name.
+func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, routinesFold bool) []namesakeKind {
 	schemaScoped := func(noun string, created, dropped []string) namesakeKind {
 		return namesakeKind{
 			created: schemaScopedNames(noun, created, semantics),
 			dropped: schemaScopedNames(noun, dropped, semantics),
 		}
 	}
+	routine := func(noun, name string) plannedName {
+		planned := schemaScopedName(noun, name, semantics)
+		if routinesFold && planned.nameKey != unresolvedNameKey {
+			// The server folds a routine name whatever its table rule says;
+			// the comparison folds it as [mysqlroutine.IdentityKey] does.
+			planned.nameKey = mysqlroutine.IdentityKey(planned.nameKey)
+			planned.key = planned.schemaKey + "\x00" + planned.nameKey
+		}
+		return planned
+	}
 	routines := namesakeKind{}
-	for _, routine := range diff.FunctionsAdded {
-		routines.created = append(routines.created, schemaScopedName(routineNoun(routine), routine.Name, semantics))
+	for _, added := range diff.FunctionsAdded {
+		routines.created = append(routines.created, routine(routineNoun(added), added.Name))
 	}
-	for _, routine := range diff.FunctionsRemoved {
-		routines.dropped = append(routines.dropped, schemaScopedName(routineNoun(routine), routine.Name, semantics))
+	for _, removed := range diff.FunctionsRemoved {
+		routines.dropped = append(routines.dropped, routine(routineNoun(removed), removed.Name))
 	}
-	for _, routine := range diff.ProceduresRemoved {
-		routines.dropped = append(routines.dropped, schemaScopedName("procedure", routine.Name, semantics))
-	}
-	triggers := namesakeKind{}
-	for _, trigger := range diff.TriggersAdded {
-		triggers.created = append(triggers.created, triggerName(trigger, semantics))
-	}
-	for _, trigger := range diff.TriggersRemoved {
-		triggers.dropped = append(triggers.dropped, triggerName(trigger, semantics))
+	for _, removed := range diff.ProceduresRemoved {
+		routines.dropped = append(routines.dropped, routine("procedure", removed.Name))
 	}
 	schemas := namesakeKind{}
 	for _, schema := range diff.SchemasAdded {
@@ -114,7 +208,6 @@ func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics) [
 		schemaScoped("materialized view", diff.MaterializedViewsAdded.Names(), diff.MaterializedViewsRemoved.Names()),
 		schemaScoped("sequence", diff.SequencesAdded.Names(), diff.SequencesRemoved.Names()),
 		routines,
-		triggers,
 	}
 }
 
@@ -136,21 +229,28 @@ func schemaScopedNames(noun string, names []string, semantics identifier.Semanti
 // schemaScopedName is an object named in a schema, such as a table or a
 // procedure, whose name may carry the schema.
 func schemaScopedName(noun, name string, semantics identifier.Semantics) plannedName {
-	return plannedName{noun: noun, name: name, key: semantics.QualifiedTableConflictKey(name), spelling: schemaSpelling(name, semantics)}
-}
-
-// triggerName is a trigger, which the comparison names per table.
-func triggerName(trigger difftypes.TriggerRef, semantics identifier.Semantics) plannedName {
-	return plannedName{
-		noun:     "trigger",
-		name:     trigger.TriggerName + " on " + trigger.TableName,
-		key:      semantics.QualifiedTableConflictKey(trigger.TableName) + "\x00" + semantics.TableConflictKey(trigger.TriggerName),
-		spelling: schemaSpelling(trigger.TableName, semantics) + "\x00" + trigger.TriggerName,
+	planned := plannedName{
+		noun: noun, name: name, key: semantics.QualifiedTableConflictKey(name), spelling: schemaSpelling(name, semantics),
+		nameKey: semantics.TableConflictKey(name),
 	}
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return planned
+	}
+	planned.nameKey = semantics.TableConflictKey(ref.Name)
+	schema := ref.Schema
+	if !ref.Qualified {
+		schema = semantics.DefaultSchema
+	}
+	if schema != "" {
+		planned.schemaKey = semantics.TableConflictKey(schema)
+	}
+	return planned
 }
 
 func schemaName(name string, semantics identifier.Semantics) plannedName {
-	return plannedName{noun: "schema", name: name, key: semantics.TableConflictKey(name), spelling: name}
+	key := semantics.TableConflictKey(name)
+	return plannedName{noun: "schema", name: name, key: key, nameKey: key, spelling: name}
 }
 
 // schemaSpelling is name with the schema it is in written out, so that

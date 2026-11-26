@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/offlinenames"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
 )
@@ -132,13 +133,14 @@ func validateTablesAndColumns(
 	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) error {
+	unanswered := offlinenames.Unanswered(semantics)
 	semantics = indexscope.ConflictSemantics(semantics)
 	tables := make([]spelledName, 0, len(desired.Tables))
 	for _, table := range desired.Tables {
 		tables = append(tables, spelledName{spelling: table.QualifiedName(), key: semantics.QualifiedTableConflictKey(table.QualifiedName())})
 	}
-	if previous, current, conflict := firstConflict(tables); conflict {
-		return conflictError("tables", previous, current)
+	if pair, conflict := firstConflict(tables); conflict {
+		return conflictError("tables", pair, unanswered)
 	}
 
 	for _, table := range desired.Tables {
@@ -167,6 +169,15 @@ type spelledName struct {
 	key      string
 }
 
+// conflictPair is two declarations of one kind the target may read as one
+// object, in declaration order. unresolved is true when one of them has no
+// equivalence class under the rules the check read, so the pair is a pair
+// because nothing said the two are apart.
+type conflictPair struct {
+	previous, current string
+	unresolved        bool
+}
+
 // firstConflict returns the first pair of names the target cannot keep
 // apart, in declaration order. Two names spelled alike are one declaration,
 // not a pair.
@@ -175,14 +186,14 @@ type spelledName struct {
 // already seen, for the reason [conflictingColumn] gives: under an
 // accent-insensitive collation `örders` is the table `orders`, and the two
 // conflict keys are different.
-func firstConflict(names []spelledName) (previous, current string, conflict bool) {
+func firstConflict(names []spelledName) (conflictPair, bool) {
 	byKey := make(map[string]string, len(names))
 	var seen []string
 	unresolved := ""
 	for _, name := range names {
 		if strings.Contains(name.key, unresolvedTableKey) {
 			if earlier, found := firstOther(seen, name.spelling); found {
-				return earlier, name.spelling, true
+				return conflictPair{previous: earlier, current: name.spelling, unresolved: true}, true
 			}
 			if unresolved == "" {
 				unresolved = name.spelling
@@ -191,15 +202,15 @@ func firstConflict(names []spelledName) (previous, current string, conflict bool
 			continue
 		}
 		if unresolved != "" && unresolved != name.spelling {
-			return unresolved, name.spelling, true
+			return conflictPair{previous: unresolved, current: name.spelling, unresolved: true}, true
 		}
 		if earlier, exists := byKey[name.key]; exists && earlier != name.spelling {
-			return earlier, name.spelling, true
+			return conflictPair{previous: earlier, current: name.spelling}, true
 		}
 		byKey[name.key] = name.spelling
 		seen = append(seen, name.spelling)
 	}
-	return "", "", false
+	return conflictPair{}, false
 }
 
 // validateSchemaObjects refuses two declared views, materialized views,
@@ -217,6 +228,7 @@ func firstConflict(names []spelledName) (previous, current string, conflict bool
 // in one schema and spelled alike. Triggers are named per table, as the
 // comparison names them.
 func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.Semantics) error {
+	unanswered := offlinenames.Unanswered(semantics)
 	semantics = indexscope.ConflictSemantics(semantics)
 	kinds := []struct {
 		noun  string
@@ -232,8 +244,8 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 		for _, name := range kind.names {
 			spelled = append(spelled, spelledName{spelling: schemaSpelling(name, semantics), key: semantics.QualifiedTableConflictKey(name)})
 		}
-		if previous, current, conflict := firstConflict(spelled); conflict {
-			return conflictError(kind.noun, previous, current)
+		if pair, conflict := firstConflict(spelled); conflict {
+			return conflictError(kind.noun, pair, unanswered)
 		}
 	}
 	triggers := make([]spelledName, 0, len(desired.Triggers))
@@ -243,8 +255,8 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 			key:      semantics.QualifiedTableConflictKey(trigger.Table) + "\x00" + semantics.TableConflictKey(trigger.Name),
 		})
 	}
-	if previous, current, conflict := firstConflict(triggers); conflict {
-		return conflictError("triggers", previous, current)
+	if pair, conflict := firstConflict(triggers); conflict {
+		return conflictError("triggers", pair, unanswered)
 	}
 	return nil
 }
@@ -273,15 +285,26 @@ func nameList[T any](elements []T, name func(T) string) []string {
 }
 
 // conflictError names two declarations of one kind the target may read as
-// one object.
-func conflictError(kind, previous, current string) error {
-	return fmt.Errorf(
+// one object. unanswered says the rules are the offline ones of a target
+// whose catalog compares its names (see [offlinenames.Unanswered]). The
+// refusal is then marked as one a connection would have answered, and a pair
+// that is a pair only because one of its names has no class says that Ptah
+// cannot tell, since no rule put the two names together.
+func conflictError(kind string, pair conflictPair, unanswered bool) error {
+	if unanswered && pair.unresolved {
+		return offlinenames.Mark(fmt.Errorf(
+			"%w: without a connection Ptah cannot tell whether target %s %s and %s are one name under the database collation",
+			ptaherr.ErrInvalidSchemaDiff, kind, pair.previous, pair.current,
+		))
+	}
+	err := fmt.Errorf(
 		"%w: target %s %s and %s may have the same catalog identity",
-		ptaherr.ErrInvalidSchemaDiff,
-		kind,
-		previous,
-		current,
+		ptaherr.ErrInvalidSchemaDiff, kind, pair.previous, pair.current,
 	)
+	if unanswered {
+		return offlinenames.Mark(err)
+	}
+	return err
 }
 
 // firstOther returns the first name in seen spelled differently from name.

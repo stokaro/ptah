@@ -341,6 +341,12 @@ provider runs the cases in a dev realm in that database.
 - **Match the target engine.** Replay verification proves the SQL executes on
   the engine it ran against, so a dev or shadow database should run the same
   engine (and ideally the same version) as the target.
+- **Match the target's collation on SQL Server.** The collation decides which
+  names are one name, so a dev or shadow database under another collation
+  builds another state than the target holds. A command that holds both
+  connections compares how the two servers read names that differ in case and
+  in accent, and refuses when they differ, naming both collations. See
+  [Identifier collation](../../databases/sqlserver/#identifier-collation).
 - **Every flag has an environment variable.** `PTAH_DB_URL`, `PTAH_DEV_URL`,
   and `PTAH_SHADOW_DB` set the corresponding flags, which keeps credentials
   out of CI command lines. A malformed non-empty value fails before command

@@ -104,6 +104,14 @@ Planning rejects ambiguity before emitting SQL and requires a live resolved
 snapshot. This can make dialect-only SQL Server planning intentionally stricter
 than live planning.
 
+A caller that compares two states neither of which is a live database, and
+holds a connection to a SQL Server whose collation the target shares, asks it
+with `ResolveIdentifierSemantics` and passes the snapshot as
+`CompareOptions.IdentifierSemantics`. `schema diff` of two schema files does
+this with its `--dev-url` database, and a dev or shadow database whose
+collation reads names otherwise than the target's is refused by every command
+that holds both connections (`internal/devcollation`).
+
 Ptah does not reproduce SQL Server collation rules locally. The live catalog is
 the source of truth.
 

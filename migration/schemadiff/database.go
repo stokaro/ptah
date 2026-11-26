@@ -45,6 +45,71 @@ func CompareWithDatabase(
 	return completeComparison(CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, database, opts, runtime))
 }
 
+// IdentifierResolver is a connected server that says how it compares names:
+// its description, and the identifier rules it resolves for a set of names.
+// The DatabaseConnection type of ptah.run/dbschema implements it, and so does
+// every [Connection].
+type IdentifierResolver interface {
+	Info() catalog.ServerInfo
+	ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
+}
+
+// ResolveIdentifierSemantics asks resolver how its server compares every name
+// a comparison of desired with database meets, the names [CompareWithDatabase]
+// asks its own connection about, and returns the server's rules.
+//
+// It is for a caller that compares two states offline while it holds a
+// connection to a database of the target's engine, such as a dev database
+// both states are planned for. Passed as
+// [config.CompareOptions.IdentifierSemantics], the answer pairs names the way
+// that server does, and it covers every name the comparison checks. On SQL
+// Server that answer comes from the database collation, which no offline rule
+// knows.
+//
+// Either state nil, or a nil resolver, is refused with an error satisfying
+// errors.Is(err, ptaherr.ErrInvalidSchemaDiff). An error from the target
+// runtime or from the server is returned as it is. The dialect is the one
+// resolver's Info names.
+func ResolveIdentifierSemantics(
+	ctx context.Context,
+	resolver IdentifierResolver,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	runtime schemaext.TargetResolver,
+) (identifier.Semantics, error) {
+	if desired == nil || database == nil || resolver == nil {
+		return identifier.Semantics{}, fmt.Errorf("%w: resolving identifiers requires a server and both schemas", ptaherr.ErrInvalidSchemaDiff)
+	}
+	if runtime == nil {
+		return identifier.Semantics{}, fmt.Errorf("%w: resolving identifiers requires a target runtime", ptaherr.ErrInvalidSchemaDiff)
+	}
+	target, err := runtime.ResolveTarget(resolver.Info().Dialect)
+	if err != nil {
+		return identifier.Semantics{}, err
+	}
+	return resolveComparisonIdentifiers(ctx, resolver, desired, database, target)
+}
+
+// resolveComparisonIdentifiers asks resolver about every name a comparison of
+// desired with database meets under target: the names the comparison keys,
+// and the names the target's facets carry.
+func resolveComparisonIdentifiers(
+	ctx context.Context,
+	resolver IdentifierResolver,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	target schemaext.TargetSelection,
+) (identifier.Semantics, error) {
+	info := resolver.Info()
+	names := collectIdentifierNames(desired, database, info.Schema, info.Dialect)
+	slots := append(desired.FacetSlots(), database.FacetSlots()...)
+	names, err := appendFacetIdentifierNames(names, slots, target)
+	if err != nil {
+		return identifier.Semantics{}, err
+	}
+	return resolver.ResolveIdentifierSemantics(ctx, names)
+}
+
 // CompareWithDatabaseReportingUndecidedAdditions performs the same
 // database-aware comparison as [CompareWithDatabase] and also reports desired
 // additions that the current state's coverage record makes undecidable.
@@ -78,17 +143,11 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	names := collectIdentifierNames(desired, database, info.Schema, info.Dialect)
 	target, err := runtime.ResolveTarget(info.Dialect)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	slots := append(desired.FacetSlots(), database.FacetSlots()...)
-	names, err = appendFacetIdentifierNames(names, slots, target)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
+	semantics, err := resolveComparisonIdentifiers(ctx, conn, desired, database, target)
 	if err != nil {
 		return nil, Diagnostics{}, fmt.Errorf("compare schemas: %w", err)
 	}

@@ -315,17 +315,51 @@ Two declarations of one kind that the database may read as one name are
 refused, because only one of them could be compared: under a case-insensitive
 collation the views `MixedView` and `MIXEDVIEW` are one view. A plan that would
 create one object and drop another of its kind whose name the target may read
-as the same name is refused too, before any statement runs.
+as the same name is refused too, before any statement runs. Triggers are
+outside that check, because the plan drops the old trigger before it creates
+the new one, so the drop frees the name the create takes.
 
-An offline, dialect-only comparison cannot know the target collation, so it
-confirms only exact-spelling identity. When it checks names for conflicts, it
-treats two ASCII names that differ after ASCII case folding as distinct,
-because no SQL Server collation makes them equal. Names that differ only in
-ASCII case, or that hold a non-ASCII character, may be one name under some
-collation, so planning rejects them as a possible conflict instead of guessing.
-This makes offline SQL Server planning intentionally stricter than live
-planning. Embedders choose between the live-aware and offline comparison APIs —
-see [Public Go API](../../extend/public-api/).
+`schema diff` of two schema files, in both binaries, asks the `--dev-url`
+database how it compares the names the two files hold, and pairs them the way
+it answers. The tables `Größe` and `Zähler` are two tables. On a
+case-insensitive dev database the views `MixedView` and `MIXEDVIEW` are one
+view, and the plan changes it in place.
+
+Without a connection, Ptah cannot know the collation, and the comparison is
+offline. These comparisons are offline:
+
+- `ptah schema diff` of two schema files whose dev URL comes from `ptah.yaml`
+  beside `--server-version`, which leaves the URL unopened;
+- the same command when that URL does not answer within five seconds;
+- the Go comparison APIs that take no connection.
+
+An offline comparison treats two ASCII names that differ after ASCII case
+folding as two names, because no SQL Server collation makes them equal. Every
+other pair it refuses rather than guesses: names that differ only in ASCII
+case, and any name that holds a non-ASCII character, which may be any other
+name of its kind in its schema. So two schema files that declare the views
+`Größe` and `v2` are refused offline. The refusal says that Ptah cannot tell
+whether the two are one name under the database collation, and names the fix:
+give `--dev-url` a database Ptah can connect to, or give `--from` a database
+URL. Embedders choose between the live-aware and offline comparison APIs; see
+[Public Go API](../../extend/public-api/).
+
+A dev or shadow database must use the target's collation. A case-sensitive dev
+database would hold `MixedCase` and `MIXEDCASE` as two procedures where the
+target holds one, and a rehearsal there would prove nothing about the target.
+A command that runs a change on a dev or shadow database before the target
+asks both servers how they compare names that differ in case and in accent,
+and refuses when the answers differ, naming both collations. Collations with
+different names that read names alike, such as `SQL_Latin1_General_CP1_CI_AS`
+and `Latin1_General_100_CI_AS`, pass. The check runs in these commands:
+
+- `schema apply --dev-url`, in both binaries;
+- `ptah migrations down --shadow-db`, and `ptah-compat migrate down --dev-url`;
+- the other commands that verify on a shadow database.
+
+`ptah migrations generate --replay` and `ptah-compat migrate diff` hold no
+connection to the target, so they cannot compare, and the generated migration
+is planned under the dev database's collation.
 
 ## Filtered indexes
 

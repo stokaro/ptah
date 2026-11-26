@@ -28,6 +28,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devdocker"
@@ -83,14 +84,34 @@ type Facts struct {
 	// its reader cannot read them alone.
 	CharsetDefaultCollations map[string]string
 	CharsetAliases           map[string]string
+	// IdentifierSemantics is how the server compares names, as the resolve
+	// function given to [ServerFacts] read it over the connection, and nil
+	// where that function was nil or nothing was connected to.
+	IdentifierSemantics *identifier.Semantics
 }
+
+// Resolve asks a connected dev server how it compares names; see
+// [ServerFacts].
+type Resolve func(context.Context, *dbschema.DatabaseConnection) (identifier.Semantics, error)
 
 // ServerFacts opens devURL as [Server] does and answers its capabilities and,
 // over the same connection, the session's character set facts. A failed read
 // of the facts is the error, wrapped as `read the character sets of
 // --<flag>: ...`.
-func ServerFacts(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (Facts, error) {
+//
+// Where resolve is not nil and a connection was opened, it is called over
+// that connection too, and its answer is [Facts.IdentifierSemantics]; an
+// error from it is the error, wrapped as `resolve identifiers on --<flag>:
+// ...`.
+func ServerFacts(ctx context.Context, dialect, flag, devURL string, timeout time.Duration, resolve Resolve) (Facts, error) {
 	return reach(ctx, dialect, flag, devURL, timeout, func(ctx context.Context, conn *dbschema.DatabaseConnection, facts Facts) (Facts, error) {
+		if resolve != nil {
+			semantics, err := resolve(ctx, conn)
+			if err != nil {
+				return Facts{}, fmt.Errorf("resolve identifiers on --%s: %w", flag, err)
+			}
+			facts.IdentifierSemantics = &semantics
+		}
 		described, _ := platform.Lookup(conn.Info().Dialect)
 		reader, reads := conn.Reader().(charsetFactsReader)
 		if described.Columns.CollationNames.CharsetDefaults == nil || !reads {

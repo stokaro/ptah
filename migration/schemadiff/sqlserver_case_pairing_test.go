@@ -130,6 +130,19 @@ func caseOnlyNamesakes() []caseOnlyNamesake {
 			sensitive:   []string{"sequence added MIXEDSEQ", "sequence removed MixedSeq"},
 		},
 		{
+			// The schema is a field of its own here, and it is a name the
+			// server is asked about as much as the sequence's.
+			name: "sequence in a named schema",
+			desired: &schemamodel.Database{Sequences: []schemamodel.Sequence{
+				{Schema: "sales", Name: "MIXEDSEQ", Increment: new(int64(2))},
+			}},
+			held: &catalog.Database{Sequences: []catalog.Sequence{
+				{Schema: "Sales", Name: "MixedSeq", Increment: new(int64(1))},
+			}},
+			insensitive: []string{"sequence modified sales.MIXEDSEQ"},
+			sensitive:   []string{"sequence added sales.MIXEDSEQ", "sequence removed Sales.MixedSeq"},
+		},
+		{
 			name: "trigger",
 			desired: &schemamodel.Database{Tables: []schemamodel.Table{orders}, Triggers: []schemamodel.Trigger{
 				{Name: "MIXEDTRG", Table: "orders", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SELECT 2 END"},
