@@ -84,6 +84,22 @@ git worktree add .codex/worktrees/<name>  -b <branch> origin/master
   scope, required companion changes, and relevant remaining work.
   Use closing keywords only when the PR fully resolves an issue.
 
+### Before and after diagram
+
+- Every PR description must include a simple before/after diagram in its
+  `Expected outcome` section. This applies to all PRs, including documentation,
+  refactoring, maintenance, and dependency updates. A diagram in a linked issue
+  or comment does not replace the one in the PR body.
+- Use a fenced `mermaid` block with clearly labeled `Before` and
+  `After (with this PR)` parts. Compare the same concrete scenario and show the
+  changed steps and their result. Keep labels plain and short, and include
+  only the nodes needed to explain the change.
+- When runtime behavior is unchanged, show the actual change to documentation,
+  structure, dependencies, or contributor workflow. Do not invent a runtime
+  effect to fill the diagram. Explain the main difference in nearby prose.
+- Verify that the diagram renders, and keep it aligned with the complete
+  current PR when its scope or implementation changes.
+
 ### Evidence and maintenance
 
 - Connect validation to the expected outcomes and material risks. Report
