@@ -133,14 +133,14 @@ func validateTablesAndColumns(
 	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) error {
-	unanswered := offlinenames.Unanswered(semantics)
+	rules := semantics
 	semantics = indexscope.ConflictSemantics(semantics)
 	tables := make([]spelledName, 0, len(desired.Tables))
 	for _, table := range desired.Tables {
 		tables = append(tables, spelledName{spelling: table.QualifiedName(), key: semantics.QualifiedTableConflictKey(table.QualifiedName())})
 	}
 	if pair, conflict := firstConflict(tables); conflict {
-		return conflictError("tables", pair, unanswered)
+		return conflictError("tables", pair, rules)
 	}
 
 	for _, table := range desired.Tables {
@@ -228,7 +228,7 @@ func firstConflict(names []spelledName) (conflictPair, bool) {
 // in one schema and spelled alike. Triggers are named per table, as the
 // comparison names them.
 func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.Semantics) error {
-	unanswered := offlinenames.Unanswered(semantics)
+	rules := semantics
 	semantics = indexscope.ConflictSemantics(semantics)
 	kinds := []struct {
 		noun  string
@@ -245,7 +245,7 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 			spelled = append(spelled, spelledName{spelling: schemaSpelling(name, semantics), key: semantics.QualifiedTableConflictKey(name)})
 		}
 		if pair, conflict := firstConflict(spelled); conflict {
-			return conflictError(kind.noun, pair, unanswered)
+			return conflictError(kind.noun, pair, rules)
 		}
 	}
 	triggers := make([]spelledName, 0, len(desired.Triggers))
@@ -256,7 +256,7 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 		})
 	}
 	if pair, conflict := firstConflict(triggers); conflict {
-		return conflictError("triggers", pair, unanswered)
+		return conflictError("triggers", pair, rules)
 	}
 	return nil
 }
@@ -285,12 +285,13 @@ func nameList[T any](elements []T, name func(T) string) []string {
 }
 
 // conflictError names two declarations of one kind the target may read as
-// one object. unanswered says the rules are the offline ones of a target
-// whose catalog compares its names (see [offlinenames.Unanswered]). The
-// refusal is then marked as one a connection would have answered, and a pair
-// that is a pair only because one of its names has no class says that Ptah
-// cannot tell, since no rule put the two names together.
-func conflictError(kind string, pair conflictPair, unanswered bool) error {
+// one object. Where rules are the offline ones of a target whose catalog
+// compares its names (see [offlinenames.Unanswered]), the refusal is marked as
+// one a connection would have answered, and a pair that is a pair only
+// because one of its names has no class says that Ptah cannot tell, since no
+// rule put the two names together.
+func conflictError(kind string, pair conflictPair, rules identifier.Semantics) error {
+	unanswered := offlinenames.Unanswered(rules)
 	if unanswered && pair.unresolved {
 		return offlinenames.Mark(fmt.Errorf(
 			"%w: without a connection Ptah cannot tell whether target %s %s and %s are one name under the database collation",

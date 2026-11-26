@@ -62,8 +62,7 @@ func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics iden
 	}
 	unanswered := offlinenames.Unanswered(semantics)
 	semantics = indexscope.ConflictSemantics(semantics)
-	described, _ := platform.Lookup(target)
-	for _, kind := range namesakeKinds(diff, semantics, described.Comparison.RoutineNamesFold) {
+	for _, kind := range namesakeKinds(diff, semantics, target) {
 		if err := refuseNamesakes(kind, target, unanswered); err != nil {
 			return err
 		}
@@ -165,9 +164,11 @@ type namesakeKind struct {
 
 // namesakeKinds lists, for each kind of object a schema holds by name, the
 // objects of it the diff creates and drops. A function and a procedure are one
-// kind, because on SQL Server they share one namespace. routinesFold says the
-// target folds the case of a routine name.
-func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, routinesFold bool) []namesakeKind {
+// kind, because on SQL Server they share one namespace. A routine name is
+// keyed by the routine rule of the target's descriptor where it states one.
+func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, target string) []namesakeKind {
+	described, _ := platform.Lookup(target)
+	routinesFold := described.Comparison.RoutineNamesFold
 	schemaScoped := func(noun string, created, dropped []string) namesakeKind {
 		return namesakeKind{
 			created: schemaScopedNames(noun, created, semantics),

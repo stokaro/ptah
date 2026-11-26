@@ -45,7 +45,7 @@ func (s collation) ResolveIdentifierSemantics(_ context.Context, names []string)
 		}
 		return name
 	}
-	byClass := map[string]string{}
+	byClass := make(map[string]string)
 	for _, name := range names {
 		if current, found := byClass[class(name)]; !found || name < current {
 			byClass[class(name)] = name
