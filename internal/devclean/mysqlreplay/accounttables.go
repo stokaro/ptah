@@ -59,8 +59,14 @@ func accountTableOperation(tokens []lexer.Token, database string) string {
 
 // accountTable names target, a table as a statement names it, as
 // database.table where it is one of [accountTables], and returns "" for any
-// other table. Names are compared in either case, as a server whose
-// lower_case_table_names is set compares them.
+// other table. Names are compared lowercased by [strings.ToLower], as a
+// server whose lower_case_table_names is set lowercases them to find the
+// table: measured on MySQL 26.10.0 and MariaDB 12.3.3 with
+// --lower-case-table-names=1, global_priv and tables_priv spelled with a
+// dotted capital I (U+0130) are the account tables, and user spelled with a
+// long s (U+017F) and global_priv with a dotless i (U+0131) are tables that
+// do not exist (1146). [strings.EqualFold] reads the dotted capital I and the
+// long s the other way.
 func accountTable(target []string, database string) string {
 	schema, table := database, ""
 	switch len(target) {
@@ -71,8 +77,7 @@ func accountTable(target []string, database string) string {
 	default:
 		return ""
 	}
-	if !strings.EqualFold(schema, "mysql") ||
-		!slices.ContainsFunc(accountTables, func(name string) bool { return strings.EqualFold(name, table) }) {
+	if strings.ToLower(schema) != "mysql" || !slices.Contains(accountTables, strings.ToLower(table)) {
 		return ""
 	}
 	return schema + "." + table

@@ -34,6 +34,16 @@ var accountTableStatements = []struct {
 	{name: "joined in a multi-table UPDATE", statement: "UPDATE ptah_dev.t JOIN mysql.user AS u ON u.User = t.name SET u.account_locked = 'Y'", operation: `write to account table "mysql.user"`},
 	{name: "inside SET STATEMENT", statement: "SET STATEMENT max_statement_time = 1 FOR DELETE FROM mysql.user", operation: `write to account table "mysql.user"`},
 	{name: "view over one", statement: "CREATE VIEW ptah_dev.accounts AS SELECT * FROM mysql.user", operation: `view "ptah_dev.accounts" over account table "mysql.user"`},
+
+	// A server whose lower_case_table_names is set lowercases a name by its
+	// Unicode simple mapping, so a dotted capital I (U+0130) is i.
+	{name: "tables_priv with a dotted capital I", statement: "DELETE FROM mysql.tables_prİv", operation: `write to account table "mysql.tables_prİv"`},
+	{name: "columns_priv with a dotted capital I", statement: "DELETE FROM mysql.columns_prİv", operation: `write to account table "mysql.columns_prİv"`},
+	{name: "procs_priv with a dotted capital I", statement: "DELETE FROM mysql.procs_prİv", operation: `write to account table "mysql.procs_prİv"`},
+	{name: "proxies_priv with a dotted capital I", statement: "DELETE FROM mysql.proxİes_priv", operation: `write to account table "mysql.proxİes_priv"`},
+	{name: "password_history with a dotted capital I", statement: "DELETE FROM mysql.password_hİstory", operation: `write to account table "mysql.password_hİstory"`},
+	{name: "global_priv with a dotted capital I", statement: "DELETE FROM mysql.global_prİv", operation: `write to account table "mysql.global_prİv"`},
+	{name: "roles_mapping with a dotted capital I", statement: "DELETE FROM mysql.roles_mappİng", operation: `write to account table "mysql.roles_mappİng"`},
 }
 
 // TestGuard_AccountTable_FailurePath pins that a write to an account table
@@ -69,8 +79,12 @@ func TestGuard_AccountTable_FailurePathUnqualified(t *testing.T) {
 
 // accountTableControls are the controls for accountTableStatements: a table
 // of the mysql schema that holds no account, a table of the same name in
-// another database, and a read of an account table. Each is lifted where it
-// is lifted without the rule.
+// another database, a read of an account table, and names the server does
+// not lowercase to an account table's: a long s (U+017F) and a dotless i
+// (U+0131) stay what they are, and the table or database does not exist
+// (1146 or 1049 on MySQL 26.10.0 and MariaDB 12.3.3 with
+// --lower-case-table-names=1). Each is lifted where it is lifted without the
+// rule.
 var accountTableControls = []struct {
 	name, statement string
 }{
@@ -79,6 +93,9 @@ var accountTableControls = []struct {
 	{name: "unqualified table of the same name", statement: "UPDATE user SET name = 'x'"},
 	{name: "account table read", statement: "SELECT User FROM mysql.user"},
 	{name: "account table read into the dev database", statement: "INSERT INTO ptah_dev.accounts SELECT User FROM mysql.user"},
+	{name: "user with a long s", statement: "DELETE FROM mysql.uſer"},
+	{name: "schema with a long s", statement: "DELETE FROM myſql.user"},
+	{name: "global_priv with a dotless i", statement: "UPDATE mysql.global_prıv SET Priv = '{}'"},
 }
 
 func TestGuard_AccountTable_HappyPath(t *testing.T) {

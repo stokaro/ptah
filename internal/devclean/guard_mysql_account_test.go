@@ -17,7 +17,7 @@ import (
 // connects as, and accountRemedy is the one remedy its refusal ends with.
 const (
 	reachesTheAccount = " that reaches the account the run connects as"
-	accountRemedy     = "; connect the dev URL as an account the history does not name"
+	accountRemedy     = "; connect as an account the history does not name"
 )
 
 // currentAccountStatements reach the account the run connects as by a

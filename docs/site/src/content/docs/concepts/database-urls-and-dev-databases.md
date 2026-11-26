@@ -409,13 +409,18 @@ proven to stay inside the disposable realm:
   account or a role it holds, and so is a `GRANT` that gives the account a
   password, a TLS requirement or a resource limit. `CREATE USER`,
   `CREATE ROLE` and `GRANT` are refused for an account that a new connection
-  would match first: the same user, or the anonymous user, on a narrower host,
-  or on a network written as `192.168.0.0/255.255.0.0` or `192.168.0.0/16`,
-  which MySQL tries before a host pattern or a name. The account is named by
+  would match first: the same user, or the anonymous user, on a narrower host;
+  on an address, when the session's host is a name or a pattern with a letter
+  in it, since the guard cannot know which address that name stands for; or on
+  a network written as `192.168.0.0/255.255.0.0` or `192.168.0.0/16`, which
+  MySQL tries before a host pattern or a name. The account is named by
   `CURRENT_USER`, `CURRENT_USER()`, `USER()`, `CURRENT_ROLE` or `PUBLIC`, or
   by its user and host in any quoting. A `DROP USER` or a `REVOKE` names one
   account, so `'app'@'%'` there is not `'app'@'localhost'`. User names compare
-  exactly, and host names in either case, after the trimming each server does.
+  exactly, after the trimming each server does. Host names compare as the
+  server lowercases them: a dotted capital I (`İ`) is `i` and a Kelvin sign
+  (`K`) is `k` on every server, and MariaDB 11.8 and 12.3 also read a long
+  s (`ſ`) as `s` and a dotless i (`ı`) as `i`.
   MySQL trims spaces, tabs, line feeds, vertical tabs, form feeds and carriage
   returns at both ends of a user, host or role name, so `'app '@'% '` names
   `app@%`. MariaDB trims the spaces at the end of a name when it writes its
@@ -424,7 +429,9 @@ proven to stay inside the disposable realm:
   either reading names the account. A write to a table of the `mysql` schema
   that holds accounts or privileges, such as `mysql.user`, `mysql.db` or
   MariaDB's `mysql.global_priv`, is refused in the same way, and so is a view
-  over one: the server reads the write as a change to its accounts once it
+  over one. Its name is lowercased as a server with `lower_case_table_names`
+  set lowercases it, so `mysql.global_prİv` is that table, and
+  `mysql.uſer` is a table that does not exist: the server reads the write as a change to its accounts once it
   reloads them, which MySQL does after any account statement that fails. The
   guard also reads the statements of a routine, trigger or event body, and
   refuses the `CREATE` or `ALTER` that writes one of these refusals into a
@@ -692,7 +699,11 @@ accepts:
   `LOAD XML`, `IMPORT TABLE`, `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a
   client character set outside the UTF-8 family, set by the history or by the
   dev session, but no statement that reaches the account the run connects as
-  and no write to an account table of the `mysql` schema;
+  and no write to an account table of the `mysql` schema. A write through a
+  `FEDERATED`, `CONNECT` or `SPIDER` table whose connection names an account
+  table is not seen (stokaro/ptah#6705). The official MySQL and MariaDB images
+  enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
+  refused;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
   logins, credentials, synonyms, a target in another database, `BACKUP`,
   `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;

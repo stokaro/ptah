@@ -53,7 +53,7 @@ func refusal(dialect, operation string) string {
 // ends the refusal of one whose accounts the guard cannot tell from it.
 const (
 	confined   = " because its effects cannot be confined to the disposable database realm"
-	reaches    = " that reaches the account the run connects as" + confined + "; connect the dev URL as an account the history does not name"
+	reaches    = " that reaches the account the run connects as" + confined + "; connect as an account the history does not name"
 	unreadable = " whose accounts cannot be read" + confined
 )
 

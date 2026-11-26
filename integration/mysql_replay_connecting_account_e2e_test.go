@@ -133,7 +133,7 @@ func (fx connectingAccountFixture) validate(c *qt.C, history string) (string, er
 func TestMigrationsValidateRefusesTheConnectingAccountE2E(t *testing.T) {
 	const (
 		reaches = " that reaches the account the run connects as because its effects cannot be confined to the " +
-			"disposable database realm; connect the dev URL as an account the history does not name"
+			"disposable database realm; connect as an account the history does not name"
 		confined = " because its effects cannot be confined to the disposable database realm"
 	)
 	histories := []struct {
@@ -195,4 +195,39 @@ func TestMigrationsValidateReplaysAnotherAccountE2E(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestMigrationsValidateRefusesAFoldedAccountTableE2E replays a write to
+// global_priv spelled with a dotted capital I (U+0130) on a MariaDB server
+// started with --lower-case-table-names=1, which lowercases the name to the
+// account table and, unguarded, locks the account at the next reload of the
+// grant tables. The guard refuses it, and the account still logs in and works
+// after the reload. The control spells the table with a dotless i (U+0131),
+// which the server does not lowercase to it: the guard replays the write, and
+// the server refuses it as a table that does not exist.
+func TestMigrationsValidateRefusesAFoldedAccountTableE2E(t *testing.T) {
+	const lock = "UPDATE mysql.global_pr%sv SET Priv = JSON_SET(Priv, '$.account_locked', true) WHERE User = '%s'"
+
+	t.Run("dotted capital I", func(t *testing.T) {
+		c := qt.New(t)
+		fx := newConnectingAccountFixture(c, dbtarget.MariaDBFoldedServer, "mariadb")
+		history := fmt.Sprintf(lock, "\u0130", fx.account)
+
+		out, err := fx.validate(c, history)
+
+		c.Assert(err, qt.ErrorMatches, `(?s).* migration replay rejects `+
+			regexp.QuoteMeta("write to account table \"mysql.global_pr\u0130v\" because its effects cannot be confined to the disposable database realm")+
+			`\nSQL: `+regexp.QuoteMeta(history), qt.Commentf("%s", out))
+		fx.works(c)
+	})
+
+	t.Run("dotless i", func(t *testing.T) {
+		c := qt.New(t)
+		fx := newConnectingAccountFixture(c, dbtarget.MariaDBFoldedServer, "mariadb")
+
+		out, err := fx.validate(c, fmt.Sprintf(lock, "\u0131", fx.account))
+
+		c.Assert(err, qt.ErrorMatches, `(?s).*Error 1146 \(42S02\): Table 'mysql\.global_pr\x{0131}v' doesn't exist.*`, qt.Commentf("%s", out))
+		fx.works(c)
+	})
 }

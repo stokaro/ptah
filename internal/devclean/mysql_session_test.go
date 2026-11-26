@@ -31,11 +31,12 @@ func (replaySessionRow) Scan(dest ...any) error {
 func (replaySessionRow) Err() error { return nil }
 
 // forSession is guard bound to replaySession, as the guard of a run is bound
-// to the session it replays on. A guard that read no session refuses every
-// MySQL or MariaDB statement that spells out an account.
+// to the session it replays on; see session_binding_internal_test.go. A
+// guard that read no session refuses every MySQL or MariaDB statement that
+// spells out an account.
 func forSession(c *qt.C, guard *devclean.ReplayGuard) *devclean.ReplayGuard {
 	c.Helper()
-	bound, err := guard.ForSession(c.Context(), replaySession{})
+	bound, err := guard.BindSession(c.Context(), replaySession{})
 	c.Assert(err, qt.IsNil)
 	return bound
 }

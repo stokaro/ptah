@@ -13,7 +13,10 @@ import (
 // 192.168.215.14, each of the first three refuses the next login of
 // dev@'192.168.215.%', and the fourth does not: a pattern does not say which
 // addresses the session's connections come from, so the guard refuses every
-// network against one.
+// network against one. A pattern with a letter in it matches the name the
+// server resolves an address to, which the guard cannot know either, so an
+// account on an address is refused against it too; a host the guard cannot
+// read as an address, such as 10.0.0.01, is a name.
 var networkSessionStatements = []struct {
 	name, session, statement, operation string
 }{
@@ -33,6 +36,11 @@ var networkSessionStatements = []struct {
 	{name: "netmask holding a mapped address", session: "dev@::ffff:192.168.215.3", statement: "CREATE USER 'dev'@'192.168.0.0/255.255.0.0'", operation: "CREATE USER"},
 	{name: "address on the session's network", session: "dev@10.0.0.0/255.0.0.0", statement: "CREATE USER 'dev'@'10.1.2.3'", operation: "CREATE USER"},
 	{name: "network inside the session's network", session: "dev@10.0.0.0/255.0.0.0", statement: "CREATE USER 'dev'@'10.1.0.0/16'", operation: "CREATE USER"},
+	{name: "address ahead of a name pattern", session: "dev@%.example.com", statement: "CREATE USER 'dev'@'192.168.215.1'", operation: "CREATE USER"},
+	{name: "address granted ahead of a name pattern", session: "dev@%.example.com", statement: "GRANT USAGE ON *.* TO 'dev'@'10.0.0.1'", operation: "GRANT"},
+	{name: "anonymous account on an address ahead of a name pattern", session: "dev@%.example.com", statement: "CREATE USER ''@'192.168.215.1'", operation: "CREATE USER"},
+	{name: "netmask ahead of a name pattern", session: "dev@%.example.com", statement: "CREATE USER 'dev'@'10.0.0.0/255.0.0.0'", operation: "CREATE USER"},
+	{name: "address ahead of a name with no letter", session: "dev@10.0.0.01", statement: "CREATE USER 'dev'@'10.0.0.1'", operation: "CREATE USER"},
 }
 
 func TestGuard_ConnectingAccount_FailurePathNetwork(t *testing.T) {
@@ -66,6 +74,8 @@ var networkSessionControls = []struct {
 	{name: "network address with bits outside its prefix length", session: "dev@192.168.215.3", statement: "CREATE USER 'dev'@'192.168.215.77/24'"},
 	{name: "pattern that reads as a zoned address", session: "dev@db.example", statement: "CREATE USER 'dev'@'fe80::%1'"},
 	{name: "address the pattern does not match", session: "dev@192.168.215.%", statement: "CREATE USER 'dev'@'10.1.2.3'"},
+	{name: "address a numeric pattern does not match", session: "dev@192.168.215.%", statement: "CREATE USER 'dev'@'10.0.0.1'"},
+	{name: "another user on an address beside a name pattern", session: "dev@%.example.com", statement: "CREATE USER 'other'@'192.168.215.1'"},
 	{name: "address off the session's network", session: "dev@10.0.0.0/255.0.0.0", statement: "CREATE USER 'dev'@'11.1.2.3'"},
 	{name: "name beside the session's network", session: "dev@10.0.0.0/255.0.0.0", statement: "CREATE USER 'dev'@'db.example'"},
 	{name: "another user on a network", session: "dev@192.168.215.%", statement: "CREATE USER 'other'@'192.168.0.0/16'"},
@@ -135,5 +145,60 @@ func TestGuard_ConnectingAccount_FailurePathEmptyHost(t *testing.T) {
 
 			c.Assert(guard.Validate("DROP USER 'dev'@''", liftingScopes[0].scope), qt.ErrorMatches, refusal(dialect, "DROP USER"+reaches))
 		})
+	}
+}
+
+// foldedHostStatements spell the session's host with letters a server folds
+// onto its own. MySQL 8.4.13 and 26.10.0 and MariaDB 10.11.19 lowercase a
+// host by the Unicode simple mapping, so a dotted capital I (U+0130) is i and
+// a Kelvin sign (U+212A) is k. MariaDB 11.8.9 and 12.3.3 also lowercase a
+// letter's uppercase, so a long s (U+017F) is s and a dotless i (U+0131) is i.
+// Measured with DROP USER on each, which drops the account of the session's
+// spelling. A pattern covers a host by the same readings.
+var foldedHostStatements = []struct {
+	name, session, statement, operation string
+}{
+	{name: "dotted capital I", session: "dev@ci-host", statement: "DROP USER 'dev'@'Cİ-HOST'", operation: "DROP USER"},
+	{name: "Kelvin sign", session: "dev@k-host", statement: "DROP USER 'dev'@'K-HOST'", operation: "DROP USER"},
+	{name: "long s", session: "dev@ci-host", statement: "DROP USER 'dev'@'ci-hoſt'", operation: "DROP USER"},
+	{name: "dotless i", session: "dev@ci-host", statement: "REVOKE ALL ON *.* FROM 'dev'@'cı-host'", operation: "REVOKE"},
+	{name: "dotted capital I under a pattern", session: "dev@ci-%", statement: "CREATE USER 'dev'@'Cİ-HOST'", operation: "CREATE USER"},
+	{name: "dotless i under a pattern", session: "dev@ci-%", statement: "CREATE USER 'dev'@'cı-host'", operation: "CREATE USER"},
+}
+
+func TestGuard_ConnectingAccount_FailurePathFoldedHost(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range foldedHostStatements {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				guard := boundGuard(c, dialect, utf8Session(test.session, "[]"))
+
+				c.Assert(guard.Validate(test.statement, liftingScopes[0].scope), qt.ErrorMatches, refusal(dialect, test.operation+reaches))
+			})
+		}
+	}
+}
+
+// foldedHostControls spell a host with letters no server folds onto the
+// session's: an accented letter and a full-width letter. Measured with DROP
+// USER on the same servers, which refuse each (1396).
+var foldedHostControls = []struct {
+	name, session, statement string
+}{
+	{name: "accented letter", session: "dev@ci-host", statement: "DROP USER 'dev'@'cí-host'"},
+	{name: "full-width letter", session: "dev@ci-host", statement: "DROP USER 'dev'@'ｃi-host'"},
+	{name: "accented letter under a pattern", session: "dev@ci-%", statement: "CREATE USER 'dev'@'cí-host'"},
+}
+
+func TestGuard_AnotherAccount_HappyPathFoldedHost(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range foldedHostControls {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				guard := boundGuard(c, dialect, utf8Session(test.session, "[]"))
+
+				c.Assert(guard.Validate(test.statement, liftingScopes[0].scope), qt.IsNil)
+			})
+		}
 	}
 }

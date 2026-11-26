@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
@@ -69,7 +70,7 @@ const unreadOperation = " whose accounts cannot be read"
 // reachRemedy ends the refusal of a statement that reaches the account the
 // run connects as. Neither owning the server nor trust lifts that refusal,
 // and the same statement replays when the run connects as another account.
-const reachRemedy = "connect the dev URL as an account the history does not name"
+const reachRemedy = "connect as an account the history does not name"
 
 // refuseAccountOperation is the refusal of operation, which
 // [sessionAccount.operation] names, with [reachRemedy] at the end of a
@@ -424,9 +425,25 @@ func (s sessionAccount) names(named namedAccount) bool {
 }
 
 // isOrHolds reports whether name is the session's account, the user name
-// compared exactly and the host in either case, or a role the account holds.
+// compared exactly and the host as [foldHost] reads it, or a role the
+// account holds.
 func (s sessionAccount) isOrHolds(name accountName) bool {
-	return name.user == s.user && strings.EqualFold(name.host, s.host) || slices.Contains(s.roles, name.user)
+	return name.user == s.user && foldHost(name.host) == foldHost(s.host) || slices.Contains(s.roles, name.user)
+}
+
+// foldHost is host as a server folds it to find an account: each character
+// lowercased after it is uppercased, by the Unicode simple mappings.
+// Measured with DROP USER, MySQL 8.4.13 and 26.10.0 and MariaDB 10.11.19
+// lowercase a host, so a dotted capital I (U+0130) for i and a Kelvin sign
+// (U+212A) for k reach dev@ci-host and dev@k-host, and MariaDB 11.8.9 and
+// 12.3.3 also lowercase a letter's uppercase, so a long s (U+017F) and a
+// dotless i (U+0131) reach them too. An accented letter and a full-width
+// letter reach neither. Lowercasing the uppercase equates every host that
+// lowercasing alone equates, so the one reading answers for each server and
+// errs toward refusal on the others. [strings.EqualFold] keeps the dotted
+// capital I and the dotless i apart from i.
+func foldHost(host string) string {
+	return strings.ToLower(strings.ToUpper(host))
 }
 
 // shadows reports whether a new connection of the run can be matched to
@@ -470,9 +487,11 @@ func (s sessionAccount) namesOrShadows(named namedAccount) bool {
 // 192.168.0.0/16, as an address. So an account on such a network takes a
 // connection from it ahead of the session's pattern, and an account on an
 // address takes one ahead of the session's name, whatever the name resolves
-// to. Against a session whose host is an address, or a network, the guard
-// compares the addresses. Anywhere else a host covers what its pattern
-// matches.
+// to. A pattern with a letter in it matches the name the server resolves an
+// address to, which the guard cannot know, so an account on an address takes
+// a connection ahead of it too. Against a session whose host is an address,
+// or a network, the guard compares the addresses. Anywhere else a host covers
+// what its pattern matches.
 func hostShadows(session, host string) bool {
 	sessionAddress, sessionIsAddress := literalAddress(session)
 	hostAddress, hostIsAddress := literalAddress(host)
@@ -483,7 +502,7 @@ func hostShadows(session, host string) bool {
 		return true
 	case strings.Contains(session, "/"):
 		return hostIsAddress && networkContains(session, hostAddress)
-	case hostIsAddress && !sessionIsAddress && !strings.ContainsAny(session, "%_"):
+	case hostIsAddress && !sessionIsAddress && (!strings.ContainsAny(session, "%_") || strings.ContainsFunc(session, unicode.IsLetter)):
 		return true
 	default:
 		return hostCovers(session, host)
@@ -538,10 +557,10 @@ func networkContains(network string, address netip.Addr) bool {
 }
 
 // hostCovers reports whether pattern, read as the server reads the host of
-// an account, matches host: ASCII letters in either case, % for any run of
-// characters and _ for one character. A host covers itself.
+// an account, matches host: letters as [foldHost] folds them, % for any run
+// of characters and _ for one character. A host covers itself.
 func hostCovers(pattern, host string) bool {
-	return wildcardMatch([]rune(lowerASCII(pattern)), []rune(lowerASCII(host)))
+	return wildcardMatch([]rune(foldHost(pattern)), []rune(foldHost(host)))
 }
 
 // wildcardMatch reports whether pattern matches text, with % matching any
@@ -569,18 +588,6 @@ func wildcardMatch(pattern, text []rune) bool {
 		p++
 	}
 	return p == len(pattern)
-}
-
-// lowerASCII is s with the letters A to Z in lower case and every other byte
-// as written. Unicode case folding would read the Kelvin sign as k, which the
-// server does not.
-func lowerASCII(s string) string {
-	return strings.Map(func(r rune) rune {
-		if 'A' <= r && r <= 'Z' {
-			return r + ('a' - 'A')
-		}
-		return r
-	}, s)
 }
 
 // accountText is the user or host a token spells, as a session that reads by
