@@ -3,9 +3,11 @@
 package integration_test
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -193,41 +195,90 @@ func TestSchemaSecurityReachE2E_MySQLFamily(t *testing.T) {
 
 // TestSchemaSecurityReachE2E_MySQLFamilyPatternGrants grants on database name
 // patterns and reads back how much of the database each role reaches. A
-// pattern that reaches the database counts as a grant on it does, for reading
-// and, through a "_" that stands for another character, for writing, and the
-// finding names the grant, which the database's own grants do not show. A
-// pattern that needs other characters reaches nothing, and neither does the
-// name with that "_" escaped, which matches only a "_" where the database has
-// an "x". A session of each role agrees: it reads or writes where a finding
-// says it reaches, and is refused where none does.
+// session of each role says what the server applies: the expected findings
+// are built from what it reads and writes in t1 and t2, and the test states
+// only which grant a finding names when one is due.
+//
+// The server applies one database-level row of all a session holds, so a
+// pattern counts only where no other row wins. The rows cover a pattern that
+// reaches the database for reading and, through a "_" that stands for another
+// character, for writing; patterns that need other characters, or the "_"
+// escaped; the database's own row beside a pattern, holding INSERT or only
+// EVENT, which shadows the pattern; a role whose two granted roles hold the
+// pattern and the own row; and two patterns against each other, where MySQL
+// applies the one first in byte order and MariaDB the one that matches fewer
+// names, so the two engines answer differently.
 func TestSchemaSecurityReachE2E_MySQLFamilyPatternGrants(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
-			run := newPatternReachRun(c, engine.admin)
-			reader, writer, escaped, other := run.role(c, "pt"), run.role(c, "pw"), run.role(c, "pe"), run.role(c, "pn")
-			run.exec(c,
-				fmt.Sprintf("GRANT SELECT ON `%sab%%`.* TO %s", run.prefix, reader),
-				fmt.Sprintf("GRANT INSERT ON `%sab_c`.* TO %s", run.prefix, writer),
-				fmt.Sprintf("GRANT SELECT ON `%sab\\_c`.* TO %s", run.prefix, escaped),
-				fmt.Sprintf("GRANT SELECT ON `%sxy%%`.* TO %s", run.prefix, other),
-			)
+			run := newPatternReachRun(c, engine.admin, "abxc")
+			roles := []patternReachRole{
+				{short: "pt", grants: []string{"SELECT ON `%sab%%`.*"}, readSources: "[SELECT ON `prab%`.* held by pt]"},
+				{short: "pw", grants: []string{"INSERT ON `%sab_c`.*"}, writeSources: "[INSERT ON `prab_c`.* held by pw]"},
+				{short: "pe", grants: []string{"SELECT ON `%sab\\_c`.*"}, readSources: "[SELECT ON `prab\\_c`.* held by pe]"},
+				{short: "pn", grants: []string{"SELECT ON `%sxy%%`.*"}, readSources: "[SELECT ON `prxy%`.* held by pn]"},
+				{
+					short: "qs1", grants: []string{"SELECT ON `%sab%%`.*", "INSERT ON `%sabxc`.*"},
+					readSources: "[SELECT ON `prab%`.* held by qs1]", writeSources: "[]",
+				},
+				{short: "qe", grants: []string{"SELECT ON `%sab%%`.*", "EVENT ON `%sabxc`.*"}, readSources: "[SELECT ON `prab%`.* held by qe]"},
+				{short: "qr1", grants: []string{"SELECT ON `%sab%%`.*"}, readSources: "[SELECT ON `prab%`.* held by qr1]"},
+				{short: "qr2", grants: []string{"INSERT ON `%sabxc`.*"}, writeSources: "[]"},
+				{
+					short: "qm", members: []string{"qr1", "qr2"}, through: "[qr1 qr2]",
+					readSources: "[SELECT ON `prab%`.* held by qr1]", writeSources: "[]",
+				},
+				{
+					short: "pp1", grants: []string{"SELECT ON `%sa%%`.*", "INSERT ON `%sab%%`.*"},
+					readSources: "[SELECT ON `pra%`.* held by pp1]", writeSources: "[INSERT ON `prab%`.* held by pp1]",
+				},
+				{
+					short: "pp2", grants: []string{"SELECT ON `%sab%%c`.*", "INSERT ON `%sa_x%%`.*"},
+					readSources: "[SELECT ON `prab%c`.* held by pp2]", writeSources: "[INSERT ON `pra_x%`.* held by pp2]",
+				},
+			}
+			run.grant(c, roles)
 
-			c.Assert(run.findings(c), qt.DeepEquals, []string{
-				"roles/read-reach error pt 2/2 through=[] sources=[SELECT ON `prab%`.* held by pt]",
-				"roles/write-reach error pw 2/2 through=[] sources=[INSERT ON `prab_c`.* held by pw]",
-			})
-			_, err := run.session(c, reader).ExecContext(c.Context(), "SELECT id FROM "+run.table())
-			c.Assert(err, qt.IsNil)
-			_, err = run.session(c, writer).ExecContext(c.Context(), "INSERT INTO "+run.table()+" VALUES (1)")
-			c.Assert(err, qt.IsNil)
-			var refused *mysqldriver.MySQLError
-			_, err = run.session(c, escaped).ExecContext(c.Context(), "SELECT id FROM "+run.table())
-			c.Assert(err, qt.ErrorAs, &refused)
-			c.Assert(refused.Number, qt.Equals, uint16(errTableAccessDenied))
-			_, err = run.session(c, other).ExecContext(c.Context(), "SELECT id FROM "+run.table())
-			c.Assert(err, qt.ErrorAs, &refused)
-			c.Assert(refused.Number, qt.Equals, uint16(errTableAccessDenied))
+			got := run.findings(c)
+			slices.Sort(got)
+
+			c.Assert(got, qt.DeepEquals, run.expectedReach(c, roles))
+			c.Assert(got, qt.Not(qt.HasLen), 0)
+		})
+	}
+}
+
+// TestSchemaSecurityReachE2E_MySQLFamilyWildcardDatabaseName reads a database
+// whose name holds "_", so a grant on the database's own name is a pattern to
+// the server too, and the one-row choice decides whether it applies: MySQL
+// tries `pra%` first, byte for byte, and MariaDB the own name, which matches
+// fewer names. The name with the "_" escaped matches the database alone and
+// wins on both. As in the test above, the expected findings are built from
+// what each role's session reads and writes.
+func TestSchemaSecurityReachE2E_MySQLFamilyWildcardDatabaseName(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newPatternReachRun(c, engine.admin, "a_xc")
+			roles := []patternReachRole{
+				{
+					short: "wu1", grants: []string{"SELECT ON `%sa%%`.*", "INSERT ON `%sa_xc`.*"},
+					readSources: "[SELECT ON `pra%`.* held by wu1]", writeSources: "[]",
+				},
+				{short: "wu2", grants: []string{"INSERT ON `%sa_xc`.*"}, writeSources: "[]"},
+				{
+					short: "wu3", grants: []string{"SELECT ON `%sa\\_xc`.*", "INSERT ON `%sa_xc`.*"},
+					readSources: "[SELECT ON `pra\\_xc`.* held by wu3]", writeSources: "[]",
+				},
+			}
+			run.grant(c, roles)
+
+			got := run.findings(c)
+			slices.Sort(got)
+
+			c.Assert(got, qt.DeepEquals, run.expectedReach(c, roles))
+			c.Assert(got, qt.Not(qt.HasLen), 0)
 		})
 	}
 }
@@ -235,7 +286,7 @@ func TestSchemaSecurityReachE2E_MySQLFamilyPatternGrants(t *testing.T) {
 // TestSchemaSecurityReachE2E_MySQLPatternGrantThroughAMembership reads a role
 // granted a role that holds a grant on a database name pattern: it reaches what
 // the pattern reaches, through the role, and the finding names the grant and
-// the role that holds it.
+// the role that holds it. A session of the member says it reaches it.
 //
 // MariaDB is left out. Its privilege views list what a role holds through a
 // granted role as the role's own row, so the read reports the member as
@@ -245,28 +296,42 @@ func TestSchemaSecurityReachE2E_MySQLFamilyPatternGrants(t *testing.T) {
 // counts the same relations either way.
 func TestSchemaSecurityReachE2E_MySQLPatternGrantThroughAMembership(t *testing.T) {
 	c := qt.New(t)
-	run := newPatternReachRun(c, dbtarget.MySQLAdmin)
-	reader, member := run.role(c, "pt"), run.role(c, "pm")
-	run.exec(c,
-		fmt.Sprintf("GRANT SELECT ON `%sab%%`.* TO %s", run.prefix, reader),
-		fmt.Sprintf("GRANT %s TO %s", reader, member),
-	)
+	run := newPatternReachRun(c, dbtarget.MySQLAdmin, "abxc")
+	roles := []patternReachRole{
+		{short: "pt", grants: []string{"SELECT ON `%sab%%`.*"}, readSources: "[SELECT ON `prab%`.* held by pt]"},
+		{short: "pm", members: []string{"pt"}, through: "[pt]", readSources: "[SELECT ON `prab%`.* held by pt]"},
+	}
+	run.grant(c, roles)
 
-	c.Assert(run.findings(c), qt.DeepEquals, []string{
-		"roles/read-reach error pm 2/2 through=[pt] sources=[SELECT ON `prab%`.* held by pt]",
-		"roles/read-reach error pt 2/2 through=[] sources=[SELECT ON `prab%`.* held by pt]",
-	})
-	_, err := run.session(c, member).ExecContext(c.Context(), "SELECT id FROM "+run.table())
-	c.Assert(err, qt.IsNil)
+	got := run.findings(c)
+	slices.Sort(got)
+
+	c.Assert(got, qt.DeepEquals, run.expectedReach(c, roles))
+	c.Assert(got, qt.HasLen, 2)
 }
 
 // errTableAccessDenied is the error a server answers a statement on a table
 // the session holds no privilege on with: ER_TABLEACCESS_DENIED_ERROR.
 const errTableAccessDenied = 1142
 
-// patternReachRun is a database on one server whose name ends in "abxc",
-// holding tables t1 and t2, and the suffix that every role and pattern of the
-// test carries. The patterns begin with prefix.
+// patternReachRole is a role of a pattern reach test: the grants it holds,
+// each a privilege and its object with %s where the database's prefix goes,
+// and the roles granted to it, named as the test names them. through and the
+// sources are what a finding states when the role's session reaches every
+// table, under the rule the sources belong to; "[]" is the default for
+// through.
+type patternReachRole struct {
+	short                     string
+	grants, members           []string
+	through                   string
+	readSources, writeSources string
+}
+
+// patternReachRun is a database on one server, holding tables t1 and t2, and
+// the suffix that every role and pattern of the test carries. The patterns
+// and the database's name begin with prefix, which holds no "%" or "_", so a
+// grant on the database's own name is a pattern to the server only where the
+// rest of the name makes it one.
 type patternReachRun struct {
 	admin    *sql.DB
 	engine   dbtarget.Engine
@@ -275,16 +340,16 @@ type patternReachRun struct {
 	database string
 }
 
-// newPatternReachRun creates the database on engine's server. It is dropped
-// when the test ends.
-func newPatternReachRun(c *qt.C, engine dbtarget.Engine) patternReachRun {
+// newPatternReachRun creates the database prefix and tail on engine's server.
+// It is dropped when the test ends.
+func newPatternReachRun(c *qt.C, engine dbtarget.Engine, tail string) patternReachRun {
 	c.Helper()
 	admin, err := sql.Open("mysql", dbtarget.DriverDSN(c, engine))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
-	suffix := fmt.Sprintf("_%d", time.Now().UnixNano())
+	suffix := fmt.Sprintf("x%d", time.Now().UnixNano())
 	run := patternReachRun{admin: admin, engine: engine, suffix: suffix, prefix: "pr" + suffix}
-	run.database = run.prefix + "abxc"
+	run.database = run.prefix + tail
 	createMySQLDatabase(c, c.Context(), admin, run.database)
 	c.Cleanup(func() { dropMySQLDatabase(c, context.Background(), admin, run.database) })
 	run.exec(c,
@@ -294,8 +359,27 @@ func newPatternReachRun(c *qt.C, engine dbtarget.Engine) patternReachRun {
 	return run
 }
 
+// grant creates each of roles and gives it its grants and its granted roles,
+// in order, so a role that others are granted comes first. FLUSH PRIVILEGES
+// follows, which MariaDB needs before a new session sees what a granted role
+// passes on.
+func (r patternReachRun) grant(c *qt.C, roles []patternReachRole) {
+	c.Helper()
+	for _, role := range roles {
+		name := r.role(c, role.short)
+		for _, grant := range role.grants {
+			r.exec(c, "GRANT "+fmt.Sprintf(grant, r.prefix)+" TO "+name)
+		}
+		for _, member := range role.members {
+			r.exec(c, "GRANT "+member+r.suffix+" TO "+name)
+		}
+	}
+	r.exec(c, "FLUSH PRIVILEGES")
+}
+
 // role creates a role named name and the suffix, and returns its name. MySQL
-// caps a role name at 32 characters, and the suffix takes 20. The role is
+// caps a role name at 32 characters, and the suffix takes 20, so the user a
+// session creates, the role's name and "_u", fits beside a name of 10. The role is
 // dropped when the test ends, and its grants with it.
 func (r patternReachRun) role(c *qt.C, name string) string {
 	c.Helper()
@@ -317,16 +401,58 @@ func (r patternReachRun) exec(c *qt.C, statements ...string) {
 	}
 }
 
-// table is t2, qualified with the database.
-func (r patternReachRun) table() string {
-	return "`" + r.database + "`.t2"
-}
-
 // findings are the reach findings `ptah schema security` reports on the
 // database about the test's roles, as [reachFindingLines] states them.
 func (r patternReachRun) findings(c *qt.C) []string {
 	c.Helper()
 	return reachFindingLines(c, replaceMySQLDatabaseName(c, dbtarget.URL(c, r.engine), r.database), r.suffix)
+}
+
+// expectedReach is the finding each role's session says is due, sorted as
+// sorted findings are: one per rule under which the session reaches both
+// tables, which is above the error threshold, and none where it reaches
+// neither. A session that reaches one table is a line no finding matches,
+// since a database-level row reaches both or neither.
+func (r patternReachRun) expectedReach(c *qt.C, roles []patternReachRole) []string {
+	c.Helper()
+	lines := make([]string, 0, 2*len(roles))
+	for _, role := range roles {
+		read, write := r.sessionReach(c, role.short+r.suffix)
+		through := cmp.Or(role.through, "[]")
+		lines = append(lines,
+			fmt.Sprintf("roles/read-reach error %s %d/2 through=%s sources=%s", role.short, read, through, role.readSources),
+			fmt.Sprintf("roles/write-reach error %s %d/2 through=%s sources=%s", role.short, write, through, role.writeSources),
+		)
+	}
+	lines = slices.DeleteFunc(lines, func(line string) bool { return strings.Contains(line, " 0/2 ") })
+	slices.Sort(lines)
+	return lines
+}
+
+// sessionReach is how many of t1 and t2 a session of role reads and how many
+// it inserts into. A statement the server refuses for want of a privilege
+// counts as not reached, and any other failure fails the test.
+func (r patternReachRun) sessionReach(c *qt.C, role string) (read, write int) {
+	c.Helper()
+	session := r.session(c, role)
+	reached := map[bool]int{true: 1}
+	for _, table := range []string{"t1", "t2"} {
+		qualified := "`" + r.database + "`." + table
+		_, err := session.ExecContext(c.Context(), "SELECT id FROM "+qualified)
+		c.Assert(err == nil || refusedForPrivilege(err), qt.IsTrue, qt.Commentf("%s reading %s: %v", role, table, err))
+		read += reached[err == nil]
+		_, err = session.ExecContext(c.Context(), "INSERT IGNORE INTO "+qualified+" VALUES (1)")
+		c.Assert(err == nil || refusedForPrivilege(err), qt.IsTrue, qt.Commentf("%s writing %s: %v", role, table, err))
+		write += reached[err == nil]
+	}
+	return read, write
+}
+
+// refusedForPrivilege reports whether err is the server refusing a statement
+// on a table for want of a privilege.
+func refusedForPrivilege(err error) bool {
+	var refused *mysqldriver.MySQLError
+	return errors.As(err, &refused) && refused.Number == errTableAccessDenied
 }
 
 // session is a session of a user role is granted to, with the role active, on

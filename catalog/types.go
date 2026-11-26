@@ -111,6 +111,14 @@ type Database struct {
 	// to measure a role's reach. Nil means the reader does not establish it,
 	// and an empty non-nil slice means it read it and found none.
 	WideAccess []WideAccess `json:"-"`
+	// SchemaGrantsInWideAccess reports a read whose WideAccess also states
+	// the access each grant on a whole schema in Grants gives, for each role
+	// the server applies it to. MySQL and MariaDB apply one database-level
+	// grant of all those a session holds, a grant on the database's own name
+	// among them, so whether a role's grant on its database reaches a member
+	// depends on the member's other grants. The security analysis then reads
+	// that access from WideAccess and leaves the schema grants in Grants out.
+	SchemaGrantsInWideAccess bool `json:"-"`
 
 	// WideGrants are the table privileges a role holds on every table, or on
 	// every table of one schema, through a grant that names no table, such as
@@ -1885,18 +1893,27 @@ type WideAccess struct {
 	// Write reports access to change the rows of every relation.
 	Write bool `json:"write,omitempty"`
 	// Source names where the access comes from, such as pg_read_all_data, or
-	// a grant in the words a REVOKE of it uses, such as "SELECT ON *.*" or
-	// "SELECT ON `ab%`.*".
+	// a grant in the words a REVOKE of it uses, such as "SELECT ON *.*",
+	// "INSERT, DELETE ON *.*" or "SELECT ON `ab%`.*". An entry is either read
+	// or write access, so a grant that gives both is two entries.
 	Source string `json:"source"`
 	// Schema is the one schema or database whose relations the access
 	// covers, in the read's spelling, such as the database a grant on a
 	// database name pattern reaches. It is empty when the access covers every
 	// relation the read describes.
 	Schema string `json:"schema,omitempty"`
+	// Subject, where set, is the one role whose reach the access counts
+	// toward, which Role's other members do not gain through it. A MySQL or
+	// MariaDB session applies one database-level row of all those its roles
+	// hold, so whether a grant on a database name pattern that Role holds
+	// reaches a member depends on the member's other rows: the read decides it
+	// for each role and states one entry per role it reaches. Every entry
+	// with a Schema has a Subject.
+	Subject string `json:"subject,omitempty"`
 	// SwitchOnly reports access Role holds only after it switches to the
 	// predefined role, which a PostgreSQL 16 membership with INHERIT FALSE
 	// states. A member of Role that can only inherit from it does not reach
-	// it.
+	// it. No read sets it on an entry with a Subject.
 	SwitchOnly bool `json:"switch_only,omitempty"`
 }
 

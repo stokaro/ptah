@@ -1536,9 +1536,13 @@ grant keeps, and names the grant: revoke it where it was granted, or grant the
 privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
 [`ptah schema security`](../../schema/security/#measure-how-much-of-the-database-a-role-reaches)
-counts the same grants toward a role's reach: a grant on a pattern that
-matches the database reaches every relation in it, and the finding names the
-grant.
+counts these grants toward a role's reach, and the finding names a pattern
+grant. The server applies one database-level row of all those that reach the
+database, so the reach counts only that row: a role holding
+``SELECT ON `d%`.*`` and `INSERT ON d2.*` writes the tables of `d2` and reads
+none of them. The refusal above counts every row that reaches the table's
+database, an outranked one included, because a revoke under it comes back once
+the row that outranks it is gone.
 
 A pattern matches a database name as the server's privilege check reads it,
 which is not how SQL `LIKE` reads it. `%` is any run of bytes and `_` is one

@@ -839,14 +839,18 @@ does not have.
 materialized views (the write rule leaves materialized views out) through its
 grants on whole relations, grants to `PUBLIC`, the roles it can use
 through membership, ownership and grants on a whole database, and through access
-no grant on a relation states. PostgreSQL reads that access as superuser and
-membership in `pg_read_all_data` or `pg_write_all_data`; MySQL and MariaDB read
-it from the privilege columns of `mysql.user`, the privileges a role holds on
-every database, and from the grants on a database name pattern that reaches the
-database, matched as the server matches them. Every other engine reports both
-rules skipped, CockroachDB and YugabyteDB included, whose `admin` and
-`yb_superuser` roles give the same access and are not read, because a reach
-measured without that access reports such a role as reaching nothing.
+no grant on a relation states. The engines read that access this way:
+
+- PostgreSQL reads superuser and membership in `pg_read_all_data` or
+  `pg_write_all_data`.
+- MySQL and MariaDB read the privilege columns of `mysql.user`, the privileges a
+  role holds on every database, and the database-level grants. Of those, each
+  role counts only the one row the server applies to a session with that role
+  active, a pattern that reaches the database included.
+- Every other engine reports both rules skipped, CockroachDB and YugabyteDB
+  included, whose `admin` and `yb_superuser` roles give the same access and are
+  not read, because a reach measured without that access reports such a role
+  as reaching nothing.
 
 `OWN02` reports one finding per object whose owner revoked from itself privileges
 PostgreSQL gives an owner by default, naming the owner and what it lacks. It reads

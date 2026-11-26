@@ -44,8 +44,11 @@ func wideGrantsOf(patterns [][]driver.Value, patternErr error, next dbtest.Query
 
 // TestReader_ReadsGrantsOnADatabasePattern reports a grant on a database name
 // pattern that reaches the database as a wide grant on it, beside the grants
-// on every database. A row the pattern does not reach, and a privilege no
-// grant on a table names, are left out. A read of the pattern grants that the
+// on every database, even where a row the server applies before it shadows
+// it, since a revoke under it would come back once that row is gone. The
+// database's own row is a grant on the database, not a wide one. A row the
+// pattern does not reach, and a privilege no grant on a table names, are left
+// out. A read of the pattern grants that the
 // server refuses leaves the grants on every database and marks the wide grants
 // partial: a revoke under a pattern grant the read could not see is then
 // planned, and the server answers for the role.
@@ -77,6 +80,14 @@ func TestReader_ReadsGrantsOnADatabasePattern(t *testing.T) {
 			want: []catalog.WideGrant{
 				everywhere,
 				{Role: "lc2_r", Privilege: "UPDATE", Grant: "UPDATE ON `R\\_LC`.*", Schema: "R_LC"},
+			},
+		},
+		{
+			name:     "the database's own row beside a pattern it outranks",
+			patterns: [][]driver.Value{{"lc2_r", "R_LC", "SELECT"}, {"lc2_r", "R_LC%", "INSERT"}},
+			want: []catalog.WideGrant{
+				everywhere,
+				{Role: "lc2_r", Privilege: "INSERT", Grant: "INSERT ON `R_LC%`.*", Schema: "R_LC"},
 			},
 		},
 		{
@@ -140,8 +151,11 @@ func refusingWideGrants(err error, next dbtest.QueryHandler) dbtest.QueryHandler
 // TestReader_ReadsTheAccessWideGrantsGive reports, for the security analysis,
 // the access to every table that the wide grants give: SELECT reads and
 // INSERT, UPDATE and DELETE write, on every database or, for a grant on a
-// pattern, on the database it reaches, under the grant's own words. The rows
-// are those the wide grants hold, so a pattern that does not reach the
+// pattern, on the database it reaches, for the role whose session applies it,
+// one read and one write entry per grant, each under the privileges that give
+// it. The database's own row is decided the same way and names no source, and
+// the read says it states the grants on the database, except under
+// partial_revokes, where it reads no row. A pattern that does not reach the
 // database gives nothing: an escaped "_" or "%" among them, one in another
 // case where the server keeps names apart by case, and any pattern under
 // partial_revokes, which reads its wildcards as the characters themselves. A
@@ -158,6 +172,9 @@ func TestReader_ReadsTheAccessWideGrantsGive(t *testing.T) {
 		patternErr error
 		globalErr  error
 		want       []catalog.WideAccess
+		// ownRows reports a read that states what the grants on the
+		// database give each role in the wide access.
+		ownRows bool
 	}{
 		{
 			name: "patterns that reach the database",
@@ -165,16 +182,17 @@ func TestReader_ReadsTheAccessWideGrantsGive(t *testing.T) {
 				{"lc2_r", "R%", "CREATE"},
 				{"lc2_r", "R%", "INSERT"},
 				{"lc2_r", "R%", "SELECT"},
+				{"lc2_u", "R_L_", "UPDATE"},
 				{"lc2_w", `R\_LC`, "DELETE"},
-				{"lc2_w", "R_L_", "UPDATE"},
 			},
 			want: []catalog.WideAccess{
 				everywhere,
-				{Role: "lc2_r", Write: true, Source: "INSERT ON `R%`.*", Schema: "R_LC"},
-				{Role: "lc2_r", Read: true, Source: "SELECT ON `R%`.*", Schema: "R_LC"},
-				{Role: "lc2_w", Write: true, Source: "DELETE ON `R\\_LC`.*", Schema: "R_LC"},
-				{Role: "lc2_w", Write: true, Source: "UPDATE ON `R_L_`.*", Schema: "R_LC"},
+				{Role: "lc2_r", Subject: "lc2_r", Read: true, Source: "SELECT ON `R%`.*", Schema: "R_LC"},
+				{Role: "lc2_r", Subject: "lc2_r", Write: true, Source: "INSERT ON `R%`.*", Schema: "R_LC"},
+				{Role: "lc2_u", Subject: "lc2_u", Write: true, Source: "UPDATE ON `R_L_`.*", Schema: "R_LC"},
+				{Role: "lc2_w", Subject: "lc2_w", Write: true, Source: "DELETE ON `R\\_LC`.*", Schema: "R_LC"},
 			},
+			ownRows: true,
 		},
 		{
 			name: "patterns that do not reach the database",
@@ -184,19 +202,42 @@ func TestReader_ReadsTheAccessWideGrantsGive(t *testing.T) {
 				{"lc2_r", `R_L\_`, "INSERT"},
 				{"lc2_r", "R_LC_", "UPDATE"},
 			},
-			want: []catalog.WideAccess{everywhere},
+			want:    []catalog.WideAccess{everywhere},
+			ownRows: true,
+		},
+		{
+			name:     "the database's own row, which sorts first",
+			patterns: [][]driver.Value{{"lc2_r", "R_LC%", "SELECT"}, {"lc2_r", "R_LC", "INSERT"}},
+			want: []catalog.WideAccess{
+				everywhere,
+				{Role: "lc2_r", Subject: "lc2_r", Write: true, Schema: "R_LC"},
+			},
+			ownRows: true,
+		},
+		{
+			// R_LC holds "_", so its own row is a pattern to the server,
+			// and `R%` sorts before it.
+			name:     "a pattern that sorts before the database's own row",
+			patterns: [][]driver.Value{{"lc2_r", "R%", "SELECT"}, {"lc2_r", "R_LC", "INSERT"}},
+			want: []catalog.WideAccess{
+				everywhere,
+				{Role: "lc2_r", Subject: "lc2_r", Read: true, Source: "SELECT ON `R%`.*", Schema: "R_LC"},
+			},
+			ownRows: true,
 		},
 		{
 			name:     "a pattern in another case, where the server folds names",
 			patterns: [][]driver.Value{{"lc2_r", "r%", "SELECT"}},
 			settings: map[string]string{"lower_case_table_names": "1"},
-			want:     []catalog.WideAccess{everywhere, {Role: "lc2_r", Read: true, Source: "SELECT ON `r%`.*", Schema: "R_LC"}},
+			want:     []catalog.WideAccess{everywhere, {Role: "lc2_r", Subject: "lc2_r", Read: true, Source: "SELECT ON `r%`.*", Schema: "R_LC"}},
+			ownRows:  true,
 		},
 		{
 			name:     "a pattern in another case, where the server keeps case",
 			patterns: [][]driver.Value{{"lc2_r", "r%", "SELECT"}},
 			settings: map[string]string{"lower_case_table_names": "0"},
 			want:     []catalog.WideAccess{everywhere},
+			ownRows:  true,
 		},
 		{
 			name:     "a pattern under partial_revokes",
@@ -218,6 +259,7 @@ func TestReader_ReadsTheAccessWideGrantsGive(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.WideAccess, qt.DeepEquals, test.want)
+			c.Assert(got.SchemaGrantsInWideAccess, qt.Equals, test.ownRows)
 		})
 	}
 }
