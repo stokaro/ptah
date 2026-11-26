@@ -103,15 +103,14 @@ func (k deniedKey) reaches(other deniedKey) bool {
 // column, and the GRANT leaves the object's row alone.
 func (p *Planner) revokeDenies(result []ast.Node, diff *difftypes.SchemaDiff, dropped droppedObjects) []ast.Node {
 	d := p.newDenies(diff)
-	for _, denied := range p.revokedDeniesByGrantor(diff) {
+	for _, denied := range diff.DeniesRemoved {
 		if dropped.holds(denied) {
 			continue
 		}
 		if held, kept := d.keptOnWholeObject(diff, denied, dropped); kept {
 			result = append(result, ast.NewGrantPrivilege(denied.Role, denied.ObjectType, denied.ObjectName, []string{denied.Privilege}).
 				SetColumns(grantColumns(denied)).
-				SetWithOption(held.WithOption && !removes(diff.GrantOptionsRevoked, held)).
-				SetGrantedBy(p.revokeGrantor(denied)))
+				SetWithOption(held.WithOption && !removes(diff.GrantOptionsRevoked, held)))
 			continue
 		}
 		result = append(result, ast.NewRevokePrivilege(denied.Role, denied.ObjectType, denied.ObjectName, []string{denied.Privilege}).
@@ -122,17 +121,14 @@ func (p *Planner) revokeDenies(result []ast.Node, diff *difftypes.SchemaDiff, dr
 }
 
 // keptOnWholeObject is the grant of denied's permission on its whole object
-// the grantee holds from the same grantor and the diff keeps, for a DENY on a
-// column. A synthetic inverse with no captured grantor keeps the default
-// grantor behavior of the statement it reverses.
+// the grantee holds and the diff keeps, for a DENY on a column.
 func (d denies) keptOnWholeObject(diff *difftypes.SchemaDiff, denied difftypes.GrantRef, dropped droppedObjects) (difftypes.GrantRef, bool) {
 	if denied.Column == "" {
 		return difftypes.GrantRef{}, false
 	}
 	want := d.key(denied).onWholeObject()
 	for _, held := range diff.CurrentGrants {
-		if d.key(held) == want && (denied.GrantedBy == "" || held.GrantedBy == denied.GrantedBy) &&
-			!dropped.holds(held) && !removes(diff.GrantsRemoved, held) {
+		if d.key(held) == want && !dropped.holds(held) && !removes(diff.GrantsRemoved, held) {
 			return held, true
 		}
 	}

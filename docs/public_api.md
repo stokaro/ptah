@@ -3540,15 +3540,12 @@ placeholders. `RegisterDialect` adds an engine Ptah does not describe, from a
 executable provider declares; the registration reaches the query builder
 alone.
 
-`core/ast.GrantPrivilegeNode.GrantedBy`, `RevokePrivilegeNode.GrantedBy`, and
-their `SetGrantedBy` methods select the catalog grantor whose permission row a
-SQL Server grant changes or revoke removes. The name is decoded and preserved
-verbatim. SQL Server writes `AS [grantor]` after `WITH GRANT OPTION` or
-`CASCADE` when present; an empty name leaves out `AS`. Other built-in dialects
-leave this SQL Server-specific field out. A plan built from a live SQL Server
-read names every grantor holding a permission or DENY the comparison removes.
-A column DENY under a kept table grant from the same grantor is cleared with
-`GRANT ... AS`, avoiding the column REVOKE row that would still withhold it.
+`core/ast.RevokePrivilegeNode.GrantedBy` and `SetGrantedBy` select the catalog
+grantor whose permission row a SQL Server revoke removes. The name is decoded
+and preserved verbatim. SQL Server writes `AS [grantor]` after `CASCADE` when
+present; an empty name leaves out `AS`. Other built-in dialects leave this
+SQL Server-specific field out. A plan built from a live SQL Server read names
+every grantor holding a permission the comparison removes.
 Generated inverse statements without a captured grantor retain the default
 grantor of the statement being reversed.
 

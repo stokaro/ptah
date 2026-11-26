@@ -833,12 +833,9 @@ only the rows that hold the option, leaving plain grants intact. The account
 running the plan must have permission to revoke as those grantors; SQL Server
 refuses the statement otherwise.
 
-Removing a DENY from a complete database comparison also names every grantor
-that denied the permission. A column DENY under a kept table grant from the
-same grantor is cleared with `GRANT ... AS [grantor]`; revoking that column
-would leave an explicit REVOKE row and keep it inaccessible. A generated down
-migration that undoes a new grant or grant option uses the default grantor of
-the original statement, preserving other grantors' preexisting rows.
+A generated down migration that undoes a new grant or grant option uses the
+default grantor of the original statement, preserving other grantors'
+preexisting rows.
 
 A plan refuses to revoke a grant option, or a grantable permission, where
 the grantee has granted the permission onward and the schema does not revoke

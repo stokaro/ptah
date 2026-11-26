@@ -2285,8 +2285,7 @@ func appendPrivilegeStatements(visit func(ast.Node) error, database schemamodel.
 			return err
 		}
 	}
-	if err := appendDeclaredGrants(visit, database.Grants, names, lowering.GrantOptionRevokesFirst,
-		describe(target).GrantOptionPerObject); err != nil {
+	if err := lowering.appendDeclaredGrants(visit, database.Grants, describe(target)); err != nil {
 		return err
 	}
 	for _, denied := range database.DeniedGrants {

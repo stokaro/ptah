@@ -37,9 +37,9 @@ func (p *Planner) refuseAWiderGrantOptionRevoke(diff *difftypes.SchemaDiff) erro
 // Server: the options the diff revokes, and the option of each grantable
 // privilege it removes, which [Planner.revokeGrants] takes first.
 func (p *Planner) grantOptionRevokes(diff *difftypes.SchemaDiff, dropped droppedObjects) []difftypes.GrantRef {
-	options := p.revokesByGrantor(diff, diff.GrantOptionsRevoked, diff.CurrentGrants, true)
+	options := p.revokesByGrantor(diff, diff.GrantOptionsRevoked, diff.CurrentGrants, grantOptionRows)
 	revokes := slices.DeleteFunc(slices.Clone(options), dropped.holds)
-	for _, grant := range p.revokesByGrantor(diff, diff.GrantsRemoved, diff.CurrentGrants, false) {
+	for _, grant := range p.revokesByGrantor(diff, diff.GrantsRemoved, diff.CurrentGrants, allPermissionRows) {
 		if grant.WithOption && !dropped.holds(grant) {
 			revokes = append(revokes, grant)
 		}

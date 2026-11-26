@@ -298,9 +298,9 @@ func grantColumns(grant difftypes.GrantRef) []string {
 // object dropped holds is left out; see [Planner.removeGrantsAndRoles].
 func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, dropped droppedObjects) []ast.Node {
 	spellings := newColumnSpellings(diff, p.targetDialect())
-	removed := p.revokesByGrantor(diff, diff.GrantsRemoved, diff.CurrentGrants, false)
+	removed := p.revokesByGrantor(diff, diff.GrantsRemoved, diff.CurrentGrants, allPermissionRows)
 	ghosts, removed := p.splitGrantOptionGhosts(slices.DeleteFunc(slices.Clone(removed), dropped.holds))
-	options := p.revokesByGrantor(diff, diff.GrantOptionsRevoked, diff.CurrentGrants, true)
+	options := p.revokesByGrantor(diff, diff.GrantOptionsRevoked, diff.CurrentGrants, grantOptionRows)
 	revokes := slices.DeleteFunc(slices.Concat(options, ghosts), dropped.holds)
 	if p.grantOptionCoversTheObject() {
 		revokes = append(revokes, grantOptionsLeftBehind(removed, diff.CurrentGrants, spellings)...)

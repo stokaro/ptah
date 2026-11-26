@@ -3248,7 +3248,7 @@ func (n *AlterRoleNode) SetComment(comment string) *AlterRoleNode {
 // Accept implements the Node interface for AlterRoleNode.
 func (n *AlterRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// GrantPrivilegeNode represents a GRANT statement.
+// GrantPrivilegeNode represents a PostgreSQL GRANT statement.
 type GrantPrivilegeNode struct {
 	// DatabasePath binds the target to the database captured by a live plan.
 	// Empty means that rendering has no database binding.
@@ -3274,10 +3274,6 @@ type GrantPrivilegeNode struct {
 	Columns []string
 	// WithOption controls WITH GRANT OPTION.
 	WithOption bool
-	// GrantedBy is the decoded catalog principal whose permission row a SQL
-	// Server grant changes. Empty uses the executing principal. Other
-	// built-in dialects do not write this SQL Server-specific clause.
-	GrantedBy string
 	// Comment is an optional comment for the grant operation.
 	Comment string
 }
@@ -3308,13 +3304,6 @@ func (n *GrantPrivilegeNode) SetColumns(columns []string) *GrantPrivilegeNode {
 // SetWithOption enables or disables WITH GRANT OPTION.
 func (n *GrantPrivilegeNode) SetWithOption(withOption bool) *GrantPrivilegeNode {
 	n.WithOption = withOption
-	return n
-}
-
-// SetGrantedBy selects the catalog grantor of a SQL Server grant and returns
-// the node for chaining. The name is preserved verbatim, including spaces.
-func (n *GrantPrivilegeNode) SetGrantedBy(grantor string) *GrantPrivilegeNode {
-	n.GrantedBy = grantor
 	return n
 }
 

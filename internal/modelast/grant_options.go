@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 )
 
@@ -12,23 +13,24 @@ import (
 // beside their grants in that order. An object-wide option is taken only
 // once, after every grant: MySQL refuses a second revoke on the same object,
 // and a later plain grant can make an already revoked option grantable again.
-func appendDeclaredGrants(
-	visit func(ast.Node) error, grants []schemamodel.Grant, names grantName, revokeFirst, perObject bool,
+func (l Lowering) appendDeclaredGrants(
+	visit func(ast.Node) error, grants []schemamodel.Grant, target descriptor.Dialect,
 ) error {
+	names := l.grantName()
 	for _, columns := range []bool{false, true} {
 		for _, grant := range grants {
 			if (len(grant.Columns) > 0) != columns {
 				continue
 			}
-			if perObject {
+			if target.GrantOptionPerObject {
 				grant.GrantOptionRevoked = false
 			}
-			if err := appendGrantStatements(visit, grant, names, revokeFirst); err != nil {
+			if err := l.appendGrantStatements(visit, grant, names); err != nil {
 				return err
 			}
 		}
 	}
-	if perObject {
+	if target.GrantOptionPerObject {
 		return appendObjectGrantOptionRevokes(visit, grants, names)
 	}
 	return nil
@@ -37,13 +39,13 @@ func appendDeclaredGrants(
 // appendGrantStatements keeps an explicit option revoke beside its grant.
 // A GRANT without WITH GRANT OPTION leaves an existing option held, so the
 // revoke is required even though the grant records WithOption as false.
-func appendGrantStatements(visit func(ast.Node) error, grant schemamodel.Grant, names grantName, revokeFirst bool) error {
+func (l Lowering) appendGrantStatements(visit func(ast.Node) error, grant schemamodel.Grant, names grantName) error {
 	nodes := []ast.Node{withGrantPath(FromGrant(grant), names)}
 	if grant.GrantOptionRevoked {
 		revoke := FromRevokedGrant(grant).SetGrantOptionFor(true)
 		revoke.ObjectName = names.rename(revoke.ObjectType, revoke.ObjectName)
 		nodes = append(nodes, revoke)
-		if revokeFirst {
+		if l.GrantOptionRevokesFirst {
 			slices.Reverse(nodes)
 		}
 	}

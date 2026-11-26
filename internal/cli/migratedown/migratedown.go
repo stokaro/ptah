@@ -261,6 +261,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 // hook the config supplies is checked against the program policy here, before
 // the command opens the database.
 func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) (options, error) {
+	opts.valueRounding = valuerounding.MigrationPolicy(cmd.Context(), opts.allowValueRounding)
 	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
 		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
 	}
@@ -461,7 +462,6 @@ var errJSONNeedsConfirmation = fmt.Errorf("--%s needs --%s or --%s: a run that p
 	jsonFlag, confirmFlag, dryRunFlag)
 
 func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
-	opts.valueRounding = valuerounding.MigrationPolicy(cmd.Context(), opts.allowValueRounding)
 	if err := refuseFlagCombinations(cmd.Flags(), opts); err != nil {
 		return err
 	}

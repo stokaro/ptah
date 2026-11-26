@@ -976,9 +976,6 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if node.WithOption {
 		statement += " WITH GRANT OPTION"
 	}
-	if node.GrantedBy != "" {
-		statement += " AS " + grantorIdentifier(node.GrantedBy)
-	}
 	r.w.WriteLinef("%s;", statement)
 	return nil
 }
@@ -1024,7 +1021,9 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 		parts = append(parts, "CASCADE")
 	}
 	if node.GrantedBy != "" {
-		parts = append(parts, "AS", grantorIdentifier(node.GrantedBy))
+		// A catalog name is decoded: even a surrounding bracket pair is part
+		// of the principal's name, rather than SQL quoting to remove.
+		parts = append(parts, "AS", "["+strings.ReplaceAll(node.GrantedBy, "]", "]]")+"]")
 	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
@@ -1042,12 +1041,6 @@ func granteeIdentifier(role string) string {
 		return "[public]"
 	}
 	return escapeIdentifier(name)
-}
-
-// grantorIdentifier quotes a decoded catalog name. Even a surrounding
-// bracket pair is part of the principal's name, not SQL quoting to remove.
-func grantorIdentifier(grantor string) string {
-	return "[" + strings.ReplaceAll(grantor, "]", "]]") + "]"
 }
 
 // renderDenyPrivilege renders a T-SQL DENY.
