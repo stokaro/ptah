@@ -135,7 +135,7 @@ func TestSQLServerReplaysTheRenamesAndTheDefaultDropPtahWritesE2E(t *testing.T) 
 	c.Assert(sqlServerStrings(c, db, sqlServerRenameTables), qt.DeepEquals, []string{"accounts", "ne]w"})
 	c.Assert(sqlServerStrings(c, db, sqlServerRenameColumns), qt.DeepEquals, []string{"id", "mail's", "status"})
 	c.Assert(sqlServerStrings(c, db, sqlServerRenameIndexes), qt.DeepEquals, []string{"ix_state"})
-	c.Assert(sqlServerStrings(c, db, sqlServerRenameDefault), qt.DeepEquals, []string{})
+	c.Assert(sqlServerStrings(c, db, sqlServerRenameDefault), qt.HasLen, 0)
 }
 
 // readSQLServerMigrations is every migration file in dir that pattern

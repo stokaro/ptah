@@ -153,7 +153,7 @@ func literalArgument(tokens []lexer.Token, function string, position int) (strin
 			continue
 		}
 		argument := index + 2
-		for skipped := 0; skipped < position; skipped++ {
+		for range position {
 			for argument < len(tokens) && !tokens[argument].MatchOperatorValue(",") {
 				argument++
 			}
