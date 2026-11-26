@@ -154,12 +154,15 @@ func TestApplyConfinesATransactionScopedSettingToItsMigration(t *testing.T) {
 }
 
 // TestReplayRefusesASessionSetting is the control: a plain SET outlives its
-// transaction and would reach every later migration of the replay. A server
-// the run owns refuses it too, so the refusal names no way to such a server.
+// transaction and would reach every later migration of the replay, and the
+// reads Ptah runs on the session after it. DateStyle is outside the settings
+// the guard accepts for a session, because it changes the text a column
+// default reads back as. A server the run owns refuses it too, so the refusal
+// names no way to such a server.
 func TestReplayRefusesASessionSetting(t *testing.T) {
 	c := qt.New(t)
 	dir := writeReplayProbeDir(c, map[string]string{
-		"1_session.sql": "SET lock_timeout = '5s';\nCREATE TABLE probe_session (v text);\n",
+		"1_session.sql": "SET DateStyle = 'SQL, DMY';\nCREATE TABLE probe_session (v text);\n",
 	})
 	devURL, _ := newSetLocalScratchDatabase(c)
 

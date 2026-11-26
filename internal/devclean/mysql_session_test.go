@@ -2,6 +2,7 @@ package devclean_test
 
 import (
 	"context"
+	"strings"
 
 	qt "github.com/frankban/quicktest"
 
@@ -9,20 +10,31 @@ import (
 	"ptah.run/internal/devclean"
 )
 
-// replaySession is a dev session of a MySQL or MariaDB server that reads
-// statements as the guard does and runs as 'replay'@'%', an account no
-// statement below names, holding no role. It answers the one query the
-// session guard asks.
+// replaySession is a dev session that reads statements as the guard does. On
+// a MySQL or MariaDB server it runs as 'replay'@'%', an account no statement
+// below names, holding no role. It answers the one query each session guard
+// asks, which it tells apart by the setting only the PostgreSQL family reads.
 type replaySession struct{}
 
-func (replaySession) QueryRowContext(context.Context, string, ...any) dataext.Row {
-	return replaySessionRow{}
+func (replaySession) QueryRowContext(_ context.Context, query string, _ ...any) dataext.Row {
+	return replaySessionRow(replaySessionAnswers[strings.Contains(query, "standard_conforming_strings")])
 }
 
-type replaySessionRow struct{}
+type replaySessionRow []string
 
-func (replaySessionRow) Scan(dest ...any) error {
-	for index, value := range []string{"utf8mb4", "replay@%", "[]"} {
+// replaySessionAnswers are the values of the session guards' queries: a MySQL
+// or MariaDB guard reads the client character set, the account and its roles,
+// and a PostgreSQL-family guard reads client_encoding,
+// standard_conforming_strings, the catalog's names and the creation schema. A
+// catalog that names nothing leaves the guard to the rule it reads without a
+// session.
+var replaySessionAnswers = map[bool][]string{
+	false: {"utf8mb4", "replay@%", "[]"},
+	true:  {"UTF8", "on", "[]", "public"},
+}
+
+func (r replaySessionRow) Scan(dest ...any) error {
+	for index, value := range r {
 		*dest[index].(*string) = value
 	}
 	return nil

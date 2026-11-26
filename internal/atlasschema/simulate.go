@@ -492,7 +492,8 @@ func rehearseStatementsOnDev(
 	if err != nil {
 		return err
 	}
-	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications)
+	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
+		WithSurvivors(baseline.Survivors)
 	if err := guardPlanRehearsal(statements, guard, devConn.Info()); err != nil {
 		return err
 	}
@@ -763,9 +764,11 @@ func recreateCurrentSchema(
 	if err != nil {
 		return nil, err
 	}
+	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
+		WithSurvivors(baseline.Survivors)
 	dev := baselineDev{
 		info:     devConn.Info(),
-		guard:    guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications),
+		guard:    guard,
 		executor: devConn.Writer(),
 		read: func(ctx context.Context) (*catalog.Database, error) {
 			return reads.settled(readscope.Authored(ctx), devConn)

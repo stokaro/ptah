@@ -46,10 +46,11 @@ import (
 // disposable outlives the run with the extensions and schemas its reset keeps,
 // so a later run on the same dev database would read a comment, or an
 // extension version, the reset does not return; a provisioned server is
-// discarded. A reset that returns a
-// schema's comment lifts that comment on any server; see
-// [replay.Scope.SchemaCommentReturned]. A comment on a protected namespace such
-// as pg_catalog stays refused, as its mutation is.
+// discarded. A reset that returns a schema's comment lifts that comment on any
+// server; see [replay.Scope.SchemaCommentReturned]. So does a reset that drops
+// the extension or the schema, one the run created; see
+// [replay.Scope.Survivors]. A comment on a protected namespace such as
+// pg_catalog stays refused, as its mutation is.
 func postgresServerWideOperation(stmt string, tokens []lexer.Token, scope replay.Scope) string {
 	if len(tokens) == 0 {
 		return ""
@@ -171,13 +172,16 @@ func postgresServerWidePrivilege(tokens []lexer.Token) string {
 // answers to on a server the run owns. The one check that can apply to such a
 // statement is the protected namespace: a routine created in pg_catalog, or a
 // privilege granted on it, changes the catalogs the rest of the run reads.
-func validatePostgresServerWideStatement(dialect string, tokens []lexer.Token, scope replay.Scope) error {
-	policy := protection{dialect: dialect, sessionTables: scope.Session && dialect == platform.Postgres}
+func validatePostgresServerWideStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
+	policy := protection{
+		dialect:       dialect,
+		sessionTables: scope.Session && dialect == platform.Postgres,
+		catalog:       names.catalog,
+		creation:      names.creation,
+		unqualified:   new(string),
+	}
 	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {
-		return replay.Refuse(
-			dialect,
-			fmt.Sprintf("protected namespace %q mutation", namespace),
-		)
+		return refuseProtectedNamespace(dialect, fmt.Sprintf("protected namespace %q mutation", namespace), *policy.unqualified)
 	}
 	return nil
 }
