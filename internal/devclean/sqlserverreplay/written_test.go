@@ -292,6 +292,13 @@ func TestGuard_RefusesADefaultReplacementThatDoesMore(t *testing.T) {
 			operation: `default expression "1 FOR [status] DROP TABLE [dbo].[orders] ALTER TABLE [dbo].[users] ADD DEFAULT 1"`,
 		},
 		{
+			// One expression to every other check: no FOR, no semicolon, and
+			// parentheses that close. The server reads two statements.
+			name:      "a statement after the expression",
+			statement: replace(users, "1 DROP TABLE [dbo].[orders]"),
+			operation: `default expression "1 DROP TABLE [dbo].[orders]"`,
+		},
+		{
 			name:      "a semicolon",
 			statement: replace(users, "1; DROP TABLE [dbo].[orders]"),
 			operation: `default expression "1; DROP TABLE [dbo].[orders]"`,

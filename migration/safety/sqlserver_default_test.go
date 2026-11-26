@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/sqlserverexec"
 	"ptah.run/migration/safety"
 )
 
@@ -96,4 +97,19 @@ func TestAssessSQL_SQLServerConstraintDropStaysDestructive(t *testing.T) {
 			c.Assert(got.Reason, qt.Equals, "DROP CONSTRAINT removes an existing data protection")
 		})
 	}
+}
+
+// A replaced default is read as the statement that adds the new one, so what
+// the batch runs after the drop is read by its words, and a statement written
+// into the expression is read as it would be on its own.
+func TestAssessSQL_SQLServerReplacedDefaultIsReadAsItsAdd(t *testing.T) {
+	users := []string{"dbo", "users"}
+	expression := "1 FOR [status]; DROP TABLE [dbo].[orders]; ALTER TABLE [dbo].[users] ADD DEFAULT 1"
+	statement := sqlserverexec.DefaultConstraintBatch(users, "status", sqlserverexec.AddDefault(users, "status", expression))
+	c := qt.New(t)
+
+	got := assessText(c, platform.SQLServer, statement)
+
+	c.Assert(got.Severity, qt.Equals, safety.Destructive)
+	c.Assert(got.Reason, qt.Equals, assessText(c, platform.SQLServer, "DROP TABLE [dbo].[orders];").Reason)
 }

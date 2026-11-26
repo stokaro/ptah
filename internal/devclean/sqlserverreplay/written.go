@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlserverbatch"
 	"ptah.run/internal/sqlserverexec"
 )
 
@@ -104,15 +105,18 @@ func validateSQLServerDefaultTable(table []string) error {
 // parentheses: ALTER TABLE ... ADD DEFAULT is incomplete without one, and the
 // server compiles the whole batch before it runs any of it, so a batch that
 // does not parse runs nothing. NEXT VALUE FOR, which reads a sequence, is the
-// one FOR an expression holds.
+// one FOR an expression holds. internal/sqlserverbatch reads the ALTER TABLE
+// too, and it has to be one statement there as well.
 func validateSQLServerDefaultReplace(replace sqlserverexec.DefaultReplace, scope replay.Scope) error {
 	if err := validateSQLServerDefaultTable(replace.Table); err != nil {
 		return err
 	}
-	if !oneSQLServerExpression(replace.Expression) {
+	add := sqlserverexec.AddDefault(replace.Table, replace.Column, replace.Expression)
+	statements, err := sqlserverbatch.Read(add)
+	if !oneSQLServerExpression(replace.Expression) || err != nil || len(statements) != 1 ||
+		statements[0].Kind != sqlserverbatch.Simple || statements[0].SQL != add {
 		return replay.Refuse(platform.SQLServer, fmt.Sprintf("default expression %q", replace.Expression))
 	}
-	add := sqlserverexec.AddDefault(replace.Table, replace.Column, replace.Expression)
 	return validateSQLServerReplayStatement(replay.Tokens(add, lexerOptions()), scope)
 }
 

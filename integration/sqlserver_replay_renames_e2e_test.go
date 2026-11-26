@@ -187,6 +187,29 @@ var sqlServerEscapes = []struct {
 		statement: "EXEC sp_executesql N'CREATE TABLE {other}.dbo.escaped (id int)';",
 		operation: "EXEC/EXECUTE sublanguage",
 	},
+	{
+		name:      "sp_executesql named with no EXEC",
+		statement: "sp_executesql N'CREATE TABLE {other}.dbo.escaped (id int)';",
+		operation: "EXEC/EXECUTE sublanguage",
+	},
+	{
+		// The server answers with xp_cmdshell disabled, as it is by default,
+		// so the row asserts the refusal and does not enable it.
+		name:      "xp_cmdshell named with no EXEC",
+		statement: "xp_cmdshell N'whoami';",
+		operation: "EXEC/EXECUTE sublanguage",
+	},
+	{
+		name:      "DROP DATABASE after an ALTER TABLE with no separator",
+		header:    "-- atlas:txmode none\n",
+		statement: "ALTER TABLE dbo.items ADD DEFAULT 0 FOR id DROP DATABASE [{other}];",
+		operation: "DROP DATABASE",
+	},
+	{
+		name:      "sp_executesql after a CREATE TABLE with no separator",
+		statement: "CREATE TABLE dbo.more (id int) EXEC sp_executesql N'CREATE TABLE {other}.dbo.escaped (id int)';",
+		operation: "EXEC/EXECUTE sublanguage",
+	},
 }
 
 // writeSQLServerEscape writes a history whose one migration creates a table
@@ -234,18 +257,34 @@ func TestSQLServerReplayRefusesAnEXECThatReachesPastTheDevDatabaseE2E(t *testing
 }
 
 // TestSQLServerReplayRunsATrustedEXECThatReachesPastTheDevDatabaseE2E is the
-// control for the refusal: with trust in the replayed SQL, the batch writes
-// into the other database, so the refusal is what kept it out.
+// control for the refusals: with trust in the replayed SQL, each batch writes
+// into the other database, so the refusal is what kept it out. The server runs
+// the EXEC that follows a statement with no separator, and the procedure a
+// statement names with no EXEC.
 func TestSQLServerReplayRunsATrustedEXECThatReachesPastTheDevDatabaseE2E(t *testing.T) {
-	c := qt.New(t)
-	work := c.TempDir()
-	dev, _ := declaredSQLServerDatabase(c)
-	otherURL, other := declaredSQLServerDatabase(c)
-	name := sqlServerDatabaseName(c, otherURL)
-	declaredSQLServerExec(c, other, "CREATE TABLE dbo.kept (id int PRIMARY KEY)")
-	writeSQLServerEscape(c, work, "", fmt.Sprintf("EXEC sp_executesql N'CREATE TABLE %s.dbo.escaped (id int)';", name))
+	tests := []struct {
+		name, statement string
+	}{
+		{name: "sp_executesql", statement: "EXEC sp_executesql N'CREATE TABLE %s.dbo.escaped (id int)';"},
+		{name: "sp_executesql named with no EXEC", statement: "sp_executesql N'CREATE TABLE %s.dbo.escaped (id int)';"},
+		{
+			name:      "sp_executesql after a CREATE TABLE with no separator",
+			statement: "CREATE TABLE dbo.more (id int) EXEC sp_executesql N'CREATE TABLE %s.dbo.escaped (id int)';",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			work := c.TempDir()
+			dev, _ := declaredSQLServerDatabase(c)
+			otherURL, other := declaredSQLServerDatabase(c)
+			name := sqlServerDatabaseName(c, otherURL)
+			declaredSQLServerExec(c, other, "CREATE TABLE dbo.kept (id int PRIMARY KEY)")
+			writeSQLServerEscape(c, work, "", fmt.Sprintf(test.statement, name))
 
-	runSQLServerRename(c, work, "migrations", "validate", "--dir", "migrations", "--dev-url", dev, "--trust-replay-sql")
+			runSQLServerRename(c, work, "migrations", "validate", "--dir", "migrations", "--dev-url", dev, "--trust-replay-sql")
 
-	c.Assert(sqlServerStrings(c, other, "SELECT name FROM sys.tables ORDER BY name"), qt.DeepEquals, []string{"escaped", "kept"})
+			c.Assert(sqlServerStrings(c, other, "SELECT name FROM sys.tables ORDER BY name"), qt.DeepEquals, []string{"escaped", "kept"})
+		})
+	}
 }

@@ -244,7 +244,9 @@ name, instead of being analyzed by whichever parser was reachable.
 One limit in that table is the body model rather than this analysis. The MySQL
 and T-SQL models carry no statements inside a branch, so an `IF` is reported as
 a statement whose contents could not be read -- not as a branch that writes
-nothing.
+nothing. A T-SQL body whose statement boundaries the reader cannot find, such as
+one with an `END` that closes no `BEGIN`, is reported the same way, as one
+statement.
 
 That distinction is the whole point of reading the list. A routine reported with
 writes and nothing else would say its reads are none rather than unknown.

@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/sqlserverexec"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/risk"
 )
@@ -1035,9 +1036,14 @@ type nodeKnowledge struct {
 
 // assessRawSQL classifies one statement by its words, which every dialect
 // shares; a statement only its owner recognizes is the owner's to judge (see
-// [AssessSQL]). known is what the node that rendered it establishes.
+// [AssessSQL]). known is what the node that rendered it establishes. The
+// batch with which the SQL Server renderer changes a default is the exception
+// ([assessSQLServerDefaultBatch]).
 func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledge) StatementAssessment {
-	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
+	if judged, ok := assessSQLServerDefaultBatch(sql, assessment, known); ok {
+		return judged
+	}
+	words := rawWords(sql)
 
 	if reason, found := destructivePrefixReason(words); found {
 		assessment.Severity = Destructive
@@ -1085,9 +1091,6 @@ func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledg
 	case hasWordPrefix(words, "CREATE", "UNIQUE", "INDEX"):
 		assessment.Severity = Warning
 		assessment.Reason = "CREATE UNIQUE INDEX can fail on existing duplicate values"
-	case dropsDefault:
-		assessment.Severity = Warning
-		assessment.Reason = dropDefaultReason
 	// Last, so a statement it rates would be safe without it, and a node's
 	// verdict on the collation can take its place ([Fold]).
 	case collationReason(sql, known) != "":
@@ -1344,6 +1347,38 @@ func dropsColumnWithoutKeyword(sql string) bool {
 	return false
 }
 
+// assessSQLServerDefaultBatch assesses sql, and reports whether it is the
+// batch the SQL Server renderer writes to drop or replace a column's default.
+// It is read here rather than by its owner. A default is a constraint the
+// server named, so the batch reads the name from sys.default_constraints and
+// drops the constraint, and read by its words that is a DROP CONSTRAINT,
+// which removes a data protection. A default constrains
+// no row. An owner's judgment can only raise a verdict to a warning or above
+// (ptah.run/core/lintext.FactSafetyEffect), so it cannot say that replacing a
+// default is safe, which is how setting one reads on every other engine.
+// internal/sqlserverexec renders the batch and reads it back, byte for byte,
+// for this assessment and for the dev replay guard alike; a batch that differs
+// in any byte is read by its words. A dropped default reads as it does
+// everywhere else, and a replaced one as the statements that add the new
+// default: the expression is text the server reads as SQL, so a statement
+// written into it is read as it would be on its own.
+func assessSQLServerDefaultBatch(sql string, assessment StatementAssessment, known nodeKnowledge) (StatementAssessment, bool) {
+	if _, drops := sqlserverexec.ReadDefaultDrop(sql); drops {
+		assessment.Severity = Warning
+		assessment.Reason = dropDefaultReason
+		return assessment, true
+	}
+	replace, replaces := sqlserverexec.ReadDefaultReplace(sql)
+	if !replaces {
+		return assessment, false
+	}
+	add := sqlserverexec.AddDefault(replace.Table, replace.Column, replace.Expression)
+	for _, statement := range lintscan.Split(add, lintscan.ForDialect("")) {
+		raiseAssessment(&assessment, assessRawSQL(statement.SQL, StatementAssessment{Severity: Safe, Reason: safeReason}, known))
+	}
+	return assessment, true
+}
+
 // asciiUpper upper-cases the ASCII letters of word and leaves every other
 // rune as it is, so a keyword comparison cannot match a name that only
 // Unicode case mapping turns into the keyword.
@@ -1354,41 +1389,6 @@ func asciiUpper(word string) string {
 		}
 		return r
 	}, word)
-}
-
-// defaultConstraintDrop is the DROP CONSTRAINT with which a SQL Server
-// migration drops a column's default, in the words [rawWords] reads it as. The
-// constraint's name is the server's own, so the statement reads it from
-// sys.default_constraints when it runs; the renderer writes it inside the
-// literal sp_executesql runs, which is where the quotes come from.
-//
-// The SQL Server renderer writes this spelling and this list recognizes it. A
-// rendering that stops matching reads as DROP CONSTRAINT again, which is the
-// louder verdict, and the SQL Server tests of AssessRendered fail on it.
-var defaultConstraintDrop = []string{"DROP", "CONSTRAINT", "''", "+", "QUOTENAME", "DC.NAME", "FROM", "SYS.DEFAULT_CONSTRAINTS"}
-
-// withoutDefaultConstraintDrop removes the DROP CONSTRAINT of every
-// [defaultConstraintDrop] from words, and reports whether the statement drops
-// a default without adding another.
-//
-// Read as words, that DROP CONSTRAINT says the statement removes a data
-// protection. A default constrains no row: dropping one changes what an INSERT
-// that leaves the column out writes, which is how dropping a default reads
-// everywhere else. Any other DROP CONSTRAINT in the statement stays, and is
-// read as it was. A statement that drops the default and adds one replaces it,
-// and is judged as a replaced default is elsewhere.
-func withoutDefaultConstraintDrop(words []string) (kept []string, dropsDefault bool) {
-	found := false
-	kept = make([]string, 0, len(words))
-	for i := 0; i < len(words); i++ {
-		if hasWordPrefix(words[i:], defaultConstraintDrop...) {
-			found = true
-			i++
-			continue
-		}
-		kept = append(kept, words[i])
-	}
-	return kept, found && !hasWordSequence(kept, "ADD", "DEFAULT")
 }
 
 // Fold raises target to source: the severity and its reason only rise, and

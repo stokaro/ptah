@@ -18,7 +18,7 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 		return replay.Refuse(platform.SQLServer, first)
 	}
 	if first == "EXEC" || first == "EXECUTE" {
-		if replay.ContainsIdentifier(tokens, "AT") && !scope.TrustedSQL {
+		if sqlServerRemoteExecute(tokens) && !scope.TrustedSQL {
 			return replay.Refuse(platform.SQLServer, "remote EXECUTE")
 		}
 	}
@@ -40,6 +40,19 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 		}
 	}
 	return nil
+}
+
+// sqlServerRemoteExecute reports the AT of EXECUTE ... AT linked_server: the
+// word AT, unquoted, that is not part of a name or a variable. A string or a
+// bracketed name that spells at, such as the new name N'at', is not it.
+func sqlServerRemoteExecute(tokens []lexer.Token) bool {
+	for index, token := range tokens {
+		previous := replay.TokenAt(tokens, index-1)
+		if token.MatchIdentifierValue("AT") && !previous.MatchOperatorValue("@") && !previous.MatchOperatorValue(".") {
+			return true
+		}
+	}
+	return false
 }
 
 func isGlobalSQLServerDDL(tokens []lexer.Token) bool {

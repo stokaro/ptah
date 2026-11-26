@@ -33,9 +33,9 @@ func labels(statements []routineext.Statement) []string {
 
 // A body is split into the statements of its outer BEGIN ... END, or of the
 // body itself when it has none, each named by the word it begins with. A
-// statement ends at a semicolon or where a keyword that only starts one
-// begins. The bodies are the text the parser hands over for each routine
-// shape.
+// statement ends at a semicolon or where the server ends it, as the dev replay
+// guard reads it. The bodies are the text the parser hands over for each
+// routine shape.
 func TestReader_SplitsATSQLBody(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -60,7 +60,14 @@ func TestReader_SplitsATSQLBody(t *testing.T) {
 			want: []string{"assignment", "exec", "raw"}},
 		{name: "an EXEC an INSERT stores", body: "INSERT INTO t EXEC dbo.p", want: []string{"insert"}},
 		{name: "the EXECUTE permission", body: "GRANT EXECUTE ON dbo.p TO u\nDENY EXECUTE ON dbo.p TO v\nREVOKE EXEC ON dbo.p FROM w",
-			want: []string{"raw"}},
+			want: []string{"raw", "raw", "raw"}},
+		{name: "a statement no keyword list names, with no separator", body: "UPDATE t SET a = 1 DELETE FROM t", want: []string{"raw", "raw"}},
+		{name: "an inline table-valued function with a common table expression",
+			body: "RETURN WITH x AS (SELECT @a AS [a]) SELECT [a] FROM x", want: []string{"return"}},
+		{name: "a procedure named with no EXEC", body: "sp_executesql @s", want: []string{"exec"}},
+		{name: "a label", body: "BEGIN\n  again:\n  DELETE FROM t;\nEND", want: []string{"label", "raw"}},
+		{name: "a TRY body", body: "BEGIN TRY DELETE FROM t; END TRY BEGIN CATCH SELECT 1; END CATCH", want: []string{"block"}},
+		{name: "statements after the outer block", body: "BEGIN SELECT 1; END\nDELETE FROM t", want: []string{"select", "raw"}},
 		{name: "a body that starts with a transaction", body: "BEGIN TRAN;\nUPDATE t SET a = 1;\nCOMMIT;",
 			want: []string{"transaction", "raw", "raw"}},
 		{name: "a distributed transaction", body: "BEGIN\n  BEGIN DISTRIBUTED TRANSACTION;\n  COMMIT;\nEND",
@@ -115,6 +122,30 @@ func TestReader_StatesEachKind(t *testing.T) {
 		{Kind: routineext.StatementSQL, Label: "raw", SQL: "BEGIN DIALOG @h FROM SERVICE a TO SERVICE 'b';"},
 		{Kind: routineext.StatementInert, Label: "return", SQL: "RETURN;"},
 	})
+}
+
+// A body whose statement boundaries the reader cannot find is one opaque
+// block: what it does is unknown, which is not the same as a guess at its
+// statements.
+func TestReader_ReadsAnUnreadableBodyAsOneOpaqueBlock(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{name: "an END that closes no BEGIN", body: "BEGIN DELETE FROM t; END END"},
+		{name: "a BEGIN with no END", body: "BEGIN DELETE FROM t;"},
+		{name: "a number written against a word", body: "SELECT 0x1DELETE FROM t"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reading := read(c, test.body)
+
+			c.Assert(reading.Statements, qt.DeepEquals, []routineext.Statement{
+				{Kind: routineext.StatementControl, Label: "block", SQL: test.body, Opaque: true},
+			})
+		})
+	}
 }
 
 // EXEC and EXECUTE compose SQL at run time when they run a string or

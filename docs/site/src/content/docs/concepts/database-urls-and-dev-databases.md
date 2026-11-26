@@ -463,6 +463,26 @@ proven to stay inside the disposable realm:
   replacement is refused when the new default is more than one expression,
   and its `ALTER TABLE ... ADD DEFAULT` is judged as the same statement
   written on its own.
+
+  T-SQL needs no semicolon between two statements, so the guard reads a batch
+  into the statements the server runs from it, ending each where the server
+  does, and judges every one: `ALTER TABLE t ADD DEFAULT 0 FOR c DROP DATABASE
+  other` is two statements, and the `DROP DATABASE` is refused. It also judges
+  the statement an `IF`, `ELSE` or `WHILE` runs, the statements of a
+  `BEGIN ... END` block and of `TRY` and `CATCH`, and the `EXEC` whose rows an
+  `INSERT` stores. A procedure named with no `EXEC`, such as
+  `sp_executesql N'...'` or `xp_cmdshell 'dir'` as the first statement of a
+  batch, runs as `EXEC` of that name and is judged as one. An `EXEC` of one
+  constant `N'...'` literal, such as the `EXEC('CREATE SCHEMA [app]')` the
+  renderer writes under `IF SCHEMA_ID('app') IS NULL`, is judged as the batch
+  the literal holds, eight levels deep at most; the server converts a
+  literal without the `N` prefix to the database's code page first, so one
+  that holds a character outside ASCII is judged as any other `EXEC`. Text
+  whose statement boundaries the guard cannot find is refused, with trust or
+  without it: an `END` that closes no `BEGIN`, a number written against a
+  word, as in `0x1GRANT`, a character the server reads as whitespace and the
+  guard's lexer does not, such as U+200B, and a `MERGE` that does not end with
+  a semicolon.
 - ClickHouse remote, distributed, replicated, and unknown table engines,
   external dictionary sources, `FREEZE`/`UNFREEZE`, and `SYSTEM` statements but
   `SYSTEM STOP MERGES` and `SYSTEM START MERGES` of one table in the dev
