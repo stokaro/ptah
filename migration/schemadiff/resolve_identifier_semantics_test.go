@@ -11,8 +11,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/offlinenames"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -54,6 +54,7 @@ func TestResolveIdentifierSemantics_FailurePath(t *testing.T) {
 		held     *catalog.Database
 	}{
 		{name: "no server", desired: desired, held: held},
+		{name: "a nil connection", resolver: (*dbschema.DatabaseConnection)(nil), desired: desired, held: held},
 		{name: "no declaration", resolver: caseInsensitiveDatabase, held: held},
 		{name: "no held state", resolver: caseInsensitiveDatabase, desired: desired},
 	}
@@ -109,7 +110,6 @@ func TestValidateDesiredSchema_SQLServerOfflineNonASCIIDeclarations_FailurePath(
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `.*`+test.want+`.*`)
-			c.Assert(offlinenames.Marked(err), qt.IsTrue)
 		})
 	}
 }

@@ -38,19 +38,26 @@ type pair struct {
 }
 
 // probe lists the pairs whose answer tells two collations apart: the case
-// and the accent of one letter. Each server is asked about the same names, so
-// two servers that put every pair alike compare these names alike.
+// and the accent of a letter, its full width, and the kana of a syllable.
+// Each server is asked about the same names, so two servers that put every
+// pair alike agree on these four sensitivities. They can still disagree
+// elsewhere: a collation of an older version gives no weight to some
+// characters a newer one weighs, so SQL_Latin1_General_CP1_CI_AS reads `p`,
+// `pȡ` and `p😀` as one name where Latin1_General_100_CI_AS reads three.
 var probe = []pair{
 	{first: "a", second: "A", sensitivity: "case"},
 	{first: "a", second: "á", sensitivity: "accent"},
+	{first: "M", second: "Ｍ", sensitivity: "width"},
+	{first: "あ", second: "ア", sensitivity: "kana"},
 }
 
 // Refuse returns an error when dev reads a probe pair as one name and target
 // reads it as two, or the other way round, on a dialect whose offline rules
-// leave names to the catalog. devName names the dev database in the message,
-// such as `--dev-url`. Any other dialect, and two servers that agree, return
-// nil. An error from either server is returned, wrapped with the database it
-// came from.
+// leave names to the catalog. The error names both collations and says to
+// create the dev database with the target's. devName names the dev database
+// in the message, such as `the --dev-url database`. Any other dialect, and
+// two servers that agree, return nil. An error from either server is
+// returned, wrapped with the database it came from.
 func Refuse(ctx context.Context, target, dev Session, devName string) error {
 	if !offlinenames.Unanswered(identifier.ForDialect(target.Info().Dialect)) {
 		return nil
@@ -79,9 +86,19 @@ func Refuse(ctx context.Context, target, dev Session, devName string) error {
 	return fmt.Errorf(
 		"%s compares names under the collation %s and the target under %s, which differ in %s sensitivity, "+
 			"so a name the two read differently would build another state on %s than the target holds; "+
-			"%s must use the target's collation",
-		devName, collationOf(devRules), collationOf(targetRules), strings.Join(differ, " and "), devName, devName,
+			"create %s with COLLATE %s",
+		devName, collationOf(devRules), collationOf(targetRules), joinSensitivities(differ), devName, devName,
+		collationOf(targetRules),
 	)
+}
+
+// joinSensitivities lists names as prose: `case`, `case and width`, or
+// `case, width and kana`.
+func joinSensitivities(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // oneName reports whether rules read the two names of probed as one name.

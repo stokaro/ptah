@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -66,7 +67,8 @@ type IdentifierResolver interface {
 // Server that answer comes from the database collation, which no offline rule
 // knows.
 //
-// Either state nil, or a nil resolver, is refused with an error satisfying
+// Either state nil, or a nil resolver, including an interface holding a nil
+// pointer, is refused with an error satisfying
 // errors.Is(err, ptaherr.ErrInvalidSchemaDiff). An error from the target
 // runtime or from the server is returned as it is. The dialect is the one
 // resolver's Info names.
@@ -77,7 +79,7 @@ func ResolveIdentifierSemantics(
 	database *catalog.Database,
 	runtime schemaext.TargetResolver,
 ) (identifier.Semantics, error) {
-	if desired == nil || database == nil || resolver == nil {
+	if desired == nil || database == nil || noResolver(resolver) {
 		return identifier.Semantics{}, fmt.Errorf("%w: resolving identifiers requires a server and both schemas", ptaherr.ErrInvalidSchemaDiff)
 	}
 	if runtime == nil {
@@ -88,6 +90,16 @@ func ResolveIdentifierSemantics(
 		return identifier.Semantics{}, err
 	}
 	return resolveComparisonIdentifiers(ctx, resolver, desired, database, target)
+}
+
+// noResolver reports whether resolver is nil or holds a nil pointer, such as
+// a nil *dbschema.DatabaseConnection, which has no Info to read.
+func noResolver(resolver IdentifierResolver) bool {
+	if resolver == nil {
+		return true
+	}
+	value := reflect.ValueOf(resolver)
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
 // resolveComparisonIdentifiers asks resolver about every name a comparison of

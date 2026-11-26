@@ -16,13 +16,17 @@ import (
 )
 
 // collation is a server that answers as a collation does: names that differ
-// only in case are one name where caseInsensitive is set, and names that
-// differ only in accent are one name where accentInsensitive is set.
+// only in case, in accent, in width or in kana are one name where the
+// matching sensitivity is off. A collation without _KS or _WS in its name
+// reads full-width and half-width letters, and hiragana and katakana, as one
+// name, so the zero value of those two fields is the common one.
 type collation struct {
 	dialect           string
 	name              string
 	caseInsensitive   bool
 	accentInsensitive bool
+	widthSensitive    bool
+	kanaSensitive     bool
 	err               error
 	asked             *int
 }
@@ -36,10 +40,18 @@ func (s collation) ResolveIdentifierSemantics(_ context.Context, names []string)
 	if s.err != nil {
 		return identifier.Semantics{}, s.err
 	}
+	var folds []string
+	if s.accentInsensitive {
+		folds = append(folds, "á", "a", "Á", "A")
+	}
+	if !s.widthSensitive {
+		folds = append(folds, "Ｍ", "M")
+	}
+	if !s.kanaSensitive {
+		folds = append(folds, "ア", "あ")
+	}
 	class := func(name string) string {
-		if s.accentInsensitive {
-			name = strings.NewReplacer("á", "a", "Á", "A").Replace(name)
-		}
+		name = strings.NewReplacer(folds...).Replace(name)
 		if s.caseInsensitive {
 			name = strings.ToLower(name)
 		}
@@ -73,11 +85,22 @@ func TestRefuse_HappyPath(t *testing.T) {
 			target: collation{dialect: platform.SQLServer, name: "Latin1_General_100_CS_AS"},
 			dev:    collation{dialect: platform.SQLServer, name: "Latin1_General_100_CS_AS"},
 		},
+		{
+			name: "two width- and kana-sensitive collations",
+			target: collation{
+				dialect: platform.SQLServer, name: "Latin1_General_100_CI_AS_KS_WS", caseInsensitive: true,
+				widthSensitive: true, kanaSensitive: true,
+			},
+			dev: collation{
+				dialect: platform.SQLServer, name: "Japanese_XJIS_140_CI_AS_KS_WS", caseInsensitive: true,
+				widthSensitive: true, kanaSensitive: true,
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(devcollation.Refuse(t.Context(), test.target, test.dev, "--dev-url"), qt.IsNil)
+			c.Assert(devcollation.Refuse(t.Context(), test.target, test.dev, "the --dev-url database"), qt.IsNil)
 		})
 	}
 }
@@ -90,7 +113,7 @@ func TestRefuse_AsksNothingOfADialectWithOfflineRules_HappyPath(t *testing.T) {
 	target := collation{dialect: platform.Postgres, caseInsensitive: true, asked: &asked}
 	dev := collation{dialect: platform.Postgres, asked: &asked}
 
-	c.Assert(devcollation.Refuse(t.Context(), target, dev, "--dev-url"), qt.IsNil)
+	c.Assert(devcollation.Refuse(t.Context(), target, dev, "the --dev-url database"), qt.IsNil)
 	c.Assert(asked, qt.Equals, 0)
 }
 
@@ -104,27 +127,49 @@ func TestRefuse_FailurePath(t *testing.T) {
 			name:   "a case-sensitive dev database for a case-insensitive target",
 			target: collation{dialect: platform.SQLServer, name: "SQL_Latin1_General_CP1_CI_AS", caseInsensitive: true},
 			dev:    collation{dialect: platform.SQLServer, name: "Latin1_General_100_CS_AS"},
-			want: `--dev-url compares names under the collation Latin1_General_100_CS_AS and the target under ` +
+			want: `the --dev-url database compares names under the collation Latin1_General_100_CS_AS and the target under ` +
 				`SQL_Latin1_General_CP1_CI_AS, which differ in case sensitivity, so a name the two read differently ` +
-				`would build another state on --dev-url than the target holds; --dev-url must use the target's collation`,
+				`would build another state on the --dev-url database than the target holds; ` +
+				`create the --dev-url database with COLLATE SQL_Latin1_General_CP1_CI_AS`,
 		},
 		{
 			name:   "an accent-insensitive dev database for an accent-sensitive target",
 			target: collation{dialect: platform.SQLServer, name: "Latin1_General_100_CI_AS", caseInsensitive: true},
 			dev:    collation{dialect: platform.SQLServer, name: "Latin1_General_100_CI_AI", caseInsensitive: true, accentInsensitive: true},
-			want:   `--dev-url compares names under the collation Latin1_General_100_CI_AI and the target under Latin1_General_100_CI_AS, which differ in accent sensitivity, .*`,
+			want: `the --dev-url database compares names under the collation Latin1_General_100_CI_AI and the target under ` +
+				`Latin1_General_100_CI_AS, which differ in accent sensitivity, .*`,
 		},
 		{
-			name:   "both sensitivities",
+			name:   "a width-sensitive dev database for a width-insensitive target",
+			target: collation{dialect: platform.SQLServer, name: "SQL_Latin1_General_CP1_CI_AS", caseInsensitive: true},
+			dev:    collation{dialect: platform.SQLServer, name: "Latin1_General_100_CI_AS_WS", caseInsensitive: true, widthSensitive: true},
+			want:   `.*, which differ in width sensitivity, .*; create the --dev-url database with COLLATE SQL_Latin1_General_CP1_CI_AS`,
+		},
+		{
+			name:   "a kana-sensitive target for a kana-insensitive dev database",
+			target: collation{dialect: platform.SQLServer, name: "Japanese_CI_AS_KS", caseInsensitive: true, kanaSensitive: true},
+			dev:    collation{dialect: platform.SQLServer, name: "Japanese_CI_AS", caseInsensitive: true},
+			want:   `.*, which differ in kana sensitivity, .*; create the --dev-url database with COLLATE Japanese_CI_AS_KS`,
+		},
+		{
+			name:   "two sensitivities",
 			target: collation{dialect: platform.SQLServer, name: "Latin1_General_100_CS_AS"},
 			dev:    collation{dialect: platform.SQLServer, name: "Latin1_General_100_CI_AI", caseInsensitive: true, accentInsensitive: true},
 			want:   `.*, which differ in case and accent sensitivity, .*`,
+		},
+		{
+			name: "every sensitivity",
+			target: collation{
+				dialect: platform.SQLServer, name: "Latin1_General_100_CS_AS_KS_WS", widthSensitive: true, kanaSensitive: true,
+			},
+			dev:  collation{dialect: platform.SQLServer, name: "Latin1_General_100_CI_AI", caseInsensitive: true, accentInsensitive: true},
+			want: `.*, which differ in case, accent, width and kana sensitivity, .*`,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(devcollation.Refuse(t.Context(), test.target, test.dev, "--dev-url"), qt.ErrorMatches, test.want)
+			c.Assert(devcollation.Refuse(t.Context(), test.target, test.dev, "the --dev-url database"), qt.ErrorMatches, test.want)
 		})
 	}
 }
@@ -140,19 +185,19 @@ func TestRefuse_ServerError_FailurePath(t *testing.T) {
 			name:   "the target",
 			target: collation{dialect: platform.SQLServer, err: failed},
 			dev:    collation{dialect: platform.SQLServer},
-			want:   `compare the collations of the target and --dev-url: read the target: login failed`,
+			want:   `compare the collations of the target and the shadow database: read the target: login failed`,
 		},
 		{
 			name:   "the dev database",
 			target: collation{dialect: platform.SQLServer},
 			dev:    collation{dialect: platform.SQLServer, err: failed},
-			want:   `compare the collations of the target and --dev-url: read --dev-url: login failed`,
+			want:   `compare the collations of the target and the shadow database: read the shadow database: login failed`,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := devcollation.Refuse(t.Context(), test.target, test.dev, "--dev-url")
+			err := devcollation.Refuse(t.Context(), test.target, test.dev, "the shadow database")
 			c.Assert(err, qt.ErrorIs, failed)
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})

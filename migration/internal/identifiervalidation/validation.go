@@ -286,26 +286,20 @@ func nameList[T any](elements []T, name func(T) string) []string {
 
 // conflictError names two declarations of one kind the target may read as
 // one object. Where rules are the offline ones of a target whose catalog
-// compares its names (see [offlinenames.Unanswered]), the refusal is marked as
-// one a connection would have answered, and a pair that is a pair only
-// because one of its names has no class says that Ptah cannot tell, since no
-// rule put the two names together.
+// compares its names (see [offlinenames.Unanswered]), a pair that is a pair
+// only because one of its names has no class says that Ptah cannot tell,
+// since no rule put the two names together.
 func conflictError(kind string, pair conflictPair, rules identifier.Semantics) error {
-	unanswered := offlinenames.Unanswered(rules)
-	if unanswered && pair.unresolved {
-		return offlinenames.Mark(fmt.Errorf(
+	if offlinenames.Unanswered(rules) && pair.unresolved {
+		return fmt.Errorf(
 			"%w: without a connection Ptah cannot tell whether target %s %s and %s are one name under the database collation",
 			ptaherr.ErrInvalidSchemaDiff, kind, pair.previous, pair.current,
-		))
+		)
 	}
-	err := fmt.Errorf(
+	return fmt.Errorf(
 		"%w: target %s %s and %s may have the same catalog identity",
 		ptaherr.ErrInvalidSchemaDiff, kind, pair.previous, pair.current,
 	)
-	if unanswered {
-		return offlinenames.Mark(err)
-	}
-	return err
 }
 
 // firstOther returns the first name in seen spelled differently from name.

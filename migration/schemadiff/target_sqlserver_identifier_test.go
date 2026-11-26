@@ -11,7 +11,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/offlinenames"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -50,9 +49,9 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownSemantics_HappyPath(t *testing.
 // TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath covers
 // two declared tables whose catalog identity the offline comparison cannot
 // separate. The refusal is about the declaration as a whole rather than about
-// anything a change set names, and it is marked as one a connection would
-// have answered. A name with a non-ASCII rune has no class offline, so the
-// refusal says Ptah cannot tell rather than that the two may be one.
+// anything a change set names. A name with a non-ASCII rune has no class
+// offline, so the refusal says Ptah cannot tell rather than that the two may
+// be one.
 func TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -88,7 +87,6 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath(t *t
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `.*`+test.want+`.*`)
-			c.Assert(offlinenames.Marked(err), qt.IsTrue)
 			c.Assert(diff, qt.IsNil)
 		})
 	}

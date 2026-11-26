@@ -304,7 +304,7 @@ func connectSimulationDev(
 	// builds the target's state on the dev database and runs the plan there.
 	// A dev database that reads two names otherwise would rehearse another
 	// state, so it is refused before anything is reset.
-	if err := devcollation.Refuse(ctx, targetConn, devConn, "--dev-url"); err != nil {
+	if err := devcollation.Refuse(ctx, targetConn, devConn, "the --dev-url database"); err != nil {
 		dbschema.CloseAndWarn(devConn)
 		release()
 		return simulationDev{}, err

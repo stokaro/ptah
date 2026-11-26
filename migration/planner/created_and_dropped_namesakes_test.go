@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/offlinenames"
 	"ptah.run/migration/planner"
 )
 
@@ -49,15 +48,13 @@ func procedure(name, body string) difftypes.RoutineChange {
 }
 
 // The rows without a snapshot plan SQL Server under its offline rules, which
-// compare no name: every such refusal is marked as one a connection would
-// have answered, and the command that planned offline names the connection.
+// compare no name, so each such refusal says that no connection answered.
 func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 		diff    difftypes.SchemaDiff
 		want    string
-		offline bool
 	}{
 		{
 			name:    "a procedure under a case-insensitive collation",
@@ -80,7 +77,6 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 			want: "the plan creates view MIXEDVIEW and drops view dbo.MixedView, which differ only in case, so under a " +
 				"case-insensitive collation the drop would remove the object the create makes, and without a connection " +
 				"Ptah cannot tell which collation the database uses; declare the object as the database spells it",
-			offline: true,
 		},
 		{
 			name:    "a table",
@@ -89,8 +85,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				TablesAdded:   difftypes.TableChanges{{Name: "MIXEDTABLE"}},
 				TablesRemoved: difftypes.TableRemovals{{Name: "MixedTable"}},
 			},
-			want:    "the plan creates table MIXEDTABLE and drops table MixedTable, which differ only in case",
-			offline: true,
+			want: "the plan creates table MIXEDTABLE and drops table MixedTable, which differ only in case",
 		},
 		{
 			name:    "a sequence",
@@ -99,8 +94,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				SequencesAdded:   difftypes.SequenceChanges{{Name: "MIXEDSEQ"}},
 				SequencesRemoved: difftypes.SequenceChanges{{Name: "MixedSeq", Schema: "dbo"}},
 			},
-			want:    "the plan creates sequence MIXEDSEQ and drops sequence dbo.MixedSeq",
-			offline: true,
+			want: "the plan creates sequence MIXEDSEQ and drops sequence dbo.MixedSeq",
 		},
 		{
 			name:    "a schema",
@@ -109,8 +103,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				SchemasAdded:   []schemamodel.Schema{{Name: "SALES"}},
 				SchemasRemoved: []string{"Sales"},
 			},
-			want:    "the plan creates schema SALES and drops schema Sales",
-			offline: true,
+			want: "the plan creates schema SALES and drops schema Sales",
 		},
 		{
 			// Offline, a name with a non-ASCII rune has no class, so it may
@@ -123,7 +116,6 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 			},
 			want: "the plan creates table Z\u00e4hler and drops table Gr\u00f6\u00dfe, and without a connection Ptah " +
 				"cannot tell whether they are one name under the database collation",
-			offline: true,
 		},
 		{
 			// An accent-insensitive collation reads café as cafe, and one
@@ -136,7 +128,6 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 			},
 			want: "the plan creates view cafe and drops view dbo.caf\u00e9, and without a connection Ptah cannot tell " +
 				"whether they are one name under the database collation",
-			offline: true,
 		},
 		{
 			// A name the snapshot does not resolve has no class, so it may be
@@ -176,7 +167,6 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, ".*"+test.want+".*")
-			c.Assert(offlinenames.Marked(err), qt.Equals, test.offline)
 			c.Assert(nodes, qt.IsNil)
 		})
 	}

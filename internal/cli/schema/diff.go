@@ -82,7 +82,10 @@ given for the run, on the command line or through its environment variable, is
 opened whatever the sides are, so one nothing answers on fails the run; a
 docker:// value is read for its server and no container is started for two
 schema files or two databases. A dev URL from the project file's dev: key is
-opened only when the comparison uses it. This makes
+opened only when the comparison uses it. Two SQL Server schema files are
+compared under the names the dev database compares, so its URL is opened from
+either source, beside --server-version too, and one nothing answers on fails
+the run. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison

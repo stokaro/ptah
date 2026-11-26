@@ -86,7 +86,10 @@ type DiffOptions struct {
 	// from the project file rather than given for the run. Two documents
 	// compared as written still ask such a URL for its server version, within
 	// [devVersionTimeout], and plan for the dialect default when it does not
-	// answer.
+	// answer. On a dialect whose names only a server compares, such as SQL
+	// Server, two documents need the dev server's answer about their names,
+	// so the URL is opened as though it were given for the run, beside a
+	// ServerVersion too, and one that does not answer fails the run.
 	SkipUnusedDevURL bool
 	Exclude          []string
 	// ImplicitExclude leaves objects out of both sides as Exclude does, for
@@ -345,7 +348,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 			return diffErr
 		})
 	if err != nil {
-		return atlasreport.SchemaDiff{}, nil, adviseConnection(err)
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 	// The plan is made once every source is released, so the dev database a
 	// --from directory was replayed on is free to answer for the CHECKs the
@@ -356,20 +359,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	report, diff, err := compared.plan(ctx, opts, dialect, spellings)
-	return report, diff, adviseConnection(err)
-}
-
-// adviseConnection says how a diff is given a connection, beside a refusal
-// that a connection would have answered ([offlinenames.Marked]): the
-// comparison of two documents asks the dev server how it compares their
-// names where it connects to one, and a --from database is compared on its
-// own connection. Every other error is returned as it is.
-func adviseConnection(err error) error {
-	if !offlinenames.Marked(err) {
-		return err
-	}
-	return fmt.Errorf("%w; give --dev-url a database Ptah can connect to, or a database URL as --from, "+
-		"and the server says how it compares the names", err)
+	return report, diff, err
 }
 
 // moveToFromContext moves the desired values of a --to side read from a
@@ -502,6 +492,15 @@ func documentIdentifiers(
 // server can do, its session's character set facts and, where resolve is not
 // nil, how it compares names. Otherwise it answers none. A --server-version
 // pins the capabilities, not the facts.
+//
+// Where resolve is not nil, two documents are compared only under the names
+// a connected server compares: the dev URL is opened even where
+// SkipUnusedDevURL is set or a --server-version is given, and a URL that does
+// not answer, or that names no database Ptah connects to, is the error. The
+// rules the dialect states offline are an assumption about a collation
+// nothing asked, and under a collation with contractions they pair names
+// wrongly without a refusal: Hungarian_CI_AS reads `ccs` as `cscs`, so a
+// plan that creates one routine and drops the other leaves neither.
 func documentServer(
 	ctx context.Context,
 	opts DiffOptions,
@@ -512,6 +511,19 @@ func documentServer(
 	documents := !materializesFrom(fromSet, toSet, opts.DevURL) && !holdsServerForComparison(fromSet, toSet)
 	asksDevServer := opts.ServerVersion == "" && documents
 	switch {
+	case documents && resolve != nil:
+		facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout, resolve)
+		if err != nil {
+			return devreach.Facts{}, devAnswersNamesError(opts, dialect, err)
+		}
+		if facts.IdentifierSemantics == nil {
+			return devreach.Facts{}, devAnswersNamesError(opts, dialect,
+				errors.New("Ptah connects to no database for this URL when it compares two schema files"))
+		}
+		if !asksDevServer {
+			facts.Capabilities = capability.Capabilities{}
+		}
+		return facts, nil
 	case !opts.SkipUnusedDevURL && documents:
 		facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
@@ -530,6 +542,19 @@ func documentServer(
 	return devreach.Facts{}, nil
 }
 
+// devAnswersNamesError says that two documents planned for dialect are
+// compared only under the names a connected dev server compares, and names
+// where the dev URL came from: the --dev-url flag or its variable, or the
+// project file ([DiffOptions.SkipUnusedDevURL]).
+func devAnswersNamesError(opts DiffOptions, dialect string, err error) error {
+	source := "the --dev-url database"
+	if opts.SkipUnusedDevURL {
+		source = "the dev database named in the project file"
+	}
+	return fmt.Errorf("two schema files planned for %s are compared only under the names a connected server compares, "+
+		"so %s must answer: %w", dialect, source, err)
+}
+
 // devServerVersion answers what the server behind devURL can do, its
 // character set facts and, where resolve is not nil, how it compares names,
 // for a diff of two documents whose dev URL is not checked
@@ -539,7 +564,9 @@ func documentServer(
 // database, and a declaration the default cannot plan is refused by name
 // there. That fallback is noted on diagnostics, when it is not nil, so an
 // operator whose project-wide dev server is down learns the plan was not made
-// for it; the run's outcome does not change.
+// for it; the run's outcome does not change. A dialect whose names only a
+// server compares never falls back: [documentServer] opens its dev URL as one
+// given for the run.
 func devServerVersion(
 	ctx context.Context,
 	dialect, devURL string,

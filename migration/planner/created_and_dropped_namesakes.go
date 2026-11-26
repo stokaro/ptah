@@ -41,12 +41,15 @@ import (
 // server says which collation it has. Under the offline rules of a target
 // whose catalog compares its names (see [offlinenames.Unanswered]), two ASCII
 // names that differ only in case are one name under a case-insensitive
-// collation, and a name with a non-ASCII rune has no class, so the refusal is
-// marked as one a connection would have answered. That is the cost of
-// planning such a target offline: a plan that creates an object and drops
-// another of its kind in the same schema is refused when either name carries
-// a non-ASCII rune, however unrelated the two names are. With a connection,
-// the server resolves every name and no such pair is left.
+// collation, and a name with a non-ASCII rune has no class, so the refusal
+// says that no connection answered. That is the cost of planning such a
+// target offline: a plan that creates an object and drops another of its kind
+// in the same schema is refused when either name carries a non-ASCII rune,
+// however unrelated the two names are. Two ASCII names that differ beyond
+// case pass, which is an assumption rather than a rule: a collation with
+// contractions reads `ccs` as `cscs` under Hungarian_CI_AS, and the offline
+// rules cannot see it. With a connection, the server resolves every name and
+// no such pair is left.
 //
 // Indexes and constraints belong to a table, and their replacements are
 // planned as a drop before the create; they are not checked here. Triggers
@@ -90,17 +93,17 @@ func namesakeError(created, removed plannedName, target string, unanswered bool)
 	pair := fmt.Sprintf("the plan creates %s %s and drops %s %s", created.noun, created.name, removed.noun, removed.name)
 	switch {
 	case unanswered && (created.unresolved() || removed.unresolved()):
-		return offlinenames.Mark(fmt.Errorf(
+		return fmt.Errorf(
 			"%w: %s, and without a connection Ptah cannot tell whether they are one name under the database collation",
 			ptaherr.ErrInvalidSchemaDiff, pair,
-		))
+		)
 	case unanswered:
-		return offlinenames.Mark(fmt.Errorf(
+		return fmt.Errorf(
 			"%w: %s, which differ only in case, so under a case-insensitive collation the drop would remove the object "+
 				"the create makes, and without a connection Ptah cannot tell which collation the database uses; "+
 				"declare the object as the database spells it",
 			ptaherr.ErrInvalidSchemaDiff, pair,
-		))
+		)
 	case created.unresolved() || removed.unresolved():
 		return fmt.Errorf(
 			"%w: %s, and %s was not asked whether they are one name, so the drop may remove the object the create makes",

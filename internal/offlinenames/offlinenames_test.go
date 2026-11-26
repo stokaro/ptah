@@ -1,15 +1,12 @@
 package offlinenames_test
 
 import (
-	"errors"
-	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/internal/offlinenames"
 )
 
@@ -35,23 +32,4 @@ func TestUnanswered_HappyPath(t *testing.T) {
 			c.Assert(offlinenames.Unanswered(test.semantics), qt.Equals, test.want)
 		})
 	}
-}
-
-func TestMark_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	refusal := fmt.Errorf("%w: two names", ptaherr.ErrInvalidSchemaDiff)
-
-	marked := fmt.Errorf("plan: %w", offlinenames.Mark(refusal))
-
-	c.Assert(marked, qt.ErrorMatches, "plan: invalid schema diff: two names")
-	c.Assert(marked, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(offlinenames.Marked(marked), qt.IsTrue)
-}
-
-func TestMark_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Assert(offlinenames.Mark(nil), qt.IsNil)
-	c.Assert(offlinenames.Marked(errors.New("two names")), qt.IsFalse)
-	c.Assert(offlinenames.Marked(nil), qt.IsFalse)
 }

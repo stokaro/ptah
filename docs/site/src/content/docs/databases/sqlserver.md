@@ -319,39 +319,54 @@ as the same name is refused too, before any statement runs. Triggers are
 outside that check, because the plan drops the old trigger before it creates
 the new one, so the drop frees the name the create takes.
 
-`schema diff` of two schema files, in both binaries, asks the `--dev-url`
-database how it compares the names the two files hold, and pairs them the way
-it answers. The tables `Größe` and `Zähler` are two tables. On a
+`schema diff` of two schema files, in both binaries, asks the dev database how
+it compares the names the two files hold, and pairs them the way it answers.
+The dev URL may come from `--dev-url` or from the project file. Ptah opens it
+beside `--server-version` too, because a server version says what the plan may
+use, not how the database compares names. A dev database that does not answer
+fails the run. The tables `Größe` and `Zähler` are two tables. On a
 case-insensitive dev database the views `MixedView` and `MIXEDVIEW` are one
-view, and the plan changes it in place.
+view, and the plan changes it in place. Under `Hungarian_CI_AS` the functions
+`ccs` and `cscs` are one function, so the plan replaces it.
 
-Without a connection, Ptah cannot know the collation, and the comparison is
-offline. These comparisons are offline:
+The Go comparison APIs that take no connection compare names offline, by these
+rules:
 
-- `ptah schema diff` of two schema files whose dev URL comes from `ptah.yaml`
-  beside `--server-version`, which leaves the URL unopened;
-- the same command when that URL does not answer within five seconds;
-- the Go comparison APIs that take no connection.
+- Two ASCII names that differ beyond ASCII case are assumed to be two names.
+  Most collations agree. A collation with contractions, which reads a group of
+  letters as one letter, does not: under `Hungarian_CI_AS` and
+  `Hungarian_100_CI_AS`, `ccs` and `cscs` are one name, and so are `ddz` and
+  `dzdz`. `Maori_100_CI_AS` reads `a-b` as `ab`. On such a database an offline
+  plan from `ccs` to `cscs` creates one function and drops the other, which
+  leaves neither.
+- Two names that differ only in ASCII case are refused, because they are one
+  name under a case-insensitive collation.
+- A name that holds a non-ASCII character is refused beside any other name of
+  its kind in any schema. Two schema files that declare the views `Größe` and
+  `v2` are refused, and the refusal says that Ptah cannot tell whether the two
+  are one name under the database collation.
 
-An offline comparison treats two ASCII names that differ after ASCII case
-folding as two names, because no SQL Server collation makes them equal. Every
-other pair it refuses rather than guesses: names that differ only in ASCII
-case, and any name that holds a non-ASCII character, which may be any other
-name of its kind in its schema. So two schema files that declare the views
-`Größe` and `v2` are refused offline. The refusal says that Ptah cannot tell
-whether the two are one name under the database collation, and names the fix:
-give `--dev-url` a database Ptah can connect to, or give `--from` a database
-URL. Embedders choose between the live-aware and offline comparison APIs; see
+Plan with a connection. An embedder gets the server's answer from
+`schemadiff.ResolveIdentifierSemantics`; see
 [Public Go API](../../extend/public-api/).
 
 A dev or shadow database must use the target's collation. A case-sensitive dev
 database would hold `MixedCase` and `MIXEDCASE` as two procedures where the
 target holds one, and a rehearsal there would prove nothing about the target.
 A command that runs a change on a dev or shadow database before the target
-asks both servers how they compare names that differ in case and in accent,
-and refuses when the answers differ, naming both collations. Collations with
-different names that read names alike, such as `SQL_Latin1_General_CP1_CI_AS`
-and `Latin1_General_100_CI_AS`, pass. The check runs in these commands:
+asks both servers how they compare names that differ in case, in accent, in
+width and in kana, and refuses when the answers differ. The refusal names both
+collations and the clause to create the dev or shadow database with, such as
+`COLLATE SQL_Latin1_General_CP1_CI_AS`. Ptah does not provision a SQL Server
+database from a `docker://` URL, so you create it.
+
+Collations with different names that agree on the four sensitivities pass,
+such as `SQL_Latin1_General_CP1_CI_AS` and `Latin1_General_100_CI_AS`. They
+can still read some names differently: a collation of an older version gives
+no weight to some characters a newer one weighs, so the first reads `p`, `pȡ`
+and `p😀` as one name and the second reads them as three.
+
+The check runs in these commands:
 
 - `schema apply --dev-url`, in both binaries;
 - `ptah migrations down --shadow-db`, and `ptah-compat migrate down --dev-url`;

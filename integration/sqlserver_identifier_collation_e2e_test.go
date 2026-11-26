@@ -5,6 +5,7 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,9 +16,10 @@ import (
 
 // Only a SQL Server database can say whether two names are one: its collation
 // decides, and Ptah's offline rules know no collation. A diff of two schema
-// files asks the --dev-url database, and a command that runs a change on a
-// dev or shadow database before the target refuses one whose collation reads
-// names otherwise than the target's.
+// files asks the dev database, whether its URL is a flag or the project
+// file's, and a command that runs a change on a dev or shadow database before
+// the target refuses one whose collation reads names otherwise than the
+// target's.
 
 // schemaFilePath writes content to a schema file named name and returns its
 // path, with forward slashes so that it reads as a file:// URL too.
@@ -43,15 +45,20 @@ func withDatabases(args []string, replacements ...string) []string {
 // compares two schema files on a SQL Server dev database. Two unrelated names
 // with non-ASCII letters are two objects, and two names that differ only in
 // case are one object under a case-insensitive collation and two under a
-// case-sensitive one. Offline, the same comparisons are refused, because no
-// rule Ptah holds says what such names are.
+// case-sensitive one. Two ASCII names that differ beyond case are one name
+// under a collation with contractions: Hungarian_CI_AS reads `ccs` as `cscs`,
+// so the plan replaces the one function, as it replaces a function whose body
+// changed, rather than creating `cscs` and dropping `ccs`, which on that
+// database would leave neither.
 func TestSchemaDiffOfTwoSchemaFilesPairsNamesAsTheSQLServerDevDatabaseDoesE2E(t *testing.T) {
 	const (
-		grosse   = "CREATE TABLE [Größe] (id int NOT NULL);\n"
-		zaehler  = "CREATE TABLE [Zähler] (id int NOT NULL);\n"
-		views    = "CREATE VIEW [Größe] AS SELECT 1 AS a;\nGO\nCREATE VIEW [v2] AS SELECT 2 AS a;\nGO\n"
-		mixed    = "CREATE VIEW [MixedView] AS SELECT 1 AS a;\n"
-		mixedNew = "CREATE VIEW [MIXEDVIEW] AS SELECT 2 AS a;\n"
+		grosse     = "CREATE TABLE [Größe] (id int NOT NULL);\n"
+		zaehler    = "CREATE TABLE [Zähler] (id int NOT NULL);\n"
+		views      = "CREATE VIEW [Größe] AS SELECT 1 AS a;\nGO\nCREATE VIEW [v2] AS SELECT 2 AS a;\nGO\n"
+		mixed      = "CREATE VIEW [MixedView] AS SELECT 1 AS a;\n"
+		mixedNew   = "CREATE VIEW [MIXEDVIEW] AS SELECT 2 AS a;\n"
+		contracted = "CREATE FUNCTION [dbo].[ccs]() RETURNS int AS BEGIN RETURN 1 END;\nGO\n"
+		expanded   = "CREATE FUNCTION [dbo].[cscs]() RETURNS int AS BEGIN RETURN 2 END;\nGO\n"
 	)
 	tests := []struct {
 		name      string
@@ -92,6 +99,17 @@ func TestSchemaDiffOfTwoSchemaFilesPairsNamesAsTheSQLServerDevDatabaseDoesE2E(t 
 			from: mixed, to: mixedNew,
 			want: "CREATE VIEW [MIXEDVIEW] AS\nSELECT 2 AS a;\nGO\nDROP VIEW [MixedView];\nGO\n",
 		},
+		{
+			name: "a contraction under a Hungarian collation", binary: clirun.Ptah, collation: "Hungarian_CI_AS",
+			from: contracted, to: expanded,
+			want: "DROP FUNCTION [dbo].[cscs];\nGO\nCREATE OR ALTER FUNCTION [dbo].[cscs]()\nRETURNS int\nAS\nBEGIN RETURN 2 END;\nGO\n",
+		},
+		{
+			name: "a contraction under a Latin collation", binary: clirun.Ptah, collation: "SQL_Latin1_General_CP1_CI_AS",
+			from: contracted, to: expanded,
+			want: "CREATE OR ALTER FUNCTION [dbo].[cscs]()\nRETURNS int\nAS\nBEGIN RETURN 2 END;\nGO\n" +
+				"DROP FUNCTION [dbo].[ccs];\nGO\n",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -105,6 +123,83 @@ func TestSchemaDiffOfTwoSchemaFilesPairsNamesAsTheSQLServerDevDatabaseDoesE2E(t 
 
 			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
 			c.Assert(result.Stdout, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestSchemaDiffAsksTheSQLServerDevDatabaseOfTheProjectFileE2E compares two
+// schema files with the dev database named only in the project file, beside
+// a --server-version that pins what the plan may use. The names are still
+// the server's to compare, so the diff asks the dev database for them: two
+// unrelated non-ASCII tables are two objects, and the Hungarian contraction
+// is one function.
+func TestSchemaDiffAsksTheSQLServerDevDatabaseOfTheProjectFileE2E(t *testing.T) {
+	tests := []struct {
+		name      string
+		collation string
+		from, to  string
+		want      string
+	}{
+		{
+			name: "two non-ASCII tables", collation: "SQL_Latin1_General_CP1_CI_AS",
+			from: "CREATE TABLE [Größe] (id int NOT NULL);\n", to: "CREATE TABLE [Zähler] (id int NOT NULL);\n",
+			want: "CREATE TABLE [Zähler] (\n  [id] int NOT NULL\n);\nGO\nDROP TABLE [Größe];\nGO\n",
+		},
+		{
+			name: "a contraction under a Hungarian collation", collation: "Hungarian_CI_AS",
+			from: "CREATE FUNCTION [dbo].[ccs]() RETURNS int AS BEGIN RETURN 1 END;\nGO\n",
+			to:   "CREATE FUNCTION [dbo].[cscs]() RETURNS int AS BEGIN RETURN 2 END;\nGO\n",
+			want: "DROP FUNCTION [dbo].[cscs];\nGO\nCREATE OR ALTER FUNCTION [dbo].[cscs]()\nRETURNS int\nAS\nBEGIN RETURN 2 END;\nGO\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			dev := sqlServerCollatedDatabase(c, test.collation)
+			c.Assert(os.WriteFile(filepath.Join(dir, "ptah.yaml"), []byte("dev: "+strconv.Quote(dev)+"\n"), 0o600), qt.IsNil)
+			from := "file://" + schemaFilePath(c, "from.sql", test.from)
+			to := "file://" + schemaFilePath(c, "to.sql", test.to)
+
+			result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+				"schema", "diff", "--from", from, "--to", to, "--server-version", "17")
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+			c.Assert(result.Stdout, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestSchemaDiffFailsWhenTheSQLServerDevDatabaseOfTheProjectFileDoesNotAnswerE2E
+// compares two SQL Server schema files with a dev database in the project
+// file that nothing answers on. Without the server nothing says how the names
+// compare, so the run fails where a PostgreSQL diff plans for the dialect
+// default (TestDevURLInTheProjectFileThatDoesNotAnswerIsNotedByADiffOfTwoDocumentsE2E),
+// with or without a --server-version.
+func TestSchemaDiffFailsWhenTheSQLServerDevDatabaseOfTheProjectFileDoesNotAnswerE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "without a server version"},
+		{name: "beside a server version", args: []string{"--server-version", "17"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			closed := "sqlserver://sa:closed-port-secret@127.0.0.1:1?database=dev&encrypt=disable"
+			c.Assert(os.WriteFile(filepath.Join(dir, "ptah.yaml"), []byte("dev: "+strconv.Quote(closed)+"\n"), 0o600), qt.IsNil)
+			from := "file://" + schemaFilePath(c, "from.sql", "CREATE TABLE [ccs] (id int NOT NULL);\n")
+			to := "file://" + schemaFilePath(c, "to.sql", "CREATE TABLE [cscs] (id int NOT NULL);\n")
+
+			result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+				append([]string{"schema", "diff", "--from", from, "--to", to}, test.args...)...)
+
+			c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+			c.Assert(result.Stderr, qt.Contains, "two schema files planned for sqlserver are compared only under the names "+
+				"a connected server compares, so the dev database named in the project file must answer: connect to --dev-url: ")
+			c.Assert(result.Stdout, qt.Equals, "")
 		})
 	}
 }
@@ -134,8 +229,8 @@ func tableCount(c *qt.C, url, name string) string {
 
 // TestSchemaApplyRehearsesOnASQLServerDevDatabaseOfTheTargetsCollationE2E is
 // the control for the refusal below: a dev database whose collation has
-// another name but reads names as the target's does is a rehearsal, and the
-// table reaches the target.
+// another name but agrees with the target's on case, accent, width and kana
+// is a rehearsal, and the table reaches the target.
 func TestSchemaApplyRehearsesOnASQLServerDevDatabaseOfTheTargetsCollationE2E(t *testing.T) {
 	for _, test := range sqlServerApplyCommands {
 		t.Run(test.name, func(t *testing.T) {
@@ -171,8 +266,42 @@ func TestSchemaApplyRefusesASQLServerDevDatabaseOfAnotherCollationE2E(t *testing
 
 			c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 			c.Assert(result.Stderr, qt.Contains,
-				"--dev-url compares names under the collation Latin1_General_100_CS_AS and the target under "+
+				"the --dev-url database compares names under the collation Latin1_General_100_CS_AS and the target under "+
 					"SQL_Latin1_General_CP1_CI_AS, which differ in case sensitivity")
+			c.Assert(result.Stderr, qt.Contains, "create the --dev-url database with COLLATE SQL_Latin1_General_CP1_CI_AS")
+			c.Assert(tableCount(c, target, "rehearsed"), qt.Equals, "0")
+		})
+	}
+}
+
+// TestSchemaApplyRefusesASQLServerDevDatabaseOfAnotherWidthOrKanaSensitivityE2E
+// rehearses on a dev database that agrees with the target on case and accent
+// and differs in width or kana sensitivity: under Latin1_General_100_CI_AS_WS
+// the full-width Ｍ is another letter than M, and under _KS the katakana ア
+// another syllable than the hiragana あ, where the target reads each pair as
+// one name.
+func TestSchemaApplyRefusesASQLServerDevDatabaseOfAnotherWidthOrKanaSensitivityE2E(t *testing.T) {
+	tests := []struct {
+		name        string
+		dev         string
+		sensitivity string
+	}{
+		{name: "width", dev: "Latin1_General_100_CI_AS_WS", sensitivity: "width"},
+		{name: "kana", dev: "Latin1_General_100_CI_AS_KS", sensitivity: "kana"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := sqlServerCollatedDatabase(c, "Latin1_General_100_CI_AS")
+			dev := sqlServerCollatedDatabase(c, test.dev)
+			schema := schemaFilePath(c, "schema.sql", "CREATE TABLE rehearsed (id int NOT NULL);\n")
+
+			result := clirun.Run(c, clirun.Ptah, clirun.Options{},
+				"schema", "apply", "--db-url", target, "--dev-url", dev, "--schema-file", schema, "--auto-approve")
+
+			c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+			c.Assert(result.Stderr, qt.Contains, "the --dev-url database compares names under the collation "+test.dev+
+				" and the target under Latin1_General_100_CI_AS, which differ in "+test.sensitivity+" sensitivity")
 			c.Assert(tableCount(c, target, "rehearsed"), qt.Equals, "0")
 		})
 	}
@@ -228,8 +357,8 @@ func shadowRun(c *qt.C, args []string, shadow string) (target string, ran []stri
 
 // TestMigrationsVerifyOnASQLServerShadowDatabaseOfTheTargetsCollationE2E is
 // the control for the refusal below: a shadow database whose collation has
-// another name but reads names as the target's verifies the change, and the
-// command changes the target.
+// another name but agrees with the target's on case, accent, width and kana
+// verifies the change, and the command changes the target.
 func TestMigrationsVerifyOnASQLServerShadowDatabaseOfTheTargetsCollationE2E(t *testing.T) {
 	for _, test := range sqlServerShadowCommands {
 		t.Run(test.name, func(t *testing.T) {
