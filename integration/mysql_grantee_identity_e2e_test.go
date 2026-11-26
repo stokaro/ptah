@@ -129,7 +129,9 @@ func TestMySQLFamilyGrantAccountIdentityCommandsE2E(t *testing.T) {
 			c.Assert(reachFindingLines(c, run.target, run.suffix), qt.HasLen, 0)
 
 			_, err = run.server.admin.ExecContext(c.Context(),
-				"GRANT SELECT ON "+granteeIdentifier(run.database)+".* TO "+granteeIdentifier(run.role))
+				// #nosec G202 -- Both names belong to this fixture and granteeIdentifier doubles embedded backticks.
+				"GRANT SELECT ON "+granteeIdentifier(run.database)+".* TO "+granteeIdentifier(run.role),
+			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(reachFindingLines(c, run.target, run.suffix), qt.DeepEquals, []string{
 				"roles/read-reach error acct 1/1 through=[] sources=[]",

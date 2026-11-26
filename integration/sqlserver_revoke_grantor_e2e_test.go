@@ -98,7 +98,7 @@ func TestSchemaApplySQLServerRevokesEveryGrantorE2E(t *testing.T) {
 // without collapsing rows that have the same permission and scope.
 func sqlServerGrantorRows(c *qt.C, server revokeAllServer) []string {
 	c.Helper()
-	return append([]string{}, grantRows(c, server.catalog, `
+	return append(make([]string, 0), grantRows(c, server.catalog, `
 		SELECT CONCAT(p.permission_name, ' ', p.state, ' ', p.class, ':', p.minor_id,
 		              ' from ', USER_NAME(p.grantor_principal_id))
 		FROM sys.database_permissions p
