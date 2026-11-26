@@ -6,8 +6,11 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/chcolumn"
+	"ptah.run/internal/sqlident"
 )
 
 // roleKeywords are the words a TO clause reads as keywords. A name spelled
@@ -79,6 +82,7 @@ func parseNames(text string) ([]string, error) {
 	var names []string
 	var current strings.Builder
 	var quote rune
+	escaped := false
 	flush := func() error {
 		name, err := parseName(strings.TrimSpace(current.String()))
 		if err != nil {
@@ -90,6 +94,12 @@ func parseNames(text string) ([]string, error) {
 	}
 	for _, char := range text {
 		switch {
+		case escaped:
+			escaped = false
+			current.WriteRune(char)
+		case quote != 0 && char == '\\':
+			escaped = true
+			current.WriteRune(char)
 		case quote == 0 && (char == '`' || char == '"'):
 			quote = char
 			current.WriteRune(char)
@@ -111,22 +121,19 @@ func parseNames(text string) ([]string, error) {
 }
 
 // parseName reads one entry: a quoted name, or a bare one that spells no
-// keyword. A doubled quote inside a quoted name is one quote.
+// keyword. A quoted name is read as the server reads it
+// ([chcolumn.UnquoteIdentifier]): a doubled quote is one quote, and a
+// backslash escapes the character after it.
 func parseName(entry string) (string, error) {
 	if entry == "" {
 		return "", fmt.Errorf("an empty entry")
 	}
 	if quote := entry[0]; quote == '`' || quote == '"' {
-		inner := entry[1:]
-		if len(inner) == 0 || inner[len(inner)-1] != quote {
+		name, ok := chcolumn.UnquoteIdentifier(entry)
+		if !ok || name == "" {
 			return "", fmt.Errorf("%s is not one quoted name", entry)
 		}
-		inner = inner[:len(inner)-1]
-		doubled := string([]byte{quote, quote})
-		if strings.Contains(strings.ReplaceAll(inner, doubled, ""), string(quote)) || inner == "" {
-			return "", fmt.Errorf("%s is not one quoted name", entry)
-		}
-		return strings.ReplaceAll(inner, doubled, string(quote)), nil
+		return name, nil
 	}
 	if slices.ContainsFunc(roleKeywords, func(keyword string) bool { return strings.EqualFold(entry, keyword) }) {
 		return "", fmt.Errorf("%s is a keyword; quote it to name a role", entry)
@@ -141,12 +148,12 @@ func parseName(entry string) (string, error) {
 var bareName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // quoteName writes a name bare where [parseName] reads it back unchanged, and
-// in backticks otherwise.
+// quoted by [sqlident.Quote] otherwise.
 func quoteName(name string) string {
 	if bareName.MatchString(name) && !slices.ContainsFunc(roleKeywords, func(keyword string) bool { return strings.EqualFold(name, keyword) }) {
 		return name
 	}
-	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+	return sqlident.Quote(platform.ClickHouse, name)
 }
 
 func rolesError(text string, err error) error {

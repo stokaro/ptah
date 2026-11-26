@@ -22,7 +22,7 @@ func TestSkippingIndexRenderingPreservesOperandsAndNames(t *testing.T) {
 	}{
 		{name: "defaults", table: "events", index: "idx", expression: "c", want: "ALTER TABLE `events` ADD INDEX `idx` c TYPE minmax GRANULARITY 1;"},
 		{name: "qualified", table: "db.events", index: "idx", expression: "tuple(a, lower(b))", indexType: "bloom_filter(0.01)", granularity: 4, want: "ALTER TABLE `db`.`events` ADD INDEX `idx` tuple(a, lower(b)) TYPE bloom_filter(0.01) GRANULARITY 4;"},
-		{name: "quoted dots", table: "`db.name`.`events.name`", index: "`idx.name`", expression: "c", want: "ALTER TABLE `db.name`.`events.name` ADD INDEX `idx.name` c TYPE minmax GRANULARITY 1;"},
+		{name: "quoted dots", table: "`db.name`.`events.name`", index: "`idx.name`", expression: "c", want: "ALTER TABLE `db.name`.`events.name` ADD INDEX ```idx.name``` c TYPE minmax GRANULARITY 1;"},
 		{name: "maximum granularity", table: "events", index: "idx", expression: "c", indexType: "set(100)", granularity: math.MaxUint64, want: "ALTER TABLE `events` ADD INDEX `idx` c TYPE set(100) GRANULARITY 18446744073709551615;"},
 		{name: "embedded quotes", table: "`db``name`.`events``name`", index: "idx`name", expression: "c", want: "ALTER TABLE `db``name`.`events``name` ADD INDEX `idx``name` c TYPE minmax GRANULARITY 1;"},
 	} {

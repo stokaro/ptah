@@ -1,7 +1,7 @@
 // Package chcolumn spells a declared column for ClickHouse: the type it maps
 // to, whether that type is wrapped in Nullable, the DEFAULT or computed clause,
-// and the column definition CREATE TABLE and ADD COLUMN take. It also quotes
-// and unquotes a ClickHouse identifier and names an unnamed CHECK constraint.
+// and the column definition CREATE TABLE and ADD COLUMN take. It also reads a
+// quoted ClickHouse identifier back and names an unnamed CHECK constraint.
 //
 // The ClickHouse renderer writes every column through it, and the ClickHouse
 // storage owner writes the columns it adds in the same ALTER TABLE as a new
@@ -13,8 +13,10 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/defaultlit"
+	"ptah.run/internal/sqlident"
 )
 
 // Mapping is the ClickHouse type a column renders with. Notice, when not
@@ -210,10 +212,10 @@ func TypeDefault(typ string) string {
 }
 
 // Definition joins a column definition as CREATE TABLE and ADD COLUMN take it:
-// the name, the type, the clause [Clause] writes for keyword and expression,
-// and the comment when it is not empty.
+// the name quoted by [sqlident.Quote], the type, the clause [Clause] writes
+// for keyword and expression, and the comment when it is not empty.
 func Definition(name, typ, keyword, expression, comment string) string {
-	parts := []string{name, typ}
+	parts := []string{sqlident.Quote(platform.ClickHouse, name), typ}
 	if clause := Clause(keyword, expression, typ); clause != "" {
 		parts = append(parts, clause)
 	}

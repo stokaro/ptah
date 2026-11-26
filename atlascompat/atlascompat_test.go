@@ -197,5 +197,5 @@ func TestSchemaToAST_DecodesClickHouseIndexSettings(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	sql, err := builtin.RenderSQL("clickhouse", list.Statements...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "ADD INDEX `idx_payload` payload TYPE bloom_filter(0.01) GRANULARITY 64;")
+	c.Assert(sql, qt.Contains, "ADD INDEX `idx_payload` `payload` TYPE bloom_filter(0.01) GRANULARITY 64;")
 }

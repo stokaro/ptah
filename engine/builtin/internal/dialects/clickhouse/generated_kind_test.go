@@ -35,44 +35,44 @@ func TestRenderModifyColumn_GeneratedKind_HappyPath(t *testing.T) {
 		{
 			name: "another MATERIALIZED expression",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull().SetGenerated("a + 2", "MATERIALIZED"), "MATERIALIZED"),
-			want: "ALTER TABLE asn MODIFY COLUMN m Int64 MATERIALIZED a + 2;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` Int64 MATERIALIZED a + 2;\n",
 		},
 		{
 			name: "MATERIALIZED to ALIAS",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull().SetGenerated("a + 2", "ALIAS"), "MATERIALIZED"),
-			want: "ALTER TABLE asn MODIFY COLUMN m Int64 ALIAS a + 2;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` Int64 ALIAS a + 2;\n",
 		},
 		{
 			name: "EPHEMERAL to MATERIALIZED",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull().SetGenerated("a", "MATERIALIZED"), "EPHEMERAL"),
-			want: "ALTER TABLE asn MODIFY COLUMN m Int64 MATERIALIZED a;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` Int64 MATERIALIZED a;\n",
 		},
 		{
 			name: "MATERIALIZED to ordinary",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull(), "MATERIALIZED"),
-			want: "ALTER TABLE asn MODIFY COLUMN m REMOVE MATERIALIZED;\nALTER TABLE asn MODIFY COLUMN m Int64;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` REMOVE MATERIALIZED;\nALTER TABLE `asn` MODIFY COLUMN `m` Int64;\n",
 		},
 		{
 			name: "ALIAS to ordinary",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull(), "ALIAS"),
-			want: "ALTER TABLE asn MODIFY COLUMN m REMOVE ALIAS;\nALTER TABLE asn MODIFY COLUMN m Int64;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` REMOVE ALIAS;\nALTER TABLE `asn` MODIFY COLUMN `m` Int64;\n",
 		},
 		{
 			name: "EPHEMERAL to ordinary",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull(), "EPHEMERAL"),
-			want: "ALTER TABLE asn MODIFY COLUMN m Int64 DEFAULT defaultValueOfTypeName('Int64');\n" +
-				"ALTER TABLE asn MODIFY COLUMN m REMOVE DEFAULT;\n" +
-				"ALTER TABLE asn MODIFY COLUMN m Int64;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` Int64 DEFAULT defaultValueOfTypeName('Int64');\n" +
+				"ALTER TABLE `asn` MODIFY COLUMN `m` REMOVE DEFAULT;\n" +
+				"ALTER TABLE `asn` MODIFY COLUMN `m` Int64;\n",
 		},
 		{
 			name: "ordinary to EPHEMERAL without an expression",
 			node: changeKind(ast.NewColumn("m", "BIGINT").SetNotNull().SetGenerated("", "EPHEMERAL"), ""),
-			want: "ALTER TABLE asn MODIFY COLUMN m Int64 EPHEMERAL defaultValueOfTypeName('Int64');\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` Int64 EPHEMERAL defaultValueOfTypeName('Int64');\n",
 		},
 		{
 			name: "a type change keeps the kind",
 			node: changeKind(ast.NewColumn("m", "INTEGER").SetNotNull().SetGenerated("a", "ALIAS"), "ALIAS"),
-			want: "ALTER TABLE asn MODIFY COLUMN m Int32 ALIAS a;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `m` Int32 ALIAS a;\n",
 		},
 	}
 	for _, test := range tests {

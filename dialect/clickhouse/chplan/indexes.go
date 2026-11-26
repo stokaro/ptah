@@ -20,6 +20,7 @@ import (
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/dialect/clickhouse/internal/chsql"
+	"ptah.run/internal/chindexkey"
 	"ptah.run/internal/chkey"
 	"ptah.run/internal/schemaprep"
 )
@@ -122,7 +123,7 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	// other target. Its key is checked whichever replacement builds it: the
 	// comparison reads a changed key as a common replacement, which drops the
 	// index before it adds it just as this one does.
-	expression, err := indexExpression(captured.desired.Name, schemaprep.IndexKeyParts(captured.desired))
+	expression, err := indexExpression(captured.desired.Name, chindexkey.Written(schemaprep.IndexKey(captured.desired)))
 	if err != nil {
 		return contribution, plan, err
 	}
@@ -142,7 +143,7 @@ func planIndexChange(request featureplan.Request, record schemaext.ChangeRecord,
 	}
 	// The captured expression only orders the old index's removal around
 	// changes to the columns it reads.
-	previous, err := indexExpression(captured.current.Name, captured.current.Columns)
+	previous, err := indexExpression(captured.current.Name, chindexkey.Reported(captured.current))
 	if err != nil {
 		return contribution, plan, err
 	}

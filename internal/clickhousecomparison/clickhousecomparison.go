@@ -7,9 +7,7 @@
 package clickhousecomparison
 
 import (
-	"cmp"
 	"regexp"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
@@ -20,6 +18,7 @@ import (
 	"ptah.run/internal/chindexkey"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/precedence"
+	"ptah.run/internal/schemaprep"
 )
 
 // Rules returns ClickHouse's comparison rules. A CHECK is decided by the
@@ -72,39 +71,5 @@ type IndexDefinitions struct{}
 // the keys are compared as the expression each side writes, in the form
 // [chindexkey.Same] reads ClickHouse's own formatting into.
 func (IndexDefinitions) DefinitionChanged(desired schemamodel.Index, current catalog.Index, _ identifier.Semantics) bool {
-	desiredKeys := make([]string, 0, len(desired.Parts))
-	for _, part := range declaredParts(desired) {
-		desiredKeys = append(desiredKeys, cmp.Or(strings.TrimSpace(part.Expr), part.Name))
-	}
-	currentKeys := make([]string, 0, len(current.Parts))
-	for _, part := range reportedParts(current) {
-		currentKeys = append(currentKeys, cmp.Or(strings.TrimSpace(part.Expr), part.Name))
-	}
-	return !chindexkey.Same(desiredKeys, currentKeys)
-}
-
-// declaredParts are the key parts of a declared index, or its fields as parts
-// where it declares no parts.
-func declaredParts(index schemamodel.Index) []schemamodel.IndexPart {
-	if len(index.Parts) > 0 {
-		return index.Parts
-	}
-	parts := make([]schemamodel.IndexPart, len(index.Fields))
-	for position, field := range index.Fields {
-		parts[position] = schemamodel.IndexPart{Name: field}
-	}
-	return parts
-}
-
-// reportedParts are the key parts of a reported index, or its columns as parts
-// where the reader reported no parts.
-func reportedParts(index catalog.Index) []catalog.IndexPart {
-	if len(index.Parts) > 0 {
-		return index.Parts
-	}
-	parts := make([]catalog.IndexPart, len(index.Columns))
-	for position, column := range index.Columns {
-		parts[position] = catalog.IndexPart{Name: column}
-	}
-	return parts
+	return !chindexkey.Same(chindexkey.Written(schemaprep.IndexKey(desired)), chindexkey.Reported(current))
 }

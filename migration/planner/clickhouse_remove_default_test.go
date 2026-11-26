@@ -33,19 +33,19 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseRemovedDefault(t *testing.T) 
 			name:    "a literal default removed",
 			desired: schemamodel.Field{Type: "INTEGER"},
 			current: schemamodel.Field{Type: "INTEGER", Default: "0", DefaultSet: true},
-			want:    []string{"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT", "ALTER TABLE asn MODIFY COLUMN n Int32"},
+			want:    []string{"ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT", "ALTER TABLE `asn` MODIFY COLUMN `n` Int32"},
 		},
 		{
 			name:    "an expression default removed",
 			desired: schemamodel.Field{Type: "INTEGER"},
 			current: schemamodel.Field{Type: "INTEGER", DefaultExpr: "toInt32(40 + 2)"},
-			want:    []string{"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT", "ALTER TABLE asn MODIFY COLUMN n Int32"},
+			want:    []string{"ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT", "ALTER TABLE `asn` MODIFY COLUMN `n` Int32"},
 		},
 		{
 			name:    "a default removed as the type changes",
 			desired: schemamodel.Field{Type: "BIGINT"},
 			current: schemamodel.Field{Type: "INTEGER", Default: "5", DefaultSet: true},
-			want:    []string{"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT", "ALTER TABLE asn MODIFY COLUMN n Int64"},
+			want:    []string{"ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT", "ALTER TABLE `asn` MODIFY COLUMN `n` Int64"},
 		},
 	}
 

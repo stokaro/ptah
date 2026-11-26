@@ -36,7 +36,7 @@ func TestRenderBareGeneratedKind_HappyPath(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(statements, "\n"), qt.Contains, "c Int64 EPHEMERAL defaultValueOfTypeName('Int64')")
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "`c` Int64 EPHEMERAL defaultValueOfTypeName('Int64')")
 }
 
 // TestRenderBareGeneratedKind_FailurePath refuses a generated kind without an

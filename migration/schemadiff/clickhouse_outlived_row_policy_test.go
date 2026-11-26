@@ -66,11 +66,11 @@ func TestClickHouseOutlivedRowPolicyIsPlannedBeforeItsTable(t *testing.T) {
 		statements []string
 	}{
 		{name: "an undeclared policy", statements: []string{
-			"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE orders ("}},
+			"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE `orders` ("}},
 		{name: "a declared policy of the same name", declared: []string{"leak"}, statements: []string{
-			"ALTER ROW POLICY `leak` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL", "CREATE TABLE orders ("}},
+			"ALTER ROW POLICY `leak` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL", "CREATE TABLE `orders` ("}},
 		{name: "an undeclared policy beside a declared one", declared: []string{"tenant"}, created: 1, statements: []string{
-			"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE orders (", "CREATE ROW POLICY `tenant` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL"}},
+			"DROP ROW POLICY `leak` ON `orders`", "CREATE TABLE `orders` (", "CREATE ROW POLICY `tenant` ON `orders` USING (id > 100) AS PERMISSIVE TO ALL"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -177,7 +177,7 @@ func TestClickHouseViewDropTakesItsRowPolicies(t *testing.T) {
 		{name: "a view the declaration leaves out", source: viewPolicySource(nil),
 			drops: []string{"DROP ROW POLICY `on_view` ON `v`", "DROP VIEW IF EXISTS `v`"}},
 		{name: "a view replaced by a table", source: viewPolicySource(nil, "v"),
-			drops: []string{"DROP ROW POLICY `on_view` ON `v`", "DROP VIEW IF EXISTS `v`"}, creates: []string{"CREATE TABLE v ("}},
+			drops: []string{"DROP ROW POLICY `on_view` ON `v`", "DROP VIEW IF EXISTS `v`"}, creates: []string{"CREATE TABLE `v` ("}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

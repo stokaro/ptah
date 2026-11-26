@@ -70,7 +70,7 @@ func (p *Planner) planCheckChanges(ctx context.Context, diff *difftypes.SchemaDi
 			// table to alter, as on every other dialect.
 			return false
 		}
-		key := builder.Table(table).Key()
+		key := tableID(builder, table).Key()
 		return !created[key] && !removed[key] && !rebuilds.has(builder, table)
 	}
 	var changes checkChanges
@@ -90,7 +90,7 @@ func (p *Planner) planCheckChanges(ctx context.Context, diff *difftypes.SchemaDi
 		if len(table.ColumnsAdded) > 0 || slices.ContainsFunc(table.ColumnsModified, func(column difftypes.ColumnDiff) bool {
 			return len(column.Changes) > 0
 		}) {
-			columnsChange[builder.Table(table.TableName).Key()] = true
+			columnsChange[tableID(builder, table.TableName).Key()] = true
 		}
 		for _, column := range table.ColumnsAdded {
 			if column.Check != "" {
@@ -118,7 +118,7 @@ func (p *Planner) planCheckChanges(ctx context.Context, diff *difftypes.SchemaDi
 		// the statement a failed scan reports is the scan alone.
 		first := ast.NewRawSQL(heldRowScan(added))
 		add.before = []ast.Node{ast.NewComment(scannedNote(added))}
-		if columnsChange[builder.Table(added.table).Key()] {
+		if columnsChange[tableID(builder, added.table).Key()] {
 			add.before = append([]ast.Node{first}, add.before...)
 		} else {
 			ahead = append(ahead, columnStep{table: added.table, before: []ast.Node{first}})
@@ -136,7 +136,7 @@ func (p *Planner) planCheckChanges(ctx context.Context, diff *difftypes.SchemaDi
 // message names no count.
 func heldRowScan(added addedCheck) string {
 	return fmt.Sprintf("SELECT throwIf(count() > 0, %s) FROM %s WHERE NOT ifNull((%s), 0);",
-		chcolumn.StringLiteral(fmt.Sprintf("%s is broken by rows %s holds", added.name, added.table)), added.table,
+		chcolumn.StringLiteral(fmt.Sprintf("%s is broken by rows %s holds", added.name, added.table)), quoteTable(added.table),
 		strings.TrimSpace(added.expression))
 }
 
@@ -187,7 +187,7 @@ func alterTable(table string, operation ast.AlterOperation) *ast.AlterTableNode 
 func tableKeys(builder objectidentity.Builder, names []string) map[objectidentity.Key]bool {
 	keys := make(map[objectidentity.Key]bool, len(names))
 	for _, name := range names {
-		keys[builder.Table(name).Key()] = true
+		keys[tableID(builder, name).Key()] = true
 	}
 	return keys
 }

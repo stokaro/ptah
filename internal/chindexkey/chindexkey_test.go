@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/internal/chindexkey"
 )
 
@@ -81,6 +82,42 @@ func TestExpression(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(chindexkey.Expression(test.parts), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestReported writes the key of a catalog index as [chindexkey.Written]
+// writes a declared one. A catalog projected from a declaration that names
+// only key columns carries Columns and no Parts, and those columns are names:
+// read as expressions, `x-y` would compare as x - y, and read as nothing, the
+// key would differ from every declaration.
+func TestReported(t *testing.T) {
+	tests := []struct {
+		name  string
+		index catalog.Index
+		want  []string
+	}{
+		{
+			name:  "a reported expression",
+			index: catalog.Index{Columns: []string{"x"}, Parts: []catalog.IndexPart{{Expr: "x - y"}}},
+			want:  []string{"x - y"},
+		},
+		{
+			name:  "declared parts",
+			index: catalog.Index{Columns: []string{"x-y"}, Parts: []catalog.IndexPart{{Name: "x-y"}, {Expr: "lower(s)"}}},
+			want:  []string{"`x-y`", "lower(s)"},
+		},
+		{
+			name:  "key columns only",
+			index: catalog.Index{Columns: []string{"x-y", "s"}},
+			want:  []string{"`x-y`", "`s`"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(chindexkey.Reported(test.index), qt.DeepEquals, test.want)
 		})
 	}
 }

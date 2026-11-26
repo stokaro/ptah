@@ -1083,7 +1083,7 @@ func indexNodeOn(index schemamodel.Index, tableName string) *ast.IndexNode {
 	indexNode := ast.NewIndex(index.Name, tableName, schemaprep.IndexKeyParts(index)...)
 	indexNode.Facets = index.Facets
 	if len(index.Parts) > 0 {
-		indexNode.SetParts(toASTIndexParts(index.Parts))
+		indexNode.SetParts(IndexParts(index.Parts))
 	}
 	indexNode.IncludeColumns = index.IncludeColumns
 	indexNode.NullsDistinct = cloneBoolPtr(index.NullsDistinct)
@@ -2496,7 +2496,10 @@ func cloneBoolPtr(value *bool) *bool {
 	return new(*value)
 }
 
-func toASTIndexParts(parts []schemamodel.IndexPart) []ast.IndexPart {
+// IndexParts converts a declared index's structured key parts into the parts
+// an index node carries, field by field, so a renderer still knows which part
+// names a column and which holds an expression.
+func IndexParts(parts []schemamodel.IndexPart) []ast.IndexPart {
 	astParts := make([]ast.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		astParts = append(astParts, ast.IndexPart{

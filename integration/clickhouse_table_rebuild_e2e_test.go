@@ -954,11 +954,14 @@ func TestClickHouseTableRebuild_CountsACopyWithATTL(t *testing.T) {
 // A table name ClickHouse reads an escape in is quoted in every statement of
 // the rebuild, the new table's name included.
 func TestClickHouseTableRebuild_QuotesTheTableName(t *testing.T) {
-	for _, name := range []string{`sl\x`, "we'ird"} {
+	for _, test := range []struct{ name, quoted string }{
+		{name: `sl\x`, quoted: "`sl\\\\x`"},
+		{name: "we'ird", quoted: "`we'ird`"},
+	} {
+		name, quoted := test.name, test.quoted
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
 			url, conn := rebuildScratch(c)
-			quoted := chcolumn.QuoteIdentifier(name)
 			rebuildExec(c, conn,
 				"CREATE TABLE "+quoted+" (id UInt64, name String, ver UInt32, d Date) ENGINE = MergeTree ORDER BY id",
 				"INSERT INTO "+quoted+" VALUES (1, 'a', 1, '2024-01-05'), (2, 'b', 2, '2024-02-05')")

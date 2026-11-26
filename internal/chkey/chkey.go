@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
@@ -88,13 +89,13 @@ func isIdentifier(token lexer.Token) bool {
 		token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`)
 }
 
-// unquote removes the backticks or double quotes a ClickHouse identifier may
-// carry.
+// unquote returns the name a ClickHouse identifier spells, read the way
+// [chcolumn.UnquoteIdentifier] reads the server's spelling and the one
+// sqlident writes, and the identifier itself when it is bare or does not read
+// back.
 func unquote(name string) string {
-	for _, quote := range []string{"`", `"`} {
-		if len(name) >= 2 && strings.HasPrefix(name, quote) && strings.HasSuffix(name, quote) {
-			return strings.ReplaceAll(name[1:len(name)-1], quote+quote, quote)
-		}
+	if unquoted, ok := chcolumn.UnquoteIdentifier(name); ok {
+		return unquoted
 	}
 	return name
 }

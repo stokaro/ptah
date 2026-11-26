@@ -27,6 +27,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/servercode"
@@ -144,29 +146,58 @@ func Check(dialect string, change Change) error {
 	return nil
 }
 
-// Names reports whether the statement sqlText names the column and the table
-// of change, the table by the last part of its name, each as a word or a quoted
-// name, with case ignored. A single-quoted literal names nothing. It is how a
+// Names reports whether the statement sqlText, written for dialect, names the
+// column and the table of change, the table by the last part of its name, each
+// as a word or a quoted name, with case ignored. A single-quoted literal and a
+// comment name nothing. The statement is read by the dialect's lexer, and a
+// quoted name by the dialect's quoting ([sqlident.ReadName], or a doubled quote
+// where the dialect states no other escape): a backtick doubled inside
+// backticks is one backtick, and on ClickHouse `a\\b` names a\b. It is how a
 // record is held to a statement of its plan, not a parse of one: the type is
 // left to [Check], since the statement may spell it as the renderer writes it,
 // INT where the comparison reads int8.
-func Names(sqlText string, change Change) bool {
+func Names(dialect, sqlText string, change Change) bool {
 	ref, parsed := tableref.Parse(change.Table)
 	if !parsed {
 		return false
 	}
 	var names []string
-	for _, match := range statementName.FindAllStringSubmatch(sqlText, -1) {
-		if name := match[1] + match[2] + match[3] + match[4]; name != "" {
+	lex := lexer.NewLexerWithOptions(sqlText, dialectlexer.Options(dialect))
+	for token := lex.NextToken(); token.Type != lexer.TokenEOF; token = lex.NextToken() {
+		if name, ok := statementName(dialect, token); ok {
 			names = append(names, strings.ToLower(name))
 		}
 	}
 	return slices.Contains(names, strings.ToLower(change.Column)) && slices.Contains(names, strings.ToLower(ref.Name))
 }
 
-// statementName matches a single-quoted literal, which it leaves out, a name
-// quoted with double quotes, backquotes or brackets, and a word.
-var statementName = regexp.MustCompile(`'[^']*'|"([^"]*)"|` + "`([^`]*)`" + `|\[([^\]]*)\]|([\p{L}\p{N}_]+)`)
+// statementName is the name token stands for: a word as written, or a name
+// quoted with double quotes, backquotes or brackets read back. A single-quoted
+// literal, an operator and a comment are not names, and neither is a quoted
+// name that does not close.
+func statementName(dialect string, token lexer.Token) (string, bool) {
+	value := token.Value
+	isName := token.Type == lexer.TokenIdentifier || token.Type == lexer.TokenString && strings.HasPrefix(value, `"`)
+	if !isName || value == "" {
+		return "", false
+	}
+	if name, ok := sqlident.ReadName(dialect, value); ok {
+		return name, true
+	}
+	var closing string
+	switch value[0] {
+	case '"', '`':
+		closing = value[:1]
+	case '[':
+		closing = "]"
+	default:
+		return value, true
+	}
+	if len(value) < 2 || !strings.HasSuffix(value, closing) {
+		return "", false
+	}
+	return strings.ReplaceAll(value[1:len(value)-1], closing+closing, closing), true
+}
 
 // Condition is the condition, on one row, that converting the value of
 // quotedColumn to the declared type of change would change it, as rules state

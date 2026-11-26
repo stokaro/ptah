@@ -178,7 +178,7 @@ func TestSchemaApplyRehearsesClickHouseViewsOnASiblingDevDatabaseE2E(t *testing.
 			got := clirun.Run(c, run.program, clirun.Options{Dir: c.TempDir()}, run.args(targetURL, schema, devURL)...)
 
 			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stdout, qt.Contains, "ADD COLUMN note")
+			c.Assert(got.Stdout, qt.Contains, "ADD COLUMN `note`")
 			c.Assert(got.Stdout, qt.Contains, "v1")
 			c.Assert(got.Stdout, qt.Contains, "mv1")
 			var left int64

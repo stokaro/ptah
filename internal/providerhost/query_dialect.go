@@ -35,7 +35,8 @@ func registerQueryDialects(engines []*protocol.Engine) error {
 		if err := query.RegisterDialect(engine.GetId(), spelling); err != nil {
 			return fmt.Errorf("%w: engine %s declares a query dialect the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
 		}
-		if err := sqlident.RegisterQuoting(spelling.Quoting, append([]string{engine.GetId()}, engine.GetAliases()...)...); err != nil {
+		described := descriptor.Dialect{Quoting: spelling.Quoting, Lexical: spelling.Lexical}
+		if err := sqlident.RegisterQuoting(described, append([]string{engine.GetId()}, engine.GetAliases()...)...); err != nil {
 			return fmt.Errorf("%w: engine %s declares quoting the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
 		}
 	}

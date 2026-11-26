@@ -51,11 +51,16 @@ func indexRequest(c *qt.C) featureplan.Request {
 	captured := featureplan.Table{Subject: table, Action: featureplan.AlterTable}
 	captured.Current.Table = catalog.Table{Name: "events", Facets: must.Must(schemaext.NewFacets(storage)),
 		Columns: []catalog.Column{{Name: "id", DataType: "UInt64"}, {Name: "payload", DataType: "String"}}}
-	captured.Current.Indexes = []catalog.Index{{Name: "idx_payload", TableName: "events", Columns: []string{"lower(payload)"}, Facets: indexFacets(before)}}
+	captured.Current.Indexes = []catalog.Index{{
+		Name: "idx_payload", TableName: "events", Columns: []string{"lower(payload)"}, Parts: reportedKey("lower(payload)"), Facets: indexFacets(before),
+	}}
 	captured.Current.FeatureCoverage = observedCoverage()
 	captured.Desired.Table = schemamodel.Table{Name: "events", StructName: "Event", Facets: must.Must(schemaext.NewFacets(storage.Desired()))}
 	captured.Desired.Fields = []schemamodel.Field{{StructName: "Event", Name: "id", Type: "UInt64"}, {StructName: "Event", Name: "payload", Type: "String"}}
-	captured.Desired.Indexes = []schemamodel.Index{{Name: "idx_payload", StructName: "Event", TableName: "events", Fields: []string{"lower(payload)"}, Facets: indexFacets(after)}}
+	captured.Desired.Indexes = []schemamodel.Index{{
+		Name: "idx_payload", StructName: "Event", TableName: "events",
+		Fields: []string{"lower(payload)"}, Parts: []schemamodel.IndexPart{{Expr: "lower(payload)"}}, Facets: indexFacets(after),
+	}}
 	return featureplan.Request{
 		Target: "clickhouse", Identifiers: semantics, Tables: []featureplan.Table{captured},
 		Changes: []schemaext.ChangeRecord{{Subject: index, Value: &chdiff.Index{Before: before, After: after}}},
@@ -172,7 +177,9 @@ func TestIndexSettingsPlanRefusesIncompleteOrConflictingStateWithoutOutput(t *te
 			r.CommonSteps[0].Effects = append(r.CommonSteps[0].Effects, plangraph.Effect{Subject: r.Changes[0].Subject, Action: plangraph.Drop})
 		}, "removes or adds index"},
 		{"dropped expression column", func(r *featureplan.Request) { r.CommonSteps[0].Effects[1].Action = plangraph.Drop }, "cannot be scheduled"},
-		{"empty expression", func(r *featureplan.Request) { r.Tables[0].Current.Indexes[0].Columns = []string{" "} }, "no key expression"},
+		{"empty expression", func(r *featureplan.Request) {
+			r.Tables[0].Current.Indexes[0].Columns, r.Tables[0].Current.Indexes[0].Parts = []string{" "}, reportedKey(" ")
+		}, "no key expression"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -281,9 +288,9 @@ func TestIndexSettingsPlanWritesTheDeclaredExpression(t *testing.T) {
 		parts    []schemamodel.IndexPart
 		want     string
 	}{
-		{name: "a tuple key the catalog reports as a list", captured: []string{"a, b"}, fields: []string{"a, b"}, want: "(a, b)"},
-		{name: "a tuple key declared as fields", captured: []string{"a, b"}, fields: []string{"a", "b"}, want: "(a, b)"},
-		{name: "a changed column", captured: []string{"a"}, fields: []string{"b"}, want: "b"},
+		{name: "a tuple key the catalog reports as a list", captured: []string{"a, b"}, parts: []schemamodel.IndexPart{{Expr: "a, b"}}, want: "(a, b)"},
+		{name: "a tuple key declared as fields", captured: []string{"a, b"}, fields: []string{"a", "b"}, want: "(`a`, `b`)"},
+		{name: "a changed column", captured: []string{"a"}, fields: []string{"b"}, want: "`b`"},
 		{name: "an expression part", captured: []string{"lower(payload)"}, parts: []schemamodel.IndexPart{{Expr: "upper(payload)"}}, want: "upper(payload)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -292,7 +299,7 @@ func TestIndexSettingsPlanWritesTheDeclaredExpression(t *testing.T) {
 			request.CommonSteps = nil
 			request.Tables[0].Desired.Fields = append(request.Tables[0].Desired.Fields,
 				schemamodel.Field{StructName: "Event", Name: "a", Type: "String"}, schemamodel.Field{StructName: "Event", Name: "b", Type: "String"})
-			request.Tables[0].Current.Indexes[0].Columns = test.captured
+			request.Tables[0].Current.Indexes[0].Columns, request.Tables[0].Current.Indexes[0].Parts = test.captured, reportedKey(test.captured...)
 			request.Tables[0].Desired.Indexes[0].Fields = test.fields
 			request.Tables[0].Desired.Indexes[0].Parts = test.parts
 			result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
@@ -325,7 +332,7 @@ func TestIndexSettingsPlanRefusesAKeyOnAnUndeclaredColumn_FailurePath(t *testing
 			c := qt.New(t)
 			request := indexRequest(c)
 			request.CommonSteps = nil
-			request.Tables[0].Current.Indexes[0].Columns = []string{"a"}
+			request.Tables[0].Current.Indexes[0].Columns, request.Tables[0].Current.Indexes[0].Parts = []string{"a"}, reportedKey("a")
 			request.Tables[0].Desired.Indexes[0].Fields = test.fields
 			request.Tables[0].Desired.Indexes[0].Parts = test.parts
 			result, err := (chplan.IndexService{}).PlanFeatures(t.Context(), request)
@@ -344,8 +351,8 @@ func TestIndexSettingsPlanOrdersBothExpressionsAroundColumns(t *testing.T) {
 	request := indexRequest(c)
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	table := request.Tables[0].Subject
-	request.Tables[0].Current.Indexes[0].Columns = []string{"payload"}
-	request.Tables[0].Desired.Indexes[0].Fields = []string{"body"}
+	request.Tables[0].Current.Indexes[0].Columns, request.Tables[0].Current.Indexes[0].Parts = []string{"payload"}, reportedKey("payload")
+	request.Tables[0].Desired.Indexes[0].Fields, request.Tables[0].Desired.Indexes[0].Parts = []string{"body"}, nil
 	request.Tables[0].Desired.Fields = append(request.Tables[0].Desired.Fields, schemamodel.Field{StructName: "Event", Name: "body", Type: "String"})
 	request.CommonSteps = []featureplan.CommonStep{
 		{ID: plangraph.StepID{Owner: "example.org/common", Name: "add-body"}, Parent: table,
@@ -359,4 +366,14 @@ func TestIndexSettingsPlanOrdersBothExpressionsAroundColumns(t *testing.T) {
 	feature := result.Contributions[0]
 	c.Assert(feature.Dependencies, qt.Contains, plangraph.Dependency{Before: request.CommonSteps[0].ID, After: feature.Steps[1].ID})
 	c.Assert(feature.Dependencies, qt.Contains, plangraph.Dependency{Before: feature.Steps[0].ID, After: request.CommonSteps[1].ID})
+}
+
+// reportedKey is the key of an index as the reader reports it: each key the
+// server prints, as one expression part.
+func reportedKey(keys ...string) []catalog.IndexPart {
+	parts := make([]catalog.IndexPart, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, catalog.IndexPart{Expr: key})
+	}
+	return parts
 }

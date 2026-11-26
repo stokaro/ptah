@@ -626,11 +626,15 @@ func (r *Reader) readSkippingIndexes(ctx context.Context, dbName string) ([]cata
 		}
 		// Columns[0] holds the whole key expression, which is what the common
 		// diff layer compares and what reports print for an expression index.
+		// The one part says it is an expression: the server reports a key in
+		// its own SQL, with a name that needs quotes quoted, so a read schema
+		// written back takes the key as it is rather than as one column name.
 		indexes = append(indexes, catalog.Index{
 			Facets:     settings,
 			Name:       name,
 			TableName:  table,
 			Columns:    []string{expr},
+			Parts:      []catalog.IndexPart{{Expr: expr}},
 			Definition: fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", name, expr, idxType, granularity),
 		})
 	}

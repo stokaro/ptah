@@ -37,13 +37,14 @@ func indexedCatalog(settings *chschema.ObservedIndex) *catalog.Database {
 		Name: "events", Facets: must.Must(schemaext.NewFacets(storage)),
 		Columns: []catalog.Column{{Name: "id", DataType: "UInt64", ColumnType: "UInt64", IsNullable: "NO"}, {Name: "payload", DataType: "String", ColumnType: "String", IsNullable: "NO"}},
 	}}, Indexes: []catalog.Index{{
-		Name: "idx_payload", TableName: "events", Columns: []string{"lower(payload)"},
+		Name: "idx_payload", TableName: "events", Columns: []string{"lower(payload)"}, Parts: []catalog.IndexPart{{Expr: "lower(payload)"}},
 		Facets: must.Must(must.Must(schemaext.NewFacets(settings)).WithTargetScope(chschema.IndexKind, "clickhouse")),
 	}}}
 }
 
 func indexedSource(index schemamodel.Index) *schemamodel.Database {
 	index.Name, index.StructName, index.TableName, index.Fields = "idx_payload", "Event", "events", []string{"lower(payload)"}
+	index.Parts = []schemamodel.IndexPart{{Expr: "lower(payload)"}}
 	return &schemamodel.Database{
 		Tables:  []schemamodel.Table{{Name: "events", StructName: "Event"}},
 		Fields:  []schemamodel.Field{{Name: "id", StructName: "Event", Type: "UInt64"}, {Name: "payload", StructName: "Event", Type: "String"}},
@@ -146,7 +147,7 @@ func TestSkippingIndexSettingsChangeAppliesTheDeclaredKey(t *testing.T) {
 	c := qt.New(t)
 	runtime := must.Must(builtin.New())
 	source := indexedSource(schemamodel.Index{Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}}})
-	source.Indexes[0].Fields = []string{"id", "payload"}
+	source.Indexes[0].Fields, source.Indexes[0].Parts = []string{"id", "payload"}, nil
 	current := indexedCatalog(&chschema.ObservedIndex{IndexType: "minmax", Granularity: 1})
 	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)
@@ -154,7 +155,7 @@ func TestSkippingIndexSettingsChangeAppliesTheDeclaredKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
 		"ALTER TABLE `events` DROP INDEX `idx_payload`",
-		"ALTER TABLE `events` ADD INDEX `idx_payload` (id, payload) TYPE minmax GRANULARITY 4",
+		"ALTER TABLE `events` ADD INDEX `idx_payload` (`id`, `payload`) TYPE minmax GRANULARITY 4",
 	})
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 		Runtime: runtime, Diff: diff, DesiredSchema: source, CurrentSchema: current, Dialect: "clickhouse",
@@ -260,7 +261,7 @@ func TestSkippingIndexSettingsRefuseAKeyOnAnUndeclaredColumn_FailurePath(t *test
 	c := qt.New(t)
 	runtime := must.Must(builtin.New())
 	source := indexedSource(schemamodel.Index{Overrides: map[string]map[string]string{"clickhouse": {"granularity": "4"}}})
-	source.Indexes[0].Fields = []string{"paylod"}
+	source.Indexes[0].Fields, source.Indexes[0].Parts = []string{"paylod"}, nil
 	current := indexedCatalog(&chschema.ObservedIndex{IndexType: "minmax", Granularity: 1})
 	diff, err := schemadiff.CompareWithDialect(t.Context(), source, current, "clickhouse", runtime)
 	c.Assert(err, qt.IsNil)

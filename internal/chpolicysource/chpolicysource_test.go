@@ -26,6 +26,10 @@ func TestParseRoles_HappyPath(t *testing.T) {
 		{text: "alice, bob", want: chschema.RoleSelection{Names: []string{"alice", "bob"}}},
 		{text: "`ALL`", want: chschema.RoleSelection{Names: []string{"ALL"}}},
 		{text: `"a""b", ` + "`c``d`", want: chschema.RoleSelection{Names: []string{`a"b`, "c`d"}}},
+		// A backslash escapes the quote after it, so the comma between them is
+		// inside the name, as the server reads it.
+		{text: "`a\\`,b`, c", want: chschema.RoleSelection{Names: []string{"a`,b", "c"}}},
+		{text: `"a\",b", c`, want: chschema.RoleSelection{Names: []string{`a",b`, "c"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.text, func(t *testing.T) {
@@ -75,6 +79,7 @@ func TestFormatRoles(t *testing.T) {
 		{roles: chschema.RoleSelection{All: true}, want: "ALL"},
 		{roles: chschema.RoleSelection{All: true, Except: []string{"admin", "b ob"}}, want: "ALL EXCEPT admin, `b ob`"},
 		{roles: chschema.RoleSelection{Names: []string{"none", "c`d"}}, want: "`none`, `c``d`"},
+		{roles: chschema.RoleSelection{Names: []string{`a\,b`, "c"}}, want: "`a\\\\,b`, c"},
 	}
 	for _, test := range tests {
 		t.Run(test.want, func(t *testing.T) {

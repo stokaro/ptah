@@ -23,8 +23,8 @@ func TestClickHouseTTLRenderingRetainsOwnerRisk(t *testing.T) {
 		after string
 		sql   string
 	}{
-		{name: "modify", after: "created_at + INTERVAL 30 DAY", sql: "ALTER TABLE events MODIFY TTL created_at + INTERVAL 30 DAY;\n"},
-		{name: "remove", sql: "ALTER TABLE events REMOVE TTL;\n"},
+		{name: "modify", after: "created_at + INTERVAL 30 DAY", sql: "ALTER TABLE `events` MODIFY TTL created_at + INTERVAL 30 DAY;\n"},
+		{name: "remove", sql: "ALTER TABLE `events` REMOVE TTL;\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

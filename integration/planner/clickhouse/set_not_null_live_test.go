@@ -123,8 +123,8 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
-		"ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2",
-		"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'",
+		"ALTER TABLE `asn` UPDATE `n` = '7' WHERE `n` IS NULL SETTINGS mutations_sync = 2",
+		"ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT '7'",
 	})
 	for _, statement := range must.Must(plan.Statements()) {
 		_, err := conn.ExecContext(ctx, statement)
@@ -180,8 +180,8 @@ func TestMaterializedColumnMadeNotNull_HappyPath(t *testing.T) {
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
-		"ALTER TABLE asn DROP COLUMN n",
-		"ALTER TABLE asn ADD COLUMN n Int32 MATERIALIZED id + 1",
+		"ALTER TABLE `asn` DROP COLUMN `n`",
+		"ALTER TABLE `asn` ADD COLUMN `n` Int32 MATERIALIZED id + 1",
 	})
 	for _, statement := range must.Must(plan.Statements()) {
 		_, err := conn.ExecContext(ctx, statement)

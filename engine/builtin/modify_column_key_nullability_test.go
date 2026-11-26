@@ -171,8 +171,8 @@ var modifyColumnNullabilityCases = []modifyColumnNullabilityCase{
 		// type renderer has always excluded a key column from the wrapping.
 		name:     "clickhouse",
 		dialect:  "clickhouse",
-		key:      renderExpectation{contains: "ALTER TABLE users MODIFY COLUMN id Int64;", absent: "Nullable("},
-		ordinary: renderExpectation{contains: "ALTER TABLE users MODIFY COLUMN nickname Nullable(String);"},
+		key:      renderExpectation{contains: "ALTER TABLE `users` MODIFY COLUMN `id` Int64;", absent: "Nullable("},
+		ordinary: renderExpectation{contains: "ALTER TABLE `users` MODIFY COLUMN `nickname` Nullable(String);"},
 	},
 	{
 		// SQLite cannot ALTER a column at all: the operation is refused and the

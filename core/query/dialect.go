@@ -25,6 +25,11 @@ type Spelling struct {
 	Quoting descriptor.Quoting `json:"quoting,omitzero"`
 	// Query is how the engine spells what engines spell differently.
 	Query descriptor.Query `json:"query,omitzero"`
+	// Lexical is how the engine reads its text. The builder reads one rule of
+	// it, IdentifierBackslashEscapes: where a backslash inside a quoted name
+	// starts an escape, as on ClickHouse, each backslash a name holds is
+	// written doubled, as a dialect the process registry describes writes it.
+	Lexical descriptor.Lexical `json:"lexical,omitzero"`
 	// DefaultCapabilities are the capability facts the builder assumes when
 	// its caller names the engine without a target's capabilities, as
 	// [RenderInsert] does. An absent key is unknown, and a clause it gates
@@ -86,7 +91,9 @@ func RegisterDialect(engine string, spelling Spelling) error {
 }
 
 func newSpelled(name string, spelling Spelling) (spelled, error) {
-	described := descriptor.Dialect{Name: name, Placeholder: spelling.Placeholder, Quoting: spelling.Quoting, Query: spelling.Query}
+	described := descriptor.Dialect{
+		Name: name, Placeholder: spelling.Placeholder, Quoting: spelling.Quoting, Query: spelling.Query, Lexical: spelling.Lexical,
+	}
 	if _, err := descriptor.NewRegistry(described); err != nil {
 		return spelled{}, fmt.Errorf("query: the spelling of %s: %w", name, err)
 	}
@@ -101,19 +108,20 @@ func newSpelled(name string, spelling Spelling) (spelled, error) {
 func (s spelled) same(other spelled) bool {
 	left, right := s.spelling, other.spelling
 	return left.Placeholder == right.Placeholder && reflect.DeepEqual(left.Quoting, right.Quoting) &&
-		reflect.DeepEqual(left.Query, right.Query) && s.caps.Equal(other.caps)
+		reflect.DeepEqual(left.Query, right.Query) && reflect.DeepEqual(left.Lexical, right.Lexical) && s.caps.Equal(other.caps)
 }
 
 // lookupDialect returns the descriptor the renderer reads for dialect: the
-// process registry's, or a registered spelling's, which also carries how the
-// dialect quotes a name.
-func lookupDialect(dialect string) (descriptor.Dialect, *descriptor.Quoting, bool) {
+// process registry's, or a registered spelling's. For a registered spelling
+// it also returns that descriptor as the one a name is quoted by, since the
+// process registry does not know the dialect's name; it is nil otherwise.
+func lookupDialect(dialect string) (descriptor.Dialect, *descriptor.Dialect, bool) {
 	if described, ok := platform.Lookup(dialect); ok {
 		return described, nil, true
 	}
 	if registered, ok := registeredSpelling(dialect); ok {
-		quoting := registered.described.Quoting
-		return registered.described, &quoting, true
+		declared := registered.described
+		return registered.described, &declared, true
 	}
 	return descriptor.Dialect{}, nil, false
 }

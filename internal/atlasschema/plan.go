@@ -1331,7 +1331,7 @@ func validatePlanRoundings(plan PlanFile) error {
 			return fmt.Errorf("plan rounding %d is not a change the plan records: %w", i+1, err)
 		}
 		if !slices.ContainsFunc(plan.Statements, func(statement PlanStatement) bool {
-			return roundingscan.Names(statement.SQL, change)
+			return roundingscan.Names(plan.Dialect, statement.SQL, change)
 		}) {
 			return fmt.Errorf("plan rounding %d is not a change the plan records: no statement of the plan names "+
 				"column %q of table %q", i+1, rounding.Column, rounding.Table)

@@ -37,24 +37,24 @@ func TestCreateTable_ComputedColumnsKeepTheirExpression(t *testing.T) {
 			// keyword, which passes through.
 			name: "the native stored kind",
 			kind: "MATERIALIZED",
-			want: "  full_name String MATERIALIZED concat(email, ' ')",
+			want: "  `full_name` String MATERIALIZED concat(email, ' ')",
 		},
 		{
 			name: "the native read-time kind",
 			kind: "ALIAS",
-			want: "  full_name String ALIAS concat(email, ' ')",
+			want: "  `full_name` String ALIAS concat(email, ' ')",
 		},
 		{
 			// What a DECLARED schema carries instead. STORED means the value is
 			// written, which is MATERIALIZED.
 			name: "the declared stored kind",
 			kind: "STORED",
-			want: "  full_name String MATERIALIZED concat(email, ' ')",
+			want: "  `full_name` String MATERIALIZED concat(email, ' ')",
 		},
 		{
 			name: "the declared read-time kind",
 			kind: "VIRTUAL",
-			want: "  full_name String ALIAS concat(email, ' ')",
+			want: "  `full_name` String ALIAS concat(email, ' ')",
 		},
 		{
 			// An unnamed kind takes the one that stores. The alternative is a
@@ -62,7 +62,7 @@ func TestCreateTable_ComputedColumnsKeepTheirExpression(t *testing.T) {
 			// noticing a query got cheaper.
 			name: "no kind at all",
 			kind: "",
-			want: "  full_name String MATERIALIZED concat(email, ' ')",
+			want: "  `full_name` String MATERIALIZED concat(email, ' ')",
 		},
 	}
 
@@ -115,7 +115,7 @@ func TestCreateTable_AComputedColumnTakesNoDefault(t *testing.T) {
 		},
 	})
 
-	c.Assert(sql, qt.Contains, "  full_name String MATERIALIZED concat(email, ' ')")
+	c.Assert(sql, qt.Contains, "  `full_name` String MATERIALIZED concat(email, ' ')")
 	c.Assert(sql, qt.Not(qt.Contains), "DEFAULT")
 }
 
@@ -135,7 +135,7 @@ func TestCreateTable_APlainDefaultIsUntouched(t *testing.T) {
 		},
 	})
 
-	c.Assert(sql, qt.Contains, "  status String DEFAULT 'new'")
+	c.Assert(sql, qt.Contains, "  `status` String DEFAULT 'new'")
 	c.Assert(sql, qt.Contains, "DEFAULT now()")
 	c.Assert(sql, qt.Not(qt.Contains), "MATERIALIZED")
 	c.Assert(sql, qt.Not(qt.Contains), "ALIAS")

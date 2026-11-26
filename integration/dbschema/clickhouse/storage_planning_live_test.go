@@ -45,22 +45,22 @@ func TestStoragePlanAppliesAndReversesInPlaceLive(t *testing.T) {
 				{Name: "a", Type: "Int32"}, {Name: "u", Type: "UInt64"}, {Name: "k", Type: "Int32"},
 				{Name: "note", Type: "String", Nullable: true, Default: "n"},
 			},
-			forward: []string{"ALTER TABLE {t} ADD COLUMN k Int32, ADD COLUMN note Nullable(String) DEFAULT 'n', MODIFY ORDER BY (a, u, k)"},
-			reverse: []string{"ALTER TABLE {t} MODIFY ORDER BY (a, u)", "ALTER TABLE {t} DROP COLUMN k", "ALTER TABLE {t} DROP COLUMN note"},
+			forward: []string{"ALTER TABLE `{t}` ADD COLUMN `k` Int32, ADD COLUMN `note` Nullable(String) DEFAULT 'n', MODIFY ORDER BY (a, u, k)"},
+			reverse: []string{"ALTER TABLE `{t}` MODIFY ORDER BY (a, u)", "ALTER TABLE `{t}` DROP COLUMN `k`", "ALTER TABLE `{t}` DROP COLUMN `note`"},
 		},
 		{
 			name: "sorting key loses its last column", columns: "a Int32, u UInt64", storage: "ORDER BY (a, u) PRIMARY KEY a",
 			change:  func(v *chschema.DesiredTable) { v.OrderBy.Value = "a" },
 			fields:  []schemamodel.Field{{Name: "a", Type: "Int32"}},
-			forward: []string{"ALTER TABLE {t} MODIFY ORDER BY a", "ALTER TABLE {t} DROP COLUMN u"},
-			reverse: []string{"ALTER TABLE {t} ADD COLUMN u UInt64, MODIFY ORDER BY (a, u)"},
+			forward: []string{"ALTER TABLE `{t}` MODIFY ORDER BY a", "ALTER TABLE `{t}` DROP COLUMN `u`"},
+			reverse: []string{"ALTER TABLE `{t}` ADD COLUMN `u` UInt64, MODIFY ORDER BY (a, u)"},
 		},
 		{
 			name: "sampling key", columns: "a Int32, u UInt64", storage: "ORDER BY (a, u)",
 			change:  func(v *chschema.DesiredTable) { v.SampleBy.Value = "u" },
 			fields:  []schemamodel.Field{{Name: "a", Type: "Int32"}, {Name: "u", Type: "UInt64"}},
-			forward: []string{"ALTER TABLE {t} MODIFY SAMPLE BY u"},
-			reverse: []string{"ALTER TABLE {t} REMOVE SAMPLE BY"},
+			forward: []string{"ALTER TABLE `{t}` MODIFY SAMPLE BY u"},
+			reverse: []string{"ALTER TABLE `{t}` REMOVE SAMPLE BY"},
 		},
 		{
 			name: "settings", columns: "a Int32", storage: "ORDER BY a SETTINGS merge_with_ttl_timeout = 100, min_bytes_for_wide_part = 0",
@@ -68,8 +68,8 @@ func TestStoragePlanAppliesAndReversesInPlaceLive(t *testing.T) {
 				v.Settings.Value = "merge_with_ttl_timeout = 3600, ttl_only_drop_parts = 1"
 			},
 			fields:  []schemamodel.Field{{Name: "a", Type: "Int32"}},
-			forward: []string{"ALTER TABLE {t} MODIFY SETTING merge_with_ttl_timeout = 3600, ttl_only_drop_parts = 1", "ALTER TABLE {t} RESET SETTING min_bytes_for_wide_part"},
-			reverse: []string{"ALTER TABLE {t} MODIFY SETTING merge_with_ttl_timeout = 100, min_bytes_for_wide_part = 0", "ALTER TABLE {t} RESET SETTING ttl_only_drop_parts"},
+			forward: []string{"ALTER TABLE `{t}` MODIFY SETTING merge_with_ttl_timeout = 3600, ttl_only_drop_parts = 1", "ALTER TABLE `{t}` RESET SETTING min_bytes_for_wide_part"},
+			reverse: []string{"ALTER TABLE `{t}` MODIFY SETTING merge_with_ttl_timeout = 100, min_bytes_for_wide_part = 0", "ALTER TABLE `{t}` RESET SETTING ttl_only_drop_parts"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

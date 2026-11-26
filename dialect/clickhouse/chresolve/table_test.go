@@ -46,12 +46,12 @@ func TestCreationDefaultsAreExplicitPlanningInput(t *testing.T) {
 	key := []string{"tenant", "id"}
 	result, err := chresolve.Table(chresolve.Request{Desired: &chschema.DesiredTable{}, Creating: true, CommonKey: key})
 	c.Assert(err, qt.IsNil)
-	want := (&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tenant, id", PrimaryKey: "tenant, id"}).Desired()
+	want := (&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "`tenant`, `id`", PrimaryKey: "`tenant`, `id`"}).Desired()
 	c.Assert(result.Prepared, qt.DeepEquals, *want)
 	c.Assert(result.Declared, qt.DeepEquals, chschema.DesiredTable{})
 	c.Assert(result.Origins, qt.DeepEquals, allOrigins(chresolve.CreationRule))
 	key[0] = "mutated"
-	c.Assert(result.Prepared.OrderBy.Value, qt.Equals, "tenant, id")
+	c.Assert(result.Prepared.OrderBy.Value, qt.Equals, "`tenant`, `id`")
 }
 
 func TestExplicitDefaultsDoNotRetainObservedClauses(t *testing.T) {
@@ -61,7 +61,7 @@ func TestExplicitDefaultsDoNotRetainObservedClauses(t *testing.T) {
 		PartitionBy: value, SampleBy: value, TTL: value, Settings: value}
 	result, err := chresolve.Table(chresolve.Request{Desired: desired, Current: observed(), CommonKey: []string{"id"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Prepared, qt.DeepEquals, *(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "id", PrimaryKey: "id"}).Desired())
+	c.Assert(result.Prepared, qt.DeepEquals, *(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "`id`", PrimaryKey: "`id`"}).Desired())
 	c.Assert(result.Declared, qt.DeepEquals, *desired)
 	c.Assert(result.Origins, qt.DeepEquals, allOrigins(chresolve.CreationRule))
 }
@@ -194,6 +194,29 @@ func TestTargetEngineIntentOverridesTheCommonFallback(t *testing.T) {
 			c.Assert(result.Prepared.Engine.Value, qt.Equals, test.want)
 			c.Assert(result.Declared.Engine, qt.DeepEquals, test.desired)
 			c.Assert(source.Engine, qt.DeepEquals, test.desired)
+		})
+	}
+}
+
+// TestColumnKey pins the sorting key a table without one takes from its
+// primary-key columns. Every name is quoted: a key is SQL the server parses,
+// so `c -- d` written bare would end the key at c, and `not` is a syntax error.
+func TestColumnKey(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		columns []string
+		want    string
+	}{
+		{name: "no column", columns: nil, want: ""},
+		{name: "one column", columns: []string{"id"}, want: "`id`"},
+		{name: "in order", columns: []string{"tenant", "id"}, want: "`tenant`, `id`"},
+		{name: "a comment marker", columns: []string{"c -- d"}, want: "`c -- d`"},
+		{name: "a keyword", columns: []string{"not"}, want: "`not`"},
+		{name: "a backtick and a backslash", columns: []string{"a`b", `a\b`}, want: "`a``b`, `a\\\\b`"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(chresolve.ColumnKey(test.columns), qt.Equals, test.want)
 		})
 	}
 }

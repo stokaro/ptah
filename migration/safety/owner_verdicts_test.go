@@ -204,14 +204,14 @@ func TestOwnerVerdicts_RaiseFeatureOwnerStatementsTheirTextReadsAsSafe(t *testin
 		{
 			name: "a ClickHouse TTL removed", dialect: platform.ClickHouse,
 			node:         alter("items", &chast.AlterStorage{Change: chdiff.Table{Before: ttl, After: noTTL}}),
-			wantSQL:      "ALTER TABLE items REMOVE TTL",
+			wantSQL:      "ALTER TABLE `items` REMOVE TTL",
 			wantSeverity: safety.Warning,
 			wantReason:   "TTL changes can expire, move, or aggregate existing data; restoring the rule cannot recover that data",
 		},
 		{
 			name: "a ClickHouse merging engine's sorting key shortened", dialect: platform.ClickHouse,
 			node:         alter("items", &chast.AlterStorage{Change: chdiff.Table{Before: replacing, After: shorterKey}}),
-			wantSQL:      "ALTER TABLE items MODIFY ORDER BY id",
+			wantSQL:      "ALTER TABLE `items` MODIFY ORDER BY id",
 			wantSeverity: safety.Destructive,
 			wantReason: "a new sorting key changes how parts written from now on are sorted and which rows the engine merges together; " +
 				"rows that differ only in a dropped sorting-key expression can merge into one, which restoring the key cannot undo",

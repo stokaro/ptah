@@ -42,7 +42,7 @@ func pathShop() *schemamodel.Database {
 // and so is an @@ string, whose quote opens no other string.
 func TestDeriveForDialect_AProvidersText(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(sqlident.RegisterQuoting(descriptor.Quoting{Style: descriptor.QuoteBacktick, Bare: descriptor.BareNever, Paths: true}, "lineage-paths"), qt.IsNil)
+	c.Assert(sqlident.RegisterQuoting(descriptor.Dialect{Quoting: descriptor.Quoting{Style: descriptor.QuoteBacktick, Bare: descriptor.BareNever, Paths: true}}, "lineage-paths"), qt.IsNil)
 	release, err := lexerext.Provide(providerscan.New(scantest.Scan), "lineage-paths")
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(release)

@@ -80,7 +80,7 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 		if len(table.ColumnsAdded)+len(table.ColumnsModified)+len(table.ColumnsRemoved)+len(table.FeatureChanges) == 0 {
 			continue
 		}
-		subject := builder.Table(table.TableName)
+		subject := tableID(builder, table.TableName)
 		action, changes := featureplan.AlterTable, table.FeatureChanges
 		if phases.rebuilds.has(builder, table.TableName) {
 			// The new table is made from the declaration, so the changes of
@@ -94,7 +94,7 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 		names[subject.Key()] = table.TableName
 	}
 	for _, removal := range diff.TablesRemoved {
-		subject := builder.Table(removal.Name)
+		subject := tableID(builder, removal.Name)
 		request.Tables = append(request.Tables, featureplan.Table{Subject: subject, Action: featureplan.DropTable, Current: removal.Current})
 		names[subject.Key()] = removal.Name
 	}
@@ -147,7 +147,7 @@ func (p *Planner) scheduleStorage(ctx context.Context, runtime featureplan.Runti
 	}
 	removed := make(map[objectidentity.Key]bool, len(diff.TablesRemoved))
 	for _, removal := range diff.TablesRemoved {
-		removed[builder.Table(removal.Name).Key()] = true
+		removed[tableID(builder, removal.Name).Key()] = true
 	}
 	for _, step := range detached {
 		if slices.ContainsFunc(step.reads, func(table objectidentity.Key) bool { return removed[table] }) {
@@ -249,10 +249,9 @@ func commonIndexes(builder objectidentity.Builder, captured map[objectidentity.K
 		default:
 			return nil, fmt.Errorf("%w: unexpected common index operation %T", schemaext.ErrInvalidValue, node)
 		}
-		parent := builder.Table(table)
-		subject := builder.Index(table, name)
+		parent, subject := tableID(builder, table), builder.Index(table, name)
 		if ref, valid := tableref.Parse(table); valid {
-			parent, subject = builder.TableParts(ref.Schema, ref.Name), builder.IndexParts(ref.Schema, ref.Name, name)
+			subject = builder.IndexParts(ref.Schema, ref.Name, name)
 		}
 		step := featureplan.CommonStep{
 			ID:          plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("index/%d", i)},
@@ -279,7 +278,7 @@ func commonColumns(builder objectidentity.Builder, captured map[objectidentity.K
 	common := plangraph.Contribution[[]ast.Node]{Owner: "ptah.run/common/clickhouse"}
 	var steps []featureplan.CommonStep
 	for i, column := range columns {
-		table := builder.Table(column.table)
+		table := tableID(builder, column.table)
 		step := featureplan.CommonStep{ID: plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("column/%d", i)}, Transaction: plangraph.TransactionForbidden}
 		if captured[table.Key()] {
 			step.Parent = table
@@ -332,7 +331,7 @@ func columnEffects(builder objectidentity.Builder, table objectidentity.ID, alte
 		// table, not a column of it.
 		return []plangraph.Effect{{Subject: table, Action: plangraph.Alter}}, nil
 	}
-	return []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: builder.Column(alter.Name, name), Action: action}}, nil
+	return []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: columnID(builder, alter.Name, name), Action: action}}, nil
 }
 
 // materializedViewChanges adds the attached-setting changes of materialized
@@ -382,7 +381,7 @@ func rebuildStepIDs(common *plangraph.Contribution[[]ast.Node], steps *[]feature
 	var ids []plangraph.StepID
 	for i, rebuild := range rebuilds {
 		id := plangraph.StepID{Owner: common.Owner, Name: fmt.Sprintf("rebuild/%d", i)}
-		effects := []plangraph.Effect{{Subject: builder.Table(rebuild.name), Action: plangraph.Alter}}
+		effects := []plangraph.Effect{{Subject: tableID(builder, rebuild.name), Action: plangraph.Alter}}
 		*steps = append(*steps, featureplan.CommonStep{ID: id, Parent: rebuild.subject, Effects: slices.Clone(effects), Transaction: plangraph.TransactionForbidden})
 		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{
 			ID: id, Payload: rebuild.nodes, Effects: effects, Transaction: plangraph.TransactionForbidden, Impact: rebuild.effect,
@@ -390,4 +389,29 @@ func rebuildStepIDs(common *plangraph.Contribution[[]ast.Node], steps *[]feature
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// tableID is the identity of a table the diff names by its model name.
+//
+// A model name double-quotes a part that holds a dot, a quote or a backtick,
+// and the captured tables hold their logical components, as the shared planner
+// builds them. [objectidentity.Builder.Table] keeps the quotes of such a name
+// in the key on ClickHouse, which folds no case, so a table named t`q would
+// take one identity here and another in the capture: the feature host then
+// refuses the plan with "feature table name disagrees with its captured
+// identity". A name that does not parse keeps the spelling it has.
+func tableID(builder objectidentity.Builder, name string) objectidentity.ID {
+	if ref, ok := tableref.Parse(name); ok {
+		return builder.TableParts(ref.Schema, ref.Name)
+	}
+	return builder.Table(name)
+}
+
+// columnID is the identity of a column of the table the diff names by its
+// model name, read the way [tableID] reads the table.
+func columnID(builder objectidentity.Builder, table, column string) objectidentity.ID {
+	if ref, ok := tableref.Parse(table); ok {
+		return builder.ColumnParts(ref.Schema, ref.Name, column)
+	}
+	return builder.Column(table, column)
 }

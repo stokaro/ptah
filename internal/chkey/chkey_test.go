@@ -20,7 +20,7 @@ func clickHouseTable(overrides map[string]string) schemamodel.Table {
 // when the clause uses it, directly or inside an expression, as the server's
 // is_in_primary_key does (measured on 24.10 and 26.9).
 func TestPrimaryKeyColumns_HappyPath(t *testing.T) {
-	columns := []string{"id", "n", "ts", "toDate"}
+	columns := []string{"id", "n", "ts", "toDate", `a\b`}
 	tests := []struct {
 		name      string
 		overrides map[string]string
@@ -40,6 +40,13 @@ func TestPrimaryKeyColumns_HappyPath(t *testing.T) {
 			want:      map[string]bool{"ts": true, "id": true},
 		},
 		{name: "quoted names", overrides: map[string]string{"order_by": "(`id`, \"n\")"}, want: map[string]bool{"id": true, "n": true}},
+		{
+			// The writer doubles a backslash a name holds, so the key names
+			// the column a\b rather than one with two backslashes.
+			name:      "a quoted name with an escape",
+			overrides: map[string]string{"order_by": "(id, `a\\\\b`)"},
+			want:      map[string]bool{"id": true, `a\b`: true},
+		},
 		{name: "a name that is no column", overrides: map[string]string{"order_by": "tuple()"}, want: make(map[string]bool)},
 	}
 	for _, test := range tests {

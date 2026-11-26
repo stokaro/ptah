@@ -46,9 +46,9 @@ func TestClickHouseResolvedFacetsReachCreatePlanning(t *testing.T) {
 		parts []schemamodel.PrimaryKeyPart
 		want  string
 	}{
-		{name: "field key", want: "id, tenant"},
-		{name: "ordered table key", key: []string{"tenant", "id"}, want: "tenant, id"},
-		{name: "ordered key parts", key: []string{"tenant", "id"}, parts: []schemamodel.PrimaryKeyPart{{Name: "tenant"}, {Name: "id"}}, want: "tenant, id"},
+		{name: "field key", want: "`id`, `tenant`"},
+		{name: "ordered table key", key: []string{"tenant", "id"}, want: "`tenant`, `id`"},
+		{name: "ordered key parts", key: []string{"tenant", "id"}, parts: []schemamodel.PrimaryKeyPart{{Name: "tenant"}, {Name: "id"}}, want: "`tenant`, `id`"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -134,7 +134,7 @@ func TestClickHouseCreationLeavesUnrelatedUnmanagedSettingsAlone(t *testing.T) {
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "clickhouse", planext.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
-	c.Assert(statements[0], qt.Contains, "CREATE TABLE added")
+	c.Assert(statements[0], qt.Contains, "CREATE TABLE `added`")
 }
 
 func TestClickHouseScopedObservationUsesTheConnectionDatabase(t *testing.T) {

@@ -30,7 +30,7 @@ func TestRenderModifyColumn_RemovesADefault(t *testing.T) {
 				PreviousDefault: "'0'", HasPreviousDefault: true,
 				Changed: ast.ColumnProperties{Default: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT;\nALTER TABLE asn MODIFY COLUMN n Int32;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT;\nALTER TABLE `asn` MODIFY COLUMN `n` Int32;\n",
 		},
 		{
 			name: "the default goes as the type changes",
@@ -39,7 +39,7 @@ func TestRenderModifyColumn_RemovesADefault(t *testing.T) {
 				PreviousDefault: "5", HasPreviousDefault: true,
 				Changed: ast.ColumnProperties{Type: true, Default: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT;\nALTER TABLE asn MODIFY COLUMN n Int64;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT;\nALTER TABLE `asn` MODIFY COLUMN `n` Int64;\n",
 		},
 		{
 			name: "the default goes as NOT NULL is dropped",
@@ -49,7 +49,7 @@ func TestRenderModifyColumn_RemovesADefault(t *testing.T) {
 				PreviousNullable: false, HasPreviousNullable: true,
 				Changed: ast.ColumnProperties{Nullability: true, Default: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT;\nALTER TABLE asn MODIFY COLUMN n Nullable(Int32);\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `n` REMOVE DEFAULT;\nALTER TABLE `asn` MODIFY COLUMN `n` Nullable(Int32);\n",
 		},
 	}
 	for _, test := range tests {
@@ -85,7 +85,7 @@ func TestRenderModifyColumn_LeavesAStatedDefaultAlone(t *testing.T) {
 				PreviousDefault: "5", HasPreviousDefault: true,
 				Changed: ast.ColumnProperties{Default: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7';\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `n` Int32 DEFAULT '7';\n",
 		},
 		{
 			name: "a column that had no default",
@@ -94,7 +94,7 @@ func TestRenderModifyColumn_LeavesAStatedDefaultAlone(t *testing.T) {
 				HasPreviousDefault: true,
 				Changed:            ast.ColumnProperties{Type: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n Int64;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `n` Int64;\n",
 		},
 		{
 			name: "a computed column",
@@ -103,7 +103,7 @@ func TestRenderModifyColumn_LeavesAStatedDefaultAlone(t *testing.T) {
 				PreviousDefault: "5", HasPreviousDefault: true,
 				Changed: ast.ColumnProperties{Default: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32 MATERIALIZED a + 1;\n",
+			want: "ALTER TABLE `asn` MODIFY COLUMN `n` Int32 MATERIALIZED a + 1;\n",
 		},
 	}
 	for _, test := range tests {

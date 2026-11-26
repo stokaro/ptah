@@ -43,7 +43,7 @@ func validateDeclaredSkippingIndexKeys(dialect string, database *schemamodel.Dat
 				declared[field.Name] = true
 			}
 		}
-		expression := chindexkey.Expression(schemaprep.IndexKeyParts(index))
+		expression := chindexkey.Expression(chindexkey.Written(schemaprep.IndexKey(index)))
 		for _, column := range chkey.PlainColumnReferences(expression) {
 			if !declared[column] {
 				return &ptaherr.RenderError{

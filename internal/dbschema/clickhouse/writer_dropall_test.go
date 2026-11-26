@@ -82,50 +82,32 @@ func TestWriterDropAllTables_DropsViewsBeforeTables(t *testing.T) {
 	assertClickHouseSQLMockComplete(c, db, queries, execs)
 }
 
-// TestWriterDropAllTables_RefusesBacktickedNames keeps the identifier guard on
-// both halves of the cleanup. quoteIdent doubles an embedded backtick, so this
-// is defense in depth, but a name that cannot appear in a real deployment is
-// refused rather than quoted.
-func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
-	tests := []struct {
-		name    string
-		views   [][]driver.Value
-		tables  [][]driver.Value
-		wantErr string
-	}{
+// TestWriterDropAllTables_QuotesEveryName pins the cleanup of objects whose
+// names hold a backtick or a backslash. ClickHouse holds such tables, and the
+// cleanup quotes each name the way the renderer created it, so the database is
+// emptied rather than refused. Written without the backslash doubled, `a\b`
+// names a table that does not exist and IF EXISTS hides it.
+func TestWriterDropAllTables_QuotesEveryName(t *testing.T) {
+	c := qt.New(t)
+	queries := []sqlMockQuery{
 		{
-			name:    "view",
-			views:   [][]driver.Value{{"v`_users"}},
-			tables:  [][]driver.Value{{"users"}},
-			wantErr: "clickhouse: refusing to drop view \"v`_users\": name contains a backtick",
+			sql:    cleanupViewsQuery,
+			result: dbtest.QueryResult{Columns: []string{"name"}, Rows: [][]driver.Value{{"v`_users"}}},
 		},
 		{
-			name:    "table",
-			views:   make([][]driver.Value, 0),
-			tables:  [][]driver.Value{{"us`ers"}},
-			wantErr: "clickhouse: refusing to drop table \"us`ers\": name contains a backtick",
+			sql:    cleanupTablesQuery,
+			result: dbtest.QueryResult{Columns: []string{"name"}, Rows: [][]driver.Value{{`a\b`}, {"us`ers"}}},
 		},
 	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			queries := []sqlMockQuery{
-				{
-					sql:    cleanupViewsQuery,
-					result: dbtest.QueryResult{Columns: []string{"name"}, Rows: test.views},
-				},
-				{
-					sql:    cleanupTablesQuery,
-					result: dbtest.QueryResult{Columns: []string{"name"}, Rows: test.tables},
-				},
-			}
-			db := openClickHouseSQLMock(t, c, queries, nil)
-
-			err := clickhouse.NewClickHouseWriter(db.SQL, "ptah_test").DropAllTables(t.Context())
-
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(err.Error(), qt.Equals, test.wantErr)
-		})
+	execs := []sqlMockExec{
+		{sql: "DROP VIEW IF EXISTS `v``_users` SYNC"},
+		{sql: "DROP TABLE IF EXISTS `a\\\\b` SYNC"},
+		{sql: "DROP TABLE IF EXISTS `us``ers` SYNC"},
 	}
+	db := openClickHouseSQLMock(t, c, queries, execs)
+
+	err := clickhouse.NewClickHouseWriter(db.SQL, "ptah_test").DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	assertClickHouseSQLMockComplete(c, db, queries, execs)
 }

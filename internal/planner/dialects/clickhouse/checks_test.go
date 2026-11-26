@@ -81,7 +81,7 @@ func checkStatementsWith(c *qt.C, opts planext.Options, desired *schemamodel.Dat
 // heldRowScan is the SELECT that stops the plan when table t holds a row the
 // CHECK name with condition refuses.
 func heldRowScan(name, condition string) string {
-	return fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM t WHERE NOT ifNull((%s), 0)", name, condition)
+	return fmt.Sprintf("SELECT throwIf(count() > 0, '%s is broken by rows t holds') FROM `t` WHERE NOT ifNull((%s), 0)", name, condition)
 }
 
 // scannedAdd is the ADD CONSTRAINT of a CHECK the plan scans for, with the
@@ -89,7 +89,7 @@ func heldRowScan(name, condition string) string {
 func scannedAdd(name, condition string) string {
 	return "-- CLICKHOUSE: ADD CONSTRAINT " + name + " checks only the rows written after it; " +
 		"a SELECT ahead of it and one after it scan t for held rows the CHECK refuses\n" +
-		fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s)", name, condition)
+		fmt.Sprintf("ALTER TABLE `t` ADD CONSTRAINT `%s` CHECK (%s)", name, condition)
 }
 
 // unscannedAdd is the ADD CONSTRAINT of a CHECK planned without the scans,
@@ -97,7 +97,7 @@ func scannedAdd(name, condition string) string {
 func unscannedAdd(name, condition string) string {
 	return "-- CLICKHOUSE: ADD CONSTRAINT " + name + " checks only the rows written after it, " +
 		"and the plan has no scan: the rows t already holds are not checked\n" +
-		fmt.Sprintf("ALTER TABLE t ADD CONSTRAINT %s CHECK (%s)", name, condition)
+		fmt.Sprintf("ALTER TABLE `t` ADD CONSTRAINT `%s` CHECK (%s)", name, condition)
 }
 
 // ClickHouse refuses a DROP COLUMN of a column a CHECK reads and an ADD
@@ -117,10 +117,10 @@ func TestGenerateMigrationAST_PlansCheckChangesAroundTheColumnChanges(t *testing
 	got := checkStatements(c, desired, current)
 
 	c.Assert(got, qt.DeepEquals, []string{
-		"ALTER TABLE t DROP CONSTRAINT t_named",
-		"ALTER TABLE t DROP CONSTRAINT t_u_check",
-		"ALTER TABLE t ADD COLUMN w Int32",
-		"ALTER TABLE t DROP COLUMN u",
+		"ALTER TABLE `t` DROP CONSTRAINT `t_named`",
+		"ALTER TABLE `t` DROP CONSTRAINT `t_u_check`",
+		"ALTER TABLE `t` ADD COLUMN `w` Int32",
+		"ALTER TABLE `t` DROP COLUMN `u`",
 		heldRowScan("t_w_check", "w > 0"), scannedAdd("t_w_check", "w > 0"), heldRowScan("t_w_check", "w > 0"),
 		heldRowScan("t_check", "v > 0"), scannedAdd("t_check", "v > 0"), heldRowScan("t_check", "v > 0"),
 		heldRowScan("t_named", "v < 100"), scannedAdd("t_named", "v < 100"), heldRowScan("t_named", "v < 100"),
@@ -140,7 +140,7 @@ func TestGenerateMigrationAST_PlansACheckOnlyChange(t *testing.T) {
 
 	c.Assert(got, qt.DeepEquals, []string{
 		heldRowScan("t_check", "v > 1"),
-		"ALTER TABLE t DROP CONSTRAINT t_check",
+		"ALTER TABLE `t` DROP CONSTRAINT `t_check`",
 		scannedAdd("t_check", "v > 1"),
 		heldRowScan("t_check", "v > 1"),
 	})
@@ -160,20 +160,20 @@ func TestGenerateMigrationAST_ScansBeforeDroppingChecksForColumnMetadata(t *test
 			name:       "removed column",
 			fields:     []schemamodel.Field{int32Field("id", ""), int32Field("v", "")},
 			oldCheck:   "v > 0",
-			columnStep: "ALTER TABLE t DROP COLUMN s",
+			columnStep: "ALTER TABLE `t` DROP COLUMN `s`",
 		},
 		{
 			name:       "removed column read by the old check",
 			fields:     []schemamodel.Field{int32Field("id", ""), int32Field("v", "")},
 			oldCheck:   "length(s) > 0",
-			columnStep: "ALTER TABLE t DROP COLUMN s",
+			columnStep: "ALTER TABLE `t` DROP COLUMN `s`",
 		},
 		{
 			name: "column comment",
 			fields: []schemamodel.Field{int32Field("id", ""), int32Field("v", ""),
 				{StructName: "T", Name: "s", Type: "String", Comment: "a note"}},
 			oldCheck:   "v > 0",
-			columnStep: "ALTER TABLE t COMMENT COLUMN s 'a note'",
+			columnStep: "ALTER TABLE `t` COMMENT COLUMN `s` 'a note'",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestGenerateMigrationAST_ScansBeforeDroppingChecksForColumnMetadata(t *test
 
 			c.Assert(got, qt.DeepEquals, []string{
 				heldRowScan("t_check", "v > 5"),
-				"ALTER TABLE t DROP CONSTRAINT t_check",
+				"ALTER TABLE `t` DROP CONSTRAINT `t_check`",
 				test.columnStep,
 				scannedAdd("t_check", "v > 5"),
 				heldRowScan("t_check", "v > 5"),
@@ -216,8 +216,8 @@ func TestGenerateMigrationAST_ScansAfterColumnDefinitionChanges(t *testing.T) {
 			got := checkStatements(c, desired, current)
 
 			c.Assert(got, qt.DeepEquals, []string{
-				"ALTER TABLE t DROP CONSTRAINT t_check",
-				"ALTER TABLE t MODIFY COLUMN v " + test.definition,
+				"ALTER TABLE `t` DROP CONSTRAINT `t_check`",
+				"ALTER TABLE `t` MODIFY COLUMN `v` " + test.definition,
 				heldRowScan("t_check", "v > 5"),
 				scannedAdd("t_check", "v > 5"),
 				heldRowScan("t_check", "v > 5"),
@@ -247,7 +247,7 @@ func TestGenerateMigrationAST_PlansNoScanWhenAskedWithout(t *testing.T) {
 		{
 			name: "a column change, scanned", schemas: columnChange,
 			want: []string{
-				"ALTER TABLE t DROP CONSTRAINT t_check", "ALTER TABLE t ADD COLUMN w Int32",
+				"ALTER TABLE `t` DROP CONSTRAINT `t_check`", "ALTER TABLE `t` ADD COLUMN `w` Int32",
 				heldRowScan("t_w_check", "w > 0"), scannedAdd("t_w_check", "w > 0"), heldRowScan("t_w_check", "w > 0"),
 				heldRowScan("t_check", "v > 1"), scannedAdd("t_check", "v > 1"), heldRowScan("t_check", "v > 1"),
 			},
@@ -255,20 +255,20 @@ func TestGenerateMigrationAST_PlansNoScanWhenAskedWithout(t *testing.T) {
 		{
 			name: "a column change, unscanned", schemas: columnChange, opts: planext.Options{SkipCheckScan: true},
 			want: []string{
-				"ALTER TABLE t DROP CONSTRAINT t_check", "ALTER TABLE t ADD COLUMN w Int32",
+				"ALTER TABLE `t` DROP CONSTRAINT `t_check`", "ALTER TABLE `t` ADD COLUMN `w` Int32",
 				unscannedAdd("t_w_check", "w > 0"), unscannedAdd("t_check", "v > 1"),
 			},
 		},
 		{
 			name: "a CHECK only, scanned", schemas: checkOnly,
 			want: []string{
-				heldRowScan("t_check", "v > 1"), "ALTER TABLE t DROP CONSTRAINT t_check",
+				heldRowScan("t_check", "v > 1"), "ALTER TABLE `t` DROP CONSTRAINT `t_check`",
 				scannedAdd("t_check", "v > 1"), heldRowScan("t_check", "v > 1"),
 			},
 		},
 		{
 			name: "a CHECK only, unscanned", schemas: checkOnly, opts: planext.Options{SkipCheckScan: true},
-			want: []string{"ALTER TABLE t DROP CONSTRAINT t_check", unscannedAdd("t_check", "v > 1")},
+			want: []string{"ALTER TABLE `t` DROP CONSTRAINT `t_check`", unscannedAdd("t_check", "v > 1")},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -349,7 +349,7 @@ func TestGenerateMigrationAST_PlansATableCommentOnlyChange(t *testing.T) {
 
 	got := checkStatements(c, desired, current)
 
-	c.Assert(got, qt.DeepEquals, []string{"ALTER TABLE t MODIFY COMMENT 'hello'"})
+	c.Assert(got, qt.DeepEquals, []string{"ALTER TABLE `t` MODIFY COMMENT 'hello'"})
 }
 
 // What each line prints for `SELECT (<condition>)`, measured on 26.10.3.7 and
@@ -551,7 +551,7 @@ func TestGenerateMigrationAST_AnUnnamedCheckKeepsTheNameTheServerHoldsItUnder(t 
 	}
 	neighborPlan := []string{
 		heldRowScan("t_check", "v != 7"), heldRowScan("t_check2", "v < 10"),
-		"ALTER TABLE t DROP CONSTRAINT t_check",
+		"ALTER TABLE `t` DROP CONSTRAINT `t_check`",
 		scannedAdd("t_check", "v != 7"), heldRowScan("t_check", "v != 7"),
 		scannedAdd("t_check2", "v < 10"), heldRowScan("t_check2", "v < 10"),
 	}
@@ -570,11 +570,11 @@ func TestGenerateMigrationAST_AnUnnamedCheckKeepsTheNameTheServerHoldsItUnder(t 
 	}
 	elsewherePlan := []string{
 		heldRowScan("t_check", "v < 10"), scannedAdd("t_check", "v < 10"), heldRowScan("t_check", "v < 10"),
-		"-- WARNING: dropping table will delete all data\nDROP TABLE IF EXISTS u",
+		"-- WARNING: dropping table will delete all data\nDROP TABLE IF EXISTS `u`",
 	}
 	noStatements := make([]string, 0)
 	recasedPlan := []string{
-		heldRowScan("t_check", "V > 0"), "ALTER TABLE t DROP CONSTRAINT t_check",
+		heldRowScan("t_check", "V > 0"), "ALTER TABLE `t` DROP CONSTRAINT `t_check`",
 		scannedAdd("t_check", "V > 0"), heldRowScan("t_check", "V > 0"),
 	}
 	for _, test := range []struct {
@@ -617,7 +617,7 @@ func TestGenerateMigrationAST_CreatesAndDropsATableWithItsChecks(t *testing.T) {
 	got := checkStatements(c, desired, current)
 
 	c.Assert(got, qt.DeepEquals, []string{
-		"CREATE TABLE t (\n  id Int32,\n  v Int32,\n  CONSTRAINT t_v_check CHECK (v != 7),\n  CONSTRAINT t_check CHECK (v > 0)\n) ENGINE = MergeTree ORDER BY (tuple()) PRIMARY KEY (tuple())",
-		"-- WARNING: dropping table will delete all data\nDROP TABLE IF EXISTS gone",
+		"CREATE TABLE `t` (\n  `id` Int32,\n  `v` Int32,\n  CONSTRAINT `t_v_check` CHECK (v != 7),\n  CONSTRAINT `t_check` CHECK (v > 0)\n) ENGINE = MergeTree ORDER BY (tuple()) PRIMARY KEY (tuple())",
+		"-- WARNING: dropping table will delete all data\nDROP TABLE IF EXISTS `gone`",
 	})
 }

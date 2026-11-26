@@ -43,11 +43,18 @@ func createTable(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection
 // body.
 func planFromFile(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, name, body string) (atlasschema.ApplyPlan, error) {
 	c.Helper()
+	return planFromFileWithPolicy(c, ctx, conn, name, body, atlasschema.DiffPolicy{})
+}
+
+// planFromFileWithPolicy is planFromFile under policy, such as the request
+// for a table rebuild.
+func planFromFileWithPolicy(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, name, body string, policy atlasschema.DiffPolicy) (atlasschema.ApplyPlan, error) {
+	c.Helper()
 	path := filepath.Join(c.TempDir(), name)
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
 	desired, err := schemafile.LoadPath(ctx, path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
 	c.Assert(err, qt.IsNil)
-	return atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
+	return atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New()), Policy: policy})
 }
 
 // A table identical to its declaration plans nothing, whichever clause states

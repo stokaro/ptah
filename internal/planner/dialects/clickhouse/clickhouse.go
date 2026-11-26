@@ -46,6 +46,7 @@ import (
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/guards"
 	"ptah.run/internal/planner/schemaprecondition"
+	"ptah.run/internal/schemaprep"
 )
 
 // Planner implements the migration planner interface for ClickHouse.
@@ -335,9 +336,15 @@ func (p *Planner) addNewIndexes(
 	return result, nil
 }
 
-// indexNode is the ADD INDEX of a declared skipping index on a table.
+// indexNode is the ADD INDEX of a declared skipping index on a table. The
+// structured parts travel with it: the renderer quotes a part that names a
+// column and writes an expression as it is, and the key text alone cannot say
+// which a part is.
 func indexNode(index schemamodel.Index, tableName string) *ast.IndexNode {
-	node := ast.NewIndex(index.Name, tableName, index.Fields...)
+	node := ast.NewIndex(index.Name, tableName, schemaprep.IndexKeyParts(index)...)
+	if len(index.Parts) > 0 {
+		node.SetParts(modelast.IndexParts(index.Parts))
+	}
 	if index.Unique {
 		node.Unique = true
 	}

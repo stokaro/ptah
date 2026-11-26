@@ -23,12 +23,12 @@ import (
 // CREATE projection must retain table coverage under that same identity.
 func TestClickHouseSQLCreationPlansBothDirections(t *testing.T) {
 	for _, test := range []struct {
-		name, defaultSchema, table, explicitSchema string
+		name, defaultSchema, table, quotedTable, explicitSchema string
 	}{
-		{"offline", "", "asn", ""},
-		{"connection database", "tenant_database", "asn", ""},
-		{"database containing a dot", "tenant.database", "asn", ""},
-		{"explicit other database", "tenant_database", "archive.asn", "archive"},
+		{"offline", "", "asn", "`asn`", ""},
+		{"connection database", "tenant_database", "asn", "`asn`", ""},
+		{"database containing a dot", "tenant.database", "asn", "`asn`", ""},
+		{"explicit other database", "tenant_database", "archive.asn", "`archive`.`asn`", "archive"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -48,11 +48,11 @@ func TestClickHouseSQLCreationPlansBothDirections(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			forward, err := builtin.RenderSQL("clickhouse", plan.Forward.Nodes...)
 			c.Assert(err, qt.IsNil)
-			c.Assert(forward, qt.Contains, "CREATE TABLE "+test.table)
+			c.Assert(forward, qt.Contains, "CREATE TABLE "+test.quotedTable)
 			c.Assert(forward, qt.Contains, "ORDER BY (id)")
 			reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes...)
 			c.Assert(err, qt.IsNil)
-			c.Assert(reverse, qt.Contains, "DROP TABLE IF EXISTS "+test.table)
+			c.Assert(reverse, qt.Contains, "DROP TABLE IF EXISTS "+test.quotedTable)
 			c.Assert(plan.Reverse.Diff.TablesRemoved, qt.HasLen, 1)
 			subject := objectidentity.NewBuilder(semantics).TableParts(test.explicitSchema, "asn")
 			coverage := plan.Reverse.Diff.TablesRemoved[0].Current.FeatureCoverage
@@ -93,12 +93,12 @@ func TestClickHouseTypedCreationPlansBothDirections(t *testing.T) {
 			c.Assert(plan.Reverse.Nodes, qt.HasLen, 1)
 			forward, err := builtin.RenderSQL("clickhouse", plan.Forward.Nodes[0])
 			c.Assert(err, qt.IsNil)
-			c.Assert(forward, qt.Contains, "CREATE TABLE events")
+			c.Assert(forward, qt.Contains, "CREATE TABLE `events`")
 			c.Assert(forward, qt.Contains, "ORDER BY (tenant, id)")
 			c.Assert(forward, qt.Contains, test.want)
 			reverse, err := builtin.RenderSQL("clickhouse", plan.Reverse.Nodes[0])
 			c.Assert(err, qt.IsNil)
-			c.Assert(reverse, qt.Contains, "DROP TABLE IF EXISTS events")
+			c.Assert(reverse, qt.Contains, "DROP TABLE IF EXISTS `events`")
 		})
 	}
 }

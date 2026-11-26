@@ -78,8 +78,8 @@ func TestTypedSortKeyIntentControlsCommonKeyFallback(t *testing.T) {
 		order chschema.Setting
 		want  string
 	}{
-		{"omitted", chschema.Setting{}, "ORDER BY (id)"},
-		{"default", chschema.Setting{State: chschema.Default}, "ORDER BY (id)"},
+		{"omitted", chschema.Setting{}, "ORDER BY (`id`)"},
+		{"default", chschema.Setting{State: chschema.Default}, "ORDER BY (`id`)"},
 		{"explicit empty", chschema.Setting{State: chschema.Explicit}, "ORDER BY (tuple())"},
 		{"explicit order", chschema.Setting{State: chschema.Explicit, Value: "tenant, id"}, "ORDER BY (tenant, id)"},
 	} {

@@ -81,7 +81,7 @@ func TestSchemaDiffJSONEncodesAClickHouseTTLChangeE2E(t *testing.T) {
 		} `json:"changes"`
 	}
 	c.Assert(featurejson.Unmarshal(c.Context(), codecs, schemaext.Desired, []byte(stdout), &document), qt.IsNil, qt.Commentf("stdout:\n%s", stdout))
-	c.Assert(document.Statements, qt.DeepEquals, []string{"ALTER TABLE events MODIFY TTL at + INTERVAL 2 DAY"})
+	c.Assert(document.Statements, qt.DeepEquals, []string{"ALTER TABLE `events` MODIFY TTL at + INTERVAL 2 DAY"})
 	c.Assert(document.Changes.TablesModified, qt.HasLen, 1)
 	change := tableTTLChange(c, document.Changes.TablesModified[0].FeatureChanges)
 	c.Assert(change.Before.TTL, qt.Equals, "at + toIntervalDay(1)")

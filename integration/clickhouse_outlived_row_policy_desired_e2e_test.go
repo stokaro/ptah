@@ -142,7 +142,7 @@ func TestClickHouseOutlivedRowPolicy_ReplayedDirectoryLeavesThePoliciesOut(t *te
 	c.Assert(got.Stderr, qt.Contains, `warning: ClickHouse row policy "leak" on table "t" is left out:`)
 	c.Assert(got.Stderr, qt.Contains, `warning: ClickHouse row policy "on_all" on every table of the database is left out:`)
 	c.Assert(got.Stdout, qt.Contains, "DROP ROW POLICY `leak` ON `t`;")
-	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE keep (")
+	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE `keep` (")
 	c.Assert(got.Stdout, qt.Not(qt.Contains), "on_all")
 }
 
@@ -168,7 +168,7 @@ func TestClickHouseOutlivedRowPolicy_DevLeftoversStayOutOfThePlan(t *testing.T) 
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stderr, qt.Contains, `warning: ClickHouse row policy "leak" on table "t" is left out:`)
 	c.Assert(got.Stderr, qt.Contains, `warning: ClickHouse row policy "on_all" on every table of the database is left out:`)
-	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE keep (")
+	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE `keep` (")
 	c.Assert(got.Stdout, qt.Not(qt.Contains), "ROW POLICY")
 	c.Assert(outlivedPolicies(c, devConn), qt.DeepEquals, []string{" on_all permissive id > 0", "t leak permissive 1"})
 }
@@ -184,8 +184,8 @@ func TestClickHouseOutlivedRowPolicy_EmptySelectionPlansNothingOutsideIt(t *test
 		from, to int
 		want     string
 	}{
-		{name: "as the current side", from: 0, to: 1, want: "CREATE TABLE other ("},
-		{name: "as the desired side", from: 1, to: 0, want: "DROP TABLE other;"},
+		{name: "as the current side", from: 0, to: 1, want: "CREATE TABLE `other` ("},
+		{name: "as the desired side", from: 1, to: 0, want: "DROP TABLE `other`;"},
 	}
 	for _, server := range clickHouseServers(qt.New(t)) {
 		for _, test := range tests {

@@ -249,11 +249,11 @@ func TestClickHouseOutlivedRowPolicy_ExportsLeaveOutWhatNoSourceDeclares(t *test
 		wantOutput string
 	}{
 		{name: "schema inspect as SQL", args: []string{"schema", "inspect", "--format", "sql"},
-			wantWide: "ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: "CREATE TABLE keep ("},
+			wantWide: "ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: "CREATE TABLE `keep` ("},
 		{name: "schema inspect as HCL", args: []string{"schema", "inspect", "--format", "hcl"},
 			wantWide: "// ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: `table "keep" {`},
 		{name: "db read", args: []string{"db", "read"},
-			wantWide: "ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: "CREATE TABLE keep ("},
+			wantWide: "ptah.run/clickhouse/row-policy *.on_all was not described", wantOutput: "CREATE TABLE `keep` ("},
 		{name: "introspect", args: []string{"introspect", "--out", "models"}, output: "models/keep.go",
 			wantWide: `warning: ClickHouse row policy "on_all" on every table of the database is left out`, wantOutput: "type Keep struct"},
 	}
@@ -365,7 +365,7 @@ func TestClickHouseOutlivedRowPolicy_DatabaseAsEitherSide(t *testing.T) {
 
 			c.Assert(toOrphaned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", toOrphaned.Stdout, toOrphaned.Stderr))
 			c.Assert(toOrphaned.Stderr, qt.Contains, `warning: ClickHouse row policy "leak" on table "t" is left out:`)
-			c.Assert(toOrphaned.Stdout, qt.Contains, "CREATE TABLE keep (")
+			c.Assert(toOrphaned.Stdout, qt.Contains, "CREATE TABLE `keep` (")
 			c.Assert(toOrphaned.Stderr, qt.Contains, `warning: ClickHouse row policy "on_all" on every table of the database is left out:`)
 			c.Assert(toOrphaned.Stdout, qt.Not(qt.Contains), "ROW POLICY")
 			c.Assert(fromOrphaned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", fromOrphaned.Stdout, fromOrphaned.Stderr))

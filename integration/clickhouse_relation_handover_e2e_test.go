@@ -208,7 +208,7 @@ func TestClickHouseRelationHandover_RevokesTheOldRelationsGrants(t *testing.T) {
 			name:        "a table to a view",
 			current:     "CREATE TABLE v (id UInt64) ENGINE = MergeTree ORDER BY id",
 			declaration: handoverBase + "views:\n  v:\n    body: SELECT id FROM base\n",
-			drop:        "DROP TABLE v;",
+			drop:        "DROP TABLE `v`;",
 		},
 		{
 			name:        "a view to a table",

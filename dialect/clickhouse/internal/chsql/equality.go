@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/chcolumn"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
@@ -28,6 +29,10 @@ func SameIndex(a, b *chschema.ObservedIndex) bool {
 
 // Preserve token boundaries, quoted text, identifier case, and order. Removing
 // whitespace from the whole expression would equate different string literals.
+// A quoted name compares by the name it spells ([chcolumn.ComparableIdentifier]),
+// since the server prints a name back in its own spelling: a sorting key
+// written (`id`) reads back as id. A double-quoted name is one too, which the
+// lexer reads as a string; a string literal is single-quoted.
 func expressionTokens(expression string) []string {
 	lex := lexer.NewLexerWithOptions(expression, dialectlexer.Options(platform.ClickHouse))
 	var tokens []string
@@ -38,6 +43,8 @@ func expressionTokens(expression string) []string {
 			return tokens
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			continue
+		case lexer.TokenIdentifier, lexer.TokenString:
+			tokens = append(tokens, chcolumn.ComparableIdentifier(token.Value))
 		default:
 			tokens = append(tokens, token.Value)
 		}

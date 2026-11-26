@@ -34,6 +34,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chresolve"
@@ -41,8 +42,10 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/chcolumn"
+	"ptah.run/internal/chindexkey"
+	"ptah.run/internal/chkey"
 	"ptah.run/internal/renderdiag"
-	"ptah.run/internal/tableref"
+	"ptah.run/internal/sqlident"
 )
 
 // DialectName is the canonical dialect identifier for ClickHouse.
@@ -139,7 +142,7 @@ func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
 	}
-	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, node.Name)
+	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, quoteName(node.Name))
 	return nil
 }
 
@@ -149,7 +152,7 @@ func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
 	}
-	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, node.Name)
+	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, quoteName(node.Name))
 	return nil
 }
 
@@ -193,6 +196,9 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", col.Name, mapping.Notice)
 	}
 	keyword, expression := chcolumn.Value(col)
+	if err := chkey.RefuseQuotedNot(fmt.Sprintf("the %s expression of column %q", keyword, col.Name), expression); err != nil {
+		return "", err
+	}
 	return "  " + chcolumn.Definition(col.Name, mapping.Type, keyword, expression, col.Comment), nil
 }
 
@@ -396,7 +402,7 @@ func splitColumns(expr string) []string {
 	if strings.HasPrefix(expr, "(") {
 		depth := 0
 		matchEnd := -1
-		for i, r := range expr {
+		for i, r := range unquotedRunes(expr) {
 			switch r {
 			case '(':
 				depth++
@@ -423,7 +429,7 @@ func splitColumns(expr string) []string {
 		depth int
 		start int
 	)
-	for i, r := range expr {
+	for i, r := range unquotedRunes(expr) {
 		switch r {
 		case '(':
 			depth++
@@ -442,6 +448,39 @@ func splitColumns(expr string) []string {
 		out = append(out, tail)
 	}
 	return out
+}
+
+// unquotedRunes returns expr with every byte inside a quoted name or a string
+// literal replaced by a space, so a parenthesis or a comma a name holds, as in
+// `a,b`, splits nothing. The result has the length of expr, so an index into
+// it is an index into expr. A backslash escapes the byte after it and a
+// doubled quote stands for the quote, as ClickHouse reads them.
+func unquotedRunes(expr string) string {
+	masked := []byte(expr)
+	for i := 0; i < len(masked); i++ {
+		if quote := masked[i]; quote == '`' || quote == '"' || quote == '\'' {
+			i = maskQuoted(masked, i+1, quote)
+		}
+	}
+	return string(masked)
+}
+
+// maskQuoted blanks the body of the quoted text that starts at masked[from]
+// and returns the index of its closing quote, or the end of masked when the
+// text is not closed.
+func maskQuoted(masked []byte, from int, quote byte) int {
+	for i := from; i < len(masked); i++ {
+		switch {
+		case masked[i] == '\\' && i+1 < len(masked), masked[i] == quote && i+1 < len(masked) && masked[i+1] == quote:
+			masked[i], masked[i+1] = ' ', ' '
+			i++
+		case masked[i] == quote:
+			return i
+		default:
+			masked[i] = ' '
+		}
+	}
+	return len(masked)
 }
 
 // renderCreateTable renders a CREATE TABLE statement for ClickHouse.
@@ -492,7 +531,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		if err != nil {
 			return err
 		}
-		r.w.Writef("CREATE TABLE%s %s", guard, node.Name)
+		r.w.Writef("CREATE TABLE%s %s", guard, quoteTable(node.Name))
 		r.writeEngineSpec(spec)
 		r.writeCustomSQL(node)
 		r.w.WriteLine(" AS")
@@ -510,7 +549,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	r.forceNotNullSet = sortKeyColumnSet(spec)
 	defer func() { r.forceNotNullSet = nil }()
 
-	r.w.WriteLinef("CREATE TABLE%s %s (", guard, node.Name)
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, quoteTable(node.Name))
 	lines, err := r.renderTableBody(node)
 	if err != nil {
 		return err
@@ -582,14 +621,26 @@ func sortKeyColumnSet(spec tableEngineSpec) map[string]struct{} {
 	set := make(map[string]struct{})
 	for _, src := range []string{spec.orderBy, spec.primaryKey} {
 		for _, c := range splitColumns(src) {
-			c = strings.TrimSpace(c)
-			if c == "" || strings.ContainsAny(c, "()") {
-				continue
+			if name, ok := keyColumn(c); ok {
+				set[name] = struct{}{}
 			}
-			set[c] = struct{}{}
 		}
 	}
 	return set
+}
+
+// keyColumn returns the column a sorting-key entry names when the entry is a
+// column alone: a bare name, or a quoted one, read back the way the server
+// reads it. An entry with a call or a group in it is an expression.
+func keyColumn(entry string) (string, bool) {
+	entry = strings.TrimSpace(entry)
+	if strings.HasPrefix(entry, "`") || strings.HasPrefix(entry, `"`) {
+		return chcolumn.UnquoteIdentifier(entry)
+	}
+	if entry == "" || strings.ContainsAny(entry, "()") {
+		return "", false
+	}
+	return entry, true
 }
 
 // resolveAndValidateTableEngine extracts the engine spec from the node and
@@ -610,7 +661,10 @@ func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tab
 		if len(pkCols) == 0 {
 			return spec, fmt.Errorf("clickhouse: table %q uses engine %s which requires ORDER BY; set platform.clickhouse.order_by or declare a primary key", node.Name, spec.engine)
 		}
-		spec.orderBy = strings.Join(pkCols, ", ")
+		spec.orderBy = chresolve.ColumnKey(pkCols)
+	}
+	if err := refuseStorageNot(node.Name, spec); err != nil {
+		return spec, err
 	}
 
 	if spec.primaryKey == "" || spec.primaryKey == "tuple()" || spec.orderBy == "" {
@@ -622,11 +676,40 @@ func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tab
 		return spec, fmt.Errorf("clickhouse: table %q PRIMARY KEY must be a prefix of ORDER BY", node.Name)
 	}
 	for i, pkCol := range pkCols {
-		if !strings.EqualFold(strings.TrimSpace(pkCol), strings.TrimSpace(obCols[i])) {
+		if !strings.EqualFold(keyEntry(pkCol), keyEntry(obCols[i])) {
 			return spec, fmt.Errorf("clickhouse: table %q PRIMARY KEY must be a prefix of ORDER BY (got PK=%v, ORDER BY=%v)", node.Name, pkCols, obCols)
 		}
 	}
 	return spec, nil
+}
+
+// refuseStorageNot refuses a storage clause of table that names a column
+// called not, which the server stores in a form it cannot read back; see
+// [chkey.QuotedNot]. The engine's arguments are a clause like the others:
+// SummingMergeTree((`not`)) and ReplacingMergeTree(`not`) are stored bare on
+// 24.10 and 26.10, and every read of the schema then fails with code 62. A
+// sorting key derived from the primary-key columns is checked too: it quotes
+// every name, so a column not is a column there.
+func refuseStorageNot(table string, spec tableEngineSpec) error {
+	for _, clause := range []struct{ name, text string }{
+		{"ENGINE", spec.engine}, {"ORDER BY", spec.orderBy}, {"PRIMARY KEY", spec.primaryKey},
+		{"PARTITION BY", spec.partitionBy}, {"SAMPLE BY", spec.sampleBy}, {"TTL", spec.ttl},
+	} {
+		if err := chkey.RefuseQuotedNot(fmt.Sprintf("the %s of table %q", clause.name, table), clause.text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// keyEntry is a sorting-key entry as the prefix comparison reads it: the name
+// of a column entry, so a quoted and a bare spelling of one column agree, and
+// the trimmed text of an expression.
+func keyEntry(entry string) string {
+	if name, ok := keyColumn(entry); ok {
+		return name
+	}
+	return strings.TrimSpace(entry)
 }
 
 // renderTableBody renders the column list and any CHECK constraints for a
@@ -651,7 +734,11 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 		if col.Check == "" {
 			continue
 		}
-		lines = append(lines, checkConstraintLine(chcolumn.CheckName(col.CheckName, node.Name, col.Name), col.Check))
+		name := chcolumn.CheckName(col.CheckName, node.Name, col.Name)
+		if err := chkey.RefuseQuotedNot(fmt.Sprintf("the CHECK %q of table %q", name, node.Name), col.Check); err != nil {
+			return nil, err
+		}
+		lines = append(lines, checkConstraintLine(name, col.Check))
 	}
 	for _, c := range node.Constraints {
 		if err := r.refuseUnrepresentableConstraint(c); err != nil {
@@ -660,7 +747,11 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 		if c.Type != ast.CheckConstraint || c.Expression == "" {
 			continue
 		}
-		lines = append(lines, checkConstraintLine(chcolumn.CheckName(c.Name, node.Name, ""), c.Expression))
+		name := chcolumn.CheckName(c.Name, node.Name, "")
+		if err := chkey.RefuseQuotedNot(fmt.Sprintf("the CHECK %q of table %q", name, node.Name), c.Expression); err != nil {
+			return nil, err
+		}
+		lines = append(lines, checkConstraintLine(name, c.Expression))
 	}
 	return lines, nil
 }
@@ -714,7 +805,7 @@ func (r *Renderer) refuseUnrepresentableConstraint(c *ast.ConstraintNode) error 
 // column list is rejected with `Code: 62 ... SYNTAX_ERROR`, so an unnamed
 // fallback here produces DDL the server will not accept.
 func checkConstraintLine(name, expression string) string {
-	return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", name, expression)
+	return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", quoteName(name), expression)
 }
 
 // writeEngineClause emits the trailing ENGINE/PARTITION BY/... clause for a
@@ -753,6 +844,7 @@ func (r *Renderer) writeEngineSpec(spec tableEngineSpec) {
 // sort key. Constraints translate to ADD/DROP CONSTRAINT (CHECK only);
 // foreign keys, primary keys and unique constraints have no equivalent.
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
+	table := quoteTable(node.Name)
 	for _, op := range node.Operations {
 		switch op := op.(type) {
 		case *ast.ExtensionAlterOperation:
@@ -765,9 +857,9 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				return fmt.Errorf("clickhouse: add column on %q: %w", node.Name, err)
 			}
 			colLine = strings.TrimPrefix(colLine, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, colLine)
+			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", table, colLine)
 		case *ast.DropColumnOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
+			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", table, quoteName(op.ColumnName))
 		case *ast.ModifyColumnOperation:
 			if err := r.renderModifyColumn(node.Name, op); err != nil {
 				return err
@@ -784,26 +876,29 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				return fmt.Errorf("%w: %s: ALTER TABLE %s ADD CONSTRAINT needs a name for its CHECK (%s); ClickHouse refuses a constraint without one",
 					ptaherr.ErrUnsupportedFeature, DialectName, node.Name, op.Constraint.Expression)
 			}
+			if err := chkey.RefuseQuotedNot(fmt.Sprintf("the CHECK %q of table %q", op.Constraint.Name, node.Name), op.Constraint.Expression); err != nil {
+				return err
+			}
 			// The statement checks only the rows written after it; the planner
 			// scans for the held rows it refuses around it.
-			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s CHECK %s;", node.Name, op.Constraint.Name, parenList(op.Constraint.Expression))
+			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s CHECK %s;", table, quoteName(op.Constraint.Name), parenList(op.Constraint.Expression))
 		case *ast.DropConstraintOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s;", node.Name, op.ConstraintName)
+			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s;", table, quoteName(op.ConstraintName))
 		case *ast.RenameColumnOperation:
 			// ClickHouse 22.6+ supports `ALTER TABLE x RENAME COLUMN old TO new`
 			// on MergeTree-family engines. The runtime DB version is the
 			// user's problem; we emit the canonical spelling unconditionally.
-			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", table, quoteName(op.OldName), quoteName(op.NewName))
 		case *ast.RenameTableOperation:
-			r.w.WriteLinef("RENAME TABLE %s TO %s;", node.Name, op.NewName)
+			r.w.WriteLinef("RENAME TABLE %s TO %s;", table, quoteTable(op.NewName))
 		case *ast.SetCommentOperation:
 			// An empty comment clears it: measured on 26.10, both statements
 			// take '' and the catalog then reports no comment.
 			if op.Column == "" {
-				r.w.WriteLinef("ALTER TABLE %s MODIFY COMMENT %s;", node.Name, chcolumn.StringLiteral(op.Comment))
+				r.w.WriteLinef("ALTER TABLE %s MODIFY COMMENT %s;", table, chcolumn.StringLiteral(op.Comment))
 				continue
 			}
-			r.w.WriteLinef("ALTER TABLE %s COMMENT COLUMN %s %s;", node.Name, op.Column, chcolumn.StringLiteral(op.Comment))
+			r.w.WriteLinef("ALTER TABLE %s COMMENT COLUMN %s %s;", table, quoteName(op.Column), chcolumn.StringLiteral(op.Comment))
 		default:
 			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, DialectName, op)
 		}
@@ -839,6 +934,14 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 // later refuse the statement and 24.10 and 25.8 break the table when a row
 // holds NULL.
 //
+// A column named not, in any case, is refused even with a default. Measured
+// on 25.8, 26.3, 26.7, 26.8, 26.9 and 26.10, the UPDATE fails with code 62
+// when it names such a column, in backticks, in double quotes or escaped, and
+// 24.10 and 26.11 run it. Qualified with the table, the name gets through 26.7
+// and later, and 24.10, 25.8 and 26.3 answer that the column is missing, so no
+// spelling runs on every line. Without the UPDATE, the MODIFY COLUMN breaks
+// the table on 24.10 and 25.8.
+//
 // A MATERIALIZED column is replaced instead; see [Renderer.replaceMaterialized].
 // An ALIAS column stores nothing, and MODIFY COLUMN changes its type on every
 // line measured.
@@ -854,36 +957,32 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 	setsNotNull := op.HasPreviousNullable && op.PreviousNullable && !chcolumn.Nullable(op.Column)
 	keyword, expression := chcolumn.Value(op.Column)
 	computed := keyword != "" && keyword != "DEFAULT"
-	if setsNotNull && !computed && clause == "" {
-		return &ptaherr.CapabilityError{
-			Dialect: platform.ClickHouse,
-			Feature: "NOT NULL on an existing column",
-			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf(
-				"column %s.%s cannot be made NOT NULL without a default: ClickHouse 26.3 and later refuse"+
-					" MODIFY COLUMN to %s unless it names a DEFAULT, and 24.10 and 25.8 accept it and then"+
-					" fail on a row holding NULL, which leaves the table unreadable; give the column a"+
-					" default for its NULL rows to take",
-				table, op.Column.Name, mapping.Type),
+	if setsNotNull {
+		if err := refuseSetNotNull(table, op.Column.Name, mapping.Type, computed, clause); err != nil {
+			return err
 		}
 	}
 	if setsNotNull && computed && keyword == "MATERIALIZED" {
 		return r.replaceMaterialized(table, op.Column)
 	}
+	if err := chkey.RefuseQuotedNot(fmt.Sprintf("the %s expression of column %q", keyword, op.Column.Name), expression); err != nil {
+		return err
+	}
 	if mapping.Notice != "" {
 		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.Notice)
 	}
+	quotedTable, column := quoteTable(table), quoteName(op.Column.Name)
 	if removesDefault(op, keyword) {
-		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", table, op.Column.Name)
+		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", quotedTable, column)
 	}
 	if keyword == "" {
-		r.removeGeneration(table, op.Column.Name, mapping.Type, op.PreviousGeneratedKind)
+		r.removeGeneration(quotedTable, column, mapping.Type, op.PreviousGeneratedKind)
 	}
 	if setsNotNull && clause != "" {
 		r.w.WriteLinef("ALTER TABLE %s UPDATE %s = %s WHERE %s IS NULL SETTINGS mutations_sync = 2;",
-			table, op.Column.Name, strings.TrimPrefix(clause, "DEFAULT "), op.Column.Name)
+			quotedTable, column, strings.TrimPrefix(clause, "DEFAULT "), column)
 	}
-	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.Type)
+	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", quotedTable, column, mapping.Type)
 	if valueClause := chcolumn.Clause(keyword, expression, mapping.Type); valueClause != "" {
 		statement += " " + valueClause
 	}
@@ -891,9 +990,41 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 	return nil
 }
 
+// refuseSetNotNull refuses making the nullable column of table NOT NULL when
+// its NULL rows cannot be filled: an ordinary column with no default clause to
+// fill them from, and a column named not, in any case, whose fill 25.8 to 26.10
+// refuse. typ is the type the column takes; computed reports a generated kind
+// other than DEFAULT. See [Renderer.renderModifyColumn] for the measurements.
+func refuseSetNotNull(table, column, typ string, computed bool, clause string) error {
+	var message string
+	switch {
+	case !computed && clause == "":
+		message = fmt.Sprintf(
+			"column %s.%s cannot be made NOT NULL without a default: ClickHouse 26.3 and later refuse"+
+				" MODIFY COLUMN to %s unless it names a DEFAULT, and 24.10 and 25.8 accept it and then"+
+				" fail on a row holding NULL, which leaves the table unreadable; give the column a"+
+				" default for its NULL rows to take",
+			table, column, typ)
+	case clause != "" && strings.EqualFold(column, "not"):
+		message = fmt.Sprintf(
+			"column %s.%s cannot be made NOT NULL: its NULL rows take the default through ALTER TABLE ... UPDATE,"+
+				" and ClickHouse 25.8 to 26.10 refuse that statement for a column named not, however the name is"+
+				" quoted; rename the column first",
+			table, column)
+	default:
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: platform.ClickHouse,
+		Feature: "NOT NULL on an existing column",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: message,
+	}
+}
+
 // removeGeneration makes a generated column ordinary, before the MODIFY
-// COLUMN that restates its type. previous is the generated kind the column
-// holds, as the catalog names it.
+// COLUMN that restates its type. table and column arrive quoted. previous is
+// the generated kind the column holds, as the catalog names it.
 //
 // A MODIFY COLUMN that names only the type keeps the expression, so each kind
 // takes a statement of its own. Measured on 24.10 and 26.10:
@@ -943,8 +1074,8 @@ func (r *Renderer) replaceMaterialized(table string, column *ast.ColumnNode) err
 	if err != nil {
 		return fmt.Errorf("clickhouse: modify column on %q: %w", table, err)
 	}
-	r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", table, column.Name)
-	r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", table, strings.TrimPrefix(line, "  "))
+	r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", quoteTable(table), quoteName(column.Name))
+	r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", quoteTable(table), strings.TrimPrefix(line, "  "))
 	return nil
 }
 
@@ -1047,8 +1178,21 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 		r.w.WriteLinef("-- CLICKHOUSE: UNIQUE index %q downgraded to a minmax skipping index; uniqueness is not enforced by ClickHouse", node.Name)
 	}
 	return r.renderOwnedExtension(&ast.AlterTableNode{Name: node.Table}, ast.AlterExtension, &chast.AddSkippingIndex{
-		Name: node.Name, Expression: chast.SkippingIndexExpression(node.Columns), IndexType: settings.IndexType, Granularity: settings.Granularity,
+		Name: node.Name, Expression: chast.SkippingIndexExpression(skippingIndexKey(node)), IndexType: settings.IndexType, Granularity: settings.Granularity,
 	})
+}
+
+// skippingIndexKey returns the key parts of node as ADD INDEX takes them: a
+// column quoted, an expression as written. node.Columns holds both kinds as
+// text, so a column named x-y would be the expression x - y there; the
+// structured parts say which a part is.
+func skippingIndexKey(node *ast.IndexNode) []string {
+	effective := node.EffectiveParts()
+	parts := make([]schemamodel.IndexPart, 0, len(effective))
+	for _, part := range effective {
+		parts = append(parts, schemamodel.IndexPart{Name: part.Name, Expr: part.Expr})
+	}
+	return chindexkey.Written(parts)
 }
 
 // recordLostPartOrder names every index part whose declared direction is gone.
@@ -1078,35 +1222,19 @@ func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef(
-		"ALTER TABLE %s DROP INDEX %s;",
-		escapeQualifiedIdentifier(node.Table),
-		escapeIdentifier(node.Name),
-	)
+	r.w.WriteLinef("ALTER TABLE %s DROP INDEX %s;", quoteTable(node.Table), quoteName(node.Name))
 	return nil
 }
 
-func escapeIdentifier(identifier string) string {
-	if len(identifier) >= 2 && identifier[0] == '`' && identifier[len(identifier)-1] == '`' {
-		identifier = strings.ReplaceAll(identifier[1:len(identifier)-1], "``", "`")
-	}
-	return escapeIdentifierValue(identifier)
-}
+// quoteName quotes a database, column, index or constraint name. Every name
+// this renderer writes is quoted, so a name holding `--`, a space, a backtick,
+// a backslash or a keyword reaches the server as the name: written bare,
+// `DROP COLUMN c -- d` drops the column c and comments the rest out.
+func quoteName(name string) string { return sqlident.Quote(platform.ClickHouse, name) }
 
-func escapeIdentifierValue(identifier string) string {
-	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
-}
-
-func escapeQualifiedIdentifier(identifier string) string {
-	ref, ok := tableref.Parse(identifier)
-	if !ok {
-		return escapeIdentifier(identifier)
-	}
-	if !ref.Qualified {
-		return escapeIdentifierValue(ref.Name)
-	}
-	return escapeIdentifierValue(ref.Schema) + "." + escapeIdentifierValue(ref.Name)
-}
+// quoteTable quotes a table or view name the model holds, qualified by its
+// database when the name carries one.
+func quoteTable(name string) string { return sqlident.TableReference(platform.ClickHouse, name) }
 
 func (r *Renderer) renderUpsert(_ *ast.UpsertNode) error {
 	return fmt.Errorf("%w: clickhouse: upsert rendering is not implemented", ptaherr.ErrUnsupportedFeature)
@@ -1119,10 +1247,14 @@ func (r *Renderer) renderDropTable(node *ast.DropTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	names := node.TableNames()
+	for i, name := range names {
+		names[i] = quoteTable(name)
+	}
 	if node.IfExists {
-		r.w.WriteLinef("DROP TABLE IF EXISTS %s;", strings.Join(node.TableNames(), ", "))
+		r.w.WriteLinef("DROP TABLE IF EXISTS %s;", strings.Join(names, ", "))
 	} else {
-		r.w.WriteLinef("DROP TABLE %s;", strings.Join(node.TableNames(), ", "))
+		r.w.WriteLinef("DROP TABLE %s;", strings.Join(names, ", "))
 	}
 	return nil
 }
@@ -1252,10 +1384,13 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 			ptaherr.ErrUnsupportedFeature,
 		)
 	}
+	if err := chkey.RefuseQuotedNot(fmt.Sprintf("the body of view %q", node.Name), node.Body); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef("%s %s AS", statement, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("%s %s AS", statement, quoteTable(node.Name))
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	r.w.WriteLine(";")
 	return nil
@@ -1279,7 +1414,7 @@ func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, escapeQualifiedIdentifier(node.Name))
+	parts = append(parts, quoteTable(node.Name))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
@@ -1342,6 +1477,9 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 	if err := viewrefusal.Owner(DialectName, "materialized view", node.Name, node.Owner); err != nil {
 		return err
 	}
+	if err := chkey.RefuseQuotedNot(fmt.Sprintf("the body of materialized view %q", node.Name), node.Body); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1359,7 +1497,7 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 	}
 	r.w.WriteLinef(
 		"CREATE MATERIALIZED VIEW %s %s%s AS",
-		escapeQualifiedIdentifier(node.Name),
+		quoteTable(node.Name),
 		refresh,
 		materializedViewEngineClause,
 	)
@@ -1393,7 +1531,7 @@ func (r *Renderer) renderDropMaterializedView(node *ast.DropMaterializedViewNode
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, escapeQualifiedIdentifier(node.Name))
+	parts = append(parts, quoteTable(node.Name))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
