@@ -397,9 +397,24 @@ proven to stay inside the disposable realm:
 - MySQL and MariaDB statements that act on the whole server are refused in
   every realm and under trust: `SHUTDOWN`, `RESTART`, `KILL`, `BINLOG`, `PURGE`
   and the other replication statements, `CLONE`, `LOCK INSTANCE`, and
-  MariaDB's `BACKUP STAGE`. So are `SET PASSWORD` and `SET DEFAULT ROLE`, as
-  the whole statement or as any item of a MariaDB `SET` list: they are
-  spellings of `ALTER USER`, which every realm and trust keep refused.
+  MariaDB's `BACKUP STAGE`.
+- MySQL and MariaDB statements that reach the account the run connects as are
+  refused in every realm and under trust, because the run and its cleanup
+  connect as that account until the command ends. The guard reads the
+  session's account and the roles it holds once, before the first statement.
+  `ALTER USER`, `RENAME USER`, `SET PASSWORD` and `SET DEFAULT ROLE` are
+  refused whatever account they name, the last two also as any item of a
+  MariaDB `SET` list. `DROP USER`, `DROP ROLE`, every `REVOKE`, `REVOKE PROXY`
+  included, and MariaDB's `CREATE OR REPLACE` are refused when they name the
+  account or a role it holds, and so is a `GRANT` that gives the account a
+  password, a TLS requirement or a resource limit. `CREATE USER`,
+  `CREATE ROLE` and `GRANT` are refused for an account that a new connection
+  would match first: the same user, or the anonymous user, on a narrower host.
+  The account is named by `CURRENT_USER`, `CURRENT_USER()`, `USER()`,
+  `CURRENT_ROLE` or `PUBLIC`, or by its user and host in any quoting, a host
+  pattern that covers the session's host included. User names compare
+  exactly, and host names in either case. A statement that names only other
+  accounts gets the answer its realm gives it.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.
@@ -525,7 +540,8 @@ reaches past the dev database:
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, writes to another database, the key
   cache statements `CACHE INDEX` and `LOAD INDEX INTO CACHE`, and
-  `SET RESOURCE GROUP`.
+  `SET RESOURCE GROUP`. An account statement that reaches the account the run
+  connects as stays refused.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
   groups, permissions, secrets, resource pools, backups and topics, on
   `docker://ydb/<tag>`, which the YDB provider starts. YDB gets no dev realm
@@ -656,7 +672,8 @@ accepts:
   group statements, `FEDERATED`, `CONNECT` and `SPIDER` tables, `LOAD DATA`,
   `LOAD XML`, `IMPORT TABLE`, `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a
   client character set outside the UTF-8 family, set by the history or by the
-  dev session;
+  dev session, but no account statement that reaches the account the run
+  connects as;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
   logins, credentials, synonyms, a target in another database, `BACKUP`,
   `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
@@ -668,7 +685,8 @@ accepts:
 
 A refusal that protects the run itself stays under trust. That covers a
 statement that changes the replay session, the identity it runs as or its
-transaction; a write to a system catalog such as `pg_catalog`; server
+transaction; a MySQL or MariaDB statement that reaches the account the run
+connects as; a write to a system catalog such as `pg_catalog`; server
 configuration such as `ALTER SYSTEM`, `SET GLOBAL` or `RECONFIGURE`; an object
 the dev database cleanup cannot remove, such as an event trigger, a YugabyteDB
 publication or a SQL Server ledger table; a MySQL event or a SQL Server DDL

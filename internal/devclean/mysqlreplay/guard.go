@@ -50,8 +50,9 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 //
 // It keeps every refusal that protects the run: an executable comment, which
 // hides SQL from every check here; an EVENT, which the scheduler runs on its own
-// timetable during the rest of the run; ALTER USER and ALTER ROLE, which can
-// change the credentials the run connects with; the statements of
+// timetable during the rest of the run; a statement that reaches the account
+// the run connects as, which [sessionAccount.operation] refuses before any
+// realm or trust is asked; the statements of
 // [mysqlServerStatements] that no realm lifts; USE, a global or persistent
 // SET, INSTALL, UNINSTALL, FLUSH, RESET and ALTER INSTANCE, which change the
 // session or the server the run uses; a TABLESPACE, LOGFILE GROUP, SERVER,

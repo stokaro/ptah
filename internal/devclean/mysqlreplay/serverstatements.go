@@ -10,8 +10,8 @@ type realmLift int
 
 const (
 	// liftedNowhere is refused in every realm and under trust: the statement
-	// acts on the server or on the identity the run connects as, which the
-	// run needs for the rest of the command whoever owns the server.
+	// acts on the server, which the run needs for the rest of the command
+	// whoever owns the server.
 	liftedNowhere realmLift = iota
 	// liftedOnOwnedServer is refused in the database realm and lifted on a
 	// server the run owns, and under trust: its only effect the guard cannot
@@ -62,12 +62,6 @@ var mysqlServerStatements = []mysqlServerStatement{
 	// whole server until the session ends.
 	{words: []string{"LOCK", "INSTANCE"}, operation: "server-wide backup lock", lift: liftedNowhere},
 	{words: []string{"BACKUP"}, operation: "server-wide backup lock", lift: liftedNowhere},
-	// Every realm: spellings of ALTER USER, which the guard refuses in every
-	// realm and under trust, so each answers as the statement it spells.
-	// MariaDB takes either as any item of a SET list, so the guard reads each
-	// item ([mysqlServerStatementOf]).
-	{words: []string{"SET", "PASSWORD"}, operation: "SET PASSWORD", lift: liftedNowhere},
-	{words: []string{"SET", "DEFAULT", "ROLE"}, operation: "SET DEFAULT ROLE", lift: liftedNowhere},
 	// Database realm only: assigns or preloads the key caches of the server,
 	// which every database shares.
 	{words: []string{"CACHE", "INDEX"}, operation: "key cache change", lift: liftedOnOwnedServer},
@@ -81,9 +75,8 @@ var mysqlServerStatements = []mysqlServerStatement{
 
 // mysqlServerStatementOf returns the server statement tokens begin with. A
 // server statement that begins with SET is found in any item of a SET list
-// too: measured on MariaDB 11.8.9, SET @a = 1, PASSWORD FOR 'u'@'%' =
-// PASSWORD('x') changes the password of u, and SET @d = 1, DEFAULT ROLE NONE
-// FOR 'u'@'%' runs as well.
+// too, as MariaDB takes SET PASSWORD and SET DEFAULT ROLE there; see
+// [sessionAccount.operation].
 func mysqlServerStatementOf(tokens []lexer.Token) (mysqlServerStatement, bool) {
 	for _, statement := range mysqlServerStatements {
 		if replay.TokenSequenceAt(tokens, 0, statement.words...) {

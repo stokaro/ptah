@@ -145,12 +145,13 @@ type replayGuardOwner interface {
 // guard reads every statement; an owner that offers no guard leaves every
 // statement refused, as a dialect no engine guards is.
 //
-// A dialect whose guard reads a statement as only some sessions read it, as
-// [replay.SessionGuard] says, has conn's session read here, once, and a
-// session the guard refuses refuses the run: the error names every way the
-// operator can lift the refusal. conn is the session the run executes its
-// statements on, or a pool whose every session has the settings that one
-// starts with.
+// A dialect whose guard reads a statement by the session it runs on, as
+// [replay.SessionGuard] says, has conn's session read here, once, and the
+// guard it returns validates the run's statements. A session the guard
+// refuses refuses the run: the error names every way the operator can lift
+// the refusal. conn is the session the run executes its statements on, or a
+// pool whose every session has the settings and the account that one starts
+// with.
 func NewDevReplayGuardFor(ctx context.Context, conn *dbschema.DatabaseConnection) (*ReplayGuard, error) {
 	return guardFor(ctx, conn, NewDevReplayGuard(conn.Info()))
 }
@@ -197,9 +198,10 @@ func guardFor(ctx context.Context, conn *dbschema.DatabaseConnection, guard *Rep
 }
 
 // validateSession asks the dialect's guard about session, when the guard
-// reads statements by the session's rules, and ends a refusal with the trust
-// remedy when trusting the SQL would lift it. Ownership lifts no such
-// refusal: what the guard misreads, it misreads in every realm.
+// reads statements by the session they run on, and keeps the guard it
+// returns. It ends a refusal with the trust remedy when trusting the SQL
+// would lift it. Ownership lifts no such refusal: what the guard misreads, it
+// misreads in every realm.
 func (g *ReplayGuard) validateSession(ctx context.Context, session replay.Session) error {
 	reader, ok := g.guard.(replay.SessionGuard)
 	if !ok {
@@ -207,13 +209,17 @@ func (g *ReplayGuard) validateSession(ctx context.Context, session replay.Sessio
 	}
 	scope := g.realm.scope(g.info.Schema)
 	scope.TrustedSQL = g.trustSQL
-	err := reader.ValidateSession(ctx, session, scope)
+	guard, err := reader.ValidateSession(ctx, session, scope)
+	if err == nil {
+		g.guard = guard
+		return nil
+	}
 	var refusal *replay.SessionRefusal
-	if err == nil || g.trustSQL || g.trustRemedy == "" || !errors.As(err, &refusal) {
+	if g.trustSQL || g.trustRemedy == "" || !errors.As(err, &refusal) {
 		return err
 	}
 	scope.TrustedSQL = true
-	if reader.ValidateSession(ctx, session, scope) != nil {
+	if _, trusted := reader.ValidateSession(ctx, session, scope); trusted != nil {
 		return err
 	}
 	return fmt.Errorf("%w; %s", err, g.trustRemedy)

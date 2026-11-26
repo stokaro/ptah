@@ -12,16 +12,19 @@ type Session interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row
 }
 
-// SessionGuard is a [Guard] whose reading of a statement holds only on a
-// session that reads the statement's bytes the way the guard does. devclean
-// asks it once, on the session the run executes its statements on, before it
-// validates any statement for the run.
+// SessionGuard is a [Guard] whose reading of a statement depends on the
+// session it runs on: whether the session reads the statement's bytes the
+// way the guard does, and who the session runs as. devclean asks it once, on
+// the session the run executes its statements on, before it validates any
+// statement for the run, and validates the run's statements with the guard
+// it returns.
 type SessionGuard interface {
 	// ValidateSession refuses a run under scope on session when the guard
 	// cannot read the run's statements as session reads them, with a
 	// [*SessionRefusal], and returns another error when it cannot read
+	// session. Otherwise it returns the guard for the run's statements on
 	// session.
-	ValidateSession(ctx context.Context, session Session, scope Scope) error
+	ValidateSession(ctx context.Context, session Session, scope Scope) (Guard, error)
 }
 
 // SessionRefusal is the error [SessionGuard.ValidateSession] returns for a
