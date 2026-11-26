@@ -175,13 +175,17 @@ func postgresServerWidePrivilege(tokens []lexer.Token) string {
 func validatePostgresServerWideStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
 	policy := protection{
 		dialect:       dialect,
+		database:      names.database,
 		sessionTables: scope.Session && dialect == platform.Postgres,
 		catalog:       names.catalog,
-		creation:      names.creation,
+		path:          names.path,
+		relations:     names.relations,
 		unqualified:   new(string),
+		through:       new(string),
 	}
 	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {
-		return refuseProtectedNamespace(dialect, fmt.Sprintf("protected namespace %q mutation", namespace), *policy.unqualified)
+		return refuseProtectedNamespace(dialect, fmt.Sprintf("protected namespace %q mutation", namespace),
+			*policy.unqualified, *policy.through)
 	}
 	return nil
 }

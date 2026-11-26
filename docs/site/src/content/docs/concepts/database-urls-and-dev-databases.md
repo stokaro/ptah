@@ -738,19 +738,54 @@ A `CREATE` is judged by where it creates, not by what its name reaches. The
 server puts an object whose name has no schema in the first schema of the
 search path, so `CREATE TYPE point` makes `public.point` beside
 `pg_catalog.point`, and the guard accepts it, as it accepts `CREATE OR REPLACE`.
-Under a search path that starts with a protected namespace such a `CREATE`
-would land there, so it is refused; Ptah refuses a dev database whose search
-path starts with `pg_catalog` before the replay. A later statement that names
-the object without its schema is a reference again: `DROP TYPE point` reaches
-`pg_catalog.point`, so the guard refuses it, as the server does; write
-`public.point`.
+A later statement that names the object without its schema is a reference
+again: `DROP TYPE point` reaches `pg_catalog.point`, so the guard refuses it,
+as the server does; write `public.point`.
+
+The server skips a schema of the search path that does not exist, so under a
+path such as `public, pg_catalog` a `DROP SCHEMA public` makes the next
+`CREATE` land in `pg_catalog`. A dev session whose search path lists a
+protected namespace anywhere therefore has every `CREATE` without a schema
+refused, under trust too, and the refusal says to qualify the name. Ptah
+refuses a dev database whose search path starts with `pg_catalog` before the
+replay.
 
 A direct write to a protected namespace is refused in every spelling the guard
-reads: with the schema written, bare, quoted or Unicode-escaped. A write
-carried through an object the replay creates first, such as an auto-updatable
-view over `pg_authid` or `pg_settings`, or an operator whose function is a
-cluster control function, still reaches the catalog; that gap is tracked in
-[issue #6739](https://github.com/stokaro/ptah/issues/6739).
+reads: with the schema written, bare, quoted, Unicode-escaped, or behind the
+dev database's own name, as in `ptah_dev.pg_catalog.pg_authid`. A write the
+server carries through another object is refused where the guard can read the
+object:
+
+- A view whose query names a relation of a protected namespace, such as
+  `CREATE VIEW v AS SELECT * FROM pg_authid`, is accepted, and so is a read
+  through it. An `INSERT`, `UPDATE`, `DELETE`, `MERGE` or `COPY` that writes
+  through it is refused, as is one through a view over that view. The guard
+  follows a view the replay renames or moves to another schema, and reads the
+  views the dev database already holds, such as an extension's, before the
+  replay. It matches a view by its schema and name, so a table of the same
+  name in another schema is written as usual. A view the replay drops stays
+  known, and a table later created under its name is refused too.
+- A `CREATE RULE` whose action writes a protected namespace, or writes
+  through such a view, is refused.
+- A `CREATE TRIGGER` whose function arguments name a relation of a protected
+  namespace is refused. The `check_foreign_key` function of the refint
+  extension runs its arguments as SQL, so
+  `check_foreign_key(1, 'cascade', 'id', 'pg_catalog.pg_description', 'objoid')`
+  deletes catalog rows. A text search configuration such as
+  `'pg_catalog.english'` names no relation and is accepted.
+- An operator, an aggregate, a type, an operator class or a conversion that
+  names a function the guard refuses as a call is refused: a cluster control
+  function such as `pg_terminate_backend` or `set_config`, a replication
+  function, a large object function, a session advisory lock, and a dblink
+  function unless the run trusts its SQL. `set_config` is refused there
+  whatever it would set, because the server passes it arguments the statement
+  does not spell out.
+
+A call of such a function in a column default, a generated column, a `CHECK`
+constraint, a policy or a rule action is refused as any call is. CockroachDB
+has no rules, operators or aggregates, and its server refuses a write through
+a view; the guard refuses a write through a CockroachDB view that reaches a
+protected namespace all the same.
 
 A Unicode-escaped identifier, such as `U&"pg\005fcatalog"`, is decoded before
 the guard reads the statement, so it counts as the name it spells. One whose

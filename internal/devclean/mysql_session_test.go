@@ -33,14 +33,14 @@ var replaySessionMarkers = []string{"standard_conforming_strings", "DB_NAME()", 
 // replaySessionAnswers are the rows of the session guards' queries, by the
 // index of their marker: a MySQL or MariaDB guard reads the client character
 // set, the account and its roles; a PostgreSQL-family guard reads
-// client_encoding, standard_conforming_strings, the catalog's names and the
-// creation schema, and a catalog that names nothing leaves the guard to the
-// rule it reads without a session; a SQL Server guard reads the database, and
-// learns that the session reaches every database, so that every name of
-// another database is refused.
+// client_encoding, standard_conforming_strings, the catalog's names, the
+// search path, the rules and the database, and a catalog that names nothing
+// leaves the guard to the rule it reads without a session; a SQL Server guard
+// reads the database, and learns that the session reaches every database, so
+// that every name of another database is refused.
 var replaySessionAnswers = map[int]dataext.Row{
 	-1: replaySessionRow{"utf8mb4", "replay@%", "[]"},
-	0:  replaySessionRow{"UTF8", "on", "[]", "public"},
+	0:  replaySessionRow{"UTF8", "on", "[]", `["public"]`, "[]", "ptah_dev"},
 	1:  replaySessionRow{"ptah_dev"},
 	2:  reachedDatabaseRow{},
 }

@@ -34,11 +34,11 @@ func sessionBoundGuard(c *qt.C, dialect string) replay.Guard {
 }
 
 // creatingGuard is the guard of dialect bound to a dev session whose catalog
-// holds [sessionCatalog] and whose search path creates in creation; "" is a
-// path that names no schema.
-func creatingGuard(c *qt.C, dialect, creation string) replay.Guard {
+// holds [sessionCatalog] and whose search path lists the schemas of path that
+// exist; none is a path that names no schema.
+func creatingGuard(c *qt.C, dialect string, path ...string) replay.Guard {
 	c.Helper()
-	session := reportedSession{encoding: "UTF8", conforming: "on", catalog: sessionCatalog, creation: creation, asked: new(int)}
+	session := reportedSession{encoding: "UTF8", conforming: "on", catalog: sessionCatalog, path: path, asked: new(int)}
 	bound, err := sessionGuardFor(c, dialect).ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev"})
 	c.Assert(err, qt.IsNil)
 	return bound

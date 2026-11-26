@@ -21,7 +21,10 @@ func Services() []replay.Service {
 	dialects := []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 	services := make([]replay.Service, 0, len(dialects))
 	for _, dialect := range dialects {
-		services = append(services, replay.Service{Dialect: dialect, Guard: guard{dialect: dialect}})
+		services = append(services, replay.Service{
+			Dialect: dialect,
+			Guard:   guard{dialect: dialect, relations: newReachingRelations()},
+		})
 	}
 	return services
 }
@@ -32,6 +35,12 @@ type guard struct {
 	// resolves a name written without a schema. Nil is a guard that read no
 	// session; see [fallbackCatalogNamespace] and [protection.creationNamespace].
 	session *sessionNames
+	// relations are the relations a write through which reaches a protected
+	// namespace: the ones the session held, and the ones the run's accepted
+	// statements created. Every copy of the guard shares them, so a view one
+	// statement creates is known to the statements after it; see
+	// [reachingRelations].
+	relations *reachingRelations
 }
 
 // Validate refuses a statement whose effects cannot be confined to scope, and
@@ -46,6 +55,7 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 	if g.session != nil {
 		names = *g.session
 	}
+	names.relations = g.relations
 	if scope.Server && postgresServerWideOperation(stmt, tokens, scope) != "" {
 		return validatePostgresServerWideStatement(g.dialect, names, tokens, scope)
 	}
