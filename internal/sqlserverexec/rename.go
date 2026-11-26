@@ -60,6 +60,8 @@ func ReadRename(stmt string) (Rename, bool) {
 		read[1].Value != "sp_rename" || read[1].Type != lexer.TokenIdentifier {
 		return Rename{}, false
 	}
+	// Each argument is a literal and the token after it, which the
+	// comparison with the rendering below holds to a comma.
 	var arguments []string
 	for index := 2; index < len(read); {
 		value, next, ok := unicodeLiteralAt(read, index)
@@ -67,12 +69,9 @@ func ReadRename(stmt string) (Rename, bool) {
 			return Rename{}, false
 		}
 		arguments = append(arguments, value)
-		if next < len(read) && !read[next].MatchOperatorValue(",") {
-			return Rename{}, false
-		}
 		index = next + 1
 	}
-	if len(arguments) < 2 || len(arguments) > 3 {
+	if len(arguments) < 2 {
 		return Rename{}, false
 	}
 	name, ok := parseQualifiedName(arguments[0])
@@ -80,7 +79,7 @@ func ReadRename(stmt string) (Rename, bool) {
 		return Rename{}, false
 	}
 	rename := Rename{Name: name, NewName: arguments[1]}
-	if len(arguments) == 3 {
+	if len(arguments) > 2 {
 		rename.Type = RenameType(arguments[2])
 	}
 	if !sameStatement(stmt, rename.Statement()) {

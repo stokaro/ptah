@@ -307,6 +307,13 @@ func TestGuard_RefusesADefaultReplacementThatDoesMore(t *testing.T) {
 			operation: `default expression "1) FOR [status] DROP TABLE [dbo].[orders] ALTER TABLE [dbo].[users] ADD DEFAULT (1"`,
 		},
 		{
+			// The expression is one, and the statement that adds it is one
+			// the guard refuses written on its own.
+			name:      "an ADD DEFAULT the guard refuses on its own",
+			statement: replace(users, "(LEDGER = ON)"),
+			operation: "LEDGER table",
+		},
+		{
 			name:      "an unclosed parenthesis",
 			statement: replace(users, "(1"),
 			operation: `default expression "(1"`,

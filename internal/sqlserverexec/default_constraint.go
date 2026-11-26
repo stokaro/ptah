@@ -64,13 +64,13 @@ type DefaultDrop struct {
 // ReadDefaultDrop reads stmt back into the column whose default it drops, when
 // stmt is the statement [DefaultConstraintBatch] writes for that column with
 // nothing to add. The batch reads the constraint's name from the catalog,
-// scoped to that table and column, and drops it from that table; a batch that
-// differs from that rendering in any byte reads as false, and so does one that
-// adds a statement after the drop.
+// scoped to that table and column, and drops it from that table. The batch is
+// rendered again for the table and column its lookup names and compared byte
+// for byte, so one that differs in any byte reads as false, and so does one
+// that adds a statement after the drop.
 func ReadDefaultDrop(stmt string) (DefaultDrop, bool) {
 	batch, drop, ok := readDefaultBatch(stmt)
-	if !ok || batch != dropDefaultBatch(drop.Table, drop.Column) ||
-		!sameStatement(stmt, DefaultConstraintBatch(drop.Table, drop.Column, "")) {
+	if !ok || batch != dropDefaultBatch(drop.Table, drop.Column) {
 		return DefaultDrop{}, false
 	}
 	return drop, true
@@ -91,10 +91,11 @@ type DefaultReplace struct {
 // ReadDefaultReplace reads stmt back into the column whose default it
 // replaces, when stmt is the statement DefaultConstraintBatch writes for that
 // column with the [AddDefault] of an expression for the same table and
-// column. The drop is read as [ReadDefaultDrop] reads it; what follows it is
-// read as AddDefault writes it, and the expression is whatever text stands
-// between ADD DEFAULT and the FOR that ends the batch. Whether that text is
-// one expression is for the caller to judge.
+// column. The drop is compared as [ReadDefaultDrop] compares it, and what
+// follows it with the text AddDefault writes around an expression, byte for
+// byte. The expression is whatever text stands between ADD DEFAULT and the
+// FOR that ends the batch; whether that text is one expression is for the
+// caller to judge.
 func ReadDefaultReplace(stmt string) (DefaultReplace, bool) {
 	batch, drop, ok := readDefaultBatch(stmt)
 	if !ok {
@@ -106,15 +107,16 @@ func ReadDefaultReplace(stmt string) (DefaultReplace, bool) {
 	}
 	expression, prefixed := strings.CutPrefix(add, "ALTER TABLE "+QuoteQualifiedName(drop.Table)+" ADD DEFAULT ")
 	expression, suffixed := strings.CutSuffix(expression, " FOR "+QuoteName(drop.Column)+";")
-	if !prefixed || !suffixed || expression == "" ||
-		!sameStatement(stmt, DefaultConstraintBatch(drop.Table, drop.Column, AddDefault(drop.Table, drop.Column, expression))) {
+	if !prefixed || !suffixed || expression == "" {
 		return DefaultReplace{}, false
 	}
 	return DefaultReplace{Table: drop.Table, Column: drop.Column, Expression: expression}, true
 }
 
 // readDefaultBatch reads the batch an EXEC sp_executesql of one Unicode
-// literal runs, and the table and column its catalog lookup names.
+// literal runs, and the table and column its catalog lookup names. Whitespace
+// and comments around the four tokens are the server's to ignore, and the
+// batch is the literal's value, compared by the caller.
 func readDefaultBatch(stmt string) (string, DefaultDrop, bool) {
 	read := tokens(stmt)
 	if len(read) != 4 || read[0].Value != "EXEC" || read[0].Type != lexer.TokenIdentifier ||

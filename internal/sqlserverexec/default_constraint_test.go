@@ -105,6 +105,8 @@ func TestReadDefaultDrop_FailurePath(t *testing.T) {
 		{name: "a default added after the drop", statement: strings.TrimSuffix(dropUsersStatus, "';") + " ALTER TABLE [dbo].[users] ADD DEFAULT ''active'' FOR [status];';"},
 		{name: "a statement after it", statement: dropUsersStatus + " DROP TABLE [dbo].[orders];"},
 		{name: "a plain literal", statement: strings.Replace(dropUsersStatus, "sp_executesql N'", "sp_executesql '", 1)},
+		{name: "a lowercase n", statement: strings.Replace(dropUsersStatus, "sp_executesql N'", "sp_executesql n'", 1)},
+		{name: "spacing inside the batch", statement: strings.Replace(dropUsersStatus, "EXEC (@drop);", "EXEC  (@drop);", 1)},
 		{name: "EXECUTE", statement: strings.Replace(dropUsersStatus, "EXEC sp_executesql", "EXECUTE sp_executesql", 1)},
 		{name: "no EXEC", statement: strings.TrimPrefix(dropUsersStatus, "EXEC ")},
 		{name: "procedure in sys", statement: strings.Replace(dropUsersStatus, "EXEC sp_executesql", "EXEC sys.sp_executesql", 1)},

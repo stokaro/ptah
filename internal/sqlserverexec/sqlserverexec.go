@@ -116,15 +116,12 @@ func tokens(stmt string) []lexer.Token {
 // each of the same type and text. A string literal is one token, so its text
 // is compared byte for byte.
 func sameStatement(stmt, rendered string) bool {
-	return sameTokens(tokens(stmt), tokens(rendered))
-}
-
-func sameTokens(read, rendered []lexer.Token) bool {
-	if len(read) != len(rendered) {
+	read, want := tokens(stmt), tokens(rendered)
+	if len(read) != len(want) {
 		return false
 	}
 	for i := range read {
-		if read[i].Type != rendered[i].Type || read[i].Value != rendered[i].Value {
+		if read[i].Type != want[i].Type || read[i].Value != want[i].Value {
 			return false
 		}
 	}
