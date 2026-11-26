@@ -15,6 +15,10 @@
 // The context also says how a read names what it reports: by default an object
 // of the connection's current schema carries no schema, and a run whose
 // statements name every schema asks for it with [Qualified].
+//
+// A selector can leave out single objects too, and a read that has to send a
+// statement naming one object, beyond the catalog queries that list them all,
+// asks [Keeps] first and sends nothing for an object the run leaves out.
 package readscope
 
 import (
@@ -102,4 +106,72 @@ func Qualified(ctx context.Context) context.Context {
 func IsQualified(ctx context.Context) bool {
 	qualified, _ := ctx.Value(qualifiedKey{}).(bool)
 	return qualified
+}
+
+// Object is one object a read found, named as the read reports it.
+type Object struct {
+	// Kind is the object's kind.
+	Kind Kind
+	// Schema is the schema the read names the object with, and "" for an
+	// object the read leaves unqualified.
+	Schema string
+	// Table is the table a trigger belongs to, and "" for an object of any
+	// other kind.
+	Table string
+	// Name is the object's name.
+	Name string
+}
+
+// Read is what a reader asks a [Selector] about: the objects it found on a
+// connection of Dialect, where Current names the schema whose objects the
+// read leaves unqualified, and "" for a read that qualifies every object.
+// Objects holds the ones it may send a statement for and every object a
+// selector could name to keep or leave out one of them: a trigger leaves with
+// its table.
+type Read struct {
+	Dialect string
+	Current string
+	Objects []Object
+}
+
+// Selector reports, for each object of a read, whether the run keeps it. It
+// answers true where it cannot tell, since a read that leaves out an object
+// the run keeps describes it wrong.
+type Selector func(read Read) []bool
+
+type selectorsKey struct{}
+
+// Selecting returns ctx saying that the run keeps only the objects selector
+// keeps, on top of what ctx already says. A nil selector leaves ctx as it
+// was.
+func Selecting(ctx context.Context, selector Selector) context.Context {
+	if selector == nil {
+		return ctx
+	}
+	current, _ := ctx.Value(selectorsKey{}).([]Selector)
+	return context.WithValue(ctx, selectorsKey{}, append(slices.Clip(current), selector))
+}
+
+// Keeps reports, for each object of read, whether the run ctx belongs to
+// keeps it: every selector [Selecting] gave keeps it. Where none was given,
+// and in a read ctx marks [Authored], it keeps every object. A read of what
+// the run created names that database the way the run names its own, which
+// is not always the way the selectors count, and an object there is the
+// run's own to read.
+func Keeps(ctx context.Context, read Read) []bool {
+	kept := make([]bool, len(read.Objects))
+	for index := range kept {
+		kept[index] = true
+	}
+	if IsAuthored(ctx) {
+		return kept
+	}
+	selectors, _ := ctx.Value(selectorsKey{}).([]Selector)
+	for _, selector := range selectors {
+		answer := selector(read)
+		for index := range kept {
+			kept[index] = kept[index] && (index >= len(answer) || answer[index])
+		}
+	}
+	return kept
 }

@@ -1902,6 +1902,53 @@ Ordinary strict modes remain accepted. The modes `ANSI_QUOTES` and
 `NO_BACKSLASH_ESCAPES` change how tokens are spelled and are outside this
 parsing-mode refusal; see [Session SQL modes](#a-session-without-a-strict-sql-mode).
 
+## How trigger and routine bodies are read
+
+`information_schema` reports a trigger's or a routine's body rewritten. MySQL
+writes a string literal's value between its quotes, so `'a\'b'` reads back as
+`'a'b'` and `'a\qb'` as `'aqb'`, and a `\0` in a routine's literal cuts the
+body short. It rewrites a quoted name that holds a backquote too, so the name
+in ``` NEW.`a``b` ``` reads back as `` NEW.`aa`bb` ``. MariaDB writes a literal
+again with its own escapes, so `'a\\b'` reads back as `'a\b'`, which is a
+backspace. Both drop the character set introducer of a hex or a bit literal,
+so `_latin1 0xE9` reads back as `0xE9`, which is another value. A declared
+body compared with that text differs on every run, and a body created again
+from it is another program, or one the server refuses.
+
+Ptah reads every trigger and routine body from `SHOW CREATE TRIGGER`,
+`SHOW CREATE FUNCTION` or `SHOW CREATE PROCEDURE`, which keep it as it was
+written. Nothing in the reported text says whether it was rewritten, so each
+body costs one statement. Over a connection pool Ptah sends them on up to
+eight connections at once where the account and the server allow that many,
+and on one otherwise; over a single session, such as a transaction, it sends
+them one after another. An object that `--exclude` or `--include` leaves out
+costs no statement. An object dropped by another session between the catalog
+read and its statement fails the read, and the error names the object; run
+the command again.
+
+The body is read under the `sql_mode` it was stored with. Where that mode
+changes how the text splits into tokens, Ptah writes the body again for the
+reading session: a backslash under `NO_BACKSLASH_ESCAPES` and a double quote
+under `ANSI_QUOTES`. `SET NEW.code = 'a\b'` stored under
+`NO_BACKSLASH_ESCAPES` reads as `SET NEW.code = 'a\\b'` on a session without
+it. A mode that changes what a token means, such as `PIPES_AS_CONCAT`, refuses
+the read before any body is read; see
+[Stored program SQL modes](#stored-program-sql-modes). An object created again
+under such a mode after the catalog read is refused when `SHOW CREATE` reports
+the mode. Ptah does not rewrite
+the text of an executable comment, so where the modes differ it refuses a body
+with a quote or a backslash inside one.
+
+The read needs no privilege beyond the one that shows the body in
+`information_schema`; see
+[What the connecting account needs](#what-the-connecting-account-needs). It
+needs no connection beyond the first either: where the account's
+`MAX_USER_CONNECTIONS`, the `max_user_connections` variable or the server's
+`max_connections` refuses another connection, the read goes on with the
+connections it holds. When the read ends, Ptah closes every connection it
+opened for the bodies, so `ptah schema diff` between two databases of one
+server can still open its connection to the second.
+
 ## Replacing a trigger
 
 A plan runs every trigger change in one block, after the columns a new trigger

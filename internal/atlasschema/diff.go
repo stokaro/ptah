@@ -209,7 +209,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// A database a realm-scoped URL names is read with the schema of every
 	// object, so the plan names it, as `schema apply` writes it; see
 	// [readscope.Qualified].
-	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), slices.Concat(opts.Exclude, opts.ImplicitExclude), opts.Include)...))
+	ctx = readscope.Qualified(atlasfilter.ReadScope(ctx, opts.Runtime.Selections(), slices.Concat(opts.Exclude, opts.ImplicitExclude), opts.Include))
 	prepared, err := prepareDiffSources(ctx, opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err

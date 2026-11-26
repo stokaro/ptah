@@ -157,7 +157,7 @@ func RehearsePlanStatements(
 	// "app"."t" on a target whose current schema is public failed on the dev
 	// database with 3F000, schema "app" does not exist.
 	read, err := applyCurrentState(
-		readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, nil)...), conn, nil, desired,
+		atlasfilter.ReadScope(ctx, opts.Runtime.Selections(), opts.Exclude, nil), conn, nil, desired,
 	)
 	if err != nil {
 		return err

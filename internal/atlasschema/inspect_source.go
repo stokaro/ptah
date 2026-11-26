@@ -269,7 +269,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	if err := ValidateInspectOptions(opts); err != nil {
 		return InspectResult{}, err
 	}
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
+	ctx = atlasfilter.ReadScope(ctx, opts.Runtime.Selections(), opts.Exclude, opts.Include)
 	set, err := atlassource.ClassifySet(opts.sourceFlag(), opts.URLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return InspectResult{}, err

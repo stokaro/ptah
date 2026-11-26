@@ -1,6 +1,7 @@
 package mysql_test
 
 import (
+	"cmp"
 	"context"
 	"database/sql/driver"
 	"errors"
@@ -19,8 +20,10 @@ import (
 )
 
 // visibleCatalog answers a reader as a server whose database fx holds what the
-// fields say. Every question it does not model answers no rows, which is how a
-// catalog view answers for what the account may not see.
+// fields say. SHOW CREATE prints a trigger or a routine with the body its row
+// holds, the session's sql_mode is the default, and its character set is
+// utf8mb4. Every other question it does not model answers no rows, which is
+// how a catalog view answers for what the account may not see.
 type visibleCatalog struct {
 	selected    any
 	databases   []string
@@ -68,6 +71,15 @@ func (v visibleCatalog) answer(query string, args []driver.NamedValue) (dbtest.Q
 			"ROUTINE_NAME", "DTD_IDENTIFIER", "IS_DETERMINISTIC", "SQL_DATA_ACCESS", "SECURITY_TYPE",
 			"DEFINER", "CURRENT_USER()", "ROUTINE_DEFINITION", "ROUTINE_COMMENT", "ROUTINE_TYPE",
 		}, Rows: v.routines}), nil
+	case query == sessionStateQuery:
+		return dbtest.QueryResult{
+			Columns: []string{"@@SESSION.sql_mode", "@@SESSION.character_set_results"},
+			Rows:    [][]driver.Value{{cmp.Or(v.sessionMode, defaultMode), "utf8mb4"}},
+		}, nil
+	case query == clientCharsetQuery:
+		return dbtest.QueryResult{Columns: []string{"@@SESSION.character_set_client"}, Rows: [][]driver.Value{{"utf8mb4"}}}, nil
+	case strings.HasPrefix(query, "SHOW CREATE "):
+		return v.showCreate(query), nil
 	}
 	return dbtest.QueryResult{}, nil
 }
@@ -86,6 +98,54 @@ func (v visibleCatalog) withModes(query string, result dbtest.QueryResult) dbtes
 	}
 	result.Rows = rows
 	return result
+}
+
+// sessionStateQuery and clientCharsetQuery are what the reader asks a session
+// about its sql_mode and its character sets.
+const (
+	sessionStateQuery  = "SELECT @@SESSION.sql_mode, @@SESSION.character_set_results"
+	clientCharsetQuery = "SELECT @@SESSION.character_set_client"
+)
+
+// defaultMode is the sql_mode of a MySQL 8 session left at the default.
+const defaultMode = "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+
+// showCreate answers SHOW CREATE TRIGGER, PROCEDURE or FUNCTION `fx`.`name`
+// as the server prints the object the catalog holds under that name, stored
+// under storedMode, and with no rows for any other.
+func (v visibleCatalog) showCreate(query string) dbtest.QueryResult {
+	_, quoted, _ := strings.Cut(query, "`.`")
+	name := strings.ReplaceAll(strings.TrimSuffix(quoted, "`"), "``", "`")
+	mode := cmp.Or(v.storedMode, defaultMode)
+	for _, row := range v.triggers {
+		if strings.HasPrefix(query, "SHOW CREATE TRIGGER ") && row[0] == name {
+			return showCreateResult("Trigger", name, mode, fmt.Sprintf(
+				"CREATE DEFINER=`owner`@`%%` TRIGGER `%s` %s %s ON `%s` FOR EACH ROW %s", name, row[2], row[3], row[1], row[5],
+			))
+		}
+	}
+	for _, row := range v.routines {
+		kind := fmt.Sprint(row[9])
+		if strings.HasPrefix(query, "SHOW CREATE "+kind+" ") && row[0] == name {
+			var returns string
+			if kind == "FUNCTION" {
+				returns = " RETURNS " + fmt.Sprint(row[1])
+			}
+			return showCreateResult(strings.ToUpper(kind[:1])+strings.ToLower(kind[1:]), name, mode, fmt.Sprintf(
+				"CREATE DEFINER=`owner`@`%%` %s `%s`()%s\n%s", kind, strings.ReplaceAll(name, "`", "``"), returns, row[7],
+			))
+		}
+	}
+	return dbtest.QueryResult{}
+}
+
+// showCreateResult is the row SHOW CREATE prints for the object of kind,
+// Trigger, Procedure or Function, named name, created by statement under mode.
+func showCreateResult(kind, name, mode, statement string) dbtest.QueryResult {
+	return dbtest.QueryResult{
+		Columns: []string{kind, "sql_mode", "Create " + kind, "character_set_client", "collation_connection", "Database Collation"},
+		Rows:    [][]driver.Value{{name, mode, statement, "utf8mb4", "utf8mb4_0900_ai_ci", "utf8mb4_0900_ai_ci"}},
+	}
 }
 
 // procedureRow is a procedure the account may list, with its body or without.

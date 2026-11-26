@@ -659,10 +659,10 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	}
 	defer func() {
 		if dc.singleSession {
-			resultErr = errors.Join(resultErr, closeSQLConnection(session, "in-memory SQLite query session"))
+			resultErr = errors.Join(resultErr, sqlrunner.Release(session, "in-memory SQLite query session"))
 			return
 		}
-		resultErr = errors.Join(resultErr, discardSQLConnection(session, "isolated query session"))
+		resultErr = errors.Join(resultErr, sqlrunner.Discard(session, "isolated query session"))
 	}()
 	service := dc.engine()
 	if !service.Transactional() {
@@ -735,10 +735,10 @@ func (dc *DatabaseConnection) WithSession(
 	}
 	defer func() {
 		if dc.singleSession {
-			resultErr = errors.Join(resultErr, closeSQLConnection(session, "in-memory SQLite database session"))
+			resultErr = errors.Join(resultErr, sqlrunner.Release(session, "in-memory SQLite database session"))
 			return
 		}
-		resultErr = errors.Join(resultErr, discardSQLConnection(session, "pinned database session"))
+		resultErr = errors.Join(resultErr, sqlrunner.Discard(session, "pinned database session"))
 	}()
 
 	runner := sqlrunner.NewConn(ctx, session)
@@ -806,27 +806,6 @@ func connectionCapabilities(connection, baseline capability.Capabilities) capabi
 // already says the run was canceled, so the failure is not reported beside it.
 func rollbackAfterCancel(ctx context.Context) bool {
 	return ctx.Err() != nil
-}
-
-func discardSQLConnection(session *sql.Conn, label string) error {
-	var resultErr error
-	discardErr := session.Raw(func(any) error {
-		return driver.ErrBadConn
-	})
-	// A session the server or the driver already closed, such as one whose
-	// backend was terminated, has nothing left to discard.
-	if discardErr != nil && !errors.Is(discardErr, driver.ErrBadConn) && !errors.Is(discardErr, sql.ErrConnDone) {
-		resultErr = errors.Join(resultErr, fmt.Errorf("discard %s: %w", label, discardErr))
-	}
-	resultErr = errors.Join(resultErr, closeSQLConnection(session, label))
-	return resultErr
-}
-
-func closeSQLConnection(session *sql.Conn, label string) error {
-	if err := session.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
-		return fmt.Errorf("close %s: %w", label, err)
-	}
-	return nil
 }
 
 // Query executes a query and returns the result rows

@@ -11,7 +11,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
-	"ptah.run/internal/dbtarget"
 )
 
 // `ptah migrations down --plan` applies the rollback it derives on a session
@@ -24,10 +23,10 @@ import (
 // read. The plan creates pf_a first, and MySQL runs DDL outside a
 // transaction, so without the read pf_a is on the target after the refusal.
 //
-// MySQL 8.4 reports the trigger body with the backslash taken out, and the
-// session reads that text the same way. MariaDB reports it with the escaped
-// quote doubled, which is one string under either rule, so no MariaDB row can
-// reach the refusal this way.
+// The rollback recreates the trigger with the body the shadow database
+// stored, as SHOW CREATE TRIGGER prints it. information_schema reports that
+// body rewritten: MariaDB doubles the escaped quote, which is one string under
+// either rule, so without SHOW CREATE the MariaDB row sends both statements.
 
 // storedValuesDownMigrations are a directory whose version 1 creates pf_a,
 // pf_t and the trigger, and whose version 2 drops pf_a and the trigger.
@@ -42,27 +41,31 @@ var storedValuesDownMigrations = map[string]string{
 }
 
 func TestMigrationsDownPlanRefusesAnUnreadableRollbackBeforeSendingE2E(t *testing.T) {
-	c := qt.New(t)
-	scratch := newMySQLFamilyScratch(c, dbtarget.MySQLAdmin)
-	target, targetURL := scratch.database(c, "pfd_target")
-	_, devURL := scratch.database(c, "pfd_dev")
-	dir := filepath.Join(c.TempDir(), "migrations")
-	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	for name, body := range storedValuesDownMigrations {
-		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+	for _, engine := range mysqlCommentEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine.engine)
+			target, targetURL := scratch.database(c, "pfd_target")
+			_, devURL := scratch.database(c, "pfd_dev")
+			dir := filepath.Join(c.TempDir(), "migrations")
+			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+			for name, body := range storedValuesDownMigrations {
+				c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+			}
+			run := clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables(), Timeout: 2 * time.Minute}
+			up := clirun.Run(c, clirun.Ptah, run, "migrations", "up", "--db-url", targetURL, "--migrations-dir", dir, "--allow-destructive")
+			c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
+			c.Assert(scratch.tablesOf(c, target), qt.Equals, "pf_t,schema_migrations,schema_migrations_log")
+
+			down := clirun.Run(c, clirun.Ptah, run, "migrations", "down",
+				"--db-url", withURLParameter(targetURL, "sql_mode", "%27NO_BACKSLASH_ESCAPES%27"), "--migrations-dir", dir,
+				"--target", "1", "--plan", "--shadow-db", devURL, "--confirm")
+
+			c.Assert(down.ExitCode, qt.Not(qt.Equals), 0, historyComment(down))
+			c.Assert(scratch.tablesOf(c, target), qt.Equals, "pf_t,schema_migrations,schema_migrations_log")
+			c.Assert(down.Stderr, qt.Contains, "apply derived rollback statements: statement 2 of 2: "+
+				"read whether the statement defines an object that keeps the session's settings")
+			c.Assert(down.Stderr, qt.Contains, "it holds another comment")
+		})
 	}
-	run := clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables(), Timeout: 2 * time.Minute}
-	up := clirun.Run(c, clirun.Ptah, run, "migrations", "up", "--db-url", targetURL, "--migrations-dir", dir, "--allow-destructive")
-	c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
-	c.Assert(scratch.tablesOf(c, target), qt.Equals, "pf_t,schema_migrations,schema_migrations_log")
-
-	down := clirun.Run(c, clirun.Ptah, run, "migrations", "down",
-		"--db-url", withURLParameter(targetURL, "sql_mode", "%27NO_BACKSLASH_ESCAPES%27"), "--migrations-dir", dir,
-		"--target", "1", "--plan", "--shadow-db", devURL, "--confirm")
-
-	c.Assert(down.ExitCode, qt.Not(qt.Equals), 0, historyComment(down))
-	c.Assert(scratch.tablesOf(c, target), qt.Equals, "pf_t,schema_migrations,schema_migrations_log")
-	c.Assert(down.Stderr, qt.Contains, "apply derived rollback statements: statement 2 of 2: "+
-		"read whether the statement defines an object that keeps the session's settings")
-	c.Assert(down.Stderr, qt.Contains, "it holds another comment")
 }

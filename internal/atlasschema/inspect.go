@@ -153,7 +153,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 		return InspectResult{}, err
 	}
 
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
+	ctx = atlasfilter.ReadScope(ctx, opts.Runtime.Selections(), opts.Exclude, opts.Include)
 	if opts.SQLCreationPlan != nil {
 		// The plan names the schema of every object, as `schema diff` does;
 		// see [readscope.Qualified]. The HCL and JSON documents are the same
