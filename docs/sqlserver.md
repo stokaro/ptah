@@ -97,12 +97,26 @@ runtime, and returns an error when its inputs or a provider fail. A caller must
 handle that error before using the diff.
 
 An offline `CompareWithDialect(..., "sqlserver")` call cannot know the target
-collation. It confirms only exact-spelling identity. Distinct unresolved names
-in the same catalog namespace are treated as potential conflicts because a
-target collation may equate them by case, accent, locale, kana, or width.
-Planning rejects ambiguity before emitting SQL and requires a live resolved
-snapshot. This can make dialect-only SQL Server planning intentionally stricter
-than live planning.
+collation. It confirms only exact-spelling identity. Two ASCII names that
+differ beyond ASCII case are assumed to be two names, which a collation with
+contractions breaks: `Hungarian_CI_AS` reads `ccs` as `cscs`, and an offline
+plan between them creates one routine and drops the other. Names that differ
+only in ASCII case, and a name that holds a non-ASCII character, are treated as
+potential conflicts, the latter with any other name of its kind in any schema,
+because a target collation may equate them by case, accent, locale, kana, or
+width. Planning rejects that ambiguity before emitting SQL. This can make
+dialect-only SQL Server planning stricter than live planning, and it is never
+safer: plan with a resolved snapshot.
+
+A caller that compares two states neither of which is a live database, and
+holds a connection to a SQL Server whose collation the target shares, asks it
+with `ResolveIdentifierSemantics` and passes the snapshot as
+`CompareOptions.IdentifierSemantics`. `schema diff` of two schema files does
+this with its dev database, whether `--dev-url` or the project file names it,
+and fails when that database does not answer. A dev or shadow database whose
+collation differs from the target's in case, accent, width or kana sensitivity
+is refused by every command that holds both connections
+(`internal/devcollation`).
 
 Ptah does not reproduce SQL Server collation rules locally. The live catalog is
 the source of truth.

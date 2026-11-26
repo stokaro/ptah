@@ -15,6 +15,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/devcollation"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -293,6 +294,10 @@ func openDistinctDevDatabase(
 		dbschema.CloseAndWarn(devConn)
 		return nil, fmt.Errorf(
 			"dynamic rollback planning failed: dev database must be distinct from target database")
+	}
+	if err := devcollation.Refuse(ctx, opts.TargetConnection, devConn, "the dev database"); err != nil {
+		dbschema.CloseAndWarn(devConn)
+		return nil, fmt.Errorf("dynamic rollback planning failed: %w", err)
 	}
 	return devConn, nil
 }

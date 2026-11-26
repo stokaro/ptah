@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/devclean"
+	"ptah.run/internal/devcollation"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/devseed"
@@ -295,6 +296,15 @@ func connectSimulationDev(
 		return simulationDev{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devInfo.Dialect, targetInfo.Dialect)
 	}
 	if err := checkSimulationSchemaScope(devInfo, targetInfo); err != nil {
+		dbschema.CloseAndWarn(devConn)
+		release()
+		return simulationDev{}, err
+	}
+	// The plan was made under the target's collation, and the rehearsal
+	// builds the target's state on the dev database and runs the plan there.
+	// A dev database that reads two names otherwise would rehearse another
+	// state, so it is refused before anything is reset.
+	if err := devcollation.Refuse(ctx, targetConn, devConn, "the --dev-url database"); err != nil {
 		dbschema.CloseAndWarn(devConn)
 		release()
 		return simulationDev{}, err

@@ -389,8 +389,11 @@ var unresolvedConflictKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 // (stokaro/ptah#4111), and so is every table with two columns
 // (stokaro/ptah#4122).
 //
-// Two ASCII names that differ after ASCII case folding are different under
-// every collation SQL Server offers, so they are kept apart. A name with a
+// Two ASCII names that differ after ASCII case folding are kept apart. That is
+// an assumption most collations honor and a collation with contractions
+// breaks: Hungarian_CI_AS reads `ccs` as `cscs`, and Maori_100_CI_AS reads
+// `a-b` as `ab`. Only a connection says which collation the target has, so a
+// command that compares two documents asks its dev server instead. A name with a
 // non-ASCII character still has no class: an accent-insensitive collation makes
 // `résumé` the same index as `resume`, and `ördérs` the same table as `orders`,
 // so such a name is compared against every other.

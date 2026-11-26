@@ -40,6 +40,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/devreach"
+	"ptah.run/internal/offlinenames"
 	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planstyle"
@@ -85,7 +86,10 @@ type DiffOptions struct {
 	// from the project file rather than given for the run. Two documents
 	// compared as written still ask such a URL for its server version, within
 	// [devVersionTimeout], and plan for the dialect default when it does not
-	// answer.
+	// answer. On a dialect whose names only a server compares, such as SQL
+	// Server, two documents need the dev server's answer about their names,
+	// so the URL is opened as though it were given for the run, beside a
+	// ServerVersion too, and one that does not answer fails the run.
 	SkipUnusedDevURL bool
 	Exclude          []string
 	// ImplicitExclude leaves objects out of both sides as Exclude does, for
@@ -321,10 +325,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 			// once the sources are read and the refusals decided from them
 			// alone are made, so those come first. Two documents compared as
 			// written hold no other connection, so the server behind it also
-			// answers what they are planned for, and the character set
-			// defaults a --from document's tables take there.
-			server := func(ctx context.Context) (diffServer, error) {
-				document, err := documentServer(ctx, opts, dialect, fromSet, toSet)
+			// answers what they are planned for, the character set defaults a
+			// --from document's tables take there, and how it compares the
+			// names the two documents hold; see [documentIdentifiers].
+			server := func(ctx context.Context, desired *schemamodel.Database, current *catalog.Database) (diffServer, error) {
+				document, err := documentServer(ctx, opts, dialect, fromSet, toSet,
+					documentIdentifiers(dialect, desired, current, opts.Runtime))
 				if err != nil {
 					return diffServer{}, err
 				}
@@ -333,6 +339,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 					facts: goschematodb.ServerFacts{
 						CharsetDefaultCollations: document.CharsetDefaultCollations, CharsetAliases: document.CharsetAliases,
 					},
+					identifiers: document.IdentifierSemantics,
 				}, nil
 			}
 			var diffErr error
@@ -351,7 +358,8 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	return compared.plan(ctx, opts, dialect, spellings)
+	report, diff, err := compared.plan(ctx, opts, dialect, spellings)
+	return report, diff, err
 }
 
 // moveToFromContext moves the desired values of a --to side read from a
@@ -441,29 +449,83 @@ func diffCapabilities(
 	}
 }
 
-// diffServer is what a schema diff plans for: the capability set, and the
-// character set facts a --from document is projected with.
+// diffServer is what a schema diff plans for: the capability set, the
+// character set facts a --from document is projected with, and how the dev
+// server compares the names of two documents, nil where it was not asked.
 type diffServer struct {
 	capabilities capability.Capabilities
 	facts        goschematodb.ServerFacts
+	identifiers  *identifier.Semantics
+}
+
+// documentIdentifiers asks a dev server how it compares the names a
+// comparison of desired with current meets, on a dialect whose offline rules
+// leave every name to the catalog ([offlinenames.Unanswered]), and is nil on
+// every other dialect.
+//
+// Two documents compared as written are compared offline, and on SQL Server
+// the offline rules know nothing of the collation the documents are created
+// under: `MixedCase` and `MIXEDCASE` may be one name, and a name with a
+// non-ASCII rune may be any other. The dev server those documents are
+// planned for answers that from its database collation, as a connected
+// comparison asks its own server. Another dialect states rules that answer
+// offline, and a dev server read there would also hand the comparison its
+// default schema and search path, which a comparison of two documents does
+// not take from a dev database.
+func documentIdentifiers(
+	dialect string,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+	runtime schemaext.TargetResolver,
+) devreach.Resolve {
+	if !offlinenames.Unanswered(identifier.ForDialect(dialect)) {
+		return nil
+	}
+	return func(ctx context.Context, conn *dbschema.DatabaseConnection) (identifier.Semantics, error) {
+		return schemadiff.ResolveIdentifierSemantics(ctx, conn, desired, current, runtime)
+	}
 }
 
 // documentServer opens the dev URL of a diff, unless
 // [DiffOptions.SkipUnusedDevURL] is set, and answers, when the two sides are
 // documents compared as written, which are planned for it, what the dev
-// server can do and its session's character set facts. Otherwise it answers
-// none. A --server-version pins the capabilities, not the facts.
+// server can do, its session's character set facts and, where resolve is not
+// nil, how it compares names. Otherwise it answers none. A --server-version
+// pins the capabilities, not the facts.
+//
+// Where resolve is not nil, two documents are compared only under the names
+// a connected server compares: the dev URL is opened even where
+// SkipUnusedDevURL is set or a --server-version is given, and a URL that does
+// not answer, or that names no database Ptah connects to, is the error. The
+// rules the dialect states offline are an assumption about a collation
+// nothing asked, and under a collation with contractions they pair names
+// wrongly without a refusal: Hungarian_CI_AS reads `ccs` as `cscs`, so a
+// plan that creates one routine and drops the other leaves neither.
 func documentServer(
 	ctx context.Context,
 	opts DiffOptions,
 	dialect string,
 	fromSet, toSet atlassource.Set,
+	resolve devreach.Resolve,
 ) (devreach.Facts, error) {
 	documents := !materializesFrom(fromSet, toSet, opts.DevURL) && !holdsServerForComparison(fromSet, toSet)
 	asksDevServer := opts.ServerVersion == "" && documents
 	switch {
+	case documents && resolve != nil:
+		facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout, resolve)
+		if err != nil {
+			return devreach.Facts{}, devAnswersNamesError(opts, dialect, err)
+		}
+		if facts.IdentifierSemantics == nil {
+			return devreach.Facts{}, devAnswersNamesError(opts, dialect,
+				errors.New("Ptah connects to no database for this URL when it compares two schema files"))
+		}
+		if !asksDevServer {
+			facts.Capabilities = capability.Capabilities{}
+		}
+		return facts, nil
 	case !opts.SkipUnusedDevURL && documents:
-		facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout)
+		facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
 			return devreach.Facts{}, err
 		}
@@ -475,30 +537,47 @@ func documentServer(
 		_, err := devreach.Server(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout)
 		return devreach.Facts{}, err
 	case asksDevServer:
-		return devServerVersion(ctx, dialect, opts.DevURL, opts.ConnectTimeout, opts.Diagnostics), nil
+		return devServerVersion(ctx, dialect, opts.DevURL, opts.ConnectTimeout, opts.Diagnostics, resolve), nil
 	}
 	return devreach.Facts{}, nil
 }
 
-// devServerVersion answers what the server behind devURL can do and its
-// character set facts, for a diff of two documents whose dev URL is not
-// checked ([DiffOptions.SkipUnusedDevURL]), or none where the dialect default
-// and the descriptor's static facts stand. A URL that cannot be opened within
+// devAnswersNamesError says that two documents planned for dialect are
+// compared only under the names a connected dev server compares, and names
+// where the dev URL came from: the --dev-url flag or its variable, or the
+// project file ([DiffOptions.SkipUnusedDevURL]).
+func devAnswersNamesError(opts DiffOptions, dialect string, err error) error {
+	source := "the --dev-url database"
+	if opts.SkipUnusedDevURL {
+		source = "the dev database named in the project file"
+	}
+	return fmt.Errorf("two schema files planned for %s are compared only under the names a connected server compares, "+
+		"so %s must answer: %w", dialect, source, err)
+}
+
+// devServerVersion answers what the server behind devURL can do, its
+// character set facts and, where resolve is not nil, how it compares names,
+// for a diff of two documents whose dev URL is not checked
+// ([DiffOptions.SkipUnusedDevURL]), or none where the dialect default and the
+// descriptor's static facts stand. A URL that cannot be opened within
 // devVersionTimeout answers nil, so the comparison runs as it does with no dev
 // database, and a declaration the default cannot plan is refused by name
 // there. That fallback is noted on diagnostics, when it is not nil, so an
 // operator whose project-wide dev server is down learns the plan was not made
-// for it; the run's outcome does not change.
+// for it; the run's outcome does not change. A dialect whose names only a
+// server compares never falls back: [documentServer] opens its dev URL as one
+// given for the run.
 func devServerVersion(
 	ctx context.Context,
 	dialect, devURL string,
 	timeout time.Duration,
 	diagnostics io.Writer,
+	resolve devreach.Resolve,
 ) devreach.Facts {
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
 	}
-	facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", devURL, timeout)
+	facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", devURL, timeout, resolve)
 	if err != nil {
 		slog.Debug("could not open the dev URL for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
@@ -630,7 +709,7 @@ func diffResolvedStates(
 	conn *dbschema.DatabaseConnection,
 	fromState, toState atlassource.State,
 	dialect string,
-	resolveServer func(context.Context) (diffServer, error),
+	resolveServer func(context.Context, *schemamodel.Database, *catalog.Database) (diffServer, error),
 	sides devServerSides,
 	opts DiffOptions,
 ) (comparedDiff, error) {
@@ -706,12 +785,13 @@ func diffResolvedStates(
 	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
 		return comparedDiff{}, err
 	}
-	capabilities, fromSide, err := plannedServer(ctx, resolveServer, fromSide, fromState, dialect, opts.Runtime)
+	server, fromSide, err := plannedServer(ctx, resolveServer, to, fromSide, fromState, dialect, opts.Runtime)
 	if err != nil {
 		return comparedDiff{}, err
 	}
+	capabilities := server.capabilities
 	if err := validateDiffDeclarations(
-		ctx, conn, opts.Runtime, fromState, toState, to, fromSide.database, dialect, capabilities,
+		ctx, conn, opts.Runtime, fromState, toState, to, fromSide.database, dialect, capabilities, server.identifiers,
 	); err != nil {
 		return comparedDiff{}, err
 	}
@@ -720,7 +800,7 @@ func diffResolvedStates(
 	// beside the established changes; silence cannot establish agreement.
 	withSecretRotation(compareOpts, opts.Policy)
 	if conn == nil {
-		compareOpts.IdentifierSemantics = offlineDiffSemantics(toState)
+		compareOpts.IdentifierSemantics = offlineDiffSemantics(toState, server.identifiers)
 	}
 	compareOpts.ReplayedCurrent = replaysCurrent(conn, fromState)
 	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts, opts.Runtime)
@@ -983,7 +1063,8 @@ func compareDiffSides(
 
 // offlineDiffSemantics is the identifier rules a diff without a held
 // connection pairs names by: those of the server the --to database was read
-// from, and the dialect's offline rules when --to is not a database.
+// from, those the dev server answered for two documents (dev, nil where it
+// was not asked), and the dialect's offline rules otherwise.
 //
 // A --to database is read on a connection the diff does not hold for the
 // comparison, and a URL that pins a schema -- a MySQL database, a PostgreSQL
@@ -993,11 +1074,14 @@ func compareDiffSides(
 // MariaDB 11.4 and PostgreSQL 18, `schema diff --from <file> --to <database>`
 // planned CREATE TABLE `t1` and DROP TABLE `f3a`.`t1` for a table both sides
 // hold.
-func offlineDiffSemantics(to atlassource.State) *identifier.Semantics {
-	if to.IdentifierSemantics == nil {
-		return nil
+func offlineDiffSemantics(to atlassource.State, dev *identifier.Semantics) *identifier.Semantics {
+	switch {
+	case to.IdentifierSemantics != nil:
+		return new(to.IdentifierSemantics.Clone())
+	case dev != nil:
+		return new(dev.Clone())
 	}
-	return new(to.IdentifierSemantics.Clone())
+	return nil
 }
 
 // Diff is DiffReportingChanges for the callers that render statements and
@@ -1021,11 +1105,13 @@ func validateDesiredDiffComparison(
 	current *catalog.Database,
 	dialect string,
 	capabilities capability.Capabilities,
+	identifiers *identifier.Semantics,
 ) error {
-	if err := schemadiff.ValidateDesiredSchema(ctx, service, desired, catalog.ServerInfo{
-		Dialect:      dialect,
-		Capabilities: capabilities,
-	}); err != nil {
+	info := catalog.ServerInfo{Dialect: dialect, Capabilities: capabilities}
+	if identifiers != nil {
+		info.IdentifierSemantics = identifiers.Clone()
+	}
+	if err := schemadiff.ValidateDesiredSchema(ctx, service, desired, info); err != nil {
 		return err
 	}
 	selected, err := service.ResolveTarget(dialect)
@@ -1041,7 +1127,9 @@ func validateDesiredDiffComparison(
 // declaration.
 //
 // Without a held connection, the --to declaration is validated here using the
-// selected target's offline facts (stokaro/ptah#2315). A held connection
+// selected target's offline facts (stokaro/ptah#2315), or the identifier
+// rules the dev server answered for two documents where it was asked
+// (identifiers; see [documentIdentifiers]). A held connection
 // validates the same schema with the identifier semantics that server
 // resolves. Run here instead, the validation would use the offline rules, and
 // on SQL Server those keep no two names apart: every table with two columns
@@ -1056,6 +1144,7 @@ func validateDiffDeclarations(
 	current *catalog.Database,
 	dialect string,
 	capabilities capability.Capabilities,
+	identifiers *identifier.Semantics,
 ) error {
 	if err := refuseDocumentReferenceProblems(service, dialect, capabilities, fromState, toState); err != nil {
 		return err
@@ -1063,7 +1152,7 @@ func validateDiffDeclarations(
 	if conn != nil {
 		return nil
 	}
-	return validateDesiredDiffComparison(ctx, service, to, current, dialect, capabilities)
+	return validateDesiredDiffComparison(ctx, service, to, current, dialect, capabilities, identifiers)
 }
 
 // refuseDocumentReferenceProblems refuses a side read from a document that
@@ -1561,23 +1650,25 @@ func withDocumentBaseline(state atlassource.State, side scopedDiffState, dialect
 	return side
 }
 
-// plannedServer resolves the server a diff plans for, and projects a --from
-// document again from its character set facts; see [withDevCharsetFacts]. It
-// returns the server's capabilities and the --from side.
+// plannedServer resolves the server a diff of desired with the --from side
+// plans for, and projects a --from document again from its character set
+// facts; see [withDevCharsetFacts]. It returns the server and the --from
+// side.
 func plannedServer(
 	ctx context.Context,
-	resolveServer func(context.Context) (diffServer, error),
+	resolveServer func(context.Context, *schemamodel.Database, *catalog.Database) (diffServer, error),
+	desired *schemamodel.Database,
 	fromSide scopedDiffState,
 	fromState atlassource.State,
 	dialect string,
 	runtime atlassource.StateRuntime,
-) (capability.Capabilities, scopedDiffState, error) {
-	server, err := resolveServer(ctx)
+) (diffServer, scopedDiffState, error) {
+	server, err := resolveServer(ctx, desired, fromSide.database)
 	if err != nil {
-		return capability.Capabilities{}, fromSide, err
+		return diffServer{}, fromSide, err
 	}
 	fromSide, err = withDevCharsetFacts(ctx, fromSide, fromState, dialect, runtime, server.facts)
-	return server.capabilities, fromSide, err
+	return server, fromSide, err
 }
 
 // withDevCharsetFacts projects a --from document again from the character set
