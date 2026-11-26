@@ -11,7 +11,7 @@ import (
 	"ptah.run/internal/pgsystemschema"
 )
 
-func validatePostgresReplayStatement(dialect string, catalog catalogNames, tokens []lexer.Token, scope replay.Scope) error {
+func validatePostgresReplayStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -20,7 +20,8 @@ func validatePostgresReplayStatement(dialect string, catalog catalogNames, token
 		sessionTables: scope.Session && dialect == platform.Postgres,
 		trustedSQL:    scope.TrustedSQL,
 		publications:  scope.Publications,
-		catalog:       catalog,
+		catalog:       names.catalog,
+		creation:      names.creation,
 		unqualified:   new(string),
 	}
 
@@ -83,6 +84,10 @@ type protection struct {
 	// owns, as the dev session's catalog names it; see
 	// [protection.unqualifiedNamespace].
 	catalog catalogNames
+	// creation is the schema the dev session creates an object in when a
+	// CREATE writes its name without one, or ""; see
+	// [protection.creationNamespace].
+	creation string
 	// unqualified receives the first name written without a schema that
 	// reached a namespace the server owns, so the refusal can say to qualify
 	// it. Every reader returns its first protected namespace at once, so the
@@ -99,6 +104,9 @@ func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) str
 		if namespace := p.protectedNamespaceFromMutationTarget(tokens, target, class); namespace != "" {
 			return namespace
 		}
+	}
+	if namespace := p.createdTargetNamespace(tokens); namespace != "" {
+		return namespace
 	}
 	for index := 1; index < len(tokens); index++ {
 		switch replay.NormalizedIdentifier(tokens[index]) {
@@ -150,7 +158,7 @@ func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) s
 			case "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "TABLE":
 				targetIndex++
 			default:
-				return p.protectedNameAt(classRelation)(tokens, targetIndex)
+				return p.createdNameAt(tokens, targetIndex)
 			}
 		}
 		return ""
@@ -158,21 +166,66 @@ func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) s
 	return ""
 }
 
-// mutationTargetClass returns the class of the objects [replay.MutationTargets]
-// reads off a statement: the table a DML statement writes, and the object of
-// the kind a CREATE, ALTER or DROP names. It is "" for a statement whose
-// targets are no object of a namespace, a trigger's name among them.
+// mutationTargetClass returns the class of the existing objects
+// [replay.MutationTargets] reads off a statement: the table a DML statement
+// writes, the object of the kind an ALTER or DROP names, and the table a
+// CREATE INDEX indexes. It is "" for a statement whose targets are no object
+// of a namespace, a trigger's name among them, and for every other CREATE:
+// its target is the object it creates, which no lookup finds, and
+// [protection.createdTargetNamespace] reads it.
 func mutationTargetClass(tokens []lexer.Token) catalogClass {
 	switch replay.NormalizedIdentifier(tokens[0]) {
 	case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
 		return classRelation
-	case "ALTER", "CREATE", "DROP":
+	case "ALTER", "DROP":
 		kindIndex := replay.StatementObjectKindIndex(tokens)
 		if kindIndex == replay.MutationTargetNotFound {
 			return ""
 		}
 		if class, ok := objectKindClass(tokens, kindIndex); ok {
 			return class
+		}
+	case "CREATE":
+		if createsIndex(tokens) {
+			return classRelation
+		}
+	}
+	return ""
+}
+
+// createsIndex reports CREATE INDEX and CREATE UNIQUE INDEX. Their mutation
+// target is the table after ON, which exists: the index is created in that
+// table's schema, whatever its own name.
+func createsIndex(tokens []lexer.Token) bool {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	return kindIndex != replay.MutationTargetNotFound &&
+		(replay.TokenSequenceAt(tokens, kindIndex, "INDEX") ||
+			replay.TokenSequenceAt(tokens, kindIndex, "UNIQUE", "INDEX"))
+}
+
+// createdTargetNamespace returns the namespace the server owns that a CREATE
+// creates its object in when the object's name is written without a schema,
+// as [protection.createdNameAt] answers, or "". A name written with a schema
+// is read by [protection.protectedNamespaceFromMutationTarget]. The kinds read
+// here are the ones [replay.MutationTargets] finds the created name of; the
+// others are read by [protection.protectedPostgresNamedSpecialDDLNamespace].
+func (p protection) createdTargetNamespace(tokens []lexer.Token) string {
+	if replay.NormalizedIdentifier(tokens[0]) != "CREATE" || createsIndex(tokens) {
+		return ""
+	}
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound {
+		return ""
+	}
+	if _, ok := objectKindClass(tokens, kindIndex); !ok {
+		return ""
+	}
+	for _, target := range replay.MutationTargets(tokens) {
+		if len(target) != 1 {
+			continue
+		}
+		if namespace := p.creationNamespace(target[0]); namespace != "" {
+			return namespace
 		}
 	}
 	return ""
@@ -398,11 +451,15 @@ func (p protection) protectedPostgresNamedSpecialDDLNamespace(
 	}
 	nameIndex = replay.SkipNameModifiers(tokens, nameIndex)
 	class, _ := objectKindClass(tokens, kindIndex)
+	nameAt := p.protectedNameAt(class)
+	if replay.NormalizedIdentifier(tokens[0]) == "CREATE" {
+		nameAt = p.createdNameAt
+	}
 	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
 		nameIndex,
 		"",
-		p.protectedNameAt(class),
+		nameAt,
 	); namespace != "" {
 		return namespace
 	}

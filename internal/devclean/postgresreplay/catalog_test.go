@@ -11,15 +11,15 @@ import (
 // sessionCatalog is a dev session's answer about its catalog: the names its
 // search path reaches, by class and namespace, as PostgreSQL 18, YugabyteDB
 // and CockroachDB give them. public is a schema the user owns, so the guard
-// keeps none of its names.
+// keeps none of its names, and it is the schema the session creates in.
 const sessionCatalog = `[
 	["r", "pg_catalog", ["pg_settings", "pg_authid", "pg_database", "pg_description", "pg_class", "pg_class_oid_index"]],
 	["r", "pg_extension", ["spatial_ref_sys"]],
 	["r", "public", ["users", "pg_shadow_copy"]],
-	["f", "pg_catalog", ["now", "pg_read_file"]],
+	["f", "pg_catalog", ["now", "pg_read_file", "sum"]],
 	["f", "public", ["app_helper"]],
-	["t", "pg_catalog", ["int4"]],
-	["c", "pg_catalog", ["C"]],
+	["t", "pg_catalog", ["int4", "money", "point", "box"]],
+	["c", "pg_catalog", ["C", "unicode"]],
 	["v", "pg_catalog", ["utf8_to_iso_8859_1"]],
 	["o", "pg_catalog", ["+"]],
 	["k", "pg_catalog", ["int4_ops"]],
@@ -27,10 +27,18 @@ const sessionCatalog = `[
 ]`
 
 // sessionBoundGuard is the guard of dialect as it comes back from reading a
-// dev session whose catalog holds [sessionCatalog].
+// dev session whose catalog holds [sessionCatalog] and that creates in public.
 func sessionBoundGuard(c *qt.C, dialect string) replay.Guard {
 	c.Helper()
-	session := reportedSession{encoding: "UTF8", conforming: "on", catalog: sessionCatalog, asked: new(int)}
+	return creatingGuard(c, dialect, "public")
+}
+
+// creatingGuard is the guard of dialect bound to a dev session whose catalog
+// holds [sessionCatalog] and whose search path creates in creation; "" is a
+// path that names no schema.
+func creatingGuard(c *qt.C, dialect, creation string) replay.Guard {
+	c.Helper()
+	session := reportedSession{encoding: "UTF8", conforming: "on", catalog: sessionCatalog, creation: creation, asked: new(int)}
 	bound, err := sessionGuardFor(c, dialect).ValidateSession(c.Context(), session, replay.Scope{Database: "ptah_dev"})
 	c.Assert(err, qt.IsNil)
 	return bound
@@ -96,6 +104,12 @@ func TestGuard_UnqualifiedCatalogName_FailurePath(t *testing.T) {
 			`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "pg_description"` + refusalEnd + qualify},
 		{"CREATE POLICY ON", "postgres", `CREATE POLICY p ON pg_authid USING (true)`,
 			`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "pg_authid"` + refusalEnd + qualify},
+		{"CREATE RULE TO", "postgres", `CREATE RULE r AS ON INSERT TO pg_description DO INSTEAD NOTHING`,
+			`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "pg_description"` + refusalEnd + qualify},
+		{"CREATE STATISTICS FROM", "postgres", `CREATE STATISTICS app.s ON objoid, classoid FROM pg_description`,
+			`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "pg_description"` + refusalEnd + qualify},
+		{"CREATE INDEX of a builtin's name ON", "postgres", `CREATE INDEX pg_class_oid_index ON pg_description (objoid)`,
+			`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "pg_description"` + refusalEnd + qualify},
 		{"REINDEX", "postgres", `REINDEX TABLE pg_class`,
 			`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "pg_class"` + refusalEnd + qualify},
 		{"a routine", "postgres", `GRANT EXECUTE ON FUNCTION pg_read_file(text) TO PUBLIC`,

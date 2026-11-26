@@ -172,11 +172,12 @@ func postgresServerWidePrivilege(tokens []lexer.Token) string {
 // answers to on a server the run owns. The one check that can apply to such a
 // statement is the protected namespace: a routine created in pg_catalog, or a
 // privilege granted on it, changes the catalogs the rest of the run reads.
-func validatePostgresServerWideStatement(dialect string, catalog catalogNames, tokens []lexer.Token, scope replay.Scope) error {
+func validatePostgresServerWideStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
 	policy := protection{
 		dialect:       dialect,
 		sessionTables: scope.Session && dialect == platform.Postgres,
-		catalog:       catalog,
+		catalog:       names.catalog,
+		creation:      names.creation,
 		unqualified:   new(string),
 	}
 	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {

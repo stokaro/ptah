@@ -83,7 +83,7 @@ func TestValidatePostgresReplayStatement_TransactionScopedLock_HappyPath(t *test
 		t.Run(statement, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := validatePostgresReplayStatement(platform.Postgres, nil, replay.Tokens(statement, lexerOptions()), replay.Scope{})
+			err := validatePostgresReplayStatement(platform.Postgres, sessionNames{}, replay.Tokens(statement, lexerOptions()), replay.Scope{})
 
 			c.Assert(err, qt.IsNil)
 		})
@@ -116,7 +116,7 @@ func TestValidatePostgresReplayStatement_TransactionScopedLock_FailurePath(t *te
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := validatePostgresReplayStatement(test.dialect, nil, replay.Tokens(test.statement, lexerOptions()), replay.Scope{})
+			err := validatePostgresReplayStatement(test.dialect, sessionNames{}, replay.Tokens(test.statement, lexerOptions()), replay.Scope{})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

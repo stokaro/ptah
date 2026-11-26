@@ -13,12 +13,13 @@ import (
 )
 
 // reportedSession is a dev session that answers every query with its client
-// encoding, its standard_conforming_strings and the names of its catalog, and
-// counts the queries it is asked. A zero catalog names nothing.
+// encoding, its standard_conforming_strings, the names of its catalog and its
+// creation schema, and counts the queries it is asked. A zero catalog names
+// nothing, and a zero creation schema is a search path that names no schema.
 type reportedSession struct {
-	encoding, conforming, catalog string
-	err                           error
-	asked                         *int
+	encoding, conforming, catalog, creation string
+	err                                     error
+	asked                                   *int
 }
 
 func (s reportedSession) QueryRowContext(context.Context, string, ...any) dataext.Row {
@@ -32,6 +33,7 @@ func (r sessionRow) Scan(dest ...any) error {
 	*dest[0].(*string) = r.encoding
 	*dest[1].(*string) = r.conforming
 	*dest[2].(*string) = cmp.Or(r.catalog, "[]")
+	*dest[3].(*string) = r.creation
 	return r.err
 }
 
@@ -143,7 +145,7 @@ func TestGuard_ValidateSession_FailurePathUnreadableSession(t *testing.T) {
 
 	c.Assert(got, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, errSessionGone)
-	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding, standard_conforming_strings and catalog names: session gone`)
+	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding, standard_conforming_strings, catalog names and creation schema: session gone`)
 	var refusal *replay.SessionRefusal
 	c.Assert(err, qt.Not(qt.ErrorAs), &refusal)
 }

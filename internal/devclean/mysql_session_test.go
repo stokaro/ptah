@@ -25,11 +25,12 @@ type replaySessionRow []string
 // replaySessionAnswers are the values of the session guards' queries: a MySQL
 // or MariaDB guard reads the client character set, the account and its roles,
 // and a PostgreSQL-family guard reads client_encoding,
-// standard_conforming_strings and the catalog's names. A catalog that names
-// nothing leaves the guard to the rule it reads without a session.
+// standard_conforming_strings, the catalog's names and the creation schema. A
+// catalog that names nothing leaves the guard to the rule it reads without a
+// session.
 var replaySessionAnswers = map[bool][]string{
 	false: {"utf8mb4", "replay@%", "[]"},
-	true:  {"UTF8", "on", "[]"},
+	true:  {"UTF8", "on", "[]", "public"},
 }
 
 func (r replaySessionRow) Scan(dest ...any) error {

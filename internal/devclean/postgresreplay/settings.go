@@ -399,16 +399,16 @@ func utf8EncodingName(name string) bool {
 // of a namespace the server owns stays refused in every scope, written with
 // the namespace or without it ([protection.unqualifiedNamespace]).
 func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) (replay.Guard, error) {
-	var encoding, conforming, names string
-	err := session.QueryRowContext(ctx, sessionCatalogQuery).Scan(&encoding, &conforming, &names)
+	var encoding, conforming, names, creation string
+	err := session.QueryRowContext(ctx, sessionCatalogQuery).Scan(&encoding, &conforming, &names, &creation)
 	if err != nil {
-		return nil, fmt.Errorf("read the dev session's client_encoding, standard_conforming_strings and catalog names: %w", err)
+		return nil, fmt.Errorf("read the dev session's client_encoding, standard_conforming_strings, catalog names and creation schema: %w", err)
 	}
 	catalog, err := readCatalogNames(g.dialect, names)
 	if err != nil {
 		return nil, err
 	}
-	bound := guard{dialect: g.dialect, catalog: &catalog}
+	bound := guard{dialect: g.dialect, session: &sessionNames{catalog: catalog, creation: creation}}
 	if scope.TrustedSQL || utf8EncodingName(encoding) && strings.EqualFold(conforming, "on") {
 		return bound, nil
 	}

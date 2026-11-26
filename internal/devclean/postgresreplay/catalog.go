@@ -43,11 +43,16 @@ const (
 
 // sessionCatalogQuery reads, in one row, what [guard.ValidateSession] needs
 // from the dev session: its client_encoding, its standard_conforming_strings,
-// and the names an unqualified name can reach, as a JSON array of [class,
-// namespace, names] for every class and namespace of the session's search
-// path, the schemas the server searches without being told included:
+// the names an unqualified name can reach, and the schema a CREATE puts an
+// object in when its name has no schema. The names are a JSON array of
+// [class, namespace, names] for every class and namespace of the session's
+// search path, the schemas the server searches without being told included:
 // pg_catalog, the session's temporary schema and, on CockroachDB,
-// pg_extension. [readCatalogNames] keeps the namespaces the server owns.
+// pg_extension. [readCatalogNames] keeps the namespaces the server owns. The
+// creation schema is the first element of current_schemas(false), which drops
+// the implicit schemas ahead of the server's creation namespace and so starts
+// with that namespace, or is empty when the path names no schema that exists;
+// the column is then "".
 //
 // The names are read from the session rather than declared because they are
 // the server's: PostgreSQL 16 holds 264 relations in pg_catalog and 19 holds
@@ -78,7 +83,18 @@ const sessionCatalogQuery = `SELECT pg_catalog.current_setting('client_encoding'
 		GROUP BY a.class, a.ns
 	) AS o
 	JOIN pg_catalog.pg_namespace AS n ON n.oid = o.ns
-	WHERE n.nspname = ANY (pg_catalog.current_schemas(true)))`
+	WHERE n.nspname = ANY (pg_catalog.current_schemas(true))),
+	COALESCE((pg_catalog.current_schemas(false))[1]::text, '')`
+
+// sessionNames is what [guard.ValidateSession] read about how the dev session
+// resolves a name written without a schema: where a reference finds it, and
+// where a CREATE puts it.
+type sessionNames struct {
+	catalog catalogNames
+	// creation is the schema a CREATE puts an object in when its name has no
+	// schema, or "" when the search path names no schema that exists.
+	creation string
+}
 
 // catalogNames is, for each class, the names an unqualified name reaches in a
 // namespace the server owns, folded to lower case, and the namespace that
@@ -172,6 +188,67 @@ func (p protection) unqualifiedNamespace(class catalogClass, name string) string
 		*p.unqualified = name
 	}
 	return namespace
+}
+
+// creationNamespace returns the namespace the server owns that a CREATE puts
+// name in when name is written without a schema, or "".
+//
+// A CREATE does not look its name up. The server puts the object in the
+// session's creation namespace, the first schema of the search path, and
+// never in pg_catalog unless the path lists pg_catalog first: `CREATE TYPE
+// point` makes a public.point beside pg_catalog.point, and `CREATE TABLE
+// pg_class` a public.pg_class. Reading the name through
+// [protection.unqualifiedNamespace] would refuse both for an object they do
+// not touch. A later statement that names the object without a schema is a
+// reference and is still looked up, so `INSERT INTO pg_class` after that
+// CREATE is refused, as the server would write pg_catalog.pg_class.
+//
+// The creation namespace is read once, by [guard.ValidateSession]. The replay
+// can change the search path only to the empty path or back to the one the
+// session starts with ([postgresSettingReach]), and under the empty path a
+// CREATE with no schema fails on the server, so the namespace read is the
+// only one such a CREATE can reach. A session that read nothing, or whose
+// path names no schema that exists, has no creation namespace and a CREATE is
+// accepted, as the server either refuses it or puts it in a schema the guard
+// does not own. A session whose path starts with a namespace the server owns
+// refuses every such CREATE, a temporary table among them, although `CREATE
+// TEMP TABLE` would go to the temporary schema; the session's own temporary
+// schema first on the path is accepted where session tables are, as
+// [protection.protectedNamespaceFromMutationTarget] accepts pg_temp.
+func (p protection) creationNamespace(name string) string {
+	namespace := p.creation
+	if namespace == "" || !p.isProtectedPostgresNamespace(namespace) {
+		return ""
+	}
+	if p.sessionTables && (namespace == "pg_temp" || strings.HasPrefix(namespace, "pg_temp_")) {
+		return ""
+	}
+	if p.unqualified != nil && *p.unqualified == "" {
+		*p.unqualified = name
+	}
+	return namespace
+}
+
+// createdNameAt returns the namespace the server owns that the name a CREATE
+// creates, beginning at index, is in: the schema it is qualified with, or the
+// session's creation namespace when it has none, as
+// [protection.creationNamespace] answers. An operator's name is its symbol.
+func (p protection) createdNameAt(tokens []lexer.Token, index int) string {
+	if namespace := p.protectedPostgresQualifiedNamespaceAt(tokens, index); namespace != "" {
+		return namespace
+	}
+	if index < 0 || index >= len(tokens) || index > 0 && tokens[index-1].MatchOperatorValue(".") ||
+		index+1 < len(tokens) && tokens[index+1].MatchOperatorValue(".") {
+		return ""
+	}
+	token := tokens[index]
+	switch {
+	case token.Type == lexer.TokenOperator && !token.MatchOperatorValue("("):
+		return p.creationNamespace(token.Value)
+	case token.Type == lexer.TokenIdentifier || quotedIdentifier(token):
+		return p.creationNamespace(replay.IdentifierValue(token))
+	}
+	return ""
 }
 
 // unqualifiedNameAt returns the namespace the server owns that the name at
