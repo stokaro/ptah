@@ -437,15 +437,26 @@ func (r patternReachRun) sessionReach(c *qt.C, role string) (read, write int) {
 	session := r.session(c, role)
 	reached := map[bool]int{true: 1}
 	for _, table := range []string{"t1", "t2"} {
-		qualified := "`" + r.database + "`." + table
-		_, err := session.ExecContext(c.Context(), "SELECT id FROM "+qualified)
+		_, err := session.ExecContext(c.Context(), readProbe(r.database, table))
 		c.Assert(err == nil || refusedForPrivilege(err), qt.IsTrue, qt.Commentf("%s reading %s: %v", role, table, err))
 		read += reached[err == nil]
-		_, err = session.ExecContext(c.Context(), "INSERT IGNORE INTO "+qualified+" VALUES (1)")
+		_, err = session.ExecContext(c.Context(), writeProbe(r.database, table))
 		c.Assert(err == nil || refusedForPrivilege(err), qt.IsTrue, qt.Commentf("%s writing %s: %v", role, table, err))
 		write += reached[err == nil]
 	}
 	return read, write
+}
+
+// readProbe reads every row of table in database, which the test created
+// under names holding no backtick.
+func readProbe(database, table string) string {
+	return "SELECT id FROM `" + database + "`.`" + table + "`"
+}
+
+// writeProbe inserts one row into table in database, or nothing where the row
+// is already there.
+func writeProbe(database, table string) string {
+	return "INSERT IGNORE INTO `" + database + "`.`" + table + "` VALUES (1)"
 }
 
 // refusedForPrivilege reports whether err is the server refusing a statement
