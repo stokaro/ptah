@@ -295,14 +295,37 @@ that resolved snapshot through comparison, planning, checkpoint generation,
 and shadow verification (shadow execution is rejected when the shadow catalog
 resolves names differently).
 
+The snapshot covers the names of schemas, tables, columns, indexes, views,
+sequences, functions, procedures and triggers, and a declared object pairs with
+the object the database holds when the server reads their names as one. On a
+case-insensitive database that holds the procedure `MixedCase`, a schema that
+declares `MIXEDCASE` with another body changes `MixedCase`. It does not create
+a second procedure and drop the first, which on that database would drop the
+procedure the plan has changed. Under a case-sensitive collation the two names are two
+procedures, and the plan creates `MIXEDCASE` beside `MixedCase`.
+
+The plan writes each name as the schema declares it, and no plan renames an
+object only to change the case of its name. A routine changes by `DROP` and
+`CREATE`, so the server then stores the declared spelling. A table, a view, a
+sequence and a trigger change in place, and the server keeps the spelling it
+already stores. Either way the next comparison reads both spellings as one name
+and plans nothing.
+
+Two declarations of one kind that the database may read as one name are
+refused, because only one of them could be compared: under a case-insensitive
+collation the views `MixedView` and `MIXEDVIEW` are one view. A plan that would
+create one object and drop another of its kind whose name the target may read
+as the same name is refused too, before any statement runs.
+
 An offline, dialect-only comparison cannot know the target collation, so it
-confirms only exact-spelling identity. When it checks table, column, or index
-names for conflicts, it treats two ASCII names that differ after ASCII case
-folding as distinct, because no SQL Server collation makes them equal. Names that differ only in ASCII case, or
-that hold a non-ASCII character, may be one name under some collation, so
-planning rejects them as a possible conflict instead of guessing. This makes
-offline SQL Server planning intentionally stricter than live planning. Embedders choose between the live-aware and offline
-comparison APIs — see [Public Go API](../../extend/public-api/).
+confirms only exact-spelling identity. When it checks names for conflicts, it
+treats two ASCII names that differ after ASCII case folding as distinct,
+because no SQL Server collation makes them equal. Names that differ only in
+ASCII case, or that hold a non-ASCII character, may be one name under some
+collation, so planning rejects them as a possible conflict instead of guessing.
+This makes offline SQL Server planning intentionally stricter than live
+planning. Embedders choose between the live-aware and offline comparison APIs —
+see [Public Go API](../../extend/public-api/).
 
 ## Filtered indexes
 

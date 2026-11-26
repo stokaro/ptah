@@ -483,8 +483,8 @@ MariaDB matching also applies Unicode lowercase equivalence. All three retain
 the declared spelling in `IndexRef` values and rendered SQL.
 
 For a live SQL Server connection, `CompareWithDatabase` sends the finite set of
-candidate schema, table, column, and index names to SQL Server as one bound JSON
-parameter. SQL Server groups those names with `COLLATE CATALOG_DEFAULT`; Ptah
+candidate schema, table, column, index, view, sequence, routine and trigger
+names to SQL Server as one bound JSON parameter. SQL Server groups those names with `COLLATE CATALOG_DEFAULT`; Ptah
 stores the returned equivalence classes and catalog collation in the resulting
 `SchemaDiff`. Diff policy, forward and reverse planning, checkpoint generation,
 and shadow verification then use that immutable snapshot. This handles
@@ -495,7 +495,8 @@ instead of approximating it in Go.
 or for callers that already provide a complete resolved
 `DBInfo.IdentifierSemantics` snapshot. It returns an error when a non-zero
 snapshot is invalid, incomplete for the compared identifier set, or exposes a
-target table, column, or index collision. Omitting the snapshot selects
+collision between two declared tables, columns, indexes, views, sequences,
+routines or triggers. Omitting the snapshot selects
 conservative dialect rules. SQL Server embedders should normally use
 `CompareWithDatabase`.
 

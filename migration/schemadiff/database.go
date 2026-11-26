@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
+	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
 
@@ -1311,7 +1312,57 @@ func collectIdentifierNames(
 	names := []string{defaultSchema}
 	names = appendGeneratedIdentifierNames(names, desired)
 	names = appendDatabaseIdentifierNames(names, database)
+	names = appendDeclaredObjectNames(names, desired)
+	names = appendHeldObjectNames(names, database)
 	return appendSequenceReferenceNames(names, desired, database, dialect)
+}
+
+// appendDeclaredObjectNames adds the names of the views, materialized views,
+// routines, sequences and triggers desired declares, as
+// [identifiervalidation.ObjectNames] lists them.
+//
+// Each of them is keyed by the table rule, as a table is (see
+// [ptah.run/core/objectidentity.Builder.SchemaScopedParts]), so on a server
+// that compares names under its collation each one needs the server's answer
+// as a table name does. A name nobody asked about keeps its spelling. Then a
+// declared procedure MIXEDCASE and a held procedure MixedCase are two objects:
+// the plan creates the one and drops the other, and on a case-insensitive SQL
+// Server database the drop removes the procedure the create has just changed
+// (stokaro/ptah#6722).
+func appendDeclaredObjectNames(names []string, desired *schemamodel.Database) []string {
+	return append(names, identifiervalidation.ObjectNames(desired)...)
+}
+
+// appendHeldObjectNames is [appendDeclaredObjectNames] for the objects the
+// database holds. A reader blanks the schema of an object in the
+// connection's own schema, and a blank is no name to ask about.
+func appendHeldObjectNames(names []string, database *catalog.Database) []string {
+	if database == nil {
+		return names
+	}
+	named := func(values ...string) {
+		for _, value := range values {
+			if value != "" {
+				names = append(names, value)
+			}
+		}
+	}
+	for _, view := range database.Views {
+		named(view.Schema, view.Name)
+	}
+	for _, view := range database.MatViews {
+		named(view.Schema, view.Name)
+	}
+	for _, function := range database.Functions {
+		named(function.Schema, function.Name)
+	}
+	for _, sequence := range database.Sequences {
+		named(sequence.Schema, sequence.Name)
+	}
+	for _, trigger := range database.Triggers {
+		named(trigger.Schema, trigger.Table, trigger.Name)
+	}
+	return names
 }
 
 // appendSequenceReferenceNames adds the schema and sequence names the column
