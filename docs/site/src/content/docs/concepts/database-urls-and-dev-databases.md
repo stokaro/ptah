@@ -989,9 +989,12 @@ baseline creates is the run's, and its cleanup drops it.
 Comments follow a narrower rule. A comment on a table or a column is written.
 The comment an extension's control file gives is not written, because `CREATE
 EXTENSION` sets it; Ptah reads that comment from the dev server. A comment the
-target gave an extension itself is written only on a server Ptah provisions
-from a docker URL, because the cleanup does not restore it and a server declared
-disposable keeps it for the next run.
+target gave an extension itself is written on a server Ptah provisions from a
+docker URL. Elsewhere it is written only for an extension the dev database did
+not hold when the run claimed it, on a dev URL that pins no schema, since the
+cleanup drops that extension with its comment. A comment on an extension the
+claim found is refused, because the cleanup keeps the extension and does not
+restore its comment.
 
 A schema's own comment and the privileges on it are written on any server,
 because they end with the run. A target often holds them, on `public` or on a
