@@ -31,7 +31,15 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 	if scope.TrustedSQL {
 		return nil
 	}
-	for _, target := range sqlServerMutationTargets(tokens) {
+	if operation := sqlServerOutsideRead(tokens); operation != "" {
+		return replay.Refuse(platform.SQLServer, operation)
+	}
+	if sqlServerKeywordSequenceAt(tokens, 0, "ADD", "SIGNATURE") || sqlServerKeywordSequenceAt(tokens, 0, "ADD", "COUNTER", "SIGNATURE") {
+		return replay.Refuse(platform.SQLServer, "ADD SIGNATURE")
+	}
+	targets := sqlServerMutationTargets(tokens)
+	targets = append(targets, sqlServerWriteTargets(tokens, sqlServerExecutableTokens(tokens))...)
+	for _, target := range targets {
 		if len(target) >= 3 {
 			return replay.Refuse(
 				platform.SQLServer,
@@ -53,6 +61,28 @@ func sqlServerRemoteExecute(tokens []lexer.Token) bool {
 		}
 	}
 	return false
+}
+
+// sqlServerOutsideRead returns the rowset function in tokens that reads
+// outside the dev database, wherever it stands: OPENROWSET reads a file on the
+// server, as OPENROWSET(BULK '/etc/hostname', SINGLE_CLOB) does, or a remote
+// source, and OPENDATASOURCE and OPENQUERY read a remote source. It refuses a
+// write into one of them too, as INSERT OPENQUERY(...) VALUES (1) is. A
+// bracketed or quoted name is a name: SQL Server 2025 refuses
+// [OPENROWSET](BULK ...) with Msg 156.
+func sqlServerOutsideRead(tokens []lexer.Token) string {
+	for index := range tokens {
+		next := replay.TokenAt(tokens, index+1)
+		if !next.MatchOperatorValue("(") {
+			continue
+		}
+		for _, name := range []string{"OPENROWSET", "OPENDATASOURCE", "OPENQUERY"} {
+			if tokens[index].MatchIdentifierValue(name) {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 func isGlobalSQLServerDDL(tokens []lexer.Token) bool {

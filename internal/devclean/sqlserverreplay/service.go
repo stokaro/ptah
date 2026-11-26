@@ -46,6 +46,13 @@ func (guard) Validate(stmt string, scope replay.Scope) error {
 	return validateSQLServerBatch(stmt, scope, 0)
 }
 
+// unreadableRemedy says how to rewrite T-SQL whose statement boundaries the
+// guard cannot read. Trust does not lift the refusal: a statement the guard
+// cannot find is one it cannot judge, nor can it tell which statements the
+// operator trusted.
+const unreadableRemedy = "end each statement with a semicolon, and put the statements an IF, a WHILE or a block runs " +
+	"between BEGIN and END; trusting the replayed SQL does not lift this refusal"
+
 // maxDynamicDepth is how many constant EXECs, one inside another, the guard
 // reads before it refuses the next one.
 const maxDynamicDepth = 8
@@ -55,9 +62,12 @@ const maxDynamicDepth = 8
 func validateSQLServerBatch(text string, scope replay.Scope, depth int) error {
 	statements, err := sqlserverbatch.Read(text)
 	if unreadable, ok := errors.AsType[*sqlserverbatch.UnreadableError](err); ok {
-		return replay.Refuse(platform.SQLServer, fmt.Sprintf(
-			"T-SQL whose statement boundaries it cannot read, %s at offset %d,", unreadable.Reason, unreadable.Offset,
-		))
+		return &replay.Refusal{
+			Dialect:   platform.SQLServer,
+			Operation: fmt.Sprintf("T-SQL at offset %d", unreadable.Offset),
+			Reason:    "Ptah cannot read where its statements begin and end there: " + unreadable.Reason,
+			Remedy:    unreadableRemedy,
+		}
 	}
 	if err != nil {
 		return err

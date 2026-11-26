@@ -467,22 +467,41 @@ proven to stay inside the disposable realm:
   T-SQL needs no semicolon between two statements, so the guard reads a batch
   into the statements the server runs from it, ending each where the server
   does, and judges every one: `ALTER TABLE t ADD DEFAULT 0 FOR c DROP DATABASE
-  other` is two statements, and the `DROP DATABASE` is refused. It also judges
-  the statement an `IF`, `ELSE` or `WHILE` runs, the statements of a
-  `BEGIN ... END` block and of `TRY` and `CATCH`, and the `EXEC` whose rows an
-  `INSERT` stores. A procedure named with no `EXEC`, such as
-  `sp_executesql N'...'` or `xp_cmdshell 'dir'` as the first statement of a
+  other` is two statements, and the `DROP DATABASE` is refused. So is the one
+  in `DELETE FROM t OUTPUT deleted.* DROP DATABASE other`, where the asterisk
+  ends the `DELETE`, and in `SELECT @ DROP DATABASE other`, where a bare `@`
+  is a variable. It also judges the statement an `IF`, `ELSE` or `WHILE` runs,
+  the statements of a `BEGIN ... END` block and of `TRY` and `CATCH`, and the
+  `EXEC` whose rows an `INSERT` stores. A procedure named with no `EXEC`, such
+  as `sp_executesql N'...'` or `xp_cmdshell 'dir'` as the first statement of a
   batch, runs as `EXEC` of that name and is judged as one. An `EXEC` of one
-  constant `N'...'` literal, such as the `EXEC('CREATE SCHEMA [app]')` the
-  renderer writes under `IF SCHEMA_ID('app') IS NULL`, is judged as the batch
-  the literal holds, eight levels deep at most; the server converts a
-  literal without the `N` prefix to the database's code page first, so one
-  that holds a character outside ASCII is judged as any other `EXEC`. Text
-  whose statement boundaries the guard cannot find is refused, with trust or
-  without it: an `END` that closes no `BEGIN`, a number written against a
-  word, as in `0x1GRANT`, a character the server reads as whitespace and the
-  guard's lexer does not, such as U+200B, and a `MERGE` that does not end with
-  a semicolon.
+  constant literal, such as the `EXEC('CREATE SCHEMA [app]')` the renderer
+  writes under `IF SCHEMA_ID('app') IS NULL`, is judged as the batch the
+  literal holds, eight levels deep at most. The server converts a literal
+  without the `N` prefix to the database's code page first, so such a literal
+  that holds a character outside ASCII is judged as any other `EXEC`.
+
+  Without trust, a write is refused when its target is in another database.
+  The guard reads the target each form writes: after `TOP`, with `INTO` or
+  `FROM` left out, through an alias or a table name to the table its `FROM`
+  clause names, the table of `OUTPUT ... INTO`, the target of a `MERGE`, and,
+  through a common table expression, every table the expression reads. Each
+  part of a name counts, an empty one too: `other..t` is the table `t` in the
+  database `other`. `OPENROWSET`, `OPENDATASOURCE` and `OPENQUERY`, which read
+  a file on the server or a remote source, are refused without trust wherever
+  they stand, and so are `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`.
+
+  Text whose statement boundaries the guard cannot find is refused, with trust
+  or without it. The refusal gives the offset and says how to rewrite the
+  text: end each statement with a semicolon, and put the statements an `IF`,
+  a `WHILE` or a block runs between `BEGIN` and `END`. The guard cannot find
+  the boundaries at an `END` that closes no `BEGIN`, a number written against
+  a word, as in `0x1GRANT`, a character the server reads as whitespace and the
+  guard's lexer does not, such as U+200B, and a currency sign such as `£`,
+  which the server reads as the start of a money constant (`£1` is 1.0000).
+  Nor can it inside a `MERGE`, which ends only at the semicolon the server
+  requires: a statement word before that semicolon is refused, except the
+  `DELETE`, `INSERT`, `SET` and `UPDATE` of its `WHEN` clauses.
 - ClickHouse remote, distributed, replicated, and unknown table engines,
   external dictionary sources, `FREEZE`/`UNFREEZE`, and `SYSTEM` statements but
   `SYSTEM STOP MERGES` and `SYSTEM START MERGES` of one table in the dev
@@ -840,7 +859,8 @@ accepts:
   refused;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
   logins, credentials, synonyms, a target in another database, `BACKUP`,
-  `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
+  `RESTORE`, `BULK INSERT`, `OPENROWSET`, `OPENDATASOURCE`, `OPENQUERY`, and
+  `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`;
 - on ClickHouse, SQL functions, databases, users, roles, row policies, named
   collections, `GRANT`, `REVOKE`, `ON CLUSTER`, writes to another database or
   through a table function, any table engine, dictionary sources, `BACKUP`,

@@ -380,13 +380,28 @@ func qualifiedTargetAt(tokens []lexer.Token, index int) [][]string {
 // QualifiedIdentifierAt reads the dotted name that begins at index, as its
 // unquoted parts, and returns the index after it. A token that is no name
 // reads as no parts.
+//
+// A part left out between two dots, or before the first one, reads as an
+// empty part, since it still counts: SQL Server reads other..t as the table t
+// in the database other, and .other.dbo.t as a four-part name with no server.
 func QualifiedIdentifierAt(tokens []lexer.Token, index int) ([]string, int) {
-	if index < 0 || index >= len(tokens) || NormalizedIdentifier(tokens[index]) == "" {
-		return nil, index
+	start := index
+	var parts []string
+	for index >= 0 && index < len(tokens) && tokens[index].MatchOperatorValue(".") {
+		parts = append(parts, "")
+		index++
 	}
-	parts := []string{IdentifierValue(tokens[index])}
+	if index < 0 || index >= len(tokens) || NormalizedIdentifier(tokens[index]) == "" {
+		return nil, start
+	}
+	parts = append(parts, IdentifierValue(tokens[index]))
 	index++
 	for index+1 < len(tokens) && tokens[index].MatchOperatorValue(".") {
+		if tokens[index+1].MatchOperatorValue(".") {
+			parts = append(parts, "")
+			index++
+			continue
+		}
 		value := IdentifierValue(tokens[index+1])
 		if value == "" {
 			break

@@ -299,6 +299,14 @@ func TestGuard_RefusesADefaultReplacementThatDoesMore(t *testing.T) {
 			operation: `default expression "1 DROP TABLE [dbo].[orders]"`,
 		},
 		{
+			// The batch runs one ALTER TABLE, which the guard accepts written
+			// on its own, so only the expression check refuses it: the text
+			// adds a second constraint rather than one expression.
+			name:      "a second constraint after the expression",
+			statement: replace(users, "1 FOR [status], CONSTRAINT [x] DEFAULT 2"),
+			operation: `default expression "1 FOR [status], CONSTRAINT [x] DEFAULT 2"`,
+		},
+		{
 			name:      "a semicolon",
 			statement: replace(users, "1; DROP TABLE [dbo].[orders]"),
 			operation: `default expression "1; DROP TABLE [dbo].[orders]"`,

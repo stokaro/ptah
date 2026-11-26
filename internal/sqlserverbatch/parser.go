@@ -14,6 +14,10 @@ import (
 type parser struct {
 	text   string
 	tokens []lexer.Token
+	// elements is true once the batch holds CREATE SCHEMA. What follows it in
+	// the batch is its schema elements, and a CREATE VIEW among them ends
+	// where the next element starts rather than at the end of the batch.
+	elements bool
 }
 
 func unreadableAt(offset int, reason string) error {
@@ -228,8 +232,11 @@ func (p *parser) follow(nested *nesting, index int, inside string) (bool, error)
 // or a statement that starts after a word that can end one and does not
 // continue this one (see [scan.continues]).
 func (p *parser) simple(index int, kind Kind) (Statement, int, error) {
-	if kind == Simple && p.module(index) {
+	if kind == Simple && !p.elements && p.module(index) {
 		return p.span(Module, index, len(p.tokens)-1), len(p.tokens), nil
+	}
+	if p.is(index, "CREATE", "SCHEMA") {
+		p.elements = true
 	}
 	s := p.newScan(index, kind)
 	var nested nesting
@@ -273,7 +280,9 @@ func (p *parser) span(kind Kind, first, last int) Statement {
 // module reports a CREATE, ALTER or CREATE OR ALTER at index of a procedure,
 // function, trigger or view. The server reads the rest of the batch as its
 // body: a statement after it, with or without a semicolon, fails the batch
-// (Msg 156) and nothing runs.
+// (Msg 156) and nothing runs. A view that CREATE SCHEMA creates is the
+// exception: the server ends it where the next schema element starts, and a
+// GRANT after it runs (see [parser.elements]).
 func (p *parser) module(index int) bool {
 	next := index + 1
 	switch p.keyword(index) {
@@ -303,7 +312,7 @@ func (p *parser) namesProcedure(index int) bool {
 		return strings.HasPrefix(tok.Value, `"`)
 	case lexer.TokenIdentifier:
 		first := tok.Value[0]
-		return first < '0' || first > '9'
+		return (first < '0' || first > '9') && first != '@'
 	default:
 		return false
 	}
@@ -383,12 +392,15 @@ func (p *parser) parenthesizedQuery(index int) bool {
 // that a statement word after it continues the statement it is in. Each word
 // here is reserved, so it cannot be a name either; APPLY and ALL are read in
 // context, since APPLY is not reserved and ALL can end DISABLE TRIGGER ALL.
-// A closing parenthesis ends many statements. An asterisk ends only SELECT *
-// with no FROM, which the server refuses to compile (Msg 263), so before a
-// parenthesized query it multiplies.
+// A closing parenthesis ends many statements, and so does an asterisk that
+// stands for every column: OUTPUT deleted.* ends a DELETE. See
+// [parser.multiplies].
 func (p *parser) cannotEnd(index int) bool {
 	if index < 0 {
 		return false
+	}
+	if p.op(index, "*") {
+		return p.multiplies(index)
 	}
 	if p.tokens[index].Type == lexer.TokenOperator {
 		return slices.Contains(continuingOperators, p.tokens[index].Value)
@@ -406,8 +418,32 @@ func (p *parser) cannotEnd(index int) bool {
 	}
 }
 
-// continuingOperators are the operators no statement ends with.
-var continuingOperators = []string{",", "(", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", "^", "~", ":", "{"}
+// continuingOperators are the operators no statement ends with. The
+// asterisk is read in context, see [parser.multiplies].
+var continuingOperators = []string{",", "(", ".", "=", "<", ">", "!", "+", "-", "/", "%", "&", "|", "^", "~", ":", "{"}
+
+// multiplies reports whether the asterisk at index multiplies, which needs an
+// operand after it, so that the statement goes on. It multiplies after an
+// operand: a closing parenthesis, a literal, a name or a number. After a dot, a
+// comma, OUTPUT or a word no statement ends with, such as SELECT, it stands for
+// every column, and OUTPUT deleted.* and OUTPUT inserted.* end a statement
+// there. An asterisk for every column after TOP 5 or ALL needs a FROM, without
+// which the server refuses the batch (Msg 263), so reading it as a
+// multiplication there keeps a statement going only into a batch that runs
+// nothing.
+func (p *parser) multiplies(index int) bool {
+	before := index - 1
+	switch {
+	case before < 0:
+		return false
+	case p.op(before, ")"), p.tokens[before].Type == lexer.TokenString:
+		return true
+	case p.tokens[before].Type != lexer.TokenIdentifier:
+		return false
+	}
+	word := p.keyword(before)
+	return word != "OUTPUT" && !slices.Contains(continuingWords, word)
+}
 
 // continuingWords are the reserved words no statement ends with.
 var continuingWords = []string{
@@ -418,9 +454,23 @@ var continuingWords = []string{
 }
 
 // closesBlock reports an END at index that closes a block. END CONVERSATION
-// is a statement.
+// is a statement, and the END of GENERATED ALWAYS AS ROW END, which a
+// temporal or ledger table's column writes, is part of the column.
 func (p *parser) closesBlock(index int) bool {
-	return p.keyword(index) == "END" && sqlcompound.SQLServerEndClosesBlock(p.word(index+1))
+	return p.keyword(index) == "END" && sqlcompound.SQLServerEndClosesBlock(p.word(index+1)) && !p.generatedEnd(index)
+}
+
+// generatedEnd reports the END at index of GENERATED ALWAYS AS ROW END,
+// TRANSACTION_ID END or SEQUENCE_NUMBER END. Without GENERATED in front, ALWAYS
+// AS ROW END can be a column aliased row in a block: BEGIN SELECT always AS row
+// END.
+func (p *parser) generatedEnd(index int) bool {
+	switch p.keyword(index - 1) {
+	case "ROW", "TRANSACTION_ID", "SEQUENCE_NUMBER":
+		return p.is(index-4, "GENERATED", "ALWAYS", "AS")
+	default:
+		return false
+	}
 }
 
 // isElse reports an ELSE at index.
@@ -446,10 +496,15 @@ func (p *parser) isName(index int) bool {
 }
 
 // afterName returns the index after the possibly qualified name at index, or
-// index when no name stands there.
+// index when no name stands there. A name may start with dots, as
+// .db.dbo.t does, which leaves the server out.
 func (p *parser) afterName(index int) int {
+	first := index
+	for p.op(index, ".") {
+		index++
+	}
 	if !p.isName(index) {
-		return index
+		return first
 	}
 	index++
 	for p.op(index, ".") {
@@ -482,7 +537,7 @@ func (p *parser) closingParenthesis(index int) int {
 }
 
 // keyword is [parser.word] for a word in a keyword's place: one that does not
-// follow a dot, an @ or a scope qualifier, where it would be part of a name.
+// follow a dot or a scope qualifier, where it would be part of a name.
 func (p *parser) keyword(index int) string {
 	if p.namePart(index) {
 		return ""
@@ -490,10 +545,13 @@ func (p *parser) keyword(index int) string {
 	return p.word(index)
 }
 
-// namePart reports a token after a dot, an @ or two colons, which is part of
-// a name whatever it spells.
+// namePart reports a token after a dot or two colons, which is part of a name
+// whatever it spells. The server allows white space on either side of the dot
+// and of the colons, and refuses a reserved word after them (Msg 156), so a
+// statement word there fails the batch rather than starting a statement. An @
+// is part of the variable token it starts (see [newParser]).
 func (p *parser) namePart(index int) bool {
-	return p.op(index-1, ".") || p.op(index-1, "@") || p.op(index-1, ":") && p.op(index-2, ":")
+	return p.op(index-1, ".") || p.op(index-1, ":") && p.op(index-2, ":")
 }
 
 // word returns the unquoted word at index in upper case, or "" for anything

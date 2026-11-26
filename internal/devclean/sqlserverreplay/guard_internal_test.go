@@ -66,25 +66,6 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 			statement: "SELECT id INTO;",
 		},
 		{
-			name: "openquery used only as source",
-			statement: "INSERT INTO dbo.local_copy (id) " +
-				"SELECT id FROM OPENQUERY(remote_link, 'SELECT id FROM remote_table');",
-		},
-		{
-			name: "openrowset used only as source",
-			statement: "UPDATE dbo.local_copy SET value = source.value " +
-				"FROM OPENROWSET('MSOLEDBSQL', 'Server=remote;', " +
-				"'SELECT id, value FROM remote_table') AS source " +
-				"WHERE dbo.local_copy.id = source.id;",
-		},
-		{
-			name: "cte openquery used only as source",
-			statement: "WITH remote_rows AS (" +
-				"SELECT id, value FROM OPENQUERY(remote_link, 'SELECT id, value FROM remote_table')) " +
-				"UPDATE dbo.local_copy SET value = remote_rows.value " +
-				"FROM remote_rows WHERE dbo.local_copy.id = remote_rows.id;",
-		},
-		{
 			name: "temporal table",
 			statement: "CREATE TABLE dbo.temporal_data (" +
 				"id int PRIMARY KEY, valid_from datetime2 GENERATED ALWAYS AS ROW START, " +
@@ -252,46 +233,78 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 			wantOperation: "temporary SELECT INTO target",
 		},
 		{
+			name: "openquery used only as source",
+			statement: "INSERT INTO dbo.local_copy (id) " +
+				"SELECT id FROM OPENQUERY(remote_link, 'SELECT id FROM remote_table');",
+			wantOperation: "OPENQUERY",
+		},
+		{
+			name: "openrowset used only as source",
+			statement: "UPDATE dbo.local_copy SET value = source.value " +
+				"FROM OPENROWSET('MSOLEDBSQL', 'Server=remote;', " +
+				"'SELECT id, value FROM remote_table') AS source " +
+				"WHERE dbo.local_copy.id = source.id;",
+			wantOperation: "OPENROWSET",
+		},
+		{
+			name:          "openrowset reading a file on the server",
+			statement:     "SELECT BulkColumn FROM OPENROWSET(BULK '/etc/hostname', SINGLE_CLOB) AS x;",
+			wantOperation: "OPENROWSET",
+		},
+		{
+			name:          "opendatasource used only as source",
+			statement:     "SELECT id FROM OPENDATASOURCE('MSOLEDBSQL', 'Server=remote;').otherdb.dbo.t;",
+			wantOperation: "OPENDATASOURCE",
+		},
+		{
+			name: "cte openquery used only as source",
+			statement: "WITH remote_rows AS (" +
+				"SELECT id, value FROM OPENQUERY(remote_link, 'SELECT id, value FROM remote_table')) " +
+				"UPDATE dbo.local_copy SET value = remote_rows.value " +
+				"FROM remote_rows WHERE dbo.local_copy.id = remote_rows.id;",
+			wantOperation: "OPENQUERY",
+		},
+		{
 			name:          "insert openquery destination",
 			statement:     "INSERT OPENQUERY(remote_link, 'SELECT id FROM remote_table') VALUES (1);",
-			wantOperation: "OPENQUERY mutation destination",
+			wantOperation: "OPENQUERY",
 		},
 		{
 			name:          "insert top openrowset destination",
 			statement:     "INSERT TOP (10) INTO OPENROWSET('MSOLEDBSQL', 'Server=remote;', 'SELECT id FROM remote_table') VALUES (1);",
-			wantOperation: "OPENROWSET mutation destination",
+			wantOperation: "OPENROWSET",
 		},
 		{
 			name:          "update openquery destination",
 			statement:     "UPDATE TOP (5) OPENQUERY(remote_link, 'SELECT value FROM remote_table') SET value = 1;",
-			wantOperation: "OPENQUERY mutation destination",
+			wantOperation: "OPENQUERY",
 		},
 		{
 			name:          "update openrowset alias destination",
 			statement:     "UPDATE RemoteRows SET value = 1 FROM OPENROWSET('MSOLEDBSQL', 'Server=remote;', 'SELECT value FROM remote_table') AS remoteRows;",
-			wantOperation: "OPENROWSET mutation destination",
+			wantOperation: "OPENROWSET",
 		},
 		{
 			name:          "delete openrowset destination",
 			statement:     "DELETE TOP (25) PERCENT FROM OPENROWSET('MSOLEDBSQL', 'Server=remote;', 'SELECT id FROM remote_table');",
-			wantOperation: "OPENROWSET mutation destination",
+			wantOperation: "OPENROWSET",
 		},
 		{
 			name:          "delete openquery alias destination",
 			statement:     "DELETE remote_rows FROM OPENQUERY(remote_link, 'SELECT id FROM remote_table') remote_rows;",
-			wantOperation: "OPENQUERY mutation destination",
+			wantOperation: "OPENQUERY",
 		},
 		{
 			name:          "merge openquery destination",
 			statement:     "MERGE INTO OPENQUERY(remote_link, 'SELECT id FROM remote_table') AS target USING dbo.source ON target.id = source.id;",
-			wantOperation: "OPENQUERY mutation destination",
+			wantOperation: "OPENQUERY",
 		},
 		{
 			name: "cte insert openquery destination",
 			statement: "WITH rows_to_send AS (SELECT id FROM dbo.source) " +
 				"INSERT OPENQUERY(remote_link, 'SELECT id FROM remote_table') " +
 				"SELECT id FROM rows_to_send;",
-			wantOperation: "OPENQUERY mutation destination",
+			wantOperation: "OPENQUERY",
 		},
 		{
 			name: "openrowset cte update destination",
@@ -299,7 +312,7 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 				"SELECT id, value FROM OPENROWSET('MSOLEDBSQL', 'Server=remote;', " +
 				"'SELECT id, value FROM remote_table')) " +
 				"UPDATE remote_rows SET value = 1;",
-			wantOperation: "OPENROWSET mutation destination",
+			wantOperation: "OPENROWSET",
 		},
 		{
 			name: "openquery second cte delete destination",
@@ -307,7 +320,7 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 				"remote_rows AS (SELECT id FROM OPENQUERY(remote_link, " +
 				"'SELECT id FROM remote_table')) " +
 				"DELETE remote_rows;",
-			wantOperation: "OPENQUERY mutation destination",
+			wantOperation: "OPENQUERY",
 		},
 		{
 			name: "create external table as select",

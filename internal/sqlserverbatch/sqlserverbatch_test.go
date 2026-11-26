@@ -978,7 +978,7 @@ func TestRead_FailurePath(t *testing.T) {
 		{
 			name: "a statement that starts with a variable",
 			text: "@x = 1",
-			want: "cannot find the T-SQL statement boundaries: a statement that starts with \"@\" at offset 0",
+			want: "cannot find the T-SQL statement boundaries: a statement that starts with \"@x\" at offset 0",
 		},
 		{
 			name: "a procedure named after the first statement",
@@ -1028,6 +1028,11 @@ func TestRead_FailurePath(t *testing.T) {
 		{
 			name: "a currency sign",
 			text: "SELECT €1 AS a INSERT dbo.log VALUES (210)",
+			want: "cannot find the T-SQL statement boundaries: a character that is not a T-SQL operator at offset 7",
+		},
+		{
+			name: "a pound sign",
+			text: "SELECT £1 AS a INSERT dbo.log VALUES (211)",
 			want: "cannot find the T-SQL statement boundaries: a character that is not a T-SQL operator at offset 7",
 		},
 		{

@@ -23,11 +23,26 @@ import (
 //     control characters), or a currency sign that opens a money constant;
 //   - a number written against a word, as in 0x1INSERT, which the server
 //     reads as a number and a word, where the lexer reads one name.
+//
+// A variable is one token, as the server reads it: @ and the identifier
+// characters that touch it, so that @a#b and @1 are one name each. A bare @
+// is a variable too: DECLARE @ int = 5 SELECT @ SELECT 42 is three
+// statements, so the word after an @ that does not touch it is not part of a
+// name.
 func newParser(text string) (*parser, error) {
 	raw := rawTokens(text)
 	p := &parser{text: text}
 	for index := 0; index < len(raw); index++ {
 		tok := raw[index]
+		if tok.Type == lexer.TokenOperator && tok.Value == "@" {
+			variable, next, err := readVariable(text, raw, index)
+			if err != nil {
+				return nil, err
+			}
+			p.tokens = append(p.tokens, variable)
+			index = next - 1
+			continue
+		}
 		switch {
 		case tok.Type == lexer.TokenUnknown:
 			return nil, unreadableAt(tok.Start, "text the lexer cannot read")
@@ -54,6 +69,32 @@ func newParser(text string) (*parser, error) {
 		p.tokens = append(p.tokens, lexer.Token{Type: lexer.TokenIdentifier, Value: text[tok.Start:end], Start: tok.Start, End: end})
 	}
 	return p, nil
+}
+
+// readVariable reads the variable whose @ is raw[index]: the @ and every
+// identifier character that touches it, as the server reads it. It returns the
+// variable as one token and the index of the raw token after it. A raw token
+// that runs past the variable's end is refused rather than cut: in @1.5 the
+// lexer reads the number 1.5, where the server reads the variable @1 and the
+// number .5, and fails the batch (Msg 102 on SQL Server 2025).
+func readVariable(text string, raw []lexer.Token, index int) (lexer.Token, int, error) {
+	start := raw[index].Start
+	end := start + 1
+	for end < len(text) {
+		r, size := utf8.DecodeRuneInString(text[end:])
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("_@#$", r) {
+			break
+		}
+		end += size
+	}
+	next := index + 1
+	for next < len(raw) && raw[next].Start < end {
+		if raw[next].End > end {
+			return lexer.Token{}, 0, unreadableAt(start, "a variable name the lexer reads differently")
+		}
+		next++
+	}
+	return lexer.Token{Type: lexer.TokenIdentifier, Value: text[start:end], Start: start, End: end}, next, nil
 }
 
 // operators are the characters T-SQL reads as operators and punctuation. The

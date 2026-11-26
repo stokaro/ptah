@@ -1,6 +1,8 @@
 package sqlserverreplay_test
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -233,36 +235,43 @@ func TestGuard_RefusesTextWhoseStatementBoundariesItCannotRead(t *testing.T) {
 		name      string
 		statement string
 		reason    string
+		offset    int
 	}{
 		{
 			name:      "an END that closes no BEGIN",
 			statement: "SELECT 1 END",
-			reason:    "an END that closes no BEGIN at offset 9",
+			reason:    "an END that closes no BEGIN",
+			offset:    9,
 		},
 		{
 			name:      "a zero width space, which the server reads as whitespace",
 			statement: "SELECT 1\u200bGRANT CONTROL TO public",
-			reason:    "a character that is not a T-SQL operator at offset 8",
+			reason:    "a character that is not a T-SQL operator",
+			offset:    8,
 		},
 		{
 			name:      "a number written against a word",
 			statement: "SELECT 0x1GRANT CONTROL TO public",
-			reason:    "a number written against a word at offset 7",
+			reason:    "a number written against a word",
+			offset:    7,
 		},
 		{
 			name:      "a MERGE that does not end with a semicolon",
 			statement: "MERGE dbo.log AS t USING (SELECT 1 AS v) AS s ON 1=0 WHEN NOT MATCHED THEN INSERT (v) VALUES (1) USE master;",
-			reason:    "a MERGE that does not end with a semicolon at offset 97",
+			reason:    "a MERGE that does not end with a semicolon",
+			offset:    97,
 		},
 		{
 			name:      "a procedure named after the first statement",
 			statement: "SELECT 1; dbo.p",
-			reason:    `a statement that starts with "dbo" at offset 10`,
+			reason:    `a statement that starts with "dbo"`,
+			offset:    10,
 		},
 		{
 			name:      "the first piece of a block a migration split at its semicolons",
 			statement: "BEGIN SELECT 1",
-			reason:    "a BEGIN with no END at offset 0",
+			reason:    "a BEGIN with no END",
+			offset:    0,
 		},
 	}
 	for _, test := range tests {
@@ -270,11 +279,12 @@ func TestGuard_RefusesTextWhoseStatementBoundariesItCannotRead(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				c := qt.New(t)
 
-				c.Assert(
-					validate(test.statement, scope),
-					qt.ErrorMatches,
-					refusal("T-SQL whose statement boundaries it cannot read, "+test.reason+","),
-				)
+				c.Assert(validate(test.statement, scope), qt.ErrorMatches, regexp.QuoteMeta(fmt.Sprintf(
+					"sqlserver migration replay rejects T-SQL at offset %d because Ptah cannot read where its statements "+
+						"begin and end there: %s; end each statement with a semicolon, and put the statements an IF, "+
+						"a WHILE or a block runs between BEGIN and END; trusting the replayed SQL does not lift this refusal",
+					test.offset, test.reason,
+				)))
 			})
 		}
 	}

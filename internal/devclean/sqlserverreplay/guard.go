@@ -15,9 +15,10 @@ import (
 // function, procedure or DML trigger, whose body is opaque and which the realm
 // cleanup removes; a database, a login or a server credential created or
 // dropped, and a synonym (see [sqlServerUnconfinedServerObject]); a target in
-// another database, including SELECT INTO; and BACKUP, RESTORE, BULK INSERT, a
-// remote EXECUTE and an OPENQUERY or OPENROWSET destination, which move data
-// across the server's edge.
+// another database, including SELECT INTO; BACKUP, RESTORE, BULK INSERT, a
+// remote EXECUTE, OPENROWSET, OPENDATASOURCE and OPENQUERY, which move data
+// across the server's edge; and ADD SIGNATURE or ADD COUNTER SIGNATURE, which
+// gives a module the permissions of a certificate's user or login.
 //
 // It keeps every refusal that protects the run: USE and a temporary object,
 // which change or live in the replay's session; GRANT, DENY and REVOKE, and a
@@ -36,7 +37,6 @@ func validateSQLServerReplayStatement(tokens []lexer.Token, scope replay.Scope) 
 	if len(tokens) == 0 {
 		return nil
 	}
-	replayTokens := tokens
 	tokens = sqlServerExecutableTokens(tokens)
 
 	first := replay.NormalizedIdentifier(tokens[0])
@@ -52,7 +52,7 @@ func validateSQLServerReplayStatement(tokens []lexer.Token, scope replay.Scope) 
 	if err := validateSQLServerStatementScope(tokens, first); err != nil {
 		return err
 	}
-	if err := validateSQLServerStatementTargets(replayTokens, tokens, first, scope); err != nil {
+	if err := validateSQLServerStatementTargets(tokens, first, scope); err != nil {
 		return err
 	}
 	return validateSQLServerStoredObjects(tokens, first)
@@ -81,7 +81,7 @@ func validateSQLServerStatementScope(tokens []lexer.Token, first string) error {
 // write whose target is outside the dev database. Under
 // [replay.Scope.TrustedSQL] only a temporary SELECT INTO target stays refused,
 // since it lives in the replay's session.
-func validateSQLServerStatementTargets(replayTokens, tokens []lexer.Token, first string, scope replay.Scope) error {
+func validateSQLServerStatementTargets(tokens []lexer.Token, first string, scope replay.Scope) error {
 	if sqlServerDefinesExecutableBody(tokens) && !scope.TrustedSQL {
 		return replay.Refuse(platform.SQLServer, first+" executable stored body")
 	}
@@ -90,16 +90,6 @@ func validateSQLServerStatementTargets(replayTokens, tokens []lexer.Token, first
 	}
 	if sqlServerSelectIntoTemporaryObject(tokens) {
 		return replay.Refuse(platform.SQLServer, "temporary SELECT INTO target")
-	}
-	destination := sqlServerMutationRowsetDestination(tokens)
-	if destination == "" {
-		destination = sqlServerMutationRowsetCTEDestination(replayTokens, tokens)
-	}
-	if destination != "" && !scope.TrustedSQL {
-		return replay.Refuse(
-			platform.SQLServer,
-			destination+" mutation destination",
-		)
 	}
 	return nil
 }
@@ -315,119 +305,6 @@ func sqlServerQualifiedNameArityAt(tokens []lexer.Token, index int) int {
 		}
 	}
 	return arity
-}
-
-func sqlServerMutationRowsetDestination(tokens []lexer.Token) string {
-	index := sqlServerMutationDestinationIndex(tokens)
-	if index == replay.MutationTargetNotFound {
-		return ""
-	}
-	if destination := sqlServerRowsetFunctionAt(tokens, index); destination != "" {
-		return destination
-	}
-	return sqlServerMutationRowsetAliasDestination(tokens, index)
-}
-
-func sqlServerRowsetFunctionAt(tokens []lexer.Token, index int) string {
-	if index < 0 ||
-		index+1 >= len(tokens) ||
-		!tokens[index+1].MatchOperatorValue("(") {
-		return ""
-	}
-	switch {
-	case tokens[index].MatchIdentifierValue("OPENQUERY"):
-		return "OPENQUERY"
-	case tokens[index].MatchIdentifierValue("OPENROWSET"):
-		return "OPENROWSET"
-	default:
-		return ""
-	}
-}
-
-func sqlServerMutationRowsetAliasDestination(tokens []lexer.Token, targetIndex int) string {
-	first := replay.NormalizedIdentifier(tokens[0])
-	if first != "UPDATE" && first != "DELETE" {
-		return ""
-	}
-	if targetIndex+1 < len(tokens) && tokens[targetIndex+1].MatchOperatorValue(".") {
-		return ""
-	}
-	target := replay.NormalizedIdentifier(tokens[targetIndex])
-	fromIndex := sqlServerFindKeyword(tokens, "FROM", targetIndex+1)
-	if target == "" || fromIndex == replay.MutationTargetNotFound {
-		return ""
-	}
-	for index := fromIndex + 1; index < len(tokens); index++ {
-		destination := sqlServerRowsetFunctionAt(tokens, index)
-		if destination == "" {
-			continue
-		}
-		aliasIndex := skipSQLServerParenthesized(tokens, index+1)
-		if sqlServerKeywordSequenceAt(tokens, aliasIndex, "AS") {
-			aliasIndex++
-		}
-		if aliasIndex < len(tokens) &&
-			replay.NormalizedIdentifier(tokens[aliasIndex]) == target {
-			return destination
-		}
-	}
-	return ""
-}
-
-func sqlServerMutationRowsetCTEDestination(
-	replayTokens,
-	executableTokens []lexer.Token,
-) string {
-	if len(replayTokens) == 0 ||
-		!replayTokens[0].MatchIdentifierValue("WITH") ||
-		len(executableTokens) >= len(replayTokens) {
-		return ""
-	}
-	targetIndex := sqlServerMutationDestinationIndex(executableTokens)
-	if targetIndex == replay.MutationTargetNotFound ||
-		targetIndex+1 < len(executableTokens) &&
-			executableTokens[targetIndex+1].MatchOperatorValue(".") {
-		return ""
-	}
-	target := replay.NormalizedIdentifier(executableTokens[targetIndex])
-	definitionTokens := replayTokens[:len(replayTokens)-len(executableTokens)]
-	return sqlServerCTERowsetDefinition(definitionTokens, target)
-}
-
-func sqlServerCTERowsetDefinition(tokens []lexer.Token, target string) string {
-	for index := 1; index < len(tokens); {
-		name := replay.NormalizedIdentifier(tokens[index])
-		index++
-		if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
-			index = skipSQLServerParenthesized(tokens, index)
-		}
-		if !sqlServerKeywordSequenceAt(tokens, index, "AS") {
-			return ""
-		}
-		index++
-		if index >= len(tokens) || !tokens[index].MatchOperatorValue("(") {
-			return ""
-		}
-		bodyEnd := skipSQLServerParenthesized(tokens, index)
-		if name == target {
-			return sqlServerRowsetFunctionInRange(tokens, index+1, bodyEnd-1)
-		}
-		index = bodyEnd
-		if index >= len(tokens) || !tokens[index].MatchOperatorValue(",") {
-			return ""
-		}
-		index++
-	}
-	return ""
-}
-
-func sqlServerRowsetFunctionInRange(tokens []lexer.Token, start, end int) string {
-	for index := max(start, 0); index < min(end, len(tokens)); index++ {
-		if destination := sqlServerRowsetFunctionAt(tokens, index); destination != "" {
-			return destination
-		}
-	}
-	return ""
 }
 
 func sqlServerFindKeyword(tokens []lexer.Token, value string, start int) int {
