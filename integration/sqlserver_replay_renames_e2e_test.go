@@ -115,6 +115,7 @@ func TestSQLServerReplaysTheRenamesAndTheDefaultDropPtahWritesE2E(t *testing.T) 
 	c.Assert(sqlServerStrings(c, db, sqlServerRenameDefault), qt.DeepEquals, []string{"status"})
 	runSQLServerRename(c, work, "migrations", "generate", "--db-url", target, "--migrations-dir", "migrations",
 		"--schema-file", "desired.sql", "--shadow-db", generateShadow, "--name", "drop_default")
+	runSQLServerRename(c, work, "migrations", "hash", "--dir", "migrations")
 	runSQLServerRename(c, work, "migrations", "validate", "--dir", "migrations", "--dev-url", validateDev)
 	runSQLServerRename(c, work, "migrations", "up", "--db-url", target, "--migrations-dir", "migrations")
 	runSQLServerRename(c, work, "migrations", "drift", "--db-url", target, "--migrations-dir", "migrations",
