@@ -210,10 +210,13 @@ func TestSQLServerReplayRefusesAnEXECThatReachesPastTheDevDatabaseE2E(t *testing
 		t.Run(escape.name, func(t *testing.T) {
 			c := qt.New(t)
 			work := c.TempDir()
-			dev, _ := declaredSQLServerDatabase(c)
+			dev, devDB := declaredSQLServerDatabase(c)
 			otherURL, other := declaredSQLServerDatabase(c)
 			name := sqlServerDatabaseName(c, otherURL)
 			declaredSQLServerExec(c, other, "CREATE TABLE dbo.kept (id int PRIMARY KEY)")
+			// No session of the test stays in the other database, so a rename
+			// of it that got past the guard would take effect.
+			other.SetMaxIdleConns(0)
 			writeSQLServerEscape(c, work, escape.header, strings.ReplaceAll(escape.statement, "{other}", name))
 
 			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: work, Env: environmentWithoutPtahVariables()},
@@ -223,9 +226,9 @@ func TestSQLServerReplayRefusesAnEXECThatReachesPastTheDevDatabaseE2E(t *testing
 			c.Assert(got.Stderr, qt.Matches, `(?s).*sqlserver migration replay rejects `+
 				regexp.QuoteMeta(strings.ReplaceAll(escape.operation, "{other}", name))+
 				` because its effects cannot be confined to the disposable database realm.*`)
-			c.Assert(sqlServerStrings(c, other, "SELECT name FROM sys.databases WHERE name LIKE N'"+name+"%' ORDER BY name"),
+			c.Assert(sqlServerStrings(c, devDB, "SELECT name FROM sys.databases WHERE name LIKE N'"+name+"%' ORDER BY name"),
 				qt.DeepEquals, []string{name})
-			c.Assert(sqlServerStrings(c, other, "SELECT name FROM sys.tables ORDER BY name"), qt.DeepEquals, []string{"kept"})
+			c.Assert(sqlServerStrings(c, devDB, "SELECT name FROM ["+name+"].sys.tables ORDER BY name"), qt.DeepEquals, []string{"kept"})
 		})
 	}
 }
