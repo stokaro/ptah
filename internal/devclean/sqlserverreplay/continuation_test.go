@@ -24,7 +24,7 @@ func TestGuard_JudgesTheStatementAfterAnAsteriskOrABareVariable(t *testing.T) {
 		{
 			name:      "an INSERT into another database after OUTPUT deleted.*",
 			statement: "DELETE FROM dbo.items OUTPUT deleted.* INSERT INTO other.dbo.kept VALUES (1)",
-			operation: `cross-database target "other.dbo.kept"`,
+			operation: `cross-database reference "other.dbo.kept"`,
 		},
 		{name: "SHUTDOWN after OUTPUT deleted.*", statement: "DELETE FROM dbo.items OUTPUT deleted.* SHUTDOWN WITH NOWAIT", operation: "SHUTDOWN server operation"},
 		{

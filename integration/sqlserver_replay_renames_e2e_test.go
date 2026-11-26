@@ -186,7 +186,7 @@ var sqlServerEscapes = []struct {
 	{
 		name:      "sp_rename of another database",
 		statement: "EXEC {other}..sp_rename N'[dbo].[kept]', N'moved', N'OBJECT';",
-		operation: "EXEC/EXECUTE sublanguage",
+		operation: `cross-database reference "{other}..sp_rename"`,
 	},
 	{
 		name:      "sp_executesql with other text",
@@ -247,7 +247,7 @@ var sqlServerEscapes = []struct {
 	{
 		name:      "a constant EXEC creating a table with the schema left out",
 		statement: "EXEC(N'CREATE TABLE {other}..escaped (id int)');",
-		operation: `cross-database target "{other}..escaped"`,
+		operation: `cross-database reference "{other}..escaped"`,
 	},
 	{
 		// The migration file splitter drops the semicolon a MERGE ends with,
@@ -257,7 +257,7 @@ var sqlServerEscapes = []struct {
 		name: "the target of a MERGE",
 		statement: "MERGE {other}.dbo.kept AS t USING (SELECT 2 AS id) AS s ON t.id = s.id " +
 			"WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id);",
-		operation: `cross-database target "{other}.dbo.kept"`,
+		operation: `cross-database reference "{other}.dbo.kept"`,
 	},
 	{
 		name:      "OPENROWSET reading a file on the server",
@@ -269,7 +269,8 @@ var sqlServerEscapes = []struct {
 // sqlServerWrites are writes into another database in every form T-SQL gives
 // the target, each with what the other database holds after it runs: its
 // tables, the columns of kept and the rows of kept, which start as kept, id
-// and 1. Without trust the guard refuses each one, naming target.
+// and 1. Without trust the guard refuses each one, naming target, the first
+// name of another database the statement holds.
 var sqlServerWrites = []struct {
 	name, statement, target string
 	tables, columns, rows   []string
@@ -303,8 +304,10 @@ var sqlServerWrites = []struct {
 		target: "{other}..kept", tables: []string{"kept"}, columns: []string{"id", "c"}, rows: []string{"1"},
 	},
 	{
+		// The guard does not know which words are reserved, so it reads INTO
+		// as a part of the name, which it refuses.
 		name: "a name that leaves the server out", statement: "INSERT INTO .{other}.dbo.kept VALUES (2);",
-		target: ".{other}.dbo.kept", tables: []string{"kept"}, columns: []string{"id"}, rows: []string{"1", "2"},
+		target: "INTO.{other}.dbo.kept", tables: []string{"kept"}, columns: []string{"id"}, rows: []string{"1", "2"},
 	},
 	{
 		name: "DELETE with no FROM", statement: "DELETE {other}.dbo.kept;",
@@ -418,7 +421,7 @@ func TestSQLServerReplayRefusesAStatementThatReachesPastTheDevDatabaseE2E(t *tes
 	refused = append(refused, sqlServerEscapes...)
 	for _, write := range sqlServerWrites {
 		refused = append(refused, struct{ name, header, statement, operation string }{
-			name: write.name, statement: write.statement, operation: fmt.Sprintf("cross-database target %q", write.target),
+			name: write.name, statement: write.statement, operation: fmt.Sprintf("cross-database reference %q", write.target),
 		})
 	}
 	for _, escape := range refused {
@@ -427,7 +430,7 @@ func TestSQLServerReplayRefusesAStatementThatReachesPastTheDevDatabaseE2E(t *tes
 			work := c.TempDir()
 			writeSQLServerEscape(c, work, escape.header, strings.ReplaceAll(escape.statement, "{other}", name))
 			refusal := `(?s).*sqlserver migration replay rejects ` + regexp.QuoteMeta(strings.ReplaceAll(escape.operation, "{other}", name)) +
-				` because its effects cannot be confined to the disposable database realm.*`
+				` because .*`
 
 			for _, args := range sqlServerEscapeCommands(dev, target, shadow) {
 				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: work, Env: environmentWithoutPtahVariables()}, args...)

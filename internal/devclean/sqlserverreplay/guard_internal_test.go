@@ -210,22 +210,22 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 		{
 			name:          "cross database select into three part name",
 			statement:     "SELECT id INTO otherdb.dbo.snapshot FROM dbo.source;",
-			wantOperation: "cross-database SELECT INTO",
+			wantOperation: `cross-database reference "otherdb.dbo.snapshot"`,
 		},
 		{
 			name:          "cross database select into omitted schema",
 			statement:     "SELECT id INTO otherdb..snapshot FROM dbo.source;",
-			wantOperation: "cross-database SELECT INTO",
+			wantOperation: `cross-database reference "otherdb..snapshot"`,
 		},
 		{
 			name:          "cross server select into",
 			statement:     "SELECT id INTO remote_server.otherdb.dbo.snapshot FROM dbo.source;",
-			wantOperation: "cross-database SELECT INTO",
+			wantOperation: `cross-database reference "remote_server.otherdb.dbo.snapshot"`,
 		},
 		{
 			name:          "cte cross database select into",
 			statement:     "WITH source_rows AS (SELECT id FROM dbo.source) SELECT id INTO otherdb.dbo.snapshot FROM source_rows;",
-			wantOperation: "cross-database SELECT INTO",
+			wantOperation: `cross-database reference "otherdb.dbo.snapshot"`,
 		},
 		{
 			name:          "temporary select into",
@@ -332,7 +332,7 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 		},
 		{
 			name:          "bulk insert",
-			statement:     `BULK INSERT otherdb.dbo.users FROM '\\host\share\users.csv';`,
+			statement:     `BULK INSERT dbo.users FROM '\\host\share\users.csv';`,
 			wantOperation: "BULK INSERT external data operation",
 		},
 		{
@@ -590,9 +590,7 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 			c.Assert(
 				err,
 				qt.ErrorMatches,
-				`sqlserver migration replay rejects `+
-					regexp.QuoteMeta(test.wantOperation)+
-					` because its effects cannot be confined to the disposable database realm`,
+				`sqlserver migration replay rejects `+regexp.QuoteMeta(test.wantOperation)+` because .+`,
 			)
 		})
 	}

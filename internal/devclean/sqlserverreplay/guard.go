@@ -14,17 +14,20 @@ import (
 // which run SQL the guard cannot read, as a DO block does on PostgreSQL; a
 // function, procedure or DML trigger, whose body is opaque and which the realm
 // cleanup removes; a database, a login or a server credential created or
-// dropped, and a synonym (see [sqlServerUnconfinedServerObject]); a target in
-// another database, including SELECT INTO; BACKUP, RESTORE, BULK INSERT, a
-// remote EXECUTE, OPENROWSET, OPENDATASOURCE and OPENQUERY, which move data
-// across the server's edge; and ADD SIGNATURE or ADD COUNTER SIGNATURE, which
-// gives a module the permissions of a certificate's user or login.
+// dropped, and a synonym (see [sqlServerUnconfinedServerObject]); a name of
+// another database in any place, a read as well as a write (see
+// [sqlServerOtherDatabaseName]); DBCC CHECKIDENT, CHECKTABLE and
+// CHECKCONSTRAINTS, which name their table in a string; BACKUP, RESTORE, BULK
+// INSERT, a remote EXECUTE and the functions that read a file on the server
+// or a remote source (see [sqlServerOutsideReads]), which move data across
+// the server's edge; and ADD SIGNATURE or ADD COUNTER SIGNATURE, which gives a
+// module the permissions of a certificate's user or login.
 //
 // It keeps every refusal that protects the run: USE and a temporary object,
 // which change or live in the replay's session; GRANT, DENY and REVOKE, and a
 // database principal, whose state stays in the dev database after the cleanup;
 // a DDL trigger on the database and anything ON SERVER, which fire on the run's
-// own statements; DBCC beyond its local checks, KILL, RECONFIGURE and SHUTDOWN,
+// own statements; every other DBCC, KILL, RECONFIGURE and SHUTDOWN,
 // which act on the server the run uses; an assembly, which loads code into the
 // server; and the objects the realm cleanup does not remove: an external table
 // or data source, a ledger table, a partition function or scheme, full-text,
@@ -78,15 +81,13 @@ func validateSQLServerStatementScope(tokens []lexer.Token, first string) error {
 }
 
 // validateSQLServerStatementTargets refuses an executable stored body and a
-// write whose target is outside the dev database. Under
-// [replay.Scope.TrustedSQL] only a temporary SELECT INTO target stays refused,
-// since it lives in the replay's session.
+// temporary SELECT INTO target. Under [replay.Scope.TrustedSQL] only the
+// temporary target stays refused, since it lives in the replay's session. A
+// target in another database is refused, without trust, as every name of
+// another database is; see [sqlServerOtherDatabaseName].
 func validateSQLServerStatementTargets(tokens []lexer.Token, first string, scope replay.Scope) error {
 	if sqlServerDefinesExecutableBody(tokens) && !scope.TrustedSQL {
 		return replay.Refuse(platform.SQLServer, first+" executable stored body")
-	}
-	if sqlServerSelectIntoEscapesRealm(tokens) && !scope.TrustedSQL {
-		return replay.Refuse(platform.SQLServer, "cross-database SELECT INTO")
 	}
 	if sqlServerSelectIntoTemporaryObject(tokens) {
 		return replay.Refuse(platform.SQLServer, "temporary SELECT INTO target")
@@ -262,11 +263,6 @@ func sqlServerDMLStatementAt(tokens []lexer.Token, index int) bool {
 		sqlServerKeywordSequenceAt(tokens, index, "MERGE")
 }
 
-func sqlServerSelectIntoEscapesRealm(tokens []lexer.Token) bool {
-	targetIndex := sqlServerSelectIntoTargetIndex(tokens)
-	return sqlServerQualifiedNameArityAt(tokens, targetIndex) >= 3
-}
-
 func sqlServerSelectIntoTemporaryObject(tokens []lexer.Token) bool {
 	targetIndex := sqlServerSelectIntoTargetIndex(tokens)
 	if targetIndex < 0 || targetIndex >= len(tokens) {
@@ -289,22 +285,6 @@ func sqlServerSelectIntoTargetIndex(tokens []lexer.Token) int {
 		return replay.MutationTargetNotFound
 	}
 	return intoIndex + 1
-}
-
-func sqlServerQualifiedNameArityAt(tokens []lexer.Token, index int) int {
-	if index < 0 || index >= len(tokens) || replay.IdentifierValue(tokens[index]) == "" {
-		return 0
-	}
-	arity := 1
-	index++
-	for index < len(tokens) && tokens[index].MatchOperatorValue(".") {
-		arity++
-		index++
-		if index < len(tokens) && replay.IdentifierValue(tokens[index]) != "" {
-			index++
-		}
-	}
-	return arity
 }
 
 func sqlServerFindKeyword(tokens []lexer.Token, value string, start int) int {
@@ -346,63 +326,6 @@ func sqlServerDDLStartsWith(tokens []lexer.Token, values ...string) bool {
 		index += 2
 	}
 	return sqlServerKeywordSequenceAt(tokens, index, values...)
-}
-
-func sqlServerMutationDestinationIndex(tokens []lexer.Token) int {
-	if len(tokens) == 0 {
-		return replay.MutationTargetNotFound
-	}
-	index := skipSQLServerTopClause(tokens, 1)
-	switch replay.NormalizedIdentifier(tokens[0]) {
-	case "INSERT", "MERGE":
-		if sqlServerKeywordSequenceAt(tokens, index, "INTO") {
-			index++
-		}
-	case "UPDATE":
-	case "DELETE":
-		if sqlServerKeywordSequenceAt(tokens, index, "FROM") {
-			index++
-		}
-	default:
-		return replay.MutationTargetNotFound
-	}
-	if index >= len(tokens) {
-		return replay.MutationTargetNotFound
-	}
-	return index
-}
-
-func skipSQLServerTopClause(tokens []lexer.Token, index int) int {
-	if !sqlServerKeywordSequenceAt(tokens, index, "TOP") {
-		return index
-	}
-	index++
-	if index < len(tokens) && tokens[index].MatchOperatorValue("(") {
-		index = skipSQLServerParenthesized(tokens, index)
-	} else if index < len(tokens) {
-		index++
-	}
-	if sqlServerKeywordSequenceAt(tokens, index, "PERCENT") {
-		index++
-	}
-	return index
-}
-
-func skipSQLServerParenthesized(tokens []lexer.Token, index int) int {
-	depth := 0
-	for index < len(tokens) {
-		switch {
-		case tokens[index].MatchOperatorValue("("):
-			depth++
-		case tokens[index].MatchOperatorValue(")"):
-			depth--
-			if depth == 0 {
-				return index + 1
-			}
-		}
-		index++
-	}
-	return index
 }
 
 func sqlServerExternalTableWritesData(tokens []lexer.Token) bool {

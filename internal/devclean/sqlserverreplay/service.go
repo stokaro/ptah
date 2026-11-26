@@ -2,9 +2,11 @@
 // refuses a T-SQL statement whose effects cannot be confined to the dev
 // database, such as USE, a remote EXECUTE, an EXEC other than the sp_rename
 // calls and default batches the renderer writes, a server-scoped object or a
-// temporary one, and on a run that trusts its SQL lifts the refusals whose only
-// reason is confinement. internal/devclean asks it through the
-// internal/devclean/replay contract.
+// temporary one, a name of another database, a read included, a DBCC, and a
+// function that reads a file on the server. On a run that trusts its SQL it
+// lifts the refusals whose only reason is confinement. internal/devclean asks
+// it through the internal/devclean/replay contract, and reads the dev
+// session's database for it once; see [guard.ValidateSession].
 //
 // T-SQL needs no separator between statements, so the guard reads the text it
 // is given into the statements the server runs from it, with
@@ -13,6 +15,7 @@
 package sqlserverreplay
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,12 +28,39 @@ import (
 	"ptah.run/internal/sqlserverbatch"
 )
 
-// Services returns the SQL Server replay guard.
+// Services returns the SQL Server replay guard. It has read no session, so
+// it takes no database part of a name for the dev database; devclean asks it
+// for the guard of the dev session with [guard.ValidateSession].
 func Services() []replay.Service {
 	return []replay.Service{{Dialect: platform.SQLServer, Guard: guard{}}}
 }
 
-type guard struct{}
+// guard judges the statements of a run on a dev session in database, the
+// name DB_NAME() returned on that session. A guard that read no session has
+// no database.
+type guard struct {
+	database string
+}
+
+// databaseQuery reads the database the dev session is in.
+const databaseQuery = "SELECT DB_NAME()"
+
+// ValidateSession reads the database the dev session is in, and returns the
+// guard that takes a name of that database for a local one. It refuses no
+// session. The database is read under trust too, where the guard does not use
+// it, so that every run reads the session the same way.
+//
+// catalog.ServerInfo.Schema, which devclean gives as [replay.Scope.Database],
+// names the schema a SQL Server connection writes to, such as dbo, not its
+// database. A session cannot leave its database during the run, since USE is
+// refused, so the name read once holds for every statement the run executes.
+func (guard) ValidateSession(ctx context.Context, session replay.Session, _ replay.Scope) (replay.Guard, error) {
+	var database string
+	if err := session.QueryRowContext(ctx, databaseQuery).Scan(&database); err != nil {
+		return nil, fmt.Errorf("read the database of the dev session: %w", err)
+	}
+	return guard{database: database}, nil
+}
 
 // Validate refuses a statement whose effects cannot be confined to the dev
 // database. No realm widens what it accepts; a run that trusts its SQL lifts
@@ -42,7 +72,12 @@ type guard struct{}
 // and the batch a constant EXEC runs. A procedure named with no EXEC, which
 // the server runs as the first statement of a batch, is judged as EXEC of the
 // same name.
-func (guard) Validate(stmt string, scope replay.Scope) error {
+//
+// The statements are judged with scope.Database set to the database the
+// guard read from the session, or to "" when it read none; see
+// [guard.ValidateSession].
+func (g guard) Validate(stmt string, scope replay.Scope) error {
+	scope.Database = g.database
 	return validateSQLServerBatch(stmt, scope, 0)
 }
 

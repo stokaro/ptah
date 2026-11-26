@@ -55,7 +55,7 @@ func TestGuard_RefusesAStatementWhereverTheBatchHoldsIt(t *testing.T) {
 		{
 			name:      "SELECT INTO another database after the rows of an INSERT",
 			statement: "INSERT dbo.log VALUES (1) SELECT 1 AS v INTO other.dbo.x",
-			operation: "cross-database SELECT INTO",
+			operation: `cross-database reference "other.dbo.x"`,
 		},
 		{
 			name:      "a procedure named with no EXEC",
@@ -75,7 +75,7 @@ func TestGuard_RefusesAStatementWhereverTheBatchHoldsIt(t *testing.T) {
 		{
 			name:      "xp_cmdshell named through master",
 			statement: "master.dbo.xp_cmdshell 'dir'",
-			operation: "EXEC/EXECUTE sublanguage",
+			operation: `cross-database reference "master.dbo.xp_cmdshell"`,
 		},
 		{
 			name:      "sp_configure named with no EXEC",
@@ -95,7 +95,7 @@ func TestGuard_RefusesAStatementWhereverTheBatchHoldsIt(t *testing.T) {
 		{
 			name:      "a procedure in another database",
 			statement: "other..p",
-			operation: "EXEC/EXECUTE sublanguage",
+			operation: `cross-database reference "other..p"`,
 		},
 		{
 			name:      "a temporary procedure",
@@ -110,17 +110,17 @@ func TestGuard_RefusesAStatementWhereverTheBatchHoldsIt(t *testing.T) {
 		{
 			name:      "a parenthesized SELECT INTO another database",
 			statement: "(SELECT 1 AS v INTO other.dbo.x)",
-			operation: "cross-database SELECT INTO",
+			operation: `cross-database reference "other.dbo.x"`,
 		},
 		{
 			name:      "a parenthesized SELECT INTO another database after an alias",
 			statement: "SELECT 1 AS a (SELECT 1 AS v INTO other.dbo.x)",
-			operation: "cross-database SELECT INTO",
+			operation: `cross-database reference "other.dbo.x"`,
 		},
 		{
 			name:      "a parenthesized query after TOP, which is one statement",
 			statement: "SELECT TOP 1 (SELECT 1) AS v INTO other.dbo.x",
-			operation: "cross-database SELECT INTO",
+			operation: `cross-database reference "other.dbo.x"`,
 		},
 		{
 			name:      "the statement IF runs",
@@ -165,7 +165,7 @@ func TestGuard_RefusesAStatementWhereverTheBatchHoldsIt(t *testing.T) {
 		{
 			name:      "the table an INSERT stores the rows of an EXEC in",
 			statement: "INSERT INTO other.dbo.log EXEC dbo.p",
-			operation: `cross-database target "other.dbo.log"`,
+			operation: `cross-database reference "other.dbo.log"`,
 		},
 		{
 			name:      "USE in a constant EXEC",

@@ -17,9 +17,9 @@ import (
 type renameShape struct {
 	// reach is the longest name. One part more can name a database: sp_rename
 	// refuses a database other than the one it runs in (Msg 15333), but the
-	// guard refuses such a name before the server reads it, as it refuses a
-	// cross-database target everywhere else. Measured on SQL Server 2022 and
-	// 2025.
+	// guard refuses such a name before the server reads it, the dev database's
+	// own name too, since the renderer never writes one. Measured on SQL
+	// Server 2022 and 2025.
 	reach int
 	// ofTable is true where the last part names a column or an index of the
 	// table before it, rather than the object itself.

@@ -481,15 +481,42 @@ proven to stay inside the disposable realm:
   without the `N` prefix to the database's code page first, so such a literal
   that holds a character outside ASCII is judged as any other `EXEC`.
 
-  Without trust, a write is refused when its target is in another database.
-  The guard reads the target each form writes: after `TOP`, with `INTO` or
-  `FROM` left out, through an alias or a table name to the table its `FROM`
-  clause names, the table of `OUTPUT ... INTO`, the target of a `MERGE`, and,
-  through a common table expression, every table the expression reads. Each
-  part of a name counts, an empty one too: `other..t` is the table `t` in the
-  database `other`. `OPENROWSET`, `OPENDATASOURCE` and `OPENQUERY`, which read
-  a file on the server or a remote source, are refused without trust wherever
-  they stand, and so are `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`.
+  Without trust, the guard refuses these statements wherever they stand,
+  including in a block, after an `IF` and in a constant `EXEC`:
+
+  - A name of another database, in any place: the target of a write, a table
+    a query reads, the body of a view, function, procedure or trigger,
+    `NEXT VALUE FOR`, `CREATE STATISTICS` and `UPDATE STATISTICS`,
+    `WRITETEXT`, `UPDATETEXT` and `READTEXT`, `OUTPUT ... INTO`, `REFERENCES`,
+    and the procedure an `EXEC` runs. Reads count:
+    `INSERT INTO dbo.t SELECT id FROM other.dbo.t` is refused, and only trust
+    lets a run read another database. In a name of three parts or more, the
+    third part from the end names a database, so `other..t` is the table `t`
+    in `other`, and a part before it names a server, or the database of the
+    column in `WRITETEXT other.dbo.t.c`. The name is local when that part is
+    empty or spelled exactly as the dev database, whose name the guard reads
+    from the dev session with `DB_NAME()`, and every part before it is empty.
+    So `[dev].dbo.t` and `dev..t` pass. `DEV.dbo.t` is refused even where the
+    collation ignores case, since no fold the guard could apply matches every
+    collation. A three-part column name, such as `dbo.t.c`, is refused as well,
+    because the guard cannot tell it from the table `c` in the database `dbo`.
+    The guard does not know which words are reserved, so in
+    `FROM .dev.dbo.t`, with the server part left out, it reads `FROM` as part
+    of the name and refuses it. A name the statement holds in a string, as
+    `OBJECT_ID(N'other.dbo.t')` does, is not read.
+  - Every `DBCC`. Trust lifts the refusal of `DBCC CHECKIDENT`, `CHECKTABLE`
+    and `CHECKCONSTRAINTS`, which name their table in a string that can name
+    another database. Every other `DBCC` acts on the server and stays refused
+    under trust.
+  - A function that reads a file on the server or a remote source:
+    `OPENROWSET`, `OPENDATASOURCE`, `OPENQUERY`,
+    `sys.dm_os_enumerate_filesystem`, `sys.dm_os_file_exists`,
+    `sys.fn_get_audit_file`, `sys.fn_get_audit_file_v2`,
+    `sys.fn_xe_file_target_read_file`, `sys.fn_trace_gettable` and
+    `sys.fn_dump_dblog`, under any spelling of the name. The procedures that
+    read the file system, such as `xp_dirtree`, `xp_fileexist` and
+    `xp_subdirs`, are refused as every `EXEC` is.
+  - `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`.
 
   Text whose statement boundaries the guard cannot find is refused, with trust
   or without it. The refusal gives the offset and says how to rewrite the
@@ -858,9 +885,10 @@ accepts:
   enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
   refused;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
-  logins, credentials, synonyms, a target in another database, `BACKUP`,
-  `RESTORE`, `BULK INSERT`, `OPENROWSET`, `OPENDATASOURCE`, `OPENQUERY`, and
-  `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`;
+  logins, credentials, synonyms, a name of another database in any place,
+  reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and `CHECKCONSTRAINTS`,
+  `BACKUP`, `RESTORE`, `BULK INSERT`, the functions that read a file on the
+  server or a remote source, and `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`;
 - on ClickHouse, SQL functions, databases, users, roles, row policies, named
   collections, `GRANT`, `REVOKE`, `ON CLUSTER`, writes to another database or
   through a table function, any table engine, dictionary sources, `BACKUP`,

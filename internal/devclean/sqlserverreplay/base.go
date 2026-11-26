@@ -31,23 +31,82 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 	if scope.TrustedSQL {
 		return nil
 	}
-	if operation := sqlServerOutsideRead(tokens); operation != "" {
-		return replay.Refuse(platform.SQLServer, operation)
+	if reader, ok := sqlServerOutsideReader(tokens); ok {
+		return &replay.Refusal{Dialect: platform.SQLServer, Operation: reader.name, Reason: reader.reason}
+	}
+	if name := sqlServerOtherDatabaseName(tokens, scope.Database); name != "" {
+		return &replay.Refusal{
+			Dialect:   platform.SQLServer,
+			Operation: fmt.Sprintf("cross-database reference %q", name),
+			Reason:    "a statement that reads or writes another database runs only when the replayed SQL is trusted",
+		}
+	}
+	if first == "DBCC" && sqlServerDatabaseLocalDBCC(tokens) {
+		// Every other DBCC acts on the server, and is refused under trust too;
+		// see [sqlServerExternalOrServerOperation].
+		return &replay.Refusal{
+			Dialect:   platform.SQLServer,
+			Operation: "DBCC " + replay.NormalizedIdentifier(tokens[1]),
+			Reason: "DBCC names the table it checks or reseeds in a string, which can name another database, " +
+				"so it runs only when the replayed SQL is trusted",
+		}
 	}
 	if sqlServerKeywordSequenceAt(tokens, 0, "ADD", "SIGNATURE") || sqlServerKeywordSequenceAt(tokens, 0, "ADD", "COUNTER", "SIGNATURE") {
 		return replay.Refuse(platform.SQLServer, "ADD SIGNATURE")
 	}
-	targets := sqlServerMutationTargets(tokens)
-	targets = append(targets, sqlServerWriteTargets(tokens, sqlServerExecutableTokens(tokens))...)
-	for _, target := range targets {
-		if len(target) >= 3 {
-			return replay.Refuse(
-				platform.SQLServer,
-				fmt.Sprintf("cross-database target %q", strings.Join(target, ".")),
-			)
+	return nil
+}
+
+// sqlServerOtherDatabaseName returns the first name in tokens that can name a
+// database other than database, the one the dev session selected, or "" when
+// every name is local. It reads every name in the statement, whatever its
+// place: the target of a write, a table a query reads, a view's or a
+// function's body, NEXT VALUE FOR, the table of CREATE STATISTICS, the column
+// of WRITETEXT, REFERENCES, the procedure of an EXEC. See [sqlServerLocalName].
+//
+// It reads a name from every token, so it reads the parts at the end of a
+// longer name again; a name ending another is local when the longer one is,
+// and the first name it refuses is the whole one.
+func sqlServerOtherDatabaseName(tokens []lexer.Token, database string) string {
+	for index := range tokens {
+		if parts, _ := replay.QualifiedIdentifierAt(tokens, index); !sqlServerLocalName(parts, database) {
+			return strings.Join(parts, ".")
 		}
 	}
-	return nil
+	return ""
+}
+
+// sqlServerLocalName reports whether a name of parts names nothing outside
+// database. A name of one or two parts is an object, or a schema and an
+// object. The part three from the end can name a database: db.schema.object,
+// or db..object with the schema left out. A part before it can name a server,
+// as in server.db.schema.object, or a database, as in the
+// db.schema.table.column of WRITETEXT.
+//
+// So a name is local when every part before the third from the end is empty
+// and that part is empty, which means the current database, or spelled
+// exactly as database. The same rule refuses a three-part column name such as
+// schema.table.column, which a guard that does not resolve names cannot tell
+// from db.schema.object. An empty database, from a guard that read no session,
+// makes every name with a database part one that reaches outside.
+//
+// The comparison is exact. The server compares database names under its own
+// collation, and no fold the guard could apply matches every collation: under
+// Turkish_CI_AS, SQL Server 2025 takes neither [mI] nor [MI] for a database
+// named mi, which strings.EqualFold would. An exact spelling names the dev
+// database under every collation, so another spelling is refused, and trust
+// lifts the refusal.
+func sqlServerLocalName(parts []string, database string) bool {
+	if len(parts) < 3 {
+		return true
+	}
+	for _, part := range parts[:len(parts)-3] {
+		if part != "" {
+			return false
+		}
+	}
+	named := parts[len(parts)-3]
+	return named == "" || named == database
 }
 
 // sqlServerRemoteExecute reports the AT of EXECUTE ... AT linked_server: the
@@ -63,26 +122,63 @@ func sqlServerRemoteExecute(tokens []lexer.Token) bool {
 	return false
 }
 
-// sqlServerOutsideRead returns the rowset function in tokens that reads
-// outside the dev database, wherever it stands: OPENROWSET reads a file on the
-// server, as OPENROWSET(BULK '/etc/hostname', SINGLE_CLOB) does, or a remote
-// source, and OPENDATASOURCE and OPENQUERY read a remote source. It refuses a
-// write into one of them too, as INSERT OPENQUERY(...) VALUES (1) is. A
-// bracketed or quoted name is a name: SQL Server 2025 refuses
-// [OPENROWSET](BULK ...) with Msg 156.
-func sqlServerOutsideRead(tokens []lexer.Token) string {
+// sqlServerOutsideRead is a function that reads outside the dev database:
+// a file on the server, or a remote source. A run that trusts its SQL may call
+// one; without trust it is refused wherever it stands, as a source, in a
+// view's body or as the target of a write, as INSERT OPENQUERY(...) VALUES (1)
+// is.
+type sqlServerOutsideRead struct {
+	// name is the function, compared without case.
+	name string
+	// reason says what the function reads.
+	reason string
+	// keyword is true for a rowset function the server reads as a keyword.
+	// Only the unquoted word calls it: SQL Server 2025 refuses
+	// [OPENROWSET](BULK ...) with Msg 156, so [OPENQUERY] is a table name.
+	// The other functions are system objects, which the server finds by any
+	// spelling of their name: sys.fn_trace_gettable, [sys].[fn_trace_gettable],
+	// fn_trace_gettable alone and ::fn_trace_gettable.
+	keyword bool
+}
+
+// sqlServerOutsideReads are the functions [sqlServerOutsideRead] describes,
+// measured on SQL Server 2025. OPENROWSET(BULK '/etc/hostname', SINGLE_CLOB)
+// returned the file. sys.dm_os_enumerate_filesystem listed /etc, and
+// sys.dm_os_file_exists found /etc/hostname. sys.fn_trace_gettable returned
+// the rows of /var/opt/mssql/log/log.trc. The two audit readers and the
+// extended event reader took a path under /var/opt/mssql/log, and
+// sys.fn_dump_dblog opened /etc/hostname as a backup device. The procedures
+// that read the file system, such as xp_dirtree, xp_fileexist and xp_subdirs,
+// are refused as every EXEC is.
+var sqlServerOutsideReads = []sqlServerOutsideRead{
+	{name: "OPENROWSET", reason: "it reads a file on the server or a remote source", keyword: true},
+	{name: "OPENDATASOURCE", reason: "it reads a remote source", keyword: true},
+	{name: "OPENQUERY", reason: "it runs a query on a linked server", keyword: true},
+	{name: "dm_os_enumerate_filesystem", reason: "it lists the server's file system"},
+	{name: "dm_os_file_exists", reason: "it tells whether a path exists on the server"},
+	{name: "fn_get_audit_file", reason: "it reads audit files on the server"},
+	{name: "fn_get_audit_file_v2", reason: "it reads audit files on the server"},
+	{name: "fn_xe_file_target_read_file", reason: "it reads extended event files on the server"},
+	{name: "fn_trace_gettable", reason: "it reads trace files on the server"},
+	{name: "fn_dump_dblog", reason: "it reads a backup file on the server"},
+}
+
+// sqlServerOutsideReader returns the first call in tokens of a function
+// [sqlServerOutsideReads] holds: its name followed by an opening parenthesis.
+func sqlServerOutsideReader(tokens []lexer.Token) (sqlServerOutsideRead, bool) {
 	for index := range tokens {
 		next := replay.TokenAt(tokens, index+1)
 		if !next.MatchOperatorValue("(") {
 			continue
 		}
-		for _, name := range []string{"OPENROWSET", "OPENDATASOURCE", "OPENQUERY"} {
-			if tokens[index].MatchIdentifierValue(name) {
-				return name
+		for _, read := range sqlServerOutsideReads {
+			if read.keyword && tokens[index].MatchIdentifierValue(read.name) ||
+				!read.keyword && strings.EqualFold(replay.IdentifierValue(tokens[index]), read.name) {
+				return read, true
 			}
 		}
 	}
-	return ""
+	return sqlServerOutsideRead{}, false
 }
 
 func isGlobalSQLServerDDL(tokens []lexer.Token) bool {
@@ -151,37 +247,4 @@ func containsTemporaryTarget(tokens []lexer.Token) bool {
 		}
 	}
 	return false
-}
-
-func sqlServerMutationTargets(tokens []lexer.Token) [][]string {
-	if replay.NormalizedIdentifier(tokens[0]) != "DROP" {
-		return replay.MutationTargets(tokens)
-	}
-	kindIndex := replay.StatementObjectKindIndex(tokens)
-	if kindIndex == replay.MutationTargetNotFound {
-		return replay.MutationTargets(tokens)
-	}
-	if replay.NormalizedIdentifier(tokens[kindIndex]) == "INDEX" {
-		return sqlServerDropIndexTargets(tokens, kindIndex+1)
-	}
-	return replay.CommaSeparatedQualifiedTargets(
-		tokens,
-		replay.ObjectNameIndex(tokens, kindIndex),
-		"",
-	)
-}
-
-func sqlServerDropIndexTargets(tokens []lexer.Token, start int) [][]string {
-	var targets [][]string
-	for index := start; index < len(tokens); index++ {
-		if !tokens[index].MatchIdentifierValue("ON") {
-			continue
-		}
-		target, next := replay.QualifiedIdentifierAt(tokens, index+1)
-		if len(target) != 0 {
-			targets = append(targets, target)
-		}
-		index = next - 1
-	}
-	return targets
 }

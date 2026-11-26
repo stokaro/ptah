@@ -468,8 +468,10 @@ differs from that shape in any byte is refused, and so is one whose new
 default is more than one expression. A rename, `EXEC sp_rename`, is accepted
 in the shape Ptah writes it, for a column, an index or an object in the dev
 database. The guard judges every statement of a batch where the server ends
-it, since T-SQL needs no semicolon between two statements, and it follows an
-alias or a common table expression to the table a write changes.
+it, since T-SQL needs no semicolon between two statements. Without trust it
+refuses every name of another database, a read as well as a write, every
+`DBCC`, and the functions that read a file on the server; the guard's page
+lists each rule.
 
 For temporal columns, the comparison ignores case in `GETDATE()` and
 `SYSDATETIME()`. It treats `CURRENT_TIMESTAMP` as `GETDATE()` because both

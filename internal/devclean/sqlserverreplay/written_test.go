@@ -28,9 +28,10 @@ func validate(statement string, scope replay.Scope) error {
 	return sqlserverreplay.Services()[0].Guard.Validate(statement, scope)
 }
 
+// refusal matches the refusal of operation whatever reason it gives; the tests
+// of a rule that gives its own reason pin it.
 func refusal(operation string) string {
-	return "sqlserver migration replay rejects " + regexp.QuoteMeta(operation) +
-		" because its effects cannot be confined to the disposable database realm"
+	return "sqlserver migration replay rejects " + regexp.QuoteMeta(operation) + " because .+"
 }
 
 // TestGuard_AcceptsTheStatementsTheRendererWrites replays, without trust, the
@@ -179,12 +180,12 @@ func TestGuard_RefusesWhatTheRendererDoesNotWrite(t *testing.T) {
 		{
 			name:      "procedure in master",
 			statement: "EXEC master.dbo.sp_rename N'[dbo].[users]', N'people', N'OBJECT';",
-			operation: "EXEC/EXECUTE sublanguage",
+			operation: `cross-database reference "master.dbo.sp_rename"`,
 		},
 		{
 			name:      "procedure in another database",
 			statement: "EXEC a6688_other..sp_rename N'[dbo].[users]', N'people', N'OBJECT';",
-			operation: "EXEC/EXECUTE sublanguage",
+			operation: `cross-database reference "a6688_other..sp_rename"`,
 		},
 		{
 			name:      "argument in a variable",
