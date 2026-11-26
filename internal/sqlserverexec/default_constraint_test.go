@@ -14,6 +14,14 @@ const dropUsersStatus = "EXEC sp_executesql N'DECLARE @drop nvarchar(max) = (SEL
 	" FROM sys.default_constraints AS dc WHERE dc.parent_object_id = OBJECT_ID(N''[dbo].[users]'')" +
 	" AND dc.parent_column_id = COLUMNPROPERTY(dc.parent_object_id, N''status'', ''ColumnId'')); EXEC (@drop);';"
 
+// doubleQuoted is statement, an EXEC sp_executesql of one N'...' literal, with
+// the literal written in double quotes: the same text, read as a string only
+// under SET QUOTED_IDENTIFIER OFF.
+func doubleQuoted(statement string) string {
+	batch := strings.TrimSuffix(strings.TrimPrefix(statement, "EXEC sp_executesql N'"), "';")
+	return `EXEC sp_executesql N"` + strings.ReplaceAll(batch, "''", "'") + `";`
+}
+
 func TestDefaultConstraintBatch(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -106,6 +114,8 @@ func TestReadDefaultDrop_FailurePath(t *testing.T) {
 		{name: "a statement after it", statement: dropUsersStatus + " DROP TABLE [dbo].[orders];"},
 		{name: "a plain literal", statement: strings.Replace(dropUsersStatus, "sp_executesql N'", "sp_executesql '", 1)},
 		{name: "a lowercase n", statement: strings.Replace(dropUsersStatus, "sp_executesql N'", "sp_executesql n'", 1)},
+		{name: "a double-quoted literal", statement: doubleQuoted(dropUsersStatus)},
+		{name: "another procedure", statement: strings.Replace(dropUsersStatus, "sp_executesql", "xp_cmdshell", 1)},
 		{name: "spacing inside the batch", statement: strings.Replace(dropUsersStatus, "EXEC (@drop);", "EXEC  (@drop);", 1)},
 		{name: "EXECUTE", statement: strings.Replace(dropUsersStatus, "EXEC sp_executesql", "EXECUTE sp_executesql", 1)},
 		{name: "no EXEC", statement: strings.TrimPrefix(dropUsersStatus, "EXEC ")},

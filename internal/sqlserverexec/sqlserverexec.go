@@ -129,11 +129,13 @@ func sameStatement(stmt, rendered string) bool {
 }
 
 // unicodeLiteralAt reads the N'...' literal at index of tokens, and the index
-// after it.
+// after it. The lexer reads a double-quoted text as a string too, which SQL
+// Server reads as a name unless QUOTED_IDENTIFIER is off, so the quote is
+// held to the one UnicodeLiteral writes.
 func unicodeLiteralAt(tokens []lexer.Token, index int) (string, int, bool) {
 	if index+1 >= len(tokens) ||
 		tokens[index].Type != lexer.TokenIdentifier || tokens[index].Value != "N" ||
-		tokens[index+1].Type != lexer.TokenString {
+		!strings.HasPrefix(tokens[index+1].Value, "'") {
 		return "", index, false
 	}
 	value, ok := lexer.StringValue(tokens[index+1].Value, lexerOptions())

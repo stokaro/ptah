@@ -2,8 +2,6 @@ package sqlserverexec
 
 import (
 	"strings"
-
-	"ptah.run/internal/lexer"
 )
 
 // RenameType is what sp_rename renames, as its @objtype argument names it.
@@ -56,12 +54,9 @@ func (r Rename) Statement() string {
 // write.
 func ReadRename(stmt string) (Rename, bool) {
 	read := tokens(stmt)
-	if len(read) < 2 || read[0].Value != "EXEC" || read[0].Type != lexer.TokenIdentifier ||
-		read[1].Value != "sp_rename" || read[1].Type != lexer.TokenIdentifier {
-		return Rename{}, false
-	}
-	// Each argument is a literal and the token after it, which the
-	// comparison with the rendering below holds to a comma.
+	// The arguments follow EXEC sp_rename. Each is a literal and the token
+	// after it, and the comparison with the rendering below holds those two
+	// tokens to EXEC sp_rename and the token after each literal to a comma.
 	var arguments []string
 	for index := 2; index < len(read); {
 		value, next, ok := unicodeLiteralAt(read, index)
