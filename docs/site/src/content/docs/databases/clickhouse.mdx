@@ -1774,6 +1774,13 @@ Ptah names `ENGINE = MergeTree` in both revision layouts, which is what a server
 whose default is already `MergeTree` was producing, so an existing deployment
 sees the table it had.
 
+An existing operation log is upgraded in place when a migration writes to it.
+Ptah adds the `run_reference`, `actor_origin`, and `repeatable` columns as
+`Nullable(String)`. This form works in ClickHouse 24.10's `ALTER TABLE` grammar
+as well as on current servers; `VARCHAR(...) NULL`, although accepted when
+creating a table, is rejected when adding a column on 24.10. Existing log rows
+remain present, with `NULL` in the added columns.
+
 **A replicated deployment has to say so.** With the default, the migration
 history is a node-local `MergeTree` on whichever node ran the migration, and
 every replica then reports itself consistent. Name the engine instead:

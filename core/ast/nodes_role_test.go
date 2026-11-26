@@ -168,6 +168,7 @@ func TestGrantPrivilegeNode(t *testing.T) {
 		c := qt.New(t)
 		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"}).
 			SetWithOption(true).
+			SetGrantedBy(" grantor ").
 			SetComment("Grant read access")
 
 		c.Assert(grant.Role, qt.Equals, "app_role")
@@ -175,6 +176,7 @@ func TestGrantPrivilegeNode(t *testing.T) {
 		c.Assert(grant.ObjectName, qt.Equals, "users")
 		c.Assert(grant.Privileges, qt.DeepEquals, []string{"SELECT"})
 		c.Assert(grant.WithOption, qt.IsTrue)
+		c.Assert(grant.GrantedBy, qt.Equals, " grantor ")
 		c.Assert(grant.Comment, qt.Equals, "Grant read access")
 	})
 
@@ -206,6 +208,7 @@ func TestRevokePrivilegeNode(t *testing.T) {
 		c := qt.New(t)
 		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"}).
 			SetGrantOptionFor(true).
+			SetGrantedBy(" grantor ").
 			SetComment("Remove schema access")
 
 		c.Assert(revoke.Role, qt.Equals, "app_role")
@@ -213,6 +216,7 @@ func TestRevokePrivilegeNode(t *testing.T) {
 		c.Assert(revoke.ObjectName, qt.Equals, "public")
 		c.Assert(revoke.Privileges, qt.DeepEquals, []string{"USAGE"})
 		c.Assert(revoke.GrantOptionFor, qt.IsTrue)
+		c.Assert(revoke.GrantedBy, qt.Equals, " grantor ")
 		c.Assert(revoke.Comment, qt.Equals, "Remove schema access")
 	})
 

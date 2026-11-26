@@ -441,10 +441,9 @@ with it to save a plan that rounds the values.
 
 `ptah migrations plan` and `ptah migrations generate` read the rows of the database
 they compare with in the same way, refuse in the same words, and take the same flag.
-A migration file runs later, often on another database, so the up file
-`ptah migrations generate` writes carries a check of kind `rounded-values` for each
-such column, which `ptah migrations up` and `ptah-compat migrate apply` evaluate on the
-database the file runs on; see
+A migration file runs later, often on another database, so each generated direction
+whose conversion keeps fewer digits carries a check of kind `rounded-values`.
+The apply or rollback evaluates it on the database the file runs on; see
 [a check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
 
 `ptah schema apply` shows this rating beside its confirmation prompt. With

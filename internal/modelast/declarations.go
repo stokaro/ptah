@@ -44,6 +44,10 @@ type Lowering struct {
 	// every routine by its signature alone, as every target but the
 	// PostgreSQL family does.
 	ResolvesBodyAtCreate deporder.BodyResolution
+	// GrantOptionRevokesFirst places an explicit grant-option revoke before
+	// its grant. SQL Server removes an ordinary grant when the option revoke
+	// runs on it, so the grant must restore the declared base permission.
+	GrantOptionRevokesFirst bool
 }
 
 // grantName binds GrantPath to the lowering's database path, and is nil where
@@ -74,7 +78,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 		return err
 	}
 	if len(objects) == 0 {
-		return walkCommonDatabase(database, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, visit, nil)
+		return walkCommonDatabase(database, target, lowering, visit, nil)
 	}
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
@@ -165,7 +169,7 @@ type commonSequence struct {
 // types the data types the declaration defines.
 func captureCommonSequence(tables schemamodel.Database, target string, lowering Lowering, objects []schemaext.Object, types []schemaext.DefinedType) (commonSequence, error) {
 	var sequence commonSequence
-	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
+	if err := walkCommonDatabase(tables, target, lowering, func(node ast.Node) error {
 		sequence.nodes = append(sequence.nodes, node)
 		return lowering.Context.Err()
 	}, func(start bool) {

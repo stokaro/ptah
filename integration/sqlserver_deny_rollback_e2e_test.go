@@ -97,6 +97,39 @@ func TestMigrationsDownSQLServerGivesBackTheReplacedRowE2E(t *testing.T) {
 		afterUp  []string
 	}{
 		{
+			name:     "an added object grant option",
+			held:     []string{"GRANT SELECT ON dbo.t TO rb_reader"},
+			declared: "GRANT SELECT ON dbo.t TO rb_reader WITH GRANT OPTION;\n",
+			before:   []string{"G SELECT dbo.t - dbo"},
+			afterUp:  []string{"W SELECT dbo.t - dbo"},
+		},
+		{
+			name:     "an added column grant option",
+			held:     []string{"GRANT SELECT (a) ON dbo.t TO rb_reader"},
+			declared: "GRANT SELECT (a) ON dbo.t TO rb_reader WITH GRANT OPTION;\n",
+			before:   []string{"G SELECT dbo.t a dbo"},
+			afterUp:  []string{"W SELECT dbo.t a dbo"},
+		},
+		{
+			name:     "an added schema grant option",
+			held:     []string{"GRANT SELECT ON SCHEMA::dbo TO rb_reader"},
+			declared: "GRANT SELECT ON SCHEMA::dbo TO rb_reader WITH GRANT OPTION;\n",
+			before:   []string{"G SELECT SCHEMA::dbo - dbo"},
+			afterUp:  []string{"W SELECT SCHEMA::dbo - dbo"},
+		},
+		{
+			name: "an added option beside another grantor's plain row",
+			held: []string{
+				"CREATE USER rb_granter WITHOUT LOGIN",
+				"GRANT SELECT ON dbo.t TO rb_granter WITH GRANT OPTION",
+				"GRANT SELECT ON dbo.t TO rb_reader",
+				"GRANT SELECT ON dbo.t TO rb_reader AS rb_granter",
+			},
+			declared: "GRANT SELECT ON dbo.t TO rb_reader WITH GRANT OPTION;\n",
+			before:   []string{"G SELECT dbo.t - dbo", "G SELECT dbo.t - rb_granter"},
+			afterUp:  []string{"G SELECT dbo.t - rb_granter", "W SELECT dbo.t - dbo"},
+		},
+		{
 			name:     "a grant a deny replaces",
 			held:     []string{"GRANT SELECT ON dbo.t TO rb_reader"},
 			declared: "DENY SELECT ON dbo.t TO rb_reader;\n",

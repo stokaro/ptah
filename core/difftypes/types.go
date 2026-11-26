@@ -2049,7 +2049,8 @@ type Rounding struct {
 	// Temporal reports a temporal type. False reports a decimal, under a
 	// decimal or an integer.
 	Temporal bool `json:"temporal,omitempty"`
-	// HeldType is the type the database holds, as its catalog spells it.
+	// HeldType is the type held before this conversion: the catalog spelling
+	// for a forward change, or the forward plan's type for its rollback.
 	HeldType string `json:"held_type"`
 	// DeclaredType is the type the plan converts the column to, as the plan's
 	// statement spells it.

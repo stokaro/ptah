@@ -2625,13 +2625,19 @@ Where `u48` holds the option, the plan is
 `ALL` grants, `MAINTAIN` included on PostgreSQL 17 and later. Measured on
 PostgreSQL 19.
 
+`ptah schema render` writes both the grant and its explicit option revoke.
+Applying that SQL to an existing grant takes its option too. Whole-table
+grants and option revokes precede column grants, so a declared column option
+survives the revoke on its table.
+
 Only a SQL schema file can say this. An HCL `permission` block and a Go
 `//ptah:schema:grant` have no spelling for it, so `ptah schema push`, which
 publishes the schema as HCL, refuses a schema that holds it.
 
 Ptah revokes the grant option without `CASCADE`. When the role has already
 granted the privilege to another role, the server refuses the revoke with
-SQLSTATE 2BP01 and the migration stops; revoke the dependent grant first.
+SQLSTATE 2BP01 and the migration stops. The error includes the remedy
+`revoke the dependent grants first, then retry the grant-option revoke`.
 Measured on PostgreSQL 18.
 
 A SQL schema file is read as a script. `GRANT` and `REVOKE` compose in

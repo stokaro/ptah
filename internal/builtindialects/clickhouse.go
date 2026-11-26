@@ -298,7 +298,15 @@ func clickHouseRevisionTable() descriptor.RevisionTable {
 		EngineClause:   " ENGINE = MergeTree",
 		// ALTER TABLE ... ADD without COLUMN is a syntax error here.
 		AddColumn: "ADD COLUMN",
-		FirstRow:  "limit",
+		// ClickHouse 24.10 accepts trailing NULL in CREATE TABLE but rejects
+		// it in ADD COLUMN. These types preserve the shared log's nullability
+		// when an older layout is upgraded in place (stokaro/ptah#6699).
+		AddedColumns: map[string]string{
+			"run_reference": "Nullable(String)",
+			"actor_origin":  "Nullable(String)",
+			"repeatable":    "Nullable(String)",
+		},
+		FirstRow: "limit",
 		Update: `ALTER TABLE {table}
 UPDATE {assignments}
 WHERE version = ?

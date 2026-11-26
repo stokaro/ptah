@@ -2896,6 +2896,15 @@ it, since the `type` entry of `Changes` may hold a folded name with the size gon
 size or a precision on one side only, or that names `real` or `float`, each of which is
 four bytes on one engine and eight on another.
 
+`ColumnDiff.Rounding` describes a forward conversion that keeps fewer digits
+after the point. `ReverseRounding` records the reverse conversion independently;
+a widening can have only `ReverseRounding`, since new values can need more
+digits when it is rolled back. Each contains the engine's type spellings and
+whether the conversion is temporal. A nil pointer means that direction has no
+recognized rounding conversion. The bidirectional generator swaps these facts
+when reversing the diff and writes each direction's value checks into its own
+migration file.
+
 A saved schema plan uses `OwnerVerdicts`, `ColumnVerdicts` and `Fold`, and the column
 verdict marks no statement `owned`. The JSON plan marks each
 statement an owner operation rendered with `owned` and records `access`,
@@ -3530,6 +3539,18 @@ placeholders. `RegisterDialect` adds an engine Ptah does not describe, from a
 `Spelling` with the descriptor's fields, such as the query dialect an
 executable provider declares; the registration reaches the query builder
 alone.
+
+`core/ast.GrantPrivilegeNode.GrantedBy`, `RevokePrivilegeNode.GrantedBy`, and
+their `SetGrantedBy` methods select the catalog grantor whose permission row a
+SQL Server grant changes or revoke removes. The name is decoded and preserved
+verbatim. SQL Server writes `AS [grantor]` after `WITH GRANT OPTION` or
+`CASCADE` when present; an empty name leaves out `AS`. Other built-in dialects
+leave this SQL Server-specific field out. A plan built from a live SQL Server
+read names every grantor holding a permission or DENY the comparison removes.
+A column DENY under a kept table grant from the same grantor is cleared with
+`GRANT ... AS`, avoiding the column REVOKE row that would still withhold it.
+Generated inverse statements without a captured grantor retain the default
+grantor of the statement being reversed.
 
 `core/astbuilder` builds `core/ast` nodes by method chaining instead of by
 nested struct literals. `NewTable` and `NewIndex` return one statement node;
@@ -5042,6 +5063,11 @@ boundaries. Baseline verification can additionally report `target-introspect`,
 target `dbschema.DatabaseConnection`. It checks the target and shadow's live
 dialects and selected database realms before resetting the shadow, rather than
 trusting a caller-supplied dialect or URL-derived database name.
+
+`RollbackVerifyOptions.ValueRounding` applies the target rollback's rounding
+policy to the shadow replay and rollback. Its zero value evaluates the
+`rounded-values` checks. Setting `Allowed` skips those checks alone and leaves
+ordinary checks enabled; `Request` names the caller's opt-in in a refusal.
 
 Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
 `MigrationRevision`. `SetAtlasRevision` implements Atlas's metadata-only

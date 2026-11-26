@@ -1,8 +1,8 @@
 // Package valuerounding declares --allow-value-rounding, the flag a native
 // command that plans schema changes takes to convert a column to a type that
 // keeps fewer digits after the point without reading the values its table
-// holds, and that `migrations up` takes to apply such a conversion a
-// migration file's check would refuse.
+// holds, and that `migrations up` and `migrations down` take to execute such a
+// conversion a migration file's check would refuse.
 //
 // A decimal given a lower scale, or a temporal column given a lower
 // fractional-second precision, is converted by most servers without an error,
@@ -11,7 +11,7 @@
 // file carries a check that reads them again where it runs; the flag asks, on
 // this one invocation, for the change anyway. It reads no environment
 // variable, so the request cannot be left on in a shell profile or a CI job and
-// reach every later plan or apply.
+// reach every later plan, apply or rollback.
 package valuerounding
 
 import (

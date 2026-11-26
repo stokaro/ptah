@@ -87,6 +87,11 @@ func (p *Planner) writesGrantOption() bool {
 // that the REVOKE then takes. The same holds for a column permission.
 func (p *Planner) revokesGrantOptionFirst() bool { return p.targetDialect() == platform.SQLServer }
 
+// revokesAsGrantor reports whether a revoke must name the principal that gave
+// the permission. SQL Server keeps a separate row for each grantor, and a
+// revoke without AS removes only the executing principal's row.
+func (p *Planner) revokesAsGrantor() bool { return p.targetDialect() == platform.SQLServer }
+
 // refuseUnhostedFeatureChanges refuses the feature changes this planner has
 // no window for: every one on a target without owners, and the settings of a
 // materialized view, which no dialect of this planner has a window for.

@@ -58,8 +58,62 @@ func TestCompareColumn_RoundingAsTheEngineReadsIt(t *testing.T) {
 			c.Assert(column.Rounding, qt.DeepEquals, &difftypes.Rounding{
 				Temporal: test.temporal, HeldType: test.held, DeclaredType: test.wantDeclared,
 			})
+			c.Assert(column.ReverseRounding, qt.IsNil)
 		})
 	}
+}
+
+// A widening can admit values its rollback would round. The reverse metadata
+// must keep the engine's raw type spellings, including implicit precision.
+func TestCompareColumn_ReverseRoundingAsTheEngineReadsIt(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		held     string
+		declared string
+		temporal bool
+	}{
+		{"PostgreSQL numeric scale", "postgres", "numeric(8,1)", "numeric(8,3)", false},
+		{"PostgreSQL explicit to bare timestamp", "postgres", "timestamp(0) without time zone", "timestamp", true},
+		{"PostgreSQL interval precision", "postgres", "interval(0)", "interval(6)", true},
+		{"CockroachDB decimal scale", "cockroachdb", "DECIMAL(8,1)", "decimal(8,3)", false},
+		{"MySQL decimal scale", "mysql", "decimal(8,1)", "decimal(8,3)", false},
+		{"MySQL bare to explicit datetime", "mysql", "datetime", "datetime(6)", true},
+		{"MariaDB time precision", "mariadb", "time(0)", "time(3)", true},
+		{"SQL Server explicit to bare datetime2", "sqlserver", "DATETIME2(0)", "datetime2", true},
+		{"ClickHouse decimal scale", "clickhouse", "Decimal(8, 1)", "Decimal(8, 3)", false},
+		{"Oracle timestamp precision", "oracle", "TIMESTAMP(0)", "TIMESTAMP(6)", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDialect(c.Context(), temporalDeclaration(test.declared),
+				heldTemporalColumn(test.held), test.dialect, builtintest.Runtime())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+			column := diff.TablesModified[0].ColumnsModified[0]
+			c.Assert(column.Rounding, qt.IsNil)
+			c.Assert(column.ReverseRounding, qt.DeepEquals, &difftypes.Rounding{
+				Temporal: test.temporal, HeldType: test.declared, DeclaredType: test.held,
+			})
+		})
+	}
+}
+
+func TestCompareColumn_SameScaleNeedsNoRoundingCheckInEitherDirection(t *testing.T) {
+	c := qt.New(t)
+
+	diff, err := schemadiff.CompareWithDialect(c.Context(), temporalDeclaration("numeric(10,3)"),
+		heldTemporalColumn("numeric(8,3)"), "postgres", builtintest.Runtime())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Rounding, qt.IsNil)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].ReverseRounding, qt.IsNil)
 }
 
 // TestCompareColumn_NoRoundingWhereEveryDigitStays holds the changes that keep every

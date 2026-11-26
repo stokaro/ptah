@@ -84,8 +84,8 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 410 | reaches rendered SQL on at least one target |
-| `comparison` | 40 | read when two schemas are compared, and written into no statement |
+| `ddl` | 411 | reaches rendered SQL on at least one target |
+| `comparison` | 39 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 15 | computed from other fields rather than authored |
 | `source` | 21 | identifies the source text the declaration was read from |
@@ -181,7 +181,7 @@ migration nobody asked for.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `schemamodel.Grant.GrantOptionRevoked` | any | both | a declared REVOKE GRANT OPTION FOR says the schema takes an option, and no catalog records who took one: a privilege held without the option converts the same with the flag and without it, so the comparison it changes is with a database that holds the option, which compare.TestGrants_TakesAGrantOptionTheSchemaRevokes measures |
+| `schemamodel.Grant.GrantOptionRevoked` | `cockroachdb`, `mariadb`, `mysql`, `postgres`, `sqlserver`, `yugabytedb` | both | a declared REVOKE GRANT OPTION FOR says the schema takes an option, and no catalog records who took one: a privilege held without the option converts the same with the flag and without it, so the comparison it changes is with a database that holds the option, which compare.TestGrants_TakesAGrantOptionTheSchemaRevokes measures |
 | `pgtable.PartitionMember.Bound` | `postgres`, `yugabytedb` | both | a changed bound is compared once a connected server normalizes it; without one the owner leaves the change undecided |
 | `pgtable.DesiredPartition.Type` | `clickhouse`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.DesiredPartition.Type` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
@@ -596,7 +596,7 @@ migration nobody asked for.
 | `schemamodel.Grant.Columns` | `ddl` | — |
 | `schemamodel.Grant.Comment` | `ddl` | — |
 | `schemamodel.Grant.Dialects` | `ddl` | — |
-| `schemamodel.Grant.GrantOptionRevoked` | `comparison` | a declared REVOKE GRANT OPTION FOR; it makes a comparison take an option the database holds from a role the schema does not manage, and a render creates the grant without the option, which the GRANT it sits on already says |
+| `schemamodel.Grant.GrantOptionRevoked` | `ddl` | — |
 | `schemamodel.Grant.GrantedBy` | `export` | the grantor a catalog read observed, carried so that a generated document can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the role that IS the current user, so rendering the observed grantor would fail on every apply by another role |
 | `schemamodel.Grant.ObjectKind` | `ddl` | — |
 | `schemamodel.Grant.OnDatabase` | `ddl` | — |

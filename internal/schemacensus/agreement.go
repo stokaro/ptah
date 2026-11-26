@@ -171,6 +171,13 @@ func SurfaceDifferences() []SurfaceDifference {
 			Reason: "the same leading `--` line, above GRANT",
 		},
 		{
+			Field: "schemamodel.Grant.GrantOptionRevoked", RenderOnly: true,
+			Reason: "the render preserves the explicit option revoke when its SQL runs against existing grants. " +
+				"This measurement plans against an empty catalog, which has no grant option to revoke. " +
+				"Comparison reads the field when the catalog holds the option, as " +
+				"compare.TestGrants_TakesAGrantOptionTheSchemaRevokes measures",
+		},
+		{
 			Field: "pgdefaultprivilege.Desired.Comment", RenderOnly: true,
 			Reason: "the same leading `--` line, above ALTER DEFAULT PRIVILEGES",
 		},

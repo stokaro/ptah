@@ -26,14 +26,16 @@ var atlasCheckScan = envbool.New(atlasCheckScanEnvVar, false, envbool.Gated)
 // column to a type that keeps fewer digits after the point without reading the
 // values its table holds. A verb that plans a schema change refuses such a plan
 // while a row holds a value the conversion would round or cut, and `migrate
-// apply` refuses a migration whose check of kind rounded-values finds such a
-// row; with the variable the plan reads no rows and the apply skips those
-// checks. Native commands ask with --allow-value-rounding; this surface takes
-// no flag the pinned binary lacks, so it reads a variable instead.
+// apply` and `migrate down` refuse a migration whose check of kind
+// rounded-values finds such a row; with the variable the plan reads no rows
+// and either migration direction skips those checks. Native commands ask with
+// --allow-value-rounding; this surface takes no flag the pinned binary lacks,
+// so it reads a variable instead.
 const atlasValueRoundingEnvVar = "PTAH_ALLOW_VALUE_ROUNDING"
 
 // atlasValueRounding is the declaration of the variable, made once, on the
-// verbs that own it: those that plan a schema change and `migrate apply`. See
+// verbs that own it: those that plan a schema change, `migrate apply` and
+// `migrate down`. See
 // [ptah.run/internal/envbool]. It is [ptah.run/internal/envbool.Retained]: the
 // pinned community binary plans the conversion, applies a migration file
 // without reading a Ptah check, and the server rounds the values, so the
