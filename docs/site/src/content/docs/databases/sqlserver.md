@@ -459,6 +459,16 @@ statement without the `ADD DEFAULT`. The safety report treats the drop as a
 default change rather than as the removal of a constraint that protects data:
 a removed default is a warning, and a replaced one is safe.
 
+The statement is an `EXEC`, which the
+[dev replay guard](../../concepts/database-urls-and-dev-databases/#statement-forms-that-fail-closed)
+refuses unless the replayed SQL is trusted. It accepts this one without trust,
+in the shape above and with or without the `ADD DEFAULT`, so a history that
+drops or replaces a default replays on a shadow or dev database. A batch that
+differs from that shape in any byte is refused, and so is one whose new
+default is more than one expression. A rename, `EXEC sp_rename`, is accepted
+in the shape Ptah writes it, for a column, an index or an object in the dev
+database.
+
 For temporal columns, the comparison ignores case in `GETDATE()` and
 `SYSDATETIME()`. It treats `CURRENT_TIMESTAMP` as `GETDATE()` because both
 return the same value. `SYSDATETIME()` remains distinct because it returns

@@ -447,7 +447,22 @@ proven to stay inside the disposable realm:
   realm gives it.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
-  `RESTORE`, and server-level maintenance statements.
+  `RESTORE`, and server-level maintenance statements. T-SQL has no DDL to
+  rename an object or to drop a default the server named, so Ptah writes an
+  `EXEC` for each, and the guard accepts those in the shape the SQL Server
+  renderer writes them and in no other. A rename is
+  `EXEC sp_rename N'[dbo].[users].[email]', N'mail', N'COLUMN';`: each part of
+  the name in brackets, every argument an `N'...'` literal, and the type
+  `COLUMN`, `INDEX`, `OBJECT` or none. The others are the batches that
+  [drop or replace a column's default](../../databases/sqlserver/#column-defaults).
+  A rename is refused when its name reaches another database, when it names a
+  temporary table, and when its type is another one, such as `DATABASE`. So is
+  the procedure under another name, such as `sys.sp_rename` or
+  `otherdb..sp_rename`, which runs in that database, and an argument built
+  when the statement runs, such as a variable or a concatenation. A
+  replacement is refused when the new default is more than one expression,
+  and its `ALTER TABLE ... ADD DEFAULT` is judged as the same statement
+  written on its own.
 - ClickHouse remote, distributed, replicated, and unknown table engines,
   external dictionary sources, `FREEZE`/`UNFREEZE`, and `SYSTEM` statements but
   `SYSTEM STOP MERGES` and `SYSTEM START MERGES` of one table in the dev

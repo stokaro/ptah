@@ -1,6 +1,7 @@
 // Package sqlserverreplay is the SQL Server migration replay guard: it
 // refuses a T-SQL statement whose effects cannot be confined to the dev
-// database, such as USE, a remote EXECUTE, a server-scoped object or a
+// database, such as USE, a remote EXECUTE, an EXEC other than the sp_rename
+// calls and default batches the renderer writes, a server-scoped object or a
 // temporary one, and on a run that trusts its SQL lifts the refusals whose only
 // reason is confinement. internal/devclean asks it through the
 // internal/devclean/replay contract.
@@ -24,7 +25,16 @@ type guard struct{}
 // database. No realm widens what it accepts; a run that trusts its SQL lifts
 // the refusals whose only reason is confinement, see
 // [validateSQLServerReplayStatement].
+//
+// The EXEC statements the renderer writes are read first, in the shape it
+// writes them; see [validateSQLServerWrittenStatement]. Read as words, a new
+// name such as N'at' would be the AT of a remote EXECUTE.
 func (guard) Validate(stmt string, scope replay.Scope) error {
+	if !scope.TrustedSQL {
+		if written, err := validateSQLServerWrittenStatement(stmt, scope); written {
+			return err
+		}
+	}
 	return validateSQLServerReplayStatement(replay.Tokens(stmt, lexerOptions()), scope)
 }
 
