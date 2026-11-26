@@ -59,7 +59,7 @@ func viewQueryTokens(body string) ([]lexer.Token, bool) {
 	relations := sqlqualifier.QueryRelations(tokens)
 	for i, token := range tokens {
 		tokens[i].Start, tokens[i].End = 0, 0
-		if !relations[i] || (token.Type != lexer.TokenIdentifier && !(token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`))) {
+		if !relations[i] || (token.Type != lexer.TokenIdentifier && (token.Type != lexer.TokenString || !strings.HasPrefix(token.Value, `"`))) {
 			continue
 		}
 		name, ok := chcolumn.UnquoteIdentifier(token.Value)

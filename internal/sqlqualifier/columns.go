@@ -101,89 +101,118 @@ func isOtherObjectKind(token lexer.Token) bool {
 // queryOnly limits relation positions to SELECT sources. DML words can name
 // columns in a query, and sequence arguments belong to the statement scanner.
 func readTables(tokens []lexer.Token, body int, queryOnly bool) (positions map[int]bool, bound map[string]bool) {
-	positions = make(map[int]bool)
-	bound = make(map[string]bool)
-	// openLists records, per parenthesis depth, whether a table list is open
-	// there, so a derived table inside FROM does not close the list around it.
-	openLists := make(map[int]bool)
-	derived := make(map[int]bool)
-	sources := make(map[int]bool)
-	var queryDepths []int
-	selectDepth := 0
-	depth := 0
-	expectTable := false
-	for i := body; i < len(tokens); i++ {
-		token := tokens[i]
-		switch {
-		case sqlreach.IsKeyword(token, "SELECT"):
-			selectDepth = depth
-			delete(sources, depth)
-			delete(openLists, depth)
-			expectTable = false
-			continue
-		case token.MatchOperatorValue("(") || token.MatchOperatorValue("[") || token.MatchOperatorValue("{"):
-			queryDepths = append(queryDepths, selectDepth)
-			derived[depth+1] = expectTable && token.MatchOperatorValue("(")
-			if !queryOnly && token.MatchOperatorValue("(") && i > 0 && isSequenceFunction(tokens[i-1]) {
-				markPath(tokens, i+1, positions)
-			}
-			depth++
-			expectTable = false
-			continue
-		case token.MatchOperatorValue(")") || token.MatchOperatorValue("]") || token.MatchOperatorValue("}"):
-			if len(queryDepths) != 0 {
-				selectDepth = queryDepths[len(queryDepths)-1]
-				queryDepths = queryDepths[:len(queryDepths)-1]
-			}
-			closedDerived := derived[depth]
-			delete(derived, depth)
-			delete(sources, depth)
-			delete(openLists, depth)
-			depth = max(depth-1, 0)
-			expectTable = false
-			if closedDerived {
-				i = bindAlias(tokens, i+1, bound) - 1
-			}
-			continue
-		case token.Type == lexer.TokenSemicolon:
-			clear(openLists)
-			expectTable = false
-			continue
-		case token.MatchOperatorValue(","):
-			expectTable = openLists[depth]
-			continue
-		case sqlreach.IsKeyword(token, "JOIN") && i > body && sqlreach.IsKeyword(tokens[i-1], "ARRAY"):
-			// ARRAY JOIN expands a column expression, not another relation.
-			delete(openLists, depth)
-			expectTable = false
-			continue
-		case sqlreach.IsKeyword(token, "FROM") && depth != selectDepth:
-			// EXTRACT and TRIM use FROM inside an expression. Their operand
-			// remains a column path, not a source relation.
-			expectTable = false
-			continue
-		case opensTableList(token) && (!queryOnly || opensQueryTableList(token, sources[depth])):
-			sources[depth] = true
-			openLists[depth] = true
-			expectTable = true
-			continue
-		case !queryOnly && sqlreach.IsKeyword(token, "FOR") && i > 0 && sqlreach.IsKeyword(tokens[i-1], "VALUE"):
-			markPath(tokens, i+1, positions)
-			continue
-		case closesTableList(token):
-			delete(openLists, depth)
-			if !sqlreach.IsKeyword(token, "ON") && !sqlreach.IsKeyword(token, "USING") {
-				delete(sources, depth)
-			}
-		}
-		if expectTable && isSchemaNameToken(token) {
-			end := markPath(tokens, i, positions)
-			bound[boundKey(tokens[end-1])] = true
-			i = bindAlias(tokens, end, bound) - 1
-		}
-		expectTable = false
+	scan := tableScan{
+		tokens: tokens, body: body, queryOnly: queryOnly,
+		positions: make(map[int]bool), bound: make(map[string]bool),
+		openLists: make(map[int]bool), derived: make(map[int]bool), sources: make(map[int]bool),
 	}
-	return positions, bound
+	for i := body; i < len(tokens); i++ {
+		if next, consumed := scan.group(i); consumed {
+			i = next
+			continue
+		}
+		if scan.clause(i) {
+			continue
+		}
+		if scan.expectTable && isSchemaNameToken(tokens[i]) {
+			end := markPath(tokens, i, scan.positions)
+			scan.bound[boundKey(tokens[end-1])] = true
+			i = bindAlias(tokens, end, scan.bound) - 1
+		}
+		scan.expectTable = false
+	}
+	return scan.positions, scan.bound
+}
+
+// tableScan holds one pass's source-list and nesting state. openLists is
+// keyed by depth so a derived table does not close the list around it.
+type tableScan struct {
+	tokens      []lexer.Token
+	body        int
+	queryOnly   bool
+	positions   map[int]bool
+	bound       map[string]bool
+	openLists   map[int]bool
+	derived     map[int]bool
+	sources     map[int]bool
+	queryDepths []int
+	selectDepth int
+	depth       int
+	expectTable bool
+}
+
+// group consumes a query or grouping boundary and returns the last consumed
+// token, including a derived table's alias when its closing group binds one.
+func (s *tableScan) group(i int) (int, bool) {
+	token := s.tokens[i]
+	switch {
+	case sqlreach.IsKeyword(token, "SELECT"):
+		s.selectDepth = s.depth
+		delete(s.sources, s.depth)
+		delete(s.openLists, s.depth)
+		s.expectTable = false
+	case token.MatchOperatorValue("(") || token.MatchOperatorValue("[") || token.MatchOperatorValue("{"):
+		s.queryDepths = append(s.queryDepths, s.selectDepth)
+		s.derived[s.depth+1] = s.expectTable && token.MatchOperatorValue("(")
+		if !s.queryOnly && token.MatchOperatorValue("(") && i > 0 && isSequenceFunction(s.tokens[i-1]) {
+			markPath(s.tokens, i+1, s.positions)
+		}
+		s.depth++
+		s.expectTable = false
+	case token.MatchOperatorValue(")") || token.MatchOperatorValue("]") || token.MatchOperatorValue("}"):
+		if len(s.queryDepths) != 0 {
+			s.selectDepth = s.queryDepths[len(s.queryDepths)-1]
+			s.queryDepths = s.queryDepths[:len(s.queryDepths)-1]
+		}
+		closedDerived := s.derived[s.depth]
+		delete(s.derived, s.depth)
+		delete(s.sources, s.depth)
+		delete(s.openLists, s.depth)
+		s.depth = max(s.depth-1, 0)
+		s.expectTable = false
+		if closedDerived {
+			i = bindAlias(s.tokens, i+1, s.bound) - 1
+		}
+	case token.Type == lexer.TokenSemicolon:
+		clear(s.openLists)
+		s.expectTable = false
+	case token.MatchOperatorValue(","):
+		s.expectTable = s.openLists[s.depth]
+	default:
+		return i, false
+	}
+	return i, true
+}
+
+// clause consumes a clause keyword that changes how the next name is read.
+// A closing clause still lets the caller clear an expected table.
+func (s *tableScan) clause(i int) bool {
+	token := s.tokens[i]
+	switch {
+	case sqlreach.IsKeyword(token, "JOIN") && i > s.body && sqlreach.IsKeyword(s.tokens[i-1], "ARRAY"):
+		// ARRAY JOIN expands a column expression, not another relation.
+		delete(s.openLists, s.depth)
+		s.expectTable = false
+	case sqlreach.IsKeyword(token, "FROM") && s.depth != s.selectDepth:
+		// EXTRACT and TRIM use FROM inside an expression. Their operand
+		// remains a column path, not a source relation.
+		s.expectTable = false
+	case opensTableList(token) && (!s.queryOnly || opensQueryTableList(token, s.sources[s.depth])):
+		s.sources[s.depth] = true
+		s.openLists[s.depth] = true
+		s.expectTable = true
+	case !s.queryOnly && sqlreach.IsKeyword(token, "FOR") && i > 0 && sqlreach.IsKeyword(s.tokens[i-1], "VALUE"):
+		markPath(s.tokens, i+1, s.positions)
+	default:
+		if closesTableList(token) {
+			delete(s.openLists, s.depth)
+			if !sqlreach.IsKeyword(token, "ON") && !sqlreach.IsKeyword(token, "USING") {
+				delete(s.sources, s.depth)
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // markPath records every part of the dotted path starting at start as a
