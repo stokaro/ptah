@@ -15,14 +15,15 @@ import (
 
 // answeringPermissions scripts the read of sys.database_permissions and
 // answers every other catalog read with no rows. A row starts with the
-// grantee's principal_id; 0 is the fixed role public.
+// grantee's principal_id; 0 is the fixed role public. It ends with the owner
+// of the securable, which a row that is not about the owner leaves empty.
 func answeringPermissions(rows [][]driver.Value) dbtest.QueryHandler {
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		if !strings.Contains(query, "sys.database_permissions") || !strings.Contains(query, "COL_NAME") {
 			return dbtest.QueryResult{}, nil
 		}
 		return dbtest.QueryResult{
-			Columns: []string{"principal_id", "grantee", "permission_name", "state_desc", "class_desc", "schema_name", "object_name", "column_name", "grantor"},
+			Columns: []string{"principal_id", "grantee", "permission_name", "state_desc", "class_desc", "schema_name", "object_name", "column_name", "grantor", "owner"},
 			Rows:    rows,
 		}, nil
 	}
@@ -36,11 +37,11 @@ func answeringPermissions(rows [][]driver.Value) dbtest.QueryHandler {
 func TestReader_ReadsColumnPermissions_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringPermissions([][]driver.Value{
-		{int64(5), "reader", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
-		{int64(5), "reader", "SELECT", "REVOKE", "OBJECT_OR_COLUMN", "dbo", "t", "secret", "dbo"},
-		{int64(5), "reader", "SELECT", "DENY", "OBJECT_OR_COLUMN", "dbo", "u", "name", "dbo"},
-		{int64(5), "reader", "UPDATE", "GRANT", "OBJECT_OR_COLUMN", "dbo", "u", "id", "dbo"},
-		{int64(5), "reader", "UPDATE", "GRANT_WITH_GRANT_OPTION", "OBJECT_OR_COLUMN", "dbo", "u", "name", "dbo"},
+		{int64(5), "reader", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo", ""},
+		{int64(5), "reader", "SELECT", "REVOKE", "OBJECT_OR_COLUMN", "dbo", "t", "secret", "dbo", ""},
+		{int64(5), "reader", "SELECT", "DENY", "OBJECT_OR_COLUMN", "dbo", "u", "name", "dbo", ""},
+		{int64(5), "reader", "UPDATE", "GRANT", "OBJECT_OR_COLUMN", "dbo", "u", "id", "dbo", ""},
+		{int64(5), "reader", "UPDATE", "GRANT_WITH_GRANT_OPTION", "OBJECT_OR_COLUMN", "dbo", "u", "name", "dbo", ""},
 	}))
 
 	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
@@ -61,9 +62,9 @@ func TestReader_ReadsColumnPermissions_HappyPath(t *testing.T) {
 func TestReader_ReadsEachGrantorOfAPermission_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringPermissions([][]driver.Value{
-		{int64(5), "q2", "SELECT", "GRANT_WITH_GRANT_OPTION", "OBJECT_OR_COLUMN", "dbo", "t48", "", "dbo"},
-		{int64(5), "q2v", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t48", "", "dbo"},
-		{int64(5), "q2v", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t48", "", "q2"},
+		{int64(5), "q2", "SELECT", "GRANT_WITH_GRANT_OPTION", "OBJECT_OR_COLUMN", "dbo", "t48", "", "dbo", ""},
+		{int64(5), "q2v", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t48", "", "dbo", ""},
+		{int64(5), "q2v", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t48", "", "q2", ""},
 	}))
 
 	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
@@ -85,9 +86,9 @@ func TestReader_ReadsEachGrantorOfAPermission_HappyPath(t *testing.T) {
 func TestReader_ReadsTheFixedRolePublicByItsPrincipal_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringPermissions([][]driver.Value{
-		{int64(0), "public", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
-		{int64(7), "Public", "DELETE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
-		{int64(8), "r ", "UPDATE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo "},
+		{int64(0), "public", "SELECT", "GRANT", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo", ""},
+		{int64(7), "Public", "DELETE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo", ""},
+		{int64(8), "r ", "UPDATE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo ", "dbo "},
 	}))
 
 	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
@@ -96,7 +97,7 @@ func TestReader_ReadsTheFixedRolePublicByItsPrincipal_HappyPath(t *testing.T) {
 	c.Assert(live.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", GrantedBy: "dbo"},
 		{Role: "Public", Privilege: "DELETE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo"},
-		{Role: "r", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo"},
+		{Role: "r", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "t", IsPartialRevoke: true, Denied: true, GrantedBy: "dbo", ObjectOwner: "dbo"},
 	})
 }
 
@@ -119,7 +120,7 @@ func TestReader_RefusesAnAmbiguousPrincipal_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := dbtest.Open(t, answeringPermissions([][]driver.Value{
-				{int64(9), test.grantee, "DELETE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo"},
+				{int64(9), test.grantee, "DELETE", "DENY", "OBJECT_OR_COLUMN", "dbo", "t", "", "dbo", ""},
 			}))
 
 			live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
@@ -182,4 +183,77 @@ func TestReader_RefusesAnAmbiguousRole_FailurePath(t *testing.T) {
 			c.Assert(live, qt.IsNil)
 		})
 	}
+}
+
+// TestReader_ReadsTheOwnerOfEachSecurable_HappyPath reads the owner the server
+// names for each row's securable: a procedure given to another principal is
+// owned by it and not by the owner of its schema, and a grant run with CONTROL
+// on it names that owner as its grantor.
+func TestReader_ReadsTheOwnerOfEachSecurable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, answeringPermissions([][]driver.Value{
+		{int64(5), "reader", "EXECUTE", "GRANT", "OBJECT_OR_COLUMN", "dbo", "p", "", "powner", "powner"},
+		{int64(5), "reader", "SELECT", "GRANT", "SCHEMA", "", "app", "", "dbo", "app_owner"},
+	}))
+
+	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(live.Grants, qt.DeepEquals, []catalog.Grant{
+		{Role: "reader", Privilege: "EXECUTE", ObjectType: "TABLE", Schema: "dbo", ObjectName: "p", GrantedBy: "powner", ObjectOwner: "powner"},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "app", GrantedBy: "dbo", ObjectOwner: "app_owner"},
+	})
+}
+
+// answeringUnmodeledPermissions scripts the read of the permissions on a
+// securable class the schema does not model and answers every other catalog
+// read with no rows. A row holds the class, its class_desc, the major_id, the
+// permission, its state, the grantee, the type of a principal the
+// permission is on, the schema of a type or an XML schema collection, and the
+// securable's name.
+func answeringUnmodeledPermissions(rows [][]driver.Value) dbtest.QueryHandler {
+	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		if !strings.Contains(query, "pe.class NOT IN (0, 1, 3)") {
+			return dbtest.QueryResult{}, nil
+		}
+		return dbtest.QueryResult{
+			Columns: []string{"class", "class_desc", "major_id", "permission_name", "state_desc", "grantee", "principal_type", "schema_name", "name"},
+			Rows:    rows,
+		}, nil
+	}
+}
+
+// TestReader_ReportsAPermissionOnAnUnmodeledClass_HappyPath keeps a permission
+// on a role, a user, a type or a certificate out of the grants and reports it
+// as the statement that gives it, by the securable's own name: read with the
+// object or schema name of its major_id, a grant on a role reads as a grant on
+// sysclones. A class the read cannot name is named by its major_id. A
+// principal's trailing spaces, which the server ignores, are left out.
+func TestReader_ReportsAPermissionOnAnUnmodeledClass_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, answeringUnmodeledPermissions([][]driver.Value{
+		{int64(4), "DATABASE_PRINCIPAL", int64(6), "ALTER", "GRANT", "app", "R", "", "auditor"},
+		{int64(4), "DATABASE_PRINCIPAL", int64(9), "ALTER", "GRANT", "app", "A", "", "reporting"},
+		{int64(4), "DATABASE_PRINCIPAL", int64(7), "IMPERSONATE", "GRANT", "app", "S", "", "worker"},
+		{int64(4), "DATABASE_PRINCIPAL", int64(6), "VIEW DEFINITION", "DENY", "app ", "R", "", "auditor "},
+		{int64(6), "TYPE", int64(257), "EXECUTE", "GRANT_WITH_GRANT_OPTION", "app", "", "dbo", "money_t"},
+		{int64(25), "CERTIFICATE", int64(256), "CONTROL", "GRANT", "app", "", "", "signing"},
+		{int64(34), "EXTERNAL_LANGUAGE", int64(65536), "EXECUTE EXTERNAL SCRIPT", "GRANT", "app", "", "", ""},
+	}))
+
+	live, err := mssql.NewSQLServerReader(db.SQL, "").ReadSchema()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(live.Grants, qt.HasLen, 0)
+	reason := "Ptah compares permissions on the database, a schema, an object or a column, " +
+		"and no permission on another securable class, so no plan grants, denies or revokes it"
+	c.Assert(live.UnmodeledObjects, qt.DeepEquals, []catalog.UnmodeledObject{
+		{Kind: "permission", Name: "GRANT ALTER ON ROLE::auditor TO app", Reason: reason},
+		{Kind: "permission", Name: "GRANT ALTER ON APPLICATION ROLE::reporting TO app", Reason: reason},
+		{Kind: "permission", Name: "GRANT IMPERSONATE ON USER::worker TO app", Reason: reason},
+		{Kind: "permission", Name: "DENY VIEW DEFINITION ON ROLE::auditor TO app", Reason: reason},
+		{Kind: "permission", Name: "GRANT EXECUTE ON TYPE::dbo.money_t TO app WITH GRANT OPTION", Reason: reason},
+		{Kind: "permission", Name: "GRANT CONTROL ON CERTIFICATE::signing TO app", Reason: reason},
+		{Kind: "permission", Name: "GRANT EXECUTE EXTERNAL SCRIPT ON EXTERNAL_LANGUAGE with major_id 65536 TO app", Reason: reason},
+	})
 }

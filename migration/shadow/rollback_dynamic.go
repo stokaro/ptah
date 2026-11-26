@@ -79,7 +79,10 @@ type DynamicRollbackOptions struct {
 	// one Exclude also lists is the caller's, and is reported like any other.
 	RefuseUnmatchedExclude bool
 	// Diagnostics receives the warning about an Exclude selector that matched
-	// nothing, when RefuseUnmatchedExclude is off. Nil writes no warning.
+	// nothing, when RefuseUnmatchedExclude is off, and an UNMANAGED line for
+	// each SQL Server DENY the live database holds that the target version
+	// does not declare, which the plan leaves in place, whichever migration or
+	// statement added it. Nil writes neither.
 	Diagnostics io.Writer
 	// Trust is the caller's trust in the SQL the planning replays on the dev
 	// database, and the remedies a refusal ends with; see
@@ -202,7 +205,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	// table the target version declares. The connections are bound to their
 	// sides, since a private in-memory target and dev database may share a
 	// URL.
-	diff, err := atlasschema.Diff(ctx, atlasschema.DiffOptions{
+	diff, structural, err := atlasschema.DiffReportingChanges(ctx, atlasschema.DiffOptions{
 		Runtime:  opts.Runtime,
 		FromURLs: []string{opts.TargetConnection.Info().URL},
 		ToURLs:   []string{devConn.Info().URL},
@@ -225,6 +228,17 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: compare the schemas: %w", err)
+	}
+	// A SQL Server DENY on a role the replay does not manage stays, and the
+	// plan says so. Neither side holds what the DENY took the place of: the
+	// replay does not create the role, and the live database holds the DENY.
+	// So a DENY a migration added on such a role outlives the rollback, and
+	// without the line a plan with no statement reads as a complete one. The
+	// replay does not run the migrations above the target either, and could
+	// not run such a DENY without the role, so the line cannot single out the
+	// ones they added.
+	if structural != nil {
+		atlasschema.ReportRollbackUnmanagedDenies(opts.Diagnostics, structural.UnmanagedDenies)
 	}
 	statements = make([]string, 0, len(diff.Changes))
 	for _, change := range diff.Changes {

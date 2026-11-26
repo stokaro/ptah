@@ -1902,7 +1902,11 @@ type Grant struct {
 	WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
 	GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
 	// ObjectOwner is the owner observed for this grant's target. It is reading
-	// context for deciding which grantor a superuser can revoke.
+	// context: a PostgreSQL read names it to decide which grantor a superuser
+	// can revoke, and a SQL Server read to tell the row a GRANT or a DENY run
+	// with CONTROL takes the place of, which names the owner as its grantor,
+	// from a row another principal gave. It is empty where the read names no
+	// owner.
 	ObjectOwner string `json:"-"`
 
 	// Arguments are a routine target's input argument types as the catalog

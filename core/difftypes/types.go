@@ -1382,6 +1382,26 @@ type SchemaDiff struct {
 	// as a DENY run by hand takes it. Like CurrentGrants it is planning
 	// context and not on the wire.
 	GrantsDeniesTake []GrantRef `json:"-"`
+
+	// GrantsReplaced is the SQL Server grants the database holds that a DENY
+	// in DeniesAdded takes the place of: the grantee's grant of the
+	// permission on the same securable, or on the same column, that the
+	// securable's owner gave, with its grant option. A grant another
+	// principal gave from its own grant option is a row the DENY leaves in
+	// place, and so is not one, and neither is a grant GrantsRemoved revokes. A reversal grants
+	// each again after it takes the DENY away, so a rollback leaves the
+	// grantee holding what it held before the DENY. Like CurrentGrants it is
+	// planning context and not on the wire.
+	GrantsReplaced []GrantRef `json:"-"`
+
+	// DeniesReplaced is the SQL Server DENY rows the database holds that a
+	// statement the plan runs takes the place of: a GRANT in GrantsAdded of
+	// the permission on the same securable, or on the same column, and a
+	// DENY in DeniesAdded on a whole object, which takes the DENY rows of its
+	// permission on the object's columns. Only a row the securable's owner
+	// gave is one, and a DENY DeniesRemoved takes away is not. A reversal denies each again. Like CurrentGrants it is
+	// planning context and not on the wire.
+	DeniesReplaced []GrantRef `json:"-"`
 	// ConnectedRole is the role used to read a live PostgreSQL database. The
 	// planner checks it before revoking grants made by another role. An offline
 	// comparison leaves it empty, and it is not part of a report or saved plan.

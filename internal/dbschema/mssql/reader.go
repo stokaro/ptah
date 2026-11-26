@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -135,11 +136,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.Roles = roles
 
-	grants, err := r.readGrants(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read grants: %w", err)
+	if err := r.readPermissions(ctx, schema); err != nil {
+		return nil, err
 	}
-	schema.Grants = grants
 
 	if err := r.readRoleGraph(ctx, schema); err != nil {
 		return nil, err
@@ -1030,6 +1029,24 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 	return owners, nil
 }
 
+// readPermissions reads the permissions of the database into schema: the
+// ones on a securable the schema models as its grants ([Reader.readGrants]),
+// and the ones on any other securable as objects Ptah does not model
+// ([Reader.readUnmodeledPermissions]).
+func (r *Reader) readPermissions(ctx context.Context, schema *catalog.Database) error {
+	grants, err := r.readGrants(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read grants: %w", err)
+	}
+	schema.Grants = grants
+	permissions, err := r.readUnmodeledPermissions(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read permissions on other securables: %w", err)
+	}
+	schema.UnmodeledObjects = append(schema.UnmodeledObjects, permissions...)
+	return nil
+}
+
 // readGrants reads the permissions this database's roles hold, and the ones a
 // database user or public holds on the database's own objects and schemas.
 //
@@ -1092,6 +1109,27 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // it WITH GRANT OPTION, has two rows, and `REVOKE GRANT OPTION FOR SELECT ...
 // FROM q2 CASCADE` takes the second. The grantor is what lets a plan see which
 // grants such a revoke takes with it.
+//
+// Each row also names the owner of its securable ([catalog.Grant.ObjectOwner]),
+// resolved on the server for that row: the principal an object was given to,
+// or else the owner of its schema, for an object or a column; the owner of
+// the schema for a schema; and dbo for the database. A GRANT or a DENY run by
+// sysadmin, by a member of db_owner or by a principal holding CONTROL names
+// that owner as its grantor, so the owner is what tells the row such a
+// statement takes the place of from one another principal gave. An inventory
+// of owners by kind cannot say it: a procedure or a function given to another
+// principal is owned by that principal and not by the owner of its schema.
+//
+// major_id names the securable in a number space of its class: a schema_id
+// for a row of class SCHEMA, an object_id for an object or a column, and a
+// principal_id, a user_type_id and so on for the other classes. The spaces
+// overlap. Measured on SQL Server 2025, the first schema a new database
+// creates has schema_id 5, OBJECT_NAME(5) is sysrowsets, and OBJECT_NAME of a
+// role's principal_id reads sysclones. So the read names a securable by its
+// class, and reads only the classes the schema models: the database, a
+// schema, and an object or a column. A permission of another class, such as
+// one on a role, a user or a type, is reported apart
+// ([Reader.readUnmodeledPermissions]).
 func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 	query := `
 		WITH permission AS (
@@ -1120,15 +1158,23 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 			)
 		)
 		SELECT grantee.principal_id, grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
-			   COALESCE(s.name, ''), COALESCE(OBJECT_NAME(pe.major_id), SCHEMA_NAME(pe.major_id), ''),
+			   COALESCE(s.name, ''),
+			   CASE pe.class WHEN 1 THEN COALESCE(OBJECT_NAME(pe.major_id), '')
+					WHEN 3 THEN COALESCE(SCHEMA_NAME(pe.major_id), '') ELSE '' END,
 			   CASE WHEN pe.class = 1 AND pe.minor_id <> 0 THEN COALESCE(COL_NAME(pe.major_id, pe.minor_id), '') ELSE '' END,
-			   COALESCE(grantor.name, '')
+			   COALESCE(grantor.name, ''),
+			   COALESCE(owner.name, '')
 		FROM effective AS pe
 		JOIN sys.database_principals AS grantee ON grantee.principal_id = pe.grantee_principal_id
 		LEFT JOIN sys.database_principals AS grantor ON grantor.principal_id = pe.grantor_principal_id
 		LEFT JOIN sys.objects AS o ON o.object_id = pe.major_id AND pe.class = 1
 		LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id
-		WHERE grantee.is_fixed_role = 0 AND (
+		LEFT JOIN sys.schemas AS target_schema ON target_schema.schema_id = pe.major_id AND pe.class = 3
+		LEFT JOIN sys.database_principals AS owner ON owner.principal_id = CASE pe.class
+			WHEN 0 THEN ` + dboPrincipalID + `
+			WHEN 1 THEN COALESCE(o.principal_id, s.principal_id)
+			WHEN 3 THEN target_schema.principal_id END
+		WHERE grantee.is_fixed_role = 0 AND pe.class IN (0, 1, 3) AND (
 			(grantee.type = 'R' AND grantee.principal_id <> 0)
 			OR (pe.class = 1 AND o.is_ms_shipped = 0)
 			OR pe.class = 3
@@ -1146,7 +1192,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		var grantee int64
 		var state, class string
 		if err := rows.Scan(&grantee, &grant.Role, &grant.Privilege, &state, &class,
-			&grant.Schema, &grant.ObjectName, &grant.Column, &grant.GrantedBy); err != nil {
+			&grant.Schema, &grant.ObjectName, &grant.Column, &grant.GrantedBy, &grant.ObjectOwner); err != nil {
 			return nil, err
 		}
 		if grantee == publicPrincipalID {
@@ -1156,6 +1202,7 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		}
 		grant.Role = strings.TrimRight(grant.Role, " ")
 		grant.GrantedBy = strings.TrimRight(grant.GrantedBy, " ")
+		grant.ObjectOwner = strings.TrimRight(grant.ObjectOwner, " ")
 		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))
 		grant.ObjectType = grantObjectTypeFor(class)
 		grant.WithOption = state == "GRANT_WITH_GRANT_OPTION"
@@ -1172,6 +1219,10 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 // publicPrincipalID is the principal_id of the fixed role public in every
 // database.
 const publicPrincipalID = 0
+
+// dboPrincipalID is the principal_id of dbo, the user the owner of the
+// database maps to, in every database, as a query spells it.
+const dboPrincipalID = "1"
 
 // publicGrantee is how a read names the fixed role public: as every reader
 // names the keyword PUBLIC, and as a schema file records it.
@@ -1203,11 +1254,7 @@ func refuseAmbiguousPrincipal(name string) error {
 // as a table and a view, and it becomes TABLE: `GRANT EXECUTE ON dbo.p` names
 // the object with no kind, so the declaration carries it OnTable. The
 // comparison takes what ALL grants on it from the routine the catalog reads.
-//
-// A class this reader does not model becomes the class name itself rather than
-// a guess: naming an unmodeled target is what lets a comparison decline it,
-// where defaulting to TABLE would compare a database-level permission against a
-// table grant.
+// DATABASE keeps its name. [Reader.readGrants] reads no other class.
 func grantObjectTypeFor(class string) string {
 	switch class {
 	case "OBJECT_OR_COLUMN":
@@ -1218,6 +1265,138 @@ func grantObjectTypeFor(class string) string {
 		return strings.ToUpper(strings.TrimSpace(class))
 	}
 }
+
+// unmodeledPermissionReason is why a read leaves a permission of a class the
+// schema does not model out of the grants it compares.
+const unmodeledPermissionReason = "Ptah compares permissions on the database, a schema, an object or a column, " +
+	"and no permission on another securable class, so no plan grants, denies or revokes it"
+
+// readUnmodeledPermissions reports the permissions this database's roles hold
+// on a securable of a class [Reader.readGrants] does not read, such as a
+// role, a user, a type or a certificate. The schema cannot declare one, so
+// the read keeps it out of the grants a comparison reads, where its major_id
+// would name a securable of another class, and records it as an object
+// Ptah does not model, named the way a statement names it: `GRANT ALTER ON
+// ROLE::auditor TO app`. A class this reader cannot name is named by its
+// class and the major_id the catalog holds, rather than by a name the
+// catalog does not give it.
+//
+// The grantees are the ones readGrants reads on every class: the database's
+// own roles, and not a user, public or a fixed role.
+func (r *Reader) readUnmodeledPermissions(ctx context.Context) ([]catalog.UnmodeledObject, error) {
+	query := `
+		SELECT pe.class, pe.class_desc, pe.major_id, pe.permission_name, pe.state_desc, grantee.name,
+			   COALESCE(target.type, ''),
+			   COALESCE(CASE pe.class
+				   WHEN 6 THEN SCHEMA_NAME(t.schema_id)
+				   WHEN 10 THEN SCHEMA_NAME(x.schema_id) END COLLATE DATABASE_DEFAULT, ''),
+			   COALESCE(CASE pe.class
+				   WHEN 4 THEN target.name COLLATE DATABASE_DEFAULT
+				   WHEN 5 THEN (SELECT a.name FROM sys.assemblies AS a WHERE a.assembly_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 6 THEN t.name COLLATE DATABASE_DEFAULT
+				   WHEN 10 THEN x.name COLLATE DATABASE_DEFAULT
+				   WHEN 15 THEN (SELECT m.name FROM sys.service_message_types AS m WHERE m.message_type_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 16 THEN (SELECT c.name FROM sys.service_contracts AS c WHERE c.service_contract_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 17 THEN (SELECT v.name FROM sys.services AS v WHERE v.service_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 18 THEN (SELECT b.name FROM sys.remote_service_bindings AS b WHERE b.remote_service_binding_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 19 THEN (SELECT ro.name FROM sys.routes AS ro WHERE ro.route_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 23 THEN (SELECT f.name FROM sys.fulltext_catalogs AS f WHERE f.fulltext_catalog_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 24 THEN (SELECT k.name FROM sys.symmetric_keys AS k WHERE k.symmetric_key_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 25 THEN (SELECT ce.name FROM sys.certificates AS ce WHERE ce.certificate_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 26 THEN (SELECT k.name FROM sys.asymmetric_keys AS k WHERE k.asymmetric_key_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 29 THEN (SELECT l.name FROM sys.fulltext_stoplists AS l WHERE l.stoplist_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 31 THEN (SELECT l.name FROM sys.registered_search_property_lists AS l WHERE l.property_list_id = pe.major_id) COLLATE DATABASE_DEFAULT
+				   WHEN 32 THEN (SELECT d.name FROM sys.database_scoped_credentials AS d WHERE d.credential_id = pe.major_id) COLLATE DATABASE_DEFAULT
+			   END, '')
+		FROM sys.database_permissions AS pe
+		JOIN sys.database_principals AS grantee ON grantee.principal_id = pe.grantee_principal_id
+		LEFT JOIN sys.database_principals AS target ON target.principal_id = pe.major_id AND pe.class = 4
+		LEFT JOIN sys.types AS t ON t.user_type_id = pe.major_id AND pe.class = 6
+		LEFT JOIN sys.xml_schema_collections AS x ON x.xml_collection_id = pe.major_id AND pe.class = 10
+		WHERE grantee.is_fixed_role = 0 AND grantee.type = 'R' AND grantee.principal_id <> 0
+			AND pe.class NOT IN (0, 1, 3)
+		ORDER BY grantee.name, pe.permission_name, pe.class, pe.major_id`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var objects []catalog.UnmodeledObject
+	for rows.Next() {
+		var permission unmodeledPermission
+		if err := rows.Scan(&permission.class, &permission.classDesc, &permission.majorID, &permission.privilege,
+			&permission.state, &permission.grantee, &permission.principalType, &permission.schema, &permission.name); err != nil {
+			return nil, err
+		}
+		// The server ignores trailing spaces in a principal's name, as the
+		// other reads of the principals here do.
+		permission.grantee = strings.TrimRight(permission.grantee, " ")
+		if permission.class == databasePrincipalClass {
+			permission.name = strings.TrimRight(permission.name, " ")
+		}
+		objects = append(objects, catalog.UnmodeledObject{
+			Kind: "permission", Name: permission.statement(), Reason: unmodeledPermissionReason,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return objects, nil
+}
+
+// unmodeledPermission is one row [Reader.readUnmodeledPermissions] reads.
+type unmodeledPermission struct {
+	class                                int
+	majorID                              int64
+	classDesc, privilege, state          string
+	grantee, principalType, schema, name string
+}
+
+// securableClasses spells each class [Reader.readUnmodeledPermissions] names
+// the way a GRANT names its securable. A database principal is spelled by
+// its type ([unmodeledPermission.securable]).
+var securableClasses = map[int]string{
+	5: "ASSEMBLY", 6: "TYPE", 10: "XML SCHEMA COLLECTION", 15: "MESSAGE TYPE", 16: "CONTRACT",
+	17: "SERVICE", 18: "REMOTE SERVICE BINDING", 19: "ROUTE", 23: "FULLTEXT CATALOG",
+	24: "SYMMETRIC KEY", 25: "CERTIFICATE", 26: "ASYMMETRIC KEY", 29: "FULLTEXT STOPLIST",
+	31: "SEARCH PROPERTY LIST", 32: "DATABASE SCOPED CREDENTIAL",
+}
+
+// statement names the permission as the statement that gives it does, such
+// as `DENY VIEW DEFINITION ON ROLE::auditor TO app`.
+func (p unmodeledPermission) statement() string {
+	verb, option := strings.TrimSpace(p.state), ""
+	if verb == "GRANT_WITH_GRANT_OPTION" {
+		verb, option = "GRANT", " WITH GRANT OPTION"
+	}
+	return fmt.Sprintf("%s %s ON %s TO %s%s", verb, strings.TrimSpace(p.privilege), p.securable(), p.grantee, option)
+}
+
+// securable names the securable as a GRANT does, or by its class and
+// major_id where the read has no name for it.
+func (p unmodeledPermission) securable() string {
+	name := p.name
+	if p.schema != "" {
+		name = p.schema + "." + name
+	}
+	class, spelled := securableClasses[p.class]
+	if p.class == databasePrincipalClass {
+		class, spelled = cmp.Or(principalSecurables[strings.TrimSpace(p.principalType)], "USER"), true
+	}
+	if !spelled || p.name == "" {
+		return fmt.Sprintf("%s with major_id %d", strings.TrimSpace(p.classDesc), p.majorID)
+	}
+	return class + "::" + name
+}
+
+// databasePrincipalClass is the class of a permission on a database
+// principal: a user, a role or an application role.
+const databasePrincipalClass = 4
+
+// principalSecurables spells a database principal's securable class by its
+// type in sys.database_principals; every other type is a user.
+var principalSecurables = map[string]string{"R": "ROLE", "A": "APPLICATION ROLE"}
 
 func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {
 	// is_instead_of_trigger and sys.trigger_events are the two facts a trigger

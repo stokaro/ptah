@@ -1789,15 +1789,41 @@ func ReportUnmanagedDenies(diagnostics io.Writer, denies []difftypes.GrantRef) {
 		return
 	}
 	for _, denied := range denies {
-		target := denied.ObjectType + " " + denied.ObjectName
-		if denied.Column != "" {
-			target += " (" + denied.Column + ")"
-		}
 		_, _ = fmt.Fprintf(diagnostics,
 			"UNMANAGED: the database denies %s on %s to %q, and the schema does not declare the DENY, "+
 				"so the plan does not revoke it; declare it to manage it, or revoke it by hand\n",
-			denied.Privilege, target, denied.Role)
+			denied.Privilege, deniedTarget(denied), denied.Role)
 	}
+}
+
+// ReportRollbackUnmanagedDenies writes one line for each SQL Server DENY the
+// database holds that a rollback derived from the schema difference leaves in
+// place: one the target version does not declare. The replay that builds the
+// target version cannot tell which of them a rolled-back migration added, so
+// the lines name every such DENY, whoever added it, and say so. The rollback
+// cannot give back a grant such a DENY took the place of either, since neither
+// side of the comparison holds it.
+func ReportRollbackUnmanagedDenies(diagnostics io.Writer, denies []difftypes.GrantRef) {
+	if diagnostics == nil {
+		return
+	}
+	for _, denied := range denies {
+		_, _ = fmt.Fprintf(diagnostics,
+			"UNMANAGED: the database denies %s on %s to %q, and the target version does not declare the DENY, "+
+				"so the derived rollback leaves it and cannot give back a grant it replaced; this lists every such DENY, "+
+				"not only the ones the rolled-back migrations added, so revoke it by hand if one of them added it\n",
+			denied.Privilege, deniedTarget(denied), denied.Role)
+	}
+}
+
+// deniedTarget names the securable of a DENY in a diagnostic line: its object
+// type and name, and the column in parentheses for a DENY on one.
+func deniedTarget(denied difftypes.GrantRef) string {
+	target := denied.ObjectType + " " + denied.ObjectName
+	if denied.Column != "" {
+		target += " (" + denied.Column + ")"
+	}
+	return target
 }
 
 func reportSkipped(diagnostics io.Writer, skipped []schemaext.SkippedObject) {

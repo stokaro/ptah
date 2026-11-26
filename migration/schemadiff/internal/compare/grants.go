@@ -239,6 +239,7 @@ func GrantsWithOptions(
 		diff, semantics)
 	read.planDenies(desired, diff)
 	read.grantsDeniesTake(generatedGrantMap, databaseGrantMapForAdditions, diff)
+	read.replacedRows(diff)
 
 	sortGrantRefs(diff.GrantsAdded)
 	sortGrantRefs(diff.GrantsRemoved)
@@ -247,6 +248,8 @@ func GrantsWithOptions(
 	sortGrantRefs(diff.DeniesAdded)
 	sortGrantRefs(diff.DeniesRemoved)
 	sortGrantRefs(diff.GrantsDeniesTake)
+	sortGrantRefs(diff.GrantsReplaced)
+	sortGrantRefs(diff.DeniesReplaced)
 	sortGrantRefs(diff.UnmanagedDenies)
 }
 
@@ -340,6 +343,125 @@ func (read grantRead) grantsDeniesTake(declared, held map[grantIdentity]difftype
 			diff.GrantsDeniesTake = append(diff.GrantsDeniesTake, ref)
 		}
 	}
+}
+
+// replacedRows fills [difftypes.SchemaDiff.GrantsReplaced] and
+// [difftypes.SchemaDiff.DeniesReplaced]: the rows of the database that a
+// statement the diff plans takes the place of, so that a reversal can give
+// them back. Only a SQL Server read holds a DENY row, and only a SQL Server
+// schema declares one, so on every other target both stay empty.
+//
+// The server keeps one row for a permission of one grantee on one securable
+// from one grantor. Measured on SQL Server 2025:
+//
+//   - `DENY SELECT ON t TO r` takes the place of `GRANT SELECT ON t TO r`,
+//     with or without the grant option, and `GRANT SELECT ON t TO r` takes the
+//     place of the DENY; the same holds on a column and on a schema;
+//   - `DENY SELECT ON t` also takes the DENY rows of SELECT on t's columns;
+//   - a statement run by sysadmin, by a member of db_owner, or by a principal
+//     holding CONTROL on the securable or on its schema records the owner of
+//     the securable as its grantor: dbo for a table in dbo, the owner of the
+//     schema for a table in a schema another principal owns, and the owner of
+//     a procedure, a function or a table given to another principal;
+//   - a grant another principal gave, from its own grant option, is a row of
+//     its own, and the DENY leaves it in place.
+//
+// So a row the securable's owner gave is the one a statement of the plan
+// takes the place of. The read names the owner of each row's securable
+// ([catalog.Grant.ObjectOwner]). The reversal runs its GRANT and DENY as a
+// principal that can run a DENY, which needs CONTROL, so the server records
+// the owner as the grantor again. A row another grantor gave stays through
+// both, and the reversal leaves it alone. That includes a grant the connected
+// principal gave from its own grant option: a DENY it runs with CONTROL does
+// not take that row.
+//
+// A row the diff takes away itself is left out: the reversal gives it back
+// from GrantsRemoved or DeniesRemoved. So are the grants a DENY on a whole
+// object takes on the object's columns: a reversal that takes the DENY away
+// grants the column grants of the read again on its own.
+func (read grantRead) replacedRows(diff *difftypes.SchemaDiff) {
+	statements := read.replacingStatements(diff)
+	if len(statements.denied) == 0 && len(statements.granted) == 0 {
+		return
+	}
+	for _, grant := range read.database.Grants {
+		// The names compare as the read spells them, as every principal name
+		// does here: a padded grantor is another principal.
+		if !replaceableRow(grant) || grant.GrantedBy == "" || grant.GrantedBy != grant.ObjectOwner {
+			continue
+		}
+		ref := grantRefFromDatabase(grant)
+		key := read.sequences.databaseKey(newGrantIdentity(ref, read.semantics))
+		switch {
+		case grant.Denied && statements.replaceDeny(key):
+			diff.DeniesReplaced = append(diff.DeniesReplaced, ref)
+		case !grant.Denied && statements.replaceGrant(key):
+			diff.GrantsReplaced = append(diff.GrantsReplaced, ref)
+		}
+	}
+}
+
+// replaceableRow reports whether grant is a row a statement can take the
+// place of: a grant or a DENY of a named permission that a statement wrote,
+// rather than a partial revoke, an implicit privilege or what an owner holds
+// by default.
+func replaceableRow(grant catalog.Grant) bool {
+	return grant.Privilege != "" && !grant.Implicit && (!grant.IsPartialRevoke || grant.Denied) && !grant.OwnerDefault()
+}
+
+// replacingStatements is what a diff writes and takes away, keyed as the
+// database's rows are: the DENY and the grants it adds, with a grant of ALL
+// standing for each privilege it names, and the grants and DENY rows it
+// removes.
+type replacingStatements struct {
+	denied, granted, revoked, undenied map[grantIdentity]bool
+}
+
+// replacingStatements reads the statements of diff.
+func (read grantRead) replacingStatements(diff *difftypes.SchemaDiff) replacingStatements {
+	declaredKey := func(ref difftypes.GrantRef) grantIdentity {
+		return read.sequences.desiredKey(newGrantIdentity(ref, read.semantics))
+	}
+	heldKeys := func(refs []difftypes.GrantRef) map[grantIdentity]bool {
+		keys := make(map[grantIdentity]bool, len(refs))
+		for _, ref := range refs {
+			keys[read.sequences.databaseKey(newGrantIdentity(ref, read.semantics))] = true
+		}
+		return keys
+	}
+	statements := replacingStatements{
+		denied:   make(map[grantIdentity]bool, len(diff.DeniesAdded)),
+		granted:  make(map[grantIdentity]bool, len(diff.GrantsAdded)),
+		revoked:  heldKeys(diff.GrantsRemoved),
+		undenied: heldKeys(diff.DeniesRemoved),
+	}
+	for _, ref := range diff.DeniesAdded {
+		statements.denied[declaredKey(ref)] = true
+	}
+	for _, ref := range diff.GrantsAdded {
+		key := declaredKey(ref)
+		statements.granted[key] = true
+		if key.privilege == allPrivilege {
+			for _, privilege := range read.lists.all(read.lists.kind(key)) {
+				statements.granted[key.withPrivilege(privilege)] = true
+			}
+		}
+	}
+	return statements
+}
+
+// replaceDeny reports whether a DENY row the database holds under key is
+// replaced: by a grant of the same permission on the same securable, or, on a
+// column, by a DENY on the whole object. A DENY the diff takes away is not.
+func (s replacingStatements) replaceDeny(key grantIdentity) bool {
+	return !s.undenied[key] && (s.granted[key] || (key.column != "" && s.denied[key.onWholeObject()]))
+}
+
+// replaceGrant reports whether a grant row the database holds under key is
+// replaced by a DENY of the same permission on the same securable. A grant
+// the diff revokes is not.
+func (s replacingStatements) replaceGrant(key grantIdentity) bool {
+	return !s.revoked[key] && s.denied[key]
 }
 
 type grantRead struct {
