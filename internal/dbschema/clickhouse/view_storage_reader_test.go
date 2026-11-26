@@ -82,7 +82,7 @@ func TestReadSchemaRecordsUndescribedViewStorage(t *testing.T) {
 	for _, view := range storedViews {
 		t.Run(view.name, func(t *testing.T) {
 			c := qt.New(t)
-			subject := identities.SchemaScopedParts(objectidentity.KindMatView, "analytics", view.name)
+			subject := identities.SchemaScopedParts(objectidentity.KindMatView, "", view.name)
 			c.Assert(observed.FeatureCoverage.Lookup(chschema.ViewStorageKind, subject), qt.DeepEquals, view.want)
 			c.Assert(observed.FeatureCoverage.Lookup(chschema.RefreshKind, subject).State, qt.Equals, schemaext.Complete)
 		})

@@ -49,6 +49,7 @@ import (
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
@@ -861,13 +862,13 @@ func rebaseDevViewBodies(state, database atlassource.State, dialect string) atla
 	observed := *state.DB
 	observed.Views = slices.Clone(state.DB.Views)
 	for i := range observed.Views {
-		observed.Views[i].Body = rewriteSchemaNames(observed.Views[i].Body, dialect, previous, target)
+		observed.Views[i].Body = sqlqualifier.ViewBody(observed.Views[i].Body, dialect, previous, target)
 		observed.Views[i].Schema = ""
 	}
 	declared := *state.Schema
 	declared.Views = slices.Clone(state.Schema.Views)
 	for i := range declared.Views {
-		declared.Views[i].Body = rewriteSchemaNames(declared.Views[i].Body, dialect, previous, target)
+		declared.Views[i].Body = sqlqualifier.ViewBody(declared.Views[i].Body, dialect, previous, target)
 		if ref, ok := tableref.Parse(declared.Views[i].Name); ok && ref.Qualified && ref.Schema == previous {
 			declared.Views[i].Name = tableref.Canonical("", ref.Name)
 		}

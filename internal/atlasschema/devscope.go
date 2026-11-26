@@ -9,7 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/sqlident"
+	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/sqlreach"
 )
 
@@ -85,7 +85,7 @@ func rescopeStatementsForDevDatabase(statements []string, dialect, targetSchema,
 	target := strings.TrimSpace(targetSchema)
 	rescoped := make([]string, len(statements))
 	for i, statement := range statements {
-		rewritten := rewriteSchemaNames(statement, dialect, target, dev)
+		rewritten := sqlqualifier.Rewrite(statement, dialect, target, dev)
 		if err := checkStatementScopedToDev(rewritten, i+1, dialect, dev); err != nil {
 			return nil, err
 		}
@@ -129,8 +129,8 @@ func soleSchemaName(statements []string, dialect string) string {
 	sole := ""
 	for _, statement := range statements {
 		tokens := sqlreach.SignificantTokens(statement, sqlreach.DialectUsesBackslashEscapes(dialect), dialect)
-		for _, position := range schemaNamePositions(tokens) {
-			name := unquoteSchemaName(tokens[position])
+		for _, position := range sqlqualifier.Positions(tokens) {
+			name := sqlqualifier.Name(tokens[position])
 			switch {
 			case sole == "":
 				sole = name
@@ -142,27 +142,6 @@ func soleSchemaName(statements []string, dialect string) string {
 	return sole
 }
 
-// rewriteSchemaNames replaces every schema name spelled `from` with `to`,
-// quoted for dialect. Only bare and dialect-quoted identifiers are rewritten;
-// anything else is left for checkStatementScopedToDev to refuse.
-func rewriteSchemaNames(statement, dialect, from, to string) string {
-	if from == "" || from == to {
-		return statement
-	}
-	tokens := sqlreach.SignificantTokens(statement, sqlreach.DialectUsesBackslashEscapes(dialect), dialect)
-	positions := schemaNamePositions(tokens)
-	replacement := sqlident.Quote(dialect, to)
-	// Splice from the end so earlier offsets stay valid.
-	for _, position := range slices.Backward(positions) {
-		token := tokens[position]
-		if token.Type != lexer.TokenIdentifier || unquoteSchemaName(token) != from {
-			continue
-		}
-		statement = statement[:token.Start] + replacement + statement[token.End:]
-	}
-	return statement
-}
-
 // checkStatementScopedToDev refuses a statement that still names a schema other
 // than the dev database's own. It scans under both string-escape
 // interpretations, like [CheckPlanStatementsSandboxable], so a statement whose
@@ -171,8 +150,8 @@ func rewriteSchemaNames(statement, dialect, from, to string) string {
 func checkStatementScopedToDev(statement string, index int, dialect, devSchema string) error {
 	for _, backslashEscapes := range []bool{false, true} {
 		tokens := sqlreach.SignificantTokens(statement, backslashEscapes, dialect)
-		for _, position := range schemaNamePositions(tokens) {
-			name := unquoteSchemaName(tokens[position])
+		for _, position := range sqlqualifier.Positions(tokens) {
+			name := sqlqualifier.Name(tokens[position])
 			if name == devSchema || (readsCatalog(dialect, tokens) && isCatalogSchema(name)) {
 				continue
 			}
@@ -221,110 +200,14 @@ func isCatalogSchema(name string) bool {
 	return strings.EqualFold(name, "system") || strings.EqualFold(name, "information_schema")
 }
 
-// schemaNamePositions returns the token indexes that name a schema:
-//
-//   - a qualifier, the head of a dotted object reference (`db`.`users`);
-//   - the operand of USE, and of CREATE/DROP/ALTER SCHEMA|DATABASE, which name
-//     a database directly rather than through a dot.
-//
-// The second form is restricted to the statement's leading keywords so that an
-// ordinary column named `database` — legal and unreserved in MySQL — is not
-// mistaken for one. Inside a view or trigger body, a name the body binds in
-// front of a column -- an alias, a table it reads, a trigger's NEW or OLD -- is
-// not a qualifier either; see [columnQualifiers].
-func schemaNamePositions(tokens []lexer.Token) []int {
-	var positions []int
-	columns := columnQualifiers(tokens)
-	for i := range tokens {
-		if !isSchemaNameToken(tokens[i]) || columns[i] {
-			continue
-		}
-		if i+1 >= len(tokens) || !tokens[i+1].MatchOperatorValue(".") {
-			continue
-		}
-		// The tail of a longer dotted path names an object, not a schema.
-		if i > 0 && tokens[i-1].MatchOperatorValue(".") {
-			continue
-		}
-		positions = append(positions, i)
-	}
-	if operand, ok := schemaOperandPosition(tokens); ok {
-		positions = append(positions, operand)
-	}
-	slices.Sort(positions)
-	return slices.Compact(positions)
-}
-
-// schemaOperandPosition finds the database named directly by a statement's
-// leading keywords: `USE <db>` and `CREATE|DROP|ALTER SCHEMA|DATABASE [IF [NOT]
-// EXISTS] <db>`. USE matters most: a plan that switches the session's database
-// would silently move every later statement out of the dev database.
-func schemaOperandPosition(tokens []lexer.Token) (int, bool) {
-	if len(tokens) >= 2 && sqlreach.IsKeyword(tokens[0], "USE") && isSchemaNameToken(tokens[1]) {
-		return 1, true
-	}
-	if len(tokens) < 3 {
-		return 0, false
-	}
-	if !sqlreach.IsKeyword(tokens[0], "CREATE") && !sqlreach.IsKeyword(tokens[0], "DROP") && !sqlreach.IsKeyword(tokens[0], "ALTER") {
-		return 0, false
-	}
-	if !sqlreach.IsKeyword(tokens[1], "SCHEMA") && !sqlreach.IsKeyword(tokens[1], "DATABASE") {
-		return 0, false
-	}
-	position := 2
-	for position < len(tokens) && (sqlreach.IsKeyword(tokens[position], "IF") ||
-		sqlreach.IsKeyword(tokens[position], "NOT") || sqlreach.IsKeyword(tokens[position], "EXISTS")) {
-		position++
-	}
-	if position >= len(tokens) || !isSchemaNameToken(tokens[position]) {
-		return 0, false
-	}
-	return position, true
-}
-
-// isSchemaNameToken reports whether a token can name a schema. Double-quoted
-// names arrive from the lexer as strings, and they are accepted here so a
-// quoted foreign schema name is refused rather than silently unseen; only bare
-// and dialect-quoted identifiers are ever rewritten.
-func isSchemaNameToken(token lexer.Token) bool {
-	switch token.Type {
-	case lexer.TokenIdentifier:
-		return true
-	case lexer.TokenString:
-		return strings.HasPrefix(token.Value, `"`)
-	default:
-		return false
-	}
-}
-
-// unquoteSchemaName returns the schema name a token spells, undoubling the
-// escaped delimiter the SQL standard uses inside a quoted identifier.
-func unquoteSchemaName(token lexer.Token) string {
-	value := token.Value
-	for _, quote := range []string{"`", `"`, "[]"} {
-		open, closing := quote[:1], quote[len(quote)-1:]
-		if !strings.HasPrefix(value, open) || !strings.HasSuffix(value, closing) || len(value) < 2 {
-			continue
-		}
-		inner := value[1 : len(value)-1]
-		if open == closing {
-			inner = strings.ReplaceAll(inner, open+open, open)
-		}
-		return inner
-	}
-	return value
-}
-
 // RebindDatabase is state, a schema read through source, with the objects a
 // one-database read names by source's database moved to destination's, where
 // a schema is a database and the two connections select databases of
 // different names. A dev database rehearses a target's schema with it, and the
 // drift check compares a shadow database's replay with the target with it.
 //
-// A read of one database records that database on each view, on each
-// ClickHouse materialized view, and on each MySQL or MariaDB routine and
-// MariaDB sequence, where a table is left unqualified, and the server
+// A reader may record the database on a view, materialized view, routine or
+// sequence while leaving a table unqualified. The MySQL-family server
 // qualifies the relations of a stored view body with it. Compared as read,
 // the same view in a shadow database `app_shadow` and in the target `app` is a
 // missing view and an extra view, and recreated as read on a dev database
@@ -363,14 +246,14 @@ func RebindDatabase(state *catalog.Database, source, destination catalog.ServerI
 	for i := range moved.Views {
 		if moved.Views[i].Schema == from {
 			moved.Views[i].Schema = ""
-			moved.Views[i].Body = viewBodyInDev(moved.Views[i].Body, destination.Dialect, from, to)
+			moved.Views[i].Body = sqlqualifier.ViewBody(moved.Views[i].Body, destination.Dialect, from, to)
 		}
 	}
 	moved.MatViews = slices.Clone(state.MatViews)
 	for i := range moved.MatViews {
 		if moved.MatViews[i].Schema == from {
 			moved.MatViews[i].Schema = ""
-			moved.MatViews[i].Body = viewBodyInDev(moved.MatViews[i].Body, destination.Dialect, from, to)
+			moved.MatViews[i].Body = sqlqualifier.ViewBody(moved.MatViews[i].Body, destination.Dialect, from, to)
 		}
 	}
 	moved.Functions = slices.Clone(state.Functions)
@@ -398,16 +281,4 @@ func RebindDatabase(state *catalog.Database, source, destination catalog.ServerI
 		}
 	}
 	return &moved
-}
-
-// viewBodyHead is the header a view body is rewritten under: the rewrite
-// tells a qualifier from a name the body binds, an alias or a table it reads,
-// only inside a statement whose body it can find.
-const viewBodyHead = "CREATE VIEW v AS "
-
-// viewBodyInDev is body, a stored view body, with each qualifier naming the
-// database from rewritten to name to. A name the body binds is kept, so
-// `SELECT app.id FROM app.t1 app` in database app keeps its alias.
-func viewBodyInDev(body, dialect, from, to string) string {
-	return strings.TrimPrefix(rewriteSchemaNames(viewBodyHead+body, dialect, from, to), viewBodyHead)
 }

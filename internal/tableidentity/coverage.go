@@ -16,8 +16,9 @@ func BindCoverage(coverage schemaext.Coverage, selected schemaext.TargetSelectio
 	return (coverageBinder{selected: selected, semantics: semantics}).bind(coverage)
 }
 
-// BindComparisonCoverage also resolves index and routine claims. Their explicit
-// identities and namespace limits use the same mode selection and builders.
+// BindComparisonCoverage also resolves index, materialized-view and routine
+// claims. Their explicit identities and namespace limits use the same mode
+// selection and builders.
 func BindComparisonCoverage(coverage schemaext.Coverage, selected schemaext.TargetSelection, semantics identifier.Semantics) (schemaext.Coverage, error) {
 	return (coverageBinder{selected: selected, semantics: semantics, comparison: true}).bind(coverage)
 }
@@ -34,7 +35,7 @@ const (
 	ownedCoverage coverageBinding = iota
 	tableCoverage
 	indexCoverage
-	routineCoverage
+	schemaCoverage
 	unchangedCoverage
 )
 
@@ -49,9 +50,9 @@ func (b coverageBinder) mode(kind objectidentity.Kind) coverageBinding {
 			return indexCoverage
 		}
 		return unchangedCoverage
-	case objectidentity.KindFunction, objectidentity.KindProcedure:
+	case objectidentity.KindMatView, objectidentity.KindFunction, objectidentity.KindProcedure:
 		if b.comparison {
-			return routineCoverage
+			return schemaCoverage
 		}
 		return unchangedCoverage
 	}
@@ -107,9 +108,9 @@ func (b coverageBinder) subject(ref objectidentity.ID) (objectidentity.ID, error
 			return objectidentity.ID{}, fmt.Errorf("%w: invalid table coverage identity %s", schemaext.ErrInvalidValue, ref)
 		}
 		return Subject(schema, ref.Name.Source, b.selected.Name(), b.semantics), nil
-	case routineCoverage:
+	case schemaCoverage:
 		if !ref.Parent.Empty() {
-			return objectidentity.ID{}, fmt.Errorf("%w: invalid routine coverage identity %s", schemaext.ErrInvalidValue, ref)
+			return objectidentity.ID{}, fmt.Errorf("%w: invalid schema-scoped coverage identity %s", schemaext.ErrInvalidValue, ref)
 		}
 		result := objectidentity.NewBuilder(b.semantics).SchemaScopedParts(ref.Kind, schema, ref.Name.Source)
 		result.Signature = ref.Signature

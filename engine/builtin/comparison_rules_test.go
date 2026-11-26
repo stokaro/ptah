@@ -38,7 +38,7 @@ func TestComparisonRules_EachTargetRegistersItsOwnersRules(t *testing.T) {
 		"postgres":    {"Indexes", "GeneratedExpressions", "Routines"},
 		"mysql":       {"Indexes", "ForeignKeyIndexes", "GeneratedExpressions", "Routines"},
 		"mariadb":     {"Indexes", "ForeignKeyIndexes", "GeneratedExpressions", "Routines"},
-		"clickhouse":  {"Checks", "IndexDefinitions", "GeneratedExpressions"},
+		"clickhouse":  {"Checks", "IndexDefinitions", "GeneratedExpressions", "ViewQueries"},
 		"sqlite":      {"Indexes"},
 		"sqlserver":   {"IndexDefinitions", "IndexPredicates", "GeneratedExpressions", "Routines"},
 		"cockroachdb": {"Indexes", "Routines"},

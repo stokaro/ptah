@@ -1,7 +1,8 @@
 // Package clickhousecomparison holds the rules ClickHouse gives the shared
 // schema comparison ([schemacomparison.Rules]): how a data-skipping index's
 // definition and a computed column's expression read on ClickHouse, and the
-// server that decides whether two CHECKs are one. The built-in runtime
+// server that decides whether two CHECKs are one. View queries compare in
+// the connection's database scope. The built-in runtime
 // registers them on its ClickHouse target, so the shared comparison holds no
 // ClickHouse knowledge of its own.
 package clickhousecomparison
@@ -25,7 +26,10 @@ import (
 // Rules returns ClickHouse's comparison rules. A CHECK is decided by the
 // server, which formats both conditions ([chprobe.CheckService]).
 func Rules() schemacomparison.Rules {
-	return schemacomparison.Rules{IndexDefinitions: IndexDefinitions{}, GeneratedExpressions: GeneratedExpressions{}, Checks: chprobe.CheckService{}}
+	return schemacomparison.Rules{
+		IndexDefinitions: IndexDefinitions{}, GeneratedExpressions: GeneratedExpressions{},
+		Checks: chprobe.CheckService{}, ViewQueries: ViewQueries{},
+	}
 }
 
 // GeneratedExpressions reads the expression of a MATERIALIZED, ALIAS or

@@ -1,4 +1,4 @@
-package atlasschema
+package sqlqualifier
 
 import (
 	"slices"
@@ -34,7 +34,7 @@ func columnQualifiers(tokens []lexer.Token) map[int]bool {
 	if body < 0 {
 		return nil
 	}
-	tablePositions, bound := readTables(tokens, body)
+	tablePositions, bound := readTables(tokens, body, false)
 	if trigger {
 		bound["new"] = true
 		bound["old"] = true
@@ -98,29 +98,46 @@ func isOtherObjectKind(token lexer.Token) bool {
 // readTables scans a body for the token positions where a name is read as a
 // table, a routine or a sequence, and the names the body binds: each table it
 // reads, under its own name and its alias, and each derived table's alias.
-func readTables(tokens []lexer.Token, body int) (positions map[int]bool, bound map[string]bool) {
+// queryOnly limits relation positions to SELECT sources. DML words can name
+// columns in a query, and sequence arguments belong to the statement scanner.
+func readTables(tokens []lexer.Token, body int, queryOnly bool) (positions map[int]bool, bound map[string]bool) {
 	positions = make(map[int]bool)
 	bound = make(map[string]bool)
 	// openLists records, per parenthesis depth, whether a table list is open
 	// there, so a derived table inside FROM does not close the list around it.
 	openLists := make(map[int]bool)
 	derived := make(map[int]bool)
+	sources := make(map[int]bool)
+	var queryDepths []int
+	selectDepth := 0
 	depth := 0
 	expectTable := false
 	for i := body; i < len(tokens); i++ {
 		token := tokens[i]
 		switch {
-		case token.MatchOperatorValue("("):
-			derived[depth+1] = expectTable
-			if i > 0 && isSequenceFunction(tokens[i-1]) {
+		case sqlreach.IsKeyword(token, "SELECT"):
+			selectDepth = depth
+			delete(sources, depth)
+			delete(openLists, depth)
+			expectTable = false
+			continue
+		case token.MatchOperatorValue("(") || token.MatchOperatorValue("[") || token.MatchOperatorValue("{"):
+			queryDepths = append(queryDepths, selectDepth)
+			derived[depth+1] = expectTable && token.MatchOperatorValue("(")
+			if !queryOnly && token.MatchOperatorValue("(") && i > 0 && isSequenceFunction(tokens[i-1]) {
 				markPath(tokens, i+1, positions)
 			}
 			depth++
 			expectTable = false
 			continue
-		case token.MatchOperatorValue(")"):
+		case token.MatchOperatorValue(")") || token.MatchOperatorValue("]") || token.MatchOperatorValue("}"):
+			if len(queryDepths) != 0 {
+				selectDepth = queryDepths[len(queryDepths)-1]
+				queryDepths = queryDepths[:len(queryDepths)-1]
+			}
 			closedDerived := derived[depth]
 			delete(derived, depth)
+			delete(sources, depth)
 			delete(openLists, depth)
 			depth = max(depth-1, 0)
 			expectTable = false
@@ -135,15 +152,29 @@ func readTables(tokens []lexer.Token, body int) (positions map[int]bool, bound m
 		case token.MatchOperatorValue(","):
 			expectTable = openLists[depth]
 			continue
-		case opensTableList(token):
+		case sqlreach.IsKeyword(token, "JOIN") && i > body && sqlreach.IsKeyword(tokens[i-1], "ARRAY"):
+			// ARRAY JOIN expands a column expression, not another relation.
+			delete(openLists, depth)
+			expectTable = false
+			continue
+		case sqlreach.IsKeyword(token, "FROM") && depth != selectDepth:
+			// EXTRACT and TRIM use FROM inside an expression. Their operand
+			// remains a column path, not a source relation.
+			expectTable = false
+			continue
+		case opensTableList(token) && (!queryOnly || opensQueryTableList(token, sources[depth])):
+			sources[depth] = true
 			openLists[depth] = true
 			expectTable = true
 			continue
-		case sqlreach.IsKeyword(token, "FOR") && i > 0 && sqlreach.IsKeyword(tokens[i-1], "VALUE"):
+		case !queryOnly && sqlreach.IsKeyword(token, "FOR") && i > 0 && sqlreach.IsKeyword(tokens[i-1], "VALUE"):
 			markPath(tokens, i+1, positions)
 			continue
 		case closesTableList(token):
 			delete(openLists, depth)
+			if !sqlreach.IsKeyword(token, "ON") && !sqlreach.IsKeyword(token, "USING") {
+				delete(sources, depth)
+			}
 		}
 		if expectTable && isSchemaNameToken(token) {
 			end := markPath(tokens, i, positions)
@@ -175,7 +206,7 @@ func bindAlias(tokens []lexer.Token, start int, bound map[string]bool) int {
 	if start < len(tokens) && sqlreach.IsKeyword(tokens[start], "AS") {
 		start++
 	}
-	if start < len(tokens) && tokens[start].Type == lexer.TokenIdentifier && !isClauseKeyword(tokens[start]) {
+	if start < len(tokens) && isSchemaNameToken(tokens[start]) && !isClauseKeyword(tokens[start]) {
 		bound[boundKey(tokens[start])] = true
 		return start + 1
 	}
@@ -186,10 +217,10 @@ func bindAlias(tokens []lexer.Token, start int, bound map[string]bool) int {
 // that is neither the tail of a longer path, the head of a three-part one, nor
 // a routine call.
 func isColumnPath(tokens []lexer.Token, i int) bool {
-	if tokens[i].Type != lexer.TokenIdentifier || i+2 >= len(tokens) || !tokens[i+1].MatchOperatorValue(".") {
+	if !isSchemaNameToken(tokens[i]) || i+2 >= len(tokens) || !tokens[i+1].MatchOperatorValue(".") {
 		return false
 	}
-	if tokens[i+2].Type != lexer.TokenIdentifier && !tokens[i+2].MatchOperatorValue("*") {
+	if !isSchemaNameToken(tokens[i+2]) && !tokens[i+2].MatchOperatorValue("*") {
 		return false
 	}
 	if i > 0 && tokens[i-1].MatchOperatorValue(".") {
@@ -202,7 +233,7 @@ func isColumnPath(tokens []lexer.Token, i int) bool {
 // it? A false match exempts a two-part path in an expression, which is a
 // column wherever it stands.
 func boundKey(token lexer.Token) string {
-	return strings.ToLower(unquoteSchemaName(token))
+	return strings.ToLower(Name(token))
 }
 
 // opensTableList reports a keyword after which the server reads a table or,
@@ -212,10 +243,17 @@ func opensTableList(token lexer.Token) bool {
 		func(keyword string) bool { return sqlreach.IsKeyword(token, keyword) })
 }
 
+// opensQueryTableList accepts a FROM source or a JOIN after that query has
+// begun reading sources. A bare JOIN before FROM can be a projection's name.
+func opensQueryTableList(token lexer.Token, hasSource bool) bool {
+	return sqlreach.IsKeyword(token, "FROM") ||
+		(hasSource && (sqlreach.IsKeyword(token, "JOIN") || sqlreach.IsKeyword(token, "STRAIGHT_JOIN")))
+}
+
 // closesTableList reports a keyword that ends the table list of its clause.
 func closesTableList(token lexer.Token) bool {
 	return slices.ContainsFunc([]string{
-		"WHERE", "SET", "ON", "USING", "GROUP", "HAVING", "ORDER", "LIMIT", "VALUES", "VALUE",
+		"WHERE", "PREWHERE", "QUALIFY", "SET", "ON", "USING", "GROUP", "HAVING", "ORDER", "LIMIT", "VALUES", "VALUE",
 		"SELECT", "UNION", "WINDOW", "RETURNING",
 	}, func(keyword string) bool { return sqlreach.IsKeyword(token, keyword) })
 }
