@@ -13,7 +13,8 @@ import (
 	"ptah.run/internal/devclean/replay"
 )
 
-// BindSession is [ReplayGuard.forSession], for the tests of devclean_test.
-func (g *ReplayGuard) BindSession(ctx context.Context, session replay.Session) (*ReplayGuard, error) {
+// BindSessionForTest is [ReplayGuard.forSession], for the tests of
+// devclean_test.
+func (g *ReplayGuard) BindSessionForTest(ctx context.Context, session replay.Session) (*ReplayGuard, error) {
 	return g.forSession(ctx, session)
 }

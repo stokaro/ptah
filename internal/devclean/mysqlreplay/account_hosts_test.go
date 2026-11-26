@@ -16,7 +16,9 @@ import (
 // network against one. A pattern with a letter in it matches the name the
 // server resolves an address to, which the guard cannot know either, so an
 // account on an address is refused against it too; a host the guard cannot
-// read as an address, such as 10.0.0.01, is a name.
+// read as an address, such as 10.0.0.01, is a name. A pattern with a colon,
+// such as fe80::%, is an IPv6 address pattern, whose letters are hexadecimal
+// digits, and covers only the addresses it matches.
 var networkSessionStatements = []struct {
 	name, session, statement, operation string
 }{
@@ -41,6 +43,8 @@ var networkSessionStatements = []struct {
 	{name: "anonymous account on an address ahead of a name pattern", session: "dev@%.example.com", statement: "CREATE USER ''@'192.168.215.1'", operation: "CREATE USER"},
 	{name: "netmask ahead of a name pattern", session: "dev@%.example.com", statement: "CREATE USER 'dev'@'10.0.0.0/255.0.0.0'", operation: "CREATE USER"},
 	{name: "address ahead of a name with no letter", session: "dev@10.0.0.01", statement: "CREATE USER 'dev'@'10.0.0.1'", operation: "CREATE USER"},
+	{name: "IPv6 address under an IPv6 pattern", session: "dev@fe80::%", statement: "CREATE USER 'dev'@'fe80::1'", operation: "CREATE USER"},
+	{name: "address ahead of a host with a colon that is no address", session: "dev@fe80::1::2", statement: "CREATE USER 'dev'@'10.0.0.1'", operation: "CREATE USER"},
 }
 
 func TestGuard_ConnectingAccount_FailurePathNetwork(t *testing.T) {
@@ -76,6 +80,8 @@ var networkSessionControls = []struct {
 	{name: "address the pattern does not match", session: "dev@192.168.215.%", statement: "CREATE USER 'dev'@'10.1.2.3'"},
 	{name: "address a numeric pattern does not match", session: "dev@192.168.215.%", statement: "CREATE USER 'dev'@'10.0.0.1'"},
 	{name: "another user on an address beside a name pattern", session: "dev@%.example.com", statement: "CREATE USER 'other'@'192.168.215.1'"},
+	{name: "address beside an IPv6 pattern", session: "dev@fe80::%", statement: "CREATE USER 'dev'@'192.168.215.1'"},
+	{name: "IPv6 address an IPv6 pattern does not match", session: "dev@fe80::%", statement: "CREATE USER 'dev'@'2001:db8::1'"},
 	{name: "address off the session's network", session: "dev@10.0.0.0/255.0.0.0", statement: "CREATE USER 'dev'@'11.1.2.3'"},
 	{name: "name beside the session's network", session: "dev@10.0.0.0/255.0.0.0", statement: "CREATE USER 'dev'@'db.example'"},
 	{name: "another user on a network", session: "dev@192.168.215.%", statement: "CREATE USER 'other'@'192.168.0.0/16'"},

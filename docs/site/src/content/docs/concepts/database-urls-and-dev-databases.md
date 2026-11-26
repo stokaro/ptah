@@ -410,12 +410,12 @@ proven to stay inside the disposable realm:
   password, a TLS requirement or a resource limit. `CREATE USER`,
   `CREATE ROLE` and `GRANT` are refused for an account that a new connection
   would match first: the same user, or the anonymous user, on a narrower host;
-  on an address, when the session's host is a name or a pattern with a letter
-  in it, since the guard cannot know which address that name stands for; or on
-  a network written as `192.168.0.0/255.255.0.0` or `192.168.0.0/16`, which
-  MySQL tries before a host pattern or a name. The account is named by
-  `CURRENT_USER`, `CURRENT_USER()`, `USER()`, `CURRENT_ROLE` or `PUBLIC`, or
-  by its user and host in any quoting. A `DROP USER` or a `REVOKE` names one
+  on an address, when the session's host is a name or a host name pattern such
+  as `%.example.com`, since the guard cannot know which address that name
+  stands for; or on a network written as `192.168.0.0/255.255.0.0` or
+  `192.168.0.0/16`, which MySQL tries before a host pattern or a name. The
+  account is named by `CURRENT_USER`, `CURRENT_USER()`, `USER()`,
+  `CURRENT_ROLE` or `PUBLIC`, or by its user and host in any quoting. A `DROP USER` or a `REVOKE` names one
   account, so `'app'@'%'` there is not `'app'@'localhost'`. User names compare
   exactly, after the trimming each server does. Host names compare as the
   server lowercases them: a dotted capital I (`İ`) is `i` and a Kelvin sign
@@ -429,14 +429,14 @@ proven to stay inside the disposable realm:
   either reading names the account. A write to a table of the `mysql` schema
   that holds accounts or privileges, such as `mysql.user`, `mysql.db` or
   MariaDB's `mysql.global_priv`, is refused in the same way, and so is a view
-  over one. Its name is lowercased as a server with `lower_case_table_names`
-  set lowercases it, so `mysql.global_prİv` is that table, and
-  `mysql.uſer` is a table that does not exist: the server reads the write as a change to its accounts once it
-  reloads them, which MySQL does after any account statement that fails. The
-  guard also reads the statements of a routine, trigger or event body, and
-  refuses the `CREATE` or `ALTER` that writes one of these refusals into a
-  body. A statement that names only other accounts gets the answer its realm
-  gives it.
+  over one: the server reads the write as a change to its accounts once it
+  reloads them, which MySQL does after any account statement that fails. On a
+  server with `lower_case_table_names` set, the guard lowercases the name as
+  the server does, so `mysql.global_prİv` is that table and `mysql.uſer` is
+  not. The guard also reads the statements of a routine, trigger or event
+  body, and refuses the `CREATE` or `ALTER` that writes one of these refusals
+  into a body. A statement that names only other accounts gets the answer its
+  realm gives it.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.

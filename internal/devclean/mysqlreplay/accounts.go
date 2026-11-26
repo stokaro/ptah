@@ -489,7 +489,8 @@ func (s sessionAccount) namesOrShadows(named namedAccount) bool {
 // address takes one ahead of the session's name, whatever the name resolves
 // to. A pattern with a letter in it matches the name the server resolves an
 // address to, which the guard cannot know, so an account on an address takes
-// a connection ahead of it too. Against a session whose host is an address,
+// a connection ahead of it too. A pattern with a colon is an IPv6 address
+// pattern, whose letters are hexadecimal digits, and is read as one. Against a session whose host is an address,
 // or a network, the guard compares the addresses. Anywhere else a host covers
 // what its pattern matches.
 func hostShadows(session, host string) bool {
@@ -502,7 +503,7 @@ func hostShadows(session, host string) bool {
 		return true
 	case strings.Contains(session, "/"):
 		return hostIsAddress && networkContains(session, hostAddress)
-	case hostIsAddress && !sessionIsAddress && (!strings.ContainsAny(session, "%_") || strings.ContainsFunc(session, unicode.IsLetter)):
+	case hostIsAddress && !sessionIsAddress && (!strings.ContainsAny(session, "%_") || strings.ContainsFunc(session, unicode.IsLetter) && !strings.Contains(session, ":")):
 		return true
 	default:
 		return hostCovers(session, host)

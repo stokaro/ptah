@@ -36,7 +36,7 @@ func (replaySessionRow) Err() error { return nil }
 // spells out an account.
 func forSession(c *qt.C, guard *devclean.ReplayGuard) *devclean.ReplayGuard {
 	c.Helper()
-	bound, err := guard.BindSession(c.Context(), replaySession{})
+	bound, err := guard.BindSessionForTest(c.Context(), replaySession{})
 	c.Assert(err, qt.IsNil)
 	return bound
 }
