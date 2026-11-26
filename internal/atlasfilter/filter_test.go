@@ -71,6 +71,24 @@ func TestExcludeDatabase_KeepsAPartialWideGrantRead(t *testing.T) {
 	c.Assert(got.WideGrantsPartial, qt.IsTrue)
 }
 
+// TestExcludeDatabase_KeepsSchemaGrantsInWideAccess keeps the mark of a read
+// whose wide access states what the grants on a schema give each role.
+// Dropped, a reach measured on the filtered description counts a MySQL grant
+// on the database for every member of its role, where the server applies it
+// only to the roles that hold no other row winning over it.
+func TestExcludeDatabase_KeepsSchemaGrantsInWideAccess(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.WideAccess = []catalog.WideAccess{{Role: "auditor", Subject: "auditor", Read: true, Schema: "auth"}}
+	schema.SchemaGrantsInWideAccess = true
+
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.WideAccess, qt.DeepEquals, schema.WideAccess)
+	c.Assert(got.SchemaGrantsInWideAccess, qt.IsTrue)
+}
+
 // TestExcludeDatabase_KeepsThePrivilegesOnRoutines keeps what the read found
 // granted on routines, and the mark of a read refused them. Dropped, a plan
 // that replaces a routine the filter keeps grants nothing back after the

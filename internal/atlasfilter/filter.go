@@ -2472,6 +2472,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// The grants a filter drops from WideGrants are an excluded role's,
 		// and the ones the read was refused stay unread.
 		WideGrantsPartial: schema.WideGrantsPartial,
+		// WideAccess keeps the schema grants it states, so the schema grants
+		// in Grants stay out of a reach measured on the filtered description.
+		SchemaGrantsInWideAccess: schema.SchemaGrantsInWideAccess,
 	}
 }
 

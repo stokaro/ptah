@@ -11,7 +11,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
-	"ptah.run/internal/mysqlgrants"
 	"ptah.run/internal/mysqlname"
 )
 
@@ -277,18 +276,6 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	}
 	schema.RoleMemberships = memberships
 
-	wide, err := r.readWideAccess(ctx)
-	if err != nil {
-		if !isRoleReadDenied(err) {
-			return fmt.Errorf("failed to read global privileges: %w", err)
-		}
-		// Left nil: the security analysis then says it could not measure a
-		// role's reach, rather than measuring it without what is granted on
-		// every database.
-		wide = nil
-	}
-	schema.WideAccess = wide
-
 	everywhere, err := r.readWideGrants(ctx)
 	if err != nil {
 		if !isRoleReadDenied(err) {
@@ -298,15 +285,50 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		// server says whether the role held the privilege on it.
 		everywhere = nil
 	}
-	patterns, err := r.readPatternGrants(ctx, databases)
+	rows, err := r.readDatabaseRows(ctx, account.mariaDB)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants on database patterns: %w", err)
 		}
-		patterns = nil
+		rows = nil
 	}
-	schema.WideGrants, schema.WideGrantsPartial = joinWideGrants(everywhere, patterns)
+	schema.WideGrants, schema.WideGrantsPartial = joinWideGrants(everywhere, rows.patternGrants(databases))
+	schema.WideAccess = wideAccessOf(everywhere, rows.databaseAccess(databases, roles, memberships))
+	schema.SchemaGrantsInWideAccess = schema.WideAccess != nil && rows.statesOwnRows()
 	return r.readConnectedRole(ctx, schema)
+}
+
+// wideAccessOf is the access to the rows of every table that the grants on
+// every database and the grants on a database name pattern give, which the
+// security analysis reads to measure a role's reach. A description of one
+// database leaves both out, because a statement that grants them is not part
+// of that database, but the role still reaches every table there: without
+// this, a role holding SELECT ON *.* or SELECT ON `ab%`.* reads the whole
+// database while its grants say it reads nothing.
+//
+// A grant on every database gives each role that holds it one read and one
+// write entry at most, each named by the privileges that give it. patterns is
+// [databaseRows.databaseAccess]. SELECT is read access, and INSERT, UPDATE and
+// DELETE are write access, as [rowaccess.Of] classifies them; the other table
+// privileges change no rows and give none.
+//
+// It is nil where either read did not establish its grants: the security
+// analysis then says it could not measure a role's reach, rather than
+// measuring it without them.
+func wideAccessOf(everywhere []catalog.WideGrant, patterns []catalog.WideAccess) []catalog.WideAccess {
+	if everywhere == nil || patterns == nil {
+		return nil
+	}
+	access := make([]catalog.WideAccess, 0, len(everywhere)+len(patterns))
+	for index := 0; index < len(everywhere); {
+		role := everywhere[index].Role
+		var privileges []string
+		for ; index < len(everywhere) && everywhere[index].Role == role; index++ {
+			privileges = append(privileges, everywhere[index].Privilege)
+		}
+		access = append(access, accessOf(role, "*.*", privileges)...)
+	}
+	return append(access, patterns...)
 }
 
 // joinWideGrants is the grants on every database and those on a database
@@ -320,82 +342,6 @@ func joinWideGrants(everywhere, patterns []catalog.WideGrant) (joined []catalog.
 	return append(append(joined, everywhere...), patterns...), everywhere == nil || patterns == nil
 }
 
-// readPatternGrants reads the table privileges each role holds on each of
-// databases through a grant on a database name pattern, such as GRANT SELECT
-// ON `cs%`.*, one row per privilege and database the pattern reaches. The
-// grant names no database the read describes, so the grants on the database
-// leave it out, and a role whose member reads every table there would read as
-// holding nothing.
-//
-// The grant is reported as wide, on the database it reaches: a REVOKE on one
-// table takes none of it. Measured on MySQL 8.4.13 and MariaDB 11.8.9, after
-// GRANT SELECT ON `wc%`.*, a member reads wc1.t and REVOKE SELECT ON wc1.t
-// fails with Error 1147.
-//
-// MySQL with partial_revokes ON reads "%" and "_" in a database name as the
-// characters themselves, so a pattern grant reaches no other database there:
-// measured on MySQL 8.4.13, the member above is refused wc1.t. MariaDB has no
-// such setting.
-//
-// The server uses the most specific database row that matches, as
-// [mysqlgrants] describes, and with an active role MySQL's choice does not
-// follow from specificity. So every row that matches is reported, and a revoke
-// under a pattern that another row shadows is refused rather than planned.
-//
-// The query reads every database row of a role that is not the database's own,
-// and [mysqlgrants.Options.MatchesDatabase] decides which of them reach it,
-// as the server's privilege check does. SQL LIKE disagrees with that check on
-// a multi-byte name and, on MySQL under NO_BACKSLASH_ESCAPES, on an escaped
-// wildcard.
-func (r *Reader) readPatternGrants(ctx context.Context, databases []string) ([]catalog.WideGrant, error) {
-	options, err := mysqlgrants.ReadOptions(ctx, r.db)
-	if err != nil {
-		return nil, err
-	}
-	if options.LiteralDatabaseNames {
-		return make([]catalog.WideGrant, 0), nil
-	}
-	predicate, err := r.rolePredicate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	patterns := make([]catalog.WideGrant, 0)
-	for _, database := range databases {
-		inDatabase, err := r.readPatternGrantsOn(ctx, qualifyPredicate(predicate, "u."), database, options)
-		if err != nil {
-			return nil, err
-		}
-		patterns = append(patterns, inDatabase...)
-	}
-	return patterns, nil
-}
-
-// readPatternGrantsOn is [readPatternGrants] for one database. A privilege no
-// grant on a table names, such as EVENT, is left out, as [readWideGrants]
-// leaves it out.
-func (r *Reader) readPatternGrantsOn(ctx context.Context, rolePredicate, database string, options mysqlgrants.Options) ([]catalog.WideGrant, error) {
-	rows, err := r.db.QueryContext(ctx, patternGrantQuery(rolePredicate), nameBinds(database, patternGrantQueryPredicates)...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var patterns []catalog.WideGrant
-	for rows.Next() {
-		var role, pattern, privilege string
-		if err := rows.Scan(&role, &pattern, &privilege); err != nil {
-			return nil, err
-		}
-		privilege = strings.ToUpper(strings.TrimSpace(privilege))
-		if !namesATablePrivilege(privilege) || !options.MatchesDatabase(pattern, database) {
-			continue
-		}
-		patterns = append(patterns, catalog.WideGrant{
-			Role: role, Privilege: privilege, Grant: privilege + " ON " + quoteMySQLIdentifier(pattern) + ".*", Schema: database,
-		})
-	}
-	return patterns, rows.Err()
-}
-
 // namesATablePrivilege reports whether privilege is one a GRANT on a table
 // names, as [globalTablePrivileges] lists them.
 func namesATablePrivilege(privilege string) bool {
@@ -407,26 +353,6 @@ func namesATablePrivilege(privilege string) bool {
 	return false
 }
 
-// patternGrantQuery projects one row per privilege a role holds through a grant
-// on a database other than the one the binds name, whose own rows
-// [grantQuery] reads. Which of the rows reach that database is decided in Go;
-// see [Reader.readPatternGrants].
-func patternGrantQuery(rolePredicate string) string {
-	const granteeUser = `REPLACE(SUBSTRING_INDEX(sp.GRANTEE, '@', 1), '''', '')`
-	return `
-		SELECT ` + granteeUser + ` AS role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE
-		FROM information_schema.SCHEMA_PRIVILEGES AS sp
-		JOIN mysql.user AS u ON u.user = ` + granteeUser + `
-		WHERE NOT ` + mysqlname.SameDatabase("sp.TABLE_SCHEMA", "?") + `
-			  AND ` + rolePredicate + `
-			  AND u.user NOT LIKE 'mysql.%'
-		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`
-}
-
-// patternGrantQueryPredicates is the number of predicates [patternGrantQuery]
-// binds the database name in, each twice.
-const patternGrantQueryPredicates = 1
-
 // globalTablePrivileges pairs each privilege column of mysql.user with the
 // privilege a GRANT on a table names the same way. Held globally, each covers
 // every table, and a REVOKE on one table cannot take it: measured on MySQL
@@ -434,10 +360,7 @@ const patternGrantQueryPredicates = 1
 // `REVOKE SELECT ON d.t FROM r` fails with Error 1147 and r keeps reading t.
 // A column marked optional exists on one flavor only: Delete_history_priv is
 // MariaDB's. Every other column exists on each supported server.
-var globalTablePrivileges = []struct {
-	column, privilege string
-	optional          bool
-}{
+var globalTablePrivileges = []globalTablePrivilege{
 	{column: "Select_priv", privilege: "SELECT"}, {column: "Insert_priv", privilege: "INSERT"},
 	{column: "Update_priv", privilege: "UPDATE"}, {column: "Delete_priv", privilege: "DELETE"},
 	{column: "Create_priv", privilege: "CREATE"}, {column: "Drop_priv", privilege: "DROP"},
@@ -445,6 +368,12 @@ var globalTablePrivileges = []struct {
 	{column: "Alter_priv", privilege: "ALTER"}, {column: "Create_view_priv", privilege: "CREATE VIEW"},
 	{column: "Show_view_priv", privilege: "SHOW VIEW"}, {column: "Trigger_priv", privilege: "TRIGGER"},
 	{column: "Delete_history_priv", privilege: "DELETE HISTORY", optional: true},
+}
+
+// globalTablePrivilege is one entry of [globalTablePrivileges].
+type globalTablePrivilege struct {
+	column, privilege string
+	optional          bool
 }
 
 // readWideGrants reads the table privileges each role holds on every
@@ -549,47 +478,6 @@ func (r *Reader) userColumns(ctx context.Context) (map[string]bool, error) {
 		return nil, err
 	}
 	return present, nil
-}
-
-// readWideAccess reads the privileges each role holds on every database, the
-// `GRANT SELECT ON *.*` kind. A description of one database leaves them out,
-// because a statement that grants them is not part of that database, but the
-// role still reaches every table in it: without this, a role holding global
-// SELECT reads the whole database while the grants say it reads nothing.
-//
-// SELECT is read access, and INSERT, UPDATE or DELETE is write access. Other
-// global privileges change no rows and are not reported. The privilege columns
-// of mysql.user are read rather than information_schema.USER_PRIVILEGES,
-// which on MariaDB lists no role.
-func (r *Reader) readWideAccess(ctx context.Context) ([]catalog.WideAccess, error) {
-	predicate, err := r.rolePredicate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT user, Select_priv = 'Y', Insert_priv = 'Y' OR Update_priv = 'Y' OR Delete_priv = 'Y'
-		FROM mysql.user
-		WHERE `+predicate+`
-			  AND user NOT LIKE 'mysql.%'
-			  AND (Select_priv = 'Y' OR Insert_priv = 'Y' OR Update_priv = 'Y' OR Delete_priv = 'Y')
-		ORDER BY user`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	access := make([]catalog.WideAccess, 0)
-	for rows.Next() {
-		held := catalog.WideAccess{Source: "global privileges"}
-		if err := rows.Scan(&held.Role, &held.Read, &held.Write); err != nil {
-			return nil, err
-		}
-		access = append(access, held)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return access, nil
 }
 
 // readConnectedRole records the role this connection runs as. CURRENT_USER()
