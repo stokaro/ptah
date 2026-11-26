@@ -1680,6 +1680,40 @@ always what the database it later runs on holds, and the grant option it
 checks is the planning account's, not the one of the account that later runs
 the migration.
 
+The down file `ptah migrations generate` writes for a body change replaces the
+routine back the same way. It drops the routine the up file created, creates it
+again with the body, the `SQL SECURITY` mode and the volatility the database it
+was planned against held, under the name the schema gives it, and grants the
+same rows of `mysql.procs_priv` again. Some of what the routine held does not
+come back:
+
+- The `CREATE` writes no `DEFINER`, so the account that runs the down file
+  becomes the routine's definer.
+- The routine's `COMMENT` is lost (stokaro/ptah#6686).
+- The down file writes no `sql_mode`, so the routine runs under the mode of
+  the session that runs the down file. A function created without a strict
+  mode returns 127 for a `TINYINT` value it cannot hold. Created again under
+  the server's strict default, the same body fails with error 1264.
+- The deterministic flag and the data-access characteristic come back as
+  Ptah's volatility writes them: a deterministic routine comes back
+  `DETERMINISTIC` with `CONTAINS SQL`, and one written `MODIFIES SQL DATA`
+  comes back `READS SQL DATA`.
+
+When the up migration also drops a table the old body reads, the down file
+creates the routine before it creates the table again (stokaro/ptah#6721).
+MySQL and MariaDB look up a body's tables when the routine runs, so the
+routine works once the table is back.
+
+A plan whose rollback finds no routine to restore is refused before anything
+is written. That happens when the read holds no routine of the name, the kind
+(function or procedure) and the argument list the change names:
+
+```text
+invalid schema diff: cannot plan the rollback of changing rt(): the database read holds no such routine to restore
+```
+
+Measured on MySQL 26.10.0 and MariaDB 12.3.3.
+
 A database name is matched exactly. On a server started with
 `lower_case_table_names=0`, the Linux default, `app` and `APP` are two
 databases, and a read of one reports nothing of the other, although

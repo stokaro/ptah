@@ -653,6 +653,12 @@ leaves the object `INVALID`: `USER_TRIGGERS` still reports such a trigger
 `ENABLED`, and `USER_PROCEDURES` omits the routine. Ptah keeps that
 semicolon on every statement it sends.
 
+The down file `ptah migrations generate` writes for a changed routine creates
+it again with the body the database it was planned against held. When the up
+migration also drops a table the old body reads, the down file creates the
+routine before the table (stokaro/ptah#6721). The down migration succeeds and
+leaves the routine `INVALID`.
+
 ## Revokes on a table
 
 A `REVOKE` on a table takes only an object privilege granted on that table,

@@ -538,6 +538,14 @@ A routine replaced for a new body is dropped first, and the plan grants back
 what each grantee held on it and denies again what was denied. Measured on SQL
 Server 2025.
 
+The down file `ptah migrations generate` writes for a changed routine creates
+it again with the body and the options the database it was planned against
+held. A plan creates a routine before the tables the same plan creates
+(stokaro/ptah#6721). A `SCHEMABINDING` routine whose body reads such a table
+fails with error 208, `Invalid object name`, and the migration rolls back.
+That holds for an up migration that creates both, and for the down file of a
+migration that changes the routine and drops a table its old body reads.
+
 ## Scripts and batches
 
 A SQL Server script runs in batches, and `GO` on a line of its own ends one.

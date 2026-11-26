@@ -5417,6 +5417,17 @@ and normalizes MySQL type spellings on both sides so that two spellings of one
 function converge, and rendering from that copy would write Ptah's
 normalization into the user's DDL.
 
+`FunctionDiff.CurrentName` names the routine the database holds as the read
+reports it, with its schema, where `FunctionName` spells the declaration's
+name, which may leave the schema out. A rollback looks up the definition it
+restores under that name, the routine's kind and `CurrentSignature`, and
+creates the routine under `FunctionName`. An entry that leaves `CurrentName`
+empty is looked up under `FunctionName`. Where `CurrentSchema` holds no routine
+of that name, kind and signature, `PlanBidirectionalSchemaDiff` returns an
+error wrapping `ptaherr.ErrInvalidSchemaDiff` rather than a rollback that keeps
+the changed routine. A removed routine with nothing to restore it from is
+refused the same way.
+
 `FunctionDiff.FeatureChanges` carries the changes an owner reports for a
 routine's facets, such as the options of a SQL Server routine's header. Each one
 replaces the routine, so the entry's CREATE writes it from `Desired`, and a

@@ -2446,6 +2446,19 @@ type FunctionDiff struct {
 	//
 	// It stays off the wire, like Desired.
 	CurrentSignature *string `json:"-"`
+
+	// CurrentName is the name of the routine the database holds now, as the
+	// read reports it, which names the schema the routine is in.
+	// FunctionName and Desired.Name spell the name as the declaration does,
+	// and a declaration may leave the schema out.
+	//
+	// A rollback restores the routine the database held, and finds the
+	// definition it restores by this name, the routine's kind and
+	// CurrentSignature, and a rollback that finds none is refused. Empty
+	// means no producer recorded the name, and FunctionName stands for it.
+	//
+	// It stays off the wire, like Desired.
+	CurrentName string `json:"-"`
 }
 
 // SequenceDiff represents changes to a standalone sequence definition.
