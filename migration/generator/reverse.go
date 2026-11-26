@@ -59,7 +59,10 @@ import (
 //     of the index removals whose object is really a UNIQUE constraint, so
 //     reverseIndexRemovals turns exactly that subset into constraint additions
 //     rebuilt from the introspected constraint, and leaves the rest as index
-//     additions.
+//     additions. GrantsReplaced and DeniesReplaced are derived the same way:
+//     they name the rows a statement of the change took the place of, and the
+//     reversal gives them back as grant and DENY additions rather than
+//     carrying them.
 //
 // No field is deliberately dropped, and none is unreachable in the down
 // direction. TestReverseSchemaDiff_AccountsForEverySchemaDiffField enforces
@@ -252,14 +255,18 @@ func reverseSchemaDiffWithPrior(
 		RoleMembershipsModified: reverseRoleMembershipChanges(diff.RoleMembershipsModified),
 		// Grants to remove become grants to add, and grants to add become grants
 		// to revoke. A routine or a table the rollback creates again also gets
-		// back the privileges the pre-change database held on it.
-		GrantsAdded:         slices.Concat(diff.GrantsRemoved, routineGrants.granted, tableGrants),
+		// back the privileges the pre-change database held on it, and a grant
+		// a DENY of the change took the place of comes back once the DENY is
+		// taken.
+		GrantsAdded:         slices.Concat(diff.GrantsRemoved, diff.GrantsReplaced, routineGrants.granted, tableGrants),
 		GrantsRemoved:       append(slices.Clone(diff.GrantsAdded), routineGrants.revoked...),
 		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
 		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
 		// A DENY the change adds is taken again, and one it takes is denied
-		// again.
-		DeniesAdded:   diff.DeniesRemoved,
+		// again, as is a DENY a statement of the change took the place of. A
+		// REVOKE alone leaves the grantee neither the DENY nor the row the
+		// change replaced (stokaro/ptah#6661).
+		DeniesAdded:   slices.Concat(diff.DeniesRemoved, diff.DeniesReplaced),
 		DeniesRemoved: diff.DeniesAdded,
 
 		// Reverse constraint operations. A modified constraint is expressed by

@@ -284,6 +284,12 @@ func (p *Planner) columnGrantsDeniesTake(diff *difftypes.SchemaDiff) []difftypes
 // Each DENY carries CASCADE, or is refused, as one the diff adds is
 // ([denies.cascades]): a GRANT ... WITH GRANT OPTION the plan runs before it
 // leaves the grantee holding the permission grantable.
+//
+// A DENY the diff adds is left to [Planner.planDenies], which runs it after
+// the grants, so it runs once. A rollback adds such a DENY: the reversal of
+// `DENY SELECT ON t`, run for a grantee that held SELECT on t and a DENY on
+// t.a, grants SELECT on t again and denies t.a again, and the read it plans
+// from holds the DENY on t.a.
 func (p *Planner) columnDeniesGrantsTake(diff *difftypes.SchemaDiff) (afterRevokes, afterGrants []ast.Node, err error) {
 	if !p.deniesOnObjects() || len(diff.CurrentPartialRevokes) == 0 {
 		return nil, nil, nil
@@ -300,7 +306,8 @@ func (p *Planner) columnDeniesGrantsTake(diff *difftypes.SchemaDiff) (afterRevok
 		})
 	}
 	for _, held := range diff.CurrentPartialRevokes {
-		if !held.Denied || held.Column == "" || dropped.holds(held) || removes(diff.DeniesRemoved, held) {
+		if !held.Denied || held.Column == "" || dropped.holds(held) || removes(diff.DeniesRemoved, held) ||
+			removes(diff.DeniesAdded, held) {
 			continue
 		}
 		key := d.key(held)

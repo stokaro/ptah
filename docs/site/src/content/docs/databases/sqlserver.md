@@ -750,6 +750,58 @@ annotation writes one, and `ptah schema inspect --format hcl` leaves it out
 and reports it. The plan check and the drift report rate a `DENY` added or
 taken away a warning.
 
+The down file `ptah migrations generate` writes gives back the row its up
+file replaced. It revokes what the up file granted or denied, then grants or
+denies the replaced row again, with its grant option, so a role that held
+`GRANT SELECT ON dbo.t` before a `DENY` holds it again after the rollback, and
+a role that held a `DENY` before a `GRANT` is denied again.
+
+Measured on SQL Server 2025, a statement run by a member of `sysadmin` or
+`db_owner`, or by a principal holding `CONTROL` on the securable or on its
+schema, records the owner of the securable as its grantor. That is `dbo` for a
+table in `dbo`, the owner of the schema for a table in a schema another
+principal owns, and the principal a procedure, a function or a table was given
+to with `ALTER AUTHORIZATION`. A `DENY` needs `CONTROL`, so the read takes the
+owner of each row's securable from the server, and the down file gives back a
+row that owner gave. Run as the same principal, it records the same grantor.
+A row another principal gave from its own grant option is a row of its own,
+which the `DENY` leaves in place, and the down file leaves it alone. That holds
+for the principal that runs the migrations too: a grant it gave from its grant
+option stays through its `DENY`.
+
+A grant on a whole table beside a column grant of the same permission is read
+as a grant on each column, and the down file gives it back that way. A member
+reads the same columns after the rollback, and a column the table gains later
+is not covered.
+
+`ptah migrations down --plan` derives the rollback from a replay of the
+migrations up to the target version, and the replay holds no row of a role the
+migrations do not create. So the derived plan cannot give back what a `DENY`
+on such a role replaced. It leaves the `DENY`, and names it on standard error:
+
+```text
+UNMANAGED: the database denies SELECT on TABLE dbo.t to "reader", and the target version does not declare the DENY, so the derived rollback leaves it and cannot give back a grant it replaced; this lists every such DENY, not only the ones the rolled-back migrations added, so revoke it by hand if one of them added it
+```
+
+The replay does not run the migrations above the target version, and could
+not run such a `DENY` without the role, so the plan cannot tell which `DENY`
+they added. The lines name every `DENY` of the database that the target
+version does not declare, whoever added it. The run exits 0.
+
+A permission on another securable class, such as a role, a user, a type or a
+certificate, is outside the schema. The read keeps it out of the grants it
+compares, so no plan grants, denies or revokes it, and names it the way the
+statement that gives it does: `schema compare` lists it under the report, and
+`db read`, `schema apply`, `schema diff` and `migrations plan` warn on
+standard error:
+
+```text
+warning: permission "GRANT ALTER ON ROLE::auditor TO app" in the database is left out: Ptah compares permissions on the database, a schema, an object or a column, and no permission on another securable class, so no plan grants, denies or revokes it
+```
+
+A class the read cannot name, such as an external language, is named by its
+class and the `major_id` the catalog holds.
+
 ## Permissions on columns
 
 `GRANT SELECT (id, name) ON dbo.t TO reader` limits a permission to columns

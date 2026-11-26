@@ -69,6 +69,8 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.DeniesAdded = slices.Clone(diff.DeniesAdded)
 	clone.DeniesRemoved = slices.Clone(diff.DeniesRemoved)
 	clone.GrantsDeniesTake = slices.Clone(diff.GrantsDeniesTake)
+	clone.GrantsReplaced = slices.Clone(diff.GrantsReplaced)
+	clone.DeniesReplaced = slices.Clone(diff.DeniesReplaced)
 	clone.ConstraintsAdded = slices.Clone(diff.ConstraintsAdded)
 	clone.ConstraintsAdded = slices.Clone(diff.ConstraintsAdded)
 	clone.ConstraintsRemoved = slices.Clone(diff.ConstraintsRemoved)
