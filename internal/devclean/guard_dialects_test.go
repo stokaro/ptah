@@ -384,10 +384,10 @@ func TestReplayGuardServerDatabases_HappyPath(t *testing.T) {
 // outlives the cleanup, which drops databases and nothing else: a user, a
 // role, a privilege, a stored body, a server setting.
 func TestReplayGuardServerDatabases_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(catalog.ServerInfo{
+	guard := forSession(qt.New(t), devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect:     platform.MySQL,
 		WholeServer: true,
-	}, devclean.ReplayRealmServerDatabases)
+	}, devclean.ReplayRealmServerDatabases))
 	tests := []struct {
 		name      string
 		statement string
@@ -422,10 +422,10 @@ const (
 )
 
 func TestReplayGuardMySQLFamily_FailurePath(t *testing.T) {
-	guard := devclean.NewReplayGuard(catalog.ServerInfo{
+	guard := forSession(qt.New(t), devclean.NewReplayGuard(catalog.ServerInfo{
 		Dialect: platform.MySQL,
 		Schema:  "ptah_dev",
-	}, devclean.ReplayRealmDatabase)
+	}, devclean.ReplayRealmDatabase))
 	tests := []struct {
 		name      string
 		statement string

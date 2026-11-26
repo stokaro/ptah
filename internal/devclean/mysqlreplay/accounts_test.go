@@ -42,15 +42,19 @@ const (
 	devRoles   = `["reader", "nested"]`
 )
 
-// refusal is the whole refusal of operation by dialect's guard.
+// refusal is the whole refusal of a statement by dialect's guard, where
+// operation is all of it after the verb.
 func refusal(dialect, operation string) string {
-	return dialect + ` migration replay rejects ` + regexp.QuoteMeta(operation) +
-		` because its effects cannot be confined to the disposable database realm`
+	return dialect + ` migration replay rejects ` + regexp.QuoteMeta(operation)
 }
 
+// confined ends every refusal, reaches ends the refusal of a statement that
+// reaches the account the run connects as, with its remedy, and unreadable
+// ends the refusal of one whose accounts the guard cannot tell from it.
 const (
-	reaches    = " that reaches the account the run connects as"
-	unreadable = " whose accounts cannot be read"
+	confined   = " because its effects cannot be confined to the disposable database realm"
+	reaches    = " that reaches the account the run connects as" + confined + "; connect the dev URL as an account the history does not name"
+	unreadable = " whose accounts cannot be read" + confined
 )
 
 // connectingAccountStatements each reach dev@% or a role it holds, and the
@@ -79,6 +83,30 @@ var connectingAccountStatements = []struct {
 	{name: "after another account", statement: "DROP USER 'other'@'%', CURRENT_USER", operation: "DROP USER" + reaches},
 	{name: "after an unquoted host", statement: "DROP USER other@127.0.0.1, dev", operation: "DROP USER" + reaches},
 	{name: "inside SET STATEMENT", statement: "SET STATEMENT max_statement_time = 1 FOR DROP USER CURRENT_USER", operation: "DROP USER" + reaches},
+
+	// Names padded with what a server trims: MySQL trims space, tab, newline,
+	// vertical tab, form feed and carriage return from both ends of a user
+	// or a host, and MariaDB trims spaces from the end when it writes the
+	// grant tables.
+	{name: "user padded with a space", statement: "DROP USER 'dev '@'%'", operation: "DROP USER" + reaches},
+	{name: "user after a space", statement: "DROP USER ' dev'@'%'", operation: "DROP USER" + reaches},
+	{name: "user padded with a tab", statement: "DROP USER 'dev\t'@'%'", operation: "DROP USER" + reaches},
+	{name: "user padded with a tab escape", statement: `DROP USER 'dev\t'@'%'`, operation: "DROP USER" + reaches},
+	{name: "user padded with a newline", statement: "DROP USER 'dev\n'", operation: "DROP USER" + reaches},
+	{name: "user after a vertical tab", statement: "DROP USER '\vdev'", operation: "DROP USER" + reaches},
+	{name: "user padded with a form feed", statement: "DROP USER 'dev\f'", operation: "DROP USER" + reaches},
+	{name: "user padded with a carriage return", statement: "DROP USER 'dev\r'", operation: "DROP USER" + reaches},
+	{name: "host padded with a space", statement: "DROP USER 'dev'@'% '", operation: "DROP USER" + reaches},
+	{name: "host of spaces", statement: "DROP USER 'dev'@'  '", operation: "DROP USER" + reaches},
+	{name: "padded in backticks", statement: "DROP USER `dev `@`% `", operation: "DROP USER" + reaches},
+	{name: "padded in double quotes", statement: `DROP USER "dev "@" %"`, operation: "DROP USER" + reaches},
+	{name: "padded user revoked from", statement: "REVOKE ALL ON *.* FROM 'dev '@'%'", operation: "REVOKE" + reaches},
+	{name: "padded held role dropped", statement: "DROP ROLE 'reader '", operation: "DROP ROLE" + reaches},
+	{name: "revoked from a padded held role", statement: "REVOKE ALL ON *.* FROM ' nested'", operation: "REVOKE" + reaches},
+	{name: "padded account on a narrower host", statement: "CREATE USER 'dev '@'127.0.0.1'", operation: "CREATE USER" + reaches},
+	{name: "account on a padded narrower host", statement: "CREATE USER 'dev'@' 127.0.0.1'", operation: "CREATE USER" + reaches},
+	{name: "anonymous account of a space", statement: "CREATE USER ' '@'127.0.0.1'", operation: "CREATE USER" + reaches},
+	{name: "grant creating an anonymous account of a space", statement: "GRANT USAGE ON *.* TO '\t'@'127.0.0.1'", operation: "GRANT" + reaches},
 
 	// A role the account holds, which it loses the privileges of.
 	{name: "held role dropped", statement: "DROP ROLE reader", operation: "DROP ROLE" + reaches},
@@ -120,14 +148,14 @@ var connectingAccountStatements = []struct {
 	{name: "grant creating an anonymous account", statement: "GRANT USAGE ON *.* TO ''@'127.0.0.1'", operation: "GRANT" + reaches},
 
 	// Refused whatever account they name.
-	{name: "another account altered", statement: "ALTER USER 'other'@'%' ACCOUNT LOCK", operation: "ALTER USER"},
-	{name: "the account altered", statement: "ALTER USER CURRENT_USER() IDENTIFIED BY 'changed'", operation: "ALTER USER"},
-	{name: "the account renamed", statement: "RENAME USER CURRENT_USER TO 'moved'@'%'", operation: "RENAME USER"},
-	{name: "another account renamed", statement: "RENAME USER 'other'@'%' TO 'moved'@'%'", operation: "RENAME USER"},
-	{name: "own password set", statement: "SET PASSWORD = 'changed'", operation: "SET PASSWORD"},
-	{name: "another password set", statement: "SET PASSWORD FOR 'other'@'%' = 'changed'", operation: "SET PASSWORD"},
-	{name: "password set by a later item", statement: "SET @a = 1, PASSWORD FOR 'other'@'%' = PASSWORD('changed')", operation: "SET PASSWORD"},
-	{name: "default role set", statement: "SET DEFAULT ROLE NONE FOR CURRENT_USER", operation: "SET DEFAULT ROLE"},
+	{name: "another account altered", statement: "ALTER USER 'other'@'%' ACCOUNT LOCK", operation: "ALTER USER" + confined},
+	{name: "the account altered", statement: "ALTER USER CURRENT_USER() IDENTIFIED BY 'changed'", operation: "ALTER USER" + confined},
+	{name: "the account renamed", statement: "RENAME USER CURRENT_USER TO 'moved'@'%'", operation: "RENAME USER" + confined},
+	{name: "another account renamed", statement: "RENAME USER 'other'@'%' TO 'moved'@'%'", operation: "RENAME USER" + confined},
+	{name: "own password set", statement: "SET PASSWORD = 'changed'", operation: "SET PASSWORD" + confined},
+	{name: "another password set", statement: "SET PASSWORD FOR 'other'@'%' = 'changed'", operation: "SET PASSWORD" + confined},
+	{name: "password set by a later item", statement: "SET @a = 1, PASSWORD FOR 'other'@'%' = PASSWORD('changed')", operation: "SET PASSWORD" + confined},
+	{name: "default role set", statement: "SET DEFAULT ROLE NONE FOR CURRENT_USER", operation: "SET DEFAULT ROLE" + confined},
 
 	// Accounts the guard cannot read, and so cannot tell from the run's.
 	{name: "parenthesized account", statement: "DROP USER (dev)", operation: "DROP USER" + unreadable},
@@ -157,16 +185,14 @@ func TestGuard_ConnectingAccount_FailurePath(t *testing.T) {
 	}
 }
 
-// hostSessionStatements reach dev@localhost by a host the server compares
-// with that one: in either case, and with % and _ as wildcards.
+// hostSessionStatements name dev@localhost by its host, which the server
+// compares in either case.
 var hostSessionStatements = []struct {
 	name, statement string
 }{
 	{name: "host in another case", statement: "DROP USER 'dev'@'LocalHost'"},
-	{name: "host pattern", statement: "DROP USER 'dev'@'local%'"},
-	{name: "host with a one-character wildcard", statement: "DROP USER 'dev'@'l_calhost'"},
-	{name: "any host", statement: "DROP USER 'dev'@'%'"},
 	{name: "bare host", statement: "DROP USER dev@localhost"},
+	{name: "host padded with a space", statement: "DROP USER 'dev'@'localhost '"},
 }
 
 func TestGuard_ConnectingAccount_FailurePathHost(t *testing.T) {
@@ -211,6 +237,13 @@ var anotherAccountStatements = []struct {
 	{name: "grant as another account", statement: "GRANT SELECT ON ptah_dev.* TO 'app'@'%' AS 'admin'@'%' WITH ROLE writer, 'dev'@'127.0.0.1'", operation: "privilege or role mutation"},
 	{name: "role not held created", statement: "CREATE ROLE writer", operation: "CREATE ROLE"},
 	{name: "another account replaced", statement: "CREATE OR REPLACE USER 'other'@'%'", operation: "CREATE USER"},
+
+	// What neither server trims: a no-break space, an ideographic space and
+	// a space inside a name.
+	{name: "user padded with a no-break space", statement: "DROP USER 'dev\u00a0'@'%'", operation: "DROP USER"},
+	{name: "user padded with an ideographic space", statement: "DROP USER 'dev\u3000'@'%'", operation: "DROP USER"},
+	{name: "space inside the user", statement: "DROP USER 'd ev'@'%'", operation: "DROP USER"},
+	{name: "space inside a held role", statement: "DROP ROLE 'read er'", operation: "DROP ROLE"},
 }
 
 // TestGuard_AnotherAccount_HappyPath is the control for the failure path
@@ -241,19 +274,25 @@ func TestGuard_AnotherAccount_FailurePath(t *testing.T) {
 					c := qt.New(t)
 					guard := boundGuard(c, dialect, utf8Session(devAccount, devRoles))
 
-					c.Assert(guard.Validate(test.statement, scope.scope), qt.ErrorMatches, refusal(dialect, test.operation))
+					c.Assert(guard.Validate(test.statement, scope.scope), qt.ErrorMatches, refusal(dialect, test.operation+confined))
 				})
 			}
 		}
 	}
 }
 
-// hostSessionControls name a dev account dev@localhost does not match, or
-// one a connection is matched to only after it.
+// hostSessionControls name a dev account other than dev@localhost, or one a
+// connection is matched to only after it. A DROP USER or a REVOKE names one
+// account exactly, so a host pattern that covers localhost names another
+// account there.
 var hostSessionControls = []struct {
 	name, statement string
 }{
 	{name: "another host dropped", statement: "DROP USER 'dev'@'127.0.0.1'"},
+	{name: "host pattern dropped", statement: "DROP USER 'dev'@'local%'"},
+	{name: "host with a one-character wildcard dropped", statement: "DROP USER 'dev'@'l_calhost'"},
+	{name: "any host dropped", statement: "DROP USER 'dev'@'%'"},
+	{name: "revoked from any host", statement: "REVOKE ALL ON *.* FROM 'dev'"},
 	{name: "wider host created", statement: "CREATE USER 'dev'@'%'"},
 	{name: "anonymous account on the session's host", statement: "CREATE USER ''@'localhost'"},
 }
@@ -297,15 +336,22 @@ func TestGuard_ConnectingAccount_FailurePathBackslashReadings(t *testing.T) {
 }
 
 // A guard that read no session knows the spellings that name the session's
-// account whoever runs it. Every run's guard reads its session first; this
-// pins what the guard knows before it does.
+// account whoever runs it, and cannot tell any account spelled out from the
+// session's, so it refuses a statement that names one. Every run's guard
+// reads its session first; this pins what the guard does before it does.
 func TestGuard_ConnectingAccount_FailurePathUnreadSession(t *testing.T) {
 	tests := []struct {
 		name, statement, operation string
 	}{
 		{name: "CURRENT_USER", statement: "DROP USER CURRENT_USER", operation: "DROP USER" + reaches},
 		{name: "PUBLIC", statement: "REVOKE ALL ON *.* FROM PUBLIC", operation: "REVOKE" + reaches},
-		{name: "ALTER USER", statement: "ALTER USER 'other'@'%' ACCOUNT LOCK", operation: "ALTER USER"},
+		{name: "ALTER USER", statement: "ALTER USER 'other'@'%' ACCOUNT LOCK", operation: "ALTER USER" + confined},
+		{name: "account dropped by name", statement: "DROP USER 'dev'@'%'", operation: "DROP USER" + unreadable},
+		{name: "role dropped by name", statement: "DROP ROLE writer", operation: "DROP ROLE" + unreadable},
+		{name: "account created", statement: "CREATE USER 'app'@'%'", operation: "CREATE USER" + unreadable},
+		{name: "privilege granted by name", statement: "GRANT SELECT ON ptah_dev.* TO 'app'@'%'", operation: "GRANT" + unreadable},
+		{name: "revoked by name", statement: "REVOKE ALL ON *.* FROM 'app'@'%'", operation: "REVOKE" + unreadable},
+		{name: "proxy on an account revoked", statement: "REVOKE PROXY ON 'other'@'%' FROM CURRENT_USER", operation: "REVOKE" + unreadable},
 	}
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		for _, test := range tests {
@@ -318,13 +364,38 @@ func TestGuard_ConnectingAccount_FailurePathUnreadSession(t *testing.T) {
 	}
 }
 
-// A guard that read no session reads an account spelled out as another one.
+// A guard that read no session lifts what names no account it cannot tell
+// from the session's: a GRANT that takes nothing from the run's own account,
+// and a write to a table of the mysql schema that holds no account.
 func TestGuard_ConnectingAccount_HappyPathUnreadSession(t *testing.T) {
+	statements := []struct {
+		name, statement string
+	}{
+		{name: "privilege granted to the account", statement: "GRANT SELECT ON ptah_dev.* TO CURRENT_USER"},
+		{name: "time zone table written", statement: "DELETE FROM mysql.time_zone_name"},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range statements {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				err := guardFor(c, dialect).Validate(test.statement, replay.Scope{Database: "ptah_dev", Server: true})
+				c.Assert(err, qt.IsNil)
+			})
+		}
+	}
+}
+
+// CURRENT_USER() names a user whose quoted name holds an at sign with the
+// host after the last one.
+func TestGuard_ConnectingAccount_FailurePathUserWithAnAtSign(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			err := guardFor(c, dialect).Validate("DROP USER 'dev'@'%'", replay.Scope{Database: "ptah_dev", Server: true})
-			c.Assert(err, qt.IsNil)
+			guard := boundGuard(c, dialect, utf8Session("ci@corp@%", "[]"))
+
+			err := guard.Validate("DROP USER 'ci@corp'@'%'", replay.Scope{Database: "ptah_dev", Server: true})
+
+			c.Assert(err, qt.ErrorMatches, refusal(dialect, "DROP USER"+reaches))
 		})
 	}
 }

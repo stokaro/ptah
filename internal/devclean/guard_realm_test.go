@@ -265,13 +265,16 @@ var mysqlServerWideStatements = []struct {
 	{name: "CREATE FUNCTION with a dollar sign definer host", statement: "CREATE DEFINER=root@$ FUNCTION f() RETURNS INT READS SQL DATA RETURN (SELECT COUNT(*) FROM archive.t)"},
 }
 
-func mysqlGuard(dialect string, realm devclean.ReplayRealm) *devclean.ReplayGuard {
-	return devclean.NewReplayGuard(catalog.ServerInfo{Dialect: dialect, Schema: "dev"}, realm)
+// mysqlGuard is the guard of a run on a MySQL or MariaDB server in realm,
+// bound to the session it replays on.
+func mysqlGuard(c *qt.C, dialect string, realm devclean.ReplayRealm) *devclean.ReplayGuard {
+	c.Helper()
+	return forSession(c, devclean.NewReplayGuard(catalog.ServerInfo{Dialect: dialect, Schema: "dev"}, realm))
 }
 
 func TestReplayGuardServerRealm_MySQLLiftsServerWideStatements(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		guard := mysqlGuard(dialect, devclean.ReplayRealmServer)
+		guard := mysqlGuard(qt.New(t), dialect, devclean.ReplayRealmServer)
 		for _, test := range mysqlServerWideStatements {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -285,7 +288,7 @@ func TestReplayGuardServerRealm_MySQLLiftsServerWideStatements(t *testing.T) {
 // for the test above.
 func TestReplayGuardDatabaseRealm_MySQLRefusesServerWideStatements(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		guard := mysqlGuard(dialect, devclean.ReplayRealmDatabase)
+		guard := mysqlGuard(qt.New(t), dialect, devclean.ReplayRealmDatabase)
 		for _, test := range mysqlServerWideStatements {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -343,7 +346,7 @@ func TestReplayGuardServerRealm_MySQLFailurePath(t *testing.T) {
 		{name: "client character set", statement: "SET NAMES latin1", wantErr: `.*rejects client character set change .*`},
 	}
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		guard := mysqlGuard(dialect, devclean.ReplayRealmServer)
+		guard := mysqlGuard(qt.New(t), dialect, devclean.ReplayRealmServer)
 		for _, test := range tests {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -374,7 +377,7 @@ func TestReplayGuardRemedy_EndsARefusalTheServerRealmLifts(t *testing.T) {
 		for _, test := range mysqlServerWideStatements {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
-				guard := mysqlGuard(dialect, devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy)
+				guard := mysqlGuard(c, dialect, devclean.ReplayRealmDatabase).WithServerRealmRemedy(replayRemedy)
 				c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches,
 					dialect+` migration replay rejects .* because its effects cannot be confined to the disposable database realm; raise the realm`)
 			})
@@ -398,7 +401,7 @@ func TestReplayGuardRemedy_EndsAWholeServerRefusalTheServerRealmLifts(t *testing
 		for _, statement := range statements {
 			t.Run(dialect+"/"+statement, func(t *testing.T) {
 				c := qt.New(t)
-				guard := mysqlGuard(dialect, devclean.ReplayRealmServerDatabases).WithServerRealmRemedy(replayRemedy)
+				guard := mysqlGuard(c, dialect, devclean.ReplayRealmServerDatabases).WithServerRealmRemedy(replayRemedy)
 				c.Assert(guard.ValidateStatement(statement), qt.ErrorMatches,
 					dialect+` migration replay rejects .* because its effects cannot be confined to the disposable database realm; raise the realm`)
 			})

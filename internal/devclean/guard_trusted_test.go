@@ -119,7 +119,7 @@ func TestDevReplayGuard_TrustedSQL_LiftsConfinementRefusals(t *testing.T) {
 			c := qt.New(t)
 			trustReplaySQL(c, test.info.URL)
 			c.Assert(devclean.DevReplayRealm(test.info), qt.Equals, devclean.ReplayRealmDatabase)
-			c.Assert(devclean.NewDevReplayGuard(test.info).ValidateStatement(test.statement), qt.IsNil)
+			c.Assert(forSession(c, devclean.NewDevReplayGuard(test.info)).ValidateStatement(test.statement), qt.IsNil)
 		})
 	}
 }
@@ -131,7 +131,7 @@ func TestDevReplayGuard_WithoutTrust_RefusesAndNamesTheTrustRemedy(t *testing.T)
 	for _, test := range trustLifted {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := devclean.NewDevReplayGuard(test.info).ValidateStatement(test.statement)
+			err := forSession(c, devclean.NewDevReplayGuard(test.info)).ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, `.* migration replay rejects .*`+trustRemedy)
 		})
 	}
@@ -406,7 +406,7 @@ func TestDevReplayGuard_TrustedSQL_OnAWholeMySQLServer(t *testing.T) {
 			c := qt.New(t)
 			trustReplaySQL(c, trustedMySQLWholeServer.URL)
 			c.Assert(devclean.DevReplayRealm(trustedMySQLWholeServer), qt.Equals, devclean.ReplayRealmServerDatabases)
-			c.Assert(devclean.NewDevReplayGuard(trustedMySQLWholeServer).ValidateStatement(test.statement), qt.IsNil)
+			c.Assert(forSession(c, devclean.NewDevReplayGuard(trustedMySQLWholeServer)).ValidateStatement(test.statement), qt.IsNil)
 		})
 	}
 }
@@ -417,7 +417,7 @@ func TestDevReplayGuard_WithoutTrust_OnAWholeMySQLServer(t *testing.T) {
 	for _, test := range wholeServerTrustLifted {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := devclean.NewDevReplayGuard(trustedMySQLWholeServer).ValidateStatement(test.statement)
+			err := forSession(c, devclean.NewDevReplayGuard(trustedMySQLWholeServer)).ValidateStatement(test.statement)
 			c.Assert(err, qt.ErrorMatches, `mysql migration replay rejects .*`+trustRemedy)
 		})
 	}

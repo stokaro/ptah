@@ -10,11 +10,13 @@ package atlasschema
 // dev server, are connected, and are pinned here for the same reason.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlassource"
@@ -190,6 +192,34 @@ func TestGuardServerRehearsal_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// rehearsalSession is the dev session of a rehearsal: it reads statements as
+// the guard does and runs as 'root'@'%', which no statement below names.
+type rehearsalSession struct{}
+
+func (rehearsalSession) QueryRowContext(context.Context, string, ...any) dataext.Row {
+	return rehearsalSessionRow{}
+}
+
+type rehearsalSessionRow struct{}
+
+func (rehearsalSessionRow) Scan(dest ...any) error {
+	for index, value := range []string{"utf8mb4", "root@%", "[]"} {
+		*dest[index].(*string) = value
+	}
+	return nil
+}
+
+func (rehearsalSessionRow) Err() error { return nil }
+
+// rehearsalGuard is the guard of a rehearsal on dev, bound to its session as
+// the guard of a run is.
+func rehearsalGuard(c *qt.C, dev catalog.ServerInfo) *devclean.ReplayGuard {
+	c.Helper()
+	guard, err := devclean.NewDevReplayGuard(dev).ForSession(c.Context(), rehearsalSession{})
+	c.Assert(err, qt.IsNil)
+	return guard
+}
+
 // serverRehearsalOwnedStatements are what the reset of a whole dev server the
 // operator named leaves behind, and a server the run owns rehearses.
 var serverRehearsalOwnedStatements = []struct {
@@ -209,7 +239,7 @@ func TestGuardServerRehearsal_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, devclean.NewDevReplayGuard(wholeMySQLServerInfo), wholeMySQLServerInfo)
+			err := guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, rehearsalGuard(c, wholeMySQLServerInfo), wholeMySQLServerInfo)
 
 			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on a whole dev server: `+
 				`mysql migration replay rejects .* because its effects cannot be confined to the disposable database realm; `+
@@ -233,8 +263,8 @@ func TestGuardServerRehearsal_OwnedServer(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(release)
 
-			c.Assert(guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, devclean.NewDevReplayGuard(owned), owned), qt.IsNil)
-			c.Assert(guardRehearsedPlan([]string{"CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM `app`.`t`"}, devclean.NewDevReplayGuard(owned), owned),
+			c.Assert(guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, rehearsalGuard(c, owned), owned), qt.IsNil)
+			c.Assert(guardRehearsedPlan([]string{"CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM `app`.`t`"}, rehearsalGuard(c, owned), owned),
 				qt.ErrorMatches, `statement 1 cannot be rehearsed on a whole dev server: `+
 					`mariadb migration replay rejects CREATE executable stored body because its effects cannot be confined to the disposable database realm`)
 		})

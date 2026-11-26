@@ -135,8 +135,8 @@ func (g guard) validate(stmt string, scope replay.Scope, reading mysqlstored.Ser
 		}
 		tokens = tokens[:start]
 	}
-	if operation := g.account.operation(stmt, tokens, reading); operation != "" {
-		return replay.Refuse(g.dialect, operation)
+	if operation := g.account.operation(stmt, tokens, reading, scope.Database); operation != "" {
+		return refuseAccountOperation(g.dialect, operation)
 	}
 	// A run that trusts its SQL lifts the same statements a server the run
 	// owns lifts, and for the same reason: their only effect the guard cannot

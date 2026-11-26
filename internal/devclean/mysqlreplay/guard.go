@@ -214,6 +214,8 @@ func mysqlMutationTargets(tokens []lexer.Token) [][]string {
 		}
 	case "UPDATE":
 		return mysqlUpdateTargets(tokens)
+	case "LOAD":
+		return mysqlLoadTargets(tokens)
 	case "LOCK":
 		// A planned trigger swap runs under LOCK TABLES. The lock ends with
 		// the replay session, so only a table outside the realm makes it

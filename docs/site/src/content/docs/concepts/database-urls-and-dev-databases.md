@@ -409,12 +409,27 @@ proven to stay inside the disposable realm:
   account or a role it holds, and so is a `GRANT` that gives the account a
   password, a TLS requirement or a resource limit. `CREATE USER`,
   `CREATE ROLE` and `GRANT` are refused for an account that a new connection
-  would match first: the same user, or the anonymous user, on a narrower host.
-  The account is named by `CURRENT_USER`, `CURRENT_USER()`, `USER()`,
-  `CURRENT_ROLE` or `PUBLIC`, or by its user and host in any quoting, a host
-  pattern that covers the session's host included. User names compare
-  exactly, and host names in either case. A statement that names only other
-  accounts gets the answer its realm gives it.
+  would match first: the same user, or the anonymous user, on a narrower host,
+  or on a network written as `192.168.0.0/255.255.0.0` or `192.168.0.0/16`,
+  which MySQL tries before a host pattern or a name. The account is named by
+  `CURRENT_USER`, `CURRENT_USER()`, `USER()`, `CURRENT_ROLE` or `PUBLIC`, or
+  by its user and host in any quoting. A `DROP USER` or a `REVOKE` names one
+  account, so `'app'@'%'` there is not `'app'@'localhost'`. User names compare
+  exactly, and host names in either case, after the trimming each server does.
+  MySQL trims spaces, tabs, line feeds, vertical tabs, form feeds and carriage
+  returns at both ends of a user, host or role name, so `'app '@'% '` names
+  `app@%`. MariaDB trims the spaces at the end of a name when it writes its
+  grant tables, so `DROP USER 'app '@'% '` removes the row of `app@%`, and the
+  account is refused once the server reloads them. A statement is refused when
+  either reading names the account. A write to a table of the `mysql` schema
+  that holds accounts or privileges, such as `mysql.user`, `mysql.db` or
+  MariaDB's `mysql.global_priv`, is refused in the same way, and so is a view
+  over one: the server reads the write as a change to its accounts once it
+  reloads them, which MySQL does after any account statement that fails. The
+  guard also reads the statements of a routine, trigger or event body, and
+  refuses the `CREATE` or `ALTER` that writes one of these refusals into a
+  body. A statement that names only other accounts gets the answer its realm
+  gives it.
 - SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
   alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
   `RESTORE`, and server-level maintenance statements.
@@ -540,8 +555,12 @@ reaches past the dev database:
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, writes to another database, the key
   cache statements `CACHE INDEX` and `LOAD INDEX INTO CACHE`, and
-  `SET RESOURCE GROUP`. An account statement that reaches the account the run
-  connects as stays refused.
+  `SET RESOURCE GROUP`. A statement that reaches the account the run connects
+  as stays refused, and so does a write to an account table of the `mysql`
+  schema, in a body too. The guard reads a body as the statement that defines
+  it writes it. SQL that a body builds and runs, with `PREPARE` and `EXECUTE`
+  or MariaDB's `EXECUTE IMMEDIATE`, is not read, so such a body can still
+  reach the account here.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
   groups, permissions, secrets, resource pools, backups and topics, on
   `docker://ydb/<tag>`, which the YDB provider starts. YDB gets no dev realm
@@ -672,8 +691,8 @@ accepts:
   group statements, `FEDERATED`, `CONNECT` and `SPIDER` tables, `LOAD DATA`,
   `LOAD XML`, `IMPORT TABLE`, `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a
   client character set outside the UTF-8 family, set by the history or by the
-  dev session, but no account statement that reaches the account the run
-  connects as;
+  dev session, but no statement that reaches the account the run connects as
+  and no write to an account table of the `mysql` schema;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
   logins, credentials, synonyms, a target in another database, `BACKUP`,
   `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
@@ -686,7 +705,8 @@ accepts:
 A refusal that protects the run itself stays under trust. That covers a
 statement that changes the replay session, the identity it runs as or its
 transaction; a MySQL or MariaDB statement that reaches the account the run
-connects as; a write to a system catalog such as `pg_catalog`; server
+connects as; a write to a system catalog such as `pg_catalog`, or to a MySQL
+account table such as `mysql.user`; server
 configuration such as `ALTER SYSTEM`, `SET GLOBAL` or `RECONFIGURE`; an object
 the dev database cleanup cannot remove, such as an event trigger, a YugabyteDB
 publication or a SQL Server ledger table; a MySQL event or a SQL Server DDL

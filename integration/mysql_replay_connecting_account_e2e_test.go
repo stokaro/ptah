@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -22,7 +23,7 @@ import (
 
 // A MySQL or MariaDB history that drops or strips the account the run
 // connects as is refused on a server the run owns and under trust, and the
-// account is still on the server afterwards. The same history naming another
+// account still logs in and works afterwards. The same history naming another
 // account replays there, so the refusal is about the account and not about
 // account statements.
 
@@ -66,15 +67,45 @@ func newConnectingAccountFixture(c *qt.C, engine dbtarget.Engine, scheme string)
 	return connectingAccountFixture{family: family, account: account, other: other, devURL: devURL}
 }
 
-// accounts counts the accounts named user on the host % that may still
-// create users, which an account dropped or stripped of its privileges is
-// not.
-func (fx connectingAccountFixture) accounts(c *qt.C, user string) int {
+// login opens a new connection as user, whose password is user+"_pw", and
+// returns it with the error of its first round trip. The server reads the
+// account the way it reads every new connection, so an account a history
+// dropped, renamed or locked out is refused here even where the grant tables
+// still hold its row.
+func (fx connectingAccountFixture) login(c *qt.C, user string) (*sql.DB, error) {
 	c.Helper()
-	var count int
-	c.Assert(fx.family.admin.QueryRowContext(c.Context(),
-		"SELECT COUNT(*) FROM mysql.user WHERE User = ? AND Host = '%' AND Create_user_priv = 'Y'", user).Scan(&count), qt.IsNil)
-	return count
+	config := fx.family.config.Clone()
+	config.User, config.Passwd, config.DBName = user, user+"_pw", ""
+	db, err := sql.Open("mysql", config.FormatDSN())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	return db, db.PingContext(c.Context())
+}
+
+// reload makes the server read its grant tables again. MariaDB removes the
+// row of an account that a padded name drops and keeps the account in memory
+// until a reload, so a login asked before it would see the account the
+// tables no longer hold.
+func (fx connectingAccountFixture) reload(c *qt.C) {
+	c.Helper()
+	_, err := fx.family.admin.ExecContext(c.Context(), "FLUSH PRIVILEGES")
+	c.Assert(err, qt.IsNil)
+}
+
+// works asserts that, once the server reloads its grant tables, the account
+// the dev URL connects as still logs in on a new connection and still creates
+// and drops a database, which an account dropped or stripped of its
+// privileges cannot.
+func (fx connectingAccountFixture) works(c *qt.C) {
+	c.Helper()
+	fx.reload(c)
+	db, err := fx.login(c, fx.account)
+	c.Assert(err, qt.IsNil)
+	name := fmt.Sprintf("ptah_works_%d", time.Now().UnixNano())
+	_, err = db.ExecContext(c.Context(), "CREATE DATABASE `"+name+"`")
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(c.Context(), "DROP DATABASE `"+name+"`")
+	c.Assert(err, qt.IsNil)
 }
 
 // validate replays a directory holding the statements of history, under trust and on a server
@@ -93,17 +124,32 @@ func (fx connectingAccountFixture) validate(c *qt.C, history string) (string, er
 }
 
 // TestMigrationsValidateRefusesTheConnectingAccountE2E replays a history that
-// reaches the account the dev URL connects as, by a spelling the server reads
-// as that account and by the name only the session read tells the guard. The
-// refusal offers no remedy, since neither owning the server nor trust lifts
-// it, and the account keeps its privileges.
+// reaches the account the dev URL connects as: by a spelling the server reads
+// as that account, by the name only the session read tells the guard, padded
+// with a space the server trims, or by a write to the grant tables that a
+// failed account statement makes the server read. The refusal offers no way
+// to own the server or to trust the SQL, since neither lifts it, and the
+// account still logs in and works afterwards.
 func TestMigrationsValidateRefusesTheConnectingAccountE2E(t *testing.T) {
+	const (
+		reaches = " that reaches the account the run connects as because its effects cannot be confined to the " +
+			"disposable database realm; connect the dev URL as an account the history does not name"
+		confined = " because its effects cannot be confined to the disposable database realm"
+	)
 	histories := []struct {
-		name, history, operation string
+		name, history, refused string
 	}{
-		{name: "DROP USER CURRENT_USER", history: "DROP USER CURRENT_USER", operation: "DROP USER"},
-		{name: "account by name", history: "DROP USER '{account}'@'%'", operation: "DROP USER"},
-		{name: "every privilege revoked", history: "REVOKE ALL PRIVILEGES, GRANT OPTION FROM CURRENT_USER", operation: "REVOKE"},
+		{name: "DROP USER CURRENT_USER", history: "DROP USER CURRENT_USER", refused: "DROP USER" + reaches},
+		{name: "account by name", history: "DROP USER '{account}'@'%'", refused: "DROP USER" + reaches},
+		{name: "account padded with a space", history: "DROP USER '{account} '@'%'", refused: "DROP USER" + reaches},
+		{name: "every privilege revoked", history: "REVOKE ALL PRIVILEGES, GRANT OPTION FROM CURRENT_USER", refused: "REVOKE" + reaches},
+		{name: "every privilege revoked from the padded account", history: "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '{account} '@'% '",
+			refused: "REVOKE" + reaches},
+		// Measured on MySQL 8.4.13 and 26.10.0: replayed, the failed GRANT
+		// reloads the grant tables and the account the DELETE removed is
+		// refused its next login.
+		{name: "grant table row deleted", history: "DELETE FROM mysql.user WHERE User = '{account}';\nCREATE ROLE {account}_r;\nGRANT {account}_r TO 'nobody'@'%'",
+			refused: `write to account table "mysql.user"` + confined},
 	}
 	for _, engine := range connectingAccountEngines {
 		for _, test := range histories {
@@ -111,13 +157,13 @@ func TestMigrationsValidateRefusesTheConnectingAccountE2E(t *testing.T) {
 				c := qt.New(t)
 				fx := newConnectingAccountFixture(c, engine.engine, engine.scheme)
 				history := strings.ReplaceAll(test.history, "{account}", fx.account)
+				first, _, _ := strings.Cut(history, ";")
 
 				out, err := fx.validate(c, history)
 
-				c.Assert(err, qt.ErrorMatches, `(?s).* migration replay rejects `+test.operation+
-					` that reaches the account the run connects as because its effects cannot be confined to the `+
-					`disposable database realm\nSQL: `+regexp.QuoteMeta(history), qt.Commentf("%s", out))
-				c.Assert(fx.accounts(c, fx.account), qt.Equals, 1)
+				c.Assert(err, qt.ErrorMatches, `(?s).* migration replay rejects `+regexp.QuoteMeta(test.refused)+
+					`\nSQL: `+regexp.QuoteMeta(first), qt.Commentf("%s", out))
+				fx.works(c)
 			})
 		}
 	}
@@ -125,20 +171,28 @@ func TestMigrationsValidateRefusesTheConnectingAccountE2E(t *testing.T) {
 
 // TestMigrationsValidateReplaysAnotherAccountE2E is the control for the test
 // above: the same statements naming another account replay, and that account
-// is gone.
+// can no longer log in once the server reloads its grant tables. The padded
+// spelling drops it too, so the server trims the name as the guard reads it.
 func TestMigrationsValidateReplaysAnotherAccountE2E(t *testing.T) {
+	histories := []struct {
+		name, history string
+	}{
+		{name: "by name", history: "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '{other}'@'%';\nDROP USER '{other}'@'%'"},
+		{name: "padded with a space", history: "DROP USER '{other} '@'% '"},
+	}
 	for _, engine := range connectingAccountEngines {
-		t.Run(engine.name, func(t *testing.T) {
-			c := qt.New(t)
-			fx := newConnectingAccountFixture(c, engine.engine, engine.scheme)
+		for _, test := range histories {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				fx := newConnectingAccountFixture(c, engine.engine, engine.scheme)
 
-			out, err := fx.validate(c, fmt.Sprintf("REVOKE ALL PRIVILEGES, GRANT OPTION FROM '%[1]s'@'%%';\nDROP USER '%[1]s'@'%%'", fx.other))
+				out, err := fx.validate(c, strings.ReplaceAll(test.history, "{other}", fx.other))
 
-			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(fx.accounts(c, fx.account), qt.Equals, 1)
-			var others int
-			c.Assert(fx.family.admin.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM mysql.user WHERE User = ?", fx.other).Scan(&others), qt.IsNil)
-			c.Assert(others, qt.Equals, 0)
-		})
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+				fx.works(c)
+				_, err = fx.login(c, fx.other)
+				c.Assert(err, qt.ErrorMatches, `Error 1045 \(28000\): Access denied for user '`+fx.other+`'.*`)
+			})
+		}
 	}
 }

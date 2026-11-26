@@ -191,10 +191,23 @@ func guardFor(ctx context.Context, conn *dbschema.DatabaseConnection, guard *Rep
 	if owner, ok := conn.SchemaWriter().(replayGuardOwner); ok {
 		guard.guard = owner.ReplayGuard()
 	}
-	if err := guard.validateSession(ctx, conn); err != nil {
+	return guard.ForSession(ctx, conn)
+}
+
+// ForSession returns a copy of the guard that validates the statements a run
+// executes on session, as [NewDevReplayGuardFor] does for its connection. A
+// dialect whose guard reads a statement by the session it runs on, as
+// [replay.SessionGuard] says, has session read here, once; a session the
+// guard refuses is an error that names every way the operator can lift the
+// refusal. A guard that read no session cannot tell an account a MySQL or
+// MariaDB statement spells out from the one the run connects as, and refuses
+// the statement.
+func (g *ReplayGuard) ForSession(ctx context.Context, session replay.Session) (*ReplayGuard, error) {
+	guard := *g
+	if err := guard.validateSession(ctx, session); err != nil {
 		return nil, err
 	}
-	return guard, nil
+	return &guard, nil
 }
 
 // validateSession asks the dialect's guard about session, when the guard
