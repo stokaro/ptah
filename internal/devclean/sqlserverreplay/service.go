@@ -16,9 +16,11 @@ package sqlserverreplay
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
@@ -36,36 +38,96 @@ func Services() []replay.Service {
 }
 
 // guard judges the statements of a run on a dev session in database, the
-// name DB_NAME() returned on that session. A guard that read no session has
-// no database.
+// name DB_NAME() returned on that session, and asks that session which other
+// databases it reaches. A guard that read no session has no database and asks
+// nothing.
 type guard struct {
-	database string
+	database  string
+	databases *reachedDatabases
 }
 
 // databaseQuery reads the database the dev session is in.
 const databaseQuery = "SELECT DB_NAME()"
 
+// databaseAccessQuery asks whether the dev session reaches a database of the
+// name @p1: HAS_DBACCESS answers 1 when the session's login may use it, 0
+// when it may not, and NULL when there is no database of that name.
+//
+// It answers truthfully where the catalog does not: under DENY VIEW ANY
+// DATABASE, DB_ID returns NULL and sys.databases leaves out a database the
+// login is mapped into, yet a statement naming that database writes into it,
+// and HAS_DBACCESS returns 1 (measured on SQL Server 2022 and 2025).
+const databaseAccessQuery = "SELECT HAS_DBACCESS(@p1)"
+
 // ValidateSession reads the database the dev session is in, and returns the
-// guard that takes a name of that database for a local one. It refuses no
-// session. The database is read under trust too, where the guard does not use
-// it, so that every run reads the session the same way.
+// guard that takes a name of that database for a local one and asks the
+// session about the database part of every other name; see
+// [guard.localName]. It refuses no session. The database is read under trust
+// too, where the guard does not use it, so that every run reads the session the
+// same way; a trusted run asks no question about a name.
 //
 // catalog.ServerInfo.Schema, which devclean gives as [replay.Scope.Database],
 // names the schema a SQL Server connection writes to, such as dbo, not its
 // database. A session cannot leave its database during the run, since USE is
 // refused, so the name read once holds for every statement the run executes.
+//
+// The guard asks its questions on ctx, the context the session was read on,
+// because [replay.Guard.Validate] takes none: devclean reads the session for
+// each run, on the run's context, and validates the run's statements with the
+// guard it gets back.
 func (guard) ValidateSession(ctx context.Context, session replay.Session, _ replay.Scope) (replay.Guard, error) {
 	var database string
 	if err := session.QueryRowContext(ctx, databaseQuery).Scan(&database); err != nil {
 		return nil, fmt.Errorf("read the database of the dev session: %w", err)
 	}
-	return guard{database: database}, nil
+	ask := func(name string) (bool, error) {
+		var access sql.NullInt64
+		if err := session.QueryRowContext(ctx, databaseAccessQuery, name).Scan(&access); err != nil {
+			return false, fmt.Errorf("ask the dev session whether it reaches the database %q: %w", name, err)
+		}
+		return access.Valid && access.Int64 == 1, nil
+	}
+	return guard{database: database, databases: &reachedDatabases{ask: ask, answers: make(map[string]bool)}}, nil
+}
+
+// reachedDatabases answers whether the dev session reaches a database of a
+// name, and asks the session once per name for the run: a run validates every
+// statement before it runs the first, and each file again before its own.
+//
+// An answer holds for the run as far as the run's own statements go. Nothing
+// the guard accepts without trust makes another database reachable: CREATE
+// DATABASE, EXECUTE AS and every EXEC but the renderer's shapes are refused
+// without trust, and ALTER DATABASE is refused with trust as well, so a run
+// cannot create a database, rename one or take another login between the
+// question and the statement it judged. Another session on the same server
+// can: a database created or a login mapped by someone else while the run
+// replays is one the guard answered for before it existed.
+type reachedDatabases struct {
+	ask     func(name string) (bool, error)
+	mu      sync.Mutex
+	answers map[string]bool
+}
+
+// reaches reports whether the dev session reaches the database name, asking
+// the session the first time a run meets name.
+func (r *reachedDatabases) reaches(name string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if reached, ok := r.answers[name]; ok {
+		return reached, nil
+	}
+	reached, err := r.ask(name)
+	if err != nil {
+		return false, err
+	}
+	r.answers[name] = reached
+	return reached, nil
 }
 
 // Validate refuses a statement whose effects cannot be confined to the dev
 // database. No realm widens what it accepts; a run that trusts its SQL lifts
 // the refusals whose only reason is confinement, see
-// [validateSQLServerReplayStatement].
+// [guard.validateReplayStatement].
 //
 // stmt is read as one batch, and every statement the server runs from it is
 // judged: one after another, the statements a block, an IF or a WHILE runs,
@@ -78,7 +140,7 @@ func (guard) ValidateSession(ctx context.Context, session replay.Session, _ repl
 // [guard.ValidateSession].
 func (g guard) Validate(stmt string, scope replay.Scope) error {
 	scope.Database = g.database
-	return validateSQLServerBatch(stmt, scope, 0)
+	return g.validateBatch(stmt, scope, 0)
 }
 
 // unreadableRemedy says how to rewrite T-SQL whose statement boundaries the
@@ -92,75 +154,94 @@ const unreadableRemedy = "end each statement with a semicolon, and put the state
 // reads before it refuses the next one.
 const maxDynamicDepth = 8
 
-// validateSQLServerBatch judges every statement of text, a batch the server
+// validateBatch judges every statement of text, a batch the server
 // runs at the given depth of constant EXECs.
-func validateSQLServerBatch(text string, scope replay.Scope, depth int) error {
+func (g guard) validateBatch(text string, scope replay.Scope, depth int) error {
 	statements, err := sqlserverbatch.Read(text)
-	if unreadable, ok := errors.AsType[*sqlserverbatch.UnreadableError](err); ok {
-		return &replay.Refusal{
-			Dialect:   platform.SQLServer,
-			Operation: fmt.Sprintf("T-SQL at offset %d", unreadable.Offset),
-			Reason:    "Ptah cannot read where its statements begin and end there: " + unreadable.Reason,
-			Remedy:    unreadableRemedy,
-		}
-	}
 	if err != nil {
-		return err
+		return unreadableRefusal(err)
 	}
-	return validateSQLServerStatements(statements, scope, depth)
+	return g.validateStatements(statements, scope, depth)
 }
 
-func validateSQLServerStatements(statements []sqlserverbatch.Statement, scope replay.Scope, depth int) error {
+// unreadableRefusal is the refusal of text whose statement boundaries or
+// words internal/sqlserverbatch cannot read, or err itself when it is another
+// error.
+func unreadableRefusal(err error) error {
+	unreadable, ok := errors.AsType[*sqlserverbatch.UnreadableError](err)
+	if !ok {
+		return err
+	}
+	return &replay.Refusal{
+		Dialect:   platform.SQLServer,
+		Operation: fmt.Sprintf("T-SQL at offset %d", unreadable.Offset),
+		Reason:    "Ptah cannot read where its statements begin and end there: " + unreadable.Reason,
+		Remedy:    unreadableRemedy,
+	}
+}
+
+// sqlServerTokens returns the tokens of one statement as the server reads its
+// words: a regular identifier is joined to the @, # and $ that touch it, as
+// internal/sqlserverbatch joins it when it finds the statement; see
+// [sqlserverbatch.JoinWords].
+func sqlServerTokens(text string) ([]lexer.Token, error) {
+	return sqlserverbatch.JoinWords(text, replay.Tokens(text, lexerOptions()))
+}
+
+func (g guard) validateStatements(statements []sqlserverbatch.Statement, scope replay.Scope, depth int) error {
 	for _, statement := range statements {
-		if err := validateSQLServerStatement(statement, scope, depth); err != nil {
+		if err := g.validateStatement(statement, scope, depth); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateSQLServerStatement judges one statement and the statements it runs.
+// validateStatement judges one statement and the statements it runs.
 // The Head of an IF, a WHILE and an INSERT whose rows an EXEC returns is
 // judged as a statement of its own, so its condition or its target is read.
-func validateSQLServerStatement(statement sqlserverbatch.Statement, scope replay.Scope, depth int) error {
+func (g guard) validateStatement(statement sqlserverbatch.Statement, scope replay.Scope, depth int) error {
 	switch statement.Kind {
 	case sqlserverbatch.Label:
 		return nil
 	case sqlserverbatch.Block:
-		return validateSQLServerStatements(statement.Statements, scope, depth)
+		return g.validateStatements(statement.Statements, scope, depth)
 	case sqlserverbatch.Call:
-		return validateSQLServerUnit("EXEC "+statement.SQL, scope, depth)
+		return g.validateUnit("EXEC "+statement.SQL, scope, depth)
 	}
-	if err := validateSQLServerUnit(statement.Head, scope, depth); err != nil {
+	if err := g.validateUnit(statement.Head, scope, depth); err != nil {
 		return err
 	}
-	return validateSQLServerStatements(statement.Statements, scope, depth)
+	return g.validateStatements(statement.Statements, scope, depth)
 }
 
-// validateSQLServerUnit judges one statement that runs no other.
+// validateUnit judges one statement that runs no other.
 //
 // The EXEC statements the renderer writes are read first, in the shape it
-// writes them; see [validateSQLServerWrittenStatement]. Read as words, a new
+// writes them; see [guard.validateWrittenStatement]. Read as words, a new
 // name such as N'at' would be the AT of a remote EXECUTE. An EXEC of a
 // constant runs that text as a batch of its own, and the guard judges the
 // batch instead of refusing the EXEC; see [constantSQLServerExec].
-func validateSQLServerUnit(sql string, scope replay.Scope, depth int) error {
+func (g guard) validateUnit(text string, scope replay.Scope, depth int) error {
 	if !scope.TrustedSQL {
-		if written, err := validateSQLServerWrittenStatement(sql, scope); written {
+		if written, err := g.validateWrittenStatement(text, scope); written {
 			return err
 		}
-		if batch, ok := constantSQLServerExec(sql); ok {
+		if batch, ok := constantSQLServerExec(text); ok {
 			if depth >= maxDynamicDepth {
 				return replay.Refuse(platform.SQLServer, "EXEC nested in more than 8 constant EXECs")
 			}
-			return validateSQLServerBatch(batch, scope, depth+1)
+			return g.validateBatch(batch, scope, depth+1)
 		}
 	}
-	tokens := replay.Tokens(sql, lexerOptions())
+	tokens, err := sqlServerTokens(text)
+	if err != nil {
+		return unreadableRefusal(err)
+	}
 	for len(tokens) > 0 && tokens[0].MatchOperatorValue("(") {
 		tokens = tokens[1:]
 	}
-	return validateSQLServerReplayStatement(tokens, scope)
+	return g.validateReplayStatement(tokens, scope)
 }
 
 // constantSQLServerExec returns the batch an EXEC or EXECUTE of one string
@@ -173,9 +254,9 @@ func validateSQLServerUnit(sql string, scope replay.Scope, depth int) error {
 // SQL_Latin1_General_CP1_CI_AS), so the batch that runs could differ from the
 // one the guard reads. Such a constant reads as no batch, and the guard judges
 // the EXEC as it judges every other.
-func constantSQLServerExec(sql string) (string, bool) {
-	tokens := replay.Tokens(sql, lexerOptions())
-	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("EXEC") && !tokens[0].MatchIdentifierValue("EXECUTE") {
+func constantSQLServerExec(text string) (string, bool) {
+	tokens, err := sqlServerTokens(text)
+	if err != nil || len(tokens) == 0 || !tokens[0].MatchIdentifierValue("EXEC") && !tokens[0].MatchIdentifierValue("EXECUTE") {
 		return "", false
 	}
 	arguments := tokens[1:]

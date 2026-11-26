@@ -839,6 +839,18 @@ func TestReplayGuardSQLServer_HappyPath(t *testing.T) {
 			name:      "drop local external table",
 			statement: "DROP EXTERNAL TABLE IF EXISTS [tenant].[events]",
 		},
+		{
+			name:      "check identity",
+			statement: "DBCC CHECKIDENT ('tenant.users', RESEED, 0)",
+		},
+		{
+			name:      "check table",
+			statement: "DBCC CHECKTABLE ('tenant.users')",
+		},
+		{
+			name:      "check constraints",
+			statement: "DBCC CHECKCONSTRAINTS ('tenant.users')",
+		},
 	}
 
 	for _, test := range tests {
@@ -866,19 +878,9 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 			wantErr:   `sqlserver migration replay rejects USE .*`,
 		},
 		{
-			name:      "check identity",
-			statement: "DBCC CHECKIDENT ('tenant.users', RESEED, 0)",
-			wantErr:   `sqlserver migration replay rejects DBCC CHECKIDENT .*`,
-		},
-		{
-			name:      "check table",
-			statement: "DBCC CHECKTABLE ('tenant.users')",
-			wantErr:   `sqlserver migration replay rejects DBCC CHECKTABLE .*`,
-		},
-		{
-			name:      "check constraints",
-			statement: "DBCC CHECKCONSTRAINTS ('tenant.users')",
-			wantErr:   `sqlserver migration replay rejects DBCC CHECKCONSTRAINTS .*`,
+			name:      "check identity of another database",
+			statement: "DBCC CHECKIDENT ('production.tenant.users', RESEED, 0)",
+			wantErr:   `sqlserver migration replay rejects DBCC CHECKIDENT of "production.tenant.users" .*`,
 		},
 		{
 			name:      "login",

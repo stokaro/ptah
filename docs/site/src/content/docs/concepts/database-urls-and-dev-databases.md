@@ -484,30 +484,64 @@ proven to stay inside the disposable realm:
   Without trust, the guard refuses these statements wherever they stand,
   including in a block, after an `IF` and in a constant `EXEC`:
 
-  - A name of another database, in any place: the target of a write, a table
-    a query reads, the body of a view, function, procedure or trigger,
+  - A name of another database that the dev session reaches. The guard reads
+    the names a statement writes as identifiers: the target of a write, a
+    table a query reads, the body of a view, function, procedure or trigger,
     `NEXT VALUE FOR`, `CREATE STATISTICS` and `UPDATE STATISTICS`,
-    `WRITETEXT`, `UPDATETEXT` and `READTEXT`, `OUTPUT ... INTO`, `REFERENCES`,
-    and the procedure an `EXEC` runs. Reads count:
+    `WRITETEXT`, `UPDATETEXT` and `READTEXT`, `OUTPUT ... INTO`,
+    `REFERENCES`, and the procedure an `EXEC` runs. Reads count:
     `INSERT INTO dbo.t SELECT id FROM other.dbo.t` is refused, and only trust
     lets a run read another database. In a name of three parts or more, the
-    third part from the end names a database, so `other..t` is the table `t`
-    in `other`, and a part before it names a server, or the database of the
-    column in `WRITETEXT other.dbo.t.c`. The name is local when that part is
-    empty or spelled exactly as the dev database, whose name the guard reads
-    from the dev session with `DB_NAME()`, and every part before it is empty.
-    So `[dev].dbo.t` and `dev..t` pass. `DEV.dbo.t` is refused even where the
-    collation ignores case, since no fold the guard could apply matches every
-    collation. A three-part column name, such as `dbo.t.c`, is refused as well,
-    because the guard cannot tell it from the table `c` in the database `dbo`.
-    The guard does not know which words are reserved, so in
-    `FROM .dev.dbo.t`, with the server part left out, it reads `FROM` as part
-    of the name and refuses it. A name the statement holds in a string, as
-    `OBJECT_ID(N'other.dbo.t')` does, is not read.
-  - Every `DBCC`. Trust lifts the refusal of `DBCC CHECKIDENT`, `CHECKTABLE`
-    and `CHECKCONSTRAINTS`, which name their table in a string that can name
-    another database. Every other `DBCC` acts on the server and stays refused
-    under trust.
+    third part from the end can name a database, so `other..t` is the table
+    `t` in `other`. A part before it names a server, or the database of the
+    column in `WRITETEXT other.dbo.t.c`, and a name with such a part is always
+    refused.
+
+    The guard reads the dev database's name from the dev session with
+    `DB_NAME()`. A database part that is empty, or spelled exactly as the dev
+    database, is local, so `[dev].dbo.t` and `dev..t` pass. For any other
+    database part, the guard asks the dev session `HAS_DBACCESS` with that
+    name, once per name in a run. An answer of 1 means the session reaches a
+    database of that name, and the name is refused. An answer of 0 or `NULL`
+    means it reaches none, so the server reads the name as a column, or a
+    method called on one, and it passes. That covers
+    `SELECT p.geo.STAsText() FROM dbo.places AS p`, `t.doc.nodes('/a')`,
+    `n.c.value('.', 'int')`, a computed column `area AS g.geo.STArea()`, a
+    check `CHECK (g.geo.STIsValid() = 1)` and `SELECT dbo.t.c FROM dbo.t`. The
+    guard does not decide by the alias or by a following parenthesis, because
+    both mislead: `SELECT o.dbo.f() FROM dbo.x AS o` runs the function `f` of
+    the database `o`. `HAS_DBACCESS` answers for a database the login cannot
+    list: under `DENY VIEW ANY DATABASE`, `DB_ID` returns `NULL` and
+    `sys.databases` leaves out a database the login is mapped into, and
+    `HAS_DBACCESS` still answers 1. `master.sys.databases` and
+    `tempdb.sys.objects` are reads of another database, since every login
+    reaches `master` and `tempdb`, and are refused. `DEV.dbo.t` is refused
+    even where the collation ignores case: the session reaches `DEV`, and no
+    fold the guard could apply matches every collation. A trusted run asks no
+    question.
+
+    The answers hold for the run's own statements, because the statements
+    that could make another database reachable, `CREATE DATABASE`,
+    `EXECUTE AS` and `EXEC`, are refused without trust, and `ALTER DATABASE`
+    is refused always. Another session on the same server can create a
+    database, or map the login into one, after the guard asked about its name;
+    the guard does not see that change.
+
+    T-SQL lets `@`, `#` and `$` follow the first character of a name, so the
+    server reads `x@.dbo.t` as the table `t` in the database `x@`, and the
+    guard reads it the same way. The guard does not know which words are
+    reserved, so in `FROM .dev.dbo.t`, with the server part left out, it reads
+    `FROM` as part of the name and refuses it. A name the statement holds in a
+    string, as `OBJECT_ID(N'other.dbo.t')` does, is not read.
+  - `DBCC CHECKIDENT`, `CHECKTABLE` and `CHECKCONSTRAINTS` on a table of
+    another database. The server reads their first argument as a table name
+    in any quoting: `'other.dbo.t'`, `N'other.dbo.t'`, `"other.dbo.t"` and
+    `[other.dbo.t]` all name the table `t` in `other`. The guard reads that
+    name with the rule above, so `DBCC CHECKIDENT ('dbo.items', RESEED, 1)`
+    after seed data passes. A first argument that is not a constant name,
+    such as a variable or an expression, is refused. `DBCC CHECKCONSTRAINTS`
+    with no table checks the dev database and passes. Every other `DBCC` acts
+    on the server and is refused with trust or without it.
   - A function that reads a file on the server or a remote source:
     `OPENROWSET`, `OPENDATASOURCE`, `OPENQUERY`,
     `sys.dm_os_enumerate_filesystem`, `sys.dm_os_file_exists`,
@@ -885,8 +919,10 @@ accepts:
   enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
   refused;
 - on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
-  logins, credentials, synonyms, a name of another database in any place,
-  reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and `CHECKCONSTRAINTS`,
+  logins, credentials, synonyms, a name of another database the dev session
+  reaches, reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and
+  `CHECKCONSTRAINTS` on a table of another database or one not named as a
+  constant,
   `BACKUP`, `RESTORE`, `BULK INSERT`, the functions that read a file on the
   server or a remote source, and `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`;
 - on ClickHouse, SQL functions, databases, users, roles, row policies, named

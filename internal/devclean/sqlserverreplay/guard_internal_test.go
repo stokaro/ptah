@@ -140,7 +140,7 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement), replay.Scope{})
+			err := guard{}.validateReplayStatement(sqlServerReplayTokens(c, test.statement), replay.Scope{})
 			c.Assert(err, qt.IsNil)
 		})
 	}
@@ -586,7 +586,7 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement), replay.Scope{})
+			err := guard{}.validateReplayStatement(sqlServerReplayTokens(c, test.statement), replay.Scope{})
 			c.Assert(
 				err,
 				qt.ErrorMatches,
@@ -596,6 +596,9 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 	}
 }
 
-func sqlServerReplayTokens(statement string) []lexer.Token {
-	return replay.Tokens(statement, lexerOptions())
+func sqlServerReplayTokens(c *qt.C, statement string) []lexer.Token {
+	c.Helper()
+	tokens, err := sqlServerTokens(statement)
+	c.Assert(err, qt.IsNil)
+	return tokens
 }

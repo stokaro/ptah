@@ -467,11 +467,17 @@ drops or replaces a default replays on a shadow or dev database. A batch that
 differs from that shape in any byte is refused, and so is one whose new
 default is more than one expression. A rename, `EXEC sp_rename`, is accepted
 in the shape Ptah writes it, for a column, an index or an object in the dev
-database. The guard judges every statement of a batch where the server ends
-it, since T-SQL needs no semicolon between two statements. Without trust it
-refuses every name of another database, a read as well as a write, every
-`DBCC`, and the functions that read a file on the server; the guard's page
-lists each rule.
+database.
+
+The guard judges every statement of a batch where the server ends it, since
+T-SQL needs no semicolon between two statements. Without trust it refuses a
+name of another database the dev session reaches, a read as well as a write,
+a `DBCC CHECKIDENT`, `CHECKTABLE` or `CHECKCONSTRAINTS` on a table of another
+database, and the functions that read a file on the server; every other
+`DBCC` is refused with trust as well. A method called on a column through its
+table's alias, such as `p.geo.STAsText()`, passes when the dev session reaches
+no database named `p`, and so does `DBCC CHECKIDENT ('dbo.items', RESEED, 1)`.
+The guard's page lists each rule.
 
 For temporal columns, the comparison ignores case in `GETDATE()` and
 `SYSDATETIME()`. It treats `CURRENT_TIMESTAMP` as `GETDATE()` because both

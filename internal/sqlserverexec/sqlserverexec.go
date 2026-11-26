@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlserverbatch"
 )
 
 // QuoteName returns name in brackets, as QUOTENAME writes it: a closing
@@ -56,7 +57,10 @@ func UnicodeLiteral(s string) string {
 func parseQualifiedName(text string) ([]string, bool) {
 	var parts []string
 	for {
-		part, rest, ok := parseQuotedName(text)
+		if !strings.HasPrefix(text, "[") {
+			return nil, false
+		}
+		part, rest, ok := readNamePart(text)
 		if !ok {
 			return nil, false
 		}
@@ -72,21 +76,56 @@ func parseQualifiedName(text string) ([]string, bool) {
 	}
 }
 
-// parseQuotedName reads one bracketed part from the start of text, undoing
-// the doubled closing brackets, and returns the text after it.
-func parseQuotedName(text string) (part, rest string, ok bool) {
-	body, found := strings.CutPrefix(text, "[")
-	if !found {
-		return "", "", false
+// SplitName reads the parts of a name the server reads from a string, such as
+// the table DBCC CHECKIDENT takes: parts joined with dots, each in brackets, in
+// double quotes, or a name the server reads unquoted (see
+// [sqlserverbatch.RegularIdentifier]). A part left out, as the schema in
+// db..table, is empty; the last part cannot be. It reports false for any other
+// text, a space beside a dot among it, so a caller that cannot read a name
+// can refuse it rather than guess which database it names.
+func SplitName(text string) ([]string, bool) {
+	var parts []string
+	for {
+		part, rest, ok := readNamePart(text)
+		dotted := strings.HasPrefix(rest, ".")
+		if !ok || part == "" && !dotted {
+			return nil, false
+		}
+		parts = append(parts, part)
+		if rest == "" {
+			return parts, true
+		}
+		if !dotted {
+			return nil, false
+		}
+		text = rest[1:]
 	}
+}
+
+// readNamePart reads one part of a name from the start of text and returns
+// the text after it. A part in brackets or double quotes ends at its closing
+// quote and undoes a doubled one; an unquoted part ends at the next dot and
+// may be empty.
+func readNamePart(text string) (part, rest string, ok bool) {
+	closing := map[byte]byte{'[': ']', '"': '"'}
+	if text == "" || closing[text[0]] == 0 {
+		end := strings.IndexByte(text, '.')
+		if end < 0 {
+			end = len(text)
+		}
+		part = text[:end]
+		return part, text[end:], part == "" || sqlserverbatch.RegularIdentifier(part)
+	}
+	quote := text[0]
 	var name strings.Builder
+	body := text[1:]
 	for i := 0; i < len(body); i++ {
-		if body[i] != ']' {
+		if body[i] != closing[quote] {
 			name.WriteByte(body[i])
 			continue
 		}
-		if i+1 < len(body) && body[i+1] == ']' {
-			name.WriteByte(']')
+		if i+1 < len(body) && body[i+1] == closing[quote] {
+			name.WriteByte(body[i])
 			i++
 			continue
 		}

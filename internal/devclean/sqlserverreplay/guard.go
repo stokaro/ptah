@@ -6,7 +6,7 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// validateSQLServerReplayStatement rejects SQL Server mutations whose
+// validateReplayStatement rejects SQL Server mutations whose
 // effects cannot be removed by the database-realm cleanup.
 //
 // Under [replay.Scope.TrustedSQL] it lifts the refusals whose only
@@ -15,9 +15,10 @@ import (
 // function, procedure or DML trigger, whose body is opaque and which the realm
 // cleanup removes; a database, a login or a server credential created or
 // dropped, and a synonym (see [sqlServerUnconfinedServerObject]); a name of
-// another database in any place, a read as well as a write (see
-// [sqlServerOtherDatabaseName]); DBCC CHECKIDENT, CHECKTABLE and
-// CHECKCONSTRAINTS, which name their table in a string; BACKUP, RESTORE, BULK
+// another database the dev session reaches, a read as well as a write (see
+// [guard.otherDatabaseName]); DBCC CHECKIDENT, CHECKTABLE and
+// CHECKCONSTRAINTS on a table of another database, or on one they do not name
+// as a constant (see [guard.validateDBCCTable]); BACKUP, RESTORE, BULK
 // INSERT, a remote EXECUTE and the functions that read a file on the server
 // or a remote source (see [sqlServerOutsideReads]), which move data across
 // the server's edge; and ADD SIGNATURE or ADD COUNTER SIGNATURE, which gives a
@@ -33,8 +34,8 @@ import (
 // or data source, a ledger table, a partition function or scheme, full-text,
 // key and certificate objects, and Service Broker and resource governor
 // objects.
-func validateSQLServerReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
-	if err := validateSQLServerReplayStatementBase(tokens, scope); err != nil {
+func (g guard) validateReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
+	if err := g.validateReplayStatementBase(tokens, scope); err != nil {
 		return err
 	}
 	if len(tokens) == 0 {
@@ -63,7 +64,7 @@ func validateSQLServerReplayStatement(tokens []lexer.Token, scope replay.Scope) 
 
 // validateSQLServerStatementScope refuses a permission change and a statement
 // whose scope is the server or a DDL trigger on the database. Trust lifts none
-// of them; see [validateSQLServerReplayStatement].
+// of them; see [guard.validateReplayStatement].
 func validateSQLServerStatementScope(tokens []lexer.Token, first string) error {
 	if first == "GRANT" || first == "DENY" || first == "REVOKE" {
 		return replay.Refuse(platform.SQLServer, "permission mutation")
@@ -84,7 +85,7 @@ func validateSQLServerStatementScope(tokens []lexer.Token, first string) error {
 // temporary SELECT INTO target. Under [replay.Scope.TrustedSQL] only the
 // temporary target stays refused, since it lives in the replay's session. A
 // target in another database is refused, without trust, as every name of
-// another database is; see [sqlServerOtherDatabaseName].
+// another database is; see [guard.otherDatabaseName].
 func validateSQLServerStatementTargets(tokens []lexer.Token, first string, scope replay.Scope) error {
 	if sqlServerDefinesExecutableBody(tokens) && !scope.TrustedSQL {
 		return replay.Refuse(platform.SQLServer, first+" executable stored body")

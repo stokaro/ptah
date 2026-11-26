@@ -41,10 +41,10 @@ var renameShapes = map[sqlserverexec.RenameType]renameShape{
 // batch drops or replaces.
 const defaultTableReach = 2
 
-// validateSQLServerWrittenStatement answers a statement the SQL Server
+// validateWrittenStatement answers a statement the SQL Server
 // renderer writes where T-SQL has no DDL for the change: an sp_rename call,
 // and the batches that drop or replace a column's default, whose name the
-// server gave it. Each is an EXEC, which [validateSQLServerReplayStatement]
+// server gave it. Each is an EXEC, which [guard.validateReplayStatement]
 // refuses because it can run anything. These do only what their shape says,
 // and internal/sqlserverexec, which writes the shape, reads it back, so a
 // statement in any other shape is not one of them: written is false, and the
@@ -54,7 +54,7 @@ const defaultTableReach = 2
 // database, as in otherdb..sp_rename or master.sys.sp_rename, runs in that
 // database and renames its objects there. Measured on SQL Server 2022 and
 // 2025.
-func validateSQLServerWrittenStatement(stmt string, scope replay.Scope) (written bool, err error) {
+func (g guard) validateWrittenStatement(stmt string, scope replay.Scope) (written bool, err error) {
 	if rename, ok := sqlserverexec.ReadRename(stmt); ok {
 		return true, validateSQLServerRename(rename)
 	}
@@ -62,7 +62,7 @@ func validateSQLServerWrittenStatement(stmt string, scope replay.Scope) (written
 		return true, validateSQLServerDefaultTable(drop.Table)
 	}
 	if replace, ok := sqlserverexec.ReadDefaultReplace(stmt); ok {
-		return true, validateSQLServerDefaultReplace(replace, scope)
+		return true, g.validateDefaultReplace(replace, scope)
 	}
 	return false, nil
 }
@@ -94,7 +94,7 @@ func validateSQLServerDefaultTable(table []string) error {
 	return validateSQLServerConfinedName(table, defaultTableReach)
 }
 
-// validateSQLServerDefaultReplace refuses the batch that replaces a default
+// validateDefaultReplace refuses the batch that replaces a default
 // on a table outside the dev database, or whose new default is not one
 // expression. The batch then runs one ALTER TABLE ... ADD DEFAULT ... FOR,
 // which is judged as the same statement written on its own in a migration.
@@ -107,7 +107,7 @@ func validateSQLServerDefaultTable(table []string) error {
 // does not parse runs nothing. NEXT VALUE FOR, which reads a sequence, is the
 // one FOR an expression holds. internal/sqlserverbatch reads the ALTER TABLE
 // too, and it has to be one statement there as well.
-func validateSQLServerDefaultReplace(replace sqlserverexec.DefaultReplace, scope replay.Scope) error {
+func (g guard) validateDefaultReplace(replace sqlserverexec.DefaultReplace, scope replay.Scope) error {
 	if err := validateSQLServerDefaultTable(replace.Table); err != nil {
 		return err
 	}
@@ -117,7 +117,11 @@ func validateSQLServerDefaultReplace(replace sqlserverexec.DefaultReplace, scope
 		statements[0].Kind != sqlserverbatch.Simple || statements[0].SQL != add {
 		return replay.Refuse(platform.SQLServer, fmt.Sprintf("default expression %q", replace.Expression))
 	}
-	return validateSQLServerReplayStatement(replay.Tokens(add, lexerOptions()), scope)
+	tokens, err := sqlServerTokens(add)
+	if err != nil {
+		return unreadableRefusal(err)
+	}
+	return g.validateReplayStatement(tokens, scope)
 }
 
 // oneSQLServerExpression reports whether text is one expression to the end of

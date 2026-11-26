@@ -24,13 +24,16 @@ import (
 //   - a number written against a word, as in 0x1INSERT, which the server
 //     reads as a number and a word, where the lexer reads one name.
 //
-// A variable is one token, as the server reads it: @ and the identifier
-// characters that touch it, so that @a#b and @1 are one name each. A bare @
-// is a variable too: DECLARE @ int = 5 SELECT @ SELECT 42 is three
-// statements, so the word after an @ that does not touch it is not part of a
-// name.
+// A word is one token, as the server reads it; see [JoinWords]. A variable is
+// one token too: @ and the identifier characters that touch it, so that @a#b
+// and @1 are one name each. A bare @ is a variable: DECLARE @ int = 5 SELECT @
+// SELECT 42 is three statements, so the word after an @ that does not touch it
+// is not part of a name.
 func newParser(text string) (*parser, error) {
-	raw := rawTokens(text)
+	raw, err := JoinWords(text, rawTokens(text))
+	if err != nil {
+		return nil, err
+	}
 	p := &parser{text: text}
 	for index := 0; index < len(raw); index++ {
 		tok := raw[index]
@@ -71,6 +74,85 @@ func newParser(text string) (*parser, error) {
 	return p, nil
 }
 
+// JoinWords returns tokens, the tokens the lexer reads from text in order,
+// with each regular identifier joined to the identifier characters that touch
+// its end. T-SQL lets @, # and $ follow the first character of a regular
+// identifier, so the server reads x@, x@d, x@@, x#y and #t@x as one name
+// each, and SELECT@x as one word that is no keyword (Msg 102 on SQL Server
+// 2025), where the lexer ends the word before the @ or the #. Read the
+// lexer's way, x@.dbo.kept is the name x, a variable and the name .dbo.kept,
+// which looks like a table of the current database, and the server writes into
+// the database x@ (measured on 2025).
+//
+// A regular identifier is an unquoted name: its first character is a letter,
+// _ or #. A bracketed or quoted name ends at its quote, as the server ends it,
+// and a number is read by its own rule. A token that runs past the joined word
+// is refused rather than cut, as a variable's is in [readVariable].
+func JoinWords(text string, tokens []lexer.Token) ([]lexer.Token, error) {
+	joined := make([]lexer.Token, 0, len(tokens))
+	for index := 0; index < len(tokens); index++ {
+		tok := tokens[index]
+		last := len(joined) - 1
+		if last < 0 || !regularIdentifier(joined[last]) || tok.Start != joined[last].End || !identifierRuneAt(text, tok.Start) {
+			joined = append(joined, tok)
+			continue
+		}
+		start := joined[last].Start
+		end := identifierEnd(text, tok.Start)
+		for index+1 < len(tokens) && tokens[index+1].Start < end {
+			index++
+		}
+		if tokens[index].End > end {
+			return nil, unreadableAt(start, "a name the lexer reads differently")
+		}
+		joined[last] = lexer.Token{Type: lexer.TokenIdentifier, Value: text[start:end], Start: start, End: end}
+	}
+	return joined, nil
+}
+
+// regularIdentifier reports whether tok is an unquoted name, one whose first
+// character is a letter, _ or #.
+func regularIdentifier(tok lexer.Token) bool {
+	return tok.Type == lexer.TokenIdentifier && regularIdentifierStart(tok.Value)
+}
+
+func regularIdentifierStart(word string) bool {
+	r, _ := utf8.DecodeRuneInString(word)
+	return unicode.IsLetter(r) || r == '_' || r == '#'
+}
+
+// RegularIdentifier reports whether word is a name the server reads unquoted,
+// as one word: a letter, _ or # first, then letters, digits, _, @, # and $, as
+// [JoinWords] joins them.
+func RegularIdentifier(word string) bool {
+	return regularIdentifierStart(word) && identifierEnd(word, 0) == len(word)
+}
+
+// identifierRuneAt reports whether the character at offset of text can follow
+// the first character of a regular identifier: a letter, a digit, _, @, # or
+// $.
+func identifierRuneAt(text string, offset int) bool {
+	r, _ := utf8.DecodeRuneInString(text[offset:])
+	return identifierRune(r)
+}
+
+func identifierRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("_@#$", r)
+}
+
+// identifierEnd returns the offset after the identifier characters of text
+// from offset on.
+func identifierEnd(text string, offset int) int {
+	for offset < len(text) {
+		r, size := utf8.DecodeRuneInString(text[offset:])
+		if !identifierRune(r) {
+			break
+		}
+		offset += size
+	}
+	return offset
+}
+
 // readVariable reads the variable whose @ is raw[index]: the @ and every
 // identifier character that touches it, as the server reads it. It returns the
 // variable as one token and the index of the raw token after it. A raw token
@@ -79,14 +161,7 @@ func newParser(text string) (*parser, error) {
 // number .5, and fails the batch (Msg 102 on SQL Server 2025).
 func readVariable(text string, raw []lexer.Token, index int) (lexer.Token, int, error) {
 	start := raw[index].Start
-	end := start + 1
-	for end < len(text) {
-		r, size := utf8.DecodeRuneInString(text[end:])
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("_@#$", r) {
-			break
-		}
-		end += size
-	}
+	end := identifierEnd(text, start+1)
 	next := index + 1
 	for next < len(raw) && raw[next].Start < end {
 		if raw[next].End > end {

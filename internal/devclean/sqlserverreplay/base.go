@@ -7,9 +7,10 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlserverexec"
 )
 
-func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Scope) error {
+func (g guard) validateReplayStatementBase(tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -34,7 +35,11 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 	if reader, ok := sqlServerOutsideReader(tokens); ok {
 		return &replay.Refusal{Dialect: platform.SQLServer, Operation: reader.name, Reason: reader.reason}
 	}
-	if name := sqlServerOtherDatabaseName(tokens, scope.Database); name != "" {
+	name, err := g.otherDatabaseName(tokens, scope.Database)
+	if err != nil {
+		return err
+	}
+	if name != "" {
 		return &replay.Refusal{
 			Dialect:   platform.SQLServer,
 			Operation: fmt.Sprintf("cross-database reference %q", name),
@@ -44,12 +49,7 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 	if first == "DBCC" && sqlServerDatabaseLocalDBCC(tokens) {
 		// Every other DBCC acts on the server, and is refused under trust too;
 		// see [sqlServerExternalOrServerOperation].
-		return &replay.Refusal{
-			Dialect:   platform.SQLServer,
-			Operation: "DBCC " + replay.NormalizedIdentifier(tokens[1]),
-			Reason: "DBCC names the table it checks or reseeds in a string, which can name another database, " +
-				"so it runs only when the replayed SQL is trusted",
-		}
+		return g.validateDBCCTable(tokens, scope.Database)
 	}
 	if sqlServerKeywordSequenceAt(tokens, 0, "ADD", "SIGNATURE") || sqlServerKeywordSequenceAt(tokens, 0, "ADD", "COUNTER", "SIGNATURE") {
 		return replay.Refuse(platform.SQLServer, "ADD SIGNATURE")
@@ -57,56 +57,159 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Sco
 	return nil
 }
 
-// sqlServerOtherDatabaseName returns the first name in tokens that can name a
+// otherDatabaseName returns the first name in tokens that can name a
 // database other than database, the one the dev session selected, or "" when
-// every name is local. It reads every name in the statement, whatever its
-// place: the target of a write, a table a query reads, a view's or a
+// every name is local. It reads each name the statement writes as
+// identifiers: the target of a write, a table a query reads, a view's or a
 // function's body, NEXT VALUE FOR, the table of CREATE STATISTICS, the column
-// of WRITETEXT, REFERENCES, the procedure of an EXEC. See [sqlServerLocalName].
+// of WRITETEXT, REFERENCES, the procedure of an EXEC. See [guard.localName].
+// A name the statement holds in a string, such as OBJECT_ID(N'db.dbo.t'), is
+// not a name here; the DBCC commands that read one are judged by
+// [guard.validateDBCCTable].
 //
 // It reads a name from every token, so it reads the parts at the end of a
 // longer name again; a name ending another is local when the longer one is,
 // and the first name it refuses is the whole one.
-func sqlServerOtherDatabaseName(tokens []lexer.Token, database string) string {
+func (g guard) otherDatabaseName(tokens []lexer.Token, database string) (string, error) {
 	for index := range tokens {
-		if parts, _ := replay.QualifiedIdentifierAt(tokens, index); !sqlServerLocalName(parts, database) {
-			return strings.Join(parts, ".")
+		parts, _ := replay.QualifiedIdentifierAt(tokens, index)
+		local, err := g.localName(parts, database)
+		if err != nil {
+			return "", err
+		}
+		if !local {
+			return strings.Join(parts, "."), nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
-// sqlServerLocalName reports whether a name of parts names nothing outside
+// localName reports whether a name of parts names nothing outside
 // database. A name of one or two parts is an object, or a schema and an
 // object. The part three from the end can name a database: db.schema.object,
-// or db..object with the schema left out. A part before it can name a server,
+// or db..object with the schema left out. A part before it names a server,
 // as in server.db.schema.object, or a database, as in the
-// db.schema.table.column of WRITETEXT.
+// db.schema.table.column of WRITETEXT, and such a name is never local.
 //
-// So a name is local when every part before the third from the end is empty
-// and that part is empty, which means the current database, or spelled
-// exactly as database. The same rule refuses a three-part column name such as
-// schema.table.column, which a guard that does not resolve names cannot tell
-// from db.schema.object. An empty database, from a guard that read no session,
-// makes every name with a database part one that reaches outside.
+// A database part that is empty, which means the current database, or
+// spelled exactly as database is local. Any other database part is asked of
+// the dev session (see [reachedDatabases]): a database the session reaches is
+// another database, and the name is refused. A part that names no database
+// the session reaches is not a database to the server either, so the name is
+// a column or a method on one, as in alias.column.Method(), table.column.Method()
+// and schema.table.column, and it is local. So master.sys.databases and
+// tempdb.sys.objects are refused, since the guest user, which cannot be
+// disabled there, lets every login reach both. The guard
+// does not bind an alias or read a parenthesis instead: SELECT o.dbo.f() FROM
+// dbo.x AS o runs database o's function, and INSERT INTO o.dbo.value (id) ...
+// FROM dbo.x AS o writes into database o.
 //
-// The comparison is exact. The server compares database names under its own
-// collation, and no fold the guard could apply matches every collation: under
-// Turkish_CI_AS, SQL Server 2025 takes neither [mI] nor [MI] for a database
-// named mi, which strings.EqualFold would. An exact spelling names the dev
-// database under every collation, so another spelling is refused, and trust
-// lifts the refusal.
-func sqlServerLocalName(parts []string, database string) bool {
+// A guard that read no session asks nothing, and takes every database part
+// that is not empty for another database.
+//
+// The comparison with database is exact. The server compares database names
+// under its own collation, and no fold the guard could apply matches every
+// collation: under Turkish_CI_AS, SQL Server 2025 takes neither [mI] nor
+// [MI] for a database named mi, which strings.EqualFold would. Another
+// spelling of the dev database is asked, the session reaches it, and the name
+// is refused; trust lifts the refusal.
+func (g guard) localName(parts []string, database string) (bool, error) {
 	if len(parts) < 3 {
-		return true
+		return true, nil
 	}
 	for _, part := range parts[:len(parts)-3] {
 		if part != "" {
-			return false
+			return false, nil
 		}
 	}
 	named := parts[len(parts)-3]
-	return named == "" || named == database
+	if named == "" || named == database {
+		return true, nil
+	}
+	if g.databases == nil {
+		return false, nil
+	}
+	reached, err := g.databases.reaches(named)
+	return !reached, err
+}
+
+// validateDBCCTable refuses DBCC CHECKIDENT, CHECKTABLE or CHECKCONSTRAINTS
+// whose table the guard cannot read as a name of the dev database. The server
+// reads the first argument as a name, whatever its quoting: 'o.dbo.t',
+// N'o.dbo.t', "o.dbo.t" and [o.dbo.t] each name the table t in database o
+// (measured on SQL Server 2025), so the argument is split with
+// [sqlserverexec.SplitName] and judged by [guard.localName]. A variable, a
+// number or any other argument names a table the guard cannot see, and is
+// refused. CHECKCONSTRAINTS with no argument checks the current database,
+// and its argument names only an object there (Msg 2506 for a name of
+// another database), so it runs.
+func (g guard) validateDBCCTable(tokens []lexer.Token, database string) error {
+	command := replay.NormalizedIdentifier(tokens[1])
+	if command == "CHECKCONSTRAINTS" && (len(tokens) == 2 || tokens[2].MatchIdentifierValue("WITH")) {
+		return nil
+	}
+	parts, ok := dbccTableName(tokens)
+	if !ok {
+		return &replay.Refusal{
+			Dialect:   platform.SQLServer,
+			Operation: "DBCC " + command,
+			Reason: "its table is not a constant name, so the guard cannot tell which database it names; " +
+				"it runs only when the replayed SQL is trusted",
+		}
+	}
+	local, err := g.localName(parts, database)
+	if err != nil || local {
+		return err
+	}
+	return &replay.Refusal{
+		Dialect:   platform.SQLServer,
+		Operation: fmt.Sprintf("DBCC %s of %q", command, strings.Join(parts, ".")),
+		Reason:    "the table it names is in another database, which a statement reaches only when the replayed SQL is trusted",
+	}
+}
+
+// dbccTableName reads the first argument of a DBCC that names a table, as in
+// DBCC CHECKIDENT ('dbo.items', RESEED, 1): a string, with or without N, or a
+// name, followed by a comma or the closing parenthesis. It reports false for
+// any other argument.
+func dbccTableName(tokens []lexer.Token) ([]string, bool) {
+	open, argument, literal := replay.TokenAt(tokens, 2), replay.TokenAt(tokens, 3), replay.TokenAt(tokens, 4)
+	if !open.MatchOperatorValue("(") {
+		return nil, false
+	}
+	next := 4
+	if argument.MatchIdentifierValue("N") && argument.End == literal.Start && strings.HasPrefix(literal.Value, "'") {
+		argument = literal
+		next = 5
+	}
+	end := replay.TokenAt(tokens, next)
+	if !end.MatchOperatorValue(",") && !end.MatchOperatorValue(")") {
+		return nil, false
+	}
+	text, ok := dbccNameText(argument)
+	if !ok {
+		return nil, false
+	}
+	return sqlserverexec.SplitName(text)
+}
+
+// dbccNameText returns the text the server reads a name from in a DBCC
+// argument: a string's value, a bracketed name without its brackets, and an
+// unquoted name as it is, which [sqlserverexec.SplitName] then reads. A
+// variable, a number and an operator have none.
+func dbccNameText(argument lexer.Token) (string, bool) {
+	switch {
+	case argument.Type == lexer.TokenString:
+		return lexer.StringValue(argument.Value, lexerOptions())
+	case argument.Type != lexer.TokenIdentifier:
+		return "", false
+	case strings.HasPrefix(argument.Value, "["):
+		value := argument.Value[1:]
+		quoted, closed := strings.CutSuffix(value, "]")
+		return strings.ReplaceAll(quoted, "]]", "]"), closed
+	default:
+		return argument.Value, true
+	}
 }
 
 // sqlServerRemoteExecute reports the AT of EXECUTE ... AT linked_server: the
