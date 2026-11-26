@@ -439,7 +439,7 @@ func TestReplayGuard_MySQLRefusesServerStatementsInEveryRealm(t *testing.T) {
 	}
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		for _, realm := range realms {
-			guard := mysqlGuard(dialect, realm.realm).WithServerRealmRemedy(replayRemedy)
+			guard := mysqlGuard(qt.New(t), dialect, realm.realm).WithServerRealmRemedy(replayRemedy)
 			for _, test := range mysqlEveryRealmStatements {
 				t.Run(dialect+"/"+realm.name+"/"+test.name, func(t *testing.T) {
 					c := qt.New(t)

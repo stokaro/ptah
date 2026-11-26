@@ -13,9 +13,9 @@ import (
 // It lifts stored routines, triggers, CALL, privileges, CREATE or DROP of a
 // user, a role or a database, and the statements of [mysqlServerStatements]
 // that name [liftedOnOwnedServer]. An EVENT is left out: the scheduler runs it on
-// its own timetable, which is during the rest of the run. ALTER USER and ALTER
-// ROLE are left out because they can change the credentials the run connects
-// with.
+// its own timetable, which is during the rest of the run. A statement that
+// reaches the account the run connects as is refused before this is asked;
+// see [sessionAccount.operation].
 func mysqlServerWideOperation(stmt string, tokens []lexer.Token) string {
 	if len(tokens) == 0 {
 		return ""

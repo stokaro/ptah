@@ -190,14 +190,18 @@ func TestGuardServerRehearsal_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-// serverRehearsalOwnedStatements are what the reset of a whole dev server the
-// operator named leaves behind, and a server the run owns rehearses.
+// serverRehearsalOwnedStatements are what a whole dev server the operator
+// named refuses, since its reset leaves their effect behind, and a server the
+// run owns rehearses. An account statement is not among them: the guard reads
+// one against the account a run connects as, which only a connected run's
+// guard has read, and internal/devclean pins those on a guard bound to a
+// session.
 var serverRehearsalOwnedStatements = []struct {
 	name      string
 	statement string
 }{
-	{name: "a user", statement: "CREATE USER 'u'@'%'"},
-	{name: "a privilege", statement: "GRANT SELECT ON `app`.* TO 'u'@'%'"},
+	{name: "a key cache assignment", statement: "CACHE INDEX `app`.`t` IN hot_cache"},
+	{name: "a key cache preload", statement: "LOAD INDEX INTO CACHE `app`.`t`"},
 	{name: "a stored body", statement: "CREATE PROCEDURE `app`.`add_t`(IN v int) BEGIN INSERT INTO `app`.`t` (id) VALUES (v); END"},
 }
 

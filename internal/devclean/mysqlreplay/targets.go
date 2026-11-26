@@ -100,6 +100,16 @@ func mysqlDeleteTargets(tokens []lexer.Token) [][]string {
 	return targets
 }
 
+// mysqlLoadTargets reads the table a LOAD DATA or LOAD XML writes, the one
+// named after its INTO TABLE.
+func mysqlLoadTargets(tokens []lexer.Token) [][]string {
+	into := topLevelKeyword(tokens, 1, "INTO")
+	if into < 0 || !isKeyword(replay.TokenAt(tokens, into+1), "TABLE") {
+		return nil
+	}
+	return qualifiedNameAt(tokens, into+2)
+}
+
 // hasTopLevelKeyword reports whether the unquoted word appears from index on
 // outside parentheses, so the USING of a join inside a subquery or of
 // CONVERT(x USING utf8mb4) does not count.
@@ -324,15 +334,8 @@ func mysqlQueryTables(tokens []lexer.Token, start int) [][]string {
 // an INSERT, UPDATE, DELETE or REPLACE through the view writes that table. A
 // table the query only reads, in a WHERE subquery, is refused with them.
 func rejectMySQLViewReach(dialect, database string, tokens []lexer.Token) error {
-	if !isKeyword(tokens[0], "CREATE", "ALTER") {
-		return nil
-	}
-	kindIndex := replay.StatementObjectKindIndex(tokens)
-	if kindIndex == replay.MutationTargetNotFound || !isKeyword(tokens[kindIndex], "VIEW") {
-		return nil
-	}
-	view, next := replay.QualifiedIdentifierAt(tokens, replay.ObjectNameIndex(tokens, kindIndex))
-	for _, table := range mysqlQueryTables(tokens, next) {
+	view, tables := mysqlViewTables(tokens)
+	for _, table := range tables {
 		if len(table) < 2 || table[0] == database {
 			continue
 		}
@@ -340,6 +343,21 @@ func rejectMySQLViewReach(dialect, database string, tokens []lexer.Token) error 
 			strings.Join(view, "."), strings.Join(table, ".")))
 	}
 	return nil
+}
+
+// mysqlViewTables reads the name of the view a CREATE or ALTER VIEW defines
+// and the tables its query names, which a write through the view lands in. It
+// returns no tables for any other statement.
+func mysqlViewTables(tokens []lexer.Token) ([]string, [][]string) {
+	if !isKeyword(replay.TokenAt(tokens, 0), "CREATE", "ALTER") {
+		return nil, nil
+	}
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound || !isKeyword(tokens[kindIndex], "VIEW") {
+		return nil, nil
+	}
+	view, next := replay.QualifiedIdentifierAt(tokens, replay.ObjectNameIndex(tokens, kindIndex))
+	return view, mysqlQueryTables(tokens, next)
 }
 
 // mysqlRoutineReach reads the stored functions and sequences of another

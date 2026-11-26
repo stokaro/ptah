@@ -55,14 +55,16 @@ type Definition struct {
 	Name string
 	// Definer is the account the statement's DEFINER clause names, and nil
 	// where it writes none.
-	Definer *Definer
+	Definer *Account
 	// writesBody reports an ALTER EVENT that writes DO, which replaces the
 	// event's body.
 	writesBody bool
 }
 
-// Definer is the account a DEFINER clause names, as the statement writes it.
-type Definer struct {
+// Account is an account as a statement writes it, in a DEFINER clause or in
+// the list of an account statement such as DROP USER, and as [ReadAccount]
+// reads it.
+type Account struct {
 	// User is the token that names the user: a name, a quoted name, a
 	// string, or CURRENT_USER or CURRENT_ROLE, with or without the empty
 	// parentheses the server accepts after those two.
@@ -245,15 +247,26 @@ func readKind(tokens []lexer.Token, at int) (string, int, bool) {
 
 // readDefiner reads `= account` from at, and returns an error where no
 // account follows the = or the host cannot be read.
-func readDefiner(statement string, tokens []lexer.Token, at int) (Definer, int, error) {
+func readDefiner(statement string, tokens []lexer.Token, at int) (Account, int, error) {
 	if at >= len(tokens) || !tokens[at].MatchOperatorValue("=") {
-		return Definer{}, at, unreadableDefinition(statement, tokens, at, "DEFINER is not followed by =")
+		return Account{}, at, unreadableDefinition(statement, tokens, at, "DEFINER is not followed by =")
 	}
-	at++
+	return ReadAccount(statement, tokens, at+1)
+}
+
+// ReadAccount reads the account that begins at at in tokens, the significant
+// tokens of statement as [Tokens] returns them, as the server reads it: a
+// user, then an @ and a host where one follows, by the rules [Account] gives.
+// It returns the account and the index of the token after it, and an error
+// wrapping [ErrUnreadableDefinition] where no user stands at at or the host
+// cannot be read. The @ may follow the user after a space, and the host
+// follows the @ directly: measured on MySQL 8.4.13 and MariaDB 11.8.9,
+// DROP USER 'u' @'h' drops u@h, and DROP USER 'u'@ 'h' is refused.
+func ReadAccount(statement string, tokens []lexer.Token, at int) (Account, int, error) {
 	if at >= len(tokens) || tokens[at].Type != lexer.TokenIdentifier && tokens[at].Type != lexer.TokenString {
-		return Definer{}, at, unreadableDefinition(statement, tokens, at, "DEFINER = names no account")
+		return Account{}, at, unreadableDefinition(statement, tokens, at, "no account is named there")
 	}
-	definer := Definer{User: tokens[at]}
+	account := Account{User: tokens[at]}
 	at++
 	if isWord(tokens, at-1, "CURRENT_USER") || isWord(tokens, at-1, "CURRENT_ROLE") {
 		if at+1 < len(tokens) && tokens[at].MatchOperatorValue("(") && tokens[at+1].MatchOperatorValue(")") {
@@ -263,11 +276,11 @@ func readDefiner(statement string, tokens []lexer.Token, at int) (Definer, int, 
 	if at < len(tokens) && tokens[at].MatchOperatorValue("@") {
 		host, next, err := readHost(statement, tokens, at)
 		if err != nil {
-			return Definer{}, at, err
+			return Account{}, at, err
 		}
-		definer.Host, at = &host, next
+		account.Host, at = &host, next
 	}
-	return definer, at, nil
+	return account, at, nil
 }
 
 // readHost reads the host after the @ at at, as the server reads it: a

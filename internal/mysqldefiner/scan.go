@@ -81,7 +81,7 @@ type account struct {
 
 // readAccount reads the account clause names. CURRENT_USER, and an account
 // it cannot read, is reported as not found.
-func readAccount(clause mysqlstored.Definer) (account, bool) {
+func readAccount(clause mysqlstored.Account) (account, bool) {
 	user, ok := accountPart(clause.User)
 	if !ok || clause.User.MatchIdentifierValue("CURRENT_USER") {
 		return account{}, false

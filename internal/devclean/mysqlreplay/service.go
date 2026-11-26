@@ -28,6 +28,9 @@ func Services() []replay.Service {
 
 type guard struct {
 	dialect string
+	// account is the account the run's session runs as, which
+	// [guard.ValidateSession] reads; see [sessionAccount.operation].
+	account sessionAccount
 }
 
 // Validate refuses a statement whose effects cannot be confined to scope.
@@ -77,35 +80,41 @@ func readings(dialect, stmt string) []mysqlstored.Server {
 	return readings
 }
 
-// ValidateSession refuses a session whose client character set is outside
-// the UTF-8 family, as a dev URL's charset or collation parameter or the
-// server's own default can make it. The guard reads every statement as UTF-8,
-// and such a session reads the same bytes by other rules, so the server can
-// run a statement the guard reads as harmless; see
-// [mysqlstored.UTF8CharacterSet].
+// ValidateSession reads the session once, and returns the guard that knows
+// the account the session runs as and the roles it holds, which decide the
+// refusals of [sessionAccount.operation]. The session is read in every scope,
+// under trust too, since trust keeps those refusals.
 //
-// A run that trusts its SQL is not refused, and the session is not read:
-// trust already lifts a prepared statement, which can change the character
-// set as well as SET NAMES can, so the refusal would protect nothing there.
-// What trust gives up is that the guard reads the statements it still
-// refuses under trust as the server reads them.
-func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) error {
-	if scope.TrustedSQL {
-		return nil
+// It refuses a session whose client character set is outside the UTF-8
+// family, as a dev URL's charset or collation parameter or the server's own
+// default can make it. The guard reads every statement as UTF-8, and such a
+// session reads the same bytes by other rules, so the server can run a
+// statement the guard reads as harmless; see [mysqlstored.UTF8CharacterSet].
+//
+// A run that trusts its SQL is not refused for its character set: trust
+// already lifts a prepared statement, which can change the character set as
+// well as SET NAMES can, so the refusal would protect nothing there. What
+// trust gives up is that the guard reads the statements it still refuses
+// under trust as the server reads them.
+func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) (replay.Guard, error) {
+	var charset, current, roles string
+	if err := session.QueryRowContext(ctx, sessionQuery).Scan(&charset, &current, &roles); err != nil {
+		return nil, fmt.Errorf("read the dev session's client character set and account: %w", err)
 	}
-	var charset string
-	if err := session.QueryRowContext(ctx, "SELECT @@character_set_client").Scan(&charset); err != nil {
-		return fmt.Errorf("read the dev session's client character set: %w", err)
+	account, err := readSessionAccount(current, roles)
+	if err != nil {
+		return nil, fmt.Errorf("read the dev session's account: %w", err)
 	}
-	if mysqlstored.UTF8CharacterSet(charset) {
-		return nil
+	if !scope.TrustedSQL && !mysqlstored.UTF8CharacterSet(charset) {
+		return nil, &replay.SessionRefusal{Reason: fmt.Sprintf(
+			"the dev session's client character set is %q, and the %s replay guard reads each statement as UTF-8: "+
+				"the server reads the same bytes as %s and can run what the guard does not see; "+
+				"connect with a utf8mb4 client character set, such as charset=utf8mb4 in the dev URL",
+			charset, g.dialect, charset,
+		)}
 	}
-	return &replay.SessionRefusal{Reason: fmt.Sprintf(
-		"the dev session's client character set is %q, and the %s replay guard reads each statement as UTF-8: "+
-			"the server reads the same bytes as %s and can run what the guard does not see; "+
-			"connect with a utf8mb4 client character set, such as charset=utf8mb4 in the dev URL",
-		charset, g.dialect, charset,
-	)}
+	g.account = account
+	return g, nil
 }
 
 // validate is [guard.Validate] for the statement read by reading's rules.
@@ -125,6 +134,9 @@ func (g guard) validate(stmt string, scope replay.Scope, reading mysqlstored.Ser
 			return err
 		}
 		tokens = tokens[:start]
+	}
+	if operation := g.account.operation(stmt, tokens, reading, scope.Database); operation != "" {
+		return refuseAccountOperation(g.dialect, operation)
 	}
 	// A run that trusts its SQL lifts the same statements a server the run
 	// owns lifts, and for the same reason: their only effect the guard cannot

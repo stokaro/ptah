@@ -178,13 +178,7 @@ func (r *headRead) routineHeadEnd(statement string, at int, kind string) (int, b
 	if !ok {
 		return 0, false
 	}
-	for {
-		next := r.characteristic(last + 1)
-		if next == last+1 {
-			return last, true
-		}
-		last = next - 1
-	}
+	return CharacteristicsEnd(r.tokens, last+1) - 1, true
 }
 
 // returnsEnd returns the index of the last token of a function's RETURNS
@@ -231,20 +225,36 @@ func (r *headRead) closingParenthesis(at int) (int, bool) {
 	return 0, false
 }
 
+// CharacteristicsEnd returns the index after the routine characteristics
+// that begin at at among tokens, in any number and order: COMMENT 'text',
+// LANGUAGE SQL, SQL SECURITY DEFINER or INVOKER, [NOT] DETERMINISTIC,
+// CONTAINS SQL, NO SQL, READS SQL DATA and MODIFIES SQL DATA. It returns at
+// itself where none begins there. No statement a body can start with begins
+// with one of these words, so after the parameter list of a procedure the
+// index is where its body begins.
+func CharacteristicsEnd(tokens []lexer.Token, at int) int {
+	for {
+		next := characteristic(tokens, at)
+		if next == at {
+			return at
+		}
+		at = next
+	}
+}
+
 // characteristic returns the index after the routine characteristic at at,
-// and at itself where none stands there. No statement a body can start with
-// begins with one of these words.
-func (r *headRead) characteristic(at int) int {
+// and at itself where none stands there.
+func characteristic(tokens []lexer.Token, at int) int {
 	switch {
-	case isWord(r.tokens, at, "COMMENT") && at+1 < len(r.tokens) && r.tokens[at+1].Type == lexer.TokenString:
+	case isWord(tokens, at, "COMMENT") && at+1 < len(tokens) && tokens[at+1].Type == lexer.TokenString:
 		return at + 2
-	case isWord(r.tokens, at, "LANGUAGE") && at+1 < len(r.tokens) && r.tokens[at+1].Type == lexer.TokenIdentifier:
+	case isWord(tokens, at, "LANGUAGE") && at+1 < len(tokens) && tokens[at+1].Type == lexer.TokenIdentifier:
 		return at + 2
-	case isWord(r.tokens, at, "SQL") && isWord(r.tokens, at+1, "SECURITY") && at+2 < len(r.tokens):
+	case isWord(tokens, at, "SQL") && isWord(tokens, at+1, "SECURITY") && at+2 < len(tokens):
 		return at + 3
 	}
 	for _, words := range characteristicWords {
-		if next := skipWords(r.tokens, at, words...); next != at {
+		if next := skipWords(tokens, at, words...); next != at {
 			return next
 		}
 	}

@@ -510,3 +510,89 @@ func TestVersionID(t *testing.T) {
 		})
 	}
 }
+
+// ReadAccount reads an account in the list of an account statement as the
+// server reads it, and returns the index of the token after it: here the
+// comma before the next account.
+func TestReadAccount_HappyPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		user      string
+		host      string
+	}{
+		{name: "strings", statement: "DROP USER 'dev'@'%', other", user: "'dev'", host: "'%'"},
+		{name: "quoted names", statement: "DROP USER `dev`@`localhost`, other", user: "`dev`", host: "`localhost`"},
+		{name: "bare", statement: "DROP USER dev@127.0.0.1, other", user: "dev", host: "127.0.0.1"},
+		{name: "a space before the at sign", statement: "DROP USER 'dev' @'%', other", user: "'dev'", host: "'%'"},
+		{name: "an empty host", statement: "DROP USER dev@, other", user: "dev", host: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tokens, err := mysqlstored.Tokens(mysql84, test.statement)
+			c.Assert(err, qt.IsNil)
+
+			account, next, err := mysqlstored.ReadAccount(test.statement, tokens, 2)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(account.User.Value, qt.Equals, test.user)
+			c.Assert(account.Host, qt.IsNotNil)
+			c.Assert(account.Host.Value, qt.Equals, test.host)
+			c.Assert(tokens[next].Value, qt.Equals, ",")
+		})
+	}
+}
+
+// An account written without a host has none. CURRENT_USER and CURRENT_ROLE
+// are read with the parentheses that may follow them.
+func TestReadAccount_HappyPathWithoutAHost(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		user      string
+	}{
+		{name: "a user", statement: "DROP USER dev, other", user: "dev"},
+		{name: "CURRENT_USER", statement: "DROP USER CURRENT_USER, other", user: "CURRENT_USER"},
+		{name: "CURRENT_USER()", statement: "DROP USER current_user ( ), other", user: "current_user"},
+		{name: "CURRENT_ROLE()", statement: "DROP ROLE CURRENT_ROLE(), other", user: "CURRENT_ROLE"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tokens, err := mysqlstored.Tokens(mysql84, test.statement)
+			c.Assert(err, qt.IsNil)
+
+			account, next, err := mysqlstored.ReadAccount(test.statement, tokens, 2)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(account.User.Value, qt.Equals, test.user)
+			c.Assert(account.Host, qt.IsNil)
+			c.Assert(tokens[next].Value, qt.Equals, ",")
+		})
+	}
+}
+
+// No account stands where ReadAccount is asked to read one.
+func TestReadAccount_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "an operator", statement: "DROP USER (dev)"},
+		{name: "the end of the statement", statement: "DROP USER"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tokens, err := mysqlstored.Tokens(mysql84, test.statement)
+			c.Assert(err, qt.IsNil)
+
+			account, _, err := mysqlstored.ReadAccount(test.statement, tokens, 2)
+
+			c.Assert(err, qt.ErrorIs, mysqlstored.ErrUnreadableDefinition)
+			c.Assert(err, qt.ErrorMatches, `.*no account is named there.*`)
+			c.Assert(account, qt.DeepEquals, mysqlstored.Account{})
+		})
+	}
+}
