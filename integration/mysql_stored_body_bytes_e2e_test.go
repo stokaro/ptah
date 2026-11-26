@@ -97,8 +97,11 @@ func TestMigrationsDownPlanRecreatesAnEscapedBodyE2E(t *testing.T) {
 			up := clirun.Run(c, clirun.Ptah, run, "migrations", "up", "--db-url", targetURL, "--migrations-dir", dir, "--allow-destructive")
 			c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
 
+			// The history creates a trigger, which the replay guard refuses on
+			// a shadow database the run does not own unless the SQL is
+			// trusted. The test is about the body the plan recreates.
 			down := clirun.Run(c, clirun.Ptah, run, "migrations", "down", "--db-url", targetURL, "--migrations-dir", dir,
-				"--target", "1", "--plan", "--shadow-db", devURL, "--confirm")
+				"--target", "1", "--plan", "--shadow-db", devURL, "--trust-replay-sql", "--confirm")
 
 			c.Assert(down.ExitCode, qt.Equals, 0, historyComment(down))
 			c.Assert(showCreateTrigger(c, scratch.admin, target, "trg_escapes"), qt.Matches,
