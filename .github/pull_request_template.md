@@ -21,9 +21,13 @@ repeating the opening, and distinguish facts from assumptions. -->
 ## Expected outcome
 
 <!-- Explain what should be possible or different when this work is
-complete. Give observable conditions that a reviewer can check, using
-a short before/after example when helpful. Include scope and meaningful
-limitations.
+complete. Give observable conditions that a reviewer can check. Include
+scope and meaningful limitations.
+
+Every PR must include a simple before/after diagram in a fenced mermaid
+block here, following AGENTS.md#before-and-after-diagram. This also applies
+to documentation, refactoring, maintenance, and dependency updates. Show
+the actual change and explain the main difference in nearby prose.
 
 State which outcomes this PR delivers, proposes, or leaves for follow-up.
 Keep expected benefits separate from measured results. Link required
