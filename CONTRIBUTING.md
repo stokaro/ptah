@@ -77,8 +77,9 @@ Explain the need, resulting behavior, material risks, and observed checks.
 Describe non-obvious decisions without listing edits file by file.
 
 A pull request that adds behavior under the compatibility surface has to say
-which it is, `GENERAL CAPABILITY` or `COMPATIBILITY ADAPTER`. AGENTS.md explains
-the distinction and what each declaration must name.
+which it is, `GENERAL CAPABILITY` or `COMPATIBILITY ADAPTER`.
+[Compatibility policy](.agents/references/compatibility.md) explains the
+distinction and what each declaration must name.
 
 ### American English, plain international English
 
@@ -100,20 +101,23 @@ make integration-test            # Docker Compose suite; binds fixed host ports
 
 `make lint` is not the whole lint job. `.github/workflows/go-lint.yml` runs
 policy scripts beside it, and the documentation gates live in
-`.github/workflows/docs.yml`. Before you finish, run what the workflows run for
-the files you touched; read the job rather than trusting a list in prose.
+`.github/workflows/docs.yml`. Use [TESTING.md](TESTING.md) for focused local
+feedback and complete merge evidence. Read the applicable jobs and record
+local or current-head CI results, including blocked or pending checks.
 
-`make integration-test` and `make docker-clean` act on the whole Docker daemon,
-so look at what is already running before you invoke either.
+`make integration-test` binds fixed ports, so inspect shared services first.
+Do not use `make docker-clean` for a task's cleanup: it prunes the whole daemon.
+Remove only resources your task owns.
 
 ### Tests
 
 Use [quicktest](https://github.com/frankban/quicktest) as `qt`; `depguard`
 refuses `testify`. A test function holds no `if`, `switch`, or `goto`; tests are
 black-box by default, and split into happy-path and failure-path functions
-rather than one table with a `wantErr` branch. AGENTS.md carries the full
-standard, including where integration tests live and why a table row holds data
-rather than a checker.
+rather than one table with a `wantErr` branch. The
+[test design policy](.agents/references/testing.md) carries the full standard,
+including where integration tests live and why a table row holds data rather
+than a checker.
 
 ### Documentation
 

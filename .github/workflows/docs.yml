@@ -225,6 +225,11 @@ jobs:
         with:
           node-version: '26'
 
+      - name: Check agent guidance
+        run: |
+          node docs/site/scripts/check-agent-guidance.mjs --selftest
+          node docs/site/scripts/check-agent-guidance.mjs
+
       # A provider's pages live in its repository; scripts/data/provider-docs.json
       # names the release the site shows, and the import writes the pages under
       # the content root, where every check below reads them as it reads a page

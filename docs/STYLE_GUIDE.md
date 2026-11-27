@@ -875,34 +875,17 @@ Complete this for every documentation PR:
 3. Examples executed against a built binary; shown output is current.
 4. Parity and conformance claims checked against current
    `stokaro/ptah-atlas-conformance` reports.
-5. `npm run check:links:selftest && npm run check:links &&
-   npm run check:redirects:selftest && npm run check:redirects &&
-   npm run check:route-retirement:selftest && npm run check:route-retirement &&
-   npm run check:core-doc-links &&
-   npm run check:page-health:selftest && npm run check:page-health &&
-   npm run check:content-inventory:selftest &&
-   npm run check:editorial-shape:selftest &&
-   npm run check:editorial-shape &&
-   npm run check:source-page-contracts:selftest &&
-   npm run check:source-page-contracts &&
-   npm run check:mutable-source-links:selftest &&
-   npm run check:mutable-source-links &&
-   npm run check:inference-quick-start-archive:selftest &&
-   npm run check:inference-quick-start-archive &&
-   npm run check:support-matrix:selftest && npm run check:support-matrix &&
-   npm run check:exit-codes:selftest && npm run check:exit-codes &&
-   npm run check:style:selftest && npm run check:style &&
-   npm run check:terminology:selftest && npm run check:terminology &&
-   npm run check:limitations:selftest && npm run check:limitations &&
-   npm run check:responsive:selftest && npm run check:accessibility:selftest &&
-   npm run check:visual-snapshots:selftest && npm run check:navigation:selftest &&
-   npm run check:search-ranking:selftest && npm run versions:selftest &&
-   npm run build && npm run check:responsive && npm run check:accessibility &&
-   npm run check:visual-snapshots -- --output /tmp/ptah-docs-snapshots &&
-   npm run check:navigation && npm run check:search-ranking`
-   all pass in `docs/site`. `check:responsive` reads the built site, so it runs
-   last. Run every `:selftest` alongside its check: a
-   check whose self-test is failing is not reporting on your content.
+5. Select checks from the affected jobs in `.github/workflows/docs.yml`.
+   Start with focused local feedback using
+   `.agents/skills/ptah-documentation-maintenance/SKILL.md`. Run a changed
+   check's self-test and a discriminating fixture; repeat broader checks only
+   when their inputs or an unresolved risk require it. Site builds and browser,
+   engine, and platform checks can supply evidence through the existing CI
+   jobs. Before merge, all applicable gates must pass for the current change.
+   Record blocked or pending checks instead of treating them as passes.
+   The skill's `references/validation-suite.md` preserves the complete suite
+   for full reproduction and workflow maintenance; its parity gate remains
+   required. A focused local run does not replace the complete required jobs.
 6. `CONTENT_INVENTORY.md` updated when a journey or editorial decision
    changes. The page inventory is computed, so a page, metadata, sidebar, or
    internal-link change needs no regeneration.
@@ -1046,8 +1029,8 @@ The table lists the rules this guide states. The documentation job also runs
 `atlas/feature-matrix.md` to its source data — `check-matrix-verdict-prose`,
 `check-matrix-citations`, `check-matrix-flag-names`, and
 `build-feature-matrix --check`. They govern named pages rather than prose in
-general. The documentation-maintenance skill carries the command list a
-contributor runs, and `check-skill-suite.mjs` fails when that list stops naming
+general. The documentation-maintenance skill's `references/validation-suite.md`
+carries the full command list, and `check-skill-suite.mjs` fails when it stops naming
 a check the workflow runs over the working tree -- a Node or shell script, an
 npm script, or a `go test` -- or names one the workflow does not run.
 A green run of the table above is not a green documentation job.
