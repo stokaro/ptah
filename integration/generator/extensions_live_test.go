@@ -63,11 +63,11 @@ type TestTable struct {
 	downSQL := legacyRenderedSQL(string(downContent))
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm")
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS btree_gin")
-	c.Assert(upSQL, qt.Contains, "CREATE TABLE test_table_generator")
+	c.Assert(upSQL, qt.Contains, "CREATE TABLE public.test_table_generator")
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION")
 	c.Assert(downSQL, qt.Contains, "pg_trgm")
 	c.Assert(downSQL, qt.Contains, "btree_gin")
-	c.Assert(downSQL, qt.Contains, "DROP TABLE test_table_generator")
+	c.Assert(downSQL, qt.Contains, "DROP TABLE public.test_table_generator")
 }
 
 // TestGenerateMigration_ExtensionVersionUpdateWithRealPostgres pins that a

@@ -70,14 +70,14 @@ func TestReverseCatalogObjects_DownRoundTrip_Integration(t *testing.T) {
 			prior:  func() *schemamodel.Database { return revCatSchemaFor(revCatOptions{}) },
 			target: func() *schemamodel.Database { return revCatSchemaFor(revCatOptions{objects: true}) },
 			downHas: []string{
-				"DROP POLICY " + revCatPolicy + " ON " + revCatTable,
-				"DROP SEQUENCE IF EXISTS " + revCatSequence,
-				"DROP FUNCTION IF EXISTS " + revCatFunction,
+				"DROP POLICY " + revCatPolicy + " ON " + revCatSchema + "." + revCatTable,
+				"DROP SEQUENCE IF EXISTS " + revCatSchema + "." + revCatSequence,
+				"DROP FUNCTION IF EXISTS " + revCatSchema + "." + revCatFunction,
 				"DROP ROLE IF EXISTS " + revCatRole,
 			},
 			downLacks: []string{"DROP TABLE", "CASCADE"},
 			downOrder: [][]string{
-				{"DROP POLICY " + revCatPolicy, "DROP FUNCTION IF EXISTS " + revCatFunction},
+				{"DROP POLICY " + revCatPolicy, "DROP FUNCTION IF EXISTS " + revCatSchema + "." + revCatFunction},
 				{"DROP POLICY " + revCatPolicy, "DROP ROLE IF EXISTS " + revCatRole},
 			},
 			roleAfterDown: false,
@@ -92,7 +92,7 @@ func TestReverseCatalogObjects_DownRoundTrip_Integration(t *testing.T) {
 			prior:  func() *schemamodel.Database { return revCatSchemaFor(revCatOptions{objects: true}) },
 			target: func() *schemamodel.Database { return revCatSchemaFor(revCatOptions{objects: true, noSequence: true}) },
 			downHas: []string{
-				"CREATE SEQUENCE " + revCatSequence,
+				"CREATE SEQUENCE " + revCatSchema + "." + revCatSequence,
 				"INCREMENT BY 2",
 			},
 			downLacks:     []string{"DROP TABLE"},
@@ -111,10 +111,10 @@ func TestReverseCatalogObjects_DownRoundTrip_Integration(t *testing.T) {
 				})
 			},
 			downHas: []string{
-				"FUNCTION " + revCatFunction,
-				"ALTER SEQUENCE " + revCatSequence + " INCREMENT BY 2",
+				"FUNCTION " + revCatSchema + "." + revCatFunction,
+				"ALTER SEQUENCE " + revCatSchema + "." + revCatSequence + " INCREMENT BY 2",
 				"ALTER ROLE " + revCatRole + " NOLOGIN",
-				"ALTER POLICY " + revCatPolicy + " ON " + revCatTable,
+				"ALTER POLICY " + revCatPolicy + " ON " + revCatSchema + "." + revCatTable,
 			},
 			downLacks:     []string{"DROP TABLE", "DROP POLICY", "CREATE POLICY"},
 			roleAfterDown: true,

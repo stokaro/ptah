@@ -118,11 +118,11 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	upSQL, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upSQL), qt.Contains, "-- +ptah no_transaction")
-	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY "idx_members_email" ON "members" ("email");`)
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY "idx_members_email" ON "public"."members" ("email");`)
 	downSQL, err := os.ReadFile(files.Files[0].DownFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(downSQL), qt.Contains, "-- +ptah no_transaction")
-	c.Assert(string(downSQL), qt.Contains, `DROP INDEX CONCURRENTLY "idx_members_email";`)
+	c.Assert(string(downSQL), qt.Contains, `DROP INDEX CONCURRENTLY "public"."idx_members_email";`)
 
 	// The linted bytes are the executed bytes: the directory is applied,
 	// rolled back and applied again, and pg_index is what says so.

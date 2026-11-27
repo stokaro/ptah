@@ -28,7 +28,7 @@ func ExampleSplitter() {
 		}
 	}
 	// Output:
-	// 1 DROP EXTERNAL TABLE [DBO].[EVENTS] 1
+	// 1 DROP EXTERNAL TABLE [dbo].[events] 1
 	//   safety-effect behavioral
-	// 2 DROP TABLE [DBO].[ORDERS] 0
+	// 2 DROP TABLE [dbo].[orders] 0
 }

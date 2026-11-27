@@ -76,7 +76,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			},
 			// Taking the column away again is what PostgreSQL refuses with
 			// "cannot drop columns from view", so the rollback must not replace.
-			downHas:   []string{"DROP VIEW " + revIntView + ";"},
+			downHas:   []string{"DROP VIEW public." + revIntView + ";"},
 			downLacks: []string{"CREATE OR REPLACE VIEW"},
 		},
 		{
@@ -90,7 +90,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			},
 			// The column list never moved, so the rollback keeps the replace and
 			// its dependents.
-			downHas:   []string{"CREATE OR REPLACE VIEW " + revIntView},
+			downHas:   []string{"CREATE OR REPLACE VIEW public." + revIntView},
 			downLacks: []string{"DROP VIEW"},
 		},
 		{
@@ -104,8 +104,8 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 				})
 			},
 			downHas: []string{
-				"DROP MATERIALIZED VIEW " + revIntMatView + ";",
-				"CREATE MATERIALIZED VIEW " + revIntMatView,
+				"DROP MATERIALIZED VIEW public." + revIntMatView + ";",
+				"CREATE MATERIALIZED VIEW public." + revIntMatView,
 				"CREATE OR REPLACE TRIGGER " + revIntTrigger,
 			},
 		},
@@ -130,7 +130,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			upLacks: []string{"DROP VIEW"},
 			// The rollback cannot afford the undecidable answer, so it drops the
 			// dependent and the view, and then rebuilds both.
-			downHas:   []string{"DROP VIEW " + revIntDepView + ";", "DROP VIEW " + revIntView + ";", "VIEW " + revIntDepView + " AS"},
+			downHas:   []string{"DROP VIEW public." + revIntDepView + ";", "DROP VIEW public." + revIntView + ";", "VIEW public." + revIntDepView + " AS"},
 			downLacks: []string{"DROP TABLE"},
 		},
 		{
@@ -158,7 +158,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 					noTrigger: true,
 				})
 			},
-			downHas:   []string{"DROP VIEW " + revIntView + ";"},
+			downHas:   []string{"DROP VIEW public." + revIntView + ";"},
 			downLacks: []string{"CREATE OR REPLACE VIEW"},
 		},
 		{
@@ -180,8 +180,8 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 					matViewBody: revIntLabelMatViewBody,
 				})
 			},
-			downHas:   []string{"DROP VIEW " + revIntView + ";"},
-			downLacks: []string{"MATERIALIZED VIEW " + revIntMatView},
+			downHas:   []string{"DROP VIEW public." + revIntView + ";"},
+			downLacks: []string{"MATERIALIZED VIEW public." + revIntMatView},
 		},
 	}
 
@@ -431,6 +431,8 @@ func revIntHasTable(db *catalog.Database) bool {
 }
 
 func revIntDropAll(conn *dbschema.DatabaseConnection) {
+	// Migration placement qualifies the table before deriving the helper name.
+	trigger := schemamodel.Trigger{Table: "public." + revIntTable, Name: revIntTrigger}
 	statements := []string{
 		"DROP VIEW IF EXISTS " + revIntDepView + " CASCADE",
 		"DROP VIEW IF EXISTS " + revIntView + " CASCADE",
@@ -438,7 +440,7 @@ func revIntDropAll(conn *dbschema.DatabaseConnection) {
 		"DROP TRIGGER IF EXISTS " + revIntTrigger + " ON " + revIntTable + " CASCADE",
 		"DROP TABLE IF EXISTS " + revIntTable + " CASCADE",
 		"DROP TABLE IF EXISTS " + revIntAltTable + " CASCADE",
-		"DROP FUNCTION IF EXISTS " + (schemamodel.Trigger{Table: revIntTable, Name: revIntTrigger}).FunctionName() + "() CASCADE",
+		"DROP FUNCTION IF EXISTS public." + trigger.FunctionName() + "() CASCADE",
 	}
 	for _, statement := range statements {
 		_, _ = conn.Exec(statement)
