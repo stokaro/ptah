@@ -114,11 +114,12 @@ func TestMySQLFamilyGrantAccountIdentityE2E(t *testing.T) {
 //
 // The control grants the role SELECT on the table, not on the database. The
 // fixture's database name holds "_", which a database-level grant reads as a
-// wildcard, so on MySQL that row ties with the role's ALTER pattern row and the
-// server applies the pattern: measured on MySQL 26.10, a member of a role
-// holding SELECT ON `mgi_dbx`.* and ALTER ON `mgi_d%`.* is refused SELECT on
-// mgi_dbx.items with Error 1142, in either grant order. A table grant names its
-// database literally.
+// wildcard, so the role's row on it is not an exact name. A MySQL role session
+// applies the exact-name row, or else the byte-smallest matching wildcard name,
+// and the role's ALTER pattern sorts before the database's own name: measured
+// on MySQL 26.10, a member of a role holding SELECT ON `mgi_dbx`.* and ALTER ON
+// `mgi_d%`.* is refused SELECT on mgi_dbx.items with Error 1142, in either
+// grant order. A table grant names its database literally.
 func TestMySQLFamilyGrantAccountIdentityCommandsE2E(t *testing.T) {
 	for _, engine := range roleInheritEngines {
 		t.Run(engine.name, func(t *testing.T) {
