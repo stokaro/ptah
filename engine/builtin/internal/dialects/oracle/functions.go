@@ -16,9 +16,8 @@ import (
 //
 //   - `CREATE OR REPLACE FUNCTION` is accepted, and it is the whole
 //     replacement: a modified routine needs no DROP in front of its CREATE. The
-//     planner emits one anyway, guarded. The create that follows puts the
-//     routine back, and the grants the planner writes after it put back the
-//     privileges the DROP took.
+//     replacement keeps the routine's object privileges, so its plan emits
+//     neither a preceding DROP nor grants to restore them.
 //   - Plain `CREATE FUNCTION` over an existing name is ORA-00955.
 //   - `CREATE FUNCTION IF NOT EXISTS` is accepted on 23 and is a trap on 21:
 //     there it creates a routine literally named IF, reporting "Function

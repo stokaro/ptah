@@ -114,8 +114,7 @@ func TestPlanBidirectionalSchemaDiff_ChangedRoutineComesBackWithItsBody(t *testi
 			schema:  "APP",
 			desired: schemamodel.Function{Name: "rt", Kind: procedure, Language: "plsql", Body: "BEGIN DBMS_OUTPUT.PUT_LINE(2); END;"},
 			current: catalog.Function{Schema: "APP", Name: "rt", Kind: procedure, Language: "plsql", Body: "BEGIN NULL; END;"},
-			want: "-- Replace procedure rt: body, volatility\nDROP PROCEDURE IF EXISTS rt;\n" +
-				"-- Modify procedure rt: body, volatility\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN NULL; END;\n",
+			want:    "-- Modify procedure rt: body, volatility\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN NULL; END;\n",
 		},
 		{
 			name:    "a PostgreSQL function",

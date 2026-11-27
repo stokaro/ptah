@@ -49,6 +49,10 @@ func oracle() descriptor.Dialect {
 		// characters (130 bytes) answer ORA-00972, so the limit counts bytes
 		// and the server refuses a longer name rather than cutting it.
 		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "bytes"},
+		// CREATE OR REPLACE keeps a same-kind routine's object privileges on
+		// both supported lines, including a user's WITH GRANT OPTION. The
+		// routine renderer writes this form for a changed declaration.
+		ReplaceRoutineWithoutDrop: true,
 		// A REVOKE on a table takes only a grant on the table, and one of a
 		// privilege the role holds there through no grant fails with
 		// ORA-01927: measured on 23.26.3, also under SELECT ANY TABLE.
