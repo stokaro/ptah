@@ -1504,7 +1504,7 @@ adds only the privileges the login lacks, so its down file leaves preexisting
 grants and their grant option in place. On MariaDB a bare grantee names a role
 when that role exists and the login on `%` otherwise; the login's grants
 never count as the role's.
-Declarative grants name a bare principal. Grants to accounts on other hosts
+A grant declaration names a bare principal. Grants to accounts on other hosts
 remain separate and are not described under that bare name.
 
 The role reader applies the same rule to roles and memberships. A role is the

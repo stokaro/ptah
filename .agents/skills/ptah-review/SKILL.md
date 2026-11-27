@@ -26,9 +26,14 @@ description: Review a Ptah change or prepare its pull request or issue. Use for 
    CI status. Treat a required failure or missing result as unresolved.
 
 For a large or data-sensitive change, request an independent review when an
-agent is available. Give it the request and raw diff, with a bounded scope.
-Resolve substantive findings before repeating review; repeated clean reviews
-of the same inputs add no evidence.
+agent is available. Give it the request, base and head revisions, raw diff,
+and applicable checks, with a bounded scope. Have it inspect production
+callers and report concrete failure cases, not preferences. Verify each
+finding against the current code before changing it. Resolve substantive
+findings before repeating review; review the fixes and affected contracts
+again, not unchanged parts of the tree. The
+[workflow guidance](../../references/agent-workflows.md) covers delegation
+and evidence for longer tasks.
 
 ## Prepare the PR or issue
 

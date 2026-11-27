@@ -52,6 +52,7 @@ references its task needs.
 | Task | Skill |
 | --- | --- |
 | Go code, errors, resources, APIs, or portability | [ptah-go-development](.agents/skills/ptah-go-development/SKILL.md) |
+| Unexplained failure, intermittent defect, or a fix that did not work | [ptah-debugging](.agents/skills/ptah-debugging/SKILL.md) |
 | SQL, inspection, schema identity, diff, planning, or execution | [ptah-schema-migrations](.agents/skills/ptah-schema-migrations/SKILL.md) |
 | Provider protocol, host/SDK, or independent module changes | [ptah-provider-contracts](.agents/skills/ptah-provider-contracts/SKILL.md) |
 | CLI, configuration, Atlas parity, or environment bindings | [ptah-compatibility](.agents/skills/ptah-compatibility/SKILL.md) |
@@ -64,6 +65,11 @@ adapters with matching metadata. `CLAUDE.md` imports only this file. Keep the
 root under 12 KiB and each skill under 8 KiB; move task details into conditional
 references. Check changes with
 `node docs/site/scripts/check-agent-guidance.mjs`.
+
+For work spanning several contracts, use the
+[workflow guidance](.agents/references/agent-workflows.md) to choose planning
+and review depth. External skills and tool instructions supplement these
+rules; check their examples against the repository's owners and test policy.
 
 ## Architecture and data safety
 

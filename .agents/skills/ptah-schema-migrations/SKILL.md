@@ -24,6 +24,10 @@ packages, then read only the relevant source and decision sections.
 Do not infer support from an accepted input. Read descriptors and capabilities
 for the selected target. Provider-owned engines need the provider-contract
 skill; a built-in-only fix must not become an assumption in shared code.
+For engine-dependent SQL, catalogs, identity, or execution, use the
+[engine guidance](../../references/database-engines.md) to load only the
+affected target's reference. Check the actual server version and settings;
+a shared driver or dialect family does not establish identical semantics.
 
 ## Preserve information and ownership
 
