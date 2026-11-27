@@ -773,8 +773,9 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 // out (see [chpolicyexport.Declarable]): a ClickHouse row policy whose table
 // is gone, and one the read could not describe. The read itself keeps both,
 // so a comparison that takes the database as the current side still plans the
-// removal of the first and keeps the second. Every conversion of a read into
-// the side to reach goes through it, so the two sides of a comparison agree
+// removal of the first and keeps the second unless it drops the policy's
+// view. Every conversion of a read into the side to reach goes through it, so
+// the two sides of a comparison agree
 // on what the read holds whichever path built them.
 func DesiredFromRead(ctx context.Context, schema *catalog.Database, dialect string, runtime dbschematogo.Runtime) (*schemamodel.Database, error) {
 	declarable, err := chpolicyexport.Declarable(ctx, rundiag.Stream(ctx), schema)

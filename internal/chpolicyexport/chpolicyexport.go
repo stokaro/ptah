@@ -18,7 +18,8 @@
 // a view, is a coverage record rather than an object, so the writer of each
 // format leaves it out. A SQL export names it in a comment and an HCL export
 // in its header; [ReportUndescribed] names it for a format that has no place
-// for either, such as Go annotations. A comparison of the database keeps it.
+// for either, such as Go annotations. A comparison keeps it unless the plan
+// drops its view. These export notices describe the read, not the plan.
 package chpolicyexport
 
 import (
@@ -95,9 +96,9 @@ func Without(ctx context.Context, w io.Writer, schema *catalog.Database) (*catal
 // desired side holds no table such a record could sit below, so the
 // comparison has nothing to compare it beside; without the record, the kind's
 // own knowledge says the policy is not declared, and a current side that
-// holds it keeps it as a policy its own read could not describe. A schema
-// holding neither is returned unchanged, and so is a nil one. The result
-// shares nothing it changes with schema.
+// holds it keeps it as a policy its own read could not describe, unless the
+// plan drops its view. A schema holding neither is returned unchanged, and so
+// is a nil one. The result shares nothing it changes with schema.
 func Declarable(ctx context.Context, w io.Writer, schema *catalog.Database) (*catalog.Database, error) {
 	result, err := Without(ctx, w, schema)
 	if err != nil || result == nil {

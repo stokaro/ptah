@@ -1,6 +1,7 @@
 package clickhouse_test
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"errors"
 	"strings"
@@ -12,9 +13,28 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/internal/chpolicyexport"
 	"ptah.run/internal/dbschema/clickhouse"
 	"ptah.run/internal/dbschema/dbtest"
 )
+
+// An export warning describes what the read can declare. It cannot promise
+// that a later plan keeps a policy whose view that plan may remove.
+func TestReaderReadSchema_PolicyExportDoesNotPredictThePlan(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, answerRowPolicyRelations([][]driver.Value{
+		{"on_view", "active_users", "1", uint8(0), uint8(1), make([]string, 0), make([]string, 0)},
+	}, nil, [][]driver.Value{{"orders", "MergeTree"}, {"active_users", "View"}}, nil))
+	schema, err := clickhouse.NewClickHouseReader(db.SQL, "analytics").ReadSchemaContext(c.Context())
+	c.Assert(err, qt.IsNil)
+	var warnings bytes.Buffer
+
+	_, err = chpolicyexport.Declarable(c.Context(), &warnings, schema)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(warnings.String(), qt.Contains, `ClickHouse row policy "on_view" on "active_users" is left out:`)
+	c.Assert(warnings.String(), qt.Not(qt.Contains), "the plan keeps")
+}
 
 // rowPolicyColumns are the columns the reader selects from
 // system.row_policies, in its order.
@@ -123,13 +143,13 @@ func TestReaderReadSchema_ReadsAPolicyItsTableOutlived(t *testing.T) {
 		{chschema.RowPolicyRef("", "orders", "tenant"), schemaext.Knowledge{State: schemaext.Complete}},
 		{chschema.RowPolicyRef("", "dropped", "leak"), schemaext.Knowledge{State: schemaext.Complete}},
 		{chschema.RowPolicyRef("", "active_users", "on_view"), schemaext.Knowledge{State: schemaext.Unrepresentable,
-			Reason: `the policy is on "active_users" (engine View), which the read does not describe as a table; the plan keeps the policy`}},
+			Reason: `the policy is on "active_users" (engine View), which the read does not describe as a table`}},
 		{chschema.RowPolicyRef("", "events_all", "on_dist"), schemaext.Knowledge{State: schemaext.Unrepresentable,
-			Reason: `the policy is on "events_all" (engine Distributed), which the read does not describe as a table; the plan keeps the policy`}},
+			Reason: `the policy is on "events_all" (engine Distributed), which the read does not describe as a table`}},
 		{chschema.RowPolicyRef("", "ptah_schema_apply_log", "on_log"), schemaext.Knowledge{State: schemaext.Unrepresentable,
-			Reason: `the policy is on "ptah_schema_apply_log", Ptah's own bookkeeping table, which the read leaves out; the plan keeps the policy`}},
+			Reason: `the policy is on "ptah_schema_apply_log", Ptah's own bookkeeping table, which the read leaves out`}},
 		{chschema.RowPolicyRef("", "*", "wide"), schemaext.Knowledge{State: schemaext.Unrepresentable,
-			Reason: "the policy is written ON analytics.*, for every table of the database, which Ptah does not model; the plan keeps the policy"}},
+			Reason: "the policy is written ON analytics.*, for every table of the database, which Ptah does not model"}},
 	} {
 		c.Assert(schema.FeatureCoverage.Lookup(chschema.RowPolicyKind, test.ref), qt.DeepEquals, test.want, qt.Commentf("%s", test.ref))
 	}
