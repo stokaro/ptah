@@ -771,6 +771,15 @@ statement the server runs from a piece. `CREATE TABLE dbo.a (id int) TRUNCATE
 TABLE dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, and
 text whose statement boundaries Ptah cannot find is rated destructive.
 
+The same reading decides which statements control a transaction. Ptah refuses
+a migration that commits or rolls back the transaction it manages, or opens one
+of its own, and a `COMMIT` inside a `BEGIN ... END` block or after an `IF` is
+refused as a `COMMIT` on its own is. A `COMMIT` in the body of a procedure is
+stored, not run, and is not refused. `ptah migrations lint` reports such a
+statement as `transaction/explicit-transaction`, but it reads a block one
+statement at a time, so it misses a `ROLLBACK` that opens a `CATCH` block
+(stokaro/ptah#6793).
+
 ## Views that read other views
 
 SQL Server checks a view's query when the view is created, so Ptah creates each view

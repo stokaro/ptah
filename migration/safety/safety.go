@@ -543,8 +543,8 @@ func assessStatement(statement, target string, known nodeKnowledge, pieces []sta
 // TABLE x` is two statements, and `IF ... BEGIN DELETE FROM x END` deletes.
 // On a target whose text is T-SQL (sqlserverbatch.Reads), sql is cut where
 // the migrator cuts it ([sqlutil.SplitSQLStatementsForDialect]), and each
-// statement the server runs from each piece, as internal/sqlserverbatch finds
-// it, is classified by its words; the most severe decides. A piece whose
+// statement the server runs from each piece, as sqlserverbatch.Leaves walks
+// them, is classified by its words; the most severe decides. A piece whose
 // statement boundaries the reader cannot find is destructive, since what it
 // runs is not established.
 func assessText(sql, target string, assessment StatementAssessment, known nodeKnowledge) StatementAssessment {
@@ -557,7 +557,7 @@ func assessText(sql, target string, assessment StatementAssessment, known nodeKn
 			raiseAssessment(&assessment, StatementAssessment{Severity: Destructive, Reason: unreadableReason(err)})
 			continue
 		}
-		for _, statement := range serverStatements(statements) {
+		for _, statement := range sqlserverbatch.Leaves(statements) {
 			raiseAssessment(&assessment, assessRawSQL(statement, StatementAssessment{Severity: Safe, Reason: safeReason}, known))
 		}
 	}
@@ -574,26 +574,6 @@ func unreadableReason(err error) string {
 	}
 	return "Ptah cannot find where the T-SQL statements in it begin and end (" + found +
 		"), so what it runs is not established"
-}
-
-// serverStatements returns the text of each statement the server runs from
-// statements, without the semicolon that ends it. The statements a block, an
-// IF or a WHILE runs stand in for it, since a condition runs nothing, and
-// CREATE SCHEMA stands beside the elements it creates.
-func serverStatements(statements []sqlserverbatch.Statement) []string {
-	var texts []string
-	for _, statement := range statements {
-		switch statement.Kind {
-		case sqlserverbatch.Block, sqlserverbatch.If, sqlserverbatch.While:
-			texts = append(texts, serverStatements(statement.Statements)...)
-		case sqlserverbatch.Schema:
-			texts = append(texts, strings.TrimSuffix(statement.Head, ";"))
-			texts = append(texts, serverStatements(statement.Statements)...)
-		default:
-			texts = append(texts, strings.TrimSuffix(statement.SQL, ";"))
-		}
-	}
-	return texts
 }
 
 // safeReason is the reason of a statement nothing marks as risky.

@@ -50,6 +50,13 @@ func TestControls_HappyPath(t *testing.T) {
 		{name: "SQL Server save transaction", statement: "SAVE TRANSACTION ptah_save", dialect: "sqlserver"},
 		{name: "SQL Server commit", statement: "COMMIT TRAN", dialect: "sqlserver"},
 		{name: "SQL Server implicit transactions", statement: "SET IMPLICIT_TRANSACTIONS ON", dialect: "sqlserver"},
+		{name: "SQL Server commit inside a block", statement: "BEGIN\n  INSERT INTO dbo.log VALUES (N'before-commit');\n  COMMIT;\nEND", dialect: "sqlserver"},
+		{name: "SQL Server rollback in a CATCH block", statement: "BEGIN TRY\n  INSERT INTO dbo.log VALUES (1);\nEND TRY\nBEGIN CATCH\n  ROLLBACK;\nEND CATCH", dialect: "sqlserver"},
+		{name: "SQL Server commit an IF runs", statement: "IF @@TRANCOUNT > 0 COMMIT", dialect: "sqlserver"},
+		{name: "SQL Server commit in the block of an IF", statement: "IF 1 = 1 BEGIN INSERT INTO dbo.log VALUES (1); COMMIT; END", dialect: "sqlserver"},
+		{name: "SQL Server transaction a TRY block opens and commits", statement: "BEGIN TRY BEGIN TRAN; INSERT INTO dbo.log VALUES (1); COMMIT; END TRY BEGIN CATCH SELECT 1; END CATCH", dialect: "sqlserver"},
+		{name: "SQL Server save transaction in a WHILE", statement: "WHILE 1 = 0 SAVE TRANSACTION s", dialect: "sqlserver"},
+		{name: "SQL Server implicit transactions after another statement", statement: "SELECT 1 SET IMPLICIT_TRANSACTIONS ON", dialect: "sqlserver"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -79,6 +86,10 @@ func TestControls_FailurePath(t *testing.T) {
 		{name: "SQL Server end of a block", statement: "END", dialect: "sqlserver"},
 		{name: "SQL Server block begin", statement: "BEGIN", dialect: "sqlserver"},
 		{name: "SQL Server procedure body", statement: "CREATE PROCEDURE p AS BEGIN SELECT 1; END", dialect: "sqlserver"},
+		{name: "SQL Server procedure body that commits", statement: "CREATE PROCEDURE p AS BEGIN INSERT INTO t VALUES (1); COMMIT; END", dialect: "sqlserver"},
+		{name: "SQL Server block that controls nothing", statement: "BEGIN TRY INSERT INTO t VALUES (1); END TRY BEGIN CATCH SELECT ERROR_MESSAGE(); END CATCH", dialect: "sqlserver"},
+		{name: "SQL Server IF that tests the transaction count", statement: "IF @@TRANCOUNT > 0 SELECT 1", dialect: "sqlserver"},
+		{name: "SQL Server commit in a string", statement: "BEGIN INSERT INTO t VALUES (N'COMMIT'); END", dialect: "sqlserver"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
