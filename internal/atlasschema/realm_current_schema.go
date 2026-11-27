@@ -86,7 +86,8 @@ func placesUnqualifiedNames(info catalog.ServerInfo) bool {
 }
 
 // resolveDesiredNaming is [namingFor] for a run whose dev database is named by
-// devURL and not yet connected, empty for a run without one.
+// devURL and not yet connected, empty for a run without one. source names
+// devURL in an error, such as `--dev-url`.
 //
 // The plan is computed before the rehearsal connects to the dev database, so a
 // dev URL that addresses a database directly is connected here to ask its
@@ -95,7 +96,7 @@ func placesUnqualifiedNames(info catalog.ServerInfo) bool {
 // to the dialect's default schema; the rehearsal checks that answer once it
 // connects. A dev URL that pins search_path keeps the target's reading, as
 // namingFor does.
-func resolveDesiredNaming(ctx context.Context, target catalog.ServerInfo, devURL string) (desiredNaming, error) {
+func resolveDesiredNaming(ctx context.Context, target catalog.ServerInfo, source, devURL string) (desiredNaming, error) {
 	devURL = strings.TrimSpace(devURL)
 	if devURL == "" || !placesUnqualifiedNames(target) {
 		return namingFor(target, nil), nil
@@ -108,7 +109,7 @@ func resolveDesiredNaming(ctx context.Context, target catalog.ServerInfo, devURL
 	}
 	devConn, err := dbschema.ConnectToDatabase(ctx, devURL)
 	if err != nil {
-		return desiredNaming{}, fmt.Errorf("connect to --dev-url: %w", err)
+		return desiredNaming{}, fmt.Errorf("connect to %s: %w", source, err)
 	}
 	defer dbschema.CloseAndWarn(devConn)
 	info := devConn.Info()
@@ -120,8 +121,8 @@ func resolveDesiredNaming(ctx context.Context, target catalog.ServerInfo, devURL
 // that URL describes every schema of its database and the engine resolves a
 // name along a search path, and nowhere otherwise. A dev database the run
 // provisions resolves a name to the dialect's default schema, as in
-// [resolveDesiredNaming].
-func resolveDevNaming(ctx context.Context, dialect, devURL string) (desiredNaming, error) {
+// [resolveDesiredNaming]. source names devURL in an error.
+func resolveDevNaming(ctx context.Context, dialect, source, devURL string) (desiredNaming, error) {
 	dev := catalog.ServerInfo{Dialect: dialect, URL: strings.TrimSpace(devURL)}
 	if dev.URL == "" || !placesUnqualifiedNames(dev) {
 		return namingFor(dev, nil), nil
@@ -131,7 +132,7 @@ func resolveDevNaming(ctx context.Context, dialect, devURL string) (desiredNamin
 	}
 	devConn, err := dbschema.ConnectToDatabase(ctx, dev.URL)
 	if err != nil {
-		return desiredNaming{}, fmt.Errorf("connect to --dev-url: %w", err)
+		return desiredNaming{}, fmt.Errorf("connect to %s: %w", source, err)
 	}
 	defer dbschema.CloseAndWarn(devConn)
 	return namingFor(devConn.Info(), nil), nil

@@ -35,8 +35,9 @@ import (
 	"ptah.run/internal/providerurl"
 )
 
-// Server opens devURL, the value of the command's --flag, and answers what its
-// server can do, or the reason it could not be opened.
+// Server opens devURL and answers what its server can do, or the reason it
+// could not be opened. source names devURL in an error the way the operator
+// gave it, such as `--dev-url` or the dev database a project file names.
 //
 // A URL of only spaces answers nil and no error: the command was given none.
 // Any other URL is taken as written, so a docker:// URL behind a space is no
@@ -63,10 +64,10 @@ import (
 // a scheme an executable provider in ctx serves names that provider's target.
 // It is then connected to and closed again, through that provider where one
 // serves it, and a connection that fails within
-// timeout is the error, wrapped as `connect to --<flag>: ...`. A timeout of
+// timeout is the error, wrapped as `connect to <source>: ...`. A timeout of
 // zero leaves the deadline of ctx, if any, as the only bound.
-func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (capability.Capabilities, error) {
-	facts, err := reach(ctx, dialect, flag, devURL, timeout, nil)
+func Server(ctx context.Context, dialect, source, devURL string, timeout time.Duration) (capability.Capabilities, error) {
+	facts, err := reach(ctx, dialect, source, devURL, timeout, nil)
 	return facts.Capabilities, err
 }
 
@@ -97,18 +98,18 @@ type Resolve func(context.Context, *dbschema.DatabaseConnection) (identifier.Sem
 // ServerFacts opens devURL as [Server] does and answers its capabilities and,
 // over the same connection, the session's character set facts. A failed read
 // of the facts is the error, wrapped as `read the character sets of
-// --<flag>: ...`.
+// <source>: ...`.
 //
 // Where resolve is not nil and a connection was opened, it is called over
 // that connection too, and its answer is [Facts.IdentifierSemantics]; an
-// error from it is the error, wrapped as `resolve identifiers on --<flag>:
+// error from it is the error, wrapped as `resolve identifiers on <source>:
 // ...`.
-func ServerFacts(ctx context.Context, dialect, flag, devURL string, timeout time.Duration, resolve Resolve) (Facts, error) {
-	return reach(ctx, dialect, flag, devURL, timeout, func(ctx context.Context, conn *dbschema.DatabaseConnection, facts Facts) (Facts, error) {
+func ServerFacts(ctx context.Context, dialect, source, devURL string, timeout time.Duration, resolve Resolve) (Facts, error) {
+	return reach(ctx, dialect, source, devURL, timeout, func(ctx context.Context, conn *dbschema.DatabaseConnection, facts Facts) (Facts, error) {
 		if resolve != nil {
 			semantics, err := resolve(ctx, conn)
 			if err != nil {
-				return Facts{}, fmt.Errorf("resolve identifiers on --%s: %w", flag, err)
+				return Facts{}, fmt.Errorf("resolve identifiers on %s: %w", source, err)
 			}
 			facts.IdentifierSemantics = &semantics
 		}
@@ -120,7 +121,7 @@ func ServerFacts(ctx context.Context, dialect, flag, devURL string, timeout time
 		var err error
 		facts.CharsetDefaultCollations, facts.CharsetAliases, err = reader.ReadCharsetFacts(ctx)
 		if err != nil {
-			return Facts{}, fmt.Errorf("read the character sets of --%s: %w", flag, err)
+			return Facts{}, fmt.Errorf("read the character sets of %s: %w", source, err)
 		}
 		return facts, nil
 	})
@@ -137,7 +138,7 @@ type charsetFactsReader interface {
 // called where reach opens none.
 func reach(
 	ctx context.Context,
-	dialect, flag, devURL string,
+	dialect, source, devURL string,
 	timeout time.Duration,
 	read func(context.Context, *dbschema.DatabaseConnection, Facts) (Facts, error),
 ) (Facts, error) {
@@ -177,7 +178,7 @@ func reach(
 	}
 	conn, err := dbschema.ConnectToServer(ctx, devURL)
 	if err != nil {
-		return Facts{}, fmt.Errorf("connect to --%s: %w", flag, err)
+		return Facts{}, fmt.Errorf("connect to %s: %w", source, err)
 	}
 	defer func() { _ = conn.Close() }()
 	facts := Facts{Capabilities: conn.Info().Capabilities}

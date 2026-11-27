@@ -14,15 +14,17 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// The offline SQL Server comparison has no collation to ask. Two ASCII names
-// that differ after ASCII case folding are different under every collation
-// SQL Server offers, so they are compared as two names; a pair that folds
-// together, or one with a non-ASCII character, may be one name, and the
-// comparison refuses rather than guess (stokaro/ptah#2315, stokaro/ptah#4122).
+// The offline SQL Server comparison has no collation to ask. Two declared ASCII
+// names that differ after ASCII case folding are compared as two names, since
+// both are created and nothing is lost when a collation reads them as one; a
+// pair that folds together, or one with a non-ASCII character, may be one
+// name, and the comparison refuses rather than guess (stokaro/ptah#2315,
+// stokaro/ptah#4122). A plan that creates one object and drops another is a
+// different question, which the planner refuses offline whatever the names
+// (stokaro/ptah#6746).
 
 // TestCompareWithDatabaseInfo_SQLServerUnknownSemantics_HappyPath declares two
-// tables, and a table with two columns, whose names no collation folds
-// together.
+// tables, and a table with two columns, whose names differ beyond ASCII case.
 func TestCompareWithDatabaseInfo_SQLServerUnknownSemantics_HappyPath(t *testing.T) {
 	c := qt.New(t)
 

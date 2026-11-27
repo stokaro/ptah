@@ -215,6 +215,7 @@ func postgres() descriptor.Dialect {
 			RolePasswords:                  true,
 			DefaultGeneratedKind:           "STORED",
 			RoutineTypeAliases:             "pg-aliases",
+			RoutineOverloads:               true,
 			QualifiedTypeNames:             true,
 			// YugabyteDB leaves this off: a routine created in pg_temp
 			// outlives the rollback there, and a copy whose body reads a

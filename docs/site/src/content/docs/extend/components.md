@@ -506,16 +506,27 @@ runtime, and returns an error when its inputs or a provider fail. A caller must
 handle that error before using the diff.
 
 Dialect-only SQL Server comparison cannot know the database collation. It keeps
-exact identity for deterministic offline diffs and assumes that two ASCII names
-that differ beyond ASCII case are two names, which a collation with
-contractions breaks: `Hungarian_CI_AS` reads `ccs` as `cscs`. Names that differ
+exact identity for deterministic offline diffs. No offline rule says that two
+names are two under every collation, since `Hungarian_CI_AS` reads `ccs` as
+`cscs`, so planning refuses every offline plan that creates an object and
+drops another of its kind unless the two are spelled alike. Names that differ
 only in case, and a name that holds a non-ASCII character, it treats as
-potentially equivalent, and planning rejects that ambiguity before SQL
-generation. Plan with a live resolved snapshot instead:
+potentially equivalent within a schema, and planning rejects that ambiguity
+before SQL generation. Plan with a live resolved snapshot instead:
 `schemadiff.ResolveIdentifierSemantics` asks a SQL Server connection how it
 compares the names two states hold, and its result goes to
 `CompareOptions.IdentifierSemantics`. Ptah does not emulate SQL Server collation
 rules locally.
+
+Planning refuses some pairs whatever the snapshot:
+
+- two routines of one kind spelled alike on a target without routine
+  overloading (`descriptor.Comparison.RoutineOverloads`), which are one
+  routine; the comparison plans a changed routine as a modification;
+- two schemas spelled alike on every target, which are one schema; the
+  comparison never asks to create a schema it holds;
+- for SQL Server, identifier semantics that are neither the offline rules nor
+  a resolved snapshot.
 
 When applying a reusable destructive-change policy to a known database target,
 use `diffpolicy.ApplyForDialect`. It preserves the drop/create pair required by

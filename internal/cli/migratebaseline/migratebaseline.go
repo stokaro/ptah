@@ -235,7 +235,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		// the same, so a --shadow-db nothing answers on fails the dry run
 		// rather than the run it rehearses. A docker:// URL is parsed and no
 		// container is started.
-		if _, err := devreach.Server(ctx, conn.Info().Dialect, shadowDBFlag, opts.shadowDB, connectTimeout); err != nil {
+		if _, err := devreach.Server(ctx, conn.Info().Dialect, "--"+shadowDBFlag, opts.shadowDB, connectTimeout); err != nil {
 			return err
 		}
 		printDryRun(opts.dbURL, opts.migrationsDir, version, mig, lockName, rows)

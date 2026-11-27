@@ -442,7 +442,7 @@ func checkUnusedShadowDB(cmd *cobra.Command, dialect, shadowDB string, timeout t
 	if !dbcli.ChecksUnusedDevURL(cmd, shadowDBFlag) {
 		return nil
 	}
-	_, err := devreach.Server(cmd.Context(), dialect, shadowDBFlagAsTyped(cmd), shadowDB, timeout)
+	_, err := devreach.Server(cmd.Context(), dialect, "--"+shadowDBFlagAsTyped(cmd), shadowDB, timeout)
 	return err
 }
 

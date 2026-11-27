@@ -349,7 +349,7 @@ func PreparePlanFileReportingUndecided(
 	// answers on fails the run here rather than the run that applies the plan;
 	// see [devreach].
 	if !opts.SkipUnusedDevURL {
-		if _, err := devreach.Server(ctx, conn.Info().Dialect, "dev-url", opts.DevURL, opts.ConnectTimeout); err != nil {
+		if _, err := devreach.Server(ctx, conn.Info().Dialect, "--dev-url", opts.DevURL, opts.ConnectTimeout); err != nil {
 			return PlanFile{}, schemadiff.Diagnostics{}, err
 		}
 	}
