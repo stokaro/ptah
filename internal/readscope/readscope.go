@@ -14,7 +14,8 @@
 //
 // The context also says how a read names what it reports: by default an object
 // of the connection's current schema carries no schema, and a run whose
-// statements name every schema asks for it with [Qualified].
+// statements name every schema asks for it with [Qualified], or with
+// [FullyQualified] when a connection scoped to one schema must name it too.
 //
 // A selector can leave out single objects too, and a read that has to send a
 // statement naming one object, beyond the catalog queries that list them all,
@@ -105,6 +106,23 @@ func Qualified(ctx context.Context) context.Context {
 // IsQualified reports whether ctx carries [Qualified].
 func IsQualified(ctx context.Context) bool {
 	qualified, _ := ctx.Value(qualifiedKey{}).(bool)
+	return qualified
+}
+
+type fullyQualifiedKey struct{}
+
+// FullyQualified returns ctx asking a read to name every object's schema,
+// including on a connection scoped to one schema. A migration file needs
+// those names even when its planning URL pins search_path: PostgreSQL still
+// searches pg_catalog before that schema for a bare reference.
+func FullyQualified(ctx context.Context) context.Context {
+	return context.WithValue(Qualified(ctx), fullyQualifiedKey{}, true)
+}
+
+// IsFullyQualified reports whether ctx asks for qualified names even on a
+// connection scoped to one schema.
+func IsFullyQualified(ctx context.Context) bool {
+	qualified, _ := ctx.Value(fullyQualifiedKey{}).(bool)
 	return qualified
 }
 

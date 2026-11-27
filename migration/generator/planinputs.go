@@ -16,6 +16,8 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
@@ -24,10 +26,24 @@ import (
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/rolepassword"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/shadow"
 )
+
+// placeMigrationNames binds declarations to the planning connection's current
+// schema on a target that resolves bare names along a search path. Qualifying
+// only a rendered DROP would leave ALTER, COMMENT, GRANT, foreign keys and
+// user-type references free to resolve to another object. Placement before
+// comparison preserves those identities throughout planning and rollback.
+func placeMigrationNames(info catalog.ServerInfo, desired *schemamodel.Database) (*schemamodel.Database, error) {
+	described, found := platform.Lookup(info.Dialect)
+	if !found || described.Schemas.Selection != descriptor.SchemaSelectionSearchPath {
+		return desired, nil
+	}
+	return schemaprep.PlaceUnqualified(desired, info.Schema, info.Dialect)
+}
 
 func verifyPlannedShadowMigration(
 	ctx context.Context,

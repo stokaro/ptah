@@ -11,6 +11,7 @@ sourceOfTruth:
   - "internal/dbschema"
   - "engine/builtin"
   - "migration/schemadiff"
+  - "migration/generator"
   - "internal/routineargs"
 generated: false
 searchAliases:
@@ -50,6 +51,10 @@ schema declares nothing in, has its tables planned for removal; the command
 warns on standard error once for each one, as
 [Generate migrations](../../versioned/generate/#which-schemas-plan-and-generate-read)
 shows.
+
+[Generated migration files](../../versioned/generate/#names-in-postgresql-migration-files)
+keep object names qualified even when the URL pins `search_path`, so a user
+object with a catalog object's name stays distinct from it.
 
 Each name in `--schemas` is trimmed of white space unless it is written as a
 double-quoted field, so `--schemas '" a",b'` names the schemas ` a` and `b`.

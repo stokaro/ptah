@@ -1995,14 +1995,21 @@ func desiredDomainIdentities(
 // A qualified spelling says its own schema. An unqualified one is resolved
 // through the declaration when there is exactly one, and otherwise left with an
 // empty schema -- the search path decides it, and this comparator does not read
-// the search path.
+// the search path. A built-in spelling remains in pg_catalog even when the
+// desired schema declares a domain of that name.
 func desiredColumnDomainIdentity(
 	genType string,
 	desiredDomains map[string]domainIdentity,
+	target string,
 ) (domainIdentity, bool) {
 	schema, bare := splitQualifiedTypeName(strings.TrimSpace(genType))
 	identity := domainIdentity{schema: foldDomainPart(schema), name: foldDomainPart(bare)}
 	if identity.name == "" {
+		return identity, false
+	}
+	spelling := strings.TrimSpace(genType[strings.LastIndexByte(genType, '.')+1:])
+	if (identity.schema == "" || identity.schema == "pg_catalog") && schemaprep.NamesBuiltInType(target, spelling) {
+		identity.schema = "pg_catalog"
 		return identity, false
 	}
 	declared, isDomain := desiredDomains[identity.name]

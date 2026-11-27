@@ -95,10 +95,10 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 
 		c.Assert(err, qt.IsNil)
 		upSQL := migrateGenerateUpSQL(c, migrationsDir)
-		c.Assert(upSQL, qt.Contains, `DROP TABLE "events_2026";`)
+		c.Assert(upSQL, qt.Contains, `DROP TABLE "public"."events_2026";`)
 		// The declared half of the plan is here too, so the row above reports
 		// the destructive gate rather than a plan that came out empty.
-		c.Assert(upSQL, qt.Contains, `CREATE INDEX "idx_events_tenant" ON "events" ("tenant");`)
+		c.Assert(upSQL, qt.Contains, `CREATE INDEX "idx_events_tenant" ON "public"."events" ("tenant");`)
 	})
 
 	t.Run("--check-destructive with --allow-destructive writes it too", func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 		c.Assert(
 			migrateGenerateUpSQL(c, migrationsDir),
 			qt.Contains,
-			`DROP TABLE "events_2026";`,
+			`DROP TABLE "public"."events_2026";`,
 		)
 	})
 }

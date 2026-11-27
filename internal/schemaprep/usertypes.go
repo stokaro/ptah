@@ -2,10 +2,12 @@ package schemaprep
 
 import (
 	"maps"
+	"slices"
 	"strings"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // DeclaredUserTypes is the vocabulary used to qualify column references to
@@ -66,7 +68,7 @@ func declaredUserTypeQualifiers(
 		if name == "" || strings.TrimSpace(schema) == "" {
 			return
 		}
-		if namesABuiltInType(targetPlatform, name) {
+		if NamesBuiltInType(targetPlatform, name) {
 			into[name] = ""
 			return
 		}
@@ -158,11 +160,14 @@ func EmitsStandaloneEnumDefinitions(targetPlatform string) bool {
 	return !InlineEnumDialect(targetPlatform)
 }
 
-// namesABuiltInType guards the dangerous side of an ambiguous bare name. A
+// NamesBuiltInType reports whether an unqualified type spelling names a
+// built-in type on the target. A quoted spelling keeps its case and must name
+// a catalog type, rather than a grammar alias. This guards an ambiguous bare
+// name in both schema preparation and comparison. A
 // false negative can turn a built-in column into a same-named user type at
 // exit 0; a conservative false positive leaves the spelling unchanged and
 // fails loudly if the target cannot resolve it.
-func namesABuiltInType(dialect, typeName string) bool {
+func NamesBuiltInType(dialect, typeName string) bool {
 	names := builtInTypeNamesFor(dialect)
 	if names == nil {
 		return false
@@ -170,6 +175,10 @@ func namesABuiltInType(dialect, typeName string) bool {
 	trimmed := strings.TrimSpace(typeName)
 	if open := strings.IndexByte(trimmed, '('); open >= 0 {
 		trimmed = strings.TrimSpace(trimmed[:open])
+	}
+	if strings.HasPrefix(trimmed, `"`) {
+		ref, parsed := tableref.Parse(trimmed)
+		return parsed && !ref.Qualified && slices.Contains(postgresCatalogTypeNames, ref.Name)
 	}
 	_, found := names[strings.ToLower(trimmed)]
 	return found

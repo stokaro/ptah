@@ -144,6 +144,21 @@ are planned for removal; to keep them, pin search_path in the URL or pass
 print the same line. The connection's own schema, usually `public`, is not
 reported, because every scope reads it.
 
+### Names in PostgreSQL migration files
+
+Generated PostgreSQL migrations name modeled objects with their schemas in
+both directions, including the connection's current schema. A URL that pins
+`search_path` uses the same rule: PostgreSQL can resolve a bare name in
+`pg_catalog` before the selected schema. Explicit names keep a user table
+`public.pg_settings` or a user type `public.point` separate from the catalog's
+objects when creating, changing, granting privileges on, or dropping it.
+
+Write a user type that shares a built-in name with its schema in the desired
+schema, such as `public.point` or `public.money`. A bare `point` or `money`
+continues to mean the built-in type. Routine bodies, expressions, and defaults
+remain SQL text as authored; qualify references inside that text when their
+meaning depends on a particular schema.
+
 ### Leave objects out with `--exclude`
 
 `--exclude` names objects that `plan` and `generate` leave alone, such as a
