@@ -25,10 +25,14 @@ type Schemas struct {
 	// database. It excludes SchemaSelectionDatabase, whose URL can name a whole
 	// server.
 	ConnectedDatabaseOnly bool `json:"connected_database_only,omitempty"`
-	// StoredViewBodyNamesDatabase reports that a one-database catalog read
-	// returns view bodies with references qualified by the database that
-	// created the view. A dev database replay needs those references rebound
-	// to the target database before the bodies are compared.
+	// StoredViewBodyNamesDatabase reports that the server stores a view body
+	// with each relation of the view's own database qualified by that
+	// database. A read of one database takes that qualifier off, so the body
+	// reads the same whichever database holds the view, and a plan written
+	// from it runs on another database. A comparison takes the same qualifier
+	// off the declared body and off the held one before reading them against
+	// each other, so a read of the whole server, which keeps it, compares the
+	// same way.
 	StoredViewBodyNamesDatabase bool `json:"stored_view_body_names_database,omitempty"`
 }
 

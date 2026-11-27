@@ -200,74 +200,31 @@ func isCatalogSchema(name string) bool {
 	return strings.EqualFold(name, "system") || strings.EqualFold(name, "information_schema")
 }
 
-// RebindDatabase is state, a schema read through source, with the objects a
-// one-database read names by source's database moved to destination's, where
-// a schema is a database and the two connections select databases of
+// RebindDatabase is state, a schema read through source, with the grants a
+// one-database read records in source's database moved to destination's,
+// where a schema is a database and the two connections select databases of
 // different names. A dev database rehearses a target's schema with it, and the
 // drift check compares a shadow database's replay with the target with it.
 //
-// A reader may record the database on a view, materialized view, routine or
-// sequence while leaving a table unqualified. The MySQL-family server
-// qualifies the relations of a stored view body with it. Compared as read,
-// the same view in a shadow database `app_shadow` and in the target `app` is a
-// missing view and an extra view, and recreated as read on a dev database
-// `appdev` the baseline wrote `app`.`v`, which the baseline guard refused as a
-// write to another database. Each of these objects in source's database is
-// left unqualified, as its tables are, and a view body reads destination's
-// tables instead. A view body that also reads another database keeps that
-// name, and an object in another database keeps its qualifier.
-//
-// The read records the database on each grant too, and a grant in source's
-// database is moved to destination's database rather than left unqualified.
-// A grant on a table, a view or a sequence names its object by the database
-// and the object, so `GRANT SELECT ON t` replayed in `app_shadow` reads as a
-// grant on `app_shadow`.`t`, and it is the target's grant on `app`.`t`. A
-// grant on the whole database names that database as its object, so
-// `GRANT SELECT ON *` replayed there reads as a grant on `app_shadow`.*, and
-// it is the target's grant on `app`.*. Left unqualified, a ClickHouse table
-// grant is refused, since a ClickHouse grant always names its database, and a
-// MySQL one is reported under another name than the target's own grants. A
-// name compares exactly: on a server that keeps the case of a database name,
-// `APP_SHADOW` is another database than `app_shadow`.
-//
-// A routine body is not rewritten: it is procedural text, and a name in it
-// that reads source's database is left as written. On a dev database of the
-// target's server the dev cleanup refuses first, since another database
-// holds a routine; on a dev server of its own the routine is created as
-// written, and a statement that calls it fails there as it would on any
-// server without that database. state is not modified.
+// A one-database read names a table, a view, a routine and a sequence of its
+// database without a schema, and a view body reads that database's relations
+// unqualified, so these objects are the same objects whichever database the
+// read selected. A grant is not: it names its object by the database and the
+// object, so `GRANT SELECT ON t` replayed in `app_shadow` reads as a grant on
+// `app_shadow`.`t`, and it is the target's grant on `app`.`t`. A grant on the
+// whole database names that database as its object, so `GRANT SELECT ON *`
+// replayed there reads as a grant on `app_shadow`.*, and it is the target's
+// grant on `app`.*. Left unqualified, a ClickHouse table grant is refused,
+// since a ClickHouse grant always names its database, and a MySQL one is
+// reported under another name than the target's own grants. A name compares
+// exactly: on a server that keeps the case of a database name, `APP_SHADOW` is
+// another database than `app_shadow`. state is not modified.
 func RebindDatabase(state *catalog.Database, source, destination catalog.ServerInfo) *catalog.Database {
 	from, to := source.Schema, destination.Schema
 	if state == nil || !schemaScopeNamesDatabase(destination.Dialect) || from == "" || to == "" || from == to {
 		return state
 	}
 	moved := *state
-	moved.Views = slices.Clone(state.Views)
-	for i := range moved.Views {
-		if moved.Views[i].Schema == from {
-			moved.Views[i].Schema = ""
-			moved.Views[i].Body = sqlqualifier.ViewBody(moved.Views[i].Body, destination.Dialect, from, to)
-		}
-	}
-	moved.MatViews = slices.Clone(state.MatViews)
-	for i := range moved.MatViews {
-		if moved.MatViews[i].Schema == from {
-			moved.MatViews[i].Schema = ""
-			moved.MatViews[i].Body = sqlqualifier.ViewBody(moved.MatViews[i].Body, destination.Dialect, from, to)
-		}
-	}
-	moved.Functions = slices.Clone(state.Functions)
-	for i := range moved.Functions {
-		if moved.Functions[i].Schema == from {
-			moved.Functions[i].Schema = ""
-		}
-	}
-	moved.Sequences = slices.Clone(state.Sequences)
-	for i := range moved.Sequences {
-		if moved.Sequences[i].Schema == from {
-			moved.Sequences[i].Schema = ""
-		}
-	}
 	moved.Grants = slices.Clone(state.Grants)
 	for i := range moved.Grants {
 		grant := &moved.Grants[i]

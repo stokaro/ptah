@@ -109,3 +109,154 @@ func TestCompareWithDatabaseInfo_KeyIntoAComparedSchema_FailurePath(t *testing.T
 		})
 	}
 }
+
+// ordersInto is a desired schema holding orders, whose key orders_customer
+// references reference.
+func ordersInto(reference string) *schemamodel.Database {
+	database := ordersIntoCRM()
+	database.Constraints[0].ForeignTable = reference
+	return database
+}
+
+// ordersBesideCustomers is [ordersInto] with the table customers declared too.
+func ordersBesideCustomers(reference string) *schemamodel.Database {
+	database := ordersInto(reference)
+	database.Tables = append(database.Tables, schemamodel.Table{StructName: "Customers", Name: "customers"})
+	database.Fields = append(database.Fields, schemamodel.Field{StructName: "Customers", Name: "id", Type: "BIGINT", Primary: true})
+	return database
+}
+
+// ownAccount is a read of the Oracle account APP holding customers.
+func ownAccount() *catalog.Database {
+	return &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "APP"}},
+		Tables: []catalog.Table{{Name: "CUSTOMERS", Columns: []catalog.Column{{
+			Name: "ID", DataType: "NUMBER", ColumnType: "NUMBER(19)", IsNullable: "NO", IsPrimaryKey: true,
+		}}}},
+	}
+}
+
+// TestCompareWithDatabaseInfo_KeyIntoTheConnectionsSchema_HappyPath compares a
+// key into the schema the connection is read in with a desired schema that
+// declares the table, under each spelling of the schema the dialect takes for
+// it: the key names the declared table, so the comparison plans orders and
+// drops nothing.
+func TestCompareWithDatabaseInfo_KeyIntoTheConnectionsSchema_HappyPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		schema    string
+		reference string
+		database  *catalog.Database
+	}{
+		{name: "oracle, lower case", dialect: "oracle", schema: "APP", reference: "app.customers", database: ownAccount()},
+		{name: "oracle, upper case", dialect: "oracle", schema: "APP", reference: "APP.customers", database: ownAccount()},
+		{name: "oracle, quoted", dialect: "oracle", schema: "APP", reference: `"APP".customers`, database: ownAccount()},
+		{
+			name: "mysql, the database read", dialect: "mysql", schema: "shop", reference: "shop.customers",
+			database: liveTables(catalog.Table{Name: "customers"}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				t.Context(), ordersBesideCustomers(test.reference), test.database,
+				catalog.ServerInfo{Dialect: test.dialect, Schema: test.schema}, nil, must.Must(builtin.New()),
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"orders"})
+			c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCompareWithDatabaseInfo_KeyIntoTheConnectionsSchema_FailurePath refuses a
+// key into the schema the connection is read in when the desired schema does
+// not declare the table, however the schema is spelled: the plan would drop
+// customers while adding a key that reads it. Measured on Oracle 23.26, the
+// plan dropped the table and the server refused the drop with ORA-02449.
+func TestCompareWithDatabaseInfo_KeyIntoTheConnectionsSchema_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		schema    string
+		reference string
+		database  *catalog.Database
+	}{
+		{name: "oracle, lower case", dialect: "oracle", schema: "APP", reference: "app.customers", database: ownAccount()},
+		{name: "oracle, upper case", dialect: "oracle", schema: "APP", reference: "APP.customers", database: ownAccount()},
+		{name: "oracle, quoted", dialect: "oracle", schema: "APP", reference: `"APP".customers`, database: ownAccount()},
+		{
+			name: "mysql, the database read", dialect: "mysql", schema: "shop", reference: "shop.customers",
+			database: liveTables(catalog.Table{Name: "customers"}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				t.Context(), ordersInto(test.reference), test.database,
+				catalog.ServerInfo{Dialect: test.dialect, Schema: test.schema}, nil, must.Must(builtin.New()),
+			)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `invalid foreign key: constraint "orders_customer" references unknown table `+
+				`".*customers": "`+test.schema+`" is the schema of the database compared, and the desired schema declares `+
+				`no such table there`)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
+// TestCompareWithDatabaseInfo_KeyIntoAComparedSchemaSpelledAnotherWay_FailurePath
+// refuses a key into crm on Oracle, read as the account APP that also sees
+// CRM's tables, whichever case the key spells crm in: Oracle stores the
+// account CRM, and an unquoted crm names it.
+func TestCompareWithDatabaseInfo_KeyIntoAComparedSchemaSpelledAnotherWay_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		reference string
+	}{
+		{name: "lower case", reference: "crm.customers"},
+		{name: "upper case", reference: "CRM.customers"},
+		{name: "quoted", reference: `"CRM".customers`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := ownAccount()
+			database.Tables = append(database.Tables, catalog.Table{Schema: "CRM", Name: "CUSTOMERS"})
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				t.Context(), ordersInto(test.reference), database,
+				catalog.ServerInfo{Dialect: "oracle", Schema: "APP"}, nil, must.Must(builtin.New()),
+			)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `invalid foreign key: constraint "orders_customer" references unknown table `+
+				`".*customers": the database compared holds schema "(?i:crm)" and the desired schema declares nothing of it`)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
+// TestCompareWithDatabaseInfo_KeyIntoAnotherAccount_HappyPath is the control:
+// on Oracle a quoted lower-case "crm" is an account of its own, which the read
+// does not hold, so the key is planned as declared.
+func TestCompareWithDatabaseInfo_KeyIntoAnotherAccount_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	database := ownAccount()
+	database.Tables = append(database.Tables, catalog.Table{Schema: "CRM", Name: "CUSTOMERS"})
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(
+		t.Context(), ordersInto(`"crm".customers`), database,
+		catalog.ServerInfo{Dialect: "oracle", Schema: "APP"}, nil, must.Must(builtin.New()),
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"orders"})
+}

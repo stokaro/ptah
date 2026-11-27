@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinebody"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewoptions"
 )
@@ -1082,6 +1083,14 @@ type declaredBodies struct {
 // ([schemacomparison.Views.QueryEqual]): the folds here are the shared reading
 // the rules replace. A target whose answers leave a pair undecided
 // ([AnsweredViewQueries]) has that pair read by the folds.
+//
+// Where the server stores a body with the view's own database qualified, the
+// folds read both bodies with that qualifier taken off ([localViewBody]). A
+// read of one database has already taken it off the held body; a read of a
+// whole server keeps it, and so does a declaration `schema inspect` of a whole
+// server writes. Taken off one side only, a body that names the view's
+// database reads as another query than the same body without it, and the plan
+// replaces a view nobody changed.
 func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, bodies declaredBodies) bool {
 	if answered, ok := bodies.rules.(answeredViews); ok {
 		if equal, decided := answered.decide(generatedBody, databaseBody); decided {
@@ -1090,15 +1099,31 @@ func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema stri
 	} else if bodies.rules != nil {
 		return bodies.rules.QueryEqual(generatedBody, databaseBody)
 	}
-	if schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema) {
+	local := localViewBody(generatedBody, dialect, databaseSchema)
+	held := localViewBody(databaseBody, dialect, databaseSchema)
+	if schemaObjectBodiesEqual(local, held, dialect, databaseSchema) {
 		return true
 	}
-	expanded, ok := expandSelectStar(normalizeSQLBody(generatedBody, dialect), bodies.columns)
-	if ok && schemaObjectBodiesEqual(expanded, databaseBody, dialect, databaseSchema) {
+	expanded, ok := expandSelectStar(normalizeSQLBody(local, dialect), bodies.columns)
+	if ok && schemaObjectBodiesEqual(expanded, held, dialect, databaseSchema) {
 		return true
 	}
 	spelled := bodies.spelled[exprkey.ViewBody(generatedBody)]
-	return spelled.Resolved && schemaObjectBodiesEqual(spelled.Body, databaseBody, dialect, databaseSchema)
+	return spelled.Resolved && schemaObjectBodiesEqual(spelled.Body, held, dialect, databaseSchema)
+}
+
+// localViewBody is body with the qualifier of database taken off, where
+// dialect's server stores a view body with the view's own database qualified:
+// the recognition the MySQL and MariaDB reader applies to the body it reads
+// ([sqlqualifier.ViewBody]), so the reader and the comparison cannot disagree
+// about which name is the database and which is an alias. A body naming
+// another database keeps that name. Any other dialect, and a comparison that
+// knows no database, gets body unchanged.
+func localViewBody(body, dialect, database string) string {
+	if database == "" || !storedViewBodyNamesDatabase(dialect) {
+		return body
+	}
+	return sqlqualifier.ViewBody(body, dialect, database, "")
 }
 
 func normalizeSQLBodyPreservingQualifiers(body, dialect string) string {
@@ -1136,6 +1161,9 @@ func normalizeSQLBody(body, dialect string) string {
 func canonicalizeNormalizedSQLBody(body, dialect string) string {
 	quoting := normalize.QuotingOf(dialect)
 	body = stripDefaultColumnAliases(body, quoting)
+	// The joins are folded before a comparison loses its parentheses, which
+	// would leave on(a = b) as ona = b.
+	body = collapseWhitespaceOutsideQuotedSQL(foldViewJoins(body, dialect), quoting)
 	body = stripSimpleComparisonParentheses(body, quoting)
 	body = collapseWhitespaceOutsideQuotedSQL(body, quoting)
 	if comparisonOf(dialect).ViewPredicatesAsIntegers {

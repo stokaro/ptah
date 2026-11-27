@@ -31,6 +31,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		RoutineTypeAliases:             "mysqlroutine",
 		OperatorPrecedence:             "mysql-operators",
 		ViewPredicatesAsIntegers:       true,
+		ViewJoinsParenthesized:         true,
 		ViewSQLSecurity:                true,
 		AutoIncrementFlag:              true,
 		DefaultGeneratedKind:           "VIRTUAL",
@@ -132,6 +133,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			GeneratedColumnsBecomePlain: true,
 		},
 		"oracle": {
+			ForeignKeysOutside:           true,
 			ForeignKeyHoldsItsKey:        true,
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},

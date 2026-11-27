@@ -45,8 +45,18 @@ var (
 	nextValueClause = descriptortable.New(func(described descriptor.Dialect) []string {
 		return strings.Fields(described.Grammar.Columns.NextValueClause)
 	})
-	checkWordFolds = descriptortable.New(checkWordFold)
+	checkWordFolds               = descriptortable.New(checkWordFold)
+	storedViewBodiesNameDatabase = descriptortable.New(func(described descriptor.Dialect) bool {
+		return described.Schemas.StoredViewBodyNamesDatabase
+	})
 )
+
+// storedViewBodyNamesDatabase reports whether dialect's server stores a view
+// body with each relation of the view's own database qualified; see
+// [descriptor.Schemas.StoredViewBodyNamesDatabase].
+func storedViewBodyNamesDatabase(dialect string) bool {
+	return storedViewBodiesNameDatabase.Get(dialect)
+}
 
 // checkWordFoldOf returns the words the CHECK comparison lowers on dialect, as
 // a test, or nil where it lowers every letter; see [checkWordFold].

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
 )
@@ -101,16 +102,27 @@ func BatchEnd(dialect, statement string) string {
 // StatementEnd returns what a script of dialect writes after a statement a
 // splitter returned: [Terminator], then [BatchEnd].
 //
-// Where a batch separator follows, a statement that already ends in a
-// semicolon takes no second one. A splitter keeps the semicolon after the last
-// statement of a T-SQL body that is not a BEGIN ... END block, since the body
-// runs to the end of the batch, and a second semicolon there writes `;;`.
+// A statement that already ends in a semicolon takes no second one where a
+// batch separator follows it, and where the dialect's bodies are PL/SQL. A
+// splitter keeps the semicolon after the last statement of a T-SQL body that
+// is not a BEGIN ... END block, since the body runs to the end of the batch,
+// and the semicolon of the END that closes a PL/SQL block, which is part of
+// the block. A second semicolon writes `;;`, and after a PL/SQL block it is
+// not part of the block.
 func StatementEnd(dialect, statement string) string {
 	end := BatchEnd(dialect, statement)
-	if end != "" && strings.HasSuffix(strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)), ";") {
+	if (end != "" || plsqlBodies(dialect)) &&
+		strings.HasSuffix(strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)), ";") {
 		return end
 	}
 	return Terminator(statement) + end
+}
+
+// plsqlBodies reports whether dialect's routine bodies are PL/SQL
+// (descriptor.Scripts.Bodies).
+func plsqlBodies(dialect string) bool {
+	described, ok := platform.Lookup(dialect)
+	return ok && described.Scripts.Bodies == descriptor.BodiesPLSQL
 }
 
 // WithBatchEnd returns a statement a renderer wrote, terminator included,

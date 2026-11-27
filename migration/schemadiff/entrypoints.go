@@ -43,6 +43,17 @@ func Compare(ctx context.Context, desired *schemamodel.Database, current *catalo
 // failures and incomplete results return no diff. The reporting variant retains
 // partial changes together with structured knowledge limits.
 //
+// It knows no connection, so it cannot tell which schema a read means by an
+// unqualified name. A read of one MySQL-family database or one Oracle account
+// names that database's or account's objects without it, and a declaration
+// that names one of them, or a grant's object, with the database or account
+// does not pair with the read here: the diff adds the declared object and
+// removes the read one. Nor does a default that names the account's own
+// sequence with the account, `app.seq.NEXTVAL` against the read's
+// "SEQ"."NEXTVAL": the diff changes the column's default. A default that
+// leaves the account out pairs here.
+// [CompareWithDatabase] reads the connection's schema and pairs them all.
+//
 // This entry point does not check who a replaced object runs as. It leaves
 // [difftypes.SchemaDiff.ConnectedAccount] nil, so neither the routine definer
 // rule nor the planner's view definer rule runs, even over a catalog a live
@@ -159,7 +170,7 @@ func foldedNames(
 	if desired == nil || database == nil || !platform.NamesFoldBySetting(dialect) {
 		return desired, nil
 	}
-	read := schemaprep.ReadNames{Session: session}
+	read := schemaprep.ReadNames{Session: session, Dialect: dialect}
 	for _, schema := range database.Schemas {
 		read.Databases = append(read.Databases, schema.Name)
 	}

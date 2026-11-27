@@ -12,12 +12,15 @@ import (
 // Remove takes the name of the dev database off the objects a read of it
 // qualifies with it.
 //
-// The MySQL-family readers record the database a view, a routine
-// or a sequence lives in as its schema, and the server prints a view's body with
-// that database in front of every relation. A file written from that read names
-// the dev database, as in DROP VIEW `dev`.`v`, so it cannot run on the database
-// it is for: the statement stops there, or, with a guard, does nothing and leaves
-// the view behind. A table carries no such name in a read of one database.
+// The MySQL-family and ClickHouse readers name every object of the one
+// database they read without it, and take it off a view body, so for them
+// nothing here applies. The Oracle reader names nothing of its account either,
+// and Oracle never reaches this path, because `migrate diff` refuses a dev
+// replay on it. For a reader that records the schema it read on a view, a
+// materialized view, a routine or a sequence, the file would name the dev
+// database without this call, as in DROP VIEW DEV.V, so it could not run on
+// the database it is for: the statement stops there, or, with a guard, does
+// nothing and leaves the object behind.
 //
 // A read of several schemas keeps every name, since there the qualifier is what
 // tells the objects apart.

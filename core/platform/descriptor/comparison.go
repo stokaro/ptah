@@ -152,6 +152,13 @@ type Comparison struct {
 	// ViewPredicatesAsIntegers reports that the server stores a view's
 	// boolean predicate as an integer comparison.
 	ViewPredicatesAsIntegers bool `json:"view_predicates_as_integers,omitempty"`
+	// ViewJoinsParenthesized reports that the server stores a view's joins in
+	// a spelling of its own: the joins a FROM clause starts with in
+	// parentheses, nested from the left, each ON condition in parentheses, a
+	// table alias without AS, and a join keyword without INNER, CROSS or
+	// OUTER. A declared and a stored body are compared with those spellings
+	// read alike.
+	ViewJoinsParenthesized bool `json:"view_joins_parenthesized,omitempty"`
 	// ViewSQLSecurity reports that a view has a SQL SECURITY mode in the
 	// catalog. An omitted declaration uses the server's DEFINER default.
 	ViewSQLSecurity bool `json:"view_sql_security,omitempty"`

@@ -16,8 +16,10 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -47,7 +49,8 @@ func unqualifiedTableSchema(dialect string) (string, bool) {
 // A reference is not outside when it is unqualified, when the dialect is not
 // one that accepts such a key, or when database holds anything of the schema
 // it names: `crm.missing` beside a described `crm` is a table that is not
-// there.
+// there. Schemas compare as dialect compares them ([SchemaKey]), so on Oracle
+// `CRM.accounts` is a key into a described crm.
 func Outside(database schemamodel.Database, dialect, reference string) (schema string, outside bool) {
 	unqualified, accepted := unqualifiedTableSchema(dialect)
 	if !accepted {
@@ -57,17 +60,92 @@ func Outside(database schemamodel.Database, dialect, reference string) (schema s
 	if !ok || !ref.Qualified {
 		return "", false
 	}
+	semantics := identifier.ForDialect(dialect)
+	named := SchemaKey(semantics, spelledSchema(semantics, reference, ref))
 	for _, declared := range database.Schemas {
-		if declared.Name == ref.Schema {
+		if SchemaKey(semantics, declared.Name) == named {
 			return "", false
 		}
 	}
 	for _, table := range database.Tables {
-		if cmp.Or(table.Schema, unqualified) == ref.Schema {
+		if SchemaKey(semantics, cmp.Or(table.Schema, unqualified)) == named {
 			return "", false
 		}
 	}
 	return ref.Schema, true
+}
+
+// SchemaKey is the key two spellings of one schema share under semantics:
+// on Oracle crm, CRM and "CRM" share one, and "crm" has its own, since Oracle
+// stores an unquoted name in upper case.
+func SchemaKey(semantics identifier.Semantics, spelled string) string {
+	return semantics.TableIdentityKey(strings.TrimSpace(spelled))
+}
+
+// StoredSchemaKey is [SchemaKey] for a schema as a catalog stores it, such as
+// the connected Oracle account APP or a table's schema in a read.
+func StoredSchemaKey(semantics identifier.Semantics, dialect, stored string) string {
+	return SchemaKey(semantics, sqlident.CatalogName(dialect, stored))
+}
+
+// ReferencedSchemaKey is the [SchemaKey] of the schema reference names, or
+// the empty string for an unqualified reference or one that does not parse.
+func ReferencedSchemaKey(semantics identifier.Semantics, reference string) string {
+	ref, ok := tableref.Parse(reference)
+	if !ok || !ref.Qualified {
+		return ""
+	}
+	return SchemaKey(semantics, spelledSchema(semantics, reference, ref))
+}
+
+// IntoSchema reports whether reference names a table of the schema whose key
+// is schema, and whether database declares that table, unqualified or in that
+// schema. An unqualified reference names no schema.
+//
+// A comparison asks it with the schema of the connection, where an
+// unqualified table is: on Oracle `REFERENCES app.t1`, `APP.T1` and
+// `"APP".T1` read as the account APP are each a key into the description's
+// own T1, which the description declares or the plan drops.
+func IntoSchema(database schemamodel.Database, semantics identifier.Semantics, reference, schema string) (into, declared bool) {
+	ref, ok := tableref.Parse(reference)
+	if schema == "" || !ok || !ref.Qualified || SchemaKey(semantics, spelledSchema(semantics, reference, ref)) != schema {
+		return false, false
+	}
+	name := SchemaKey(semantics, spelledTable(semantics, reference, ref))
+	for _, table := range database.Tables {
+		if (table.Schema == "" || SchemaKey(semantics, table.Schema) == schema) && SchemaKey(semantics, table.Name) == name {
+			return true, true
+		}
+	}
+	return true, false
+}
+
+// spelledSchema is the schema part of reference as written: ref.Schema, with
+// its double quotes where semantics fold an unquoted name, so that a quoted
+// name the fold would change keeps apart from the unquoted one.
+func spelledSchema(semantics identifier.Semantics, reference string, ref tableref.Ref) string {
+	return spelledPart(semantics, reference, 0, ref.Schema)
+}
+
+// spelledTable is [spelledSchema] for the table part.
+func spelledTable(semantics identifier.Semantics, reference string, ref tableref.Ref) string {
+	return spelledPart(semantics, reference, 1, ref.Name)
+}
+
+// spelledPart is part index of a two-part reference as written where it is
+// double-quoted and semantics fold an unquoted name, and parsed otherwise.
+func spelledPart(semantics identifier.Semantics, reference string, index int, parsed string) string {
+	if semantics.UnquotedFold == "" {
+		return parsed
+	}
+	parts := sqlident.SplitQualified(strings.TrimSpace(reference))
+	if len(parts) != 2 {
+		return parsed
+	}
+	if raw := strings.TrimSpace(parts[index]); strings.HasPrefix(raw, `"`) {
+		return raw
+	}
+	return parsed
 }
 
 // Reference is one foreign key a description declares: what declares it and

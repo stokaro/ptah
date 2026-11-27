@@ -233,7 +233,7 @@ func tableColumnsWithSemantics(
 			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains, columnContext{
 				schema:               genTable.Schema,
 				table:                genTable.Name,
-				heldSchema:           dbTable.Schema,
+				heldSchema:           cmp.Or(dbTable.Schema, semantics.DefaultSchema),
 				generatedExpressions: spellings.Generated,
 				columnSpellings:      spellings.Columns,
 				defaultIntSize:       spellings.DefaultIntSize,
@@ -465,7 +465,11 @@ type columnContext struct {
 	schema string
 	table  string
 	// heldSchema is the schema the catalog holds the table in, which an
-	// unqualified sequence reference in a default resolves to.
+	// unqualified sequence reference in a default resolves to. A read of one
+	// Oracle account names the account's tables without it, so there it is
+	// the connection's schema: Oracle stores the reference qualified with the
+	// account, and without it a declared seq.NEXTVAL differs from the stored
+	// "APP"."SEQ"."NEXTVAL" on every apply.
 	heldSchema string
 	// semantics compares the schema and sequence names a sequence reference
 	// in a default spells, as the server compares them. The zero value

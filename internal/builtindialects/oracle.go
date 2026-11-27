@@ -191,6 +191,10 @@ END;`,
 		// Oracle stores a generated column's expression in a form of its own
 		// (stokaro/ptah#1915).
 		Comparison: descriptor.Comparison{
+			// Measured on Oracle Free 23.26: an account granted REFERENCES on
+			// another account's table creates a foreign key into it, and the
+			// read reports the key with that account's name.
+			ForeignKeysOutside: true,
 			// Measured on Oracle Free 23.26: dropping a UNIQUE a foreign key
 			// references answers ORA-02273, so the foreign key leaves first
 			// and comes back once the key that replaces it is there.
