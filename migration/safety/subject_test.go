@@ -254,6 +254,10 @@ func TestAssessRendered_NamesWhatEachRenderedStatementActsOn(t *testing.T) {
 			want: []string{"app"}},
 		{dialect: "sqlserver", nodes: []ast.Node{ast.NewRawSQL("CREATE SYNONYM [dbo].[orders_alias] FOR [dbo].[orders]")},
 			want: []string{"dbo.orders_alias"}},
+		{dialect: "sqlserver", nodes: []ast.Node{ast.NewRawSQL("CREATE SYNONYM [Sales].[order]]s.alias] FOR [dbo].[orders]")},
+			want: []string{"Sales.order]s.alias"}},
+		{dialect: "sqlserver", nodes: []ast.Node{ast.NewRawSQL("DROP TABLE [dbo].[order items]")},
+			want: []string{"dbo.order items"}},
 		{dialect: "postgres", nodes: []ast.Node{&ast.ExtensionStatement{Payload: &pgpolicy.TableStateOperation{
 			Schema: "app", Table: "orders", Change: pgpolicy.TableStateChange{
 				Before: &pgpolicy.ObservedTableState{Enabled: true}, After: &pgpolicy.DesiredTableState{},
@@ -285,7 +289,6 @@ func TestAssessRendered_LeavesTheSubjectEmptyWhereTheStatementNamesNoObject(t *t
 		{dialect: "postgres", statement: "LOCK TABLE users IN ACCESS EXCLUSIVE MODE"},
 		{dialect: "postgres", statement: "CREATE EVENT TRIGGER audit ON ddl_command_start EXECUTE FUNCTION f()"},
 		{dialect: "sqlserver", statement: "EXEC sp_rename 'dbo.a', 'b'"},
-		{dialect: "sqlserver", statement: "DROP TABLE [dbo].[order items]"},
 		{dialect: "sqlserver", statement: "UPDATE TOP (10) orders SET a = 1"},
 		{dialect: "sqlserver", statement: "DELETE TOP (10) FROM orders"},
 		{dialect: "postgres", statement: "CREATE USER MAPPING FOR bob SERVER files"},

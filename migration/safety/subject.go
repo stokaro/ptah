@@ -335,6 +335,10 @@ func (w subjectWords) clauseHead(index int) string {
 	var head []string
 	for ; index < len(w.upper) && len(head) < clauseHeadWords; index++ {
 		word, source := w.upper[index], w.source[index]
+		if name, ok := bracketedSubjectName(source); ok {
+			head = append(head, name)
+			continue
+		}
 		if !identifierPart(word) || w.doubleQuotedStrings && source[0] == '"' {
 			break
 		}
@@ -550,6 +554,9 @@ func (w subjectWords) namePart(index int) (string, int, bool) {
 		return "", index, false
 	}
 	word := w.source[index]
+	if name, ok := bracketedSubjectName(word); ok {
+		return name, index + 1, true
+	}
 	if w.upper[index] == "[" {
 		if index+2 >= len(w.upper) || w.upper[index+2] != "]" {
 			return "", index, false
@@ -564,4 +571,13 @@ func (w subjectWords) namePart(index int) (string, int, bool) {
 		return "", index, false
 	}
 	return word, index + 1, true
+}
+
+// bracketedSubjectName decodes a whole identifier token from the SQL Server
+// lexer. The hybrid scanner's separate bracket tokens stay in namePart.
+func bracketedSubjectName(word string) (string, bool) {
+	if len(word) <= 2 || word[0] != '[' || word[len(word)-1] != ']' {
+		return "", false
+	}
+	return strings.ReplaceAll(word[1:len(word)-1], "]]", "]"), true
 }
