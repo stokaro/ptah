@@ -89,7 +89,7 @@ func TestGenerateMigration_PartitionedParentRefusesRequestedConcurrentIndexBefor
 	c.Assert(files, qt.IsNil)
 	c.Assert(err, qt.ErrorMatches,
 		`CREATE INDEX CONCURRENTLY requested by diff\.concurrent_index\.create cannot be generated `+
-			`for partitioned table\(s\): "idx_events_tenant" on "events"; .*`)
+			`for partitioned table\(s\): "idx_events_tenant" on "public\.events"; .*`)
 	c.Assert(err.Error(), qt.Contains, "SQLSTATE 0A000")
 	c.Assert(err.Error(), qt.Contains, "ALTER INDEX ... ATTACH PARTITION")
 

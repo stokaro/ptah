@@ -67,15 +67,12 @@ const createdNamesQuery = `SELECT pg_catalog.string_agg(o.name, ' ' ORDER BY o.n
 // applies it, and replays the history on a shadow database through migrations
 // drift and a second migrations generate, none of it trusted. It reads the
 // target back: each object is in public, and the catalog's object of the same
-// name is still there. A CREATE puts an object whose name has no schema in the
-// session's creation schema, so the guard judges it by that schema rather than
-// by what the name reaches.
+// name is still there. Generated statements name public explicitly, so a
+// reference cannot resolve to the catalog's object with the same name.
 //
-// The first generate runs without a shadow database. Its round trip replays
-// the down migration, which drops each object by its bare name, and a DROP is
-// a reference: the server resolves `DROP TYPE "point"` to pg_catalog.point and
-// refuses it as required by the database system, and the guard refuses it
-// first. The second generate writes nothing, so it has no down to replay.
+// The first generate runs without a shadow database. Validation and drift
+// replay its history on dev and shadow databases. The second generate writes
+// nothing, so it has no down migration to replay.
 func TestReplayCreatedBuiltinNameE2E_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -86,25 +83,25 @@ func TestReplayCreatedBuiltinNameE2E_HappyPath(t *testing.T) {
 		want     string
 	}{
 		{name: "PostgreSQL", engine: dbtarget.PostgreSQL, entities: createdBuiltinNameEntities,
-			creates: `CREATE TYPE "point" AS`,
+			creates: `CREATE TYPE "public"."point" AS`,
 			names:   []string{"money", "point", "box", "pg_settings"},
 			want: "pg_catalog.box type pg_catalog.money type pg_catalog.pg_settings relation pg_catalog.pg_settings type " +
 				"pg_catalog.point type public.box type public.money type public.pg_settings relation public.pg_settings type " +
 				"public.point type"},
 		{name: "PostgreSQL 16", engine: dbtarget.PostgreSQL16, entities: createdBuiltinNameEntities,
-			creates: `CREATE TYPE "point" AS`,
+			creates: `CREATE TYPE "public"."point" AS`,
 			names:   []string{"money", "point", "box", "pg_settings"},
 			want: "pg_catalog.box type pg_catalog.money type pg_catalog.pg_settings relation pg_catalog.pg_settings type " +
 				"pg_catalog.point type public.box type public.money type public.pg_settings relation public.pg_settings type " +
 				"public.point type"},
 		{name: "YugabyteDB", engine: dbtarget.YugabyteDB, entities: createdBuiltinNameEntities,
-			creates: `CREATE TYPE "point" AS`,
+			creates: `CREATE TYPE "public"."point" AS`,
 			names:   []string{"money", "point", "box", "pg_settings"},
 			want: "pg_catalog.box type pg_catalog.money type pg_catalog.pg_settings relation pg_catalog.pg_settings type " +
 				"pg_catalog.point type public.box type public.money type public.pg_settings relation public.pg_settings type " +
 				"public.point type"},
 		{name: "CockroachDB", engine: dbtarget.CockroachDB, entities: createdCatalogNameCockroachEntities,
-			creates: `CREATE TYPE "pg_settings" AS ENUM`,
+			creates: `CREATE TYPE "public"."pg_settings" AS ENUM`,
 			names:   []string{"pg_settings", "spatial_ref_sys"},
 			want: "pg_catalog.pg_settings relation pg_catalog.pg_settings type pg_extension.spatial_ref_sys relation " +
 				"pg_extension.spatial_ref_sys type public.pg_settings type public.spatial_ref_sys relation public.spatial_ref_sys type"},

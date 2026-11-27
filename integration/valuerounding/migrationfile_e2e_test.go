@@ -29,9 +29,9 @@ const roundingCheck = "-- +ptah check kind=rounded-values "
 const checkRefusal = "the migration converts a column to a type that keeps fewer digits after the point while the " +
 	"table holds a value with more digits, which the server rounds or cuts without an error"
 
-// unqualified is what the migration commands say of a column a refusal of
-// `schema apply` names: they compare a table of the schema the connection
-// resolves under its bare name, the name the generated statements use.
+// unqualified is how `migrations plan` names a column: it compares the table
+// under the bare name the connection resolves. `migrations generate` keeps
+// the catalog's schema qualifier, as `schema apply` does.
 func unqualified(column string) string {
 	return strings.Replace(column, `of table "public.`, `of table "`, 1)
 }
@@ -146,7 +146,7 @@ func TestMigrationsGenerateRefusesToRoundStoredValuesE2E(t *testing.T) {
 			c.Assert(result.ExitCode, qt.Equals, 2, outcome(result))
 			c.Assert(result.Stderr, qt.Contains, refusal)
 			for _, column := range engine.refused {
-				c.Assert(result.Stderr, qt.Contains, unqualified(column))
+				c.Assert(result.Stderr, qt.Contains, column)
 			}
 			c.Assert(result.Stderr, qt.Contains, "or ask for the change with --allow-value-rounding")
 			written, err := os.ReadDir(dir)

@@ -960,7 +960,7 @@ func TestPtahYAMLExcludeOnPostgreSQL_HappyPathE2E(t *testing.T) {
 			name:     "a project file without the key",
 			project:  yamlExcludeWithoutKey,
 			tables:   []string{"reporting_cache", "widgets"},
-			upHas:    []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
+			upHas:    []string{`CREATE TABLE "public"."reporting_cache"`, `DROP TABLE "public"."external_audit"`},
 			upAlways: `ADD COLUMN "name" text`,
 		},
 		{

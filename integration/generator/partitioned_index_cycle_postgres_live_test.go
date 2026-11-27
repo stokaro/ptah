@@ -143,7 +143,7 @@ func TestGenerateMigration_PartitionedParentSurvivesASecondCycleWithRealPostgres
 	c.Assert(third.Files, qt.HasLen, 1)
 	thirdUp, err := os.ReadFile(third.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(thirdUp), qt.Contains, `DROP INDEX "events_2026_id_idx";`)
+	c.Assert(string(thirdUp), qt.Contains, `DROP INDEX "public"."events_2026_id_idx";`)
 	c.Assert(string(thirdUp), qt.Not(qt.Contains), "events_2026_tenant_idx")
 
 	thirdProvider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))

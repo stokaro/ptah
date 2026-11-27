@@ -556,8 +556,8 @@ func TestPartitionMoveMigrationsE2E(t *testing.T) {
 		"--db-url", dev.url, "--migrations-dir", dir, "--name", "widen")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	up, down := migrationFile(c, dir, "widen", "up"), migrationFile(c, dir, "widen", "down")
-	c.Assert(up, qt.Contains, `ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');`)
-	c.Assert(down, qt.Contains, `ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`)
+	c.Assert(up, qt.Contains, `ALTER TABLE "public"."events" ATTACH PARTITION "public"."e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');`)
+	c.Assert(down, qt.Contains, `ALTER TABLE "public"."events" ATTACH PARTITION "public"."e1" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`)
 
 	out, err = ptah("migrations", "up", "--db-url", dev.url, "--migrations-dir", dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
@@ -599,8 +599,8 @@ CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-
 	out, err = ptah("migrations", "generate", "--schema-file", shrink, "--db-url", dev.url, "--migrations-dir", dir, "--name", "shrink")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	up, down := migrationFile(c, dir, "shrink", "up"), migrationFile(c, dir, "shrink", "down")
-	c.Assert(up, qt.Contains, `DROP TABLE "e2";`)
-	c.Assert(down, qt.Contains, `CREATE TABLE "e2" PARTITION OF "events" FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');`)
+	c.Assert(up, qt.Contains, `DROP TABLE "public"."e2";`)
+	c.Assert(down, qt.Contains, `CREATE TABLE "public"."e2" PARTITION OF "public"."events" FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');`)
 
 	out, err = ptah("migrations", "up", "--db-url", dev.url, "--migrations-dir", dir)
 	c.Assert(err, qt.ErrorMatches, `(?s)error running migrations: pending migrations contain destructive statements.*destructive/drop-table.*`, qt.Commentf("%s", out))
