@@ -27,6 +27,10 @@ import (
 type databaseRows struct {
 	options mysqlgrants.Options
 	held    map[string]map[string][]string
+	// revoked are the partial revokes, by role and privilege: the databases a
+	// REVOKE took the privilege from while the role keeps it on every other
+	// database. They exist only under partial_revokes.
+	revoked map[string]map[string][]string
 }
 
 // readDatabaseRows reads every database-level row of every role, the rows on
@@ -38,7 +42,8 @@ type databaseRows struct {
 // characters themselves, so a pattern grant reaches no other database there:
 // measured on MySQL 8.4.13, after GRANT SELECT ON `wc%`.*, a member is refused
 // wc1.t. MariaDB has no such setting. The read then returns no rows, since no
-// row but the database's own applies to it.
+// row but the database's own applies to it, and reads the partial revokes
+// instead, as [Reader.readPartialRevokes] says.
 func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*databaseRows, error) {
 	options, err := mysqlgrants.ReadOptions(ctx, r.db)
 	if err != nil {
@@ -46,12 +51,16 @@ func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*dat
 	}
 	options.MariaDB = source.tables
 	rows := &databaseRows{options: options, held: make(map[string]map[string][]string)}
-	if options.LiteralDatabaseNames {
-		return rows, nil
-	}
 	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if options.LiteralDatabaseNames {
+		rows.revoked, err = r.readPartialRevokes(ctx, qualifyPredicate(predicate, "u."))
+		if err != nil {
+			return nil, err
+		}
+		return rows, nil
 	}
 	query := databaseRowQuery(qualifyPredicate(predicate, "u."))
 	if source.tables {
@@ -90,6 +99,82 @@ func databaseRowQuery(rolePredicate string) string {
 		WHERE ` + rolePredicate + `
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`
+}
+
+// readPartialRevokes reads, for each role, the databases a partial revoke
+// takes each privilege from.
+//
+// Under partial_revokes, `REVOKE SELECT ON app.* FROM r` from a role holding
+// SELECT ON *.* leaves the global grant and records a restriction:
+// measured on MySQL 8.4.13 and 26.10.0, mysql.user.User_attributes then holds
+// {"Restrictions": [{"Database": "app", "Privileges": ["SELECT"]}]}, SHOW
+// GRANTS prints the REVOKE, and a session with r active is refused with Error
+// 1142 on every table of app while it reads every other database. The global
+// grant itself, in mysql.user, says nothing of it.
+func (r *Reader) readPartialRevokes(ctx context.Context, rolePredicate string) (map[string]map[string][]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT u.user AS role_name, restriction.database_name, privilege.name
+		FROM mysql.user AS u,
+			JSON_TABLE(u.User_attributes, '$.Restrictions[*]' COLUMNS (
+				database_name VARCHAR(64) PATH '$.Database',
+				privileges JSON PATH '$.Privileges')) AS restriction,
+			JSON_TABLE(restriction.privileges, '$[*]' COLUMNS (name VARCHAR(64) PATH '$')) AS privilege
+		WHERE `+rolePredicate+`
+			  AND u.user NOT LIKE 'mysql.%'
+		ORDER BY role_name, restriction.database_name, privilege.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	revoked := make(map[string]map[string][]string)
+	for rows.Next() {
+		var role, database, privilege string
+		if err := rows.Scan(&role, &database, &privilege); err != nil {
+			return nil, err
+		}
+		if revoked[role] == nil {
+			revoked[role] = make(map[string][]string)
+		}
+		revoked[role][privilege] = append(revoked[role][privilege], database)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return revoked, nil
+}
+
+// withoutPartialRevokes is everywhere, the grants on every database, less
+// what a partial revoke takes from a database of databases: such a grant is
+// held on each of databases the revoke leaves it, one entry per database,
+// and the others hold as they are. A role a revoke leaves no database of them
+// holds none of it there.
+//
+// A partial revoke takes the privilege from the role's own grant only: a
+// session with another role active that holds the privilege on every
+// database reads the database, measured on MySQL 8.4.13 and 26.10.0. So the
+// entry stays the role's, and reaches its members as the grant does.
+func (d *databaseRows) withoutPartialRevokes(everywhere []catalog.WideGrant, databases []string) []catalog.WideGrant {
+	if everywhere == nil || d == nil || len(d.revoked) == 0 {
+		return everywhere
+	}
+	same := mysqlname.NamesOf(d.options.FoldCase)
+	kept := make([]catalog.WideGrant, 0, len(everywhere))
+	for _, grant := range everywhere {
+		takenFrom := func(database string) bool {
+			return slices.ContainsFunc(d.revoked[grant.Role][grant.Privilege], func(name string) bool { return same.Same(name, database) })
+		}
+		if !slices.ContainsFunc(databases, takenFrom) {
+			kept = append(kept, grant)
+			continue
+		}
+		for _, database := range databases {
+			if !takenFrom(database) {
+				grant.Schema = database
+				kept = append(kept, grant)
+			}
+		}
+	}
+	return kept
 }
 
 // mariaDBDatabaseRowQuery is [databaseRowQuery] read from MariaDB's mysql.db,

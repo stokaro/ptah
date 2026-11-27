@@ -326,6 +326,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		}
 		rows = nil
 	}
+	everywhere = rows.withoutPartialRevokes(everywhere, databases)
 	schema.WideGrants, schema.WideGrantsPartial = joinWideGrants(everywhere, rows.patternGrants(databases))
 	schema.WideAccess = wideAccessOf(everywhere, rows.databaseAccess(databases, roles, memberships))
 	if inheritsUnread(roles, memberships) || mandatoryUnread {
@@ -443,7 +444,9 @@ func withoutPublic(roles []catalog.Role, mariaDB bool) []catalog.Role {
 // database while its grants say it reads nothing.
 //
 // A grant on every database gives each role that holds it one read and one
-// write entry at most, each named by the privileges that give it. patterns is
+// write entry at most, each named by the privileges that give it, and one of
+// each per database where a partial revoke leaves it only some of those a
+// read describes ([databaseRows.withoutPartialRevokes]). patterns is
 // [databaseRows.databaseAccess]. SELECT is read access, and INSERT, UPDATE and
 // DELETE are write access, as [rowaccess.Of] classifies them; the other table
 // privileges change no rows and give none.
@@ -455,14 +458,22 @@ func wideAccessOf(everywhere []catalog.WideGrant, patterns []catalog.WideAccess)
 	if everywhere == nil || patterns == nil {
 		return nil
 	}
-	access := make([]catalog.WideAccess, 0, len(everywhere)+len(patterns))
-	for index := 0; index < len(everywhere); {
-		role := everywhere[index].Role
-		var privileges []string
-		for ; index < len(everywhere) && everywhere[index].Role == role; index++ {
-			privileges = append(privileges, everywhere[index].Privilege)
+	type holding struct{ role, schema string }
+	var order []holding
+	held := make(map[holding][]string)
+	for _, grant := range everywhere {
+		key := holding{role: grant.Role, schema: grant.Schema}
+		if _, seen := held[key]; !seen {
+			order = append(order, key)
 		}
-		access = append(access, accessOf(role, "*.*", privileges)...)
+		held[key] = append(held[key], grant.Privilege)
+	}
+	access := make([]catalog.WideAccess, 0, len(everywhere)+len(patterns))
+	for _, key := range order {
+		for _, entry := range accessOf(key.role, "*.*", held[key]) {
+			entry.Schema = key.schema
+			access = append(access, entry)
+		}
 	}
 	return append(access, patterns...)
 }

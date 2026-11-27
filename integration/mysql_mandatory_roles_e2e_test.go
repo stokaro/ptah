@@ -54,8 +54,8 @@ func TestMySQLMandatoryRolesReachE2E(t *testing.T) {
 
 	lines := publicFindingLines(c, server.url("mysql", database), suffix)
 
-	everyAccount := mandatorySessionReads(c, server, database, "mpub"+suffix, nil)
-	holdingOther := mandatorySessionReads(c, server, database, "moth"+suffix, []string{other})
+	everyAccount := loginReads(c, server, database, "mpub"+suffix, nil)
+	holdingOther := loginReads(c, server, database, "moth"+suffix, []string{other})
 	c.Assert(lines, qt.DeepEquals, []string{
 		"ROL04 info mother",
 		fmt.Sprintf("roles/read-reach warning PUBLIC %d/3 through=[mand]", everyAccount),
@@ -121,12 +121,13 @@ func withMandatoryRoles(c *qt.C, server mysqlFamilyServer, value string) {
 	c.Assert(err, qt.IsNil)
 }
 
-// mandatorySessionReads is how many of the tables a, b and c of database a
-// session of a new login reads with every role it may use active, the login
-// granted roles and nothing else. A statement the server refuses for want of
-// a privilege counts as not read, and any other failure fails the test. The
-// login is dropped when the test ends.
-func mandatorySessionReads(c *qt.C, server mysqlFamilyServer, database, login string, roles []string) int {
+// loginReads is how many of the tables a, b and c of database a session of
+// a new login reads with every role it may use active, the login granted each
+// of grants, a role or a privilege on an object, and nothing else. A
+// statement the server refuses for want of a privilege counts as not read,
+// and any other failure fails the test. The login is dropped when the test
+// ends.
+func loginReads(c *qt.C, server mysqlFamilyServer, database, login string, grants []string) int {
 	c.Helper()
 	account := granteeIdentifier(login) + "@'%'"
 	c.Cleanup(func() {
@@ -134,8 +135,8 @@ func mandatorySessionReads(c *qt.C, server mysqlFamilyServer, database, login st
 		c.Check(err, qt.IsNil)
 	})
 	statements := []string{"CREATE USER " + account + " IDENTIFIED BY 'mandatory_login_pw'"}
-	for _, role := range roles {
-		statements = append(statements, "GRANT "+role+" TO "+account)
+	for _, granted := range grants {
+		statements = append(statements, "GRANT "+granted+" TO "+account)
 	}
 	for _, statement := range statements {
 		_, err := server.admin.ExecContext(c.Context(), statement)

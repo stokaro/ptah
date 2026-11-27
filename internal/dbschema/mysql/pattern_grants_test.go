@@ -31,6 +31,8 @@ func wideGrantsOf(patterns [][]driver.Value, patternErr error, next dbtest.Query
 	}
 	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
+		case strings.Contains(query, "JSON_TABLE(u.User_attributes"):
+			return dbtest.QueryResult{Columns: []string{"role_name", "database_name", "name"}}, nil
 		case strings.Contains(query, "sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE"):
 			return dbtest.QueryResult{Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"}, Rows: patterns}, patternErr
 		case strings.Contains(query, "SELECT column_name"):

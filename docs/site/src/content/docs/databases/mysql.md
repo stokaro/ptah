@@ -1591,6 +1591,16 @@ Ptah refuses a declared revoke on a table, existing or created, that such a
 grant keeps, and names the grant: revoke it where it was granted, or grant the
 privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
+With `partial_revokes` on, `REVOKE SELECT ON d2.* FROM r` from a role holding
+`SELECT ON *.*` keeps the global grant and takes the privilege away on `d2`
+alone. MySQL records the revoke in `mysql.user`, where Ptah reads it, so the
+grant on every database keeps nothing on a table of `d2`: a revoke on such a
+table is planned, and the reach does not count `d2`. Measured on 8.4.13 and
+26.10.0: a session with `r` active, or with a member of `r` active, is refused
+every table of `d2` and reads every other database. A partial revoke takes the
+privilege from the role's own grant alone, so a session with another role
+active that holds `SELECT ON *.*` still reads `d2`.
+
 The role also keeps what a role it is a member of holds, at any depth, and what
 `PUBLIC` or a role granted to `PUBLIC` holds, which on MySQL includes the roles
 in `mandatory_roles`. So the refusal counts those grants too, a grant on the

@@ -241,7 +241,8 @@ of all of them. A role reaches a relation through:
   it, which the next paragraph describes;
 - access no grant on a relation states: superuser, membership in
   `pg_read_all_data` or `pg_write_all_data`, a privilege on every database
-  such as `GRANT SELECT ON *.*`, or, on MySQL and MariaDB, a privilege on a
+  such as `GRANT SELECT ON *.*` except where a MySQL partial revoke takes it
+  away, or, on MySQL and MariaDB, a privilege on a
   database name pattern that reaches the database, such as
   ``GRANT SELECT ON `ab%`.*``. A member reaches what a superuser role reaches
   only if it can switch to that role, because PostgreSQL does not pass the
