@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/sqlserverbatch"
 	"ptah.run/internal/txcontrol"
 )
 
@@ -221,6 +222,11 @@ func setsSessionState(statement string) bool {
 	return sessionStateWord.MatchString(statement)
 }
 
+// noTransactionResumeAction is what a resumed run does with one statement of
+// the committed prefix of a body no transaction wraps: nothing, when the
+// statement left no session state; replay it, when the state it set is the
+// statement's whole effect; refuse the resume otherwise. A statement is read
+// by its words, except where [transactSQLResumeAction] reads it.
 func noTransactionResumeAction(statement string, grammar bodyGrammar) noTransactionPrefixAction {
 	if grammar.hasUnits() {
 		// A query unit carries every definition and setting it needs, and
@@ -228,6 +234,59 @@ func noTransactionResumeAction(statement string, grammar bodyGrammar) noTransact
 		// one leaves nothing a resumed session has to replay.
 		return noTransactionPrefixDurable
 	}
+	if action, ok := transactSQLResumeAction(statement, grammar); ok {
+		return action
+	}
+	return wordsResumeAction(statement, grammar)
+}
+
+// transactSQLResumeAction reads a T-SQL statement that runs others: a BEGIN
+// ... END block, a TRY block with its CATCH block, an IF or a WHILE, or
+// statements written with no semicolon between them. Its first word says
+// nothing about them, so it is durable when every statement the server runs
+// from it is (sqlserverbatch.Leaves), and refused otherwise: replaying it to
+// restore a SET would run its other statements a second time, and an IF may
+// take another branch on a second run. A variable lives only in its batch, so
+// DECLARE and SET of one leave no state. ok is false for a statement that runs
+// no other and for text whose statement boundaries the reader cannot find,
+// which are read by their words.
+func transactSQLResumeAction(statement string, grammar bodyGrammar) (action noTransactionPrefixAction, ok bool) {
+	if !sqlserverbatch.Reads(grammar.dialect) {
+		return noTransactionPrefixDurable, false
+	}
+	read, err := sqlserverbatch.Read(statement)
+	if err != nil || len(read) == 0 || len(read) == 1 && !runsOthers(read[0]) {
+		return noTransactionPrefixDurable, false
+	}
+	for _, leaf := range sqlserverbatch.Leaves(read) {
+		if !setsBatchVariable(leaf, grammar.dialect) && wordsResumeAction(leaf, grammar) != noTransactionPrefixDurable {
+			return noTransactionPrefixReject, true
+		}
+	}
+	return noTransactionPrefixDurable, true
+}
+
+// runsOthers reports a T-SQL statement whose first words are not the
+// statement the server runs.
+func runsOthers(statement sqlserverbatch.Statement) bool {
+	switch statement.Kind {
+	case sqlserverbatch.Block, sqlserverbatch.If, sqlserverbatch.While:
+		return true
+	default:
+		return false
+	}
+}
+
+// setsBatchVariable reports a T-SQL DECLARE or SET of a variable, whose value
+// ends with its batch.
+func setsBatchVariable(statement, dialect string) bool {
+	tokens := significantSQLTokens(statement, dialect)
+	return len(tokens) > 1 && matchesAnyKeyword(tokens[0], "DECLARE", "SET") && strings.HasPrefix(tokens[1].Value, "@")
+}
+
+// wordsResumeAction is [noTransactionResumeAction] for a statement read by
+// the words it starts with.
+func wordsResumeAction(statement string, grammar bodyGrammar) noTransactionPrefixAction {
 	dialect := grammar.dialect
 	services := builtin.Lookup(dialect)
 	tokens := significantSQLTokens(statement, dialect)
