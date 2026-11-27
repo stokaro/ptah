@@ -2768,6 +2768,12 @@ leaves `app` able to update those two columns and no other, and Ptah plans the
 `//ptah:schema:grant` and `//ptah:schema:revoke`, and in HCL the `columns`
 attribute of a `permission` or `revoke` block.
 
+When a plan revokes a table privilege, it grants back each column privilege
+of the same kind that the plan keeps, with its grant option. These grants
+follow the table revoke in the same migration. The rollback of an added
+table grant also restores the column privileges the database held before
+that migration. A column privilege the plan removes stays removed.
+
 Some forms are refused rather than approximated, each with a message that
 names the form:
 
