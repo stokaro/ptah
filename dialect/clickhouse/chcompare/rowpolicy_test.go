@@ -363,7 +363,7 @@ func TestRowPolicyComparisonReportsAPolicyOnARelationItDoesNotModel(t *testing.T
 	c := qt.New(t)
 	onView := chschema.RowPolicyRef("app", "active_orders", "tenant")
 	onTable := chschema.RowPolicyRef("app", "orders", "tenant")
-	reason := "the policy is on \"active_orders\", whose engine View the read does not hold as a table; the plan keeps the policy"
+	reason := "the policy is on \"active_orders\", whose engine View the read does not hold as a table"
 	current := schemaext.ObjectState{Coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, complete(), []schemaext.SubjectCoverage{
 		{Kind: chschema.RowPolicyKind, Subject: onView, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: reason}},
 		{Kind: chschema.RowPolicyKind, Subject: onTable, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "defined in users.xml"}},
