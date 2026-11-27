@@ -254,6 +254,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	// Ahead of --ignore, so a selector is measured against what the read found:
 	// a table both flags name is not a selector that matched nothing.
 	info := conn.Info()
+	selection.Names = conn
 	dbSchema, desired, err = selection.Apply(ctx, opts.Runtime, info, dbSchema, desired)
 	if err != nil {
 		return nil, err

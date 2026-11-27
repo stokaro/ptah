@@ -1,6 +1,7 @@
 package schemascope_test
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -10,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/schemascope"
@@ -171,6 +173,13 @@ type realmConnection struct {
 
 // SchemaWriter returns the writer the connection was given.
 func (c realmConnection) SchemaWriter() catalog.SchemaWriter { return c.writer }
+
+// ResolveIdentifierSemantics answers as PostgreSQL does, whose identifier
+// rules are fixed: every row of [TestReadNames] that reads a realm is
+// PostgreSQL's, and a pairing never asks such a target.
+func (realmConnection) ResolveIdentifierSemantics(context.Context, []string) (identifier.Semantics, error) {
+	return identifier.ForDialect("postgres"), nil
+}
 
 // postgresConnection reads a realm through db as PostgreSQL's writer reads it.
 // Every row of [TestReadNames] that reads a realm is PostgreSQL's; a row of

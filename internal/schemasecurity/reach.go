@@ -317,13 +317,17 @@ func findBroadReach(reach *Reach) []Finding {
 			superusers[principal.Name] = true
 		}
 	}
-	if slices.ContainsFunc(reach.Grants, func(grant ReachGrant) bool { return strings.EqualFold(grant.Role, publicRole) }) {
+	if namesPublic(reach) {
 		subjects = append(subjects, publicRole)
 	}
 	slices.Sort(subjects)
 	subjects = slices.Compact(subjects)
 
-	publicOnly := roleAccess{subject: publicRole, usable: map[string]bool{publicRole: true}, switchable: map[string]bool{publicRole: true}}
+	// Every account holds PUBLIC and the roles granted to it: measured on
+	// MariaDB 11.8.9 and 12.3.3, after `GRANT r TO PUBLIC` a login granted
+	// nothing reads the tables r reads, and is refused them with Error 1142
+	// once the grant is revoked.
+	publicOnly := usableRoles(publicRole, reach.Memberships)
 	public := reachedRelations(reach, index, publicOnly, superusers, readOnly)
 	findings := make([]Finding, 0)
 	for _, subject := range subjects {
@@ -337,7 +341,7 @@ func findBroadReach(reach *Reach) []Finding {
 		}
 		slices.Sort(through)
 		if !isPublic {
-			access.usable[publicRole] = true
+			maps.Copy(access.usable, publicOnly.usable)
 		}
 		reached := reachedRelations(reach, index, access, superusers, readOnly)
 		for _, measured := range []struct {
@@ -370,6 +374,18 @@ func findBroadReach(reach *Reach) []Finding {
 		}
 	}
 	return findings
+}
+
+// namesPublic reports whether the reach holds anything for PUBLIC: a grant,
+// access to every relation, or a role granted to it. PUBLIC is then a subject
+// of its own, since it is no principal a read lists and every account holds
+// what it reaches.
+func namesPublic(reach *Reach) bool {
+	return slices.ContainsFunc(reach.Grants, func(grant ReachGrant) bool { return strings.EqualFold(grant.Role, publicRole) }) ||
+		slices.ContainsFunc(reach.WideAccess, func(held catalog.WideAccess) bool { return strings.EqualFold(held.Role, publicRole) }) ||
+		slices.ContainsFunc(reach.Memberships, func(membership ReachMembership) bool {
+			return strings.EqualFold(membership.Member, publicRole)
+		})
 }
 
 // sourceSuggestion asks to take the sources away first.

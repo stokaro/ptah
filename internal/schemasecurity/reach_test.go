@@ -720,3 +720,41 @@ func TestReachFromCatalog_AddsPUBLICsDatabaseAccessToEveryRole(t *testing.T) {
 		"roles/read-reach warning reader 3/4 over 50% through=[] sources=[SELECT ON `ab%`.* held by PUBLIC]",
 	})
 }
+
+// TestReachFromCatalog_PUBLICHoldsTheRolesGrantedToIt reads a MariaDB shape:
+// `GRANT pubheld TO PUBLIC` gives every account what pubheld reads. PUBLIC is
+// no role the read lists, and it is reported as reaching what pubheld
+// reaches, through pubheld. pubheld reaches no more than PUBLIC and is not
+// reported; other adds t4 to what it holds through PUBLIC.
+func TestReachFromCatalog_PUBLICHoldsTheRolesGrantedToIt(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("t1", "t2", "t3", "t4")
+	live.Roles = []catalog.Role{{Name: "other"}, {Name: "pubheld"}}
+	live.RoleMemberships = []catalog.RoleMembership{{Role: "pubheld", Member: "PUBLIC"}}
+	for _, table := range []string{"t1", "t2", "t3"} {
+		live.Grants = append(live.Grants, catalog.Grant{Role: "pubheld", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: table})
+	}
+	live.Grants = append(live.Grants, catalog.Grant{Role: "other", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t4"})
+
+	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "app", 50, 80)), qt.DeepEquals, []string{
+		"roles/read-reach warning PUBLIC 3/4 over 50% through=[pubheld] sources=[]",
+		"roles/read-reach error other 4/4 over 80% through=[] sources=[]",
+	})
+}
+
+// TestAnalyzeReach_PUBLICsAccessToEveryRelationIsReported holds a grant to
+// PUBLIC on every database, `GRANT SELECT ON *.* TO PUBLIC`, which no grant on
+// a relation states. PUBLIC is reported for it, and no role, since each
+// reaches no more than PUBLIC does.
+func TestAnalyzeReach_PUBLICsAccessToEveryRelationIsReported(t *testing.T) {
+	c := qt.New(t)
+	reach := defaultThresholds(schemasecurity.Reach{
+		Relations:  relations("a", "b"),
+		WideAccess: []catalog.WideAccess{{Role: "PUBLIC", Read: true, Source: "SELECT ON *.*"}},
+		Principals: principals("app"),
+	})
+
+	c.Assert(reachLines(reach), qt.DeepEquals, []string{
+		"roles/read-reach error PUBLIC 2/2 over 75% through=[] sources=[SELECT ON *.* held by PUBLIC]",
+	})
+}

@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/tableref"
 )
@@ -35,6 +34,70 @@ type ReadRelation struct {
 	Database string
 	// Name is the relation's name, as the read spells it.
 	Name string
+}
+
+// ReadNamesOf is what database, a read, found: its schemas and the schema and
+// the name of each table, view and sequence. session is the schema a name
+// written without one is in, empty on a whole MySQL-family server, and
+// dialect the dialect a view body is read in. A nil database found nothing.
+func ReadNamesOf(database *catalog.Database, session, dialect string) ReadNames {
+	read := ReadNames{Session: session, Dialect: dialect}
+	if database == nil {
+		return read
+	}
+	for _, schema := range database.Schemas {
+		read.Databases = append(read.Databases, schema.Name)
+	}
+	found := func(schema, name string) {
+		read.Databases = append(read.Databases, schema)
+		read.Relations = append(read.Relations, ReadRelation{Database: schema, Name: name})
+	}
+	for _, table := range database.Tables {
+		found(table.Schema, table.Name)
+	}
+	for _, view := range database.Views {
+		found(view.Schema, view.Name)
+	}
+	for _, sequence := range database.Sequences {
+		found(sequence.Schema, sequence.Name)
+	}
+	return read
+}
+
+// DeclaredNamesOf is what a document declares, read as [ReadNamesOf] reads a
+// database: its schemas and the schema and the name of each table, view and
+// sequence, a qualified name standing in the schema it names. session and
+// dialect are as [ReadNamesOf] takes them. A nil document declares nothing.
+//
+// It stands for the side a comparison of two documents holds no read of, so
+// that a name of the other document is matched against it as against a read.
+func DeclaredNamesOf(database *schemamodel.Database, session, dialect string) ReadNames {
+	read := ReadNames{Session: session, Dialect: dialect}
+	if database == nil {
+		return read
+	}
+	for _, schema := range database.Schemas {
+		read.Databases = append(read.Databases, schema.Name)
+	}
+	declared := func(schema, name string) {
+		if ref, ok := tableref.Parse(name); ok && ref.Qualified {
+			schema, name = ref.Schema, ref.Name
+		}
+		if schema = strings.TrimSpace(schema); schema != "" {
+			read.Databases = append(read.Databases, schema)
+		}
+		read.Relations = append(read.Relations, ReadRelation{Database: schema, Name: strings.TrimSpace(name)})
+	}
+	for _, table := range database.Tables {
+		declared(table.Schema, table.Name)
+	}
+	for _, view := range database.Views {
+		declared("", view.Name)
+	}
+	for _, sequence := range database.Sequences {
+		declared(sequence.Schema, sequence.Name)
+	}
+	return read
 }
 
 // RespellReadNames returns a copy of database in which every database and
@@ -97,10 +160,22 @@ type ReadRelation struct {
 // part of a body, an expression and a default keep what they were written
 // with, and so does the identity of a feature object.
 func RespellReadNames(database *schemamodel.Database, read ReadNames, folding catalog.NameFolding) (*schemamodel.Database, error) {
-	if database == nil || folding == catalog.NameFoldingExact {
+	return RespellReadNamesBy(database, read, FoldingRule(folding))
+}
+
+// RespellReadNamesBy is [RespellReadNames] under rule: a name that matches
+// one spelling only by rule takes that spelling, where rule says a connection
+// answered, and is refused where it says none did. A database the rule
+// compares as bytes is returned as it is. A view body's qualifiers are
+// respelled only where rule says the server stores them as it holds the
+// names; a SQL Server body keeps what it was written with, since the server
+// stores the body as written. A refusal names a schema as rule names it: a
+// database on the MySQL family, a schema on SQL Server.
+func RespellReadNamesBy(database *schemamodel.Database, read ReadNames, rule NameRule) (*schemamodel.Database, error) {
+	if database == nil || rule.Exact() {
 		return database, nil
 	}
-	r := newReadRespeller(read, folding)
+	r := newReadRespeller(read, rule)
 	respelled := r.declarations(database)
 	r.declaredDatabases(database, &respelled)
 	relation := r.qualifiedBy(r.declaredRelations(database, &respelled))
@@ -129,11 +204,11 @@ type readRespeller struct {
 	found map[string][]string
 }
 
-// newReadRespeller is a respeller for read on a server whose folding is
-// folding.
-func newReadRespeller(read ReadNames, folding catalog.NameFolding) *readRespeller {
+// newReadRespeller is a respeller for read on a server whose names compare
+// by rule.
+func newReadRespeller(read ReadNames, rule NameRule) *readRespeller {
 	r := &readRespeller{
-		match:     &nameMatch{unknown: folding != catalog.NameFoldingFolds},
+		match:     &nameMatch{rule: rule},
 		dialect:   read.Dialect,
 		session:   read.Session,
 		databases: distinctNames(append([]string{read.Session}, read.Databases...)),
@@ -151,7 +226,7 @@ func newReadRespeller(read ReadNames, folding catalog.NameFolding) *readRespelle
 
 // database respells a database qualifier among the databases the read found.
 func (r *readRespeller) database(qualifier string) string {
-	return r.match.respell("database", qualifier, r.databases)
+	return r.match.respell(r.match.rule.schema, qualifier, r.databases)
 }
 
 // in is the database a qualifier names once respelled, and the session's
@@ -293,17 +368,16 @@ func (r *readRespeller) declarations(database *schemamodel.Database) schemamodel
 // what it was written with: a body is compared, never refused, for how it
 // spells a name.
 func (r *readRespeller) body(body string) string {
-	if r.match.unknown || r.dialect == "" {
+	if !r.match.rule.known || !r.match.rule.bodies || r.dialect == "" {
 		return body
 	}
-	folds := mysqlname.NamesOf(true)
 	return sqlqualifier.RespellViewBody(body, r.dialect, func(name string) string {
 		if slices.Contains(r.databases, name) {
 			return name
 		}
 		var matches []string
 		for _, database := range r.databases {
-			if folds.Same(name, database) {
+			if r.match.rule.same(name, database) {
 				matches = append(matches, database)
 			}
 		}
@@ -324,7 +398,7 @@ func (r *readRespeller) declaredRelations(database, respelled *schemamodel.Datab
 	for in, names := range r.found {
 		relations[in] = slices.Clone(names)
 	}
-	declared := &declaredSpellings{kind: "table"}
+	declared := &declaredSpellings{kind: "table", key: r.match.rule.key}
 	declare := func(schema, name, writtenSchema, written string) {
 		in, respelledName := r.declaredAt(schema, name)
 		relations[in] = distinctNames(append(relations[in], respelledName))
@@ -347,7 +421,7 @@ func (r *readRespeller) declaredRelations(database, respelled *schemamodel.Datab
 // declaredDatabases refuses two databases database declares that a server
 // that folds names reads as one.
 func (r *readRespeller) declaredDatabases(database, respelled *schemamodel.Database) {
-	declared := &declaredSpellings{kind: "database"}
+	declared := &declaredSpellings{kind: r.match.rule.schema, key: r.match.rule.key}
 	for i, schema := range respelled.Schemas {
 		declared.add(declaredSpelling{name: strings.TrimSpace(database.Schemas[i].Name), respelled: strings.TrimSpace(schema.Name)})
 	}
@@ -362,10 +436,10 @@ type declaredSpelling struct {
 }
 
 // declaredSpellings groups the names a document declares of one kind by the
-// name a server that folds names reads them as, lower-cased, to find two
-// spellings of one name.
+// key the server's rule gives them, to find two spellings of one name.
 type declaredSpellings struct {
 	kind   string
+	key    func(string) string
 	keys   []string
 	groups map[string][]declaredSpelling
 }
@@ -375,7 +449,7 @@ func (d *declaredSpellings) add(spelling declaredSpelling) {
 	if spelling.name == "" {
 		return
 	}
-	key := strings.ToLower(spelling.in) + "\x00" + strings.ToLower(spelling.name)
+	key := d.key(spelling.in) + "\x00" + d.key(spelling.name)
 	if d.groups == nil {
 		d.groups = make(map[string][]declaredSpelling)
 	}
@@ -404,12 +478,14 @@ func (d *declaredSpellings) refuse(match *nameMatch) {
 		for i, spelling := range group {
 			written[i] = shownIn(group, spelling.in, spelling.name)
 		}
-		if match.unknown {
-			match.fail(&UnknownFoldingError{Kind: d.kind, Written: written[1], Found: written[0]})
+		if !match.rule.known {
+			match.fail(&UnknownFoldingError{Kind: d.kind, Written: written[1], Found: written[0], Setting: match.rule.setting})
 			continue
 		}
 		first := group[0]
-		match.fail(&AmbiguousNameError{Kind: d.kind, Name: shownIn(group, first.respelledIn, first.respelled), Matches: written})
+		match.fail(&AmbiguousNameError{
+			Kind: d.kind, Name: shownIn(group, first.respelledIn, first.respelled), Matches: written, Reading: match.rule.reading,
+		})
 	}
 }
 
@@ -424,27 +500,42 @@ func shownIn(group []declaredSpelling, in, name string) string {
 	return name
 }
 
-// nameMatch matches the names of a document against the spellings a read
-// found, and keeps the first refusal it meets. unknown is a server whose
-// folding no connection read, on which a name is refused rather than
-// respelled.
-type nameMatch struct {
-	unknown bool
-	err     error
+// RespellName is written as the one of spellings rule reads as the same
+// schema name, as [RespellReadNamesBy] respells a schema. A name spelled as
+// one of spellings, or matching none, stays as written. A name matching more
+// than one spelling is refused with an [*AmbiguousNameError], and one that
+// would be respelled under a rule no connection answered with an
+// [*UnknownFoldingError].
+func RespellName(rule NameRule, written string, spellings []string) (string, error) {
+	if rule.Exact() {
+		return written, nil
+	}
+	match := &nameMatch{rule: rule}
+	respelled := match.respell(rule.schema, written, distinctNames(spellings))
+	if match.err != nil {
+		return "", match.err
+	}
+	return respelled, nil
 }
 
-// respell is written as the one of spellings it names, under the rule of a
-// server that folds names. A name spelled as one of them, or matching none,
-// stays as written.
+// nameMatch matches the names of a document against the spellings a read
+// found under a rule, and keeps the first refusal it meets. A rule no
+// connection answered refuses a name rather than respell it.
+type nameMatch struct {
+	rule NameRule
+	err  error
+}
+
+// respell is written as the one of spellings it names under the rule. A name
+// spelled as one of them, or matching none, stays as written.
 func (m *nameMatch) respell(kind, written string, spellings []string) string {
 	trimmed := strings.TrimSpace(written)
 	if trimmed == "" || slices.Contains(spellings, trimmed) {
 		return written
 	}
-	folds := mysqlname.NamesOf(true)
 	var matches []string
 	for _, spelling := range spellings {
-		if folds.Same(trimmed, spelling) {
+		if m.rule.same(trimmed, spelling) {
 			matches = append(matches, spelling)
 		}
 	}
@@ -452,10 +543,10 @@ func (m *nameMatch) respell(kind, written string, spellings []string) string {
 	case len(matches) == 0:
 		return written
 	case len(matches) > 1:
-		m.fail(&AmbiguousNameError{Kind: kind, Name: trimmed, Matches: matches})
+		m.fail(&AmbiguousNameError{Kind: kind, Name: trimmed, Matches: matches, Reading: m.rule.reading})
 		return written
-	case m.unknown:
-		m.fail(&UnknownFoldingError{Kind: kind, Written: trimmed, Found: matches[0]})
+	case !m.rule.known:
+		m.fail(&UnknownFoldingError{Kind: kind, Written: trimmed, Found: matches[0], Setting: m.rule.setting})
 		return written
 	default:
 		return matches[0]
@@ -492,6 +583,10 @@ type AmbiguousNameError struct {
 	// Matches are the spellings Name matches, in the order the read and the
 	// document gave them.
 	Matches []string
+	// Reading is how the server compares the names, where it does not
+	// compare them without regard to case: "under the database collation" on
+	// SQL Server. Empty is the MySQL family's rule.
+	Reading string
 }
 
 // Error implements error.
@@ -499,6 +594,10 @@ func (e *AmbiguousNameError) Error() string {
 	quoted := make([]string, len(e.Matches))
 	for i, name := range e.Matches {
 		quoted[i] = strconv.Quote(name)
+	}
+	if e.Reading != "" {
+		return fmt.Sprintf("%s %q matches %s, names the server reads as one %s; no spelling is chosen",
+			e.Kind, e.Name, strings.Join(quoted, " and "), e.Reading)
 	}
 	return fmt.Sprintf("%s %q matches %s, names that differ only in case, "+
 		"on a server that compares database and table names without regard to case; no spelling is chosen",
@@ -515,10 +614,20 @@ type UnknownFoldingError struct {
 	Written string
 	// Found is the spelling it matches without regard to case.
 	Found string
+	// Setting is what decides whether the two are one name, where it is not
+	// lower_case_table_names: "the database collation" on SQL Server. Empty
+	// is the MySQL family's setting.
+	Setting string
 }
 
 // Error implements error.
 func (e *UnknownFoldingError) Error() string {
+	if e.Setting != "" {
+		return fmt.Sprintf("%s %q and %q differ only in case, and whether they name one %s depends on %s, "+
+			"which this comparison does not know; compare against a database connection, which reads it, "+
+			"or spell both names the same way",
+			e.Kind, e.Written, e.Found, e.Kind, e.Setting)
+	}
 	return fmt.Sprintf("%s %q and %q differ only in case, and whether they name one %s depends on the server's "+
 		"lower_case_table_names, which this comparison does not know; compare against a database connection, "+
 		"which reads the setting, or spell both names the same way",

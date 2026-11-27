@@ -389,6 +389,10 @@ func generateDiff(
 	if err != nil {
 		return DiffResult{}, err
 	}
+	selection := comparisonSelection{
+		exclusion: exclusion, inclusion: prepared.inclusion, info: info,
+		declared: desiredState.Schema, desiredNaming: desiredNaming,
+	}
 	planned, err := replayedDiffPlanner{
 		conn:      conn,
 		runtime:   runtime,
@@ -397,7 +401,7 @@ func generateDiff(
 		schemas:   schemas,
 		naming:    devNaming,
 		desired:   desired,
-		selection: comparisonSelection{exclusion: exclusion, inclusion: prepared.inclusion, info: info},
+		selection: selection,
 		format:    format,
 		// A desired state read from a server, or replayed there from a
 		// directory, holds the server's CHECK spelling already.
@@ -841,6 +845,10 @@ func compareReplayedState(
 	if err != nil {
 		return replayedComparison{}, err
 	}
+	desired, err = selection.desiredAgainst(ctx, replayConn, schemas, replayed, desired, selected.Selections())
+	if err != nil {
+		return replayedComparison{}, fmt.Errorf("apply the selection: %w", err)
+	}
 	replayed, err = schemascope.FilterDatabaseWithDefaultSchema(ctx, selected.Selections(), replayed, readNames, defaultSchema)
 	if err != nil {
 		return replayedComparison{}, err
@@ -871,7 +879,7 @@ func compareReplayedState(
 	}
 	// An include pattern counts as an exclude one does; see
 	// [comparisonSelection].
-	replayed, desired, err = selection.inclusion.Apply(ctx, selection.info.Dialect, naming, replayed, desired)
+	replayed, desired, err = selection.inclusion.Apply(ctx, schemascope.Target{Info: replayConn.Info(), Names: replayConn}, naming, replayed, desired)
 	if err != nil {
 		return replayedComparison{}, err
 	}
@@ -905,10 +913,60 @@ func compareReplayedState(
 // pattern as the dev connection names it, and info is that connection's. The
 // replay connection is not asked, because a confined replay runs in a
 // database or schema of its own.
+//
+// declared is the desired state before --schema and the exclusion narrowed
+// it, and desiredNaming the count they narrowed it by; see
+// [comparisonSelection.desiredAgainst].
 type comparisonSelection struct {
-	exclusion atlasfilter.Exclusion
-	inclusion atlasschema.Inclusion
-	info      catalog.ServerInfo
+	exclusion     atlasfilter.Exclusion
+	inclusion     atlasschema.Inclusion
+	info          catalog.ServerInfo
+	declared      *schemamodel.Database
+	desiredNaming atlasfilter.Naming
+}
+
+// desiredAgainst is the desired state the comparison with replayed selects
+// from. Where the run selects by --schema, --exclude or --include and the dev
+// database reads two spellings of a name as one, it is the declaration
+// narrowed again once each name it declares is spelled as the replay holds
+// it, and placed as the caller placed desired; see [schemascope.Pairing].
+// Otherwise it is desired as it came.
+//
+// The declaration is narrowed before the replay, because the schemas the
+// replay is read at are resolved from it, and a selector then meets the name
+// as the declaration spells it on one side and as the replay holds it on the
+// other. Without the respelling, on a dev server started with
+// lower_case_table_names=1, `migrate diff --schema sales` for a declaration of
+// Sales.t against a directory that creates sales.t leaves the declared table
+// out, keeps the replayed one, and writes DROP TABLE and DROP DATABASE into the
+// new file (stokaro/ptah#6785).
+func (s comparisonSelection) desiredAgainst(
+	ctx context.Context,
+	replayConn *dbschema.DatabaseConnection,
+	schemas []string,
+	replayed *catalog.Database,
+	desired *schemamodel.Database,
+	selections selectext.Set,
+) (*schemamodel.Database, error) {
+	if s.declared == nil || len(schemas) == 0 && !s.exclusion.Excludes() && !s.inclusion.Includes() {
+		return desired, nil
+	}
+	pairing, err := schemascope.Target{Info: replayConn.Info(), Names: replayConn}.Pairing(ctx, schemas, s.declared, replayed)
+	if err != nil {
+		return nil, err
+	}
+	if pairing.Exact() {
+		return desired, nil
+	}
+	scope, declared, err := pairing.Selection(schemas, s.declared, replayed)
+	if err != nil {
+		return nil, err
+	}
+	selected, err := filterDiffDesired(ctx, declared, selections, scope, s.exclusion, s.desiredNaming)
+	if err != nil {
+		return nil, err
+	}
+	return atlasschema.PlaceUnqualifiedNames(replayConn.Info(), selected)
 }
 
 // filterDiffDesired scopes the desired state to schemas and leaves out what

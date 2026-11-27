@@ -233,16 +233,26 @@ func (g Grants) databaseLevel(database string) Privileges {
 }
 
 // applied is what one subject holds at the database level: what every row
-// that may apply holds, each name holding what all its rows hold.
+// that may apply holds, each name holding what all its rows hold. With a role
+// granted on MySQL, it is what both lookups give, and a lookup that applies no
+// row gives nothing: measured on MySQL 8.4.13 and 26.10.0, an account holding
+// SELECT ON `qa\bc`.* reads qabc with SET ROLE NONE and is refused it with
+// its role active.
 func (g Grants) applied(database string, rows []row) Privileges {
 	names := make([]string, len(rows))
 	for i, r := range rows {
 		names[i] = r.database
 	}
-	applying := g.options.ApplyingRows(AccountLookup, database, names)
+	held := appliedThrough(g.options.ApplyingRows(AccountLookup, database, names), rows)
 	if !g.options.MariaDB && g.roleGranted {
-		applying = distinct(append(applying, g.options.ApplyingRows(RoleLookup, database, names)...))
+		held = held.intersect(appliedThrough(g.options.ApplyingRows(RoleLookup, database, names), rows))
 	}
+	return held
+}
+
+// appliedThrough is what every row named in applying holds, each name holding
+// what all its rows hold, and nothing where applying is empty.
+func appliedThrough(applying []string, rows []row) Privileges {
 	held := Privileges{}
 	for i, name := range applying {
 		byName := Privileges{}
@@ -340,6 +350,23 @@ func (o Options) MatchesDatabase(pattern, name string) bool {
 		pattern, name = strings.ToLower(pattern), strings.ToLower(name)
 	}
 	return likeMatch(pattern, name)
+}
+
+// RoleRowReaches reports whether MySQL's lookup with an active role finds a
+// database-level row on name for database, before it ranks the rows it finds.
+// It is [Options.MatchesDatabase], except under partial_revokes, where a name
+// holding `%` or `_` reaches a database it equals without case, the
+// characters themselves. Measured on MySQL 8.4.13 and 26.10.0 with
+// lower_case_table_names=0 and partial_revokes ON: a role holding SELECT ON
+// `X_Y`.* reads x_y and not xay, one holding SELECT ON `X%Y`.* reads x%y and
+// not xzzy, one holding SELECT ON `XY`.* does not read xy, and an account
+// holding SELECT ON `X_Y`.* itself does not read x_y. MariaDB has no
+// partial_revokes.
+func (o Options) RoleRowReaches(name, database string) bool {
+	if o.LiteralDatabaseNames && !o.MariaDB && strings.ContainsAny(name, "%_") {
+		return strings.EqualFold(name, database)
+	}
+	return o.MatchesDatabase(name, database)
 }
 
 // sameName reports whether a row's database or table name is name. One setting,

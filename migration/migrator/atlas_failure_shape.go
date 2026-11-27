@@ -71,6 +71,10 @@ func atlasFailureError(failure error) string {
 // the one it was, so indexing by applied would record the file's first
 // statement for every tx-mode-all failure.
 //
+// A statement a client delimiter closes, such as `//` after `-- atlas:delimiter
+// //`, is recorded without the semicolon the delimiter is read as, which the
+// file does not hold, as internal/sourcestatement quotes it.
+//
 // Falling back to the executor's text keeps a shape this cannot resolve — a
 // source that splits differently, or a failure with no statement — reporting
 // the statement it always did rather than nothing at all.
@@ -79,7 +83,11 @@ func atlasFailureStatement(sqlText string, grammar bodyGrammar, failedIndex int,
 	if failedIndex < 1 || failedIndex > len(statements) {
 		return revisiontext.ValidUTF8(stmt)
 	}
-	source := strings.TrimSpace(statements[failedIndex-1].Text)
+	failed := statements[failedIndex-1]
+	source := strings.TrimSpace(failed.Text)
+	if failed.ClientDelimited {
+		source = strings.TrimSpace(strings.TrimSuffix(source, ";"))
+	}
 	if source == "" {
 		return revisiontext.ValidUTF8(stmt)
 	}

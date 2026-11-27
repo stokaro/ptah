@@ -8,6 +8,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlcompound"
+	"ptah.run/internal/sqlserverbatch"
 )
 
 // SourceStatement is one statement as it was written, rather than as an
@@ -41,13 +42,25 @@ type SourceStatement struct {
 // statement written with the semicolon flush against it. Anything that hashes
 // statement text needs to tell those apart, because the two spell different
 // bytes and therefore different digests.
+//
+// The statements are cut where [SplitSQLStatementsForDialect] cuts them, and
+// a piece with nothing but comments in it is left out. On SQL Server that
+// includes the GO lines: a GO line belongs to no statement, the statements of
+// a batch GO repeats come back once per run, and those of a batch GO 0
+// discards do not come back. A SQL Server piece that a statement opening its
+// batch ends, with no semicolon before it, is not Terminated.
 func SplitSourceStatements(sql, dialect string) []SourceStatement {
 	if strings.TrimSpace(sql) == "" {
 		return nil
 	}
+	if sqlserverbatch.Reads(dialect) {
+		_, statements := splitTransactSQL(sql, lexicalDialect(dialect), capability.Capabilities{})
+		return statements
+	}
 
 	normalized, origins := clientDelimitersFor(sql, dialect, capability.Capabilities{})
-	lexr := lexer.NewLexerWithOptions(normalized, dialectlexer.Options(dialect))
+	options := dialectlexer.Options(dialect)
+	lexr := lexer.NewLexerWithOptions(normalized, options)
 	state := sqlcompound.New(dialect)
 
 	var statements []SourceStatement
@@ -62,7 +75,7 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 				Text:            current.String() + token.Value,
 				Terminated:      true,
 				ClientDelimited: standsForClientDelimiter(sql, origins, token.Start),
-			})
+			}, options)
 			current.Reset()
 			state.Reset()
 			continue
@@ -70,7 +83,7 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 		observeToken(&state, token)
 		current.WriteString(token.Value)
 	}
-	return appendSourceStatement(statements, SourceStatement{Text: current.String()})
+	return appendSourceStatement(statements, SourceStatement{Text: current.String()}, options)
 }
 
 // standsForClientDelimiter reports whether the semicolon at offset of the
@@ -82,13 +95,15 @@ func standsForClientDelimiter(sql string, origins clientdelimiter.Origins, offse
 }
 
 // appendSourceStatement trims the leading trivia off one accumulated statement
-// and keeps it when anything is left.
+// and keeps it when anything is left. options are the lexer's for the
+// dialect, which say where a comment ends: a block comment holds block
+// comments on SQL Server and PostgreSQL.
 //
 // Only the leading side is trimmed. The trailing side is the whole point: the
 // bytes between the last token of the body and the terminator are part of what
 // was written.
-func appendSourceStatement(statements []SourceStatement, raw SourceStatement) []SourceStatement {
-	raw.Text = trimLeadingSQLTrivia(raw.Text)
+func appendSourceStatement(statements []SourceStatement, raw SourceStatement, options lexer.Options) []SourceStatement {
+	raw.Text = trimLeadingSQLTrivia(raw.Text, options)
 	// A terminated statement whose body is empty -- a stray `;`, or one
 	// following nothing but a comment -- is trivia too, so the terminator alone
 	// does not make it content.
@@ -98,32 +113,16 @@ func appendSourceStatement(statements []SourceStatement, raw SourceStatement) []
 	return append(statements, raw)
 }
 
-// trimLeadingSQLTrivia drops leading whitespace and comments, returning "" when
-// nothing but trivia is left.
-func trimLeadingSQLTrivia(raw string) string {
-	rest := raw
-	for {
-		trimmed := strings.TrimLeft(rest, " \t\r\n")
-		switch {
-		case strings.HasPrefix(trimmed, "--"):
-			if end := strings.IndexAny(trimmed, "\r\n"); end >= 0 {
-				rest = trimmed[end:]
-				continue
-			}
-			return ""
-		case strings.HasPrefix(trimmed, "/*"):
-			if end := strings.Index(trimmed[2:], "*/"); end >= 0 {
-				rest = trimmed[2+end+2:]
-				continue
-			}
-			return ""
-		default:
-			rest = trimmed
+// trimLeadingSQLTrivia drops leading whitespace and comments, read with
+// options, returning "" when nothing but trivia is left. The migrator drops the
+// same comments from a statement it sends, so a statement that holds only
+// comments is sent by neither and the two lists keep their positions.
+func trimLeadingSQLTrivia(raw string, options lexer.Options) string {
+	scanner := lexer.NewLexerWithOptions(raw, options)
+	for token := scanner.NextToken(); token.Type != lexer.TokenEOF; token = scanner.NextToken() {
+		if token.Type != lexer.TokenComment && token.Type != lexer.TokenWhitespace {
+			return raw[token.Start:]
 		}
-		break
 	}
-	if strings.TrimSpace(rest) == "" {
-		return ""
-	}
-	return rest
+	return ""
 }

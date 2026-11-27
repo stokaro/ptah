@@ -314,6 +314,30 @@ sequence and a trigger change in place, and the server keeps the spelling it
 already stores. Either way the next comparison reads both spellings as one name
 and plans nothing.
 
+A routine is replaced in the schema the read found it in. The `DROP` and the
+`CREATE` both put the declared name in that schema. A routine the schema
+declares without a schema is compared in `dbo`, or in the URL's `schema`, and
+is replaced there. SQL Server resolves an unqualified name in the session's
+default schema first, so for an account whose default schema is another,
+`DROP FUNCTION [f]` would drop that schema's `f` and leave the routine the plan
+compared unchanged.
+
+A selection runs after the names are paired. `--schemas`, `--include` and
+`--exclude`, in both binaries (`--schema` in `ptah-compat`), select a schema
+by the spelling the database holds. Under a case-insensitive collation,
+`--schemas sales` selects the database's `Sales` and the file's `sales`, so
+the plan keeps both sides of the schema. Under a case-sensitive collation
+the two are two schemas.
+
+A pattern is matched as written against the names the database holds. Under a
+case-insensitive collation, `--exclude sales.u` matches nothing and the apply
+refuses it, as it refuses every exclusion that protects nothing. `migrations
+plan` and `migrations generate` warn about it instead and compare the table as
+if no exclusion named it, as they do with every exclusion that matches nothing.
+Write the pattern as the database spells the schema. Where no connection
+answers how the database compares names, a selection whose two sides spell a
+schema in two cases is refused.
+
 Two declarations of one kind that the database may read as one name are
 refused, because only one of them could be compared: under a case-insensitive
 collation the views `MixedView` and `MIXEDVIEW` are one view, and the roles
@@ -741,6 +765,57 @@ line. An optional repeat count and a comment may follow it on the line. The
 `GO` line belongs to no statement, so a `-- ptah:nolint` directive goes after
 it, directly above the statement it suppresses.
 
+Inside a batch, the migrator cuts a script at the semicolon after a statement,
+and never inside a statement, which it finds where SQL Server does. A
+`BEGIN ... END` block, a `TRY` block with its `CATCH` block, and an `IF`,
+`ELSE` or `WHILE` with the statement or block it runs are each one statement,
+semicolons inside included. A `MERGE` keeps its semicolon, which the server
+requires (`Msg 10713`); every other statement is sent without the one that ends
+it. Where Ptah cannot find the statement boundaries of a batch, it cuts the
+batch at each semicolon outside a routine body.
+
+A procedure, function, trigger or view, and `CREATE SCHEMA`, must open its
+batch (`Msg 111`), so each starts a piece of its own, which ends here:
+
+- a procedure, function or trigger at the first semicolon after the `END` that
+  closes its `BEGIN ... END` body, and at the end of the batch when its body
+  has no `BEGIN`;
+- a view, and the elements of `CREATE SCHEMA`, at the first semicolon after
+  them.
+
+What follows runs as a batch of its own. `sqlcmd` sends it in the same batch,
+where the server refuses it (`Msg 156`) or stores it in the body.
+
+Each piece runs as a batch of its own, and a variable lives only in its batch,
+so a semicolon after a `DECLARE` ends the scope of the variable. Statements
+written with no semicolon between them run as one batch, as they do in
+`sqlcmd`. With semicolons, put a `DECLARE` and the statements that read the
+variable in one `BEGIN ... END` block:
+
+```sql
+BEGIN
+  DECLARE @region nvarchar(20) = N'emea';
+  INSERT INTO dbo.regions (code) VALUES (@region);
+END;
+```
+
+The safety rating of `ptah schema plan` and `ptah schema apply` reads every
+statement written in a piece. `CREATE TABLE dbo.a (id int) TRUNCATE TABLE
+dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, a
+`MERGE` with a `THEN DELETE` arm as destructive, and text whose statement
+boundaries Ptah cannot find is rated destructive. The rating does not read SQL
+held in a string, so a statement that `EXEC` or `sp_executesql` runs from one
+is not rated: `EXEC(N'DROP TABLE dbo.x')` rates safe.
+
+The same reading decides which statements control a transaction. Ptah refuses
+a migration that commits or rolls back the transaction it manages, or opens one
+of its own, and a `COMMIT` inside a `BEGIN ... END` block or after an `IF` is
+refused as a `COMMIT` on its own is. A `COMMIT` in the body of a procedure is
+stored, not run, and is not refused. `ptah migrations lint` reports such a
+statement as `transaction/explicit-transaction`, but it reads a block one
+statement at a time, so it misses a `ROLLBACK` that opens a `CATCH` block
+(stokaro/ptah#6793).
+
 ## Views that read other views
 
 SQL Server checks a view's query when the view is created, so Ptah creates each view
@@ -767,10 +842,13 @@ other schema with `Msg 2103`. The table may be a view: an `INSTEAD OF` trigger
 is how a view takes writes, and `ptah db read` describes one on a view as it
 describes one on a table.
 
-The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
-line, at the `END` that closes a `BEGIN ... END` body, or at the end of the
-file. A body of several statements outside a `BEGIN ... END` block needs a
-`GO` line after it when anything follows it.
+The body follows `AS` and runs to the end of its batch. A schema file's body
+ends at a `GO` line, at the `END` that closes a `BEGIN ... END` body, or at the
+end of the file. In a migration file, the migrator ends a `BEGIN ... END` body
+at the first semicolon after its `END`, as
+[Scripts and batches](#scripts-and-batches) says. In both, a body without
+`BEGIN` runs to the end of its batch, so a body of several statements outside a
+`BEGIN ... END` block needs a `GO` line after it when anything follows it.
 
 A header clause that Ptah does not model is refused by name rather than
 dropped, because a trigger read without the clause would compare equal to one

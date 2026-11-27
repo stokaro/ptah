@@ -787,6 +787,21 @@ type SchemaDiff struct {
 	// this diff. It is absent for dialect-only comparisons, whose planners use
 	// conservative offline defaults.
 	IdentifierSemantics *identifier.Semantics `json:"identifier_semantics,omitempty"`
+	// NameFolding is how the server the comparison read compares database and
+	// table names, on a dialect whose servers each compare them by a setting
+	// ([ptah.run/core/platform.NamesFoldBySetting]): MySQL and MariaDB, under
+	// lower_case_table_names. The database-aware comparison entry points of
+	// [ptah.run/migration/schemadiff] set it from
+	// [ptah.run/catalog.ServerInfo.NameFolding]. Every other diff leaves it
+	// [catalog.NameFoldingUnknown].
+	//
+	// A planner reads it before it plans a database the diff creates beside one
+	// it drops whose name differs only in case. Only [catalog.NameFoldingExact]
+	// says that the two are two databases. On a server that folds names they
+	// are one: `CREATE SCHEMA IF NOT EXISTS` creates nothing, and the `DROP
+	// DATABASE` after it removes the database with every table in it. Like
+	// ConnectedAccount it is not on the wire.
+	NameFolding catalog.NameFolding `json:"-"`
 
 	// SchemasAdded are the schemas a comparison creates, whether or not anything
 	// is in them. On MySQL and MariaDB, a whole-server comparison adds the

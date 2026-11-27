@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
+	"ptah.run/internal/tableref"
 )
 
 // reportUnsupportedObjects appends the AST nodes for the declared object kinds
@@ -245,11 +246,28 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		// a server answers the wrong one by name. A replacement that dropped a
 		// procedure as a function would fail on the drop and leave the old body
 		// in place while reporting the plan it did not run.
+		//
+		// Both halves name the schema the read found the routine in, and both
+		// keep the declared spelling of the routine's own name: the
+		// comparison paired it with the routine the read found, so it names
+		// that routine on this server, and the server stores it on create.
+		// The declaration may leave the schema out, and SQL Server resolves an
+		// unqualified name in the session's default schema first, which is not
+		// dbo for every account. Measured on SQL
+		// Server 2025 for an account whose default schema app holds an f of
+		// its own, with the comparison pairing a declared f with [dbo].[f]:
+		// DROP FUNCTION [f] dropped [app].[f], a routine the plan never named,
+		// and CREATE OR ALTER FUNCTION [f] then replaced [dbo].[f]
+		// (stokaro/ptah#6786).
+		replacement, moved := inHeldSchema(fn, fnDiff)
+		if moved {
+			node = modelast.FromFunction(replacement)
+		}
 		if p.describes() {
 			node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
 		}
 		if p.replacesRoutine(fnDiff) {
-			drop := ast.NewDropFunction(fn.Name).
+			drop := ast.NewDropFunction(replacement.Name).
 				SetKind(fn.Kind).
 				SetIfExists()
 			if p.describes() {
@@ -343,4 +361,22 @@ func (p *Planner) runsRoutineLanguage(language string) bool {
 		return oracleroutine.RunsLanguage(language)
 	}
 	return mysqlroutine.RunsLanguage(language)
+}
+
+// inHeldSchema is fn named in the schema the read found the routine change
+// replaces in, from [difftypes.FunctionDiff.CurrentName], with the declared
+// spelling of its own name. It reports false, and fn is planned as declared,
+// where the read named no schema: a routine of the session's own database, or
+// a diff no read produced.
+func inHeldSchema(fn schemamodel.Function, change difftypes.FunctionDiff) (schemamodel.Function, bool) {
+	held, ok := tableref.Parse(change.CurrentName)
+	if !ok || !held.Qualified {
+		return fn, false
+	}
+	declared, ok := tableref.Parse(fn.Name)
+	if !ok {
+		return fn, false
+	}
+	fn.Name = tableref.Canonical(held.Schema, declared.Name)
+	return fn, true
 }

@@ -178,3 +178,39 @@ func TestCompareWithDatabaseInfo_NameFolding_Databases(t *testing.T) {
 		})
 	}
 }
+
+// The diff records how the server it read compares names, which the planner
+// reads before it plans a database created beside one dropped whose name
+// differs only in case. A dialect whose servers do not compare names by a
+// setting records nothing.
+func TestCompareWithDatabaseInfo_RecordsNameFolding(t *testing.T) {
+	tests := []struct {
+		name string
+		info catalog.ServerInfo
+		want catalog.NameFolding
+	}{
+		{name: "a MySQL server that folds names", info: mysqlServer(catalog.NameFoldingFolds), want: catalog.NameFoldingFolds},
+		{name: "a MySQL server that keeps names apart", info: mysqlServer(catalog.NameFoldingExact), want: catalog.NameFoldingExact},
+		{
+			name: "a MariaDB server that keeps names apart",
+			info: catalog.ServerInfo{Dialect: "mariadb", Schema: "app", NameFolding: catalog.NameFoldingExact},
+			want: catalog.NameFoldingExact,
+		},
+		{
+			name: "a PostgreSQL server",
+			info: catalog.ServerInfo{Dialect: "postgres", Schema: "public", NameFolding: catalog.NameFoldingExact},
+			want: catalog.NameFoldingUnknown,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, &catalog.Database{},
+				test.info, nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.NameFolding, qt.Equals, test.want)
+		})
+	}
+}

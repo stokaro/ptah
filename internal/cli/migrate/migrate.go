@@ -483,6 +483,14 @@ func readPlanStates(
 		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
 	}
 	current = revisiontable.Without(current, bookkeeping)
+	// A selector meets one spelling of a name the target reads as one on both
+	// sides, the spelling the read found; see [schemascope.Pairing].
+	if exclusion.Excludes() || selection.inclusion.Includes() {
+		declared, err = schemascope.Target{Info: conn.Info(), Names: conn}.Respell(cmd.Context(), declared, current)
+		if err != nil {
+			return planStates{}, fmt.Errorf("apply the selection: %w", err)
+		}
+	}
 	// The desired side names a declared key by the key the database holds,
 	// which only the read can say; the first pass decided which schemas to
 	// read.
@@ -496,7 +504,7 @@ func readPlanStates(
 		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
 	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), selection.excludeSources, desiredReport, currentReport)
-	current, desired, err = selection.inclusion.Apply(cmd.Context(), conn.Info().Dialect, naming, current, desired)
+	current, desired, err = selection.inclusion.Apply(cmd.Context(), schemascope.Target{Info: conn.Info(), Names: conn}, naming, current, desired)
 	if err != nil {
 		return planStates{}, err
 	}

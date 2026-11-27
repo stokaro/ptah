@@ -31,7 +31,8 @@ const publicGrantee = "PUBLIC"
 // Cover is a grant wider than one table that gives a role a privilege a
 // REVOKE on the table names.
 type Cover struct {
-	// Grantee holds the grant: the revoke's role, or PUBLIC.
+	// Grantee holds the grant: the revoke's role, PUBLIC, or a role either
+	// holds through memberships.
 	Grantee string
 	// Grant is what the grantee holds, in the words a REVOKE of it uses:
 	// "SELECT ON d2.*", "SELECT ON *.*", "SELECT ANY TABLE" or "SELECT ANY
@@ -47,14 +48,20 @@ type Cover struct {
 	// schema declares too. A revoke of it is no way out, since the plan would
 	// grant it again.
 	AlsoDeclared bool
+	// OnTable is true for a grant on the table itself, held by PUBLIC or by a
+	// role the revoke's role holds, rather than a grant wider than the table.
+	OnTable bool
 }
 
 // Find returns the grants wider than table that give role a privilege
 // privileges names: a grant on the table's database, a grant on every table,
-// and a grant on every table of the table's schema, that current holds for the
-// role or for PUBLIC, and then a grant on the table's database that desired
-// declares for either and current does not hold yet, which the plan adds
-// before the revoke would run. A grant on the database that the plan removes
+// and a grant on every table of the table's schema, that current holds for a
+// holder of role's privileges, and then a grant on the table's database that
+// desired declares for a holder and current does not hold yet, which the plan
+// adds before the revoke would run. The holders are role, PUBLIC and every
+// role either holds through memberships, as [holders] says. A grant on the
+// table itself keeps the privilege too where a holder other than role holds
+// it, or desired declares it for one, since the revoke takes only role's. A grant on the database that the plan removes
 // is left out, because it keeps nothing once the plan runs: one desired
 // revokes there, and one held by a role desired declares and does not grant
 // there.
@@ -87,8 +94,9 @@ func Find(desired *schemamodel.Database, current *catalog.Database, role string,
 		return nil, false
 	}
 	privileges = onTable(privileges, all.All("TABLE"))
+	holding := holders(desired, current, role)
 	held := func(grantee string) bool {
-		return sameGrantee(grantee, role) || strings.EqualFold(grantee, publicGrantee)
+		return holding[grantee] || strings.EqualFold(grantee, publicGrantee)
 	}
 	scope := scopeOf(current, table)
 	for _, grant := range current.Grants {
@@ -106,7 +114,132 @@ func Find(desired *schemamodel.Database, current *catalog.Database, role string,
 		}
 	}
 	covers = append(covers, declaredCovers(desired, current, privileges, all, scope, held)...)
+	others := func(grantee string) bool { return !sameGrantee(grantee, role) && held(grantee) }
+	covers = append(covers, tableCovers(desired, current, privileges, table, scope, others)...)
 	return covers, current.WideGrants != nil && !current.WideGrantsPartial
+}
+
+// tableCovers is the grants on table that current holds or desired declares
+// for a grantee others names, each privilege privileges names a cover of its
+// own. A grant on some columns of the table keeps only those columns, and a
+// grant the plan removes keeps nothing, as [removedFromTable] says.
+func tableCovers(
+	desired *schemamodel.Database, current *catalog.Database, privileges []string, table string,
+	scope tableScope, others func(grantee string) bool,
+) []Cover {
+	_, name := tableName(table)
+	var covers []Cover
+	for _, grant := range current.Grants {
+		if !isTable(grant.ObjectType) || grant.Column != "" || grant.ObjectName != name || !scope.reaches(grant.Schema) ||
+			!others(grant.Role) || !names(privileges, grant.Privilege) || removedFromTable(desired, grant, table) {
+			continue
+		}
+		covers = append(covers, Cover{
+			Grantee: grant.Role, Grant: grant.Privilege + " ON " + table, OnTable: true,
+			AlsoDeclared: declaresOnTable(desired, grant.Role, table, grant.Privilege),
+		})
+	}
+	if desired == nil {
+		return covers
+	}
+	for _, declared := range desired.Grants {
+		if declared.OnTable != table || len(declared.Columns) > 0 || !others(declared.Role) {
+			continue
+		}
+		for _, privilege := range declared.Privileges {
+			privilege = strings.ToUpper(strings.TrimSpace(privilege))
+			if isAll(privilege) || !names(privileges, privilege) || holdsOnTable(current, declared.Role, name, privilege, scope) {
+				continue
+			}
+			covers = append(covers, Cover{Grantee: declared.Role, Grant: privilege + " ON " + table, OnTable: true, Declared: true})
+		}
+	}
+	return covers
+}
+
+// tableName splits a revoke's table into its database, empty where it names
+// none, and its name.
+func tableName(table string) (database, name string) {
+	database, name, qualified := strings.Cut(table, ".")
+	if !qualified {
+		return "", table
+	}
+	return database, name
+}
+
+// isTable reports whether a grant's object type is a table or a view.
+func isTable(objectType string) bool {
+	return strings.EqualFold(strings.TrimSpace(objectType), "TABLE")
+}
+
+// holdsOnTable reports whether current holds privilege on the table name for
+// grantee, on the whole table.
+func holdsOnTable(current *catalog.Database, grantee, name, privilege string, scope tableScope) bool {
+	return slices.ContainsFunc(current.Grants, func(grant catalog.Grant) bool {
+		return isTable(grant.ObjectType) && grant.Column == "" && grant.ObjectName == name && scope.reaches(grant.Schema) &&
+			sameGrantee(grant.Role, grantee) && strings.EqualFold(strings.TrimSpace(grant.Privilege), privilege)
+	})
+}
+
+// declaresOnTable reports whether desired grants privilege, or ALL, on table
+// to grantee.
+func declaresOnTable(desired *schemamodel.Database, grantee, table, privilege string) bool {
+	return desired != nil && slices.ContainsFunc(desired.Grants, func(declared schemamodel.Grant) bool {
+		return sameGrantee(declared.Role, grantee) && declared.OnTable == table && len(declared.Columns) == 0 &&
+			names(declared.Privileges, privilege)
+	})
+}
+
+// removedFromTable reports whether the plan removes a held grant on table, as
+// [removed] reports it for a grant on a database: desired revokes the
+// privilege on the table from the grant's grantee, or the grantee is a role
+// desired declares and desired does not grant the privilege there.
+func removedFromTable(desired *schemamodel.Database, grant catalog.Grant, table string) bool {
+	if desired == nil {
+		return false
+	}
+	there := func(declared schemamodel.Grant) bool {
+		return declared.Role == grant.Role && declared.OnTable == table && len(declared.Columns) == 0 &&
+			names(declared.Privileges, grant.Privilege)
+	}
+	if slices.ContainsFunc(desired.RevokedGrants, there) {
+		return true
+	}
+	declared := slices.ContainsFunc(desired.Roles, func(role schemamodel.Role) bool { return role.Name == grant.Role })
+	return declared && !slices.ContainsFunc(desired.Grants, there)
+}
+
+// holders is role, PUBLIC, and every role either of them holds through a
+// chain of memberships: those current holds, and those desired declares,
+// which the plan grants before the revoke runs. A member holds what its roles
+// hold, so a REVOKE on a table takes nothing a role's wider grant gives it:
+// measured on MySQL 8.4.13, after GRANT parent TO member with parent holding
+// SELECT ON `gc%`.*, REVOKE SELECT ON gcdb.t1 FROM member succeeds and a
+// session of member with member active reads t1. A membership the plan
+// removes counts too, so the check refuses more rather than less.
+func holders(desired *schemamodel.Database, current *catalog.Database, role string) map[string]bool {
+	held := make(map[string][]string)
+	for _, membership := range current.RoleMemberships {
+		held[membership.Member] = append(held[membership.Member], membership.Role)
+	}
+	if desired != nil {
+		for _, declared := range desired.Roles {
+			held[declared.Name] = append(held[declared.Name], declared.MemberOf...)
+		}
+	}
+	seen := map[string]bool{role: true, publicGrantee: true}
+	queue := []string{role, publicGrantee}
+	for len(queue) > 0 {
+		member := queue[0]
+		queue = queue[1:]
+		for _, granted := range held[member] {
+			if !seen[granted] {
+				seen[granted] = true
+				queue = append(queue, granted)
+			}
+		}
+	}
+	return seen
 }
 
 // tableScope is the database a revoke's table is in, as far as the read says.
@@ -229,6 +362,9 @@ func Validate(dialect string, desired *schemamodel.Database, current *catalog.Da
 // the whole database.
 func refusal(revoke schemamodel.Grant, cover Cover) error {
 	role := revoke.Role
+	if cover.OnTable {
+		return tableRefusal(revoke, cover)
+	}
 	if cover.Declared && cover.Grantee == role {
 		return fmt.Errorf(
 			"the schema grants %s to role %q, which covers table %s, so a revoke on the table cannot take it: "+
@@ -263,6 +399,34 @@ func refusal(revoke schemamodel.Grant, cover Cover) error {
 		"%s holds %s, which gives role %q the privilege on table %s, so a revoke on the table cannot take it: "+
 			"revoke %s from %s instead, or grant the privilege on each table that needs it",
 		cover.Grantee, cover.Grant, role, revoke.OnTable, cover.Grant, cover.Grantee)
+}
+
+// tableRefusal is [refusal] for a grant on the table itself, which another
+// grantee holds or the schema grants to one.
+func tableRefusal(revoke schemamodel.Grant, cover Cover) error {
+	role := revoke.Role
+	// PUBLIC is every role's, through no membership a statement can end.
+	membership := ", or end the membership that passes it on"
+	if strings.EqualFold(cover.Grantee, publicGrantee) {
+		membership = ""
+	}
+	switch {
+	case cover.Declared:
+		return fmt.Errorf(
+			"the schema grants %s to %s, which gives role %q the privilege on table %s, so a revoke from %q cannot take it: "+
+				"leave the grant out%s",
+			cover.Grant, cover.Grantee, role, revoke.OnTable, role, membership)
+	case cover.AlsoDeclared:
+		return fmt.Errorf(
+			"%s holds %s, which the schema grants too and which gives role %q the privilege on table %s, "+
+				"so a revoke from %q cannot take it: leave the grant out%s",
+			cover.Grantee, cover.Grant, role, revoke.OnTable, role, membership)
+	default:
+		return fmt.Errorf(
+			"%s holds %s, which gives role %q the privilege on table %s, so a revoke from %q cannot take it: "+
+				"revoke %s from %s instead%s",
+			cover.Grantee, cover.Grant, role, revoke.OnTable, role, cover.Grant, cover.Grantee, membership)
+	}
 }
 
 // names reports whether a revoke of privileges takes privilege.

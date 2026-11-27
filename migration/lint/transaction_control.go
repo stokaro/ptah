@@ -34,7 +34,11 @@ func transactionControlRules() []Rule {
 // refusals read [txcontrol.Controls], which this rule reads too, so lint
 // reports what an apply would stop at on every engine the migrator applies. A
 // block of several statements is one finding, on the statement that opens it:
-// the statements the block holds are the same mistake.
+// the statements the block holds are the same mistake. The statements are the
+// scanner's, which on SQL Server cuts a BEGIN ... END block at the semicolons
+// inside it where the migrator sends the block whole, so a COMMIT inside one is
+// reported on its own line, and a ROLLBACK that opens a CATCH block, read with
+// END TRY and BEGIN CATCH in front of it, is missed (stokaro/ptah#6793).
 //
 // A run whose files run in transactions they open themselves, as with
 // golang-migrate, is judged by the same reading the migrator applies and rolls

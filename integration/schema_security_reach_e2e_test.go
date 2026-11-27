@@ -34,13 +34,16 @@ type reachReportFinding struct {
 		Name string `json:"name"`
 	} `json:"subject"`
 	Detail struct {
-		Reach *struct {
-			Reached   int      `json:"reached"`
-			Relations int      `json:"relations"`
-			Through   []string `json:"through"`
-			Sources   []string `json:"sources"`
-		} `json:"reach"`
+		Reach *reachReportDetail `json:"reach"`
 	} `json:"detail"`
+}
+
+// reachReportDetail is the reach a finding states.
+type reachReportDetail struct {
+	Reached   int      `json:"reached"`
+	Relations int      `json:"relations"`
+	Through   []string `json:"through"`
+	Sources   []string `json:"sources"`
 }
 
 // reachFindingLines runs `ptah schema security` against dbURL and states, one

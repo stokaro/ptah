@@ -23,34 +23,38 @@ import (
 // A readable grant option must not turn the same replacement into a refusal.
 func TestPlanBidirectionalSchemaDiff_OracleRoutineReplacementKeepsPrivileges(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		routine    string
-		kind       string
-		parameters string
-		returns    string
-		oldBody    string
-		newBody    string
-		coverage   coverage.Set
-		grants     []catalog.Grant
-		wantHeader string
+		name           string
+		routine        string
+		kind           string
+		parameters     string
+		returns        string
+		oldBody        string
+		newBody        string
+		coverage       coverage.Set
+		grants         []catalog.Grant
+		wantUpHeader   string
+		wantDownHeader string
 	}{
 		{
 			name: "procedure with unread roles", routine: "rt", kind: schemamodel.FunctionKindProcedure,
 			parameters: "answer OUT NUMBER", oldBody: "BEGIN answer := 1; END;", newBody: "BEGIN answer := 2; END;",
-			coverage:   coverage.Set{}.With(coverage.Refused(coverage.Role)),
-			wantHeader: "CREATE OR REPLACE PROCEDURE rt(answer OUT NUMBER) AUTHID DEFINER IS",
+			coverage:       coverage.Set{}.With(coverage.Refused(coverage.Role)),
+			wantUpHeader:   "CREATE OR REPLACE PROCEDURE APP.rt(answer OUT NUMBER) AUTHID DEFINER IS",
+			wantDownHeader: "CREATE OR REPLACE PROCEDURE rt(answer OUT NUMBER) AUTHID DEFINER IS",
 		},
 		{
 			name: "qualified procedure with unread roles", routine: "APP.rt", kind: schemamodel.FunctionKindProcedure,
 			parameters: "answer OUT NUMBER", oldBody: "BEGIN answer := 1; END;", newBody: "BEGIN answer := 2; END;",
-			coverage:   coverage.Set{}.With(coverage.Refused(coverage.Role)),
-			wantHeader: "CREATE OR REPLACE PROCEDURE APP.rt(answer OUT NUMBER) AUTHID DEFINER IS",
+			coverage:       coverage.Set{}.With(coverage.Refused(coverage.Role)),
+			wantUpHeader:   "CREATE OR REPLACE PROCEDURE APP.rt(answer OUT NUMBER) AUTHID DEFINER IS",
+			wantDownHeader: "CREATE OR REPLACE PROCEDURE APP.rt(answer OUT NUMBER) AUTHID DEFINER IS",
 		},
 		{
 			name: "function with unread roles", routine: "rt", kind: schemamodel.FunctionKindFunction,
 			returns: "NUMBER", oldBody: "BEGIN RETURN 1; END;", newBody: "BEGIN RETURN 2; END;",
-			coverage:   coverage.Set{}.With(coverage.Refused(coverage.Role)),
-			wantHeader: "CREATE OR REPLACE FUNCTION rt RETURN NUMBER AUTHID DEFINER IS",
+			coverage:       coverage.Set{}.With(coverage.Refused(coverage.Role)),
+			wantUpHeader:   "CREATE OR REPLACE FUNCTION APP.rt RETURN NUMBER AUTHID DEFINER IS",
+			wantDownHeader: "CREATE OR REPLACE FUNCTION rt RETURN NUMBER AUTHID DEFINER IS",
 		},
 		{
 			name: "observed user and role privileges", routine: "rt", kind: schemamodel.FunctionKindProcedure,
@@ -59,7 +63,8 @@ func TestPlanBidirectionalSchemaDiff_OracleRoutineReplacementKeepsPrivileges(t *
 				{Role: "READER", ObjectType: "TABLE", ObjectName: "RT", Privilege: "EXECUTE"},
 				{Role: "APP_USER", ObjectType: "TABLE", ObjectName: "RT", Privilege: "EXECUTE", WithOption: true},
 			},
-			wantHeader: "CREATE OR REPLACE PROCEDURE rt(answer OUT NUMBER) AUTHID DEFINER IS",
+			wantUpHeader:   "CREATE OR REPLACE PROCEDURE APP.rt(answer OUT NUMBER) AUTHID DEFINER IS",
+			wantDownHeader: "CREATE OR REPLACE PROCEDURE rt(answer OUT NUMBER) AUTHID DEFINER IS",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -95,8 +100,8 @@ func TestPlanBidirectionalSchemaDiff_OracleRoutineReplacementKeepsPrivileges(t *
 			c.Assert(err, qt.IsNil)
 			down, err := builtin.RenderSQLWithCapabilities(platform.Oracle, capability.Oracle23(), plan.Reverse.Nodes...)
 			c.Assert(err, qt.IsNil)
-			c.Assert(up, qt.Contains, test.wantHeader+"\n"+test.newBody+"\n")
-			c.Assert(down, qt.Contains, test.wantHeader+"\n"+test.oldBody+"\n")
+			c.Assert(up, qt.Contains, test.wantUpHeader+"\n"+test.newBody+"\n")
+			c.Assert(down, qt.Contains, test.wantDownHeader+"\n"+test.oldBody+"\n")
 		})
 	}
 }

@@ -405,10 +405,14 @@ func TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand(t *testing.T) {
 		repository, _ := splitImageRef(ref)
 		repositories = append(repositories, repository)
 	}
+	// Two MySQL and two MariaDB lines run with lower_case_table_names=1, and
+	// each is started by hand.
 	c.Assert(repositories, qt.ContentEquals, []string{
 		"cockroachdb/cockroach",
 		"mariadb",
+		"mariadb",
 		"mcr.microsoft.com/mssql/server",
+		"mysql",
 		"mysql",
 		"yugabytedb/yugabyte",
 	})

@@ -18,6 +18,7 @@ var kindNames = map[sqlserverbatch.Kind]string{
 	sqlserverbatch.Module: "module",
 	sqlserverbatch.Call:   "call",
 	sqlserverbatch.Label:  "label",
+	sqlserverbatch.Schema: "schema",
 }
 
 // render returns one line per statement, its kind and its SQL, with the
@@ -259,9 +260,38 @@ func TestRead_SplitsWhereTheServerDoes(t *testing.T) {
 			name: "each element of CREATE SCHEMA",
 			text: "CREATE SCHEMA s20 CREATE TABLE t20 (id int) GRANT SELECT ON t20 TO public",
 			want: []string{
-				"simple: CREATE SCHEMA s20",
-				"simple: CREATE TABLE t20 (id int)",
-				"simple: GRANT SELECT ON t20 TO public",
+				"schema: CREATE SCHEMA s20 CREATE TABLE t20 (id int) GRANT SELECT ON t20 TO public",
+				"  simple: CREATE TABLE t20 (id int)",
+				"  simple: GRANT SELECT ON t20 TO public",
+			},
+		},
+		{
+			// The server refuses the batch with Msg 156 at the second CREATE
+			// TABLE, semicolon or not, so nothing in it runs.
+			name: "CREATE SCHEMA takes the rest of the batch",
+			text: "CREATE SCHEMA s21 CREATE TABLE t21 (id int); CREATE TABLE t22 (id int)",
+			want: []string{
+				"schema: CREATE SCHEMA s21 CREATE TABLE t21 (id int); CREATE TABLE t22 (id int)",
+				"  simple: CREATE TABLE t21 (id int);",
+				"  simple: CREATE TABLE t22 (id int)",
+			},
+		},
+		{
+			name: "CREATE SCHEMA after another statement of the batch",
+			text: "SELECT 1; CREATE SCHEMA s23 AUTHORIZATION dbo",
+			want: []string{
+				"simple: SELECT 1;",
+				"schema: CREATE SCHEMA s23 AUTHORIZATION dbo",
+			},
+		},
+		{
+			// The server refuses CREATE SCHEMA inside a block, so the reader
+			// keeps it a statement of the block.
+			name: "CREATE SCHEMA in a block",
+			text: "BEGIN CREATE SCHEMA s24 END",
+			want: []string{
+				"block: BEGIN CREATE SCHEMA s24 END",
+				"  simple: CREATE SCHEMA s24",
 			},
 		},
 		{
@@ -871,6 +901,11 @@ func TestRead_StatesWhatAStatementRunsBesideOthers(t *testing.T) {
 			text: "BEGIN SELECT 1 END",
 			want: "",
 		},
+		{
+			name: "CREATE SCHEMA and its elements",
+			text: "CREATE SCHEMA s25 AUTHORIZATION dbo CREATE TABLE t25 (id int)",
+			want: "CREATE SCHEMA s25 AUTHORIZATION dbo",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -879,6 +914,67 @@ func TestRead_StatesWhatAStatementRunsBesideOthers(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 1)
 			c.Assert(statements[0].Head, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestRead_KeepsTheSemicolonAMergeRequires pins KeepsSemicolon on each
+// statement of a batch. SQL Server answers a MERGE without its semicolon with
+// Msg 10713, as the last statement of a batch too, so a statement whose text
+// ends with a MERGE's semicolon keeps it; measured on SQL Server 2022 and 2025.
+func TestRead_KeepsTheSemicolonAMergeRequires(t *testing.T) {
+	merge := "MERGE dbo.t AS t USING (SELECT 1 AS id) AS s ON t.id = s.id WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id);"
+	tests := []struct {
+		name string
+		text string
+		want []bool
+	}{
+		{name: "a MERGE", text: merge, want: []bool{true}},
+		{name: "a MERGE and a statement after it", text: merge + " SELECT 1;", want: []bool{true, false}},
+		{name: "a MERGE that common table expressions serve",
+			text: "WITH s AS (SELECT 1 AS id) MERGE dbo.t AS t USING s ON t.id = s.id WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id);",
+			want: []bool{true}},
+		{name: "an IF that runs a MERGE", text: "IF 1 = 1 " + merge, want: []bool{true}},
+		{name: "an ELSE that runs a MERGE", text: "IF 1 = 0 SELECT 1; ELSE " + merge, want: []bool{true}},
+		{name: "a WHILE that runs a MERGE", text: "WHILE 1 = 0 " + merge, want: []bool{true}},
+		{name: "an IF whose ELSE runs another statement", text: "IF 1 = 1 " + merge + " ELSE SELECT 1;", want: []bool{false}},
+		{name: "a block that ends with a MERGE", text: "BEGIN " + merge + " END;", want: []bool{false}},
+		{name: "another statement", text: "UPDATE dbo.t SET id = 1;", want: []bool{false}},
+		{name: "a MERGE with no semicolon after it", text: strings.TrimSuffix(merge, ";"), want: []bool{false}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			statements, err := sqlserverbatch.Read(test.text)
+			c.Assert(err, qt.IsNil)
+			kept := make([]bool, 0, len(statements))
+			for _, statement := range statements {
+				kept = append(kept, statement.KeepsSemicolon)
+			}
+			c.Assert(kept, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReads names the dialects whose text the reader reads: the one whose
+// descriptor declares Transact-SQL bodies, in any spelling the registry
+// accepts, and no other.
+func TestReads(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    bool
+	}{
+		{dialect: "sqlserver", want: true},
+		{dialect: " MSSQL ", want: true},
+		{dialect: "postgres", want: false},
+		{dialect: "oracle", want: false},
+		{dialect: "", want: false},
+		{dialect: "nonesuch", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(sqlserverbatch.Reads(test.dialect), qt.Equals, test.want)
 		})
 	}
 }

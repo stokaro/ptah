@@ -5,7 +5,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/schemaselection"
 )
 
 // ComparisonReadNames resolves the schemas a live read is made at when the
@@ -23,11 +22,11 @@ func ComparisonReadNames(
 	ctx context.Context,
 	info catalog.ServerInfo,
 	requested []string,
-	q schemaselection.RealmConnection,
+	q Connection,
 	desired *schemamodel.Database,
 ) ([]string, error) {
 	if names := UniqueNames(requested); len(names) > 0 {
-		return names, nil
+		return ReadNames(ctx, info, names, q)
 	}
 	urlScope, err := ReadNames(ctx, info, nil, q)
 	if err != nil {

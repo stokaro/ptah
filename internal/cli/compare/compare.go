@@ -265,6 +265,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
+	selection.Names = conn
 	dbSchema, result, err = selection.Apply(ctx, runtime, info, dbSchema, result)
 	if err != nil {
 		return err

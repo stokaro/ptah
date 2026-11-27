@@ -170,23 +170,7 @@ func foldedNames(
 	if desired == nil || database == nil || !platform.NamesFoldBySetting(dialect) {
 		return desired, nil
 	}
-	read := schemaprep.ReadNames{Session: session, Dialect: dialect}
-	for _, schema := range database.Schemas {
-		read.Databases = append(read.Databases, schema.Name)
-	}
-	for _, table := range database.Tables {
-		read.Databases = append(read.Databases, table.Schema)
-		read.Relations = append(read.Relations, schemaprep.ReadRelation{Database: table.Schema, Name: table.Name})
-	}
-	for _, view := range database.Views {
-		read.Databases = append(read.Databases, view.Schema)
-		read.Relations = append(read.Relations, schemaprep.ReadRelation{Database: view.Schema, Name: view.Name})
-	}
-	for _, sequence := range database.Sequences {
-		read.Databases = append(read.Databases, sequence.Schema)
-		read.Relations = append(read.Relations, schemaprep.ReadRelation{Database: sequence.Schema, Name: sequence.Name})
-	}
-	respelled, err := schemaprep.RespellReadNames(desired, read, folding)
+	respelled, err := schemaprep.RespellReadNames(desired, schemaprep.ReadNamesOf(database, session, dialect), folding)
 	if err != nil {
 		return nil, &RefusalError{cause: err}
 	}
@@ -301,6 +285,12 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	}
 	if err := recordDefiners(desired, database, info, merged, semantics, runtime, diff); err != nil {
 		return nil, Diagnostics{}, err
+	}
+	// The planner refuses a database created beside one dropped whose name
+	// differs only in case unless the diff says the server keeps the two
+	// apart; see [difftypes.SchemaDiff.NameFolding].
+	if platform.NamesFoldBySetting(info.Dialect) {
+		diff.NameFolding = info.NameFolding
 	}
 	return diff, undecided, nil
 }

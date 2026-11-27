@@ -639,7 +639,7 @@ func computeApplyPlan(
 	}
 	selectionOpts := opts
 	selectionOpts.RefuseUnmatchedExclude = opts.RefuseUnmatchedExclude && !allowUnmatched
-	current, desired, err = selectApplyStates(ctx, conn.Info().Dialect, current, desired, scope, selectionOpts)
+	current, desired, err = selectApplyStates(ctx, schemascope.Target{Info: conn.Info(), Names: conn}, current, desired, scope, selectionOpts)
 	if err != nil {
 		return applyComputation{}, err
 	}
@@ -871,8 +871,15 @@ func plannedData(
 // empty side is a create or removal; two empty selections cannot prove agreement.
 // A standalone feature object is kept or left out whole by the tables it binds
 // on either side, and a selection that would split one is refused.
-func selectApplyStates(ctx context.Context, dialect string, current *catalog.Database, desired *schemamodel.Database, scope atlasfilter.Scope, opts ApplyOptions) (*catalog.Database, *schemamodel.Database, error) {
-	scoped, err := projectLiveStates(ctx, opts.Runtime, dialect, current, desired, scope)
+func selectApplyStates(
+	ctx context.Context,
+	target schemascope.Target,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+	scope atlasfilter.Scope,
+	opts ApplyOptions,
+) (*catalog.Database, *schemamodel.Database, error) {
+	scoped, err := projectLiveStates(ctx, opts.Runtime, target.Info.Dialect, target, current, desired, scope)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -930,17 +937,23 @@ type scopedApplyStates struct {
 }
 
 // projectLiveStates captures the bindings of both sides of a comparison with a
-// live read and projects both through scope. An empty selection is not an error
-// here: it stays in the result, for the caller that can see both sides.
+// live read and projects both through scope, once the names scope and desired
+// spell are paired with current on target; see [pairedSelection]. An empty
+// selection is not an error here: it stays in the result, for the caller that
+// can see both sides.
 func projectLiveStates(
 	ctx context.Context,
 	runtime any,
 	dialect string,
+	target schemascope.Target,
 	current *catalog.Database,
 	desired *schemamodel.Database,
 	scope atlasfilter.Scope,
 ) (scopedApplyStates, error) {
-	var err error
+	scope, desired, err := pairedSelection(ctx, target, scope, current, desired)
+	if err != nil {
+		return scopedApplyStates{}, err
+	}
 	scope.LiveKeys = atlasfilter.KeysOf(current)
 	scope.Bindings, err = scopeBindings(ctx, runtime, dialect, scope, databaseSide(current), generatedSide(desired))
 	if err != nil {
@@ -1051,6 +1064,12 @@ func applyCurrentState(
 	desired *schemamodel.Database,
 ) (applyRead, error) {
 	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
+	if err != nil {
+		return applyRead{}, fmt.Errorf("read database schema: %w", err)
+	}
+	// A --schemas name is read as the target holds the schema it names, as
+	// [schemascope.ReadNames] reads it.
+	requested, err = schemascope.Target{Info: conn.Info(), Names: conn}.SpellAsHeld(ctx, schemascope.UniqueNames(requested), urlScope)
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
