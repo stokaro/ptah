@@ -77,7 +77,8 @@ func TestMariaDBPublicReachE2E(t *testing.T) {
 			c := qt.New(t)
 			server := newMySQLFamilyServer(c, row.engine)
 			database := server.database(c, "public_reach")
-			held := fmt.Sprintf("pubheld_%d", time.Now().UnixNano()%1_000_000_000_000)
+			suffix := fmt.Sprintf("_%d", time.Now().UnixNano()%1_000_000_000_000)
+			held := "pubheld" + suffix
 			c.Cleanup(func() {
 				for _, statement := range []string{
 					"REVOKE SELECT ON " + granteeIdentifier(database) + ".direct FROM PUBLIC",
@@ -106,16 +107,17 @@ func TestMariaDBPublicReachE2E(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", printed))
 			c.Assert(printed, qt.Not(qt.Contains), "ROLE IF NOT EXISTS `PUBLIC`")
 			c.Assert(printed, qt.Contains, "GRANT SELECT ON `"+database+"`.`direct` TO `PUBLIC`;")
-			c.Assert(publicFindingLines(c, target, held), qt.DeepEquals, []string{
-				"roles/read-reach error PUBLIC 2/2 through=[" + held + "]",
+			c.Assert(publicFindingLines(c, target, suffix), qt.DeepEquals, []string{
+				"roles/read-reach error PUBLIC 2/2 through=[pubheld]",
 			})
 		})
 	}
 }
 
 // publicFindingLines runs `ptah schema security` against dbURL and states the
-// ROL04 and reach findings about PUBLIC and about role, one line each.
-func publicFindingLines(c *qt.C, dbURL, role string) []string {
+// ROL04 and reach findings about PUBLIC and about the roles whose names end in
+// suffix, one line each, with the suffix taken off.
+func publicFindingLines(c *qt.C, dbURL, suffix string) []string {
 	c.Helper()
 	stdout, err := runPtahNativeStdout("schema", "security", "--db-url", dbURL, "--format", "json", "--fail-on", "none",
 		"--reach-error", "75")
@@ -123,12 +125,13 @@ func publicFindingLines(c *qt.C, dbURL, role string) []string {
 	var report reachReport
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil, qt.Commentf("%s", stdout))
 	findings := slices.DeleteFunc(report.Findings, func(finding reachReportFinding) bool {
-		return finding.Subject.Name != "PUBLIC" && finding.Subject.Name != role ||
+		return finding.Subject.Name != "PUBLIC" && !strings.HasSuffix(finding.Subject.Name, suffix) ||
 			finding.Code != "ROL04" && !strings.HasPrefix(finding.Code, "roles/")
 	})
 	lines := make([]string, 0, len(findings))
 	for _, finding := range findings {
-		lines = append(lines, finding.Code+" "+finding.Severity+" "+finding.Subject.Name+reachText(finding.Detail.Reach))
+		line := finding.Code + " " + finding.Severity + " " + finding.Subject.Name + reachText(finding.Detail.Reach)
+		lines = append(lines, strings.ReplaceAll(line, suffix, ""))
 	}
 	return lines
 }

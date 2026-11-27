@@ -1459,6 +1459,15 @@ reads that row as a role, since `CREATE ROLE PUBLIC` is refused with ERROR
 1959, so `ptah db read` and `ptah migrations checkpoint` print the grants to
 `PUBLIC` and no `CREATE ROLE` for it.
 
+On MySQL, a role named in `mandatory_roles` is granted to every account, and
+every account may make it active with `SET ROLE`. The read records it as held
+by `PUBLIC`, so `ptah schema security` counts its access for every account.
+`ptah db read` prints the role and its grants, and no membership for it: the
+server refuses to grant a mandatory role to another role (ERROR 4027) or to
+revoke it (ERROR 3628). A MySQL role may be named `PUBLIC`; beside a mandatory
+role, the read records no such membership and the reach rules report
+themselves skipped.
+
 MySQL role and grantee names with leading or trailing white space are refused
 before a schema is compared or rendered. MySQL normalizes this white space in
 principal references, so use the unpadded name stored by the server. The same

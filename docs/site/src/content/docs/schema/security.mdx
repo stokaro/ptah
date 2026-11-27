@@ -294,8 +294,10 @@ ptah schema security --db-url "$DATABASE_URL" --reach-error 75
 A role that reaches no more than `PUBLIC` does is not reported, because the
 `PUBLIC` finding already names that reach. On MariaDB a role may be granted to
 `PUBLIC`, and `PUBLIC` then reaches what that role reaches, and so does every
-other role. In `--format json`,
-`detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
+other role. A role named in MySQL's `mandatory_roles` counts the same way,
+since the server grants it to every account.
+
+In `--format json`, `detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
 the reach passes through under `through`, and under `sources` the access a
 revoke on a relation does not narrow, such as `superuser held by ptah`,
 `ownership of 2 relations held by ptah` or, on MySQL and MariaDB,
@@ -356,12 +358,13 @@ across native commands.
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and
   the roles it inherits active.
-- A role named in MySQL's `mandatory_roles` is granted to every account, and is
-  active in every session that runs `SET ROLE ALL` or logs in with
-  `activate_all_roles_on_login` on. The rules treat it as an ordinary role.
-  They do not report that it reads or writes for every account, and they do not
-  count that its rows, active beside another role under `SET ROLE ALL`, can
-  shadow that role's pattern.
+- A role named in MySQL's `mandatory_roles` is measured with each role apart
+  from it. Under `SET ROLE ALL` its row on a database can win over another
+  role's pattern, and the session reads less than that role alone: measured on
+  MySQL 8.4.13 and 26.10.0, a session that activates only that role reads what
+  the pattern gives. Where a MySQL role is named `PUBLIC` beside a mandatory
+  role, the rules report themselves skipped, because the name reads as every
+  account.
 - Where Ptah cannot tell which of two rows the server applies, the finding
   counts every privilege of both, each under its own row, so it may show more
   than the server allows. That covers two MariaDB patterns with the same counts

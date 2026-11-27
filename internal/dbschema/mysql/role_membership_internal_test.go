@@ -7,6 +7,8 @@ package mysql
 
 import (
 	"database/sql/driver"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -235,6 +237,83 @@ func TestWithoutPublic(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(withoutPublic([]catalog.Role{{Name: "PUBLIC"}, {Name: "reader"}}, test.mariaDB), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadMandatoryRoles reads each MySQL mandatory role as held by PUBLIC,
+// named as a membership names it, and asks MariaDB nothing: it has no
+// mandatory_roles.
+func TestReadMandatoryRoles(t *testing.T) {
+	tests := []struct {
+		name    string
+		mariaDB bool
+		want    []catalog.RoleMembership
+	}{
+		{name: "MySQL", want: []catalog.RoleMembership{
+			{Role: "mand", Member: "PUBLIC"},
+			{Role: "mloc@localhost", Member: "PUBLIC"},
+		}},
+		{name: "MariaDB", mariaDB: true, want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+				return dbtest.QueryResult{
+					Columns: []string{"ROLE_NAME", "ROLE_HOST"},
+					Rows:    [][]driver.Value{{"mand", "%"}, {"mloc", "localhost"}},
+				}, map[bool]error{false: fmt.Errorf("unexpected query: %s", query), true: nil}[strings.Contains(query, "IS_MANDATORY = 'YES'")]
+			})
+
+			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{MariaDB: test.mariaDB})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestWithMandatory adds PUBLIC's memberships in the mandatory roles, and
+// leaves them out where a MySQL role is named PUBLIC, reporting that the
+// access cannot be measured then.
+func TestWithMandatory(t *testing.T) {
+	held := []catalog.RoleMembership{{Role: "reader", Member: "app"}}
+	mandatory := []catalog.RoleMembership{{Role: "mand", Member: "PUBLIC"}}
+	tests := []struct {
+		name       string
+		roles      []catalog.Role
+		mandatory  []catalog.RoleMembership
+		want       []catalog.RoleMembership
+		wantUnread bool
+	}{
+		{
+			name:      "mandatory roles",
+			roles:     []catalog.Role{{Name: "app"}, {Name: "reader"}, {Name: "mand"}},
+			mandatory: mandatory,
+			want:      []catalog.RoleMembership{{Role: "reader", Member: "app"}, {Role: "mand", Member: "PUBLIC"}},
+		},
+		{
+			name:       "a role named PUBLIC",
+			roles:      []catalog.Role{{Name: "app"}, {Name: "reader"}, {Name: "mand"}, {Name: "Public"}},
+			mandatory:  mandatory,
+			want:       held,
+			wantUnread: true,
+		},
+		{
+			name:  "a role named PUBLIC and no mandatory role",
+			roles: []catalog.Role{{Name: "app"}, {Name: "reader"}, {Name: "PUBLIC"}},
+			want:  held,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, unread := withMandatory(test.roles, slices.Clone(held), test.mandatory)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(unread, qt.Equals, test.wantUnread)
 		})
 	}
 }
