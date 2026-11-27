@@ -97,16 +97,20 @@ runtime, and returns an error when its inputs or a provider fail. A caller must
 handle that error before using the diff.
 
 An offline `CompareWithDialect(..., "sqlserver")` call cannot know the target
-collation. It confirms only exact-spelling identity. Two ASCII names that
-differ beyond ASCII case are assumed to be two names, which a collation with
-contractions breaks: `Hungarian_CI_AS` reads `ccs` as `cscs`, and an offline
-plan between them creates one routine and drops the other. Names that differ
-only in ASCII case, and a name that holds a non-ASCII character, are treated as
-potential conflicts, the latter with any other name of its kind in any schema,
-because a target collation may equate them by case, accent, locale, kana, or
-width. Planning rejects that ambiguity before emitting SQL. This can make
-dialect-only SQL Server planning stricter than live planning, and it is never
-safer: plan with a resolved snapshot.
+collation. It confirms only exact-spelling identity, and planning refuses
+before emitting SQL where it cannot tell two names apart:
+
+- Every plan that creates an object and drops another of its kind, unless the
+  two are spelled alike. No offline rule says that two names are two under
+  every collation: `Hungarian_CI_AS` reads `ccs` as `cscs`, so a plan that
+  creates one routine and drops the other would leave neither.
+- Two declarations whose names differ only in ASCII case, and a name that holds
+  a non-ASCII character beside another name of its kind that may be the same
+  name part by part, schema and object name. A target collation may equate
+  them by case, accent, locale, kana, or width.
+
+This makes dialect-only SQL Server planning stricter than live planning, and it
+is never safer: plan with a resolved snapshot.
 
 A caller that compares two states neither of which is a live database, and
 holds a connection to a SQL Server whose collation the target shares, asks it

@@ -96,11 +96,14 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *d
 //     the plan removes fails with an error satisfying errors.Is against
 //     ptaherr.ErrUnsupportedFeature, whichever comes first in the plan
 //   - a diff that creates a schema, a table, a view, a materialized view, a
-//     sequence, a routine or a trigger and drops another of its kind whose
-//     name the dialect's identifier rules may read as the same name fails
-//     with an error satisfying errors.Is against ptaherr.ErrInvalidSchemaDiff:
-//     the drop would remove what the create made. Names in one schema whose
-//     own names have the same bytes are not such a pair
+//     sequence or a routine and drops another of its kind whose name the
+//     dialect's identifier rules may read as the same name fails with an
+//     error satisfying errors.Is against ptaherr.ErrInvalidSchemaDiff: the
+//     drop would remove what the create made. Names in one schema whose own
+//     names have the same bytes are not such a pair. On a dialect whose
+//     catalog compares names, such as SQL Server, a diff that carries no
+//     resolved snapshot has no rule that says two names are two, so every
+//     such pair whose spellings differ is refused
 //   - a plan in which an owner operation shares a node with other work fails
 //     with an error satisfying errors.Is against [ErrInvalidPlan]: each owner
 //     operation is planned as a node of its own, so its verdict belongs to

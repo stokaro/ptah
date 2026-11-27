@@ -47,8 +47,13 @@ func procedure(name, body string) difftypes.RoutineChange {
 	return difftypes.RoutineChange{Function: schemamodel.Function{Name: name, Kind: schemamodel.FunctionKindProcedure, Body: body}}
 }
 
+func function(name, body string) difftypes.RoutineChange {
+	return difftypes.RoutineChange{Function: schemamodel.Function{Name: name, Returns: "int", Body: body}}
+}
+
 // The rows without a snapshot plan SQL Server under its offline rules, which
-// compare no name, so each such refusal says that no connection answered.
+// say of no two names that they are two, so each such refusal says that no
+// connection answered.
 func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -144,6 +149,48 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				"so the drop may remove the object the create makes",
 		},
 		{
+			// Hungarian_CI_AS reads ccs as cscs, and the offline rules cannot
+			// see it, so no rule says the two are two (stokaro/ptah#6746).
+			name:    "a contraction offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{function("dbo.cscs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function dbo.cscs and drops function dbo.ccs, and without a connection Ptah cannot tell " +
+				"whether they are one name under the database collation, so the drop may remove the object the create makes; " +
+				"compare with a connection to the database, which answers how it compares the names",
+		},
+		{
+			name:    "a contraction a Hungarian server reads as one name",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Hungarian_CI_AS", []string{"dbo"}, []string{"ccs", "cscs"}),
+				FunctionsAdded:      difftypes.FunctionChanges{function("dbo.cscs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved:    difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function dbo.cscs and drops function dbo.ccs, and sqlserver reads them as one name",
+		},
+		{
+			name:    "two ASCII views offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ViewsAdded:   difftypes.ViewChanges{{Name: "recent", Body: "SELECT 2 AS a"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.archived", Body: "SELECT 1 AS a"}},
+			},
+			want: "the plan creates view recent and drops view dbo.archived, and without a connection Ptah cannot tell",
+		},
+		{
+			// Two schemas may be one schema too.
+			name:    "a table in another schema offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:   difftypes.TableChanges{{Name: "sales.orders"}},
+				TablesRemoved: difftypes.TableRemovals{{Name: "dbo.orders"}},
+			},
+			want: "the plan creates table sales.orders and drops table dbo.orders, and without a connection Ptah cannot tell",
+		},
+		{
 			// MySQL folds a routine name whatever its table rule says, which
 			// compares names exactly.
 			name:    "a MySQL routine whose names differ only in case",
@@ -190,11 +237,36 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			},
 		},
 		{
-			name:    "two views every collation keeps apart",
+			// The control for the offline ASCII row: a server that was asked
+			// put the two names in two classes.
+			name:    "two views a server put apart",
 			dialect: platform.SQLServer,
 			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS",
+					[]string{"dbo"}, []string{"recent"}, []string{"archived"}),
 				ViewsAdded:   difftypes.ViewChanges{{Name: "recent", Body: "SELECT 2 AS a"}},
 				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.archived", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// The control for the contraction rows: a server of another
+			// collation put ccs and cscs in two classes.
+			name:    "a contraction a Latin server reads as two names",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS", []string{"dbo"}, []string{"ccs"}, []string{"cscs"}),
+				FunctionsAdded:      difftypes.FunctionChanges{function("dbo.cscs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved:    difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+		},
+		{
+			// Offline, a routine dropped and created again under one spelling
+			// is a replacement, which the planner orders.
+			name:    "a routine replaced offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{function("ccs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
 			},
 		},
 		{
@@ -212,9 +284,11 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 		{
 			// A name with no class is a namesake only of names in a schema
 			// that may be its own.
-			name:    "a non-ASCII table offline beside a drop in another schema",
+			name:    "a name a snapshot does not cover beside a drop in another schema",
 			dialect: platform.SQLServer,
 			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS",
+					[]string{"dbo"}, []string{"sales"}, []string{"orders"}),
 				TablesAdded:   difftypes.TableChanges{{Name: "sales.Gr\u00f6\u00dfe"}},
 				TablesRemoved: difftypes.TableRemovals{{Name: "dbo.orders"}},
 			},

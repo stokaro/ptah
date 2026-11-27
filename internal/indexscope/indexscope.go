@@ -392,11 +392,15 @@ var unresolvedConflictKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 // Two ASCII names that differ after ASCII case folding are kept apart. That is
 // an assumption most collations honor and a collation with contractions
 // breaks: Hungarian_CI_AS reads `ccs` as `cscs`, and Maori_100_CI_AS reads
-// `a-b` as `ab`. Only a connection says which collation the target has, so a
-// command that compares two documents asks its dev server instead. A name with a
-// non-ASCII character still has no class: an accent-insensitive collation makes
-// `résumé` the same index as `resume`, and `ördérs` the same table as `orders`,
-// so such a name is compared against every other.
+// `a-b` as `ab`. Two declarations kept apart wrongly are both created, and the
+// server refuses the second, so nothing is lost; a plan that creates one
+// object and drops another could lose both, and the planner refuses every
+// such pair offline rather than read it through this assumption
+// (stokaro/ptah#6746). Only a connection says which collation the target has,
+// so a command that compares two documents asks its dev server instead. A
+// name with a non-ASCII character still has no class: an accent-insensitive
+// collation makes `résumé` the same index as `resume`, and `ördérs` the same
+// table as `orders`, so such a name is compared against every other.
 //
 // The index conflict set here and the table and column check in
 // migration/internal/identifiervalidation both call it. One rule for both is

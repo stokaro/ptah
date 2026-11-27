@@ -4,7 +4,6 @@ package identifiervalidation
 
 import (
 	"fmt"
-	"strings"
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
@@ -137,7 +136,7 @@ func validateTablesAndColumns(
 	semantics = indexscope.ConflictSemantics(semantics)
 	tables := make([]spelledName, 0, len(desired.Tables))
 	for _, table := range desired.Tables {
-		tables = append(tables, spelledName{spelling: table.QualifiedName(), key: semantics.QualifiedTableConflictKey(table.QualifiedName())})
+		tables = append(tables, spelledName{spelling: table.QualifiedName(), namesake: NamesakeOf(table.QualifiedName(), semantics)})
 	}
 	if pair, conflict := firstConflict(tables); conflict {
 		return conflictError("tables", pair, rules)
@@ -163,10 +162,10 @@ func validateTablesAndColumns(
 var unresolvedTableKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 
 // spelledName is a declared name as a conflict check reads it: spelling
-// says which declaration it is, and key is its conflict key.
+// says which declaration it is, and namesake is how it is compared.
 type spelledName struct {
 	spelling string
-	key      string
+	namesake Namesake
 }
 
 // conflictPair is two declarations of one kind the target may read as one
@@ -182,33 +181,34 @@ type conflictPair struct {
 // apart, in declaration order. Two names spelled alike are one declaration,
 // not a pair.
 //
-// A name whose key has no equivalence class is compared against every name
-// already seen, for the reason [conflictingColumn] gives: under an
-// accent-insensitive collation `örders` is the table `orders`, and the two
-// conflict keys are different.
+// A name that has no equivalence class is compared against every name
+// already seen, and a later name against every such name, for the reason
+// [conflictingColumn] gives: under an accent-insensitive collation `örders`
+// is the table `orders`, and the two conflict keys are different. Each such
+// pair is a pair only where [Namesake.MayBe] says the two may be one name,
+// so a name in one schema is never paired with a name in another.
 func firstConflict(names []spelledName) (conflictPair, bool) {
 	byKey := make(map[string]string, len(names))
-	var seen []string
-	unresolved := ""
+	var seen, unresolved []spelledName
 	for _, name := range names {
-		if strings.Contains(name.key, unresolvedTableKey) {
-			if earlier, found := firstOther(seen, name.spelling); found {
-				return conflictPair{previous: earlier, current: name.spelling, unresolved: true}, true
+		earlier := unresolved
+		if name.namesake.Unresolved() {
+			earlier = seen
+		}
+		for _, other := range earlier {
+			if other.spelling != name.spelling && other.namesake.MayBe(name.namesake) {
+				return conflictPair{previous: other.spelling, current: name.spelling, unresolved: true}, true
 			}
-			if unresolved == "" {
-				unresolved = name.spelling
-			}
-			seen = append(seen, name.spelling)
+		}
+		seen = append(seen, name)
+		if name.namesake.Unresolved() {
+			unresolved = append(unresolved, name)
 			continue
 		}
-		if unresolved != "" && unresolved != name.spelling {
-			return conflictPair{previous: unresolved, current: name.spelling, unresolved: true}, true
+		if other, exists := byKey[name.namesake.Key]; exists && other != name.spelling {
+			return conflictPair{previous: other, current: name.spelling}, true
 		}
-		if earlier, exists := byKey[name.key]; exists && earlier != name.spelling {
-			return conflictPair{previous: earlier, current: name.spelling}, true
-		}
-		byKey[name.key] = name.spelling
-		seen = append(seen, name.spelling)
+		byKey[name.namesake.Key] = name.spelling
 	}
 	return conflictPair{}, false
 }
@@ -242,7 +242,7 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 	for _, kind := range kinds {
 		spelled := make([]spelledName, 0, len(kind.names))
 		for _, name := range kind.names {
-			spelled = append(spelled, spelledName{spelling: schemaSpelling(name, semantics), key: semantics.QualifiedTableConflictKey(name)})
+			spelled = append(spelled, spelledName{spelling: schemaSpelling(name, semantics), namesake: NamesakeOf(name, semantics)})
 		}
 		if pair, conflict := firstConflict(spelled); conflict {
 			return conflictError(kind.noun, pair, rules)
@@ -250,9 +250,10 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 	}
 	triggers := make([]spelledName, 0, len(desired.Triggers))
 	for _, trigger := range desired.Triggers {
+		table, name := semantics.QualifiedTableConflictKey(trigger.Table), semantics.TableConflictKey(trigger.Name)
 		triggers = append(triggers, spelledName{
 			spelling: schemaSpelling(trigger.Table, semantics) + " trigger " + trigger.Name,
-			key:      semantics.QualifiedTableConflictKey(trigger.Table) + "\x00" + semantics.TableConflictKey(trigger.Name),
+			namesake: Namesake{Key: table + "\x00" + name, SchemaKey: table, NameKey: name},
 		})
 	}
 	if pair, conflict := firstConflict(triggers); conflict {
@@ -300,16 +301,6 @@ func conflictError(kind string, pair conflictPair, rules identifier.Semantics) e
 		"%w: target %s %s and %s may have the same catalog identity",
 		ptaherr.ErrInvalidSchemaDiff, kind, pair.previous, pair.current,
 	)
-}
-
-// firstOther returns the first name in seen spelled differently from name.
-func firstOther(seen []string, name string) (string, bool) {
-	for _, earlier := range seen {
-		if earlier != name {
-			return earlier, true
-		}
-	}
-	return "", false
 }
 
 // conflictingColumn returns the first pair of column names one table cannot

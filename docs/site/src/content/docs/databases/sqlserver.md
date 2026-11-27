@@ -332,19 +332,26 @@ view, and the plan changes it in place. Under `Hungarian_CI_AS` the functions
 The Go comparison APIs that take no connection compare names offline, by these
 rules:
 
-- Two ASCII names that differ beyond ASCII case are assumed to be two names.
-  Most collations agree. A collation with contractions, which reads a group of
-  letters as one letter, does not: under `Hungarian_CI_AS` and
-  `Hungarian_100_CI_AS`, `ccs` and `cscs` are one name, and so are `ddz` and
-  `dzdz`. `Maori_100_CI_AS` reads `a-b` as `ab`. On such a database an offline
-  plan from `ccs` to `cscs` creates one function and drops the other, which
-  leaves neither.
-- Two names that differ only in ASCII case are refused, because they are one
-  name under a case-insensitive collation.
-- A name that holds a non-ASCII character is refused beside any other name of
-  its kind in any schema. Two schema files that declare the views `Größe` and
-  `v2` are refused, and the refusal says that Ptah cannot tell whether the two
-  are one name under the database collation.
+- A plan that creates an object and drops another of its kind is refused
+  unless the two are spelled alike, whatever the two names are. No offline rule
+  says that two names are two under every collation. A collation with
+  contractions, which reads a group of letters as one letter, breaks the
+  obvious one: under `Hungarian_CI_AS` and `Hungarian_100_CI_AS`, `ccs` and
+  `cscs` are one name, and so are `ddz` and `dzdz`. `Maori_100_CI_AS` reads
+  `a-b` as `ab`. On such a database a plan from `ccs` to `cscs` that creates
+  one function and drops the other leaves neither. The refusal says that no
+  connection answered. A plan that only adds or only drops objects is written.
+- Two declarations whose names differ only in ASCII case are refused, because
+  they are one name under a case-insensitive collation. Two ASCII names that
+  differ beyond case are kept as two declarations, since nothing is lost when
+  both are created.
+- A name that holds a non-ASCII character may be any other name. Two
+  declarations of one kind are compared part by part, the schema and the
+  object name, and are refused when each part may be the other's. The views
+  `sales.Größe` and `sales.v2` are refused, and the refusal says that Ptah
+  cannot tell whether the two are one name under the database collation. The
+  views `sales.Größe` and `dbo.v2` are two views under every collation,
+  because `sales` and `dbo` are two schemas.
 
 Plan with a connection. An embedder gets the server's answer from
 `schemadiff.ResolveIdentifierSemantics`; see
