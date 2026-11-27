@@ -46,6 +46,12 @@ func TestAnalyzeFS_ACompoundRoutineBodyIsOneStatement(t *testing.T) {
 			object:  "purge",
 		},
 		{
+			name:    "sqlserver procedure stores the rest of its emitted piece",
+			dialect: "sqlserver",
+			sql:     "CREATE PROCEDURE purge AS\nBEGIN\n  SELECT 1;\nEND\nDROP TABLE users;\n",
+			object:  "purge",
+		},
+		{
 			name:    "postgres dollar-quoted body, which was never cut",
 			dialect: "postgres",
 			sql:     "CREATE FUNCTION total() RETURNS int AS $$\nBEGIN\n  PERFORM 1;\n  RETURN 1;\nEND;\n$$ LANGUAGE plpgsql;\n",
@@ -68,6 +74,19 @@ func TestAnalyzeFS_ACompoundRoutineBodyIsOneStatement(t *testing.T) {
 			c.Assert(changeObjects(file.Changes), qt.DeepEquals, []string{row.object})
 		})
 	}
+}
+
+func TestAnalyzeFS_TSQLDropAfterProcedurePiece(t *testing.T) {
+	c := qt.New(t)
+	const sql = "CREATE PROCEDURE purge AS\nBEGIN\n  SELECT 1;\nEND;\nDROP TABLE users;\n"
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(sql), lint.Options{
+		DirFormat: migrationfile.DirFormatAtlas,
+		Dialect:   "sqlserver",
+	})
+	c.Assert(err, qt.IsNil)
+	file := analysis.Files()[0]
+	c.Assert(file.Statements, qt.HasLen, 2)
+	c.Assert(changeObjects(file.Changes), qt.DeepEquals, []string{"purge", "users"})
 }
 
 // TestAnalyzeFS_ARoutineBodyIsNotAMigrationStatement pins the second half, and

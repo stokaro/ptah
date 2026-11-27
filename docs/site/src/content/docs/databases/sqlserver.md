@@ -9,6 +9,7 @@ goal: "Identify the SQL Server surface and release lines Ptah supports."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
+  - "internal/lintscan"
 generated: false
 searchAliases:
   - "SQL Server support"
@@ -811,10 +812,27 @@ The same reading decides which statements control a transaction. Ptah refuses
 a migration that commits or rolls back the transaction it manages, or opens one
 of its own, and a `COMMIT` inside a `BEGIN ... END` block or after an `IF` is
 refused as a `COMMIT` on its own is. A `COMMIT` in the body of a procedure is
-stored, not run, and is not refused. `ptah migrations lint` reports such a
-statement as `transaction/explicit-transaction`, but it reads a block one
-statement at a time, so it misses a `ROLLBACK` that opens a `CATCH` block
-(stokaro/ptah#6793).
+stored, not run, and is not refused. `ptah migrations lint` reports transaction
+control as `transaction/explicit-transaction`.
+
+`ptah migrations lint --dialect sqlserver` checks statements inside
+`BEGIN ... END`, `IF ... ELSE`, `WHILE`, and `TRY`/`CATCH` blocks, and the
+elements of `CREATE SCHEMA`. It also checks statements written without a
+semicolon between them. A nested `DROP TABLE` receives the same destructive
+finding as a standalone drop,
+at the line where the `DROP` starts.
+
+Lint checks each possible branch without evaluating its condition. A condition
+the schema parser does not model retains its coverage finding. Lint follows the
+pieces the migrator sends, as described above. A routine's stored body stays
+whole within its piece. A `DROP` after `END;` is checked even without `GO`,
+because the migrator sends it separately. Without the semicolon after `END`,
+text that stays in the same routine piece remains stored body text.
+
+Place a [suppression directive](../../versioned/lint/#suppress-a-single-statement-inline)
+directly above the statement inside a block. A directive before an `IF` or
+`WHILE` condition applies only to that condition, and one before `BEGIN` is
+not inherited by the statements in the block.
 
 ## Views that read other views
 

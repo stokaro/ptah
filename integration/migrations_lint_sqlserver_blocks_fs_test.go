@@ -12,16 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// TestMigrationsLintSplitsATSQLProcedureWhereItEndsFS is stokaro/ptah#4461
-// through the command.
-//
-// The migration splitter counted every T-SQL BEGIN as opening a block and
-// closed one only at "END;". A transaction or a TRY/CATCH inside a procedure
-// therefore swallowed the DROP TABLE written after it, and the lint reported
-// nothing about it. END CONVERSATION cut the procedure in two, so a DROP TABLE
-// in its body was linted as one the migration runs. Each row is one shape
-// followed by the same DROP TABLE users, which is the one statement after the
-// procedure.
+// TestMigrationsLintSplitsATSQLProcedureWhereItEndsFS keeps a transaction,
+// TRY/CATCH and END CONVERSATION inside a procedure, then reports the DROP
+// TABLE in the batch after it. GO ends the stored definition even when the
+// procedure's body has a BEGIN ... END block of its own.
 func TestMigrationsLintSplitsATSQLProcedureWhereItEndsFS(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -29,16 +23,16 @@ func TestMigrationsLintSplitsATSQLProcedureWhereItEndsFS(t *testing.T) {
 		want []string
 	}{
 		{name: "TRY and CATCH", body: "BEGIN TRY\n    UPDATE t SET c = 1;\n  END TRY\n  BEGIN CATCH\n    SELECT 1;\n  END CATCH;",
-			want: []string{"coverage/routine-body@1", "destructive/drop-table@10 users", "rollout/drop-table@10 users"}},
+			want: []string{"coverage/routine-body@1", "destructive/drop-table@11 users", "rollout/drop-table@11 users"}},
 		{name: "a transaction", body: "BEGIN TRAN;\n  UPDATE t SET c = 1;\n  COMMIT;",
-			want: []string{"coverage/routine-body@1", "destructive/drop-table@7 users", "rollout/drop-table@7 users"}},
+			want: []string{"coverage/routine-body@1", "destructive/drop-table@8 users", "rollout/drop-table@8 users"}},
 		{name: "a DROP TABLE after END CONVERSATION is body text", body: "END CONVERSATION @h;\n  DROP TABLE audit;",
-			want: []string{"coverage/routine-body@1", "destructive/drop-table@6 users", "rollout/drop-table@6 users"}},
+			want: []string{"coverage/routine-body@1", "destructive/drop-table@7 users", "rollout/drop-table@7 users"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
-			sql := fmt.Sprintf("CREATE PROCEDURE p AS\nBEGIN\n  %s\nEND;\nDROP TABLE users;\n", test.body)
+			sql := fmt.Sprintf("CREATE PROCEDURE p AS\nBEGIN\n  %s\nEND;\nGO\nDROP TABLE users;\n", test.body)
 			c.Assert(os.WriteFile(filepath.Join(dir, "0001_init.up.sql"), []byte(sql), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(dir, "0001_init.down.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
 

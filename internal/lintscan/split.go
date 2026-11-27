@@ -35,7 +35,19 @@ import (
 // and the comments on its line belong to no statement. Read as a word, GO
 // opened the next statement, and every rule that reads a statement's first
 // words passed over it: a DROP TABLE after a GO line was not linted at all.
+// T-SQL also uses the shared batch reader to find unseparated statements and
+// the statements a control-flow block runs. Stored module bodies stay whole.
 func Split(sql string, mode Mode) []lintext.Statement {
+	if mode.transactSQL {
+		return splitTransactSQL(sql, mode)
+	}
+	return splitSemicolons(sql, mode)
+}
+
+// splitSemicolons reads delimiter-separated statements and compound routine
+// bodies. It also retains text the T-SQL reader cannot classify, so ordinary
+// parse diagnostics can report that incomplete analysis.
+func splitSemicolons(sql string, mode Mode) []lintext.Statement {
 	var statements []lintext.Statement
 	start := -1
 	end := 0

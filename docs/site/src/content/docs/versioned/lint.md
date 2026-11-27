@@ -422,6 +422,10 @@ one statement. A rule name or category that does not exist fails the run, and
 so does a word written as a rule code, such as `DS102`: Ptah rules are named,
 and a code is not a name.
 
+For [SQL Server control flow](../../databases/sqlserver/#scripts-and-batches),
+put the directive directly above the statement inside the block. A directive
+above the condition or the block opener does not suppress the nested statements.
+
 `-- atlas:nolint` is Atlas's directive. `ptah-compat migrate lint` reads it,
 with Atlas's codes and analyzer names (`destructive`, `data_depend`,
 `concurrent_index`, `incompatible`, `nestedtx`), and so does the whole-file
