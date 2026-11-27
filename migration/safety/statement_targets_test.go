@@ -74,6 +74,22 @@ func TestStatementTargets(t *testing.T) {
 			want: []safety.StatementTarget{{Action: "PRAGMA", Objects: [][]string{{"foreign_keys"}}}},
 		},
 		{
+			name: "a SQL Server name with an escaped bracket and a literal dot", target: "sqlserver",
+			statement: "DROP TABLE IF EXISTS [dbo].[order]]s.items]",
+			want:      []safety.StatementTarget{{Action: "DROP TABLE IF EXISTS", Objects: [][]string{{"dbo", "order]s.items"}}}},
+		},
+		{
+			name: "a SQL Server clause with a quoted column", target: "sqlserver",
+			statement: "ALTER TABLE [Sales].[order items] ADD [unit]]Price] decimal(10,2) DEFAULT 'secret'",
+			want: []safety.StatementTarget{{
+				Action: "ALTER TABLE", Objects: [][]string{{"Sales", "order items"}}, Clause: "ADD unit]Price DECIMAL",
+			}},
+		},
+		{
+			name: "the hybrid scanner keeps separate bracket tokens", target: "", statement: "DROP TABLE [dbo].[notes]",
+			want: []safety.StatementTarget{{Action: "DROP TABLE", Objects: [][]string{{"dbo", "notes"}}}},
+		},
+		{
 			name: "an anonymous block names no object", target: "postgres", statement: "DO $$ BEGIN PERFORM 1; END $$",
 			want: []safety.StatementTarget{{Action: "DO"}},
 		},

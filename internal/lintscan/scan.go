@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlbatch"
+	"ptah.run/internal/sqlserverbatch"
 )
 
 // Mode selects dialect-specific lexing behavior for the lint scanner.
@@ -69,6 +70,9 @@ type Mode struct {
 	// dialect whose scripts have none. It ends the statement before it as a
 	// semicolon does, and the line it stands on belongs to no statement.
 	batchSeparator string
+	// transactSQL selects the shared T-SQL reader for statement boundaries
+	// and the dialect lexer for bracketed names and nested comments.
+	transactSQL bool
 }
 
 // ForDialect maps a lint target dialect to its lexing behavior. An empty
@@ -99,6 +103,7 @@ func ForDialect(dialect string) Mode {
 	mode := Mode{
 		dialect:        dialect,
 		batchSeparator: described.Scripts.BatchSeparator,
+		transactSQL:    sqlserverbatch.Reads(dialect),
 		escapeStrings:  described.Lexical.EscapeStrings,
 		dollarTags:     dialectlexer.DollarTags(described.Lexical),
 	}
@@ -159,7 +164,10 @@ type lintToken struct {
 // unterminated string or comment consumes the rest of the input.
 func scanSQL(input string, mode Mode) []lintToken {
 	if mode.yql {
-		return scanYQL(input, mode.dialect)
+		return scanDialect(input, mode.dialect, yqlTokenKind)
+	}
+	if mode.transactSQL {
+		return scanDialect(input, mode.dialect, transactSQLTokenKind)
 	}
 	var toks []lintToken
 	n := len(input)
@@ -377,13 +385,9 @@ func quotedEnd(input string, i int, quote byte, backslashEscapes bool) int {
 	return i
 }
 
-// scanYQL tokenizes YQL with internal/lexer in its YQL mode, which is how the
-// migrator reads the same text, and maps each token onto the kinds the rules
-// read. A backticked name is a quoted identifier; every other identifier --
-// a keyword, a name, a $name, a number with its suffix -- is a word. A
-// translation setting such as --!syntax_v1 at the head of the text is a
-// comment here: it starts no statement.
-func scanYQL(input, dialect string) []lintToken {
+// scanDialect maps the dialect lexer's tokens onto the kinds the rules read,
+// retaining the original byte offsets and line numbers.
+func scanDialect(input, dialect string, kind func(lexer.Token) lintTokenKind) []lintToken {
 	start := 0
 	if strings.HasPrefix(input, "\uFEFF") {
 		start = len("\uFEFF") // a UTF-8 BOM must not become part of the first word
@@ -397,12 +401,14 @@ func scanYQL(input, dialect string) []lintToken {
 			return toks
 		}
 		begin, end := start+token.Start, start+token.End
-		toks = append(toks, lintToken{kind: yqlTokenKind(token), text: input[begin:end], start: begin, end: end, line: line})
+		toks = append(toks, lintToken{kind: kind(token), text: input[begin:end], start: begin, end: end, line: line})
 		line += strings.Count(input[begin:end], "\n")
 	}
 }
 
-// yqlTokenKind is the scanner kind of one YQL lexer token.
+// yqlTokenKind is the scanner kind of one YQL lexer token. A backticked name
+// is a quoted identifier; every other identifier is a word. A translation
+// setting such as --!syntax_v1 is a comment: it starts no statement.
 func yqlTokenKind(token lexer.Token) lintTokenKind {
 	switch token.Type {
 	case lexer.TokenWhitespace:

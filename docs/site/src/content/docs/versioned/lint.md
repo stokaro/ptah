@@ -414,13 +414,15 @@ everywhere else, put a `ptah:nolint` comment directly above it:
 ALTER TABLE users DROP COLUMN archived_note;
 ```
 
-The directive suppresses only the named rules, and only for the statement
-directly below it — a blank line between the comment and the statement
-detaches the two. List several rule names separated by spaces or commas, name
-a category, or write a bare `-- ptah:nolint` to silence every rule for that
-one statement. A rule name or category that does not exist fails the run, and
-so does a word written as a rule code, such as `DS102`: Ptah rules are named,
-and a code is not a name.
+A directive suppresses its named rules only for the following statement.
+A blank line detaches it. Separate rule names with spaces or commas, name
+a category, or use bare `-- ptah:nolint` to suppress every rule for that
+statement. Unknown rules or categories fail the run, as do rule codes such
+as `DS102`.
+
+For [SQL Server control flow](../../databases/sqlserver/#scripts-and-batches),
+put the directive directly above the statement inside the block. A directive
+above the condition or the block opener does not suppress the nested statements.
 
 `-- atlas:nolint` is Atlas's directive. `ptah-compat migrate lint` reads it,
 with Atlas's codes and analyzer names (`destructive`, `data_depend`,

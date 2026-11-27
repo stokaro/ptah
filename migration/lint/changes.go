@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/sqlserverbatch"
 	"ptah.run/internal/sqlsyntax"
 )
 
@@ -176,7 +177,21 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 // the one parse of a statement this package makes, so the schema change count and
 // the report of a statement nothing read answer alike about the same text.
 func parseStatement(file *File, sql, dialect string) (*ast.StatementList, error) {
-	return sqlsyntax.Parse(sql, dialect, parser.WithSQL(file.owners))
+	list, err := sqlsyntax.Parse(sql, dialect, parser.WithSQL(file.owners))
+	if err != nil || list == nil || len(list.Statements) < 2 {
+		return list, err
+	}
+	if !sqlserverbatch.Reads(dialect) {
+		return list, nil
+	}
+	// The schema parser can end a routine at its outer END. The input already
+	// belongs to one emitted piece: text after an unterminated END in that
+	// piece stays in the module, rather than changing the schema immediately.
+	statements, readErr := sqlserverbatch.Read(sql)
+	if readErr == nil && len(statements) == 1 && statements[0].Kind == sqlserverbatch.Module {
+		return &ast.StatementList{Statements: list.Statements[:1]}, nil
+	}
+	return list, nil
 }
 
 // nodeSchemaChanges returns a node's changes and reports whether the scope

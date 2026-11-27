@@ -29,6 +29,25 @@ func TestAlterTableReference(t *testing.T) {
 	}
 }
 
+// A T-SQL bracketed name is one token, and its doubled closing bracket is
+// one character of the name rather than a token boundary.
+func TestAlterTableReference_SQLServer(t *testing.T) {
+	for _, test := range []struct {
+		sql  string
+		want lintkit.TableReference
+	}{
+		{"ALTER TABLE [a]]b] ADD [c] int", lintkit.TableReference{Name: "[a]]b]", Normalized: "A]B"}},
+		{"ALTER TABLE [dbo].[a]]b] ADD [c] int", lintkit.TableReference{Name: "[dbo].[a]]b]", Normalized: "DBO.A]B"}},
+	} {
+		t.Run(test.sql, func(t *testing.T) {
+			c := qt.New(t)
+			statements := lintscan.Split(test.sql, lintscan.ForDialect("sqlserver"))
+			c.Assert(statements, qt.HasLen, 1)
+			c.Assert(lintkit.AlterTableReference(statements[0].Words, statements[0].SourceWords), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // Every unique index a file builds is found, in file order: the spellings the
 // package reads, and the sites a dialect's owner reported as effects.
 func TestUniqueIndexSites(t *testing.T) {
@@ -106,6 +125,11 @@ func TestStringLiteral(t *testing.T) {
 		{"E'", false, true},
 		{"users", false, true},
 		{`"users"`, false, true},
+		{"[users]", false, true},
+		{"[the total]", false, true},
+		{"[DROP; TABLE]", false, true},
+		{"[", false, false},
+		{"[]", false, false},
 		{"'", false, false},
 	} {
 		t.Run(test.word, func(t *testing.T) {

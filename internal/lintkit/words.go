@@ -124,6 +124,8 @@ func IdentLike(word string) bool {
 	switch word[0] {
 	case '`', '"':
 		return true
+	case '[':
+		return len(word) > 2 && strings.HasSuffix(word, "]")
 	case '\'':
 		return false
 	}
@@ -471,6 +473,9 @@ func SourceWordAt(words, sourceWords []string, index int) string {
 
 // NormalizeIdent strips identifier quoting and uppercases for comparison.
 func NormalizeIdent(word string) string {
+	if len(word) >= 2 && word[0] == '[' && word[len(word)-1] == ']' {
+		return strings.ToUpper(strings.ReplaceAll(word[1:len(word)-1], "]]", "]"))
+	}
 	return strings.ToUpper(strings.Trim(word, "`\"[]"))
 }
 
