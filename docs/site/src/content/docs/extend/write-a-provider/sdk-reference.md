@@ -27,7 +27,7 @@ it. The rules themselves live in the README. The tables describe the SDK
 release that the [minimal provider example](../tutorial/) requires:
 
 ```text title="go.mod"
-	ptah.run/provider-sdk v0.45.0
+	ptah.run/provider-sdk v0.45.1
 ```
 
 The README links below open that release. The
@@ -42,11 +42,11 @@ packages:
 
 | Package | What it holds |
 | --- | --- |
-| [`protocol/experimental`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.0/protocol/experimental) | The generated Protobuf messages and the gRPC `Provider` service. `provider.proto` in this directory is the wire contract. |
-| [`provider`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.0/provider) | The service interfaces, the feature names, the contract version, the request and reply validators, and the error types. |
-| [`runtime`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.0/runtime) | `Serve` and `Server` for a provider; `Start`, `Options` and `Client` for a host or a test; `ErrorWithReason`; the call timeouts and message bounds. |
-| [`modeljson`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.0/modeljson) | `Canonical`, the JSON normalization that model definitions and their digests use. |
-| [`conformance`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.0/conformance) | `Check` and `Run`, the suite that acts as a strict host against a provider's executable or its in-process server; the command `cmd/ptah-provider-conformance` runs it and prints the report. |
+| [`protocol/experimental`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.1/protocol/experimental) | The generated Protobuf messages and the gRPC `Provider` service. `provider.proto` in this directory is the wire contract. |
+| [`provider`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.1/provider) | The service interfaces, the feature names, the contract version, the request and reply validators, and the error types. |
+| [`runtime`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.1/runtime) | `Serve` and `Server` for a provider; `Start`, `Options` and `Client` for a host or a test; `ErrorWithReason`; the call timeouts and message bounds. |
+| [`modeljson`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.1/modeljson) | `Canonical`, the JSON normalization that model definitions and their digests use. |
+| [`conformance`](https://pkg.go.dev/ptah.run/provider-sdk@v0.45.1/conformance) | `Check` and `Run`, the suite that acts as a strict host against a provider's executable or its in-process server; the command `cmd/ptah-provider-conformance` runs it and prints the report. |
 
 The README sections that apply to every service:
 [Contract versions](https://github.com/stokaro/ptah/blob/provider-sdk/v0.45.1/provider-sdk/README.md#contract-versions),
