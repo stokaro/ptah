@@ -37,6 +37,18 @@ func selecting(grants ...catalog.Grant) *catalog.Database {
 	return read
 }
 
+// holding is read with the memberships added.
+func holding(read *catalog.Database, memberships ...catalog.RoleMembership) *catalog.Database {
+	read.RoleMemberships = memberships
+	return read
+}
+
+// tableGrant is privilege granted to role on table t3, or on its column where
+// column is not empty.
+func tableGrant(role, privilege, column string) catalog.Grant {
+	return catalog.Grant{Role: role, Privilege: privilege, ObjectType: "TABLE", ObjectName: "t3", Column: column}
+}
+
 // databaseGrant is privilege granted to role on the whole of database d2.
 func databaseGrant(role, privilege string) catalog.Grant {
 	return catalog.Grant{Role: role, Privilege: privilege, ObjectType: "SCHEMA", ObjectName: "d2"}
@@ -146,6 +158,84 @@ func TestFind_HappyPath(t *testing.T) {
 		{
 			name: "a grant on the table", privileges: []string{"SELECT"}, table: "t3",
 			current: readHolding([]catalog.Grant{{Role: "r2", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t3"}}),
+		},
+		{
+			name: "a grant on the database held by a role the role holds", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{databaseGrant("parent", "SELECT")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+			want:    []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "a grant on every table held through a chain of memberships", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding(nil, catalog.WideGrant{Role: "top", Privilege: "SELECT", Grant: "SELECT ON *.*"}),
+				catalog.RoleMembership{Role: "middle", Member: "r2"}, catalog.RoleMembership{Role: "top", Member: "middle"}),
+			want: []grantcover.Cover{{Grantee: "top", Grant: "SELECT ON *.*"}},
+		},
+		{
+			name: "a grant on a pattern held by a role granted to PUBLIC", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding(nil, catalog.WideGrant{Role: "everyone", Privilege: "SELECT", Grant: "SELECT ON `d%`.*", Schema: "d2"}),
+				catalog.RoleMembership{Role: "everyone", Member: "PUBLIC"}),
+			want: []grantcover.Cover{{Grantee: "everyone", Grant: "SELECT ON `d%`.*"}},
+		},
+		{
+			name:    "a grant on the database held by a role the schema makes the role a member of",
+			desired: &schemamodel.Database{Roles: []schemamodel.Role{{Name: "r2", MemberOf: []string{"parent"}}}}, privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding([]catalog.Grant{databaseGrant("parent", "SELECT")}),
+			want:    []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON d2.*"}},
+		},
+		{
+			name: "a grant on the table held by a role the role holds", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{tableGrant("parent", "SELECT", "")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+			want:    []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON t3", OnTable: true}},
+		},
+		{
+			name: "a grant on the table to PUBLIC", privileges: []string{"ALL"}, table: "t3",
+			current: readHolding([]catalog.Grant{tableGrant("PUBLIC", "INSERT", "")}),
+			want:    []grantcover.Cover{{Grantee: "PUBLIC", Grant: "INSERT ON t3", OnTable: true}},
+		},
+		{
+			name: "a grant on some columns of the table held by a role the role holds", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{tableGrant("parent", "SELECT", "id")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+		},
+		{
+			name: "a grant on another table held by a role the role holds", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{{Role: "parent", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t9"}}),
+				catalog.RoleMembership{Role: "parent", Member: "r2"}),
+		},
+		{
+			name: "a grant on the table of another database held by a role the role holds", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(selecting(catalog.Grant{Role: "parent", Privilege: "SELECT", ObjectType: "TABLE", Schema: "d9", ObjectName: "t3"}),
+				catalog.RoleMembership{Role: "parent", Member: "r2"}),
+		},
+		{
+			name:       "a grant on the table held by a role, which the schema revokes",
+			desired:    &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: "parent", Privileges: []string{"SELECT"}, OnTable: "t3"}}},
+			privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{tableGrant("parent", "SELECT", "")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+		},
+		{
+			name: "a grant on the table held by a role, which the schema grants too",
+			desired: &schemamodel.Database{
+				Roles:  []schemamodel.Role{{Name: "parent"}},
+				Grants: []schemamodel.Grant{{Role: "parent", Privileges: []string{"SELECT"}, OnTable: "t3"}},
+			},
+			privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{tableGrant("parent", "SELECT", "")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+			want:    []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON t3", OnTable: true, AlsoDeclared: true}},
+		},
+		{
+			name: "a grant on the table the schema grants to a role the schema makes the role a member of",
+			desired: &schemamodel.Database{
+				Roles:  []schemamodel.Role{{Name: "r2", MemberOf: []string{"parent"}}},
+				Grants: []schemamodel.Grant{{Role: "parent", Privileges: []string{"select", "INSERT"}, OnTable: "t3"}},
+			},
+			privileges: []string{"SELECT"}, table: "t3",
+			current: readHolding(nil),
+			want:    []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON t3", OnTable: true, Declared: true}},
+		},
+		{
+			name: "a grant held by a member of the role", privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{databaseGrant("member", "SELECT")},
+				catalog.WideGrant{Role: "member", Privilege: "SELECT", Grant: "SELECT ON *.*"}), catalog.RoleMembership{Role: "r2", Member: "member"}),
 		},
 		{
 			name:    "a grant on the database the plan removes",
@@ -410,6 +500,25 @@ func TestValidate_FailurePath(t *testing.T) {
 				`revoke SELECT ON d2\.\* from PUBLIC instead, or grant the privilege on each table that needs it`,
 		},
 		{
+			name: "a grant on a pattern held by a role the role holds", dialect: "mysql",
+			current: holding(readHolding(nil, catalog.WideGrant{Role: "parent", Privilege: "SELECT", Grant: "SELECT ON `d%`.*", Schema: "d2"}),
+				catalog.RoleMembership{Role: "parent", Member: "r2"}),
+			want: "parent holds SELECT ON `d%`\\.\\*, which gives role \"r2\" the privilege on table t3, so a revoke on the table cannot take it: " +
+				"revoke SELECT ON `d%`\\.\\* from parent instead, or grant the privilege on each table that needs it",
+		},
+		{
+			name: "a grant on the table held by a role the role holds", dialect: "mysql",
+			current: holding(readHolding([]catalog.Grant{tableGrant("parent", "SELECT", "")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+			want: `parent holds SELECT ON t3, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: ` +
+				`revoke SELECT ON t3 from parent instead, or end the membership that passes it on`,
+		},
+		{
+			name: "a grant on the table to PUBLIC", dialect: "mariadb",
+			current: readHolding([]catalog.Grant{tableGrant("PUBLIC", "SELECT", "")}),
+			want: `PUBLIC holds SELECT ON t3, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: ` +
+				`revoke SELECT ON t3 from PUBLIC instead`,
+		},
+		{
 			name: "a grant on the database, in a read that does not say what covers every table", dialect: "mysql",
 			current: &catalog.Database{Grants: []catalog.Grant{databaseGrant("r2", "SELECT")}},
 			want: `role "r2" holds SELECT ON d2\.\*, which covers table t3, so a revoke on the table cannot take it: ` +
@@ -487,6 +596,24 @@ func TestValidate_FailurePathDeclared(t *testing.T) {
 				`so a revoke on the table cannot take it: grant the privilege on each table that needs it instead of on the database`,
 		},
 		{
+			name: "a grant on the table the schema declares to a role the role is a member of",
+			desired: withRevoke(&schemamodel.Database{
+				Roles:  []schemamodel.Role{{Name: "r2", MemberOf: []string{"parent"}}},
+				Grants: []schemamodel.Grant{{Role: "parent", Privileges: []string{"SELECT"}, OnTable: "t3"}},
+			}, "SELECT"),
+			current: readHolding(nil),
+			want: `the schema grants SELECT ON t3 to parent, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: ` +
+				`leave the grant out, or end the membership that passes it on`,
+		},
+		{
+			name: "a grant on the table to PUBLIC the schema declares too", desired: withRevoke(&schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "t3"}},
+			}, "SELECT"),
+			current: readHolding([]catalog.Grant{tableGrant("PUBLIC", "SELECT", "")}),
+			want: `PUBLIC holds SELECT ON t3, which the schema grants too and which gives role "r2" the privilege on table t3, ` +
+				`so a revoke from "r2" cannot take it: leave the grant out`,
+		},
+		{
 			name: "a revoke of ALL under a grant of a table privilege and one no table carries", desired: revokes("t3", "ALL"),
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "EXECUTE"), databaseGrant("r2", "SELECT")}),
 			want: `role "r2" holds SELECT ON d2\.\*, which covers table t3, so a revoke on the table cannot take it: ` +
@@ -517,6 +644,10 @@ func TestValidate_HappyPath(t *testing.T) {
 		current *catalog.Database
 	}{
 		{name: "nothing wider", dialect: "mysql", desired: revokes("t3", "SELECT"), current: readHolding(nil)},
+		{
+			name: "a wider grant held by a role the role does not hold", dialect: "mysql", desired: revokes("t3", "SELECT"),
+			current: holding(readHolding([]catalog.Grant{databaseGrant("other", "SELECT")}), catalog.RoleMembership{Role: "r2", Member: "other"}),
+		},
 		{name: "a read that does not say", dialect: "mysql", desired: revokes("t3", "SELECT"), current: &catalog.Database{}},
 		{
 			name: "a revoke on the database", dialect: "mysql", current: covered,

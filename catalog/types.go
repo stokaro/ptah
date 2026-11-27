@@ -1910,8 +1910,11 @@ type WideAccess struct {
 	// MariaDB session applies one database-level row of all those its roles
 	// hold, so whether a grant on a database name pattern that Role holds
 	// reaches a member depends on the member's other rows: the read decides it
-	// for each role and states one entry per role it reaches. Every entry
-	// with a Schema has a Subject.
+	// for each role and states one entry per role it reaches. Every entry of
+	// a database-level row has a Subject. An entry of a grant on every
+	// database that holds on Schema alone, because a MySQL partial revoke
+	// takes it from another database the read describes, has none: it
+	// reaches every member of Role, as the grant does.
 	Subject string `json:"subject,omitempty"`
 	// SwitchOnly reports access Role holds only after it switches to the
 	// predefined role, which a PostgreSQL 16 membership with INHERIT FALSE

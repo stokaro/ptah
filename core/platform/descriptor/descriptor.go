@@ -96,8 +96,9 @@ type Dialect struct {
 	// TableRevokeTakesOnlyTableGrants reports that a REVOKE on a table takes
 	// only a privilege granted on that table, and that the engine refuses one
 	// of a privilege the grantee holds nowhere on the table. A grant on the
-	// table's database, on every table, or to PUBLIC keeps the privilege, and
-	// a REVOKE on the table cannot take it away.
+	// table's database or on every table, held by the grantee, by PUBLIC or by
+	// a role either holds, keeps the privilege, and a REVOKE on the table
+	// cannot take it away.
 	TableRevokeTakesOnlyTableGrants bool `json:"table_revoke_takes_only_table_grants,omitempty"`
 	// ColumnPrivilegeBySpelling reports that a privilege on a column, held
 	// through a role, serves only a statement that spells the column the way

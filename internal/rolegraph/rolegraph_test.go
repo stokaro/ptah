@@ -388,6 +388,17 @@ func TestForPlan_HappyPath(t *testing.T) {
 			want: peerEdges,
 		},
 		{
+			// A MariaDB login is named with its host, because a role there
+			// has none and may share the login's user name. The user alone is
+			// followed too, since that is how a MySQL login on host % reads.
+			name: "a routine definer named with its host",
+			database: described(func(database *catalog.Database) {
+				database.RoleMemberships = append(slices.Clone(graph), edge("group", "apart@%"))
+				database.Functions = []catalog.Function{{Name: "f", Definer: "apart@%"}}
+			}),
+			want: []catalog.RoleMembership{edge("apart_group", "apart"), edge("group", "apart@%"), edge("top", "group")},
+		},
+		{
 			name: "a policy target",
 			database: described(func(database *catalog.Database) {
 				database.RLSPolicies = []catalog.RLSPolicy{{ToRoles: "peer, PUBLIC"}}

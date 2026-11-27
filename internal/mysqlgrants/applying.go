@@ -74,8 +74,12 @@ const (
 // as written and folded, and a disagreement returns both: with
 // lower_case_table_names=1 the server stores the names folded and the two
 // orders agree, and no server with lower_case_table_names=2 was measured. With
-// [Options.LiteralDatabaseNames], every row that names the database applies
-// together, which no server was measured to order.
+// [Options.LiteralDatabaseNames], MySQL with RoleLookup keeps its rule, and a
+// pattern is a name holding `%` or `_` that reaches the database as
+// [Options.RoleRowReaches] says: of `X_Y` and `x_y` on the database x_y, a
+// session applies `X_Y` alone, measured on MySQL 8.4.13 and 26.10.0. With
+// AccountLookup every row that names the database applies together, which no
+// server was measured to order.
 //
 // The revoke refusal does not use this: it treats every row that matches as
 // one that may apply. That fails closed for a refusal, which must not plan a
@@ -85,10 +89,10 @@ func (o Options) ApplyingRows(lookup Lookup, database string, rows []string) []s
 	names := distinct(rows)
 	var applying []string
 	switch {
-	case o.LiteralDatabaseNames:
-		applying = o.matching(database, names)
 	case !o.MariaDB && lookup == RoleLookup:
 		applying = o.roleLookup(database, names)
+	case o.LiteralDatabaseNames:
+		applying = o.matching(database, names)
 	case o.MariaDB:
 		applying = ranked(o.matching(database, names), func(name string) (int, bool) {
 			magic, ok := mariaDBMagic(name)
@@ -114,7 +118,7 @@ func (o Options) roleLookup(database string, names []string) []string {
 			if mysqlname.NamesOf(o.FoldCase).Same(name, database) {
 				exact = append(exact, name)
 			}
-		case o.MatchesDatabase(name, database):
+		case o.RoleRowReaches(name, database):
 			patterns = append(patterns, name)
 		}
 	}

@@ -1,6 +1,7 @@
 package mysql_test
 
 import (
+	"cmp"
 	"context"
 	"database/sql/driver"
 	"errors"
@@ -306,6 +307,35 @@ func TestWriterDropAllTables_RejectsExternalStoredProgramsBeforeMutation(t *test
 					" `"+test.schema+"`.`"+test.object+"` may reference the cleanup realm",
 			)
 			c.Assert(recorder.statements(), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestWriterDropAllTables_LooksUpTheAccountByItsCompleteName asks
+// USER_PRIVILEGES for the account CURRENT_USER() names, split at its last @.
+// Measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9 and 12.3.3, an
+// account 'rvq@x'@'%' looked up as 'rvq'@'x@%' has no rows there, and one
+// whose user is o'k has none under the spelling QUOTE() writes.
+func TestWriterDropAllTables_LooksUpTheAccountByItsCompleteName(t *testing.T) {
+	tests := []struct {
+		name    string
+		current string
+		want    string
+	}{
+		{name: "an @ in the user name", current: "rvq@x@%", want: "'rvq@x'@'%'"},
+		{name: "an apostrophe in the user name", current: "o'k@%", want: "'o'k'@'%'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			recorder := &mysqlCleanupRecorder{foreignKeyChecks: 1, currentUser: test.current}
+			db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+			writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MySQL, "8.0.13")
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(recorder.privilegeGrantees, qt.DeepEquals, []driver.Value{test.want})
 		})
 	}
 }
@@ -991,6 +1021,8 @@ type mysqlCleanupRecorder struct {
 	viewQueryErr               error
 	storedProgramQueryErr      error
 	missingGlobalPrivileges    bool
+	currentUser                string
+	privilegeGrantees          []driver.Value
 	missingShowRoutine         bool
 	missingTrigger             bool
 	partialPrivilegeRevokes    bool
@@ -1017,7 +1049,14 @@ func (rec *mysqlCleanupRecorder) query(
 	args []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
 	switch {
+	case strings.Contains(query, "SELECT CURRENT_USER()"):
+		return dbtest.QueryResult{Columns: []string{"CURRENT_USER()"}, Rows: [][]driver.Value{{cmp.Or(rec.currentUser, "ptah@%")}}}, nil
 	case strings.Contains(query, "information_schema.user_privileges"):
+		rec.mu.Lock()
+		for _, arg := range args {
+			rec.privilegeGrantees = append(rec.privilegeGrantees, arg.Value)
+		}
+		rec.mu.Unlock()
 		hasSelect := int64(1)
 		hasDrop := int64(1)
 		hasAlter := int64(1)

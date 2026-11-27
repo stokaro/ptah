@@ -1050,9 +1050,9 @@ type createdGrants struct {
 // creates holds no grant on itself before a GRANT in the plan gives it one,
 // and the server refuses a revoke of a privilege the grantee does not hold
 // there: Error 1147 on MySQL and MariaDB, ORA-01927 on Oracle. Such a revoke
-// is left out. It is planned when a grant on the table's database, on every
-// table or to PUBLIC keeps the privilege, held or declared, or when the read
-// does not say whether one does. The server then answers for the role, where
+// is left out. It is planned when a grant on the table's database or on every
+// table keeps the privilege, held or declared, by the grantee, by PUBLIC or by
+// a role either holds, or when the read does not say whether one does. The server then answers for the role, where
 // a revoke left out would leave the privilege in place with a plan that reads
 // as synced.
 func (g createdGrants) needsRevoke(ref difftypes.GrantRef) bool {

@@ -281,6 +281,39 @@ func TestOnDatabase(t *testing.T) {
 			want:      false,
 		},
 		{
+			// Measured on MySQL 8.4.13 and 26.10.0: the account reads qabc
+			// with SET ROLE NONE and is refused it with its role active.
+			name: "with a role granted on MySQL, a row only the account's lookup applies",
+			lines: []string{
+				"GRANT SELECT ON `qa\\bc`.* TO `a`@`%`",
+				"GRANT `r`@`%` TO `a`@`%`",
+			},
+			database:  "qabc",
+			privilege: "SELECT",
+			want:      false,
+		},
+		{
+			name:      "without a role granted, a row the account's lookup applies",
+			lines:     []string{"GRANT SELECT ON `qa\\bc`.* TO `a`@`%`"},
+			database:  "qabc",
+			privilege: "SELECT",
+			want:      true,
+		},
+		{
+			// Measured on MySQL 8.4.13 and 26.10.0 with partial_revokes ON:
+			// an account holding the row itself does not read x_y, and a role
+			// holding it does.
+			name: "with partial_revokes on and a role granted, a row only the role's lookup applies",
+			lines: []string{
+				"GRANT SELECT ON `X_Y`.* TO `a`@`%`",
+				"GRANT `r`@`%` TO `a`@`%`",
+			},
+			options:   mysqlgrants.Options{LiteralDatabaseNames: true},
+			database:  "x_y",
+			privilege: "SELECT",
+			want:      false,
+		},
+		{
 			name:      "with partial_revokes on, a wildcard is an ordinary character",
 			lines:     []string{"GRANT TRIGGER ON `f%`.* TO `a`@`%`"},
 			options:   mysqlgrants.Options{LiteralDatabaseNames: true},

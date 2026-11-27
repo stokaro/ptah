@@ -1194,6 +1194,12 @@ Where a grant applies decides what it proves:
 - **A role counts while it is active**, through `SET DEFAULT ROLE` or
   `activate_all_roles_on_login`. Connections do not run `SET ROLE`, so a role that is
   granted and not set holds nothing here.
+- **An active role changes which row applies on MySQL.** With a role active, a name
+  with no `%` or `_` matches byte for byte, so ``GRANT SELECT ON `qa\bc`.*`` reaches
+  `qabc` only without one, and with `partial_revokes` on ``GRANT SELECT ON `X_Y`.*``
+  reaches `x_y` only with one. SHOW GRANTS does not say whether a granted role is
+  active, so while one is granted Ptah counts a row only where both lookups apply it.
+  Measured on 8.4.13 and 26.10.0.
 - **`ALL PRIVILEGES` on the database** shows everything on MariaDB 11.4 and newer. On
   MySQL and on MariaDB 10.11 it lists every routine and shows the body only of the
   account's own, as `EXECUTE`, `ALTER ROUTINE` and `CREATE ROUTINE` on the database do:
@@ -1491,6 +1497,54 @@ The role's exact name is kept, including an `@`, apostrophe or backslash.
 This applies to database, table and column privileges and grants on database
 name patterns.
 
+The role reader applies the same rule to roles and memberships. A role is the
+account `CREATE ROLE` makes: on MySQL an account on host `%` that cannot log
+in, and on MariaDB an account marked as a role, which has no host. A MySQL
+account on another host, such as `reader@localhost`, is not the role `reader`
+even when it cannot log in, and the reader does not describe it as a role.
+
+Each end of a membership is named the way ``GRANT `r` TO `name` `` names it:
+the user alone for an account on host `%`, and `user@host` for any other host.
+On MariaDB that statement grants to a role of that name where one exists, so a
+login on `%` that shares a role's name reads as `name@%`. When a role holds a
+MySQL role on another host, the privileges that second role passes on were not
+read, and `ptah schema security` reports the reach rules skipped rather than
+measure the member short.
+
+On MariaDB, `PUBLIC` is the grantee every account holds, and a role granted to
+it is held by every account too. A grant to `PUBLIC` leaves a `PUBLIC` row in
+the account tables, and the row stays after the grant is revoked. Ptah never
+reads that row as a role, since `CREATE ROLE PUBLIC` is refused with ERROR
+1959, so `ptah db read` and `ptah migrations checkpoint` print the grants to
+`PUBLIC` and no `CREATE ROLE` for it.
+
+On MySQL, a role named in `mandatory_roles` is granted to every account, and
+every account may make it active with `SET ROLE`. The read records it as held
+by `PUBLIC`, so `ptah schema security` counts its access for every account.
+`ptah db read` prints the role and its grants, and no membership for it: the
+server refuses to grant a mandatory role to another role (ERROR 4027) or to
+revoke it (ERROR 3628). A MySQL role may be named `PUBLIC`; beside a mandatory
+role, the read records no such membership and the reach rules report
+themselves skipped.
+
+The mandatory-role read also works when the connection sets
+`default_collation_for_utf8mb4=utf8mb4_general_ci`. It keeps user names distinct
+by case and preserves the host spelling in the server setting. Use the stored
+account's host spelling in `mandatory_roles`: MySQL can find `reader@localhost`
+as `reader@LOCALHOST` yet activate it without the stored account's privileges.
+A login named in the setting is also recorded as a mandatory account; an
+account that does not exist is not recorded.
+
+Each role is read with the grants it holds itself, the ones `SHOW GRANTS FOR`
+lists under its name, and not with what it holds through the roles granted to
+it. On MariaDB the privilege views of `information_schema` list both under the
+member, so Ptah reads the grants on databases, tables and columns from
+`mysql.db`, `mysql.tables_priv` and `mysql.columns_priv` there. A grant the
+schema declares for a role that holds it only through another role is then
+planned, and a `REVOKE` of one is refused, since the server would refuse it
+with ERROR 1141 or ERROR 1147. MySQL's views list a role's own grants, and
+Ptah reads them there.
+
 MySQL role and grantee names with leading or trailing white space are refused
 before a schema is compared or rendered. MySQL normalizes this white space in
 principal references, so use the unpadded name stored by the server. The same
@@ -1508,9 +1562,10 @@ grants as a comparison limit instead of claiming the schemas are fully synced.
 Native `schema diff --format json` includes these limits in `comparison_limits`.
 An account that compares grants needs `SELECT` on `mysql.*`. Separate `SELECT`
 grants on `mysql.user`, `mysql.db`, `mysql.tables_priv` and `mysql.columns_priv`
-do not suffice: the `information_schema` privilege views still hide other
-grantees. Ptah checks the connecting account's grants before treating these
-views as complete, for a database URL and for a URL naming no database.
+do not suffice: on MySQL the `information_schema` privilege views still hide
+other grantees, and Ptah asks for the same grant on MariaDB. Ptah checks the
+connecting account's grants before treating the read as complete, for a
+database URL and for a URL naming no database.
 
 When the grant read is incomplete, a declared `REVOKE` remains in the plan,
 including a revoke on an existing table. The server then decides whether it
@@ -1603,6 +1658,26 @@ Ptah refuses a declared revoke on a table, existing or created, that such a
 grant keeps, and names the grant: revoke it where it was granted, or grant the
 privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
+With `partial_revokes` on, `REVOKE SELECT ON d2.* FROM r` from a role holding
+`SELECT ON *.*` keeps the global grant and takes the privilege away on `d2`
+alone. MySQL records the revoke in `mysql.user`, where Ptah reads it, so the
+grant on every database keeps nothing on a table of `d2`: a revoke on such a
+table is planned, and the reach does not count `d2`. Measured on 8.4.13 and
+26.10.0: a session with `r` active, or with a member of `r` active, is refused
+every table of `d2` and reads every other database. A partial revoke takes the
+privilege from the role's own grant alone, so a session with another role
+active that holds `SELECT ON *.*` still reads `d2`.
+
+The role also keeps what a role it is a member of holds, at any depth, and what
+`PUBLIC` or a role granted to `PUBLIC` holds, which on MySQL includes the roles
+in `mandatory_roles`. So the refusal counts those grants too, a grant on the
+table itself among them, and names the role that holds the grant. A membership
+the schema declares counts before the server holds it, and one the plan removes
+still counts. Measured on 8.4.13: with
+`parent` holding ``SELECT ON `gc%`.*`` and granted to `member`, `REVOKE SELECT
+ON gcdb.t1 FROM member` succeeds and a session with `member` active still
+reads `t1`.
+
 [`ptah schema security`](../../schema/security/#measure-how-much-of-the-database-a-role-reaches)
 counts these grants toward a role's reach, and the finding names a pattern
 grant. The server applies one database-level row of all those that reach the
@@ -1629,7 +1704,12 @@ would carry out. Measured on 8.4.13 and 11.8.9.
 Case counts on a server with `lower_case_table_names=0` and does not on one
 that folds names, so a grant on `` `D%` `` reaches no table of `d1` there.
 MySQL with `partial_revokes` on reads `%` and `_` as the characters themselves,
-so a pattern grant reaches no other database, and Ptah reports none. Where
+so a pattern grant reaches no other database. Through a role, a name holding
+them still reaches the database it names in another case, where
+`lower_case_table_names` is `0`: ``SELECT ON `X_Y`.*`` reaches `x_y` and not
+`xay`, while ``SELECT ON `XY`.*`` reaches no `xy`, and an account holding the
+row itself reads neither. Ptah counts such a row and refuses a revoke on a table
+it keeps. Measured on 8.4.13 and 26.10.0. Where
 several database rows match, the server applies one of them, but a shadowed
 pattern's privilege applies again once the row that shadows it is gone. So Ptah
 counts every row that matches, and refuses a revoke on a table such a pattern

@@ -38,7 +38,7 @@ func TestReadRolesMarksNonAuthenticatingPasswordsAbsent(t *testing.T) {
 		},
 		{
 			name:          "MySQL empty authentication data",
-			wantPredicate: "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = ''",
+			wantPredicate: "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = '' AND host = '%'",
 		},
 	}
 
@@ -113,7 +113,7 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(t, refusingMySQLCatalog(test.refused))
+			db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants, refusingMySQLCatalog(test.refused)))
 			reader := NewMySQLReader(db.SQL, "app")
 
 			schema := &catalog.Database{}
