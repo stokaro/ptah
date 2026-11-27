@@ -445,9 +445,136 @@ proven to stay inside the disposable realm:
   body, and refuses the `CREATE` or `ALTER` that writes one of these refusals
   into a body. A statement that names only other accounts gets the answer its
   realm gives it.
-- SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
-  alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
-  `RESTORE`, and server-level maintenance statements.
+- SQL Server `EXEC`/`EXECUTE`, `SETUSER` in every form,
+  procedure/function/trigger creation or alteration, synonym/external-table
+  creation, `BULK INSERT`, `BACKUP`, `RESTORE`, and server-level maintenance
+  statements. T-SQL has no DDL to
+  rename an object or to drop a default the server named, so Ptah writes an
+  `EXEC` for each, and the guard accepts those in the shape the SQL Server
+  renderer writes them and in no other. A rename is
+  `EXEC sp_rename N'[dbo].[users].[email]', N'mail', N'COLUMN';`: each part of
+  the name in brackets, every argument an `N'...'` literal, and the type
+  `COLUMN`, `INDEX`, `OBJECT` or none. The others are the batches that
+  [drop or replace a column's default](../../databases/sqlserver/#column-defaults).
+  A rename is refused when its name reaches another database, when it names a
+  temporary table, and when its type is another one, such as `DATABASE`. So is
+  the procedure under another name, such as `sys.sp_rename` or
+  `otherdb..sp_rename`, which runs in that database, and an argument built
+  when the statement runs, such as a variable or a concatenation. A
+  replacement is refused when the new default is more than one expression,
+  and its `ALTER TABLE ... ADD DEFAULT` is judged as the same statement
+  written on its own.
+
+  T-SQL needs no semicolon between two statements, so the guard reads a batch
+  into the statements the server runs from it, ending each where the server
+  does, and judges every one: `ALTER TABLE t ADD DEFAULT 0 FOR c DROP DATABASE
+  other` is two statements, and the `DROP DATABASE` is refused. So is the one
+  in `DELETE FROM t OUTPUT deleted.* DROP DATABASE other`, where the asterisk
+  ends the `DELETE`, and in `SELECT @ DROP DATABASE other`, where a bare `@`
+  is a variable. It also judges the statement an `IF`, `ELSE` or `WHILE` runs,
+  the statements of a `BEGIN ... END` block and of `TRY` and `CATCH`, and the
+  `EXEC` whose rows an `INSERT` stores. A procedure named with no `EXEC`, such
+  as `sp_executesql N'...'` or `xp_cmdshell 'dir'` as the first statement of a
+  batch, runs as `EXEC` of that name and is judged as one. An `EXEC` of one
+  constant literal, such as the `EXEC('CREATE SCHEMA [app]')` the renderer
+  writes under `IF SCHEMA_ID('app') IS NULL`, is judged as the batch the
+  literal holds, eight levels deep at most. The server converts a literal
+  without the `N` prefix to the database's code page first, so such a literal
+  that holds a character outside ASCII is judged as any other `EXEC`.
+
+  Without trust, the guard refuses these statements wherever they stand,
+  including in a block, after an `IF` and in a constant `EXEC`:
+
+  - A name of another database that the dev session reaches. The guard reads
+    the names a statement writes as identifiers: the target of a write, a
+    table a query reads, the body of a view, function, procedure or trigger,
+    `NEXT VALUE FOR`, `CREATE STATISTICS` and `UPDATE STATISTICS`,
+    `WRITETEXT`, `UPDATETEXT` and `READTEXT`, `OUTPUT ... INTO`,
+    `REFERENCES`, and the procedure an `EXEC` runs. Reads count:
+    `INSERT INTO dbo.t SELECT id FROM other.dbo.t` is refused, and only trust
+    lets a run read another database. In a name of three parts or more, the
+    third part from the end can name a database, so `other..t` is the table
+    `t` in `other`. A part before it names a server, or the database of the
+    column in `WRITETEXT other.dbo.t.c`, and a name with such a part is always
+    refused.
+
+    The guard reads the dev database's name from the dev session with
+    `DB_NAME()`. A database part that is empty, or spelled exactly as the dev
+    database, is local, so `[dev].dbo.t` and `dev..t` pass. For any other
+    database part, the guard asks the dev session `HAS_DBACCESS` with that
+    name, once per name in a run. An answer of 1 means the session reaches a
+    database of that name, and the name is refused. An answer of 0 or `NULL`
+    means it reaches none, so the server reads the name as a column, or a
+    method called on one, and it passes. That covers
+    `SELECT p.geo.STAsText() FROM dbo.places AS p`, `t.doc.nodes('/a')`,
+    `n.c.value('.', 'int')`, a computed column `area AS g.geo.STArea()`, a
+    check `CHECK (g.geo.STIsValid() = 1)` and `SELECT dbo.t.c FROM dbo.t`. The
+    guard does not decide by the alias or by a following parenthesis, because
+    both mislead: `SELECT o.dbo.f() FROM dbo.x AS o` runs the function `f` of
+    the database `o`. `HAS_DBACCESS` answers for a database the login cannot
+    list: under `DENY VIEW ANY DATABASE`, `DB_ID` returns `NULL` and
+    `sys.databases` leaves out a database the login is mapped into, and
+    `HAS_DBACCESS` still answers 1. `master.sys.databases` and
+    `tempdb.sys.objects` are reads of another database, since every login
+    reaches `master` and `tempdb`, and are refused. `DEV.dbo.t` is refused
+    even where the collation ignores case: the session reaches `DEV`, and no
+    fold the guard could apply matches every collation. A trusted run asks no
+    question.
+
+    The answers hold for the run's own statements, in whatever order a
+    command asks: `migrations validate` asks before each file and runs that
+    file before it asks about the next. Without trust the guard refuses
+    each statement that could make another database reachable: `EXECUTE AS`
+    and `SETUSER` in every form, a bare `SETUSER` that goes back included,
+    `CREATE DATABASE`, and `EXEC`. It refuses a user or a role created,
+    altered or dropped, `ALTER AUTHORIZATION` and `ALTER DATABASE` always,
+    and the cleanup refuses a dev database that holds a user other than the
+    run's own.
+
+    Another session on the same server can change an answer after the guard
+    asked about a name. It can create a database or map the login into one,
+    release a database it holds in single-user mode, bring an `OFFLINE`
+    database back online, or move one from `RESTRICTED_USER` to
+    `MULTI_USER`. The guard keeps the answer it read, that the run does not
+    reach the database, for the rest of the run, and accepts a later
+    statement that names it.
+
+    T-SQL lets `@`, `#` and `$` follow the first character of a name, so the
+    server reads `x@.dbo.t` as the table `t` in the database `x@`, and the
+    guard reads it the same way. The guard does not know which words are
+    reserved, so in `FROM .dev.dbo.t`, with the server part left out, it reads
+    `FROM` as part of the name and refuses it. A name the statement holds in a
+    string, as `OBJECT_ID(N'other.dbo.t')` does, is not read.
+  - `DBCC CHECKIDENT`, `CHECKTABLE` and `CHECKCONSTRAINTS` on a table of
+    another database. The server reads their first argument as a table name
+    in any quoting: `'other.dbo.t'`, `N'other.dbo.t'`, `"other.dbo.t"` and
+    `[other.dbo.t]` all name the table `t` in `other`. The guard reads that
+    name with the rule above, so `DBCC CHECKIDENT ('dbo.items', RESEED, 1)`
+    after seed data passes. A first argument that is not a constant name,
+    such as a variable or an expression, is refused. `DBCC CHECKCONSTRAINTS`
+    with no table checks the dev database and passes. Every other `DBCC` acts
+    on the server and is refused with trust or without it.
+  - A function that reads a file on the server or a remote source:
+    `OPENROWSET`, `OPENDATASOURCE`, `OPENQUERY`,
+    `sys.dm_os_enumerate_filesystem`, `sys.dm_os_file_exists`,
+    `sys.fn_get_audit_file`, `sys.fn_get_audit_file_v2`,
+    `sys.fn_xe_file_target_read_file`, `sys.fn_trace_gettable` and
+    `sys.fn_dump_dblog`, under any spelling of the name. The procedures that
+    read the file system, such as `xp_dirtree`, `xp_fileexist` and
+    `xp_subdirs`, are refused as every `EXEC` is.
+  - `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`.
+
+  Text whose statement boundaries the guard cannot find is refused, with trust
+  or without it. The refusal gives the offset and says how to rewrite the
+  text: end each statement with a semicolon, and put the statements an `IF`,
+  a `WHILE` or a block runs between `BEGIN` and `END`. The guard cannot find
+  the boundaries at an `END` that closes no `BEGIN`, a number written against
+  a word, as in `0x1GRANT`, a character the server reads as whitespace and the
+  guard's lexer does not, such as U+200B, and a currency sign such as `£`,
+  which the server reads as the start of a money constant (`£1` is 1.0000).
+  Nor can it inside a `MERGE`, which ends only at the semicolon the server
+  requires: a statement word before that semicolon is refused, except the
+  `DELETE`, `INSERT`, `SET` and `UPDATE` of its `WHEN` clauses.
 - ClickHouse remote, distributed, replicated, and unknown table engines,
   external dictionary sources, `FREEZE`/`UNFREEZE`, and `SYSTEM` statements but
   `SYSTEM STOP MERGES` and `SYSTEM START MERGES` of one table in the dev
@@ -803,9 +930,13 @@ accepts:
   table is not seen (stokaro/ptah#6705). The official MySQL and MariaDB images
   enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
   refused;
-- on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
-  logins, credentials, synonyms, a target in another database, `BACKUP`,
-  `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
+- on SQL Server, `EXEC`, `SETUSER`, functions, procedures and DML triggers,
+  databases, logins, credentials, synonyms, a name of another database the dev session
+  reaches, reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and
+  `CHECKCONSTRAINTS` on a table of another database or one not named as a
+  constant,
+  `BACKUP`, `RESTORE`, `BULK INSERT`, the functions that read a file on the
+  server or a remote source, and `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`;
 - on ClickHouse, SQL functions, databases, users, roles, row policies, named
   collections, `GRANT`, `REVOKE`, `ON CLUSTER`, writes to another database or
   through a table function, any table engine, dictionary sources, `BACKUP`,

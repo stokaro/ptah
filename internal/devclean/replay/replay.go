@@ -177,20 +177,23 @@ type Refusal struct {
 	// Remedy says how the author can rewrite the statement so that the guard
 	// accepts it, and is empty where the guard has nothing to suggest.
 	Remedy string
+	// Reason says why the guard refuses the statement. Empty, the reason is
+	// that its effects cannot be confined to the dev database realm.
+	Reason string
 }
 
 // Is reports whether target is [ErrRefused].
 func (e *Refusal) Is(target error) bool { return target == ErrRefused }
 
 func (e *Refusal) Error() string {
-	var refusal string
+	refuses, reason := "migration replay rejects", "its effects cannot be confined to the disposable database realm"
 	if e.Baseline {
-		refusal = fmt.Sprintf("%s rehearsal baseline refuses %s because its effects cannot be confined to the dev database realm",
-			e.Dialect, e.Operation)
-	} else {
-		refusal = fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
-			e.Dialect, e.Operation)
+		refuses, reason = "rehearsal baseline refuses", "its effects cannot be confined to the dev database realm"
 	}
+	if e.Reason != "" {
+		reason = e.Reason
+	}
+	refusal := fmt.Sprintf("%s %s %s because %s", e.Dialect, refuses, e.Operation, reason)
 	if e.Remedy == "" {
 		return refusal
 	}
