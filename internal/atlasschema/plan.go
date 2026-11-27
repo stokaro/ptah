@@ -444,6 +444,10 @@ func PreparePlanFileReportingUndecided(
 	if name == "" {
 		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
+	roundings, err := planRoundings(computation.roundings, conn.Info().Dialect, computation.executedSQL())
+	if err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, err
+	}
 
 	return PlanFile{
 		Provider:         binding,
@@ -459,7 +463,7 @@ func PreparePlanFileReportingUndecided(
 		PlacedSchema:     computation.naming.schema,
 		ManagedRows:      computation.rowSets,
 		RowsFingerprint:  rowsFingerprint,
-		Roundings:        planRoundings(computation.roundings),
+		Roundings:        roundings,
 		Destructive:      destructive,
 		Statements:       statements,
 		Annotations:      computation.executionAnnotations(),
@@ -1166,6 +1170,9 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 // refuseRoundedValues reads the rows of the plan's Roundings again, and
 // refuses the plan while one holds a value its type change would alter.
 func (p PlanFile) refuseRoundedValues(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if err := validateTargetPlanRoundings(p, conn); err != nil {
+		return err
+	}
 	if err := roundingscan.Refuse(ctx, conn, roundingChanges(p.Roundings), ""); err != nil {
 		return fmt.Errorf("%w. The plan found no such value when it read the table; compute it again, with the request "+
 			"to round them if they should change", err)
@@ -1292,18 +1299,29 @@ type PlanRounding struct {
 	Temporal bool `json:"temporal,omitempty"`
 }
 
-func planRoundings(changes []roundingscan.Change) []PlanRounding {
+// planRoundings records only freshly rendered statements. A comparison may
+// resolve a type alias through a session setting; the saved scan must instead
+// use the spelling the ALTER applies. Decoding never repairs a saved record.
+func planRoundings(changes []roundingscan.Change, dialect string, statements []string) ([]PlanRounding, error) {
 	if len(changes) == 0 {
-		return nil
+		return nil, nil
 	}
 	recorded := make([]PlanRounding, len(changes))
 	for i, change := range changes {
+		target, err := roundingscan.StatementType(dialect, statements, change)
+		if err != nil {
+			return nil, fmt.Errorf("record plan rounding %d: %w", i+1, err)
+		}
+		change.DeclaredType = target
+		if err := roundingscan.Check(dialect, change); err != nil {
+			return nil, fmt.Errorf("record plan rounding %d: %w", i+1, err)
+		}
 		recorded[i] = PlanRounding{
 			Table: change.Table, Column: change.Column, HeldType: change.HeldType, DeclaredType: change.DeclaredType,
 			Temporal: change.Temporal,
 		}
 	}
-	return recorded
+	return recorded, nil
 }
 
 func roundingChanges(recorded []PlanRounding) []roundingscan.Change {
@@ -1321,23 +1339,29 @@ func roundingChanges(recorded []PlanRounding) []roundingscan.Change {
 // could not have written. The scan builds SQL from each record and runs it
 // before the plan is shown for approval, on --dry-run too, so a record is held
 // to the type grammar, to a change that keeps fewer digits on the plan's
-// dialect ([roundingscan.Check]), and to a column and table a statement of the
-// plan names. Anyone can edit a plan file; without this a record could carry
-// SQL of its own into that scan, or read a column the plan leaves alone.
+// dialect ([roundingscan.Check]), and to the type its ALTER TABLE applies.
+// Anyone can edit a plan file; without this a record could carry SQL of its
+// own into that scan, read a column the plan leaves alone, or check a type
+// that preserves more digits than the statement does.
 func validatePlanRoundings(plan PlanFile) error {
 	for i, rounding := range plan.Roundings {
 		change := roundingChanges([]PlanRounding{rounding})[0]
 		if err := roundingscan.Check(plan.Dialect, change); err != nil {
 			return fmt.Errorf("plan rounding %d is not a change the plan records: %w", i+1, err)
 		}
-		if !slices.ContainsFunc(plan.Statements, func(statement PlanStatement) bool {
-			return roundingscan.Names(plan.Dialect, statement.SQL, change)
-		}) {
-			return fmt.Errorf("plan rounding %d is not a change the plan records: no statement of the plan names "+
-				"column %q of table %q", i+1, rounding.Column, rounding.Table)
+		if err := roundingscan.CheckStatements(plan.Dialect, plan.StatementSQL(), change); err != nil {
+			return fmt.Errorf("plan rounding %d is not a change the plan records: %w", i+1, err)
 		}
 	}
 	return nil
+}
+
+// validateTargetPlanRoundings supplies the dialect an Atlas-format plan omits.
+func validateTargetPlanRoundings(plan PlanFile, conn *dbschema.DatabaseConnection) error {
+	if plan.Dialect == "" && conn != nil {
+		plan.Dialect = conn.Info().Dialect
+	}
+	return validatePlanRoundings(plan)
 }
 
 func validatePlanFile(plan PlanFile) error {

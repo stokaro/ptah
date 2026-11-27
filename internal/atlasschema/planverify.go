@@ -350,7 +350,8 @@ func ReviewPlanRoundings(
 		Exclude: plan.Exclude,
 		Policy:  policy,
 		naming:  naming,
-		// The statements are the plan's own; only the type changes are read.
+		// Render the desired changes to read their target type spellings.
+		// Execution still uses the saved plan's statements.
 		roundingsOnly: true,
 	})
 	if refusal, refused := errors.AsType[*planrefusal.RoundedValuesError](err); refused {
@@ -359,7 +360,13 @@ func ReviewPlanRoundings(
 	if err != nil {
 		return PlanFile{}, fmt.Errorf("read the type changes of the plan: %w", err)
 	}
-	plan.Roundings = planRoundings(computation.roundings)
+	plan.Roundings, err = planRoundings(computation.roundings, conn.Info().Dialect, computation.executedSQL())
+	if err != nil {
+		return PlanFile{}, err
+	}
+	if err := validateTargetPlanRoundings(plan, conn); err != nil {
+		return PlanFile{}, err
+	}
 	return plan, nil
 }
 

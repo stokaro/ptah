@@ -3,6 +3,7 @@
 package valuerounding_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -113,6 +114,67 @@ func TestSavedPlanRunsWhenNoRowCameToHoldDigitsLive(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(read(c, target, "SELECT string_agg(amount::text, ',' ORDER BY id) FROM prices"), qt.Equals, "1234.5,1.5")
+}
+
+// A caller can hold and edit a plan without decoding it from a file. Both
+// execution entry points must compare the recorded type with the ALTER before
+// a scan can incorrectly report that the newly written row fits.
+func TestSavedPlanRefusesAnEditedRoundingTypeLive(t *testing.T) {
+	c := qt.New(t)
+	target := postgresServer.scratch(c, "CREATE TABLE prices (id int PRIMARY KEY, amount numeric(8,3))",
+		"INSERT INTO prices VALUES (4, 1.5)")
+	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	runtime := must.Must(builtin.New())
+	plan, err := atlasschema.PreparePlanFile(c.Context(), conn, atlasschema.PlanFileOptions{
+		Desired: lowerScale(), Runtime: runtime,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Roundings, qt.HasLen, 1)
+	plan.Roundings[0].DeclaredType = "numeric(8,2)"
+	run(c, target, "INSERT INTO prices VALUES (2, 1234.550)")
+
+	verifyErr := atlasschema.VerifyPlanTarget(c.Context(), conn, plan, runtime)
+	executeErr := plan.Execute(c.Context(), conn, migrator.MigrationTxModeFile)
+	execution, captureErr := plan.ExecutionPlan(c.Context(), conn, runtime)
+
+	c.Assert(verifyErr, qt.ErrorMatches, `plan rounding 1 is not a change the plan records: .*declared type .* differs from the statement's type .*`)
+	c.Assert(executeErr, qt.ErrorMatches, `plan rounding 1 is not a change the plan records: .*declared type .* differs from the statement's type .*`)
+	c.Assert(captureErr, qt.ErrorMatches, `plan rounding 1 is not a change the plan records: .*declared type .* differs from the statement's type .*`)
+	c.Assert(execution.HasChanges(), qt.IsFalse)
+	c.Assert(read(c, target, "SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'prices'::regclass AND attname = 'amount'"), qt.Equals, "numeric(8,3)")
+	c.Assert(read(c, target, "SELECT string_agg(amount::text, ',' ORDER BY id) FROM prices"), qt.Equals, "1234.550,1.500")
+}
+
+// CockroachDB compares bare INT as the width its session chooses, but renders
+// INT itself. A generated file must scan that rendered spelling and survive
+// decoding and execution without treating int8 as a globally equivalent alias.
+func TestSavedPlanKeepsTheRenderedIntegerTypeCockroachLive(t *testing.T) {
+	c := qt.New(t)
+	engine := engineNamed(c, "cockroachdb")
+	target := engine.server.scratch(c, "CREATE TABLE prices (id int PRIMARY KEY, amount numeric(8,3))",
+		"INSERT INTO prices VALUES (4, 1.000)")
+	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	desired := lowerScale()
+	desired.Fields[1].Type = "INT"
+	plan, err := atlasschema.PreparePlanFile(c.Context(), conn, atlasschema.PlanFileOptions{
+		Desired: desired, Runtime: must.Must(builtin.New()),
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Roundings, qt.HasLen, 1)
+	c.Assert(plan.Roundings[0].DeclaredType, qt.Equals, "INT")
+	contents, err := json.Marshal(plan)
+	c.Assert(err, qt.IsNil)
+
+	decoded, _, err := atlasschema.DecodePlanFile(contents, "integer.plan.json")
+	c.Assert(err, qt.IsNil)
+	err = decoded.Execute(c.Context(), conn, migrator.MigrationTxModeFile)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(read(c, target, "SELECT amount::text FROM prices"), qt.Equals, "1")
 }
 
 // editedSQL is the SQL of plan with its type spelled in capitals: an edit of the
