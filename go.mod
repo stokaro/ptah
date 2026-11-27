@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.48.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.22
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.84.1
-	github.com/aws/smithy-go v1.28.10
+	github.com/aws/smithy-go v1.28.11
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-extras/go-kit v1.2.0
