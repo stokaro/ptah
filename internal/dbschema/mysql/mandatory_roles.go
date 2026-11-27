@@ -5,13 +5,42 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/internal/mysqlgrants"
 	"ptah.run/internal/mysqlstored"
 )
+
+// mandatoryRoles is what a read established about MySQL's mandatory_roles.
+type mandatoryRoles struct {
+	// memberships are PUBLIC's memberships in the roles the setting names,
+	// each role named as a membership names it.
+	memberships []catalog.RoleMembership
+	// read is false where the read could not establish which roles the
+	// setting names.
+	read bool
+}
+
+// addTo adds the memberships of PUBLIC in the mandatory roles to schema's
+// memberships, and records in schema whether every account then holds roles
+// whose memberships the read does not state: where the mandatory roles were
+// not read, and where a MySQL role is named PUBLIC
+// ([catalog.Database.PublicIsRole]). That role's described memberships list
+// it as a member, so a membership of PUBLIC is the role's, and none is left to
+// state what every account holds: `ptah db read` would print GRANT of each
+// mandatory role to the role, and a comparison would hold it. The memberships
+// are then left as they are.
+func (m mandatoryRoles) addTo(schema *catalog.Database) {
+	switch {
+	case !m.read:
+		schema.EveryAccountHoldsUnread = true
+	case schema.PublicIsRole:
+		schema.EveryAccountHoldsUnread = len(m.memberships) > 0
+	default:
+		schema.RoleMemberships = append(schema.RoleMemberships, m.memberships...)
+	}
+}
 
 // readMandatoryRoles reports each account MySQL's mandatory_roles names as
 // held by PUBLIC, every account's grantee. A mandatory role can be activated
@@ -23,20 +52,25 @@ import (
 // and checking mysql.user avoids that view without changing the session.
 // The parser follows the server's account-list grammar, including its change
 // to double-quoted lists in MySQL 9.7.
-func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Names) ([]catalog.RoleMembership, error) {
+//
+// A setting, a version or an account the read cannot read leaves the
+// mandatory roles unread rather than failing the read, and the security
+// analysis then says it cannot measure a role's reach. A cancellation still
+// fails it.
+func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Names) (mandatoryRoles, error) {
 	if names.MariaDB {
-		return nil, nil
+		return mandatoryRoles{read: true}, nil
 	}
 	var value, version string
 	if err := r.db.QueryRowContext(ctx, "SELECT @@GLOBAL.mandatory_roles, VERSION()").Scan(&value, &version); err != nil {
-		return nil, err
+		return mandatoryRoles{}, ctx.Err()
 	}
 	if value == "" {
-		return nil, nil
+		return mandatoryRoles{read: true}, nil
 	}
 	versionID := mysqlstored.VersionID(version)
 	if versionID == 0 {
-		return nil, fmt.Errorf("cannot read mandatory roles for unrecognized MySQL version %q", version)
+		return mandatoryRoles{}, nil
 	}
 	// MySQL keeps the first occurrence with equal user bytes and equal host
 	// byte lengths whose hosts compare without case. The stored host supplies
@@ -53,21 +87,29 @@ func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Name
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return mandatoryRoles{}, ctx.Err()
 		}
 		key := accountKey{user: role.User, storedHost: storedHost, hostBytes: len(role.Host)}
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		name, err := names.Name(role)
-		if err != nil {
-			return nil, err
+		// The account the server makes active is the setting's spelling, and
+		// it holds the stored account's privileges only where the hosts match
+		// byte for byte. Measured on MySQL 8.4.13 and 26.10.0 with the role
+		// 'mloc'@'localhost' reading a table: `mloc`@LOCALHOST makes
+		// `mloc`@`LOCALHOST` active, and a login with it active is refused the
+		// table with Error 1142. With `mh`@`K`, `mh`@`k` the server keeps
+		// the first spelling alone, and the login is refused the table of
+		// 'mh'@'k' the same way. Such an account holds nothing, so PUBLIC is
+		// not recorded holding it.
+		if storedHost != role.Host {
+			continue
 		}
-		memberships = append(memberships, catalog.RoleMembership{Role: name, Member: publicGrantee})
+		memberships = append(memberships, catalog.RoleMembership{Role: names.Name(role), Member: publicGrantee})
 	}
 	slices.SortFunc(memberships, func(a, b catalog.RoleMembership) int { return cmp.Compare(a.Role, b.Role) })
-	return memberships, nil
+	return mandatoryRoles{memberships: memberships, read: true}, nil
 }
 
 // mandatoryRoleHost finds the account as MySQL's mandatory-role cache does:

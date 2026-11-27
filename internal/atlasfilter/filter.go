@@ -183,6 +183,7 @@ func excludeDatabase(
 	filtered.UnmodeledObjects = state.filterUnmodeledObjects(filtered.UnmodeledObjects)
 	state.noteRemovalBlockers(filtered.RemovalBlockers)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
+	state.noteUnreadRoles(filtered.UnreadRoles)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
 	protectSchemaContents(schema, filtered, defaultSchema)
@@ -1214,6 +1215,17 @@ func (s *exclusionState) filterSequences(sequences []catalog.Sequence) []catalog
 func (s *exclusionState) noteRolesOutOfScope(roles []catalog.Role) {
 	for _, role := range roles {
 		s.matches("role", role.Name)
+	}
+}
+
+// noteUnreadRoles asks the patterns about the principals whose privileges the
+// read did not read. They are cloned but never filtered, for the reason
+// [noteRolesOutOfScope] gives: they are not part of the description, and a
+// role that holds one holds privileges the read does not state whatever a
+// filter keeps.
+func (s *exclusionState) noteUnreadRoles(roles []string) {
+	for _, role := range roles {
+		s.matches("role", role)
 	}
 }
 
@@ -2421,6 +2433,13 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// absent. See stokaro/ptah#1267.
 		RolesOutOfScope:       slices.Clone(schema.RolesOutOfScope),
 		RolesOutOfScopeReason: schema.RolesOutOfScopeReason,
+		// What PUBLIC names, and which principals the read did not read, are
+		// facts about the server. Dropping them would read a MySQL role named
+		// PUBLIC as every account, and measure the reach of a role that holds
+		// privileges the read does not state.
+		PublicIsRole:            schema.PublicIsRole,
+		UnreadRoles:             slices.Clone(schema.UnreadRoles),
+		EveryAccountHoldsUnread: schema.EveryAccountHoldsUnread,
 		// Filtering narrows what a description contains; it does not widen what
 		// the description claimed to cover. This is a field-by-field
 		// constructor, which is exactly the shape that drops a new field in

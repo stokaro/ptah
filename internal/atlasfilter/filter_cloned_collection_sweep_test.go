@@ -196,6 +196,16 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// Not filtered, as the roles out of scope are not: the read did not
+			// read these principals, so they are outside the description, and
+			// a role holding one is skipped by the reach rules whatever a
+			// filter keeps. They are still ASKED.
+			field: "UnreadRoles", present: "legacy_login", absent: "nosuch_unread_role",
+			seed: func(s *catalog.Database) {
+				s.UnreadRoles = append(s.UnreadRoles, "legacy_login")
+			},
+		},
+		{
 			// Not filtered either, and for a sharper reason than the roles
 			// above: this list is what the SQLite comparison refusal reads, and
 			// the whole point is that it survives the exclusion of the table it

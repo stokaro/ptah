@@ -271,9 +271,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	schema.Roles = roles
 	names := &mysqlgrants.Names{MariaDB: account.mariaDB}
 	for _, role := range roles {
-		if _, err := names.Name(mysqlgrants.Account{User: role.Name, Host: mysqlgrants.Options{MariaDB: account.mariaDB}.RoleHost()}); err != nil {
-			return err
-		}
+		names.Name(mysqlgrants.Account{User: role.Name, Host: mysqlgrants.Options{MariaDB: account.mariaDB}.RoleHost()})
 	}
 
 	source, err := r.grantSourceOf(ctx, account)
@@ -311,8 +309,9 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	if err != nil {
 		return fmt.Errorf("failed to read mandatory roles: %w", err)
 	}
-	memberships, mandatoryUnread := withMandatory(roles, memberships, mandatory)
+	schema.PublicIsRole = !account.mariaDB && slices.ContainsFunc(roles, isPublicRole)
 	schema.RoleMemberships = memberships
+	mandatory.addTo(schema)
 
 	everywhere, err := r.readWideGrants(ctx)
 	if err != nil {
@@ -332,54 +331,83 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	}
 	everywhere = rows.withoutPartialRevokes(everywhere, databases)
 	schema.WideGrants, schema.WideGrantsPartial = joinWideGrants(everywhere, rows.patternGrants(databases))
-	schema.WideAccess = wideAccessOf(everywhere, rows.databaseAccess(databases, roles, memberships))
-	if inheritsUnread(roles, memberships) || mandatoryUnread {
-		schema.WideAccess = nil
-	}
+	schema.WideAccess = wideAccessOf(everywhere, rows.databaseAccess(databases, roles, schema.RoleMemberships))
 	schema.SchemaGrantsInWideAccess = schema.WideAccess != nil && rows.statesOwnRows()
-	return r.readConnectedRole(ctx, schema, names)
+	if err := r.readConnectedRole(ctx, schema, names); err != nil {
+		return err
+	}
+	refuseCollisions(schema, names.Collisions())
+	schema.UnreadRoles = unreadRoles(schema)
+	return nil
 }
 
-// inheritsUnread reports whether a role the read describes, or every role
-// through PUBLIC, holds a principal the read does not describe: a role on a
-// host other than [mysqlgrants.Options.RoleHost], or a login MySQL lets a statement
-// grant as a role. Its privileges reach the member, and the read did not read
-// them, so a reach measured without them would report the member narrower
-// than the server makes it. The access is then left unread, and the security
-// analysis says it cannot measure the reach.
-func inheritsUnread(roles []catalog.Role, memberships []catalog.RoleMembership) bool {
-	described := map[string]bool{publicGrantee: true}
-	for _, role := range roles {
+// refuseCollisions leaves out each principal name two accounts read as
+// ([mysqlgrants.Names]), and records it as a role the read does not describe.
+// A role named `nm@localhost` beside the login 'nm'@'localhost' is the shape:
+// a membership of either reads the same, so neither the role's memberships nor
+// its privileges can be told from the login's. The role, its grants and its
+// access are left out, the connected role is left unknown where it is one of
+// them, and the memberships stay, naming a principal the read did not read
+// ([unreadRoles]). The rest of the server reads as it is, so one collision
+// does not stop a read of a database that has nothing to do with either
+// account.
+func refuseCollisions(schema *catalog.Database, collisions []mysqlgrants.Collision) {
+	for _, collision := range collisions {
+		name := collision.Name
+		schema.Roles = slices.DeleteFunc(schema.Roles, func(role catalog.Role) bool { return role.Name == name })
+		schema.Grants = slices.DeleteFunc(schema.Grants, func(grant catalog.Grant) bool { return grant.Role == name })
+		schema.WideGrants = slices.DeleteFunc(schema.WideGrants, func(grant catalog.WideGrant) bool { return grant.Role == name })
+		schema.WideAccess = slices.DeleteFunc(schema.WideAccess, func(held catalog.WideAccess) bool {
+			return held.Role == name || held.Subject == name
+		})
+		if schema.ConnectedRole == name {
+			schema.ConnectedRole = ""
+		}
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
+			Kind: coverage.Role, Name: name, Reason: coverage.Unresolved, Provenance: coverage.Observed,
+		})
+	}
+}
+
+// isPublicRole reports whether role is named PUBLIC, in any case. MySQL lets
+// CREATE ROLE PUBLIC create one, and so does `PuBlIc`; both read as PUBLIC to
+// a reader that folds the name as MariaDB's grantee is folded.
+func isPublicRole(role catalog.Role) bool {
+	return strings.EqualFold(role.Name, publicGrantee)
+}
+
+// unreadRoles is each principal a role schema describes holds, or PUBLIC
+// holds where it stands for every account, that schema does not describe: a
+// role on a host other than [mysqlgrants.Options.RoleHost], a login MySQL lets
+// a statement grant as a role, or a name two accounts read as. Measured on
+// MySQL 26.10.0, after CREATE USER legacy ACCOUNT LOCK and GRANT legacy TO a
+// role, a session with the role active holds what legacy holds. Its privileges
+// reach the member, and the read did not read them, so a reach measured
+// without them would report the member narrower than the server makes it: the
+// security analysis says so for each role that holds one, and measures the
+// others.
+func unreadRoles(schema *catalog.Database) []string {
+	described := make(map[string]bool, len(schema.Roles)+1)
+	if !schema.PublicIsRole {
+		described[publicGrantee] = true
+	}
+	for _, role := range schema.Roles {
 		described[role.Name] = true
 	}
-	return slices.ContainsFunc(memberships, func(membership catalog.RoleMembership) bool {
-		return described[membership.Member] && !described[membership.Role]
-	})
+	var unread []string
+	for _, membership := range schema.RoleMemberships {
+		if described[membership.Member] && !described[membership.Role] {
+			unread = append(unread, membership.Role)
+		}
+	}
+	slices.Sort(unread)
+	return slices.Compact(unread)
 }
 
 // publicGrantee is the grantee MariaDB names PUBLIC, whose privileges every
 // account holds. MySQL has none, and a read names by it what every account
 // holds there: the mandatory roles ([Reader.readMandatoryRoles]).
 const publicGrantee = "PUBLIC"
-
-// withMandatory adds the memberships of PUBLIC in the mandatory roles to
-// memberships, and reports whether the access must be left unread instead.
-//
-// A MySQL role may be named PUBLIC. The security analysis reads that name as
-// every account's, and the role's described memberships list it as a member,
-// so `ptah db read` would print GRANT of each mandatory role to it and a
-// comparison would hold it. Where such a role exists the memberships are
-// returned as they are, and the access the mandatory roles give is not
-// measured.
-func withMandatory(roles []catalog.Role, memberships, mandatory []catalog.RoleMembership) ([]catalog.RoleMembership, bool) {
-	if len(mandatory) == 0 {
-		return memberships, false
-	}
-	if slices.ContainsFunc(roles, func(role catalog.Role) bool { return strings.EqualFold(role.Name, publicGrantee) }) {
-		return memberships, true
-	}
-	return append(memberships, mandatory...), false
-}
 
 // withoutPublic leaves MariaDB's PUBLIC out of the roles a read describes.
 // MariaDB keeps PUBLIC as a role row once something is granted to it, and the
@@ -613,11 +641,7 @@ func (r *Reader) readConnectedRole(ctx context.Context, schema *catalog.Database
 	if account == "" {
 		return nil
 	}
-	name, err := names.Name(mysqlgrants.SplitAccount(account))
-	if err != nil {
-		return fmt.Errorf("failed to name the connected account: %w", err)
-	}
-	schema.ConnectedRole = name
+	schema.ConnectedRole = names.Name(mysqlgrants.SplitAccount(account))
 	return nil
 }
 
@@ -713,12 +737,7 @@ func (r *Reader) readRoleMemberships(ctx context.Context, names *mysqlgrants.Nam
 		if role.User == "" || member.User == "" {
 			continue
 		}
-		if membership.Role, err = names.Name(role); err != nil {
-			return nil, err
-		}
-		if membership.Member, err = names.Name(member); err != nil {
-			return nil, err
-		}
+		membership.Role, membership.Member = names.Name(role), names.Name(member)
 		memberships = append(memberships, membership)
 	}
 	if err := rows.Err(); err != nil {

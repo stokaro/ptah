@@ -1,6 +1,7 @@
 package schemasecurity_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -601,4 +602,31 @@ func TestAnalyze_NamesTheSchemaAGrantIsOnWithItsSpace(t *testing.T) {
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Code, qt.Equals, "PRV03")
 	c.Assert(report.Findings[0].Subject, qt.Equals, schemasecurity.Subject{Kind: "schema", Name: " public"})
+}
+
+// TestAnalyze_ARoleNamedPUBLICHoldsItsOwnGrants reads a grant to PUBLIC where
+// PUBLIC names a role, as MySQL lets CREATE ROLE PUBLIC make one: the grant is
+// that role's alone, so PRV03, which reports what every account holds, says
+// nothing about it. The control is the same grant where PUBLIC is every
+// account's grantee.
+func TestAnalyze_ARoleNamedPUBLICHoldsItsOwnGrants(t *testing.T) {
+	tests := []struct {
+		name         string
+		publicIsRole bool
+		wantPRV03    bool
+	}{
+		{name: "PUBLIC is a role", publicIsRole: true, wantPRV03: false},
+		{name: "control: PUBLIC is every account", publicIsRole: false, wantPRV03: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			report := schemasecurity.Analyze(&schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "orders"}},
+			}, schemasecurity.Options{PublicIsRole: test.publicIsRole})
+
+			c.Assert(slices.Contains(codes(report), "PRV03"), qt.Equals, test.wantPRV03)
+		})
+	}
 }

@@ -69,6 +69,19 @@ type Reach struct {
 	// ErrorPercent an error.
 	WarnPercent  int
 	ErrorPercent int
+	// PublicIsRole reports a read in which PUBLIC names a role rather than
+	// every role, as [catalog.Database.PublicIsRole] says: a grant to it, and
+	// a membership of it, are then that role's alone.
+	PublicIsRole bool
+	// Unread are the roles whose privileges the read did not read, as
+	// [catalog.Database.UnreadRoles] says. The reach of a role that can use
+	// one is not measured, and the rules say which roles they left out.
+	Unread []string
+	// EveryRoleHoldsUnread reports that every role holds roles whose
+	// privileges the read does not state, as
+	// [catalog.Database.EveryAccountHoldsUnread] says. No role's reach is
+	// measured then.
+	EveryRoleHoldsUnread bool
 }
 
 // ReachRelation names a relation the same way whichever object reports it.
@@ -100,8 +113,9 @@ type ReachGrant struct {
 	Source string
 	// Subject, where set, is the one role whose reach the grant counts
 	// toward, as [catalog.WideAccess.Subject] says: a member of Role does not
-	// gain it through Role, and a grant to PUBLIC that names a subject counts
-	// toward every role. Only a grant on a database name pattern sets it.
+	// gain it through Role. A grant to PUBLIC, or one whose subject is
+	// PUBLIC, counts toward every role, since every role holds what PUBLIC
+	// holds. Only a database-level row sets it.
 	Subject string
 	// Read and Write classify the privilege.
 	Read, Write bool
@@ -168,11 +182,14 @@ func ReachFromCatalog(live *catalog.Database, defaultSchema string, warnPercent,
 		return nil
 	}
 	reach := &Reach{
-		Grants:       reachGrants(grantsOutsideWideAccess(live), defaultSchema),
-		Memberships:  reachMemberships(live.RoleMemberships),
-		WideAccess:   make([]catalog.WideAccess, 0, len(live.WideAccess)),
-		WarnPercent:  warnPercent,
-		ErrorPercent: errorPercent,
+		Grants:               reachGrants(grantsOutsideWideAccess(live), defaultSchema),
+		Memberships:          reachMemberships(live.RoleMemberships),
+		WideAccess:           make([]catalog.WideAccess, 0, len(live.WideAccess)),
+		WarnPercent:          warnPercent,
+		ErrorPercent:         errorPercent,
+		PublicIsRole:         live.PublicIsRole,
+		Unread:               slices.Clone(live.UnreadRoles),
+		EveryRoleHoldsUnread: live.EveryAccountHoldsUnread,
 	}
 	for _, held := range live.WideAccess {
 		if held.Schema == "" {
@@ -277,7 +294,8 @@ func schemaKey(schema, defaultSchema string) string {
 	return schema
 }
 
-// findBroadReach implements roles/read-reach and roles/write-reach.
+// findBroadReach implements roles/read-reach and roles/write-reach, and
+// returns the rules it ran for some roles alone, each with the reason.
 //
 // A role reaches a relation when a role it can use holds a read or write
 // privilege on the whole relation or on its schema, owns it, or holds access
@@ -297,11 +315,23 @@ func schemaKey(schema, defaultSchema string) string {
 // PUBLIC is not reported: the PUBLIC finding already names that reach, and one
 // finding per role would bury it. Each rule names the sources of its own
 // reach: a role that reads everything and writes through grants is told to
-// take the read access away for the read rule alone.
-func findBroadReach(reach *Reach) []Finding {
+// take the read access away for the read rule alone. Where PUBLIC is a role
+// of that name ([Reach.PublicIsRole]), it is measured as any other role, and
+// no role holds what it holds through no membership.
+//
+// A role that can use a role whose privileges the read did not read
+// ([Reach.Unread]) is not measured, since its reach would be reported short,
+// and neither is any role where every role holds such roles
+// ([Reach.EveryRoleHoldsUnread]).
+func findBroadReach(reach *Reach) ([]Finding, []SkippedRule) {
+	if reach.EveryRoleHoldsUnread {
+		const reason = "every role holds roles whose privileges the read does not state, " +
+			"such as MySQL mandatory roles it could not read, so no role's reach was measured"
+		return nil, []SkippedRule{{Code: ReadReachRule, Reason: reason}, {Code: WriteReachRule, Reason: reason}}
+	}
 	index := indexRelations(reach.Relations)
 	if len(index.counted) == 0 {
-		return nil
+		return nil, nil
 	}
 	readOnly := make(map[ReachRelation]bool)
 	for _, relation := range reach.ReadOnly {
@@ -309,39 +339,30 @@ func findBroadReach(reach *Reach) []Finding {
 			readOnly[relation] = true
 		}
 	}
-	superusers := make(map[string]bool)
-	subjects := make([]string, 0, len(reach.Principals)+1)
-	for _, principal := range reach.Principals {
-		subjects = append(subjects, principal.Name)
-		if principal.Superuser {
-			superusers[principal.Name] = true
-		}
-	}
-	if namesPublic(reach) {
-		subjects = append(subjects, publicRole)
-	}
-	slices.Sort(subjects)
-	subjects = slices.Compact(subjects)
+	subjects, superusers := reachSubjects(reach)
+	everyRole := !reach.PublicIsRole
 
 	// Every account holds PUBLIC and the roles granted to it: measured on
 	// MariaDB 11.8.9 and 12.3.3, after `GRANT r TO PUBLIC` a login granted
 	// nothing reads the tables r reads, and is refused them with Error 1142
 	// once the grant is revoked.
-	publicOnly := usableRoles(publicRole, reach.Memberships)
+	publicOnly := roleAccess{everyRole: everyRole}
+	if everyRole {
+		publicOnly = usableRoles(publicRole, reach.Memberships, everyRole)
+	}
 	public := reachedRelations(reach, index, publicOnly, superusers, readOnly)
 	findings := make([]Finding, 0)
+	unread := make(map[string][]string)
 	for _, subject := range subjects {
-		isPublic := strings.EqualFold(subject, publicRole)
-		access := usableRoles(subject, reach.Memberships)
-		through := make([]string, 0, len(access.usable))
-		for role := range access.usable {
-			if role != subject {
-				through = append(through, role)
-			}
-		}
-		slices.Sort(through)
+		isPublic := everyRole && strings.EqualFold(subject, publicRole)
+		access := usableRoles(subject, reach.Memberships, everyRole)
+		through := throughRoles(subject, access)
 		if !isPublic {
 			maps.Copy(access.usable, publicOnly.usable)
+		}
+		if held := slices.IndexFunc(reach.Unread, func(role string) bool { return access.usable[role] }); held >= 0 {
+			unread[reach.Unread[held]] = append(unread[reach.Unread[held]], subject)
+			continue
 		}
 		reached := reachedRelations(reach, index, access, superusers, readOnly)
 		for _, measured := range []struct {
@@ -353,7 +374,7 @@ func findBroadReach(reach *Reach) []Finding {
 			{rule: WriteReachRule, verb: "change the rows of", reached: reached.write, public: public.write,
 				total: len(index.counted) - len(readOnly)},
 		} {
-			// The usable roles include PUBLIC, so the set only grows from
+			// The usable roles include PUBLIC's, so the set only grows from
 			// PUBLIC's, and an equal size is an equal set.
 			if !isPublic && len(measured.reached.relations) == len(measured.public.relations) {
 				continue
@@ -373,7 +394,51 @@ func findBroadReach(reach *Reach) []Finding {
 			findings = append(findings, finding)
 		}
 	}
-	return findings
+	return findings, unreadSkips(unread)
+}
+
+// reachSubjects is each principal the reach rules measure, sorted, with
+// PUBLIC where it stands for every role and the read names it, and the
+// superusers among them.
+func reachSubjects(reach *Reach) ([]string, map[string]bool) {
+	superusers := make(map[string]bool)
+	subjects := make([]string, 0, len(reach.Principals)+1)
+	for _, principal := range reach.Principals {
+		subjects = append(subjects, principal.Name)
+		if principal.Superuser {
+			superusers[principal.Name] = true
+		}
+	}
+	if !reach.PublicIsRole && namesPublic(reach) {
+		subjects = append(subjects, publicRole)
+	}
+	slices.Sort(subjects)
+	return slices.Compact(subjects), superusers
+}
+
+// throughRoles is each role other than subject whose privileges access lets
+// subject use, sorted.
+func throughRoles(subject string, access roleAccess) []string {
+	through := make([]string, 0, len(access.usable))
+	for role := range access.usable {
+		if role != subject {
+			through = append(through, role)
+		}
+	}
+	slices.Sort(through)
+	return through
+}
+
+// unreadSkips says, for each role whose privileges the read did not read,
+// which roles holding it the reach rules left unmeasured.
+func unreadSkips(unread map[string][]string) []SkippedRule {
+	skipped := make([]SkippedRule, 0, 2*len(unread))
+	for _, role := range slices.Sorted(maps.Keys(unread)) {
+		reason := "the read did not read the privileges of " + role + ", which " + strings.Join(unread[role], ", ") +
+			" can use, so their reach was not measured"
+		skipped = append(skipped, SkippedRule{Code: ReadReachRule, Reason: reason}, SkippedRule{Code: WriteReachRule, Reason: reason})
+	}
+	return skipped
 }
 
 // namesPublic reports whether the reach holds anything for PUBLIC: a grant,
@@ -404,30 +469,35 @@ const patternSourceSuggestion = "first take away what detail.reach.sources names
 // roleAccess is the roles a subject can use: usable holds every role whose
 // privileges the subject has, by inheriting them or by switching first, and
 // switchable the roles it can become with SET ROLE, itself included.
+// everyRole reports that PUBLIC stands for every role.
 type roleAccess struct {
 	subject            string
 	usable, switchable map[string]bool
+	everyRole          bool
 }
 
-// usableRoles is the access subject has through memberships.
-func usableRoles(subject string, memberships []ReachMembership) roleAccess {
+// usableRoles is the access subject has through memberships. everyRole is
+// [roleAccess.everyRole].
+func usableRoles(subject string, memberships []ReachMembership, everyRole bool) roleAccess {
 	switchable := roleClosure(subject, memberships, func(membership ReachMembership) bool { return !membership.CannotSwitch })
 	usable := make(map[string]bool)
 	for role := range switchable {
 		maps.Copy(usable, roleClosure(role, memberships, func(membership ReachMembership) bool { return !membership.CannotInherit }))
 	}
-	return roleAccess{subject: subject, usable: usable, switchable: switchable}
+	return roleAccess{subject: subject, usable: usable, switchable: switchable, everyRole: everyRole}
 }
 
 // holds reports whether the subject has the privileges of grant: through a
-// role it can use, or, for a grant that names its subject, as that subject or
-// through PUBLIC.
+// role it can use, or, for a grant that names its subject, as that subject.
+// Where PUBLIC stands for every role, a grant to PUBLIC, and a grant whose
+// subject is PUBLIC, are held by every role that holds PUBLIC's privileges.
 func (a roleAccess) holds(grant ReachGrant) bool {
-	isPublic := strings.EqualFold(grant.Role, publicRole)
+	public := a.everyRole && a.usable[publicRole] &&
+		(strings.EqualFold(grant.Role, publicRole) || strings.EqualFold(grant.Subject, publicRole))
 	if grant.Subject != "" {
-		return grant.Subject == a.subject || isPublic && a.usable[publicRole]
+		return grant.Subject == a.subject || public
 	}
-	return a.usable[grant.Role] || isPublic && a.usable[publicRole]
+	return a.usable[grant.Role] || public
 }
 
 // roleClosure is start and every role it reaches through the memberships

@@ -255,59 +255,79 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT SELECT, TRIGGER ON `fx`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
+			options:   mysqlgrants.Options{ActiveRole: true},
 			privilege: "TRIGGER",
 			want:      true,
 		},
 		{
 			// Measured on MySQL 8.4: with the role active the server used `f%`,
 			// which holds INSERT alone, and listed no trigger.
-			name: "with a role granted on MySQL, wildcard rows do not rank by specificity",
+			name: "with a role active on MySQL, wildcard rows do not rank by specificity",
+			lines: []string{
+				"GRANT INSERT ON `f%`.* TO `a`@`%`",
+				"GRANT SELECT, TRIGGER ON `fx%`.* TO `a`@`%`",
+				"GRANT `r`@`%` TO `a`@`%`",
+			},
+			options:   mysqlgrants.Options{ActiveRole: true},
+			privilege: "TRIGGER",
+			want:      false,
+		},
+		{
+			name: "with a role granted and not active on MySQL, wildcard rows rank by specificity",
 			lines: []string{
 				"GRANT INSERT ON `f%`.* TO `a`@`%`",
 				"GRANT SELECT, TRIGGER ON `fx%`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
 			privilege: "TRIGGER",
-			want:      false,
+			want:      true,
 		},
 		{
-			name: "with a role granted on MySQL, a literal row still wins",
+			name: "with a role active on MySQL, a literal row still wins",
 			lines: []string{
 				"GRANT TRIGGER ON `fx`.* TO `a`@`%`",
 				"GRANT SELECT ON `f%`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
+			options:   mysqlgrants.Options{ActiveRole: true},
 			privilege: "SELECT",
 			want:      false,
 		},
 		{
 			// Measured on MySQL 8.4.13 and 26.10.0: the account reads qabc
 			// with SET ROLE NONE and is refused it with its role active.
-			name: "with a role granted on MySQL, a row only the account's lookup applies",
+			name: "with a role granted and not active on MySQL, a row the account's lookup applies",
 			lines: []string{
 				"GRANT SELECT ON `qa\\bc`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
 			database:  "qabc",
 			privilege: "SELECT",
+			want:      true,
+		},
+		{
+			name:      "with a role active on MySQL, a row only the account's lookup applies",
+			lines:     []string{"GRANT SELECT ON `qa\\bc`.* TO `a`@`%`", "GRANT `r`@`%` TO `a`@`%`"},
+			options:   mysqlgrants.Options{ActiveRole: true},
+			database:  "qabc",
+			privilege: "SELECT",
 			want:      false,
 		},
 		{
-			name:      "without a role granted, a row the account's lookup applies",
-			lines:     []string{"GRANT SELECT ON `qa\\bc`.* TO `a`@`%`"},
-			database:  "qabc",
+			// Measured on MySQL 8.4.13 and 26.10.0 with partial_revokes ON:
+			// an account holding the row itself does not read x_y, and with a
+			// role holding it active SHOW GRANTS prints the row as the
+			// account's and the session reads x_y.
+			name:      "with partial_revokes on and a role active, a row only the role's lookup applies",
+			lines:     []string{"GRANT SELECT ON `X_Y`.* TO `a`@`%`", "GRANT `r`@`%` TO `a`@`%`"},
+			options:   mysqlgrants.Options{LiteralDatabaseNames: true, ActiveRole: true},
+			database:  "x_y",
 			privilege: "SELECT",
 			want:      true,
 		},
 		{
-			// Measured on MySQL 8.4.13 and 26.10.0 with partial_revokes ON:
-			// an account holding the row itself does not read x_y, and a role
-			// holding it does.
-			name: "with partial_revokes on and a role granted, a row only the role's lookup applies",
-			lines: []string{
-				"GRANT SELECT ON `X_Y`.* TO `a`@`%`",
-				"GRANT `r`@`%` TO `a`@`%`",
-			},
+			name:      "with partial_revokes on and no role active, a row only the role's lookup applies",
+			lines:     []string{"GRANT SELECT ON `X_Y`.* TO `a`@`%`", "GRANT `r`@`%` TO `a`@`%`"},
 			options:   mysqlgrants.Options{LiteralDatabaseNames: true},
 			database:  "x_y",
 			privilege: "SELECT",

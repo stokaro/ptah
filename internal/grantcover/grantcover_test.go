@@ -7,10 +7,27 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/grantcover"
+	"ptah.run/internal/membershipplan"
 )
+
+// plannedOn is what a plan for dialect does with the memberships desired
+// declares, as the comparison plans them.
+func plannedOn(dialect string, desired *schemamodel.Database) membershipplan.Declared {
+	return membershipplan.Read(desired, identifier.ForDialect(dialect), capability.ForDialect(dialect))
+}
+
+// validate is [grantcover.Validate] with what ALL grants on dialect, its
+// semantics, and the memberships a plan for it keeps and grants.
+func validate(dialect string, desired *schemamodel.Database, current *catalog.Database) error {
+	return grantcover.Validate(dialect, desired, current, grantcover.Target{
+		AllPrivileges: listsOf(dialect), Semantics: identifier.ForDialect(dialect), Memberships: plannedOn(dialect, desired),
+	})
+}
 
 // listsOf is what ALL grants on each object kind of dialect.
 func listsOf(dialect string) descriptor.AllPrivileges {
@@ -243,6 +260,25 @@ func TestFind_HappyPath(t *testing.T) {
 			current: readHolding([]catalog.Grant{databaseGrant("r2", "SELECT")}),
 		},
 		{
+			name: "a grant on the database held by a role whose membership the plan removes",
+			desired: &schemamodel.Database{
+				Roles:  []schemamodel.Role{{Name: "r2", MemberOfStated: true}, {Name: "parent"}},
+				Grants: []schemamodel.Grant{{Role: "parent", Privileges: []string{"SELECT"}, OnSchema: "d2"}},
+			},
+			privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{databaseGrant("parent", "SELECT")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+		},
+		{
+			name: "a grant on the database held by a role whose membership the plan keeps",
+			desired: &schemamodel.Database{
+				Roles:  []schemamodel.Role{{Name: "r2"}, {Name: "parent"}},
+				Grants: []schemamodel.Grant{{Role: "parent", Privileges: []string{"SELECT"}, OnSchema: "d2"}},
+			},
+			privileges: []string{"SELECT"}, table: "t3",
+			current: holding(readHolding([]catalog.Grant{databaseGrant("parent", "SELECT")}), catalog.RoleMembership{Role: "parent", Member: "r2"}),
+			want:    []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON d2.*", AlsoDeclared: true}},
+		},
+		{
 			name: "a grant on the database the schema revokes",
 			desired: &schemamodel.Database{RevokedGrants: []schemamodel.Grant{
 				{Role: "r2", Privileges: []string{"ALL"}, OnSchema: "d2"},
@@ -277,7 +313,7 @@ func TestFind_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table, descriptor.AllPrivileges{})
+			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table, grantcover.Target{Memberships: plannedOn("mysql", test.desired)})
 
 			c.Assert(known, qt.IsTrue)
 			c.Assert(covers, qt.DeepEquals, test.want)
@@ -401,7 +437,7 @@ func TestFind_HappyPathDeclared(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table, test.all)
+			covers, known := grantcover.Find(test.desired, test.current, "r2", test.privileges, test.table, grantcover.Target{AllPrivileges: test.all, Memberships: plannedOn("mysql", test.desired)})
 
 			c.Assert(known, qt.IsTrue)
 			c.Assert(covers, qt.DeepEquals, test.want)
@@ -438,7 +474,7 @@ func TestFind_HappyPathTableAll(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			covers, known := grantcover.Find(nil, current, "r2", []string{"all privileges"}, "t3", test.all)
+			covers, known := grantcover.Find(nil, current, "r2", []string{"all privileges"}, "t3", grantcover.Target{AllPrivileges: test.all})
 
 			c.Assert(known, qt.IsTrue)
 			c.Assert(covers, qt.DeepEquals, test.want)
@@ -453,7 +489,7 @@ func TestFind_NotKnown(t *testing.T) {
 	c := qt.New(t)
 
 	covers, known := grantcover.Find(nil, &catalog.Database{Grants: []catalog.Grant{databaseGrant("r2", "SELECT")}},
-		"r2", []string{"SELECT"}, "t3", descriptor.AllPrivileges{})
+		"r2", []string{"SELECT"}, "t3", grantcover.Target{})
 
 	c.Assert(known, qt.IsFalse)
 	c.Assert(covers, qt.DeepEquals, []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ON d2.*"}})
@@ -466,7 +502,7 @@ func TestFind_PartlyKnown(t *testing.T) {
 	current := readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"})
 	current.WideGrantsPartial = true
 
-	covers, known := grantcover.Find(nil, current, "r2", []string{"SELECT"}, "t3", descriptor.AllPrivileges{})
+	covers, known := grantcover.Find(nil, current, "r2", []string{"SELECT"}, "t3", grantcover.Target{})
 
 	c.Assert(known, qt.IsFalse)
 	c.Assert(covers, qt.DeepEquals, []grantcover.Cover{{Grantee: "r2", Grant: "SELECT ANY TABLE"}})
@@ -526,14 +562,14 @@ func TestValidate_FailurePath(t *testing.T) {
 		},
 		{
 			name: "a system privilege", dialect: "oracle",
-			current: readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}),
+			current: readHolding(nil, catalog.WideGrant{Role: "R2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}),
 			want: `role "r2" holds SELECT ANY TABLE, which covers table t3, so a revoke on the table cannot take it: ` +
 				`revoke SELECT ANY TABLE from "r2" instead, or grant the privilege on each table that needs it`,
 		},
 		{
 			name: "a system privilege, in a read refused the privileges on a schema", dialect: "oracle",
 			current: &catalog.Database{
-				WideGrants:        []catalog.WideGrant{{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}},
+				WideGrants:        []catalog.WideGrant{{Role: "R2", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}},
 				WideGrantsPartial: true,
 			},
 			want: `role "r2" holds SELECT ANY TABLE, which covers table t3, so a revoke on the table cannot take it: ` +
@@ -541,7 +577,7 @@ func TestValidate_FailurePath(t *testing.T) {
 		},
 		{
 			name: "a system privilege on the schema", dialect: "oracle",
-			current: readHolding(nil, catalog.WideGrant{Role: "r2", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"}),
+			current: readHolding(nil, catalog.WideGrant{Role: "R2", Privilege: "SELECT", Grant: "SELECT ANY TABLE ON SCHEMA APP", Schema: "APP"}),
 			want: `role "r2" holds SELECT ANY TABLE ON SCHEMA APP, which covers table t3, so a revoke on the table cannot take it: ` +
 				`revoke SELECT ANY TABLE ON SCHEMA APP from "r2" instead, or grant the privilege on each table that needs it`,
 		},
@@ -550,7 +586,7 @@ func TestValidate_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := grantcover.Validate(test.dialect, revokes("t3", "SELECT"), test.current)
+			err := validate(test.dialect, revokes("t3", "SELECT"), test.current)
 
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})
@@ -624,7 +660,7 @@ func TestValidate_FailurePathDeclared(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := grantcover.Validate("mysql", test.desired, test.current)
+			err := validate("mysql", test.desired, test.current)
 
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})
@@ -666,6 +702,13 @@ func TestValidate_HappyPath(t *testing.T) {
 				RevokedGrants: revokes("t3", "SELECT").RevokedGrants,
 			},
 		},
+		{
+			name: "Oracle, a grant to PUBLIC on a table created as a quoted lower-case name", dialect: "oracle", desired: revokes("t3", "SELECT"),
+			current: readHolding([]catalog.Grant{
+				{Role: "R2", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t3"},
+				{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t3"},
+			}),
+		},
 		{name: "PostgreSQL", dialect: "postgres", desired: revokes("t3", "SELECT"), current: covered},
 		{name: "ClickHouse, which refuses it on its own", dialect: "clickhouse", desired: revokes("t3", "SELECT"), current: covered},
 	}
@@ -673,7 +716,97 @@ func TestValidate_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(grantcover.Validate(test.dialect, test.desired, test.current), qt.IsNil)
+			c.Assert(validate(test.dialect, test.desired, test.current), qt.IsNil)
 		})
 	}
+}
+
+// TestFind_MembershipsTheTargetPlans counts a membership the schema declares
+// only on a target that plans one: Oracle plans none, so a declared member_of
+// grants the revoke's role nothing there, and a comparison refuses it by the
+// capability.
+func TestFind_MembershipsTheTargetPlans(t *testing.T) {
+	desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "r2", MemberOf: []string{"parent"}}}}
+	current := readHolding([]catalog.Grant{tableGrant("parent", "SELECT", "")})
+	tests := []struct {
+		name    string
+		dialect string
+		want    []grantcover.Cover
+	}{
+		{name: "MySQL", dialect: "mysql", want: []grantcover.Cover{{Grantee: "parent", Grant: "SELECT ON t3", OnTable: true}}},
+		{name: "Oracle", dialect: "oracle"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			covers, known := grantcover.Find(desired, current, "r2", []string{"SELECT"}, "t3", grantcover.Target{Memberships: plannedOn(test.dialect, desired)})
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(covers, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestFind_ARoleNamedPUBLIC reads a MySQL role named PUBLIC as a role: its
+// grants keep a revoke only for a role that holds it, and a membership whose
+// member is PUBLIC is that role's.
+func TestFind_ARoleNamedPUBLIC(t *testing.T) {
+	tests := []struct {
+		name         string
+		publicIsRole bool
+		want         []grantcover.Cover
+	}{
+		{
+			name: "PUBLIC is every account",
+			want: []grantcover.Cover{
+				{Grantee: "PUBLIC", Grant: "SELECT ON d2.*"},
+				{Grantee: "big", Grant: "SELECT ON *.*"},
+			},
+		},
+		{name: "PUBLIC is a role", publicIsRole: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			current := holding(readHolding([]catalog.Grant{databaseGrant("PUBLIC", "SELECT")},
+				catalog.WideGrant{Role: "big", Privilege: "SELECT", Grant: "SELECT ON *.*"}),
+				catalog.RoleMembership{Role: "big", Member: "PUBLIC"})
+			current.PublicIsRole = test.publicIsRole
+
+			covers, known := grantcover.Find(nil, current, "r2", []string{"SELECT"}, "t3", grantcover.Target{})
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(covers, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestValidate_FailurePathRoleNamedPUBLIC names the membership a role named
+// PUBLIC passes a grant on the table through, which a statement can end.
+func TestValidate_FailurePathRoleNamedPUBLIC(t *testing.T) {
+	c := qt.New(t)
+	current := holding(readHolding([]catalog.Grant{tableGrant("PUBLIC", "SELECT", "")}), catalog.RoleMembership{Role: "PUBLIC", Member: "r2"})
+	current.PublicIsRole = true
+
+	err := validate("mysql", revokes("t3", "SELECT"), current)
+
+	c.Assert(err, qt.ErrorMatches, `PUBLIC holds SELECT ON t3, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: `+
+		`revoke SELECT ON t3 from PUBLIC instead, or end the membership that passes it on`)
+}
+
+// TestValidate_FailurePathOracleNames compares the revoke's table and role
+// with the read as Oracle stores them: t3 is the table T3 and r2 the role R2,
+// so a grant to PUBLIC on T3 keeps the privilege.
+func TestValidate_FailurePathOracleNames(t *testing.T) {
+	c := qt.New(t)
+	current := readHolding([]catalog.Grant{
+		{Role: "R2", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "T3"},
+		{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "T3"},
+	})
+
+	err := validate("oracle", revokes("t3", "SELECT"), current)
+
+	c.Assert(err, qt.ErrorMatches, `PUBLIC holds SELECT ON t3, which gives role "r2" the privilege on table t3, so a revoke from "r2" cannot take it: `+
+		`revoke SELECT ON t3 from PUBLIC instead`)
 }

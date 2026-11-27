@@ -704,6 +704,19 @@ table of the schema. Ptah reads them from `DBA_SCHEMA_PRIVS` for the schema it
 reads, and names `SELECT ANY TABLE ON SCHEMA APP` the same way. Oracle 21 has
 no such privilege, and Ptah does not ask. Measured on 23.26.3 and 21.3.
 
+A grant to `PUBLIC` on the table keeps the privilege the same way. Measured on
+23.26: with `SELECT` on `t48` granted to `PUBLIC` and to a user,
+`REVOKE SELECT ON t48 FROM` the user succeeds and a session of the user still
+reads `t48`. Ptah refuses a declared revoke on a table that `PUBLIC` holds the
+privilege on, and names the grant: revoke `SELECT ON t48` from `PUBLIC`
+instead. A role the user holds keeps it too, and Ptah does not see that one,
+since the Oracle read leaves out the roles granted to a role or a user: the
+revoke is planned, and the role's grant stays.
+
+The revoke's table and role are compared with what the read found as Oracle
+stores them, so `REVOKE SELECT ON t48 FROM reader` names the table `T48` and the
+role `READER`, as a statement that spells them that way does.
+
 What the account may read decides what Ptah can refuse:
 
 - An account that may not read `DBA_SYS_PRIVS` gets the revoke planned as

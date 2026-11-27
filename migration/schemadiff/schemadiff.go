@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/grantcover"
+	"ptah.run/internal/membershipplan"
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/pgreservedrole"
@@ -288,6 +289,7 @@ func compareReportingUndecidedAdditions(
 		// REVOKE on a table takes only a grant on that table.
 		TableRevokesTakeOnlyTableGrants: platform.TableRevokeTakesOnlyTableGrants(opts.Dialect),
 		AllPrivileges:                   targetAllPrivileges(opts.Dialect),
+		Memberships:                     membershipplan.Read(desired, identifierSemantics, caps),
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
@@ -480,6 +482,9 @@ func validateDeclaredBeforeComparison(
 	if err := pgreservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
 		return err
 	}
+	if err := validateResolvedRoles(desired, database); err != nil {
+		return err
+	}
 	// An owner declared for an object of a kind the target does not manage
 	// the owner of is refused, so it is never compared, planned or dropped.
 	if err := objectowner.ValidateDeclared(info.Dialect, desired); err != nil {
@@ -517,8 +522,16 @@ func validateDeclaredBeforeComparison(
 	// database or on every table keeps, held by the grantee, by PUBLIC or by a
 	// role either holds, where a REVOKE on a table takes only a grant on that
 	// table: the plan would find nothing under the table's name to take, or
-	// fail on a table it creates.
-	if err := grantcover.Validate(info.Dialect, desired, database); err != nil {
+	// fail on a table it creates. The memberships that pass a grant on are the
+	// ones the plan keeps or grants, as the comparison plans them.
+	caps := info.Capabilities
+	if caps.Len() == 0 {
+		caps = capability.ForDialect(info.Dialect)
+	}
+	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
+	if err := grantcover.Validate(info.Dialect, desired, database, grantcover.Target{
+		AllPrivileges: targetAllPrivileges(info.Dialect), Semantics: semantics, Memberships: membershipplan.Read(desired, semantics, caps),
+	}); err != nil {
 		return err
 	}
 	if err := pgsystemschema.ValidateDeclaredPostgresSystemSchemas(

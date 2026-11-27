@@ -19,8 +19,9 @@ import (
 
 // TestMySQLMandatoryRolesReadWithSessionCollation keeps the account identities
 // in mandatory_roles when the session's utf8mb4 default makes MySQL's
-// APPLICABLE_ROLES view fail. Logins can be mandatory roles, user names are
-// case-sensitive, and the setting keeps its host spelling.
+// APPLICABLE_ROLES view fail. Logins can be mandatory roles, and user names are
+// case-sensitive. A host spelled in another case than the account's is left
+// out: the server makes that spelling active, and it holds nothing.
 func TestMySQLMandatoryRolesReadWithSessionCollation(t *testing.T) {
 	c := qt.New(t)
 	server := newMySQLFamilyServer(c, dbtarget.MySQLAdmin)
@@ -62,22 +63,23 @@ func TestMySQLMandatoryRolesReadWithSessionCollation(t *testing.T) {
 	c.Assert(mandatory, qt.ContentEquals, []catalog.RoleMembership{
 		{Role: "mand" + suffix, Member: "PUBLIC"},
 		{Role: "Mand" + suffix, Member: "PUBLIC"},
-		{Role: "mloc" + suffix + "@LOCALHOST", Member: "PUBLIC"},
 		{Role: "mlog" + suffix, Member: "PUBLIC"},
 		{Role: "m,x@'" + suffix, Member: "PUBLIC"},
 	})
 }
 
 // TestMySQLMandatoryRoleHostIdentity keeps the first host spelling among
-// equal-length case variants, while a Unicode variant of another byte length
-// remains distinct. A host with a trailing space or accent is not the stored
-// account. These distinctions decide which role MySQL activates.
+// equal-length case variants, as MySQL does, and records the account only
+// where that spelling is the account's own: a spelling in another case, or a
+// Unicode variant of another byte length, holds nothing. A host with a
+// trailing space or accent is not the stored account. These distinctions
+// decide which role MySQL activates.
 func TestMySQLMandatoryRoleHostIdentity(t *testing.T) {
 	tests := []struct {
 		name        string
 		hosts, want []string
 	}{
-		{name: "uppercase first and Unicode", hosts: []string{"K", "k", "K", "K"}, want: []string{"K", "K"}},
+		{name: "uppercase first and Unicode", hosts: []string{"K", "k", "K", "K"}},
 		{name: "lowercase first", hosts: []string{"k", "K"}, want: []string{"k"}},
 		{name: "padding and accents do not match", hosts: []string{"k ", "ḱ", "missing"}},
 	}

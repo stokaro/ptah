@@ -3,7 +3,6 @@ package compare
 import (
 	"cmp"
 	"slices"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -11,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/membershipplan"
 )
 
 // RoleMemberships compares the membership of each role in other roles, on a
@@ -36,6 +36,8 @@ import (
 // Such a membership between two declared roles is listed in
 // UnmanagedRoleMemberships, so a report can say the plan kept it: deleting
 // member_of from a role revokes nothing, and the line is how a reader finds out.
+// [membershipplan.Declared.Fate] decides each of these, and the revoke check
+// of [ptah.run/internal/grantcover] reads the same decision.
 //
 // A membership both sides hold is compared option by option, where the target
 // reports options. A declaration that states no option means the default:
@@ -56,54 +58,49 @@ func RoleMemberships(
 	if !caps.Has(capability.RoleMembership) || desired == nil || database == nil {
 		return
 	}
-	managed, owners, declared := declaredMemberships(desired, semantics)
-	held := make(map[membershipKey]catalog.RoleMembership, len(database.RoleMemberships))
+	plan := membershipplan.Read(desired, semantics, caps)
+	held := make(map[membershipplan.Key]catalog.RoleMembership, len(database.RoleMemberships))
 	for _, membership := range database.RoleMemberships {
-		key := newMembershipKey(membership.Role, membership.Member, semantics)
+		key := plan.KeyOf(membership.Role, membership.Member)
 		if previous, seen := held[key]; seen {
 			membership = mergeHeldMemberships(previous, membership)
 		}
 		held[key] = membership
 	}
-	for key, want := range declared {
-		if !desired.NotDescribed.Describes(coverage.RoleMembership, want.ref.Member) {
+	for key, want := range plan.Stated() {
+		if !desired.NotDescribed.Describes(coverage.RoleMembership, want.Ref.Member) {
 			continue
 		}
 		live, found := held[key]
 		if !found {
 			// A role the read refused to describe may not exist, and a GRANT
 			// planned beside the undecided CREATE would name it first.
-			if !database.NotDescribed.Describes(coverage.Role, want.ref.Member) ||
-				!database.NotDescribed.Describes(coverage.Role, want.ref.Role) {
+			if !database.NotDescribed.Describes(coverage.Role, want.Ref.Member) ||
+				!database.NotDescribed.Describes(coverage.Role, want.Ref.Role) {
 				continue
 			}
-			added := want.ref
-			added.Options = want.options.Clone()
+			added := want.Ref
+			added.Options = want.Options.Clone()
 			diff.RoleMembershipsAdded = append(diff.RoleMembershipsAdded, added)
 			continue
 		}
-		if change, differs := compareMembershipOptions(want.ref, want, live, caps); differs {
+		if change, differs := compareMembershipOptions(want.Ref, want, live, caps); differs {
 			diff.RoleMembershipsModified = append(diff.RoleMembershipsModified, change)
 			continue
 		}
 		diff.Matched.RoleMemberships++
 	}
-	for key, live := range held {
-		if !desired.NotDescribed.Describes(coverage.RoleMembership, live.Member) ||
-			!database.NotDescribed.Describes(coverage.RoleMembership, live.Member) {
-			continue
-		}
-		if _, isDeclared := declared[key]; isDeclared || !managed[key.role] || !managed[key.member] {
-			continue
-		}
-		if !owners[key.member] {
+	for _, live := range held {
+		switch plan.Fate(database, live) {
+		case membershipplan.Unmanaged:
 			diff.UnmanagedRoleMemberships = append(diff.UnmanagedRoleMemberships,
 				difftypes.RoleMembershipRef{Role: live.Role, Member: live.Member})
-			continue
+		case membershipplan.Removed:
+			removed := difftypes.RoleMembershipRef{Role: live.Role, Member: live.Member}
+			removed.Options = heldMembershipOptions(live, caps)
+			diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, removed)
+		case membershipplan.Kept:
 		}
-		removed := difftypes.RoleMembershipRef{Role: live.Role, Member: live.Member}
-		removed.Options = heldMembershipOptions(live, caps)
-		diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, removed)
 	}
 	slices.SortFunc(diff.RoleMembershipsAdded, compareMemberships)
 	slices.SortFunc(diff.RoleMembershipsRemoved, compareMemberships)
@@ -111,24 +108,6 @@ func RoleMemberships(
 	slices.SortFunc(diff.RoleMembershipsModified, func(a, b difftypes.RoleMembershipChange) int {
 		return cmp.Or(cmp.Compare(a.Role, b.Role), cmp.Compare(a.Member, b.Member))
 	})
-}
-
-// declaredMembership is one declared membership: the options it states, and
-// the member's own inherit attribute, which is the default for the inherit
-// option.
-type declaredMembership struct {
-	// ref names the two roles as the declaration spells them.
-	ref            difftypes.RoleMembershipRef
-	options        schemamodel.RoleMembershipOptions
-	memberInherits bool
-}
-
-// membershipKey is a membership matched by the names the server stores for
-// its two roles; see [roleKey].
-type membershipKey struct{ role, member string }
-
-func newMembershipKey(role, member string, semantics identifier.Semantics) membershipKey {
-	return membershipKey{role: roleKey(role, semantics), member: roleKey(member, semantics)}
 }
 
 // mergeHeldMemberships folds a second row for one membership into the first.
@@ -176,7 +155,7 @@ func heldMembershipOptions(live catalog.RoleMembership, caps capability.Capabili
 // no key for, is left out of the comparison.
 func compareMembershipOptions(
 	key difftypes.RoleMembershipRef,
-	want declaredMembership,
+	want membershipplan.Stated,
 	live catalog.RoleMembership,
 	caps capability.Capabilities,
 ) (difftypes.RoleMembershipChange, bool) {
@@ -184,16 +163,16 @@ func compareMembershipOptions(
 	to := from.Clone()
 	differs := false
 	if caps.Has(capability.RoleMembershipAdmin) {
-		to.Admin = new(optionOr(want.options.Admin, false))
+		to.Admin = new(optionOr(want.Options.Admin, false))
 		differs = differs || *to.Admin != live.AdminOption
 	}
 	if caps.Has(capability.RoleMembershipInheritSet) {
 		if live.InheritOption != nil {
-			to.Inherit = new(optionOr(want.options.Inherit, want.memberInherits))
+			to.Inherit = new(optionOr(want.Options.Inherit, want.MemberInherits))
 			differs = differs || *to.Inherit != *live.InheritOption
 		}
 		if live.SetOption != nil {
-			to.Set = new(optionOr(want.options.Set, true))
+			to.Set = new(optionOr(want.Options.Set, true))
 			differs = differs || *to.Set != *live.SetOption
 		}
 	}
@@ -209,34 +188,4 @@ func optionOr(value *bool, fallback bool) bool {
 
 func compareMemberships(a, b difftypes.RoleMembershipRef) int {
 	return cmp.Or(cmp.Compare(a.Role, b.Role), cmp.Compare(a.Member, b.Member))
-}
-
-// declaredMemberships collects the roles the schema declares, the ones among
-// them that own their memberships, and each membership they state, each keyed
-// by the names the server stores.
-func declaredMemberships(desired *schemamodel.Database, semantics identifier.Semantics) (
-	managed, owners map[string]bool,
-	declared map[membershipKey]declaredMembership,
-) {
-	managed = make(map[string]bool, len(desired.Roles))
-	owners = make(map[string]bool, len(desired.Roles))
-	declared = make(map[membershipKey]declaredMembership)
-	for _, role := range desired.Roles {
-		managed[roleKey(role.Name, semantics)] = true
-		owners[roleKey(role.Name, semantics)] = role.OwnsMemberships()
-		for _, group := range role.MemberOf {
-			spelled := group
-			if group = strings.TrimSpace(group); group != "" {
-				options, stated := role.MemberOptions[spelled]
-				if !stated {
-					options = role.MemberOptions[group]
-				}
-				declared[newMembershipKey(group, role.Name, semantics)] = declaredMembership{
-					ref:     difftypes.RoleMembershipRef{Role: group, Member: role.Name},
-					options: options, memberInherits: role.Inherit,
-				}
-			}
-		}
-	}
-	return managed, owners, declared
 }

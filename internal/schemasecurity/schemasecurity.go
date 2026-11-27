@@ -258,6 +258,11 @@ type Options struct {
 	// grant on the database itself names the database by it, and by its kind
 	// when it is empty.
 	DatabasePath string
+	// PublicIsRole reports a database in which PUBLIC names a role rather
+	// than every role, as [ptah.run/catalog.Database.PublicIsRole] says: MySQL
+	// lets CREATE ROLE PUBLIC create one. PRV03 then reports no grant to it,
+	// and ROL01 reads its grants as any other role's.
+	PublicIsRole bool
 }
 
 // Analyze runs every rule over db and returns their findings.
@@ -271,7 +276,9 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	report := Report{Findings: make([]Finding, 0), SkippedRules: make([]SkippedRule, 0)}
-	report.Findings = append(report.Findings, findPublicGrants(db, opts.DatabasePath)...)
+	if !opts.PublicIsRole {
+		report.Findings = append(report.Findings, findPublicGrants(db, opts.DatabasePath)...)
+	}
 	report.Findings = append(report.Findings, findDefinerRoutines(db)...)
 
 	if opts.Capabilities.Has(capability.RowLevelSecurity) {
@@ -300,7 +307,7 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	if opts.RoleObjectUsage != nil {
-		report.Findings = append(report.Findings, findGrantsOnUnusedObjects(db, opts.RoleObjectUsage, opts.DatabasePath)...)
+		report.Findings = append(report.Findings, findGrantsOnUnusedObjects(db, opts)...)
 	} else {
 		report.SkippedRules = append(report.SkippedRules, SkippedRule{
 			Code: "ROL01",
@@ -320,7 +327,9 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	if opts.Reach != nil {
-		report.Findings = append(report.Findings, findBroadReach(opts.Reach)...)
+		findings, skipped := findBroadReach(opts.Reach)
+		report.Findings = append(report.Findings, findings...)
+		report.SkippedRules = append(report.SkippedRules, skipped...)
 	} else {
 		const reason = "the access no object grant states -- superuser, predefined roles, " +
 			"server-wide privileges -- was not read for this source, so a role's reach would be measured short"
@@ -596,14 +605,15 @@ func ownersWithUnknownLogin(owners []ObjectOwner) []string {
 // an observation naming a real role says nothing about the PUBLIC grant), and a
 // privilege granted to PUBLIC is already PRV03's finding with a better
 // suggestion. Reporting it here as well would mean two findings and two
-// remedies for one grant.
+// remedies for one grant. Where PUBLIC is a role of that name
+// ([Options.PublicIsRole]), its grants are read as any other role's.
 //
 // Severity is Warning rather than Error: the signal is a window, and a window
 // is evidence of absence only for as long as it covers. A quarterly job that
 // did not run inside it holds a privilege this rule will name.
-func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage, databasePath string) []Finding {
-	used := make(map[string]bool, len(usage))
-	for _, observation := range usage {
+func findGrantsOnUnusedObjects(db *schemamodel.Database, opts Options) []Finding {
+	used := make(map[string]bool, len(opts.RoleObjectUsage))
+	for _, observation := range opts.RoleObjectUsage {
 		role := observation.Role
 		name := strings.TrimSpace(observation.Name)
 		if role == "" || name == "" {
@@ -615,10 +625,10 @@ func findGrantsOnUnusedObjects(db *schemamodel.Database, usage []RoleObjectUsage
 	findings := make([]Finding, 0)
 	for _, grant := range db.Grants {
 		role := grant.Role
-		if role == "" || strings.EqualFold(role, publicRole) {
+		if role == "" || !opts.PublicIsRole && strings.EqualFold(role, publicRole) {
 			continue
 		}
-		object, kind := grantTarget(databasePath, grant)
+		object, kind := grantTarget(opts.DatabasePath, grant)
 		if object == "" {
 			continue
 		}
