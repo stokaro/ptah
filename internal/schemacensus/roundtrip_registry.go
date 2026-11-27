@@ -40,9 +40,7 @@ type UnmeasuredEntry struct {
 // The reasons a fixture's round trip is known to plan a change. Each one is a
 // false migration a user of `ptah schema diff` would be shown.
 const (
-	lossRoutineKind           = "goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION"
-	lossRoutinePublicExecute  = "dbschematogo drops the EXECUTE that PUBLIC holds on a procedure, so the converted-back declaration revokes it"
-	lossRoutinesWithoutTarget = "the comparison lists a routine on a target that has none, so the plan carries notes about it or is refused"
+	lossRoutinePublicExecute = "dbschematogo drops the EXECUTE that PUBLIC holds on a procedure, so the converted-back declaration revokes it"
 )
 
 // The reasons a compared field is known not to reach the plan.
@@ -50,7 +48,6 @@ const (
 	gapToCatalog   = "goschematodb drops it: the catalog is the same with and without it"
 	gapFromCatalog = "dbschematogo drops it: the converted-back declaration is the same with and without it"
 	gapComparison  = "both conversions carry it, and the comparison plans nothing when it changes"
-	gapRoutineKind = "the conversions drop a routine's kind; the other direction is a recorded loss"
 )
 
 // viewOwnerDialects are the targets that manage the owner of a view.
@@ -120,8 +117,9 @@ const (
 		"and deduplicate_items are unrecognized, ybgin does not support fastupdate, and BRIN, which pages_per_range " +
 		"belongs to, is not supported"
 	exemptForeignDefiner = "a routine that states no security mode is a definer routine here, a definer routine is " +
-		"replaced only beside a recorded definer and connected account, and a description converted from a catalog " +
-		"records neither, so the comparison refuses the replacement and names the routine"
+		"replaced only beside a recorded definer and connected account, and neither a catalog converted from a " +
+		"declaration nor a description converted from a catalog records them, so the comparison refuses the " +
+		"replacement and names the routine"
 )
 
 // RoundTripUnmeasured is every compared field the round trip cannot ask
@@ -212,31 +210,7 @@ func Alternates() []string {
 func RoundTripLosses() []RecordedLoss { return slices.Clone(roundTripLosses) }
 
 var roundTripLosses = []RecordedLoss{
-	{
-		Fixtures:   []string{"function-procedure"},
-		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlserver", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossRoutineKind,
-	},
-	{
-		Fixtures:   []string{"grant-routine"},
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossRoutineKind,
-	},
 	{Fixtures: []string{"grant-routine"}, Dialects: []string{"postgres"}, Directions: []Direction{FromCatalog}, Reason: lossRoutinePublicExecute},
-	{
-		Fixtures:   []string{"function-procedure"},
-		Dialects:   []string{"clickhouse", "sqlite"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossRoutinesWithoutTarget,
-	},
-	{
-		Fixtures:   []string{"grant-routine"},
-		Dialects:   []string{"sqlite"},
-		Directions: []Direction{ToCatalog},
-		Reason:     lossRoutinesWithoutTarget,
-	},
 }
 
 // RoundTripGaps is every compared field a conversion or the comparison is
@@ -288,16 +262,10 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{
-		Field:      "schemamodel.Function.Kind",
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapRoutineKind,
-	},
-	{
-		Field:      "schemamodel.Function.Kind",
-		Dialects:   []string{"mariadb", "mysql", "sqlserver"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapRoutineKind,
+		Field:      "schemamodel.Grant.Dialects",
+		Dialects:   []string{"cockroachdb", "yugabytedb"},
+		Directions: []Direction{ToCatalog},
+		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Index.Facets", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
@@ -454,7 +422,7 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.Database.FeatureCoverage", Dialects: nil, Directions: nil, Reason: exemptFeatureCoverage},
 	{Field: "schemamodel.Database.NotDescribed", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "schemamodel.Field.Primary", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptClickHouseKey},
-	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
+	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: exemptForeignDefiner},
 	{Field: "schemamodel.MaterializedView.Owner", Dialects: viewOwnerDialects, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
 	{Field: "schemamodel.View.Owner", Dialects: viewOwnerDialects, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
 	{Field: "pgpublication.DesiredPublication.Owner", Dialects: []string{"postgres"}, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},

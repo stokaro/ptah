@@ -82,28 +82,34 @@ func ValidateRoutineDefinerReplacements(
 		if !strings.EqualFold(current.Security, "DEFINER") || desired.Security != "DEFINER" {
 			continue
 		}
+		kind := "function"
+		if desired.IsProcedure() {
+			kind = "procedure"
+		}
 		switch definer.Replace(current.Definer, database.CurrentAccount) {
 		case definer.Kept:
 			continue
 		case definer.Unknown:
 			return fmt.Errorf(
-				"%w: cannot safely replace %s function %q with SQL SECURITY DEFINER: "+
+				"%w: cannot safely replace %s %s %q with SQL SECURITY DEFINER: "+
 					"catalog ownership facts are incomplete (definer %q, connected account %q); "+
 					"the replacement could change its execution principal",
 				ptaherr.ErrInvalidSchemaDiff,
 				dialect,
+				kind,
 				desired.Name,
 				current.Definer,
 				database.CurrentAccount,
 			)
 		default:
 			return fmt.Errorf(
-				"%w: cannot safely replace %s function %q with SQL SECURITY DEFINER: "+
+				"%w: cannot safely replace %s %s %q with SQL SECURITY DEFINER: "+
 					"catalog definer %q differs from connected account %q; dropping and recreating "+
 					"it would change the execution principal. Connect as the routine definer, "+
 					"declare SQL SECURITY INVOKER, or leave it unchanged",
 				ptaherr.ErrInvalidSchemaDiff,
 				dialect,
+				kind,
 				desired.Name,
 				current.Definer,
 				database.CurrentAccount,
