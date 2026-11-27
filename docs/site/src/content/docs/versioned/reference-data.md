@@ -127,8 +127,8 @@ one comparison.
 
 A data migration is applied through the ordinary migration path, where neither
 the lint nor the safety gate classifies a row `INSERT`, an `UPDATE`, or a
-`DELETE` limited by a `WHERE` clause as destructive. So `ptah migrations data` gates destructive changes when it
-generates them:
+`DELETE` limited by a `WHERE` clause as destructive. So `ptah migrations data`
+gates destructive changes when it generates them:
 
 - Unless `--allow-destructive` is set, a migration that would `UPDATE` or
   `DELETE` existing rows is refused with a per-table summary of the volume.

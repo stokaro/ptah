@@ -122,13 +122,14 @@ func SplitSQLStatements(sql string) []string {
 // WHILE with the statements it runs are one statement each, semicolons inside
 // them included. A MERGE keeps the semicolon that ends it, which the server
 // requires. Statements with no semicolon between them, such as `DECLARE @n int
-// = 1 SELECT @n`, stay in one piece, so a variable stays in scope. The body of
-// CREATE PROCEDURE, FUNCTION, TRIGGER or VIEW, and the elements of CREATE
-// SCHEMA, start a piece, since each must open its batch, and end at the END
-// that closes a body opened by BEGIN, otherwise at the first semicolon outside
-// a body, or at the end of the batch; the text after it is cut as a batch of
-// its own. A batch whose statement boundaries Ptah cannot read is cut at each
-// semicolon outside such a body.
+// = 1 SELECT @n`, stay in one piece, so a variable stays in scope. CREATE
+// PROCEDURE, FUNCTION, TRIGGER and VIEW, and CREATE SCHEMA, start a piece, since
+// each must open its batch. The body of a procedure, function or trigger ends
+// at the first semicolon after the END that closes its BEGIN ... END body; a
+// body without BEGIN runs to the end of its batch. A view, and the elements of
+// CREATE SCHEMA, end at the first semicolon after them. The text after the
+// piece is cut as a batch of its own. A batch whose statement boundaries Ptah
+// cannot read is cut at each semicolon outside a routine body.
 // MySQL, MariaDB and ClickHouse string literals are scanned with C-style
 // backslash escapes, so a semicolon behind a backslash-escaped quote cannot
 // leak out as a statement boundary. And compound routine bodies are recognized

@@ -747,11 +747,20 @@ and never inside a statement, which it finds where SQL Server does. A
 `ELSE` or `WHILE` with the statement or block it runs are each one statement,
 semicolons inside included. A `MERGE` keeps its semicolon, which the server
 requires (`Msg 10713`); every other statement is sent without the one that ends
-it. A procedure, function, trigger or view, and `CREATE SCHEMA`, must open its
-batch (`Msg 111`), so each starts a piece of its own, and its body ends as
-described under [Triggers](#triggers). Where Ptah cannot find the statement
-boundaries of a batch, it cuts the batch at each semicolon outside a routine
-body.
+it. Where Ptah cannot find the statement boundaries of a batch, it cuts the
+batch at each semicolon outside a routine body.
+
+A procedure, function, trigger or view, and `CREATE SCHEMA`, must open its
+batch (`Msg 111`), so each starts a piece of its own, which ends here:
+
+- a procedure, function or trigger at the first semicolon after the `END` that
+  closes its `BEGIN ... END` body, and at the end of the batch when its body
+  has no `BEGIN`;
+- a view, and the elements of `CREATE SCHEMA`, at the first semicolon after
+  them.
+
+What follows runs as a batch of its own. `sqlcmd` sends it in the same batch,
+where the server refuses it (`Msg 156`) or stores it in the body.
 
 Each piece runs as a batch of its own, and a variable lives only in its batch,
 so a semicolon after a `DECLARE` ends the scope of the variable. Statements
@@ -809,10 +818,13 @@ other schema with `Msg 2103`. The table may be a view: an `INSTEAD OF` trigger
 is how a view takes writes, and `ptah db read` describes one on a view as it
 describes one on a table.
 
-The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
-line, at the `END` that closes a `BEGIN ... END` body, or at the end of the
-file. A body of several statements outside a `BEGIN ... END` block needs a
-`GO` line after it when anything follows it.
+The body follows `AS` and runs to the end of its batch. A schema file's body
+ends at a `GO` line, at the `END` that closes a `BEGIN ... END` body, or at the
+end of the file. In a migration file, the migrator ends a `BEGIN ... END` body
+at the first semicolon after its `END`, as
+[Scripts and batches](#scripts-and-batches) says. In both, a body without
+`BEGIN` runs to the end of its batch, so a body of several statements outside a
+`BEGIN ... END` block needs a `GO` line after it when anything follows it.
 
 A header clause that Ptah does not model is refused by name rather than
 dropped, because a trigger read without the clause would compare equal to one

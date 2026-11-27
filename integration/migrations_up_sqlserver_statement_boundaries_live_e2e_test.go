@@ -17,14 +17,20 @@ import (
 // logRows reads dbo.log back as one line, its messages in order.
 const logRows = "SELECT STRING_AGG(CONCAT(msg, ''), ',') WITHIN GROUP (ORDER BY msg) FROM dbo.log"
 
-// sqlServerStatementBoundaryScripts are migrations sqlcmd runs as written on
-// SQL Server 2022 and 2025, each with the query that reads its result back and
-// the result sqlcmd leaves. Cut at every semicolon outside a routine body, a
-// block reaches the server as a piece ending at an inner semicolon, which the
-// server refuses with Msg 102, a MERGE sent without its semicolon is refused
-// with Msg 10713, and a procedure sent after a statement in one batch is
-// refused with Msg 111. Cut at every statement the server reads, a variable
-// is out of scope in the statement after its DECLARE (Msg 137).
+// sqlServerStatementBoundaryScripts are migrations, each with the query that
+// reads its result back and the result a run leaves. sqlcmd runs every script
+// but three as written on SQL Server 2022 and 2025 and leaves the same result.
+// The three are a statement and a procedure after it with no semicolon and a
+// procedure and the statement after its body, which the server refuses in one
+// batch with Msg 111, and CREATE SCHEMA and the statement after its elements,
+// which it refuses with Msg 156. Those rows show Ptah's own cut, which runs
+// the routine or the schema as a batch of its own. Cut at every semicolon outside a
+// routine body, a block reaches the server as a piece ending at an inner
+// semicolon, which the server refuses with Msg 102, a MERGE sent without its
+// semicolon is refused with Msg 10713, and a procedure sent after a statement
+// in one batch is refused with Msg 111. Cut at every statement the server
+// reads, a variable is out of scope in the statement after its DECLARE (Msg
+// 137).
 var sqlServerStatementBoundaryScripts = []struct {
 	name  string
 	up    string

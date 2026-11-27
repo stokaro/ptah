@@ -940,6 +940,7 @@ func TestRead_KeepsTheSemicolonAMergeRequires(t *testing.T) {
 		{name: "an IF whose ELSE runs another statement", text: "IF 1 = 1 " + merge + " ELSE SELECT 1;", want: []bool{false}},
 		{name: "a block that ends with a MERGE", text: "BEGIN " + merge + " END;", want: []bool{false}},
 		{name: "another statement", text: "UPDATE dbo.t SET id = 1;", want: []bool{false}},
+		{name: "a MERGE with no semicolon after it", text: strings.TrimSuffix(merge, ";"), want: []bool{false}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
