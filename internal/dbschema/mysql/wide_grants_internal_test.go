@@ -157,11 +157,11 @@ func TestReadDatabaseRows_ReadsEachDatabase(t *testing.T) {
 }
 
 // TestReadDatabaseRows_PartialRevokesReadNamesLiterally reports no pattern
-// grant and no access, and asks for no row but the partial revokes, where
-// MySQL's partial_revokes is ON: the server then reads "%" and "_" in a
-// database name as the characters themselves, and a pattern grant reaches no
-// other database. Both lists are empty rather than nil, since the read
-// established them.
+// grant and no access where MySQL's partial_revokes is ON: the server then
+// reads "%" and "_" in a database name as the characters themselves, and a
+// pattern grant reaches no other database. Both lists are empty rather than
+// nil, since the read established them, and the read asks for the partial
+// revokes beside the rows.
 func TestReadDatabaseRows_PartialRevokesReadNamesLiterally(t *testing.T) {
 	c := qt.New(t)
 	reader, queries := openDatabaseRowCatalog(c, "ON", [][]driver.Value{{"rvc", "cs%", "SELECT"}})
@@ -171,7 +171,7 @@ func TestReadDatabaseRows_PartialRevokesReadNamesLiterally(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows.patternGrants([]string{"cs1"}), qt.DeepEquals, make([]catalog.WideGrant, 0))
 	c.Assert(rows.databaseAccess([]string{"cs1"}, nil, nil), qt.DeepEquals, make([]catalog.WideAccess, 0))
-	c.Assert(*queries, qt.HasLen, 3)
+	c.Assert(*queries, qt.HasLen, 4)
 	c.Assert((*queries)[2], qt.Contains, "JSON_TABLE(u.User_attributes")
 }
 

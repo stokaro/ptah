@@ -267,11 +267,13 @@ and those of the roles it inherits:
   characters first, and `_` before `%`. MariaDB looks a role and `PUBLIC` up
   apart and adds what each applies.
 
-A pattern that does not reach the database counts nothing, and so does every
-pattern on MySQL with `partial_revokes` on. Where Ptah cannot tell which row the
-server applies, the role counts every row that may apply, as the limits below
-say. The order was measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9
-and 12.3.3.
+A pattern that does not reach the database counts nothing. On MySQL with
+`partial_revokes` on, `%` and `_` are the characters themselves, and a role's
+row on a name holding them reaches the database it names in another case:
+``SELECT ON `X_Y`.*`` reaches `x_y` where `lower_case_table_names` is `0`.
+Where Ptah cannot tell which row the server applies, the role counts every row
+that may apply, as the limits below say. The order was measured on MySQL 8.4.13
+and 26.10.0 and on MariaDB 11.8.9 and 12.3.3.
 
 `SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
 access. The write rule leaves materialized views out of its count, since no

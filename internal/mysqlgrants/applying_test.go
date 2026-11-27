@@ -94,6 +94,64 @@ func TestOptions_ApplyingRows(t *testing.T) {
 	}
 }
 
+// TestOptions_ApplyingRows_PartialRevokes asks which rows MySQL applies with
+// partial_revokes ON, where `%` and `_` are the characters themselves. Each
+// row is a measurement on MySQL 8.4.13 and 26.10.0 with
+// lower_case_table_names=0: roles or an account held the rows, and a session
+// that activated them showed which privilege it held.
+func TestOptions_ApplyingRows_PartialRevokes(t *testing.T) {
+	literal := mysqlgrants.Options{LiteralDatabaseNames: true}
+	tests := []struct {
+		name     string
+		lookup   mysqlgrants.Lookup
+		database string
+		rows     []string
+		want     []string
+	}{
+		{name: "a role's row in another case on a name holding an underscore", lookup: mysqlgrants.RoleLookup, database: "x_y", rows: []string{"X_Y"}, want: []string{"X_Y"}},
+		{name: "a role's row in another case on a name holding a percent sign", lookup: mysqlgrants.RoleLookup, database: "x%y", rows: []string{"X%Y"}, want: []string{"X%Y"}},
+		{name: "an underscore is not a wildcard", lookup: mysqlgrants.RoleLookup, database: "xay", rows: []string{"X_Y"}},
+		{name: "a percent sign is not a wildcard", lookup: mysqlgrants.RoleLookup, database: "xzzy", rows: []string{"X%Y"}},
+		{name: "a role's row in another case on a name holding neither", lookup: mysqlgrants.RoleLookup, database: "xy", rows: []string{"XY"}},
+		{name: "the spelling first in byte order shadows the database's own", lookup: mysqlgrants.RoleLookup, database: "x_y", rows: []string{"x_y", "X_Y"}, want: []string{"X_Y"}},
+		{name: "two roles' rows on the database's own name", lookup: mysqlgrants.RoleLookup, database: "x_y", rows: []string{"x_y", "x_y"}, want: []string{"x_y"}},
+		{name: "an account's row in another case", lookup: mysqlgrants.AccountLookup, database: "x_y", rows: []string{"X_Y"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(literal.ApplyingRows(test.lookup, test.database, test.rows), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestOptions_RoleRowReaches compares a name holding `%` or `_` without case
+// only where MySQL reads the characters literally, under partial_revokes.
+func TestOptions_RoleRowReaches(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  mysqlgrants.Options
+		row      string
+		database string
+		want     bool
+	}{
+		{name: "partial_revokes: another case", options: mysqlgrants.Options{LiteralDatabaseNames: true}, row: "X_Y", database: "x_y", want: true},
+		{name: "partial_revokes: no wildcard", options: mysqlgrants.Options{LiteralDatabaseNames: true}, row: "X_Y", database: "xay", want: false},
+		{name: "partial_revokes: another case of a name holding neither", options: mysqlgrants.Options{LiteralDatabaseNames: true}, row: "XY", database: "xy", want: false},
+		{name: "without partial_revokes: a wildcard", options: mysqlgrants.Options{}, row: "x_y", database: "xay", want: true},
+		{name: "without partial_revokes: another case", options: mysqlgrants.Options{}, row: "X_Y", database: "x_y", want: false},
+		{name: "MariaDB: another case", options: mysqlgrants.Options{LiteralDatabaseNames: true, MariaDB: true}, row: "X_Y", database: "x_y", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.options.RoleRowReaches(test.row, test.database), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestOptions_ApplyingRows_LongMariaDBPattern returns both rows where a MariaDB
 // pattern's literal bytes exceed the longest database name, 64: the server's
 // unsigned arithmetic wraps there, so the order is unknown. No server was

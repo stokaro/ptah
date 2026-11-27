@@ -134,3 +134,72 @@ func TestReader_TakesPartialRevokesFromGrantsOnEveryDatabase_HappyPath(t *testin
 		})
 	}
 }
+
+// rowInAnotherCase answers a reader as MySQL 8.4.13 answers it with
+// partial_revokes ON for the role pwc, which holds SELECT on the database
+// x_y spelled X_Y, and the role pwo, which holds INSERT on x_y spelled as the
+// database is. Every other question goes to next.
+func rowInAnotherCase(next dbtest.QueryHandler) dbtest.QueryHandler {
+	answers := []struct {
+		marker string
+		result dbtest.QueryResult
+	}{
+		{marker: "SHOW VARIABLES WHERE Variable_name IN ('partial_revokes'", result: dbtest.QueryResult{
+			Columns: []string{"Variable_name", "Value"},
+			Rows:    [][]driver.Value{{"lower_case_table_names", "0"}, {"partial_revokes", "ON"}},
+		}},
+		{marker: "column_name = 'is_role'", result: dbtest.QueryResult{Columns: []string{"COUNT(*)"}, Rows: [][]driver.Value{{int64(0)}}}},
+		{marker: "JSON_TABLE(u.User_attributes", result: dbtest.QueryResult{Columns: []string{"role_name", "database_name", "name"}}},
+		{marker: "sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE", result: dbtest.QueryResult{
+			Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"},
+			Rows:    [][]driver.Value{{"pwc", "X_Y", "SELECT"}, {"pwo", "x_y", "INSERT"}},
+		}},
+		{marker: "Insert_priv = 'Y', Update_priv = 'Y'", result: dbtest.QueryResult{Columns: []string{"user"}}},
+		{marker: "SELECT column_name", result: dbtest.QueryResult{Columns: []string{"column_name"}, Rows: [][]driver.Value{
+			{"Select_priv"}, {"Insert_priv"}, {"Update_priv"}, {"Delete_priv"}, {"Create_priv"}, {"Drop_priv"},
+			{"References_priv"}, {"Index_priv"}, {"Alter_priv"}, {"Create_view_priv"}, {"Show_view_priv"}, {"Trigger_priv"},
+		}}},
+		{marker: "information_schema.SCHEMA_PRIVILEGES", result: dbtest.QueryResult{
+			Columns: []string{"role_name", "object_schema", "object_name", "column_name", "privilege", "grantable", "object_type"},
+			Rows:    [][]driver.Value{{"pwo", "x_y", "", "", "INSERT", "NO", "SCHEMA"}},
+		}},
+		{marker: "table_name = 'role_edges'", result: dbtest.QueryResult{Columns: []string{"COUNT(*)"}, Rows: [][]driver.Value{{int64(1)}}}},
+		{marker: "FROM mysql.role_edges", result: dbtest.QueryResult{
+			Columns: []string{"role_name", "role_host", "member_name", "member_host", "admin_option"},
+		}},
+		{marker: "FROM mysql.user", result: dbtest.QueryResult{Columns: []string{"user"}, Rows: [][]driver.Value{{"pwc"}, {"pwo"}}}},
+	}
+	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		for _, answer := range answers {
+			if strings.Contains(query, answer.marker) {
+				return answer.result, nil
+			}
+		}
+		return next(query, args)
+	}
+}
+
+// TestReader_ReadsARoleRowInAnotherCaseUnderPartialRevokes_HappyPath counts
+// a role's row on a name holding `_` that equals the database without case.
+// Measured on MySQL 8.4.13 and 26.10.0 with partial_revokes ON and
+// lower_case_table_names=0, a session with pwc active reads x_y, so pwc
+// reaches every table there; an account holding the row itself does not. The
+// row is also one a revoke on a table there cannot undo.
+func TestReader_ReadsARoleRowInAnotherCaseUnderPartialRevokes_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	session := dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants,
+		visibleCatalog{selected: "x_y", tables: []string{"t1"}}.answer)
+	db := dbtest.Open(t, rowInAnotherCase(session))
+
+	got, err := mysql.NewMySQLReaderWithCapabilities(db.SQL, "", capability.MySQL84()).ReadSchemaContext(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.WideAccess, qt.DeepEquals, []catalog.WideAccess{
+		{Role: "pwc", Read: true, Source: "SELECT ON `X_Y`.*", Schema: "x_y", Subject: "pwc"},
+		{Role: "pwo", Write: true, Schema: "x_y", Subject: "pwo"},
+	})
+	c.Assert(got.SchemaGrantsInWideAccess, qt.IsTrue)
+	c.Assert(got.WideGrants, qt.DeepEquals, []catalog.WideGrant{
+		{Role: "pwc", Privilege: "SELECT", Grant: "SELECT ON `X_Y`.*", Schema: "x_y"},
+	})
+}

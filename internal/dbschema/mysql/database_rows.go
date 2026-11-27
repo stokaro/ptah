@@ -41,9 +41,10 @@ type databaseRows struct {
 // MySQL with partial_revokes ON reads "%" and "_" in a database name as the
 // characters themselves, so a pattern grant reaches no other database there:
 // measured on MySQL 8.4.13, after GRANT SELECT ON `wc%`.*, a member is refused
-// wc1.t. MariaDB has no such setting. The read then returns no rows, since no
-// row but the database's own applies to it, and reads the partial revokes
-// instead, as [Reader.readPartialRevokes] says.
+// wc1.t. MariaDB has no such setting. A role's row on a name holding them
+// still reaches a database it equals without case, as
+// [mysqlgrants.Options.RoleRowReaches] says, so the rows are read there too,
+// and so are the partial revokes ([Reader.readPartialRevokes]).
 func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*databaseRows, error) {
 	options, err := mysqlgrants.ReadOptions(ctx, r.db)
 	if err != nil {
@@ -60,7 +61,6 @@ func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*dat
 		if err != nil {
 			return nil, err
 		}
-		return rows, nil
 	}
 	query := databaseRowQuery(qualifyPredicate(predicate, "u."))
 	if source.tables {
@@ -203,10 +203,10 @@ func mariaDBDatabaseRowQuery(rolePredicate string, databaseColumns []globalTable
 // Every row that reaches the database is reported, including one the server
 // does not apply because another row shadows it: the refusal must not plan a
 // revoke that a pattern undoes once the row shadowing it is gone, so it fails
-// closed. [mysqlgrants.Options.MatchesDatabase] decides which rows reach it,
-// as the server's privilege check does; SQL LIKE disagrees with that check on
-// a multi-byte name and, on MySQL under NO_BACKSLASH_ESCAPES, on an escaped
-// wildcard.
+// closed. [mysqlgrants.Options.RoleRowReaches] decides which rows reach it,
+// as the server's privilege check does for a role; SQL LIKE disagrees with
+// that check on a multi-byte name and, on MySQL under NO_BACKSLASH_ESCAPES, on
+// an escaped wildcard.
 func (d *databaseRows) patternGrants(databases []string) []catalog.WideGrant {
 	if d == nil {
 		return nil
@@ -216,7 +216,7 @@ func (d *databaseRows) patternGrants(databases []string) []catalog.WideGrant {
 	for _, database := range databases {
 		for _, role := range slices.Sorted(maps.Keys(d.held)) {
 			for _, name := range slices.Sorted(maps.Keys(d.held[role])) {
-				if same.Same(name, database) || !d.options.MatchesDatabase(name, database) {
+				if same.Same(name, database) || !d.options.RoleRowReaches(name, database) {
 					continue
 				}
 				for _, privilege := range d.held[role][name] {
@@ -283,11 +283,11 @@ func (d *databaseRows) databaseAccess(databases []string, roles []catalog.Role, 
 }
 
 // statesOwnRows reports whether [databaseRows.databaseAccess] decides the
-// access of the rows on each database's own name. Under partial_revokes no
-// row is read, since every row naming the database applies, and the grants
-// on the database count as they are.
+// access of the rows on each database's own name, which it does wherever the
+// rows were read: under partial_revokes too, a role's row on the database's
+// own name gives way to another spelling of it ([mysqlgrants.Options.ApplyingRows]).
 func (d *databaseRows) statesOwnRows() bool {
-	return d != nil && !d.options.LiteralDatabaseNames
+	return d != nil
 }
 
 // subjectAccess is [databaseRows.databaseAccess] for one subject, whose

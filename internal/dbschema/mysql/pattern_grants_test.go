@@ -246,6 +246,16 @@ func TestReader_ReadsTheAccessWideGrantsGive(t *testing.T) {
 			patterns: [][]driver.Value{{"lc2_r", "R%", "SELECT"}},
 			settings: map[string]string{"partial_revokes": "ON", "lower_case_table_names": "0"},
 			want:     []catalog.WideAccess{everywhere},
+			ownRows:  true,
+		},
+		{
+			// Measured on MySQL 8.4.13 and 26.10.0 with partial_revokes ON:
+			// a role holding SELECT ON `X_Y`.* reads x_y.
+			name:     "a role's row in another case under partial_revokes",
+			patterns: [][]driver.Value{{"lc2_r", "r_lc", "SELECT"}},
+			settings: map[string]string{"partial_revokes": "ON", "lower_case_table_names": "0"},
+			want:     []catalog.WideAccess{everywhere, {Role: "lc2_r", Subject: "lc2_r", Read: true, Source: "SELECT ON `r_lc`.*", Schema: "R_LC"}},
+			ownRows:  true,
 		},
 		{name: "a refused read of the patterns", patternErr: refused},
 		{name: "a refused read of the grants on every database", patterns: [][]driver.Value{{"lc2_r", "R%", "SELECT"}}, globalErr: refused},

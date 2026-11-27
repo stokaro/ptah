@@ -1194,6 +1194,12 @@ Where a grant applies decides what it proves:
 - **A role counts while it is active**, through `SET DEFAULT ROLE` or
   `activate_all_roles_on_login`. Connections do not run `SET ROLE`, so a role that is
   granted and not set holds nothing here.
+- **An active role changes which row applies on MySQL.** With a role active, a name
+  with no `%` or `_` matches byte for byte, so ``GRANT SELECT ON `qa\bc`.*`` reaches
+  `qabc` only without one, and with `partial_revokes` on ``GRANT SELECT ON `X_Y`.*``
+  reaches `x_y` only with one. SHOW GRANTS does not say whether a granted role is
+  active, so while one is granted Ptah counts a row only where both lookups apply it.
+  Measured on 8.4.13 and 26.10.0.
 - **`ALL PRIVILEGES` on the database** shows everything on MariaDB 11.4 and newer. On
   MySQL and on MariaDB 10.11 it lists every routine and shows the body only of the
   account's own, as `EXECUTE`, `ALTER ROUTINE` and `CREATE ROUTINE` on the database do:
@@ -1637,7 +1643,12 @@ would carry out. Measured on 8.4.13 and 11.8.9.
 Case counts on a server with `lower_case_table_names=0` and does not on one
 that folds names, so a grant on `` `D%` `` reaches no table of `d1` there.
 MySQL with `partial_revokes` on reads `%` and `_` as the characters themselves,
-so a pattern grant reaches no other database, and Ptah reports none. Where
+so a pattern grant reaches no other database. Through a role, a name holding
+them still reaches the database it names in another case, where
+`lower_case_table_names` is `0`: ``SELECT ON `X_Y`.*`` reaches `x_y` and not
+`xay`, while ``SELECT ON `XY`.*`` reaches no `xy`, and an account holding the
+row itself reads neither. Ptah counts such a row and refuses a revoke on a table
+it keeps. Measured on 8.4.13 and 26.10.0. Where
 several database rows match, the server applies one of them, but a shadowed
 pattern's privilege applies again once the row that shadows it is gone. So Ptah
 counts every row that matches, and refuses a revoke on a table such a pattern
