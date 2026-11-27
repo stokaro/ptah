@@ -188,7 +188,7 @@ func TestSchemaApplyOracleKeepsARevokeOnAReplacedRoutineE2E(t *testing.T) {
 	settled := apply("--dry-run")
 
 	c.Assert(replaced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replaced.Stdout, replaced.Stderr))
-	c.Assert(replaced.Stdout, qt.Contains, "REVOKE DEBUG ON rt FROM "+account.role)
+	c.Assert(replaced.Stdout, qt.Contains, "REVOKE DEBUG ON RT FROM "+account.role)
 	c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
 	c.Assert(settled.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 	c.Assert(oracleRoutinePrivilegesOf(c, account.owner, account.role, account.name), qt.DeepEquals, []string{"EXECUTE"})
