@@ -368,7 +368,8 @@ proven to stay inside the disposable realm:
   statements, MariaDB compound statements outside a stored program, such as
   `BEGIN NOT ATOMIC` or an Oracle-mode block that begins with `DECLARE` or
   with a `BEGIN` other than `BEGIN` or `BEGIN WORK`, `LOAD DATA`/`LOAD XML`, `IMPORT TABLE`, and externally
-  backed `FEDERATED`, `CONNECT` or `SPIDER` tables. A `DEFINER` clause is read
+  backed `FEDERATED`, `CONNECT` or `SPIDER` tables, or a table with a
+  `CONNECTION` option. A `DEFINER` clause is read
   as the server reads it, an unquoted host such as `app@$` included. A
   `CREATE` or `ALTER` whose words the guard cannot follow to a kind of object
   it knows is refused, since it may define a body. On MariaDB, the statement a
@@ -868,8 +869,11 @@ reaches past the dev database:
   cache statements `CACHE INDEX` and `LOAD INDEX INTO CACHE`, and
   `SET RESOURCE GROUP`. A statement that reaches the account the run connects
   as stays refused, and so does a write to an account table of the `mysql`
-  schema, in a body too. The guard reads a body as the statement that defines
-  it writes it. SQL that a body builds and runs, with `PREPARE` and `EXECUTE`
+  schema, in a body too. `CREATE TABLE` and `ALTER TABLE` with a `FEDERATED`,
+  `CONNECT` or `SPIDER` engine, or a `CONNECTION` option, stay refused: their
+  writes can reach an account table through the table they name. The guard
+  reads a body as the statement that defines it writes it. SQL that a body
+  builds and runs, with `PREPARE` and `EXECUTE`
   or MariaDB's `EXECUTE IMMEDIATE`, is not read, so such a body can still
   reach the account here.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
@@ -1000,15 +1004,16 @@ accepts:
 - on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements,
   MariaDB compound statements, users, roles, `GRANT`, `REVOKE`, loadable
   functions, other databases and writes to them, the key cache and resource
-  group statements, `FEDERATED`, `CONNECT` and `SPIDER` tables, `LOAD DATA`,
+  group statements, `LOAD DATA`,
   `LOAD XML`, `IMPORT TABLE`, `SELECT ... INTO OUTFILE` or `DUMPFILE`, and a
   client character set outside the UTF-8 family, set by the history or by the
   dev session, but no statement that reaches the account the run connects as
-  and no write to an account table of the `mysql` schema. A write through a
-  `FEDERATED`, `CONNECT` or `SPIDER` table whose connection names an account
-  table is not seen (stokaro/ptah#6705). The official MySQL and MariaDB images
-  enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
-  refused;
+  and no write to an account table of the `mysql` schema. `CREATE TABLE` and
+  `ALTER TABLE` with a `FEDERATED`, `CONNECT` or `SPIDER` engine, or a
+  `CONNECTION` option, stay refused in every realm and under trust. The guard
+  cannot prove that their destination is not an account table. The same rule
+  applies to table options in a stored or anonymous body and in a partition
+  definition. `INSTALL SONAME` and `CREATE SERVER` stay refused too;
 - on SQL Server, `EXEC`, `SETUSER`, functions, procedures and DML triggers,
   databases, logins, credentials, synonyms, a name of another database the dev session
   reaches, reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and
