@@ -32,6 +32,12 @@ type Revision struct {
 	// or nil when the directory holds no file for the revision. A count other
 	// than the revision's Total means the file changed after the run.
 	FileStatements *int
+	// FailedStatementRunsSeveral reports that the statement the run failed
+	// in runs several statements outside a transaction, so some of them may
+	// have committed before the one that failed
+	// ([migrator.Migrator.RevisionFailedStatementRunsSeveral]). Neither
+	// running it again nor resuming after it is right on its own.
+	FailedStatementRunsSeveral bool
 	// Selection is what [repaircommand.SelectionFor] returns for the inputs
 	// the migrator that read the revision was built from. Every command the
 	// hint names carries it, so it reads the same directory and revision
@@ -78,6 +84,9 @@ func Recovery(dirty Revision) string {
 	}
 	if revision.Applied == 0 && ddltx.AllStatementsDurable(ddltx.ClassOf(dirty.Dialect)) {
 		return uncheckpointedHint(dirty)
+	}
+	if dirty.FailedStatementRunsSeveral && !dirty.OwnTransactions {
+		return partlyCommittedHint(dirty)
 	}
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return partialRollbackHint(dirty)
@@ -231,6 +240,42 @@ func partialRollbackHint(dirty Revision) string {
 		revision.Applied,
 		revision.Total,
 		dirty.repair(fmt.Sprintf(" --resume-from %d", revision.Applied+1)),
+	)
+}
+
+// partlyCommittedHint names what ends a run that failed inside a statement
+// that runs several, such as a T-SQL block, outside a transaction. The
+// statements before the one that failed committed, so a run from that
+// statement repeats them and a run after it skips the rest of it: the operator
+// finishes the statement by hand, then resumes after it, or records the result
+// where it was the last one.
+func partlyCommittedHint(dirty Revision) string {
+	revision := dirty.Revision
+	failed := revision.Applied + 1
+	if revision.Direction == migrator.MigrationDirectionDown {
+		next := fmt.Sprintf("%s (version 0 where this is the oldest migration in the directory) to move the "+
+			"boundary back", dirty.setPrevious())
+		if failed < revision.Total {
+			next = fmt.Sprintf("%s to run the remaining down statements and remove the revision",
+				dirty.repair(fmt.Sprintf(" --resume-from %d", failed+1)))
+		}
+		return fmt.Sprintf(
+			"This rollback failed in down statement %d of %d, which runs several statements outside a "+
+				"transaction, so some of them may have committed. Inspect the database and finish what "+
+				"statement %d left undone, then run %s.",
+			failed, revision.Total, failed, next,
+		)
+	}
+	next := fmt.Sprintf("%s to record the migration applied", dirty.reconciled())
+	if failed < revision.Total {
+		next = fmt.Sprintf("%s to run the rest, or %s once you have run them yourself",
+			dirty.repair(fmt.Sprintf(" --resume-from %d", failed+1)), dirty.reconciled())
+	}
+	return fmt.Sprintf(
+		"This migration failed in statement %d of %d, which runs several statements outside a transaction, "+
+			"so some of them may have committed. Inspect the database and finish what statement %d left "+
+			"undone, then run %s.",
+		failed, revision.Total, failed, next,
 	)
 }
 

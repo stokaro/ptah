@@ -1300,11 +1300,12 @@ func rollbackStatus(
 		return nil, fmt.Errorf("error reading the migration revisions: %w", err)
 	}
 	return nil, fmt.Errorf("error running down migrations: %w\n%s", err, dirtyhint.Recovery(dirtyhint.Revision{
-		Revision:        &dirty.Revision,
-		Dialect:         hint.dialect,
-		OwnTransactions: mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
-		FileStatements:  dirtyhint.FileStatements(mig, dirty.Revision),
-		Selection:       hint.selection,
+		Revision:                   &dirty.Revision,
+		Dialect:                    hint.dialect,
+		OwnTransactions:            mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
+		FileStatements:             dirtyhint.FileStatements(mig, dirty.Revision),
+		FailedStatementRunsSeveral: mig.RevisionFailedStatementRunsSeveral(dirty.Revision),
+		Selection:                  hint.selection,
 	}))
 }
 

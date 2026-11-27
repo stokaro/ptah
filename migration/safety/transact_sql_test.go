@@ -14,7 +14,7 @@ const (
 	dropTableReason          = "DROP TABLE removes the table and all rows"
 	truncateReason           = "TRUNCATE removes all rows from a table"
 	deleteWithoutWhereReason = "DELETE without a WHERE clause removes every row it reaches, every row of its table in the plain form"
-	mergeDeleteReason        = "MERGE with a THEN DELETE arm removes the target rows the arm matches, " +
+	mergeDeleteReason        = "MERGE with a DELETE arm removes the target rows the arm matches, " +
 		"every row the source does not hold under WHEN NOT MATCHED BY SOURCE"
 )
 
@@ -36,6 +36,13 @@ func TestAssessSQL_SQLServerJudgesEveryStatementTheServerRuns(t *testing.T) {
 		{name: "a DELETE after a SELECT", statement: "SELECT 1 AS a DELETE FROM dbo.x", severity: safety.Destructive, reason: deleteWithoutWhereReason},
 		{name: "a DROP TABLE after an ALTER TABLE that adds a column", statement: "ALTER TABLE dbo.t ADD c int DROP TABLE dbo.x", severity: safety.Destructive, reason: dropTableReason},
 		{name: "a block", statement: "BEGIN SELECT 1; DROP TABLE dbo.x; END", severity: safety.Destructive, reason: dropTableReason},
+		{name: "an EXEC of a literal", statement: "EXEC(N'DROP TABLE dbo.x')", severity: safety.Destructive, reason: dropTableReason},
+		{name: "an EXEC of a literal that holds a doubled quote", statement: "EXECUTE ('SELECT ''a''; TRUNCATE TABLE dbo.x')", severity: safety.Destructive, reason: truncateReason},
+		{name: "sp_executesql of a literal", statement: "EXEC sp_executesql N'DELETE FROM dbo.x', N'@p int', @p = 1", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{name: "sp_executesql of a named literal", statement: "IF 1 = 1 EXEC sys.sp_executesql @stmt = N'DROP TABLE dbo.x'", severity: safety.Destructive, reason: dropTableReason},
+		{name: "an EXEC of a literal an EXEC holds", statement: "EXEC(N'EXEC(N''DROP TABLE dbo.x'')')", severity: safety.Destructive, reason: dropTableReason},
+		{name: "an EXEC of a variable, which is not read", statement: "DECLARE @s nvarchar(100) = N'DROP TABLE dbo.x'; EXEC(@s)", severity: safety.Safe, reason: safeReason},
+		{name: "an EXEC of a concatenation, which is not read", statement: "EXEC(N'DROP' + N' TABLE dbo.x')", severity: safety.Safe, reason: safeReason},
 		{name: "a nested block", statement: "BEGIN SELECT 1; BEGIN TRUNCATE TABLE dbo.x; END; END", severity: safety.Destructive, reason: truncateReason},
 		{name: "a CATCH block", statement: "BEGIN TRY SELECT 1; END TRY BEGIN CATCH DROP TABLE dbo.x; END CATCH", severity: safety.Destructive, reason: dropTableReason},
 		{name: "an IF", statement: "IF OBJECT_ID(N'dbo.x') IS NOT NULL TRUNCATE TABLE dbo.x", severity: safety.Destructive, reason: truncateReason},
@@ -120,6 +127,17 @@ func TestAssessSQL_DeleteWithoutWhereIsDestructive(t *testing.T) {
 		{target: "postgres", statement: "DROP /* old */ TABLE users", severity: safety.Destructive, reason: dropTableReason},
 		{target: "sqlserver", statement: "SELECT 1 DROP /* old */ TABLE dbo.users", severity: safety.Destructive, reason: dropTableReason},
 		{target: "postgres", statement: "DELETE FROM users WHERE note = '-- x'", severity: safety.Safe, reason: safeReason},
+		{target: "postgres", statement: "DELETE FROM t USING (SELECT 1 FROM u WHERE u.x = 1) q", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "mysql", statement: "DELETE FROM t USING t JOIN (SELECT 1 AS x FROM u WHERE u.x = 1) q", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "mysql", statement: "DELETE FROM t USING (SELECT 1 FROM u WHERE u.x = 1) q", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "sqlserver", statement: "DELETE t FROM dbo.t CROSS JOIN (SELECT 1 AS x WHERE 1 = 1) q", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "sqlserver", statement: "DELETE FROM [where]", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "sqlserver", statement: "DELETE FROM [where] WHERE id = 1", severity: safety.Safe, reason: safeReason},
+		{target: "postgres", statement: "WITH gone AS (DELETE FROM t RETURNING *) SELECT count(*) FROM gone", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "postgres", statement: "WITH gone AS NOT MATERIALIZED (DELETE FROM t RETURNING *) SELECT 1", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "postgres", statement: "WITH gone AS (DELETE FROM t WHERE id = 1 RETURNING *) SELECT count(*) FROM gone", severity: safety.Safe, reason: safeReason},
+		{target: "postgres", statement: "WITH d AS (SELECT id FROM (SELECT id FROM users) x) DELETE FROM users", severity: safety.Destructive, reason: deleteWithoutWhereReason},
+		{target: "postgres", statement: "SELECT 1; DELETE FROM users", severity: safety.Destructive, reason: deleteWithoutWhereReason},
 	} {
 		t.Run(test.target+" "+test.statement, func(t *testing.T) {
 			c := qt.New(t)
@@ -134,8 +152,9 @@ func TestAssessSQL_DeleteWithoutWhereIsDestructive(t *testing.T) {
 	}
 }
 
-// TestAssessSQL_MergeThatDeletesIsDestructive: a MERGE with a THEN DELETE arm
-// removes the target rows the arm matches, and under WHEN NOT MATCHED BY
+// TestAssessSQL_MergeThatDeletesIsDestructive: a MERGE with a DELETE arm,
+// THEN DELETE or the DELETE WHERE of an Oracle UPDATE arm, removes the target
+// rows the arm matches, and under WHEN NOT MATCHED BY
 // SOURCE every row the source does not hold, so its words rate it as a DELETE
 // without a WHERE clause is rated. A MERGE that only inserts and updates
 // removes nothing.
@@ -164,6 +183,16 @@ func TestAssessSQL_MergeThatDeletesIsDestructive(t *testing.T) {
 		{
 			target:    "postgres",
 			statement: "WITH v AS (SELECT 1 AS id) MERGE INTO t USING v ON t.id = v.id WHEN MATCHED THEN DELETE",
+			severity:  safety.Destructive, reason: mergeDeleteReason,
+		},
+		{
+			target:    "oracle",
+			statement: "MERGE INTO t USING s ON (t.id = s.id) WHEN MATCHED THEN UPDATE SET t.v = s.v DELETE WHERE t.v = 0",
+			severity:  safety.Destructive, reason: mergeDeleteReason,
+		},
+		{
+			target:    "postgres",
+			statement: "SELECT 1; MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE",
 			severity:  safety.Destructive, reason: mergeDeleteReason,
 		},
 		{

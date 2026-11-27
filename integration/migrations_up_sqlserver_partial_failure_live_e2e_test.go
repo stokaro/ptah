@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -175,4 +176,170 @@ func TestCompatMigrateApplyResumesAfterASQLServerBlockLiveE2E(t *testing.T) {
 	c.Assert(db.QueryRowContext(ctx, logRows).Scan(&rows), qt.IsNil)
 	c.Assert(rows, qt.Equals, "one,two")
 	c.Assert(sqlServerRevision(c, ctx, db, "atlas_schema_revisions"), qt.Equals, "3/3 ")
+}
+
+// sqlServerPartlyCommittedScripts are migrations no transaction wraps that fail
+// inside a statement that runs several: a block, and two INSERTs with no
+// semicolon between them. The server commits the INSERT of 'a' before the one
+// that fails, so running the statement again would write 'a' twice. Once the
+// missing table exists, a retry refuses to run the statement again and leaves
+// the rows and the revision as the failed run left them.
+var sqlServerPartlyCommittedScripts = []struct {
+	name string
+	up   string
+}{
+	{
+		name: "a block that fails after an INSERT",
+		up: "-- atlas:txmode none\nCREATE TABLE dbo.log (msg nvarchar(10));\n" +
+			"BEGIN\n  INSERT INTO dbo.log VALUES (N'a');\n  INSERT INTO dbo.missing VALUES (1);\nEND;\n" +
+			"INSERT INTO dbo.log VALUES (N'after');\n",
+	},
+	{
+		name: "two INSERTs with no semicolon between them",
+		up: "-- atlas:txmode none\nCREATE TABLE dbo.log (msg nvarchar(10));\n" +
+			"INSERT INTO dbo.log VALUES (N'a') INSERT INTO dbo.missing VALUES (1);\n" +
+			"INSERT INTO dbo.log VALUES (N'after');\n",
+	},
+}
+
+// sqlServerPartlyCommittedRefusal is the part of the retry's refusal that
+// names the statement.
+const sqlServerPartlyCommittedRefusal = "cannot resume automatically: statement 2 runs several statements outside a transaction"
+
+// TestMigrationsUpRefusesToRerunAPartlyCommittedSQLServerStatementLiveE2E fails
+// each script through `ptah migrations up`, creates the missing table, and
+// retries with --allow-dirty. `ptah migrations status` then names the resume
+// after the failed statement.
+func TestMigrationsUpRefusesToRerunAPartlyCommittedSQLServerStatementLiveE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	for _, test := range sqlServerPartlyCommittedScripts {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			databaseURL, db := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte(test.up), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+			out, err := runPtahNativeWithError("migrations", "up", "--db-url", databaseURL, "--migrations-dir", dir)
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+			_, err = db.ExecContext(ctx, "CREATE TABLE dbo.missing (id int)")
+			c.Assert(err, qt.IsNil)
+
+			out, err = runPtahNativeWithError("migrations", "up", "--db-url", databaseURL, "--migrations-dir", dir, "--allow-dirty")
+
+			c.Assert(err, qt.ErrorMatches, `(?s).*migration 1 `+regexp.QuoteMeta(sqlServerPartlyCommittedRefusal)+`.*`, qt.Commentf("%s", out))
+			var rows string
+			c.Assert(db.QueryRowContext(ctx, logRows).Scan(&rows), qt.IsNil)
+			c.Assert(rows, qt.Equals, "a")
+			c.Assert(sqlServerRevisionCounts(c, ctx, db, "schema_migrations"), qt.Equals, "1/3")
+			status, _ := runPtahNativeWithError("migrations", "status", "--db-url", databaseURL, "--migrations-dir", dir)
+			c.Assert(status, qt.Contains, "This migration failed in statement 2 of 3, which runs several statements outside a transaction")
+			c.Assert(status, qt.Contains, "'ptah migrations repair --version 1 --resume-from 3")
+		})
+	}
+}
+
+// TestCompatMigrateApplyRefusesToRerunAPartlyCommittedSQLServerStatementLiveE2E
+// is the same run through `ptah-compat migrate apply`.
+func TestCompatMigrateApplyRefusesToRerunAPartlyCommittedSQLServerStatementLiveE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	for _, test := range sqlServerPartlyCommittedScripts {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			databaseURL, db := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "20260101000000_init.sql"), []byte(test.up), 0o600), qt.IsNil)
+			out, err := runCompatVerb("migrate", "hash", "--dir", "file://"+filepath.ToSlash(dir))
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			out, err = runCompatVerb("migrate", "apply", "--url", databaseURL, "--dir", "file://"+filepath.ToSlash(dir))
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+			_, err = db.ExecContext(ctx, "CREATE TABLE dbo.missing (id int)")
+			c.Assert(err, qt.IsNil)
+
+			out, err = runCompatVerb("migrate", "apply", "--url", databaseURL, "--dir", "file://"+filepath.ToSlash(dir), "--allow-dirty")
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(out, qt.Matches, `(?s).*migration 20260101000000 `+regexp.QuoteMeta(sqlServerPartlyCommittedRefusal)+`.*`)
+			var rows string
+			c.Assert(db.QueryRowContext(ctx, logRows).Scan(&rows), qt.IsNil)
+			c.Assert(rows, qt.Equals, "a")
+			c.Assert(sqlServerRevisionCounts(c, ctx, db, "atlas_schema_revisions"), qt.Equals, "1/3")
+		})
+	}
+}
+
+// sqlServerRolledBackBlock fails inside a block that a file transaction wraps.
+// The rollback undoes the INSERT of 'a', so a retry from the block writes each
+// row once and is not refused.
+const sqlServerRolledBackBlock = "BEGIN\n  INSERT INTO dbo.log VALUES (N'a');\n  INSERT INTO dbo.missing VALUES (1);\nEND;\n" +
+	"INSERT INTO dbo.log VALUES (N'after');\n"
+
+// TestMigrationsUpRerunsASQLServerBlockATransactionRolledBackLiveE2E is the
+// control for the refusal above: under the file transaction the same block
+// runs again on a retry, and every row is written once. The status hint names
+// that retry.
+func TestMigrationsUpRerunsASQLServerBlockATransactionRolledBackLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	dbURL := dbtarget.URL(c, dbtarget.SQLServer)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	databaseURL, db := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
+	_, err := db.ExecContext(ctx, "CREATE TABLE dbo.log (msg nvarchar(10))")
+	c.Assert(err, qt.IsNil)
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte(sqlServerRolledBackBlock), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+	out, err := runPtahNativeWithError("migrations", "up", "--db-url", databaseURL, "--migrations-dir", dir)
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+	status, _ := runPtahNativeWithError("migrations", "status", "--db-url", databaseURL, "--migrations-dir", dir)
+	c.Assert(status, qt.Contains, "No statement of this migration reached the database.")
+	_, err = db.ExecContext(ctx, "CREATE TABLE dbo.missing (id int)")
+	c.Assert(err, qt.IsNil)
+
+	out, err = runPtahNativeWithError("migrations", "up", "--db-url", databaseURL, "--migrations-dir", dir, "--allow-dirty")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	var rows string
+	c.Assert(db.QueryRowContext(ctx, logRows).Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, "a,after")
+}
+
+// TestCompatMigrateApplyRerunsASQLServerBlockATransactionRolledBackLiveE2E is
+// the same control through `ptah-compat migrate apply`.
+func TestCompatMigrateApplyRerunsASQLServerBlockATransactionRolledBackLiveE2E(t *testing.T) {
+	c := qt.New(t)
+	dbURL := dbtarget.URL(c, dbtarget.SQLServer)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	databaseURL, db := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
+	_, err := db.ExecContext(ctx, "CREATE TABLE dbo.log (msg nvarchar(10))")
+	c.Assert(err, qt.IsNil)
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "20260101000000_init.sql"), []byte(sqlServerRolledBackBlock), 0o600), qt.IsNil)
+	out, err := runCompatVerb("migrate", "hash", "--dir", "file://"+filepath.ToSlash(dir))
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	out, err = runCompatVerb("migrate", "apply", "--url", databaseURL, "--dir", "file://"+filepath.ToSlash(dir))
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+	_, err = db.ExecContext(ctx, "CREATE TABLE dbo.missing (id int)")
+	c.Assert(err, qt.IsNil)
+
+	out, err = runCompatVerb("migrate", "apply", "--url", databaseURL, "--dir", "file://"+filepath.ToSlash(dir), "--allow-dirty")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	var rows string
+	c.Assert(db.QueryRowContext(ctx, logRows).Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, "a,after")
+}
+
+// sqlServerRevisionCounts reads the applied and total counts of the one
+// revision in table.
+func sqlServerRevisionCounts(c *qt.C, ctx context.Context, db *sql.DB, table string) string {
+	c.Helper()
+	var applied, total int
+	// #nosec G202 -- table is one of the two revision table names the tests pass.
+	c.Assert(db.QueryRowContext(ctx, "SELECT applied, total FROM "+table).Scan(&applied, &total), qt.IsNil)
+	return fmt.Sprintf("%d/%d", applied, total)
 }
