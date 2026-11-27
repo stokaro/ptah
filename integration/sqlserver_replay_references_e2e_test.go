@@ -111,6 +111,17 @@ var sqlServerReferences = []struct {
 		statement: "INSERT INTO dbo.items SELECT TOP (1) database_id FROM master.sys.databases;",
 		operation: `cross-database reference "master.sys.databases"`,
 	},
+	// SETUSER changes the user the session runs as, and with it the answer of
+	// HAS_DBACCESS; a bare SETUSER goes back to the login. The fixture cannot
+	// hold a user to change to, since the cleanup refuses a dev database that
+	// holds one, so these rows are refusals only.
+	{name: "SETUSER", statement: "SETUSER 'dbo';", operation: "SETUSER"},
+	{name: "SETUSER WITH NORESET", statement: "SETUSER N'dbo' WITH NORESET;", operation: "SETUSER"},
+	{
+		name:      "a bare SETUSER before a write",
+		statement: "IF 1 = 1 BEGIN SETUSER INSERT INTO {other}.dbo.kept VALUES (88) END;",
+		operation: "SETUSER",
+	},
 }
 
 // TestSQLServerReplayRefusesAReferenceToAnotherDatabaseE2E replays each

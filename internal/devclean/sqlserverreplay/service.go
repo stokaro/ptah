@@ -91,17 +91,25 @@ func (guard) ValidateSession(ctx context.Context, session replay.Session, _ repl
 }
 
 // reachedDatabases answers whether the dev session reaches a database of a
-// name, and asks the session once per name for the run: a run validates every
-// statement before it runs the first, and each file again before its own.
+// name, and asks the session once per name for the run. When it asks differs
+// by path: `migrations validate` validates a file and runs it before it
+// validates the next, so the run's own statements sit between two questions.
 //
-// An answer holds for the run as far as the run's own statements go. Nothing
-// the guard accepts without trust makes another database reachable: CREATE
-// DATABASE, EXECUTE AS and every EXEC but the renderer's shapes are refused
-// without trust, and ALTER DATABASE is refused with trust as well, so a run
-// cannot create a database, rename one or take another login between the
-// question and the statement it judged. Another session on the same server
-// can: a database created or a login mapped by someone else while the run
-// replays is one the guard answered for before it existed.
+// An answer holds for the run as far as the run's own statements go, in
+// whatever order the path asks. Without trust the guard refuses each
+// statement that changes which databases the session reaches: an identity
+// change (EXECUTE AS, and SETUSER in every form), CREATE DATABASE, and every
+// EXEC but the renderer's shapes. It refuses CREATE, ALTER and DROP of a user
+// or a role, ALTER AUTHORIZATION and ALTER DATABASE with trust as well, and
+// the cleanup that claims the dev database refuses one that holds a user
+// other than the session's own. A trusted run asks no question.
+//
+// Another session on the same server can change an answer after the guard
+// asked: it can create a database, map the login into one, release a
+// database it held in single-user mode, bring an OFFLINE database back
+// online, or move one from RESTRICTED_USER to MULTI_USER. The guard keeps the
+// answer it read, that the session does not reach the database, for the rest
+// of the run, and accepts a later statement that names it.
 type reachedDatabases struct {
 	ask     func(name string) (bool, error)
 	mu      sync.Mutex

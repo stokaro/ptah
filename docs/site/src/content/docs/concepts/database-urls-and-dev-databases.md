@@ -445,9 +445,10 @@ proven to stay inside the disposable realm:
   body, and refuses the `CREATE` or `ALTER` that writes one of these refusals
   into a body. A statement that names only other accounts gets the answer its
   realm gives it.
-- SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
-  alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
-  `RESTORE`, and server-level maintenance statements. T-SQL has no DDL to
+- SQL Server `EXEC`/`EXECUTE`, `SETUSER` in every form,
+  procedure/function/trigger creation or alteration, synonym/external-table
+  creation, `BULK INSERT`, `BACKUP`, `RESTORE`, and server-level maintenance
+  statements. T-SQL has no DDL to
   rename an object or to drop a default the server named, so Ptah writes an
   `EXEC` for each, and the guard accepts those in the shape the SQL Server
   renderer writes them and in no other. A rename is
@@ -520,12 +521,23 @@ proven to stay inside the disposable realm:
     fold the guard could apply matches every collation. A trusted run asks no
     question.
 
-    The answers hold for the run's own statements, because the statements
-    that could make another database reachable, `CREATE DATABASE`,
-    `EXECUTE AS` and `EXEC`, are refused without trust, and `ALTER DATABASE`
-    is refused always. Another session on the same server can create a
-    database, or map the login into one, after the guard asked about its name;
-    the guard does not see that change.
+    The answers hold for the run's own statements, in whatever order a
+    command asks: `migrations validate` asks before each file and runs that
+    file before it asks about the next. Without trust the guard refuses
+    each statement that could make another database reachable: `EXECUTE AS`
+    and `SETUSER` in every form, a bare `SETUSER` that goes back included,
+    `CREATE DATABASE`, and `EXEC`. It refuses a user or a role created,
+    altered or dropped, `ALTER AUTHORIZATION` and `ALTER DATABASE` always,
+    and the cleanup refuses a dev database that holds a user other than the
+    run's own.
+
+    Another session on the same server can change an answer after the guard
+    asked about a name. It can create a database or map the login into one,
+    release a database it holds in single-user mode, bring an `OFFLINE`
+    database back online, or move one from `RESTRICTED_USER` to
+    `MULTI_USER`. The guard keeps the answer it read, that the run does not
+    reach the database, for the rest of the run, and accepts a later
+    statement that names it.
 
     T-SQL lets `@`, `#` and `$` follow the first character of a name, so the
     server reads `x@.dbo.t` as the table `t` in the database `x@`, and the
@@ -918,8 +930,8 @@ accepts:
   table is not seen (stokaro/ptah#6705). The official MySQL and MariaDB images
   enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
   refused;
-- on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
-  logins, credentials, synonyms, a name of another database the dev session
+- on SQL Server, `EXEC`, `SETUSER`, functions, procedures and DML triggers,
+  databases, logins, credentials, synonyms, a name of another database the dev session
   reaches, reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and
   `CHECKCONSTRAINTS` on a table of another database or one not named as a
   constant,

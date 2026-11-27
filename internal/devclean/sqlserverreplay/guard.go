@@ -11,7 +11,9 @@ import (
 //
 // Under [replay.Scope.TrustedSQL] it lifts the refusals whose only
 // reason is that the effect reaches past the dev database: EXEC and EXECUTE,
-// which run SQL the guard cannot read, as a DO block does on PostgreSQL; a
+// which run SQL the guard cannot read, as a DO block does on PostgreSQL, and
+// EXECUTE AS among them; SETUSER in every form, which changes the user the
+// session runs as, or goes back to the login when it names none; a
 // function, procedure or DML trigger, whose body is opaque and which the realm
 // cleanup removes; a database, a login or a server credential created or
 // dropped, and a synonym (see [sqlServerUnconfinedServerObject]); a name of
@@ -49,6 +51,13 @@ func (g guard) validateReplayStatement(tokens []lexer.Token, scope replay.Scope)
 			return nil
 		}
 		return validateSQLServerExecute(tokens)
+	}
+	if first == "SETUSER" && !scope.TrustedSQL {
+		return &replay.Refusal{
+			Dialect:   platform.SQLServer,
+			Operation: first,
+			Reason:    "it changes the user the session runs as, and with it the databases the session reaches; it runs only when the replayed SQL is trusted",
+		}
 	}
 	if operation := sqlServerExternalOrServerOperation(tokens, scope); operation != "" {
 		return replay.Refuse(platform.SQLServer, operation)

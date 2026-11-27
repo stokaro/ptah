@@ -619,6 +619,22 @@ func TestGuard_AsksTheSessionOncePerDatabasePart(t *testing.T) {
 	c.Assert(*asked, qt.DeepEquals, []string{"", "p"})
 }
 
+// The guard asks about a database part as the statement spells it, and keeps
+// each answer under that spelling: under a case-sensitive collation o and O
+// are two databases, and here the session reaches o and finds no O. Each
+// spelling is asked once, and its second statement gets its own answer back.
+func TestGuard_AsksAboutADatabasePartAsItIsSpelled(t *testing.T) {
+	c := qt.New(t)
+	asked := new([]string)
+	guard := guardFor(c, databaseSession{database: "thisdb", access: map[string]any{"o": int64(1), "O": nil}, asked: asked})
+
+	c.Assert(guard.Validate("SELECT * FROM O.dbo.t", replay.Scope{}), qt.IsNil)
+	c.Assert(guard.Validate("SELECT * FROM o.dbo.t", replay.Scope{}), qt.ErrorMatches, refusal(`cross-database reference "o.dbo.t"`))
+	c.Assert(guard.Validate("SELECT * FROM O.dbo.t", replay.Scope{}), qt.IsNil)
+	c.Assert(guard.Validate("SELECT * FROM o.dbo.t", replay.Scope{}), qt.ErrorMatches, refusal(`cross-database reference "o.dbo.t"`))
+	c.Assert(*asked, qt.DeepEquals, []string{"", "O", "o"})
+}
+
 // databaseAccess holds the three answers of HAS_DBACCESS for the database
 // part p of p.geo.STAsText(): 1 is a database the session reaches, so the
 // name is refused; 0, a database the login is not mapped into, and NULL, no
