@@ -3,6 +3,7 @@ package atlasfilter
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -184,6 +185,8 @@ func excludeDatabase(
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
+	protectSchemaContents(schema, filtered, defaultSchema)
+	state.protectUnreadSchemaContents(filtered)
 	return filtered, state.report(), nil
 }
 
@@ -2459,7 +2462,8 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// An object that blocks a table's removal is still in the database
 		// whatever a filter keeps, and a plan that drops a table the filter
 		// keeps must still see it.
-		RemovalBlockers: slices.Clone(schema.RemovalBlockers),
+		RemovalBlockers:       slices.Clone(schema.RemovalBlockers),
+		SchemaRemovalBlockers: maps.Clone(schema.SchemaRemovalBlockers),
 		// The planning context is what a filtered read established outside its
 		// scope, for planning only. A filter narrows the compared description
 		// and leaves the context as it is; without it a provider's plan cannot

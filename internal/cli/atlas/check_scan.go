@@ -31,6 +31,7 @@ var atlasCheckScan = envbool.New(atlasCheckScanEnvVar, false, envbool.Gated)
 // and either migration direction skips those checks. Native commands ask with
 // --allow-value-rounding; this surface takes no flag the pinned binary lacks,
 // so it reads a variable instead.
+// The same request permits time-zone loss and waives time-zone-loss checks.
 const atlasValueRoundingEnvVar = "PTAH_ALLOW_VALUE_ROUNDING"
 
 // atlasValueRounding is the declaration of the variable, made once, on the

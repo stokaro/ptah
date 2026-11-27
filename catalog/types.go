@@ -270,6 +270,14 @@ type Database struct {
 	// narrowing the description cannot make the database lose the object.
 	RemovalBlockers []RemovalBlocker `json:"-"`
 
+	// SchemaRemovalBlockers maps a schema name to one resource a selection
+	// left outside the description. Dropping that schema would remove the
+	// resource too, so a comparison refuses the drop. The value is diagnostic
+	// text, not an identifier to parse. A whole-kind exclusion can name its
+	// selector when the read deliberately did not list the kind's objects.
+	// Filtering preserves these observations; they are never serialized.
+	SchemaRemovalBlockers map[string]string `json:"-"`
+
 	// OutOfScope holds what an exclude selector took out of this description
 	// that the database keeps beside the tables the description holds: the
 	// columns, indexes and constraints of those tables, and every trigger and

@@ -63,7 +63,7 @@ func TestIsNarrowing_Temporal(t *testing.T) {
 		{"time to timetz", "time", "timetz", false},
 		{"datetimeoffset to datetime2", "datetimeoffset(7)", "datetime2(7)", true},
 		{"datetime2 to datetimeoffset", "datetime2(7)", "datetimeoffset(7)", false},
-		{"timestamptz to timestamp drops nothing stored", "timestamptz(6)", "timestamp(6)", false},
+		{"timestamptz to timestamp loses the instant", "timestamptz(6)", "timestamp(6)", true},
 		{"timestamp to timestamptz drops nothing", "timestamp(6)", "timestamptz(6)", false},
 
 		// MySQL's narrower range.

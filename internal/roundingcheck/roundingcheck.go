@@ -12,6 +12,8 @@
 // evaluates it before the body, on the database the file runs on, and refuses
 // the migration while a row would change. A file generated with the rounding
 // allowed carries a note instead, saying that no check reads the rows.
+// Time-zone removal uses [migrator.CheckKindTimeZoneLoss] and refuses every
+// non-NULL value, even when no fractional digit is lost.
 package roundingcheck
 
 import (
@@ -26,10 +28,11 @@ import (
 
 // Checked is the text a migration file for dialect carries before its
 // statements for changes: for each change, a comment naming the column and
-// both types, and a check of kind [migrator.CheckKindRoundedValues] named after
-// the column, which holds while no row holds a value the change would round or
-// cut. Each line ends with a line break. No change writes nothing. It refuses
-// a change [roundingscan.Assertion] refuses.
+// both types, and a check of kind [migrator.CheckKindRoundedValues] or
+// [migrator.CheckKindTimeZoneLoss] named after the column. It holds while no
+// row loses fractional digits or zone information. Each line ends with a line
+// break. No change writes nothing. It refuses a change [roundingscan.Assertion]
+// refuses.
 func Checked(dialect string, changes []roundingscan.Change) (string, error) {
 	var block strings.Builder
 	for _, change := range changes {
@@ -37,17 +40,24 @@ func Checked(dialect string, changes []roundingscan.Change) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		kind := migrator.CheckKindRoundedValues
+		loss := "keeps fewer digits after the point"
+		refused := "a row holds a value the server would round or cut"
+		if change.DropsTimeZone() {
+			kind = migrator.CheckKindTimeZoneLoss
+			loss = "removes a time zone or offset"
+			refused = "the column holds a non-NULL value"
+		}
 		directive, err := migrator.Check{
-			Kind:   migrator.CheckKindRoundedValues,
+			Kind:   kind,
 			Name:   Name(change),
 			Assert: assertion,
 		}.Directive()
 		if err != nil {
 			return "", fmt.Errorf("write the check of %s: %w", column(change), err)
 		}
-		writeLine(&block, fmt.Sprintf("%s goes from %s to %s, which keeps fewer digits after the point; "+
-			"the check refuses the migration while a row holds a value the server would round or cut",
-			column(change), change.HeldType, change.DeclaredType))
+		writeLine(&block, fmt.Sprintf("%s goes from %s to %s, which %s; the check refuses the migration while %s",
+			column(change), change.HeldType, change.DeclaredType, loss, refused))
 		block.WriteString(directive)
 		block.WriteByte('\n')
 	}
@@ -61,6 +71,12 @@ func Checked(dialect string, changes []roundingscan.Change) (string, error) {
 func Allowed(changes []roundingscan.Change) string {
 	var block strings.Builder
 	for _, change := range changes {
+		if change.DropsTimeZone() {
+			writeLine(&block, fmt.Sprintf("%s goes from %s to %s, which removes a time zone or offset; "+
+				"the information loss was allowed when this file was generated, so no check reads the rows",
+				column(change), change.HeldType, change.DeclaredType))
+			continue
+		}
 		writeLine(&block, fmt.Sprintf("%s goes from %s to %s, which keeps fewer digits after the point; "+
 			"the rounding was allowed when this file was generated, so no check reads the rows and the server "+
 			"rounds or cuts each value to the new digits",

@@ -1070,9 +1070,10 @@ func (o migrateUpOutcome) err() error {
 			return fmt.Errorf("error running migrations: %w", postErr)
 		}
 		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](o.runErr); ok {
-			// A rounded-values check names --allow-value-rounding, which waives
-			// that kind alone; --skip-checks would waive every other check too.
-			if checkErr.Kind == migrator.CheckKindRoundedValues {
+			// Use the waiver's shared kind recognition so every check naming
+			// --allow-value-rounding avoids advice to skip every other check too.
+			valueLoss := migrator.ValueRounding{Allowed: true}
+			if valueLoss.Waives(migrator.Check{Kind: checkErr.Kind}) {
 				return checkErr
 			}
 			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)

@@ -13,12 +13,9 @@ import (
 // A change from a type that carries a time zone or an offset to one that does
 // not is converted by keeping the time of day: '10:00:00+02' under time(0) is
 // 10:00:00, and a datetimeoffset under datetime2 keeps its clock and drops its
-// offset. Compared as two instants, the value and its conversion differ by the
-// offset with no digit lost, so each value is compared in the declared type's
-// own domain. On PostgreSQL and YugabyteDB the database's TimeZone is
-// America/New_York, where 2024-11-03 05:30 UTC is the second 01:30 of the day
-// the clocks go back, which reads back as the first one when compared as an
-// instant.
+// offset. That loss needs permission even when no fractional digit is lost.
+// PostgreSQL and YugabyteDB use America/New_York here: 2024-11-03 05:30 UTC
+// and 06:30 UTC both become the local time 01:30 when the zone is removed.
 
 // zoneEngine is one server, with a table whose columns lose their zone and
 // keep their digits under the desired schema.
@@ -112,16 +109,15 @@ var zoneEngines = []zoneEngine{
 	},
 }
 
-// TestSchemaApplyKeepsTheTimeOfDayAZoneChangeLeavesE2E applies the change over a
-// row with no fraction of a second. Nothing is refused, and each column reads
-// back the time of day the row held.
-func TestSchemaApplyKeepsTheTimeOfDayAZoneChangeLeavesE2E(t *testing.T) {
+// TestSchemaApplyDropsTheTimeZoneOnRequestE2E explicitly permits the loss
+// and reads back the local date or time the target type keeps.
+func TestSchemaApplyDropsTheTimeZoneOnRequestE2E(t *testing.T) {
 	for _, engine := range zoneEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := engine.server.scratch(c, append(append([]string{engine.table}, engine.setup...), engine.whole)...)
 
-			applied := ptah(c, "schema", "apply", "--db-url", target, "--schema-file", schemaFile(c, engine.desired), "--auto-approve")
+			applied := ptah(c, "schema", "apply", "--db-url", target, "--schema-file", schemaFile(c, engine.desired), "--auto-approve", "--allow-value-rounding")
 
 			c.Assert(applied.ExitCode, qt.Equals, 0, outcome(applied))
 			c.Assert(read(c, target, engine.readBack), qt.Equals, engine.kept)
@@ -141,7 +137,7 @@ func TestSchemaApplyRefusesAFractionAZoneChangeRoundsE2E(t *testing.T) {
 			applied := ptah(c, "schema", "apply", "--db-url", target, "--schema-file", schemaFile(c, engine.desired), "--auto-approve")
 
 			c.Assert(applied.ExitCode, qt.Equals, 2, outcome(applied))
-			c.Assert(applied.Stderr, qt.Contains, refusal)
+			c.Assert(applied.Stderr, qt.Contains, zoneLossRefusal)
 			for _, fragment := range engine.refused {
 				c.Assert(applied.Stderr, qt.Contains, fragment)
 			}

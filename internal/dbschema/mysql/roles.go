@@ -124,7 +124,8 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 	return "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = '' AND host = '%'", nil
 }
 
-// readGrants reports the privileges the roles hold on the connected database.
+// readGrants reports the direct privileges held by grantees a declaration can
+// name on the connected database. A login is never added to the role list.
 //
 // The database, table and column scopes come from source: the information_schema
 // privilege views on MySQL, where [grantQuery] says why those, and the grant
@@ -132,14 +133,9 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 // database is not reported, because the description this reader produces is
 // of one database and a grant elsewhere is not part of it.
 func (r *Reader) readGrants(ctx context.Context, dbName string, source grantSource) ([]catalog.Grant, error) {
-	predicate, err := r.rolePredicate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rolePredicateOn := func(prefix string) string { return qualifyPredicate(predicate, prefix) }
-	query, arms := grantQuery(rolePredicateOn("u.")), grantQueryArms
+	query, arms := grantQuery("u.host = '%'"), grantQueryArms
 	if source.tables {
-		query, arms = mariaDBGrantQuery(rolePredicateOn("u."), source.databaseColumns), 1
+		query, arms = mariaDBGrantQuery(mariaDBDeclaredGrantee, source.databaseColumns), 1
 	}
 	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, arms)...)
 	if err != nil {
@@ -186,6 +182,14 @@ func (r *Reader) readGrants(ctx context.Context, dbName string, source grantSour
 	}
 	return grants, nil
 }
+
+// A MariaDB bare grantee names the role when one has that name, and otherwise
+// the login on host %. A login that shares a role's name must not contribute
+// its privileges to the role. Account names compare by bytes, including case.
+const mariaDBDeclaredGrantee = `(u.is_role = 'Y' OR (u.host = '%' AND NOT EXISTS (
+	SELECT 1 FROM mysql.user AS named_role
+	WHERE named_role.is_role = 'Y' AND CAST(named_role.user AS BINARY) = CAST(u.user AS BINARY)
+)))`
 
 // qualifyPredicate prefixes every column name in a role predicate, so the same
 // discriminator can be used in a join where mysql.user carries an alias.

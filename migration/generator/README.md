@@ -422,6 +422,13 @@ the rounding checks for one run with `--allow-value-rounding` on
 `ptah migrations up` or `ptah migrations down`; ordinary checks still run.
 See [Migration assertion checks](../../docs/pre-migration-checks.md).
 
+A scalar temporal conversion that removes a time zone or offset carries a
+`-- +ptah check kind=time-zone-loss`. It counts non-NULL values regardless of
+fractional precision. Adding a zone needs no forward check, but its generated
+down file carries one so that a rollback protects offsets written meanwhile.
+`DiffPolicy.AllowValueRounding` explicitly permits this information loss too;
+its generated note names the time zone or offset the conversion removes.
+
 ### PostgreSQL concurrent indexes
 
 When Ptah generates a new PostgreSQL index on an existing table whose

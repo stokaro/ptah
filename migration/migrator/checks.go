@@ -59,6 +59,18 @@ type CheckKind string
 // [Migrator.WithValueRounding] waives them.
 const CheckKindRoundedValues CheckKind = "rounded-values"
 
+// CheckKindTimeZoneLoss is a check that a column whose type removes a time
+// zone or offset holds no non-NULL values. The check runs before the conversion,
+// including in a generated rollback. [Migrator.WithValueRounding] waives it
+// only when the caller explicitly permits this information loss.
+const CheckKindTimeZoneLoss CheckKind = "time-zone-loss"
+
+// guardsValueLoss is shared by parsing, execution and diagnostics: every kind
+// recognized here must run before its conversion and use the same waiver.
+func (k CheckKind) guardsValueLoss() bool {
+	return k == CheckKindRoundedValues || k == CheckKindTimeZoneLoss
+}
+
 // Check is an assertion parsed from a `-- +ptah check` directive. Assert is a
 // SQL predicate that must evaluate to a single truthy scalar; Name labels the
 // check in error output; OnFail selects the failure behavior; Phase selects
@@ -192,9 +204,9 @@ func parseCheckArgs(args, dialect string) (Check, error) {
 	}
 	// After the body the values are already rounded, so the assertion would
 	// hold on every table and refuse nothing.
-	if check.Kind == CheckKindRoundedValues && check.Phase == CheckPhaseAfter {
+	if check.Kind.guardsValueLoss() && check.Phase == CheckPhaseAfter {
 		return Check{}, fmt.Errorf("+ptah check kind=%s reads the rows before the body and takes no phase=%s",
-			CheckKindRoundedValues, CheckPhaseAfter)
+			check.Kind, CheckPhaseAfter)
 	}
 	if statements := sqlutil.SplitStatementsForDialect(dialect, check.Assert); len(statements) > 1 {
 		return Check{}, fmt.Errorf("+ptah check assert must be a single statement, got %d", len(statements))
@@ -219,8 +231,8 @@ func (c *Check) set(key, value string) error {
 	case "phase":
 		c.Phase = CheckPhase(value)
 	case "kind":
-		if CheckKind(value) != CheckKindRoundedValues {
-			return fmt.Errorf("unsupported +ptah check kind=%q (want %s)", value, CheckKindRoundedValues)
+		if !CheckKind(value).guardsValueLoss() {
+			return fmt.Errorf("unsupported +ptah check kind=%q (want %s or %s)", value, CheckKindRoundedValues, CheckKindTimeZoneLoss)
 		}
 		c.Kind = CheckKind(value)
 	default:
@@ -267,11 +279,20 @@ func (e *CheckFailedError) Error() string {
 	}
 	if e.Err != nil {
 		how := ""
-		if e.Kind == CheckKindRoundedValues && e.request != "" {
+		if e.Kind.guardsValueLoss() && e.request != "" {
 			how = "; ask for the change with " + e.request + " to apply the migration without the check"
 		}
 		return fmt.Sprintf("%s %s for migration %d could not run: %v%s (assert: %s)",
 			kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Err, how, e.Assert)
+	}
+	if e.Kind == CheckKindTimeZoneLoss {
+		how := "keep a zoned type or explicitly convert the values in a reviewed migration"
+		if e.request != "" {
+			how += ", or ask for the change with " + e.request
+		}
+		return fmt.Sprintf("%s %s for migration %d was not satisfied: the migration removes a time zone or offset "+
+			"while the column holds a non-NULL value; %s (assert: %s)",
+			kind, label, versionText{number: e.Version, label: e.versionLabel}, how, e.Assert)
 	}
 	if e.Kind == CheckKindRoundedValues {
 		how := "store values the new type keeps"

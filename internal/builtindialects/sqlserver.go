@@ -179,9 +179,9 @@ END`,
 		// to the minute and under datetime to 1/300 of a second, and cuts a decimal
 		// under an integer. CAST reads back what the ALTER stores. A temporal value
 		// and its conversion are compared at seven digits in the declared type's
-		// family, datetime2 for datetime and smalldatetime: a datetimeoffset under a
-		// datetime2 then compares the time of day the new column keeps rather than
-		// two instants, which differ by the offset with no digit lost.
+		// family, datetime2 for datetime and smalldatetime. A conversion removing
+		// an offset is checked separately by counting non-NULL values, since
+		// retaining the clock time does not retain its source offset.
 		Rounding: descriptor.Rounding{
 			Decimal:  "{column} <> CAST({column} AS {type})",
 			Temporal: "CAST({column} AS {domain}) <> CAST(CAST({column} AS {type}) AS {domain})",

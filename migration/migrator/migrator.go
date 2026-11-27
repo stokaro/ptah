@@ -453,12 +453,12 @@ func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
 	return &tmp
 }
 
-// ValueRounding is how a run treats the checks of kind
-// [CheckKindRoundedValues].
+// ValueRounding is how a run treats [CheckKindRoundedValues] and
+// [CheckKindTimeZoneLoss], the checks guarding fractional and time-zone loss.
 type ValueRounding struct {
 	// Allowed skips those checks, and warns once for each check skipped: the
 	// run converts the columns they read without reading the rows, and the
-	// server rounds or cuts each value to the new digits. The zero value
+	// server rounds the value or removes its time zone or offset. The zero value
 	// evaluates them like any other check.
 	Allowed bool
 	// Request is how the caller asks for Allowed, which a failed check of that
@@ -468,14 +468,14 @@ type ValueRounding struct {
 
 // Waives reports whether a run that treats rounding checks as r says skips
 // check without evaluating it, which only a check of kind
-// [CheckKindRoundedValues] is, and only while Allowed holds. A report of the
+// [CheckKindRoundedValues] or [CheckKindTimeZoneLoss] is, and only while Allowed holds. A report of the
 // checks a run evaluated leaves out the ones this waives.
 func (r ValueRounding) Waives(check Check) bool {
-	return r.Allowed && check.Kind == CheckKindRoundedValues
+	return r.Allowed && check.Kind.guardsValueLoss()
 }
 
 // WithValueRounding returns a copy of the migrator that treats the checks of
-// kind [CheckKindRoundedValues] as rounding says. [Migrator.WithSkipChecks]
+// kinds [CheckKindRoundedValues] and [CheckKindTimeZoneLoss] as rounding says. [Migrator.WithSkipChecks]
 // waives them with every other check whatever rounding says.
 func (m *Migrator) WithValueRounding(rounding ValueRounding) *Migrator {
 	tmp := *m
@@ -508,12 +508,16 @@ func (m *Migrator) warnWaivedChecks(ctx context.Context, migration *Migration, d
 	}
 	version := m.versionText(migration.Version)
 	for _, check := range checks {
-		if check.Kind != CheckKindRoundedValues {
+		if !check.Kind.guardsValueLoss() {
 			continue
 		}
 		line := fmt.Sprintf("pre-migration check %s of migration %d is skipped, so migration %d converts a column to a "+
 			"type that keeps fewer digits after the point without a scan of the values the table holds: the server rounds "+
 			"or cuts each value to the new digits", check.Name, version, version)
+		if check.Kind == CheckKindTimeZoneLoss {
+			line = fmt.Sprintf("pre-migration check %s of migration %d is skipped, so migration %d removes a time zone "+
+				"or offset without a scan of the values the column holds", check.Name, version, version)
+		}
 		out := rundiag.Stream(ctx)
 		if out == nil {
 			m.logger.Warn(line)

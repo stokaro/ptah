@@ -770,7 +770,7 @@ without an error; store values the new type keeps, or ask for the change with
 To execute the file and round the values, pass `--allow-value-rounding` to
 `ptah migrations up` or `ptah migrations down`, or set `PTAH_ALLOW_VALUE_ROUNDING=1`
 for `ptah-compat migrate apply` or `ptah-compat migrate down`.
-Either skips the checks of kind `rounded-values` alone,
+Either skips checks of kind `rounded-values` and `time-zone-loss`,
 warns once for each one skipped, and evaluates every other check; `--skip-checks` and
 `PTAH_SKIP_CHECKS=1` skip them all, and warn the same way for each check of this kind.
 The flag reads no environment variable. Under `--tx-mode all` a migration with a check
@@ -793,6 +793,16 @@ A widening from `numeric(8,1)` to `numeric(8,3)` needs no up check. Its down fil
 checks before narrowing back, so a value such as `1.567` written after the up file
 ran stops the rollback. The value stays `1.567`; with the rollback opt-in it becomes
 `1.6`. Shadow rollback verification uses the target's rounding policy too.
+
+A scalar conversion that removes a time zone or offset carries
+`kind=time-zone-loss`. Its assertion requires every value in the column to be
+NULL, since keeping a clock time does not keep the source offset or an
+unambiguous instant. It runs in each affected direction: adding a zone needs
+no forward check, but its rollback checks values inserted after that addition.
+The explicit `--allow-value-rounding` or `PTAH_ALLOW_VALUE_ROUNDING=1` request
+permits this loss too, with a warning that names the zone or offset being lost.
+Both kinds refuse `phase=after`, because a check after the conversion cannot
+protect information the conversion discarded.
 
 A check of kind `rounded-values` reads the rows before the body and refuses
 `phase=after`. A file that carries no check is not scanned at execution, and a

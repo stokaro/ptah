@@ -158,6 +158,8 @@ type RoundedValue struct {
 // room for. The server rounds or cuts each such value without an error, so
 // the refusal is raised before any statement runs. A value the new type
 // cannot hold at all is refused the same way, with the server's error.
+// It also refuses a temporal conversion that removes a time zone or offset
+// while the column holds any non-NULL value, with that loss named explicitly.
 type RoundedValuesError struct {
 	// Columns are the columns whose values would change, in the order the
 	// comparison lists the tables and each table's columns.

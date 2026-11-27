@@ -312,8 +312,8 @@ func VerifyAppliedPlanState(
 	return nil
 }
 
-// ReviewPlanRoundings reads which column type changes of plan keep fewer digits
-// after the point, for a plan whose format records none, as an Atlas .plan.hcl
+// ReviewPlanRoundings reads which column type changes of plan lose fractional
+// digits or a time zone, for a plan whose format records none, as an Atlas .plan.hcl
 // does not. It compares the schema conn holds with desired, as
 // [VerifyAppliedPlanState] does after the plan runs, and reads the rows of each
 // such change: it refuses the plan with a [*planrefusal.RoundedValuesError]

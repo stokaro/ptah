@@ -12,6 +12,8 @@
 // this one invocation, for the change anyway. It reads no environment
 // variable, so the request cannot be left on in a shell profile or a CI job and
 // reach every later plan, apply or rollback.
+// The same explicit request permits removing a time zone or offset. Without
+// it, a non-NULL zoned value is refused even when its fractional digits fit.
 package valuerounding
 
 import (
@@ -26,12 +28,11 @@ const FlagName = "allow-value-rounding"
 // Request is how the flag is written, as a refusal names it.
 const Request = "--" + FlagName
 
-const usage = "Plan a column type change that keeps fewer digits after the point (such as a lower decimal scale or " +
-	"fractional-second precision) without reading the stored values: the server rounds or cuts each value to the new digits"
+const usage = "Allow a column type change to round stored values or remove their time zone or offset without scanning " +
+	"the rows: the server keeps fewer digits or discards the zone information"
 
-const applyUsage = "Skip the pre-migration checks of kind rounded-values, which refuse a migration that converts a column " +
-	"to a type keeping fewer digits after the point while a row holds a value with more: the server rounds or cuts each " +
-	"value to the new digits"
+const applyUsage = "Skip pre-migration checks of kind rounded-values and time-zone-loss, allowing the migration to round " +
+	"stored values or discard their time zone or offset"
 
 // Register adds the flag to cmd, a command that plans schema changes, with no
 // environment binding.

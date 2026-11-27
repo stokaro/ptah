@@ -379,16 +379,30 @@ func grantOptionsLeftBehind(removed, current []difftypes.GrantRef, spellings col
 	keepsOption := make(map[grantObject]bool)
 	for _, grant := range current {
 		if grant.WithOption && !removedKeys[spellings.columnGrant(grant)] {
-			keepsOption[grantObjectOf(grant)] = true
+			keepsOption[spellings.grantObject(grant)] = true
 		}
 	}
 	var left []difftypes.GrantRef
 	for _, grant := range removed {
-		if grant.WithOption && !keepsOption[grantObjectOf(grant)] {
+		if grant.WithOption && !keepsOption[spellings.grantObject(grant)] {
 			left = append(left, grant)
 		}
 	}
 	return left
+}
+
+// grantObject pairs a declared target with the catalog's qualified spelling.
+// The grant option belongs to that object even when the declaration leaves
+// its database out, or the server folds the two spellings to the same name.
+func (s columnSpellings) grantObject(grant difftypes.GrantRef) grantObject {
+	target := s.target(grant)
+	if target.objectType == "SCHEMA" {
+		// A database name is one identifier, even when it contains a dot.
+		target.object = s.semantics.TableIdentityKey(grant.ObjectName)
+	}
+	return grantObject{
+		role: target.role, objectType: target.objectType, objectName: target.object, arguments: grant.Arguments,
+	}
 }
 
 // grantObjectOf is the grantee and object a grant option belongs to on MySQL
