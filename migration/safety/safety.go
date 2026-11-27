@@ -25,6 +25,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
@@ -535,7 +536,8 @@ func assessStatement(statement, target string, known nodeKnowledge, pieces []sta
 }
 
 // assessText classifies sql, the text of one statement on target, by its
-// words (see [assessRawSQL]).
+// words with its comments set aside (see [assessRawSQL]), so a comment does
+// not hide the words a statement starts with.
 //
 // T-SQL needs no separator between two statements, and a block, an IF or a
 // WHILE runs the statements written in it, so the words a T-SQL statement
@@ -549,7 +551,7 @@ func assessStatement(statement, target string, known nodeKnowledge, pieces []sta
 // runs is not established.
 func assessText(sql, target string, assessment StatementAssessment, known nodeKnowledge) StatementAssessment {
 	if !sqlserverbatch.Reads(target) {
-		return assessRawSQL(sql, assessment, known)
+		return assessRawSQL(sqlutil.StripCommentsForDialect(sql, target), assessment, known)
 	}
 	for _, piece := range sqlutil.SplitSQLStatementsForDialect(sql, target) {
 		statements, err := sqlserverbatch.Read(piece)
@@ -558,7 +560,11 @@ func assessText(sql, target string, assessment StatementAssessment, known nodeKn
 			continue
 		}
 		for _, statement := range sqlserverbatch.Leaves(statements) {
-			raiseAssessment(&assessment, assessRawSQL(statement, StatementAssessment{Severity: Safe, Reason: safeReason}, known))
+			raiseAssessment(&assessment, assessRawSQL(
+				sqlutil.StripCommentsForDialect(statement, target),
+				StatementAssessment{Severity: Safe, Reason: safeReason},
+				known,
+			))
 		}
 	}
 	return assessment
@@ -1099,8 +1105,14 @@ func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledg
 		return judged
 	}
 	words := rawWords(sql)
+	statements := lintscan.Split(sql, lintscan.ForDialect(""))
 
 	if reason, found := destructivePrefixReason(words); found {
+		assessment.Severity = Destructive
+		assessment.Reason = reason
+		return assessment
+	}
+	if reason, found := removesRowsReason(statements); found {
 		assessment.Severity = Destructive
 		assessment.Reason = reason
 		return assessment
@@ -1152,10 +1164,52 @@ func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledg
 		assessment.Severity = Warning
 		assessment.Reason = collationReason(sql, known)
 	}
-	for _, statement := range lintscan.Split(sql, lintscan.ForDialect("")) {
+	for _, statement := range statements {
 		raiseAssessment(&assessment, nextInsertVerdict(statement.Words))
 	}
 	return assessment
+}
+
+// removesRowsReason returns why a statement that removes rows no condition
+// selects is destructive: a DELETE with no WHERE clause, and a MERGE with a
+// THEN DELETE arm. Each is read by the scanner's words, so a comment neither
+// hides the statement nor stands for its WHERE clause, and a WITH clause in
+// front of it is set aside.
+func removesRowsReason(statements []lintext.Statement) (string, bool) {
+	for _, statement := range statements {
+		words := afterWithClause(statement.Words)
+		switch {
+		case hasWordPrefix(words, "DELETE") && !slices.Contains(words, "WHERE"):
+			return deleteWithoutWhereReason, true
+		case hasWordPrefix(words, "MERGE") && hasWordSequence(words, "THEN", "DELETE"):
+			return mergeDeleteReason, true
+		}
+	}
+	return "", false
+}
+
+// afterWithClause returns the scanner's words of a statement without the WITH
+// clause it starts with: WITH, then each common table expression through the
+// parenthesis that closes its query, separated by commas. A parenthesis
+// followed by AS closes a list of column names, not the query. Words that do
+// not start with WITH are returned as they are.
+func afterWithClause(words []string) []string {
+	if !hasWordPrefix(words, "WITH") {
+		return words
+	}
+	depth := 0
+	for i, word := range words {
+		switch word {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth == 0 && i+1 < len(words) && words[i+1] != "," && words[i+1] != "AS" {
+				return words[i+1:]
+			}
+		}
+	}
+	return nil
 }
 
 // collationReason is the reason a statement that sets a collation is rated a
@@ -1670,6 +1724,12 @@ const replaceTableReason = "CREATE OR REPLACE TABLE drops the existing table and
 // verdict instead, which only the plan knows.
 const deleteWithoutWhereReason = "DELETE without a WHERE clause removes every row it reaches, every row of its table in the plain form"
 
+// mergeDeleteReason is why a MERGE with a THEN DELETE arm is destructive: the
+// arm removes every target row it matches, and under WHEN NOT MATCHED BY
+// SOURCE every target row the source does not hold.
+const mergeDeleteReason = "MERGE with a THEN DELETE arm removes the target rows the arm matches, " +
+	"every row the source does not hold under WHEN NOT MATCHED BY SOURCE"
+
 // destructivePrefixes are the statements whose leading words alone make them
 // destructive, each with the reason it reports, in the order
 // [destructivePrefixReason] tries them.
@@ -1709,16 +1769,12 @@ var destructivePrefixes = []struct {
 }
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
-// entry the statement's words start with, and otherwise
-// [deleteWithoutWhereReason] for a DELETE with no WHERE clause.
+// entry the statement's words start with.
 func destructivePrefixReason(words []string) (string, bool) {
 	for _, prefix := range destructivePrefixes {
 		if hasWordPrefix(words, prefix.words...) {
 			return prefix.reason, true
 		}
-	}
-	if hasWordPrefix(words, "DELETE") && !slices.Contains(words, "WHERE") {
-		return deleteWithoutWhereReason, true
 	}
 	return "", false
 }

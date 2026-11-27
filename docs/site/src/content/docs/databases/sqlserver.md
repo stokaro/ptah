@@ -767,9 +767,12 @@ END;
 ```
 
 The safety rating of `ptah schema plan` and `ptah schema apply` reads every
-statement the server runs from a piece. `CREATE TABLE dbo.a (id int) TRUNCATE
-TABLE dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, and
-text whose statement boundaries Ptah cannot find is rated destructive.
+statement written in a piece. `CREATE TABLE dbo.a (id int) TRUNCATE TABLE
+dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, a
+`MERGE` with a `THEN DELETE` arm as destructive, and text whose statement
+boundaries Ptah cannot find is rated destructive. The rating does not read SQL
+held in a string, so a statement that `EXEC` or `sp_executesql` runs from one
+is not rated: `EXEC(N'DROP TABLE dbo.x')` rates safe.
 
 The same reading decides which statements control a transaction. Ptah refuses
 a migration that commits or rolls back the transaction it manages, or opens one
