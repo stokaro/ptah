@@ -13,7 +13,9 @@
 //
 // The check has no npm dependencies on purpose: CI runs it from a bare checkout
 // for changes that touch no site page at all.
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,7 +24,6 @@ import { importedProviders } from '../src/lib/provider-docs.mjs';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const repoRoot = join(siteRoot, '..', '..');
-const docsRoot = join(siteRoot, 'src', 'content', 'docs');
 
 // docs/STYLE_GUIDE.md defines the banned words, so it necessarily contains
 // them. It is the rule source, not prose that has to obey the rule.
@@ -214,8 +215,8 @@ function walk(dir, matches) {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      // Dot directories hold tooling, git state, and nested worktrees, none of
-      // which are reader-facing documentation.
+      // Discover agent guidance separately through Git; a walk into tooling
+      // directories would also read parked worktrees and dependencies.
       if (entry.name.startsWith('.') || skipDirectories.has(entry.name)) continue;
       files.push(...walk(fullPath, matches));
       continue;
@@ -244,25 +245,31 @@ const readme = (name) => readmeName.test(name);
 
 // documentationFiles returns every file the style guide governs: the site, the
 // repository docs, the example and integration docs, every package README, and
-// the contributor entry point that mandates the guide.
-function documentationFiles() {
+// the contributor instructions that mandate the guide. Only tracked guidance
+// enters the corpus, matching check-agent-guidance.mjs.
+function documentationFiles(root = repoRoot) {
+  const guidance = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
+    .split('\0')
+    .filter((path) => /^(?:\.agents\/.*\.mdx?|\.claude\/skills\/.*\.mdx?|CLAUDE\.md)$/.test(path))
+    .map((path) => join(root, path));
   const files = [
-    ...walk(docsRoot, markdown),
-    ...walk(join(repoRoot, 'docs'), markdown).filter((file) => !toPosix(file).includes('/docs/site/')),
-    ...walk(join(repoRoot, 'examples'), markdown),
-    ...walk(join(repoRoot, 'integration'), markdown),
+    ...walk(join(root, 'docs/site/src/content/docs'), markdown),
+    ...walk(join(root, 'docs'), markdown).filter((file) => !toPosix(file).includes('/docs/site/')),
+    ...walk(join(root, 'examples'), markdown),
+    ...walk(join(root, 'integration'), markdown),
     // Package READMEs are in scope but scattered, so they are discovered rather
     // than listed: a new package must not be able to opt out by existing.
-    ...walk(repoRoot, readme),
+    ...walk(root, readme),
+    ...guidance,
   ];
   for (const name of ['README.md', 'AGENTS.md']) {
-    const path = join(repoRoot, name);
+    const path = join(root, name);
     if (existsSync(path) && statSync(path).isFile()) files.push(path);
   }
 
   const seen = new Set();
   return files.filter((file) => {
-    const key = toPosix(relative(repoRoot, file));
+    const key = toPosix(relative(root, file));
     if (seen.has(key) || exemptFiles.has(key)) return false;
     seen.add(key);
     return true;
@@ -865,6 +872,41 @@ function checkFile(file) {
 // here would let a broken checker keep reporting OK.
 function selftest() {
   const failures = [];
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'ptah-guidance-style-'));
+  try {
+    const guidancePaths = [
+      '.agents/skills/ptah-example/SKILL.md',
+      '.agents/skills/ptah-example/references/task.md',
+      '.agents/references/engine.md',
+      '.claude/skills/ptah-example/SKILL.md',
+      'CLAUDE.md',
+    ];
+    const fixturePaths = [...guidancePaths, 'AGENTS.md', 'README.md'];
+    for (const path of fixturePaths) {
+      mkdirSync(dirname(join(fixtureRoot, path)), { recursive: true });
+      writeFileSync(join(fixtureRoot, path), '# Instructions\n\nThe behaviour is documented.\n');
+    }
+    execFileSync('git', ['init', '-q'], { cwd: fixtureRoot });
+    execFileSync('git', ['add', '.'], { cwd: fixtureRoot });
+    for (const path of ['.agents/untracked.md', '.claude/worktrees/parked/README.md']) {
+      mkdirSync(dirname(join(fixtureRoot, path)), { recursive: true });
+      writeFileSync(join(fixtureRoot, path), '# Unrelated instructions\n');
+    }
+    const files = documentationFiles(fixtureRoot);
+    const actual = files.map((file) => toPosix(relative(fixtureRoot, file))).sort();
+    if (JSON.stringify(actual) !== JSON.stringify([...fixturePaths].sort())) {
+      failures.push(`instruction corpus differs from tracked fixture: ${JSON.stringify(actual)}`);
+    }
+    for (const path of guidancePaths) {
+      if (!files.includes(join(fixtureRoot, path)) || !checkFile(join(fixtureRoot, path)).some((finding) => finding.includes('British spelling'))) {
+        failures.push(`style violation in agent guidance was not reported: ${path}`);
+      }
+      writeFileSync(join(fixtureRoot, path), '# Instructions\n\nThe behavior is documented.\n');
+      if (checkFile(join(fixtureRoot, path)).length !== 0) failures.push(`clean guidance was refused: ${path}`);
+    }
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
   for (const [language, text] of [['de', 'Ein Schema visualisieren.'], ['fr', 'Utiliser le programme sous licence MIT.']]) {
     if (analyze(text, { language }).length) failures.push(`${language}: valid translated prose was refused`);
     if (!analyze(text, { language: 'en' }).some((f) => f.message.includes('British spelling'))) {
@@ -1262,7 +1304,7 @@ function selftest() {
     process.exitCode = 1;
     return;
   }
-  console.log(`check-style.mjs --selftest: OK (${expected.length} rule assertions via analyze())`);
+  console.log(`check-style.mjs --selftest: OK (${expected.length} rule assertions via analyze(), tracked guidance corpus and style checks)`);
 }
 
 function main() {

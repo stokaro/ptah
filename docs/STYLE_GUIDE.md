@@ -2,7 +2,10 @@
 
 This is the authoritative style guide for all Ptah documentation: the site
 under `docs/site/src/content/docs/`, the repository docs under `docs/*.md`,
-package READMEs, example READMEs, integration docs, and `AGENTS.md` itself.
+package READMEs, example READMEs, integration docs, and agent instructions.
+`check-style.mjs` includes tracked Markdown under `.agents/` and
+`.claude/skills/`, plus `AGENTS.md` and `CLAUDE.md`. Stage new instruction
+files before running the check; parked worktrees are outside its corpus.
 Contributor guidance (`AGENTS.md`) and the documentation-maintenance skill
 (`.agents/skills/ptah-documentation-maintenance/SKILL.md`) require it. Section
 16 lists which of its rules CI enforces.

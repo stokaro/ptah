@@ -21,6 +21,19 @@ description: Use when implementing or reviewing Go changes in Ptah, including pa
    Use `.golangci.yml` for actual settings. Keep detailed rules there rather
    than duplicating them in new instructions.
 
+## Load the relevant Go tools and detail
+
+| Task | Reference |
+| --- | --- |
+| Resolve symbols, references, package APIs, or diagnostics across Go files | [Semantic navigation and optional gopls setup](../../references/go-semantic-tools.md) |
+| Change goroutines, cancellation, shared state, or process cleanup | [Concurrency and resource lifetimes](../../references/go-concurrency.md) |
+| Diagnose or improve measured CPU, memory, or latency costs | [Performance evidence](../../references/go-performance.md) |
+
+Use available semantic tools for Go relationships. Keep scoped `rg` for text,
+SQL, configuration, and code that cannot load. Tool setup is optional and must
+not delay an otherwise answerable local change. Load only the matching
+reference; routine Go work does not require profiling or a concurrency audit.
+
 ## Implement at the existing boundary
 
 - Keep the change with the package that owns the behavior. Follow
