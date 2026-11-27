@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -247,21 +246,23 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		// procedure as a function would fail on the drop and leave the old body
 		// in place while reporting the plan it did not run.
 		//
-		// Both halves name the schema the read found the routine in. The drop
-		// names the routine the read found, as the removal path does, and the
-		// create keeps the declared spelling of the routine's own name, which
-		// the server then stores. The declaration may leave the schema out,
-		// and SQL Server resolves an unqualified name in the session's default
-		// schema first, which is not dbo for every account. Measured on SQL
+		// Both halves name the schema the read found the routine in, and both
+		// keep the declared spelling of the routine's own name: the
+		// comparison paired it with the routine the read found, so it names
+		// that routine on this server, and the server stores it on create.
+		// The declaration may leave the schema out, and SQL Server resolves an
+		// unqualified name in the session's default schema first, which is not
+		// dbo for every account. Measured on SQL
 		// Server 2025 for an account whose default schema app holds an f of
 		// its own, with the comparison pairing a declared f with [dbo].[f]:
 		// DROP FUNCTION [f] dropped [app].[f], a routine the plan never named,
 		// and CREATE OR ALTER FUNCTION [f] then replaced [dbo].[f]
 		// (stokaro/ptah#6786).
-		if replacement, moved := inHeldSchema(fn, fnDiff); moved {
+		replacement, moved := inHeldSchema(fn, fnDiff)
+		if moved {
 			node = modelast.FromFunction(replacement)
 		}
-		drop := ast.NewDropFunction(cmp.Or(fnDiff.CurrentName, fn.Name)).
+		drop := ast.NewDropFunction(replacement.Name).
 			SetKind(fn.Kind).
 			SetIfExists()
 		if p.describes() {

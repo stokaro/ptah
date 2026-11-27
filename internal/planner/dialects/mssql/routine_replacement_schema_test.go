@@ -48,11 +48,11 @@ func TestPlanner_RoutineReplacementNamesTheHeldSchema(t *testing.T) {
 			want: []string{"DROP FUNCTION IF EXISTS [dbo].[f]", "CREATE OR ALTER FUNCTION [dbo].[f]()"},
 		},
 		{
-			// The drop names the routine the read found, and the create keeps
-			// the declared spelling, which the server then stores.
+			// Both halves take the schema as the read found it and the
+			// routine's name as declared, which the server then stores.
 			name:     "a declaration in another case under a case-insensitive collation",
 			declared: "sales.MIXEDCASE", held: "Sales.MixedCase",
-			want: []string{"DROP FUNCTION IF EXISTS [Sales].[MixedCase]", "CREATE OR ALTER FUNCTION [Sales].[MIXEDCASE]()"},
+			want: []string{"DROP FUNCTION IF EXISTS [Sales].[MIXEDCASE]", "CREATE OR ALTER FUNCTION [Sales].[MIXEDCASE]()"},
 		},
 		{
 			name:     "a change no read recorded the name of",

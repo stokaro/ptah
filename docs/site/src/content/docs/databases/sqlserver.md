@@ -314,13 +314,13 @@ sequence and a trigger change in place, and the server keeps the spelling it
 already stores. Either way the next comparison reads both spellings as one name
 and plans nothing.
 
-A routine is replaced in the schema the read found it in. The `DROP` names
-the routine the read found, and the `CREATE` puts the declared name in that
-schema. A routine the schema declares without a schema is compared in `dbo`,
-or in the URL's `schema`, and is replaced there. SQL Server resolves an
-unqualified name in the session's default schema first, so for an account whose
-default schema is another, `DROP FUNCTION [f]` would drop that schema's `f`
-and leave the routine the plan compared unchanged.
+A routine is replaced in the schema the read found it in. The `DROP` and the
+`CREATE` both put the declared name in that schema. A routine the schema
+declares without a schema is compared in `dbo`, or in the URL's `schema`, and
+is replaced there. SQL Server resolves an unqualified name in the session's
+default schema first, so for an account whose default schema is another,
+`DROP FUNCTION [f]` would drop that schema's `f` and leave the routine the plan
+compared unchanged.
 
 A selection runs after the names are paired. `--schemas`, `--include` and
 `--exclude`, in both binaries (`--schema` in `ptah-compat`), select a schema
