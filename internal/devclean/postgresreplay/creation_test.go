@@ -82,7 +82,7 @@ func TestGuard_CreatedNameWithNoCreationSchema_HappyPath(t *testing.T) {
 	for _, test := range createdWithBuiltinNames {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(creatingGuard(c, "postgres", "").Validate(test.statement, test.scope), qt.IsNil)
+			c.Assert(creatingGuard(c, "postgres").Validate(test.statement, test.scope), qt.IsNil)
 		})
 	}
 }
@@ -115,6 +115,7 @@ func TestGuard_CreatedNameInProtectedCreationSchema_FailurePath(t *testing.T) {
 		{"a replaced function", `CREATE OR REPLACE FUNCTION app_helper() RETURNS int LANGUAGE sql AS 'SELECT 1'`, "app_helper"},
 		{"an aggregate", `CREATE AGGREGATE app_sum(int) (SFUNC = app.add, STYPE = int)`, "app_sum"},
 		{"an operator", `CREATE OPERATOR + (LEFTARG = app.amount, RIGHTARG = app.amount, FUNCTION = app.add_amount)`, "+"},
+		{"an operator of several characters", `CREATE OPERATOR ||| (FUNCTION = int4pl, LEFTARG = int, RIGHTARG = int)`, "|||"},
 		{"a collation", `CREATE COLLATION app_collation (provider = icu, locale = 'und')`, "app_collation"},
 		{"a conversion", `CREATE CONVERSION app_conversion FOR 'UTF8' TO 'LATIN1' FROM app.convert_latin1`, "app_conversion"},
 		{"statistics", `CREATE STATISTICS app_stats ON id, kind FROM app.events`, "app_stats"},
@@ -127,6 +128,69 @@ func TestGuard_CreatedNameInProtectedCreationSchema_FailurePath(t *testing.T) {
 					regexp.QuoteMeta(test.unqualified)+`"`+refusalEnd+qualify)
 		})
 	}
+}
+
+// The server skips a schema of the search path that does not exist, so a path
+// that lists a namespace the server owns after the user's schema creates
+// there once the replay drops that schema: measured on PostgreSQL 18, with the
+// path public, pg_catalog, `DROP SCHEMA public CASCADE` and then `CREATE
+// DOMAIN d AS int` makes pg_catalog.d. The guard reads the path once, so any
+// namespace the server owns on it refuses every CREATE whose name has no
+// schema, before and after the DROP, on every member of the family. A
+// routine is refused under trust as well: `CREATE OR REPLACE FUNCTION now()`
+// would replace pg_catalog.now.
+func TestGuard_CreatedNameOnPathListingProtectedSchema_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, statement, unqualified string
+		scope                        replay.Scope
+	}{
+		{"a table", `CREATE TABLE app_events (id int)`, "app_events", databaseScope},
+		{"a domain", `CREATE DOMAIN d AS int`, "d", databaseScope},
+		{"an operator", `CREATE OPERATOR ||| (FUNCTION = int4pl, LEFTARG = int, RIGHTARG = int)`, "|||", databaseScope},
+		{"an enum", `CREATE TYPE e AS ENUM ('a')`, "e", databaseScope},
+		{"a function under trust", `CREATE OR REPLACE FUNCTION now() RETURNS int LANGUAGE sql AS 'SELECT 1'`, "now",
+			replay.Scope{Database: "ptah_dev", TrustedSQL: true}},
+	}
+	for _, dialect := range postgresFamily {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				guard := creatingGuard(c, dialect, "public", "pg_catalog")
+				c.Assert(guard.Validate(test.statement, test.scope), qt.ErrorMatches,
+					dialect+` migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "`+
+						regexp.QuoteMeta(test.unqualified)+`"`+refusalEnd+qualify)
+			})
+		}
+	}
+}
+
+// A path of the user's schemas alone creates in them whichever one the replay
+// drops, and a statement that names its schema is created there on any path.
+func TestGuard_CreatedNameOnPathListingProtectedSchema_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, statement string
+		path            []string
+	}{
+		{"a domain on a path of user schemas", `CREATE DOMAIN d AS int`, []string{"public", "app"}},
+		{"the drop of the first schema of the path", `DROP SCHEMA public CASCADE`, []string{"public", "pg_catalog"}},
+		{"a qualified domain", `CREATE DOMAIN app.d AS int`, []string{"public", "pg_catalog"}},
+		{"a qualified operator", `CREATE OPERATOR app.||| (FUNCTION = int4pl, LEFTARG = int, RIGHTARG = int)`, []string{"public", "pg_catalog"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(creatingGuard(c, "postgres", test.path...).Validate(test.statement, databaseScope), qt.IsNil)
+		})
+	}
+}
+
+// The session's own temporary schema on the path is skipped where the guard
+// accepts session tables, so the schema after it decides.
+func TestGuard_CreatedNameAfterTemporarySchema_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(creatingGuard(c, "postgres", "pg_temp_3", "public", "pg_catalog").Validate(`CREATE TABLE scratch (id int)`,
+		replay.Scope{Database: "ptah_dev", Session: true}), qt.ErrorMatches,
+		`postgres migration replay rejects protected namespace "pg_catalog" mutation through the unqualified name "scratch"`+refusalEnd+qualify)
 }
 
 // A name written with the user's schema is created there whatever the path.

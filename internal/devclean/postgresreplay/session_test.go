@@ -3,7 +3,10 @@ package postgresreplay_test
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,13 +16,18 @@ import (
 )
 
 // reportedSession is a dev session that answers every query with its client
-// encoding, its standard_conforming_strings, the names of its catalog and its
-// creation schema, and counts the queries it is asked. A zero catalog names
-// nothing, and a zero creation schema is a search path that names no schema.
+// encoding, its standard_conforming_strings, the names of its catalog, its
+// search path, its rules and its database, and counts the queries it is
+// asked. A zero catalog names nothing, a zero path is a search path that
+// names no schema, zero rules are none, and a zero database is ptah_dev. The
+// search path lists the schemas of path, which exist; the dev database holds
+// them, public and app. The session's user is ptah. A searchPath answers the
+// search path's column as written instead.
 type reportedSession struct {
-	encoding, conforming, catalog, creation string
-	err                                     error
-	asked                                   *int
+	encoding, conforming, catalog, rules, database, searchPath string
+	path                                                       []string
+	err                                                        error
+	asked                                                      *int
 }
 
 func (s reportedSession) QueryRowContext(context.Context, string, ...any) dataext.Row {
@@ -33,8 +41,16 @@ func (r sessionRow) Scan(dest ...any) error {
 	*dest[0].(*string) = r.encoding
 	*dest[1].(*string) = r.conforming
 	*dest[2].(*string) = cmp.Or(r.catalog, "[]")
-	*dest[3].(*string) = r.creation
-	return r.err
+	path, err := json.Marshal(map[string]any{
+		"existing": r.path,
+		"setting":  strings.Join(r.path, ", "),
+		"user":     "ptah",
+		"schemas":  slices.Concat(r.path, []string{"public", "app"}),
+	})
+	*dest[3].(*string) = cmp.Or(r.searchPath, string(path))
+	*dest[4].(*string) = cmp.Or(r.rules, "[]")
+	*dest[5].(*string) = cmp.Or(r.database, "ptah_dev")
+	return cmp.Or(r.err, err)
 }
 
 func (r sessionRow) Err() error { return r.err }
@@ -145,7 +161,7 @@ func TestGuard_ValidateSession_FailurePathUnreadableSession(t *testing.T) {
 
 	c.Assert(got, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, errSessionGone)
-	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding, standard_conforming_strings, catalog names and creation schema: session gone`)
+	c.Assert(err, qt.ErrorMatches, `read the dev session's client_encoding, standard_conforming_strings, catalog names, search path, rules and database: session gone`)
 	var refusal *replay.SessionRefusal
 	c.Assert(err, qt.Not(qt.ErrorAs), &refusal)
 }
