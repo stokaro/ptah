@@ -60,7 +60,7 @@ func TestSchemaApplyOracleGrantAllOnARoutineE2E(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			read := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: 3 * time.Minute}, "db", "read", "--db-url", account.url)
 			c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", read.Stderr))
-			c.Assert(read.Stdout, qt.Contains, "GRANT EXECUTE ON "+account.name+".RT TO "+account.role+";\n")
+			c.Assert(read.Stdout, qt.Contains, "GRANT EXECUTE ON RT TO "+account.role+";\n")
 		})
 	}
 }
@@ -264,7 +264,7 @@ func TestSchemaApplyOracleRevokesAnUndeclaredRoutineGrantE2E(t *testing.T) {
 	settled := apply("--dry-run")
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stdout, qt.Contains, "REVOKE EXECUTE ON "+account.name+".RT FROM "+account.role+";\n")
+	c.Assert(applied.Stdout, qt.Contains, "REVOKE EXECUTE ON RT FROM "+account.role+";\n")
 	c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
 	c.Assert(settled.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 	c.Assert(oracleRoutinePrivilegesOf(c, account.owner, account.role, account.name), qt.DeepEquals, make([]string, 0))

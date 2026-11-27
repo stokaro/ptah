@@ -44,10 +44,9 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 		held []string
 		// declared is the desired schema file.
 		declared string
-		// planned is a statement the plan prints, with ACCOUNT standing for the
-		// account's name. The drop of a folded namesake is matched from its
-		// name on: the plan's existence guards compare names without case, so
-		// that drop may carry IF EXISTS.
+		// planned is a statement the plan prints. The drop of a folded
+		// namesake is matched from its name on: the plan's existence guards
+		// compare names without case, so that drop may carry IF EXISTS.
 		planned []string
 		// objects is every table, view, sequence and trigger the account holds
 		// after the apply, as type and stored name.
@@ -61,7 +60,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 			name:     "a quoted table is dropped by its quoted name",
 			held:     []string{`CREATE TABLE "orders" (id NUMBER(10) PRIMARY KEY)`},
 			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n",
-			planned:  []string{`DROP TABLE ACCOUNT."orders" PURGE;`},
+			planned:  []string{`DROP TABLE "orders" PURGE;`},
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 		},
@@ -72,7 +71,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 				`CREATE TABLE orders (id NUMBER(10) PRIMARY KEY)`,
 			},
 			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n",
-			planned:  []string{`DROP TABLE ACCOUNT."orders" PURGE;`, `ACCOUNT.ORDERS PURGE;`},
+			planned:  []string{`DROP TABLE "orders" PURGE;`, ` ORDERS PURGE;`},
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 		},
@@ -84,7 +83,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 				`CREATE TABLE "keep_me" (id NUMBER(10) PRIMARY KEY)`,
 			},
 			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n",
-			planned:  []string{`DROP TABLE ACCOUNT."keep_me" PURGE;`},
+			planned:  []string{`DROP TABLE "keep_me" PURGE;`},
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 			rows:     1,
@@ -96,7 +95,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 				`CREATE VIEW "v1" AS SELECT id FROM keep_me`,
 			},
 			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n",
-			planned:  []string{`DROP VIEW ACCOUNT."v1";`},
+			planned:  []string{`DROP VIEW "v1";`},
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 		},
@@ -108,7 +107,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 				`CREATE VIEW v1 AS SELECT id FROM keep_me`,
 			},
 			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n",
-			planned:  []string{`DROP VIEW ACCOUNT."v1";`, `ACCOUNT.V1;`},
+			planned:  []string{`DROP VIEW "v1";`, ` V1;`},
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 		},
@@ -201,8 +200,11 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 			for _, statement := range test.planned {
-				c.Assert(stdout, qt.Contains, strings.ReplaceAll(statement, "ACCOUNT", strings.ToUpper(account)))
+				c.Assert(stdout, qt.Contains, statement)
 			}
+			// The plan names no object of the account with the account, so a
+			// file written from it runs in the account that applies it.
+			c.Assert(strings.ToUpper(stdout), qt.Not(qt.Contains), strings.ToUpper(account)+".")
 			c.Assert(accountObjects(c, ctx, conn), qt.DeepEquals, test.objects)
 			c.Assert(accountColumns(c, ctx, conn), qt.DeepEquals, test.columns)
 			c.Assert(keepMeRows(c, ctx, conn), qt.Equals, test.rows)
@@ -410,9 +412,9 @@ func TestOracleCaseSensitiveNamesE2E_InspectReplays(t *testing.T) {
 	inspected, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
 		"schema", "inspect", "--db-url", sourceURL, "--format", "sql")
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	sourceSchema := strings.ToUpper(source)
-	c.Assert(inspected, qt.Contains, `CREATE TABLE `+sourceSchema+`."orders" (`)
-	c.Assert(inspected, qt.Contains, `CREATE TABLE `+sourceSchema+`.ORDERS (`)
+	c.Assert(inspected, qt.Contains, `CREATE TABLE "orders" (`)
+	c.Assert(inspected, qt.Contains, `CREATE TABLE ORDERS (`)
+	c.Assert(inspected, qt.Not(qt.Contains), strings.ToUpper(source)+".")
 	c.Assert(inspected, qt.Contains, `CONSTRAINT "ck_st" CHECK ("Status" IN ('a','b'))`)
 
 	compared, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
@@ -420,12 +422,11 @@ func TestOracleCaseSensitiveNamesE2E_InspectReplays(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", compared, stderr))
 	c.Assert(compared, qt.Contains, "No schema differences detected")
 
-	// The file qualifies every table with the account it was read from, so the
-	// replay names the fresh account in its place.
-	replica, replicaURL, replicaConn := oracleCaseSensitiveAccount(c, ctx)
-	replayed := strings.ReplaceAll(inspected, sourceSchema+".", strings.ToUpper(replica)+".")
+	// The file names no table with the account it was read from, so it
+	// replays into a fresh account as it was written.
+	_, replicaURL, replicaConn := oracleCaseSensitiveAccount(c, ctx)
 	stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
-		"schema", "apply", "--db-url", replicaURL, "--schema-file", writeDeclaredSchema(c, replayed), "--auto-approve")
+		"schema", "apply", "--db-url", replicaURL, "--schema-file", writeDeclaredSchema(c, inspected), "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 
 	c.Assert(accountTables(c, ctx, replicaConn), qt.DeepEquals, []string{"Cust", "KEEP_ME", "ORDERS", "orders"})

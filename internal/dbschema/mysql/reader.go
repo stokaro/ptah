@@ -434,7 +434,7 @@ func (r *Reader) readDatabase(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
-	schema.Tables = tables
+	schema.Tables = localColumnDefaults(tables, account.dialect(), current)
 
 	// Read enums (MySQL stores them as column types)
 	enums, err := r.readEnums(ctx, dbName)
@@ -469,7 +469,7 @@ func (r *Reader) readDatabase(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read views: %w", err)
 	}
-	schema.Views = views.views
+	schema.Views = localViewBodies(views.views, account.dialect(), current)
 
 	triggers, err := r.readTriggers(ctx, dbName)
 	if err != nil {
@@ -1148,7 +1148,6 @@ func (r *Reader) readViews(ctx context.Context, dbName string) (viewRead, error)
 		if err != nil {
 			return viewRead{}, err
 		}
-		view.Schema = dbName
 		read.views = append(read.views, view)
 	}
 	if err := rows.Err(); err != nil {
@@ -1263,7 +1262,6 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) (routineRead,
 			}
 		}
 		fn.Body = body.String
-		fn.Schema = dbName
 		fn.Language = mysqlroutine.Language
 		fn.Returns = mysqlroutine.NormalizeType(returns.String)
 		fn.Parameters = parameters[routineParameterKey(routineType, fn.Name)]

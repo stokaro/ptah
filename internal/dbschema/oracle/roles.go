@@ -184,7 +184,6 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 			&grantable, &objectType, &grantor); err != nil {
 			return nil, err
 		}
-		grant.Schema = r.schema
 		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))
 		grant.ObjectType = grantObjectTypeFor(objectType)
 		grant.WithOption = strings.EqualFold(strings.TrimSpace(grantable), "YES")

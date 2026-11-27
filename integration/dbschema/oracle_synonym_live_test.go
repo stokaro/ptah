@@ -29,7 +29,9 @@ import (
 //
 // Oracle stores an unquoted name in upper case and records the target with its
 // owner, so the declaration and the read spell the same synonym differently;
-// the comparison has to pair them under the connection's rules.
+// the comparison has to pair them under the connection's rules. The read names
+// a target in the connection's own account without the account, as it names
+// the account's tables.
 func TestOracleLiveSynonymLifecycle(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.Oracle)
 	c := qt.New(t)
@@ -55,14 +57,14 @@ func TestOracleLiveSynonymLifecycle(t *testing.T) {
 	c.Assert(created, qt.DeepEquals, []string{"CREATE SYNONYM ora_syn_alias FOR ora_syn_orders"})
 	oracleApply(c, conn, created)
 
-	c.Assert(oracleReadSynonyms(c, conn), qt.DeepEquals, map[string]string{"ORA_SYN_ALIAS": oracleOwner(conn) + ".ORA_SYN_ORDERS"})
+	c.Assert(oracleReadSynonyms(c, conn), qt.DeepEquals, map[string]string{"ORA_SYN_ALIAS": "ORA_SYN_ORDERS"})
 	c.Assert(oracleSynonymPlan(c, conn, declared), qt.HasLen, 0,
 		qt.Commentf("the synonym the first plan created is the one the declaration names"))
 
 	retargeted := oracleSynonymPlan(c, conn, oracleSynonymDeclaration("ora_syn_archive"))
 	c.Assert(retargeted, qt.HasLen, 2)
 	oracleApply(c, conn, retargeted)
-	c.Assert(oracleReadSynonyms(c, conn), qt.DeepEquals, map[string]string{"ORA_SYN_ALIAS": oracleOwner(conn) + ".ORA_SYN_ARCHIVE"})
+	c.Assert(oracleReadSynonyms(c, conn), qt.DeepEquals, map[string]string{"ORA_SYN_ALIAS": "ORA_SYN_ARCHIVE"})
 	c.Assert(oracleSynonymPlan(c, conn, oracleSynonymDeclaration("ora_syn_archive")), qt.HasLen, 0)
 }
 
@@ -123,8 +125,4 @@ func observedSynonymTargets(c *qt.C, live *catalog.Database) map[string]string {
 		}
 	}
 	return targets
-}
-
-func oracleOwner(conn *dbschema.DatabaseConnection) string {
-	return strings.ToUpper(conn.Info().Schema)
 }

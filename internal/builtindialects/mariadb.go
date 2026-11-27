@@ -198,6 +198,7 @@ func mariaDB() descriptor.Dialect {
 			RoutineNamesFold:               true,
 			RoutineTypeAliases:             "mysqlroutine",
 			ViewPredicatesAsIntegers:       true,
+			ViewJoinsParenthesized:         true,
 			ViewSQLSecurity:                true,
 			AutoIncrementFlag:              true,
 			// MariaDB 12.3 stores the default (7 % 4 * 2) as (7 MOD 4 * 2)

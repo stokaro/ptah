@@ -97,3 +97,14 @@ func TestRebindDatabaseGrants_LeftInPlace(t *testing.T) {
 		})
 	}
 }
+
+func TestRebindDatabase_NilState(t *testing.T) {
+	c := qt.New(t)
+
+	got := atlasschema.RebindDatabase(nil,
+		catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app"},
+		catalog.ServerInfo{Dialect: platform.MySQL, Schema: "appdev"},
+	)
+
+	c.Assert(got, qt.IsNil)
+}

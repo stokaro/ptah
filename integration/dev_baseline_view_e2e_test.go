@@ -103,7 +103,8 @@ func TestSchemaApplyRehearsesAViewOnASiblingDevDatabaseE2E(t *testing.T) {
 
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 				c.Assert(got.Stdout, qt.Contains, "ADD COLUMN `note`")
-				c.Assert(got.Stdout, qt.Contains, "DROP VIEW `"+target+"`.`v1`")
+				c.Assert(got.Stdout, qt.Contains, "DROP VIEW `v1`")
+				c.Assert(got.Stdout, qt.Not(qt.Contains), "`"+target+"`.`v1`")
 				c.Assert(scratch.tablesOf(c, dev), qt.Equals, "")
 			})
 		}
@@ -128,17 +129,19 @@ func TestSchemaApplyRehearsesAViewAndARoutineOnAProvisionedDevDatabaseE2E(t *tes
 
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 				c.Assert(got.Stdout, qt.Contains, "ADD COLUMN `note`")
-				c.Assert(got.Stdout, qt.Contains, "DROP VIEW `"+target+"`.`v1`")
-				c.Assert(got.Stdout, qt.Contains, "DROP FUNCTION `"+target+"`.`f1`")
+				c.Assert(got.Stdout, qt.Contains, "DROP VIEW `v1`")
+				c.Assert(got.Stdout, qt.Contains, "DROP FUNCTION `f1`")
+				c.Assert(got.Stdout, qt.Not(qt.Contains), "`"+target+"`.`")
 			})
 		}
 	}
 }
 
 // TestSchemaApplyRehearsesAMariaDBSequenceOnASiblingDevDatabaseE2E plans the
-// drop of a sequence, which a MariaDB read records under the target's
-// database, with a dev database of the same server. The baseline creates the
-// sequence in the dev database and the rehearsal drops it there.
+// drop of a sequence, which a MariaDB read of the target's database names
+// without it, as it names a table, with a dev database of the same server. The
+// baseline creates the sequence in the dev database and the rehearsal drops it
+// there.
 func TestSchemaApplyRehearsesAMariaDBSequenceOnASiblingDevDatabaseE2E(t *testing.T) {
 	for _, run := range devBaselineRuns {
 		t.Run(run.name, func(t *testing.T) {
@@ -151,16 +154,17 @@ func TestSchemaApplyRehearsesAMariaDBSequenceOnASiblingDevDatabaseE2E(t *testing
 			got := clirun.Run(c, run.program, clirun.Options{Dir: c.TempDir()}, run.args(targetURL, schema, devURL)...)
 
 			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stdout, qt.Contains, "DROP SEQUENCE `"+target+"`.`sq1`")
+			c.Assert(got.Stdout, qt.Contains, "DROP SEQUENCE `sq1`")
+			c.Assert(got.Stdout, qt.Not(qt.Contains), "`"+target+"`.`sq1`")
 			c.Assert(scratch.tablesOf(c, dev), qt.Equals, "")
 		})
 	}
 }
 
 // TestSchemaApplyRehearsesClickHouseViewsOnASiblingDevDatabaseE2E is the same
-// plan on ClickHouse, whose read records the database on a view and on a
-// materialized view alike: both are written into the dev database and dropped
-// there, and it is left empty.
+// plan on ClickHouse, whose read names a view and a materialized view without
+// the database, as it names a table: both are written into the dev database
+// and dropped there, and it is left empty.
 func TestSchemaApplyRehearsesClickHouseViewsOnASiblingDevDatabaseE2E(t *testing.T) {
 	for _, run := range devBaselineRuns {
 		t.Run(run.name, func(t *testing.T) {

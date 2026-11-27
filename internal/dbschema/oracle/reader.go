@@ -29,6 +29,7 @@ import (
 	lockbuiltin "ptah.run/internal/dblockext/builtin"
 	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -79,6 +80,16 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 }
 
 // ReadSchemaContext reads the objects Ptah renders for Oracle.
+//
+// The read describes one account, the schema every object it reads is in, so
+// no object carries that schema: a table, its constraints and its indexes, a
+// sequence, a view, a materialized view, a routine, a synonym and a grant on
+// one of them are named without it. Naming the account writes a migration
+// that runs against the account it was planned from, whichever account
+// applies it: `DROP TABLE APP.T PURGE` from a read of APP, run as another
+// account, answers ORA-00942 or drops APP's table. A name of another account
+// keeps that account: a foreign key to its table, and a synonym for its
+// object.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	schema := &catalog.Database{
 		Schemas: []catalog.Schema{{Name: r.schema}},
@@ -254,7 +265,6 @@ func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 		if err := rows.Scan(&table.Name, &comment); err != nil {
 			return nil, err
 		}
-		table.Schema = r.schema
 		table.Type = "TABLE"
 		table.Comment = strings.TrimSpace(comment)
 		tables = append(tables, table)
@@ -402,6 +412,7 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 		column.CharacterMaxLength = intPointer(charLength)
 		column.NumericPrecision = intPointer(precision)
 		column.NumericScale = intPointer(scale)
+		def.String = r.localExpression(def.String)
 		assignDefault(&column, identity == "YES", virtual == "YES", def)
 		columns[table] = append(columns[table], column)
 	}
@@ -421,6 +432,7 @@ SELECT c.constraint_name,
        c.generated,
        c.table_name,
        NVL(c.search_condition_vc, ' '),
+       NVL(c.r_owner, ' '),
        NVL(c.r_constraint_name, ' '),
        NVL(c.delete_rule, ' '),
        c.deferrable,
@@ -517,6 +529,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			desired    string
 			table      string
 			condition  string
+			refOwner   string
 			refName    string
 			deleteRule string
 			deferrable string
@@ -526,7 +539,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			columnName sql.NullString
 			position   sql.NullInt64
 		)
-		if err := rows.Scan(&name, &kind, &desired, &table, &condition, &refName,
+		if err := rows.Scan(&name, &kind, &desired, &table, &condition, &refOwner, &refName,
 			&deleteRule, &deferrable, &deferred, &status, &validated, &columnName, &position); err != nil {
 			return nil, nil, err
 		}
@@ -542,6 +555,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 				kind:       kind,
 				table:      table,
 				condition:  condition,
+				refOwner:   refOwner,
 				refName:    refName,
 				deleteRule: deleteRule,
 				deferrable: deferrable,
@@ -581,6 +595,7 @@ type constraintRow struct {
 	kind       string
 	table      string
 	condition  string
+	refOwner   string
 	refName    string
 	deleteRule string
 	deferrable string
@@ -595,11 +610,10 @@ type constraintRow struct {
 // foreign-key half needs the second catalog read: Oracle records the target as
 // the NAME of the unique or primary-key constraint it references rather than as
 // a table and a column list.
-func (r *Reader) newConstraint(row constraintRow, referenced map[string]referencedKey) catalog.Constraint {
+func (r *Reader) newConstraint(row constraintRow, referenced map[keyName]referencedKey) catalog.Constraint {
 	constraint := catalog.Constraint{
 		Name:          row.name,
 		TableName:     row.table,
-		Schema:        r.schema,
 		Type:          constraintTypeWord(row.kind),
 		Deferrable:    row.deferrable == "DEFERRABLE",
 		Disabled:      row.status == "DISABLED",
@@ -624,10 +638,11 @@ func (r *Reader) newConstraint(row constraintRow, referenced map[string]referenc
 		clause := strings.TrimSpace(row.condition)
 		constraint.CheckClause = &clause
 	case "R":
-		key := referenced[strings.TrimSpace(row.refName)]
+		owner := strings.TrimSpace(row.refOwner)
+		key := referenced[keyName{owner: owner, name: strings.TrimSpace(row.refName)}]
 		target := key.table
 		constraint.ForeignTable = &target
-		constraint.ForeignSchema = r.schema
+		constraint.ForeignSchema = r.local(owner)
 		constraint.ForeignColumns = key.columns
 		if len(key.columns) > 0 {
 			first := key.columns[0]
@@ -640,6 +655,36 @@ func (r *Reader) newConstraint(row constraintRow, referenced map[string]referenc
 	return constraint
 }
 
+// local is owner as a name of the read spells it: empty for the account the
+// read describes, and owner itself for another account.
+func (r *Reader) local(owner string) string {
+	if owner == r.schema {
+		return ""
+	}
+	return owner
+}
+
+// localExpression is expression, a column default, a virtual column or an
+// index key the catalog stores, without the account that was read on the
+// objects it names ([sqlqualifier.Expression]). Oracle qualifies a sequence
+// or function of the account in what it stores, whether or not the
+// statement did: `DEFAULT seq.NEXTVAL` reads "APP"."SEQ"."NEXTVAL" and
+// `AS (dbl(n))` reads "APP"."DBL"("N"). Without this call a migration
+// generated from a read of APP names APP's sequence and function, so applied
+// as another account its table draws from APP's sequence, or its rollback
+// fails with ORA-00942 where that account may not read it. A sequence or
+// function of another account keeps the account.
+func (r *Reader) localExpression(expression string) string {
+	return sqlqualifier.Expression(expression, platform.Oracle, r.schema)
+}
+
+// keyName names one unique or primary-key constraint: the account that owns
+// it and its name, which is unique only within that account.
+type keyName struct {
+	owner string
+	name  string
+}
+
 // referencedKey is the table and column list a foreign key points at.
 //
 // Oracle records the TARGET of a foreign key as the NAME of the unique or
@@ -650,27 +695,37 @@ type referencedKey struct {
 	columns []string
 }
 
+// referencedKeyQuery reads the unique and primary-key constraints a foreign
+// key of the account may reference: the account's own, and each one of
+// another account that a foreign key of the account references. A key of
+// another account is listed by ALL_CONSTRAINTS when the account may reference
+// its table, which a foreign key to it requires.
 const referencedKeyQuery = `
-SELECT c.constraint_name, c.table_name, col.column_name
+SELECT c.owner, c.constraint_name, c.table_name, col.column_name
 FROM all_constraints c
 JOIN all_cons_columns col
      ON col.owner = c.owner AND col.constraint_name = c.constraint_name
-WHERE c.owner = :1
-  AND c.table_name NOT LIKE 'BIN$%'
+WHERE c.table_name NOT LIKE 'BIN$%'
   AND c.constraint_type IN ('P', 'U')
-ORDER BY c.constraint_name, col.position`
+  AND (c.owner = :1
+       OR (c.owner, c.constraint_name) IN (
+            SELECT f.r_owner, f.r_constraint_name
+            FROM all_constraints f
+            WHERE f.owner = :2 AND f.constraint_type = 'R'))
+ORDER BY c.owner, c.constraint_name, col.position`
 
-func (r *Reader) readReferencedKeys(ctx context.Context) (map[string]referencedKey, error) {
-	rows, err := r.db.QueryContext(ctx, referencedKeyQuery, r.schema)
+func (r *Reader) readReferencedKeys(ctx context.Context) (map[keyName]referencedKey, error) {
+	rows, err := r.db.QueryContext(ctx, referencedKeyQuery, r.schema, r.schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	keys := make(map[string]referencedKey)
+	keys := make(map[keyName]referencedKey)
 	for rows.Next() {
-		var name, table, column string
-		if err := rows.Scan(&name, &table, &column); err != nil {
+		var name keyName
+		var table, column string
+		if err := rows.Scan(&name.owner, &name.name, &table, &column); err != nil {
 			return nil, err
 		}
 		key := keys[name]
@@ -725,7 +780,6 @@ func (r *Reader) readIndexes(ctx context.Context, tables []catalog.Table) ([]cat
 		if err := rows.Scan(&index.Name, &index.TableName, &uniqueness, &indexType); err != nil {
 			return nil, err
 		}
-		index.Schema = r.schema
 		index.IsUnique = uniqueness == "UNIQUE"
 		indexes = append(indexes, index)
 	}
@@ -795,7 +849,7 @@ func (r *Reader) readIndexColumns(ctx context.Context, collations map[string]map
 			// A function-based key is listed under a hidden column. The
 			// expression is what the key is, and a part carries one or the
 			// other.
-			part.Name, part.Expr = "", strings.TrimSpace(expression.String)
+			part.Name, part.Expr = "", r.localExpression(strings.TrimSpace(expression.String))
 		}
 		parts[index] = append(parts[index], part)
 	}
@@ -850,7 +904,6 @@ func (r *Reader) readSequences(ctx context.Context) ([]catalog.Sequence, error) 
 		if err := rows.Scan(&sequence.Name, &minValue, &maxValue, &increment, &cycle, &cache, &lastNumber); err != nil {
 			return nil, err
 		}
-		sequence.Schema = r.schema
 		sequence.MinValue = numberPointer(minValue)
 		sequence.MaxValue = numberPointer(maxValue)
 		sequence.Increment = numberPointer(increment)
@@ -868,6 +921,10 @@ FROM all_views v
 WHERE v.owner = :1
 ORDER BY v.view_name`
 
+// readViews reads the views the connected schema owns, each named without the
+// schema, as [Reader.ReadSchemaContext] names every object of the account. The
+// body is the text the author wrote, and a relation it qualifies keeps its
+// schema.
 func (r *Reader) readViews(ctx context.Context) ([]catalog.View, error) {
 	rows, err := r.db.QueryContext(ctx, viewQuery, r.schema)
 	if err != nil {
@@ -882,7 +939,6 @@ func (r *Reader) readViews(ctx context.Context) ([]catalog.View, error) {
 		if err := rows.Scan(&view.Name, &body); err != nil {
 			return nil, err
 		}
-		view.Schema = r.schema
 		view.Body = strings.TrimSpace(body)
 		views = append(views, view)
 	}
@@ -914,7 +970,6 @@ func (r *Reader) readMaterializedViews(ctx context.Context) ([]catalog.Materiali
 		if err := rows.Scan(&view.Name, &body); err != nil {
 			return nil, err
 		}
-		view.Schema = r.schema
 		view.Body = strings.TrimSpace(body.String)
 		views = append(views, view)
 	}

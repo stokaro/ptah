@@ -530,7 +530,7 @@ func validateDeclaredBeforeComparison(
 	if err := oraclecollation.RefuseDeclared(info.Dialect, desired, database, info.CollationNames); err != nil {
 		return err
 	}
-	return validateKeysIntoComparedSchemas(desired, database, info.Dialect)
+	return validateKeysIntoComparedSchemas(desired, database, info.Dialect, info.Schema)
 }
 
 // validateKeysIntoComparedSchemas refuses a foreign key into a schema the
@@ -548,20 +548,49 @@ func validateDeclaredBeforeComparison(
 // planned `ALTER TABLE "crm"."customers" DROP CONSTRAINT IF EXISTS
 // "customers_pkey"`, and the server refused it with SQLSTATE 2BP01
 // (stokaro/ptah#3906).
-func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *catalog.Database, dialect string) error {
+//
+// A key into current, the schema the connection resolves an unqualified name
+// in, names a table of the description however the schema is spelled: on
+// Oracle, read as the account APP, `app.t1`, `APP.T1` and `"APP".T1` are each
+// the declared T1. Such a key is accepted when the description declares the
+// table and refused when it does not, since the plan would drop the table the
+// key reads; measured on Oracle 23.26, the plan dropped T1 and the server
+// refused the drop with ORA-02449. Schema names compare as the dialect compares
+// them, so a key into `CRM.customers` is a key into a held crm on Oracle.
+func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *catalog.Database, dialect, current string) error {
 	if database == nil {
 		return nil
 	}
+	semantics := identifier.ForDialect(dialect)
+	own := ""
+	if current != "" {
+		own = foreignkeyscope.StoredSchemaKey(semantics, dialect, current)
+	}
 	held := make(map[string]bool, len(database.Schemas)+len(database.Tables))
 	for _, schema := range database.Schemas {
-		held[schema.Name] = true
+		held[foreignkeyscope.StoredSchemaKey(semantics, dialect, schema.Name)] = true
 	}
 	for _, table := range database.Tables {
-		held[table.Schema] = true
+		held[foreignkeyscope.StoredSchemaKey(semantics, dialect, table.Schema)] = true
 	}
 	for _, reference := range foreignkeyscope.References(*desired) {
+		into, declared := foreignkeyscope.IntoSchema(*desired, semantics, reference.Table, own)
+		if into && !declared {
+			return &ptaherr.RenderError{
+				Dialect: dialect,
+				Err:     ptaherr.ErrInvalidSchemaDiff,
+				Message: fmt.Sprintf(
+					"invalid foreign key: %s references unknown table %q: %q is the schema of the database compared, "+
+						"and the desired schema declares no such table there",
+					reference.Declaration, reference.Table, current,
+				),
+			}
+		}
+		if into {
+			continue
+		}
 		schema, outside := foreignkeyscope.Outside(*desired, dialect, reference.Table)
-		if outside && held[schema] {
+		if outside && held[foreignkeyscope.ReferencedSchemaKey(semantics, reference.Table)] {
 			return &ptaherr.RenderError{
 				Dialect: dialect,
 				Err:     ptaherr.ErrInvalidSchemaDiff,

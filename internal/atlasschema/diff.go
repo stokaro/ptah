@@ -50,8 +50,6 @@ import (
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
-	"ptah.run/internal/sqlqualifier"
-	"ptah.run/internal/tableref"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/valuecontext"
@@ -636,12 +634,11 @@ func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.Sta
 	return conn != nil && fromState.Kind != atlassource.KindDatabase
 }
 
-// scopedDiffSides prepares the two resolved sides for scoping: each side's
-// view bodies are rebased on the other's database, both are narrowed on a dev
-// server, the one-database rule reads the narrowed sides, the documents'
-// unqualified names are placed, and the indexes of each side read from a
-// document are checked on the placed names; see [placeDiffDocuments] and
-// [refuseDocumentIndexProblems].
+// scopedDiffSides prepares the two resolved sides for scoping: both are
+// narrowed on a dev server, the one-database rule reads the narrowed sides, the
+// documents' unqualified names are placed, and the indexes of each side read
+// from a document are checked on the placed names; see [placeDiffDocuments]
+// and [refuseDocumentIndexProblems].
 func scopedDiffSides(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -651,8 +648,6 @@ func scopedDiffSides(
 	sides devServerSides,
 	devURL string,
 ) (from, to atlassource.State, err error) {
-	fromState = rebaseDevViewBodies(fromState, toState, dialect)
-	toState = rebaseDevViewBodies(toState, fromState, dialect)
 	// The dev-server scope comes first: it refuses what CE refuses on a dev
 	// server, in CE's words, and narrows a one-schema document to the one
 	// database. The one-database rule then reads the narrowed sides.
@@ -921,41 +916,6 @@ func diffComparisonLimits(fromState, toState atlassource.State, from, to *catalo
 		}
 	}
 	return limits
-}
-
-// A one-database catalog read records the database on each view, and MySQL and
-// MariaDB qualify relations in its stored body with that database. A migration
-// directory replayed on a dev database therefore reads the same view under a
-// different name from the target. Rebind the stored body and leave the view
-// unqualified for comparison; the replay and its cleanup stay in the dev
-// database.
-func rebaseDevViewBodies(state, database atlassource.State, dialect string) atlassource.State {
-	if !described(dialect).Schemas.StoredViewBodyNamesDatabase ||
-		state.Kind == atlassource.KindDatabase ||
-		state.DB == nil || state.Schema == nil || state.WholeServer ||
-		database.Kind != atlassource.KindDatabase || database.WholeServer ||
-		state.DefaultSchema == "" || database.DefaultSchema == "" ||
-		state.DefaultSchema == database.DefaultSchema || len(state.DB.Views) == 0 {
-		return state
-	}
-	previous, target := state.DefaultSchema, database.DefaultSchema
-	observed := *state.DB
-	observed.Views = slices.Clone(state.DB.Views)
-	for i := range observed.Views {
-		observed.Views[i].Body = sqlqualifier.ViewBody(observed.Views[i].Body, dialect, previous, target)
-		observed.Views[i].Schema = ""
-	}
-	declared := *state.Schema
-	declared.Views = slices.Clone(state.Schema.Views)
-	for i := range declared.Views {
-		declared.Views[i].Body = sqlqualifier.ViewBody(declared.Views[i].Body, dialect, previous, target)
-		if ref, ok := tableref.Parse(declared.Views[i].Name); ok && ref.Qualified && ref.Schema == previous {
-			declared.Views[i].Name = tableref.Canonical("", ref.Name)
-		}
-	}
-	state.DB, state.Schema = &observed, &declared
-	state.DefaultSchema = target
-	return state
 }
 
 // plannedDiffChanges is the statements of diff's plan, each carrying the comment

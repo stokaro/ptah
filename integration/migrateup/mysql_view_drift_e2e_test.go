@@ -185,7 +185,9 @@ func TestMySQLViewDriftCheckE2E_FailurePath(t *testing.T) {
 			c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftDrifted)
 			c.Assert(document.DriftCheck.Findings, qt.HasLen, 1)
 			c.Assert(document.DriftCheck.Findings[0].Kind, qt.Equals, "extra_view")
-			c.Assert(document.DriftCheck.Findings[0].Object, qt.Matches, `ptah_view_drift_\d+\.item_names`)
+			// A read of the target's one database names the view without that
+			// database, as it names a table (stokaro/ptah#6710).
+			c.Assert(document.DriftCheck.Findings[0].Object, qt.Equals, "item_names")
 		})
 		t.Run(engine.name+"/a view body changed on the target", func(t *testing.T) {
 			c := qt.New(t)
@@ -201,8 +203,9 @@ func TestMySQLViewDriftCheckE2E_FailurePath(t *testing.T) {
 	}
 }
 
-// MariaDB records a sequence with the database that holds it, as a view and a
-// routine are recorded, so the shadow's own sequence is the target's own.
+// A read of one MariaDB database names a sequence without the database, as it
+// names a table, a view and a routine, so the shadow's own sequence is the
+// target's own.
 func TestMariaDBSequenceDriftCheckE2E_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	files := map[string]string{

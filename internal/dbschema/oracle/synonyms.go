@@ -22,8 +22,10 @@ ORDER BY s.synonym_name`
 // knowledge that the read looked, so a synonym this read did not return is one
 // the schema does not have.
 //
-// Oracle records the target's owner whether the statement named one or not,
-// so the target is written as owner.object. A synonym through a database link
+// Oracle records the target's owner whether the statement named one or not.
+// The alias is named without the account, as every object of the read is
+// ([Reader.ReadSchemaContext]), and so is a target the account owns; a target
+// another account owns is written as owner.object. A synonym through a database link
 // cannot be declared, since a target has no place for the link, so it is
 // recorded as unrepresentable rather than as an object: a comparison leaves
 // it as it is.
@@ -42,8 +44,8 @@ func (r *Reader) readSynonyms(ctx context.Context, db *catalog.Database) error {
 		if err := rows.Scan(&name, &owner, &object, &link); err != nil {
 			return err
 		}
-		observed := synonym.ObservedSynonym{Synonym: synonym.Synonym{Schema: r.schema, Name: name,
-			Target: synonym.DeclaredTarget([4]string{"", "", owner.String, object.String})}}
+		observed := synonym.ObservedSynonym{Synonym: synonym.Synonym{Name: name,
+			Target: synonym.DeclaredTarget([4]string{"", "", r.local(owner.String), object.String})}}
 		if link.Valid && link.String != "" {
 			unrepresentable = append(unrepresentable, schemaext.SubjectCoverage{Kind: synonym.Kind, Subject: observed.Ref(),
 				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable,

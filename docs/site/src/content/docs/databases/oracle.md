@@ -104,21 +104,24 @@ so a plan never names one. A catalog name that equals its upper-case fold is
 written bare:
 
 ```sql
-DROP TABLE APP."orders" PURGE;
-DROP TABLE APP.ORDERS PURGE;
+DROP TABLE "orders" PURGE;
+DROP TABLE IF EXISTS ORDERS PURGE;
 ```
+
+The second drop carries `IF EXISTS` because the plan's existence guard compares
+names without case, so it cannot tell the two tables apart.
 
 Role names follow the same rule. A declared `CREATE ROLE reader` is the role
 Oracle stores as `READER`, so the next plan finds it and creates nothing, and
 `GRANT SELECT ON orders TO reader` is held once `READER` holds `SELECT`.
 `CREATE ROLE "reader"` is the role stored as `reader`, which is a different
 role. A grant read for a role or on a table created quoted is revoked by the
-quoted names, as in `REVOKE SELECT ON APP."orders" FROM "reader"`.
+quoted names, as in `REVOKE SELECT ON "orders" FROM "reader"`.
 
 A database used as the desired side keeps the same spelling. `schema diff
 --from` and `--to` on one account plan nothing, and `schema inspect --format
-sql` and `db read` write `CREATE TABLE APP."orders"` and `CREATE ROLE
-"reader"`, so the file creates the same objects when it is replayed.
+sql` and `db read` write `CREATE TABLE "orders"` and `CREATE ROLE "reader"`,
+so the file creates the same objects when it is replayed.
 
 A declaration that would replace such an object is refused. If the declaration
 names `orders`, the catalog has no `ORDERS`, and it holds the case-sensitive
@@ -134,7 +137,7 @@ selects the one created unquoted. It matches the same way on both sides of a
 plan, including a desired side read from a database or declared in a SQL
 file, where a bare `orders` is the table stored as `ORDERS` and is selected by
 `ORDERS`. A selector written with quotes matches nothing. A report names such
-a table the same way a statement does, `APP."orders"`. A selector that names
+a table the same way a statement does, `"orders"`. A selector that names
 nothing as written, where its upper-case spelling names a table, is reported
 with that spelling: `"orders" (the stored name is "ORDERS")`.
 
@@ -607,7 +610,8 @@ the constraint refuses fails the statement, with `ORA-02293` for a `CHECK` and
 
 ```text
 error: apply schema changes: failed to execute SQL statement: oracle: SQL execution failed: ORA-02293: cannot validate (APP.CK_QTY) - check constraint violated
-SQL: ALTER TABLE APP.ORDERS ENABLE VALIDATE CONSTRAINT CK_QTY
+ error occur at position: 46
+SQL: ALTER TABLE ORDERS ENABLE VALIDATE CONSTRAINT CK_QTY
 ```
 
 Every later apply plans the same statement and fails the same way, because the
@@ -718,7 +722,7 @@ So Ptah refuses both ways of asking for it, before any statement runs:
   app_user`:
 
   ```text
-  oracle: cannot take the grant option on SELECT ON APP.T1 from "APP_USER" and leave the privilege: Oracle has no statement for it, and a REVOKE also takes the privilege from everyone "APP_USER" granted it to; revoke the privilege and grant it again by hand
+  oracle: cannot take the grant option on SELECT ON T1 from "APP_USER" and leave the privilege: Oracle has no statement for it, and a REVOKE also takes the privilege from everyone "APP_USER" granted it to; revoke the privilege and grant it again by hand
   ```
 
 In both cases, to take an option a grantee holds, revoke the privilege and
@@ -752,7 +756,7 @@ names a table, and on either `ALL` grants `DEBUG` and `EXECUTE`. A declared
 `ALL` on a routine is held once the role holds both, and a role the schema
 creates keeps them. A privilege on a routine that the schema does not declare
 is revoked from a role the schema creates, as on a table, and `ptah db read`
-prints one as `GRANT EXECUTE ON APP.FN_DOUBLE TO READER;`. Measured on 21.3
+prints one as `GRANT EXECUTE ON FN_DOUBLE TO READER;`. Measured on 21.3
 and 23.26.
 
 ## Versioned migrations
@@ -774,6 +778,58 @@ it stay applied and the revision row counts them. See
 
 `--migrations-engine` is refused on Oracle, because the revision table has no
 engine clause to carry it.
+
+### The account a generated migration names
+
+A read describes the account it connects as, and names none of that account's
+objects with it: tables, constraints, indexes, sequences, views, materialized
+views, functions, procedures, synonyms and grants. So the files
+`ptah migrations generate` writes from a read of `APP` drop and create them in
+the account that applies the files. A migration that removes the table `T`
+and the view `VV` drops them with `DROP VIEW VV;` and `DROP TABLE T PURGE;`,
+and its down file creates them again:
+
+```sql
+CREATE TABLE T (
+  ID NUMBER(10) NOT NULL PRIMARY KEY,
+  CRM_ID NUMBER(10)
+);
+CREATE VIEW VV AS
+SELECT id, rt(id) AS d FROM t;
+ALTER TABLE T ADD CONSTRAINT T_CRM_FK FOREIGN KEY (CRM_ID) REFERENCES CRM.ACCOUNTS (ID);
+```
+
+Run as another account, `DROP TABLE APP.T PURGE` fails with `ORA-00942`, or
+drops the table of `APP` where the account may drop any table. An object of
+another account keeps that account's name, as the foreign key into
+`CRM.ACCOUNTS` above does, and so does a synonym for it, which `db read`
+writes as `CREATE SYNONYM SYN_CRM FOR CRM.ACCOUNTS;`. A view body is the text
+its author wrote, so a relation it qualifies with an account keeps that
+account. A schema-wide grant, as in `SELECT ANY TABLE ON SCHEMA APP`, names
+the account, because the account is what it is on.
+
+Oracle stores a column default or a virtual column that reads one of the
+account's own sequences or functions with the account: `DEFAULT sk.NEXTVAL`
+as `"APP"."SK"."NEXTVAL"`, and `GENERATED ALWAYS AS (dbl(n))` as
+`"APP"."DBL"("N")`. The read leaves the account out, as it does for an index
+on a function, so the files write `"SK"."NEXTVAL"` and `"DBL"("N")`, and a row
+inserted in another account draws from that account's sequence. A sequence or
+a function of another account keeps its account.
+
+A foreign key the declaration writes into another account is accepted and
+written as declared. The description holds nothing of that account, so Ptah
+checks neither that the account exists nor that it holds the table:
+`REFERENCES NOSUCH.T9 (ID)` is planned, and the server refuses it when the
+plan runs, with `ORA-00942`. A key that names the account Ptah connects as is
+a key into the description, in any spelling: `app.T1`, `APP.T1` and
+`"APP".T1` all name the declared `T1`. The declaration has to declare that
+table. A key into one it does not declare is refused before anything runs,
+because the plan would drop the table the key reads.
+
+A constraint that its author left unnamed has a name Oracle made, such as
+`SYS_C008719`, and that name differs in every account. A file that drops one
+by that name answers `ORA-02443` in another account, so name each constraint a
+migration may drop. Measured on 23.26.3.
 
 ### The migration lock
 
