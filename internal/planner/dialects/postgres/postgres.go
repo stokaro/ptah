@@ -2545,6 +2545,7 @@ func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff, re
 			SetArguments(grant.Arguments).
 			SetColumns(grantColumns(grant))
 		result = append(result, node)
+		result = restoreColumnGrants(result, diff, grant, semantics)
 	}
 	return result
 }
