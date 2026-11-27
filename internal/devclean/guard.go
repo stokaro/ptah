@@ -56,6 +56,9 @@ type ReplayGuard struct {
 	// validated; see [ReplayGuard.WithPublications]. Nil is a cleanup that
 	// drops no publication.
 	publications func() replay.PublicationScope
+	// survivors answers [replay.Scope.Survivors] when a statement is
+	// validated; see [ReplayGuard.WithSurvivors]. Nil names none.
+	survivors func() replay.CleanupSurvivors
 	// session is set only by a caller that discards its pinned replay session.
 	session bool
 	// ownTransactions is set only by a caller that replays an existing history
@@ -99,7 +102,8 @@ const (
 	// an extension or a schema of the dev database. A server the operator
 	// declared disposable outlives the run, and its reset keeps the extensions
 	// and schemas it found, so a comment written there would reach the next
-	// run's reading of the dev database.
+	// run's reading of the dev database. A comment on one the run created is
+	// accepted in every realm; see [ReplayGuard.WithSurvivors].
 	ReplayRealmProvisionedServer
 )
 
@@ -392,6 +396,24 @@ func (g *ReplayGuard) WithPublications(publications func() replay.PublicationSco
 	return &guard
 }
 
+// WithSurvivors returns a copy of the guard for a run whose every cleanup
+// leaves in place the extensions and schemas survivors names and drops the
+// others, as [Baseline.Survivors] answers for a claim. A replay can build its
+// guard before it claims the database, so survivors is asked when a statement
+// is validated.
+//
+// On the PostgreSQL family the copy accepts a comment on an extension or a
+// schema survivors does not name: the run created it, and every cleanup drops
+// it with its comment. pg_dump writes such a comment for every extension it
+// dumps, and Ptah renders one for an extension that declares a comment. A
+// comment on one survivors names stays refused, since the next run would read
+// it as the dev database's own.
+func (g *ReplayGuard) WithSurvivors(survivors func() replay.CleanupSurvivors) *ReplayGuard {
+	guard := *g
+	guard.survivors = survivors
+	return &guard
+}
+
 // WithSchemaCommentReturned returns a copy of the guard for a migration replay on
 // a dev database whose every reset may return the schemas it keeps to what the
 // claim recorded. A replay builds its guard before it claims the database, so
@@ -465,6 +487,9 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm, trusted bool) err
 	scope.TrustedSQL = trusted
 	if g.publications != nil {
 		scope.Publications = g.publications()
+	}
+	if g.survivors != nil {
+		scope.Survivors = g.survivors()
 	}
 	return g.guard.Validate(stmt, scope)
 }

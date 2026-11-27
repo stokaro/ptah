@@ -15,6 +15,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/devcollation"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemascope"
@@ -185,6 +186,12 @@ func validateConnection(
 			fmt.Sprintf("shadow database capabilities do not match target %s capabilities", dialect),
 			nil,
 		)
+	}
+	// The identifier check after the replay compares only the names the
+	// target's snapshot resolved, and a snapshot whose names fall in classes
+	// of one name each agrees with a shadow of any collation.
+	if err := devcollation.Refuse(ctx, target, shadowConn, "the shadow database"); err != nil {
+		return newVerificationError("collation-check", "collation_mismatch", err.Error(), nil)
 	}
 	return nil
 }

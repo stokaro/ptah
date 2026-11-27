@@ -141,7 +141,11 @@ type BidirectionalSchemaPlanOptions struct {
 // Planning fails before a caller can publish artifacts when an explicitly
 // requested concurrent operation is unsupported, targets a PostgreSQL
 // partitioned parent, would remove every MySQL/MariaDB foreign-key covering
-// index, or cannot be expressed safely by the reverse direction.
+// index, or cannot be expressed safely by the reverse direction. A removed or
+// changed routine that CurrentSchema does not hold, under the name, kind and
+// signature the diff records, fails with
+// [ptah.run/core/ptaherr.ErrInvalidSchemaDiff]: the rollback would have no
+// definition to create it again from.
 func PlanBidirectionalSchemaDiff(
 	ctx context.Context,
 	opts BidirectionalSchemaPlanOptions,

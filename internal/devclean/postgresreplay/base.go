@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
+	"ptah.run/sqlsyntax/pgsyntax"
 )
 
 func (p protection) validateBase(tokens []lexer.Token) error {
@@ -35,10 +36,6 @@ func (p protection) validateBase(tokens []lexer.Token) error {
 		if kept := p.keptPublication(tokens); kept != "" {
 			return replay.Refuse(dialect, fmt.Sprintf(
 				"%s of the dev database's own publication %q", replay.DescribeStatementObject(tokens), kept))
-		}
-		if len(p.publications.Kept) != 0 && unicodeEscapedIdentifier(tokens) {
-			return replay.Refuse(dialect, replay.DescribeStatementObject(tokens)+
-				" naming a publication with a Unicode escape, which may spell one the dev database held before the run")
 		}
 	}
 	if replay.UsesTemporaryObject(tokens) && (!p.sessionTables || !createsTemporaryTable(tokens)) {
@@ -89,7 +86,7 @@ func (p protection) keptPublication(tokens []lexer.Token) string {
 		if token.Type != lexer.TokenIdentifier && !quotedIdentifier(token) {
 			continue
 		}
-		if name := storedPublicationName(token); slices.Contains(p.publications.Kept, name) {
+		if name := storedName(token); slices.Contains(p.publications.Kept, name) {
 			return name
 		}
 		if !replay.TokenSequenceAt(tokens, 0, "DROP") {
@@ -105,24 +102,67 @@ func quotedIdentifier(token lexer.Token) bool {
 	return token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`)
 }
 
-// unicodeEscapedIdentifier reports a U&"..." identifier, which the lexer reads
-// as the word U, an operator and a string it does not decode. The guard does
-// not decode the escapes either, so it cannot tell which publication such a
-// name spells, and refuses it rather than compare an undecoded name.
-func unicodeEscapedIdentifier(tokens []lexer.Token) bool {
-	for index := 0; index+2 < len(tokens); index++ {
-		if strings.EqualFold(tokens[index].Value, "U") && tokens[index+1].Value == "&" && quotedIdentifier(tokens[index+2]) {
-			return true
+// decodedUnicodeIdentifiers returns tokens with each U&"..." identifier read
+// as the quoted identifier it spells, its UESCAPE clause included. The lexer
+// reads one as the word U, an operator and a string it does not decode, so
+// without this `UPDATE U&"\0070g_catalog".pg_settings` names a schema U to
+// every check, while the server decodes the escape before it looks a name up
+// and writes to pg_catalog. Each is decoded as the server decodes it
+// (pgsyntax.Value) from the three adjacent tokens the server reads as one:
+// with a space between them, `u & "mask"` is an operator over two columns.
+//
+// It reports false for an identifier the server does not decode either, an
+// escape it refuses or an empty name, so the guard refuses the statement
+// rather than read a name the server would not.
+func decodedUnicodeIdentifiers(stmt string, tokens []lexer.Token) ([]lexer.Token, bool) {
+	decoded := make([]lexer.Token, 0, len(tokens))
+	for index := 0; index < len(tokens); index++ {
+		if !unicodeIdentifierAt(tokens, index) {
+			decoded = append(decoded, tokens[index])
+			continue
 		}
+		last := index + 2
+		if last+2 < len(tokens) && replay.TokenSequenceAt(tokens, last+1, "UESCAPE") {
+			last += 2
+		}
+		text := stmt[tokens[index].Start:tokens[last].End]
+		scanned, err := pgsyntax.Scan(text, pgsyntax.Options{})
+		if err != nil {
+			return nil, false
+		}
+		name, next, ok := pgsyntax.Value(text, scanned, 0, pgsyntax.Options{})
+		if !ok || next != len(scanned) {
+			return nil, false
+		}
+		decoded = append(decoded, lexer.Token{
+			Type:  lexer.TokenString,
+			Value: pgsyntax.QuoteIdentifier(name),
+			Start: tokens[index].Start,
+			End:   tokens[last].End,
+		})
+		index = last
 	}
-	return false
+	return decoded, true
 }
 
-// storedPublicationName is token as PostgreSQL stores the name it spells. An
-// unquoted name is folded to lower case in ASCII only, as the server folds it:
-// Étoile stays Étoile, where a Unicode fold would compare étoile and miss the
-// publication the claim found.
-func storedPublicationName(token lexer.Token) string {
+// unicodeIdentifierAt reports the word U, an ampersand and a quoted identifier
+// written with nothing between them, which the server reads as one U&"..."
+// identifier.
+func unicodeIdentifierAt(tokens []lexer.Token, index int) bool {
+	if index+2 >= len(tokens) {
+		return false
+	}
+	introducer, ampersand, quoted := tokens[index], tokens[index+1], tokens[index+2]
+	return introducer.Type == lexer.TokenIdentifier && strings.EqualFold(introducer.Value, "U") &&
+		ampersand.MatchOperatorValue("&") && quotedIdentifier(quoted) &&
+		introducer.End == ampersand.Start && ampersand.End == quoted.Start
+}
+
+// storedName is token as PostgreSQL stores the name it spells. An unquoted
+// name is folded to lower case in ASCII only, as the server folds it: Étoile
+// stays Étoile, where a Unicode fold would compare étoile and miss the
+// publication, the extension or the schema the claim found.
+func storedName(token lexer.Token) string {
 	if quotedIdentifier(token) {
 		return replay.IdentifierValue(token)
 	}
@@ -168,14 +208,34 @@ func isGlobalPostgresDDL(tokens []lexer.Token) bool {
 	}
 }
 
+// isExternalPostgresCopy reports a COPY that runs a program on the server's
+// host, or reads or writes a file there: `COPY ... PROGRAM`, `COPY ... TO
+// 'file'` and `COPY table FROM 'file'`.
 func isExternalPostgresCopy(tokens []lexer.Token) bool {
 	if replay.ContainsIdentifier(tokens, "PROGRAM") {
 		return true
 	}
-	toIndex := replay.FindIdentifier(tokens, "TO", 1)
-	if toIndex == replay.MutationTargetNotFound || toIndex+1 >= len(tokens) {
-		return false
+	return copiesServerFile(tokens, "TO") || copiesServerFile(tokens, "FROM")
+}
+
+// copiesServerFile reports a COPY whose direction keyword, outside the
+// parentheses of a query or a column list, is followed by a string constant,
+// which is a file name: the client's streams are the keywords STDIN and
+// STDOUT, and `TO 'stdout'` writes a file of that name in the server's data
+// directory. A table named "to" or "from" is a quoted identifier, never the
+// keyword.
+func copiesServerFile(tokens []lexer.Token, direction string) bool {
+	depth := 0
+	for index := 1; index+1 < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth--
+		case depth == 0 && wordAt(tokens, index) == direction:
+			next := tokens[index+1]
+			return next.Type == lexer.TokenString && !quotedIdentifier(next)
+		}
 	}
-	return tokens[toIndex+1].Type == lexer.TokenString &&
-		replay.NormalizedIdentifier(tokens[toIndex+1]) != "STDOUT"
+	return false
 }

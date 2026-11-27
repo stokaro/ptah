@@ -295,14 +295,86 @@ that resolved snapshot through comparison, planning, checkpoint generation,
 and shadow verification (shadow execution is rejected when the shadow catalog
 resolves names differently).
 
-An offline, dialect-only comparison cannot know the target collation, so it
-confirms only exact-spelling identity. When it checks table, column, or index
-names for conflicts, it treats two ASCII names that differ after ASCII case
-folding as distinct, because no SQL Server collation makes them equal. Names that differ only in ASCII case, or
-that hold a non-ASCII character, may be one name under some collation, so
-planning rejects them as a possible conflict instead of guessing. This makes
-offline SQL Server planning intentionally stricter than live planning. Embedders choose between the live-aware and offline
-comparison APIs — see [Public Go API](../../extend/public-api/).
+The snapshot covers the names of schemas, tables, columns, indexes, views,
+sequences, functions, procedures and triggers, and a declared object pairs with
+the object the database holds when the server reads their names as one. On a
+case-insensitive database that holds the procedure `MixedCase`, a schema that
+declares `MIXEDCASE` with another body changes `MixedCase`. It does not create
+a second procedure and drop the first, which on that database would drop the
+procedure the plan has changed. Under a case-sensitive collation the two names are two
+procedures, and the plan creates `MIXEDCASE` beside `MixedCase`.
+
+The plan writes each name as the schema declares it, and no plan renames an
+object only to change the case of its name. A routine changes by `DROP` and
+`CREATE`, so the server then stores the declared spelling. A table, a view, a
+sequence and a trigger change in place, and the server keeps the spelling it
+already stores. Either way the next comparison reads both spellings as one name
+and plans nothing.
+
+Two declarations of one kind that the database may read as one name are
+refused, because only one of them could be compared: under a case-insensitive
+collation the views `MixedView` and `MIXEDVIEW` are one view. A plan that would
+create one object and drop another of its kind whose name the target may read
+as the same name is refused too, before any statement runs. Triggers are
+outside that check, because the plan drops the old trigger before it creates
+the new one, so the drop frees the name the create takes.
+
+`schema diff` of two schema files, in both binaries, asks the dev database how
+it compares the names the two files hold, and pairs them the way it answers.
+The dev URL may come from `--dev-url` or from the project file. Ptah opens it
+beside `--server-version` too, because a server version says what the plan may
+use, not how the database compares names. A dev database that does not answer
+fails the run. The tables `Größe` and `Zähler` are two tables. On a
+case-insensitive dev database the views `MixedView` and `MIXEDVIEW` are one
+view, and the plan changes it in place. Under `Hungarian_CI_AS` the functions
+`ccs` and `cscs` are one function, so the plan replaces it.
+
+The Go comparison APIs that take no connection compare names offline, by these
+rules:
+
+- Two ASCII names that differ beyond ASCII case are assumed to be two names.
+  Most collations agree. A collation with contractions, which reads a group of
+  letters as one letter, does not: under `Hungarian_CI_AS` and
+  `Hungarian_100_CI_AS`, `ccs` and `cscs` are one name, and so are `ddz` and
+  `dzdz`. `Maori_100_CI_AS` reads `a-b` as `ab`. On such a database an offline
+  plan from `ccs` to `cscs` creates one function and drops the other, which
+  leaves neither.
+- Two names that differ only in ASCII case are refused, because they are one
+  name under a case-insensitive collation.
+- A name that holds a non-ASCII character is refused beside any other name of
+  its kind in any schema. Two schema files that declare the views `Größe` and
+  `v2` are refused, and the refusal says that Ptah cannot tell whether the two
+  are one name under the database collation.
+
+Plan with a connection. An embedder gets the server's answer from
+`schemadiff.ResolveIdentifierSemantics`; see
+[Public Go API](../../extend/public-api/).
+
+A dev or shadow database must use the target's collation. A case-sensitive dev
+database would hold `MixedCase` and `MIXEDCASE` as two procedures where the
+target holds one, and a rehearsal there would prove nothing about the target.
+A command that runs a change on a dev or shadow database before the target
+asks both servers how they compare names that differ in case, in accent, in
+width and in kana, and refuses when the answers differ. The refusal names both
+collations and the clause to create the dev or shadow database with, such as
+`COLLATE SQL_Latin1_General_CP1_CI_AS`. Ptah does not provision a SQL Server
+database from a `docker://` URL, so you create it.
+
+Collations with different names that agree on the four sensitivities pass,
+such as `SQL_Latin1_General_CP1_CI_AS` and `Latin1_General_100_CI_AS`. They
+can still read some names differently: a collation of an older version gives
+no weight to some characters a newer one weighs, so the first reads `p`, `pȡ`
+and `p😀` as one name and the second reads them as three.
+
+The check runs in these commands:
+
+- `schema apply --dev-url`, in both binaries;
+- `ptah migrations down --shadow-db`, and `ptah-compat migrate down --dev-url`;
+- the other commands that verify on a shadow database.
+
+`ptah migrations generate --replay` and `ptah-compat migrate diff` hold no
+connection to the target, so they cannot compare, and the generated migration
+is planned under the dev database's collation.
 
 ## Filtered indexes
 
@@ -386,6 +458,26 @@ and a variable does not outlive its batch. A removed default is the same
 statement without the `ADD DEFAULT`. The safety report treats the drop as a
 default change rather than as the removal of a constraint that protects data:
 a removed default is a warning, and a replaced one is safe.
+
+The statement is an `EXEC`, which the
+[dev replay guard](../../concepts/database-urls-and-dev-databases/#statement-forms-that-fail-closed)
+refuses unless the replayed SQL is trusted. It accepts this one without trust,
+in the shape above and with or without the `ADD DEFAULT`, so a history that
+drops or replaces a default replays on a shadow or dev database. A batch that
+differs from that shape in any byte is refused, and so is one whose new
+default is more than one expression. A rename, `EXEC sp_rename`, is accepted
+in the shape Ptah writes it, for a column, an index or an object in the dev
+database.
+
+The guard judges every statement of a batch where the server ends it, since
+T-SQL needs no semicolon between two statements. Without trust it refuses a
+name of another database the dev session reaches, a read as well as a write,
+a `DBCC CHECKIDENT`, `CHECKTABLE` or `CHECKCONSTRAINTS` on a table of another
+database, and the functions that read a file on the server; every other
+`DBCC` is refused with trust as well. A method called on a column through its
+table's alias, such as `p.geo.STAsText()`, passes when the dev session reaches
+no database named `p`, and so does `DBCC CHECKIDENT ('dbo.items', RESEED, 1)`.
+The guard's page lists each rule.
 
 For temporal columns, the comparison ignores case in `GETDATE()` and
 `SYSDATETIME()`. It treats `CURRENT_TIMESTAMP` as `GETDATE()` because both
@@ -537,6 +629,14 @@ the reader reports every routine `VOLATILE`.
 A routine replaced for a new body is dropped first, and the plan grants back
 what each grantee held on it and denies again what was denied. Measured on SQL
 Server 2025.
+
+The down file `ptah migrations generate` writes for a changed routine creates
+it again with the body and the options the database it was planned against
+held. A plan creates a routine before the tables the same plan creates
+(stokaro/ptah#6721). A `SCHEMABINDING` routine whose body reads such a table
+fails with error 208, `Invalid object name`, and the migration rolls back.
+That holds for an up migration that creates both, and for the down file of a
+migration that changes the routine and drops a table its old body reads.
 
 ## Scripts and batches
 
@@ -826,7 +926,18 @@ to, for every permission held with the option, `CONTROL` and `ALTER` included.
 Column names compare under the database's
 [collation](#identifier-collation). Measured on SQL Server 2019, 2022 and 2025.
 
-So a plan refuses to revoke a grant option, or a grantable permission, where
+Each planned revoke names the grantor reported by the database with
+`AS [grantor]`. When several principals granted the same permission, the plan
+revokes each row, on an object, a schema or a column. An option revoke names
+only the rows that hold the option, leaving plain grants intact. The account
+running the plan must have permission to revoke as those grantors; SQL Server
+refuses the statement otherwise.
+
+A generated down migration that undoes a new grant or grant option uses the
+default grantor of the original statement, preserving other grantors'
+preexisting rows.
+
+A plan refuses to revoke a grant option, or a grantable permission, where
 the grantee has granted the permission onward and the schema does not revoke
 that grant. The server keeps a row for each grantor, and the refusal names each
 principal holding a row the grantee granted:
@@ -839,6 +950,20 @@ This holds for a `REVOKE GRANT OPTION FOR` in a SQL schema file and for a role
 the schema creates that it declares without the option. A grant `r_v` holds
 from another grantor stays, and with no onward grant `CASCADE` takes nothing
 more. Measured on SQL Server 2025.
+
+`ptah schema render` preserves an explicit option revoke and writes it before
+the corresponding grant. SQL Server can remove the base permission when the
+option revoke runs on an ordinary grant, so this order restores the declared
+permission whether it was absent, ordinary or grantable. Whole-table pairs
+precede column pairs, so a table operation cannot erase a declared column
+option written earlier in the source.
+
+This render is SQL for execution by SQL Server. Its option revoke includes
+the `CASCADE` the server requires, so the rendered script is refused as a
+declarative `--schema-file`: that reader refuses a cascade whose onward
+grants it cannot inspect. Keep the original declaration as the input for
+another render or comparison. `schema apply` checks the live onward grants
+before it plans the cascade; an offline render cannot make that check.
 
 ## Limitations
 

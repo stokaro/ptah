@@ -40,15 +40,17 @@ func (v identifierFacet) Equal(other schemaext.Value) bool { return other == v }
 func (v identifierFacet) IdentifierNames() []string        { return []string{v.name} }
 
 // The public comparison resolves owner names from both representations and
-// excludes facets bound to another target before contacting the catalog.
+// excludes facets bound to another target before contacting the catalog. The
+// routine the facets are on is named f on both sides, and its name is asked
+// about either way.
 func TestCompareWithDatabase_ResolvesActiveFacetIdentifiers(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		scope []string
 		want  []string
 	}{
-		{"active", []string{"sqlserver"}, []string{"dbo", "declared", "observed"}},
-		{"excluded", []string{"postgres"}, []string{"dbo"}},
+		{"active", []string{"sqlserver"}, []string{"dbo", "f", "f", "declared", "observed"}},
+		{"excluded", []string{"postgres"}, []string{"dbo", "f", "f"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

@@ -206,6 +206,7 @@ func TestRevokePrivilegeNode(t *testing.T) {
 		c := qt.New(t)
 		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"}).
 			SetGrantOptionFor(true).
+			SetGrantedBy(" grantor ").
 			SetComment("Remove schema access")
 
 		c.Assert(revoke.Role, qt.Equals, "app_role")
@@ -213,6 +214,7 @@ func TestRevokePrivilegeNode(t *testing.T) {
 		c.Assert(revoke.ObjectName, qt.Equals, "public")
 		c.Assert(revoke.Privileges, qt.DeepEquals, []string{"USAGE"})
 		c.Assert(revoke.GrantOptionFor, qt.IsTrue)
+		c.Assert(revoke.GrantedBy, qt.Equals, " grantor ")
 		c.Assert(revoke.Comment, qt.Equals, "Remove schema access")
 	})
 

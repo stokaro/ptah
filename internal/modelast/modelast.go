@@ -1756,9 +1756,10 @@ func WalkDatabase(
 // after enums and before routines whose signatures name a type and tables.
 // Owned type steps share this span and order by their captured references.
 func walkCommonDatabase(
-	database schemamodel.Database, targetPlatform string, names grantName, resolves deporder.BodyResolution, visit func(ast.Node) error,
+	database schemamodel.Database, targetPlatform string, lowering Lowering, visit func(ast.Node) error,
 	typeWindow func(start bool),
 ) error {
+	resolves := lowering.ResolvesBodyAtCreate
 	// No server is asked here, so a bare table's schema is the target's
 	// catalog default. See schemaprep.ValidateTableSpellings for why a
 	// wrong default refuses rather than merges.
@@ -1828,7 +1829,7 @@ func walkCommonDatabase(
 	}
 
 	// 9. Everything that needs the tables to exist first.
-	if err := appendPostTableObjectStatements(visit, database, targetPlatform, names, placements, tableRoutines, resolves); err != nil {
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform, lowering, placements, tableRoutines); err != nil {
 		return err
 	}
 
@@ -2218,10 +2219,9 @@ func appendPostTableObjectStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
 	targetPlatform string,
-	names grantName,
+	lowering Lowering,
 	placements map[string]deporder.RoutinePlacement,
 	tableRoutines map[string]bool,
-	resolves deporder.BodyResolution,
 ) error {
 	// Associate standalone sequences with their owning table.column now that the
 	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
@@ -2232,7 +2232,7 @@ func appendPostTableObjectStatements(
 			}
 		}
 	}
-	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements, tableRoutines, resolves); err != nil {
+	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform, placements, tableRoutines, lowering.ResolvesBodyAtCreate); err != nil {
 		return err
 	}
 	for _, rlsEnabled := range database.RLSEnabledTables {
@@ -2245,7 +2245,7 @@ func appendPostTableObjectStatements(
 			return err
 		}
 	}
-	if err := appendPrivilegeStatements(visit, database, names); err != nil {
+	if err := appendPrivilegeStatements(visit, database, targetPlatform, lowering); err != nil {
 		return err
 	}
 	for _, trigger := range database.Triggers {
@@ -2258,7 +2258,8 @@ func appendPostTableObjectStatements(
 
 // appendPrivilegeStatements appends the declared revokes, denies and grants in
 // the order the server keeps each of them.
-func appendPrivilegeStatements(visit func(ast.Node) error, database schemamodel.Database, names grantName) error {
+func appendPrivilegeStatements(visit func(ast.Node) error, database schemamodel.Database, target string, lowering Lowering) error {
+	names := lowering.grantName()
 	// Before the grants. The two never name the same privilege -- the schema
 	// reader folds a later GRANT and REVOKE of one into one of the two -- but
 	// a REVOKE of a table privilege also takes it off every column, measured
@@ -2284,10 +2285,8 @@ func appendPrivilegeStatements(visit func(ast.Node) error, database schemamodel.
 			return err
 		}
 	}
-	for _, grant := range database.Grants {
-		if err := visit(withGrantPath(FromGrant(grant), names)); err != nil {
-			return err
-		}
+	if err := lowering.appendDeclaredGrants(visit, database.Grants, describe(target)); err != nil {
+		return err
 	}
 	for _, denied := range database.DeniedGrants {
 		if len(denied.Columns) == 0 {

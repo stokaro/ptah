@@ -341,6 +341,13 @@ provider runs the cases in a dev realm in that database.
 - **Match the target engine.** Replay verification proves the SQL executes on
   the engine it ran against, so a dev or shadow database should run the same
   engine (and ideally the same version) as the target.
+- **Match the target's collation on SQL Server.** The collation decides which
+  names are one name, so a dev or shadow database under another collation
+  builds another state than the target holds. A command that holds both
+  connections compares how the two servers read names that differ in case, in
+  accent, in width and in kana, and refuses when they differ, naming both
+  collations. See
+  [Identifier collation](../../databases/sqlserver/#identifier-collation).
 - **Every flag has an environment variable.** `PTAH_DB_URL`, `PTAH_DEV_URL`,
   and `PTAH_SHADOW_DB` set the corresponding flags, which keeps credentials
   out of CI command lines. A malformed non-empty value fails before command
@@ -353,7 +360,8 @@ proven to stay inside the disposable realm:
 
 - PostgreSQL-family `DO`, `CALL`, routine creation or alteration, foreign-table
   creation or alteration, foreign servers, `IMPORT FOREIGN SCHEMA`,
-  `SET search_path`, `SELECT INTO` protected namespaces, and CockroachDB's
+  a `search_path` other than the empty one, `SELECT INTO` protected namespaces,
+  and CockroachDB's
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`.
 - MySQL and MariaDB executable comments, `CALL`, a `CREATE` or `ALTER` of an
   event, a trigger, a routine or a MariaDB package or package body, prepared
@@ -437,9 +445,136 @@ proven to stay inside the disposable realm:
   body, and refuses the `CREATE` or `ALTER` that writes one of these refusals
   into a body. A statement that names only other accounts gets the answer its
   realm gives it.
-- SQL Server `EXEC`/`EXECUTE`, procedure/function/trigger creation or
-  alteration, synonym/external-table creation, `BULK INSERT`, `BACKUP`,
-  `RESTORE`, and server-level maintenance statements.
+- SQL Server `EXEC`/`EXECUTE`, `SETUSER` in every form,
+  procedure/function/trigger creation or alteration, synonym/external-table
+  creation, `BULK INSERT`, `BACKUP`, `RESTORE`, and server-level maintenance
+  statements. T-SQL has no DDL to
+  rename an object or to drop a default the server named, so Ptah writes an
+  `EXEC` for each, and the guard accepts those in the shape the SQL Server
+  renderer writes them and in no other. A rename is
+  `EXEC sp_rename N'[dbo].[users].[email]', N'mail', N'COLUMN';`: each part of
+  the name in brackets, every argument an `N'...'` literal, and the type
+  `COLUMN`, `INDEX`, `OBJECT` or none. The others are the batches that
+  [drop or replace a column's default](../../databases/sqlserver/#column-defaults).
+  A rename is refused when its name reaches another database, when it names a
+  temporary table, and when its type is another one, such as `DATABASE`. So is
+  the procedure under another name, such as `sys.sp_rename` or
+  `otherdb..sp_rename`, which runs in that database, and an argument built
+  when the statement runs, such as a variable or a concatenation. A
+  replacement is refused when the new default is more than one expression,
+  and its `ALTER TABLE ... ADD DEFAULT` is judged as the same statement
+  written on its own.
+
+  T-SQL needs no semicolon between two statements, so the guard reads a batch
+  into the statements the server runs from it, ending each where the server
+  does, and judges every one: `ALTER TABLE t ADD DEFAULT 0 FOR c DROP DATABASE
+  other` is two statements, and the `DROP DATABASE` is refused. So is the one
+  in `DELETE FROM t OUTPUT deleted.* DROP DATABASE other`, where the asterisk
+  ends the `DELETE`, and in `SELECT @ DROP DATABASE other`, where a bare `@`
+  is a variable. It also judges the statement an `IF`, `ELSE` or `WHILE` runs,
+  the statements of a `BEGIN ... END` block and of `TRY` and `CATCH`, and the
+  `EXEC` whose rows an `INSERT` stores. A procedure named with no `EXEC`, such
+  as `sp_executesql N'...'` or `xp_cmdshell 'dir'` as the first statement of a
+  batch, runs as `EXEC` of that name and is judged as one. An `EXEC` of one
+  constant literal, such as the `EXEC('CREATE SCHEMA [app]')` the renderer
+  writes under `IF SCHEMA_ID('app') IS NULL`, is judged as the batch the
+  literal holds, eight levels deep at most. The server converts a literal
+  without the `N` prefix to the database's code page first, so such a literal
+  that holds a character outside ASCII is judged as any other `EXEC`.
+
+  Without trust, the guard refuses these statements wherever they stand,
+  including in a block, after an `IF` and in a constant `EXEC`:
+
+  - A name of another database that the dev session reaches. The guard reads
+    the names a statement writes as identifiers: the target of a write, a
+    table a query reads, the body of a view, function, procedure or trigger,
+    `NEXT VALUE FOR`, `CREATE STATISTICS` and `UPDATE STATISTICS`,
+    `WRITETEXT`, `UPDATETEXT` and `READTEXT`, `OUTPUT ... INTO`,
+    `REFERENCES`, and the procedure an `EXEC` runs. Reads count:
+    `INSERT INTO dbo.t SELECT id FROM other.dbo.t` is refused, and only trust
+    lets a run read another database. In a name of three parts or more, the
+    third part from the end can name a database, so `other..t` is the table
+    `t` in `other`. A part before it names a server, or the database of the
+    column in `WRITETEXT other.dbo.t.c`, and a name with such a part is always
+    refused.
+
+    The guard reads the dev database's name from the dev session with
+    `DB_NAME()`. A database part that is empty, or spelled exactly as the dev
+    database, is local, so `[dev].dbo.t` and `dev..t` pass. For any other
+    database part, the guard asks the dev session `HAS_DBACCESS` with that
+    name, once per name in a run. An answer of 1 means the session reaches a
+    database of that name, and the name is refused. An answer of 0 or `NULL`
+    means it reaches none, so the server reads the name as a column, or a
+    method called on one, and it passes. That covers
+    `SELECT p.geo.STAsText() FROM dbo.places AS p`, `t.doc.nodes('/a')`,
+    `n.c.value('.', 'int')`, a computed column `area AS g.geo.STArea()`, a
+    check `CHECK (g.geo.STIsValid() = 1)` and `SELECT dbo.t.c FROM dbo.t`. The
+    guard does not decide by the alias or by a following parenthesis, because
+    both mislead: `SELECT o.dbo.f() FROM dbo.x AS o` runs the function `f` of
+    the database `o`. `HAS_DBACCESS` answers for a database the login cannot
+    list: under `DENY VIEW ANY DATABASE`, `DB_ID` returns `NULL` and
+    `sys.databases` leaves out a database the login is mapped into, and
+    `HAS_DBACCESS` still answers 1. `master.sys.databases` and
+    `tempdb.sys.objects` are reads of another database, since every login
+    reaches `master` and `tempdb`, and are refused. `DEV.dbo.t` is refused
+    even where the collation ignores case: the session reaches `DEV`, and no
+    fold the guard could apply matches every collation. A trusted run asks no
+    question.
+
+    The answers hold for the run's own statements, in whatever order a
+    command asks: `migrations validate` asks before each file and runs that
+    file before it asks about the next. Without trust the guard refuses
+    each statement that could make another database reachable: `EXECUTE AS`
+    and `SETUSER` in every form, a bare `SETUSER` that goes back included,
+    `CREATE DATABASE`, and `EXEC`. It refuses a user or a role created,
+    altered or dropped, `ALTER AUTHORIZATION` and `ALTER DATABASE` always,
+    and the cleanup refuses a dev database that holds a user other than the
+    run's own.
+
+    Another session on the same server can change an answer after the guard
+    asked about a name. It can create a database or map the login into one,
+    release a database it holds in single-user mode, bring an `OFFLINE`
+    database back online, or move one from `RESTRICTED_USER` to
+    `MULTI_USER`. The guard keeps the answer it read, that the run does not
+    reach the database, for the rest of the run, and accepts a later
+    statement that names it.
+
+    T-SQL lets `@`, `#` and `$` follow the first character of a name, so the
+    server reads `x@.dbo.t` as the table `t` in the database `x@`, and the
+    guard reads it the same way. The guard does not know which words are
+    reserved, so in `FROM .dev.dbo.t`, with the server part left out, it reads
+    `FROM` as part of the name and refuses it. A name the statement holds in a
+    string, as `OBJECT_ID(N'other.dbo.t')` does, is not read.
+  - `DBCC CHECKIDENT`, `CHECKTABLE` and `CHECKCONSTRAINTS` on a table of
+    another database. The server reads their first argument as a table name
+    in any quoting: `'other.dbo.t'`, `N'other.dbo.t'`, `"other.dbo.t"` and
+    `[other.dbo.t]` all name the table `t` in `other`. The guard reads that
+    name with the rule above, so `DBCC CHECKIDENT ('dbo.items', RESEED, 1)`
+    after seed data passes. A first argument that is not a constant name,
+    such as a variable or an expression, is refused. `DBCC CHECKCONSTRAINTS`
+    with no table checks the dev database and passes. Every other `DBCC` acts
+    on the server and is refused with trust or without it.
+  - A function that reads a file on the server or a remote source:
+    `OPENROWSET`, `OPENDATASOURCE`, `OPENQUERY`,
+    `sys.dm_os_enumerate_filesystem`, `sys.dm_os_file_exists`,
+    `sys.fn_get_audit_file`, `sys.fn_get_audit_file_v2`,
+    `sys.fn_xe_file_target_read_file`, `sys.fn_trace_gettable` and
+    `sys.fn_dump_dblog`, under any spelling of the name. The procedures that
+    read the file system, such as `xp_dirtree`, `xp_fileexist` and
+    `xp_subdirs`, are refused as every `EXEC` is.
+  - `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`.
+
+  Text whose statement boundaries the guard cannot find is refused, with trust
+  or without it. The refusal gives the offset and says how to rewrite the
+  text: end each statement with a semicolon, and put the statements an `IF`,
+  a `WHILE` or a block runs between `BEGIN` and `END`. The guard cannot find
+  the boundaries at an `END` that closes no `BEGIN`, a number written against
+  a word, as in `0x1GRANT`, a character the server reads as whitespace and the
+  guard's lexer does not, such as U+200B, and a currency sign such as `£`,
+  which the server reads as the start of a money constant (`£1` is 1.0000).
+  Nor can it inside a `MERGE`, which ends only at the semicolon the server
+  requires: a statement word before that semicolon is refused, except the
+  `DELETE`, `INSERT`, `SET` and `UPDATE` of its `WHEN` clauses.
 - ClickHouse remote, distributed, replicated, and unknown table engines,
   external dictionary sources, `FREEZE`/`UNFREEZE`, and `SYSTEM` statements but
   `SYSTEM STOP MERGES` and `SYSTEM START MERGES` of one table in the dev
@@ -457,13 +592,45 @@ proven to stay inside the disposable realm:
   streaming queries.
 
 Replay runs every migration of a directory on one session, as `migrate apply`
-runs the migrations of one run, so a PostgreSQL `SET` or `RESET` that changes
-the session would carry into the migrations after it, and is refused. A
-setting that ends with its transaction is accepted:
+runs the migrations of one run, so a PostgreSQL `SET`, `RESET` or
+`set_config(name, value, false)` carries into the migrations after it, and into
+the reads and the cleanup Ptah runs on that session. Such a setting is accepted
+where it changes nothing a later statement reaches, how Ptah reads that
+statement, or how Ptah reads the dev database back:
+
+- `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
+  `idle_session_timeout` and `transaction_timeout`, at any value;
+- `client_min_messages`, `check_function_bodies`, `row_security`,
+  `xmloption`, `default_tablespace` and `default_table_access_method`, at any
+  value;
+- `search_path` at the empty path `''`, or given back with `DEFAULT` or
+  `RESET`;
+- `standard_conforming_strings` at `on`, and `client_encoding`, or
+  `SET NAMES`, at UTF-8.
+
+These are what `pg_dump --schema-only` sets around the objects it dumps. In
+`set_config` the name is written as a string, and so is the value of
+`search_path`, `standard_conforming_strings` or `client_encoding`.
+
+A setting of any other parameter is accepted when it ends with its
+transaction:
 
 - `SET LOCAL` and `SET CONSTRAINTS`;
 - `set_config(name, value, true)`, with the name written as a string and `true`
   written as the keyword.
+
+A parameter that changes how the server writes a value out, such as `DateStyle`
+or `TimeZone`, belongs here: set for the session, it would change the text Ptah
+reads a column default back as.
+
+`SET LOCAL session_replication_role = replica` belongs here too. It turns
+triggers off, foreign key checks among them, for the statements of its
+migration, so a migration can load rows in any order. It cannot outlive the
+migration: replay refuses a file that leaves a transaction open, so a
+transaction ends no later than its migration, on commit and on rollback alike,
+and outside a transaction PostgreSQL ignores `SET LOCAL`. Set for the session,
+it would carry into the migrations after it and into the cleanup, so it is
+refused there.
 
 PostgreSQL `CREATE TEMP TABLE` and `CREATE TEMPORARY TABLE` are accepted on the
 replay's pinned physical session. Later statements and migrations can use those
@@ -485,6 +652,14 @@ that state, so there the comment is refused. A privilege on a schema is refused 
 every replay, because it depends on the server's roles, and so is a comment on a
 protected namespace such as `pg_catalog`. The pinned community binary
 replays all of these, so `ptah-compat` is stricter here, deliberately.
+
+A `COMMENT ON EXTENSION` is accepted, under the same condition, on an extension
+the dev database did not hold when the replay claimed it: the history created
+it, and the reset drops it with its comment. `pg_dump` writes such a comment
+after each extension it dumps, and Ptah renders one for a declared extension.
+A comment on an extension the dev database held is refused, since the reset
+keeps the extension and the comment would outlive the run. The name is compared
+as the server stores it, so an unquoted name is read in lower case.
 
 Replay runs each migration the way `migrations up` does, in one transaction
 unless the file opts out with `-- +ptah no_transaction` or
@@ -526,10 +701,138 @@ verifies runs each down file on the shadow database the same way, and
 `--plan` builds the target version there by running each up file the same
 way.
 
-Three parameters stay refused even for one transaction. `search_path` (and its
-alias `SET SCHEMA`) decides where an unqualified name lands, which would let a
-`CREATE FUNCTION` reach `pg_catalog`. `role` and `session_authorization` change
-who the rest of the migration runs as.
+Some settings stay refused even for one transaction. A `search_path` that names
+a schema (and its alias `SET SCHEMA`) decides where an unqualified name lands,
+which would let a `CREATE FUNCTION` reach `pg_catalog`; under the empty path an
+unqualified `CREATE` has no schema to land in and fails. `role` and
+`session_authorization` change who the rest of the migration runs as.
+`allow_system_table_mods` is refused as well.
+
+A `standard_conforming_strings` other than `on`, or a `client_encoding` other
+than UTF-8, makes the server read the bytes of a later statement by other rules
+than Ptah does: measured on PostgreSQL 18.6, either lets a statement Ptah reads
+as one `SELECT` run a `CREATE ROLE`. PostgreSQL 19 refuses
+`standard_conforming_strings = off` itself. `DEFAULT` and `RESET` are refused
+for both, since they give back the value the session started with. A dev
+session that starts with either setting, such as one whose URL sets
+`client_encoding=GBK`, is refused before the replay.
+
+A name written without a schema is read the way the server reads it. A
+statement that refers to an existing object looks its name up in `pg_catalog`
+before any schema of the search path, so `UPDATE pg_settings` writes the
+catalog's view, and sets the parameter of the row it changes, as `SET` would.
+Before the replay the guard reads the names the dev session's catalog holds in
+its protected namespaces: relations, routines, types, operators and the other
+objects a statement can name. A statement that writes, alters, drops, locks,
+comments on or grants on one of them under its bare name is refused, as it is
+with the schema written, and the refusal says to qualify the name. On
+CockroachDB the same holds for the names in `pg_extension`.
+
+A `CREATE` can hold such a reference too: the table after `ON` in
+`CREATE INDEX`, `CREATE TRIGGER` and `CREATE POLICY`, after `TO` in
+`CREATE RULE` and after `FROM` in `CREATE STATISTICS`. A table of your own
+that has a catalog's name, such as `app.pg_settings`, is accepted when its
+schema is written.
+
+A `CREATE` is judged by where it creates, not by what its name reaches. The
+server puts an object whose name has no schema in the first schema of the
+search path, so `CREATE TYPE point` makes `public.point` beside
+`pg_catalog.point`, and the guard accepts it, as it accepts `CREATE OR REPLACE`.
+A later statement that names the object without its schema is a reference
+again: `DROP TYPE point` reaches `pg_catalog.point`, so the guard refuses it,
+as the server does; write `public.point`.
+
+The server skips a schema of the search path that does not exist, so under a
+path such as `public, pg_catalog` a `DROP SCHEMA public` makes the next
+`CREATE` land in `pg_catalog`. A dev session whose search path lists a
+protected namespace anywhere therefore has every `CREATE` without a schema
+refused, under trust too, and the refusal says to qualify the name. Ptah
+refuses a dev database whose search path starts with `pg_catalog` before the
+replay.
+
+A direct write to a protected namespace is refused in every spelling the guard
+reads: with the schema written, bare, quoted, Unicode-escaped, or behind the
+dev database's own name, as in `ptah_dev.pg_catalog.pg_authid`. A write the
+server carries through another object is refused where the guard can read the
+object:
+
+- A view whose query names a relation of a protected namespace, such as
+  `CREATE VIEW v AS SELECT * FROM pg_authid`, is accepted, and so is a read
+  through it. An `INSERT`, `UPDATE`, `DELETE`, `MERGE` or `COPY` that writes
+  through it is refused, as is one through a view over that view.
+- A `CREATE RULE` whose action writes a protected namespace, or writes
+  through such a view, is refused.
+- A `CREATE TRIGGER` whose function arguments name a relation of a protected
+  namespace, or call a function the guard refuses as a call, is refused. The
+  `check_foreign_key` function of the refint extension runs its arguments as
+  SQL, so
+  `check_foreign_key(1, 'cascade', 'id', 'pg_catalog.pg_description', 'objoid')`
+  deletes catalog rows, and an argument that calls `set_config` changes the
+  replay session. A text search configuration such as `'pg_catalog.english'`
+  names no relation and is accepted.
+- A table that inherits from a relation of a protected namespace or is a
+  partition of one is refused: `CREATE TABLE ... INHERITS`, `PARTITION OF`,
+  `ALTER TABLE ... INHERIT` and `ATTACH PARTITION`.
+- An operator, an aggregate, a type, an operator class or a conversion that
+  names a function the guard refuses as a call is refused. The guard reads
+  every value of a definition list, whatever the option and whether the value
+  is quoted. A refused function is a cluster control function such as
+  `pg_terminate_backend` or `set_config`, a replication function, a large
+  object function, `pg_import_system_collations`, a session advisory lock, and,
+  unless the run trusts its SQL, a server file function or a dblink function.
+  `set_config` is refused there whatever it would set, because the server
+  passes it arguments the statement does not spell out.
+
+The guard judges each write when it runs, over what the replay has done to the
+dev database up to that statement. It keeps one graph of relations: the views,
+the rules and the triggers the replay creates, replaces, renames, moves or
+drops, and the ones the dev database already holds, such as an extension's,
+which it reads before the replay. A write reaches what a view's query, a rule's
+action and a trigger's arguments name, and the tables a cascading foreign key,
+a partition or an inherited table carries it to. So a write through a view
+over a view that a later statement replaces with one over `pg_authid` is
+refused, and so is a delete whose trigger names a view created after the
+trigger. A trigger's argument is looked up when the write runs, as the trigger
+does.
+
+The guard reads a view as one the server writes through on its own when its
+query is one `SELECT`, without `DISTINCT` or a window, of one relation after
+`FROM`, with only a `WHERE` or an `ORDER BY` after it. Such a view writes that
+relation alone, so a filter that reads a catalog does not make the write a catalog
+write. A view of any other shape counts every relation its query names. A
+dropped view reaches nothing, so a table later created under its name is
+written as usual. The guard matches a relation by its schema and name, and
+reads a name without a schema through the dev session's search path, as the
+server does: a table of `public` is written as usual beside a view of the same
+name in a schema the path does not reach. Where the guard cannot tell which
+relation a name without a schema means, it refuses the write, and the refusal
+says to qualify the name.
+
+A function that reads, lists or changes the files of the server's host is
+refused unless the run trusts its SQL: `pg_read_file`, `pg_read_binary_file`,
+`pg_stat_file`, the `pg_ls_*dir` functions, and adminpack's `pg_file_write`,
+`pg_file_rename`, `pg_file_unlink` and `pg_file_sync`. So is a `COPY` to or
+from a program or a file of the host, such as `COPY t FROM '/etc/hostname'`.
+`lo_import` and `lo_export` read and write host files too, and stay refused
+under trust with the rest of the large object functions.
+`pg_import_system_collations` is refused in every scope, because the schema it
+adds collations to is an argument the guard cannot read.
+
+On CockroachDB a statement can name a table of another database of the same
+server, as `other.public.t` or as `other.t`. Such a name is refused unless the
+run trusts its SQL. A name of two parts counts as another database's when its
+first part is neither the dev database nor one of its schemas. PostgreSQL and
+YugabyteDB refuse a reference to another database themselves.
+
+A call of such a function in a column default, a generated column, a `CHECK`
+constraint, a policy or a rule action is refused as any call is. CockroachDB
+has no rules, operators or aggregates, and its server refuses a write through
+a view; the guard refuses a write through a CockroachDB view that reaches a
+protected namespace all the same.
+
+A Unicode-escaped identifier, such as `U&"pg\005fcatalog"`, is decoded before
+the guard reads the statement, so it counts as the name it spells. One whose
+escapes the guard cannot decode is refused.
 
 The rejection happens while Ptah validates the whole migration, before its
 first statement executes. Realm-local removals Ptah can classify without
@@ -553,8 +856,9 @@ reaches past the dev database:
   `REASSIGN OWNED`, `COMMENT ON` a role, a database, or an extension or
   schema of the dev database, and `ALTER EXTENSION ... UPDATE [TO ...]` whose
   name and version Ptah reads. A server declared disposable lifts all of these
-  except the comment on an extension or a schema and the extension update,
-  because that server outlives the run and its reset keeps them. Replay does
+  except a comment on an extension or a schema the dev database held when the
+  run claimed it and the extension update, because that server outlives the
+  run and its reset keeps them. Replay does
   not read a `DO` block or a routine body; outside one, any other
   `ALTER EXTENSION` stays refused. A
   [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own comment
@@ -581,8 +885,8 @@ statements change the replay session or the sessions the rest of the command
 opens (`SET search_path`, `ALTER ROLE ... SET`, any `ALTER DATABASE`,
 transaction control), change how the command's later SQL runs (`ALTER SYSTEM`,
 event triggers, casts, languages), reach past the container (foreign servers,
-subscriptions, `dblink`, an external `COPY`), or mutate a protected namespace
-such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
+subscriptions, `dblink`, an external `COPY`, a server file function), or
+mutate a protected namespace such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
 scheduler runs it during the rest of the command.
 
 A YDB external data source or table, async replication, a transfer and a
@@ -612,8 +916,8 @@ A server Ptah did not start can be as disposable: a CI service container
 the job throws away, or a container the operator runs. `PTAH_DEV_SERVER_DISPOSABLE=1` declares that the server
 `--dev-url` names is the run's own. Replay then runs the statements listed
 above on it, as on a server Ptah provisions, except a comment on an extension
-or a schema of the dev database and an extension update, and refuses the same
-rest.
+or a schema the dev database held when the run claimed it and an extension
+update, and refuses the same rest.
 
 ```bash
 PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url "$DEV_URL"
@@ -689,9 +993,10 @@ accepts:
 
 - on PostgreSQL, CockroachDB and YugabyteDB, the statements a
   [server Ptah provisions](#a-server-ptah-provisions) accepts except a comment
-  on an extension or a schema of the dev database and an extension update, and
-  also an external `COPY`,
-  `dblink` and `IMPORT FOREIGN SCHEMA`;
+  on an extension or a schema the dev database held when the run claimed it
+  and an extension update, and also an external `COPY`, a server file
+  function, `dblink`, `IMPORT FOREIGN SCHEMA` and, on CockroachDB, a name of
+  another database;
 - on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements,
   MariaDB compound statements, users, roles, `GRANT`, `REVOKE`, loadable
   functions, other databases and writes to them, the key cache and resource
@@ -704,9 +1009,13 @@ accepts:
   table is not seen (stokaro/ptah#6705). The official MySQL and MariaDB images
   enable none of these engines, and `INSTALL SONAME` and `CREATE SERVER` stay
   refused;
-- on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
-  logins, credentials, synonyms, a target in another database, `BACKUP`,
-  `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
+- on SQL Server, `EXEC`, `SETUSER`, functions, procedures and DML triggers,
+  databases, logins, credentials, synonyms, a name of another database the dev session
+  reaches, reads included, `DBCC CHECKIDENT`, `CHECKTABLE` and
+  `CHECKCONSTRAINTS` on a table of another database or one not named as a
+  constant,
+  `BACKUP`, `RESTORE`, `BULK INSERT`, the functions that read a file on the
+  server or a remote source, and `ADD SIGNATURE` and `ADD COUNTER SIGNATURE`;
 - on ClickHouse, SQL functions, databases, users, roles, row policies, named
   collections, `GRANT`, `REVOKE`, `ON CLUSTER`, writes to another database or
   through a table function, any table engine, dictionary sources, `BACKUP`,
@@ -748,6 +1057,23 @@ non-UTF-8 dev session too. After such a change the server reads the bytes of
 the statements that follow by other rules, and an event or an executable
 comment the guard does not see can run. Keep a history that trust replays in
 `utf8mb4` for these refusals to hold.
+
+On PostgreSQL, CockroachDB and YugabyteDB too, these refusals hold for a
+statement as the history writes it. The guard does not read a `DO` block or the
+body of a routine, and trust accepts both, so under trust a `DO` block, or an
+operator, a trigger or a default that calls a routine the history created, can
+run a statement that trust keeps refused. Measured on PostgreSQL 18.7 under
+trust, a `DO` block that updates `pg_catalog.pg_authid` changes the role, where
+the same `UPDATE` written on its own is refused. This is the design: trust
+declares that you accept what the history runs.
+
+On PostgreSQL, CockroachDB and YugabyteDB the guard reads each statement as
+UTF-8 with standard-conforming strings, and the refusal of a
+`client_encoding` or `standard_conforming_strings` setting that changes that
+reading stays under trust. A `DO` block that trust runs can change either, so
+trust lifts the refusal of a dev session that starts with one. Keep a history
+that trust replays in UTF-8, with `standard_conforming_strings` on, for the
+refusals that stay to hold.
 
 An executable provider, such as the YDB provider, guards its own dev databases
 and decides in its dialect what trust lifts. A provider that declares
@@ -936,9 +1262,12 @@ baseline creates is the run's, and its cleanup drops it.
 Comments follow a narrower rule. A comment on a table or a column is written.
 The comment an extension's control file gives is not written, because `CREATE
 EXTENSION` sets it; Ptah reads that comment from the dev server. A comment the
-target gave an extension itself is written only on a server Ptah provisions
-from a docker URL, because the cleanup does not restore it and a server declared
-disposable keeps it for the next run.
+target gave an extension itself is written on a server Ptah provisions from a
+docker URL. Elsewhere it is written only for an extension the dev database did
+not hold when the run claimed it, on a dev URL that pins no schema, since the
+cleanup drops that extension with its comment. A comment on an extension the
+claim found is refused, because the cleanup keeps the extension and does not
+restore its comment.
 
 A schema's own comment and the privileges on it are written on any server,
 because they end with the run. A target often holds them, on `public` or on a

@@ -16,6 +16,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/sqlserverexec"
 	"ptah.run/internal/sqlservertype"
 	"ptah.run/internal/triggerdef"
 )
@@ -376,15 +377,20 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			// "Incorrect syntax near 'RENAME'" on 15.0, 16.0 and 17.0 alike,
 			// so there is no arm where the clause becomes the right emission
 			// (stokaro/ptah#916).
-			r.w.WriteLinef("EXEC sp_rename %s, %s, 'COLUMN';",
-				escapeStringLiteral(node.Name+"."+op.OldName),
-				escapeStringLiteral(op.NewName),
-			)
+			r.w.WriteLine(sqlserverexec.Rename{
+				Name:    append(nameParts(node.Name), unquoteIdentifier(op.OldName)),
+				NewName: unquoteIdentifier(op.NewName),
+				Type:    sqlserverexec.RenameColumn,
+			}.Statement())
 		case *ast.RenameTableOperation:
-			r.w.WriteLinef("EXEC sp_rename %s, %s;",
-				escapeStringLiteral(node.Name),
-				escapeStringLiteral(op.NewName),
-			)
+			// OBJECT, because sp_rename without a type looks the name up as a
+			// user data type first, and refuses the rename as ambiguous when
+			// a type shares the table's name. Measured on SQL Server 2025.
+			r.w.WriteLine(sqlserverexec.Rename{
+				Name:    nameParts(node.Name),
+				NewName: unquoteIdentifier(op.NewName),
+				Type:    sqlserverexec.RenameObject,
+			}.Statement())
 		case *ast.SetCommentOperation:
 			if err := r.writeSetComment(node.Name, op); err != nil {
 				return err
@@ -1020,6 +1026,11 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if node.GrantOptionFor {
 		parts = append(parts, "CASCADE")
 	}
+	if node.GrantedBy != "" {
+		// A catalog name is decoded: even a surrounding bracket pair is part
+		// of the principal's name, rather than SQL quoting to remove.
+		parts = append(parts, "AS", "["+strings.ReplaceAll(node.GrantedBy, "]", "]]")+"]")
+	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
@@ -1584,17 +1595,21 @@ func escapeStringLiteral(s string) string {
 }
 
 func escapeIdentifier(identifier string) string {
-	unquoted := unquoteIdentifier(identifier)
-	escaped := strings.ReplaceAll(unquoted, "]", "]]")
-	return "[" + escaped + "]"
+	return sqlserverexec.QuoteName(unquoteIdentifier(identifier))
 }
 
 func escapeQualifiedIdentifier(identifier string) string {
+	return sqlserverexec.QuoteQualifiedName(nameParts(identifier))
+}
+
+// nameParts splits a qualified name as [splitQualifiedIdentifier] does and
+// removes the quotes of each part.
+func nameParts(identifier string) []string {
 	parts := splitQualifiedIdentifier(identifier)
 	for i, part := range parts {
-		parts[i] = escapeIdentifier(part)
+		parts[i] = unquoteIdentifier(part)
 	}
-	return strings.Join(parts, ".")
+	return parts
 }
 
 func escapeIdentifierList(identifiers []string) []string {

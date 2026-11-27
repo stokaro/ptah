@@ -204,6 +204,29 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT TRIGGER ON `f%`.* TO `r`",
 				"SET DEFAULT ROLE `r` FOR `a`@`%`",
 			},
+			options:   mysqlgrants.Options{MariaDB: true},
+			privilege: "TRIGGER",
+			want:      true,
+		},
+		{
+			name: "MariaDB looks a role and the roles it inherits up together",
+			lines: []string{
+				"GRANT `r` TO `a`@`%`",
+				"GRANT `r1` TO `r`",
+				"GRANT TRIGGER ON `f%`.* TO `r`",
+				"GRANT SELECT ON `fx`.* TO `r1`",
+			},
+			options:   mysqlgrants.Options{MariaDB: true},
+			privilege: "TRIGGER",
+			want:      false,
+		},
+		{
+			name: "MariaDB applies an underscore pattern over a percent sign",
+			lines: []string{
+				"GRANT TRIGGER ON `f_`.* TO `a`@`%`",
+				"GRANT SELECT ON `f%`.* TO `a`@`%`",
+			},
+			options:   mysqlgrants.Options{MariaDB: true},
 			privilege: "TRIGGER",
 			want:      true,
 		},
@@ -213,6 +236,7 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT TRIGGER ON `fx`.* TO `a`@`%`",
 				"GRANT SELECT ON `fx`.* TO PUBLIC",
 			},
+			options:   mysqlgrants.Options{MariaDB: true},
 			privilege: "SELECT",
 			want:      true,
 		},
@@ -222,7 +246,6 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT SELECT ON `fx`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
-			options:   mysqlgrants.Options{MergedRoles: true},
 			privilege: "TRIGGER",
 			want:      false,
 		},
@@ -232,7 +255,6 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT SELECT, TRIGGER ON `fx`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
-			options:   mysqlgrants.Options{MergedRoles: true},
 			privilege: "TRIGGER",
 			want:      true,
 		},
@@ -245,7 +267,6 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT SELECT, TRIGGER ON `fx%`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
-			options:   mysqlgrants.Options{MergedRoles: true},
 			privilege: "TRIGGER",
 			want:      false,
 		},
@@ -256,7 +277,6 @@ func TestOnDatabase(t *testing.T) {
 				"GRANT SELECT ON `f%`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
-			options:   mysqlgrants.Options{MergedRoles: true},
 			privilege: "SELECT",
 			want:      false,
 		},
@@ -548,7 +568,7 @@ func FuzzParse(f *testing.F) {
 	f.Add("GRANT SELECT ON \"f\"\"x\".* TO \"a\"")
 	f.Add("GRANT ( ON")
 	f.Fuzz(func(_ *testing.T, line string) {
-		grants := mysqlgrants.Parse([]string{line}, mysqlgrants.Options{MergedRoles: true})
+		grants := mysqlgrants.Parse([]string{line}, mysqlgrants.Options{})
 		_ = grants.OnTable("fx", "t").Holds("SELECT")
 	})
 }

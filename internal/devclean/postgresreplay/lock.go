@@ -1,8 +1,6 @@
 package postgresreplay
 
 import (
-	"strings"
-
 	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
@@ -21,7 +19,9 @@ import (
 //
 // The form read is `LOCK [TABLE] [ONLY] name [*] [, ...] [IN mode MODE]
 // [NOWAIT]`. A name in a namespace the server owns is refused, as a mutation
-// of one is, because a lock on a catalog can stall the server. A form this does
+// of one is, because a lock on a catalog can stall the server: qualified with
+// the namespace, or written without a schema and found there
+// ([protection.unqualifiedNamespace]). A form this does
 // not read is refused with the other session statements.
 func (p protection) transactionScopedLockRefusal(tokens []lexer.Token) string {
 	const unread = "LOCK session or transaction state"
@@ -47,17 +47,20 @@ func (p protection) transactionScopedLockRefusal(tokens []lexer.Token) string {
 
 // lockTargets reads the comma-separated table names that follow LOCK [TABLE]
 // [ONLY]. It returns the position after them, the first protected namespace a
-// qualified name uses, and whether at least one name was read.
+// name is in, and whether at least one name was read.
 func (p protection) lockTargets(tokens []lexer.Token, at int) (int, string, bool) {
 	names := 0
 	for at < len(tokens) {
-		if tokens[at].Type != lexer.TokenIdentifier && !isQuotedIdentifier(tokens[at]) {
+		if tokens[at].Type != lexer.TokenIdentifier && !quotedIdentifier(tokens[at]) {
 			return at, "", false
 		}
 		names++
 		qualified := at+1 < len(tokens) && tokens[at+1].MatchOperatorValue(".")
 		if qualified && p.isProtectedPostgresNamespace(replay.IdentifierValue(tokens[at])) {
 			return at, replay.IdentifierValue(tokens[at]), true
+		}
+		if namespace := p.unqualifiedNameAt(classRelation, tokens, at); namespace != "" {
+			return at, namespace, true
 		}
 		for at+1 < len(tokens) && tokens[at+1].MatchOperatorValue(".") {
 			at += 2
@@ -102,9 +105,4 @@ func lockModeWidth(tokens []lexer.Token, index int) int {
 		}
 	}
 	return 0
-}
-
-// isQuotedIdentifier reports a double-quoted identifier token.
-func isQuotedIdentifier(token lexer.Token) bool {
-	return token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`)
 }

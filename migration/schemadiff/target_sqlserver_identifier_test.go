@@ -49,15 +49,27 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownSemantics_HappyPath(t *testing.
 // TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath covers
 // two declared tables whose catalog identity the offline comparison cannot
 // separate. The refusal is about the declaration as a whole rather than about
-// anything a change set names.
+// anything a change set names. A name with a non-ASCII rune has no class
+// offline, so the refusal says Ptah cannot tell rather than that the two may
+// be one.
 func TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
 		first  string
 		second string
+		want   string
 	}{
-		{name: "ASCII case", first: "Users", second: "users"},
-		{name: "an accent", first: "orders", second: "\u00f6rders"},
+		{name: "ASCII case", first: "Users", second: "users", want: `target tables dbo\.Users and dbo\.users may have the same catalog identity`},
+		{
+			name: "an accent", first: "orders", second: "\u00f6rders",
+			want: "without a connection Ptah cannot tell whether target tables dbo\\.orders and dbo\\.\u00f6rders are one name under the database collation",
+		},
+		{
+			// Two names no collation reads as one are still a pair offline:
+			// nothing says what a non-ASCII name is.
+			name: "unrelated non-ASCII names", first: "Gr\u00f6\u00dfe", second: "Z\u00e4hler",
+			want: "without a connection Ptah cannot tell whether target tables dbo\\.Gr\u00f6\u00dfe and dbo\\.Z\u00e4hler are one name under the database collation",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -74,8 +86,7 @@ func TestCompareWithDatabaseInfo_SQLServerUnknownTableSemantics_FailurePath(t *t
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(err, qt.ErrorMatches,
-				`.*target tables dbo\.`+test.first+` and dbo\.`+test.second+` may have the same catalog identity.*`)
+			c.Assert(err, qt.ErrorMatches, `.*`+test.want+`.*`)
 			c.Assert(diff, qt.IsNil)
 		})
 	}

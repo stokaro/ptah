@@ -158,8 +158,8 @@ func ownerSelections() selectext.Set {
 }
 
 // noCapabilities answers what a diff of two documents with no dev database
-// plans for: nothing beyond the dialect, and the descriptor's character set
-// defaults.
-func noCapabilities(context.Context) (diffServer, error) {
+// plans for: nothing beyond the dialect, the descriptor's character set
+// defaults, and the dialect's offline identifier rules.
+func noCapabilities(context.Context, *schemamodel.Database, *catalog.Database) (diffServer, error) {
 	return diffServer{}, nil
 }

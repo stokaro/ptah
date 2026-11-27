@@ -211,7 +211,7 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 		return err
 	}
 	if _, err := w.db.ExecContext(ctx, expanded.text, args...); err != nil {
-		return fmt.Errorf("SQL execution failed: %w\nSQL: %s%s", expanded.redact(err), sqlExpr, collationFoldHint(err))
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s%s%s", expanded.redact(err), sqlExpr, collationFoldHint(err), grantOptionHint(err, sqlExpr))
 	}
 	return nil
 }
@@ -262,7 +262,7 @@ func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr stri
 		return err
 	}
 	if _, err := w.tx.ExecContext(ctx, expanded.text, args...); err != nil {
-		return fmt.Errorf("SQL execution failed: %w\nSQL: %s%s", expanded.redact(err), sqlExpr, collationFoldHint(err))
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s%s%s", expanded.redact(err), sqlExpr, collationFoldHint(err), grantOptionHint(err, sqlExpr))
 	}
 	return nil
 }

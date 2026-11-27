@@ -170,7 +170,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"GRANT USAGE ON",
 		// SQL Server's spelling of a comment on a schema it may find holding one.
 		"IF NOT EXISTS",
-		// A privilege taken away, which creates no object either.
+		// A privilege or its grant option taken away creates no object either.
+		"REVOKE GRANT OPTION",
 		"REVOKE INSERT ON",
 		// TimescaleDB converts a table that CREATE TABLE already made.
 		"SELECT CREATE_HYPERTABLE('\"T\"', BY_RANGE('AT'),",

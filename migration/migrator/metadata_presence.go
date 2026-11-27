@@ -491,7 +491,7 @@ func (m *Migrator) collectMySQLSchemaObjects(
 // Only an engine whose services state TriggerGrant reaches this, and that engine
 // prints an active role's rows as the account's own.
 func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, schema string) error {
-	grants, err := mysqlgrants.Read(ctx, m.conn, true)
+	grants, err := mysqlgrants.Read(ctx, m.conn, false)
 	if err != nil {
 		return fmt.Errorf("failed to prove MySQL-family trigger catalog visibility: %w", err)
 	}

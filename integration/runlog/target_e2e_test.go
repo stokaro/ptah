@@ -102,6 +102,12 @@ var (
 		ident: "`%s`", table: "CREATE TABLE {t} (id Int32) ENGINE = MergeTree ORDER BY id",
 		releasedLog: releasedLogColumns + " ENGINE = MergeTree", releasedRow: releasedRowValues,
 	}
+	clickhouse2410RunLog = runLogEngine{
+		name: "clickhouse 24.10", engine: dbtarget.ClickHouse2410,
+		create: "CREATE DATABASE `{name}`", drop: "DROP DATABASE IF EXISTS `{name}`",
+		ident: "`%s`", table: "CREATE TABLE {t} (id Int32) ENGINE = MergeTree ORDER BY id",
+		releasedLog: releasedLogColumns + " ENGINE = MergeTree", releasedRow: releasedRowValues,
+	}
 	cockroachRunLog = runLogEngine{
 		name: "cockroachdb", engine: dbtarget.CockroachDB,
 		create: `CREATE DATABASE "{name}"`, drop: `DROP DATABASE IF EXISTS "{name}" CASCADE`,
@@ -159,6 +165,11 @@ var runLogEngines = []runLogEngine{
 	postgresRunLog, mysqlRunLog, mariadbRunLog, clickhouseRunLog,
 	cockroachRunLog, yugabyteRunLog, sqlserverRunLog, oracleRunLog,
 }
+
+// runLogUpgradeEngines also covers the older ClickHouse ALTER TABLE grammar.
+// That server accepts the released CREATE TABLE but rejects a trailing NULL
+// when the same type is used to add a column (stokaro/ptah#6699).
+var runLogUpgradeEngines = append([]runLogEngine{clickhouse2410RunLog}, runLogEngines...)
 
 // runLogTarget is the database a test runs against, and a direct handle on it
 // with nothing of the command's in between.

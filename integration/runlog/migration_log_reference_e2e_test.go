@@ -55,7 +55,7 @@ func TestMigrationsUpStoresTheRunReferenceE2E(t *testing.T) {
 // document. The run's insert names every added column, so a column the run
 // failed to add loses both entries.
 func TestMigrationsUpUpgradesALogTableAReleaseCreatedE2E(t *testing.T) {
-	for _, engine := range runLogEngines {
+	for _, engine := range runLogUpgradeEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := newRunLogTarget(c, engine)
@@ -74,6 +74,11 @@ func TestMigrationsUpUpgradesALogTableAReleaseCreatedE2E(t *testing.T) {
 				Operation: "up", Version: 9, State: string(migrator.MigrationLogStarted), Actor: "bob",
 				ActorSource: string(migrator.ActorProvided),
 			}})
+			var preservedNulls int
+			err := target.conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM "+log+
+				" WHERE run_id = 'released-run' AND run_reference IS NULL AND actor_origin IS NULL AND repeatable IS NULL").Scan(&preservedNulls)
+			c.Assert(err, qt.IsNil)
+			c.Assert(preservedNulls, qt.Equals, 1)
 			records := target.readLogDocument(c, revisions)
 			c.Assert(records, qt.HasLen, 2)
 			c.Assert(records[""].RunID, qt.Equals, "released-run")

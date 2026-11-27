@@ -72,6 +72,28 @@ type Scope struct {
 	// database's publications; see [PublicationScope]. The zero value is a
 	// cleanup that drops none, and a guard then refuses publication DDL.
 	Publications PublicationScope
+	// Survivors names the extensions and schemas that outlive every cleanup
+	// of the run; see [CleanupSurvivors]. The zero value names none, and a
+	// guard then treats every extension and schema as one that outlives the
+	// run.
+	Survivors CleanupSurvivors
+}
+
+// CleanupSurvivors names the extensions and schemas of the dev database that
+// outlive every cleanup of the run, whoever created them: the ones the claim
+// found, and the ones a cleanup keeps or creates again whether the claim found
+// them or not. A comment on one of them outlives the run as well, and the next
+// run on the same dev database reads it as the database's own. Every cleanup
+// drops an extension or a schema under any other name, which only the run can
+// have created, and the comment on it goes with it.
+type CleanupSurvivors struct {
+	// Recorded reports that the claim read the names, and that every cleanup
+	// of the run drops each extension and each schema they do not name.
+	Recorded bool
+	// Extensions are the extension names, sorted.
+	Extensions []string
+	// Schemas are the schema names, sorted.
+	Schemas []string
 }
 
 // PublicationScope is what the cleanups of a run do with the publications of
@@ -155,20 +177,23 @@ type Refusal struct {
 	// Remedy says how the author can rewrite the statement so that the guard
 	// accepts it, and is empty where the guard has nothing to suggest.
 	Remedy string
+	// Reason says why the guard refuses the statement. Empty, the reason is
+	// that its effects cannot be confined to the dev database realm.
+	Reason string
 }
 
 // Is reports whether target is [ErrRefused].
 func (e *Refusal) Is(target error) bool { return target == ErrRefused }
 
 func (e *Refusal) Error() string {
-	var refusal string
+	refuses, reason := "migration replay rejects", "its effects cannot be confined to the disposable database realm"
 	if e.Baseline {
-		refusal = fmt.Sprintf("%s rehearsal baseline refuses %s because its effects cannot be confined to the dev database realm",
-			e.Dialect, e.Operation)
-	} else {
-		refusal = fmt.Sprintf("%s migration replay rejects %s because its effects cannot be confined to the disposable database realm",
-			e.Dialect, e.Operation)
+		refuses, reason = "rehearsal baseline refuses", "its effects cannot be confined to the dev database realm"
 	}
+	if e.Reason != "" {
+		reason = e.Reason
+	}
+	refusal := fmt.Sprintf("%s %s %s because %s", e.Dialect, refuses, e.Operation, reason)
 	if e.Remedy == "" {
 		return refusal
 	}

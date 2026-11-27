@@ -4,10 +4,12 @@
 // time.
 //
 // A body is split into the top-level statements of its outer BEGIN ... END, or
-// of the body itself when it has none. The statements an IF, a WHILE or a
-// nested block runs are not split out of it, so each of those is reported as
-// opaque. The bundled runtime ptah.run/engine/builtin registers [Reader] on the
-// sqlserver target.
+// of the body itself when it has none, where SQL Server ends each statement:
+// the reader is the one the dev replay guard judges batches with. The
+// statements an IF, a WHILE or a nested block runs are not split out of it, so
+// each of those is reported as opaque, and so is a body whose statement
+// boundaries the reader cannot find. The bundled runtime ptah.run/engine/builtin
+// registers [Reader] on the sqlserver target.
 package mssqlroutine
 
 import (

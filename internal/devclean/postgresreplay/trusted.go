@@ -26,24 +26,44 @@ import (
 // leftover in the dev database, not an effect elsewhere. A comment on an
 // extension or a schema of the dev database is lifted only on a server the run
 // provisioned, because the reset keeps those objects and not their comment.
+// One on an extension or a schema the run created is accepted in every scope,
+// trusted or not, since every cleanup drops the object with its comment; see
+// [protection.commentOnDroppedObject].
 //
-// Three refusals are lifted where they are checked rather than here, because
-// they can share a statement with a refusal that stays: an external COPY, a
-// dblink call and IMPORT FOREIGN SCHEMA. Each reaches past the server and
-// changes nothing in it that the cleanup does not remove.
+// Some refusals are lifted where they are checked rather than here, because
+// they can share a statement with a refusal that stays: an external COPY, to
+// or from a program or a file of the server's host; a dblink call; IMPORT
+// FOREIGN SCHEMA; a server file function such as pg_read_file, pg_ls_dir or
+// adminpack's pg_file_write, called or named for an operator, an aggregate or
+// a type to call (serverFileFunctions); and, on CockroachDB, a name of another
+// database of the server (protection.crossDatabaseName). Each reaches past the
+// dev database and changes nothing in it that the cleanup does not remove.
 //
 // Every other refusal protects the run rather than the server and stays under
 // trust:
 //
-//   - session and transaction control, SET search_path, SET ROLE and SET
-//     SESSION AUTHORIZATION, LOCK outside the form the guard reads, and a
-//     session advisory lock: the rest of the replay runs in that session;
-//   - a mutation of a protected namespace such as pg_catalog, and a TEMP
+//   - session and transaction control, a setting [postgresSettingReach]
+//     refuses (search_path, role, session_authorization,
+//     standard_conforming_strings and client_encoding unless the value leaves
+//     the guard's reading as it is, and a parameter set past its
+//     transaction), SET ROLE and SET SESSION AUTHORIZATION, LOCK outside the
+//     form the guard reads, and a session advisory lock: the rest of the
+//     replay runs in that session;
+//   - a mutation of a protected namespace such as pg_catalog, written with
+//     the namespace, through a name the session's catalog holds there, or
+//     through the relations a write reaches when it runs (a view, a rule, a
+//     trigger's argument, a cascading foreign key, a partition or an
+//     inherited table), a table that inherits from or partitions a catalog
+//     table, a CREATE with no schema on a path that lists it, and a TEMP
 //     object outside a session scope: the catalogs the run reads, and objects
 //     neither the reads nor the cleanup see;
 //   - ALTER SYSTEM, LOAD, ALTER DATABASE, ALTER ROLE or ALTER USER with SET or
-//     RESET, and the cluster control functions: they configure the server and
-//     the sessions the run opens after the statement;
+//     RESET, and the cluster control functions, called, named for an
+//     operator, an aggregate or a type to call, or called by a trigger's
+//     argument: they configure the server and the sessions the run opens
+//     after the statement;
+//   - pg_import_system_collations, whose schema argument is a regnamespace
+//     the guard cannot read, so it can add collations to pg_catalog;
 //   - TABLESPACE, which configures where the server stores what the run
 //     creates, as a server the run owns keeps it refused;
 //   - EVENT TRIGGER, CAST, LANGUAGE, TRANSFORM, TEXT SEARCH, ACCESS METHOD,

@@ -82,9 +82,8 @@ func TestDevReplayGuard_PostgreSQLPublication_FailurePath(t *testing.T) {
 			`postgres migration replay rejects DROP PUBLICATION of the dev database's own publication "Kept Feed" because its effects cannot be confined to the disposable database realm.*`},
 		{"a kept publication whose name folds only in ASCII", postgres, claimedPublications, `DROP PUBLICATION Étoile`,
 			`postgres migration replay rejects DROP PUBLICATION of the dev database's own publication "Étoile" because .*`},
-		{"a publication named with a Unicode escape", postgres, claimedPublications, `DROP PUBLICATION U&"supabase\005frealtime"`,
-			`postgres migration replay rejects DROP PUBLICATION naming a publication with a Unicode escape, which may spell one the dev ` +
-				`database held before the run because .*`},
+		{"a kept publication named with a Unicode escape", postgres, claimedPublications, `DROP PUBLICATION U&"supabase\005frealtime"`,
+			`postgres migration replay rejects DROP PUBLICATION of the dev database's own publication "supabase_realtime" because .*`},
 		{"YugabyteDB publication", yugabyte, claimedPublications, `CREATE PUBLICATION p FOR TABLE ONLY "public"."orders"`,
 			`yugabytedb migration replay rejects CREATE PUBLICATION because its effects cannot be confined to the disposable database realm.*`},
 		{"YugabyteDB publication change", yugabyte, claimedPublications, `ALTER PUBLICATION p ADD TABLE ONLY "public"."items"`,

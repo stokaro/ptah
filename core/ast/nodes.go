@@ -3316,7 +3316,7 @@ func (n *GrantPrivilegeNode) SetComment(comment string) *GrantPrivilegeNode {
 // Accept implements the Node interface for GrantPrivilegeNode.
 func (n *GrantPrivilegeNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// RevokePrivilegeNode represents a PostgreSQL REVOKE statement.
+// RevokePrivilegeNode represents a REVOKE statement.
 type RevokePrivilegeNode struct {
 	// DatabasePath is the captured target database; see [GrantPrivilegeNode.DatabasePath].
 	DatabasePath string
@@ -3339,6 +3339,10 @@ type RevokePrivilegeNode struct {
 	Columns []string
 	// GrantOptionFor controls REVOKE GRANT OPTION FOR.
 	GrantOptionFor bool
+	// GrantedBy is the decoded catalog principal whose permission row a SQL
+	// Server revoke removes. Empty uses the executing principal. Other
+	// built-in dialects do not write this SQL Server-specific clause.
+	GrantedBy string
 	// Comment is an optional comment for the revoke operation.
 	Comment string
 }
@@ -3369,6 +3373,13 @@ func (n *RevokePrivilegeNode) SetColumns(columns []string) *RevokePrivilegeNode 
 // SetGrantOptionFor enables or disables REVOKE GRANT OPTION FOR.
 func (n *RevokePrivilegeNode) SetGrantOptionFor(grantOptionFor bool) *RevokePrivilegeNode {
 	n.GrantOptionFor = grantOptionFor
+	return n
+}
+
+// SetGrantedBy selects the catalog grantor of a SQL Server revoke and returns
+// the node for chaining. The name is preserved verbatim, including spaces.
+func (n *RevokePrivilegeNode) SetGrantedBy(grantor string) *RevokePrivilegeNode {
+	n.GrantedBy = grantor
 	return n
 }
 

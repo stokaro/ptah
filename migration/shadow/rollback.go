@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/devcollation"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -43,6 +44,10 @@ type RollbackVerifyOptions struct {
 	// checks waived and the verification replay with them on, so the flag and
 	// --dev-url could not be used together at all (stokaro/ptah#3114).
 	SkipChecks bool
+	// ValueRounding treats rounded-values checks alike during replay and
+	// rollback, so verification exercises the target run's explicit choice.
+	// The zero value evaluates every such check.
+	ValueRounding migrator.ValueRounding
 	// Trust is the caller's trust in the SQL the verification replays on the
 	// shadow database, and the remedies a refusal ends with; see
 	// [ReplayTrust]. The zero value trusts nothing.
@@ -105,6 +110,12 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if sameDatabase {
 		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
 	}
+	// The rollback is planned under the target's collation and replayed on
+	// the shadow database. One that reads two names otherwise replays the
+	// directory into another state, so it is refused before it is claimed.
+	if err := devcollation.Refuse(ctx, opts.TargetConnection, shadowConn, "the shadow database"); err != nil {
+		return fmt.Errorf("rollback verification failed: %w", err)
+	}
 
 	lease, err := shadowdb.Claim(ctx, shadowConn, opts.Trust.guardTrust())
 	if err != nil {
@@ -121,7 +132,8 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
-	mig = shadowdb.ReplayMigrator(lease, mig.WithSkipChecks(opts.SkipChecks).WithAppliedHistoryReplay())
+	mig = shadowdb.ReplayMigrator(lease, mig.WithSkipChecks(opts.SkipChecks).
+		WithValueRounding(opts.ValueRounding).WithAppliedHistoryReplay())
 
 	// DropAllTables leaves the revision table behind, because it is metadata
 	// rather than part of the schema under test. Rows left in it name versions

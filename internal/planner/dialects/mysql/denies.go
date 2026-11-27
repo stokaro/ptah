@@ -114,7 +114,8 @@ func (p *Planner) revokeDenies(result []ast.Node, diff *difftypes.SchemaDiff, dr
 			continue
 		}
 		result = append(result, ast.NewRevokePrivilege(denied.Role, denied.ObjectType, denied.ObjectName, []string{denied.Privilege}).
-			SetColumns(grantColumns(denied)))
+			SetColumns(grantColumns(denied)).
+			SetGrantedBy(p.revokeGrantor(denied)))
 	}
 	return result
 }

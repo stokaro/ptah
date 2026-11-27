@@ -11,17 +11,37 @@ import (
 	"ptah.run/internal/pgsystemschema"
 )
 
-func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope replay.Scope) error {
+// validatePostgresReplayStatement refuses a statement whose effects scope
+// cannot confine ([protection.refuseReplayStatement]).
+func validatePostgresReplayStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
-	policy := protection{
-		dialect:       dialect,
-		sessionTables: scope.Session && dialect == platform.Postgres,
-		trustedSQL:    scope.TrustedSQL,
-		publications:  scope.Publications,
-	}
+	policy := names.protection(dialect, scope)
+	policy.trustedSQL = scope.TrustedSQL
+	policy.publications = scope.Publications
+	return policy.refuseReplayStatement(tokens, scope)
+}
 
+// protection is how p reads a statement of dialect in scope, recording the
+// first unqualified name and the object a refusal names.
+func (n sessionNames) protection(dialect string, scope replay.Scope) protection {
+	return protection{
+		dialect:       dialect,
+		database:      n.database,
+		sessionTables: scope.Session && dialect == platform.Postgres,
+		catalog:       n.catalog,
+		path:          n.path,
+		graph:         n.graph,
+		unqualified:   new(string),
+		through:       new(string),
+	}
+}
+
+// refuseReplayStatement is the refusal of a statement, at least one token
+// long, whose effects scope cannot confine, or nil.
+func (p protection) refuseReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
+	dialect := p.dialect
 	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "DO" {
 		return replay.Refuse(dialect, "DO sublanguage")
@@ -32,18 +52,17 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if definesPostgresRoutine(tokens) {
 		return replay.Refuse(dialect, first+" routine definition")
 	}
-	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {
-		return replay.Refuse(
-			dialect,
-			fmt.Sprintf("protected namespace %q mutation", namespace),
-		)
+	if namespace := p.protectedPostgresMutationNamespace(tokens); namespace != "" {
+		return refuseProtectedNamespace(dialect, fmt.Sprintf("protected namespace %q mutation", namespace),
+			*p.unqualified, *p.through)
 	}
 	// It reads a remote server's catalog into foreign tables of the dev
 	// database, which the cleanup drops; only the read reaches past the server.
 	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") && !scope.TrustedSQL {
 		return replay.Refuse(dialect, "IMPORT FOREIGN SCHEMA")
 	}
-	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" && !postgresSchemaStateReturned(tokens, scope) {
+	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" &&
+		!postgresSchemaStateReturned(tokens, scope) && !p.commentOnDroppedObject(tokens, scope.Survivors) {
 		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresRoleOrAuthorizationChange(tokens); operation != "" {
@@ -53,8 +72,8 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 		return replay.Refuse(dialect, operation)
 	}
 	if first == "LOCK" {
-		if operation := policy.transactionScopedLockRefusal(tokens); operation != "" {
-			return replay.Refuse(dialect, operation)
+		if operation := p.transactionScopedLockRefusal(tokens); operation != "" {
+			return refuseProtectedNamespace(dialect, operation, *p.unqualified, "")
 		}
 	} else if operation := postgresSessionOrControlOperation(tokens); operation != "" {
 		return replay.Refuse(dialect, operation)
@@ -62,38 +81,100 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if selectsIntoPostgresTemporaryObject(tokens) {
 		return replay.Refuse(dialect, "TEMP object")
 	}
-	if operation := dangerousPostgresFunctionCall(tokens, scope); operation != "" {
+	if operation := refusedFunctionReach(tokens, scope); operation != "" {
 		return replay.Refuse(dialect, operation)
 	}
+	if name := p.crossDatabaseName(tokens); name != "" {
+		return replay.Refuse(dialect, fmt.Sprintf("name %q of another database", name))
+	}
+	return p.validateBase(tokens)
+}
 
-	return policy.validateBase(tokens)
+// refusedFunctionReach names a refused function the statement reaches, or ""
+// when it reaches none: one it calls, one a trigger's argument calls when the
+// trigger fires, or one it names for an operator, an aggregate or a type to
+// call later. [functionReach] answers for each.
+func refusedFunctionReach(tokens []lexer.Token, scope replay.Scope) string {
+	if operation := dangerousPostgresFunctionCall(tokens, scope); operation != "" {
+		return operation
+	}
+	if operation := triggerArgumentCall(tokens, scope); operation != "" {
+		return operation
+	}
+	return referencedFunctionReach(tokens, scope)
 }
 
 // protection reads the namespaces a replayed statement must not change on one
 // member of the PostgreSQL family: the ones its server owns.
 type protection struct {
-	dialect       string
+	dialect string
+	// database is the name of the dev database, which may stand in front of
+	// a schema, or "" when the guard read no session; see
+	// [protection.qualifierNamespace].
+	database      string
 	sessionTables bool
 	// trustedSQL is [replay.Scope.TrustedSQL]: it lifts an external COPY, whose
 	// only reason to be refused is that it reaches past the server.
 	trustedSQL bool
 	// publications is [replay.Scope.Publications]; see confinedPublicationDDL.
 	publications replay.PublicationScope
+	// catalog is what an unqualified name reaches in the namespaces the server
+	// owns, as the dev session's catalog names it; see
+	// [protection.unqualifiedNamespace].
+	catalog catalogNames
+	// path is the schemas the dev session can create an object in when a
+	// CREATE writes its name without one; see [protection.creationNamespace].
+	path []string
+	// graph is the relations the guard knows and what a write to each
+	// reaches; see [relationGraph]. Nil holds none.
+	graph *relationGraph
+	// unqualified receives the first name written without a schema that
+	// reached a namespace the server owns, so the refusal can say to qualify
+	// it. Every reader returns its first protected namespace at once, so the
+	// name is the one that refusal names. Nil records none.
+	unqualified *string
+	// through receives what carried a change to a namespace the server owns
+	// when the statement names another object, such as `the relation "v"`;
+	// see [refuseProtectedNamespace]. Nil records none.
+	through *string
 }
 
 func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) string {
 	if namespace := p.protectedPostgresSelectIntoNamespace(tokens); namespace != "" {
 		return namespace
 	}
-	for _, target := range postgresMutationTargets(tokens) {
-		if namespace := p.protectedNamespaceFromMutationTarget(tokens, target); namespace != "" {
+	class := mutationTargetClass(tokens)
+	writes := writesRows(tokens)
+	for _, target := range replay.MutationTargets(tokens) {
+		var namespace string
+		if writes {
+			namespace = p.writeTargetNamespace(target)
+		} else {
+			namespace = p.protectedNamespaceFromMutationTarget(tokens, target, class)
+		}
+		if namespace != "" {
 			return namespace
 		}
+	}
+	if namespace := p.createdTargetNamespace(tokens); namespace != "" {
+		return namespace
+	}
+	if namespace := p.embeddedWriteNamespace(tokens[1:]); namespace != "" {
+		return namespace
+	}
+	if namespace := p.graphWriteNamespace(tokens); namespace != "" {
+		return namespace
+	}
+	if namespace := p.parentTableNamespace(tokens); namespace != "" {
+		return namespace
 	}
 	if namespace := p.protectedPostgresMutationListNamespace(tokens); namespace != "" {
 		return namespace
 	}
 	if namespace := p.protectedPostgresSpecialMutationNamespace(tokens); namespace != "" {
+		return namespace
+	}
+	if namespace := p.triggerArgumentNamespace(tokens); namespace != "" {
 		return namespace
 	}
 
@@ -102,6 +183,8 @@ func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) str
 		if replay.TokenSequenceAt(tokens, 1, "DEFAULT", "PRIVILEGES") {
 			return p.protectedPostgresSchemaClause(tokens)
 		}
+	case "COPY":
+		return p.copyTargetNamespace(tokens)
 	case "COMMENT", "SECURITY":
 		return p.protectedPostgresObjectTarget(tokens)
 	case "GRANT", "REVOKE":
@@ -128,7 +211,7 @@ func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) s
 			case "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "TABLE":
 				targetIndex++
 			default:
-				return p.protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+				return p.createdNameAt(tokens, targetIndex)
 			}
 		}
 		return ""
@@ -136,25 +219,90 @@ func (p protection) protectedPostgresSelectIntoNamespace(tokens []lexer.Token) s
 	return ""
 }
 
-func postgresMutationTargets(tokens []lexer.Token) [][]string {
-	targets := replay.MutationTargets(tokens)
-	for index := 1; index < len(tokens); index++ {
-		switch replay.NormalizedIdentifier(tokens[index]) {
-		case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
-			targets = append(targets, replay.MutationTargets(tokens[index:])...)
+// mutationTargetClass returns the class of the existing objects
+// [replay.MutationTargets] reads off a statement: the table a DML statement
+// writes, the object of the kind an ALTER or DROP names, and the table a
+// CREATE INDEX indexes. It is "" for a statement whose targets are no object
+// of a namespace, a trigger's name among them, and for every other CREATE:
+// its target is the object it creates, which no lookup finds, and
+// [protection.createdTargetNamespace] reads it.
+func mutationTargetClass(tokens []lexer.Token) catalogClass {
+	switch replay.NormalizedIdentifier(tokens[0]) {
+	case "DELETE", "INSERT", "MERGE", "TRUNCATE", "UPDATE":
+		return classRelation
+	case "ALTER", "DROP":
+		kindIndex := replay.StatementObjectKindIndex(tokens)
+		if kindIndex == replay.MutationTargetNotFound {
+			return ""
+		}
+		if class, ok := objectKindClass(tokens, kindIndex); ok {
+			return class
+		}
+	case "CREATE":
+		if createsIndex(tokens) {
+			return classRelation
 		}
 	}
-	return targets
+	return ""
 }
 
-func (p protection) protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string) string {
-	if len(target) >= 2 && p.isProtectedPostgresNamespace(target[0]) {
-		if !p.sessionTables || target[0] != "pg_temp" {
-			return target[0]
+// createsIndex reports CREATE INDEX and CREATE UNIQUE INDEX. Their mutation
+// target is the table after ON, which exists: the index is created in that
+// table's schema, whatever its own name.
+func createsIndex(tokens []lexer.Token) bool {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	return kindIndex != replay.MutationTargetNotFound &&
+		(replay.TokenSequenceAt(tokens, kindIndex, "INDEX") ||
+			replay.TokenSequenceAt(tokens, kindIndex, "UNIQUE", "INDEX"))
+}
+
+// createdTargetNamespace returns the namespace the server owns that a CREATE
+// creates its object in when the object's name is written without a schema,
+// as [protection.createdNameAt] answers, or "". A name written with a schema
+// is read by [protection.protectedNamespaceFromMutationTarget]. The kinds read
+// here are the ones [replay.MutationTargets] finds the created name of; the
+// others are read by [protection.protectedPostgresNamedSpecialDDLNamespace].
+func (p protection) createdTargetNamespace(tokens []lexer.Token) string {
+	if replay.NormalizedIdentifier(tokens[0]) != "CREATE" || createsIndex(tokens) {
+		return ""
+	}
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound {
+		return ""
+	}
+	if _, ok := objectKindClass(tokens, kindIndex); !ok {
+		return ""
+	}
+	for _, target := range replay.MutationTargets(tokens) {
+		if len(target) != 1 {
+			continue
 		}
+		if namespace := p.creationNamespace(target[0]); namespace != "" {
+			return namespace
+		}
+	}
+	return ""
+}
+
+// protectedNamespaceFromMutationTarget returns the namespace the server owns
+// that target is in: the one a qualifier of it names ([protection.qualifierNamespace]),
+// or for a name of class written without a schema, the one the server finds
+// it in. A class of "" reads no name without a schema.
+func (p protection) protectedNamespaceFromMutationTarget(
+	tokens []lexer.Token,
+	target []string,
+	class catalogClass,
+) string {
+	if namespace := p.qualifierNamespace(target); namespace != "" {
+		return namespace
 	}
 	if len(target) == 0 {
 		return ""
+	}
+	if class != "" && len(target) == 1 {
+		if namespace := p.unqualifiedNamespace(class, target[0]); namespace != "" {
+			return namespace
+		}
 	}
 
 	kindIndex := replay.StatementObjectKindIndex(tokens)
@@ -202,6 +350,9 @@ func (p protection) protectedPostgresMutationListNamespace(tokens []lexer.Token)
 			return ""
 		}
 		targetAt := p.protectedPostgresQualifiedNamespaceAt
+		if class, ok := objectKindClass(tokens, kindIndex); ok {
+			targetAt = p.protectedNameAt(class)
+		}
 		if kind == "SCHEMA" {
 			targetAt = p.protectedPostgresNamespaceObjectAt
 		}
@@ -223,7 +374,7 @@ func (p protection) protectedPostgresMutationListNamespace(tokens []lexer.Token)
 			tokens,
 			index,
 			"",
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
 		)
 	default:
 		return ""
@@ -265,7 +416,7 @@ func (p protection) protectedPostgresSpecialMutationNamespace(tokens []lexer.Tok
 			if replay.TokenSequenceAt(tokens, index, "CONCURRENTLY") {
 				index++
 			}
-			return p.protectedPostgresQualifiedNamespaceAt(tokens, index)
+			return p.protectedNameAt(classRelation)(tokens, index)
 		}
 	case "REINDEX":
 		return p.protectedPostgresReindexNamespace(tokens)
@@ -282,6 +433,13 @@ func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) s
 	switch kind {
 	case "AGGREGATE", "COLLATION", "CONVERSION", "OPERATOR", "STATISTICS":
 		return p.protectedPostgresNamedSpecialDDLNamespace(tokens, kindIndex, kind)
+	case "INDEX":
+		// CREATE INDEX names the table after ON, which the mutation targets
+		// read; ALTER INDEX names the index itself.
+		if replay.NormalizedIdentifier(tokens[0]) != "ALTER" {
+			return ""
+		}
+		return p.protectedNameAt(classRelation)(tokens, replay.ObjectNameIndex(tokens, kindIndex))
 	case "EXTENSION":
 		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
@@ -289,12 +447,22 @@ func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) s
 			kindIndex+1,
 			p.protectedPostgresNamespaceObjectAt,
 		)
-	case "POLICY":
+	case "POLICY", "TRIGGER":
 		return p.protectedPostgresNamespaceAfterKeyword(
 			tokens,
 			"ON",
 			kindIndex+1,
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
+		)
+	case "CONSTRAINT":
+		if !replay.TokenSequenceAt(tokens, kindIndex, "CONSTRAINT", "TRIGGER") {
+			return ""
+		}
+		return p.protectedPostgresNamespaceAfterKeyword(
+			tokens,
+			"ON",
+			kindIndex+2,
+			p.protectedNameAt(classRelation),
 		)
 	case "RULE":
 		keyword := "ON"
@@ -305,7 +473,7 @@ func (p protection) protectedPostgresSpecialDDLNamespace(tokens []lexer.Token) s
 			tokens,
 			keyword,
 			kindIndex+1,
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
 		)
 	default:
 		return ""
@@ -333,11 +501,16 @@ func (p protection) protectedPostgresNamedSpecialDDLNamespace(
 		nameIndex++
 	}
 	nameIndex = replay.SkipNameModifiers(tokens, nameIndex)
+	class, _ := objectKindClass(tokens, kindIndex)
+	nameAt := p.protectedNameAt(class)
+	if replay.NormalizedIdentifier(tokens[0]) == "CREATE" {
+		nameAt = p.createdNameAt
+	}
 	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
 		nameIndex,
 		"",
-		p.protectedPostgresQualifiedNamespaceAt,
+		nameAt,
 	); namespace != "" {
 		return namespace
 	}
@@ -346,7 +519,7 @@ func (p protection) protectedPostgresNamedSpecialDDLNamespace(
 			tokens,
 			"FROM",
 			nameIndex,
-			p.protectedPostgresQualifiedNamespaceAt,
+			p.protectedNameAt(classRelation),
 		)
 	}
 	return ""
@@ -359,7 +532,7 @@ func (p protection) protectedPostgresReindexNamespace(tokens []lexer.Token) stri
 			return ""
 		case "INDEX", "TABLE":
 			targetIndex := replay.SkipNameModifiers(tokens, index+1)
-			return p.protectedPostgresQualifiedNamespaceAt(tokens, targetIndex)
+			return p.protectedNameAt(classRelation)(tokens, targetIndex)
 		case "SCHEMA":
 			targetIndex := replay.SkipNameModifiers(tokens, index+1)
 			return p.protectedPostgresNamespaceObjectAt(tokens, targetIndex)
@@ -391,8 +564,15 @@ func (p protection) protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	classWidth := postgresObjectClassWidth(tokens, targetIndex)
 	targetIndex += classWidth
 	targetAt := p.protectedPostgresQualifiedNamespaceAt
-	if classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "SCHEMA" {
+	switch class, ok := objectKindClass(tokens, onIndex+1); {
+	case classWidth == 0:
+		targetAt = p.protectedNameAt(classRelation)
+	case classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "SCHEMA":
 		targetAt = p.protectedPostgresNamespaceObjectAt
+	case classWidth == 1 && replay.NormalizedIdentifier(tokens[onIndex+1]) == "COLUMN":
+		targetAt = p.protectedColumnAt
+	case ok:
+		targetAt = p.protectedNameAt(class)
 	}
 	if namespace := p.protectedPostgresObjectListNamespace(
 		tokens,
@@ -411,7 +591,21 @@ func (p protection) protectedPostgresObjectTarget(tokens []lexer.Token) string {
 	if relationOnIndex == replay.MutationTargetNotFound {
 		return ""
 	}
-	return p.protectedPostgresQualifiedNamespaceAt(tokens, relationOnIndex+1)
+	return p.protectedNameAt(classRelation)(tokens, relationOnIndex+1)
+}
+
+// protectedColumnAt reads the column a COMMENT or a SECURITY LABEL names:
+// schema.table.column, whose first part is a namespace, or table.column,
+// whose first part is a table written without a schema.
+func (p protection) protectedColumnAt(tokens []lexer.Token, index int) string {
+	parts, _ := replay.QualifiedIdentifierAt(tokens, index)
+	switch len(parts) {
+	case 0, 1:
+		return ""
+	case 2:
+		return p.unqualifiedNamespace(classRelation, parts[0])
+	}
+	return p.protectedPostgresQualifiedNamespaceAt(tokens, index)
 }
 
 func (p protection) protectedPostgresObjectListNamespace(
@@ -468,16 +662,43 @@ func (p protection) protectedPostgresNamespaceObjectAt(tokens []lexer.Token, ind
 	return name
 }
 
+// protectedPostgresQualifiedNamespaceAt returns the namespace the server owns
+// that a qualifier of the dotted name beginning at index names, as
+// [protection.qualifierNamespace] reads it, or "". An operator's symbol is no
+// identifier, so in `pg_catalog.===` every identifier read is a qualifier.
 func (p protection) protectedPostgresQualifiedNamespaceAt(tokens []lexer.Token, index int) string {
-	name := p.protectedPostgresNamespaceObjectAt(tokens, index)
-	if name == "" {
+	if index < 0 || index >= len(tokens) || index > 0 && tokens[index-1].MatchOperatorValue(".") {
 		return ""
 	}
-	if index+1 < len(tokens) && tokens[index+1].MatchOperatorValue(".") {
-		if p.sessionTables && replay.IdentifierValue(tokens[index]) == "pg_temp" {
-			return ""
+	parts, next := replay.QualifiedIdentifierAt(tokens, index)
+	if next < len(tokens) && tokens[next].MatchOperatorValue(".") {
+		parts = append(parts, "")
+	}
+	return p.qualifierNamespace(parts)
+}
+
+// qualifierNamespace returns the namespace the server owns that the schema of
+// the dotted name parts names, or "". The schema is the first part, or the
+// second when the first names the dev database: PostgreSQL accepts the name
+// of the current database in front of a schema, so
+// `ptah_dev.pg_catalog.pg_authid` is pg_catalog.pg_authid, measured on
+// PostgreSQL 18, and refuses any other with "cross-database references are not
+// implemented". A guard that read no session knows no database, and reads
+// the second part of three as a schema too. The session's own pg_temp is not one where the guard
+// accepts session tables.
+func (p protection) qualifierNamespace(parts []string) string {
+	if len(parts) < 2 {
+		return ""
+	}
+	schemas := parts[:1]
+	if len(parts) >= 3 && (p.database == "" || strings.EqualFold(parts[0], p.database)) {
+		schemas = parts[:2]
+	}
+	for _, part := range schemas {
+		if !p.isProtectedPostgresNamespace(part) || p.sessionTables && part == "pg_temp" {
+			continue
 		}
-		return name
+		return part
 	}
 	return ""
 }
@@ -614,6 +835,40 @@ func postgresSchemaStateStatement(tokens []lexer.Token) bool {
 	return false
 }
 
+// commentOnDroppedObject reports a comment on an extension or a schema that
+// every cleanup of the run drops: COMMENT ON EXTENSION or COMMENT ON SCHEMA,
+// a single name and IS, on a run whose survivors were recorded, naming an
+// extension or a schema they do not name. The run created it, and the comment
+// is dropped with it; see [replay.CleanupSurvivors]. pg_dump writes one for
+// every extension it dumps, and Ptah renders one for an extension or a schema
+// that declares a comment.
+//
+// The name is compared as the server stores it ([storedName]). A Unicode
+// escape reaches it decoded, as the quoted identifier it spells
+// ([decodedUnicodeIdentifiers]), and a schema the server owns is refused
+// whatever the claim found: the server creates pg_temp and
+// pg_toast_temp schemas as sessions need them and keeps them afterwards, so
+// one the run's own session created is missing from the claim and outlives
+// the run.
+func (p protection) commentOnDroppedObject(tokens []lexer.Token, survivors replay.CleanupSurvivors) bool {
+	if !survivors.Recorded || len(tokens) != 6 ||
+		!replay.TokenSequenceAt(tokens, 0, "COMMENT", "ON") || !replay.TokenSequenceAt(tokens, 4, "IS") {
+		return false
+	}
+	name := tokens[3]
+	if name.Type != lexer.TokenIdentifier && !quotedIdentifier(name) {
+		return false
+	}
+	stored := storedName(name)
+	switch replay.NormalizedIdentifier(tokens[2]) {
+	case "EXTENSION":
+		return !slices.Contains(survivors.Extensions, stored)
+	case "SCHEMA":
+		return !p.isProtectedPostgresNamespace(stored) && !slices.Contains(survivors.Schemas, stored)
+	}
+	return false
+}
+
 func postgresGlobalMetadataOperation(tokens []lexer.Token) string {
 	onIndex := findPostgresKeyword(tokens, "ON", 1)
 	if onIndex == replay.MutationTargetNotFound || onIndex+1 >= len(tokens) {
@@ -739,95 +994,16 @@ func postgresSessionOrControlOperation(tokens []lexer.Token) string {
 		(replay.ContainsIdentifier(tokens, "DATABASE") || replay.ContainsIdentifier(tokens, "SYSTEM")) {
 		return "REINDEX database or system"
 	}
-	if first == "SET" && setsPostgresSearchPath(tokens) {
-		return "SET search_path"
-	}
-	if postgresTransactionScopedSetting(tokens) {
-		return ""
+	if first == "SET" || first == "RESET" {
+		return postgresSettingOperation(first, tokens)
 	}
 	switch first {
 	case "ABORT", "BEGIN", "CHECKPOINT", "COMMIT", "DEALLOCATE", "DECLARE",
 		"DISCARD", "END", "EXECUTE", "FETCH", "LISTEN", "LOAD", "LOCK", "MOVE",
-		"NOTIFY", "PREPARE", "RELEASE", "RESET", "ROLLBACK", "SAVEPOINT", "SET",
-		"START", "UNLISTEN":
+		"NOTIFY", "PREPARE", "RELEASE", "ROLLBACK", "SAVEPOINT", "START", "UNLISTEN":
 		return first + " session or transaction state"
 	default:
 		return ""
-	}
-}
-
-// postgresTransactionScopedSetting reports a SET whose effect ends with the
-// transaction it runs in: SET LOCAL of a parameter
-// [postgresTransactionScopedParameter] accepts, and SET CONSTRAINTS.
-//
-// A replay runs every migration of a directory on one session, so a setting
-// that outlives its transaction reaches the migrations after it, and a plain
-// SET or RESET stays refused for that reason. These do not: measured on
-// PostgreSQL 18.6, `lock_timeout` reads `0` after `BEGIN; SET LOCAL
-// lock_timeout = '5s'; COMMIT`, after the same with ROLLBACK, and after a SET
-// LOCAL issued outside a transaction block, which PostgreSQL answers with a
-// warning and ignores. A replay runs a migration the way the executor does, in
-// one transaction unless the file opts out, so the setting is in effect for
-// the rest of that migration and gone before the next.
-func postgresTransactionScopedSetting(tokens []lexer.Token) bool {
-	if len(tokens) < 3 || replay.NormalizedIdentifier(tokens[0]) != "SET" {
-		return false
-	}
-	switch replay.NormalizedIdentifier(tokens[1]) {
-	case "CONSTRAINTS":
-		return true
-	case "LOCAL":
-		// SET LOCAL ROLE and SET LOCAL SESSION AUTHORIZATION never reach here:
-		// postgresRoleOrAuthorizationChange refuses both first.
-		return postgresTransactionScopedParameter(replay.NormalizedIdentifier(tokens[2]))
-	default:
-		return false
-	}
-}
-
-// postgresTransactionScopedSetConfig reports a set_config call, whose opening
-// parenthesis is at open, that names its parameter as a string literal
-// [postgresTransactionScopedParameter] accepts and passes the literal TRUE as
-// is_local. set_config with is_local true is SET LOCAL spelled as a function,
-// and ends with its transaction the same way; with false it is a plain SET.
-//
-// Any other spelling is refused: a parameter name computed at run time cannot
-// be read here, and a string such as 'on' is left out because the one spelling
-// the guard accepts should be the one a reader recognizes.
-func postgresTransactionScopedSetConfig(tokens []lexer.Token, open int) bool {
-	arguments := postgresCallArguments(tokens, open)
-	if len(arguments) != 3 || len(arguments[0]) != 1 || len(arguments[2]) != 1 {
-		return false
-	}
-	name := arguments[0][0]
-	if name.Type != lexer.TokenString {
-		return false
-	}
-	isLocal := arguments[2][0]
-	return isLocal.Type == lexer.TokenIdentifier &&
-		replay.NormalizedIdentifier(isLocal) == "TRUE" &&
-		postgresTransactionScopedParameter(replay.NormalizedIdentifier(name))
-}
-
-// postgresTransactionScopedParameter reports whether a parameter set for one
-// transaction stays inside what the guard checks. It is the one answer both
-// SET LOCAL and set_config read, so the two spellings of the same setting
-// cannot be judged apart.
-//
-// Three names are left out although their effect also ends with the
-// transaction. search_path, and SET SCHEMA which is its alias, decide where an
-// unqualified name lands for the rest of the migration: measured on PostgreSQL
-// 18.6, `SET LOCAL search_path = pg_catalog` followed by an unqualified CREATE
-// FUNCTION creates the function in pg_catalog, and the protected-namespace
-// check reads only qualified names. role and session_authorization change the
-// identity the rest of the migration runs as, which is not a setting the guard
-// can reason about statement by statement.
-func postgresTransactionScopedParameter(name string) bool {
-	switch name {
-	case "", "SEARCH_PATH", "SCHEMA", "ROLE", "SESSION_AUTHORIZATION":
-		return false
-	default:
-		return true
 	}
 }
 
@@ -860,14 +1036,6 @@ func postgresCallArguments(tokens []lexer.Token, open int) [][]lexer.Token {
 	return nil
 }
 
-func setsPostgresSearchPath(tokens []lexer.Token) bool {
-	index := 1
-	if replay.TokenSequenceAt(tokens, index, "LOCAL") || replay.TokenSequenceAt(tokens, index, "SESSION") {
-		index++
-	}
-	return replay.TokenSequenceAt(tokens, index, "SEARCH_PATH")
-}
-
 func selectsIntoPostgresTemporaryObject(tokens []lexer.Token) bool {
 	for index := 0; index+1 < len(tokens); index++ {
 		if replay.NormalizedIdentifier(tokens[index]) != "INTO" {
@@ -886,55 +1054,121 @@ func selectsIntoPostgresTemporaryObject(tokens []lexer.Token) bool {
 	return false
 }
 
-// dangerousPostgresFunctionCall names the first call the replay refuses. Under
-// [replay.Scope.TrustedSQL], a dblink call is not one: it reaches another server and changes
-// nothing in this one. The control, replication, large object and advisory
-// lock calls are refused either way, because they act on the server the run
-// uses, on state the realm cleanup cannot remove, or on the replay's session.
+// dangerousPostgresFunctionCall names the first call the replay refuses, as
+// [functionReach] answers for the function called.
 func dangerousPostgresFunctionCall(tokens []lexer.Token, scope replay.Scope) string {
 	if definesPostgresRoutine(tokens) || replay.NormalizedIdentifier(tokens[0]) == "CALL" {
 		return ""
 	}
-	// The control and replication functions are the ones the PostgreSQL
-	// descriptor states, which the plan and check-assertion scans of
-	// internal/sqlreach refuse too.
-	described, _ := platform.Lookup(platform.Postgres)
+	operation, _ := refusedPostgresCall(tokens, scope)
+	return operation
+}
+
+// refusedPostgresCall returns what the first call in tokens that the guard
+// refuses does ([functionReach]) and the function's name, or "". A call of
+// set_config whose setting the guard accepts as a SET is not one.
+func refusedPostgresCall(tokens []lexer.Token, scope replay.Scope) (operation, name string) {
 	for index := 0; index+1 < len(tokens); index++ {
 		if !tokens[index+1].MatchOperatorValue("(") {
 			continue
 		}
-		name := replay.NormalizedIdentifier(tokens[index])
-		// The control and replication names are shared with the
-		// check-assertion validator, which refuses the same set in a predicate
-		// it is about to send to a live database. The rest below are this
-		// guard's own: they answer what a dev-clean run may execute, which is
-		// a wider question.
-		if name == "SET_CONFIG" && postgresTransactionScopedSetConfig(tokens, index+1) {
-			continue
-		}
-		if slices.Contains(described.Reach.ControlFunctions.Names, name) {
-			return "cluster control function"
-		}
-		if slices.Contains(described.Reach.ReplicationFunctions.Names, name) {
-			return "replication state operation"
-		}
-		switch name {
-		case "DBLINK", "DBLINK_CANCEL_QUERY", "DBLINK_CLOSE", "DBLINK_CONNECT",
-			"DBLINK_CONNECT_U", "DBLINK_DISCONNECT", "DBLINK_EXEC", "DBLINK_FETCH",
-			"DBLINK_GET_RESULT", "DBLINK_OPEN", "DBLINK_SEND_QUERY":
-			if !scope.TrustedSQL {
-				return "external dblink operation"
+		called := replay.NormalizedIdentifier(tokens[index])
+		// A call spells its arguments, so the setting a set_config call makes
+		// can be read and judged as SET is. A function only named, as by an
+		// operator or an aggregate, cannot; see [referencedFunctionReach].
+		if called == "SET_CONFIG" {
+			if setting, ok := postgresSetConfig(tokens, index+1); ok && setting.accepted() {
+				continue
 			}
-		case "LO_CLOSE", "LO_CREATE", "LO_EXPORT", "LO_FROM_BYTEA", "LO_IMPORT",
-			"LO_LSEEK", "LO_LSEEK64", "LO_OPEN", "LO_PUT", "LO_TRUNCATE",
-			"LO_TRUNCATE64", "LO_UNLINK", "LOWRITE":
-			return "large object operation"
-		case "PG_ADVISORY_LOCK", "PG_ADVISORY_LOCK_SHARED", "PG_TRY_ADVISORY_LOCK",
-			"PG_TRY_ADVISORY_LOCK_SHARED":
-			return "session advisory lock"
+		}
+		if operation := functionReach(called, scope); operation != "" {
+			return operation, replay.IdentifierValue(tokens[index])
 		}
 	}
+	return "", ""
+}
+
+// functionReach names what running the function name, folded to upper case,
+// does that the realm cannot hold, or is "" for a function the guard lets a
+// statement run. It is the one answer for a function a statement calls
+// ([dangerousPostgresFunctionCall]) and for one it names for the server to
+// call later ([referencedFunctionReach]), so a function refused as a call is
+// refused as an operator's or an aggregate's as well. Under
+// [replay.Scope.TrustedSQL] a dblink function is not one, and neither is a
+// function of [serverFileFunctions]: each reaches past the database and
+// changes nothing in it that the cleanup misses. The control, replication,
+// large object, collation import and advisory lock functions are refused
+// either way, because they act on the server the run uses, on state the
+// realm cleanup cannot remove, or on the replay's session.
+func functionReach(name string, scope replay.Scope) string {
+	// The control and replication functions are the ones the PostgreSQL
+	// descriptor states, which the plan and check-assertion scans of
+	// internal/sqlreach refuse too. The check-assertion validator refuses the
+	// same set in a predicate it is about to send to a live database. The rest
+	// below are this guard's own: they answer what a dev-clean run may
+	// execute, which is a wider question.
+	described, _ := platform.Lookup(platform.Postgres)
+	if slices.Contains(described.Reach.ControlFunctions.Names, name) {
+		return "cluster control function"
+	}
+	if slices.Contains(described.Reach.ReplicationFunctions.Names, name) {
+		return "replication state operation"
+	}
+	if operation, ok := serverFileFunctions[name]; ok {
+		if scope.TrustedSQL {
+			return ""
+		}
+		return operation
+	}
+	switch name {
+	case "DBLINK", "DBLINK_CANCEL_QUERY", "DBLINK_CLOSE", "DBLINK_CONNECT",
+		"DBLINK_CONNECT_U", "DBLINK_DISCONNECT", "DBLINK_EXEC", "DBLINK_FETCH",
+		"DBLINK_GET_RESULT", "DBLINK_OPEN", "DBLINK_SEND_QUERY":
+		if !scope.TrustedSQL {
+			return "external dblink operation"
+		}
+	case "LO_CLOSE", "LO_CREATE", "LO_EXPORT", "LO_FROM_BYTEA", "LO_IMPORT",
+		"LO_LSEEK", "LO_LSEEK64", "LO_OPEN", "LO_PUT", "LO_TRUNCATE",
+		"LO_TRUNCATE64", "LO_UNLINK", "LOWRITE":
+		return "large object operation"
+	case "PG_ADVISORY_LOCK", "PG_ADVISORY_LOCK_SHARED", "PG_TRY_ADVISORY_LOCK",
+		"PG_TRY_ADVISORY_LOCK_SHARED":
+		return "session advisory lock"
+	case "PG_IMPORT_SYSTEM_COLLATIONS":
+		// It adds a collation for each locale of the server's host to the
+		// schema its argument names, a regnamespace the guard cannot read:
+		// 'pg_catalog' adds them to the catalog.
+		return "collation import"
+	}
 	return ""
+}
+
+// serverFileFunctions are the functions that read, list or change the files
+// of the server's host, by what the refusal says each does. The realm is the
+// dev database: a file a function writes, renames or removes outlives the
+// cleanup, and what one reads or lists leaves the database for the run's
+// output. They are refused as an external COPY is, which reads and writes the
+// same files, and trust lifts them as it lifts that COPY. The large object
+// functions lo_import and lo_export, which read and write a file on the host
+// too, stay refused in every scope with the rest of the large object
+// functions ([functionReach]). pg_file_write and the other adminpack
+// functions exist on servers older than PostgreSQL 17.
+var serverFileFunctions = map[string]string{
+	"PG_READ_FILE":            "server file read",
+	"PG_READ_BINARY_FILE":     "server file read",
+	"PG_STAT_FILE":            "server file status read",
+	"PG_LS_DIR":               "server directory listing",
+	"PG_LS_LOGDIR":            "server directory listing",
+	"PG_LS_WALDIR":            "server directory listing",
+	"PG_LS_TMPDIR":            "server directory listing",
+	"PG_LS_ARCHIVE_STATUSDIR": "server directory listing",
+	"PG_LS_LOGICALSNAPDIR":    "server directory listing",
+	"PG_LS_LOGICALMAPDIR":     "server directory listing",
+	"PG_LS_REPLSLOTDIR":       "server directory listing",
+	"PG_FILE_WRITE":           "server file write",
+	"PG_FILE_RENAME":          "server file write",
+	"PG_FILE_UNLINK":          "server file write",
+	"PG_FILE_SYNC":            "server file write",
 }
 
 func definesPostgresRoutine(tokens []lexer.Token) bool {

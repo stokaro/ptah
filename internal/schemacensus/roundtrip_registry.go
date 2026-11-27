@@ -418,7 +418,8 @@ var roundTripGaps = []Unreached{
 func RoundTripExemptions() []Unreached { return slices.Clone(roundTripExemptions) }
 
 var roundTripExemptions = []Unreached{
-	{Field: "schemamodel.Grant.GrantOptionRevoked", Reason: exemptGrantOptionRevoked},
+	{Field: "schemamodel.Grant.GrantOptionRevoked",
+		Dialects: []string{"cockroachdb", "mariadb", "mysql", "postgres", "sqlserver", "yugabytedb"}, Reason: exemptGrantOptionRevoked},
 	{Field: "pgtable.PartitionMember.Bound", Dialects: []string{"postgres", "yugabytedb"}, Reason: "a changed bound is compared once a connected server normalizes it; without one the owner leaves the change undecided"},
 	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"clickhouse", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
 	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},

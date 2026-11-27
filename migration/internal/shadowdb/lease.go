@@ -98,7 +98,8 @@ func RecordTrust(rawURL string, trust devclean.ShadowTrust) func() {
 //
 // The lease's release resets the database with baseline, so the guard accepts
 // what that reset takes back: a comment on a schema it returns to its recorded
-// state, and a publication the claim did not find. A body the migrator runs
+// state, a publication the claim did not find, and a comment on an extension
+// or a schema the claim did not find, which the reset drops. A body the migrator runs
 // with the transactions it opens itself, as golang-migrate sends it, has its
 // transaction control read the way that runner reads it; the migrator asks
 // for that reading of no other body.
@@ -113,7 +114,8 @@ func replayGuard(
 		return nil, err
 	}
 	return guard.WithOwnTransactions().WithUnwrappedTransactions().
-		WithSchemaCommentReturned(baseline.ReturnsSchemaState).WithPublications(baseline.Publications), nil
+		WithSchemaCommentReturned(baseline.ReturnsSchemaState).WithPublications(baseline.Publications).
+		WithSurvivors(baseline.Survivors), nil
 }
 
 // DropsMetadata names revision tables Release drops as well. A reset keeps a

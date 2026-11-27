@@ -878,6 +878,11 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 			wantErr:   `sqlserver migration replay rejects USE .*`,
 		},
 		{
+			name:      "check identity of another database",
+			statement: "DBCC CHECKIDENT ('production.tenant.users', RESEED, 0)",
+			wantErr:   `sqlserver migration replay rejects DBCC CHECKIDENT of "production.tenant.users" .*`,
+		},
+		{
 			name:      "login",
 			statement: "CREATE LOGIN app_user WITH PASSWORD = 'secret'",
 			wantErr:   `sqlserver migration replay rejects CREATE LOGIN .*`,
@@ -895,7 +900,7 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 		{
 			name:      "cross database table",
 			statement: "CREATE TABLE [production].[dbo].[users] ([id] bigint)",
-			wantErr:   `sqlserver migration replay rejects cross-database target "production.dbo.users" .*`,
+			wantErr:   `sqlserver migration replay rejects cross-database reference "production.dbo.users" .*`,
 		},
 		{
 			name:      "remote execute",
@@ -930,13 +935,13 @@ func TestReplayGuardSQLServer_FailurePath(t *testing.T) {
 		{
 			name:      "second multi-object drop target",
 			statement: "DROP TABLE dbo.local_copy, otherdb.dbo.remote_copy",
-			wantErr:   `sqlserver migration replay rejects cross-database target "otherdb.dbo.remote_copy" .*`,
+			wantErr:   `sqlserver migration replay rejects cross-database reference "otherdb.dbo.remote_copy" .*`,
 		},
 		{
 			name: "second drop index target",
 			statement: "DROP INDEX ix_local ON dbo.local_copy, " +
 				"ix_remote ON otherdb.dbo.remote_copy",
-			wantErr: `sqlserver migration replay rejects cross-database target "otherdb.dbo.remote_copy" .*`,
+			wantErr: `sqlserver migration replay rejects cross-database reference "otherdb.dbo.remote_copy" .*`,
 		},
 		{
 			name:      "other DBCC command",
