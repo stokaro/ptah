@@ -191,6 +191,39 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 			want: "the plan creates table sales.orders and drops table dbo.orders, and without a connection Ptah cannot tell",
 		},
 		{
+			// SQL Server keeps views and routines in one namespace, and the
+			// plan creates the procedure while the view holds the name
+			// (stokaro/ptah#6741).
+			name:    "a procedure named as a view the plan drops",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS", []string{"dbo"}, []string{"REPORT", "Report"}),
+				FunctionsAdded:      difftypes.FunctionChanges{procedure("dbo.REPORT", "BEGIN SELECT 2 END")},
+				ViewsRemoved:        difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS a"}},
+			},
+			want: "the plan creates procedure dbo.REPORT and drops view dbo.Report, and sqlserver keeps both kinds in one " +
+				"namespace in a schema, where it may read the two names as one, so the create would fail while the view " +
+				"exists; drop the view in a plan of its own first",
+		},
+		{
+			name:    "a table spelled as a view the plan drops, offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:  difftypes.TableChanges{{Name: "Report"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS a"}},
+			},
+			want: "the plan creates table Report and drops view dbo.Report, and sqlserver keeps both kinds in one namespace",
+		},
+		{
+			name:    "a sequence named as a table the plan drops, offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				SequencesAdded: difftypes.SequenceChanges{{Name: "TAB1"}},
+				TablesRemoved:  difftypes.TableRemovals{{Name: "dbo.Tab1"}},
+			},
+			want: "the plan creates sequence TAB1 and drops table dbo.Tab1, and sqlserver keeps both kinds in one namespace",
+		},
+		{
 			// MySQL folds a routine name whatever its table rule says, which
 			// compares names exactly.
 			name:    "a MySQL routine whose names differ only in case",
@@ -267,6 +300,39 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			diff: difftypes.SchemaDiff{
 				FunctionsAdded:   difftypes.FunctionChanges{function("ccs", "BEGIN RETURN 2 END")},
 				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+		},
+		{
+			// The control for the cross-kind rows: under a case-sensitive
+			// collation REPORT and Report are two names.
+			name:    "a procedure beside a view the plan drops under a case-sensitive collation",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Latin1_General_100_CS_AS", []string{"dbo"}, []string{"REPORT"}, []string{"Report"}),
+				FunctionsAdded:      difftypes.FunctionChanges{procedure("dbo.REPORT", "BEGIN SELECT 2 END")},
+				ViewsRemoved:        difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// Two ASCII names of two kinds that differ beyond case are two
+			// names offline: a create beside the other object fails on the
+			// server, and nothing is lost.
+			name:    "a table beside a view of another name the plan drops, offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:  difftypes.TableChanges{{Name: "orders"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.recent_orders", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// PostgreSQL keeps routines apart from relations.
+			name:    "a PostgreSQL function named as a view the plan drops",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "report", Returns: "integer", Language: "sql", Body: "SELECT 1",
+				}}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "public.report", Body: "SELECT 1 AS a"}},
 			},
 		},
 		{

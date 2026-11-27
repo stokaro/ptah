@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/indexscope"
@@ -15,7 +16,9 @@ import (
 )
 
 // refuseCreatedAndDroppedNamesakes refuses a plan that creates an object and
-// drops another of its kind whose name the target may read as the same name.
+// drops another of its kind whose name the target may read as the same name,
+// and a plan that creates an object and drops one of another kind that shares
+// its namespace under a name the target may read as the same name.
 //
 // The comparison pairs two such names as one object and plans a change of it,
 // so it never asks for both. A kind whose names it does not pair the way the
@@ -48,6 +51,16 @@ import (
 // answered. With a connection, the server resolves every name, and only the
 // names it reads as one are refused.
 //
+// Objects of two kinds that share a namespace in a schema
+// ([descriptor.Comparison.SharedObjectNamespace]) are refused when their names
+// may be one name, spelled alike or not. The planner writes every create
+// before every drop of another kind, so the create runs while the other
+// object holds the name, and the server refuses it: measured on SQL Server
+// 2025, `CREATE OR ALTER PROCEDURE [dbo].[REPORT]` beside the view dbo.Report
+// fails with error 2010 (stokaro/ptah#6741). Nothing is lost there, so the
+// offline rules apply as they stand: two ASCII names that differ beyond case
+// are two names.
+//
 // Indexes and constraints belong to a table, and their replacements are
 // planned as a drop before the create; they are not checked here. Triggers
 // are not checked either. A trigger the plan adds is written as CREATE
@@ -62,12 +75,14 @@ func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics iden
 	}
 	rules := namesakeRules{target: target, unanswered: offlinenames.Unanswered(semantics)}
 	semantics = indexscope.ConflictSemantics(semantics)
-	for _, kind := range namesakeKinds(diff, semantics, target) {
+	described, _ := platform.Lookup(target)
+	kinds := namesakeKinds(diff, semantics, described)
+	for _, kind := range kinds {
 		if err := rules.refuseNamesakes(kind); err != nil {
 			return err
 		}
 	}
-	return nil
+	return refuseNamesakesOfAnotherKind(kinds, target)
 }
 
 // namesakeRules is how a plan's namesakes are judged on target. unanswered
@@ -85,6 +100,34 @@ func (r namesakeRules) refuseNamesakes(kind namesakeKind) error {
 		for _, removed := range kind.dropped {
 			if created.spelling != removed.spelling && (r.unanswered || created.MayBe(removed.Namesake)) {
 				return r.namesakeError(created, removed)
+			}
+		}
+	}
+	return nil
+}
+
+// refuseNamesakesOfAnotherKind refuses the first object the plan creates
+// whose name may be the name of an object of another kind it drops, where the
+// target keeps both kinds in one namespace; see
+// [refuseCreatedAndDroppedNamesakes].
+func refuseNamesakesOfAnotherKind(kinds []namesakeKind, target string) error {
+	for _, creating := range kinds {
+		for _, dropping := range kinds {
+			if creating.kind == dropping.kind || !creating.shared || !dropping.shared {
+				continue
+			}
+			for _, created := range creating.created {
+				for _, removed := range dropping.dropped {
+					if created.MayBe(removed.Namesake) {
+						return fmt.Errorf(
+							"%w: the plan creates %s %s and drops %s %s, and %s keeps both kinds in one namespace "+
+								"in a schema, where it may read the two names as one, so the create would fail while "+
+								"the %s exists; drop the %s in a plan of its own first",
+							ptaherr.ErrInvalidSchemaDiff, created.noun, created.name, removed.noun, removed.name, target,
+							removed.noun, removed.noun,
+						)
+					}
+				}
 			}
 		}
 	}
@@ -136,8 +179,12 @@ type plannedName struct {
 	spelling string
 }
 
-// namesakeKind is the objects of one kind a plan creates and drops.
+// namesakeKind is the objects of one kind a plan creates and drops. shared
+// reports that the kind is in the namespace the target's descriptor states
+// ([descriptor.Comparison.SharedObjectNamespace]).
 type namesakeKind struct {
+	kind    string
+	shared  bool
 	created []plannedName
 	dropped []plannedName
 }
@@ -146,11 +193,13 @@ type namesakeKind struct {
 // objects of it the diff creates and drops. A function and a procedure are one
 // kind, because on SQL Server they share one namespace. A routine name is
 // keyed by the routine rule of the target's descriptor where it states one.
-func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, target string) []namesakeKind {
-	described, _ := platform.Lookup(target)
+func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, described descriptor.Dialect) []namesakeKind {
 	routinesFold := described.Comparison.RoutineNamesFold
-	schemaScoped := func(noun string, created, dropped []string) namesakeKind {
+	namespace := described.Comparison.SharedObjectNamespace
+	schemaScoped := func(noun string, shared bool, created, dropped []string) namesakeKind {
 		return namesakeKind{
+			kind:    noun,
+			shared:  shared,
 			created: schemaScopedNames(noun, created, semantics),
 			dropped: schemaScopedNames(noun, dropped, semantics),
 		}
@@ -165,7 +214,7 @@ func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, t
 		}
 		return planned
 	}
-	var routines namesakeKind
+	routines := namesakeKind{kind: "routine", shared: namespace.Routines}
 	for _, added := range diff.FunctionsAdded {
 		routines.created = append(routines.created, routine(routineNoun(added), added.Name))
 	}
@@ -175,7 +224,7 @@ func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, t
 	for _, removed := range diff.ProceduresRemoved {
 		routines.dropped = append(routines.dropped, routine("procedure", removed.Name))
 	}
-	var schemas namesakeKind
+	schemas := namesakeKind{kind: "schema"}
 	for _, schema := range diff.SchemasAdded {
 		schemas.created = append(schemas.created, schemaName(schema.Name, semantics))
 	}
@@ -184,10 +233,11 @@ func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, t
 	}
 	return []namesakeKind{
 		schemas,
-		schemaScoped("table", diff.TablesAdded.Names(), diff.TablesRemoved.Names()),
-		schemaScoped("view", diff.ViewsAdded.Names(), diff.ViewsRemoved.Names()),
-		schemaScoped("materialized view", diff.MaterializedViewsAdded.Names(), diff.MaterializedViewsRemoved.Names()),
-		schemaScoped("sequence", diff.SequencesAdded.Names(), diff.SequencesRemoved.Names()),
+		schemaScoped("table", namespace.Tables, diff.TablesAdded.Names(), diff.TablesRemoved.Names()),
+		schemaScoped("view", namespace.Views, diff.ViewsAdded.Names(), diff.ViewsRemoved.Names()),
+		schemaScoped("materialized view", namespace.MaterializedViews,
+			diff.MaterializedViewsAdded.Names(), diff.MaterializedViewsRemoved.Names()),
+		schemaScoped("sequence", namespace.Sequences, diff.SequencesAdded.Names(), diff.SequencesRemoved.Names()),
 		routines,
 	}
 }

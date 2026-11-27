@@ -123,6 +123,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			StoredGeneratedKind:            "PERSISTED",
 			GeneratedColumnTypesDerived:    true,
 			RespelledIndexReplaced:         true,
+			SharedObjectNamespace:          descriptor.ObjectNamespace{Tables: true, Views: true, Routines: true, Sequences: true},
 		},
 		"clickhouse": {
 			NullableTypes:               true,

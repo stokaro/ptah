@@ -14,6 +14,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -23,6 +24,7 @@ import (
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/offlinenames"
 	"ptah.run/internal/routinebody"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/sqlitevirtual"
@@ -1385,7 +1387,58 @@ func collectIdentifierNames(
 	names = appendDatabaseIdentifierNames(names, database)
 	names = appendDeclaredObjectNames(names, desired)
 	names = appendHeldObjectNames(names, database)
+	names = appendRoleNames(names, desired, database, dialect)
 	return appendSequenceReferenceNames(names, desired, database, dialect)
+}
+
+// appendRoleNames adds every role name desired and database hold -- roles,
+// the roles grants name and the roles of a membership -- on a dialect whose
+// offline rules leave every name to the catalog ([offlinenames.Unanswered])
+// and whose descriptor states no rule of its own for a role name
+// (descriptor.Names.Roles).
+//
+// A SQL Server role name is compared under the database collation, as a
+// table name is: measured on SQL Server 2025, CREATE ROLE [APP] beside the
+// role App fails with error 15023 under a case-insensitive collation and
+// succeeds under a case-sensitive one, and under Hungarian_CI_AS the roles
+// ccs and cscs are one role. Compared as written, a declared APP and a held
+// App were two roles, and the plan created the one that exists
+// (stokaro/ptah#6741). Another dialect states how it compares a role name,
+// and asking its server about one would only spend the probe its index names
+// need.
+func appendRoleNames(names []string, desired *schemamodel.Database, database *catalog.Database, dialect string) []string {
+	described, _ := platform.Lookup(dialect)
+	if !offlinenames.Unanswered(identifier.ForDialect(dialect)) || described.Names.Roles != "" {
+		return names
+	}
+	named := func(values ...string) {
+		for _, value := range values {
+			if value != "" {
+				names = append(names, value)
+			}
+		}
+	}
+	if desired != nil {
+		for _, role := range desired.Roles {
+			named(role.Name)
+			named(role.MemberOf...)
+		}
+		for _, grant := range slices.Concat(desired.Grants, desired.RevokedGrants, desired.DeniedGrants) {
+			named(grant.Role)
+		}
+	}
+	if database != nil {
+		for _, role := range slices.Concat(database.Roles, database.RolesOutOfScope) {
+			named(role.Name)
+		}
+		for _, grant := range database.Grants {
+			named(grant.Role)
+		}
+		for _, membership := range database.RoleMemberships {
+			named(membership.Role, membership.Member)
+		}
+	}
+	return names
 }
 
 // appendDeclaredObjectNames adds the names of the views, materialized views,

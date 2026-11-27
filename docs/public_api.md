@@ -5549,6 +5549,11 @@ in place of a dialect's name:
 - `CheckNames`: where the server keeps a CHECK name unique, how it compares the
   names, the code points beyond ASCII it folds (`CodePointRange`), and the error
   it answers.
+- `Comparison.SharedObjectNamespace`: the kinds of object that share one
+  namespace in a schema, as an `ObjectNamespace`. A declaration that gives two
+  of them names the server may read as one is refused, and so is a plan that
+  creates an object of one kind and drops one of another under such a name.
+  SQL Server states tables, views, routines and sequences.
 - `Statements` and `TableOptions`: how the server reads the role and table
   statements a schema file writes. `Statements.DoBlocks` names the procedural
   language of a DO block that declares roles, one of `DoBlockLanguages`, such

@@ -205,7 +205,16 @@ func managedRoles(database *catalog.Database, semantics identifier.Semantics) ma
 // on every run after the first, which Oracle refuses with ORA-01921, and every
 // grant to it is planned again. A quoted "reader" is stored as reader and
 // stays a different role.
+//
+// A server that compares names under its catalog collation answers for a
+// role name too, and a name it answered for is keyed by the class it put the
+// name in, as a table name is: measured on SQL Server 2025, the roles App and
+// APP are one role under a case-insensitive collation and two under a
+// case-sensitive one (stokaro/ptah#6741).
 func roleKey(name string, semantics identifier.Semantics) string {
+	if semantics.TableNames == identifier.ComparisonCatalogResolved && semantics.Resolves(name) {
+		return semantics.TableIdentityKey(name)
+	}
 	return semantics.StoredName(name)
 }
 

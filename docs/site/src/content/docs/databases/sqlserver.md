@@ -296,8 +296,11 @@ and shadow verification (shadow execution is rejected when the shadow catalog
 resolves names differently).
 
 The snapshot covers the names of schemas, tables, columns, indexes, views,
-sequences, functions, procedures and triggers, and a declared object pairs with
-the object the database holds when the server reads their names as one. On a
+sequences, functions, procedures, triggers and roles, and a declared object
+pairs with the object the database holds when the server reads their names as
+one. A role is no exception: on a case-insensitive database that holds the
+role `App`, a schema that declares `APP` plans nothing, where `CREATE ROLE
+[APP]` would fail with error 15023. On a
 case-insensitive database that holds the procedure `MixedCase`, a schema that
 declares `MIXEDCASE` with another body changes `MixedCase`. It does not create
 a second procedure and drop the first, which on that database would drop the
@@ -318,6 +321,15 @@ create one object and drop another of its kind whose name the target may read
 as the same name is refused too, before any statement runs. Triggers are
 outside that check, because the plan drops the old trigger before it creates
 the new one, so the drop frees the name the create takes.
+
+Tables, views, functions, procedures and sequences share one namespace in a
+schema: a procedure cannot take the name a view holds there. A declaration
+that gives objects of two of these kinds names the database may read as one
+is refused and names both objects, such as the view `dbo.Report` and the
+procedure `dbo.REPORT` under a case-insensitive collation. So is a plan that
+creates an object of one kind and drops an object of another kind under such
+a name, because the plan creates before it drops and the server would refuse
+the create with error 2010. Drop the old object in a plan of its own first.
 
 `schema diff` of two schema files, in both binaries, asks the dev database how
 it compares the names the two files hold, and pairs them the way it answers.

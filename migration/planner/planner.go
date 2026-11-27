@@ -104,6 +104,10 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *d
 //     catalog compares names, such as SQL Server, a diff that carries no
 //     resolved snapshot has no rule that says two names are two, so every
 //     such pair whose spellings differ is refused
+//   - a diff that creates an object of one kind and drops an object of
+//     another kind that the dialect keeps in the same namespace in a schema,
+//     under a name its rules may read as the same name, fails the same way:
+//     the create would run while the other object holds the name
 //   - a plan in which an owner operation shares a node with other work fails
 //     with an error satisfying errors.Is against [ErrInvalidPlan]: each owner
 //     operation is planned as a node of its own, so its verdict belongs to
