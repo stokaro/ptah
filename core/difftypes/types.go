@@ -816,9 +816,12 @@ type SchemaDiff struct {
 	// SchemasRemoved are the schemas, by name, that a plan drops. On MySQL and
 	// MariaDB, a whole-server comparison removes the user databases the server
 	// holds and the desired state neither declares nor puts a table or a sequence
-	// in, and dropping one drops every object in it. No other comparison fills
-	// it: there it comes only from reversing [SchemaDiff.SchemasAdded], and the
-	// drop fails on a schema that holds anything.
+	// in, and dropping one drops every object in it. A database the read holds
+	// only part of, because a selection such as --exclude left objects in it
+	// out, is not removed: its other objects are removed one at a time. No other
+	// comparison fills it: there it comes only from reversing
+	// [SchemaDiff.SchemasAdded], and the drop fails on a schema that holds
+	// anything.
 	SchemasRemoved []string `json:"schemas_removed,omitempty"`
 
 	// SchemasModified are the schemas both sides hold whose character set or

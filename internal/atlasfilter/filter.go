@@ -184,6 +184,7 @@ func excludeDatabase(
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
+	filtered.PartialSchemas = partialSchemas(schema, filtered, kindsLeftOutBy(filters))
 	return filtered, state.report(), nil
 }
 
@@ -2453,6 +2454,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// filter cannot change that: dropping the record would let a declared
 		// table at it plan a CREATE TABLE the database rejects.
 		UnreadTables: slices.Clone(schema.UnreadTables),
+		// A schema the read held part of is still held in part: narrowing
+		// the description cannot put back what an earlier filter took out.
+		PartialSchemas: slices.Clone(schema.PartialSchemas),
 		// The filters narrow these to the run's selection; see
 		// [exclusionState.filterUnmodeledObjects].
 		UnmodeledObjects: slices.Clone(schema.UnmodeledObjects),

@@ -15,10 +15,18 @@ import (
 
 // ServerSchemas records on diff the databases a comparison of a whole MySQL or
 // MariaDB server creates, drops and changes: desired is the desired state,
-// current the user databases the server holds. A database the desired state
-// puts a table or a sequence in is declared, whether or not a schema block
-// names it: a database dropped under the tables the plan creates in it would
-// take them with it.
+// current the user databases the server holds, and partial the ones the read
+// holds only part of ([catalog.Database.PartialSchemas]). A database the
+// desired state puts a table or a sequence in is declared, whether or not a
+// schema block names it: a database dropped under the tables the plan creates
+// in it would take them with it.
+//
+// A partial database is not dropped, declared or not. DROP DATABASE drops
+// every object in it, and an object a selector left out of the comparison is
+// not the comparison's to remove: with `--exclude db.t`, `DROP DATABASE db`
+// would drop db.t and its rows. The comparison still removes what the read
+// holds of it one object at a time, so the plan drops what the selection kept
+// and leaves the database with what it left out.
 //
 // The pinned community binary v1.3.0 plans the same three, measured on MySQL
 // 8.4.11 and MariaDB 11.8.9 with `schema apply` against a URL naming no
@@ -39,6 +47,7 @@ func ServerSchemas(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	current []catalog.Schema,
+	partial []string,
 	semantics identifier.Semantics,
 ) {
 	held := make(map[string]catalog.Schema, len(current))
@@ -65,6 +74,9 @@ func ServerSchemas(
 		if change, changed := schemaAttributeChange(schema, existing); changed {
 			diff.SchemasModified = append(diff.SchemasModified, change)
 		}
+	}
+	for _, name := range partial {
+		declared[semantics.TableIdentityKey(name)] = struct{}{}
 	}
 	for _, schema := range current {
 		if _, kept := declared[semantics.TableIdentityKey(schema.Name)]; !kept {

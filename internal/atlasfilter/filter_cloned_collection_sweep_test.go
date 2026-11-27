@@ -260,12 +260,14 @@ func sweptCollectionFixture() *catalog.Database {
 // rather than repeating it, so the sweep cannot silently fall behind
 // [catalog.Database]. Every slice-typed field is a collection
 // cloneDatabase copies; NotDescribed is a coverage set rather than a slice and
-// carries no objects a selector could name.
+// carries no objects a selector could name. PartialSchemas is a slice of
+// schema names a filter computes from what it took out, not objects of the
+// read, so no selector names one either.
 func clonedDatabaseCollectionFields() []string {
 	schemaType := reflect.TypeFor[catalog.Database]()
 	fields := make([]string, 0, schemaType.NumField())
 	for field := range schemaType.Fields() {
-		if field.Type.Kind() != reflect.Slice {
+		if field.Type.Kind() != reflect.Slice || field.Name == "PartialSchemas" {
 			continue
 		}
 		fields = append(fields, field.Name)

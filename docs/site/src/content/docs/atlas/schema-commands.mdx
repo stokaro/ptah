@@ -1278,6 +1278,12 @@ them:
   `ALTER DATABASE`. One the declaration leaves out is the server's to choose.
 - A database the server holds and the desired schema does not declare is
   dropped with everything in it, after every other statement.
+- A database that holds an object `--include` or `--exclude` leaves out is not
+  dropped, because `DROP DATABASE` would drop that object with it. The plan
+  drops the objects the selection keeps, one at a time, and the database stays
+  with the rest: `--exclude db.t` drops `db.u` and keeps `db` and `db.t`. A
+  selector that leaves out a whole kind, such as `*[type=function]`, keeps every
+  database, since the read does not look for that kind.
 - The server's own databases, such as `mysql` and `sys`, are never planned.
 
 `--schema` limits the run to the databases it names. Use it to apply a file

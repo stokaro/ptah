@@ -192,7 +192,7 @@ func compareReportingUndecidedAdditions(
 	// Compare the databases of a whole server, before what is in them, on a
 	// target that compares them; see [config.CompareOptions.ServerSchemas].
 	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
-		compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics)
+		compare.ServerSchemas(diff, desired, database.Schemas, database.PartialSchemas, identifierSemantics)
 	}
 	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics, rules)
 

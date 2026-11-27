@@ -311,20 +311,27 @@ func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catal
 // [Reader.SetSchemas] gave that the server does not hold is left out, as the
 // pinned community binary leaves it out: `--schema nope` describes
 // nothing and succeeds.
+//
+// The names are matched here, as the server compares database names
+// ([mysqlname.Names]), and not in the query. MariaDB with
+// lower_case_table_names=0 answers a name condition on SCHEMATA by a lookup
+// that compares exactly, though the column compares without case. Measured on
+// MariaDB 11.8.9 holding sales: `SCHEMA_NAME IN ('Sales', 'sales')` and
+// `= 'Sales'` find no row, while `IN ('sales', 'Sales')` and `IN ('Sales',
+// 'x')` find sales. A document declaring Sales asks for both names, and the
+// read left sales out: the plan never dropped it, and `--exclude sales.u`
+// matched nothing.
 func (r *Reader) serverDatabases(ctx context.Context) ([]catalog.Schema, error) {
 	query := `
 		SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
 		FROM information_schema.SCHEMATA
-		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("SCHEMA_NAME")
-	args := make([]any, 0, len(r.databases))
-	if len(r.databases) > 0 {
-		query += ` AND SCHEMA_NAME IN (?` + strings.Repeat(", ?", len(r.databases)-1) + `)`
-		for _, name := range r.databases {
-			args = append(args, name)
-		}
+		WHERE ` + mysqlsystemdb.MySQLUserDatabasesPredicate("SCHEMA_NAME") + `
+		ORDER BY SCHEMA_NAME`
+	covered, err := r.coveredDatabases(ctx)
+	if err != nil {
+		return nil, err
 	}
-	query += ` ORDER BY SCHEMA_NAME`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}
@@ -335,12 +342,32 @@ func (r *Reader) serverDatabases(ctx context.Context) ([]catalog.Schema, error) 
 		if err := rows.Scan(&database.Name, &database.Charset, &database.Collate); err != nil {
 			return nil, fmt.Errorf("failed to list databases: %w", err)
 		}
-		databases = append(databases, database)
+		if covered(database.Name) {
+			databases = append(databases, database)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}
 	return databases, nil
+}
+
+// coveredDatabases answers whether a whole-server read covers the database
+// the server holds as name: every user database where [Reader.SetSchemas]
+// named none, and otherwise one a name it gave names as the server compares
+// database names.
+func (r *Reader) coveredDatabases(ctx context.Context) (func(name string) bool, error) {
+	if len(r.databases) == 0 {
+		return func(string) bool { return true }, nil
+	}
+	var folds bool
+	if err := r.db.QueryRowContext(ctx, mysqlname.FoldsNamesQuery).Scan(&folds); err != nil {
+		return nil, fmt.Errorf("failed to read how the server compares database names: %w", err)
+	}
+	names := mysqlname.NamesOf(folds)
+	return func(name string) bool {
+		return slices.ContainsFunc(r.databases, func(requested string) bool { return names.Same(requested, name) })
+	}, nil
 }
 
 // inDatabase names database as the schema of every object part holds that

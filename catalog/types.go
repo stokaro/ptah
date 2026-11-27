@@ -286,6 +286,16 @@ type Database struct {
 	// description, so it is never serialized.
 	OutOfScope TableParts `json:"-"`
 
+	// PartialSchemas names the schemas this description holds part of: a
+	// selector took objects in them out of the description, or left a kind of
+	// object out of the read, and the database keeps those objects. A
+	// comparison of a whole MySQL or MariaDB server does not drop a database
+	// named here, because DROP DATABASE drops every object in it, the objects
+	// the description left out among them. What the description holds of the
+	// schema is compared as usual. It is a fact about the read, not part of the
+	// description, so it is never serialized.
+	PartialSchemas []string `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER

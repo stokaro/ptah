@@ -1930,6 +1930,14 @@ Write the pattern as the server spells the database. Where no connection says
 how the server compares names, as in a `schema diff` between two files, a
 selection whose two sides spell a database in two cases is refused.
 
+On a URL that names no database, a database the file does not declare is
+dropped with `DROP DATABASE`, which drops every object in it. A database that
+holds an object `--include` or `--exclude` leaves out is not dropped: the plan
+drops the objects the selection keeps, one at a time, and the database stays
+with the rest. `--exclude db.t` drops `db.u` and keeps `db` and `db.t` with its
+rows. A selector that leaves out a whole kind, such as `*[type=function]`,
+keeps every database, since the read does not look for that kind.
+
 A plan that creates a database and drops another whose name differs from it
 only in case is refused, unless the comparison that produced it read a server
 that keeps names apart. On a server that folds names, the two are one

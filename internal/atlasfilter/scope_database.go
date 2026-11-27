@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/tableref"
 )
 
@@ -66,6 +67,11 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return nil, err
 	}
 	out.Schemas = s.keepDatabaseSchemas(db, out, slices.Concat(extensionSchemas, features.schemas))
+	var leftOut []readscope.Kind
+	if len(s.selectors) > 0 {
+		leftOut = kindsNotIncluded(s.selectors)
+	}
+	out.PartialSchemas = partialSchemas(db, out, leftOut)
 	return out, nil
 }
 
