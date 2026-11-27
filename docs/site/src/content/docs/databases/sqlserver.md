@@ -741,6 +741,36 @@ line. An optional repeat count and a comment may follow it on the line. The
 `GO` line belongs to no statement, so a `-- ptah:nolint` directive goes after
 it, directly above the statement it suppresses.
 
+Inside a batch, the migrator cuts a script at the semicolon after a statement,
+and never inside a statement, which it finds where SQL Server does. A
+`BEGIN ... END` block, a `TRY` block with its `CATCH` block, and an `IF`,
+`ELSE` or `WHILE` with the statement or block it runs are each one statement,
+semicolons inside included. A `MERGE` keeps its semicolon, which the server
+requires (`Msg 10713`); every other statement is sent without the one that ends
+it. A procedure, function, trigger or view, and `CREATE SCHEMA`, must open its
+batch (`Msg 111`), so each starts a piece of its own, and its body ends as
+described under [Triggers](#triggers). Where Ptah cannot find the statement
+boundaries of a batch, it cuts the batch at each semicolon outside a routine
+body.
+
+Each piece runs as a batch of its own, and a variable lives only in its batch,
+so a semicolon after a `DECLARE` ends the scope of the variable. Statements
+written with no semicolon between them run as one batch, as they do in
+`sqlcmd`. With semicolons, put a `DECLARE` and the statements that read the
+variable in one `BEGIN ... END` block:
+
+```sql
+BEGIN
+  DECLARE @region nvarchar(20) = N'emea';
+  INSERT INTO dbo.regions (code) VALUES (@region);
+END;
+```
+
+The safety rating of `ptah schema plan` and `ptah schema apply` reads every
+statement the server runs from a piece. `CREATE TABLE dbo.a (id int) TRUNCATE
+TABLE dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, and
+text whose statement boundaries Ptah cannot find is rated destructive.
+
 ## Views that read other views
 
 SQL Server checks a view's query when the view is created, so Ptah creates each view

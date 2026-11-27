@@ -15,6 +15,7 @@ package safety
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"ptah.run/internal/htmlstyle"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/sqlserverbatch"
 	"ptah.run/internal/sqlserverexec"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/risk"
@@ -297,7 +299,7 @@ func AssessRenderedWithCapabilities(
 		_, raw := node.(*ast.RawSQLNode)
 		for _, statement := range rendered[i] {
 			judged := judgments[len(assessments)]
-			assessment := assessStatement(statement, known, judged)
+			assessment := assessStatement(statement, target, known, judged)
 			assessment.NodeType = nodeAssessment.NodeType
 			assessment.Subject = renderedSubject(node, nodeAssessment.Subject, statement, target)
 			ownedText := raw && judged != nil
@@ -466,6 +468,16 @@ func judgeNullFillPair(assessment *StatementAssessment, statement, target string
 // CASCADE it stays destructive, since it also drops the objects that depend on
 // the dropped one.
 //
+// On a target whose text is T-SQL, such as sqlserver, a statement's words are
+// read statement by statement as the server runs them. The text is cut where
+// the migrator cuts it ([sqlutil.SplitSQLStatementsForDialect]), and every
+// statement the server finds in each piece is classified, those an IF, a WHILE
+// or a BEGIN ... END block runs included; the most severe decides. T-SQL needs
+// no separator between statements, so `CREATE TABLE a (id int) TRUNCATE TABLE
+// x` is destructive for its TRUNCATE. Text whose statement boundaries Ptah
+// cannot find is Destructive, since what it runs is not established. The
+// assessments stay one per input statement.
+//
 // Each assessment names the object its statement acts on in Subject, read
 // from the statement's leading words as the target's lexer splits them.
 //
@@ -480,7 +492,7 @@ func AssessSQL(ctx context.Context, runtime Runtime, target string, statements [
 	assessments := make([]StatementAssessment, 0, len(statements))
 	ownWords := make([]bool, 0, len(statements))
 	for i, statement := range statements {
-		assessment := assessStatement(statement, nodeKnowledge{}, judgments[i])
+		assessment := assessStatement(statement, target, nodeKnowledge{}, judgments[i])
 		assessment.Subject = statementSubject(statement, target)
 		assessment.Index = i + 1
 		assessments = append(assessments, assessment)
@@ -493,13 +505,14 @@ func AssessSQL(ctx context.Context, runtime Runtime, target string, statements [
 	return assessments, nil
 }
 
-// assessStatement classifies one statement, knowing whether its operation
-// leaves the column's nullability alone (see [assessRawSQL]). A statement no
-// owner judged is read by its words. One an owner judged a piece of is read
-// piece by piece, as the owner's split reads it: a judged piece by the
-// owner's judgment, and any other by its words, so the judgment of one piece
-// does not hide what another does. The most severe piece decides.
-func assessStatement(statement string, known nodeKnowledge, pieces []statementPiece) StatementAssessment {
+// assessStatement classifies one statement on target, knowing whether its
+// operation leaves the column's nullability alone (see [assessRawSQL]). A
+// statement no owner judged is read by its words (see [assessText]). One an
+// owner judged a piece of is read piece by piece, as the owner's split reads
+// it: a judged piece by the owner's judgment, and any other by its words, so
+// the judgment of one piece does not hide what another does. The most severe
+// piece decides.
+func assessStatement(statement, target string, known nodeKnowledge, pieces []statementPiece) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType:  "sql",
 		Statement: strings.TrimSpace(statement),
@@ -507,18 +520,80 @@ func assessStatement(statement string, known nodeKnowledge, pieces []statementPi
 		Reason:    safeReason,
 	}
 	if pieces == nil {
-		return assessRawSQL(statement, assessment, known)
+		return assessText(statement, target, assessment, known)
 	}
 	for _, piece := range pieces {
 		verdict := StatementAssessment{Severity: Safe, Reason: safeReason}
 		if piece.judgment != nil {
 			verdict.Severity, verdict.Reason = piece.judgment.severity, piece.judgment.reason
 		} else {
-			verdict = assessRawSQL(piece.sql, verdict, known)
+			verdict = assessText(piece.sql, target, verdict, known)
 		}
 		raiseAssessment(&assessment, verdict)
 	}
 	return assessment
+}
+
+// assessText classifies sql, the text of one statement on target, by its
+// words (see [assessRawSQL]).
+//
+// T-SQL needs no separator between two statements, and a block, an IF or a
+// WHILE runs the statements written in it, so the words a T-SQL statement
+// starts with need not be what it runs: `CREATE TABLE a (id int) TRUNCATE
+// TABLE x` is two statements, and `IF ... BEGIN DELETE FROM x END` deletes.
+// On a target whose text is T-SQL (sqlserverbatch.Reads), sql is cut where
+// the migrator cuts it ([sqlutil.SplitSQLStatementsForDialect]), and each
+// statement the server runs from each piece, as internal/sqlserverbatch finds
+// it, is classified by its words; the most severe decides. A piece whose
+// statement boundaries the reader cannot find is destructive, since what it
+// runs is not established.
+func assessText(sql, target string, assessment StatementAssessment, known nodeKnowledge) StatementAssessment {
+	if !sqlserverbatch.Reads(target) {
+		return assessRawSQL(sql, assessment, known)
+	}
+	for _, piece := range sqlutil.SplitSQLStatementsForDialect(sql, target) {
+		statements, err := sqlserverbatch.Read(piece)
+		if err != nil {
+			raiseAssessment(&assessment, StatementAssessment{Severity: Destructive, Reason: unreadableReason(err)})
+			continue
+		}
+		for _, statement := range serverStatements(statements) {
+			raiseAssessment(&assessment, assessRawSQL(statement, StatementAssessment{Severity: Safe, Reason: safeReason}, known))
+		}
+	}
+	return assessment
+}
+
+// unreadableReason is why T-SQL whose statement boundaries
+// internal/sqlserverbatch cannot find is destructive: err says what the reader
+// found.
+func unreadableReason(err error) string {
+	found := err.Error()
+	if unreadable, ok := errors.AsType[*sqlserverbatch.UnreadableError](err); ok {
+		found = unreadable.Reason
+	}
+	return "Ptah cannot find where the T-SQL statements in it begin and end (" + found +
+		"), so what it runs is not established"
+}
+
+// serverStatements returns the text of each statement the server runs from
+// statements, without the semicolon that ends it. The statements a block, an
+// IF or a WHILE runs stand in for it, since a condition runs nothing, and
+// CREATE SCHEMA stands beside the elements it creates.
+func serverStatements(statements []sqlserverbatch.Statement) []string {
+	var texts []string
+	for _, statement := range statements {
+		switch statement.Kind {
+		case sqlserverbatch.Block, sqlserverbatch.If, sqlserverbatch.While:
+			texts = append(texts, serverStatements(statement.Statements)...)
+		case sqlserverbatch.Schema:
+			texts = append(texts, strings.TrimSuffix(statement.Head, ";"))
+			texts = append(texts, serverStatements(statement.Statements)...)
+		default:
+			texts = append(texts, strings.TrimSuffix(statement.SQL, ";"))
+		}
+	}
+	return texts
 }
 
 // safeReason is the reason of a statement nothing marks as risky.
@@ -1607,6 +1682,14 @@ func hasWordSequence(words []string, sequence ...string) bool {
 // replaceTableReason is why replacing a table is destructive.
 const replaceTableReason = "CREATE OR REPLACE TABLE drops the existing table and all its rows"
 
+// deleteWithoutWhereReason is why a DELETE with no WHERE clause is
+// destructive: no condition selects the rows it removes, so in its plain form
+// it removes every row of its table, as TRUNCATE does. A DELETE with a WHERE
+// clause is left to the reading of its words, which finds nothing in it: the
+// DELETE of a row the declaration no longer holds carries the data stage's
+// verdict instead, which only the plan knows.
+const deleteWithoutWhereReason = "DELETE without a WHERE clause removes every row it reaches, every row of its table in the plain form"
+
 // destructivePrefixes are the statements whose leading words alone make them
 // destructive, each with the reason it reports, in the order
 // [destructivePrefixReason] tries them.
@@ -1646,12 +1729,16 @@ var destructivePrefixes = []struct {
 }
 
 // destructivePrefixReason returns the reason of the first [destructivePrefixes]
-// entry the statement's words start with.
+// entry the statement's words start with, and otherwise
+// [deleteWithoutWhereReason] for a DELETE with no WHERE clause.
 func destructivePrefixReason(words []string) (string, bool) {
 	for _, prefix := range destructivePrefixes {
 		if hasWordPrefix(words, prefix.words...) {
 			return prefix.reason, true
 		}
+	}
+	if hasWordPrefix(words, "DELETE") && !slices.Contains(words, "WHERE") {
+		return deleteWithoutWhereReason, true
 	}
 	return "", false
 }
