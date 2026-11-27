@@ -99,7 +99,7 @@
       "enabled": false
     },
     {
-      "description": "The mariadb-11-8 integration service is pinned to 11.8 deliberately: MariaDB 11.8 refuses a foreign key dropped and added under one name in one ALTER TABLE with errno 121, the 12.3 service accepts it, and the catalog shape test points its rows that drop and add one name at both. A 12.x tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 11.8 patch release.",
+      "description": "The mariadb-11-8 integration service is pinned to 11.8 deliberately: MariaDB 11.8 refuses a foreign key dropped and added under one name in one ALTER TABLE with errno 121, the 12.3 service accepts it, and the catalog shape test points its rows that drop and add one name at both. A 12.x tag removes that coverage without failing anything. The ptah-mariadb-11-8-folded server stands on the same pin, for the 11.8 line started with lower_case_table_names=1 that dbtarget.MariaDB118FoldedServer names. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 11.8 patch release.",
       "matchDatasources": [
         "docker"
       ],
@@ -107,6 +107,17 @@
         "mariadb"
       ],
       "matchCurrentValue": "11.8",
+      "enabled": false
+    },
+    {
+      "description": "The ptah-mysql-8-4-folded integration server is pinned to 8.4 deliberately: it is the 8.4 line started with lower_case_table_names=1, and the tests that ask for dbtarget.MySQL84FoldedServer prove a selection keeps both spellings of a database on that line beside the 26.10 server that folds. A newer tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 8.4 patch release.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "mysql"
+      ],
+      "matchCurrentValue": "8.4",
       "enabled": false
     },
     {

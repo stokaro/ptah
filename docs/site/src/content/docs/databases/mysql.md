@@ -1834,6 +1834,30 @@ name that matches another only without regard to case, rather than plan under
 either answer, and the error names both spellings. Compare against the
 database, or spell both names the same way.
 
+A selection runs after the names are matched. Every command that takes
+`--schemas`, `--include` or `--exclude`, in both binaries (`--schema` in
+`ptah-compat`), selects a database by the spelling the server holds. On a
+server that folds names, `--schemas Sales` and `--schemas sales` both select
+the database `sales` and the file's `Sales`, so the plan keeps both sides
+of the database and changes only what the file and the database disagree on.
+
+A pattern is matched as written against the names the server holds. On a
+server that folds names, `--exclude Sales.u` matches nothing and the apply
+refuses it, as it refuses every exclusion that protects nothing. `migrations
+plan` and `migrations generate` warn about it instead and compare the table as
+if no exclusion named it, as they do with every exclusion that matches nothing.
+Write the pattern as the server spells the database. Where no connection says
+how the server compares names, as in a `schema diff` between two files, a
+selection whose two sides spell a database in two cases is refused.
+
+A plan that creates a database and drops another whose name differs from it
+only in case is refused, unless the comparison that produced it read a server
+that keeps names apart. On a server that folds names, the two are one
+database: the create makes nothing, and the drop would remove the database
+with every table in it. A diff built by hand records no setting, so the
+planner refuses such a pair there too. Measured on MySQL 8.4.13 and 26.10.0
+and MariaDB 11.8.9 and 12.3.3.
+
 With `lower_case_table_names=2`, which needs a file system that ignores case,
 MariaDB answers `DATABASE()` in the spelling of the URL while its privilege
 views spell the database in lower case. The read describes the database and its

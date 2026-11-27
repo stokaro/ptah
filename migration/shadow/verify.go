@@ -560,7 +560,7 @@ func assertSchemaMatches(
 	// The plan refused a selection of nothing before the change. After it,
 	// an empty selection is what a plan that drops everything it selects
 	// leaves, and the two empty sides agree.
-	dbSchema, generated, err = inclusion.ApplyAfterChange(ctx, opts.TargetConnection.Info().Dialect, planNaming, dbSchema, generated)
+	dbSchema, generated, err = inclusion.ApplyAfterChange(ctx, schemascope.Target{Info: conn.Info(), Names: conn}, planNaming, dbSchema, generated)
 	if err != nil {
 		return newVerificationError("schema-match", "include_error", "apply include selectors", err)
 	}

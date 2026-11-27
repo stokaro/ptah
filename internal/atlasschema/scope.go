@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 )
 
@@ -40,6 +41,12 @@ type LiveSelection struct {
 	// Diagnostics receives the warning for an Exclude selector that matched
 	// nothing on either side. Nil writes no warning.
 	Diagnostics io.Writer
+	// Names is the connection to the target, which answers how its catalog
+	// compares the names the selectors meet, on a target whose catalog
+	// compares them: SQL Server. Nil answers nothing, and a selection there
+	// refuses a name that differs from one on the other side only in case;
+	// see [schemascope.Pairing].
+	Names schemascope.Resolver
 }
 
 // Validate refuses a malformed selector, for a caller that has not contacted a
@@ -76,7 +83,11 @@ func (s LiveSelection) Apply(
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
-	return s.applyCounted(ctx, runtime, countedOn{dialect: info.Dialect, naming: atlasfilter.ConnectionNaming(info)}, current, desired)
+	return s.applyCounted(ctx, runtime, countedOn{
+		dialect: info.Dialect,
+		naming:  atlasfilter.ConnectionNaming(info),
+		target:  schemascope.Target{Info: info, Names: s.Names},
+	}, current, desired)
 }
 
 // emptyRule is what a projection answers when the Include selectors select
@@ -94,10 +105,13 @@ const (
 
 // countedOn is how a projection counts its patterns: on a connection of
 // dialect, as naming says, and what it answers for a selection of nothing.
+// target is the connection the names the selectors meet are paired on; see
+// [pairedSelection].
 type countedOn struct {
 	dialect string
 	naming  atlasfilter.Naming
 	empty   emptyRule
+	target  schemascope.Target
 }
 
 // applyCounted is [LiveSelection.Apply] counting each pattern as on says.
@@ -123,7 +137,7 @@ func (s LiveSelection) applyCounted(
 		!slices.ContainsFunc(s.Exclude, atlasfilter.NamesSelector) {
 		return current, desired, nil
 	}
-	scoped, err := projectLiveStates(ctx, runtime, dialect, current, desired, scope)
+	scoped, err := projectLiveStates(ctx, runtime, dialect, on.target, current, desired, scope)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -138,6 +152,42 @@ func (s LiveSelection) applyCounted(
 	}
 	applyExtensionSupportCoverage(scoped.desired, scoped.currentReports.Selection, scoped.desiredReports.Selection)
 	return scoped.current, scoped.desired, nil
+}
+
+// pairedSelection is scope with its --schemas names, and desired with every
+// schema and relation name it declares, spelled as target holds them in
+// current, so that each selector of scope meets one spelling of a name on
+// both sides; see [schemascope.Pairing]. A scope with no selector, and a
+// target that compares names as bytes, are returned as they came.
+//
+// Without it a selection keeps one spelling of a name the target reads as one
+// and leaves out the other. On a server started with lower_case_table_names=1,
+// `schema apply --schemas sales` for a document declaring Sales.t keeps the
+// held sales.t, leaves the declared Sales.t out, and drops the database with
+// its rows (stokaro/ptah#6785).
+func pairedSelection(
+	ctx context.Context,
+	target schemascope.Target,
+	scope atlasfilter.Scope,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+) (atlasfilter.Scope, *schemamodel.Database, error) {
+	if len(scope.Schemas) == 0 && len(scope.Include) == 0 && len(scope.Exclude) == 0 {
+		return scope, desired, nil
+	}
+	pairing, err := target.Pairing(ctx, scope.Schemas, desired, current)
+	if err != nil {
+		return atlasfilter.Scope{}, nil, fmt.Errorf("apply the selection: %w", err)
+	}
+	if pairing.Exact() {
+		return scope, desired, nil
+	}
+	schemas, respelled, err := pairing.Selection(scope.Schemas, desired, current)
+	if err != nil {
+		return atlasfilter.Scope{}, nil, fmt.Errorf("apply the selection: %w", err)
+	}
+	scope.Schemas = schemas
+	return scope, respelled, nil
 }
 
 // scopeGeneratedSide filters one generated-schema comparison side. Positive

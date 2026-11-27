@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/schemascope"
 )
 
 // Inclusion is a positive selection over both sides of a comparison that plans
@@ -76,20 +77,22 @@ func (i Inclusion) ReadContext(ctx context.Context) context.Context {
 	return i.selection().ReadContext(ctx, i.runtime.Selections())
 }
 
-// Apply keeps on both sides what the selectors select, on a connection of
-// dialect, counting each pattern as naming says: the count the verb's
-// exclusion takes, so one selector list names the same objects in both. Selectors
-// that select nothing on either side return the
+// Apply keeps on both sides what the selectors select, on target, counting
+// each pattern as naming says: the count the verb's exclusion takes, so one
+// selector list names the same objects in both. The names desired declares
+// are spelled as target holds them in current first, so a selector meets one
+// spelling of a name the target reads as one; see [schemascope.Pairing].
+// Selectors that select nothing on either side return the
 // [atlasfilter.EmptySelectionError]: a migration planned over nothing would
 // read as synced. current and desired are not changed.
 func (i Inclusion) Apply(
 	ctx context.Context,
-	dialect string,
+	target schemascope.Target,
 	naming atlasfilter.Naming,
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
-	return i.apply(ctx, countedOn{dialect: dialect, naming: naming, empty: refuseEmpty}, current, desired)
+	return i.apply(ctx, countedOn{dialect: target.Info.Dialect, naming: naming, empty: refuseEmpty, target: target}, current, desired)
 }
 
 // ApplyAfterChange is [Inclusion.Apply] for a comparison made after the
@@ -100,12 +103,12 @@ func (i Inclusion) Apply(
 // refused.
 func (i Inclusion) ApplyAfterChange(
 	ctx context.Context,
-	dialect string,
+	target schemascope.Target,
 	naming atlasfilter.Naming,
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
-	return i.apply(ctx, countedOn{dialect: dialect, naming: naming, empty: compareEmpty}, current, desired)
+	return i.apply(ctx, countedOn{dialect: target.Info.Dialect, naming: naming, empty: compareEmpty, target: target}, current, desired)
 }
 
 func (i Inclusion) apply(

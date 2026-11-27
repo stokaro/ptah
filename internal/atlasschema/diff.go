@@ -48,6 +48,7 @@ import (
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
@@ -726,16 +727,15 @@ func diffResolvedStates(
 	opts DiffOptions,
 ) (comparedDiff, error) {
 	opts.Policy = opts.Policy.ForDialect(dialect)
-	fromState, toState, err := scopedDiffSides(
-		ctx, conn, opts.Runtime, fromState, toState, dialect, sides, opts.devURLSource(), opts.DevURL,
-	)
+	prepared, err := preparedDiffSides(ctx, conn, fromState, toState, dialect, sides, opts)
 	if err != nil {
 		return comparedDiff{}, err
 	}
+	fromState, toState = prepared.from, prepared.to
 
 	defaultSchema, realmRelative := diffPatternScope(dialect, fromState, toState)
 	scope := atlasfilter.Scope{
-		Schemas:       opts.Schemas,
+		Schemas:       prepared.schemas,
 		Include:       opts.Include,
 		Exclude:       slices.Concat(opts.Exclude, opts.ImplicitExclude),
 		DefaultSchema: defaultSchema,
@@ -1654,6 +1654,91 @@ func scopeDiffStates(
 	}
 	return scopeDiffState(ctx, fromState, withLiveKeys(pairScope, fromState, toState), "--from schema", dialect, runtime),
 		scopeDiffState(ctx, toState, withLiveKeys(pairScope, toState, fromState), "--to schema", dialect, runtime)
+}
+
+// diffSides is the two sides of a schema diff once they are scoped and
+// paired, with the --schemas names the selection takes.
+type diffSides struct {
+	from, to atlassource.State
+	schemas  []string
+}
+
+// preparedDiffSides scopes the two sides, see [scopedDiffSides], and then
+// pairs them, see [pairedDiffSides].
+func preparedDiffSides(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	from, to atlassource.State,
+	dialect string,
+	sides devServerSides,
+	opts DiffOptions,
+) (diffSides, error) {
+	from, to, err := scopedDiffSides(ctx, conn, opts.Runtime, from, to, dialect, sides, opts.devURLSource(), opts.DevURL)
+	if err != nil {
+		return diffSides{}, err
+	}
+	return pairedDiffSides(ctx, conn, from, to, dialect, opts)
+}
+
+// pairedDiffSides spells the --schemas names, and every schema and relation
+// name the document side declares, as the database side holds them, so that
+// each selector meets one spelling of a name the target reads as one on both
+// sides; see [schemascope.Pairing].
+//
+// The database side is paired on conn, the connection the diff holds to it,
+// and otherwise by what its read recorded: the folding of a MySQL or MariaDB
+// server, and for SQL Server nothing, so a name that differs from one on the
+// other side only in case is refused there. Two documents are paired as the
+// target compares names with no connection to say how: a name of the --to
+// document that matches one of the --from document only in case is refused.
+// Two databases, a run with no selector, and a target that compares names as
+// bytes are returned as they came.
+//
+// Without it, `schema diff --from <server> --to <file> --schemas sales`
+// against a server started with lower_case_table_names=1 keeps the held
+// sales.t, leaves out the declared Sales.t, and plans DROP DATABASE `sales`
+// (stokaro/ptah#6785).
+func pairedDiffSides(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	from, to atlassource.State,
+	dialect string,
+	opts DiffOptions,
+) (diffSides, error) {
+	unpaired := diffSides{from: from, to: to, schemas: opts.Schemas}
+	if len(opts.Schemas) == 0 && len(opts.Include) == 0 && len(opts.Exclude) == 0 ||
+		from.DB != nil && to.DB != nil {
+		return unpaired, nil
+	}
+	held, document := from, &to
+	if from.DB == nil && to.DB != nil {
+		held, document = to, &from
+	}
+	target := schemascope.Target{Info: catalog.ServerInfo{
+		Dialect: dialect, Schema: held.DefaultSchema, NameFolding: held.NameFolding,
+	}}
+	if conn != nil && held.DB != nil {
+		target = schemascope.Target{Info: conn.Info(), Names: conn}
+	}
+	pairing, err := target.Pairing(ctx, opts.Schemas, document.Schema, held.DB)
+	if err != nil {
+		return diffSides{}, fmt.Errorf("apply the selection: %w", err)
+	}
+	if pairing.Exact() {
+		return unpaired, nil
+	}
+	var schemas []string
+	var respelled *schemamodel.Database
+	if held.DB != nil {
+		schemas, respelled, err = pairing.Selection(opts.Schemas, document.Schema, held.DB)
+	} else {
+		schemas, respelled, err = pairing.DocumentSelection(opts.Schemas, document.Schema, held.Schema)
+	}
+	if err != nil {
+		return diffSides{}, fmt.Errorf("apply the selection: %w", err)
+	}
+	document.Schema = respelled
+	return diffSides{from: from, to: to, schemas: schemas}, nil
 }
 
 // withLiveKeys returns scope naming a declared key of side by the key the
