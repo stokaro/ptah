@@ -49,18 +49,26 @@ var roleCaseSpellings = []struct {
 func applyRoleCaseSchema(c *qt.C, engine dbtarget.Engine, quote, template string) *difftypes.SchemaDiff {
 	c.Helper()
 	ctx := c.Context()
-	conn, err := dbschema.ConnectToDatabase(ctx, dbtarget.URL(c, engine))
+	address := dbtarget.URL(c, engine)
+	conn, err := dbschema.ConnectToDatabase(ctx, address)
 	c.Assert(err, qt.IsNil)
 	suffix := time.Now().UnixNano()
 	schema := fmt.Sprintf("ptah_role_case_%d", suffix)
 	role := fmt.Sprintf("%sPtah_Case_%d%s", quote, suffix, quote)
 	c.Cleanup(func() {
-		cleanup := context.Background()
-		_, dropSchema := conn.ExecContext(cleanup, "DROP SCHEMA IF EXISTS "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
-		c.Check(dropSchema, qt.IsNil)
-		_, dropRole := conn.ExecContext(cleanup, "DROP ROLE IF EXISTS "+role)
-		c.Check(dropRole, qt.IsNil)
 		c.Check(conn.Close(), qt.IsNil)
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		// YugabyteDB can refuse DDL on the session whose catalog snapshot
+		// the fixture's role and grant changes moved (SQLSTATE 40001).
+		// Clean up through a new session after the fixture connection closes.
+		server, err := dbschema.ConnectToDatabase(cleanup, address)
+		c.Assert(err, qt.IsNil)
+		defer func() { c.Check(server.Close(), qt.IsNil) }()
+		_, dropSchema := server.ExecContext(cleanup, "DROP SCHEMA IF EXISTS "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
+		c.Check(dropSchema, qt.IsNil)
+		_, dropRole := server.ExecContext(cleanup, "DROP ROLE IF EXISTS "+role)
+		c.Check(dropRole, qt.IsNil)
 	})
 	for _, statement := range []string{
 		"CREATE SCHEMA " + pgx.Identifier{schema}.Sanitize(),

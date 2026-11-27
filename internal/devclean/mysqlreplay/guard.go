@@ -39,8 +39,8 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 // [mysqlServerStatements] that a server the run owns lifts. Here it lifts,
 // beyond them: a prepared statement and a MariaDB compound statement, which
 // are the dynamic SQL a MySQL history writes where PostgreSQL writes a DO
-// block; a FEDERATED, CONNECT or SPIDER table, LOAD DATA or LOAD XML, IMPORT
-// TABLE, and SELECT ... INTO OUTFILE or DUMPFILE, which move data across the
+// block; LOAD DATA or LOAD XML, IMPORT TABLE, and SELECT ... INTO OUTFILE or
+// DUMPFILE, which move data across the
 // server's edge and leave nothing in it that the cleanup does not remove; and
 // a write to another database, a view over one, and a function or sequence of
 // one. Each one's only reason to be refused is that its effect reaches past
@@ -52,8 +52,9 @@ func rejectMySQLExecutableComments(dialect, stmt string, reading mysqlstored.Ser
 // hides SQL from every check here; an EVENT, which the scheduler runs on its own
 // timetable during the rest of the run; a statement that reaches the account
 // the run connects as, which [sessionAccount.operation] refuses before any
-// realm or trust is asked; the statements of
-// [mysqlServerStatements] that no realm lifts; USE, a global or persistent
+// realm or trust is asked; a FEDERATED, CONNECT or SPIDER table, or a table
+// with a CONNECTION option, whose writes can reach account tables; the
+// statements of [mysqlServerStatements] that no realm lifts; USE, a global or persistent
 // SET, INSTALL, UNINSTALL, FLUSH, RESET and ALTER INSTANCE, which change the
 // session or the server the run uses; a TABLESPACE, LOGFILE GROUP, SERVER,
 // RESOURCE GROUP or SPATIAL REFERENCE SYSTEM, which configure the server, as a
@@ -70,7 +71,7 @@ func validateMySQLReplayStatement(dialect, database, stmt string, tokens []lexer
 	statement := tokens
 	tokens = replay.LeadingCTEExecutableTokens(tokens)
 	first := replay.NormalizedIdentifier(tokens[0])
-	if err := rejectMySQLExecutableObjects(dialect, stmt, first, tokens, scope); err != nil {
+	if err := rejectMySQLExecutableObjects(dialect, stmt, first, tokens); err != nil {
 		return err
 	}
 	if operation := unsafeMySQLReplayOperation(tokens, scope); operation != "" {
@@ -147,12 +148,9 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token, scope replay.Scope) string
 	return ""
 }
 
-func rejectMySQLExecutableObjects(dialect, stmt, first string, tokens []lexer.Token, scope replay.Scope) error {
+func rejectMySQLExecutableObjects(dialect, stmt, first string, tokens []lexer.Token) error {
 	if definesMySQLExecutableBody(stmt, tokens) {
 		return replay.Refuse(dialect, first+" executable stored body")
-	}
-	if engine := unconfinedMySQLStorageEngine(tokens); engine != "" && !scope.TrustedSQL {
-		return replay.Refuse(dialect, engine+" storage engine")
 	}
 	return nil
 }
@@ -469,25 +467,4 @@ func namesUTF8(tokens []lexer.Token, at int) bool {
 		return false
 	}
 	return mysqlstored.UTF8CharacterSet(replay.NormalizedIdentifier(tokens[at]))
-}
-
-// unconfinedMySQLStorageEngine names the storage engine of a CREATE or ALTER
-// TABLE whose rows live on another server or in another database: FEDERATED,
-// CONNECT, and MariaDB's SPIDER. Measured on MariaDB 11.8.9, a SPIDER table
-// whose connection names the server itself and another database writes that
-// database's table on INSERT.
-func unconfinedMySQLStorageEngine(tokens []lexer.Token) string {
-	if !replay.IsDDLAction(tokens) {
-		return ""
-	}
-	kindIndex := replay.StatementObjectKindIndex(tokens)
-	if kindIndex == replay.MutationTargetNotFound ||
-		replay.NormalizedIdentifier(tokens[kindIndex]) != "TABLE" {
-		return ""
-	}
-	engine, _ := replay.TopLevelValueAfterKeyword(tokens, "ENGINE", replay.ObjectNameIndex(tokens, kindIndex)+1)
-	if engine == "FEDERATED" || engine == "CONNECT" || engine == "SPIDER" {
-		return engine
-	}
-	return ""
 }

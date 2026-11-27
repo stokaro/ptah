@@ -73,7 +73,6 @@ var trustLifted = []struct {
 	{"MySQL prepared statement", trustedMySQLDev, "PREPARE s FROM 'SELECT 1'"},
 	{"MySQL LOAD DATA", trustedMySQLDev, "LOAD DATA INFILE '/tmp/items' INTO TABLE items"},
 	{"MySQL OUTFILE", trustedMySQLDev, "SELECT * FROM items INTO OUTFILE '/tmp/items'"},
-	{"MySQL FEDERATED table", trustedMySQLDev, "CREATE TABLE t (id int) ENGINE=FEDERATED CONNECTION='mysql://u@elsewhere/db/t'"},
 	// A prepared statement makes the same change, and trust lifts it.
 	{"MySQL client character set", trustedMySQLDev, "SET NAMES latin1"},
 	{"SQL Server procedure", trustedSQLServerDev, "CREATE PROCEDURE dbo.refresh AS SELECT 1"},

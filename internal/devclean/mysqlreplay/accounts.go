@@ -137,9 +137,10 @@ func refuseAccountOperation(dialect, operation string) error {
 // changes the password of u.
 //
 // A write to a table that holds accounts is refused as well
-// ([accountTables]), and each of these statements in the body of a routine, a
-// trigger or an event is refused at the statement that writes the body
-// ([bodyStatements]).
+// ([accountTables]), as is a table option that can forward writes to one
+// ([remoteTableOperation]). Each of these statements in the body of a routine,
+// trigger, event or compound statement is refused at the statement that
+// writes the body ([bodyStatements]).
 //
 // A statement that names accounts the guard cannot read is refused, since it
 // cannot tell them from the run's. The rule reads a statement and a body as
@@ -158,6 +159,12 @@ func (s sessionAccount) operation(stmt string, tokens []lexer.Token, reading mys
 	}
 	if definition, ok, _ := mysqlstored.Read(stmt, tokens); ok && definition.Body() {
 		return s.bodyOperation(stmt, tokens, reading, definition, database)
+	}
+	if isMySQLCompoundStatement(tokens) {
+		return s.bodyOperation(stmt, tokens, reading, mysqlstored.Definition{}, database)
+	}
+	if operation := remoteTableOperation(tokens, reading); operation != "" {
+		return operation
 	}
 	return accountTableOperation(tokens, database)
 }

@@ -304,7 +304,7 @@ func TestReplayGuardMariaDBReach_FailurePath(t *testing.T) {
 		{
 			name:      "SPIDER table",
 			statement: `CREATE TABLE remote_users (id bigint) ENGINE=SPIDER COMMENT='wrapper "mysql", host "127.0.0.1", database "production", table "users"'`,
-			want:      "SPIDER storage engine",
+			want:      "SPIDER storage engine that can forward writes to account tables",
 		},
 	}
 	guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.MariaDB, Schema: "ptah_dev"}, devclean.ReplayRealmDatabase)
@@ -422,6 +422,10 @@ var mysqlEveryRealmStatements = []struct {
 	{name: "account password set by a later item", statement: "SET @a = 1, PASSWORD FOR 'app'@'%' = PASSWORD('changed')", operation: "SET PASSWORD"},
 	{name: "own password set by a later item", statement: "SET @c = 1, PASSWORD = PASSWORD('changed')", operation: "SET PASSWORD"},
 	{name: "default role set by a later item", statement: "SET @d = 1, DEFAULT ROLE NONE FOR 'app'@'%'", operation: "SET DEFAULT ROLE"},
+	{name: "federated table", statement: "CREATE TABLE t (id INT) ENGINE=FEDERATED CONNECTION='mysql://dev@localhost/mysql/user'", operation: "FEDERATED storage engine that can forward writes to account tables"},
+	{name: "spider table", statement: "CREATE TABLE t (id INT) ENGINE=SPIDER", operation: "SPIDER storage engine that can forward writes to account tables"},
+	{name: "connect table", statement: "ALTER TABLE t ENGINE=CONNECT", operation: "CONNECT storage engine that can forward writes to account tables"},
+	{name: "remote connection", statement: "ALTER TABLE t CONNECTION='server/t'", operation: "CONNECTION table option that can forward writes to account tables"},
 }
 
 // TestReplayGuard_MySQLRefusesServerStatementsInEveryRealm pins that no realm
@@ -477,7 +481,6 @@ var mysqlTrustLifted = []struct {
 	{"MariaDB anonymous block", trustedMariaDBDev, "BEGIN NOT ATOMIC DELETE FROM other.t WHERE 1; END"},
 	{"MariaDB Oracle-mode block", trustedMariaDBDev, "DECLARE n INT; BEGIN DELETE FROM other.t WHERE 1; END"},
 	{"MySQL IMPORT TABLE", trustedMySQLDev, "IMPORT TABLE FROM '/tmp/t.sdi'"},
-	{"MariaDB SPIDER table", trustedMariaDBDev, `CREATE TABLE s (id int) ENGINE=SPIDER COMMENT='wrapper "mysql", host "elsewhere", table "t"'`},
 	{"MySQL insert into another database without INTO", trustedMySQLDev, "INSERT other.t VALUES (1)"},
 	{"MySQL view over another database", trustedMySQLDev, "CREATE VIEW v AS SELECT * FROM other.t"},
 	{"MySQL function of another database", trustedMySQLDev, "SELECT other.f()"},
