@@ -189,12 +189,12 @@ func TestParseChecks_FailurePath(t *testing.T) {
 		{
 			name:    "unknown kind",
 			sql:     `-- +ptah check kind=rounded name="x" assert="SELECT 1"` + "\nSELECT 1;\n",
-			wantErr: `unsupported \+ptah check kind="rounded" \(want rounded-values\)`,
+			wantErr: `unsupported \+ptah check kind="rounded" \(want rounded-values or time-zone-loss\)`,
 		},
 		{
 			name:    "empty kind",
 			sql:     `-- +ptah check kind="" name="x" assert="SELECT 1"` + "\nSELECT 1;\n",
-			wantErr: `unsupported \+ptah check kind="" \(want rounded-values\)`,
+			wantErr: `unsupported \+ptah check kind="" \(want rounded-values or time-zone-loss\)`,
 		},
 		{
 			name:    "rounded values after the body",

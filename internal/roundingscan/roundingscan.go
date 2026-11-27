@@ -11,6 +11,10 @@
 // value whose extra digits are all zero is not counted, and an empty table is
 // never refused. A value the declared type cannot hold at all is refused too,
 // with the server's error.
+//
+// A temporal conversion that removes a time zone or offset is also checked.
+// It counts every non-NULL value rather than comparing casts: retaining the
+// clock time does not retain the source offset or an unambiguous instant.
 package roundingscan
 
 import (
@@ -37,8 +41,8 @@ import (
 	"ptah.run/internal/typechange"
 )
 
-// Change is one column type change that keeps fewer digits after the point,
-// on an engine whose descriptor states how to read the values it would change.
+// Change is one column conversion that loses fractional digits or a time zone,
+// on an engine whose descriptor supports reading the values it would change.
 type Change struct {
 	// Table is the column's table, as the comparison names it.
 	Table string
@@ -52,11 +56,19 @@ type Change struct {
 	Temporal bool
 }
 
+// DropsTimeZone reports whether this conversion removes an offset or an
+// unambiguous instant. The type pair carries that fact through saved plans;
+// no editable classification can disagree with the types the plan applies.
+func (c Change) DropsTimeZone() bool {
+	return typechange.DropsTimeZone(c.HeldType, c.DeclaredType)
+}
+
 // Changes lists the column type changes of diff that keep fewer digits after
 // the point and whose values the descriptor of dialect states a condition
 // for, in the order the comparison lists the tables and each table's columns.
 // A change on an engine that refuses the conversion itself, or that does not
 // enforce a declared size, is left out. A nil diff holds none.
+// A temporal change removing a zone is included regardless of its digits.
 func Changes(diff *difftypes.SchemaDiff, dialect string) []Change {
 	if diff == nil {
 		return nil
@@ -120,6 +132,7 @@ func spelling(typ string) (string, error) {
 // descriptor states a condition for the kind of type, and the held type under the
 // declared one keeps fewer digits after the point, of the kind change says. A
 // plan file's records are read through it before anything reaches a database.
+// Removing a time zone also qualifies, with Temporal set, regardless of digits.
 func Check(dialect string, change Change) error {
 	if strings.TrimSpace(change.Table) == "" || strings.TrimSpace(change.Column) == "" {
 		return errors.New("it names no table or column")
@@ -140,6 +153,9 @@ func Check(dialect string, change Change) error {
 		return fmt.Errorf("dialect %q reads no value of such a change", dialect)
 	}
 	rounding, rounds := typechange.EngineOf(described.Comparison).Rounds(held, declared)
+	if typechange.DropsTimeZone(held, declared) && change.Temporal {
+		return nil
+	}
 	if !rounds || rounding.Temporal != change.Temporal {
 		return fmt.Errorf("%s under %s is not a change that keeps fewer digits after the point", held, declared)
 	}
@@ -210,6 +226,9 @@ func Condition(rules descriptor.Rounding, quotedColumn string, change Change) (s
 	declared, err := spelling(change.DeclaredType)
 	if err != nil {
 		return "", err
+	}
+	if change.DropsTimeZone() {
+		return quotedColumn + " IS NOT NULL", nil
 	}
 	cast, err := CastType(rules, declared)
 	if err != nil {
@@ -477,6 +496,7 @@ func refusedValue(change Change, rows int64, unconvertible string) planrefusal.R
 func refusal(refused []planrefusal.RoundedValue, request string) error {
 	described := make([]string, len(refused))
 	rounding := false
+	dropsZone := false
 	for i, value := range refused {
 		name := column(Change{Table: value.Table, Column: value.Column})
 		if value.Unconvertible != "" {
@@ -489,6 +509,12 @@ func refusal(refused []planrefusal.RoundedValue, request string) error {
 		if value.Rows == 1 {
 			noun = "row holds a value"
 		}
+		if typechange.DropsTimeZone(value.HeldType, value.DeclaredType) {
+			dropsZone = true
+			described[i] = fmt.Sprintf("%s from %s to %s, where %d %s whose time zone or offset the new type removes",
+				name, value.HeldType, value.DeclaredType, value.Rows, noun)
+			continue
+		}
 		described[i] = fmt.Sprintf("%s from %s to %s, where %d %s with more digits, which the server rounds or cuts "+
 			"without an error", name, value.HeldType, value.DeclaredType, value.Rows, noun)
 	}
@@ -496,7 +522,15 @@ func refusal(refused []planrefusal.RoundedValue, request string) error {
 	if rounding && request != "" {
 		how += ", or ask for the change with " + request
 	}
-	return errors.New("refusing a type change that keeps fewer digits after the point while the table holds values it " +
+	loss := "keeps fewer digits after the point"
+	if dropsZone {
+		loss = "removes a time zone or offset"
+		how = "keep a zoned type or explicitly convert the values in a reviewed migration"
+		if request != "" {
+			how += ", or ask for the change with " + request
+		}
+	}
+	return errors.New("refusing a type change that " + loss + " while the table holds values it " +
 		"would change: " + strings.Join(described, "; ") + ". Nothing was changed; " + how)
 }
 
@@ -505,10 +539,16 @@ func refusal(refused []planrefusal.RoundedValue, request string) error {
 func Warn(ctx context.Context, changes []Change) {
 	for _, change := range changes {
 		name := column(change)
+		loss := "keeps fewer digits after the point"
+		result := "rounds or cuts each value to the new digits"
+		if change.DropsTimeZone() {
+			loss = "removes a time zone or offset"
+			result = "removes the zone or offset from every non-NULL value"
+		}
 		_ = rundiag.Warn(ctx, rundiag.Stream(ctx), rundiag.UnscannedRoundings, rundiag.Record{
 			Key: name,
-			Line: fmt.Sprintf("%s changes from %s to %s, which keeps fewer digits after the point, without a scan of the values "+
-				"the table holds: the server rounds or cuts each value to the new digits", name, change.HeldType, change.DeclaredType),
+			Line: fmt.Sprintf("%s changes from %s to %s, which %s, without a scan of the values "+
+				"the table holds: the server %s", name, change.HeldType, change.DeclaredType, loss, result),
 			Attrs: []slog.Attr{slog.String("column", name)},
 		})
 	}

@@ -30,15 +30,20 @@ Keys:
 | `name` | no | A label for the check, shown in error output. |
 | `on_fail` | no | What to do when the assertion is not satisfied. Only `abort` is supported; it is the default. |
 | `phase` | no | When the predicate is evaluated: `before` the body (the default) or `after` it. |
-| `kind` | no | `rounded-values`, or no `kind` for an ordinary check. Any other value is refused. |
+| `kind` | no | `rounded-values`, `time-zone-loss`, or no `kind` for an ordinary check. Any other value is refused. |
 
 - `kind=rounded-values` is the check `ptah migrations generate` writes in each
   direction whose column type change keeps fewer digits after the point. A run
   asked to round the values (`--allow-value-rounding` on `ptah migrations up` or
   `ptah migrations down`, `PTAH_ALLOW_VALUE_ROUNDING=1` on `ptah-compat migrate apply`
-  or `ptah-compat migrate down`) skips this kind
-  alone and warns once for each check skipped; `--skip-checks` skips it with
+  or `ptah-compat migrate down`) skips this kind and `time-zone-loss`
+  and warns once for each check skipped; `--skip-checks` skips it with
   every other check and warns the same way. The kind refuses `phase=after`.
+- `kind=time-zone-loss` requires a column losing its time zone or offset to
+  hold no non-NULL value, even when fractional precision stays unchanged.
+  Generated down files carry it when their up files add a zone. The same
+  explicit opt-in permits this information loss, with a warning naming it.
+  This kind also refuses `phase=after`.
 - `assert` is a single top-level `SELECT` returning exactly one column and one
   row. A boolean result uses its value; a number passes when non-zero; a
   text/`bytea` result accepts the common

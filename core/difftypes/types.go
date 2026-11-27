@@ -2061,8 +2061,9 @@ func (d *TableDiff) HasChanges() bool {
 		len(d.FeatureChanges) > 0)
 }
 
-// Rounding is a column type change that keeps fewer digits after the point
-// than the type the column holds; see [ColumnDiff.Rounding].
+// Rounding describes a column conversion that can lose fractional digits or
+// remove a time zone or offset; see [ColumnDiff.Rounding]. The type pair
+// identifies the loss, including when fractional precision stays unchanged.
 type Rounding struct {
 	// Temporal reports a temporal type. False reports a decimal, under a
 	// decimal or an integer.
@@ -2126,20 +2127,18 @@ type ColumnDiff struct {
 	// displayed transition only when no such answer is available.
 	PreviousType string `json:"previous_type,omitempty"`
 
-	// Rounding is set when the column's new type keeps fewer digits after the
-	// point than the type it holds, as the engine reads the two: a decimal
-	// with a lower scale, a decimal under an integer, or a temporal type of
-	// the same kind with a lower fractional-second precision or, for an
-	// interval, a coarser last field. Converting the column stores each value
-	// at the new type's digits, and most servers round or cut the value
-	// without an error. It is nil for every other change, an array included,
-	// and where the comparison cannot read the digits of both types.
+	// Rounding is set when the column's new type keeps fewer fractional digits
+	// or removes a time zone or offset. Fractional loss includes a lower
+	// decimal scale, a decimal under an integer, lower fractional-second
+	// precision and an interval ending at a coarser field. A zone-free type
+	// loses an offset or the unambiguous instant a zoned type holds even when
+	// its digits fit. It is nil for other changes and arrays.
 	Rounding *Rounding `json:"rounding,omitempty"`
 
 	// ReverseRounding describes the same conversion in the rollback direction
-	// when it keeps fewer digits after the point. A widening can have no
-	// Rounding and still need this check once the column holds new values.
-	// It is nil when the comparison finds no rounding in that direction.
+	// when it loses fractional digits or removes a time zone or offset. A
+	// widening or adding a zone can have no Rounding and still need this check
+	// once the column holds new values. It is nil when neither loss applies.
 	ReverseRounding *Rounding `json:"reverse_rounding,omitempty"`
 
 	// CharsetChange carries the change of the column's character set that a

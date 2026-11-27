@@ -1691,11 +1691,12 @@ func typeChangeRounding(change, dbRawType, renderedType, dialect string) (forwar
 
 func roundingForTypes(before, after, dialect string) *difftypes.Rounding {
 	rounding, rounds := typeEngineOf(dialect).Rounds(before, after)
-	if !rounds {
+	dropsZone := typechange.DropsTimeZone(before, after)
+	if !rounds && !dropsZone {
 		return nil
 	}
 	return &difftypes.Rounding{
-		Temporal:     rounding.Temporal,
+		Temporal:     rounding.Temporal || dropsZone,
 		HeldType:     strings.TrimSpace(before),
 		DeclaredType: strings.TrimSpace(after),
 	}

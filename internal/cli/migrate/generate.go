@@ -102,9 +102,11 @@ A column type change that keeps fewer digits after the point, such as a lower
 decimal scale or fractional-second precision, is refused while a row of the
 database the plan reads holds a value the server would round or cut. The up
 file then carries a "-- +ptah check kind=rounded-values" for each such column,
-which migrations up evaluates on the database the file runs on.
+which migrations up evaluates on the database the file runs on. Removing a
+time zone or offset is likewise refused while the column holds a non-NULL
+value, with a check of kind time-zone-loss in each affected direction.
 --allow-value-rounding writes the file without reading the rows, and with a
-note in place of each check.`,
+note in place of each check; it permits both rounding and time-zone loss.`,
 		RunE: migrateGenerateCommand,
 	}
 

@@ -454,6 +454,23 @@ whose conversion keeps fewer digits carries a check of kind `rounded-values`.
 The apply or rollback evaluates it on the database the file runs on; see
 [a check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
 
+Removing a time zone or offset is also refused while the column holds a non-NULL
+value, even when both types keep the same fractional digits. This covers scalar
+`timetz` or `timestamptz` becoming a zone-free temporal type on PostgreSQL,
+CockroachDB and YugabyteDB, and SQL Server `datetimeoffset` becoming a zone-free
+temporal type. Empty columns and columns holding only NULL can be converted.
+Adding a zone and retaining the same zoned type do not trigger this refusal.
+
+A `timetz` or `datetimeoffset` conversion discards the stored offset. PostgreSQL
+and YugabyteDB convert `timestamptz` in the session's time zone; distinct instants
+can become the same local time when clocks move back. CockroachDB converts that
+type in UTC. The refusal counts every non-NULL value because the target type
+cannot retain its zone information. To permit this loss, explicitly pass
+`--allow-value-rounding`, or set `PTAH_ALLOW_VALUE_ROUNDING=1` on the compatibility
+surface. The warning names time-zone loss, even when no digits are rounded.
+Generated migrations use `kind=time-zone-loss`, including in the down file when
+the up file adds a zone. Saved plans carry the type pair and scan again on apply.
+
 `ptah schema apply` shows this rating beside its confirmation prompt. With
 `--auto-approve` there is no prompt and no rating, so read the plan to see one. Plan
 with `ptah schema plan`, review the file, and run it with `ptah schema apply --plan`.
@@ -760,9 +777,9 @@ A provider-native operation without SQL cannot establish the target type for a
 rounding record and is refused if paired with one. Provider operations without
 rounding records get no such scan (stokaro/ptah#6672).
 
-The scan checks fractional digits. It does not cover every change in value,
-including a decimal converted to floating point, a timestamp converted to a date,
-or a time zone discarded without reducing precision (stokaro/ptah#6672).
+The scan checks fractional digits and scalar time-zone removal. It does not
+cover every change in value, including a decimal converted to floating point,
+a zone-free timestamp converted to a date, or array elements (stokaro/ptah#6672).
 The scan also holds no table lock through the `ALTER`, so a concurrent write after
 the final scan can still introduce a value the conversion changes. Stop writes
 for the scan and apply when preserving every stored value is required.

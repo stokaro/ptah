@@ -402,12 +402,10 @@ func postgresAtlasColumnTypes() []string {
 // infinity for infinity. A decimal is compared as an unlimited numeric, since money
 // has no comparison with numeric. A serial is not a type CAST takes.
 //
-// A temporal value is compared in the declared type with no precision: a timetz or a
-// timestamptz under a time or a timestamp compares the time of day the new column
-// keeps. Compared with the column itself, the new value is read back in the session's
-// time zone, so `10:00:00+02` under time(0) and the repeated hour of a DST change
-// under timestamp(0) count as changed with no digit lost. An interval compares as an
-// interval with no field, so a coarser last field reads as a change.
+// Temporal precision is compared in the declared type with no precision.
+// An interval compares with no field limit, so a coarser last field reads as
+// a change. A conversion removing a zone is checked separately by counting
+// non-NULL values: a clock time does not preserve its offset or instant.
 var postgresFamilyRounding = descriptor.Rounding{
 	Decimal:  "CAST({column} AS numeric) IS DISTINCT FROM CAST({column} AS {type})",
 	Temporal: "CAST({column} AS {domain}) IS DISTINCT FROM CAST({column} AS {type})",

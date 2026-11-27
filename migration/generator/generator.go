@@ -277,6 +277,8 @@ type DiffPolicy struct {
 	// whose descriptor states no condition for the
 	// values, such as SQLite or Oracle, plans and writes as it would without
 	// this.
+	// Removing a time zone or offset is guarded in the same directions by
+	// [migrator.CheckKindTimeZoneLoss]; this request permits that loss too.
 	AllowValueRounding bool
 	// ValueRoundingRequest is how the caller asks for AllowValueRounding,
 	// which a refusal names. Empty names no way to ask.

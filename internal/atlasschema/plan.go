@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemafingerprint"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlsafety"
 	"ptah.run/internal/txrequire"
@@ -149,9 +150,9 @@ type PlanFile struct {
 	// exactly as it did before.
 	ManagedRows     []PlanRowSet `json:"managed_rows,omitempty"`
 	RowsFingerprint string       `json:"rows_fingerprint,omitempty"`
-	// Roundings are the column type changes of the plan that keep fewer digits
-	// after the point, whose rows the planning read and found no value the
-	// change would round or cut. [VerifyPlanTarget] reads them again, and
+	// Roundings are the column type changes that lose fractional digits or
+	// remove a time zone or offset, whose rows planning read and found no value
+	// the change would affect. [VerifyPlanTarget] reads them again, and
 	// refuses the plan while a row has come to hold such a value. A plan
 	// computed with the request to round values records none. That read runs
 	// before the plan is approved, so [ReadPlanFile] refuses a record the
@@ -1107,6 +1108,8 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // sql_mode. The schema is read at the plan's
 // [PlanFile.Schemas] when it records a selection, and otherwise at the
 // connection URL's scope together with the plan's [PlanFile.SchemasBeyondURL].
+// A drop of a database now holding an excluded object is refused even when
+// the filtered fingerprint is unchanged.
 // A fingerprint mismatch returns *StalePlanError.
 func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile, runtime PlanTargetRuntime) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
@@ -1130,6 +1133,9 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 
 	current, err := planTargetState(ctx, conn, recordedReadScope(plan), plan.Exclude, runtime)
 	if err != nil {
+		return err
+	}
+	if err := schemaremoval.RefuseStatements(plan.StatementSQL(), current.SchemaRemovalBlockers, conn.Info()); err != nil {
 		return err
 	}
 	fingerprint, err := planSourceFingerprint(ctx, current, conn.Info(), plan.Statements, runtime)
@@ -1292,7 +1298,8 @@ type PlanRounding struct {
 	Column string `json:"column"`
 	// HeldType is the type the database held, as its catalog spells it, and
 	// DeclaredType the type the plan converts the column to, as the plan's
-	// statement spells it. The scan converts each value to DeclaredType.
+	// statement spells it. A fractional scan converts each value to DeclaredType;
+	// a time-zone-loss scan counts non-NULL values without converting them.
 	HeldType     string `json:"held_type"`
 	DeclaredType string `json:"declared_type"`
 	// Temporal reports a temporal type; false reports a decimal.

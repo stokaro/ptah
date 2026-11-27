@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlsystemdb"
+	"ptah.run/internal/schemaremoval"
 )
 
 // ServerSchemas records on diff the databases a comparison of a whole MySQL or
@@ -35,12 +36,17 @@ import (
 // reader leaves them out and a declaration of one would plan a CREATE for a
 // database that exists. Names are compared the way the server compares table
 // names, which is how it compares database names too.
+//
+// removalBlockers names a resource outside the selection for each protected
+// database. Removing such a database returns an error instead of a drop. A
+// nil map leaves every database eligible for removal.
 func ServerSchemas(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 	current []catalog.Schema,
 	semantics identifier.Semantics,
-) {
+	removalBlockers map[string]string,
+) error {
 	held := make(map[string]catalog.Schema, len(current))
 	for _, schema := range current {
 		held[semantics.TableIdentityKey(schema.Name)] = schema
@@ -68,12 +74,16 @@ func ServerSchemas(
 	}
 	for _, schema := range current {
 		if _, kept := declared[semantics.TableIdentityKey(schema.Name)]; !kept {
+			if err := schemaremoval.Refuse(schema.Name, removalBlockers); err != nil {
+				return err
+			}
 			diff.SchemasRemoved = append(diff.SchemasRemoved, schema.Name)
 		}
 	}
 	slices.SortFunc(diff.SchemasAdded, func(a, b schemamodel.Schema) int { return cmp.Compare(a.Name, b.Name) })
 	slices.SortFunc(diff.SchemasModified, func(a, b difftypes.SchemaChange) int { return cmp.Compare(a.Name, b.Name) })
 	slices.Sort(diff.SchemasRemoved)
+	return nil
 }
 
 // serverDatabasesOf is the databases desired declares, in declaration order:

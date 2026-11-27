@@ -30,10 +30,9 @@ var quotedColumn = map[string]string{
 
 // TestCondition_HappyPath renders the condition each engine's descriptor states: the
 // server's own CAST to the declared type, spelled as that CAST takes it. PostgreSQL
-// compares a decimal as an unlimited numeric, and a temporal value in the declared type
-// with no precision, so a dropped time zone compares the time of day the new column
-// keeps. SQL Server compares a temporal value at seven digits in the declared type's
-// family, and ClickHouse lets the CAST read a NULL.
+// compares a decimal as an unlimited numeric and temporal precision in the declared
+// type's domain. A removed zone instead counts every non-NULL value. SQL Server
+// compares precision at seven digits, and ClickHouse lets the CAST read a NULL.
 func TestCondition_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -55,7 +54,7 @@ func TestCondition_HappyPath(t *testing.T) {
 			`CAST("c" AS interval) IS DISTINCT FROM CAST("c" AS interval day to second(0))`},
 		{"PostgreSQL a time zone dropped", "postgres",
 			roundingscan.Change{HeldType: "timestamptz", DeclaredType: "timestamp(0)", Temporal: true},
-			`CAST("c" AS timestamp) IS DISTINCT FROM CAST("c" AS timestamp(0))`},
+			`"c" IS NOT NULL`},
 		{"PostgreSQL a precision before the time zone", "postgres",
 			roundingscan.Change{HeldType: "timestamp(6) with time zone", DeclaredType: "timestamp(3) with time zone", Temporal: true},
 			`CAST("c" AS timestamp with time zone) IS DISTINCT FROM CAST("c" AS timestamp(3) with time zone)`},
@@ -67,7 +66,7 @@ func TestCondition_HappyPath(t *testing.T) {
 			`CAST("c" AS timestamp) IS DISTINCT FROM CAST("c" AS timestamp(0))`},
 		{"CockroachDB a time zone dropped", "cockroachdb",
 			roundingscan.Change{HeldType: "timetz", DeclaredType: "TIME(0)", Temporal: true},
-			`CAST("c" AS TIME) IS DISTINCT FROM CAST("c" AS TIME(0))`},
+			`"c" IS NOT NULL`},
 		{"YugabyteDB an integer", "yugabytedb",
 			roundingscan.Change{HeldType: "numeric(8,3)", DeclaredType: "integer"},
 			`CAST("c" AS numeric) IS DISTINCT FROM CAST("c" AS integer)`},
@@ -97,7 +96,7 @@ func TestCondition_HappyPath(t *testing.T) {
 			"CAST([c] AS datetime2(7)) <> CAST(CAST([c] AS SMALLDATETIME) AS datetime2(7))"},
 		{"SQL Server an offset dropped", "sqlserver",
 			roundingscan.Change{HeldType: "DATETIMEOFFSET", DeclaredType: "DATETIME2(0)", Temporal: true},
-			"CAST([c] AS datetime2(7)) <> CAST(CAST([c] AS DATETIME2(0)) AS datetime2(7))"},
+			"[c] IS NOT NULL"},
 		{"SQL Server an offset kept", "sqlserver",
 			roundingscan.Change{HeldType: "DATETIMEOFFSET", DeclaredType: "DATETIMEOFFSET(3)", Temporal: true},
 			"CAST([c] AS datetimeoffset(7)) <> CAST(CAST([c] AS DATETIMEOFFSET(3)) AS datetimeoffset(7))"},

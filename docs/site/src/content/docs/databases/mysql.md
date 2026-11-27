@@ -1497,6 +1497,15 @@ The role's exact name is kept, including an `@`, apostrophe or backslash.
 This applies to database, table and column privileges and grants on database
 name patterns.
 
+Database, table and column grants to a login on host `%` are read and compared
+too, without declaring or managing the login as a role. A generated migration
+adds only the privileges the login lacks, so its down file leaves preexisting
+grants and their grant option in place. On MariaDB a bare grantee names a role
+when that role exists and the login on `%` otherwise; the login's grants
+never count as the role's.
+Declarative grants name a bare principal. Grants to accounts on other hosts
+remain separate and are not described under that bare name.
+
 The role reader applies the same rule to roles and memberships. A role is the
 account `CREATE ROLE` makes: on MySQL an account on host `%` that cannot log
 in, and on MariaDB an account marked as a role, which has no host. A MySQL
@@ -1930,6 +1939,19 @@ if no exclusion named it, as they do with every exclusion that matches nothing.
 Write the pattern as the server spells the database. Where no connection says
 how the server compares names, as in a `schema diff` between two files, a
 selection whose two sides spell a database in two cases is refused.
+
+A database that holds an excluded object cannot be dropped. For example,
+`--exclude app.t` keeps `app.t` even when the desired schema declares no
+`app`: the comparison refuses the database drop and names the object it would
+remove. Keep `app` in the desired schema to remove its other tables, or exclude
+the whole database to leave all of it unchanged. This rule covers schema apply,
+schema diff and migration planning and generation in both binaries. A selector
+that leaves an entire object kind unread also blocks a database drop, because
+the read cannot establish that the database holds none of those objects.
+Applying a saved JSON plan checks this protection again. An excluded object
+created after planning still blocks a drop of its database, even when the
+filtered schema fingerprint is unchanged. Changes to excluded objects do not
+block a saved plan that leaves their database intact.
 
 A plan that creates a database and drops another whose name differs from it
 only in case is refused, unless the comparison that produced it read a server

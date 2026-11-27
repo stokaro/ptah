@@ -153,12 +153,26 @@ func atoiOr(text string, fallback int) int {
 	return value
 }
 
-// holdsOffset reports a type whose values keep the zone offset they were written with.
-// PostgreSQL's timestamptz is not one: it stores the instant, and a change to timestamp
-// reinterprets it without dropping anything stored. Oracle's TIMESTAMP WITH TIME ZONE
-// keeps an offset, and the server refuses to change it while a row exists (ORA-01439).
-func (t temporalType) holdsOffset() bool {
-	return t.name == "timetz" || t.name == "datetimeoffset"
+// holdsTimeZone reports a type that holds an offset or an unambiguous instant.
+// PostgreSQL's timestamptz stores the instant rather than the input offset;
+// converting it to local time can merge distinct instants during a DST overlap.
+func (t temporalType) holdsTimeZone() bool {
+	return t.name == "timetz" || t.name == "timestamptz" || t.name == "datetimeoffset"
+}
+
+// DropsTimeZone reports a scalar temporal conversion that removes a stored
+// offset or turns an unambiguous instant into a local date or time. It reads
+// both type spellings, including SQL's WITH TIME ZONE form, and ignores their
+// fractional precision. Arrays, unknown types, unchanged zoned types and a
+// conversion that adds a zone report false.
+//
+// Comparison, value scans and migration checks share this recognition so a
+// conversion is classified the same way when planned, saved and executed.
+func DropsTimeZone(oldType, newType string) bool {
+	old, oldOK := parseTemporal(oldType)
+	updated, newOK := parseTemporal(newType)
+	return oldOK && newOK && !old.array && !updated.array && old.holdsTimeZone() && !updated.holdsTimeZone() &&
+		updated.family != familyInterval
 }
 
 // resolvedDigits is how many fractional-second digits a value of the type holds, and
@@ -214,7 +228,7 @@ func temporalNarrows(old, updated temporalType, engine *Engine) bool {
 			return true
 		}
 	}
-	if old.holdsOffset() && !updated.holdsOffset() {
+	if old.holdsTimeZone() && !updated.holdsTimeZone() {
 		return true
 	}
 	if temporalRangeRank[updated.name] < temporalRangeRank[old.name] {
