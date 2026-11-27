@@ -292,7 +292,9 @@ ptah schema security --db-url "$DATABASE_URL" --reach-error 75
 ```
 
 A role that reaches no more than `PUBLIC` does is not reported, because the
-`PUBLIC` finding already names that reach. In `--format json`,
+`PUBLIC` finding already names that reach. On MariaDB a role may be granted to
+`PUBLIC`, and `PUBLIC` then reaches what that role reaches, and so does every
+other role. In `--format json`,
 `detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
 the reach passes through under `through`, and under `sources` the access a
 revoke on a relation does not narrow, such as `superuser held by ptah`,

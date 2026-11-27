@@ -140,9 +140,9 @@ func (d *databaseRows) patternGrants(databases []string) []catalog.WideGrant {
 // [catalog.Database.SchemaGrantsInWideAccess] tells the security analysis to
 // leave the grants on the database out.
 //
-// Each role in roles and each role holding a row is a subject, and its
-// session holds its own rows and those of every role it inherits through
-// memberships. That is the session with the subject active, which MariaDB
+// Each role in roles, each role holding a row and PUBLIC where a role is
+// granted to it are subjects, and a subject's session holds its own rows and
+// those of every role it inherits through memberships. That is the session with the subject active, which MariaDB
 // looks up alone and ORs with PUBLIC's, itself a subject. On MySQL the
 // session's account and any other active role add their rows to the same
 // lookup, and those may shadow the row or be applied instead; the account's
@@ -161,6 +161,11 @@ func (d *databaseRows) databaseAccess(databases []string, roles []catalog.Role, 
 	subjects := slices.Collect(maps.Keys(d.held))
 	for _, role := range roles {
 		subjects = append(subjects, role.Name)
+	}
+	// PUBLIC is no described role, and it holds the rows of the roles granted
+	// to it even where it holds none of its own.
+	if slices.ContainsFunc(memberships, func(membership catalog.RoleMembership) bool { return membership.Member == publicGrantee }) {
+		subjects = append(subjects, publicGrantee)
 	}
 	slices.Sort(subjects)
 	access := make([]catalog.WideAccess, 0)

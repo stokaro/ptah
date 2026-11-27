@@ -1452,6 +1452,13 @@ MySQL role on another host, the privileges that second role passes on were not
 read, and `ptah schema security` reports the reach rules skipped rather than
 measure the member short.
 
+On MariaDB, `PUBLIC` is the grantee every account holds, and a role granted to
+it is held by every account too. A grant to `PUBLIC` leaves a `PUBLIC` row in
+the account tables, and the row stays after the grant is revoked. Ptah never
+reads that row as a role, since `CREATE ROLE PUBLIC` is refused with ERROR
+1959, so `ptah db read` and `ptah migrations checkpoint` print the grants to
+`PUBLIC` and no `CREATE ROLE` for it.
+
 MySQL role and grantee names with leading or trailing white space are refused
 before a schema is compared or rendered. MySQL normalizes this white space in
 principal references, so use the unpadded name stored by the server. The same

@@ -218,3 +218,23 @@ func TestReadConnectedRole(t *testing.T) {
 		})
 	}
 }
+
+// TestWithoutPublic leaves MariaDB's PUBLIC row out of the described roles,
+// since CREATE ROLE PUBLIC is refused there, and keeps a MySQL role of that
+// name.
+func TestWithoutPublic(t *testing.T) {
+	tests := []struct {
+		name    string
+		mariaDB bool
+		want    []catalog.Role
+	}{
+		{name: "MariaDB", mariaDB: true, want: []catalog.Role{{Name: "reader"}}},
+		{name: "MySQL", mariaDB: false, want: []catalog.Role{{Name: "PUBLIC"}, {Name: "reader"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(withoutPublic([]catalog.Role{{Name: "PUBLIC"}, {Name: "reader"}}, test.mariaDB), qt.DeepEquals, test.want)
+		})
+	}
+}

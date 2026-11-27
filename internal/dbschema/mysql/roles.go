@@ -258,6 +258,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
+	roles = withoutPublic(roles, account.mariaDB)
 	schema.Roles = roles
 	names := &mysqlgrants.Names{MariaDB: account.mariaDB}
 	for _, role := range roles {
@@ -340,6 +341,18 @@ func inheritsUnread(roles []catalog.Role, memberships []catalog.RoleMembership) 
 // publicGrantee is the grantee MariaDB names PUBLIC, whose privileges every
 // account holds. MySQL has none.
 const publicGrantee = "PUBLIC"
+
+// withoutPublic leaves MariaDB's PUBLIC out of the roles a read describes.
+// MariaDB keeps PUBLIC as a role row once something is granted to it, and the
+// row stays after the grant is revoked. It is the grantee every account
+// holds, not a role a statement can create: CREATE ROLE PUBLIC is Error 1959
+// on MariaDB 11.8.9 and 12.3.3, so a role read of it is a checkpoint that
+// cannot be applied, and a role with no members to the security analysis.
+// Its grants and memberships are still read, as every account's. On MySQL a
+// role may be named PUBLIC, and it is a role like any other.
+func withoutPublic(roles []catalog.Role, mariaDB bool) []catalog.Role {
+	return slices.DeleteFunc(roles, func(role catalog.Role) bool { return mariaDB && role.Name == publicGrantee })
+}
 
 // wideAccessOf is the access to the rows of every table that the grants on
 // every database and the grants on a database name pattern give, which the
@@ -435,7 +448,7 @@ type globalTablePrivilege struct {
 // The columns of mysql.user are read rather than
 // information_schema.USER_PRIVILEGES, which on MariaDB lists no role.
 // Measured on MariaDB 10.11.19 and 11.8.9, a role holding `SELECT ON *.*` has
-// no row there and Select_priv = 'Y' in mysql.user. PUBLIC is a role on
+// no row there and Select_priv = 'Y' in mysql.user. PUBLIC is a role row on
 // MariaDB, so a grant to it is read as well. Delete_history_priv, which MySQL
 // lacks, is left out where the server has none. Where any other column is
 // missing the account sees only part of mysql.user, and the read returns nil:
