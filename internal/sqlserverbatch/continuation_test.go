@@ -132,7 +132,11 @@ func TestRead_EndsAStatementRightAfterEachContinuation(t *testing.T) {
 		{
 			name: "a view that CREATE SCHEMA creates",
 			text: "CREATE SCHEMA s9 CREATE VIEW v9 AS SELECT 1 AS a GRANT SELECT ON v9 TO public",
-			want: []string{"simple: CREATE SCHEMA s9", "simple: CREATE VIEW v9 AS SELECT 1 AS a", "simple: GRANT SELECT ON v9 TO public"},
+			want: []string{
+				"schema: CREATE SCHEMA s9 CREATE VIEW v9 AS SELECT 1 AS a GRANT SELECT ON v9 TO public",
+				"  simple: CREATE VIEW v9 AS SELECT 1 AS a",
+				"  simple: GRANT SELECT ON v9 TO public",
+			},
 		},
 	}
 	for _, test := range tests {

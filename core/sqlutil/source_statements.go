@@ -8,6 +8,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlcompound"
+	"ptah.run/internal/sqlserverbatch"
 )
 
 // SourceStatement is one statement as it was written, rather than as an
@@ -41,9 +42,20 @@ type SourceStatement struct {
 // statement written with the semicolon flush against it. Anything that hashes
 // statement text needs to tell those apart, because the two spell different
 // bytes and therefore different digests.
+//
+// The statements are cut where [SplitSQLStatementsForDialect] cuts them, and
+// a piece with nothing but comments in it is left out. On SQL Server that
+// includes the GO lines: a GO line belongs to no statement, the statements of
+// a batch GO repeats come back once per run, and those of a batch GO 0
+// discards do not come back. A SQL Server piece that a statement opening its
+// batch ends, with no semicolon before it, is not Terminated.
 func SplitSourceStatements(sql, dialect string) []SourceStatement {
 	if strings.TrimSpace(sql) == "" {
 		return nil
+	}
+	if sqlserverbatch.Reads(dialect) {
+		_, statements := splitTransactSQL(sql, lexicalDialect(dialect), capability.Capabilities{})
+		return statements
 	}
 
 	normalized, origins := clientDelimitersFor(sql, dialect, capability.Capabilities{})

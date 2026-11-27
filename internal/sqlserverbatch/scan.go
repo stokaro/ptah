@@ -2,6 +2,8 @@ package sqlserverbatch
 
 import (
 	"slices"
+
+	"ptah.run/internal/lexer"
 )
 
 // scan follows one simple statement while [parser.simple] reads it, holding
@@ -251,6 +253,7 @@ var servedWords = []string{"DELETE", "INSERT", "MERGE", "SELECT", "UPDATE"}
 // finish returns the statement read from its start to the token at last.
 func (s *scan) finish(last int) Statement {
 	statement := s.p.span(s.kind, s.start, last)
+	statement.KeepsSemicolon = s.merge && s.p.tokens[last].Type == lexer.TokenSemicolon
 	if s.execute < 0 {
 		return statement
 	}

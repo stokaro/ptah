@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/lexerext"
 	"ptah.run/internal/sqlbatch"
 	"ptah.run/internal/sqlcompound"
+	"ptah.run/internal/sqlserverbatch"
 )
 
 // StripComments removes all SQL comments from the input string, scanning it as
@@ -115,6 +116,19 @@ func SplitSQLStatements(sql string) []string {
 // additionally split on the GO batch separator: a GO alone on its line ends the
 // batch, an optional trailing count makes the batch come back that many times,
 // and GO 0 discards the pending batch, matching SQL Server client tooling.
+// Inside a batch, a SQL Server script is cut at the semicolon after a
+// statement, where the server ends the statement, and never inside one: a
+// BEGIN ... END block, a BEGIN TRY block with its CATCH block, and an IF or a
+// WHILE with the statements it runs are one statement each, semicolons inside
+// them included. A MERGE keeps the semicolon that ends it, which the server
+// requires. Statements with no semicolon between them, such as `DECLARE @n int
+// = 1 SELECT @n`, stay in one piece, so a variable stays in scope. The body of
+// CREATE PROCEDURE, FUNCTION, TRIGGER or VIEW, and the elements of CREATE
+// SCHEMA, start a piece, since each must open its batch, and end at the END
+// that closes a body opened by BEGIN, otherwise at the first semicolon outside
+// a body, or at the end of the batch; the text after it is cut as a batch of
+// its own. A batch whose statement boundaries Ptah cannot read is cut at each
+// semicolon outside such a body.
 // MySQL, MariaDB and ClickHouse string literals are scanned with C-style
 // backslash escapes, so a semicolon behind a backslash-escaped quote cannot
 // leak out as a statement boundary. And compound routine bodies are recognized
@@ -152,6 +166,10 @@ func SplitSQLStatementsForSession(sql, dialect string, caps capability.Capabilit
 func splitSQLStatements(sql, dialect string, caps capability.Capabilities) []string {
 	if strings.TrimSpace(sql) == "" {
 		return make([]string, 0)
+	}
+	if sqlserverbatch.Reads(dialect) {
+		statements, _ := splitTransactSQL(sql, dialect, caps)
+		return statements
 	}
 
 	sql = normalizeClientDelimitersFor(sql, dialect, caps)
