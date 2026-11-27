@@ -650,6 +650,13 @@ holding the second body, and a call with the first one's arguments fails with
 `PLS-00306`. A function and a procedure of one name are left to the server,
 which refuses the second with `ORA-00955` and keeps the first.
 
+A body change to a function or procedure uses `CREATE OR REPLACE` without a
+preceding `DROP`. Both migration directions keep the routine's object grants,
+including grants to undeclared users and roles and a user's `WITH GRANT
+OPTION`. This also works for an ordinary owner without access to `DBA_ROLES`:
+the replacement preserves the grants in the database without reading and
+granting them again. Explicit changes to privileges still apply.
+
 The semicolon that closes a PL/SQL block belongs to the block, not the client,
 so Oracle's own tooling ends one with a `/` on the next line.
 A `CREATE` handed to the server without it returns **no error at all** and
@@ -672,19 +679,9 @@ creates therefore has no statement, which would fail after the `CREATE TABLE`
 has run.
 
 A plan that drops a table, a view, a sequence or a routine revokes nothing on
-it, and neither does one that replaces a changed routine with `DROP` and
-`CREATE`. The `DROP` takes every privilege on the object, and a `REVOKE` run
+it. The `DROP` takes every privilege on the object, and a `REVOKE` run
 after it answers `ORA-00942` once the `DROP` has committed. Measured on
 23.26.3.
-
-The `CREATE` of a replaced routine brings back no privilege, so the plan grants
-back, after it, every privilege the read found on the routine and does not
-revoke, a privilege of a grantee the schema does not manage included. A
-privilege a grantee holds `WITH GRANT OPTION` stops that replacement plan,
-because its grant renderer writes no option on Oracle (`ORA-01926` refuses
-one to a role).
-Revoke the privilege and grant it again without the option, or change the
-routine by hand with `CREATE OR REPLACE`, which keeps it.
 
 The rollback of a removed routine restores every object grant the database
 read found on it, including grants to users the schema does not declare.

@@ -1991,9 +1991,6 @@ func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 	}
 	// A nil diff is refused as invalid further on, where every planner refuses it.
 	if diff != nil {
-		if err := p.refuseALostGrantOption(diff); err != nil {
-			return err
-		}
 		if err := p.refuseUnreadRoutinePrivileges(diff); err != nil {
 			return err
 		}

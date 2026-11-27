@@ -94,10 +94,9 @@ func TestSchemaApplyOracleGrantAllOnACollectionFunctionE2E(t *testing.T) {
 	c.Assert(values, qt.Equals, 1)
 }
 
-// A body change to an Oracle routine with a declared grant drops the routine,
-// creates it again and grants back every privilege a grantee held on it: the
-// declared role holds what it held before, and so does the member, a user the
-// schema does not manage. The next plan is empty, and the member calls the
+// A body change to an Oracle routine replaces it in place and keeps every
+// privilege a grantee held on it: the declared role holds what it held before,
+// and so does the member, a user the schema does not manage. The next plan is empty, and the member calls the
 // new body.
 func TestSchemaApplyOracleKeepsTheGrantsOnAReplacedRoutineE2E(t *testing.T) {
 	tests := []struct {
@@ -151,11 +150,9 @@ func TestSchemaApplyOracleKeepsTheGrantsOnAReplacedRoutineE2E(t *testing.T) {
 	}
 }
 
-// A body change to an Oracle routine on which a user holds a privilege WITH
-// GRANT OPTION is refused before any statement runs: the DROP would take the
-// option, and Ptah writes no grant option on Oracle. The routine keeps its body
-// and the user keeps the privilege.
-func TestSchemaApplyOracleRefusesToReplaceARoutineAGrantOptionIsHeldOnE2E(t *testing.T) {
+// A body change keeps a user's WITH GRANT OPTION even when the reader can
+// describe it. The replacement requires neither a DROP nor another GRANT.
+func TestSchemaApplyOracleReplacesARoutineWhileKeepingGrantOptionsE2E(t *testing.T) {
 	c := qt.New(t)
 	account := newOracleRoutineAccount(c)
 	statements := "CREATE ROLE {role};\nGRANT EXECUTE ON rt TO {role};\n"
@@ -163,23 +160,19 @@ func TestSchemaApplyOracleRefusesToReplaceARoutineAGrantOptionIsHeldOnE2E(t *tes
 	c.Assert(created.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", created.Stdout, created.Stderr))
 	_, err := account.owner.ExecContext(c.Context(), "GRANT EXECUTE ON rt TO "+account.user+" WITH GRANT OPTION")
 	c.Assert(err, qt.IsNil)
+	held := removedOracleRoutinePrivileges(c, account.owner)
+	c.Assert(held, qt.Contains, account.user+" EXECUTE YES")
 
-	refused := account.applier(c, `//ptah:schema:procedure name="rt" language="plsql" body="BEGIN RETURN; END;"`, statements)("--auto-approve")
+	replaced := account.applier(c, `//ptah:schema:procedure name="rt" language="plsql" body="BEGIN RETURN; END;"`, statements)("--auto-approve")
 
-	c.Assert(refused.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", refused.Stdout, refused.Stderr))
-	c.Assert(refused.Stderr, qt.Contains, "oracle: cannot replace procedure rt: grantee \""+account.user+"\" holds EXECUTE on it "+
-		"WITH GRANT OPTION, and the DROP that replaces the routine takes the option, which Ptah cannot grant back; "+
-		"revoke the option, or change the routine by hand with CREATE OR REPLACE, which keeps it")
-	var body string
-	c.Assert(account.owner.QueryRowContext(c.Context(),
-		"SELECT LISTAGG(text) WITHIN GROUP (ORDER BY line) FROM user_source WHERE name = 'RT'").Scan(&body), qt.IsNil)
-	c.Assert(body, qt.Contains, "BEGIN NULL; END;")
-	c.Assert(oracleRoutinePrivilegesOf(c, account.owner, account.user, account.name), qt.DeepEquals, []string{"EXECUTE"})
+	c.Assert(replaced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replaced.Stdout, replaced.Stderr))
+	c.Assert(replaced.Stdout, qt.Not(qt.Contains), "DROP PROCEDURE")
+	c.Assert(replaced.Stdout, qt.Not(qt.Contains), "GRANT EXECUTE")
+	assertOracleRoutineReplacement(c, account, "BEGIN RETURN; END;", held)
 }
 
 // A plan that replaces an Oracle procedure for a new body and stops declaring
-// one of the role's privileges on it writes no REVOKE, since the DROP takes
-// the privilege, and gives back only the privileges the schema keeps. The role
+// one of the role's privileges writes that REVOKE explicitly. The role
 // holds EXECUTE and not DEBUG, and the next plan is empty.
 func TestSchemaApplyOracleKeepsARevokeOnAReplacedRoutineE2E(t *testing.T) {
 	c := qt.New(t)
@@ -195,7 +188,7 @@ func TestSchemaApplyOracleKeepsARevokeOnAReplacedRoutineE2E(t *testing.T) {
 	settled := apply("--dry-run")
 
 	c.Assert(replaced.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", replaced.Stdout, replaced.Stderr))
-	c.Assert(replaced.Stdout, qt.Not(qt.Contains), "REVOKE")
+	c.Assert(replaced.Stdout, qt.Contains, "REVOKE DEBUG ON RT FROM "+account.role)
 	c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
 	c.Assert(settled.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
 	c.Assert(oracleRoutinePrivilegesOf(c, account.owner, account.role, account.name), qt.DeepEquals, []string{"EXECUTE"})
@@ -292,6 +285,14 @@ type oracleRoutineAccount struct {
 // the account may not create roles; the schema declares it all the same.
 func newOracleRoutineAccount(c *qt.C) oracleRoutineAccount {
 	c.Helper()
+	return newOracleRoutineAccountWithPrivileges(c, "SELECT_CATALOG_ROLE, CREATE PROCEDURE, CREATE TYPE")
+}
+
+// newOracleRoutineAccountWithPrivileges gives the owner only the extra system
+// privileges the case requires. A routine body replacement needs no access to
+// DBA_ROLES, even when the routine has grants the owner cannot describe.
+func newOracleRoutineAccountWithPrivileges(c *qt.C, privileges string) oracleRoutineAccount {
+	c.Helper()
 	ctx := c.Context()
 	adminURL := dbtarget.URL(c, dbtarget.OracleAdmin)
 	admin, err := dbschema.ConnectToDatabase(ctx, adminURL)
@@ -305,7 +306,7 @@ func newOracleRoutineAccount(c *qt.C) oracleRoutineAccount {
 		dropOracleRole(context.Background(), c, admin, role)
 	})
 	createOracleUser(ctx, c, admin, name)
-	execOracle(ctx, c, admin, "GRANT SELECT_CATALOG_ROLE, CREATE PROCEDURE, CREATE TYPE TO "+name)
+	execOracle(ctx, c, admin, "GRANT "+privileges+" TO "+name)
 	execOracle(ctx, c, admin, "CREATE ROLE "+role)
 	execOracle(ctx, c, admin, "CREATE USER "+user+" IDENTIFIED BY "+user)
 	execOracle(ctx, c, admin, "GRANT CREATE SESSION, "+role+" TO "+user)

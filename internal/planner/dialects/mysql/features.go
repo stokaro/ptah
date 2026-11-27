@@ -73,7 +73,7 @@ func (p *Planner) deniesOnObjects() bool {
 // writesGrantOption reports whether the renderer writes WITH GRANT OPTION.
 // Oracle's does not: Oracle refuses one to a role with ORA-01926, measured on
 // 23.26.2, and a grant carries no mark of whether its grantee is a role or a
-// user. [Planner.refuseALostGrantOption] reads it.
+// user. A restored observed grant can use [Planner.restoredGrantOption].
 func (p *Planner) writesGrantOption() bool {
 	return p.targetDialect() != platform.Oracle
 }

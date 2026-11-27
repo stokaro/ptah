@@ -276,8 +276,8 @@ const (
 	//     and recreates the routine, which makes the connected role its owner;
 	//     no PostgreSQL-family reader records an owner, so that case is not
 	//     checked.
-	//   - Oracle: the plan drops and recreates the routine in its schema, and a
-	//     definer's-rights routine runs as the schema's owner, which stays.
+	//   - Oracle: the plan writes CREATE OR REPLACE in the routine's schema,
+	//     and a definer's-rights routine runs as that schema's owner, which stays.
 	//   - SQL Server: the plan drops and recreates the routine, and a new
 	//     module is owned by its schema's owner. A module whose owner was moved
 	//     with ALTER AUTHORIZATION gets that owner back; the reader records no

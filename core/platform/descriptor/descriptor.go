@@ -155,6 +155,12 @@ type Dialect struct {
 	// operator asks for it, and refuses the change otherwise. The request is
 	// [ptah.run/core/planext.Options.AllowTableRebuild].
 	TableRebuild bool `json:"table_rebuild,omitempty"`
+	// ReplaceRoutineWithoutDrop reports that the routine CREATE statement
+	// replaces a function or procedure of the same kind without dropping its
+	// object privileges. The shared routine planner then emits no preceding
+	// DROP and no restoration of privileges the replacement already keeps.
+	// False retains the planner's separate DROP and CREATE statements.
+	ReplaceRoutineWithoutDrop bool `json:"replace_routine_without_drop,omitempty"`
 
 	// Migrations: what the migrator reads.
 

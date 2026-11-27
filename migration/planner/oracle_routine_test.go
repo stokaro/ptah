@@ -88,14 +88,9 @@ func TestGenerateSchemaDiffSQLStatements_KeepsAnOracleRoutineInOneStatement(t *t
 	}
 }
 
-// TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves pins
-// the pair, because half a replacement is a deletion.
-//
-// The planner emits a guarded DROP and then the CREATE. Oracle's own
-// CREATE OR REPLACE would make the drop unnecessary, and it is still emitted
-// because a routine whose KIND changed cannot be replaced in place -- and the
-// guard is what keeps the drop harmless when there is nothing to drop.
-func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t *testing.T) {
+// A same-kind Oracle routine replacement is one statement, so a body change
+// keeps the object and its privileges while replacing its definition.
+func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithoutDropping(t *testing.T) {
 	c := qt.New(t)
 	desired := &schemamodel.Database{Functions: []schemamodel.Function{{
 		StructName: "F",
@@ -120,9 +115,8 @@ func TestGenerateSchemaDiffSQLStatements_OracleReplacesARoutineWithBothHalves(t 
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.HasLen, 2)
-	c.Assert(statements[0], qt.Contains, "DROP FUNCTION IF EXISTS fn_double")
-	c.Assert(statements[1], qt.Contains, "CREATE OR REPLACE FUNCTION fn_double")
+	c.Assert(statements, qt.HasLen, 1)
+	c.Assert(statements[0], qt.Contains, "CREATE OR REPLACE FUNCTION fn_double")
 }
 
 // TestGenerateSchemaDiffSQLStatements_OracleDropsNothingItCannotRecreate is the

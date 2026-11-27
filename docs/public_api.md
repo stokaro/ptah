@@ -5565,6 +5565,10 @@ in place of a dialect's name:
   YugabyteDB state it. Where it is false, a plan that creates a routine and
   drops one of its kind spelled alike is refused, because the two are one
   routine.
+- `ReplaceRoutineWithoutDrop`: the routine CREATE statement replaces a
+  routine of the same kind while keeping its object privileges. The shared
+  routine planner emits no preceding DROP or grant restoration. Oracle states
+  it; false keeps the planner's separate DROP and CREATE statements.
 - `Statements` and `TableOptions`: how the server reads the role and table
   statements a schema file writes. `Statements.DoBlocks` names the procedural
   language of a DO block that declares roles, one of `DoBlockLanguages`, such

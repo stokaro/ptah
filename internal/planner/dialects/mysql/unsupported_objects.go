@@ -10,7 +10,9 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
@@ -186,10 +188,10 @@ func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *dif
 // planFunctions plans the create, replace and drop of stored functions for a
 // target that hosts them.
 //
-// A modified function is planned as TWO nodes: a DROP FUNCTION IF EXISTS
-// followed by the full CREATE. Neither engine has the single-statement replace
-// form the PostgreSQL planner leans on -- `CREATE OR REPLACE FUNCTION` is
-// Error 1064 on MySQL 26.7.0 -- so the pair is what a replacement is here.
+// A target whose routine CREATE preserves the object and its privileges
+// ([descriptor.Dialect.ReplaceRoutineWithoutDrop]) needs only the CREATE.
+// Other targets get a separate DROP followed by the full CREATE: MySQL
+// answers CREATE OR REPLACE FUNCTION with Error 1064.
 //
 // The drop is planned rather than rendered inside the CREATE. As the first line
 // of VisitCreateFunction it makes one node render two statements, and an
@@ -218,7 +220,6 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		if fn.Name == "" {
 			continue
 		}
-		replaced := p.replacesRoutine(fnDiff)
 		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
 		node := modelast.FromFunction(fn)
 		// The two halves of a replacement travel together or not at all.
@@ -233,7 +234,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		// The CREATE node is still emitted, and that is deliberate: it renders
 		// the skip comment, so the plan says which function was left alone
 		// instead of silently omitting it. Nothing executable is produced.
-		if !replaced {
+		if !p.runsRoutineLanguage(fn.Language) {
 			node.SetComment(fmt.Sprintf(
 				"Function %s differs (%s) but its language is not one this target runs; "+
 					"left unchanged, and NOT dropped", fn.Name, changes))
@@ -262,14 +263,19 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		if moved {
 			node = modelast.FromFunction(replacement)
 		}
-		drop := ast.NewDropFunction(replacement.Name).
-			SetKind(fn.Kind).
-			SetIfExists()
 		if p.describes() {
-			drop.SetComment(fmt.Sprintf("Replace %s %s: %s", routineWord(fn), fn.Name, changes))
 			node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
 		}
-		result = append(result, drop, node)
+		if p.replacesRoutine(fnDiff) {
+			drop := ast.NewDropFunction(replacement.Name).
+				SetKind(fn.Kind).
+				SetIfExists()
+			if p.describes() {
+				drop.SetComment(fmt.Sprintf("Replace %s %s: %s", routineWord(fn), fn.Name, changes))
+			}
+			result = append(result, drop)
+		}
+		result = append(result, node)
 	}
 	if p.dropsRoutinesLate() {
 		// Removed after the tables and the feature objects that may call them;
@@ -322,15 +328,23 @@ func routineWord(fn schemamodel.Function) string {
 
 // replacesRoutine reports whether the plan replaces a changed routine by DROP
 // and CREATE: the target hosts routines, and the change names the routine it
-// declares, in a language this target runs. [Planner.planFunctions] emits the
-// two statements exactly then, and [Planner.replacedRoutines] reads the same
+// declares, in a language this target runs, and its CREATE cannot preserve the
+// object in place. [Planner.planFunctions] emits the two statements exactly
+// then, and [Planner.replacedRoutines] reads the same
 // answer for the privileges the DROP takes, so the statements and the grants
 // cannot disagree about a routine.
 func (p *Planner) replacesRoutine(change difftypes.FunctionDiff) bool {
 	return p.capabilities().Has(capability.Functions) &&
 		change.Desired.Name != "" &&
-		p.runsRoutineLanguage(change.Desired.Language)
+		p.runsRoutineLanguage(change.Desired.Language) &&
+		!replaceRoutineWithoutDrop.Get(p.targetDialect())
 }
+
+// replaceRoutineWithoutDrop keeps the statement choice and the grant
+// preservation choice on the same descriptor fact.
+var replaceRoutineWithoutDrop = descriptortable.New(func(described descriptor.Dialect) bool {
+	return described.ReplaceRoutineWithoutDrop
+})
 
 // runsRoutineLanguage reports whether a routine declared in this language
 // becomes real DDL on the dialect this planner renders for.

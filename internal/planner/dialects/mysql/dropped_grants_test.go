@@ -69,10 +69,9 @@ func TestPlan_OracleRevokesNothingOnWhatItDrops(t *testing.T) {
 	})
 }
 
-// A changed Oracle routine is replaced by DROP and CREATE, which takes its
-// privileges too. A routine in a language Oracle does not run is left alone,
-// so the privilege on it is still revoked.
-func TestPlan_OracleRevokesNothingOnARoutineItReplaces(t *testing.T) {
+// An Oracle routine replacement keeps its grants. An explicit revoke must
+// therefore run whether the body is replaced or its language is skipped.
+func TestPlan_OracleRevokesADeclaredPrivilegeOnARoutineItReplaces(t *testing.T) {
 	tests := []struct {
 		name     string
 		language string
@@ -82,8 +81,8 @@ func TestPlan_OracleRevokesNothingOnARoutineItReplaces(t *testing.T) {
 			name:     "a PL/SQL procedure is replaced",
 			language: "plsql",
 			want: []string{
-				"-- Replace procedure rt: body\nDROP PROCEDURE IF EXISTS rt",
 				"-- Modify procedure rt: body\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN RETURN; END;",
+				"REVOKE EXECUTE ON rt FROM reader",
 			},
 		},
 		{
@@ -177,11 +176,12 @@ func heldOnAReplacedRoutine(language, removed string, auditorOption bool) *difft
 }
 
 // A routine the plan replaces with DROP and CREATE holds nothing once both
-// ran, measured on Oracle 23.26.3 and SQL Server 2025. The plan grants again,
+// ran, measured on SQL Server 2025. The plan grants again,
 // after the CREATE, every privilege the read reported on it except the one it
 // revokes, a privilege of a role the schema does not manage included. MySQL
 // reads report no privilege on a routine, and a table privilege of the same
-// name is the table's, so the MySQL plan gives back nothing.
+// name is the table's, so the MySQL plan gives back nothing. Oracle replaces
+// the routine without a DROP and needs only the explicitly requested REVOKE.
 func TestPlan_GivesBackWhatARoleHeldOnAReplacedRoutine(t *testing.T) {
 	tests := []struct {
 		dialect       string
@@ -195,10 +195,8 @@ func TestPlan_GivesBackWhatARoleHeldOnAReplacedRoutine(t *testing.T) {
 			language: "plsql",
 			removed:  "DEBUG",
 			want: []string{
-				"-- Replace procedure rt: body\nDROP PROCEDURE IF EXISTS rt",
 				"-- Modify procedure rt: body\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN RETURN; END;",
-				"GRANT EXECUTE ON rt TO reader",
-				"GRANT EXECUTE ON rt TO auditor",
+				"REVOKE DEBUG ON rt FROM reader",
 			},
 		},
 		{
@@ -254,39 +252,33 @@ func TestPlan_GivesBackAPrivilegeWithoutTheGrantOptionItRevokes(t *testing.T) {
 	})
 }
 
-// Ptah writes no grant option on Oracle, and a grantee that holds one on a
-// routine the plan replaces would lose the option to the DROP. The plan is
-// refused rather than giving back the privilege alone, and the refusal names
-// the grantee, the privilege and the routine.
-func TestPlan_OracleRefusesToReplaceARoutineAGrantOptionIsHeldOn(t *testing.T) {
+// CREATE OR REPLACE keeps a user's observed grant option without rendering
+// a grant to a grantee whose role or user classification is not known.
+func TestPlan_OracleReplacesARoutineWhileKeepingGrantOptions(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()),
 		heldOnAReplacedRoutine("plsql", "DEBUG", true), "oracle")
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s).*oracle: cannot replace procedure rt: grantee "auditor" holds EXECUTE on it WITH GRANT OPTION, `+
-		`and the DROP that replaces the routine takes the option, which Ptah cannot grant back; revoke the option, `+
-		`or change the routine by hand with CREATE OR REPLACE, which keeps it`)
-	c.Assert(statements, qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		"-- Modify procedure rt: body\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN RETURN; END;",
+		"REVOKE DEBUG ON rt FROM reader",
+	})
 }
 
-// A grant option the plan revokes is not one the DROP loses, so Oracle
-// replaces the routine and gives back the privilege without it.
-func TestPlan_OracleReplacesARoutineWhoseGrantOptionThePlanRevokes(t *testing.T) {
+// A body change cannot stand in for an unsupported revoke of only a grant
+// option. Oracle keeps the option when it replaces the routine in place.
+func TestPlan_OracleRefusesToRevokeOnlyAGrantOptionWhileReplacing(t *testing.T) {
 	c := qt.New(t)
 	diff := heldOnAReplacedRoutine("plsql", "DEBUG", true)
 	diff.GrantOptionsRevoked = []difftypes.GrantRef{{Role: "auditor", Privilege: "EXECUTE", ObjectType: "TABLE", ObjectName: "rt", WithOption: true}}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()), diff, "oracle")
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.DeepEquals, []string{
-		"-- Replace procedure rt: body\nDROP PROCEDURE IF EXISTS rt",
-		"-- Modify procedure rt: body\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN RETURN; END;",
-		"GRANT EXECUTE ON rt TO reader",
-		"GRANT EXECUTE ON rt TO auditor",
-	})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*oracle: cannot take the grant option on EXECUTE ON rt from "auditor" and leave the privilege: .*`)
+	c.Assert(statements, qt.IsNil)
 }
 
 // A target that hosts no routines replaces none, so the plan neither drops
@@ -366,14 +358,15 @@ func TestPlan_SQLServerDeniesAgainOnAQualifiedRoutine(t *testing.T) {
 // DENY, so an Oracle plan writes none even for a diff that carries one.
 func TestPlan_OracleDeniesNothingOnAReplacedRoutine(t *testing.T) {
 	c := qt.New(t)
+	diff := deniedOnAReplacedRoutine("plsql")
+	diff.GrantsRemoved = nil
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(context.Background(), must.Must(builtin.New()),
-		deniedOnAReplacedRoutine("plsql"), "oracle")
+		diff, "oracle")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements[len(statements)-2:], qt.DeepEquals, []string{
-		"GRANT EXECUTE ON rt TO reader",
-		"GRANT EXECUTE ON rt TO auditor",
+	c.Assert(statements, qt.DeepEquals, []string{
+		"-- Modify procedure rt: body\nCREATE OR REPLACE PROCEDURE rt IS\nBEGIN RETURN; END;",
 	})
 }
 

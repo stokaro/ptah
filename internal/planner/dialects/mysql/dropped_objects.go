@@ -78,17 +78,14 @@ func (p *Planner) replacedRoutines(diff *difftypes.SchemaDiff, semantics identif
 // with WithOption set where the grant option comes back with it.
 type heldGrant struct {
 	grant    difftypes.GrantRef
-	routine  schemamodel.Function
 	restored bool
 }
 
 // heldOnRecreatedRoutines is every privilege the read reported on a routine
 // the plan creates again, after a replacement or in a rollback, except the
 // ones the plan revokes, which it leaves revoked. A privilege held WITH GRANT
-// OPTION keeps the option
-// unless the plan revokes the option. [Planner.grantsGivenBack] grants them
-// after the CREATE, and [Planner.refuseALostGrantOption] refuses a plan that
-// would have to give back an option the target's renderer does not write.
+// OPTION keeps the option unless the plan revokes it.
+// [Planner.grantsGivenBack] grants them after the CREATE.
 // Restored additions may copy an observed grant option through
 // [Planner.restoredGrantOption].
 //
@@ -96,8 +93,8 @@ type heldGrant struct {
 // none: measured on Oracle 23.26.3 and SQL Server 2025, and on MySQL 8.4 and
 // MariaDB 11.8, where DROP PROCEDURE deletes the routine's rows of
 // mysql.procs_priv. The comparison reads the privileges as held and plans
-// nothing for them, so without these a body change leaves a role nothing on
-// the routine until a later apply grants the declared ones again.
+// nothing for them, so a routine created again after a DROP needs these
+// grants even when the comparison reports no change to them.
 //
 // They are what the read reported, not what the declaration grants: the
 // comparison leaves alone a privilege of a grantee the schema does not manage,
@@ -144,7 +141,7 @@ func (p *Planner) heldOnRecreatedRoutines(diff *difftypes.SchemaDiff) []heldGran
 			continue
 		}
 		grant.WithOption = grant.WithOption && !optionRevoked[key]
-		held = append(held, heldGrant{grant: grant, routine: routine,
+		held = append(held, heldGrant{grant: grant,
 			restored: addedRoutine(diff, semantics, routine.Name)})
 	}
 	return held
@@ -408,32 +405,6 @@ func denyStatement(denied difftypes.GrantRef) (string, error) {
 // permissionName is the shape of a permission sys.database_permissions
 // names: upper-case words, such as EXECUTE or VIEW DEFINITION.
 var permissionName = regexp.MustCompile(`^[A-Z]+( [A-Z]+)*$`)
-
-// refuseALostGrantOption refuses a plan that replaces a routine on which a
-// grantee holds a privilege WITH GRANT OPTION, where the target's renderer
-// writes no grant option ([Planner.writesGrantOption]). The DROP would take
-// the option, and the give-back could not write it, so the apply would leave
-// the grantee the privilege without the option it held. Oracle is that target,
-// and there CREATE OR REPLACE alone keeps the option, measured on 23.26.3, so
-// the refusal names it as the way round.
-func (p *Planner) refuseALostGrantOption(diff *difftypes.SchemaDiff) error {
-	if p.writesGrantOption() {
-		return nil
-	}
-	for _, held := range p.heldOnRecreatedRoutines(diff) {
-		if !held.grant.WithOption || held.restored {
-			continue
-		}
-		return fmt.Errorf(
-			"%w: %s: cannot replace %s %s: grantee %q holds %s on it WITH GRANT OPTION, and the DROP that "+
-				"replaces the routine takes the option, which Ptah cannot grant back; revoke the option, or "+
-				"change the routine by hand with CREATE OR REPLACE, which keeps it",
-			ptaherr.ErrUnsupportedFeature, p.targetDialect(), routineWord(held.routine), held.routine.Name,
-			held.grant.Role, held.grant.Privilege,
-		)
-	}
-	return nil
-}
 
 // routinesByName holds each descriptor's AllPrivileges.RoutinesByName.
 var routinesByName = descriptortable.New(func(described descriptor.Dialect) bool {
