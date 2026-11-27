@@ -1865,9 +1865,10 @@ come back:
   comes back `READS SQL DATA`.
 
 When the up migration also drops a table the old body reads, the down file
-creates the routine before it creates the table again (stokaro/ptah#6721).
-MySQL and MariaDB look up a body's tables when the routine runs, so the
-routine works once the table is back.
+restores the table before the routine. Creation order includes the tables,
+views and routines a definition names, in both migration directions.
+MySQL and MariaDB look up a body's tables when the routine runs, so a restored
+routine can read the restored table when called.
 
 A plan whose rollback finds no routine to restore is refused before anything
 is written. That happens when the read holds no routine of the name, the kind

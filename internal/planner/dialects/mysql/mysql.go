@@ -2170,9 +2170,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the routines that may name a type.
 	typeCreation := featurehost.Span{Start: len(result), End: len(result)}
 
-	// 0b. Plan the stored functions this target does host. Functions are
-	// planned before tables because a generated column or a CHECK constraint
-	// may call one, and the function must exist first.
+	// 0b. Build routine changes beside the relations they may read or be
+	// called by. Their creation order is settled together after the view phase.
+	routineStart := len(result)
 	result = p.planFunctions(result, diff)
 
 	// 1. Add enum change warnings (MySQL limitations)
@@ -2231,15 +2231,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	windows := featurehost.Windows{Creation: len(result)}
 
 	// 4.5. Add and modify views/triggers after tables exist.
-	result, err = p.createViews(result, diff)
+	result, err = p.createViewsAndOrderRoutines(ctx, result, routineStart, diff, &windows)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.rejectMaterializedViews(diff); err != nil {
-		return nil, err
-	}
-	result = p.addNewMaterializedViews(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff)
 
 	// 4.6. Create, replace and remove triggers in one block, after the columns
 	// a new body uses exist and before the columns an old body reads go away.

@@ -728,11 +728,12 @@ snapshot.
 
 The down file `ptah migrations generate` writes for a changed routine creates
 it again with the body and the options the database it was planned against
-held. A plan creates a routine before the tables the same plan creates
-(stokaro/ptah#6721). A `SCHEMABINDING` routine whose body reads such a table
-fails with error 208, `Invalid object name`, and the migration rolls back.
-That holds for an up migration that creates both, and for the down file of a
-migration that changes the routine and drops a table its old body reads.
+held. Plans create a routine after the tables and views the same plan creates
+that its body reads, so a `SCHEMABINDING` body resolves against the restored
+objects. A table's `DEFAULT`, `CHECK` or computed column
+that calls the routine follows it. This order applies to both up and down
+migrations. A cycle that requires each new object to exist before the other
+is refused before the plan returns SQL.
 
 ## Scripts and batches
 
