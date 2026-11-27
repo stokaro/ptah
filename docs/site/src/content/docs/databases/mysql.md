@@ -1468,6 +1468,16 @@ revoke it (ERROR 3628). A MySQL role may be named `PUBLIC`; beside a mandatory
 role, the read records no such membership and the reach rules report
 themselves skipped.
 
+Each role is read with the grants it holds itself, the ones `SHOW GRANTS FOR`
+lists under its name, and not with what it holds through the roles granted to
+it. On MariaDB the privilege views of `information_schema` list both under the
+member, so Ptah reads the grants on databases, tables and columns from
+`mysql.db`, `mysql.tables_priv` and `mysql.columns_priv` there. A grant the
+schema declares for a role that holds it only through another role is then
+planned, and a `REVOKE` of one is refused, since the server would refuse it
+with ERROR 1141 or ERROR 1147. MySQL's views list a role's own grants, and
+Ptah reads them there.
+
 MySQL role and grantee names with leading or trailing white space are refused
 before a schema is compared or rendered. MySQL normalizes this white space in
 principal references, so use the unpadded name stored by the server. The same
@@ -1485,9 +1495,10 @@ grants as a comparison limit instead of claiming the schemas are fully synced.
 Native `schema diff --format json` includes these limits in `comparison_limits`.
 An account that compares grants needs `SELECT` on `mysql.*`. Separate `SELECT`
 grants on `mysql.user`, `mysql.db`, `mysql.tables_priv` and `mysql.columns_priv`
-do not suffice: the `information_schema` privilege views still hide other
-grantees. Ptah checks the connecting account's grants before treating these
-views as complete, for a database URL and for a URL naming no database.
+do not suffice: on MySQL the `information_schema` privilege views still hide
+other grantees, and Ptah asks for the same grant on MariaDB. Ptah checks the
+connecting account's grants before treating the read as complete, for a
+database URL and for a URL naming no database.
 
 When the grant read is incomplete, a declared `REVOKE` remains in the plan,
 including a revoke on an existing table. The server then decides whether it

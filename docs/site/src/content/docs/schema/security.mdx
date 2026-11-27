@@ -372,11 +372,6 @@ across native commands.
   server orders by an unstable sort, and, on a server with
   `lower_case_table_names=2`, two MySQL rows whose order changes when the names
   are folded. No server with `lower_case_table_names=2` was measured.
-- On MariaDB, a role granted a role that holds a grant on a database name
-  pattern is named in `detail.reach.sources` as holding that grant as well,
-  because MariaDB's privilege views list the grant under both roles. The
-  member reaches the same relations either way, and `REVOKE` of the grant from
-  the member fails, since it holds the grant only through the other role.
 - PostgreSQL's bootstrap superuser is read only when it is not named
   `postgres`: a role read leaves the name `postgres` out, so that role is not
   measured, while a superuser under any other name is. A role that can switch

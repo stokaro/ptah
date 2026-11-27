@@ -126,17 +126,22 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 
 // readGrants reports the privileges the roles hold on the connected database.
 //
-// The database, table and column scopes come from the information_schema
-// privilege views; [grantQuery] says why those rather than the grant tables. A
-// grant on another database is not reported, because the description this
-// reader produces is of one database and a grant elsewhere is not part of it.
-func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant, error) {
+// The database, table and column scopes come from source: the information_schema
+// privilege views on MySQL, where [grantQuery] says why those, and the grant
+// tables on MariaDB, where [grantSource] says why those. A grant on another
+// database is not reported, because the description this reader produces is
+// of one database and a grant elsewhere is not part of it.
+func (r *Reader) readGrants(ctx context.Context, dbName string, source grantSource) ([]catalog.Grant, error) {
 	predicate, err := r.rolePredicate(ctx)
 	if err != nil {
 		return nil, err
 	}
 	rolePredicateOn := func(prefix string) string { return qualifyPredicate(predicate, prefix) }
-	rows, err := r.db.QueryContext(ctx, grantQuery(rolePredicateOn("u.")), nameBinds(dbName, grantQueryArms)...)
+	query, arms := grantQuery(rolePredicateOn("u.")), grantQueryArms
+	if source.tables {
+		query, arms = mariaDBGrantQuery(rolePredicateOn("u."), source.databaseColumns), 1
+	}
+	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, arms)...)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +272,11 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		}
 	}
 
-	grants, err := r.readGrantsIn(ctx, databases)
+	source, err := r.grantSourceOf(ctx, account)
+	if err != nil {
+		return fmt.Errorf("failed to read the grant tables: %w", err)
+	}
+	grants, err := r.readGrantsIn(ctx, databases, source)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants: %w", err)
@@ -310,7 +319,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		// server says whether the role held the privilege on it.
 		everywhere = nil
 	}
-	rows, err := r.readDatabaseRows(ctx, account.mariaDB)
+	rows, err := r.readDatabaseRows(ctx, source)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants on database patterns: %w", err)
@@ -595,10 +604,16 @@ func wideGrantQuery(rolePredicate string, columns []string) string {
 
 // userColumns is the set of the columns mysql.user has, in lower case.
 func (r *Reader) userColumns(ctx context.Context) (map[string]bool, error) {
+	return r.grantTableColumns(ctx, "user")
+}
+
+// grantTableColumns is the set of the columns the grant table mysql.<table>
+// has, in lower case. table is a name this package writes, never input.
+func (r *Reader) grantTableColumns(ctx context.Context, table string) (map[string]bool, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT column_name
 		FROM information_schema.columns
-		WHERE table_schema = 'mysql' AND table_name = 'user'`)
+		WHERE table_schema = 'mysql' AND table_name = '`+table+`'`)
 	if err != nil {
 		return nil, err
 	}
@@ -638,10 +653,10 @@ func (r *Reader) readConnectedRole(ctx context.Context, schema *catalog.Database
 }
 
 // readGrantsIn reads the grants on each of databases, in that order.
-func (r *Reader) readGrantsIn(ctx context.Context, databases []string) ([]catalog.Grant, error) {
+func (r *Reader) readGrantsIn(ctx context.Context, databases []string, source grantSource) ([]catalog.Grant, error) {
 	var grants []catalog.Grant
 	for _, database := range databases {
-		inDatabase, err := r.readGrants(ctx, database)
+		inDatabase, err := r.readGrants(ctx, database, source)
 		if err != nil {
 			return nil, err
 		}
@@ -789,3 +804,177 @@ func grantQuery(rolePredicate string) string {
 // grantQueryArms is the number of privilege views [grantQuery] reads, each
 // filtered on the database by one [mysqlname.SameDatabase] predicate.
 const grantQueryArms = 3
+
+// grantSource says where the grants on databases, tables and columns are
+// read. The zero value reads the information_schema privilege views, as on
+// MySQL.
+//
+// MariaDB's views list a privilege a role or a user holds through a role as
+// its own: measured on MariaDB 11.8.9 and 12.3.3, after GRANT parent TO member
+// with parent holding SELECT ON app.*, SCHEMA_PRIVILEGES lists SELECT on app
+// for member too, while SHOW GRANTS FOR member lists only the membership and
+// REVOKE SELECT ON app.* FROM member fails with Error 1141. The same holds in
+// TABLE_PRIVILEGES and COLUMN_PRIVILEGES. A read of the views then describes
+// grants member does not hold, a plan built on it revokes what the server has
+// nothing of, and a declared grant member does not hold reads as held and is
+// never made. MySQL's views list a grantee's own privileges only. So on
+// MariaDB the grants are read from mysql.db, mysql.tables_priv and
+// mysql.columns_priv, which hold each grantee's own rows.
+type grantSource struct {
+	// tables is true where the grants are read from the grant tables.
+	tables bool
+	// databaseColumns are the privilege columns of mysql.db the server has,
+	// in the order of [mariaDBDatabasePrivileges].
+	databaseColumns []globalTablePrivilege
+}
+
+// grantSourceOf is the source of the grants on the server account reads.
+func (r *Reader) grantSourceOf(ctx context.Context, account sessionAccount) (grantSource, error) {
+	if !account.mariaDB {
+		return grantSource{}, nil
+	}
+	present, err := r.grantTableColumns(ctx, "db")
+	if err != nil {
+		return grantSource{}, err
+	}
+	source := grantSource{tables: true}
+	for _, held := range mariaDBDatabasePrivileges {
+		// A required column is named whether or not information_schema lists
+		// it: a server that hides it from the account refuses the read for
+		// want of a privilege, and the read degrades as it does for a refusal.
+		if !held.optional || present[strings.ToLower(held.column)] {
+			source.databaseColumns = append(source.databaseColumns, held)
+		}
+	}
+	return source, nil
+}
+
+// mariaDBDatabasePrivileges pairs each privilege column of MariaDB's mysql.db
+// with the privilege SCHEMA_PRIVILEGES and SHOW GRANTS name it by, measured on
+// MariaDB 11.8.9 and 12.3.3 after GRANT ALL. Grant_priv is the grant option,
+// not a privilege. Show_create_routine_priv exists from MariaDB 11.3 on, so
+// it is optional.
+var mariaDBDatabasePrivileges = []globalTablePrivilege{
+	{column: "Select_priv", privilege: "SELECT"}, {column: "Insert_priv", privilege: "INSERT"},
+	{column: "Update_priv", privilege: "UPDATE"}, {column: "Delete_priv", privilege: "DELETE"},
+	{column: "Create_priv", privilege: "CREATE"}, {column: "Drop_priv", privilege: "DROP"},
+	{column: "References_priv", privilege: "REFERENCES"}, {column: "Index_priv", privilege: "INDEX"},
+	{column: "Alter_priv", privilege: "ALTER"}, {column: "Create_tmp_table_priv", privilege: "CREATE TEMPORARY TABLES"},
+	{column: "Lock_tables_priv", privilege: "LOCK TABLES"}, {column: "Create_view_priv", privilege: "CREATE VIEW"},
+	{column: "Show_view_priv", privilege: "SHOW VIEW"}, {column: "Create_routine_priv", privilege: "CREATE ROUTINE"},
+	{column: "Alter_routine_priv", privilege: "ALTER ROUTINE"}, {column: "Execute_priv", privilege: "EXECUTE"},
+	{column: "Event_priv", privilege: "EVENT"}, {column: "Trigger_priv", privilege: "TRIGGER"},
+	{column: "Delete_history_priv", privilege: "DELETE HISTORY"},
+	{column: "Show_create_routine_priv", privilege: "SHOW CREATE ROUTINE", optional: true},
+}
+
+// mariaDBSetPrivilege pairs a member of the SET a MariaDB grant table keeps
+// a table's or a column's privileges in with the privilege TABLE_PRIVILEGES
+// and COLUMN_PRIVILEGES name it by.
+type mariaDBSetPrivilege struct {
+	member, privilege string
+}
+
+// mariaDBTablePrivileges are the members of mysql.tables_priv.Table_priv,
+// measured on MariaDB 11.8.9 and 12.3.3 after GRANT ALL on a table. Grant is
+// the grant option, not a privilege.
+var mariaDBTablePrivileges = []mariaDBSetPrivilege{
+	{"Select", "SELECT"}, {"Insert", "INSERT"}, {"Update", "UPDATE"}, {"Delete", "DELETE"}, {"Create", "CREATE"},
+	{"Drop", "DROP"}, {"References", "REFERENCES"}, {"Index", "INDEX"}, {"Alter", "ALTER"},
+	{"Create View", "CREATE VIEW"}, {"Show view", "SHOW VIEW"}, {"Trigger", "TRIGGER"},
+	{"Delete versioning rows", "DELETE HISTORY"},
+}
+
+// mariaDBColumnPrivileges are the members of mysql.columns_priv.Column_priv.
+var mariaDBColumnPrivileges = []mariaDBSetPrivilege{
+	{"Select", "SELECT"}, {"Insert", "INSERT"}, {"Update", "UPDATE"}, {"References", "REFERENCES"},
+}
+
+// mariaDBPrivilegeRows projects one row per privilege each grantee holds in
+// the grant tables, the way the privilege views project it on MySQL: the
+// grantee's user and host, the database, the table and the column, empty for
+// a grant on a database or a whole table, the privilege, whether it is
+// grantable, YES or NO, and SCHEMA or TABLE. A table's grant option makes
+// each privilege on its columns grantable too. A row that holds the grant
+// option and no privilege is USAGE, grantable, as the views and SHOW GRANTS
+// list it; a table row whose columns hold privileges lists none, as
+// TABLE_PRIVILEGES does not. Measured on MariaDB 11.8.9 and 12.3.3.
+// [mariaDBDatabasePrivilegeRows] is the rows on databases alone.
+//
+// The text columns take the collation the views give them, so the database
+// predicate and the order are the views': the grant tables compare as bytes.
+// With lower_case_table_names=2 the views spell r_lc a database a session
+// selected as R_LC ([mysqlname.SameDatabase]), and the views read the grant
+// tables, so a byte comparison there would find no grant. No such server was
+// measured here: on a Linux file system MariaDB 12.3.3 sets the value to 0.
+func mariaDBPrivilegeRows(databaseColumns []globalTablePrivilege) string {
+	arms := mariaDBDatabaseArms(databaseColumns)
+	for _, held := range mariaDBTablePrivileges {
+		arms = append(arms, `SELECT tp.User, tp.Host, `+viewText("tp.Db")+`, `+viewText("tp.Table_name")+`, '', '`+held.privilege+`',
+			   IF(FIND_IN_SET('Grant', tp.Table_priv) > 0, 'YES', 'NO'), 'TABLE'
+		FROM mysql.tables_priv AS tp WHERE FIND_IN_SET('`+held.member+`', tp.Table_priv) > 0`)
+	}
+	arms = append(arms, `SELECT tp.User, tp.Host, `+viewText("tp.Db")+`, `+viewText("tp.Table_name")+`, '', 'USAGE', 'YES', 'TABLE'
+		FROM mysql.tables_priv AS tp WHERE tp.Table_priv = 'Grant' AND tp.Column_priv = ''`)
+	for _, held := range mariaDBColumnPrivileges {
+		arms = append(arms, `SELECT cp.User, cp.Host, `+viewText("cp.Db")+`, `+viewText("cp.Table_name")+`, `+viewText("cp.Column_name")+`,
+			   '`+held.privilege+`', IF(FIND_IN_SET('Grant', COALESCE(tg.Table_priv, '')) > 0, 'YES', 'NO'), 'TABLE'
+		FROM mysql.columns_priv AS cp
+		LEFT JOIN mysql.tables_priv AS tg
+			ON tg.User = cp.User AND tg.Host = cp.Host AND tg.Db = cp.Db AND tg.Table_name = cp.Table_name
+		WHERE FIND_IN_SET('`+held.member+`', cp.Column_priv) > 0`)
+	}
+	return unionAll(arms)
+}
+
+// mariaDBDatabasePrivilegeRows is [mariaDBPrivilegeRows] on databases alone.
+func mariaDBDatabasePrivilegeRows(databaseColumns []globalTablePrivilege) string {
+	return unionAll(mariaDBDatabaseArms(databaseColumns))
+}
+
+// unionAll joins the arms of a query.
+func unionAll(arms []string) string {
+	return strings.Join(arms, "\n\t\t\tUNION ALL\n\t\t\t")
+}
+
+// mariaDBDatabaseArms are the arms of [mariaDBPrivilegeRows] on databases:
+// one per privilege column of mysql.db, and one for a row holding the grant
+// option alone.
+func mariaDBDatabaseArms(databaseColumns []globalTablePrivilege) []string {
+	arms := make([]string, 0, len(databaseColumns)+1)
+	none := make([]string, 0, len(databaseColumns))
+	for _, held := range databaseColumns {
+		arms = append(arms, `SELECT d.User AS grantee_user, d.Host AS grantee_host, `+viewText("d.Db")+` AS object_schema,
+				   '' AS object_name, '' AS column_name, '`+held.privilege+`' AS privilege,
+				   IF(d.Grant_priv = 'Y', 'YES', 'NO') AS grantable, 'SCHEMA' AS object_type
+			FROM mysql.db AS d WHERE d.`+held.column+` = 'Y'`)
+		none = append(none, "d."+held.column+" <> 'Y'")
+	}
+	arms = append(arms, `SELECT d.User, d.Host, `+viewText("d.Db")+`, '', '', 'USAGE', 'YES', 'SCHEMA'
+			FROM mysql.db AS d WHERE d.Grant_priv = 'Y' AND `+strings.Join(none, " AND "))
+	return arms
+}
+
+// viewText is column of a grant table compared and sorted as the privilege
+// views compare their text, which is utf8mb3_general_ci on MariaDB 11.8.9 and
+// 12.3.3.
+func viewText(column string) string {
+	return "CONVERT(" + column + " USING utf8mb3) COLLATE utf8mb3_general_ci"
+}
+
+// mariaDBGrantQuery is [grantQuery] read from MariaDB's grant tables, as
+// [grantSource] says why, with one [mysqlname.SameDatabase] predicate on the
+// database.
+func mariaDBGrantQuery(rolePredicate string, databaseColumns []globalTablePrivilege) string {
+	return `
+		SELECT u.user AS role_name, object_schema, object_name, column_name,
+			   privilege, grantable, object_type
+		FROM (
+			` + mariaDBPrivilegeRows(databaseColumns) + `
+		) AS granted
+		JOIN mysql.user AS u ON u.user = granted.grantee_user AND u.host = granted.grantee_host
+		WHERE ` + mysqlname.SameDatabase("granted.object_schema", "?") + `
+			  AND ` + rolePredicate + `
+			  AND u.user NOT LIKE 'mysql.%'
+		ORDER BY role_name, object_schema, object_name, column_name, privilege`
+}

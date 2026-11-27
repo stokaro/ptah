@@ -30,20 +30,21 @@ type databaseRows struct {
 }
 
 // readDatabaseRows reads every database-level row of every role, the rows on
-// a database's own name and the rows on a pattern alike. mariaDB is
-// [mysqlgrants.Options.MariaDB].
+// a database's own name and the rows on a pattern alike, from source. A
+// source that reads the grant tables is MariaDB's
+// ([mysqlgrants.Options.MariaDB]).
 //
 // MySQL with partial_revokes ON reads "%" and "_" in a database name as the
 // characters themselves, so a pattern grant reaches no other database there:
 // measured on MySQL 8.4.13, after GRANT SELECT ON `wc%`.*, a member is refused
 // wc1.t. MariaDB has no such setting. The read then returns no rows, since no
 // row but the database's own applies to it.
-func (r *Reader) readDatabaseRows(ctx context.Context, mariaDB bool) (*databaseRows, error) {
+func (r *Reader) readDatabaseRows(ctx context.Context, source grantSource) (*databaseRows, error) {
 	options, err := mysqlgrants.ReadOptions(ctx, r.db)
 	if err != nil {
 		return nil, err
 	}
-	options.MariaDB = mariaDB
+	options.MariaDB = source.tables
 	rows := &databaseRows{options: options, held: make(map[string]map[string][]string)}
 	if options.LiteralDatabaseNames {
 		return rows, nil
@@ -52,7 +53,11 @@ func (r *Reader) readDatabaseRows(ctx context.Context, mariaDB bool) (*databaseR
 	if err != nil {
 		return nil, err
 	}
-	result, err := r.db.QueryContext(ctx, databaseRowQuery(qualifyPredicate(predicate, "u.")))
+	query := databaseRowQuery(qualifyPredicate(predicate, "u."))
+	if source.tables {
+		query = mariaDBDatabaseRowQuery(qualifyPredicate(predicate, "u."), source.databaseColumns)
+	}
+	result, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +90,21 @@ func databaseRowQuery(rolePredicate string) string {
 		WHERE ` + rolePredicate + `
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`
+}
+
+// mariaDBDatabaseRowQuery is [databaseRowQuery] read from MariaDB's mysql.db,
+// as [grantSource] says why: a role that holds another lists the other's rows
+// as its own in SCHEMA_PRIVILEGES.
+func mariaDBDatabaseRowQuery(rolePredicate string, databaseColumns []globalTablePrivilege) string {
+	return `
+		SELECT u.user AS role_name, granted.object_schema, granted.privilege
+		FROM (
+			` + mariaDBDatabasePrivilegeRows(databaseColumns) + `
+		) AS granted
+		JOIN mysql.user AS u ON u.user = granted.grantee_user AND u.host = granted.grantee_host
+		WHERE ` + rolePredicate + `
+			  AND u.user NOT LIKE 'mysql.%'
+		ORDER BY role_name, granted.object_schema, granted.privilege`
 }
 
 // patternGrants are the table privileges each role holds on each of databases

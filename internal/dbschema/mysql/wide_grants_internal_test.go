@@ -146,7 +146,7 @@ func TestReadDatabaseRows_ReadsEachDatabase(t *testing.T) {
 	c := qt.New(t)
 	reader, queries := openDatabaseRowCatalog(c, "OFF", [][]driver.Value{{"rvc", "cs%", "SELECT"}})
 
-	rows, err := reader.readDatabaseRows(t.Context(), false)
+	rows, err := reader.readDatabaseRows(t.Context(), grantSource{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows.patternGrants([]string{"cs1", "cs2"}), qt.DeepEquals, []catalog.WideGrant{
@@ -165,7 +165,7 @@ func TestReadDatabaseRows_PartialRevokesReadNamesLiterally(t *testing.T) {
 	c := qt.New(t)
 	reader, queries := openDatabaseRowCatalog(c, "ON", [][]driver.Value{{"rvc", "cs%", "SELECT"}})
 
-	rows, err := reader.readDatabaseRows(t.Context(), false)
+	rows, err := reader.readDatabaseRows(t.Context(), grantSource{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows.patternGrants([]string{"cs1"}), qt.DeepEquals, make([]catalog.WideGrant, 0))
