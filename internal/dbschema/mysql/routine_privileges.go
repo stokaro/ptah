@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -10,9 +11,9 @@ import (
 	"ptah.run/internal/mysqlname"
 )
 
-// readRoutinePrivilegesInto records what the plan that replaces a routine of
-// the databases a read describes has to grant again, or that the server
-// refused to say ([catalog.RoutinePrivileges]).
+// readRoutinePrivilegesInto records the privileges a routine replacement or
+// the rollback of a removal must grant again, or that the server refused to
+// say ([catalog.RoutinePrivileges]).
 //
 // DROP PROCEDURE and DROP FUNCTION delete the routine's rows of
 // mysql.procs_priv under the default automatic_sp_privileges, measured on
@@ -21,7 +22,7 @@ import (
 // CREATE. No information_schema view lists them, so the read takes them from
 // mysql.procs_priv, which an account reads only with SELECT on it. A refusal
 // is recorded rather than failing the read: the description does not depend
-// on these rows, and only a plan that replaces a routine does.
+// on these rows. A routine replacement and the rollback of a removal do.
 //
 // With automatic_sp_privileges off the DROP keeps the rows and the CREATE
 // grants none, so there is nothing to give back and nothing to refuse, and
@@ -43,8 +44,22 @@ func (r *Reader) readRoutinePrivilegesInto(ctx context.Context, account sessionA
 		schema.RoutinePrivileges = catalog.RoutinePrivileges{Refused: true}
 		return nil
 	}
-	schema.RoutinePrivileges = catalog.RoutinePrivileges{Grants: grants}
+	schema.RoutinePrivileges = catalog.RoutinePrivileges{Grants: existingRoutinePrivileges(grants, schema)}
 	return nil
+}
+
+// existingRoutinePrivileges drops rows whose routine is absent from the
+// catalog. A DROP with automatic_sp_privileges disabled can leave them in
+// mysql.procs_priv; restoring them on a later CREATE would grant stale access.
+// Names of routines compare without case, but kind and database still select
+// separate objects. Both database spellings come from this same read.
+func existingRoutinePrivileges(grants []catalog.RoutineGrant, schema *catalog.Database) []catalog.RoutineGrant {
+	return slices.DeleteFunc(grants, func(grant catalog.RoutineGrant) bool {
+		return !slices.ContainsFunc(schema.Functions, func(function catalog.Function) bool {
+			return cmp.Or(function.Schema, schema.CurrentDatabase) == grant.Schema &&
+				strings.EqualFold(function.Name, grant.Name) && function.Kind == routineKind(grant.Type)
+		})
+	})
 }
 
 func (r *Reader) readRoutinePrivileges(ctx context.Context, account sessionAccount, databases []string) ([]catalog.RoutineGrant, error) {

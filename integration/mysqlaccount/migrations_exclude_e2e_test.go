@@ -76,13 +76,14 @@ func withoutComments(planned string) string {
 // administrator's connection plans with the same selector. Without the selector
 // the same account is refused, which shows the relief comes from the selector.
 // Events are left out too, because a report names them for an account holding
-// no EVENT and the administrator holds it.
+// no EVENT and the administrator holds it. This fixture has no routine to
+// remove: planning its rollback would separately require the routine grants.
 func TestAPlanningVerbThatLeavesAKindOutDoesNotNeedItsPrivilegeE2E(t *testing.T) {
 	const everyTrigger = "*[type=trigger|event]"
 	for _, s := range servers() {
 		t.Run(s.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newFixture(c, s, leftProcedure...)
+			f := newFixture(c, s)
 			file := sharedObjectsFile(c)
 			account := f.newAccount(c, "plan", "GRANT SELECT, SHOW VIEW ON {db}.* TO {account}", s.routineGrant)
 			address := f.url(account, f.left)

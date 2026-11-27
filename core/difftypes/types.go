@@ -1258,8 +1258,9 @@ type SchemaDiff struct {
 	// runs against found granted on routines, to every account, carried once
 	// for the whole diff and off the wire. The MySQL family reads it from
 	// mysql.procs_priv, whose rows for a routine DROP PROCEDURE and DROP
-	// FUNCTION delete; a plan that replaces a routine grants them again after
-	// the CREATE, and refuses the replacement where the read was refused.
+	// FUNCTION delete; a plan that replaces a routine or restores a removed
+	// routine grants them again after the CREATE. A refused read prevents the
+	// replacement and the generation of a rollback for a routine removal.
 	//
 	// A reversal runs against the same database and carries the same
 	// privileges.

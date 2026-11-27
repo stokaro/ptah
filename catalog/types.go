@@ -137,8 +137,8 @@ type Database struct {
 
 	// RoutinePrivileges are the privileges granted on the routines of the
 	// databases the read describes, to every account, where a reader reads
-	// them for a plan that replaces a routine. The comparison does not read
-	// them. See [RoutinePrivileges].
+	// them for a plan that replaces a routine or restores one in a rollback.
+	// The comparison does not read them. See [RoutinePrivileges].
 	RoutinePrivileges RoutinePrivileges `json:"-"`
 
 	// RolesOutOfScope lists roles that exist on the server but that this
@@ -1808,15 +1808,17 @@ type WideGrant struct {
 }
 
 // RoutinePrivileges is what a read found granted on routines, kept for a plan
-// that replaces a routine by DROP and CREATE.
+// that replaces a routine by DROP and CREATE, or restores a removed routine
+// in a rollback.
 //
 // On MySQL and MariaDB with the default automatic_sp_privileges, DROP
 // PROCEDURE and DROP FUNCTION delete every row of mysql.procs_priv for the
 // routine, whoever the grantee is, and the CREATE brings back only the row it
 // grants the account that runs it. A plan that replaces a routine for a new
-// body grants the others again after the CREATE. They are what the server
-// holds, not what a declaration grants, so they cover accounts a schema does
-// not manage, and nothing compares them. With automatic_sp_privileges off the
+// body, or restores a removed routine in a rollback, grants the others again
+// after the CREATE. They are what the server holds, not what a declaration
+// grants, so they cover accounts a schema does not manage, and nothing
+// compares them. With automatic_sp_privileges off the
 // DROP keeps every row, and the read reports none.
 //
 // The zero value gives nothing back and refuses nothing. It is what a read
@@ -1827,8 +1829,9 @@ type RoutinePrivileges struct {
 	// reported them.
 	Grants []RoutineGrant `json:"grants,omitempty"`
 	// Refused reports that the server refused the read, so the privileges on
-	// a routine are not known. A plan that would replace a routine refuses
-	// rather than take privileges nobody can see.
+	// a routine are not known. A plan that would replace a routine, or write
+	// the rollback of its removal, refuses rather than take privileges nobody
+	// can see.
 	Refused bool `json:"refused,omitempty"`
 }
 

@@ -187,6 +187,10 @@ func routineAdditionsFromRemovals(removals difftypes.FunctionChanges, current *c
 // Neither says anything about it.
 func refuseUnrestorableRoutines(diff *difftypes.SchemaDiff, current *catalog.Database, prior *schemamodel.Database) error {
 	for _, removal := range append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...) {
+		if current != nil && current.RoutinePrivileges.Refused {
+			return fmt.Errorf("%w: cannot plan the rollback of removing %s(%s): the database read could not read the routine privileges; grant the reading account SELECT on mysql.procs_priv",
+				ptaherr.ErrInvalidSchemaDiff, removal.Name, signatureText(removal.Signature))
+		}
 		if priorFunction(current, prior, removal.Name, removal.Kind, removal.Signature).Name == "" {
 			return fmt.Errorf("%w: cannot plan the rollback of removing %s(%s): the database read holds no such routine to restore",
 				ptaherr.ErrInvalidSchemaDiff, removal.Name, signatureText(removal.Signature))

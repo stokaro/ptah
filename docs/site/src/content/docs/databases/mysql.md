@@ -1751,8 +1751,16 @@ because nothing says what the `DROP` would take:
 cannot replace procedure app.rt: the account may not read mysql.procs_priv, so nothing says who holds privileges on the routine, and the DROP that replaces it takes them all; grant the account SELECT on mysql.procs_priv
 ```
 
-A plan that replaces no routine needs neither privilege. A versioned migration
-grants back what the database it was planned against holds, which is not
+A generated rollback of a routine removal also restores these rows, including
+privileges held by users and roles the schema does not declare. Generation
+is refused before writing the rollback when the account cannot read
+`mysql.procs_priv`. A row for a routine that the database does not hold is left out:
+`automatic_sp_privileges=0` can leave such rows after a drop, and granting them
+on a later routine of the same name would restore stale access.
+
+A plan that neither replaces a routine nor writes the rollback of its removal
+needs neither privilege. A versioned migration grants back what the database
+it was planned against holds, which is not
 always what the database it later runs on holds, and the grant option it
 checks is the planning account's, not the one of the account that later runs
 the migration.

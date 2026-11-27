@@ -695,6 +695,12 @@ A routine replaced for a new body is dropped first, and the plan grants back
 what each grantee held on it and denies again what was denied. Measured on SQL
 Server 2025.
 
+A generated rollback of a routine removal restores every grant and `DENY`
+the database read held on the routine. This includes unmanaged users and
+roles, and preserves `WITH GRANT OPTION` on a grant. A privilege granted only
+on another database where the migration later runs is outside the captured
+snapshot.
+
 The down file `ptah migrations generate` writes for a changed routine creates
 it again with the body and the options the database it was planned against
 held. A plan creates a routine before the tables the same plan creates
