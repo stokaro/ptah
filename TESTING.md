@@ -7,8 +7,8 @@ define regression, engine-level, fixture, and assertion requirements.
 
 ## Prerequisites
 
-Use the Go versions declared in `go.mod`; its `toolchain` directive identifies
-the build toolchain. Check `go version` before running Go commands. The
+Use **Go 1.26.7+**, matching the minimum in `go.mod`; its `toolchain` directive
+identifies the build toolchain. Check `go version` before running Go commands. The
 Makefile and shell scripts require Make and Bash. Database scenarios need
 Docker Compose; documentation checks use the dependencies described in
 [the site README](docs/site/README.md).
