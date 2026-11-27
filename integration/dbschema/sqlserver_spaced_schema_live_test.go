@@ -3,6 +3,7 @@
 package dbschema_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -55,13 +56,19 @@ func spacedSchemaPlan(c *qt.C, conn *dbschema.DatabaseConnection, schema, base s
 	return schemas
 }
 
-// dropSpacedSchema removes the table and the schema a row created.
+// dropSpacedSchema removes the table and the schema a row created, once the
+// row ends, whether it passed or not, and fails the row when a drop fails.
+// The row's context is canceled before its cleanups run, and a drop sent with
+// it never reaches the server, so the drops carry a context of their own.
 func dropSpacedSchema(c *qt.C, conn *dbschema.DatabaseConnection, schema string) {
 	c.Helper()
 	quoted := quoteSQLServerIdentifier(schema)
 	c.Cleanup(func() {
-		_, _ = conn.ExecContext(c.Context(), "DROP TABLE IF EXISTS "+quoted+".[widget]")
-		_, _ = conn.ExecContext(c.Context(), "DROP SCHEMA IF EXISTS "+quoted)
+		ctx := context.WithoutCancel(c.Context())
+		_, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoted+".[widget]")
+		c.Check(err, qt.IsNil)
+		_, err = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoted)
+		c.Check(err, qt.IsNil)
 	})
 }
 
