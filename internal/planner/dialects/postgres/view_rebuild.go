@@ -1128,7 +1128,14 @@ func rebuiltRelationGrants(diff *difftypes.SchemaDiff, object deporder.ViewLike,
 func (r rebuiltRoutine) privilegeNodes(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []ast.Node {
 	var nodes []ast.Node
 	for _, held := range r.held {
-		if !held.kept || held.Signature == nil {
+		if held.Signature == nil {
+			continue
+		}
+		if change, modified := rebuiltRoutineChange(held, diff, semantics); modified {
+			nodes = append(nodes, changedRoutineGrants(change, diff, semantics)...)
+			continue
+		}
+		if !held.kept {
 			continue
 		}
 		public := false

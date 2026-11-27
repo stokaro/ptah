@@ -2509,7 +2509,7 @@ func grantColumns(grant difftypes.GrantRef) []string {
 func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, grant := range diff.GrantsAdded {
-		if rebuild.dropsForGood(grant, semantics) {
+		if rebuild.dropsForGood(grant, semantics) || modifiedRoutineDropsGrant(diff, grant, semantics) {
 			continue
 		}
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
@@ -2519,7 +2519,7 @@ func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff, re
 		result = append(result, node)
 	}
 	for _, grant := range diff.GrantOptionsAdded {
-		if rebuild.dropsForGood(grant, semantics) {
+		if rebuild.dropsForGood(grant, semantics) || modifiedRoutineDropsGrant(diff, grant, semantics) {
 			continue
 		}
 		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
@@ -2537,7 +2537,7 @@ func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff, re
 func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, grant := range diff.GrantsRemoved {
-		if rebuild.dropsForGood(grant, semantics) ||
+		if rebuild.dropsForGood(grant, semantics) || modifiedRoutineDropsGrant(diff, grant, semantics) ||
 			rebuildReadsRemovedColumn(diff, rebuild) && rebuild.recreatesRelationGrant(grant, semantics) {
 			continue
 		}
@@ -2552,7 +2552,7 @@ func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff, re
 func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, grant := range diff.GrantOptionsRevoked {
-		if rebuild.dropsForGood(grant, semantics) ||
+		if rebuild.dropsForGood(grant, semantics) || modifiedRoutineDropsGrant(diff, grant, semantics) ||
 			rebuildReadsRemovedColumn(diff, rebuild) && rebuild.recreatesRelationGrant(grant, semantics) {
 			continue
 		}
@@ -2594,7 +2594,8 @@ func (p *Planner) refuseForeignGrantRevokes(diff *difftypes.SchemaDiff, rebuild 
 		return nil
 	}
 	for _, grant := range slices.Concat(diff.GrantsRemoved, diff.GrantOptionsRevoked) {
-		if rebuild.dropsForGood(grant, diff.EffectiveIdentifierSemantics(p.targetDialect())) {
+		semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+		if rebuild.dropsForGood(grant, semantics) || modifiedRoutineDropsGrant(diff, grant, semantics) {
 			continue
 		}
 		if grant.GrantedBy == "" || diff.ConnectedRole == "" || grant.GrantedBy == diff.ConnectedRole {
@@ -2612,7 +2613,7 @@ func (p *Planner) refuseForeignGrantRevokes(diff *difftypes.SchemaDiff, rebuild 
 
 // modifiedFunctionNodes is the statements that replace one routine: CREATE OR
 // REPLACE, or a drop and a create where the server refuses the replacement.
-func (p *Planner) modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
+func (p *Planner) modifiedFunctionNodes(fnDiff difftypes.FunctionDiff, diff *difftypes.SchemaDiff) []ast.Node {
 	target := fnDiff.Desired
 	var result []ast.Node
 	if replacementIsRefused(fnDiff) {
@@ -2644,7 +2645,8 @@ func (p *Planner) modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Nod
 	// A replacement even after the drop above: the plan still rewrites a
 	// routine that exists, and the drop took its grants with it. Only an added
 	// routine is a plain CREATE.
-	return append(result, modelast.FromFunctionFor(target, p.targetDialect()).SetReplace())
+	result = append(result, modelast.FromFunctionFor(target, p.targetDialect()).SetReplace())
+	return append(result, changedRoutineGrants(fnDiff, diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))...)
 }
 
 // replacementIsRefused reports whether PostgreSQL refuses this modification

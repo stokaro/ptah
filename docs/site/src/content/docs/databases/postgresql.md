@@ -2800,6 +2800,15 @@ other renderers refuse the statement by name. Column privileges are modeled for
 PostgreSQL, MySQL, MariaDB and SQL Server; the other renderers refuse them by
 name too.
 
+Changing a routine's parameter list or return type can require a drop and a
+create. The replacement keeps the privileges read from that overload,
+including grants to roles the schema does not manage, such as `pg_monitor`,
+and their grant options. An overload that was not executable by `PUBLIC`
+remains so. Declared grant changes still apply to the replacement, and the
+down migration restores the original signature and its original grants.
+Changing only the body uses `CREATE OR REPLACE`, which keeps the access list
+in place.
+
 New-role SQL fails closed when the role already
 exists, so later comments and grants cannot be applied to a role with
 unverified security attributes. Role descriptions are applied with
