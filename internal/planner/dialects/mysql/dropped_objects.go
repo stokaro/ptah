@@ -63,7 +63,7 @@ func (p *Planner) droppedObjects(diff *difftypes.SchemaDiff) droppedObjects {
 // by DROP and CREATE, keyed the way semantics compares the object a grant
 // names. [Planner.replacesRoutine] decides it for both the statements and the
 // privileges: the revokes [Planner.droppedObjects] leaves out and the grants
-// [Planner.heldOnReplacedRoutines] gives back.
+// [Planner.heldOnRecreatedRoutines] gives back.
 func (p *Planner) replacedRoutines(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[string]schemamodel.Function {
 	replaced := make(map[string]schemamodel.Function)
 	for _, change := range diff.FunctionsModified {
@@ -74,19 +74,23 @@ func (p *Planner) replacedRoutines(diff *difftypes.SchemaDiff, semantics identif
 	return replaced
 }
 
-// heldGrant is a privilege the read reported on a routine the plan replaces,
+// heldGrant is a privilege the read reported on a routine the plan recreates,
 // with WithOption set where the grant option comes back with it.
 type heldGrant struct {
-	grant   difftypes.GrantRef
-	routine schemamodel.Function
+	grant    difftypes.GrantRef
+	routine  schemamodel.Function
+	restored bool
 }
 
-// heldOnReplacedRoutines is every privilege the read reported on a routine
-// the plan replaces by DROP and CREATE, except the ones the plan revokes,
-// which it leaves revoked. A privilege held WITH GRANT OPTION keeps the option
+// heldOnRecreatedRoutines is every privilege the read reported on a routine
+// the plan creates again, after a replacement or in a rollback, except the
+// ones the plan revokes, which it leaves revoked. A privilege held WITH GRANT
+// OPTION keeps the option
 // unless the plan revokes the option. [Planner.grantsGivenBack] grants them
 // after the CREATE, and [Planner.refuseALostGrantOption] refuses a plan that
 // would have to give back an option the target's renderer does not write.
+// Restored additions may copy an observed grant option through
+// [Planner.restoredGrantOption].
 //
 // The DROP takes every privilege on the routine, and the CREATE brings back
 // none: measured on Oracle 23.26.3 and SQL Server 2025, and on MySQL 8.4 and
@@ -115,12 +119,12 @@ type heldGrant struct {
 // routine's, since a routine is granted on with ON FUNCTION or ON PROCEDURE;
 // [Planner.routinePrivilegesGivenBack] gives back what the read found there.
 // A target without [capability.RoleManagement] plans no grant at all.
-func (p *Planner) heldOnReplacedRoutines(diff *difftypes.SchemaDiff) []heldGrant {
+func (p *Planner) heldOnRecreatedRoutines(diff *difftypes.SchemaDiff) []heldGrant {
 	if !p.capabilities().Has(capability.RoleManagement) || !routinesByName.Get(p.targetDialect()) {
 		return nil
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	replaced := p.replacedRoutines(diff, semantics)
+	replaced := p.recreatedRoutines(diff, semantics)
 	if len(replaced) == 0 {
 		return nil
 	}
@@ -140,23 +144,32 @@ func (p *Planner) heldOnReplacedRoutines(diff *difftypes.SchemaDiff) []heldGrant
 			continue
 		}
 		grant.WithOption = grant.WithOption && !optionRevoked[key]
-		held = append(held, heldGrant{grant: grant, routine: routine})
+		held = append(held, heldGrant{grant: grant, routine: routine,
+			restored: addedRoutine(diff, semantics, routine.Name)})
 	}
 	return held
 }
 
 // grantsGivenBack is the GRANT, after the CREATE, of each privilege
-// [Planner.heldOnReplacedRoutines] reports, followed by the DENY of each one
+// [Planner.heldOnRecreatedRoutines] reports, followed by the DENY of each one
 // [Planner.deniesGivenBack] reports and the GRANT of each one
 // [Planner.routinePrivilegesGivenBack] reports. The grants the plan adds are
 // written after these, as on any other object, so a declared GRANT of a
 // privilege the grantee was denied replaces the DENY, as it does on a routine
 // the plan keeps.
 func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
-	held := p.heldOnReplacedRoutines(diff)
+	held := p.heldOnRecreatedRoutines(diff)
 	nodes := make([]ast.Node, 0, len(held))
 	for _, given := range held {
 		grant := given.grant
+		if given.restored && grant.WithOption && !p.writesGrantOption() {
+			node, err := p.restoredGrantOption(grant)
+			if err != nil {
+				return nil, err
+			}
+			nodes = append(nodes, node)
+			continue
+		}
 		nodes = append(nodes, ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetWithOption(grant.WithOption))
 	}
@@ -172,8 +185,8 @@ func (p *Planner) grantsGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error
 }
 
 // routinePrivilegesGivenBack is the GRANT, after the CREATE, of what each
-// account held on a MySQL or MariaDB routine the plan replaces by DROP and
-// CREATE, as the read found it in mysql.procs_priv
+// account held on a MySQL or MariaDB routine the plan creates again after a
+// replacement or in a rollback, as the read found it in mysql.procs_priv
 // ([difftypes.SchemaDiff.CurrentRoutinePrivileges]).
 //
 // Under the default automatic_sp_privileges the DROP deletes every row of
@@ -207,7 +220,7 @@ func (p *Planner) routinePrivilegesGivenBack(diff *difftypes.SchemaDiff) ([]ast.
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	var nodes []ast.Node
-	for _, routine := range p.replacedRoutineList(diff) {
+	for _, routine := range p.recreatedRoutineList(diff) {
 		ref, parsed := tableref.Parse(routine.Name)
 		if !parsed {
 			ref = tableref.Ref{Name: routine.Name}
@@ -334,8 +347,8 @@ func (p *Planner) refuseUnreadRoutinePrivileges(diff *difftypes.SchemaDiff) erro
 }
 
 // deniesGivenBack is the DENY, after the CREATE, of each privilege the read
-// reported denied on a routine the plan replaces by DROP and CREATE, to
-// whichever grantee it was denied to.
+// reported denied on a routine the plan creates again, to whichever grantee
+// it was denied to.
 //
 // The DROP takes a DENY with the routine, measured on SQL Server 2025, and the
 // comparison plans no DENY the database already holds. Without these a body
@@ -355,7 +368,7 @@ func (p *Planner) deniesGivenBack(diff *difftypes.SchemaDiff) ([]ast.Node, error
 		return nil, nil
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	replaced := p.replacedRoutines(diff, semantics)
+	replaced := p.recreatedRoutines(diff, semantics)
 	var nodes []ast.Node
 	for _, denied := range diff.CurrentPartialRevokes {
 		_, onReplaced := replaced[semantics.QualifiedTableIdentityKey(denied.ObjectName)]
@@ -407,8 +420,8 @@ func (p *Planner) refuseALostGrantOption(diff *difftypes.SchemaDiff) error {
 	if p.writesGrantOption() {
 		return nil
 	}
-	for _, held := range p.heldOnReplacedRoutines(diff) {
-		if !held.grant.WithOption {
+	for _, held := range p.heldOnRecreatedRoutines(diff) {
+		if !held.grant.WithOption || held.restored {
 			continue
 		}
 		return fmt.Errorf(

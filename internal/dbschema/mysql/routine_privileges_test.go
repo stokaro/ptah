@@ -64,7 +64,7 @@ func TestReader_ReadsThePrivilegesOnRoutines_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := dbtest.Open(t, dbtest.MySQLSession(test.version, dbtest.MySQLAllGrants,
-				procsPriv(rows, nil, visibleCatalog{selected: "shop"}.answer)))
+				procsPriv(rows, nil, visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1"), functionRow("price", "RETURN 1")}}.answer)))
 
 			got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 
@@ -118,7 +118,7 @@ func TestReader_KeepsTheAccountsOwnRowOnRoutinesWithARoleActive(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := dbtest.Open(t, currentRole(test.role, dbtest.MySQLSession(test.version, grants,
-				procsPriv(rows, nil, visibleCatalog{selected: "shop"}.answer))))
+				procsPriv(rows, nil, visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1"), functionRow("price", "RETURN 1")}}.answer))))
 
 			got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 
@@ -140,7 +140,7 @@ func TestReader_RecordsThePrivilegesOnRoutinesTheReaderMayNotGrant(t *testing.T)
 		"GRANT EXECUTE ON `other`.* TO `app`@`%` WITH GRANT OPTION",
 	}
 	db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, grants,
-		procsPriv(rows, nil, visibleCatalog{selected: "shop"}.answer)))
+		procsPriv(rows, nil, visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1"), functionRow("price", "RETURN 1")}}.answer)))
 
 	got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 
@@ -158,7 +158,7 @@ func TestReader_ReadsNoPrivilegesOnRoutinesTheDropKeeps(t *testing.T) {
 	c := qt.New(t)
 	refused := &mysqldriver.MySQLError{Number: 1142, Message: "SELECT command denied to user 'app'@'%' for table 'procs_priv'"}
 	session := dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants,
-		procsPriv([][]driver.Value{{"u1", "%", "p", "PROCEDURE", "Execute"}}, refused, visibleCatalog{selected: "shop"}.answer))
+		procsPriv([][]driver.Value{{"u1", "%", "p", "PROCEDURE", "Execute"}}, refused, visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1"), functionRow("price", "RETURN 1")}}.answer))
 	db := dbtest.Open(t, automaticSPPrivileges(0, session))
 
 	got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
@@ -174,7 +174,7 @@ func TestReader_RecordsARefusedReadOfThePrivilegesOnRoutines(t *testing.T) {
 	c := qt.New(t)
 	refused := &mysqldriver.MySQLError{Number: 1142, Message: "SELECT command denied to user 'app'@'%' for table 'procs_priv'"}
 	db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants,
-		procsPriv(nil, refused, visibleCatalog{selected: "shop"}.answer)))
+		procsPriv(nil, refused, visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1"), functionRow("price", "RETURN 1")}}.answer)))
 
 	got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 
@@ -187,10 +187,31 @@ func TestReader_ReadsThePrivilegesOnRoutines_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	broken := errors.New("connection reset")
 	db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants,
-		procsPriv(nil, broken, visibleCatalog{selected: "shop"}.answer)))
+		procsPriv(nil, broken, visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1"), functionRow("price", "RETURN 1")}}.answer)))
 
 	got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `failed to read privileges on routines: .*connection reset`)
 	c.Assert(got, qt.IsNil)
+}
+
+// A stale row left after DROP with automatic_sp_privileges disabled belongs
+// to no routine. The reader keeps only rows on an existing name and kind.
+func TestReader_LeavesOutPrivilegesOnMissingRoutines(t *testing.T) {
+	c := qt.New(t)
+	rows := [][]driver.Value{
+		{"reader", "%", "P", "PROCEDURE", "Execute"},
+		{"gone", "%", "missing", "PROCEDURE", "Execute"},
+		{"other_kind", "%", "p", "FUNCTION", "Execute"},
+	}
+	visible := visibleCatalog{selected: "shop", routines: [][]driver.Value{procedureRow("p", "SELECT 1")}}
+	db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants,
+		procsPriv(rows, nil, visible.answer)))
+
+	got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.RoutinePrivileges.Grants, qt.DeepEquals, []catalog.RoutineGrant{
+		{User: "reader", Host: "%", Schema: "shop", Name: "P", Type: "PROCEDURE", Privileges: []string{"EXECUTE"}, ReaderMayGrant: true},
+	})
 }

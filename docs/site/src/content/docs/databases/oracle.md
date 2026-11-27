@@ -680,10 +680,19 @@ after it answers `ORA-00942` once the `DROP` has committed. Measured on
 The `CREATE` of a replaced routine brings back no privilege, so the plan grants
 back, after it, every privilege the read found on the routine and does not
 revoke, a privilege of a grantee the schema does not manage included. A
-privilege a grantee holds `WITH GRANT OPTION` stops the plan instead, since
-Ptah writes no grant option on Oracle (`ORA-01926` refuses one to a role).
+privilege a grantee holds `WITH GRANT OPTION` stops that replacement plan,
+because its grant renderer writes no option on Oracle (`ORA-01926` refuses
+one to a role).
 Revoke the privilege and grant it again without the option, or change the
 routine by hand with `CREATE OR REPLACE`, which keeps it.
+
+The rollback of a removed routine restores every object grant the database
+read found on it, including grants to users the schema does not declare.
+An observed grant to a user keeps `WITH GRANT OPTION`: the catalog row proves
+that the grantee may hold it. This restoration does not allow a declaration
+to grant the option to a role. A generated migration restores the grants of
+the database it was planned against; grants made only on another database
+where the migration runs are outside that snapshot.
 
 A system privilege held by the role or by `PUBLIC` gives the privilege on every
 table, and a revoke on one table cannot take it away. Ptah reads `SELECT`,
