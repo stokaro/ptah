@@ -371,6 +371,14 @@ type GenerateMigrationOptions struct {
 
 ### Bidirectional schema planning
 
+`PlanMigration` and `GenerateMigration` bind PostgreSQL-family declarations
+to the planning connection's current schema and retain explicit schema names
+from the catalog read, including on URLs that pin `search_path`. Both files
+therefore refer to the compared objects even when `pg_catalog` holds the same
+name. This placement preserves explicit user-type references such as
+`public.point`, while a bare built-in type name stays built in. SQL text in
+routine bodies, expressions, and defaults keeps its authored references.
+
 `PlanBidirectionalSchemaDiff` is the shared semantic boundary used by the
 native generator and compatibility adapters. It accepts the forward diff, the
 desired and introspected current schemas, the dialect capability set, and a

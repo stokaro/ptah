@@ -126,8 +126,8 @@ func NewPostgreSQLWireReaderWithCapabilities(
 // SetRealmScoped records whether the connection describes every schema of its
 // database, as a URL that pins no search_path does. A read over such a
 // connection names the schema of every object it reports when the run asks
-// for it with [readscope.Qualified]; a reader of a connection limited to one
-// schema leaves the objects of that schema unqualified whatever the run asks.
+// for it with [readscope.Qualified]. A connection limited to one schema keeps
+// its objects unqualified unless the run asks for [readscope.FullyQualified].
 func (r *Reader) SetRealmScoped(realm bool) {
 	r.realm = realm
 }
@@ -223,9 +223,10 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 
 // ReadSchemaContext reads the complete database schema. On a realm-scoped
 // connection, a ctx carrying [readscope.Qualified] names the schema of every
-// object, the current schema's included.
+// object, the current schema's included. [readscope.FullyQualified] asks for
+// the same names on a connection scoped to one schema too.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
-	if r.realm && readscope.IsQualified(ctx) && !r.qualified {
+	if (r.realm && readscope.IsQualified(ctx) || readscope.IsFullyQualified(ctx)) && !r.qualified {
 		return r.qualifiedReader().readSchema(ctx)
 	}
 	return r.readSchema(ctx)

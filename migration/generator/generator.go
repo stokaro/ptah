@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/definer"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/migrationfile"
@@ -369,6 +370,11 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 // artifacts. Call WriteFiles only after any surrounding database cleanup or
 // other pre-publication work succeeds.
 //
+// On PostgreSQL-family targets, modeled object names retain their schemas in
+// both directions. Unqualified declarations are placed in the connection's
+// current schema even when its URL pins search_path, so a reference cannot
+// resolve to a same-named catalog object. SQL bodies remain as authored.
+//
 // A nil plan with a nil error means the comparison found no changes: there is
 // nothing to publish and nothing to release. Otherwise the returned plan holds
 // the migration directory open until it is published or closed, so a caller
@@ -408,7 +414,6 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if ownedConnection {
 		defer dbschema.CloseAndWarn(conn)
 	}
-
 	// The read leaves out the kinds the inclusion leaves out whole, and the
 	// inclusion applies after the exclusion, to both sides.
 	desired, dbSchema, err := readExcludedPlanStates(prepared.inclusion.ReadContext(ctx), conn, desired, prepared.exclusion, opts)
@@ -515,12 +520,20 @@ func readExcludedPlanStates(
 	exclusion atlasfilter.Exclusion,
 	opts GenerateMigrationOptions,
 ) (*schemamodel.Database, *catalog.Database, error) {
+	// Names in both directions must reach the compared object even when
+	// pg_catalog holds the same name. Placement and the read agree on the
+	// current schema; the rest of planning keeps the caller's context.
+	desired, err := placeMigrationNames(conn.Info(), desired)
+	if err != nil {
+		return nil, nil, fmt.Errorf("place migration object names: %w", err)
+	}
+	ctx = readscope.FullyQualified(ctx)
 	// Native patterns count from the connection's schema on every URL; the
 	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
 	// that names no schema.
 	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema, Dialect: conn.Info().Dialect}
 	declared := desired
-	desired, _, err := exclusion.Desired(desired, naming)
+	desired, _, err = exclusion.Desired(desired, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
 	}

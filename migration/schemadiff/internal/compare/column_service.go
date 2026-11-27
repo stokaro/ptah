@@ -163,7 +163,7 @@ func columnTypeOwned(desired schemamodel.Field, current catalog.Column, target s
 
 func commonColumnTypeChange(desired schemamodel.Field, current catalog.Column, currentType, target string, domains map[string]domainIdentity) (string, bool) {
 	held, currentDomain := dbColumnDomainIdentity(current)
-	declared, desiredDomain := desiredColumnDomainIdentity(desired.Type, domains)
+	declared, desiredDomain := desiredColumnDomainIdentity(desired.Type, domains, target)
 	if currentDomain || desiredDomain {
 		if currentDomain && domainIdentitiesMatch(held, declared) {
 			return "", true

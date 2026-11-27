@@ -299,7 +299,7 @@ func placedEnumTypes(enums []schemamodel.Enum, schema, targetPlatform string) ma
 		if strings.TrimSpace(enum.Schema) != "" || !unqualified(name) {
 			continue
 		}
-		if _, seen := placed[name]; seen || namesABuiltInType(targetPlatform, name) {
+		if _, seen := placed[name]; seen || NamesBuiltInType(targetPlatform, name) {
 			placed[name] = ""
 			continue
 		}
