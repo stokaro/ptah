@@ -50,11 +50,16 @@ const (
 // session's search path, the schemas the server searches without being told
 // included: pg_catalog, the session's temporary schema and, on CockroachDB,
 // pg_extension.
-// [readCatalogNames] keeps the namespaces the server owns. The creation path
-// is current_schemas(false) as a JSON array: the schemas of the search path
-// that exist, without the implicit ones; see [protection.creationNamespace].
-// The rules are read by [readReachingRelations], and the database's name by
-// [protection.qualifierNamespace].
+// [readCatalogNames] keeps the namespaces the server owns, and the relations
+// of the other namespaces for [loadRelationGraph]. The search path is a JSON
+// object read by [readSessionPath]: current_schemas(false), the schemas of
+// the search path that exist without the implicit ones, which
+// [protection.creationNamespace] reads; the search_path setting and the
+// session's user, from which [relationGraph] looks up a relation named
+// without a schema, schemas created later included; and the schemas of the
+// dev database. The rules are read by [loadRelationGraph], and the
+// database's name by [protection.qualifierNamespace]. CURRENT_USER is a
+// keyword, not a function, and takes no schema.
 //
 // The names are read from the session rather than declared because they are
 // the server's: PostgreSQL 16 holds 264 relations in pg_catalog and 19 holds
@@ -96,7 +101,11 @@ const sessionCatalogColumns = `SELECT pg_catalog.current_setting('client_encodin
 	) AS o
 	JOIN pg_catalog.pg_namespace AS n ON n.oid = o.ns
 	WHERE n.nspname = ANY (pg_catalog.current_schemas(true))),
-	pg_catalog.array_to_json(pg_catalog.current_schemas(false))::text`
+	pg_catalog.json_build_object(
+		'existing', pg_catalog.current_schemas(false),
+		'setting', pg_catalog.current_setting('search_path'),
+		'user', CURRENT_USER,
+		'schemas', (SELECT pg_catalog.array_agg(nspname::text) FROM pg_catalog.pg_namespace))::text`
 
 // sessionRulesColumn is a JSON array of [namespace, relation, definition] for
 // every rule the dev database holds that initdb did not create: a view's
@@ -123,9 +132,9 @@ type sessionNames struct {
 	// database is the name of the dev database, or "" for a session the
 	// guard did not read; see [protection.qualifierNamespace].
 	database string
-	// relations is the guard's [reachingRelations], which
-	// [guard.Validate] sets on the copy it reads a statement with.
-	relations *reachingRelations
+	// graph is the guard's [relationGraph], which [guard.Validate] sets on
+	// the copy it reads a statement with.
+	graph *relationGraph
 }
 
 // catalogNames is, for each class, the names an unqualified name reaches in a
@@ -134,28 +143,33 @@ type sessionNames struct {
 // [fallbackCatalogNamespace].
 type catalogNames map[catalogClass]map[string]string
 
-// readCatalogNames decodes the third column of [sessionCatalogQuery] and keeps
-// the names in a namespace the server of dialect owns.
-func readCatalogNames(dialect, encoded string) (catalogNames, error) {
+// readCatalogNames decodes the third column of [sessionCatalogQuery], and
+// returns the names in a namespace the server of dialect owns and the names
+// of the relations of each other namespace.
+func readCatalogNames(dialect, encoded string) (catalogNames, map[string][]string, error) {
 	var rows [][3]json.RawMessage
 	if err := json.Unmarshal([]byte(encoded), &rows); err != nil {
-		return nil, fmt.Errorf("read the dev session's catalog names: %w", err)
+		return nil, nil, fmt.Errorf("read the dev session's catalog names: %w", err)
 	}
 	policy := protection{dialect: dialect}
 	names := make(catalogNames)
+	relations := make(map[string][]string)
 	for _, row := range rows {
 		var class, namespace string
 		var members []string
 		if err := json.Unmarshal(row[0], &class); err != nil {
-			return nil, fmt.Errorf("read the dev session's catalog names: %w", err)
+			return nil, nil, fmt.Errorf("read the dev session's catalog names: %w", err)
 		}
 		if err := json.Unmarshal(row[1], &namespace); err != nil {
-			return nil, fmt.Errorf("read the dev session's catalog names: %w", err)
+			return nil, nil, fmt.Errorf("read the dev session's catalog names: %w", err)
 		}
 		if err := json.Unmarshal(row[2], &members); err != nil {
-			return nil, fmt.Errorf("read the dev session's catalog names: %w", err)
+			return nil, nil, fmt.Errorf("read the dev session's catalog names: %w", err)
 		}
 		if !policy.isProtectedPostgresNamespace(namespace) {
+			if catalogClass(class) == classRelation {
+				relations[namespace] = append(relations[namespace], members...)
+			}
 			continue
 		}
 		byName := names[catalogClass(class)]
@@ -167,7 +181,7 @@ func readCatalogNames(dialect, encoded string) (catalogNames, error) {
 			byName[strings.ToLower(member)] = namespace
 		}
 	}
-	return names, nil
+	return names, relations, nil
 }
 
 // fallbackCatalogNamespace is the namespace a guard that read no session takes
@@ -270,14 +284,86 @@ func (p protection) creationNamespace(name string) string {
 	return ""
 }
 
-// readCreationPath decodes the fourth column of [sessionCatalogQuery], the
-// schemas of current_schemas(false) as a JSON array.
-func readCreationPath(encoded string) ([]string, error) {
-	var path []string
+// sessionPath is the fourth column of [sessionCatalogQuery].
+type sessionPath struct {
+	// Existing is current_schemas(false): the schemas of the search path that
+	// exist, in its order, without the implicit ones.
+	Existing []string `json:"existing"`
+	// Setting is the search_path setting as the session holds it.
+	Setting string `json:"setting"`
+	// User is the session's user, which $user in the setting stands for.
+	User string `json:"user"`
+	// Schemas are the schemas of the dev database.
+	Schemas []string `json:"schemas"`
+}
+
+// readSessionPath decodes the fourth column of [sessionCatalogQuery].
+func readSessionPath(encoded string) (sessionPath, error) {
+	var path sessionPath
 	if err := json.Unmarshal([]byte(encoded), &path); err != nil {
-		return nil, fmt.Errorf("read the dev session's search path: %w", err)
+		return sessionPath{}, fmt.Errorf("read the dev session's search path: %w", err)
 	}
 	return path, nil
+}
+
+// searchPath returns the schemas the search_path setting lists, as the
+// server reads them: separated by commas, an unquoted name folded to lower
+// case and a double-quoted one kept with its doubled quotes undone, and $user
+// read as the session's user. A schema listed that does not exist is kept,
+// since the replay can create it.
+func (s sessionPath) searchPath() []string {
+	var schemas []string
+	for _, item := range splitSearchPath(s.Setting) {
+		if item == "$user" {
+			item = s.User
+		}
+		if item != "" {
+			schemas = append(schemas, item)
+		}
+	}
+	return schemas
+}
+
+// splitSearchPath splits a search_path setting into its names, as the
+// server's SplitIdentifierString does.
+func splitSearchPath(setting string) []string {
+	var names []string
+	var name strings.Builder
+	quoted, inQuotes := false, false
+	flush := func() {
+		item := name.String()
+		if !quoted {
+			item = strings.ToLower(strings.TrimSpace(item))
+		}
+		names = append(names, item)
+		name.Reset()
+		quoted = false
+	}
+	for index := 0; index < len(setting); index++ {
+		character := setting[index]
+		switch {
+		case inQuotes && character == '"' && index+1 < len(setting) && setting[index+1] == '"':
+			name.WriteByte('"')
+			index++
+		case character == '"':
+			inQuotes = !inQuotes
+			quoted = true
+		case inQuotes:
+			name.WriteByte(character)
+		case character == ',':
+			flush()
+		case character == ' ' || character == '\t' || character == '\n':
+			if name.Len() > 0 && !quoted {
+				name.WriteByte(character)
+			}
+		default:
+			name.WriteByte(character)
+		}
+	}
+	if strings.TrimSpace(setting) != "" {
+		flush()
+	}
+	return names
 }
 
 // createdNameAt returns the namespace the server owns that the name a CREATE
@@ -417,7 +503,11 @@ func (p protection) copyTargetNamespace(tokens []lexer.Token) string {
 		return ""
 	}
 	target, _ := replay.QualifiedIdentifierAt(tokens, 1)
-	return p.relationReach(target, relationPosition)
+	if namespace := p.writeTargetNamespace(target); namespace != "" {
+		return namespace
+	}
+	folded, _ := foldedNameAt(tokens, 1)
+	return p.graphReach(folded)
 }
 
 // closingParenthesis returns the index of the parenthesis that closes the one
@@ -446,11 +536,15 @@ const unqualifiedRemedy = "qualify the name with the schema of the object it mea
 // namespace the server owns. unqualified is the name written without a schema
 // that reached the namespace, and the refusal then says how to name another
 // object. through names the object that carries the change to the namespace,
-// such as `the relation "v"` for a view the run created over pg_authid, and no
-// remedy follows, since naming that object another way reaches the same
-// namespace. Both are "" for a statement that names the namespace itself.
+// such as `the relation "v"` for a view the run created over pg_authid. The
+// remedy follows it only when the statement names that object without a
+// schema, since the object the server finds for such a name depends on the
+// search path, and naming it with its schema reaches the same namespace
+// otherwise. Both are "" for a statement that names the namespace itself.
 func refuseProtectedNamespace(dialect, operation, unqualified, through string) error {
 	switch {
+	case through != "" && unqualified != "":
+		return replay.RefuseWithRemedy(dialect, fmt.Sprintf("%s through %s", operation, through), unqualifiedRemedy)
 	case through != "":
 		return replay.Refuse(dialect, fmt.Sprintf("%s through %s", operation, through))
 	case unqualified != "":

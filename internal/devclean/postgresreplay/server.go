@@ -3,7 +3,6 @@ package postgresreplay
 import (
 	"fmt"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/pgextensioninstall"
@@ -173,16 +172,7 @@ func postgresServerWidePrivilege(tokens []lexer.Token) string {
 // statement is the protected namespace: a routine created in pg_catalog, or a
 // privilege granted on it, changes the catalogs the rest of the run reads.
 func validatePostgresServerWideStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
-	policy := protection{
-		dialect:       dialect,
-		database:      names.database,
-		sessionTables: scope.Session && dialect == platform.Postgres,
-		catalog:       names.catalog,
-		path:          names.path,
-		relations:     names.relations,
-		unqualified:   new(string),
-		through:       new(string),
-	}
+	policy := names.protection(dialect, scope)
 	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return refuseProtectedNamespace(dialect, fmt.Sprintf("protected namespace %q mutation", namespace),
 			*policy.unqualified, *policy.through)

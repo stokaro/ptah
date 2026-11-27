@@ -12,30 +12,30 @@ import (
 )
 
 // validatePostgresReplayStatement refuses a statement whose effects scope
-// cannot confine ([protection.refuseReplayStatement]) and records what an
-// accepted one makes a relation that writes a protected namespace
-// ([protection.recordReachingRelation]), for the statements after it.
+// cannot confine ([protection.refuseReplayStatement]).
 func validatePostgresReplayStatement(dialect string, names sessionNames, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
-	policy := protection{
+	policy := names.protection(dialect, scope)
+	policy.trustedSQL = scope.TrustedSQL
+	policy.publications = scope.Publications
+	return policy.refuseReplayStatement(tokens, scope)
+}
+
+// protection is how p reads a statement of dialect in scope, recording the
+// first unqualified name and the object a refusal names.
+func (n sessionNames) protection(dialect string, scope replay.Scope) protection {
+	return protection{
 		dialect:       dialect,
-		database:      names.database,
+		database:      n.database,
 		sessionTables: scope.Session && dialect == platform.Postgres,
-		trustedSQL:    scope.TrustedSQL,
-		publications:  scope.Publications,
-		catalog:       names.catalog,
-		path:          names.path,
-		relations:     names.relations,
+		catalog:       n.catalog,
+		path:          n.path,
+		graph:         n.graph,
 		unqualified:   new(string),
 		through:       new(string),
 	}
-	if err := policy.refuseReplayStatement(tokens, scope); err != nil {
-		return err
-	}
-	policy.recordReachingRelation(tokens)
-	return nil
 }
 
 // refuseReplayStatement is the refusal of a statement, at least one token
@@ -81,13 +81,27 @@ func (p protection) refuseReplayStatement(tokens []lexer.Token, scope replay.Sco
 	if selectsIntoPostgresTemporaryObject(tokens) {
 		return replay.Refuse(dialect, "TEMP object")
 	}
-	if operation := dangerousPostgresFunctionCall(tokens, scope); operation != "" {
+	if operation := refusedFunctionReach(tokens, scope); operation != "" {
 		return replay.Refuse(dialect, operation)
 	}
-	if operation := referencedFunctionReach(tokens, scope); operation != "" {
-		return replay.Refuse(dialect, operation)
+	if name := p.crossDatabaseName(tokens); name != "" {
+		return replay.Refuse(dialect, fmt.Sprintf("name %q of another database", name))
 	}
 	return p.validateBase(tokens)
+}
+
+// refusedFunctionReach names a refused function the statement reaches, or ""
+// when it reaches none: one it calls, one a trigger's argument calls when the
+// trigger fires, or one it names for an operator, an aggregate or a type to
+// call later. [functionReach] answers for each.
+func refusedFunctionReach(tokens []lexer.Token, scope replay.Scope) string {
+	if operation := dangerousPostgresFunctionCall(tokens, scope); operation != "" {
+		return operation
+	}
+	if operation := triggerArgumentCall(tokens, scope); operation != "" {
+		return operation
+	}
+	return referencedFunctionReach(tokens, scope)
 }
 
 // protection reads the namespaces a replayed statement must not change on one
@@ -111,9 +125,9 @@ type protection struct {
 	// path is the schemas the dev session can create an object in when a
 	// CREATE writes its name without one; see [protection.creationNamespace].
 	path []string
-	// relations are the relations a write through which reaches a namespace
-	// the server owns; see [protection.relationReach]. Nil holds none.
-	relations *reachingRelations
+	// graph is the relations the guard knows and what a write to each
+	// reaches; see [relationGraph]. Nil holds none.
+	graph *relationGraph
 	// unqualified receives the first name written without a schema that
 	// reached a namespace the server owns, so the refusal can say to qualify
 	// it. Every reader returns its first protected namespace at once, so the
@@ -134,7 +148,7 @@ func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) str
 	for _, target := range replay.MutationTargets(tokens) {
 		var namespace string
 		if writes {
-			namespace = p.relationReach(target, relationPosition)
+			namespace = p.writeTargetNamespace(target)
 		} else {
 			namespace = p.protectedNamespaceFromMutationTarget(tokens, target, class)
 		}
@@ -146,6 +160,12 @@ func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) str
 		return namespace
 	}
 	if namespace := p.embeddedWriteNamespace(tokens[1:]); namespace != "" {
+		return namespace
+	}
+	if namespace := p.graphWriteNamespace(tokens); namespace != "" {
+		return namespace
+	}
+	if namespace := p.parentTableNamespace(tokens); namespace != "" {
 		return namespace
 	}
 	if namespace := p.protectedPostgresMutationListNamespace(tokens); namespace != "" {
@@ -1040,24 +1060,32 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token, scope replay.Scope) str
 	if definesPostgresRoutine(tokens) || replay.NormalizedIdentifier(tokens[0]) == "CALL" {
 		return ""
 	}
+	operation, _ := refusedPostgresCall(tokens, scope)
+	return operation
+}
+
+// refusedPostgresCall returns what the first call in tokens that the guard
+// refuses does ([functionReach]) and the function's name, or "". A call of
+// set_config whose setting the guard accepts as a SET is not one.
+func refusedPostgresCall(tokens []lexer.Token, scope replay.Scope) (operation, name string) {
 	for index := 0; index+1 < len(tokens); index++ {
 		if !tokens[index+1].MatchOperatorValue("(") {
 			continue
 		}
-		name := replay.NormalizedIdentifier(tokens[index])
+		called := replay.NormalizedIdentifier(tokens[index])
 		// A call spells its arguments, so the setting a set_config call makes
 		// can be read and judged as SET is. A function only named, as by an
 		// operator or an aggregate, cannot; see [referencedFunctionReach].
-		if name == "SET_CONFIG" {
+		if called == "SET_CONFIG" {
 			if setting, ok := postgresSetConfig(tokens, index+1); ok && setting.accepted() {
 				continue
 			}
 		}
-		if operation := functionReach(name, scope); operation != "" {
-			return operation
+		if operation := functionReach(called, scope); operation != "" {
+			return operation, replay.IdentifierValue(tokens[index])
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // functionReach names what running the function name, folded to upper case,
@@ -1066,10 +1094,12 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token, scope replay.Scope) str
 // ([dangerousPostgresFunctionCall]) and for one it names for the server to
 // call later ([referencedFunctionReach]), so a function refused as a call is
 // refused as an operator's or an aggregate's as well. Under
-// [replay.Scope.TrustedSQL] a dblink function is not one: it reaches another
-// server and changes nothing in this one. The control, replication, large object and advisory lock functions
-// are refused either way, because they act on the server the run uses, on
-// state the realm cleanup cannot remove, or on the replay's session.
+// [replay.Scope.TrustedSQL] a dblink function is not one, and neither is a
+// function of [serverFileFunctions]: each reaches past the database and
+// changes nothing in it that the cleanup misses. The control, replication,
+// large object, collation import and advisory lock functions are refused
+// either way, because they act on the server the run uses, on state the
+// realm cleanup cannot remove, or on the replay's session.
 func functionReach(name string, scope replay.Scope) string {
 	// The control and replication functions are the ones the PostgreSQL
 	// descriptor states, which the plan and check-assertion scans of
@@ -1083,6 +1113,12 @@ func functionReach(name string, scope replay.Scope) string {
 	}
 	if slices.Contains(described.Reach.ReplicationFunctions.Names, name) {
 		return "replication state operation"
+	}
+	if operation, ok := serverFileFunctions[name]; ok {
+		if scope.TrustedSQL {
+			return ""
+		}
+		return operation
 	}
 	switch name {
 	case "DBLINK", "DBLINK_CANCEL_QUERY", "DBLINK_CLOSE", "DBLINK_CONNECT",
@@ -1098,8 +1134,41 @@ func functionReach(name string, scope replay.Scope) string {
 	case "PG_ADVISORY_LOCK", "PG_ADVISORY_LOCK_SHARED", "PG_TRY_ADVISORY_LOCK",
 		"PG_TRY_ADVISORY_LOCK_SHARED":
 		return "session advisory lock"
+	case "PG_IMPORT_SYSTEM_COLLATIONS":
+		// It adds a collation for each locale of the server's host to the
+		// schema its argument names, a regnamespace the guard cannot read:
+		// 'pg_catalog' adds them to the catalog.
+		return "collation import"
 	}
 	return ""
+}
+
+// serverFileFunctions are the functions that read, list or change the files
+// of the server's host, by what the refusal says each does. The realm is the
+// dev database: a file a function writes, renames or removes outlives the
+// cleanup, and what one reads or lists leaves the database for the run's
+// output. They are refused as an external COPY is, which reads and writes the
+// same files, and trust lifts them as it lifts that COPY. The large object
+// functions lo_import and lo_export, which read and write a file on the host
+// too, stay refused in every scope with the rest of the large object
+// functions ([functionReach]). pg_file_write and the other adminpack
+// functions exist on servers older than PostgreSQL 17.
+var serverFileFunctions = map[string]string{
+	"PG_READ_FILE":            "server file read",
+	"PG_READ_BINARY_FILE":     "server file read",
+	"PG_STAT_FILE":            "server file status read",
+	"PG_LS_DIR":               "server directory listing",
+	"PG_LS_LOGDIR":            "server directory listing",
+	"PG_LS_WALDIR":            "server directory listing",
+	"PG_LS_TMPDIR":            "server directory listing",
+	"PG_LS_ARCHIVE_STATUSDIR": "server directory listing",
+	"PG_LS_LOGICALSNAPDIR":    "server directory listing",
+	"PG_LS_LOGICALMAPDIR":     "server directory listing",
+	"PG_LS_REPLSLOTDIR":       "server directory listing",
+	"PG_FILE_WRITE":           "server file write",
+	"PG_FILE_RENAME":          "server file write",
+	"PG_FILE_UNLINK":          "server file write",
+	"PG_FILE_SYNC":            "server file write",
 }
 
 func definesPostgresRoutine(tokens []lexer.Token) bool {

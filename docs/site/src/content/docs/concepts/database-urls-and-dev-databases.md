@@ -759,27 +759,70 @@ object:
 - A view whose query names a relation of a protected namespace, such as
   `CREATE VIEW v AS SELECT * FROM pg_authid`, is accepted, and so is a read
   through it. An `INSERT`, `UPDATE`, `DELETE`, `MERGE` or `COPY` that writes
-  through it is refused, as is one through a view over that view. The guard
-  follows a view the replay renames or moves to another schema, and reads the
-  views the dev database already holds, such as an extension's, before the
-  replay. It matches a view by its schema and name, so a table of the same
-  name in another schema is written as usual. A view the replay drops stays
-  known, and a table later created under its name is refused too.
+  through it is refused, as is one through a view over that view.
 - A `CREATE RULE` whose action writes a protected namespace, or writes
   through such a view, is refused.
 - A `CREATE TRIGGER` whose function arguments name a relation of a protected
-  namespace is refused. The `check_foreign_key` function of the refint
-  extension runs its arguments as SQL, so
+  namespace, or call a function the guard refuses as a call, is refused. The
+  `check_foreign_key` function of the refint extension runs its arguments as
+  SQL, so
   `check_foreign_key(1, 'cascade', 'id', 'pg_catalog.pg_description', 'objoid')`
-  deletes catalog rows. A text search configuration such as
-  `'pg_catalog.english'` names no relation and is accepted.
+  deletes catalog rows, and an argument that calls `set_config` changes the
+  replay session. A text search configuration such as `'pg_catalog.english'`
+  names no relation and is accepted.
+- A table that inherits from a relation of a protected namespace or is a
+  partition of one is refused: `CREATE TABLE ... INHERITS`, `PARTITION OF`,
+  `ALTER TABLE ... INHERIT` and `ATTACH PARTITION`.
 - An operator, an aggregate, a type, an operator class or a conversion that
-  names a function the guard refuses as a call is refused: a cluster control
-  function such as `pg_terminate_backend` or `set_config`, a replication
-  function, a large object function, a session advisory lock, and a dblink
-  function unless the run trusts its SQL. `set_config` is refused there
-  whatever it would set, because the server passes it arguments the statement
-  does not spell out.
+  names a function the guard refuses as a call is refused. The guard reads
+  every value of a definition list, whatever the option and whether the value
+  is quoted. A refused function is a cluster control function such as
+  `pg_terminate_backend` or `set_config`, a replication function, a large
+  object function, `pg_import_system_collations`, a session advisory lock, and,
+  unless the run trusts its SQL, a server file function or a dblink function.
+  `set_config` is refused there whatever it would set, because the server
+  passes it arguments the statement does not spell out.
+
+The guard judges each write when it runs, over what the replay has done to the
+dev database up to that statement. It keeps one graph of relations: the views,
+the rules and the triggers the replay creates, replaces, renames, moves or
+drops, and the ones the dev database already holds, such as an extension's,
+which it reads before the replay. A write reaches what a view's query, a rule's
+action and a trigger's arguments name, and the tables a cascading foreign key,
+a partition or an inherited table carries it to. So a write through a view
+over a view that a later statement replaces with one over `pg_authid` is
+refused, and so is a delete whose trigger names a view created after the
+trigger. A trigger's argument is looked up when the write runs, as the trigger
+does.
+
+The guard reads a view as one the server writes through on its own when its
+query is one `SELECT`, without `DISTINCT` or a window, of one relation after
+`FROM`, with only a `WHERE` or an `ORDER BY` after it. Such a view writes that
+relation alone, so a filter that reads a catalog does not make the write a catalog
+write. A view of any other shape counts every relation its query names. A
+dropped view reaches nothing, so a table later created under its name is
+written as usual. The guard matches a relation by its schema and name, and
+reads a name without a schema through the dev session's search path, as the
+server does: a table of `public` is written as usual beside a view of the same
+name in a schema the path does not reach. Where the guard cannot tell which
+relation a name without a schema means, it refuses the write, and the refusal
+says to qualify the name.
+
+A function that reads, lists or changes the files of the server's host is
+refused unless the run trusts its SQL: `pg_read_file`, `pg_read_binary_file`,
+`pg_stat_file`, the `pg_ls_*dir` functions, and adminpack's `pg_file_write`,
+`pg_file_rename`, `pg_file_unlink` and `pg_file_sync`. So is a `COPY` to or
+from a program or a file of the host, such as `COPY t FROM '/etc/hostname'`.
+`lo_import` and `lo_export` read and write host files too, and stay refused
+under trust with the rest of the large object functions.
+`pg_import_system_collations` is refused in every scope, because the schema it
+adds collations to is an argument the guard cannot read.
+
+On CockroachDB a statement can name a table of another database of the same
+server, as `other.public.t` or as `other.t`. Such a name is refused unless the
+run trusts its SQL. A name of two parts counts as another database's when its
+first part is neither the dev database nor one of its schemas. PostgreSQL and
+YugabyteDB refuse a reference to another database themselves.
 
 A call of such a function in a column default, a generated column, a `CHECK`
 constraint, a policy or a rule action is refused as any call is. CockroachDB
@@ -842,8 +885,8 @@ statements change the replay session or the sessions the rest of the command
 opens (`SET search_path`, `ALTER ROLE ... SET`, any `ALTER DATABASE`,
 transaction control), change how the command's later SQL runs (`ALTER SYSTEM`,
 event triggers, casts, languages), reach past the container (foreign servers,
-subscriptions, `dblink`, an external `COPY`), or mutate a protected namespace
-such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
+subscriptions, `dblink`, an external `COPY`, a server file function), or
+mutate a protected namespace such as `pg_catalog`. A MySQL or MariaDB event stays refused because the
 scheduler runs it during the rest of the command.
 
 A YDB external data source or table, async replication, a transfer and a
@@ -951,8 +994,9 @@ accepts:
 - on PostgreSQL, CockroachDB and YugabyteDB, the statements a
   [server Ptah provisions](#a-server-ptah-provisions) accepts except a comment
   on an extension or a schema the dev database held when the run claimed it
-  and an extension update, and also an external `COPY`,
-  `dblink` and `IMPORT FOREIGN SCHEMA`;
+  and an extension update, and also an external `COPY`, a server file
+  function, `dblink`, `IMPORT FOREIGN SCHEMA` and, on CockroachDB, a name of
+  another database;
 - on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements,
   MariaDB compound statements, users, roles, `GRANT`, `REVOKE`, loadable
   functions, other databases and writes to them, the key cache and resource
@@ -1013,6 +1057,15 @@ non-UTF-8 dev session too. After such a change the server reads the bytes of
 the statements that follow by other rules, and an event or an executable
 comment the guard does not see can run. Keep a history that trust replays in
 `utf8mb4` for these refusals to hold.
+
+On PostgreSQL, CockroachDB and YugabyteDB too, these refusals hold for a
+statement as the history writes it. The guard does not read a `DO` block or the
+body of a routine, and trust accepts both, so under trust a `DO` block, or an
+operator, a trigger or a default that calls a routine the history created, can
+run a statement that trust keeps refused. Measured on PostgreSQL 18.7 under
+trust, a `DO` block that updates `pg_catalog.pg_authid` changes the role, where
+the same `UPDATE` written on its own is refused. This is the design: trust
+declares that you accept what the history runs.
 
 On PostgreSQL, CockroachDB and YugabyteDB the guard reads each statement as
 UTF-8 with standard-conforming strings, and the refusal of a

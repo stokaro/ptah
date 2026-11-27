@@ -35,19 +35,23 @@ func acceptAll(c *qt.C, guard replay.Guard, statements []string) {
 // through it is refused: measured on PostgreSQL 18, `UPDATE v SET rolcreatedb
 // = true` over `CREATE VIEW v AS SELECT * FROM pg_authid` sets rolcreatedb in
 // pg_authid. The view is found under every name a later statement reaches it
-// by, and a view over it reaches pg_catalog too.
+// by, and a view over it reaches pg_catalog too. A write that names the
+// relation without a schema is told to qualify it, since the relation the
+// server finds for the name depends on the search path.
 func TestGuard_WriteThroughCatalogView_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
 		setup    []string
 		refused  string
 		relation string
+		remedy   string
 	}{
 		{
 			name:     "an update through a view of every column",
 			setup:    []string{`CREATE VIEW v AS SELECT * FROM pg_authid`},
 			refused:  `UPDATE v SET rolcreatedb = true WHERE rolname = 'r'`,
 			relation: "v",
+			remedy:   qualify,
 		},
 		{
 			name:     "an insert through a qualified view of a qualified relation",
@@ -60,24 +64,28 @@ func TestGuard_WriteThroughCatalogView_FailurePath(t *testing.T) {
 			setup:    []string{`CREATE OR REPLACE VIEW Roles AS SELECT oid, rolname FROM pg_authid`},
 			refused:  `DELETE FROM "roles" WHERE rolname = 'r'`,
 			relation: "roles",
+			remedy:   qualify,
 		},
 		{
 			name:     "a merge through a view",
 			setup:    []string{`CREATE VIEW v AS SELECT * FROM pg_authid`},
 			refused:  `MERGE INTO v USING app.users AS u ON v.rolname = u.name WHEN MATCHED THEN UPDATE SET rolcreatedb = true`,
 			relation: "v",
+			remedy:   qualify,
 		},
 		{
 			name:     "a write in a common table expression",
 			setup:    []string{`CREATE VIEW v AS SELECT * FROM pg_authid`},
 			refused:  `WITH changed AS (UPDATE v SET rolcreatedb = true RETURNING 1) SELECT count(*) FROM changed`,
 			relation: "v",
+			remedy:   qualify,
 		},
 		{
 			name:     "a view written as TABLE",
 			setup:    []string{`CREATE VIEW v AS TABLE pg_authid`},
 			refused:  `UPDATE v SET rolcreatedb = true`,
 			relation: "v",
+			remedy:   qualify,
 		},
 		{
 			name:     "a view over a view",
@@ -102,18 +110,21 @@ func TestGuard_WriteThroughCatalogView_FailurePath(t *testing.T) {
 			setup:    []string{`CREATE VIEW s AS SELECT name, setting FROM pg_settings`},
 			refused:  `UPDATE s SET setting = 'off' WHERE name = 'standard_conforming_strings'`,
 			relation: "s",
+			remedy:   qualify,
 		},
 		{
 			name:     "a rule whose action writes through a view",
 			setup:    []string{`CREATE VIEW v AS SELECT * FROM pg_authid`},
 			refused:  `CREATE RULE grant_createdb AS ON INSERT TO app.events DO ALSO UPDATE v SET rolcreatedb = true`,
 			relation: "v",
+			remedy:   qualify,
 		},
 		{
 			name:     "a COPY into a view",
 			setup:    []string{`CREATE VIEW v AS SELECT * FROM pg_authid`},
 			refused:  `COPY v (rolname) FROM STDIN`,
 			relation: "v",
+			remedy:   qualify,
 		},
 	}
 	for _, dialect := range []string{"postgres", "yugabytedb"} {
@@ -124,7 +135,7 @@ func TestGuard_WriteThroughCatalogView_FailurePath(t *testing.T) {
 				acceptAll(c, guard, test.setup)
 				c.Assert(guard.Validate(test.refused, databaseScope), qt.ErrorMatches,
 					dialect+` migration replay rejects protected namespace "pg_catalog" mutation through the relation "`+
-						test.relation+`"`+refusalEnd)
+						test.relation+`"`+refusalEnd+test.remedy)
 			})
 		}
 	}
@@ -138,7 +149,7 @@ func TestGuard_WriteThroughInformationSchemaView_FailurePath(t *testing.T) {
 	guard := sessionBoundGuard(c, "postgres")
 	acceptAll(c, guard, []string{`CREATE VIEW features AS SELECT * FROM information_schema.sql_features`})
 	c.Assert(guard.Validate(`DELETE FROM features`, databaseScope), qt.ErrorMatches,
-		`postgres migration replay rejects protected namespace "information_schema" mutation through the relation "features"`+refusalEnd)
+		`postgres migration replay rejects protected namespace "information_schema" mutation through the relation "features"`+refusalEnd+qualify)
 }
 
 // A view the dev database holds is read from its rules when the session is
@@ -147,7 +158,7 @@ func TestGuard_WriteThroughInformationSchemaView_FailurePath(t *testing.T) {
 // another relation.
 func TestGuard_WriteThroughSessionView_FailurePath(t *testing.T) {
 	tests := []struct {
-		name, rules, refused string
+		name, rules, refused, remedy string
 	}{
 		{
 			name:    "a view of pg_authid",
@@ -158,6 +169,7 @@ func TestGuard_WriteThroughSessionView_FailurePath(t *testing.T) {
 			name:    "a view of pg_authid written without a schema",
 			rules:   `[["public", "v", "CREATE RULE \"_RETURN\" AS\n    ON SELECT TO public.v DO INSTEAD  SELECT pg_authid.rolname\n   FROM pg_authid;"]]`,
 			refused: `UPDATE v SET rolname = 'x'`,
+			remedy:  qualify,
 		},
 		{
 			name: "a view of a view of pg_authid, listed first",
@@ -175,7 +187,7 @@ func TestGuard_WriteThroughSessionView_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(rulesGuard(c, "postgres", test.rules).Validate(test.refused, databaseScope), qt.ErrorMatches,
-				`postgres migration replay rejects protected namespace "pg_catalog" mutation through the relation "[a-z]+"`+refusalEnd)
+				`postgres migration replay rejects protected namespace "pg_catalog" mutation through the relation "[a-z]+"`+refusalEnd+test.remedy)
 		})
 	}
 }
@@ -222,7 +234,7 @@ func TestGuard_WriteThroughCatalogViewOnCockroachDB_FailurePath(t *testing.T) {
 	guard := sessionBoundGuard(c, "cockroachdb")
 	acceptAll(c, guard, []string{`CREATE VIEW v AS SELECT * FROM pg_catalog.pg_class`})
 	c.Assert(guard.Validate(`UPDATE v SET relname = 'x'`, databaseScope), qt.ErrorMatches,
-		`cockroachdb migration replay rejects protected namespace "pg_catalog" mutation through the relation "v"`+refusalEnd)
+		`cockroachdb migration replay rejects protected namespace "pg_catalog" mutation through the relation "v"`+refusalEnd+qualify)
 }
 
 // A view that reads the catalog is accepted, as is a read through it, and a
@@ -450,6 +462,76 @@ func TestGuard_ReferencedFunction_FailurePath(t *testing.T) {
 			statement: `CREATE OPERATOR app.&&& (FUNCTION = dblink_exec, LEFTARG = text, RIGHTARG = text)`,
 			want:      `external dblink operation "dblink_exec" named by FUNCTION`,
 		},
+		{
+			name:      "an option written as a quoted identifier",
+			statement: `CREATE OPERATOR public.!!! ("function" = pg_terminate_backend, leftarg = int, rightarg = int8)`,
+			want:      `cluster control function "pg_terminate_backend" named by FUNCTION`,
+		},
+		{
+			name:      "a state function written as a quoted identifier",
+			statement: `CREATE AGGREGATE app.set_all(text, text) ("sfunc" = set_config, "stype" = text)`,
+			want:      `cluster control function "set_config" named by SFUNC`,
+		},
+		{
+			name:      "a state function written as a string",
+			statement: `CREATE AGGREGATE app.set_all(text, text) (SFUNC = 'set_config', STYPE = text)`,
+			want:      `cluster control function "set_config" named by SFUNC`,
+		},
+		{
+			name:      "the old spelling of a state function",
+			statement: `CREATE AGGREGATE app.set_all (BASETYPE = text, SFUNC1 = set_config, STYPE1 = text, INITCOND1 = '')`,
+			want:      `cluster control function "set_config" named by SFUNC1`,
+		},
+		{
+			name:      "an aggregate in the old syntax",
+			statement: `CREATE AGGREGATE app.reload (BASETYPE = int, SFUNC = pg_reload_conf, STYPE = int)`,
+			want:      `cluster control function "pg_reload_conf" named by SFUNC`,
+		},
+		{
+			name:      "the combine function of an aggregate",
+			statement: `CREATE AGGREGATE app.cancel_all(int) (SFUNC = int4pl, STYPE = int, COMBINEFUNC = pg_cancel_backend)`,
+			want:      `cluster control function "pg_cancel_backend" named by COMBINEFUNC`,
+		},
+		{
+			name:      "the join estimator of an operator",
+			statement: `CREATE OPERATOR app.=== (FUNCTION = app.equals, LEFTARG = int, RIGHTARG = int, JOIN = pg_reload_conf)`,
+			want:      `cluster control function "pg_reload_conf" named by JOIN`,
+		},
+		{
+			name:      "an option the server does not list",
+			statement: `CREATE OPERATOR app.=== (FUNCTION = app.equals, LEFTARG = int, RIGHTARG = int, SUPPORT = pg_reload_conf)`,
+			want:      `cluster control function "pg_reload_conf" named by SUPPORT`,
+		},
+		{
+			name:      "the input function of a base type",
+			statement: `CREATE TYPE app.t (INPUT = pg_terminate_backend, OUTPUT = textout)`,
+			want:      `cluster control function "pg_terminate_backend" named by INPUT`,
+		},
+		{
+			name:      "the receive function of an altered type",
+			statement: `ALTER TYPE app.t SET (RECEIVE = pg_reload_conf)`,
+			want:      `cluster control function "pg_reload_conf" named by RECEIVE`,
+		},
+		{
+			name:      "the start function of a text search parser",
+			statement: `CREATE TEXT SEARCH PARSER app.p (START = pg_reload_conf, GETTOKEN = prsd_nexttoken, END = prsd_end, LEXTYPES = prsd_lextype)`,
+			want:      `cluster control function "pg_reload_conf" named by START`,
+		},
+		{
+			name:      "the function of a cast named without its argument types",
+			statement: `CREATE CAST (int AS app.t) WITH FUNCTION pg_terminate_backend`,
+			want:      `cluster control function "pg_terminate_backend" named by WITH FUNCTION`,
+		},
+		{
+			name:      "the handler of a foreign-data wrapper",
+			statement: `CREATE FOREIGN DATA WRAPPER app_fdw HANDLER pg_reload_conf`,
+			want:      `cluster control function "pg_reload_conf" named by HANDLER`,
+		},
+		{
+			name:      "a server file function",
+			statement: `CREATE OPERATOR app.~~ (FUNCTION = pg_read_file, RIGHTARG = text)`,
+			want:      `server file read "pg_read_file" named by FUNCTION`,
+		},
 	}
 	for _, dialect := range []string{"postgres", "yugabytedb"} {
 		for _, test := range tests {
@@ -474,6 +556,12 @@ func TestGuard_ReferencedFunction_HappyPath(t *testing.T) {
 		{"an aggregate over builtin functions", `CREATE AGGREGATE app.total(int) (SFUNC = int4pl, STYPE = int, COMBINEFUNC = int4pl, INITCOND = '0')`, databaseScope},
 		{"a range type", `CREATE TYPE app.span AS RANGE (SUBTYPE = int4, SUBTYPE_DIFF = app.int_diff)`, databaseScope},
 		{"an operator class", `CREATE OPERATOR CLASS app.int_ops FOR TYPE int USING btree AS OPERATOR 1 <, FUNCTION 1 btint4cmp(int, int)`, databaseScope},
+		{"an option written as a quoted identifier", `CREATE OPERATOR app.=== ("function" = app.equals, "leftarg" = int, "rightarg" = int)`, databaseScope},
+		{"a state function written as a string", `CREATE AGGREGATE app.total(int) (SFUNC = 'int4pl', STYPE = int)`, databaseScope},
+		{"a composite type with an attribute named like a control function", `CREATE TYPE app.pair AS (set_config text, b int)`, databaseScope},
+		{"an enum with a label named like a control function", `CREATE TYPE app.mood AS ENUM ('pg_reload_conf', 'happy')`, databaseScope},
+		{"a base type over a user's functions", `CREATE TYPE app.t (INPUT = app.t_in, OUTPUT = app.t_out, RECEIVE = app.t_recv, SEND = app.t_send)`, databaseScope},
+		{"a server file function under trust", `CREATE OPERATOR app.~~ (FUNCTION = pg_read_file, RIGHTARG = text)`, replay.Scope{Database: "ptah_dev", TrustedSQL: true}},
 		{"a dblink function under trust", `CREATE OPERATOR app.&&& (FUNCTION = dblink_exec, LEFTARG = text, RIGHTARG = text)`, replay.Scope{Database: "ptah_dev", TrustedSQL: true}},
 	}
 	for _, test := range tests {

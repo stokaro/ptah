@@ -40,9 +40,13 @@ var replaySessionMarkers = []string{"standard_conforming_strings", "DB_NAME()", 
 // that every name of another database is refused.
 var replaySessionAnswers = map[int]dataext.Row{
 	-1: replaySessionRow{"utf8mb4", "replay@%", "[]"},
-	0:  replaySessionRow{"UTF8", "on", "[]", `["public"]`, "[]", "ptah_dev"},
-	1:  replaySessionRow{"ptah_dev"},
-	2:  reachedDatabaseRow{},
+	0: replaySessionRow{
+		"UTF8", "on", "[]",
+		`{"existing": ["public"], "setting": "\"$user\", public", "user": "ptah", "schemas": ["public"]}`,
+		"[]", "ptah_dev",
+	},
+	1: replaySessionRow{"ptah_dev"},
+	2: reachedDatabaseRow{},
 }
 
 type replaySessionRow []string

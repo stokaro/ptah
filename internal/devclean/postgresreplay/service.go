@@ -23,7 +23,7 @@ func Services() []replay.Service {
 	for _, dialect := range dialects {
 		services = append(services, replay.Service{
 			Dialect: dialect,
-			Guard:   guard{dialect: dialect, relations: newReachingRelations()},
+			Guard:   guard{dialect: dialect, graph: newRelationGraph()},
 		})
 	}
 	return services
@@ -35,12 +35,12 @@ type guard struct {
 	// resolves a name written without a schema. Nil is a guard that read no
 	// session; see [fallbackCatalogNamespace] and [protection.creationNamespace].
 	session *sessionNames
-	// relations are the relations a write through which reaches a protected
-	// namespace: the ones the session held, and the ones the run's accepted
-	// statements created. Every copy of the guard shares them, so a view one
-	// statement creates is known to the statements after it; see
-	// [reachingRelations].
-	relations *reachingRelations
+	// graph is the relations a write can reach a protected namespace
+	// through: the ones the session held, changed by the run's accepted
+	// statements. Every copy of the guard shares it, so a view one statement
+	// creates or replaces is known to the statements after it; see
+	// [relationGraph].
+	graph *relationGraph
 }
 
 // Validate refuses a statement whose effects cannot be confined to scope, and
@@ -55,14 +55,21 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 	if g.session != nil {
 		names = *g.session
 	}
-	names.relations = g.relations
-	if scope.Server && postgresServerWideOperation(stmt, tokens, scope) != "" {
-		return validatePostgresServerWideStatement(g.dialect, names, tokens, scope)
+	names.graph = g.graph
+	var err error
+	switch {
+	case scope.Server && postgresServerWideOperation(stmt, tokens, scope) != "",
+		scope.TrustedSQL && postgresUnconfinedOperation(stmt, tokens) != "":
+		err = validatePostgresServerWideStatement(g.dialect, names, tokens, scope)
+	default:
+		err = validatePostgresReplayStatement(g.dialect, names, tokens, scope)
 	}
-	if scope.TrustedSQL && postgresUnconfinedOperation(stmt, tokens) != "" {
-		return validatePostgresServerWideStatement(g.dialect, names, tokens, scope)
+	if err == nil {
+		// The statement runs, so the statements after it are read with what it
+		// changes about the relations a write reaches through.
+		g.graph.record(names.protection(g.dialect, scope), tokens)
 	}
-	return validatePostgresReplayStatement(g.dialect, names, tokens, scope)
+	return err
 }
 
 // lexerOptions is how PostgreSQL reads its text: standard-conforming string

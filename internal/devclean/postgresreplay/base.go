@@ -208,14 +208,34 @@ func isGlobalPostgresDDL(tokens []lexer.Token) bool {
 	}
 }
 
+// isExternalPostgresCopy reports a COPY that runs a program on the server's
+// host, or reads or writes a file there: `COPY ... PROGRAM`, `COPY ... TO
+// 'file'` and `COPY table FROM 'file'`.
 func isExternalPostgresCopy(tokens []lexer.Token) bool {
 	if replay.ContainsIdentifier(tokens, "PROGRAM") {
 		return true
 	}
-	toIndex := replay.FindIdentifier(tokens, "TO", 1)
-	if toIndex == replay.MutationTargetNotFound || toIndex+1 >= len(tokens) {
-		return false
+	return copiesServerFile(tokens, "TO") || copiesServerFile(tokens, "FROM")
+}
+
+// copiesServerFile reports a COPY whose direction keyword, outside the
+// parentheses of a query or a column list, is followed by a string constant,
+// which is a file name: the client's streams are the keywords STDIN and
+// STDOUT, and `TO 'stdout'` writes a file of that name in the server's data
+// directory. A table named "to" or "from" is a quoted identifier, never the
+// keyword.
+func copiesServerFile(tokens []lexer.Token, direction string) bool {
+	depth := 0
+	for index := 1; index+1 < len(tokens); index++ {
+		switch {
+		case tokens[index].MatchOperatorValue("("):
+			depth++
+		case tokens[index].MatchOperatorValue(")"):
+			depth--
+		case depth == 0 && wordAt(tokens, index) == direction:
+			next := tokens[index+1]
+			return next.Type == lexer.TokenString && !quotedIdentifier(next)
+		}
 	}
-	return tokens[toIndex+1].Type == lexer.TokenString &&
-		replay.NormalizedIdentifier(tokens[toIndex+1]) != "STDOUT"
+	return false
 }

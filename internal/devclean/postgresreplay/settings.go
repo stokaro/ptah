@@ -385,8 +385,8 @@ func utf8EncodingName(name string) bool {
 // ValidateSession reads the dev session once, refuses one that does not read
 // a statement's bytes the way the guard does, and returns the guard that reads
 // the run's statements by the names the session's catalog holds, the schemas
-// its search path can create in, the relations its rules write the catalog
-// through, and the name of its database.
+// its search path can create in, the relations a write reaches through, and
+// the name of its database.
 //
 // The guard reads as UTF-8, with standard-conforming strings. A dev URL's
 // options, a database's or a role's defaults, or the server's configuration
@@ -403,30 +403,27 @@ func utf8EncodingName(name string) bool {
 // included, because the mutation of a namespace the server owns stays refused
 // in every scope, written with the namespace, without it, or through a
 // relation that writes it ([protection.unqualifiedNamespace],
-// [protection.creationNamespace], [readReachingRelations]).
+// [protection.creationNamespace], [loadRelationGraph]).
 func (g guard) ValidateSession(ctx context.Context, session replay.Session, scope replay.Scope) (replay.Guard, error) {
-	var encoding, conforming, names, path, rules, database string
-	err := session.QueryRowContext(ctx, sessionCatalogQuery(g.dialect)).Scan(&encoding, &conforming, &names, &path, &rules, &database)
+	var encoding, conforming, names, encodedPath, rules, database string
+	err := session.QueryRowContext(ctx, sessionCatalogQuery(g.dialect)).Scan(&encoding, &conforming, &names, &encodedPath, &rules, &database)
 	if err != nil {
 		return nil, fmt.Errorf("read the dev session's client_encoding, standard_conforming_strings, catalog names, search path, rules and database: %w", err)
 	}
-	catalog, err := readCatalogNames(g.dialect, names)
+	catalog, relations, err := readCatalogNames(g.dialect, names)
 	if err != nil {
 		return nil, err
 	}
-	creation, err := readCreationPath(path)
+	path, err := readSessionPath(encodedPath)
 	if err != nil {
 		return nil, err
 	}
-	relations, err := readReachingRelations(g.dialect, catalog, rules)
+	read := sessionNames{catalog: catalog, path: path.Existing, database: database}
+	graph, err := loadRelationGraph(read.protection(g.dialect, scope).scanning(), path, relations, rules)
 	if err != nil {
 		return nil, err
 	}
-	bound := guard{
-		dialect:   g.dialect,
-		session:   &sessionNames{catalog: catalog, path: creation, database: database},
-		relations: relations,
-	}
+	bound := guard{dialect: g.dialect, session: &read, graph: graph}
 	if scope.TrustedSQL || utf8EncodingName(encoding) && strings.EqualFold(conforming, "on") {
 		return bound, nil
 	}
