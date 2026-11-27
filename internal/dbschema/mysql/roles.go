@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/internal/mysqlgrants"
 	"ptah.run/internal/mysqlname"
 )
 
@@ -96,6 +98,17 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 // `ERROR 1054: Unknown column 'account_locked'`, so a query written for MySQL
 // does not degrade there, it fails. MySQL 8.4 has no is_role and marks a role
 // locked with its password expired and an empty authentication string.
+//
+// A MySQL role is an account, and two roles can share a user name on two
+// hosts. A declaration names a role by its name, which is the role on host %
+// ([mysqlgrants.Options.RoleHost]), so a role on another host is a principal a
+// declaration cannot name, and the read leaves it out as it leaves out a
+// login. Read by its user alone, 'mdup'@'localhost' and 'mdup'@'%' were one
+// role, and the grants of the first were printed as grants to the second:
+// measured on MySQL 8.4.13 and 26.10.0, after `GRANT SELECT ON dup_probe.* TO
+// 'mdup'@'localhost'`, a session with 'mdup'@'%' active is refused the table
+// with Error 1142. A MariaDB role has no host, so the predicate needs none
+// there.
 func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 	var hasIsRole int
 	err := r.db.QueryRowContext(ctx, `
@@ -108,7 +121,7 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 	if hasIsRole > 0 {
 		return "is_role = 'Y'", nil
 	}
-	return "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = ''", nil
+	return "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = '' AND host = '%'", nil
 }
 
 // readGrants reports the privileges the roles hold on the connected database.
@@ -172,7 +185,7 @@ func (r *Reader) readGrants(ctx context.Context, dbName string) ([]catalog.Grant
 // qualifyPredicate prefixes every column name in a role predicate, so the same
 // discriminator can be used in a join where mysql.user carries an alias.
 func qualifyPredicate(predicate, prefix string) string {
-	for _, column := range []string{"is_role", "account_locked", "password_expired", "authentication_string"} {
+	for _, column := range []string{"is_role", "account_locked", "password_expired", "authentication_string", "host"} {
 		predicate = strings.ReplaceAll(predicate, column, prefix+column)
 	}
 	return predicate
@@ -246,6 +259,12 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 		return nil
 	}
 	schema.Roles = roles
+	names := &mysqlgrants.Names{MariaDB: account.mariaDB}
+	for _, role := range roles {
+		if _, err := names.Name(mysqlgrants.Account{User: role.Name, Host: mysqlgrants.Options{MariaDB: account.mariaDB}.RoleHost()}); err != nil {
+			return err
+		}
+	}
 
 	grants, err := r.readGrantsIn(ctx, databases)
 	if err != nil {
@@ -261,7 +280,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	}
 	schema.Grants = grants
 
-	memberships, err := r.readRoleMemberships(ctx)
+	memberships, err := r.readRoleMemberships(ctx, names)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read role memberships: %w", err)
@@ -294,9 +313,33 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	}
 	schema.WideGrants, schema.WideGrantsPartial = joinWideGrants(everywhere, rows.patternGrants(databases))
 	schema.WideAccess = wideAccessOf(everywhere, rows.databaseAccess(databases, roles, memberships))
+	if inheritsUnread(roles, memberships) {
+		schema.WideAccess = nil
+	}
 	schema.SchemaGrantsInWideAccess = schema.WideAccess != nil && rows.statesOwnRows()
-	return r.readConnectedRole(ctx, schema)
+	return r.readConnectedRole(ctx, schema, names)
 }
+
+// inheritsUnread reports whether a role the read describes, or every role
+// through PUBLIC, holds a principal the read does not describe: a role on a
+// host other than [mysqlgrants.Options.RoleHost], or a login MySQL lets a statement
+// grant as a role. Its privileges reach the member, and the read did not read
+// them, so a reach measured without them would report the member narrower
+// than the server makes it. The access is then left unread, and the security
+// analysis says it cannot measure the reach.
+func inheritsUnread(roles []catalog.Role, memberships []catalog.RoleMembership) bool {
+	described := map[string]bool{publicGrantee: true}
+	for _, role := range roles {
+		described[role.Name] = true
+	}
+	return slices.ContainsFunc(memberships, func(membership catalog.RoleMembership) bool {
+		return described[membership.Member] && !described[membership.Role]
+	})
+}
+
+// publicGrantee is the grantee MariaDB names PUBLIC, whose privileges every
+// account holds. MySQL has none.
+const publicGrantee = "PUBLIC"
 
 // wideAccessOf is the access to the rows of every table that the grants on
 // every database and the grants on a database name pattern give, which the
@@ -490,19 +533,23 @@ func (r *Reader) userColumns(ctx context.Context) (map[string]bool, error) {
 	return present, nil
 }
 
-// readConnectedRole records the role this connection runs as. CURRENT_USER()
-// answers `user@host`, and a membership names the user alone; a user name can
-// hold an `@`, and a host cannot.
-func (r *Reader) readConnectedRole(ctx context.Context, schema *catalog.Database) error {
+// readConnectedRole records the role this connection runs as, named the way a
+// membership names it ([mysqlgrants.Names]), so a plan finds the memberships
+// of the account that runs it. CURRENT_USER() answers `user@host`.
+func (r *Reader) readConnectedRole(ctx context.Context, schema *catalog.Database, names *mysqlgrants.Names) error {
 	var account string
 	// No row leaves the role unknown, and a plan then covers every membership.
 	if err := r.db.QueryRowContext(ctx, `SELECT CURRENT_USER()`).Scan(&account); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to read the connected account: %w", err)
 	}
-	schema.ConnectedRole = account
-	if at := strings.LastIndexByte(account, '@'); at >= 0 {
-		schema.ConnectedRole = account[:at]
+	if account == "" {
+		return nil
 	}
+	name, err := names.Name(mysqlgrants.SplitAccount(account))
+	if err != nil {
+		return fmt.Errorf("failed to name the connected account: %w", err)
+	}
+	schema.ConnectedRole = name
 	return nil
 }
 
@@ -527,6 +574,11 @@ func (r *Reader) readGrantsIn(ctx context.Context, databases []string) ([]catalo
 // TO_USER; MariaDB 11.8 has mysql.roles_mapping with Role and User, and no
 // role_edges at all, so a query written for one does not degrade on the other,
 // it fails (stokaro/ptah#1950).
+//
+// Each end of an edge is an account, a user and a host, and the query reads
+// both. A member is a role or a login, and a login can share a role's user
+// name on another host. MySQL records the role's host too; a MariaDB role has
+// none, so its host reads as empty.
 func (r *Reader) membershipTable(ctx context.Context) (query string, found bool, err error) {
 	var hasRoleEdges int
 	if err := r.db.QueryRowContext(ctx, `
@@ -537,10 +589,10 @@ func (r *Reader) membershipTable(ctx context.Context) (query string, found bool,
 	}
 	if hasRoleEdges > 0 {
 		return `
-			SELECT FROM_USER AS role_name, TO_USER AS member_name,
+			SELECT FROM_USER AS role_name, FROM_HOST AS role_host, TO_USER AS member_name, TO_HOST AS member_host,
 			       WITH_ADMIN_OPTION = 'Y' AS admin_option
 			FROM mysql.role_edges
-			ORDER BY FROM_USER, TO_USER`, true, nil
+			ORDER BY FROM_USER, FROM_HOST, TO_USER, TO_HOST`, true, nil
 	}
 
 	var hasRolesMapping int
@@ -552,22 +604,23 @@ func (r *Reader) membershipTable(ctx context.Context) (query string, found bool,
 	}
 	if hasRolesMapping > 0 {
 		return `
-			SELECT Role AS role_name, User AS member_name,
+			SELECT Role AS role_name, '' AS role_host, User AS member_name, Host AS member_host,
 			       Admin_option = 'Y' AS admin_option
 			FROM mysql.roles_mapping
 			WHERE User <> ''
-			ORDER BY Role, User`, true, nil
+			ORDER BY Role, User, Host`, true, nil
 	}
 	return "", false, nil
 }
 
-// readRoleMemberships reports the role-in-role edges this server holds.
+// readRoleMemberships reports the role-in-role edges this server holds, each
+// end named as names names its account.
 //
 // A server old enough to have neither table has no role graph to read, and
 // answers an empty list rather than an error: roles arrived in MySQL 8.0 and
 // MariaDB 10.0.5, and a 5.7 server is describing a world where the question
 // does not exist.
-func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
+func (r *Reader) readRoleMemberships(ctx context.Context, names *mysqlgrants.Names) ([]catalog.RoleMembership, error) {
 	query, found, err := r.membershipTable(ctx)
 	if err != nil {
 		return nil, err
@@ -584,12 +637,19 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 	defer rows.Close()
 
 	for rows.Next() {
+		var role, member mysqlgrants.Account
 		var membership catalog.RoleMembership
-		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption); err != nil {
+		if err := rows.Scan(&role.User, &role.Host, &member.User, &member.Host, &membership.AdminOption); err != nil {
 			return nil, err
 		}
-		if membership.Role == "" || membership.Member == "" {
+		if role.User == "" || member.User == "" {
 			continue
+		}
+		if membership.Role, err = names.Name(role); err != nil {
+			return nil, err
+		}
+		if membership.Member, err = names.Name(member); err != nil {
+			return nil, err
 		}
 		memberships = append(memberships, membership)
 	}

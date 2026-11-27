@@ -38,7 +38,7 @@ func TestReadRolesMarksNonAuthenticatingPasswordsAbsent(t *testing.T) {
 		},
 		{
 			name:          "MySQL empty authentication data",
-			wantPredicate: "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = ''",
+			wantPredicate: "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = '' AND host = '%'",
 		},
 	}
 

@@ -119,7 +119,7 @@ func planRoles(database *catalog.Database, statements []string, scope descriptor
 		roles = append(roles, owner.Owner)
 	}
 	for _, function := range database.Functions {
-		roles = append(roles, accountUser(function.Definer))
+		roles = append(roles, function.Definer, accountUser(function.Definer))
 	}
 	policyTargets := make([]string, 0, len(database.RLSPolicies))
 	for _, policy := range database.RLSPolicies {
@@ -150,8 +150,10 @@ func NamedRoles(roles []catalog.Role, statements []string) []string {
 	return namesInStatements(names, statements)
 }
 
-// accountUser is the user part of a `user@host` account, which is how a
-// membership names it. A user name can hold an `@`, and a host cannot.
+// accountUser is the user part of a `user@host` account. A MySQL-family
+// membership names an account by its user where its host is the one a role
+// takes, and as `user@host` elsewhere, so a definer is looked up both ways. A
+// user name can hold an `@`, and a host cannot.
 func accountUser(account string) string {
 	if at := strings.LastIndexByte(account, '@'); at >= 0 {
 		return account[:at]

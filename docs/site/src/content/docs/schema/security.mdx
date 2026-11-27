@@ -347,7 +347,9 @@ across native commands.
 - A view counts as written by a role holding a write privilege on it, whether or
   not the view is updatable.
 - On MySQL and MariaDB the rules measure roles, the principals the role read
-  covers. A user account that holds broad grants directly is not measured.
+  covers. A user account that holds broad grants directly is not measured, and
+  neither is a MySQL role on a host other than `%`. Where a measured role holds
+  such a role, the rules report themselves skipped.
 - On MySQL a session's account and every role it has active share one lookup
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and

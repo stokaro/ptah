@@ -1438,6 +1438,20 @@ The role's exact name is kept, including an `@`, apostrophe or backslash.
 This applies to database, table and column privileges and grants on database
 name patterns.
 
+The role reader applies the same rule to roles and memberships. A role is the
+account `CREATE ROLE` makes: on MySQL an account on host `%` that cannot log
+in, and on MariaDB an account marked as a role, which has no host. A MySQL
+account on another host, such as `reader@localhost`, is not the role `reader`
+even when it cannot log in, and the reader does not describe it as a role.
+
+Each end of a membership is named the way ``GRANT `r` TO `name` `` names it:
+the user alone for an account on host `%`, and `user@host` for any other host.
+On MariaDB that statement grants to a role of that name where one exists, so a
+login on `%` that shares a role's name reads as `name@%`. When a role holds a
+MySQL role on another host, the privileges that second role passes on were not
+read, and `ptah schema security` reports the reach rules skipped rather than
+measure the member short.
+
 MySQL role and grantee names with leading or trailing white space are refused
 before a schema is compared or rendered. MySQL normalizes this white space in
 principal references, so use the unpadded name stored by the server. The same

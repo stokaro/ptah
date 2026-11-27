@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/mysqlgrants"
 )
 
 // TestReadRoleMemberships_ReadsTheTableThisEngineHas pins the discovery and the
@@ -39,8 +40,8 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 			name:         "MySQL, through role_edges",
 			hasRoleEdges: true,
 			rows: [][]driver.Value{
-				{"reader", "alice", true},
-				{"reader", "root", false},
+				{"reader", "%", "alice", "%", true},
+				{"reader", "%", "root", "%", false},
 			},
 			want: []catalog.RoleMembership{
 				{Role: "reader", Member: "alice", AdminOption: true},
@@ -48,15 +49,33 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 			},
 		},
 		{
+			// A login that shares a role's user name on another host is a
+			// principal of its own: its memberships are not the role's.
+			name:         "MySQL, a login named like a role on another host",
+			hasRoleEdges: true,
+			rows: [][]driver.Value{
+				{"mbig", "%", "macct", "localhost", false},
+				{"mlocal", "localhost", "macct", "%", false},
+			},
+			want: []catalog.RoleMembership{
+				{Role: "mbig", Member: "macct@localhost"},
+				{Role: "mlocal@localhost", Member: "macct"},
+			},
+		},
+		{
 			name:        "MariaDB, through roles_mapping",
 			hasRolesMap: true,
 			rows: [][]driver.Value{
-				{"reader", "root", true},
-				{"reader", "alice", false},
+				{"reader", "", "root", "localhost", true},
+				{"reader", "", "alice", "", false},
+				{"reader", "", "alice", "%", false},
+				{"reader", "", "bob", "%", false},
 			},
 			want: []catalog.RoleMembership{
-				{Role: "reader", Member: "root", AdminOption: true},
+				{Role: "reader", Member: "root@localhost", AdminOption: true},
 				{Role: "reader", Member: "alice", AdminOption: false},
+				{Role: "reader", Member: "alice@%", AdminOption: false},
+				{Role: "reader", Member: "bob", AdminOption: false},
 			},
 		},
 		{
@@ -74,7 +93,7 @@ func TestReadRoleMemberships_ReadsTheTableThisEngineHas(t *testing.T) {
 			db := membershipDB(c, test.hasRoleEdges, test.hasRolesMap, test.rows)
 			reader := NewMySQLReader(db.SQL, "app")
 
-			memberships, err := reader.readRoleMemberships(t.Context())
+			memberships, err := reader.readRoleMemberships(t.Context(), &mysqlgrants.Names{MariaDB: test.hasRolesMap})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(memberships, qt.DeepEquals, test.want)
@@ -107,17 +126,95 @@ func membershipDB(c *qt.C, hasRoleEdges, hasRolesMap bool, rows [][]driver.Value
 			// analysis that lost the flag would report every role as held.
 			c.Assert(query, qt.Contains, "WITH_ADMIN_OPTION")
 			return dbtest.QueryResult{
-				Columns: []string{"role_name", "member_name", "admin_option"},
+				Columns: []string{"role_name", "role_host", "member_name", "member_host", "admin_option"},
 				Rows:    rows,
 			}, nil
 		case strings.Contains(query, "FROM mysql.roles_mapping"):
 			c.Assert(query, qt.Contains, "Admin_option")
 			return dbtest.QueryResult{
-				Columns: []string{"role_name", "member_name", "admin_option"},
+				Columns: []string{"role_name", "role_host", "member_name", "member_host", "admin_option"},
 				Rows:    rows,
 			}, nil
 		}
 		c.Fatalf("unexpected query: %s", query)
 		return dbtest.QueryResult{}, nil
 	})
+}
+
+// TestReadRoleMemberships_FailurePath refuses a graph where a role's name is
+// the name another account reads as: the role `macct@localhost` on host % and
+// the login 'macct'@'localhost' would share their memberships.
+func TestReadRoleMemberships_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	db := membershipDB(c, true, false, [][]driver.Value{
+		{"mbig", "%", "macct@localhost", "%", false},
+		{"mbig", "%", "macct", "localhost", false},
+	})
+	reader := NewMySQLReader(db.SQL, "app")
+
+	memberships, err := reader.readRoleMemberships(t.Context(), &mysqlgrants.Names{})
+
+	c.Assert(err, qt.ErrorMatches, `the accounts 'macct@localhost'@'%' and 'macct'@'localhost' both read as the principal "macct@localhost", .*`)
+	c.Assert(memberships, qt.IsNil)
+}
+
+// TestInheritsUnread finds a described role, or PUBLIC, that holds a principal
+// the read does not describe, whose privileges the read then did not read: a
+// MySQL role on another host, or a login granted as a role.
+func TestInheritsUnread(t *testing.T) {
+	roles := []catalog.Role{{Name: "reader"}, {Name: "writer"}}
+	tests := []struct {
+		name        string
+		memberships []catalog.RoleMembership
+		want        bool
+	}{
+		{name: "between described roles", memberships: []catalog.RoleMembership{{Role: "reader", Member: "writer"}}},
+		{name: "a described role held by a login", memberships: []catalog.RoleMembership{{Role: "reader", Member: "app@localhost"}}},
+		{name: "a role on another host held by a described role", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "writer"}}, want: true},
+		{name: "a role on another host held by PUBLIC", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "PUBLIC"}}, want: true},
+		{name: "a role on another host held by a login", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "app@%"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(inheritsUnread(roles, test.memberships), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestReadConnectedRole names the connected account the way a membership names
+// it, so a plan finds the memberships of the account that runs it.
+// CURRENT_USER() splits at its last @.
+func TestReadConnectedRole(t *testing.T) {
+	tests := []struct {
+		name, current string
+		mariaDB       bool
+		roles         []string
+		want          string
+	}{
+		{name: "MySQL account on host %", current: "app@%", want: "app"},
+		{name: "MySQL account on another host", current: "app@localhost", want: "app@localhost"},
+		{name: "an @ in the user name", current: "r@x@%", want: "r@x"},
+		{name: "MariaDB login with no role of its name", current: "app@%", mariaDB: true, want: "app"},
+		{name: "MariaDB login named like a role", current: "app@%", mariaDB: true, roles: []string{"app"}, want: "app@%"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+				return dbtest.QueryResult{Columns: []string{"CURRENT_USER()"}, Rows: [][]driver.Value{{test.current}}}, nil
+			})
+			names := &mysqlgrants.Names{MariaDB: test.mariaDB}
+			for _, role := range test.roles {
+				_, err := names.Name(mysqlgrants.Account{User: role, Host: mysqlgrants.Options{MariaDB: test.mariaDB}.RoleHost()})
+				c.Assert(err, qt.IsNil)
+			}
+			schema := &catalog.Database{}
+
+			err := NewMySQLReader(db.SQL, "app").readConnectedRole(t.Context(), schema, names)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(schema.ConnectedRole, qt.Equals, test.want)
+		})
+	}
 }
