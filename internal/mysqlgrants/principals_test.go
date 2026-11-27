@@ -28,6 +28,27 @@ func TestSplitAccount(t *testing.T) {
 	}
 }
 
+// TestAccount_Grantee spells an account as USER_PRIVILEGES names it, which
+// escapes neither an @ nor an apostrophe in the user name. Measured on MySQL
+// 8.4.13 and 26.10.0 and on MariaDB 11.8.9 and 12.3.3.
+func TestAccount_Grantee(t *testing.T) {
+	tests := []struct {
+		name    string
+		account mysqlgrants.Account
+		want    string
+	}{
+		{name: "an account", account: mysqlgrants.Account{User: "ptah", Host: "localhost"}, want: "'ptah'@'localhost'"},
+		{name: "an @ in the user name", account: mysqlgrants.Account{User: "rvq@x", Host: "%"}, want: "'rvq@x'@'%'"},
+		{name: "an apostrophe in the user name", account: mysqlgrants.Account{User: "o'k", Host: "%"}, want: "'o'k'@'%'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.account.Grantee(), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestPrincipalName names an account by its user where its host is the one
 // CREATE ROLE gives a role, and by user@host elsewhere. A login that shares a
 // role's user name on another host must not read as the role.

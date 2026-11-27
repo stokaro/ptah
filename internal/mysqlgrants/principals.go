@@ -23,6 +23,15 @@ func SplitAccount(account string) Account {
 	return Account{User: account[:at], Host: account[at+1:]}
 }
 
+// Grantee is the account as the information_schema privilege views name it,
+// 'user'@'host': each part between single quotes and neither one escaped.
+// Measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9 and 12.3.3,
+// USER_PRIVILEGES names 'rvq@x'@'%' so, and an account whose user is o'k as
+// 'o'k'@'%', where QUOTE() would write 'o\'k'.
+func (a Account) Grantee() string {
+	return "'" + a.User + "'@'" + a.Host + "'"
+}
+
 // RoleHost is the host of a role a statement names by its name alone: `%` on
 // MySQL, where `CREATE ROLE r` is 'r'@'%', and empty on MariaDB, where a role
 // has no host. A declaration names a role by its name, so only an account on

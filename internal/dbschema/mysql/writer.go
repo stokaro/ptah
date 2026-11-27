@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/mysqlgrants"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlsystemdb"
 	"ptah.run/internal/sqlident"
@@ -762,10 +763,21 @@ func metadataVisibilityRequirements(dialect string, caps capability.Capabilities
 	}
 }
 
+// readGlobalMetadataPrivileges reads the global privileges of the session's
+// own account, which CURRENT_USER() answers as `user@host`, looked up in
+// information_schema.user_privileges by [mysqlgrants.Account.Grantee]. Split
+// at the first @ rather than the last, 'rvq@x'@'%' is looked up as
+// 'rvq'@'x@%', which has no rows, and an account holding ALL PRIVILEGES ON *.*
+// is refused: measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9 and
+// 12.3.3.
 func readGlobalMetadataPrivileges(
 	ctx context.Context,
 	conn *sql.Conn,
 ) (globalMetadataPrivileges, error) {
+	var current string
+	if err := conn.QueryRowContext(ctx, "SELECT CURRENT_USER()").Scan(&current); err != nil {
+		return globalMetadataPrivileges{}, fmt.Errorf("mysql: prove global metadata visibility: %w", err)
+	}
 	var privileges globalMetadataPrivileges
 	if err := conn.QueryRowContext(ctx, `
 		SELECT
@@ -780,11 +792,7 @@ func readGlobalMetadataPrivileges(
 			COALESCE(MAX(privilege_type = 'SHOW_ROUTINE'), 0),
 			COALESCE(MAX(privilege_type = 'TRIGGER'), 0)
 		FROM information_schema.user_privileges
-		WHERE grantee = CONCAT(
-			QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', 1)),
-			'@',
-			QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', -1))
-		)
+		WHERE CAST(grantee AS BINARY) = CAST(? AS BINARY)
 		  AND privilege_type IN (
 		    'SELECT',
 		    'DROP',
@@ -797,7 +805,7 @@ func readGlobalMetadataPrivileges(
 		    'SHOW_ROUTINE',
 		    'TRIGGER'
 		  )
-	`).Scan(
+	`, mysqlgrants.SplitAccount(current).Grantee()).Scan(
 		&privileges.selectPrivilege,
 		&privileges.dropPrivilege,
 		&privileges.alterPrivilege,
