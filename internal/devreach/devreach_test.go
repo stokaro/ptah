@@ -37,7 +37,7 @@ func TestServer_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := devreach.Server(c.Context(), "postgres", "dev-url", test.devURL, 0)
+			got, err := devreach.Server(c.Context(), "postgres", "--dev-url", test.devURL, 0)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Len(), qt.Equals, 0)
@@ -50,7 +50,7 @@ func TestServer_HappyPath(t *testing.T) {
 func TestServer_DockerTagNamesTheServer(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := devreach.Server(c.Context(), "postgres", "dev-url", "docker://postgres/18/dev", 0)
+	got, err := devreach.Server(c.Context(), "postgres", "--dev-url", "docker://postgres/18/dev", 0)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
@@ -62,7 +62,7 @@ func TestServer_LeavesASQLiteFileUncreated(t *testing.T) {
 	c := qt.New(t)
 	path := filepath.Join(c.TempDir(), "dev.db")
 
-	got, err := devreach.Server(c.Context(), "sqlite", "dev-url", "sqlite://"+filepath.ToSlash(path), 0)
+	got, err := devreach.Server(c.Context(), "sqlite", "--dev-url", "sqlite://"+filepath.ToSlash(path), 0)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Len(), qt.Equals, 0)
@@ -70,20 +70,20 @@ func TestServer_LeavesASQLiteFileUncreated(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 }
 
-// TestServer_FailurePath refuses a URL nothing answers on, naming the flag the
-// caller passes, and a docker URL that does not parse.
+// TestServer_FailurePath refuses a URL nothing answers on, naming it as the
+// caller names its source, and a docker URL that does not parse.
 func TestServer_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		flag    string
+		source  string
 		devURL  string
 		wantErr string
 	}{
 		{
 			name:    "a server nothing answers on",
 			dialect: "postgres",
-			flag:    "dev-url",
+			source:  "--dev-url",
 			devURL:  closedPort,
 			// The clause after the address is the operating system's.
 			wantErr: `(?s)connect to --dev-url: .*dial tcp 127\.0\.0\.1:1: .*`,
@@ -91,14 +91,21 @@ func TestServer_FailurePath(t *testing.T) {
 		{
 			name:    "the flag the caller names",
 			dialect: "postgres",
-			flag:    "shadow-db",
+			source:  "--shadow-db",
 			devURL:  closedPort,
 			wantErr: `(?s)connect to --shadow-db: .*`,
 		},
 		{
+			name:    "a project file the caller names",
+			dialect: "postgres",
+			source:  "the dev database named in the project file",
+			devURL:  closedPort,
+			wantErr: `(?s)connect to the dev database named in the project file: .*`,
+		},
+		{
 			name:    "a docker image no engine runs",
 			dialect: "postgres",
-			flag:    "dev-url",
+			source:  "--dev-url",
 			devURL:  "docker://sqlite/dev",
 			wantErr: `unsupported docker image "sqlite"`,
 		},
@@ -106,7 +113,7 @@ func TestServer_FailurePath(t *testing.T) {
 			// A docker URL behind a space is no docker URL, as it is none to
 			// the pinned community binary, so it is not parsed as one.
 			name:    "a docker URL behind a space",
-			flag:    "dev-url",
+			source:  "--dev-url",
 			devURL:  " docker://sqlite/dev",
 			wantErr: `connect to --dev-url: .*`,
 		},
@@ -115,14 +122,14 @@ func TestServer_FailurePath(t *testing.T) {
 			// names the mismatch and not the closed port.
 			name:    "a server of another dialect",
 			dialect: "postgres",
-			flag:    "dev-url",
+			source:  "--dev-url",
 			devURL:  "mysql://127.0.0.1:1/dev",
 			wantErr: `--dev-url dialect "mysql" does not match --url dialect "postgres"`,
 		},
 		{
 			name:    "a scheme no dialect has",
 			dialect: "postgres",
-			flag:    "dev-url",
+			source:  "--dev-url",
 			devURL:  "notadriver://x",
 			wantErr: `unsupported --dev-url dialect "notadriver://x"`,
 		},
@@ -131,7 +138,7 @@ func TestServer_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, err := devreach.Server(c.Context(), test.dialect, test.flag, test.devURL, 0)
+			got, err := devreach.Server(c.Context(), test.dialect, test.source, test.devURL, 0)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.Len(), qt.Equals, 0)
@@ -175,7 +182,7 @@ func TestServer_ProviderScheme_FailurePath(t *testing.T) {
 			})
 			c.Assert(err, qt.IsNil)
 
-			got, err := devreach.Server(ctx, test.dialect, "dev-url", "fixture:///dev.db", 0)
+			got, err := devreach.Server(ctx, test.dialect, "--dev-url", "fixture:///dev.db", 0)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.Len(), qt.Equals, 0)
@@ -225,7 +232,7 @@ func TestServer_ProviderDocker_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			ctx := devdocker.WithExternal(c.Context(), test.owner)
 
-			got, err := devreach.Server(ctx, test.dialect, "dev-url", test.devURL, 0)
+			got, err := devreach.Server(ctx, test.dialect, "--dev-url", test.devURL, 0)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Len(), qt.Equals, 0)
@@ -239,7 +246,7 @@ func TestServer_ProviderDocker_BuiltInImage(t *testing.T) {
 	c := qt.New(t)
 	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
 
-	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://postgres/18/dev", 0)
+	got, err := devreach.Server(ctx, "postgres", "--dev-url", "docker://postgres/18/dev", 0)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
@@ -252,7 +259,7 @@ func TestServer_ProviderDocker_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
 
-	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://fixture/dev", 0)
+	got, err := devreach.Server(ctx, "postgres", "--dev-url", "docker://fixture/dev", 0)
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
 	c.Assert(got.Len(), qt.Equals, 0)

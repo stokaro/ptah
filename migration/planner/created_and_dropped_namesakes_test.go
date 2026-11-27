@@ -47,8 +47,13 @@ func procedure(name, body string) difftypes.RoutineChange {
 	return difftypes.RoutineChange{Function: schemamodel.Function{Name: name, Kind: schemamodel.FunctionKindProcedure, Body: body}}
 }
 
+func function(name, body string) difftypes.RoutineChange {
+	return difftypes.RoutineChange{Function: schemamodel.Function{Name: name, Returns: "int", Body: body}}
+}
+
 // The rows without a snapshot plan SQL Server under its offline rules, which
-// compare no name, so each such refusal says that no connection answered.
+// say of no two names that they are two, so each such refusal says that no
+// connection answered.
 func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -64,7 +69,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				FunctionsAdded:      difftypes.FunctionChanges{procedure("MIXEDCASE", "BEGIN SELECT 2 END")},
 				ProceduresRemoved:   difftypes.FunctionChanges{procedure("dbo.MixedCase", "BEGIN SELECT 1 END")},
 			},
-			want: "the plan creates procedure MIXEDCASE and drops procedure dbo.MixedCase, and sqlserver reads them as one name, " +
+			want: "the plan creates procedure dbo.MIXEDCASE and drops procedure dbo.MixedCase, and sqlserver reads them as one name, " +
 				"so the drop would remove the object the create makes; declare the object as the database spells it",
 		},
 		{
@@ -74,7 +79,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				ViewsAdded:   difftypes.ViewChanges{{Name: "MIXEDVIEW", Body: "SELECT 2 AS a"}},
 				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.MixedView", Body: "SELECT 1 AS a"}},
 			},
-			want: "the plan creates view MIXEDVIEW and drops view dbo.MixedView, which differ only in case, so under a " +
+			want: "the plan creates view dbo.MIXEDVIEW and drops view dbo.MixedView, which differ only in case, so under a " +
 				"case-insensitive collation the drop would remove the object the create makes, and without a connection " +
 				"Ptah cannot tell which collation the database uses; declare the object as the database spells it",
 		},
@@ -85,7 +90,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				TablesAdded:   difftypes.TableChanges{{Name: "MIXEDTABLE"}},
 				TablesRemoved: difftypes.TableRemovals{{Name: "MixedTable"}},
 			},
-			want: "the plan creates table MIXEDTABLE and drops table MixedTable, which differ only in case",
+			want: "the plan creates table dbo.MIXEDTABLE and drops table dbo.MixedTable, which differ only in case",
 		},
 		{
 			name:    "a sequence",
@@ -94,7 +99,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				SequencesAdded:   difftypes.SequenceChanges{{Name: "MIXEDSEQ"}},
 				SequencesRemoved: difftypes.SequenceChanges{{Name: "MixedSeq", Schema: "dbo"}},
 			},
-			want: "the plan creates sequence MIXEDSEQ and drops sequence dbo.MixedSeq",
+			want: "the plan creates sequence dbo.MIXEDSEQ and drops sequence dbo.MixedSeq",
 		},
 		{
 			name:    "a schema",
@@ -114,7 +119,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				TablesAdded:   difftypes.TableChanges{{Name: "Z\u00e4hler"}},
 				TablesRemoved: difftypes.TableRemovals{{Name: "Gr\u00f6\u00dfe"}},
 			},
-			want: "the plan creates table Z\u00e4hler and drops table Gr\u00f6\u00dfe, and without a connection Ptah " +
+			want: "the plan creates table dbo.Z\u00e4hler and drops table dbo.Gr\u00f6\u00dfe, and without a connection Ptah " +
 				"cannot tell whether they are one name under the database collation",
 		},
 		{
@@ -126,7 +131,7 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				ViewsAdded:   difftypes.ViewChanges{{Name: "cafe", Body: "SELECT 2 AS a"}},
 				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.caf\u00e9", Body: "SELECT 1 AS a"}},
 			},
-			want: "the plan creates view cafe and drops view dbo.caf\u00e9, and without a connection Ptah cannot tell " +
+			want: "the plan creates view dbo.cafe and drops view dbo.caf\u00e9, and without a connection Ptah cannot tell " +
 				"whether they are one name under the database collation",
 		},
 		{
@@ -140,8 +145,100 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				ViewsAdded:          difftypes.ViewChanges{{Name: "recent", Body: "SELECT 2 AS a"}},
 				ViewsRemoved:        difftypes.ViewChanges{{Name: "archived", Body: "SELECT 1 AS a"}},
 			},
-			want: "the plan creates view recent and drops view archived, and sqlserver was not asked whether they are one name, " +
+			want: "the plan creates view dbo.recent and drops view dbo.archived, and sqlserver was not asked whether they are one name, " +
 				"so the drop may remove the object the create makes",
+		},
+		{
+			// Hungarian_CI_AS reads ccs as cscs, and the offline rules cannot
+			// see it, so no rule says the two are two (stokaro/ptah#6746).
+			name:    "a contraction offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{function("dbo.cscs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function dbo.cscs and drops function dbo.ccs, and without a connection Ptah cannot tell " +
+				"whether they are one name under the database collation, so the drop may remove the object the create makes; " +
+				"compare with a connection to the database, which answers how it compares the names",
+		},
+		{
+			name:    "a contraction a Hungarian server reads as one name",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Hungarian_CI_AS", []string{"dbo"}, []string{"ccs", "cscs"}),
+				FunctionsAdded:      difftypes.FunctionChanges{function("dbo.cscs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved:    difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function dbo.cscs and drops function dbo.ccs, and sqlserver reads them as one name",
+		},
+		{
+			name:    "two ASCII views offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				ViewsAdded:   difftypes.ViewChanges{{Name: "recent", Body: "SELECT 2 AS a"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.archived", Body: "SELECT 1 AS a"}},
+			},
+			want: "the plan creates view dbo.recent and drops view dbo.archived, and without a connection Ptah cannot tell",
+		},
+		{
+			// Two schemas may be one schema too.
+			name:    "a table in another schema offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:   difftypes.TableChanges{{Name: "sales.orders"}},
+				TablesRemoved: difftypes.TableRemovals{{Name: "dbo.orders"}},
+			},
+			want: "the plan creates table sales.orders and drops table dbo.orders, and without a connection Ptah cannot tell",
+		},
+		{
+			// SQL Server keeps views and routines in one namespace, and the
+			// plan creates the procedure while the view holds the name
+			// (stokaro/ptah#6741).
+			name:    "a procedure named as a view the plan drops",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS", []string{"dbo"}, []string{"REPORT", "Report"}),
+				FunctionsAdded:      difftypes.FunctionChanges{procedure("dbo.REPORT", "BEGIN SELECT 2 END")},
+				ViewsRemoved:        difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS a"}},
+			},
+			want: "the plan creates procedure dbo.REPORT and drops view dbo.Report, and sqlserver keeps both kinds in one " +
+				"namespace in a schema, where it may read the two names as one, so the create would fail while the view " +
+				"exists; make the change in two migrations, the first dropping the view dbo.Report and the second " +
+				"creating the procedure dbo.REPORT",
+		},
+		{
+			// A function and a procedure are two kinds there, and the plan
+			// creates the procedure while the function holds the name.
+			name:    "a procedure in place of a function of one name",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{procedure("dbo.x", "BEGIN SELECT 1 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.x", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates procedure dbo.x and drops function dbo.x, and sqlserver keeps both kinds in one " +
+				"namespace in a schema, where the two are one name, so the create would fail while the function exists; " +
+				"make the change in two migrations, the first dropping the function dbo.x and the second creating the " +
+				"procedure dbo.x",
+		},
+		{
+			name:    "a table spelled as a view the plan drops, offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:  difftypes.TableChanges{{Name: "Report"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS a"}},
+			},
+			want: "the plan creates table dbo.Report and drops view dbo.Report, and sqlserver keeps both kinds in one namespace " +
+				"in a schema, where the two are one name",
+		},
+		{
+			name:    "a sequence named as a table the plan drops, offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				SequencesAdded: difftypes.SequenceChanges{{Name: "TAB1"}},
+				TablesRemoved:  difftypes.TableRemovals{{Name: "dbo.Tab1"}},
+			},
+			want: "the plan creates sequence dbo.TAB1 and drops table dbo.Tab1, and sqlserver keeps both kinds in one namespace " +
+				"in a schema, where it may read the two names as one",
 		},
 		{
 			// MySQL folds a routine name whatever its table rule says, which
@@ -157,6 +254,122 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				}}},
 			},
 			want: "the plan creates function FOO and drops function foo, and mysql reads them as one name",
+		},
+		{
+			// An unqualified routine is in the default schema, so the two are
+			// one routine, which SQL Server cannot hold twice: CREATE OR
+			// ALTER FUNCTION [ccs] replaces dbo.ccs, and the DROP FUNCTION
+			// after it removes it.
+			name:    "a routine created and dropped under one spelling offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{function("ccs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function dbo.ccs and drops function dbo.ccs, which are one routine on sqlserver, " +
+				"since it has no routine overloading, and a plan cannot both create it and drop it; a routine whose " +
+				"definition changes is a modification, which the planner replaces",
+		},
+		{
+			name:    "a routine created and dropped under one spelling with a connection",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Latin1_General_100_CI_AS", []string{"dbo"}, []string{"f"}),
+				FunctionsAdded:      difftypes.FunctionChanges{function("dbo.f", "BEGIN RETURN 2 END")},
+				FunctionsRemoved:    difftypes.FunctionChanges{function("f", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function dbo.f and drops function dbo.f, which are one routine on sqlserver",
+		},
+		{
+			// The schema is spelled under the target's own rules, which the
+			// offline rules leave to the collation, so DBO and dbo are two
+			// spellings that may be one schema.
+			name:    "a routine whose schema differs only in case offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{function("DBO.f", "BEGIN RETURN 2 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.f", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates function DBO.f and drops function dbo.f, which differ only in case, so under a " +
+				"case-insensitive collation the drop would remove the object the create makes",
+		},
+		{
+			name:    "a MySQL routine created and dropped under one name",
+			dialect: platform.MySQL,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "foo", Returns: "INT", Language: "SQL", Body: "RETURN 2",
+				}}},
+				FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "foo", Returns: "INT", Language: "SQL", Body: "RETURN 1",
+				}}},
+			},
+			want: "the plan creates function foo and drops function foo, which are one routine on mysql",
+		},
+		{
+			// Every planner creates a schema only where none exists and drops
+			// it after, so the schema the plan keeps is dropped.
+			name:    "a SQL Server schema created and dropped under one spelling",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				SchemasAdded:   []schemamodel.Schema{{Name: "sales"}},
+				SchemasRemoved: []string{"sales"},
+			},
+			want: "the plan creates schema sales and drops schema sales, which are one schema, so the drop would " +
+				"remove the schema the create keeps",
+		},
+		{
+			name:    "a PostgreSQL schema created and dropped under one spelling",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				SchemasAdded:   []schemamodel.Schema{{Name: "sales"}},
+				SchemasRemoved: []string{"sales"},
+			},
+			want: "the plan creates schema sales and drops schema sales, which are one schema",
+		},
+		{
+			// A MySQL schema is a database, and its drop is DROP DATABASE.
+			name:    "a MySQL database created and dropped under one spelling",
+			dialect: platform.MySQL,
+			diff: difftypes.SchemaDiff{
+				SchemasAdded:   []schemamodel.Schema{{Name: "sales"}},
+				SchemasRemoved: []string{"sales"},
+			},
+			want: "the plan creates schema sales and drops schema sales, which are one schema",
+		},
+		{
+			// SQL Server compares a role name under the database collation,
+			// and CREATE ROLE [APP] beside the role App fails with error
+			// 15023 under a case-insensitive one.
+			name:    "a role whose name differs only in case offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				RolesAdded:   difftypes.RoleChanges{{Name: "APP"}},
+				RolesRemoved: difftypes.RoleChanges{{Name: "App"}},
+			},
+			want: "the plan creates role APP and drops role App, which differ only in case, so under a case-insensitive " +
+				"collation the create would fail while the role the plan drops exists",
+		},
+		{
+			name:    "a role a server reads as one name",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Latin1_General_100_CI_AS", []string{"dbo"}, []string{"APP", "App"}),
+				RolesAdded:          difftypes.RoleChanges{{Name: "APP"}},
+				RolesRemoved:        difftypes.RoleChanges{{Name: "App"}},
+			},
+			want: "the plan creates role APP and drops role App, and sqlserver reads them as one name, so the create " +
+				"would fail while the role the plan drops exists",
+		},
+		{
+			name:    "two non-ASCII roles offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				RolesAdded:   difftypes.RoleChanges{{Name: "Z\u00e4hler"}},
+				RolesRemoved: difftypes.RoleChanges{{Name: "Gr\u00f6\u00dfe"}},
+			},
+			want: "the plan creates role Z\u00e4hler and drops role Gr\u00f6\u00dfe, and without a connection Ptah " +
+				"cannot tell whether they are one name under the database collation, so the create may fail",
 		},
 	}
 	for _, test := range tests {
@@ -190,11 +403,127 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			},
 		},
 		{
-			name:    "two views every collation keeps apart",
+			// The control for the offline ASCII row: a server that was asked
+			// put the two names in two classes.
+			name:    "two views a server put apart",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS",
+					[]string{"dbo"}, []string{"recent"}, []string{"archived"}),
+				ViewsAdded:   difftypes.ViewChanges{{Name: "recent", Body: "SELECT 2 AS a"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.archived", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// The control for the contraction rows: a server of another
+			// collation put ccs and cscs in two classes.
+			name:    "a contraction a Latin server reads as two names",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS", []string{"dbo"}, []string{"ccs"}, []string{"cscs"}),
+				FunctionsAdded:      difftypes.FunctionChanges{function("dbo.cscs", "BEGIN RETURN 2 END")},
+				FunctionsRemoved:    difftypes.FunctionChanges{function("dbo.ccs", "BEGIN RETURN 1 END")},
+			},
+		},
+		{
+			// CREATE VIEW fails while the view exists, so a view created and
+			// dropped under one spelling is not judged here.
+			name:    "a SQL Server view created and dropped under one spelling",
 			dialect: platform.SQLServer,
 			diff: difftypes.SchemaDiff{
 				ViewsAdded:   difftypes.ViewChanges{{Name: "recent", Body: "SELECT 2 AS a"}},
-				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.archived", Body: "SELECT 1 AS a"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.recent", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// A role is created with CREATE ROLE, which fails while a namesake
+			// exists, so nothing is lost, and offline two ASCII names that
+			// differ beyond case are two names.
+			name:    "two ASCII roles offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				RolesAdded:   difftypes.RoleChanges{{Name: "reader"}},
+				RolesRemoved: difftypes.RoleChanges{{Name: "writer"}},
+			},
+		},
+		{
+			// The control for the resolved role row.
+			name:    "two roles a case-sensitive server put apart",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Latin1_General_100_CS_AS", []string{"dbo"}, []string{"APP"}, []string{"App"}),
+				RolesAdded:          difftypes.RoleChanges{{Name: "APP"}},
+				RolesRemoved:        difftypes.RoleChanges{{Name: "App"}},
+			},
+		},
+		{
+			// PostgreSQL states how it compares a role name.
+			name:    "a PostgreSQL role whose name differs only in case",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				RolesAdded:   difftypes.RoleChanges{{Name: "APP"}},
+				RolesRemoved: difftypes.RoleChanges{{Name: "app"}},
+			},
+		},
+		{
+			// MySQL keeps functions and procedures in two namespaces, so a
+			// function and a procedure of one name are two routines.
+			name:    "a MySQL procedure created where a function of its name is dropped",
+			dialect: platform.MySQL,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "foo", Kind: schemamodel.FunctionKindProcedure, Language: "SQL", Body: "SELECT 2",
+				}}},
+				FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "foo", Returns: "INT", Language: "SQL", Body: "RETURN 1",
+				}}},
+			},
+		},
+		{
+			// The control for the cross-kind rows: under a case-sensitive
+			// collation REPORT and Report are two names.
+			name:    "a procedure beside a view the plan drops under a case-sensitive collation",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("Latin1_General_100_CS_AS", []string{"dbo"}, []string{"REPORT"}, []string{"Report"}),
+				FunctionsAdded:      difftypes.FunctionChanges{procedure("dbo.REPORT", "BEGIN SELECT 2 END")},
+				ViewsRemoved:        difftypes.ViewChanges{{Name: "dbo.Report", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// Two ASCII names of two kinds that differ beyond case are two
+			// names offline: a create beside the other object fails on the
+			// server, and nothing is lost.
+			name:    "a table beside a view of another name the plan drops, offline",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				TablesAdded:  difftypes.TableChanges{{Name: "orders"}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.recent_orders", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// SQL Server's shared namespace is its descriptor's, and the
+			// PostgreSQL descriptor states none.
+			name:    "a PostgreSQL function replaced by a procedure of one name",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "x", Kind: schemamodel.FunctionKindProcedure, Language: "sql", Body: "SELECT 1",
+				}}},
+				FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "x", Returns: "integer", Language: "sql", Body: "SELECT 1",
+				}}},
+			},
+		},
+		{
+			// PostgreSQL keeps routines apart from relations.
+			name:    "a PostgreSQL function named as a view the plan drops",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "report", Returns: "integer", Language: "sql", Body: "SELECT 1",
+				}}},
+				ViewsRemoved: difftypes.ViewChanges{{Name: "public.report", Body: "SELECT 1 AS a"}},
 			},
 		},
 		{
@@ -212,9 +541,11 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 		{
 			// A name with no class is a namesake only of names in a schema
 			// that may be its own.
-			name:    "a non-ASCII table offline beside a drop in another schema",
+			name:    "a name a snapshot does not cover beside a drop in another schema",
 			dialect: platform.SQLServer,
 			diff: difftypes.SchemaDiff{
+				IdentifierSemantics: sqlServerCollation("SQL_Latin1_General_CP1_CI_AS",
+					[]string{"dbo"}, []string{"sales"}, []string{"orders"}),
 				TablesAdded:   difftypes.TableChanges{{Name: "sales.Gr\u00f6\u00dfe"}},
 				TablesRemoved: difftypes.TableRemovals{{Name: "dbo.orders"}},
 			},
@@ -233,8 +564,9 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			},
 		},
 		{
-			// A routine created beside one of its name that is dropped is an
-			// overload, which PostgreSQL addresses by its argument list.
+			// The control for the routine rows spelled alike: a routine
+			// created beside one of its name that is dropped is an overload,
+			// which PostgreSQL addresses by its argument list.
 			name:    "a PostgreSQL overload",
 			dialect: platform.Postgres,
 			diff: difftypes.SchemaDiff{
@@ -261,6 +593,74 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			c := qt.New(t)
 
 			_, err := planner.GenerateSchemaDiffAST(t.Context(), must.Must(builtin.New()), &test.diff, test.dialect)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// SQL Server compares names under the database collation, so semantics of
+// another shape say which names are one by a rule the server does not follow.
+// The namesake checks would trust them: under the exact rule MIXEDCASE and
+// MixedCase are two procedures, and the plan would drop the one it changes.
+func TestGenerateSchemaDiffAST_RefusesSemanticsThatIgnoreTheCatalog_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		comparison identifier.Comparison
+	}{
+		{name: "the exact rule", comparison: identifier.ComparisonExact},
+		{name: "an ASCII fold", comparison: identifier.ComparisonASCIIInsensitive},
+		{name: "a fold that leaves other names unknown", comparison: identifier.ComparisonASCIIFoldedNonASCIIUnknown},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := difftypes.SchemaDiff{
+				IdentifierSemantics: &identifier.Semantics{
+					DefaultSchema:  "dbo",
+					IndexNamespace: identifier.IndexNamespaceTable,
+					TableNames:     test.comparison,
+					ColumnNames:    test.comparison,
+					IndexNames:     test.comparison,
+				},
+				FunctionsAdded:    difftypes.FunctionChanges{procedure("MIXEDCASE", "BEGIN SELECT 2 END")},
+				ProceduresRemoved: difftypes.FunctionChanges{procedure("dbo.MixedCase", "BEGIN SELECT 1 END")},
+			}
+
+			nodes, err := planner.GenerateSchemaDiffAST(t.Context(), must.Must(builtin.New()), &diff, platform.SQLServer)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `.*the identifier semantics compare table names by the "`+string(test.comparison)+
+				`" rule, and sqlserver compares names under the database collation; plan with the semantics a `+
+				`connection resolved, or with none.*`)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// The controls: the offline rules of a target whose catalog compares names,
+// a snapshot a connection resolved, and the exact rule on a target that
+// states it.
+func TestGenerateSchemaDiffAST_PlansSemanticsOfTheTargetsShape_HappyPath(t *testing.T) {
+	offline := identifier.ForDialect(platform.SQLServer)
+	tests := []struct {
+		name      string
+		dialect   string
+		semantics *identifier.Semantics
+	}{
+		{name: "the offline SQL Server rules", dialect: platform.SQLServer, semantics: &offline},
+		{name: "a resolved SQL Server snapshot", dialect: platform.SQLServer, semantics: caseInsensitiveProcedures()},
+		{name: "the exact rule on PostgreSQL", dialect: platform.Postgres, semantics: new(identifier.ForDialect(platform.Postgres))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := difftypes.SchemaDiff{
+				IdentifierSemantics: test.semantics,
+				ViewsAdded:          difftypes.ViewChanges{{Name: "recent", Body: "SELECT 1 AS a"}},
+			}
+
+			_, err := planner.GenerateSchemaDiffAST(t.Context(), must.Must(builtin.New()), &diff, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 		})

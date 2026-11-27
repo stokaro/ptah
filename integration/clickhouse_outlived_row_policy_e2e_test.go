@@ -201,10 +201,9 @@ func keepsPoliciesOnUnmodeledRelations(c *qt.C, url string, conn *dbschema.Datab
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(applied.Stderr, qt.Contains, "could not decide them: ")
-	c.Assert(applied.Stderr, qt.Contains, `dist.on_dist (the policy is on "dist" (engine Distributed), which the read does not describe as a table; the plan keeps the policy)`)
-	c.Assert(applied.Stderr, qt.Contains, `v.on_view (the policy is on "v" (engine View), which the read does not describe as a table; the plan keeps the policy)`)
-	c.Assert(applied.Stderr, qt.Contains, "*.on_all (the policy is written ON "+database+".*, for every table of the database, which Ptah does not model; "+
-		"the plan keeps the policy)")
+	c.Assert(applied.Stderr, qt.Contains, `dist.on_dist (the policy is on "dist" (engine Distributed), which the read does not describe as a table)`)
+	c.Assert(applied.Stderr, qt.Contains, `v.on_view (the policy is on "v" (engine View), which the read does not describe as a table)`)
+	c.Assert(applied.Stderr, qt.Contains, "*.on_all (the policy is written ON "+database+".*, for every table of the database, which Ptah does not model)")
 	c.Assert(applied.Stdout, qt.Not(qt.Contains), "ROW POLICY")
 	c.Assert(outlivedPolicies(c, conn), qt.DeepEquals, []string{" on_all permissive id > 0", "dist on_dist permissive id > 1", "v on_view permissive id > 1"})
 }
@@ -342,6 +341,32 @@ func TestClickHouseOutlivedRowPolicy_ViewDropTakesItsPolicy(t *testing.T) {
 			c.Assert(outlivedPolicies(c, conn), qt.HasLen, 0)
 			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+		})
+	}
+}
+
+// A schema diff can drop a view policy after source conversion leaves it out
+// of the declarable schema. The export notice must not promise to keep it.
+func TestClickHouseOutlivedRowPolicy_ViewDiffDoesNotPromisePreservation(t *testing.T) {
+	for _, server := range clickHouseServers(qt.New(t)) {
+		t.Run(server.name, func(t *testing.T) {
+			c := qt.New(t)
+			current, conn := outlivedDatabase(c, server.url, "on_view ON v")
+			desired, desiredConn := outlivedDatabase(c, server.url)
+			base := "CREATE TABLE base (id UInt64) ENGINE = MergeTree ORDER BY id"
+			rebuildExec(c, conn, base,
+				"CREATE VIEW v AS SELECT id FROM base",
+				"CREATE ROW POLICY on_view ON v USING id > 1 TO ALL",
+			)
+			rebuildExec(c, desiredConn, base)
+
+			diff := outlivedRun(c, c.TempDir(), "schema", "diff", "--from", current, "--to", desired)
+
+			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
+			c.Assert(diff.Stdout, qt.Contains, "DROP ROW POLICY `on_view` ON `v`;\nDROP VIEW ")
+			c.Assert(diff.Stderr, qt.Contains, `ClickHouse row policy "on_view" on "v" is left out:`)
+			c.Assert(diff.Stderr, qt.Not(qt.Contains), "the plan keeps")
+			c.Assert(outlivedPolicies(c, conn), qt.DeepEquals, []string{"v on_view permissive id > 1"})
 		})
 	}
 }

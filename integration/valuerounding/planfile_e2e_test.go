@@ -15,7 +15,7 @@ import (
 // approval: the scan converts each recorded column to the recorded type, on
 // --dry-run too. Anyone can edit a plan file, so a record is refused at decode
 // unless its types fit the type grammar, the pair keeps fewer digits on the
-// plan's dialect, and a statement of the plan names its column.
+// plan's dialect, and its column and declared type agree with the parsed ALTER.
 
 // sqlServerPrices is the table the plans below lower the scale of, with a row
 // that fits, and the desired schema.
@@ -83,7 +83,13 @@ func TestSchemaApplyRefusesAPlanWhoseRoundingRecordWasEditedE2E(t *testing.T) {
 			name:  "a column the plan does not change",
 			field: "column",
 			value: "id",
-			want:  `plan rounding 1 is not a change the plan records: no statement of the plan names column "id" of table "prices"`,
+			want:  `plan rounding 1 is not a change the plan records: no statement of the plan changes the type of column "id" of table "prices"`,
+		},
+		{
+			name:  "a scan that keeps more digits than the ALTER",
+			field: "declared_type",
+			value: "DECIMAL(8,2)",
+			want:  `declared type "DECIMAL(8,2)" differs from the statement's type "DECIMAL(8,1)"`,
 		},
 	}
 	for _, test := range tests {
@@ -115,4 +121,30 @@ func TestSchemaApplyAppliesAPlanWhoseRoundingRecordIsItsOwnE2E(t *testing.T) {
 	c.Assert(shown.ExitCode, qt.Equals, 0, outcome(shown))
 	c.Assert(applied.ExitCode, qt.Equals, 0, outcome(applied))
 	c.Assert(read(c, target, sqlServerPricesHeld), qt.Equals, "decimal(8,1)|1.5|0")
+}
+
+// A row written after planning fits the edited scan's scale but would be
+// rounded by the saved ALTER. Both preview and execution refuse that mismatch,
+// and the type and stored digits stay intact.
+func TestSchemaApplyRefusesAMismatchedSavedPlanRoundingTypePostgresE2E(t *testing.T) {
+	c := qt.New(t)
+	target := postgresServer.scratch(c, "CREATE TABLE prices (id int PRIMARY KEY, amount numeric(8,3))",
+		"INSERT INTO prices VALUES (4, 1.5)")
+	plan := filepath.Join(c.TempDir(), "rounding.plan.json")
+	planned := ptah(c, "schema", "plan", "--db-url", target,
+		"--schema-file", schemaFile(c, "CREATE TABLE prices (id int PRIMARY KEY, amount numeric(8,1));\n"),
+		"--save", "--output", plan)
+	c.Assert(planned.ExitCode, qt.Equals, 0, outcome(planned))
+	editRounding(c, plan, "declared_type", "numeric(8,2)")
+	run(c, target, "INSERT INTO prices VALUES (2, 1234.550)")
+
+	shown := ptah(c, "schema", "apply", "--db-url", target, "--plan", plan, "--dry-run")
+	applied := ptah(c, "schema", "apply", "--db-url", target, "--plan", plan, "--auto-approve")
+
+	c.Assert(shown.ExitCode, qt.Equals, 2, outcome(shown))
+	c.Assert(shown.Stderr, qt.Contains, `declared type "numeric(8,2)" differs from the statement's type "numeric(8,1)"`)
+	c.Assert(applied.ExitCode, qt.Equals, 2, outcome(applied))
+	c.Assert(applied.Stderr, qt.Contains, `declared type "numeric(8,2)" differs from the statement's type "numeric(8,1)"`)
+	c.Assert(read(c, target, "SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = 'prices'::regclass AND attname = 'amount'"), qt.Equals, "numeric(8,3)")
+	c.Assert(read(c, target, "SELECT string_agg(amount::text, ',' ORDER BY id) FROM prices"), qt.Equals, "1234.550,1.500")
 }
