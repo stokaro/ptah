@@ -2,13 +2,16 @@ package planner
 
 import (
 	"fmt"
+	"strconv"
 
+	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/offlinenames"
 	"ptah.run/internal/tableref"
@@ -106,6 +109,9 @@ func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics iden
 	if diff == nil {
 		return nil
 	}
+	if err := refuseFoldableDatabaseNamesakes(diff, target); err != nil {
+		return err
+	}
 	described, _ := platform.Lookup(target)
 	rules := namesakeRules{
 		target:     target,
@@ -119,6 +125,57 @@ func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics iden
 		}
 	}
 	return refuseNamesakesOfAnotherKind(kinds, target)
+}
+
+// refuseFoldableDatabaseNamesakes refuses a diff that creates a database and
+// drops another whose name differs from it only in case, on a target whose
+// servers each compare database names by a setting
+// ([platform.NamesFoldBySetting]), unless the diff says that the server the
+// comparison read keeps the two apart ([catalog.NameFoldingExact] in
+// [difftypes.SchemaDiff.NameFolding]).
+//
+// The identifier rules of such a target compare database names exactly,
+// because a server started with lower_case_table_names 0 does, so they do not
+// make the two a pair. A server started with 1 or 2 reads them as one
+// database: CREATE SCHEMA IF NOT EXISTS for Sales creates nothing, and the
+// DROP DATABASE of sales after it removes the database with every table in
+// it. Measured on MySQL 8.4.13 and 26.10.0 and MariaDB 11.8.9 and 12.3.3
+// with lower_case_table_names=1: a diff built by hand with SchemasAdded Sales
+// and SchemasRemoved sales leaves the server with no database of that name,
+// and the rows of its tables are gone (stokaro/ptah#6785). A comparison with a
+// connection records the setting it read, and on a server that folds names it
+// matches the declared spelling to the one the server holds, so it never asks
+// for both; a diff of any other origin carries no answer and is refused.
+func refuseFoldableDatabaseNamesakes(diff *difftypes.SchemaDiff, target string) error {
+	if !platform.NamesFoldBySetting(target) || diff.NameFolding == catalog.NameFoldingExact {
+		return nil
+	}
+	folds := mysqlname.NamesOf(true)
+	for _, created := range diff.SchemasAdded {
+		for _, dropped := range diff.SchemasRemoved {
+			if created.Name == dropped || !folds.Same(created.Name, dropped) {
+				continue
+			}
+			if diff.NameFolding == catalog.NameFoldingFolds {
+				return fmt.Errorf(
+					"%w: the plan creates database %s and drops database %s, and the server the comparison read "+
+						"compares database names without regard to case, so the two are one database: the create "+
+						"makes nothing, and the drop would remove the database with every table in it; "+
+						"declare the database as the server spells it",
+					ptaherr.ErrInvalidSchemaDiff, strconv.Quote(created.Name), strconv.Quote(dropped),
+				)
+			}
+			return fmt.Errorf(
+				"%w: the plan creates database %s and drops database %s, which differ only in case, and the diff "+
+					"does not say how the server compares database names: on a server started with "+
+					"lower_case_table_names 1 or 2 the two are one database, the create makes nothing, and the drop "+
+					"would remove the database with every table in it; plan the diff of a comparison with a "+
+					"connection to the server, which records how it compares names",
+				ptaherr.ErrInvalidSchemaDiff, strconv.Quote(created.Name), strconv.Quote(dropped),
+			)
+		}
+	}
+	return nil
 }
 
 // namesakeRules is how a plan's namesakes are judged on target. unanswered

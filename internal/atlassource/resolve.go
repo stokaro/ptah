@@ -222,6 +222,12 @@ type State struct {
 	// to that server pairs names by these rather than by the dialect's
 	// offline ones.
 	IdentifierSemantics *identifier.Semantics
+	// NameFolding is how the MySQL or MariaDB server of a database source, or
+	// of the dev database a directory was replayed on, compares database and
+	// table names, and [catalog.NameFoldingUnknown] for every other source; see
+	// [catalog.ServerInfo.NameFolding]. A selection that holds no connection to
+	// that server pairs the names it meets on both sides by it.
+	NameFolding catalog.NameFolding
 	// Environment is what the dev database held of its extensions and
 	// publications before a migration directory was replayed there or a
 	// declaration was created there, and empty for every other source. It is
@@ -560,6 +566,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 		RealmScoped:         schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
 		WholeServer:         conn.Info().WholeServer,
 		IdentifierSemantics: new(conn.Info().IdentifierSemantics.Clone()),
+		NameFolding:         conn.Info().NameFolding,
 		Address:             conn.Info().URL,
 	}, conn)
 }
@@ -762,6 +769,7 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
+		NameFolding:   conn.Info().NameFolding,
 		Address:       conn.Info().URL,
 	}, nil
 }

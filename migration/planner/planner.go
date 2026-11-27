@@ -116,6 +116,14 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *d
 //     SQL Server, a diff that carries no resolved snapshot has no rule that
 //     says two names are two, so every such pair whose spellings differ is
 //     refused
+//   - on a dialect whose servers each compare database names by a setting,
+//     MySQL and MariaDB under lower_case_table_names, a diff that creates a
+//     database and drops another whose name differs from it only in case
+//     fails the same way unless its NameFolding is catalog.NameFoldingExact:
+//     on a server that folds names the two are one database, and the drop
+//     removes it with every table in it. A comparison with a connection to
+//     the server sets NameFolding; a diff built by hand states it or is
+//     refused
 //   - on a dialect that compares a role name under its catalog's rules, such
 //     as SQL Server, a diff that creates a role and drops another the rules
 //     may read as the same name fails the same way: the create would fail

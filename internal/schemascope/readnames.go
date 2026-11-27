@@ -35,7 +35,12 @@ import (
 //   - an explicit `--schema`/`--schemas` selection wins. It is the operator
 //     naming what they want, and a name that turns out not to exist stays
 //     absent from the result rather than being replaced by a schema they did
-//     not ask for.
+//     not ask for. A name the target reads as a schema it holds in another
+//     spelling is that schema, and is returned as the target holds it: a
+//     server started with lower_case_table_names=1 holds `sales` for
+//     `--schemas Sales`, and so does a SQL Server database under a
+//     case-insensitive collation. Where no connection said how the target
+//     compares names, such a name is refused; see [Pairing].
 //   - otherwise the URL decides, through [schemaselection.Realm]: a URL that
 //     pins no schema puts the whole realm under the read.
 //   - a URL that pins one leaves the read at the connected schema.
@@ -45,21 +50,40 @@ import (
 // themselves and not only their contents.
 //
 // q is the connection the realm read runs on, with the writer whose catalog
-// lists the realm; it is the narrow interface [schemaselection.RealmSchemas]
-// takes, so this package stays off the connection layer.
+// lists the realm, and which answers how its catalog compares names; it is a
+// narrow interface, so this package stays off the connection layer.
 func ReadNames(
 	ctx context.Context,
 	info catalog.ServerInfo,
 	requested []string,
-	q schemaselection.RealmConnection,
+	q Connection,
 ) ([]string, error) {
 	if names := UniqueNames(requested); len(names) > 0 {
-		return names, nil
+		if PairingOf(info, nil).Exact() {
+			return names, nil
+		}
+		held, err := ReadNames(ctx, info, nil, q)
+		if err != nil {
+			return nil, err
+		}
+		respelled, err := (Target{Info: info, Names: q}).SpellAsHeld(ctx, names, held)
+		if err != nil {
+			return nil, err
+		}
+		return UniqueNames(respelled), nil
 	}
 	if !schemaselection.Realm(info.Dialect, info.URL, info.Schema) {
 		return connectedSchemaNames(info), nil
 	}
 	return schemaselection.RealmSchemas(ctx, info.Dialect, info.Capabilities, q)
+}
+
+// Connection is the connection a read lists the realm on: the narrow
+// interface [schemaselection.RealmSchemas] takes, and the [Resolver] that
+// answers how its catalog compares names.
+type Connection interface {
+	schemaselection.RealmConnection
+	Resolver
 }
 
 // connectedSchemaNames is the read scope of a connection whose URL pinned a

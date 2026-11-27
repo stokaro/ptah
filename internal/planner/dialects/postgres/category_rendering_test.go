@@ -68,6 +68,7 @@ var supplementalDiffCategories = map[string]string{
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
 	"Matched":                         "how many objects of each kind the comparison paired, which a drift report counts each side's objects with. It is not a change and no planner reads it, so a fixture here would assert that a count plans nothing",
 	"FeatureCounts":                   "how many objects of each change kind the feature owners compared, which a drift report counts each side's objects with. It is not a change and no planner reads it; the changes among those objects are FeatureChanges",
+	"NameFolding":                     "how the MySQL-family server the comparison read compares database names, which lets that family's planner refuse a database created beside one dropped whose name differs only in case. PostgreSQL keeps names apart by bytes and its comparison records nothing here, so this planner reads the field nowhere; a fixture here would assert that a setting plans nothing (stokaro/ptah#6785)",
 }
 
 // refusedDiffCategories are the categories the planner answers with an error

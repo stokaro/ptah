@@ -46,9 +46,9 @@ import (
 //     across is what restores the prior definition. Only the recorded
 //     "old -> new" description is flipped, plus any recorded prior state (a
 //     view's PreviousBody) that names a side rather than a change.
-//   - Derived. IdentifierSemantics is cloned rather than reversed: it describes
-//     the catalog the diff was measured against, which does not have a
-//     direction. The table-qualified constraint collections are rebuilt from
+//   - Derived. IdentifierSemantics and NameFolding are cloned rather than
+//     reversed: they describe the catalog the diff was measured against,
+//     which does not have a direction. The table-qualified constraint collections are rebuilt from
 //     the pre-change database schema by reverseConstraintAdditions and
 //     reverseConstraintRemovals rather than swapped, because a down migration
 //     must restore the prior body, not the new one.
@@ -95,6 +95,9 @@ func reverseSchemaDiffWithPrior(
 		// reversed entry carries too, it decides the down migration's view
 		// definers on the terms it decided the up migration's.
 		ConnectedAccount: cloneStringPtr(diff.ConnectedAccount),
+		// A rollback drops the database the forward plan created and creates
+		// the one it dropped, so the planner asks the same question of it.
+		NameFolding:      diff.NameFolding,
 		TablePreparation: cloneTablePreparation(diff.TablePreparation),
 
 		// Reverse table operations.

@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/schemascope"
 )
 
 const splitPolicyErr = `(?s).*ptah.run/mssql/security-policy rls.tenancy binds dbo.orders, which the scope selects, and dbo.invoices, which it does not.*`
@@ -138,10 +139,11 @@ func TestExcludeCurrentWithBindings_ScopesAPolicyWhole(t *testing.T) {
 func TestSelectApplyStates_ScopesAPolicyWhole(t *testing.T) {
 	c := qt.New(t)
 	options := ApplyOptions{Runtime: must.Must(builtin.New())}
+	target := schemascope.Target{Info: catalog.ServerInfo{Dialect: platform.SQLServer, Schema: "dbo"}}
 
-	_, _, splitErr := selectApplyStates(t.Context(), platform.SQLServer, boundRead(), boundDeclaration(),
+	_, _, splitErr := selectApplyStates(t.Context(), target, boundRead(), boundDeclaration(),
 		atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"invoices"}, DefaultSchema: "dbo"}, options)
-	current, desired, err := selectApplyStates(t.Context(), platform.SQLServer, boundRead(), boundDeclaration(),
+	current, desired, err := selectApplyStates(t.Context(), target, boundRead(), boundDeclaration(),
 		atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{"orders", "invoices"}, DefaultSchema: "dbo"}, options)
 
 	c.Assert(splitErr, qt.ErrorIs, featureselect.ErrPartialScope)

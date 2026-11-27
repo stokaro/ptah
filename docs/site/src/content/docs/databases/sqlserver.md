@@ -314,6 +314,30 @@ sequence and a trigger change in place, and the server keeps the spelling it
 already stores. Either way the next comparison reads both spellings as one name
 and plans nothing.
 
+A routine is replaced in the schema the read found it in. The `DROP` names
+the routine the read found, and the `CREATE` puts the declared name in that
+schema. A routine the schema declares without a schema is compared in `dbo`,
+or in the URL's `schema`, and is replaced there. SQL Server resolves an
+unqualified name in the session's default schema first, so for an account whose
+default schema is another, `DROP FUNCTION [f]` would drop that schema's `f`
+and leave the routine the plan compared unchanged.
+
+A selection runs after the names are paired. `--schemas`, `--include` and
+`--exclude`, in both binaries (`--schema` in `ptah-compat`), select a schema
+by the spelling the database holds. Under a case-insensitive collation,
+`--schemas sales` selects the database's `Sales` and the file's `sales`, so
+the plan keeps both sides of the schema. Under a case-sensitive collation
+the two are two schemas.
+
+A pattern is matched as written against the names the database holds. Under a
+case-insensitive collation, `--exclude sales.u` matches nothing and the apply
+refuses it, as it refuses every exclusion that protects nothing. `migrations
+plan` and `migrations generate` warn about it instead and compare the table as
+if no exclusion named it, as they do with every exclusion that matches nothing.
+Write the pattern as the database spells the schema. Where no connection
+answers how the database compares names, a selection whose two sides spell a
+schema in two cases is refused.
+
 Two declarations of one kind that the database may read as one name are
 refused, because only one of them could be compared: under a case-insensitive
 collation the views `MixedView` and `MIXEDVIEW` are one view, and the roles

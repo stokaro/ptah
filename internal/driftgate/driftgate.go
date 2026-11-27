@@ -290,8 +290,10 @@ func (c *Check) scope() func(
 		return nil
 	}
 	info := c.opts.Conn.Info()
+	selection := c.opts.Selection
+	selection.Names = c.opts.Conn
 	return func(ctx context.Context, target *catalog.Database, replayed *schemamodel.Database) (*catalog.Database, *schemamodel.Database, error) {
-		return c.opts.Selection.Apply(ctx, c.opts.Runtime, info, target, replayed)
+		return selection.Apply(ctx, c.opts.Runtime, info, target, replayed)
 	}
 }
 
