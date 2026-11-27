@@ -44,6 +44,10 @@ type RollbackVerifyOptions struct {
 	// checks waived and the verification replay with them on, so the flag and
 	// --dev-url could not be used together at all (stokaro/ptah#3114).
 	SkipChecks bool
+	// ValueRounding treats rounded-values checks alike during replay and
+	// rollback, so verification exercises the target run's explicit choice.
+	// The zero value evaluates every such check.
+	ValueRounding migrator.ValueRounding
 	// Trust is the caller's trust in the SQL the verification replays on the
 	// shadow database, and the remedies a refusal ends with; see
 	// [ReplayTrust]. The zero value trusts nothing.
@@ -128,7 +132,8 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
-	mig = shadowdb.ReplayMigrator(lease, mig.WithSkipChecks(opts.SkipChecks).WithAppliedHistoryReplay())
+	mig = shadowdb.ReplayMigrator(lease, mig.WithSkipChecks(opts.SkipChecks).
+		WithValueRounding(opts.ValueRounding).WithAppliedHistoryReplay())
 
 	// DropAllTables leaves the revision table behind, because it is metadata
 	// rather than part of the schema under test. Rows left in it name versions

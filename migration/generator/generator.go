@@ -263,16 +263,17 @@ type DiffPolicy struct {
 	// AllowValueRounding plans a column type change that keeps fewer digits
 	// after the point -- a decimal given a lower scale or put under an integer,
 	// or a temporal column given a lower fractional-second precision --
-	// without reading the rows, and writes the up migration with a note in
-	// place of its check.
+	// without reading the rows, and writes each migration direction with a
+	// note in place of its check.
 	//
 	// Without it, the plan reads the rows of each such column on the database
 	// it was compared with and refuses while a row holds a value the change
 	// would round or cut. The up migration then carries, for each column, a
 	// `-- +ptah check` of kind [migrator.CheckKindRoundedValues], which reads
 	// the rows again on the database the file runs on and refuses the
-	// migration there while a row would change. The down migration carries no
-	// such check. An engine whose descriptor states no condition for the
+	// migration there while a row would change. The down migration carries the
+	// same check for a reverse conversion that keeps fewer digits. An engine
+	// whose descriptor states no condition for the
 	// values, such as SQLite or Oracle, plans and writes as it would without
 	// this.
 	AllowValueRounding bool

@@ -906,7 +906,18 @@ to, for every permission held with the option, `CONTROL` and `ALTER` included.
 Column names compare under the database's
 [collation](#identifier-collation). Measured on SQL Server 2019, 2022 and 2025.
 
-So a plan refuses to revoke a grant option, or a grantable permission, where
+Each planned revoke names the grantor reported by the database with
+`AS [grantor]`. When several principals granted the same permission, the plan
+revokes each row, on an object, a schema or a column. An option revoke names
+only the rows that hold the option, leaving plain grants intact. The account
+running the plan must have permission to revoke as those grantors; SQL Server
+refuses the statement otherwise.
+
+A generated down migration that undoes a new grant or grant option uses the
+default grantor of the original statement, preserving other grantors'
+preexisting rows.
+
+A plan refuses to revoke a grant option, or a grantable permission, where
 the grantee has granted the permission onward and the schema does not revoke
 that grant. The server keeps a row for each grantor, and the refusal names each
 principal holding a row the grantee granted:
@@ -919,6 +930,20 @@ This holds for a `REVOKE GRANT OPTION FOR` in a SQL schema file and for a role
 the schema creates that it declares without the option. A grant `r_v` holds
 from another grantor stays, and with no onward grant `CASCADE` takes nothing
 more. Measured on SQL Server 2025.
+
+`ptah schema render` preserves an explicit option revoke and writes it before
+the corresponding grant. SQL Server can remove the base permission when the
+option revoke runs on an ordinary grant, so this order restores the declared
+permission whether it was absent, ordinary or grantable. Whole-table pairs
+precede column pairs, so a table operation cannot erase a declared column
+option written earlier in the source.
+
+This render is SQL for execution by SQL Server. Its option revoke includes
+the `CASCADE` the server requires, so the rendered script is refused as a
+declarative `--schema-file`: that reader refuses a cascade whose onward
+grants it cannot inspect. Keep the original declaration as the input for
+another render or comparison. `schema apply` checks the live onward grants
+before it plans the cascade; an offline render cannot make that check.
 
 ## Limitations
 

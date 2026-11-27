@@ -1020,6 +1020,11 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if node.GrantOptionFor {
 		parts = append(parts, "CASCADE")
 	}
+	if node.GrantedBy != "" {
+		// A catalog name is decoded: even a surrounding bracket pair is part
+		// of the principal's name, rather than SQL quoting to remove.
+		parts = append(parts, "AS", "["+strings.ReplaceAll(node.GrantedBy, "]", "]]")+"]")
+	}
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }

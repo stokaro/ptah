@@ -353,6 +353,35 @@ func namesATablePrivilege(privilege string) bool {
 	return false
 }
 
+// patternGrantQuery projects one row per privilege a role holds through a grant
+// on a database other than the one the binds name, whose own rows
+// [grantQuery] reads. Which of the rows reach that database is decided in Go;
+// see [Reader.readPatternGrants].
+func patternGrantQuery(rolePredicate string) string {
+	return `
+		SELECT u.user AS role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE
+		FROM information_schema.SCHEMA_PRIVILEGES AS sp
+		JOIN mysql.user AS u ON ` + granteeMatchesAccount("sp.GRANTEE") + `
+		WHERE NOT ` + mysqlname.SameDatabase("sp.TABLE_SCHEMA", "?") + `
+			  AND ` + rolePredicate + `
+			  AND u.user NOT LIKE 'mysql.%'
+		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`
+}
+
+// granteeMatchesAccount matches a privilege view's account to mysql.user's
+// alias u. Both engines surround the raw user and host with single quotes;
+// they do not escape quotes or backslashes within either part. Comparing that
+// complete spelling keeps an embedded @ intact and separates accounts on
+// different hosts. A byte comparison also keeps case-distinct users apart.
+// grantee is a column expression owned by this reader, never SQL input.
+func granteeMatchesAccount(grantee string) string {
+	return "CAST(" + grantee + " AS BINARY) = CAST(CONCAT('''', u.user, '''@''', u.host, '''') AS BINARY)"
+}
+
+// patternGrantQueryPredicates is the number of predicates [patternGrantQuery]
+// binds the database name in, each twice.
+const patternGrantQueryPredicates = 1
+
 // globalTablePrivileges pairs each privilege column of mysql.user with the
 // privilege a GRANT on a table names the same way. Held globally, each covers
 // every table, and a REVOKE on one table cannot take it: measured on MySQL
@@ -596,8 +625,9 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 // all in the SQL and all invisible from outside: each produced a description
 // that parsed, named real roles, and was wrong about what they hold.
 //
-// The grantee is `'user'@'host'` in these views, so the user is cut out of it
-// to join against mysql.user, which is where the role discriminator lives.
+// The grantee is an account, including its host. The complete spelling joins
+// mysql.user, where the role discriminator lives, and that row supplies the
+// role name without interpreting quotes or @ within it.
 //
 // A privilege limited to columns is a row of COLUMN_PRIVILEGES per column and
 // no row of TABLE_PRIVILEGES: measured on MySQL 8.4.13 and MariaDB 11.8.9,
@@ -605,9 +635,8 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 // that view the read holds no such grant, and a plan for a declared one
 // grants it again on every run.
 func grantQuery(rolePredicate string) string {
-	const granteeUser = `REPLACE(SUBSTRING_INDEX(granted.grantee, '@', 1), '''', '')`
 	return `
-		SELECT ` + granteeUser + ` AS role_name, object_schema, object_name, column_name,
+		SELECT u.user AS role_name, object_schema, object_name, column_name,
 			   privilege, grantable, object_type
 		FROM (
 			SELECT sp.GRANTEE AS grantee, sp.TABLE_SCHEMA AS object_schema,
@@ -626,7 +655,7 @@ func grantQuery(rolePredicate string) string {
 			FROM information_schema.COLUMN_PRIVILEGES AS cp
 			WHERE ` + mysqlname.SameDatabase("cp.TABLE_SCHEMA", "?") + `
 		) AS granted
-		JOIN mysql.user AS u ON u.user = ` + granteeUser + `
+		JOIN mysql.user AS u ON ` + granteeMatchesAccount("granted.grantee") + `
 		WHERE ` + rolePredicate + `
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, object_schema, object_name, column_name, privilege`

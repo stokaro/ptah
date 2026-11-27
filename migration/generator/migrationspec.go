@@ -209,19 +209,19 @@ type generatedMigrationSpecOptions struct {
 	Version   int64
 	Name      string
 	Qualifier atlasmigrate.Qualifier
-	// AllowValueRounding writes the up migration with a note in place of the
+	// AllowValueRounding writes each migration direction with a note in place of the
 	// check of each column type change that keeps fewer digits after the
 	// point; see [DiffPolicy.AllowValueRounding].
 	AllowValueRounding bool
 }
 
-// roundingBlock is what the up migration carries before its statements for
-// each column type change of the forward plan that keeps fewer digits after
+// roundingBlock is what a migration carries before its statements for
+// each column type change of diff that keeps fewer digits after
 // the point: a check that reads the rows on the database the file runs on, or
 // with the rounding allowed a note that none does. A table the qualifier
 // moves is read in the schema the statements name.
-func (opts generatedMigrationSpecOptions) roundingBlock() (string, error) {
-	changes := roundingscan.Changes(opts.Plan.Forward.Diff, opts.Plan.Dialect)
+func (opts generatedMigrationSpecOptions) roundingBlock(diff *difftypes.SchemaDiff) (string, error) {
+	changes := roundingscan.Changes(diff, opts.Plan.Dialect)
 	if !opts.Qualifier.IsZero() {
 		for i := range changes {
 			if ref, parsed := tableref.Parse(changes[i].Table); parsed {
@@ -252,7 +252,7 @@ func buildGeneratedMigrationSpec(ctx context.Context, runtime Runtime, opts gene
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error assessing migration safety: %w", err)
 	}
-	rounding, err := opts.roundingBlock()
+	rounding, err := opts.roundingBlock(opts.Plan.Forward.Diff)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, err
 	}
@@ -275,7 +275,11 @@ func buildGeneratedMigrationSpec(ctx context.Context, runtime Runtime, opts gene
 		upSQL = withNoTransactionDirective(upSQL)
 	}
 
-	downSQL, err := renderGeneratedDownMigrationSQL(ctx, runtime, opts.Plan, opts.Qualifier)
+	reverseRounding, err := opts.roundingBlock(opts.Plan.Reverse.Diff)
+	if err != nil {
+		return generatedMigrationSpec{}, nil, err
+	}
+	downSQL, err := renderGeneratedDownMigrationSQL(ctx, runtime, opts.Plan, opts.Qualifier, reverseRounding)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -323,6 +327,7 @@ func renderGeneratedDownMigrationSQL(
 	service renderer.Service,
 	plan *BidirectionalSchemaPlan,
 	qualifier atlasmigrate.Qualifier,
+	preamble string,
 ) (string, error) {
 	priorSchema := plan.PriorSchema
 	nodes := plan.Reverse.Nodes
@@ -343,7 +348,7 @@ func renderGeneratedDownMigrationSQL(
 	header := fmt.Sprintf(
 		"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
 		time.Now().Format(time.RFC3339),
-	) + leftOut(ctx, output.Omissions)
+	) + leftOut(ctx, output.Omissions) + preamble
 	directives := generatedDirectiveOptions{skipTimeouts: plan.Reverse.RequiresNoTransaction}
 	return withGeneratedTimeoutDirectivesForOptions(
 		header+joinScriptStatements(statements, plan.Dialect),

@@ -21,10 +21,8 @@ owns:
   - cli-ptah-migrations-repair
 ---
 
-Something shipped that has to come back out, or a deploy is being unwound.
-Roll back to an explicit target version, prove the plan on a shadow database
-before touching the target, and use the down-file contract to understand what
-Ptah can reverse.
+Roll back to an explicit target version, verify on a shadow database, and
+check what the down files reverse.
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
@@ -34,8 +32,7 @@ A migration directory and a database with applied migrations. The examples use
 a local SQLite file with two applied migrations, `1785255952_init` and
 `1785255953_add_posts`.
 
-If you do not have that state, build it here. The two migrations are written by
-hand so the versions match the ones this page rolls back:
+Create these migration pairs if you need that starting state:
 
 <Tabs syncKey="shell">
 <TabItem label="Bash">
@@ -211,10 +208,8 @@ Expected output on standard output:
 Database is now at version: 1785255952
 ```
 
-In automation there is no terminal to answer the prompt; a non-interactive
-run without confirmation aborts with
-`error: read rollback confirmation: EOF`. Pass `--confirm` to skip the prompt
-— only in scripts where the target and blast radius are already reviewed.
+Without `--confirm`, a non-interactive run aborts with
+`error: read rollback confirmation: EOF`.
 
 This confirmation belongs only to the native command. The Atlas-compatible
 `ptah-compat migrate down` matches Atlas by starting a real rollback without
@@ -235,7 +230,7 @@ Applied Migrations: 1
 Pending Migrations: 1
 ```
 
-The version is pending again, not gone, so the same `up` puts it back:
+Run `up` to reapply the reverted version:
 
 ```console
 ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations
@@ -248,10 +243,9 @@ Expected output on standard output:
 Database is now at version: 1785255953
 ```
 
-Before rollback starts, Ptah verifies that every selected migration has a down
-body that says what it does. A missing down body, or a down file with no
-statements that does not [state it has none](#a-down-file-with-no-statements),
-aborts before Ptah changes either the schema or the revision table.
+A missing down body, or an empty one that does not
+[state it has no statements](#a-down-file-with-no-statements), aborts before
+Ptah changes the schema or revision table.
 
 Dry run follows the same dirty-state, checksum, checkpoint, and down-body
 validation path as execution. It reports no migration as reverted when a
@@ -310,11 +304,8 @@ rollback verification failed: shadow database must be distinct from target datab
   applied migration above it and records the newest migration below it as the
   current version, with `--plan` or without, when no pending migration sits
   below it. A pending one is handled as the item above says.
-- `--target 0` rolls back everything, returning the database to an empty
-  application schema. It is the only way to ask for that rollback, since a run
-  that names no stop is refused.
-- To roll back one step, pass `--limit 1`. It reverts the last applied
-  migration, and no version has to be read first.
+- `--target 0` rolls back every applied migration, returning the database to
+  an empty application schema.
 
 ## The down-file contract
 
@@ -326,8 +317,6 @@ reads it (exit `2`):
 error: error registering migrations: incomplete migrations found (missing up or down files): [1]
 ```
 
-Two consequences:
-
 - **Write real rollbacks.** A generated down file reverses the generated up
   file, but hand-written migrations need the same care in both directions —
   the down half is what this page executes.
@@ -335,6 +324,21 @@ Two consequences:
   rollback for a migration, [Import from another tool](../import/) writes a
   placeholder down file, and a rollback through it is refused until someone
   decides what it should do.
+
+### Values written after a widening
+
+A generated down file checks values before a conversion that keeps fewer
+digits after the point. Widening `numeric(8,1)` to `numeric(8,3)` needs no up
+check; a later value of `1.567` stops its rollback and stays unchanged.
+
+`--allow-value-rounding` on `ptah migrations down` waives only these checks,
+warns for each, and lets PostgreSQL round that value to `1.6`. Ordinary checks
+still run. `ptah-compat migrate down` uses `PTAH_ALLOW_VALUE_ROUNDING=1`, with
+or without `--format`. Shadow verification uses the same choice.
+
+A down file with no check gains none at execution; `--plan` does not run down
+files. See [Generated checks](../integrity-and-safety/#a-check-a-generated-file-carries)
+for the generation opt-in and check limits.
 
 ### A down file with no statements
 

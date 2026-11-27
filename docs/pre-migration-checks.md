@@ -32,10 +32,11 @@ Keys:
 | `phase` | no | When the predicate is evaluated: `before` the body (the default) or `after` it. |
 | `kind` | no | `rounded-values`, or no `kind` for an ordinary check. Any other value is refused. |
 
-- `kind=rounded-values` is the check `ptah migrations generate` writes before a
-  column type change that keeps fewer digits after the point. A run asked to round
-  the values (`ptah migrations up --allow-value-rounding`,
-  `PTAH_ALLOW_VALUE_ROUNDING=1` on `ptah-compat migrate apply`) skips this kind
+- `kind=rounded-values` is the check `ptah migrations generate` writes in each
+  direction whose column type change keeps fewer digits after the point. A run
+  asked to round the values (`--allow-value-rounding` on `ptah migrations up` or
+  `ptah migrations down`, `PTAH_ALLOW_VALUE_ROUNDING=1` on `ptah-compat migrate apply`
+  or `ptah-compat migrate down`) skips this kind
   alone and warns once for each check skipped; `--skip-checks` skips it with
   every other check and warns the same way. The kind refuses `phase=after`.
 - `assert` is a single top-level `SELECT` returning exactly one column and one
@@ -88,6 +89,14 @@ re-evaluated during a rollback. A failing assertion produces a
 `CheckGroupFailedError` that names the file and assertion count. In both cases
 the verb that ran the check -- `ptah migrations up` or `ptah migrations down` --
 exits non-zero.
+
+A generated widening can need a check only in its down file. For example,
+`numeric(8,1)` to `numeric(8,3)` accepts a later value of `1.567`; rolling back
+would round that value to `1.6`. The down check reads the rows at rollback time
+and refuses before changing the column. Shadow rollback verification uses the
+same rounding choice as the target, including on both compatibility output
+paths. A down file with no check gains none at execution, and a rollback
+derived with `--plan` does not execute the down file's checks.
 
 A failed precondition writes **no revision row**. Checks run before the migration's
 bookkeeping row is created, so a blocked migration is recorded as never

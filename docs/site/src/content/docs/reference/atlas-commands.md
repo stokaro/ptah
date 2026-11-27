@@ -890,6 +890,13 @@ assertion does not hold. It means on this verb exactly what it means on
 `migrate apply`, including through `PTAH_SKIP_CHECKS`. `PTAH_SERVER_DETAILS`
 shows what the server said about a failed down statement, as on `migrate apply`.
 
+`PTAH_ALLOW_VALUE_ROUNDING=1` skips only checks of kind `rounded-values`, leaving
+ordinary checks in force and warning for each skipped check. Generated down
+files carry these checks when the reverse type conversion keeps fewer digits
+after the point. The choice also reaches verification on `--dev-url`, with or
+without `--format`. The native `--allow-value-rounding` flag is refused here;
+see [the variable's contract](../extension-variables/#ptah_allow_value_rounding).
+
 A database whose record of repeatable migrations holds a row is refused, as
 `ptah migrations down` refuses it. While
 [`PTAH_ATLAS_REPEATABLE_MIGRATIONS`](../extension-variables/#ptah_atlas_repeatable_migrations)

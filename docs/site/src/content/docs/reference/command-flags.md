@@ -803,6 +803,7 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--actor` | `string` | — | `PTAH_ACTOR` | — |
 | `--actor-origin` | `string` | — | `PTAH_ACTOR_ORIGIN` | — |
+| `--allow-value-rounding` | `bool` | `false` | — | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
 | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
 | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |

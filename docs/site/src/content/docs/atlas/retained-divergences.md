@@ -2454,14 +2454,18 @@ An empty table, and values whose extra digits are zero, plan as usual.
 A `.plan.hcl` records no such change, so `schema apply --plan` reads them from the
 `--to` state and counts the rows before it runs.
 
-`migrate apply` reads the rows only where the file asks it to. A file
-`ptah migrations generate` writes carries a `-- +ptah check kind=rounded-values` for
-each such column, and `migrate apply` evaluates it before the body and refuses while
-a row would change; `PTAH_ALLOW_VALUE_ROUNDING=1` skips those checks alone. The
-binary reads the directive as a comment. A file with no such check, such as one
-`migrate diff` writes, is applied and rounds as the binary rounds. Under
-`PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah directive, so `migrate apply`
-refuses the file; see
+`migrate apply` and `migrate down` read the rows only where the file asks them to.
+Each generated direction that converts such a column carries a
+`-- +ptah check kind=rounded-values`. The command evaluates it before the body
+and refuses while a row would change; `PTAH_ALLOW_VALUE_ROUNDING=1` skips those
+checks alone. A widening can therefore carry only a down check, which reads
+values written after the up file ran. The rollback's choice also reaches
+verification on `--dev-url`, with or without `--format`.
+
+The community binary's `migrate apply` reads the directive as a comment. A file
+with no such check, such as one `migrate diff` writes, is applied and rounds as
+the binary rounds. Under `PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah
+directive, so `migrate apply` refuses the file; see
 [A check a generated file carries](../../versioned/integrity-and-safety/#a-check-a-generated-file-carries).
 
 Measured on 2026-11-25 with the community binary v1.4.0 on PostgreSQL 18.6, a
@@ -2479,11 +2483,12 @@ The variable restores the binary's behavior, so strict mode keeps it. Native
 the change; see
 [A change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
 
-The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
-exits `0`, never the reverse.
+For this schema apply, `ptah-compat` exits `1` where the binary exits `0`.
 
-**Evidence.** `integration/valuerounding/rounding_e2e_test.go` and
-`integration/valuerounding/migrationfile_e2e_test.go`
+**Evidence.** `integration/valuerounding/rounding_e2e_test.go`,
+`integration/valuerounding/migrationfile_e2e_test.go`,
+`integration/valuerounding/rollback_file_e2e_test.go` and
+`integration/valuerounding/rollback_waiver_e2e_test.go`
 
 ## Not on this page
 

@@ -397,6 +397,23 @@ ordinary blocking statement when that reverse-only capability is absent.
 Planning fails before files are published when an explicit forward operation
 cannot honor the policy or targets a PostgreSQL partitioned parent.
 
+### Checks for values a type change would round
+
+Each generated direction gets a `-- +ptah check kind=rounded-values` before a
+column conversion that keeps fewer digits after the point, on an engine that
+provides the value comparison. A widening from `numeric(8,1)` to `numeric(8,3)`
+needs no up check, but its down file checks the rows before returning to
+`numeric(8,1)`. Values written after the widening can therefore stop a rollback.
+The check uses the same schema-qualified table as the conversion. When a plan
+splits into files, only the file that converts the column carries its check.
+
+`DiffPolicy.AllowValueRounding` replaces each affected direction's check with a
+comment saying the rounding was allowed at generation. Without it, a generated
+file reads the target's rows when executed. An operator can instead waive only
+the rounding checks for one run with `--allow-value-rounding` on
+`ptah migrations up` or `ptah migrations down`; ordinary checks still run.
+See [Migration assertion checks](../../docs/pre-migration-checks.md).
+
 ### PostgreSQL concurrent indexes
 
 When Ptah generates a new PostgreSQL index on an existing table whose

@@ -298,8 +298,10 @@ func grantColumns(grant difftypes.GrantRef) []string {
 // object dropped holds is left out; see [Planner.removeGrantsAndRoles].
 func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, dropped droppedObjects) []ast.Node {
 	spellings := newColumnSpellings(diff, p.targetDialect())
-	ghosts, removed := p.splitGrantOptionGhosts(slices.DeleteFunc(slices.Clone(diff.GrantsRemoved), dropped.holds))
-	revokes := slices.DeleteFunc(slices.Concat(diff.GrantOptionsRevoked, ghosts), dropped.holds)
+	removed := p.revokesByGrantor(diff, diff.GrantsRemoved, diff.CurrentGrants, allPermissionRows)
+	ghosts, removed := p.splitGrantOptionGhosts(slices.DeleteFunc(slices.Clone(removed), dropped.holds))
+	options := p.revokesByGrantor(diff, diff.GrantOptionsRevoked, diff.CurrentGrants, grantOptionRows)
+	revokes := slices.DeleteFunc(slices.Concat(options, ghosts), dropped.holds)
 	if p.grantOptionCoversTheObject() {
 		revokes = append(revokes, grantOptionsLeftBehind(removed, diff.CurrentGrants, spellings)...)
 		removed = withoutColumnRevokesTheirTableTakes(removed, spellings)
@@ -317,7 +319,8 @@ func (p *Planner) revokeGrants(result []ast.Node, diff *difftypes.SchemaDiff, dr
 	for _, grant := range removed {
 		result = append(result, ast.NewRevokePrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
-			SetColumns(spellings.columns(grant)))
+			SetColumns(spellings.columns(grant)).
+			SetGrantedBy(p.revokeGrantor(grant)))
 	}
 	return p.revokeDenies(result, diff, dropped)
 }
@@ -600,7 +603,8 @@ func (p *Planner) grantOptionRevocations(refs []difftypes.GrantRef) []*ast.Revok
 		}
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
 			SetColumns(columns).
-			SetGrantOptionFor(true)
+			SetGrantOptionFor(true).
+			SetGrantedBy(p.revokeGrantor(grant))
 		byObject[object] = node
 		nodes = append(nodes, node)
 	}

@@ -190,12 +190,14 @@ func reverseColumnDiffs(
 			desired.DefaultExpr = restored
 		}
 		reversed[i] = difftypes.ColumnDiff{
-			ColumnName:     columnDiff.ColumnName,
-			Changes:        reversedChanges,
-			Desired:        desired,
-			CommentChange:  reverseCommentChange(columnDiff.CommentChange),
-			CharsetChange:  reverseCharsetChange(columnDiff.CharsetChange),
-			SerialSequence: restoredSerialSequence(columnDiff.Changes["default_expr"]),
+			ColumnName:      columnDiff.ColumnName,
+			Changes:         reversedChanges,
+			Desired:         desired,
+			CommentChange:   reverseCommentChange(columnDiff.CommentChange),
+			CharsetChange:   reverseCharsetChange(columnDiff.CharsetChange),
+			SerialSequence:  restoredSerialSequence(columnDiff.Changes["default_expr"]),
+			Rounding:        columnDiff.ReverseRounding,
+			ReverseRounding: columnDiff.Rounding,
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
 			CurrentSequenceRestart:        columnDiff.CurrentSequenceRestart,

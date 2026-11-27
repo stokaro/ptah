@@ -743,8 +743,8 @@ converted by most servers without an error: each stored value is rounded or cut.
 `ptah migrations generate` reads the rows of the database it compares with and
 refuses while a row would change; see
 [a change that rounds stored values](../../direct/plan-and-approve/#a-change-that-rounds-stored-values).
-The file runs later, often on another database, so the up file carries one check
-for each such column, above the statements:
+The file runs later, often on another database, so each direction whose conversion
+keeps fewer digits carries one check for each such column, above the statements:
 
 ```sql
 -- column "amount" of table "prices" goes from numeric(8,3) to numeric(8,1), which keeps fewer digits after the point; the check refuses the migration while a row holds a value the server would round or cut
@@ -752,13 +752,12 @@ for each such column, above the statements:
 ALTER TABLE "prices" ALTER COLUMN "amount" TYPE numeric(8,1);
 ```
 
-The assertion is the comparison `ptah migrations generate` counted, the server's own
-`CAST` against the stored value. With `--replay`, `ptah migrations generate` counts the
-rows of the dev database the directory was replayed on, which holds only the rows the
-migrations insert; the check reads the database the file runs on either way.
-`ptah migrations up` and `ptah-compat migrate apply` evaluate it before the body like
-any other check, so a row written after the file was generated stops the migration
-with nothing applied:
+The assertion compares the server's own `CAST` with the stored value. With
+`--replay`, generation scans forward conversions on the dev database the directory
+was replayed on, which holds only the rows the migrations insert. Each direction's
+check reads the database the file runs on.
+The migration command evaluates it before the body like any other check, so a row
+written after the file was generated stops the migration with nothing applied:
 
 ```text
 error: pre-migration check prices.amount for migration 1795620874 was not satisfied:
@@ -768,9 +767,10 @@ without an error; store values the new type keeps, or ask for the change with
 --allow-value-rounding (assert: SELECT CASE WHEN EXISTS ...)
 ```
 
-To apply the file and round the values, pass `--allow-value-rounding` to
-`ptah migrations up`, or set `PTAH_ALLOW_VALUE_ROUNDING=1` for
-`ptah-compat migrate apply`. Either skips the checks of kind `rounded-values` alone,
+To execute the file and round the values, pass `--allow-value-rounding` to
+`ptah migrations up` or `ptah migrations down`, or set `PTAH_ALLOW_VALUE_ROUNDING=1`
+for `ptah-compat migrate apply` or `ptah-compat migrate down`.
+Either skips the checks of kind `rounded-values` alone,
 warns once for each one skipped, and evaluates every other check; `--skip-checks` and
 `PTAH_SKIP_CHECKS=1` skip them all, and warn the same way for each check of this kind.
 The flag reads no environment variable. Under `--tx-mode all` a migration with a check
@@ -783,19 +783,22 @@ such a change after review, generate the file with
 `ptah migrations generate --allow-value-rounding`, which writes no check. An opt-in for
 each target is not available (stokaro/ptah#6672).
 
-`ptah migrations generate --allow-value-rounding` reads no rows and writes the file
-without the checks. Each column gets a comment in place of its check, saying that the
-rounding was allowed when the file was generated, so the file rounds the values
+`ptah migrations generate --allow-value-rounding` reads no rows and writes both
+directions without rounding checks. Each affected column gets a comment in place of
+its check, saying that the rounding was allowed when the file was generated, so it rounds the values
 wherever it runs. Edit the file to add a check, or generate it again without the flag,
 to have it read the rows where it runs.
 
+A widening from `numeric(8,1)` to `numeric(8,3)` needs no up check. Its down file
+checks before narrowing back, so a value such as `1.567` written after the up file
+ran stops the rollback. The value stays `1.567`; with the rollback opt-in it becomes
+`1.6`. Shadow rollback verification uses the target's rounding policy too.
+
 A check of kind `rounded-values` reads the rows before the body and refuses
-`phase=after`. Only the up file carries the check. The down file of such a migration
-widens the column back, and the down file of a migration that widens a column narrows
-it without a check, so a rollback rounds the values written after the up file ran
-(stokaro/ptah#6672). Under
-`PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah directive, so `ptah-compat migrate
-apply` refuses the file, as it refuses every other check; `migrate hash`,
+`phase=after`. A file that carries no check is not scanned at execution, and a
+rollback derived with `--plan` does not run the down file's checks. Under
+`PTAH_ATLAS_STRICT_COMPAT=1` the check is a Ptah directive, so `ptah-compat migrate apply`
+refuses the file, as it refuses every other check; `migrate hash`,
 `migrate status` and `migrate validate` without `--dev-url` read the bytes and keep
 them. An engine whose conversion Ptah does not read, such as SQLite or Oracle, gets
 no check.

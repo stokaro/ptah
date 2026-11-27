@@ -2049,7 +2049,8 @@ type Rounding struct {
 	// Temporal reports a temporal type. False reports a decimal, under a
 	// decimal or an integer.
 	Temporal bool `json:"temporal,omitempty"`
-	// HeldType is the type the database holds, as its catalog spells it.
+	// HeldType is the type held before this conversion: the catalog spelling
+	// for a forward change, or the forward plan's type for its rollback.
 	HeldType string `json:"held_type"`
 	// DeclaredType is the type the plan converts the column to, as the plan's
 	// statement spells it.
@@ -2116,6 +2117,12 @@ type ColumnDiff struct {
 	// without an error. It is nil for every other change, an array included,
 	// and where the comparison cannot read the digits of both types.
 	Rounding *Rounding `json:"rounding,omitempty"`
+
+	// ReverseRounding describes the same conversion in the rollback direction
+	// when it keeps fewer digits after the point. A widening can have no
+	// Rounding and still need this check once the column holds new values.
+	// It is nil when the comparison finds no rounding in that direction.
+	ReverseRounding *Rounding `json:"reverse_rounding,omitempty"`
 
 	// CharsetChange carries the change of the column's character set that a
 	// change of its collation makes, and is nil where the character set stays

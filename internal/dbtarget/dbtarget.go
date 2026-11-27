@@ -167,6 +167,11 @@ const (
 	// other server the suite starts can serve these tests.
 	MySQLFoldedServer
 	MariaDBFoldedServer
+	// ClickHouse2410 is the ClickHouse 24.10 server. Its ALTER TABLE parser
+	// rejects a trailing NULL in an added column's type even though CREATE
+	// TABLE accepts it. Running its metadata-upgrade tests against the current
+	// ClickHouse server would leave that released-server failure untested.
+	ClickHouse2410
 )
 
 // source is where one engine's address comes from.
@@ -232,6 +237,10 @@ var sources = map[Engine]source{
 	},
 	ClickHouse: {
 		canonical: "CLICKHOUSE_URL",
+		scheme:    []string{"clickhouse"},
+	},
+	ClickHouse2410: {
+		canonical: "CLICKHOUSE_24_10_TEST_URL",
 		scheme:    []string{"clickhouse"},
 	},
 	SQLServer: {

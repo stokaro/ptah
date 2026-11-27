@@ -1431,6 +1431,13 @@ The plan records the mode before and after each statement on a view, as the
 
 ### Roles and grants
 
+The grant reader matches an account by both its user name and its host. A
+privilege of `reader@localhost` is not a privilege of the MySQL role
+`reader@%`, or of the MariaDB role `reader`, whose catalog host is empty.
+The role's exact name is kept, including an `@`, apostrophe or backslash.
+This applies to database, table and column privileges and grants on database
+name patterns.
+
 MySQL role and grantee names with leading or trailing white space are refused
 before a schema is compared or rendered. MySQL normalizes this white space in
 principal references, so use the unpadded name stored by the server. The same
@@ -1511,6 +1518,14 @@ refused and names it, as in ``cannot revoke the grant option for SELECT on
 app.t1 from "r": the server keeps the grant option at the whole object, not at
 one privilege, so the revoke also takes it from INSERT, which the schema keeps
 grantable``. Measured on MySQL 8.4.13 and MariaDB 11.8.
+
+`ptah schema render` also writes one option revoke per grantee and object,
+after every declared grant. Privileges on a table and its columns share that
+revoke. This order leaves the base privileges in place, avoids a second
+option revoke that MySQL refuses with ERROR 1147, and prevents a later plain
+grant from making the option grantable again. The render does not inspect
+existing grants; use `schema apply` when a comparison must check which
+privileges an object-wide revoke reaches.
 
 The server keeps a table or column privilege after `DROP TABLE` and `DROP
 COLUMN`, and the privilege applies again to a table or column created under

@@ -67,15 +67,15 @@ func TestPlan_SQLServerRevokesAGrantOptionThatCascadesToNothingKept(t *testing.T
 		{
 			name: "no onward grant",
 			held: []difftypes.GrantRef{q2Select("q2", "dbo", true), q2Select("q2v", "dbo", false)},
-			want: []string{"REVOKE GRANT OPTION FOR SELECT ON [dbo].[t48] FROM [q2] CASCADE"},
+			want: []string{"REVOKE GRANT OPTION FOR SELECT ON [dbo].[t48] FROM [q2] CASCADE AS [dbo]"},
 		},
 		{
 			name:    "an onward grant the diff revokes",
 			removed: []difftypes.GrantRef{q2Select("q2v", "q2", false)},
 			held:    []difftypes.GrantRef{q2Select("q2", "dbo", true), q2Select("q2v", "q2", false)},
 			want: []string{
-				"REVOKE GRANT OPTION FOR SELECT ON [dbo].[t48] FROM [q2] CASCADE",
-				"REVOKE SELECT ON [dbo].[t48] FROM [q2v]",
+				"REVOKE GRANT OPTION FOR SELECT ON [dbo].[t48] FROM [q2] CASCADE AS [dbo]",
+				"REVOKE SELECT ON [dbo].[t48] FROM [q2v] AS [q2]",
 			},
 		},
 	} {

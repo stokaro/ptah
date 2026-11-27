@@ -79,7 +79,7 @@ func TestSchemaApplySQLServerTakesAGrantOptionNobodyGrantedOnwardE2E(t *testing.
 	again := server.apply(c, declared, "--dry-run")
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stdout, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON [dbo].[t1] FROM ["+server.role+"] CASCADE;")
+	c.Assert(applied.Stdout, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON [dbo].[t1] FROM ["+server.role+"] CASCADE AS [dbo];")
 	c.Assert(server.privileges(c), qt.DeepEquals, []string{"SELECT G"})
 	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 	c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
