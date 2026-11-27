@@ -286,7 +286,7 @@ func VerifyAppliedPlanState(
 	naming, recorded := recordedNaming(conn.Info(), plan.PlacedSchema)
 	if !recorded {
 		var err error
-		if naming, err = resolveDesiredNaming(ctx, conn.Info(), devURL); err != nil {
+		if naming, err = resolveDesiredNaming(ctx, conn.Info(), "--dev-url", devURL); err != nil {
 			return fmt.Errorf(
 				"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
 		}
@@ -340,7 +340,7 @@ func ReviewPlanRoundings(
 	naming, recorded := recordedNaming(conn.Info(), plan.PlacedSchema)
 	if !recorded {
 		var err error
-		if naming, err = resolveDesiredNaming(ctx, conn.Info(), devURL); err != nil {
+		if naming, err = resolveDesiredNaming(ctx, conn.Info(), "--dev-url", devURL); err != nil {
 			return PlanFile{}, fmt.Errorf("read the type changes of the plan: %w", err)
 		}
 	}

@@ -336,10 +336,16 @@ it compares the names the two files hold, and pairs them the way it answers.
 The dev URL may come from `--dev-url` or from the project file. Ptah opens it
 beside `--server-version` too, because a server version says what the plan may
 use, not how the database compares names. A dev database that does not answer
-fails the run. The tables `Größe` and `Zähler` are two tables. On a
-case-insensitive dev database the views `MixedView` and `MIXEDVIEW` are one
-view, and the plan changes it in place. Under `Hungarian_CI_AS` the functions
-`ccs` and `cscs` are one function, so the plan replaces it.
+fails the run, and the error names where the URL came from. The tables `Größe`
+and `Zähler` are two tables. On a case-insensitive dev database the views
+`MixedView` and `MIXEDVIEW` are one view, and the plan changes it in place.
+Under `Hungarian_CI_AS` the functions `ccs` and `cscs` are one function, so the
+plan replaces it.
+
+`schema diff` from a schema file or a migration directory to a SQL Server
+database asks the `--to` database how it compares the names of both sides, so
+the plan pairs them under the collation of the database it describes. A
+native diff from a file to a database needs no dev database for that.
 
 The Go comparison APIs that take no connection compare names offline, by these
 rules:

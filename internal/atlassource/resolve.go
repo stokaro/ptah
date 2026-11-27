@@ -106,6 +106,10 @@ type ResolveOptions struct {
 	// DevURL is the dev database URL used to replay migration-directory
 	// sources.
 	DevURL string
+	// DevURLSource names DevURL in an error the way the operator gave it, and
+	// `--dev-url` where it is empty: a native command that took the URL from
+	// its project file names the project file.
+	DevURLSource string
 	// Protected are the databases the dev database must not be: the target a
 	// plan is computed for, and a database read as the other side of a
 	// comparison. A dev database that replays a migration directory or holds
@@ -560,6 +564,31 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 	}, conn)
 }
 
+// DevURLName is [ResolveOptions.DevURLSource], or `--dev-url` where it is
+// empty.
+func (o ResolveOptions) DevURLName() string {
+	if o.DevURLSource == "" {
+		return "--dev-url"
+	}
+	return o.DevURLSource
+}
+
+// Connect opens the one database source of s as a resolution reads it, for a
+// caller that asks its server something the read does not answer, and returns
+// what releases the connection. A set that is not one database source is the
+// error, and so is a connection that fails, wrapped as `connect to <flag>
+// database: ...`.
+func (s Set) Connect(ctx context.Context, opts ResolveOptions) (*dbschema.DatabaseConnection, func(), error) {
+	if s.Kind != KindDatabase || len(s.Sources) != 1 {
+		return nil, nil, fmt.Errorf("%s names no one database to connect to", s.Flag)
+	}
+	conn, release, err := s.connectDatabase(ctx, opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect to %s database: %w", s.Flag, err)
+	}
+	return conn, release, nil
+}
+
 // connectDatabase returns the connection a database source is read on, and
 // what releases it: the connection the caller holds ([Set.ReadOn]), which
 // stays open, or a connection opened from the URL, which is closed.
@@ -656,7 +685,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 	// the replay claims, confines and resets database by database.
 	conn, err := connectWith(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToServer)
 	if err != nil {
-		return fmt.Errorf("connect to --dev-url: %w", err)
+		return fmt.Errorf("connect to %s: %w", opts.DevURLName(), err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 	// The replay resets the dev database before its first migration.

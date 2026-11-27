@@ -562,7 +562,7 @@ func loadPlacedDesiredApplySchema(
 	naming := opts.naming
 	if !naming.resolved {
 		var err error
-		naming, err = resolveDesiredNaming(ctx, conn.Info(), opts.DevURL)
+		naming, err = resolveDesiredNaming(ctx, conn.Info(), "--dev-url", opts.DevURL)
 		if err != nil {
 			return placedDesired{}, err
 		}
@@ -1361,7 +1361,7 @@ func PrepareApply(
 		RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
 		Vars:                     opts.Vars,
 	}
-	naming, err := resolveDesiredNaming(ctx, conn.Info(), opts.DevURL)
+	naming, err := resolveDesiredNaming(ctx, conn.Info(), "--dev-url", opts.DevURL)
 	if err != nil {
 		return ApplyRuntimePlan{}, err
 	}
