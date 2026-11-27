@@ -1,805 +1,187 @@
 # AGENTS.md
 
-Rules for coding agents in Ptah that no gate enforces. Where a gate or another
-document holds a rule, this file points to it, because a copy drifts.
+Ptah generates, compares, plans, and applies database schemas and migrations.
+These are the required rules for every coding task. Load the matching skills
+below for the detailed policy; do not read every skill or reference up front.
+Paths in code spans are relative to the repository root.
 
-## Where Work Happens
+## Where work happens
 
-**Work only in a linked git worktree, never in the main one.** Two agents work
-here at once, and a branch checked out in the main worktree moves the other
-agent's work.
+**Work only in a linked git worktree, never in the main one.** Start from
+`origin/master`, with a task-named branch and worktree:
 
 ```bash
 git fetch origin
-git worktree add .claude/worktrees/<name> -b <branch> origin/master
-git worktree add .codex/worktrees/<name>  -b <branch> origin/master
+git worktree add .codex/worktrees/<task> -b <branch> origin/master
 ```
 
-- Name the worktree for the task (`2538-constraint-include`, not `tmp`), and
-  branch from `origin/master`, never from a local `master`.
-- After the merge, run `git worktree remove <path>` and `git branch -D`. `-d`
-  does not see a squash merge, so first confirm the content reached master.
-- **Never remove a worktree you did not create**: it is another agent's claim,
-  and `--force` destroys work with no pull request yet.
-- A gate that enumerates files asks `git ls-files`, never the filesystem,
-  which also holds parked checkouts (as `scripts/check-test-style.sh` and
-  `scripts/list-go-modules.sh` do). A gate that regenerates requires every
-  generator to exit 0, and one that enumerates holds its corpus above a floor;
-  otherwise it reports without running.
+`.claude/worktrees/<task>` is the equivalent location for Claude. Inspect
+`git status --short` before editing. Never remove another agent's worktree or
+overwrite its changes. After a merge, confirm the content reached master
+before removing your worktree and deleting its branch, including squash merges.
+
+## Start with the task
+
+1. Establish the observable outcome and the affected boundary. Inspect the
+   nearest implementation, its real caller, and its tests before designing.
+2. Use `rg --files`, scoped `rg`, and bounded reads. Follow symbols outward
+   when evidence requires it. Do not load whole ledgers, all ADRs, generated
+   code, or all documentation for a local fix.
+3. Identify the owning Go module, entry point, engine or provider, native or
+   compatibility surface, and relevant generated artifacts. For cross-cutting
+   work, note the dependencies and test evidence in a short plan.
+4. Implement the smallest complete change at the existing ownership boundary.
+   Do not add speculative frameworks, parallel implementations, or unrelated
+   cleanup. Fix the cause rather than weakening a refusal or assertion.
+5. Give parallel agents independent questions or disjoint file ownership.
+   Share paths, findings, and test results instead of repeated repository
+   surveys. Run shared-database checks serially.
+
+Keep an evidence record: command, result, relevant diff or commit, environment,
+and remaining uncertainty. Reuse a valid result until its inputs change.
+Inspect failed output once; retry only after identifying a changed cause.
+
+## Load task-specific guidance
+
+Read the skill for each affected boundary. Start with Go development for Go
+edits, add a domain skill when applicable, and use validation to select checks.
+Load documentation guidance when documented behavior or documentation changes;
+load review guidance when preparing a PR or issue. Each skill links only the
+references its task needs.
+
+| Task | Skill |
+| --- | --- |
+| Go code, errors, resources, APIs, or portability | [ptah-go-development](.agents/skills/ptah-go-development/SKILL.md) |
+| SQL, inspection, schema identity, diff, planning, or execution | [ptah-schema-migrations](.agents/skills/ptah-schema-migrations/SKILL.md) |
+| Provider protocol, host/SDK, or independent module changes | [ptah-provider-contracts](.agents/skills/ptah-provider-contracts/SKILL.md) |
+| CLI, configuration, Atlas parity, or environment bindings | [ptah-compatibility](.agents/skills/ptah-compatibility/SKILL.md) |
+| Tests, CI, regression evidence, or validation scope | [ptah-validation](.agents/skills/ptah-validation/SKILL.md) |
+| Documentation, examples, or generated references | [ptah-documentation-maintenance](.agents/skills/ptah-documentation-maintenance/SKILL.md) |
+| Review, PR description, or issue | [ptah-review](.agents/skills/ptah-review/SKILL.md) |
+
+`.agents/skills` holds the instructions. `.claude/skills` holds small discovery
+adapters with matching metadata. `CLAUDE.md` imports only this file. Keep the
+root under 12 KiB and each skill under 8 KiB; move task details into conditional
+references. Check changes with
+`node docs/site/scripts/check-agent-guidance.mjs`.
+
+## Architecture and data safety
+
+- Read declarations rather than copying module, dialect, version, or tag
+  lists. Start with the [repository map](.agents/references/architecture.md)
+  when the owner is unclear.
+- Keep neutral models, orchestration, and shared parsers independent of
+  concrete owners. Dispatch engine behavior through existing descriptors,
+  capabilities, and runtime services. Follow
+  [architecture boundaries](docs/architecture_boundaries.md).
+- Incomplete inspection is not deletion intent. Preserve coverage, structured
+  identity, quoting, scope, and dependency order through the schema pipeline.
+  Unsupported semantics must not be silently discarded.
+- A failed execution can have committed effects. Preserve durable progress
+  and unknown-outcome errors; never authorize replay from an uncertain result.
+- DuckDB, Spanner, and YDB engine knowledge and live tests belong to their
+  provider repositories. Host fixture tests prove the provider contract only.
+
+## Compatibility policy
+
+Preserve the [complete compatibility policy](.agents/references/compatibility.md):
+**(a)** never accept and ignore input the Atlas community binary enforces;
+**(b)** match observable contracts without copying defects;
+**(c)** keep implemented capabilities reachable in default compatibility mode.
+`PTAH_ATLAS_STRICT_COMPAT=1` selects the CE-only conformance policy.
+
+Pre-v1 cleanup does not require aliases for older Ptah shapes. It does not
+permit losing user data, breaking Atlas parity, or bypassing the reviewed
+Stable Embedder API approval in [the public API ledger](docs/public_api.md).
+
+### Native and compatibility capability ownership
+
+General capabilities live below both CLIs and are reachable natively.
+Compatibility spelling, codecs, and policy belong in the adapter. Native and
+shared code never import `internal/cli/atlas`; this boundary needs review
+because the architecture gate does not enforce it. Declare compat additions
+as `GENERAL CAPABILITY` or `COMPATIBILITY ADAPTER` in the PR.
+
+### The native CLI surface
+
+`ptah` groups verbs into namespaces; built `--help` is the flag authority.
+There is no `ptah generate`, `ptah compare`, `ptah read-db`, `ptah drop-all`
+or `ptah migrate`, and none may be added. Atlas spellings live in `ptah-compat`.
+`--dry-run` belongs to commands that write. A help line's `[env: PTAH_...]`
+marker declares an environment binding. Resolve owned boolean variables
+strictly before early returns, and disable a forwarded native binding when
+its adapter has already resolved the value. Rendering stays deterministic.
+
+## Code style and linting
+
+Use plain American English in code, comments, docs, issues, and PRs. Follow
+relevant sections of [the style guide](docs/STYLE_GUIDE.md) and
+[Go policy](.agents/references/go-style.md). Prefer existing Go idioms and
+helpers over new abstractions. Preserve error identity and resource ownership.
+
+`.golangci.yml`, architecture budgets, generated-file checks, API approvals,
+and test-style baselines are contracts. Fix code instead of weakening them.
+Discover modules with `scripts/list-go-modules.sh` and build tags with
+`scripts/list-build-tags.sh`. Root-module tests do not cover nested modules
+or prove that a published dependency pin includes an in-tree SDK edit.
+
+## Building and testing
+
+Use [validation guidance](.agents/skills/ptah-validation/SKILL.md) to separate
+fast local feedback from complete merge evidence. Start with the regression
+and affected packages. Broaden when a shared contract, tags, platforms,
+engines, or observed failures require it. Budget elapsed time; report blocked
+or deferred checks and use applicable CI results at the tested revision.
+A local budget never waives a required test or merge gate.
+
+Keep the existing entry points in [TESTING.md](TESTING.md). CI scope belongs
+to `scripts/ci-diff-scope.sh` and the workflows, not an agent's guess. Unknown
+scope runs checks. Do not add workflow-level `paths:` filters or a second
+test orchestrator. Never use daemon-wide Docker cleanup for a local task.
+
+### Testing standards
+
+Behavioral fixes carry a regression that fails without the fix and passes
+with it, through the affected public path. Record the missing input shape.
+Changed SQL execution, engine-dependent constraints, or database effects
+also need engine-level evidence; SQL-string assertions alone do not prove it.
+Provider contract and live-provider evidence are separate claims.
+
+Go tests use Quicktest as `qt`, black-box packages by default, declarative data
+rows, and separate success/failure cases. Do not branch inside test functions
+or hide assertion choices in helpers. Integration tests are tagged under
+`integration/`, use `dbtarget`, and clean up all created state. Follow the
+[test design policy](.agents/references/testing.md) for exact conventions,
+white-box exceptions, regression controls, and contour completeness.
+
+## Documentation obligations
+
+Update documentation with changes to CLI/config behavior, SQL, migrations,
+public APIs, diagnostics, safety checks, or compatibility claims. Search both
+old and new terms across affected surfaces. Edit generated sources, then
+regenerate; never repair their output by hand. The
+[documentation policy](.agents/references/documentation.md) names owners.
+Read style-guide sections relevant to the change, then choose local and CI
+evidence through the documentation skill. A prose edit does not require
+repeating unrelated engine or browser suites locally.
 
 ## PR and issue writing
 
-- Write PR and issue titles in plain American English. Name the concrete
-  problem or intended result using familiar words. Follow the repository's
-  title convention, but do not make readers decode internal component
-  names, unexplained acronyms, or abstract architecture terms to understand
-  the purpose. Do not add tool signatures or generated-with footers.
-- Start every PR with the template's `Summary`, before `Goal and motivation`.
-  In a short paragraph, usually two to four sentences, explain who or what
-  is affected, what is wrong, missing, or unnecessarily difficult, and why
-  it matters.
-  Assume the reader knows what the project does but has not followed this
-  work. Keep architecture and implementation details in later sections.
-- Start every issue with the same kind of plain-English introduction,
-  including issues created through a CLI or API. With an issue form, put
-  this explanation in the first description field. Follow it with the
-  evidence, reproduction steps, expected behavior, constraints, or proposal
-  relevant to that issue.
-- For maintenance, documentation, and internal changes, explain the
-  concrete problem for contributors or maintainers. Do not invent an
-  effect on end users, an incident, or a benefit that the evidence does
-  not establish.
-- Before publishing, read the title and opening without the rest of the
-  description. They must explain the problem and why it matters without
-  requiring the reader to inspect code, follow links, or reconstruct the
-  investigation. Explain unfamiliar terms where they first appear.
-- When updating a PR or issue, read its current title and description
-  first. Keep the title and introduction accurate as the scope changes.
+Write a plain-English title and opening that explain the problem and why it
+matters. Follow [review policy](.agents/references/review.md), including issue
+labels and frozen/hold-off-merge handling. Separate observed results from
+expected benefits. Do not invent performance gains or user impact.
 
 ## Pull request descriptions
 
-### Purpose and scope
-
-- Read and follow `.github/pull_request_template.md`, including when
-  creating or updating a PR through a CLI or API. Keep its headings and
-  remove drafting comments and unused optional content.
-- Establish the problem, motivation, goal, and observable conditions for
-  success from the request, issue, discussion, and supporting evidence.
-  Do not invent user impact, urgency, performance gains, or security
-  benefits. Ask for clarification when missing information materially
-  changes the goal, scope, acceptable risk, or completion criteria.
-- Use `Summary` for the plain-English problem and its consequence,
-  `Goal and motivation` for the intended improvement and its supported
-  rationale, and `Expected outcome` for observable success conditions,
-  scope, and limitations. Add information in each section instead of
-  retelling the same explanation.
-- For a bug fix, explain the established cause. Distinguish observations,
-  conclusions drawn from code, and hypotheses.
-- Distinguish delivered outcomes from proposals and deferred work, and
-  expected benefits from measured results. Explain non-obvious decisions
-  and include implementation details when they help assess correctness,
-  risk, or use. Avoid file inventories, commit histories, and repeated
-  summaries.
-- Keep the essential explanation in the PR. Link issues that define its
-  scope, required companion changes, and relevant remaining work.
-  Use closing keywords only when the PR fully resolves an issue.
+Use [.github/pull_request_template.md](.github/pull_request_template.md), keep
+its headings, and begin with `Summary`. Inspect the complete base-to-head
+diff before publishing. Update the whole description when scope changes;
+state passed, failed, blocked, deferred, and inapplicable checks accurately.
 
 ### Before and after diagram
 
-- Every PR description must include a simple before/after diagram in its
-  `Expected outcome` section. This applies to all PRs, including documentation,
-  refactoring, maintenance, and dependency updates. A diagram in a linked issue
-  or comment does not replace the one in the PR body.
-- Use a fenced `mermaid` block with clearly labeled `Before` and
-  `After (with this PR)` parts. Compare the same concrete scenario and show the
-  changed steps and their result. Keep labels plain and short, and include
-  only the nodes needed to explain the change.
-- When runtime behavior is unchanged, show the actual change to documentation,
-  structure, dependencies, or contributor workflow. Do not invent a runtime
-  effect to fill the diagram. Explain the main difference in nearby prose.
-- Verify that the diagram renders, and keep it aligned with the complete
-  current PR when its scope or implementation changes.
-
-### Evidence and maintenance
-
-- Connect validation to the expected outcomes and material risks. Report
-  the observed results and which success conditions remain unverified.
-  Do not present lint, compilation, skipped checks, or planned work as
-  proof of behavior they do not verify.
-- State the engines, versions, platforms, or component combinations
-  actually exercised when they affect the claim. Provide manual steps
-  only where they add useful verification.
-- Before publishing, inspect the complete diff from the actual base
-  branch to the current head.
-- After substantive changes, revise the description for the complete
-  current PR. Update the goal, outcomes, scope, risks, dependencies, and
-  validation claims; replace stale text instead of appending a development
-  diary.
-- Keep the description proportional to the change. Put essential results,
-  material risks, and remaining uncertainty in the main text. Link or
-  collapse lengthy supporting evidence.
-- Follow all repository-specific testing, documentation, safety, and
-  compatibility requirements alongside this description standard.
-
-The shared wording of these sections and the PR template is maintained in
-[`stokaro/ptah`](https://github.com/stokaro/ptah). Keep copies aligned across
-Ptah repositories; put repository-specific additions in a separate section.
-
-### Ptah-specific review context
-
-For compatibility-surface changes, include the declaration required by
-[capability ownership](#native-and-compatibility-capability-ownership).
-For database effects, state which engine-level evidence covers the change,
-or why the [engine-level test conditions](#an-engine-observable-change-carries-an-engine-level-test)
-do not apply. For bug fixes, identify the missing case and regression
-proof required by [the fix standard](#every-fix-carries-a-regression-test).
-Keep provider-contract checks distinct from live engine checks owned by the
-provider repository. Put these details in the relevant template section.
-
-## What Ptah Is
-
-Ptah generates SQL DDL from annotated Go structs, compares a desired schema
-with a live database, and plans, generates and applies migrations. It ships
-`ptah` and `ptah-compat`, a drop-in replacement for the Atlas CLI. Read facts
-from their declarations, not from counts here:
-
-- Dialects: the descriptors in `internal/builtindialects` feed
-  `core/platform.Dialects` and `NormalizeDialect`. Shared code reads a
-  descriptor field, never a dialect name (stokaro/ptah#4204). `migrations
-  lint` and `sql lint` skip Oracle on purpose (`internal/lintdialect/dialect.go`).
-  DuckDB, Spanner and YDB are served by providers installed separately (ADR
-  0031), and their engine knowledge lives in the provider (ADR 0023).
-- Drivers: the descriptor's `Driver`, read by
-  `internal/connector/<engine>connect`; a `sqlite` URL may take `libsql`
-  (`internal/connector/sqliteconnect`).
-- Rendering: `docs/capabilities.md`. Accepted is not promised: `SERIAL` is
-  refused by name on ClickHouse, never downgraded.
-
-## Repository Layout
-
-- Most code is under `internal/`; check where a package lives before writing
-  an import path.
-- The public Go surface is the ledger [`docs/public_api.md`](docs/public_api.md).
-  `scripts/check-public-api.sh` classifies every importable library package as
-  Stable Embedder API or Documentation-Only.
-  `scripts/check-public-api-released.sh` diffs against the newest tag (an
-  intentional break needs a reviewed entry in `docs/public_api_approvals.txt`),
-  and `scripts/check-exported-docs.sh` requires every exported declaration to
-  be documented. Those two read only the stable category, because a
-  documentation-only package carries no guarantee.
-- "Library package" is package metadata: `main` packages, `_test.go`-only
-  directories and anything behind an `internal/` path segment (`core/internal`,
-  not `internalized`) are outside. The gate has no exemptions and gets none;
-  move the subtree instead.
-- Additive API changes get normal review; never commit a generated snapshot of
-  exported declarations.
-- Core packages: `core/ast`, `core/astbuilder`, `core/goschema` (annotation
-  parser in `parser.go`), `engine/builtin` (dialects in
-  `engine/builtin/internal/dialects/`), `core/platform`, `core/yamlschema`,
-  `dbschema`, `migration/generator`, `migration/migrationfile`,
-  `migration/shadow`, `migration/migrator`, `migration/planner`,
-  `migration/schemadiff`.
-- `cmd/` holds only shipped programs. `internal/cli/root/root.go` assembles
-  `ptah` from the namespaces under `internal/cli/`, one package per leaf verb
-  (`internal/cli/generate` backs `ptah schema render`); `internal/cli/atlas`
-  is the tree `cmd/ptah-compat` ships. Shared helpers sit in
-  `internal/cli/internal/`, except `internal/cli/banner` and
-  `internal/cli/cliobs`, which a `main` package imports. `cmd/integration-test`
-  runs the suite; `cmd/ptah-ls` is the language server.
-- Test entities: `internal/stubs/`, `examples/`,
-  `integration/internal/fixtures/entities/`.
-
-## Schema Annotations
-
-- Directives are `//ptah:` comments on Go structs; see `internal/stubs/`.
-- **An index annotation has to sit on a struct field**; at file level it is
-  silently ignored. For an index away from its column, annotate a holder
-  struct's `_ int` field and name the table:
-  `//ptah:schema:index name="..." fields="name" table="products"`.
-- `fields=` is current and `columns=` a legacy synonym; unknown attributes
-  and unknown directive names on a struct or a field fail at parse time.
-
-## The Native CLI Surface
-
-- `ptah` groups verbs into namespaces (`ptah schema render`); `--help` is the
-  authority on flags.
-- There is no `ptah generate`, `ptah compare`, `ptah read-db`, `ptah drop-all`
-  or `ptah migrate`, and none may be added: Atlas spellings live only in
-  `ptah-compat`.
-- `--dry-run` belongs to the commands that write, not to the whole CLI.
-- `[env: PTAH_...]` on a `--help` line marks an environment binding; no marker,
-  no binding. Booleans are [strict](#boolean-ptah_-environment-variables-are-strict).
-- Rendering is deterministic and dependency-aware; a test may pin its bytes.
-
-## Building And Testing
-
-```bash
-make build                       # ptah, ptah-ls, ptah-compat, ptah-integration-test
-go test ./... -count=1           # unit contour
-make lint                        # golangci-lint, qtlint, nolintguard -- three targets, all required
-scripts/check-test-style.sh      # declarative-test baseline
-make integration-test            # Docker Compose suite; binds fixed host ports
-```
-
-- These are the only test entry points; a wrapper stays thin, with no
-  discovery, orchestration or reporting of its own.
-- `make docker-clean` prunes the whole Docker daemon; check what is running
-  before it or `make integration-test`.
-- `make lint` is not the whole lint job (`.github/workflows/go-lint.yml` runs
-  policy scripts too). Before finishing, run what the workflows run for the
-  files you touched, read from the job.
-
-### Pull-request scoping
-
-- `scripts/ci-diff-scope.sh` alone decides to skip a contour, and fails open.
-  Never use a workflow `paths:` filter: a missing check reads as a pass.
-- A scoped workflow keeps an always-visible `scope` job and a `*-gate` job
-  that fails when decision and results disagree. Every contour runs on a push
-  to `master`.
-- Gate jobs carry `if: ${{ !cancelled() }}`
-  (`scripts/check-ci-scope-gate.sh --check-workflows`): a gate skipped after a
-  failed dependency reports success. `always()` is refused too, since it also
-  judges a run a newer one canceled.
-
-### The version matrix
-
-- Release lines are declared once, in `internal/capabilityprobe/cells.go`;
-  then run `scripts/check-docsync.sh --write`. `go run
-  ./internal/cmd/capmatrix matrix` shows the fan-out.
-- Probe jobs skip a pull request unless a comment asks: `/capability-matrix`,
-  `/capability-matrix postgres`, or prefixes and exact ids. `cells`, `preset
-  coverage` and `documented matrix` always run.
-- Upstream end of life lowers the promise and removes nothing ("Upstream end
-  of life" in `docs/site/src/content/docs/databases/support-policy.md`); a
-  line CI stops running records the reason in `Unprobed`.
-  `.github/workflows/eol-check.yml` opens a draft pull request when a
-  declaration outruns the vendor calendar; `go run ./internal/cmd/eolcheck
-  report` does it by hand.
-- `Support` describes this repository's testing, not the server, and gates
-  nothing. Certified or legacy-tested needs a probe, a server
-  `go-integration-tests.yml` starts, or the compiled-in SQLite
-  (`TestCells_CertificationMatchesWhatContinuousIntegrationRuns`).
-- Only the generated support matrix counts release lines; authored pages never
-  repeat its counts (`check-support-matrix.mjs`).
-- A provider-served engine declares its lines and levels in the plugin
-  (`release-lines.json`); Ptah's matrix links there with no level (ADR 0023).
-
-### Lint rules
-
-A lint rule is identified by its name, `category/name`, everywhere the lint
-core reads one: findings, selectors, baselines, the apply gate and every native
-report. Ptah rules have no numeric code. The categories are declared once in
-`internal/lintnames`; the engine runtime accepts one name from several owners
-when their dialects are disjoint and their severities match, so one hazard is
-one rule with a check per engine.
-
-Every rule name is enumerated on one generated page. Adding a rule is two
-edits -- the rule, which declares its name, and its meaning in
-`internal/lintcatalog` -- and `scripts/check-docsync.sh` fails when they
-disagree. A selector is an exact name or an exact category, never a prefix, and
-native code refuses any word spelled as a code, with a message that names no
-rule: native code holds no table from codes to rules.
-
-The Atlas check codes live in `internal/atlascodes`, which only the
-compatibility surface (`ptah-compat`, `internal/atlasreport`) and the
-documentation generator import. A native or shared package must not. The
-table from names to Atlas codes and the reviewed reference snapshot are gated
-there, in both directions. Every `ptah-compat` report prints a finding the
-way the community binary does: the Atlas code, in that binary's report shape,
-for a rule the table maps, and the rule name for one it does not, since there
-is no code to print. `PTAH_ATLAS_STRICT_COMPAT=1` changes which rules run, not
-how a finding is printed: it runs only the rules the table maps. `atlas:nolint`
-reads a code or an analyzer name in both modes and a rule name in the default
-mode only.
-
-The rule-name grammar is published once by the provider SDK as
-`provider.ValidLintRuleName`, because a provider is a separate module. The
-host's `lintext.CanonicalName` is the host's copy, since `core/lintext` must
-not link the SDK, and `internal/providerhost` holds the two to one answer.
-
-### The Go toolchain
-
-In `go.mod`, `go` is the published compatibility floor and moves on a human
-decision; `toolchain` is the CI build and moves every patch release. Never
-write a `go-version:` literal into a workflow (use `go-version-file: go.mod`)
-or the version into `.golangci.yml`; clear a standard-library advisory by
-raising `toolchain`, never `go`. `scripts/check-go-toolchain-single-source.sh`
-enforces this; `.github/actions/ptah/action.yml` is its one exemption and
-says why.
-
-The Windows jobs that run Go tests patch the toolchain's runtime with the
-approved, unmerged upstream fix for golang/go#81238 (`scripts/go-runtime-patch`,
-stokaro/ptah#2365). The step skips a toolchain that carries the fix and fails
-the job when the patch does not apply, so a Windows failure that names CL 828724
-is about that step, not the change under test. `go-runtime-patch-watch.yml`
-opens an issue when upstream moves.
-
-## Compatibility Policy
-
-Ptah aims to be a drop-in replacement for the Atlas CLI under three rules;
-stating only the first is how a capability gets thrown away.
-
-**(a) Never be looser.** What the community binary refuses must not succeed
-here. Where Ptah cannot yet implement a construct the community binary enforces,
-refuse loudly rather than accept and ignore.
-
-**(b) Matching is the floor, not the ceiling. We do not copy defects.** Where
-the community binary silently drops input, corrupts state or fails for an
-unrelated reason, do not reproduce it: `-- atlas:txmode none` works without a
-blank line after it, and `file()` in `atlas.hcl` stays inside the project,
-where the community binary reads `/etc/passwd`. Say so in the commit and
-issue: "we are stricter here, deliberately, and here is the measurement."
-
-**(c) Compatibility never removes a capability.** `ptah-compat` is also the
-migration path for Atlas Pro pipelines, so:
-
-- the default surface keeps every implemented capability reachable;
-- `PTAH_ATLAS_STRICT_COMPAT=1` selects a CE-only policy for reference and
-  conformance runs. It refuses extension values; it refuses Atlas txtar, Ptah
-  directives and SQL templates where a command executes, converts or replays a
-  migration body, but keeps the bytes in a checksum-only read (`migrate hash`,
-  `migrate status`, `migrate validate` without `--dev-url`) for `atlas.sum`
-  parity; it refuses the known `PTAH_*` toggles, never a `PTAH_*` prefix,
-  since `atlas.hcl` reads user input through `getenv`;
-- the strict selector is an environment variable, never a flag (the
-  `cli-surface` conformance tier asserts flag parity);
-- what the default leaves out is reported, not dropped in silence;
-- the capability is written down: a feature-matrix row, documentation, a test.
-
-To decide whether to match, ask what it costs the user. A different spelling
-of the same outcome (wording, exit codes, flag names, output shape): match. A
-loss of something they asked for: do not.
-
-### Boolean `PTAH_*` environment variables are strict
-
-- Absence selects the default; a present value that is not a boolean makes
-  the owning command refuse before work. **Never turn a parse error into the
-  default.** Use `os.LookupEnv`: `PTAH_X=` is not absence.
-- Declare each variable once with `envbool.New(name, default, class)` and
-  read it with `Var.Resolve` (`internal/cli/internal/envboolguard` refuses
-  `strconv.ParseBool(os.Getenv(...))`). `class` is `Gated` (CE lacks it;
-  strict mode refuses it), `Retained` (CE has it; strict mode keeps it) or
-  `Selector` (reserved), with a comment on what the pinned binary has. An
-  unclassified declaration fails closed.
-- **Resolve the variables a command owns before its early returns**, on every
-  invocation of each command that recognizes them and no other, so a malformed
-  value cannot stay dormant.
-- Toggles opt in to the permissive side, so a typo fails closed; a new
-  restrictive boolean documents why it cannot be a capability gate.
-
-### A `PTAH_*` value is consumed once, by the surface that decides with it
-
-`internal/cli/internal/cmdadapter` installs the same `PTAH_*` binding on the
-native target, which can then read a variable its adapter scoped away. **When
-an adapter resolves a native flag's whole value, disable the target's binding
-with `cmdflags.DisableEnvBinding`**, and test the refusal plus a control in
-which the variable still reaches an unscoped run.
-
-### Recognition that spans two functions belongs to one of them
-
-Two functions that must recognize the same set share one predicate, whose
-declaration says why it cannot split. Two lists drift when one is extended;
-the control drives the public path that joins them.
-
-### A path is not a string, and an assertion about one is not portable
-
-These pass on Linux and fail on `windows-latest`:
-
-1. A path in HCL, YAML or a Go template (`\U` is an escape): use
-   `filepath.ToSlash` or `strconv.Quote`.
-2. `url.URL.Path` through `String()` (`%5C`, `//` before a drive letter): use
-   `atlasurl.SQLiteURLFromPath`.
-3. Text the OS wrote: assert with `errors.Is` or on Ptah's part only;
-   `testutils.StatMissingText` and `syscall.ENOENT.Error()` derive the OS
-   clause.
-4. `go build -o dir/tool` is not executable there: use `internal/exeext`.
-5. `os.PathError.Op` is `stat` on Unix and `GetFileAttributesEx` on Windows.
-6. Shell grammar in a fixture (`echo m; exit 9`): use `internal/preflight` or
-   `testutils.FailingHookCommand`.
-7. Win32 refuses `< > : " / \ | ? *` in a file name: split the test by
-   concern, not platform, with a portable name for the round trip and the
-   escaping asserted as a string everywhere.
-8. `os/exec` does not set `PWD` on Windows; Ptah's contract does, so Ptah
-   sets it.
-
-- **A platform-conditional assertion tends to pass on the platform it cannot
-  test** (a mode check becomes `0o200 == 0o200`): pass the varying part in or
-  split by build tag, never leave a tautology on the half you are not looking
-  at.
-- **A wildcard is not a wildcard across lines**: `qt.ErrorMatches` anchors the
-  message and `.` skips newlines, which Windows messages often hold. Assert
-  the sentinel with `qt.ErrorIs` and pin a prefix with `(?s)`.
-- A rule about file names must not depend on the host: `filepath.IsAbs` calls
-  `/tmp/x` relative on Windows, so `atlas.hcl` confinement refuses a leading
-  slash, backslash or drive letter everywhere.
-
-### A handle is released by a caller, not by the collector
-
-A type holding an OS handle offers `Close`; on Windows an open directory
-handle blocks removal until the collector runs. Releasing twice, or after the
-handle is gone, is a no-op, so `defer` beside the constructor is always
-right. Check the production abandonment path, not only tests, and say which
-release happened. Test it white-box on the handle field, and say in the file
-why a black-box test cannot exist.
-
-### Compatibility with older Ptah is not owed
-
-Ptah is pre-GA: until v1, prefer the cleaner architecture and keep no
-fallback, alias, wrapper, old spelling or second reader for an older shape or
-an earlier Ptah's output; update callers, tests and docs. Never soften a
-refusal or keep a default to preserve output. Say so in the issue and commit:
-"this changes behavior; pre-v1, so no compatibility is owed." This never
-justifies breaking parity with the community binary or discarding user data.
-
-## Native And Compatibility Capability Ownership
-
-`ptah-compat` is an adapter over Ptah capabilities, not a second product; the
-`ptah` binary stays purely native.
-
-- A **general capability** means something without Atlas (schema plan
-  testing, migration testing, drift detection, schema security analysis,
-  checkpoints, pre-apply checks, planning, validation, artifact publishing,
-  directory import). It lives in a shared package below the CLI, reachable
-  natively, never only in `internal/cli/atlas`.
-- **Compatibility machinery** may stay compat-only: `atlas://` resolution,
-  flag spelling and precedence, `atlas.hcl` evaluation, the `.plan.hcl` and
-  `.test.hcl` codecs, revision-table and checksum format, Atlas-shaped output,
-  exit codes, diagnostics. A codec feeding a shared capability is the
-  intended shape.
-- Adapt the compat surface to native capabilities; never narrow a native one
-  to what Atlas can express. A deliberate divergence is a policy the caller
-  picks in the shared package, not a second implementation.
-- A capability reaches the native surface as a verb or flag; the compat
-  surface takes no new flag and keeps fuller behavior behind a `PTAH_*`
-  variable, as `PTAH_ALLOW_EXTERNAL_SCHEMA` does.
-- **Every PR that adds behavior under the compat surface says which it is**:
-  `GENERAL CAPABILITY` (where it lives, how native Ptah uses it, and if no
-  native surface is added, why and which issue tracks it) or `COMPATIBILITY
-  ADAPTER` (naming the Atlas contract). This applies to new work.
-
-### Dependency direction
-
-Native code and shared packages never import `internal/cli/atlas`. **No gate
-checks this**: `scripts/check-architecture-boundaries.sh` and
-[`docs/architecture_boundaries.md`](docs/architecture_boundaries.md) do not
-name it. Besides `cmd/ptah-compat`, only `internal/cmdrefviews` imports it, to
-show what strict mode removes, and says why at the top of the file; a second
-importer needs a written reason too.
-
-## Language And Spelling
-
-- American English in code, comments, docs, issues, PRs and CLI output,
-  except exact external quotes and protocol tokens.
-- **Plain international English in everything you write**, including commits,
-  PR and issue text, comments, CLI output and review replies: short
-  sentences, concrete nouns, active voice, one idea per sentence, for readers
-  who are often not native speakers. Say what changed and why, once.
-  [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) is the authority (sections 4
-  to 6).
-- Avoid the default assistant register: marketing adjectives and filler
-  intensifiers; `Certainly`, `Great question`, `I hope this helps`;
-  `delve into`, `leverage`, `utilize`; `not just X, but Y`; rule-of-three
-  flourishes; a rhetorical question opening a section; a closing paragraph
-  that restates; throat-clearing. Do not narrate the diff: give the reason,
-  trade-off or risk.
-- **A count is not a subject**: never `Two things follow:`, `Decide four
-  things` or `asserts three things`, nor the same with a nicer noun. A
-  lead-in says what the items share, or it is dropped; prose names the noun,
-  Go doc comments included. `one thing` and `two different things` are fine.
-  Style guide 5.3; `internal/countsubjectguard` and `check-style.mjs` enforce
-  it.
-
-### Say what holds now, not when it changed
-
-- **Never date a statement to a Ptah issue or narrate what Ptah did before**,
-  in pages or comments. Write what is still true: the ablation (`without this
-  call every write wins`) or a measurement without its calendar. Cite an
-  issue that still owns something plainly: `(stokaro/ptah#2209)` is a
-  pointer, `since stokaro/ptah#2209` is a date.
-- Read the subject of `used to`, `no longer`, `previously` or `originally`:
-  behind a pronoun or `Ptah` it is history; behind a thing (`the rows used to
-  derive it`, `a row the source no longer has`) it is current and stays.
-- `check-implementation-chronology.mjs` (Markdown) and
-  `internal/chronologyguard` (Go comments) catch the fixed shapes; the rest is
-  yours, and a forward reference to owned work (`after stokaro/ptah#2725
-  removes the converter`) is allowed. Style guide 6.7 has the full rule.
-
-## Documentation Obligations
-
-**Before finishing a change to external behavior, inspect and update the
-documentation.** External behavior: CLI names, flags, environment variables,
-help, output formats, exit codes; config formats, keys, validation,
-precedence; generated and parsed SQL, migration files, directives, revision
-tables, hash files; public Go APIs and extension points; `ptah-compat`
-behavior, conformance claims, documented limitations; user-facing errors,
-warnings, diagnostics and safety checks.
-
-- Search old and new terms (commands, flags, variables, issue numbers, exact
-  errors) in `README.md`, `docs/`, `docs/site/src/content/docs/`,
-  `examples/**/README.md`, `integration/*.md`, package READMEs, and this file
-  when rules change.
-- `go test ./internal/doccommands -count=1` fails while a command line it
-  reads in a tracked page or in `--help` spells a verb or flag the command tree
-  does not have, so a rename lands with the documentation it reads. Section 16
-  of the style guide says which lines those are. It lists pages through git, so
-  without `-count=1` a cached run does not see a page added or removed.
-- Never document Atlas command paths in the native binary, and never claim
-  full Atlas parity without conformance evidence.
-- **Run the gates `.github/workflows/docs.yml` runs**: `node
-  docs/site/scripts/check-style.mjs` (no install, every Markdown file), `npm
-  run check:*` from `docs/site` after `npm ci`, and `npm run build`. The
-  documentation-maintenance skill lists every one, and `check-skill-suite.mjs`
-  keeps that list equal to the workflow's. The style
-  guide holds the page rules (section 7 terms, 8 code and quick starts, 11
-  visuals, 15 checklist, 17 translations).
-- Terms live in `docs/site/scripts/data/terminology.json` (read by
-  `check-terminology.mjs` and `internal/cli/internal/terminologyguard`); render
-  section 7 with `--write`. Product definitions live once in `src/glossary.ts`.
-- A new page joins `docs/site/src/sidebar.mjs` and the route ledger (`node
-  docs/site/scripts/check-route-retirement.mjs --write`); a retired route gets
-  a `redirectRoutes` entry. A route added and renamed on an unmerged branch
-  leaves the ledger only by `--forget <route> --against origin/master`, never
-  by a redirect for a URL nobody was served. `docs/site/scripts/lib/docroutes.mjs`
-  says which routes exist; a route is Astro's, not the file path's.
-- The content inventory is computed by `buildContentInventory()` in
-  `docs/site/scripts/build-content-inventory.mjs` (`--print`), never committed.
-- A provider's pages live in its repository's `docs/` folder and reach the site
-  through `docs/site/scripts/import-provider-docs.mjs`, at the release
-  `docs/site/scripts/data/provider-docs.json` names. Edit one there, never under
-  the ignored `_providers/` directory the import writes; `docs/site/README.md`
-  says how to move to a newer release and how to add a provider.
-- `docs/site/src/content/docs/atlas/feature-matrix.md` is generated: edit
-  `docs/site/scripts/data/feature-matrix-rows.json`, run `node
-  docs/site/scripts/build-feature-matrix.mjs`. A `note` is the reader's text
-  and never restates a count or list that code or a generated table owns;
-  `evidence` is not rendered. When a verdict flips, re-tense the old reasoning
-  as history and keep its measurement (`check-matrix-verdict-prose.mjs`).
-- A page claims features with `owns:`; `scripts/check-feature-inventory.sh
-  --write` regenerates `docs/feature-inventory.json`. Keep the design
-  `internal/featureinventory` documents: exact strings, a claimed-row floor in
-  source, columns named for what is checked (never "canonical"), program rows
-  from `.goreleaser.yaml`, not `go list`.
-- A quick start sets `quickstart: true`; CI runs its commands on three
-  platforms (`internal/quickstart`, `scripts/check-quickstart.sh`), and
-  `quickstartContinues:` chains pages in one working directory. The inference
-  quick start has its own Compose fixture; on a remote Docker context run
-  `PTAH_DOCKER_CONTEXT=<context> PTAH_FIXTURE_HOST=<host> docs/site/scripts/check-inference-quick-start.sh`.
-- `check-translations.mjs` checks only the structure and bytes of
-  `README.ja.md`, `README.de.md` and `README.fr.md`; review their meaning
-  yourself, accessibility text included.
-- `support-matrix.md` is generated, `support-policy.md` the promise,
-  `support-evidence.md` the measurement; generated counts stay off the last
-  two.
-- After a visual fixture or generator changes, run `PTAH_BIN=../../bin/ptah
-  npm run assets:write` in `docs/site` and look at the PNGs in
-  `docs/site/src/assets/`; `check-generated-assets.mjs` compares only
-  `docs/site/public/samples`.
-- Each top-level `examples/*` has the sections `check-examples.mjs` requires;
-  `npm run examples:write` rebuilds the index, and `npm run check:examples`
-  and `scripts/check-examples.sh` verify it.
-- Deep documentation work: `.agents/skills/ptah-documentation-maintenance/SKILL.md`.
-
-### Label every issue you file
-
-Only web-form issues get a type label, and an unlabeled issue escapes every
-planning filter, so pass labels to `gh issue create`: one type (`bug`,
-`enhancement`, `feature-request`, `documentation`, `question`); areas only
-where clear (`cli`, `migration`, `schema-generation`, `postgresql`, `sql`,
-`rls`, `roles`, `security`, `foreign-key`, `constraints`, `field-ordering`);
-`post-ga` or `critical` when they apply. Engine names have no label; classify
-by subject. Milestones are not used. Prefer no label to a wrong one.
-
-`frozen` stops work for the reason its comments give; it is not ownership,
-and a stale reason is raised on the issue, not decided alone.
-`hold-off-merge` means what it says. `eol-keep` on a CLOSED end-of-life pull
-request marks its declaration deliberate, so the daily check opens no new
-pull request for that line.
-
-## Code Style And Linting
-
-- `.golangci.yml` is a strict contract: fix code, never relax thresholds or
-  widen exclusions. Run `golangci-lint run --fix ./...`, then `golangci-lint
-  run ./...`, fix the rest by hand, and repeat both with
-  `--build-tags="$(scripts/list-build-tags.sh --joined)"`, since CI lints both
-  contours (`make lint-golangci`). Every discovered tag except `integration`
-  is built into `ptah` and tested in the `build-tags` job of
-  `go-unit-tests.yml`.
-- `modernize` is on (`slices.Contains`, `maps.Copy`, `strings.CutPrefix`,
-  `any`, `fmt.Fprintf(&b, ...)`, `new(expr)` over a named temporary); no
-  pointer helper packages.
-- Suppressions name the rule and a reason (`#nosec Gxxx -- reason`,
-  `//revive:disable... reason`), never a bare `//nolint:gosec`; `nolintguard`
-  runs through `go vet -vettool` in both contours.
-- A closing parenthesis goes on its own line when the arguments began on
-  their own lines; no linter checks it. Re-read the diff after `gofmt -r`.
-- Discover the module list, never write it: `scripts/list-go-modules.sh`
-  (from `git ls-files`) feeds `make lint`, and
-  `scripts/check-go-module-lint-coverage.sh` fails when a lint job misses a
-  module or passes a tag list other than the discovered one. Any "every
-  module" claim needs discovery or a check.
-- Every package has a `// Package <name>` comment, grounded in the code, on
-  what it does and where it sits (`ST1000`); no filler.
-
-### Public API doc comments and examples
-
-- Embedders read ledger packages through godoc without this repository, so
-  doc comments state error semantics and sentinels, zero-value and nil
-  behavior, ordering and determinism, mutation versus copy, accepted dialects.
-- **Document stable caller-observable behavior, not incidental implementation
-  behavior.** Generalize a sentence a compatible internal change would
-  falsify; state an intended guarantee precisely.
-  `scripts/check-exported-docs.sh` checks presence only.
-- Important usage patterns get executable examples in `example_test.go`,
-  shaped like `core/astbuilder/example_test.go`: black-box, attached to a
-  symbol by name, deterministic `// Output:` from offline fixtures, a doc
-  comment on what it shows. Not one `ExampleFoo` per symbol. A compile-only
-  example is the fallback when output cannot be deterministic, and says why.
-- Examples keep `if err != nil`, and `scripts/check-test-style.sh` skips them.
-  `must.Must` (`github.com/go-extras/go-kit/must`) is for fixture setup, never
-  for the demonstrated call.
-
-## Testing Standards
-
-### Where tests live
-
-- A test crossing no process, filesystem, network or database boundary is a
-  unit or pipeline test beside its package.
-- Integration tests live under an `integration/` tree with `//go:build
-  integration` and are black-box (`package <name>_test`, exported API, never
-  `*_internal_test.go`). Those trees hold only tagged tests; their library
-  code lives outside, with its own unit tests.
-- For behavior reachable only through an unexported symbol, move the logic
-  behind a package boundary with a black-box unit test, or add the real public
-  boundary. Never export a test-only accessor or use white-box access as an
-  integration shortcut.
-- `internal/testcontour` refuses tagged tests elsewhere and fails on any skip.
-  CI splits the contour across shards, and `testcontour` alone decides the
-  split: each shard lists every test with `go test -list`, partitions the
-  listing and runs its part, and the `integration-tests` job (`testcontour
-  verify`) proves from the shards' reports that their union is the listing,
-  above a floor, with every test run once and none skipped or failed. Nothing
-  else selects integration tests: no build tag, package or name pattern.
-- **A test removes what it creates in a shared database**, a revision table's
-  companions included (`revisiontable.Configured`, plus
-  `revisiontable.ApplyLog` for `schema apply`). A shard runs part of the
-  contour, and the timings move the partition, so a leftover turns a different
-  test red on each run, far from the test that left it. `Configured` also
-  names `ptah_migration_tags`, which every revision table shares. Dropping it
-  after a test is safe only because the contour runs one test at a time
-  (`-p=1`, and no `t.Parallel` in a package that migrates).
-- **A live test asks for an engine, never for a variable**: `dbtarget.URL(c,
-  dbtarget.PostgreSQL)` for the address ptah connects with,
-  `dbtarget.DriverDSN(c, dbtarget.MySQL)` for a raw driver. They differ:
-  `go-sql-driver/mysql` reads a `mysql://` prefix as part of the username.
-  Never `os.Getenv` a database address in a test
-  (`TestNoIntegrationTestReadsARegistryVariableDirectly`).
-- File names say what a test needs: `*_live_test.go` a server,
-  `*_e2e_test.go` a command or process (the larger claim, when both),
-  `*_fs_test.go` only the filesystem; no new `*_integration_test.go`. Classify
-  by reading, not by scanning imports: the database helper often sits in a
-  sibling file.
-- `cmd/integration-test` covers apply, rollback, idempotency, parallel
-  execution, partial-failure recovery and schema diff.
-
-### An engine-observable change carries an engine-level test
-
-A unit test shows the statement Ptah built, not that a server accepts it:
-rows planned in an order a foreign key rejects pass every offline assertion.
-A change needs a test under `integration/` when the diff:
-
-- changes the SQL an engine receives, or its order;
-- depends on a constraint, permission, transaction or catalog rather than on
-  Ptah's code;
-- gives a CLI verb a database effect, or moves one to another verb, phase or
-  connection.
-
-Use `*_live_test.go` where a server decides and `*_e2e_test.go` where the
-binary does, `dbtarget` for the engine, rows varied by engine where answers
-differ, and expected values read back from the database. **The unit test
-stays**: it names the defect; the engine test proves it matters. Nothing is
-owed where Ptah settles the behavior itself (a pre-connect refusal, a
-rendering, a parse, a rank over a fixture) or the engine normalizes it away;
-a change that meets no condition says in the pull request which it misses.
-An engine a new test needs joins `.github/workflows/go-integration-tests.yml`
-in the same change.
-
-**A provider-served engine is tested in the provider's repository.** Ptah's
-CI proves the provider contract only on `provider-sdk/testdata/fixture`
-(`testutils.BuildFixtureProvider`, `provider-sdk/integration`,
-`integration/providercli`), and a change to what a provider receives is
-tested there. The end-to-end, live and parity tests of DuckDB, Spanner and YDB
-run in their plugin repositories against current Ptah and never join
-`go-integration-tests.yml` (ADR 0031).
-
-### Every fix carries a regression test
-
-A fix lands with a test that fails on the code before it and passes after it.
-The test drives the path the defect took: the same verb, selector, input shape
-and, where the defect needed one, engine. Prove it: disable the fix, watch the
-test fail, restore it. When the existing tests missed the defect, the pull
-request names the shape they lacked, and that shape becomes a row.
-
-### Declarative tests only
-
-No `if`, `switch` or `goto` in a test function; `for` over a static table is
-fine; `Example*` is exempt. New tests add nothing to the
-`scripts/check-test-style.sh` baseline, refreshed only through the script's
-`--write-baseline`, never the bare tool. Never use `testify` (`depguard` refuses
-it); `importas` requires `quicktest` as `qt`.
-
-### Checkers belong to the test they report against
-
-`QTLINT_RULES` in the Makefile enforces these in both contours and on Windows;
-`make lint-qtlint-fix` rewrites, one rule per pass.
-
-- Assert through a receiver: `c := qt.New(t)`, then `c.Assert(...)`.
-- Subtests use `t.Run(name, func(t *testing.T) { c := qt.New(t) ... })`,
-  never `c.Run`, whose closure asserts through the parent. The parameter `t`
-  shadows the outer one on purpose.
-- A helper takes the checker, `c *qt.C`, not `testing.TB`, which hides the
-  escape from `-require-testing-run`. One that needs `*testing.T` takes it,
-  never `c.TB.(*testing.T)`.
-
-### A table row carries data, not a checker
-
-- Rows hold the varying value (`wantErr: "..."`), not an asserting closure;
-  rows whose assertions differ are two tests.
-- Callbacks into production code are fine; assertion callbacks, checker
-  factories and assertion-choosing comparators are not. `-require-data-rows`
-  catches only a function field taking `*qt.C`; this rule covers the rest.
-- No helper hides the conditional (`checkError(c, err, wantIs, wantLike)`
-  choosing a checker); assert per case.
-- **A rewritten table that still passes proves nothing**: disable the defect,
-  watch it fail, restore. Losing a row's discrimination is worse than the old
-  shape.
-
-### Separate happy-path and failure-path tests
-
-`TestXxx_HappyPath` asserts `err, qt.IsNil` and the value;
-`TestXxx_FailurePath` asserts the error and the zero value; never one table
-with a `wantErr` branch. Prefer `qt.ErrorIs` for a sentinel, `qt.ErrorAs` for
-a type, `qt.ErrorMatches` when there is no sentinel.
-
-```go
-func TestDialectFromURL_FailurePath(t *testing.T) {
-	t.Run("unsupported", func(t *testing.T) {
-		c := qt.New(t)
-		got, err := atlasurl.DialectFromURL("db2://localhost/dev")
-		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "db2://localhost/dev"`)
-		c.Assert(got, qt.Equals, "")
-	})
-}
-```
-
-### Black-box by default, white-box as the exception
-
-Tests are `package <name>_test` over exported API. White-box is allowed only
-for an unexported function critical to correctness or otherwise unobservable
-state, in `*_internal_test.go` whose first line after `package` is
-`// White-box testing required:` with the reason, never in an integration
-tree.
-
-### A linter's reach is configuration, not a property of the linter
-
-`rowserrcheck` sees only packages its settings list as declaring `Query`,
-which must include Ptah's `sqlrunner.Runner` readers (see `.golangci.yml`);
-`internal/rowserrguard` checks the list against the tree both ways. It does
-not follow rows into closures or parameters: a function running its own
-`QueryContext` owns the final check. A sweep hit is not a finding:
-`Rows.Err` is nil until `Rows.Next` runs, so verify each site. Run a new
-linter against the pre-fix tree before trusting a clean result.
-
-### A blank import says why
-
-Each blank import has its own comment on or right above its line; a group
-comment does not count, since `gofmt` interleaves groups. revive's
-`blank-imports` covers code and `internal/blankimportguard` covers tests,
-where a missing registry import quietly shrinks what a test checks.
-
-### A rule with no caller is a rule that is not in effect
-
-`unused` counts tests as callers, so a rule called only by its own tests is
-green while the behavior is absent (`internal/embedguard` reports this over
-`internal/embed...`). A new
-rule needs a test that drives the real entry point and fails with the rule
-disabled. A guard finding is a decision: call the rule or delete it.
+Every PR includes a simple fenced Mermaid diagram in `Expected outcome`,
+with `Before` and `After (with this PR)` parts showing the same scenario.
+For internal or documentation changes, show the contributor workflow or
+structure that changes. Verify the diagram and keep it aligned with the PR.

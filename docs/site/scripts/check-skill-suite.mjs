@@ -2,9 +2,9 @@
 // Holds the documentation-maintenance skill's validation suite to the checks
 // .github/workflows/docs.yml runs.
 //
-// The skill tells an agent to run "the complete suite" and that a local failure
-// is a CI failure. That is only true while its list names what the workflow
-// runs, and the two are edited by different changes: a new check lands in the
+// The skill's full-validation reference names what the workflow runs. The list
+// must stay complete even when local feedback uses only relevant checks.
+// The reference and workflow are edited by different changes: a new check lands in the
 // workflow, and the list a contributor reads keeps naming the old set. Nothing
 // fails, and the next change that breaks the new check is pushed green locally.
 //
@@ -30,7 +30,7 @@
 // fails, so the list cannot outlive what it describes.
 //
 // Only the suite block counts: the bash block that follows the
-// `<!-- documentation-suite -->` marker in the skill. A command in another block
+// `<!-- documentation-suite -->` marker in the fixed suite reference. A command in another block
 // is an example of something else, not part of what the skill says to run.
 //
 // The same reading holds .github/workflows/provider-docs.yml to docs.yml in one
@@ -48,7 +48,7 @@ const siteRoot = join(scriptDir, '..');
 const repoRoot = join(siteRoot, '..', '..');
 const workflowPath = join(repoRoot, '.github', 'workflows', 'docs.yml');
 const providerWorkflowPath = join(repoRoot, '.github', 'workflows', 'provider-docs.yml');
-const skillPath = join(repoRoot, '.agents', 'skills', 'ptah-documentation-maintenance', 'SKILL.md');
+const suitePath = join(repoRoot, '.agents', 'skills', 'ptah-documentation-maintenance', 'references', 'validation-suite.md');
 const packagePath = join(siteRoot, 'package.json');
 
 export const marker = '<!-- documentation-suite -->';
@@ -402,13 +402,13 @@ function main() {
   }
   const scripts = JSON.parse(readFileSync(packagePath, 'utf8')).scripts;
   const workflow = readFileSync(workflowPath, 'utf8');
-  const findings = compare(workflow, readFileSync(skillPath, 'utf8'), scripts);
+  const findings = compare(workflow, readFileSync(suitePath, 'utf8'), scripts);
   const providerWorkflow = readFileSync(providerWorkflowPath, 'utf8');
   const providerFindings = compareProvider(workflow, providerWorkflow, scripts);
   if (findings.length > 0 || providerFindings.length > 0) {
     console.error('check-skill-suite.mjs: FAILED');
     for (const finding of [...findings, ...providerFindings]) console.error(`- ${finding}`);
-    if (findings.length > 0) console.error('Update the suite in .agents/skills/ptah-documentation-maintenance/SKILL.md.');
+    if (findings.length > 0) console.error('Update the suite in .agents/skills/ptah-documentation-maintenance/references/validation-suite.md.');
     if (providerFindings.length > 0) console.error('Update .github/workflows/provider-docs.yml.');
     process.exitCode = 1;
     return;

@@ -1,256 +1,108 @@
-# Ptah Core Renderer Testing Guide
+# Testing Ptah
 
-This directory contains PowerShell scripts for running comprehensive tests of the ptah core renderer, including the newly implemented visitor methods for `DropIndex`, `CreateType`, and `AlterType`.
+Start with the behavior your change affects, then expand to its callers and
+contracts. The [Makefile](Makefile) and [CI workflows](.github/workflows)
+define executable checks. The [test standards](.agents/references/testing.md)
+define regression, engine-level, fixture, and assertion requirements.
 
 ## Prerequisites
 
-- **Docker Desktop** - Required for running database integration tests
-- **Go 1.26.7+** - For running the tests. This is the `go` directive in `go.mod`, the published compatibility floor — not the patch release CI builds with, which is the `toolchain` directive.
-- **PowerShell 7+** - For running the test scripts (works on Windows, macOS, Linux)
-
-## Test Scripts
-
-### 🚀 Quick Start
-
-```powershell
-# Run all tests (recommended)
-.\test-all.ps1
-
-# Run only the new visitor methods tests
-.\test-new-methods.ps1
-
-# Run unit tests only (no databases needed)
-.\test-all.ps1 -Category unit
-```
-
-### 📋 Available Scripts
-
-| Script | Purpose | Database Required |
-|--------|---------|-------------------|
-| `test-all.ps1` | Comprehensive test runner with multiple options | Conditional |
-| `test-new-methods.ps1` | Quick test for new visitor methods | Yes |
-| `run-integration-tests.ps1` | Full integration test runner | Yes |
-
-## Script Details
-
-### `test-all.ps1` - Comprehensive Test Runner
-
-The main test script with multiple categories and options:
-
-```powershell
-# Run all tests
-.\test-all.ps1
-
-# Run only unit tests (fast, no databases)
-.\test-all.ps1 -Category unit
-
-# Run integration tests for specific dialect
-.\test-all.ps1 -Category integration -Dialect postgresql
-
-# Run essential tests only (faster)
-.\test-all.ps1 -Quick
-
-# Test specific dialect
-.\test-all.ps1 -Dialect mysql
-```
-
-**Categories:**
-- `unit` - Unit tests only (AST, renderer logic)
-- `integration` - Integration tests with real databases
-- `new-methods` - Tests for DropIndex, CreateType, AlterType
-- `all` - All test categories (default)
-
-**Dialects:**
-- `postgresql` - PostgreSQL tests only
-- `mysql` - MySQL tests only  
-- `mariadb` - MariaDB tests only
-- `all` - All dialects (default)
-
-### `test-new-methods.ps1` - New Visitor Methods
-
-Quick test script focusing on the newly implemented visitor methods:
-
-```powershell
-# Test new methods
-.\test-new-methods.ps1
-
-# Test and keep databases running for debugging
-.\test-new-methods.ps1 -KeepDatabases
-```
-
-Tests the following functionality:
-- `VisitDropIndex` - DROP INDEX statements
-- `VisitCreateType` - CREATE TYPE statements (enums, domains, composite types)
-- `VisitAlterType` - ALTER TYPE statements (add values, rename, etc.)
-
-### `run-integration-tests.ps1` - Full Integration Runner
-
-Detailed integration test runner with Docker Compose:
-
-```powershell
-# Run all integration tests
-.\run-integration-tests.ps1
-
-# Run specific test pattern
-.\run-integration-tests.ps1 -TestPattern "TestDropIndex"
-
-# Verbose output and keep databases
-.\run-integration-tests.ps1 -Verbose -KeepDatabases
-
-# Skip Docker image building
-.\run-integration-tests.ps1 -SkipBuild
-```
-
-## Database Setup
-
-The integration tests use Docker Compose to start:
-
-- **PostgreSQL 19** on port 5432
-- **MySQL 26.10** on port 3310
-- **MariaDB 12.3** on port 3307
-
-Connection details:
-- Database: `ptah_test`
-- Username: `ptah_user`
-- Password: `ptah_password`
-
-## Test Coverage
-
-### New Visitor Methods Tests
-
-✅ **DropIndex Tests:**
-- PostgreSQL: `DROP INDEX [IF EXISTS] name;`
-- MySQL/MariaDB: `DROP INDEX name ON table;`
-
-✅ **CreateType Tests:**
-- PostgreSQL: Full support for ENUM, DOMAIN, COMPOSITE types
-- MySQL/MariaDB: Informative comments (types handled inline)
-
-✅ **AlterType Tests:**
-- PostgreSQL: ADD VALUE, RENAME VALUE, RENAME TYPE operations
-- MySQL/MariaDB: Informative comments (use ALTER TABLE instead)
-
-### Integration Test Categories
-
-1. **Unit Tests** - No database required
-   - AST node functionality
-   - Renderer interface compliance
-   - SQL generation logic
-
-2. **Integration Tests** - Real database connections
-   - Actual SQL execution
-   - Database-specific syntax validation
-   - Cross-dialect compatibility
-
-3. **Dialect-Specific Tests**
-   - PostgreSQL advanced features
-   - MySQL/MariaDB compatibility
-   - Error handling and edge cases
-
-## Troubleshooting
-
-### Docker Issues
-
-```powershell
-# Check Docker status
-docker --version
-docker compose --version
-
-# View database logs
-docker compose logs postgres mysql mariadb
-
-# Clean up containers
-docker compose down -v
-```
-
-### Test Failures
-
-```powershell
-# Run with verbose output
-.\run-integration-tests.ps1 -Verbose
-
-# Keep databases for debugging
-.\run-integration-tests.ps1 -KeepDatabases
-
-# Test specific pattern
-.\run-integration-tests.ps1 -TestPattern "TestDropIndex"
-```
-
-### Performance
-
-```powershell
-# Quick tests only
-.\test-all.ps1 -Quick
-
-# Unit tests only (fastest)
-.\test-all.ps1 -Category unit
-
-# Specific dialect only
-.\test-all.ps1 -Dialect postgresql
-```
-
-## Examples
-
-### Development Workflow
-
-```powershell
-# 1. Quick unit tests during development
-.\test-all.ps1 -Category unit
-
-# 2. Test new functionality
-.\test-new-methods.ps1
-
-# 3. Full integration test before commit
-.\test-all.ps1
-
-# 4. Test specific database if issues found
-.\test-all.ps1 -Dialect mysql -Verbose
-```
-
-### CI/CD Pipeline
-
-```powershell
-# Comprehensive test suite for CI
-.\test-all.ps1 -Category all -Verbose
-
-# Quick smoke test
-.\test-all.ps1 -Quick
-```
-
-## Exit Codes
-
-- `0` - All tests passed
-- `1` - Test failures or errors
-- `2` - Script parameter errors
-- `3` - Docker/environment issues
-
-All scripts return appropriate exit codes for CI/CD integration.
-
-# Test Style Baseline
-
-Ptah enforces the current declarative-test and white-box-test baseline while
-issue #541 is being cleaned up:
+Use the Go versions declared in `go.mod`; its `toolchain` directive identifies
+the build toolchain. Check `go version` before running Go commands. The
+Makefile and shell scripts require Make and Bash. Database scenarios need
+Docker Compose; documentation checks use the dependencies described in
+[the site README](docs/site/README.md).
+
+Run commands from the repository root unless a command uses `go -C` to select
+another module. Keep changes in the linked worktree required by
+[AGENTS.md](AGENTS.md).
+
+## Iterate on a focused test
+
+Select a test from the affected package. For example, this renderer test
+runs without a database server:
 
 ```bash
-scripts/check-test-style.sh
+go test ./engine/builtin -run '^TestNewVisitorMethods_UnitTests$' -count=1 -timeout=2m
 ```
 
-The check fails when a PR adds a new prohibited conditional in a top-level
-`Test*`, `Fuzz*`, or `Example*` function, adds a same-package test file that is
-not named `*_internal_test.go`, or adds an internal test file without an
-`// White-box testing required:` justification comment as the first non-empty
-line after the package clause.
+Confirm that the filter executes the intended test. For a bug fix, prove
+that the new regression fails for the defect and passes with the fix. Then
+run the owning package and affected consumers. Use an explicit timeout;
+downloads and compilation also contribute to wall time.
 
-Cleanup PRs should reduce `.teststyle-baseline.json` with:
+Keep Go's normal cache for ordinary iteration. Use `-count=1` for regression
+proof and tests that read external state, including Git inventories and live
+databases. For documentation command changes, run:
 
 ```bash
-scripts/check-test-style.sh --write-baseline
+go test ./internal/doccommands -count=1 -timeout=5m
 ```
 
-The script scans the files git reports for this checkout rather than walking the
-filesystem, so both the check and the regeneration ignore linked git worktrees
-parked under the repository. `go tool teststyle -write-baseline` run directly
-does walk them, and records their tests into the tracked baseline.
+## Broader checks
 
-`scripts/check-test-style.sh --list-scan-paths` prints the exact set of files the
-gate will judge, which is the quickest way to confirm a file is in scope.
+| Command | What it covers |
+| --- | --- |
+| `make build` | Shipped binaries and the integration scenario runner |
+| `go test ./... -count=1 -timeout=10m` | Untagged tests in the root Go module |
+| `make lint` | golangci-lint, qtlint, and nolintguard across discovered modules and tag configurations |
+| `scripts/check-test-style.sh` | The declarative-test baseline |
+| `make integration-test` | Docker Compose scenarios through `cmd/integration-test` |
+
+Run these when their scope is relevant. A focused local pass does not replace
+required CI checks. Use the existing CI jobs for complete engine and platform
+coverage instead of repeatedly starting the same expensive suite locally.
+Report blocked or deferred checks with the specific evidence still needed.
+
+The [validation skill](.agents/skills/ptah-validation/SKILL.md) describes
+local budgets, escalation, and reporting. The
+[validation policy](.agents/references/validation.md) names the full checks
+and their constraints.
+
+## Modules, tags, and platforms
+
+A root `go test ./...` does not enter nested Go modules. Discover modules
+with `scripts/list-go-modules.sh` and test the affected module explicitly.
+For example:
+
+```bash
+go -C provider-sdk test ./... -timeout=5m
+```
+
+The [module workflow](.github/workflows/go-module-tests.yml) builds and tests
+every discovered nested module with `GOWORK=off`. A local workspace can link
+unreleased modules, but it does not prove that their published dependencies
+work. Follow the [provider SDK module boundary](provider-sdk/README.md#module-boundary)
+when changing the SDK or host together.
+
+Discover opt-in tags with `scripts/list-build-tags.sh`. Default and tagged
+builds can select different files. The
+[unit workflow](.github/workflows/go-unit-tests.yml) owns race checks,
+Windows runs, the `js/wasm` build, and opt-in tag checks. Report only the
+platforms and execution modes actually exercised.
+
+## Integration evidence
+
+The tagged Go integration suite and the Compose scenario runner are separate
+checks. After configuring the services, tools, and environment declared by
+[the integration workflow](.github/workflows/go-integration-tests.yml), run
+the complete tagged suite through its existing runner:
+
+```bash
+go run ./internal/cmd/testcontour --tags integration --timeout 40m
+```
+
+The runner discovers tests, rejects skips, and verifies complete execution.
+CI can split its work into shards and verify their combined coverage. A
+filtered tagged `go test` is a local diagnostic only; it does not establish
+a complete integration pass. The Compose targets do not replace this runner.
+
+Use `dbtarget` in live tests and remove everything the test creates. Avoid
+concurrent runs that share mutable database state or fixed ports. Inspect
+Docker resources before using cleanup targets; `make docker-clean` also
+prunes the Docker daemon.
+
+When SQL or engine behavior changes, retain both the unit regression and the
+required engine-level test. Provider engine evidence belongs in the provider
+repository; Ptah's fixture proves the host contract. Name any pending live
+check in the PR and verify it before claiming the behavior is covered.
