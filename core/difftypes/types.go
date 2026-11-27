@@ -1234,7 +1234,9 @@ type SchemaDiff struct {
 	// with the old object while the new one has none, and this is how a
 	// planner gives them back.
 	//
-	// A reversal runs against the same database and carries the same grants.
+	// A reversal carries the original privileges under the identities it
+	// replaces: a changed routine's grants name the forward change's new
+	// signature so the rollback can restore them on the old one.
 	CurrentGrants []GrantRef `json:"-"`
 
 	// CurrentPartialRevokes is the read's rows that take a privilege away

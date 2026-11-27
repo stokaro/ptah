@@ -188,6 +188,7 @@ func cockroachDB() descriptor.Dialect {
 			DefaultGeneratedKind:    "STORED",
 			RolePasswords:           true,
 			RoutineTypeAliases:      "pg-aliases",
+			RoutineOverloads:        true,
 			QualifiedTypeNames:      true,
 			CatalogTypeNames:        true,
 			PrimaryKeyStoresColumns: true,

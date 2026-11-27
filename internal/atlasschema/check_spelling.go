@@ -119,7 +119,7 @@ func diffCheckSpellings(
 	defer releaseDev()
 	devConn, err := connectInspectSource(ctx, devURL, opts.ConnectTimeout, dbschema.ConnectToServer)
 	if err != nil {
-		return atlascheckform.Spellings{}, fmt.Errorf("connect to --dev-url: %w", err)
+		return atlascheckform.Spellings{}, fmt.Errorf("connect to %s: %w", opts.devURLSource(), err)
 	}
 	defer dbschema.CloseAndWarn(devConn)
 	if len(atlascheckform.Plan(devConn.Info().Dialect, desired, diff)) == 0 {

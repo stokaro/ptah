@@ -2451,13 +2451,19 @@ func validateRoutineOverloads(dialect string, functions []schemamodel.Function) 
 	if !refused {
 		return nil
 	}
-	// The schema keeps its spelling. The routine's own name is folded where
-	// the target folds it, as validateRoutineIdentityCollisions keys it, and
-	// kept as written on SQL Server, whose collation decides.
+	// The schema keeps its spelling, and an unqualified routine is in the
+	// target's default schema: on SQL Server [f] is [dbo].[f], so the two are
+	// one routine there, and without the default the second CREATE OR ALTER
+	// replaces the first in silence. Two schemas spelled apart are not judged
+	// here: a collation may read them as one, and the declaration check names
+	// both. The routine's own name is folded where the target folds it, as
+	// validateRoutineIdentityCollisions keys it, and kept as written on SQL
+	// Server, whose collation decides.
 	type routineName struct {
 		procedure    bool
 		schema, name string
 	}
+	defaultSchema := identifier.ForDialect(dialect).DefaultSchema
 	seen := make(map[routineName]schemamodel.Function, len(functions))
 	for _, function := range functions {
 		ref, ok := tableref.Parse(function.Name)
@@ -2468,7 +2474,11 @@ func validateRoutineOverloads(dialect string, functions []schemamodel.Function) 
 		if routineNamesAreCaseInsensitive(dialect) {
 			name = mysqlroutine.IdentityKey(name)
 		}
-		key := routineName{procedure: function.IsProcedure(), schema: ref.Schema, name: name}
+		schema := ref.Schema
+		if !ref.Qualified {
+			schema = defaultSchema
+		}
+		key := routineName{procedure: function.IsProcedure(), schema: schema, name: name}
 		previous, declared := seen[key]
 		if !declared {
 			seen[key] = function

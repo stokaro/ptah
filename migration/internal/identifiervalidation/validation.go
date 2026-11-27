@@ -4,9 +4,10 @@ package identifiervalidation
 
 import (
 	"fmt"
-	"strings"
+	"slices"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -54,7 +55,37 @@ func ValidateTarget(
 	if err := validateSchemaObjects(desired, semantics); err != nil {
 		return err
 	}
+	if err := validateSharedNamespace(desired, dialect, semantics); err != nil {
+		return err
+	}
+	if err := validateRoles(desired, dialect, semantics); err != nil {
+		return err
+	}
 	return indexscope.ValidateDeclared(dialect, semantics, difftypes.IndexDeclarationsOf(desired))
+}
+
+// validateRoles refuses two declared roles the target may read as one name,
+// where it compares a role name under its catalog's rules
+// ([offlinenames.RolesByCatalog]). The comparison pairs each declared role
+// with the role the database holds under those rules, so of two such
+// declarations it compares one and the plan creates the other: measured on
+// SQL Server 2025 under a case-insensitive collation, the roles App and APP
+// are one role, and CREATE ROLE [APP] beside App fails with error 15023.
+// Two roles spelled alike are one declaration.
+func validateRoles(desired *schemamodel.Database, dialect string, semantics identifier.Semantics) error {
+	if !offlinenames.RolesByCatalog(dialect) {
+		return nil
+	}
+	conflict := indexscope.ConflictSemantics(semantics)
+	roles := make([]spelledName, 0, len(desired.Roles))
+	for _, role := range desired.Roles {
+		key := conflict.TableConflictKey(role.Name)
+		roles = append(roles, spelledName{spelling: role.Name, namesake: Namesake{Key: key, NameKey: key}})
+	}
+	if pair, found := firstConflict(roles); found {
+		return conflictError("roles", pair, semantics)
+	}
+	return nil
 }
 
 // ObjectNames lists the names of the views, materialized views, routines,
@@ -137,7 +168,7 @@ func validateTablesAndColumns(
 	semantics = indexscope.ConflictSemantics(semantics)
 	tables := make([]spelledName, 0, len(desired.Tables))
 	for _, table := range desired.Tables {
-		tables = append(tables, spelledName{spelling: table.QualifiedName(), key: semantics.QualifiedTableConflictKey(table.QualifiedName())})
+		tables = append(tables, spelledName{spelling: table.QualifiedName(), namesake: NamesakeOf(table.QualifiedName(), semantics)})
 	}
 	if pair, conflict := firstConflict(tables); conflict {
 		return conflictError("tables", pair, rules)
@@ -163,10 +194,10 @@ func validateTablesAndColumns(
 var unresolvedTableKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 
 // spelledName is a declared name as a conflict check reads it: spelling
-// says which declaration it is, and key is its conflict key.
+// says which declaration it is, and namesake is how it is compared.
 type spelledName struct {
 	spelling string
-	key      string
+	namesake Namesake
 }
 
 // conflictPair is two declarations of one kind the target may read as one
@@ -182,33 +213,34 @@ type conflictPair struct {
 // apart, in declaration order. Two names spelled alike are one declaration,
 // not a pair.
 //
-// A name whose key has no equivalence class is compared against every name
-// already seen, for the reason [conflictingColumn] gives: under an
-// accent-insensitive collation `örders` is the table `orders`, and the two
-// conflict keys are different.
+// A name that has no equivalence class is compared against every name
+// already seen, and a later name against every such name, for the reason
+// [conflictingColumn] gives: under an accent-insensitive collation `örders`
+// is the table `orders`, and the two conflict keys are different. Each such
+// pair is a pair only where [Namesake.MayBe] says the two may be one name,
+// so a name in one schema is never paired with a name in another.
 func firstConflict(names []spelledName) (conflictPair, bool) {
 	byKey := make(map[string]string, len(names))
-	var seen []string
-	unresolved := ""
+	var seen, unresolved []spelledName
 	for _, name := range names {
-		if strings.Contains(name.key, unresolvedTableKey) {
-			if earlier, found := firstOther(seen, name.spelling); found {
-				return conflictPair{previous: earlier, current: name.spelling, unresolved: true}, true
+		earlier := unresolved
+		if name.namesake.Unresolved() {
+			earlier = seen
+		}
+		for _, other := range earlier {
+			if other.spelling != name.spelling && other.namesake.MayBe(name.namesake) {
+				return conflictPair{previous: other.spelling, current: name.spelling, unresolved: true}, true
 			}
-			if unresolved == "" {
-				unresolved = name.spelling
-			}
-			seen = append(seen, name.spelling)
+		}
+		seen = append(seen, name)
+		if name.namesake.Unresolved() {
+			unresolved = append(unresolved, name)
 			continue
 		}
-		if unresolved != "" && unresolved != name.spelling {
-			return conflictPair{previous: unresolved, current: name.spelling, unresolved: true}, true
+		if other, exists := byKey[name.namesake.Key]; exists && other != name.spelling {
+			return conflictPair{previous: other, current: name.spelling}, true
 		}
-		if earlier, exists := byKey[name.key]; exists && earlier != name.spelling {
-			return conflictPair{previous: earlier, current: name.spelling}, true
-		}
-		byKey[name.key] = name.spelling
-		seen = append(seen, name.spelling)
+		byKey[name.namesake.Key] = name.spelling
 	}
 	return conflictPair{}, false
 }
@@ -242,7 +274,7 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 	for _, kind := range kinds {
 		spelled := make([]spelledName, 0, len(kind.names))
 		for _, name := range kind.names {
-			spelled = append(spelled, spelledName{spelling: schemaSpelling(name, semantics), key: semantics.QualifiedTableConflictKey(name)})
+			spelled = append(spelled, spelledName{spelling: schemaSpelling(name, semantics), namesake: NamesakeOf(name, semantics)})
 		}
 		if pair, conflict := firstConflict(spelled); conflict {
 			return conflictError(kind.noun, pair, rules)
@@ -250,15 +282,114 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 	}
 	triggers := make([]spelledName, 0, len(desired.Triggers))
 	for _, trigger := range desired.Triggers {
+		table, name := semantics.QualifiedTableConflictKey(trigger.Table), semantics.TableConflictKey(trigger.Name)
 		triggers = append(triggers, spelledName{
 			spelling: schemaSpelling(trigger.Table, semantics) + " trigger " + trigger.Name,
-			key:      semantics.QualifiedTableConflictKey(trigger.Table) + "\x00" + semantics.TableConflictKey(trigger.Name),
+			namesake: Namesake{Key: table + "\x00" + name, SchemaKey: table, NameKey: name},
 		})
 	}
 	if pair, conflict := firstConflict(triggers); conflict {
 		return conflictError("triggers", pair, rules)
 	}
 	return nil
+}
+
+// kindedName is a declared object as [validateSharedNamespace] reads it: the
+// noun a message names it by, which is also its kind, so a function and a
+// procedure are two kinds.
+type kindedName struct {
+	noun string
+	spelledName
+}
+
+// validateSharedNamespace refuses two declared objects of two kinds that the
+// target keeps in one namespace in a schema
+// ([descriptor.Comparison.SharedObjectNamespace]) whose names it may read as
+// one name, spelled alike or not. Measured on SQL Server 2025: CREATE OR
+// ALTER PROCEDURE [dbo].[REPORT] beside the view dbo.Report fails with error
+// 2010 under a case-insensitive collation, and so does [dbo].[Report] under
+// any collation (stokaro/ptah#6741). So does the procedure dbo.x beside the
+// function dbo.x. Two objects of one kind are [validateSchemaObjects]'s to
+// check.
+//
+// [descriptor.Comparison.SharedObjectNamespace]: ptah.run/core/platform/descriptor.Comparison
+func validateSharedNamespace(desired *schemamodel.Database, dialect string, semantics identifier.Semantics) error {
+	described, _ := platform.Lookup(dialect)
+	namespace := described.Comparison.SharedObjectNamespace
+	rules := semantics
+	semantics = indexscope.ConflictSemantics(semantics)
+	var objects []kindedName
+	add := func(shared bool, noun, name string) {
+		if shared {
+			objects = append(objects, kindedName{noun: noun, spelledName: spelledName{
+				spelling: schemaSpelling(name, semantics), namesake: NamesakeOf(name, semantics),
+			}})
+		}
+	}
+	for _, table := range desired.Tables {
+		add(namespace.Tables, "table", table.QualifiedName())
+	}
+	for _, view := range desired.Views {
+		add(namespace.Views, "view", view.Name)
+	}
+	for _, view := range desired.MaterializedViews {
+		add(namespace.MaterializedViews, "materialized view", view.Name)
+	}
+	for _, function := range desired.Functions {
+		noun := schemamodel.FunctionKindFunction
+		if function.IsProcedure() {
+			noun = schemamodel.FunctionKindProcedure
+		}
+		add(namespace.Routines, noun, function.Name)
+	}
+	for _, sequence := range desired.Sequences {
+		add(namespace.Sequences, "sequence", sequence.QualifiedName())
+	}
+	byKey := make(map[string][]kindedName, len(objects))
+	var seen, unresolved []kindedName
+	for _, object := range objects {
+		earlier := append(slices.Clone(byKey[object.namesake.Key]), unresolved...)
+		if object.namesake.Unresolved() {
+			earlier = seen
+		}
+		for _, other := range earlier {
+			if other.noun != object.noun && other.namesake.MayBe(object.namesake) {
+				return sharedNamespaceError(other, object, dialect, rules)
+			}
+		}
+		seen = append(seen, object)
+		if object.namesake.Unresolved() {
+			unresolved = append(unresolved, object)
+			continue
+		}
+		byKey[object.namesake.Key] = append(byKey[object.namesake.Key], object)
+	}
+	return nil
+}
+
+// sharedNamespaceError names two declared objects of two kinds that dialect
+// keeps in one namespace, which it may read as one name, or which are one
+// name where they are spelled alike; see [conflictError] for the offline
+// wording.
+func sharedNamespaceError(previous, current kindedName, dialect string, rules identifier.Semantics) error {
+	pair := fmt.Sprintf("target %s %s and %s %s", previous.noun, previous.spelling, current.noun, current.spelling)
+	if previous.spelling == current.spelling {
+		return fmt.Errorf(
+			"%w: %s are one name, and %s keeps both kinds in one namespace in a schema",
+			ptaherr.ErrInvalidSchemaDiff, pair, dialect,
+		)
+	}
+	if offlinenames.Unanswered(rules) && (previous.namesake.Unresolved() || current.namesake.Unresolved()) {
+		return fmt.Errorf(
+			"%w: without a connection Ptah cannot tell whether %s are one name under the database collation, "+
+				"and %s keeps both kinds in one namespace in a schema",
+			ptaherr.ErrInvalidSchemaDiff, pair, dialect,
+		)
+	}
+	return fmt.Errorf(
+		"%w: %s may have the same catalog identity, and %s keeps both kinds in one namespace in a schema",
+		ptaherr.ErrInvalidSchemaDiff, pair, dialect,
+	)
 }
 
 // schemaSpelling is name with the schema it is in written out, so that
@@ -300,16 +431,6 @@ func conflictError(kind string, pair conflictPair, rules identifier.Semantics) e
 		"%w: target %s %s and %s may have the same catalog identity",
 		ptaherr.ErrInvalidSchemaDiff, kind, pair.previous, pair.current,
 	)
-}
-
-// firstOther returns the first name in seen spelled differently from name.
-func firstOther(seen []string, name string) (string, bool) {
-	for _, earlier := range seen {
-		if earlier != name {
-			return earlier, true
-		}
-	}
-	return "", false
 }
 
 // conflictingColumn returns the first pair of column names one table cannot

@@ -296,8 +296,11 @@ and shadow verification (shadow execution is rejected when the shadow catalog
 resolves names differently).
 
 The snapshot covers the names of schemas, tables, columns, indexes, views,
-sequences, functions, procedures and triggers, and a declared object pairs with
-the object the database holds when the server reads their names as one. On a
+sequences, functions, procedures, triggers and roles, and a declared object
+pairs with the object the database holds when the server reads their names as
+one. A role is no exception: on a case-insensitive database that holds the
+role `App`, a schema that declares `APP` plans nothing, where `CREATE ROLE
+[APP]` would fail with error 15023. On a
 case-insensitive database that holds the procedure `MixedCase`, a schema that
 declares `MIXEDCASE` with another body changes `MixedCase`. It does not create
 a second procedure and drop the first, which on that database would drop the
@@ -313,42 +316,104 @@ and plans nothing.
 
 Two declarations of one kind that the database may read as one name are
 refused, because only one of them could be compared: under a case-insensitive
-collation the views `MixedView` and `MIXEDVIEW` are one view. A plan that would
-create one object and drop another of its kind whose name the target may read
-as the same name is refused too, before any statement runs. Triggers are
-outside that check, because the plan drops the old trigger before it creates
-the new one, so the drop frees the name the create takes.
+collation the views `MixedView` and `MIXEDVIEW` are one view, and the roles
+`App` and `APP` are one role.
+
+A plan that would create one object and drop another of its kind whose name
+the target may read as the same name is refused too, before any statement
+runs. The check covers schemas, tables, views, sequences, functions,
+procedures and roles. Two functions or two procedures spelled alike are one
+routine, because SQL Server has no routine overloading, so a plan that creates
+one and drops the other is refused as well. The comparison never plans that
+pair: a routine whose definition changes is planned as a change of that
+routine. A role is created with `CREATE ROLE`, which fails with error 15023
+while the other role exists, so nothing is lost and the refusal only says so
+earlier.
+
+Triggers and columns are outside the check, because a plan that would lose one
+fails visibly instead. The plan drops a trigger before it creates one whose
+name differs from it only in case, so the drop frees the name the create
+takes, and `CREATE TRIGGER` fails while another trigger holds the name. A
+column added to a table that holds a column of that name fails the same way.
+
+Tables, views, functions, procedures and sequences share one namespace in a
+schema: a procedure cannot take the name a view or a function holds there. A
+declaration that gives objects of two of these kinds names the database may
+read as one is refused and names both objects, such as the view `dbo.Report`
+and the procedure `dbo.REPORT` under a case-insensitive collation, or the
+function `dbo.x` and the procedure `dbo.x` under any collation.
+
+So is a plan that creates an object of one kind and drops an object of another
+kind under such a name, because the plan creates before it drops and the
+server would refuse the create with error 2010. Make the change in two
+migrations: the first drops the old object, and the second creates the new
+one. The plan is not reordered to drop first. The drop takes every privilege
+on the old object, and a rollback would have to create the old object while
+the new one holds the name.
+
+A synonym shares that namespace too, and the check does not read synonyms:
+`CREATE SYNONYM [dbo].[REPORT]` beside the view `dbo.Report` fails with error
+2714 under a case-insensitive collation, and nothing is lost.
 
 `schema diff` of two schema files, in both binaries, asks the dev database how
 it compares the names the two files hold, and pairs them the way it answers.
 The dev URL may come from `--dev-url` or from the project file. Ptah opens it
 beside `--server-version` too, because a server version says what the plan may
 use, not how the database compares names. A dev database that does not answer
-fails the run. The tables `Größe` and `Zähler` are two tables. On a
-case-insensitive dev database the views `MixedView` and `MIXEDVIEW` are one
-view, and the plan changes it in place. Under `Hungarian_CI_AS` the functions
-`ccs` and `cscs` are one function, so the plan replaces it.
+fails the run, and the error names where the URL came from. The tables `Größe`
+and `Zähler` are two tables. On a case-insensitive dev database the views
+`MixedView` and `MIXEDVIEW` are one view, and the plan changes it in place.
+Under `Hungarian_CI_AS` the functions `ccs` and `cscs` are one function, so the
+plan replaces it.
+
+`schema diff` from a schema file or a migration directory to a SQL Server
+database asks the `--to` database how it compares the names of both sides, and
+the plan pairs them under the `--to` database's collation. The plan turns the
+`--from` state into the `--to` one, and a file has no collation. A native diff
+from a file to a database needs no dev database for that.
 
 The Go comparison APIs that take no connection compare names offline, by these
 rules:
 
-- Two ASCII names that differ beyond ASCII case are assumed to be two names.
-  Most collations agree. A collation with contractions, which reads a group of
-  letters as one letter, does not: under `Hungarian_CI_AS` and
-  `Hungarian_100_CI_AS`, `ccs` and `cscs` are one name, and so are `ddz` and
-  `dzdz`. `Maori_100_CI_AS` reads `a-b` as `ab`. On such a database an offline
-  plan from `ccs` to `cscs` creates one function and drops the other, which
-  leaves neither.
-- Two names that differ only in ASCII case are refused, because they are one
-  name under a case-insensitive collation.
-- A name that holds a non-ASCII character is refused beside any other name of
-  its kind in any schema. Two schema files that declare the views `Größe` and
-  `v2` are refused, and the refusal says that Ptah cannot tell whether the two
-  are one name under the database collation.
+- A plan that creates an object and drops another of its kind is refused
+  unless the two are spelled alike, whatever the two names are. No offline rule
+  says that two names are two under every collation. A collation with
+  contractions, which reads a group of letters as one letter, breaks the
+  obvious one: under `Hungarian_CI_AS` and `Hungarian_100_CI_AS`, `ccs` and
+  `cscs` are one name, and so are `ddz` and `dzdz`. On such a database a plan
+  from `ccs` to `cscs` that creates one function and drops the other leaves
+  neither. The refusal says that no connection answered. A plan that only adds
+  or only drops objects is written.
+- Two names are spelled alike when they are in one schema and written the same
+  way, with an unqualified name in `dbo`: `f` and `dbo.f` are spelled alike,
+  and `DBO.f` and `dbo.f` are not. A plan that creates the function `DBO.f`
+  and drops `dbo.f` is refused, because a case-insensitive database reads the
+  two as one function and the drop would remove it.
+- Roles are the exception to the first rule, because nothing is lost there: a
+  plan that creates the role `APP` and drops `App` is refused, and one that
+  creates `reader` and drops `writer` is written. The comparison never drops a
+  role, so only a diff built by hand carries such a pair. Offline, a role
+  declared as `APP` on a database that holds `App` is planned as `CREATE ROLE
+  [APP]`, which a case-insensitive database refuses with error 15023, and the
+  database keeps `App`.
+- Two declarations whose names differ only in ASCII case are refused, because
+  they are one name under a case-insensitive collation. Two ASCII names that
+  differ beyond case are kept as two declarations, since nothing is lost when
+  both are created.
+- A name that holds a non-ASCII character may be any other name. Two
+  declarations of one kind are compared part by part, the schema and the
+  object name, and are refused when each part may be the other's. The views
+  `sales.Größe` and `sales.v2` are refused, and the refusal says that Ptah
+  cannot tell whether the two are one name under the database collation. The
+  views `sales.Größe` and `dbo.v2` are two views under every collation,
+  because `sales` and `dbo` are two schemas.
 
 Plan with a connection. An embedder gets the server's answer from
 `schemadiff.ResolveIdentifierSemantics`; see
-[Public Go API](../../extend/public-api/).
+[Public Go API](../../extend/public-api/). A plan whose identifier semantics
+are neither these offline rules nor a snapshot a connection resolved is
+refused, because its rules would say which names are one by a rule SQL Server
+does not follow.
 
 A dev or shadow database must use the target's collation. A case-sensitive dev
 database would hold `MixedCase` and `MIXEDCASE` as two procedures where the

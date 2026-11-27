@@ -39,24 +39,22 @@ func documentDiff(c *qt.C, devURL, from, to string) atlasschema.DiffOptions {
 
 // TestDiff_SQLServerDevDatabaseMustAnswer_FailurePath compares two SQL Server
 // schema files on a dev URL nothing answers on. The run fails, naming where
-// the URL came from, whether a --server-version pins the capabilities or
-// not: without the server, nothing says how the names compare.
+// the URL came from in each clause, whether a --server-version pins the
+// capabilities or not: without the server, nothing says how the names
+// compare (stokaro/ptah#6749).
 func TestDiff_SQLServerDevDatabaseMustAnswer_FailurePath(t *testing.T) {
-	const prefix = `two schema files planned for sqlserver are compared only under the names a connected server compares, so `
+	const prefix = `two schema files planned for sqlserver are compared only under the names a connected server compares: `
 	tests := []struct {
 		name          string
 		fromProject   bool
 		serverVersion string
 		want          string
 	}{
-		{name: "the --dev-url flag", want: prefix + `the --dev-url database must answer: connect to --dev-url: .*`},
-		{
-			name: "the project file", fromProject: true,
-			want: prefix + `the dev database named in the project file must answer: connect to --dev-url: .*`,
-		},
+		{name: "the --dev-url flag", want: prefix + `connect to --dev-url: .*`},
+		{name: "the project file", fromProject: true, want: prefix + `connect to the dev database named in the project file: .*`},
 		{
 			name: "the project file beside a server version", fromProject: true, serverVersion: "17",
-			want: prefix + `the dev database named in the project file must answer: connect to --dev-url: .*`,
+			want: prefix + `connect to the dev database named in the project file: .*`,
 		},
 	}
 	for _, test := range tests {
@@ -131,6 +129,63 @@ func TestDiff_SQLServerDevDatabaseNobodyConnectsTo_FailurePath(t *testing.T) {
 	report, err := atlasschema.Diff(ctx, opts)
 
 	c.Assert(err, qt.ErrorMatches, `two schema files planned for sqlserver are compared only under the names a connected server `+
-		`compares, so the --dev-url database must answer: Ptah connects to no database for this URL when it compares two schema files`)
+		`compares: Ptah connects to no database for --dev-url when it compares two schema files`)
 	c.Assert(report.Changes, qt.HasLen, 0)
+}
+
+// TestDiff_NamesTheSourceOfADevURLItCannotRead_FailurePath gives a diff a
+// docker URL of an engine Ptah starts no container for. The pinned community
+// binary refuses it as an unsupported docker image and names no source, which
+// is the refusal for a URL given for the run. One the project file named is
+// refused naming the project file, since the operator did not type it
+// (stokaro/ptah#6749).
+func TestDiff_NamesTheSourceOfADevURLItCannotRead_FailurePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		fromProject bool
+		want        string
+	}{
+		{name: "the --dev-url flag", want: `unsupported docker image "sqlserver"`},
+		{name: "the project file", fromProject: true, want: `the dev database named in the project file: unsupported docker image "sqlserver"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			opts := documentDiff(c, "docker://sqlserver", "CREATE TABLE [t1] (id int NOT NULL);\n", "CREATE TABLE [t1] (id int NOT NULL);\n")
+			opts.SkipUnusedDevURL = test.fromProject
+
+			report, err := atlasschema.Diff(c.Context(), opts)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(report.Changes, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestDiff_NamesTheSourceOfADevURLThatPlacesNames_FailurePath compares two
+// PostgreSQL schema files on a dev URL that pins no search_path, so the diff
+// connects to ask where an unqualified name goes, and nothing answers there.
+// The error names where the URL came from (stokaro/ptah#6749).
+func TestDiff_NamesTheSourceOfADevURLThatPlacesNames_FailurePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		fromProject bool
+		want        string
+	}{
+		{name: "the --dev-url flag", want: `connect to --dev-url: .*`},
+		{name: "the project file", fromProject: true, want: `connect to the dev database named in the project file: .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			opts := documentDiff(c, "postgres://user@127.0.0.1:1/dev?sslmode=disable",
+				"CREATE TABLE archived (id int NOT NULL);\n", "CREATE TABLE recent (id int NOT NULL);\n")
+			opts.SkipUnusedDevURL = test.fromProject
+
+			report, err := atlasschema.Diff(c.Context(), opts)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(report.Changes, qt.HasLen, 0)
+		})
+	}
 }

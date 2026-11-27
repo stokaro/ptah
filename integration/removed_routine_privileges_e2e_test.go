@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,21 +156,23 @@ func TestMigrationsDownSQLServerRestoresRemovedRoutinePrivilegesE2E(t *testing.T
 // and WITH GRANT OPTION, for the procedure the migration removes.
 func removedSQLServerRoutinePermissions(c *qt.C, db *sql.DB) []string {
 	c.Helper()
+	// Catalog names and permission descriptions can use different collations.
+	// Read them separately so the server need not concatenate unlike strings.
 	rows, err := db.QueryContext(c.Context(), `
-		SELECT grantee.name + ' ' + pe.permission_name + ' ' + pe.state_desc
+		SELECT grantee.name, pe.permission_name, pe.state_desc
 		FROM sys.database_permissions AS pe
 		JOIN sys.database_principals AS grantee ON grantee.principal_id = pe.grantee_principal_id
-		WHERE pe.class = 1 AND pe.major_id = OBJECT_ID(N'dbo.rt')
-		ORDER BY 1`)
+		WHERE pe.class = 1 AND pe.major_id = OBJECT_ID(N'dbo.rt')`)
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
 	held := make([]string, 0)
 	for rows.Next() {
-		var row string
-		c.Assert(rows.Scan(&row), qt.IsNil)
-		held = append(held, row)
+		var grantee, permission, state string
+		c.Assert(rows.Scan(&grantee, &permission, &state), qt.IsNil)
+		held = append(held, strings.Join([]string{grantee, permission, state}, " "))
 	}
 	c.Assert(rows.Err(), qt.IsNil)
+	slices.Sort(held)
 	return held
 }
 

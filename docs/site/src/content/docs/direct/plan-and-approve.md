@@ -251,11 +251,19 @@ column with the type the database held and the type the plan converts it to.
 Applying the plan reads those columns again and refuses while a row holds a value
 the change would round; see
 [A change that rounds stored values](#a-change-that-rounds-stored-values). That read
-runs before the confirmation prompt and on `--dry-run`, so reading the file refuses a
-record whose types are not type names, whose two types keep every digit on the plan's
-engine, or whose column no statement of the plan names. The `.plan.hcl` format has no
-field for them, so applying such a file reads the changes from the desired state that
-`--to` names instead.
+runs before the confirmation prompt and on `--dry-run`. Reading the file refuses a
+record whose types are not type names, whose conversion keeps every digit, or whose
+table, column and declared type disagree with the parsed `ALTER TABLE`.
+
+Case and whitespace in type keywords do not matter; precision, scale, signedness
+and time-zone arguments must agree. A mismatch names both types and refuses before
+the scan. Generate and review a new plan to correct it.
+Generation records the type as the rendered `ALTER` spells it, including an alias
+such as `INT` whose width depends on the database session.
+
+The `.plan.hcl` format has no field for these records. Applying such a file reads
+the changes from the desired schema that `--to` names and checks them against the
+plan's SQL before allowing the saved statements to run.
 
 `from_fingerprint` also covers the role memberships the plan depends on, and no
 others. A membership counts when it connects to one of these roles, directly or
@@ -742,6 +750,22 @@ plan, so this control is worth what review of that file is worth.
   leaves an unrelated plan valid. A plan that names the new role still covers it.
 - MySQL and MariaDB list every role on the server, but a plan covers only roles
   it names or reaches. Creating an unrelated role leaves the plan valid.
+
+### Rounding checks
+
+A saved plan scans only the conversions its `roundings` records describe. A plan
+created with `--allow-value-rounding` carries none. Validation does not derive
+missing records from SQL, so removing records also removes those scans.
+A provider-native operation without SQL cannot establish the target type for a
+rounding record and is refused if paired with one. Provider operations without
+rounding records get no such scan (stokaro/ptah#6672).
+
+The scan checks fractional digits. It does not cover every change in value,
+including a decimal converted to floating point, a timestamp converted to a date,
+or a time zone discarded without reducing precision (stokaro/ptah#6672).
+The scan also holds no table lock through the `ALTER`, so a concurrent write after
+the final scan can still introduce a value the conversion changes. Stop writes
+for the scan and apply when preserving every stored value is required.
 
 ## Next steps
 

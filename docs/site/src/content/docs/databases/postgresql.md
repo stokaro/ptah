@@ -2768,6 +2768,12 @@ leaves `app` able to update those two columns and no other, and Ptah plans the
 `//ptah:schema:grant` and `//ptah:schema:revoke`, and in HCL the `columns`
 attribute of a `permission` or `revoke` block.
 
+When a plan revokes a table privilege, it grants back each column privilege
+of the same kind that the plan keeps, with its grant option. These grants
+follow the table revoke in the same migration. The rollback of an added
+table grant also restores the column privileges the database held before
+that migration. A column privilege the plan removes stays removed.
+
 Some forms are refused rather than approximated, each with a message that
 names the form:
 
@@ -2799,6 +2805,15 @@ A privilege on a function or procedure is modeled for PostgreSQL only; the
 other renderers refuse the statement by name. Column privileges are modeled for
 PostgreSQL, MySQL, MariaDB and SQL Server; the other renderers refuse them by
 name too.
+
+Changing a routine's parameter list or return type can require a drop and a
+create. The replacement keeps the privileges read from that overload,
+including grants to roles the schema does not manage, such as `pg_monitor`,
+and their grant options. An overload that was not executable by `PUBLIC`
+remains so. Declared grant changes still apply to the replacement, and the
+down migration restores the original signature and its original grants.
+Changing only the body uses `CREATE OR REPLACE`, which keeps the access list
+in place.
 
 New-role SQL fails closed when the role already
 exists, so later comments and grants cannot be applied to a role with

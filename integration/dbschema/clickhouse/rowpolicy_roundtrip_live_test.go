@@ -116,7 +116,7 @@ func TestRowPolicyOfADroppedTableIsReadLive(t *testing.T) {
 		{"nul", "CREATE TABLE nul (id UInt64) ENGINE = Null", undescribedRelation("nul", "Null")},
 		{"dict", "CREATE DICTIONARY dict (id UInt64) PRIMARY KEY id SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)", undescribedRelation("dict", "Dictionary")},
 		{"ptah_schema_apply_log", "CREATE TABLE ptah_schema_apply_log (id UInt64) ENGINE = MergeTree ORDER BY id", schemaext.Knowledge{State: schemaext.Unrepresentable,
-			Reason: `the policy is on "ptah_schema_apply_log", Ptah's own bookkeeping table, which the read leaves out; the plan keeps the policy`}},
+			Reason: `the policy is on "ptah_schema_apply_log", Ptah's own bookkeeping table, which the read leaves out`}},
 	}
 	var names []string
 	for _, relation := range relations {
@@ -143,14 +143,14 @@ func TestRowPolicyOfADroppedTableIsReadLive(t *testing.T) {
 	}
 	c.Assert(live.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "*", "p_wide")), qt.DeepEquals, schemaext.Knowledge{
 		State: schemaext.Unrepresentable, Reason: "the policy is written ON " + conn.Info().Schema + ".*, for every table of the database, " +
-			"which Ptah does not model; the plan keeps the policy"})
+			"which Ptah does not model"})
 }
 
 // undescribedRelation is what a read knows about a policy on the relation
 // name, whose engine it does not describe as a table.
 func undescribedRelation(name, engine string) schemaext.Knowledge {
 	return schemaext.Knowledge{State: schemaext.Unrepresentable,
-		Reason: fmt.Sprintf("the policy is on %q (engine %s), which the read does not describe as a table; the plan keeps the policy", name, engine)}
+		Reason: fmt.Sprintf("the policy is on %q (engine %s), which the read does not describe as a table", name, engine)}
 }
 
 // openOutlivedPolicyDatabase creates a database for one test and connects to

@@ -96,6 +96,38 @@ func TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement(t *testing.T) 
 	}
 }
 
+// TestCompareWithDatabaseInfoNamesTheKindOfARefusedReplacement replaces a
+// definer procedure whose definer is another account. The refusal calls it a
+// procedure, which is what the operator declared and what the server holds.
+func TestCompareWithDatabaseInfoNamesTheKindOfARefusedReplacement(t *testing.T) {
+	tests := []struct {
+		definer string
+		want    string
+	}{
+		{definer: "owner_a@%", want: `.*cannot safely replace mysql procedure "p" with SQL SECURITY DEFINER: catalog definer "owner_a@%".*`},
+		{definer: "", want: `.*cannot safely replace mysql procedure "p" with SQL SECURITY DEFINER: catalog ownership facts are incomplete.*`},
+	}
+	for _, test := range tests {
+		t.Run(test.want, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Functions: []schemamodel.Function{{
+				Name: "p", Kind: schemamodel.FunctionKindProcedure, Language: "sql", Security: "DEFINER", Body: "SELECT 2",
+			}}}
+			current := &catalog.Database{CurrentAccount: "migrator_a@%", Functions: []catalog.Function{{
+				Name: "p", Schema: "app", Kind: "procedure", Language: "sql", Security: "DEFINER", Body: "SELECT 1",
+				Definer: test.definer,
+			}}}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, mysqlDefinerInfo("mysql"), nil,
+				must.Must(builtin.New()))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
 // TestCompareWithDatabaseInfoRefusesAReplacementWithoutOwnershipFacts keeps
 // the safety rule fail closed when the read did not record a fact: a
 // programmatic caller that builds a live-like Function without the reader-only

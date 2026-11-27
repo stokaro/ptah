@@ -152,10 +152,9 @@ func Check(dialect string, change Change) error {
 // comment name nothing. The statement is read by the dialect's lexer, and a
 // quoted name by the dialect's quoting ([sqlident.ReadName], or a doubled quote
 // where the dialect states no other escape): a backtick doubled inside
-// backticks is one backtick, and on ClickHouse `a\\b` names a\b. It is how a
-// record is held to a statement of its plan, not a parse of one: the type is
-// left to [Check], since the statement may spell it as the renderer writes it,
-// INT where the comparison reads int8.
+// backticks is one backtick, and on ClickHouse `a\\b` names a\b. It is how
+// candidate statements are selected for [CheckStatements]. It establishes
+// neither a type conversion nor agreement with the record's declared type.
 func Names(dialect, sqlText string, change Change) bool {
 	ref, parsed := tableref.Parse(change.Table)
 	if !parsed {

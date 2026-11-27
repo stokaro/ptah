@@ -85,7 +85,8 @@ schema files or two databases. A dev URL from the project file's dev: key is
 opened only when the comparison uses it. Two SQL Server schema files are
 compared under the names the dev database compares, so its URL is opened from
 either source, beside --server-version too, and one nothing answers on fails
-the run. This makes
+the run. A schema file or migration directory compared with a SQL Server --to
+database is compared under the names that database compares. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison

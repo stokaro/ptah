@@ -1730,12 +1730,15 @@ the warning names, then apply.
 A policy written `ON db.*` applies to every table of a database, and Ptah does
 not model it. Nor does Ptah read a view, a materialized view, a dictionary, a
 `Null` or `Distributed` table, or its own bookkeeping tables as tables. A policy
-on any of these is kept: the plan changes nothing for it and reports it as a
-policy the comparison could not decide. A schema written from the database
-leaves it out too, and says so: a SQL export in a comment, an HCL export in its
-header, and `ptah introspect` on standard error. A comparison whose desired
-side is such a database leaves it out and names it on standard error, and the
-plan does not create it on the target.
+on any of these is kept while its relation remains: the plan changes nothing
+for it and reports it as a policy the comparison could not decide. A schema
+written from the database leaves it out too, and says so: a SQL export in a
+comment, an HCL export in its header, and `ptah introspect` on standard error.
+
+A comparison whose desired side is such a database leaves it out and names it
+on standard error, and the
+plan does not create it on the target. These notices describe what the read
+can declare. They do not predict whether a plan keeps or drops a policy.
 
 A plan that drops a view or materialized view drops the policies on it first,
 so the next relation created under the name does not inherit them, and the

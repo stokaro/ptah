@@ -16,12 +16,12 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.48.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.22
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.84.1
-	github.com/aws/smithy-go v1.28.10
+	github.com/aws/smithy-go v1.28.11
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-extras/go-kit v1.2.0
 	github.com/go-git/go-git/v5 v5.19.3
-	github.com/go-sql-driver/mysql v1.10.2
+	github.com/go-sql-driver/mysql v1.11.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/hcl/v2 v2.25.0

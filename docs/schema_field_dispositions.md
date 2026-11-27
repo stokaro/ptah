@@ -98,20 +98,16 @@ None.
 
 ### Round trips that plan a change
 
-5 recorded losses. Each is a fixture that, compared with its own conversion, plans a
+1 recorded losses. Each is a fixture that, compared with its own conversion, plans a
 migration nobody asked for.
 
 | Fixtures | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `function-procedure` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlserver`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
-| `grant-routine` | `cockroachdb`, `postgres`, `yugabytedb` | to-catalog | goschematodb drops a routine's kind, so a procedure reads as a function and the plan creates the procedure beside a DROP FUNCTION |
 | `grant-routine` | `postgres` | from-catalog | dbschematogo drops the EXECUTE that PUBLIC holds on a procedure, so the converted-back declaration revokes it |
-| `function-procedure` | `clickhouse`, `sqlite` | to-catalog | the comparison lists a routine on a target that has none, so the plan carries notes about it or is refused |
-| `grant-routine` | `sqlite` | to-catalog | the comparison lists a routine on a target that has none, so the plan carries notes about it or is refused |
 
 ### Compared fields a change of which plans nothing
 
-59 known gaps: a conversion or the comparison drops each one on the dialects named.
+58 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -141,8 +137,7 @@ migration nobody asked for.
 | `schemamodel.Field.TypeRawSQL` | `clickhouse`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Function.Dialects` | `clickhouse`, `oracle`, `sqlite` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Function.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Function.Kind` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
-| `schemamodel.Function.Kind` | `mariadb`, `mysql`, `sqlserver` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
+| `schemamodel.Grant.Dialects` | `cockroachdb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Fields` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Index.Parts` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -216,7 +211,7 @@ migration nobody asked for.
 | `schemamodel.Database.FeatureCoverage` | any | both | it is what a feature comparison may conclude from: without it the comparison refuses the objects as not inspected, which is the comparison reading it |
 | `schemamodel.Database.NotDescribed` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `schemamodel.Field.Primary` | `clickhouse` | both | every fixture's only key column is its primary one, and a ClickHouse MergeTree table without a sorting key is refused |
-| `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
+| `schemamodel.Function.Body` | `mariadb`, `mysql` | both | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and neither a catalog converted from a declaration nor a description converted from a catalog records them, so the comparison refuses the replacement and names the routine |
 | `schemamodel.MaterializedView.Owner` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
 | `schemamodel.View.Owner` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
 | `pgpublication.DesiredPublication.Owner` | `postgres` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
