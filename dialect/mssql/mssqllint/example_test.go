@@ -10,7 +10,8 @@ import (
 
 // ExampleSplitter shows the SQL Server owner splitting a migration and
 // judging its PolyBase drop, which a safety assessment reads in place of the
-// statement's words. The ordinary drop beside it is left to those words.
+// statement's words. The ordinary drop beside it is left to those words. A
+// bracketed name is a quoted identifier, so the canonical form keeps its case.
 func ExampleSplitter() {
 	request := lintext.SplitRequest{Target: "sqlserver", Sources: []lintext.Source{{
 		Name: "0000000002_lake.up.sql",
@@ -28,7 +29,7 @@ func ExampleSplitter() {
 		}
 	}
 	// Output:
-	// 1 DROP EXTERNAL TABLE [DBO].[EVENTS] 1
+	// 1 DROP EXTERNAL TABLE [dbo].[events] 1
 	//   safety-effect behavioral
-	// 2 DROP TABLE [DBO].[ORDERS] 0
+	// 2 DROP TABLE [dbo].[orders] 0
 }
