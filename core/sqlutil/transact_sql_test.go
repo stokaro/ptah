@@ -202,6 +202,14 @@ func TestSplitSourceStatements_SQLServerEndsAStatementWhereTheServerDoes(t *test
 				{Text: "SELECT 1\n-- trailing\n"},
 			},
 		},
+		{
+			name:   "a declared delimiter is read as the semicolon the text ends in",
+			script: "-- atlas:delimiter //\nINSERT INTO dbo.t VALUES (1)\n//\nINSERT INTO dbo.t VALUES (2);\n",
+			want: []sqlutil.SourceStatement{
+				{Text: "INSERT INTO dbo.t VALUES (1)\n;", Terminated: true, ClientDelimited: true},
+				{Text: "INSERT INTO dbo.t VALUES (2);", Terminated: true},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

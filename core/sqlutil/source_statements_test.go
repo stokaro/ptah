@@ -109,3 +109,22 @@ func TestSplitSourceStatements(t *testing.T) {
 		})
 	}
 }
+
+// TestSplitSourceStatements_ACommentThatHoldsACommentIsNoStatement: SQL Server
+// and PostgreSQL read a block comment that holds block comments as one
+// comment, so the text before the first statement is a comment whole, as the
+// migrator reads it when it leaves a statement of only comments unsent. Read
+// as a comment that ends at its first `*/`, the rest of it would stand for a
+// statement the migrator never sends, and a failure would be recorded as that
+// text.
+func TestSplitSourceStatements_ACommentThatHoldsACommentIsNoStatement(t *testing.T) {
+	for _, dialect := range []string{"sqlserver", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := sqlutil.SplitSourceStatements("/* a /* b */ c */;\n/* d /* e */ f */ INSERT INTO t VALUES (1);\n", dialect)
+
+			c.Assert(got, qt.DeepEquals, []sqlutil.SourceStatement{{Text: "INSERT INTO t VALUES (1);", Terminated: true}})
+		})
+	}
+}

@@ -34,19 +34,20 @@ import (
 // The server reads the rest of a batch as the body of CREATE PROCEDURE,
 // FUNCTION, TRIGGER or VIEW, and as the elements of CREATE SCHEMA, and each
 // must open its batch (Msg 111). Such a statement starts a piece of its own,
-// and the piece ends as the compound-body reader ends it: a body opened by
-// BEGIN at the END that closes it, and any other at the first semicolon
-// outside a body, or at the end of the batch. What follows runs as a batch of
-// its own, so a migration need not write GO after each routine. A batch whose
-// statement boundaries the reader cannot find is cut by the compound-body
-// reader alone.
+// and the piece ends as the compound-body reader ends it: a procedure,
+// function or trigger at the first semicolon after the END that closes its
+// BEGIN ... END body, and at the end of the batch when its body has no BEGIN;
+// a view and CREATE SCHEMA at the first semicolon after them. What follows
+// runs as a batch of its own, so a migration need not write GO after each
+// routine. A batch whose statement boundaries the reader cannot find is cut by
+// the compound-body reader alone.
 func splitTransactSQL(sql, dialect string, caps capability.Capabilities) ([]string, []SourceStatement) {
 	text, origins := clientDelimitersFor(sql, dialect, caps)
 	options := dialectlexer.ForSession(dialect, caps)
 	sent := make([]string, 0)
 	var sources []SourceStatement
 	for _, batch := range transactSQLBatches(text, options, batchSeparator(dialect)) {
-		pieces := transactSQLPieces{sql: sql, text: text, origins: origins}
+		pieces := transactSQLPieces{sql: sql, text: text, origins: origins, options: options}
 		pieces.cut(batch, transactSQLCuts(text, batch, dialect, options))
 		for range batch.count {
 			sent = append(sent, pieces.sent...)
@@ -197,6 +198,7 @@ type transactSQLPieces struct {
 	sql     string
 	text    string
 	origins clientdelimiter.Origins
+	options lexer.Options
 	sent    []string
 	sources []SourceStatement
 }
@@ -226,5 +228,5 @@ func (p *transactSQLPieces) add(body string, source SourceStatement) {
 	if body = strings.TrimSpace(body); body != "" {
 		p.sent = append(p.sent, body)
 	}
-	p.sources = appendSourceStatement(p.sources, source)
+	p.sources = appendSourceStatement(p.sources, source, p.options)
 }
