@@ -765,6 +765,57 @@ line. An optional repeat count and a comment may follow it on the line. The
 `GO` line belongs to no statement, so a `-- ptah:nolint` directive goes after
 it, directly above the statement it suppresses.
 
+Inside a batch, the migrator cuts a script at the semicolon after a statement,
+and never inside a statement, which it finds where SQL Server does. A
+`BEGIN ... END` block, a `TRY` block with its `CATCH` block, and an `IF`,
+`ELSE` or `WHILE` with the statement or block it runs are each one statement,
+semicolons inside included. A `MERGE` keeps its semicolon, which the server
+requires (`Msg 10713`); every other statement is sent without the one that ends
+it. Where Ptah cannot find the statement boundaries of a batch, it cuts the
+batch at each semicolon outside a routine body.
+
+A procedure, function, trigger or view, and `CREATE SCHEMA`, must open its
+batch (`Msg 111`), so each starts a piece of its own, which ends here:
+
+- a procedure, function or trigger at the first semicolon after the `END` that
+  closes its `BEGIN ... END` body, and at the end of the batch when its body
+  has no `BEGIN`;
+- a view, and the elements of `CREATE SCHEMA`, at the first semicolon after
+  them.
+
+What follows runs as a batch of its own. `sqlcmd` sends it in the same batch,
+where the server refuses it (`Msg 156`) or stores it in the body.
+
+Each piece runs as a batch of its own, and a variable lives only in its batch,
+so a semicolon after a `DECLARE` ends the scope of the variable. Statements
+written with no semicolon between them run as one batch, as they do in
+`sqlcmd`. With semicolons, put a `DECLARE` and the statements that read the
+variable in one `BEGIN ... END` block:
+
+```sql
+BEGIN
+  DECLARE @region nvarchar(20) = N'emea';
+  INSERT INTO dbo.regions (code) VALUES (@region);
+END;
+```
+
+The safety rating of `ptah schema plan` and `ptah schema apply` reads every
+statement written in a piece. `CREATE TABLE dbo.a (id int) TRUNCATE TABLE
+dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, a
+`MERGE` with a `THEN DELETE` arm as destructive, and text whose statement
+boundaries Ptah cannot find is rated destructive. The rating does not read SQL
+held in a string, so a statement that `EXEC` or `sp_executesql` runs from one
+is not rated: `EXEC(N'DROP TABLE dbo.x')` rates safe.
+
+The same reading decides which statements control a transaction. Ptah refuses
+a migration that commits or rolls back the transaction it manages, or opens one
+of its own, and a `COMMIT` inside a `BEGIN ... END` block or after an `IF` is
+refused as a `COMMIT` on its own is. A `COMMIT` in the body of a procedure is
+stored, not run, and is not refused. `ptah migrations lint` reports such a
+statement as `transaction/explicit-transaction`, but it reads a block one
+statement at a time, so it misses a `ROLLBACK` that opens a `CATCH` block
+(stokaro/ptah#6793).
+
 ## Views that read other views
 
 SQL Server checks a view's query when the view is created, so Ptah creates each view
@@ -791,10 +842,13 @@ other schema with `Msg 2103`. The table may be a view: an `INSTEAD OF` trigger
 is how a view takes writes, and `ptah db read` describes one on a view as it
 describes one on a table.
 
-The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
-line, at the `END` that closes a `BEGIN ... END` body, or at the end of the
-file. A body of several statements outside a `BEGIN ... END` block needs a
-`GO` line after it when anything follows it.
+The body follows `AS` and runs to the end of its batch. A schema file's body
+ends at a `GO` line, at the `END` that closes a `BEGIN ... END` body, or at the
+end of the file. In a migration file, the migrator ends a `BEGIN ... END` body
+at the first semicolon after its `END`, as
+[Scripts and batches](#scripts-and-batches) says. In both, a body without
+`BEGIN` runs to the end of its batch, so a body of several statements outside a
+`BEGIN ... END` block needs a `GO` line after it when anything follows it.
 
 A header clause that Ptah does not model is refused by name rather than
 dropped, because a trigger read without the clause would compare equal to one

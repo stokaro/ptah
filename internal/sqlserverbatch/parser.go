@@ -34,9 +34,9 @@ func (p *parser) unreadable(index int, what string) error {
 
 // list reads statements from index until the text ends or an END or an ELSE
 // stands where a statement would start, and returns the index it stopped at.
-// first is true for the statements of a whole batch, whose first statement
-// may be a [Call].
-func (p *parser) list(index int, first bool) ([]Statement, int, error) {
+// batch is true for the statements of a whole batch, whose first statement
+// may be a [Call] and any of which may be a [Schema].
+func (p *parser) list(index int, batch bool) ([]Statement, int, error) {
 	var statements []Statement
 	for {
 		for index < len(p.tokens) && p.tokens[index].Type == lexer.TokenSemicolon {
@@ -45,7 +45,15 @@ func (p *parser) list(index int, first bool) ([]Statement, int, error) {
 		if index >= len(p.tokens) || p.closesBlock(index) || p.isElse(index) {
 			return statements, index, nil
 		}
-		statement, next, err := p.statement(index, first && len(statements) == 0)
+		var statement Statement
+		var next int
+		var err error
+		switch {
+		case batch && p.is(index, "CREATE", "SCHEMA"):
+			statement, next, err = p.schema(index)
+		default:
+			statement, next, err = p.statement(index, batch && len(statements) == 0)
+		}
 		if err != nil {
 			return nil, 0, err
 		}
@@ -132,6 +140,31 @@ func (p *parser) block(index int) (Statement, int, error) {
 	return block, next, nil
 }
 
+// schema reads CREATE SCHEMA at index and the elements the rest of the batch
+// holds; see [Schema].
+func (p *parser) schema(index int) (Statement, int, error) {
+	head, next, err := p.simple(index, Simple)
+	if err != nil {
+		return Statement{}, 0, err
+	}
+	elements, after, err := p.list(next, false)
+	if err != nil {
+		return Statement{}, 0, err
+	}
+	end := head.End
+	if len(elements) > 0 {
+		end = elements[len(elements)-1].End
+	}
+	return Statement{
+		Kind:       Schema,
+		SQL:        p.text[head.Start:end],
+		Start:      head.Start,
+		End:        end,
+		Head:       head.SQL,
+		Statements: elements,
+	}, after, nil
+}
+
 // conditional reads an IF or a WHILE at index: the condition, the statement
 // it runs and, for an IF, the statement an ELSE runs. The condition ends where
 // a statement starts after a word that can end one; a condition cannot hold a
@@ -162,12 +195,13 @@ func (p *parser) conditional(index int, kind Kind) (Statement, int, error) {
 		next = after
 	}
 	statement := Statement{
-		Kind:       kind,
-		SQL:        p.text[p.tokens[index].Start:statements[len(statements)-1].End],
-		Start:      p.tokens[index].Start,
-		End:        statements[len(statements)-1].End,
-		Head:       p.text[p.tokens[index].Start:p.tokens[body-1].End],
-		Statements: statements,
+		Kind:           kind,
+		SQL:            p.text[p.tokens[index].Start:statements[len(statements)-1].End],
+		Start:          p.tokens[index].Start,
+		End:            statements[len(statements)-1].End,
+		Head:           p.text[p.tokens[index].Start:p.tokens[body-1].End],
+		Statements:     statements,
+		KeepsSemicolon: statements[len(statements)-1].KeepsSemicolon,
 	}
 	return statement, next, nil
 }

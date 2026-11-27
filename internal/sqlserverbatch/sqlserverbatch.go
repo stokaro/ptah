@@ -9,13 +9,15 @@
 // nests: an IF runs one statement, a BEGIN ... END block runs several, and the
 // reader returns each with the statements it runs.
 //
-// Two callers read T-SQL statements: the dev replay guard in
-// internal/devclean/sqlserverreplay, which judges each statement, and the
-// routine body reader in ptah.run/dialect/mssql/mssqlroutine. They share this
-// package because two readers agree when the second is written and stop
-// agreeing when the first one changes, and a guard that splits text
-// differently from the server judges statements that never run and misses
-// ones that do.
+// Four callers read T-SQL statements: the statement splitter in
+// ptah.run/core/sqlutil, which cuts a script into the statements the migrator
+// sends; the safety judgment in ptah.run/migration/safety and the dev replay
+// guard in internal/devclean/sqlserverreplay, which judge each statement the
+// server runs; and the routine body reader in
+// ptah.run/dialect/mssql/mssqlroutine. They share this package because two
+// readers agree when the second is written and stop agreeing when the first
+// one changes, and a judge that splits text differently from the server
+// judges statements that never run and misses ones that do.
 //
 // The reader fails closed. Text whose statement boundaries it cannot find,
 // such as an END that closes no block or a statement that starts with a word
@@ -29,7 +31,27 @@ package sqlserverbatch
 import (
 	"errors"
 	"fmt"
+
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
+
+// Reads reports whether the text of dialect is T-SQL, the language [Read]
+// reads: the dialect's descriptor names Transact-SQL bodies
+// ([descriptor.BodiesTransactSQL]). The statement splitter of
+// ptah.run/core/sqlutil cuts such a dialect's scripts where [Read] ends each
+// statement, and ptah.run/migration/safety judges the statements [Read] finds
+// in each piece, so the statement Ptah sends and the statements it judges in
+// it are found by one reader. A blank or unknown dialect reads as false.
+func Reads(dialect string) bool {
+	return transactSQL.Get(dialect)
+}
+
+// transactSQL holds, per dialect, whether its descriptor names Transact-SQL
+// bodies.
+var transactSQL = descriptortable.New(func(described descriptor.Dialect) bool {
+	return described.Scripts.Bodies == descriptor.BodiesTransactSQL
+})
 
 // ErrUnreadable is what the error of [Read] matches with [errors.Is] when it
 // cannot find where a statement of the text ends.
@@ -83,6 +105,15 @@ const (
 	// Label is a label, such as `retry:`, that a GOTO jumps to. It runs
 	// nothing.
 	Label
+	// Schema is CREATE SCHEMA and the schema elements after it. The server
+	// reads the rest of the batch as its elements: CREATE TABLE, CREATE
+	// VIEW, GRANT, REVOKE and DENY run in the new schema, and any other
+	// statement after it, with or without a semicolon between them, fails the
+	// batch with Msg 156. Its Head is CREATE SCHEMA and the name, and its
+	// Statements are the elements. Only a statement of the batch itself is
+	// one: inside a block or after IF the server refuses CREATE SCHEMA, and the
+	// reader reads it as a [Simple] statement.
+	Schema
 )
 
 // Statement is one statement the server runs.
@@ -96,15 +127,21 @@ type Statement struct {
 	// Start and End are the offsets of SQL in the text [Read] read.
 	Start, End int
 	// Head is the part of the statement that is not one of its Statements:
-	// IF or WHILE and its condition, or an INSERT whose rows an EXEC returns,
-	// up to the EXEC. It is SQL for a statement that runs no other, and empty
-	// for a block.
+	// IF or WHILE and its condition, CREATE SCHEMA and the name, or an INSERT
+	// whose rows an EXEC returns, up to the EXEC. It is SQL for a statement
+	// that runs no other, and empty for a block.
 	Head string
 	// Statements are the statements this one runs, in the order the text
 	// writes them: a block's, the statement an IF runs and the one its ELSE
-	// runs, the statement a WHILE runs, and the EXEC whose rows an INSERT
-	// stores, which the server runs as a statement of its own.
+	// runs, the statement a WHILE runs, the elements of CREATE SCHEMA, and the
+	// EXEC whose rows an INSERT stores, which the server runs as a statement
+	// of its own.
 	Statements []Statement
+	// KeepsSemicolon reports that the semicolon SQL ends with is one the
+	// server requires: the statement is a MERGE, or an IF or a WHILE whose
+	// last statement is one. A MERGE without it fails the batch with Msg
+	// 10713, so text that sends the statement on its own keeps it.
+	KeepsSemicolon bool
 }
 
 // Read reads text, which is one batch, into the statements SQL Server runs

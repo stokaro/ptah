@@ -52,9 +52,12 @@ func TestAssessUnitsKeepsUnknownNativeEffectDestructive(t *testing.T) {
 	c.Assert(assessments[0].NativeKind, qt.Equals, unassessedNative{}.Kind())
 }
 
+// TestAssessUnitsRetainsManagedDataSeverity raises the keyed DELETE the data
+// stage writes for a row the declaration no longer holds, which its words
+// read as safe, to the stage's verdict and reason.
 func TestAssessUnitsRetainsManagedDataSeverity(t *testing.T) {
 	c := qt.New(t)
-	assessments, err := safety.AssessUnits(c.Context(), must.Must(builtin.New()), "sqlite", []renderer.Fragment{{SQL: "DELETE FROM reference_rows;"}}, []safety.StatementAssessment{{NodeType: "managed-data", Severity: safety.Destructive, Reason: "removes declared rows"}})
+	assessments, err := safety.AssessUnits(c.Context(), must.Must(builtin.New()), "sqlite", []renderer.Fragment{{SQL: "DELETE FROM reference_rows WHERE id = 1;"}}, []safety.StatementAssessment{{NodeType: "managed-data", Severity: safety.Destructive, Reason: "removes declared rows"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(assessments[0].Severity, qt.Equals, safety.Destructive)
 	c.Assert(assessments[0].Reason, qt.Equals, "removes declared rows")

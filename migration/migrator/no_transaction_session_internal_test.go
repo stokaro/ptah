@@ -125,3 +125,36 @@ func TestNoTransactionResumeAction_RejectsSQLServerTemporaryTable(t *testing.T) 
 		})
 	}
 }
+
+// A T-SQL block, IF or WHILE is one statement of the body, and its first word
+// says nothing about the statements it runs: it is durable when each of them
+// is, and refused when one of them set state a replay would have to restore,
+// since a replay would run the others a second time.
+func TestNoTransactionResumeAction_ReadsWhatATransactSQLStatementRuns(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		want      noTransactionPrefixAction
+	}{
+		{name: "a block of inserts", statement: "BEGIN\n  INSERT INTO dbo.t VALUES (1);\n  INSERT INTO dbo.t VALUES (2);\nEND", want: noTransactionPrefixDurable},
+		{name: "a TRY block and its CATCH block", statement: "BEGIN TRY INSERT INTO dbo.t VALUES (1); END TRY BEGIN CATCH UPDATE dbo.t SET id = 0; END CATCH", want: noTransactionPrefixDurable},
+		{name: "an IF that creates a table", statement: "IF OBJECT_ID(N'dbo.t') IS NULL CREATE TABLE dbo.t (id int)", want: noTransactionPrefixDurable},
+		{name: "a WHILE that deletes", statement: "WHILE 1 = 0 DELETE FROM dbo.t WHERE id = 1", want: noTransactionPrefixDurable},
+		{name: "a block that declares a variable", statement: "BEGIN DECLARE @n int = 1; SET @n = 2; INSERT INTO dbo.t VALUES (@n); END", want: noTransactionPrefixDurable},
+		{name: "statements with no semicolon between them", statement: "CREATE TABLE dbo.a (id int) INSERT INTO dbo.a VALUES (1)", want: noTransactionPrefixDurable},
+		{name: "a block that sets a session option", statement: "BEGIN SET NOCOUNT ON; INSERT INTO dbo.t VALUES (1); END", want: noTransactionPrefixReject},
+		{name: "an IF that sets a session option", statement: "IF 1 = 1 SET XACT_ABORT ON", want: noTransactionPrefixReject},
+		{name: "a session option after a statement", statement: "CREATE TABLE dbo.a (id int) SET NOCOUNT ON", want: noTransactionPrefixReject},
+		{name: "a block that fills a temporary table", statement: "BEGIN INSERT INTO #work VALUES (1); END", want: noTransactionPrefixReject},
+		{name: "a block that runs a procedure", statement: "BEGIN EXEC dbo.p; END", want: noTransactionPrefixReject},
+		{name: "a session option alone", statement: "SET NOCOUNT ON", want: noTransactionPrefixReplay},
+		{name: "a procedure body", statement: "CREATE PROCEDURE dbo.p AS BEGIN SET NOCOUNT ON; SELECT 1; END", want: noTransactionPrefixDurable},
+		{name: "an unclosed block", statement: "BEGIN INSERT INTO dbo.t VALUES (1);", want: noTransactionPrefixReject},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(noTransactionResumeAction(test.statement, grammarForDialect("sqlserver")), qt.Equals, test.want)
+		})
+	}
+}

@@ -1174,8 +1174,11 @@ forward SQL, and rollback SQL.
 `safety.Runtime`. The target's splitter judges the statements only its owner
 recognizes, as `lintext.FactSafetyEffect`; with no target every annotator
 judges them, the most severe impact wins, and a statement an owner declined is
-`Destructive`. Every other statement is read by its words. This changes the Go
-API; pre-v1, so no compatibility is owed.
+`Destructive`. Every other statement is read by its words. On a target whose
+text is T-SQL, every statement the server runs from the text is read, the
+statements of a block, an `IF` and a `WHILE` included, and text whose statement
+boundaries cannot be found is `Destructive`. This changes the Go API; pre-v1, so
+no compatibility is owed.
 
 Each assessment `AssessSQL` returns names its statement's object in `Subject`,
 read from the statement's leading words, and is empty for text that holds

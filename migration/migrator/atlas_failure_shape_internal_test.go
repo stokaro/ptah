@@ -188,3 +188,64 @@ func TestAtlasFailureStatement(t *testing.T) {
 		})
 	}
 }
+
+// TestAtlasFailureStatement_RecordsWhatTheFileWrote: `error_stmt` holds the
+// failing statement as the file writes it. A client delimiter is read as a
+// semicolon the file does not hold, so the statement it closes is recorded
+// without one, and a comment that holds another comment is set aside whole, so
+// it neither stands for a statement nor shifts the statements after it.
+func TestAtlasFailureStatement_RecordsWhatTheFileWrote(t *testing.T) {
+	tests := []struct {
+		name        string
+		dialect     string
+		sql         string
+		failedIndex int
+		stmt        string
+		want        string
+	}{
+		{
+			name:        "SQL Server statement a client delimiter closes",
+			dialect:     "sqlserver",
+			sql:         "-- atlas:txmode none\n-- atlas:delimiter //\nCREATE TABLE dbo.a (id int)\n//\nINSERT INTO dbo.missing VALUES (1)\n//\n",
+			failedIndex: 2,
+			stmt:        "INSERT INTO dbo.missing VALUES (1)",
+			want:        "INSERT INTO dbo.missing VALUES (1)",
+		},
+		{
+			name:        "SQLite statement a client delimiter closes",
+			dialect:     "sqlite",
+			sql:         "-- atlas:delimiter $$\nCREATE TABLE a (id int)$$\nINSERT INTO missing (id) VALUES (1)$$\n",
+			failedIndex: 2,
+			stmt:        "INSERT INTO missing (id) VALUES (1)",
+			want:        "INSERT INTO missing (id) VALUES (1)",
+		},
+		{
+			name:        "SQL Server statement after a nested comment",
+			dialect:     "sqlserver",
+			sql:         "-- atlas:txmode none\n/* a /* b */ c */;\nINSERT INTO dbo.missing VALUES (1);\n",
+			failedIndex: 1,
+			stmt:        "INSERT INTO dbo.missing VALUES (1)",
+			want:        "INSERT INTO dbo.missing VALUES (1);",
+		},
+		{
+			name:        "PostgreSQL statement after a nested comment",
+			dialect:     "postgres",
+			sql:         "/* a /* b */ c */;\nCREATE TABLE a (id int);\nINSERT INTO missing VALUES (1);\n",
+			failedIndex: 2,
+			stmt:        "INSERT INTO missing VALUES (1)",
+			want:        "INSERT INTO missing VALUES (1);",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			c.Assert(
+				atlasFailureStatement(test.sql, grammarForDialect(test.dialect), test.failedIndex, test.stmt),
+				qt.Equals,
+				test.want,
+			)
+		})
+	}
+}
