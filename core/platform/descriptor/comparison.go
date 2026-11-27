@@ -345,7 +345,8 @@ type ObjectNamespace struct {
 	// MaterializedViews reports that materialized views are in the
 	// namespace.
 	MaterializedViews bool `json:"materialized_views,omitempty"`
-	// Routines reports that functions and procedures are in the namespace.
+	// Routines reports that functions and procedures are in the namespace,
+	// as two kinds: a procedure cannot take the name a function holds.
 	Routines bool `json:"routines,omitempty"`
 	// Sequences reports that sequences are in the namespace.
 	Sequences bool `json:"sequences,omitempty"`

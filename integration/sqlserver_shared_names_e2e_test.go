@@ -52,32 +52,56 @@ func TestSchemaApplyPairsASQLServerRoleByCollationE2E(t *testing.T) {
 	}
 }
 
-// TestSchemaApplyRefusesASQLServerNamesakeOfAnotherKindE2E declares
-// the procedure dbo.REPORT on a case-insensitive database holding the view
-// dbo.Report, alone and beside that view. The plan is refused before anything
-// runs, naming both objects, and the database keeps the view.
+// TestSchemaApplyRefusesASQLServerNamesakeOfAnotherKindE2E declares an
+// object of one kind on a case-insensitive database holding an object of
+// another kind under a name the server reads as the same name, alone and
+// beside the held object: the procedure dbo.REPORT where the view dbo.Report
+// is, and the procedure dbo.x where the function dbo.x is. The plan is refused
+// before anything runs, naming both objects, and the database keeps what it
+// held.
 func TestSchemaApplyRefusesASQLServerNamesakeOfAnotherKindE2E(t *testing.T) {
-	const procedure = "CREATE PROCEDURE [dbo].[REPORT] AS BEGIN SELECT 2 END;\nGO\n"
+	const (
+		view      = "CREATE VIEW [dbo].[Report] AS SELECT 1 AS a"
+		report    = "CREATE PROCEDURE [dbo].[REPORT] AS BEGIN SELECT 2 END;\nGO\n"
+		function  = "CREATE FUNCTION [dbo].[x]() RETURNS int AS BEGIN RETURN 1 END"
+		procedure = "CREATE PROCEDURE [dbo].[x] AS BEGIN SELECT 1 END;\nGO\n"
+	)
 	tests := []struct {
 		name   string
+		held   string
 		schema string
 		want   string
+		kept   string
 	}{
 		{
-			name: "the procedure in place of the view", schema: procedure,
+			name: "the procedure in place of the view", held: view, schema: report,
 			want: "the plan creates procedure dbo.REPORT and drops view dbo.Report, and sqlserver keeps both kinds " +
 				"in one namespace in a schema",
+			kept: "Report V",
 		},
 		{
-			name: "the procedure beside the view", schema: "CREATE VIEW [dbo].[Report] AS SELECT 1 AS a;\nGO\n" + procedure,
+			name: "the procedure beside the view", held: view, schema: view + ";\nGO\n" + report,
 			want: "target view dbo.Report and procedure dbo.REPORT may have the same catalog identity, and sqlserver " +
 				"keeps both kinds in one namespace in a schema",
+			kept: "Report V",
+		},
+		{
+			name: "a procedure in place of a function of one name", held: function, schema: procedure,
+			want: "the plan creates procedure dbo.x and drops function dbo.x, and sqlserver keeps both kinds " +
+				"in one namespace in a schema",
+			kept: "x FN",
+		},
+		{
+			name: "a procedure beside a function of one name", held: function, schema: function + ";\nGO\n" + procedure,
+			want: "target function dbo.x and procedure dbo.x may have the same catalog identity, and sqlserver " +
+				"keeps both kinds in one namespace in a schema",
+			kept: "x FN",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			target := sqlServerDatabaseHolding(c, "SQL_Latin1_General_CP1_CI_AS", "CREATE VIEW [dbo].[Report] AS SELECT 1 AS a")
+			target := sqlServerDatabaseHolding(c, "SQL_Latin1_General_CP1_CI_AS", test.held)
 			schema := schemaFilePath(c, "schema.sql", test.schema)
 
 			result := clirun.Run(c, clirun.Ptah, clirun.Options{},
@@ -85,7 +109,7 @@ func TestSchemaApplyRefusesASQLServerNamesakeOfAnotherKindE2E(t *testing.T) {
 
 			c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 			c.Assert(result.Stderr, qt.Contains, test.want)
-			c.Assert(sqlServerObjects(c, target), qt.Equals, "Report V")
+			c.Assert(sqlServerObjects(c, target), qt.Equals, test.kept)
 		})
 	}
 }

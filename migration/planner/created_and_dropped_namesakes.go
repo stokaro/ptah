@@ -57,9 +57,11 @@ import (
 // before every drop of another kind, so the create runs while the other
 // object holds the name, and the server refuses it: measured on SQL Server
 // 2025, `CREATE OR ALTER PROCEDURE [dbo].[REPORT]` beside the view dbo.Report
-// fails with error 2010 (stokaro/ptah#6741). Nothing is lost there, so the
-// offline rules apply as they stand: two ASCII names that differ beyond case
-// are two names.
+// fails with error 2010 (stokaro/ptah#6741). A function and a procedure are
+// two kinds here: a plan that replaces the function dbo.x by the procedure
+// dbo.x creates the procedure first, and fails the same way. Nothing is lost
+// there, so the offline rules apply as they stand: two ASCII names that differ
+// beyond case are two names.
 //
 // Indexes and constraints belong to a table, and their replacements are
 // planned as a drop before the create; they are not checked here. Triggers
@@ -109,16 +111,17 @@ func (r namesakeRules) refuseNamesakes(kind namesakeKind) error {
 // refuseNamesakesOfAnotherKind refuses the first object the plan creates
 // whose name may be the name of an object of another kind it drops, where the
 // target keeps both kinds in one namespace; see
-// [refuseCreatedAndDroppedNamesakes].
+// [refuseCreatedAndDroppedNamesakes]. The kind of an object is its noun, so
+// a function and a procedure are two kinds.
 func refuseNamesakesOfAnotherKind(kinds []namesakeKind, target string) error {
 	for _, creating := range kinds {
 		for _, dropping := range kinds {
-			if creating.kind == dropping.kind || !creating.shared || !dropping.shared {
+			if !creating.shared || !dropping.shared {
 				continue
 			}
 			for _, created := range creating.created {
 				for _, removed := range dropping.dropped {
-					if created.MayBe(removed.Namesake) {
+					if created.noun != removed.noun && created.MayBe(removed.Namesake) {
 						return fmt.Errorf(
 							"%w: the plan creates %s %s and drops %s %s, and %s keeps both kinds in one namespace "+
 								"in a schema, where it may read the two names as one, so the create would fail while "+
@@ -179,26 +182,27 @@ type plannedName struct {
 	spelling string
 }
 
-// namesakeKind is the objects of one kind a plan creates and drops. shared
-// reports that the kind is in the namespace the target's descriptor states
+// namesakeKind is the objects of one kind a plan creates and drops, or its
+// functions and procedures together. shared reports that the kind is in the
+// namespace the target's descriptor states
 // ([descriptor.Comparison.SharedObjectNamespace]).
 type namesakeKind struct {
-	kind    string
 	shared  bool
 	created []plannedName
 	dropped []plannedName
 }
 
 // namesakeKinds lists, for each kind of object a schema holds by name, the
-// objects of it the diff creates and drops. A function and a procedure are one
-// kind, because on SQL Server they share one namespace. A routine name is
-// keyed by the routine rule of the target's descriptor where it states one.
+// objects of it the diff creates and drops. Functions and procedures are
+// listed together, because a plan can replace a routine of one kind by a
+// routine of the other under one name; each keeps its noun, which
+// [refuseNamesakesOfAnotherKind] reads as its kind. A routine name is keyed by
+// the routine rule of the target's descriptor where it states one.
 func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, described descriptor.Dialect) []namesakeKind {
 	routinesFold := described.Comparison.RoutineNamesFold
 	namespace := described.Comparison.SharedObjectNamespace
 	schemaScoped := func(noun string, shared bool, created, dropped []string) namesakeKind {
 		return namesakeKind{
-			kind:    noun,
 			shared:  shared,
 			created: schemaScopedNames(noun, created, semantics),
 			dropped: schemaScopedNames(noun, dropped, semantics),
@@ -214,7 +218,7 @@ func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, d
 		}
 		return planned
 	}
-	routines := namesakeKind{kind: "routine", shared: namespace.Routines}
+	routines := namesakeKind{shared: namespace.Routines}
 	for _, added := range diff.FunctionsAdded {
 		routines.created = append(routines.created, routine(routineNoun(added), added.Name))
 	}
@@ -224,7 +228,7 @@ func namesakeKinds(diff *difftypes.SchemaDiff, semantics identifier.Semantics, d
 	for _, removed := range diff.ProceduresRemoved {
 		routines.dropped = append(routines.dropped, routine("procedure", removed.Name))
 	}
-	schemas := namesakeKind{kind: "schema"}
+	var schemas namesakeKind
 	for _, schema := range diff.SchemasAdded {
 		schemas.created = append(schemas.created, schemaName(schema.Name, semantics))
 	}

@@ -206,6 +206,19 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_FailurePath(t *
 				"exists; drop the view in a plan of its own first",
 		},
 		{
+			// A function and a procedure are two kinds there, and the plan
+			// creates the procedure while the function holds the name.
+			name:    "a procedure in place of a function of one name",
+			dialect: platform.SQLServer,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded:   difftypes.FunctionChanges{procedure("dbo.x", "BEGIN SELECT 1 END")},
+				FunctionsRemoved: difftypes.FunctionChanges{function("dbo.x", "BEGIN RETURN 1 END")},
+			},
+			want: "the plan creates procedure dbo.x and drops function dbo.x, and sqlserver keeps both kinds in one " +
+				"namespace in a schema, where it may read the two names as one, so the create would fail while the " +
+				"function exists; drop the function in a plan of its own first",
+		},
+		{
 			name:    "a table spelled as a view the plan drops, offline",
 			dialect: platform.SQLServer,
 			diff: difftypes.SchemaDiff{
@@ -322,6 +335,20 @@ func TestGenerateSchemaDiffAST_RefusesCreatedAndDroppedNamesakes_HappyPath(t *te
 			diff: difftypes.SchemaDiff{
 				TablesAdded:  difftypes.TableChanges{{Name: "orders"}},
 				ViewsRemoved: difftypes.ViewChanges{{Name: "dbo.recent_orders", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			// SQL Server's shared namespace is its descriptor's, and the
+			// PostgreSQL descriptor states none.
+			name:    "a PostgreSQL function replaced by a procedure of one name",
+			dialect: platform.Postgres,
+			diff: difftypes.SchemaDiff{
+				FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "x", Kind: schemamodel.FunctionKindProcedure, Language: "sql", Body: "SELECT 1",
+				}}},
+				FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{
+					Name: "x", Returns: "integer", Language: "sql", Body: "SELECT 1",
+				}}},
 			},
 		},
 		{

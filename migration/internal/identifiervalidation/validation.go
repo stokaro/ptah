@@ -267,11 +267,10 @@ func validateSchemaObjects(desired *schemamodel.Database, semantics identifier.S
 	return nil
 }
 
-// kindedName is a declared object of one kind as [validateSharedNamespace]
-// reads it: the kind it shares the namespace as, where a function and a
-// procedure are one kind, and the noun a message names it by.
+// kindedName is a declared object as [validateSharedNamespace] reads it: the
+// noun a message names it by, which is also its kind, so a function and a
+// procedure are two kinds.
 type kindedName struct {
-	kind string
 	noun string
 	spelledName
 }
@@ -282,8 +281,9 @@ type kindedName struct {
 // one name, spelled alike or not. Measured on SQL Server 2025: CREATE OR
 // ALTER PROCEDURE [dbo].[REPORT] beside the view dbo.Report fails with error
 // 2010 under a case-insensitive collation, and so does [dbo].[Report] under
-// any collation (stokaro/ptah#6741). Two objects of one kind are
-// [validateSchemaObjects]'s to check.
+// any collation (stokaro/ptah#6741). So does the procedure dbo.x beside the
+// function dbo.x. Two objects of one kind are [validateSchemaObjects]'s to
+// check.
 //
 // [descriptor.Comparison.SharedObjectNamespace]: ptah.run/core/platform/descriptor.Comparison
 func validateSharedNamespace(desired *schemamodel.Database, dialect string, semantics identifier.Semantics) error {
@@ -292,31 +292,31 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 	rules := semantics
 	semantics = indexscope.ConflictSemantics(semantics)
 	var objects []kindedName
-	add := func(shared bool, kind, noun, name string) {
+	add := func(shared bool, noun, name string) {
 		if shared {
-			objects = append(objects, kindedName{kind: kind, noun: noun, spelledName: spelledName{
+			objects = append(objects, kindedName{noun: noun, spelledName: spelledName{
 				spelling: schemaSpelling(name, semantics), namesake: NamesakeOf(name, semantics),
 			}})
 		}
 	}
 	for _, table := range desired.Tables {
-		add(namespace.Tables, "table", "table", table.QualifiedName())
+		add(namespace.Tables, "table", table.QualifiedName())
 	}
 	for _, view := range desired.Views {
-		add(namespace.Views, "view", "view", view.Name)
+		add(namespace.Views, "view", view.Name)
 	}
 	for _, view := range desired.MaterializedViews {
-		add(namespace.MaterializedViews, "materialized view", "materialized view", view.Name)
+		add(namespace.MaterializedViews, "materialized view", view.Name)
 	}
 	for _, function := range desired.Functions {
 		noun := schemamodel.FunctionKindFunction
 		if function.IsProcedure() {
 			noun = schemamodel.FunctionKindProcedure
 		}
-		add(namespace.Routines, "routine", noun, function.Name)
+		add(namespace.Routines, noun, function.Name)
 	}
 	for _, sequence := range desired.Sequences {
-		add(namespace.Sequences, "sequence", "sequence", sequence.QualifiedName())
+		add(namespace.Sequences, "sequence", sequence.QualifiedName())
 	}
 	byKey := make(map[string][]kindedName, len(objects))
 	var seen, unresolved []kindedName
@@ -326,7 +326,7 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 			earlier = seen
 		}
 		for _, other := range earlier {
-			if other.kind != object.kind && other.namesake.MayBe(object.namesake) {
+			if other.noun != object.noun && other.namesake.MayBe(object.namesake) {
 				return sharedNamespaceError(other, object, dialect, rules)
 			}
 		}

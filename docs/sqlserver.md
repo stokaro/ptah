@@ -108,8 +108,8 @@ before emitting SQL where it cannot tell two names apart:
   a non-ASCII character beside another name of its kind that may be the same
   name part by part, schema and object name. A target collation may equate
   them by case, accent, locale, kana, or width.
-- Objects of two kinds that share a schema's namespace, tables, views, routines
-  and sequences, whose names may be one.
+- Objects of two kinds that share a schema's namespace, tables, views,
+  functions, procedures and sequences, whose names may be one.
 
 This makes dialect-only SQL Server planning stricter than live planning, and it
 is never safer: plan with a resolved snapshot.

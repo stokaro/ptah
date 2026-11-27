@@ -323,13 +323,15 @@ outside that check, because the plan drops the old trigger before it creates
 the new one, so the drop frees the name the create takes.
 
 Tables, views, functions, procedures and sequences share one namespace in a
-schema: a procedure cannot take the name a view holds there. A declaration
-that gives objects of two of these kinds names the database may read as one
-is refused and names both objects, such as the view `dbo.Report` and the
-procedure `dbo.REPORT` under a case-insensitive collation. So is a plan that
-creates an object of one kind and drops an object of another kind under such
-a name, because the plan creates before it drops and the server would refuse
-the create with error 2010. Drop the old object in a plan of its own first.
+schema: a procedure cannot take the name a view or a function holds there. A
+declaration that gives objects of two of these kinds names the database may
+read as one is refused and names both objects, such as the view `dbo.Report`
+and the procedure `dbo.REPORT` under a case-insensitive collation, or the
+function `dbo.x` and the procedure `dbo.x` under any collation. So is a plan
+that creates an object of one kind and drops an object of another kind under
+such a name, because the plan creates before it drops and the server would
+refuse the create with error 2010. Drop the old object in a plan of its own
+first.
 
 `schema diff` of two schema files, in both binaries, asks the dev database how
 it compares the names the two files hold, and pairs them the way it answers.

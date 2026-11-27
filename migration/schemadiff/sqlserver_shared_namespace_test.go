@@ -59,6 +59,15 @@ func TestValidateDesiredSchema_SQLServerNamesakesOfTwoKinds_FailurePath(t *testi
 			want: `target function dbo\.next_id and sequence dbo\.next_id may have the same catalog identity`,
 		},
 		{
+			name: "a procedure spelled as a function",
+			desired: &schemamodel.Database{Functions: []schemamodel.Function{
+				{Name: "x", Returns: "int", Body: "BEGIN RETURN 1 END"},
+				{Name: "x", Kind: schemamodel.FunctionKindProcedure, Body: "BEGIN SELECT 1 END"},
+			}},
+			want: `target function dbo\.x and procedure dbo\.x may have the same catalog identity, and sqlserver keeps ` +
+				`both kinds in one namespace in a schema`,
+		},
+		{
 			name:    "a non-ASCII procedure beside a view offline",
 			desired: reportView(reportProcedure("Größe")),
 			want: `without a connection Ptah cannot tell whether target view dbo\.Report and procedure dbo\.Größe ` +
