@@ -40,12 +40,13 @@ func TestMigrationsDownRestoresSQLServerRoutineAfterItsTableLiveE2E(t *testing.T
 	assertRoutineRelationRollback(c, sqlServerDevDatabase(c), routineRelationRollback{
 		initial: "CREATE TABLE dbo.t (id int NOT NULL);\n" +
 			"CREATE FUNCTION dbo.rt() RETURNS int WITH SCHEMABINDING AS BEGIN RETURN (SELECT COUNT(*) FROM dbo.t) END;\n",
-		desired: "CREATE FUNCTION dbo.rt() RETURNS int WITH SCHEMABINDING AS BEGIN RETURN 0 END;\n",
-		drop:    "DROP FUNCTION dbo.rt;\nDROP TABLE dbo.t;\n",
-		status:  "SELECT CASE WHEN OBJECTPROPERTY(OBJECT_ID('dbo.rt'), 'IsSchemaBound') = 1 THEN 'VALID' ELSE 'INVALID' END",
-		body:    "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.rt'))",
-		reads:   "FROM DBO.T",
-		call:    "SELECT dbo.rt()",
+		schemaFile: "schema.sql",
+		desired:    "CREATE FUNCTION dbo.rt() RETURNS int WITH SCHEMABINDING AS BEGIN RETURN 0 END;\n",
+		drop:       "DROP FUNCTION dbo.rt;\nDROP TABLE dbo.t;\n",
+		status:     "SELECT CASE WHEN OBJECTPROPERTY(OBJECT_ID('dbo.rt'), 'IsSchemaBound') = 1 THEN 'VALID' ELSE 'INVALID' END",
+		body:       "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.rt'))",
+		reads:      "FROM DBO.T",
+		call:       "SELECT dbo.rt()",
 	})
 }
 
@@ -57,12 +58,14 @@ func TestMigrationsDownRestoresValidOracleRoutineAfterItsTableLiveE2E(t *testing
 	assertRoutineRelationRollback(c, oracleRoutineDatabase(c), routineRelationRollback{
 		initial: "CREATE TABLE t (id NUMBER NOT NULL);\n" +
 			"CREATE OR REPLACE PROCEDURE rt AUTHID DEFINER IS\n n NUMBER;\nBEGIN SELECT COUNT(*) INTO n FROM t; END;\n",
-		desired: "CREATE OR REPLACE PROCEDURE rt AUTHID DEFINER IS\nBEGIN NULL; END;\n",
-		drop:    "DROP PROCEDURE rt;\nDROP TABLE t;\n",
-		status:  "SELECT status FROM user_objects WHERE object_name = 'RT' AND object_type = 'PROCEDURE'",
-		body:    "SELECT LISTAGG(text) WITHIN GROUP (ORDER BY line) FROM user_source WHERE name = 'RT'",
-		reads:   "FROM T",
-		call:    "BEGIN rt; END;",
+		schemaFile: "schema.hcl",
+		desired: "procedure \"rt\" {\n  lang = \"plsql\"\n  security = \"DEFINER\"\n" +
+			"  as = \"BEGIN NULL; END;\"\n}\n",
+		drop:   "DROP PROCEDURE rt;\nDROP TABLE t;\n",
+		status: "SELECT status FROM user_objects WHERE object_name = 'RT' AND object_type = 'PROCEDURE'",
+		body:   "SELECT LISTAGG(text) WITHIN GROUP (ORDER BY line) FROM user_source WHERE name = 'RT'",
+		reads:  "FROM T",
+		call:   "BEGIN rt; END;",
 	})
 }
 
@@ -75,17 +78,19 @@ func TestMigrationsDownRestoresMySQLRoutineAfterItsTableLiveE2E(t *testing.T) {
 	assertRoutineRelationRollback(c, devDialectDatabase{url: address, conn: connectDevDialect(c, address)}, routineRelationRollback{
 		initial: "-- +ptah no_transaction\nCREATE TABLE t (id int NOT NULL);\n" +
 			"CREATE PROCEDURE rt() READS SQL DATA BEGIN SELECT COUNT(*) AS n FROM t; END;\n",
-		desired: "CREATE PROCEDURE rt() READS SQL DATA BEGIN SELECT 0 AS n; END;\n",
-		drop:    "-- +ptah no_transaction\nDROP PROCEDURE rt;\nDROP TABLE t;\n",
-		status:  "SELECT 'VALID' FROM information_schema.routines WHERE routine_schema = DATABASE() AND routine_name = 'rt'",
-		body:    "SELECT routine_definition FROM information_schema.routines WHERE routine_schema = DATABASE() AND routine_name = 'rt'",
-		reads:   "FROM T",
-		call:    "CALL rt()",
+		schemaFile: "schema.sql",
+		desired:    "CREATE PROCEDURE rt() READS SQL DATA BEGIN SELECT 0 AS n; END;\n",
+		drop:       "-- +ptah no_transaction\nDROP PROCEDURE rt;\nDROP TABLE t;\n",
+		status:     "SELECT 'VALID' FROM information_schema.routines WHERE routine_schema = DATABASE() AND routine_name = 'rt'",
+		body:       "SELECT routine_definition FROM information_schema.routines WHERE routine_schema = DATABASE() AND routine_name = 'rt'",
+		reads:      "FROM T",
+		call:       "CALL rt()",
 	})
 }
 
 type routineRelationRollback struct {
 	initial, desired, drop string
+	schemaFile             string
 	status, body, reads    string
 	call                   string
 }
@@ -95,11 +100,12 @@ func assertRoutineRelationRollback(c *qt.C, database devDialectDatabase, fixture
 	dir := c.TempDir()
 	writeRoutineMigration(c, dir, "1700000000_init.up.sql", fixture.initial)
 	writeRoutineMigration(c, dir, "1700000000_init.down.sql", fixture.drop)
-	source := filepath.Join(c.TempDir(), "schema.sql")
+	source := filepath.Join(c.TempDir(), fixture.schemaFile)
 	c.Assert(os.WriteFile(source, []byte(fixture.desired), 0o600), qt.IsNil)
 	initialized, err := runPtahNativeWithError("migrations", "up", "--db-url", database.url, "--migrations-dir", dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", initialized))
 	c.Assert(routineRelationScalar(c, database, fixture.status), qt.Equals, "VALID")
+	c.Assert(strings.ToUpper(routineRelationScalar(c, database, fixture.body)), qt.Contains, fixture.reads)
 
 	generated, err := runPtahNativeWithError("migrations", "generate", "--db-url", database.url,
 		"--migrations-dir", dir, "--schema-file", source, "--name", "drop_table")
@@ -107,6 +113,7 @@ func assertRoutineRelationRollback(c *qt.C, database devDialectDatabase, fixture
 	applied, err := runPtahNativeWithError("migrations", "up", "--db-url", database.url, "--migrations-dir", dir,
 		"--allow-destructive")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
+	c.Assert(routineRelationScalar(c, database, fixture.status), qt.Equals, "VALID")
 	c.Assert(strings.ToUpper(routineRelationScalar(c, database, fixture.body)), qt.Not(qt.Contains), fixture.reads)
 	rolledBack, err := runPtahNativeWithError("migrations", "down", "--db-url", database.url,
 		"--migrations-dir", dir, "--limit", "1", "--confirm")

@@ -89,9 +89,9 @@ func TestGeneratedMigration_NamesNoDatabaseOfTheRead(t *testing.T) {
 				"DROP VIEW `v_child`",
 			},
 			wantDown: []string{
+				"CREATE VIEW `v_child` AS\nselect `child`.`id` AS `id` from `child`",
 				"CREATE FUNCTION `f_double`() RETURNS int DETERMINISTIC SQL SECURITY DEFINER RETURN 2",
 				"CREATE PROCEDURE `p_noop`() READS SQL DATA SQL SECURITY DEFINER SELECT 1",
-				"CREATE VIEW `v_child` AS\nselect `child`.`id` AS `id` from `child`",
 				"CREATE TRIGGER `trg_child` BEFORE INSERT ON `child` FOR EACH ROW SET NEW.n = 1",
 			},
 		},
@@ -106,9 +106,9 @@ func TestGeneratedMigration_NamesNoDatabaseOfTheRead(t *testing.T) {
 				"DROP VIEW `v_child`",
 			},
 			wantDown: []string{
+				"CREATE VIEW `v_child` AS\nselect `child`.`id` AS `id` from `child`",
 				"CREATE FUNCTION `f_double`() RETURNS int DETERMINISTIC SQL SECURITY DEFINER RETURN 2",
 				"CREATE PROCEDURE `p_noop`() READS SQL DATA SQL SECURITY DEFINER SELECT 1",
-				"CREATE VIEW `v_child` AS\nselect `child`.`id` AS `id` from `child`",
 				"CREATE TRIGGER `trg_child` BEFORE INSERT ON `child` FOR EACH ROW SET NEW.n = 1",
 			},
 		},
