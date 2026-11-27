@@ -221,6 +221,9 @@ func (p PlanFile) ExecutionPlan(ctx context.Context, conn *dbschema.DatabaseConn
 	if conn == nil {
 		return ApplyPlan{}, errors.New("schema apply execution requires database connection")
 	}
+	if err := validateTargetPlanRoundings(p, conn); err != nil {
+		return ApplyPlan{}, err
+	}
 	if err := renderer.ValidateAnnotations(p.Annotations, len(p.Statements)); err != nil {
 		return ApplyPlan{}, err
 	}

@@ -182,11 +182,9 @@ type ApplyOptions struct {
 	// for the session it was planned on: a saved plan runs later, on a session
 	// the plan cannot name. See [backslashmode.ForLater].
 	forLater bool
-	// roundingsOnly stops the computation once the comparison has been read
-	// for the column changes that keep fewer digits after the point, and their
-	// rows counted: no statement is planned, rehearsed or reported. A saved
-	// plan whose format records no such change reads them this way; see
-	// [ReviewPlanRoundings].
+	// roundingsOnly skips the managed-row stage after reading and rendering
+	// schema changes. A saved plan whose format records no rounding metadata
+	// needs the rendered target types for its scans; see [ReviewPlanRoundings].
 	roundingsOnly bool
 	// naming is where a desired name written without a schema is placed; see
 	// [namingFor]. Unresolved, it is decided from the connection and DevURL.
@@ -689,11 +687,11 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	computation.roundings, computation.roundingRequest = roundings, opts.Policy.ValueRoundingRequest
-	if opts.roundingsOnly {
-		return computation, nil
-	}
 	if err := computation.planStatements(ctx, opts, info, compared, diff, desired, current); err != nil {
 		return applyComputation{}, err
+	}
+	if opts.roundingsOnly {
+		return computation, nil
 	}
 	// The data stage runs whether or not the schema changed. A release that
 	// only edits a reference row changes no DDL, and a planner that returned
@@ -715,7 +713,7 @@ func (c *applyComputation) planStatements(
 	desired *schemamodel.Database,
 	current *catalog.Database,
 ) error {
-	if !diff.HasChanges() {
+	if !diff.HasChanges() || opts.roundingsOnly && len(c.roundings) == 0 {
 		return nil
 	}
 	// The planner is handed the comparison as it came back, with the
