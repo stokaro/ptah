@@ -214,6 +214,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			RoleObjectUsage: usage,
 			Reach:           schemasecurity.ReachFromCatalog(live, conn.Info().Schema, opts.reachWarn, opts.reachErr),
 			DatabasePath:    live.DatabasePath,
+			PublicIsRole:    live.PublicIsRole,
 		},
 	)
 

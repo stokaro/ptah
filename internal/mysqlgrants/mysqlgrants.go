@@ -48,10 +48,16 @@ type Options struct {
 	// MariaDB reports a MariaDB server, which orders database-level rows its
 	// own way and prints a role's rows under the role's name. Otherwise the
 	// server is MySQL, which prints an active role's rows as the account's
-	// own: while a role is granted, SHOW GRANTS does not say whether it is
-	// active, so a row credits a privilege only where the account's lookup
-	// and the role lookup both apply one holding it.
+	// own.
 	MariaDB bool
+	// ActiveRole reports a MySQL session with a role active, as CURRENT_ROLE()
+	// answers it. The server then looks a database up in the join of the
+	// account's rows and the active roles' rows, [RoleLookup], and without one
+	// it ranks the account's own rows, [AccountLookup]: measured on MySQL
+	// 8.4.13 and 26.10.0, an account holding SELECT ON `qa\bc`.* with a role
+	// granted and not active reads qabc, and is refused it after SET ROLE of
+	// the role. MariaDB has one lookup, and the value changes nothing there.
+	ActiveRole bool
 }
 
 // Privileges is a set of privileges on one object.
@@ -156,9 +162,8 @@ type row struct {
 
 // Grants is what one session's SHOW GRANTS printed.
 type Grants struct {
-	rows        []row
-	options     Options
-	roleGranted bool
+	rows    []row
+	options Options
 }
 
 // Parse reads the lines SHOW GRANTS printed.
@@ -169,9 +174,7 @@ func Parse(lines []string, options Options) Grants {
 		switch shape {
 		case shapePrivileges:
 			grants.rows = append(grants.rows, parsed)
-		case shapeRole:
-			grants.roleGranted = true
-		case shapeOther:
+		case shapeRole, shapeOther:
 		}
 	}
 	return grants
@@ -214,9 +217,8 @@ func (g Grants) OnTable(database, table string) Privileges {
 // databaseLevel adds what each subject holds through the database-level row
 // the server applies to it, as [Options.ApplyingRows] decides. On MariaDB the
 // subjects are the account, the active role with the roles it inherits, and
-// PUBLIC; on MySQL every row printed is the account's. With a role granted on
-// MySQL, SHOW GRANTS does not say whether it is active, so the rows either
-// lookup applies are crossed together.
+// PUBLIC; on MySQL every row printed is the account's, and
+// [Options.ActiveRole] picks the lookup.
 func (g Grants) databaseLevel(database string) Privileges {
 	subjects := make(map[subject][]row)
 	for _, r := range g.rows {
@@ -233,21 +235,18 @@ func (g Grants) databaseLevel(database string) Privileges {
 }
 
 // applied is what one subject holds at the database level: what every row
-// that may apply holds, each name holding what all its rows hold. With a role
-// granted on MySQL, it is what both lookups give, and a lookup that applies no
-// row gives nothing: measured on MySQL 8.4.13 and 26.10.0, an account holding
-// SELECT ON `qa\bc`.* reads qabc with SET ROLE NONE and is refused it with
-// its role active.
+// that may apply holds, each name holding what all its rows hold, under the
+// lookup [Options.ActiveRole] picks.
 func (g Grants) applied(database string, rows []row) Privileges {
 	names := make([]string, len(rows))
 	for i, r := range rows {
 		names[i] = r.database
 	}
-	held := appliedThrough(g.options.ApplyingRows(AccountLookup, database, names), rows)
-	if !g.options.MariaDB && g.roleGranted {
-		held = held.intersect(appliedThrough(g.options.ApplyingRows(RoleLookup, database, names), rows))
+	lookup := AccountLookup
+	if g.options.ActiveRole {
+		lookup = RoleLookup
 	}
-	return held
+	return appliedThrough(g.options.ApplyingRows(lookup, database, names), rows)
 }
 
 // appliedThrough is what every row named in applying holds, each name holding

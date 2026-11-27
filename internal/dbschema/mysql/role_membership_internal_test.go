@@ -6,6 +6,7 @@ package mysql
 // scripting every other catalog query to observe this one.
 
 import (
+	"context"
 	"database/sql/driver"
 	"fmt"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/mysqlgrants"
 )
@@ -143,45 +145,95 @@ func membershipDB(c *qt.C, hasRoleEdges, hasRolesMap bool, rows [][]driver.Value
 	})
 }
 
-// TestReadRoleMemberships_FailurePath refuses a graph where a role's name is
-// the name another account reads as: the role `macct@localhost` on host % and
-// the login 'macct'@'localhost' would share their memberships.
-func TestReadRoleMemberships_FailurePath(t *testing.T) {
+// TestReadRoleMemberships_Collision reads a graph where a role's name is the
+// name another account reads as, the role `macct@localhost` on host % and the
+// login 'macct'@'localhost', and records the name as one both accounts read
+// as, so the read can leave the role out rather than fail.
+func TestReadRoleMemberships_Collision(t *testing.T) {
 	c := qt.New(t)
 	db := membershipDB(c, true, false, [][]driver.Value{
 		{"mbig", "%", "macct@localhost", "%", false},
 		{"mbig", "%", "macct", "localhost", false},
 	})
 	reader := NewMySQLReader(db.SQL, "app")
+	names := &mysqlgrants.Names{}
 
-	memberships, err := reader.readRoleMemberships(t.Context(), &mysqlgrants.Names{})
+	memberships, err := reader.readRoleMemberships(t.Context(), names)
 
-	c.Assert(err, qt.ErrorMatches, `the accounts 'macct@localhost'@'%' and 'macct'@'localhost' both read as the principal "macct@localhost", .*`)
-	c.Assert(memberships, qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(memberships, qt.DeepEquals, []catalog.RoleMembership{
+		{Role: "mbig", Member: "macct@localhost"},
+		{Role: "mbig", Member: "macct@localhost"},
+	})
+	c.Assert(names.Collisions(), qt.DeepEquals, []mysqlgrants.Collision{{
+		Name:     "macct@localhost",
+		Accounts: []mysqlgrants.Account{{User: "macct@localhost", Host: "%"}, {User: "macct", Host: "localhost"}},
+	}})
 }
 
-// TestInheritsUnread finds a described role, or PUBLIC, that holds a principal
-// the read does not describe, whose privileges the read then did not read: a
-// MySQL role on another host, or a login granted as a role.
-func TestInheritsUnread(t *testing.T) {
+// TestUnreadRoles finds each principal the read does not describe that a
+// described role holds, or PUBLIC holds where it stands for every account,
+// whose privileges the read then did not read: a MySQL role on another host,
+// or a login granted as a role.
+func TestUnreadRoles(t *testing.T) {
 	roles := []catalog.Role{{Name: "reader"}, {Name: "writer"}}
 	tests := []struct {
-		name        string
-		memberships []catalog.RoleMembership
-		want        bool
+		name         string
+		memberships  []catalog.RoleMembership
+		publicIsRole bool
+		want         []string
 	}{
 		{name: "between described roles", memberships: []catalog.RoleMembership{{Role: "reader", Member: "writer"}}},
 		{name: "a described role held by a login", memberships: []catalog.RoleMembership{{Role: "reader", Member: "app@localhost"}}},
-		{name: "a role on another host held by a described role", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "writer"}}, want: true},
-		{name: "a role on another host held by PUBLIC", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "PUBLIC"}}, want: true},
+		{
+			name: "a role on another host held by two described roles",
+			memberships: []catalog.RoleMembership{
+				{Role: "reader@localhost", Member: "writer"}, {Role: "legacy", Member: "reader"}, {Role: "reader@localhost", Member: "reader"},
+			},
+			want: []string{"legacy", "reader@localhost"},
+		},
+		{name: "a role on another host held by PUBLIC", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "PUBLIC"}}, want: []string{"reader@localhost"}},
+		{
+			name:         "a role on another host held by a role named PUBLIC the read does not describe",
+			memberships:  []catalog.RoleMembership{{Role: "reader@localhost", Member: "PUBLIC"}},
+			publicIsRole: true,
+		},
 		{name: "a role on another host held by a login", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "app@%"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(inheritsUnread(roles, test.memberships), qt.Equals, test.want)
+			schema := &catalog.Database{Roles: roles, RoleMemberships: test.memberships, PublicIsRole: test.publicIsRole}
+
+			c.Assert(unreadRoles(schema), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestRefuseCollisions leaves a role two accounts read as out of the read,
+// with its grants, its access and the connected role it would be, records it
+// as not described, and keeps every other role and the memberships.
+func TestRefuseCollisions(t *testing.T) {
+	c := qt.New(t)
+	schema := &catalog.Database{
+		Roles:           []catalog.Role{{Name: "nm@localhost"}, {Name: "reader"}},
+		Grants:          []catalog.Grant{{Role: "nm@localhost", Privilege: "SELECT"}, {Role: "reader", Privilege: "SELECT"}},
+		WideGrants:      []catalog.WideGrant{{Role: "nm@localhost", Privilege: "SELECT"}, {Role: "reader", Privilege: "SELECT"}},
+		WideAccess:      []catalog.WideAccess{{Role: "nm@localhost"}, {Role: "reader", Subject: "nm@localhost"}, {Role: "reader", Subject: "reader"}},
+		RoleMemberships: []catalog.RoleMembership{{Role: "reader", Member: "nm@localhost"}},
+		ConnectedRole:   "nm@localhost",
+	}
+
+	refuseCollisions(schema, []mysqlgrants.Collision{{Name: "nm@localhost"}})
+
+	c.Assert(schema.Roles, qt.DeepEquals, []catalog.Role{{Name: "reader"}})
+	c.Assert(schema.Grants, qt.DeepEquals, []catalog.Grant{{Role: "reader", Privilege: "SELECT"}})
+	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{{Role: "reader", Privilege: "SELECT"}})
+	c.Assert(schema.WideAccess, qt.DeepEquals, []catalog.WideAccess{{Role: "reader", Subject: "reader"}})
+	c.Assert(schema.RoleMemberships, qt.DeepEquals, []catalog.RoleMembership{{Role: "reader", Member: "nm@localhost"}})
+	c.Assert(schema.ConnectedRole, qt.Equals, "")
+	c.Assert(schema.NotDescribed.Describes(coverage.Role, "nm@localhost"), qt.IsFalse)
+	c.Assert(schema.NotDescribed.Describes(coverage.Role, "reader"), qt.IsTrue)
 }
 
 // TestReadConnectedRole names the connected account the way a membership names
@@ -208,8 +260,7 @@ func TestReadConnectedRole(t *testing.T) {
 			})
 			names := &mysqlgrants.Names{MariaDB: test.mariaDB}
 			for _, role := range test.roles {
-				_, err := names.Name(mysqlgrants.Account{User: role, Host: mysqlgrants.Options{MariaDB: test.mariaDB}.RoleHost()})
-				c.Assert(err, qt.IsNil)
+				names.Name(mysqlgrants.Account{User: role, Host: mysqlgrants.Options{MariaDB: test.mariaDB}.RoleHost()})
 			}
 			schema := &catalog.Database{}
 
@@ -241,40 +292,14 @@ func TestWithoutPublic(t *testing.T) {
 	}
 }
 
-// TestReadMandatoryRoles reads the setting without APPLICABLE_ROLES, whose
-// internal joins fail under default_collation_for_utf8mb4=utf8mb4_general_ci.
-// Existence checks preserve the setting's identity and discard only accounts
-// the server does not hold. MariaDB has no mandatory_roles and is not queried.
-func TestReadMandatoryRoles(t *testing.T) {
-	tests := []struct {
-		name    string
-		mariaDB bool
-		want    []catalog.RoleMembership
-	}{
-		{name: "MySQL", want: []catalog.RoleMembership{
-			{Role: "mand", Member: "PUBLIC"},
-			{Role: "mloc@LOCALHOST", Member: "PUBLIC"},
-		}},
-		{name: "MariaDB", mariaDB: true, want: nil},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			db := dbtest.Open(t, mandatoryQuery("mand, 'mloc'@'LOCALHOST', missing, mand", "8.4.13"))
-
-			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{MariaDB: test.mariaDB})
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.DeepEquals, test.want)
-		})
-	}
-}
-
 // mandatoryQuery models a session whose APPLICABLE_ROLES view fails and whose
-// grant tables can still identify the accounts in mandatory_roles.
-func mandatoryQuery(value, version string) dbtest.QueryHandler {
+// grant tables can still identify the accounts in mandatory_roles. The
+// question that holds refused fails as a server's does.
+func mandatoryQuery(value, version, refused string) dbtest.QueryHandler {
 	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
+		case refused != "" && strings.Contains(query, refused):
+			return dbtest.QueryResult{}, fmt.Errorf("Error 1142 (42000): SELECT command denied")
 		case strings.Contains(query, "@@GLOBAL.mandatory_roles"):
 			return dbtest.QueryResult{
 				Columns: []string{"mandatory_roles", "version"},
@@ -284,6 +309,7 @@ func mandatoryQuery(value, version string) dbtest.QueryHandler {
 			host, found := map[mysqlgrants.Account]string{
 				{User: "mand", Host: "%"}:         "%",
 				{User: "mloc", Host: "LOCALHOST"}: "localhost",
+				{User: "mloc", Host: "localhost"}: "localhost",
 				{User: "a", Host: "%"}:            "%",
 				{User: "b@h", Host: "%"}:          "%",
 				{User: "a,b", Host: "h"}:          "h",
@@ -303,15 +329,53 @@ func mandatoryQuery(value, version string) dbtest.QueryHandler {
 	}
 }
 
-// TestReadMandatoryRolesGrammarAndDuplicates applies the server version's
-// list grammar, and deduplicates hosts in setting order without changing the
-// first account's spelling or merging differently cased user names.
-func TestReadMandatoryRolesGrammarAndDuplicates(t *testing.T) {
+// TestReadMandatoryRoles_HappyPath reads the setting without APPLICABLE_ROLES,
+// whose internal joins fail under
+// default_collation_for_utf8mb4=utf8mb4_general_ci. A name counts where an
+// account exists whose host matches the setting's byte for byte, and a name
+// whose host differs in case is left out: the server makes that spelling
+// active, and it holds nothing. MariaDB has no mandatory_roles and is not
+// queried.
+func TestReadMandatoryRoles_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, value, version string
+		mariaDB              bool
+		want                 []catalog.RoleMembership
+	}{
+		{name: "MySQL", value: "mand, 'mloc'@'localhost', missing, mand", version: "8.4.13", want: []catalog.RoleMembership{
+			{Role: "mand", Member: "PUBLIC"},
+			{Role: "mloc@localhost", Member: "PUBLIC"},
+		}},
+		{name: "a host in another case", value: "mand, 'mloc'@'LOCALHOST'", version: "8.4.13", want: []catalog.RoleMembership{
+			{Role: "mand", Member: "PUBLIC"},
+		}},
+		{name: "empty setting", version: "26.10.0"},
+		{name: "MariaDB", value: "mand", version: "8.4.13", mariaDB: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, mandatoryQuery(test.value, test.version, ""))
+
+			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{MariaDB: test.mariaDB})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.read, qt.IsTrue)
+			c.Assert(got.memberships, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadMandatoryRoles_GrammarAndDuplicates applies the server version's
+// list grammar, and keeps the first of the hosts that differ in case alone,
+// as the server does, without merging differently cased user names. A host
+// kept in another case than the account's holds nothing, so a setting that
+// names it first records no membership for the account.
+func TestReadMandatoryRoles_GrammarAndDuplicates(t *testing.T) {
 	tests := []struct {
 		name, value, version string
 		want                 []catalog.RoleMembership
 	}{
-		{name: "empty setting", version: "26.10.0"},
 		{name: "before double quoted lists", value: `"a,b"@"h"`, version: "9.6.0", want: []catalog.RoleMembership{
 			{Role: "a", Member: "PUBLIC"}, {Role: "b@h", Member: "PUBLIC"},
 		}},
@@ -321,78 +385,102 @@ func TestReadMandatoryRolesGrammarAndDuplicates(t *testing.T) {
 		{name: "current double quoted lists", value: `"a,b"@"h"`, version: "26.10.0", want: []catalog.RoleMembership{
 			{Role: "a,b@h", Member: "PUBLIC"},
 		}},
-		{name: "first host spelling", value: "r@K,r@k,r@K,R@k,r@K", version: "8.4.13", want: []catalog.RoleMembership{
-			{Role: "R@k", Member: "PUBLIC"}, {Role: "r@K", Member: "PUBLIC"}, {Role: "r@K", Member: "PUBLIC"},
+		{name: "a host in another case first", value: "r@K,r@k,r@K,R@k,r@K", version: "8.4.13", want: []catalog.RoleMembership{
+			{Role: "R@k", Member: "PUBLIC"},
 		}},
-		{name: "reversed host spelling", value: "r@k,r@K", version: "26.10.0", want: []catalog.RoleMembership{
+		{name: "the account's host first", value: "r@k,r@K", version: "26.10.0", want: []catalog.RoleMembership{
 			{Role: "r@k", Member: "PUBLIC"},
 		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(t, mandatoryQuery(test.value, test.version))
+			db := dbtest.Open(t, mandatoryQuery(test.value, test.version, ""))
 
 			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(got.read, qt.IsTrue)
+			c.Assert(got.memberships, qt.DeepEquals, test.want)
 		})
 	}
 }
 
-// TestReadMandatoryRolesUnknownVersion refuses to guess which account-list
-// grammar an unrecognized server applies.
-func TestReadMandatoryRolesUnknownVersion(t *testing.T) {
-	c := qt.New(t)
-	db := dbtest.Open(t, mandatoryQuery("mand", "unknown"))
+// TestReadMandatoryRoles_Unread leaves the mandatory roles unread, rather than
+// failing the read, where the setting or an account in it cannot be read, or
+// the server's version does not say which account-list grammar it applies.
+func TestReadMandatoryRoles_Unread(t *testing.T) {
+	tests := []struct {
+		name, version, refused string
+	}{
+		{name: "the setting", version: "8.4.13", refused: "@@GLOBAL.mandatory_roles"},
+		{name: "an account", version: "8.4.13", refused: "FROM mysql.user"},
+		{name: "an unrecognized version", version: "unknown"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, mandatoryQuery("mand", test.version, test.refused))
 
-	got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
+			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
 
-	c.Assert(err, qt.ErrorMatches, `cannot read mandatory roles for unrecognized MySQL version "unknown"`)
-	c.Assert(got, qt.IsNil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.read, qt.IsFalse)
+			c.Assert(got.memberships, qt.IsNil)
+		})
+	}
 }
 
-// TestWithMandatory adds PUBLIC's memberships in the mandatory roles, and
-// leaves them out where a MySQL role is named PUBLIC, reporting that the
-// access cannot be measured then.
-func TestWithMandatory(t *testing.T) {
+// TestReadMandatoryRoles_FailurePath fails the read when it was canceled: a
+// cancellation is no answer about the setting.
+func TestReadMandatoryRoles_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	db := dbtest.Open(t, mandatoryQuery("mand", "8.4.13", ""))
+
+	got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(ctx, &mysqlgrants.Names{})
+
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	c.Assert(got.read, qt.IsFalse)
+	c.Assert(got.memberships, qt.IsNil)
+}
+
+// TestMandatoryRoles_AddTo adds PUBLIC's memberships in the mandatory roles,
+// and records that every account holds roles the read does not state where
+// the mandatory roles were not read, or where a MySQL role is named PUBLIC
+// beside a mandatory role, leaving the memberships as they are then.
+func TestMandatoryRoles_AddTo(t *testing.T) {
 	held := []catalog.RoleMembership{{Role: "reader", Member: "app"}}
 	mandatory := []catalog.RoleMembership{{Role: "mand", Member: "PUBLIC"}}
 	tests := []struct {
-		name       string
-		roles      []catalog.Role
-		mandatory  []catalog.RoleMembership
-		want       []catalog.RoleMembership
-		wantUnread bool
+		name         string
+		mandatory    []catalog.RoleMembership
+		read         bool
+		publicIsRole bool
+		want         []catalog.RoleMembership
+		wantUnread   bool
 	}{
 		{
 			name:      "mandatory roles",
-			roles:     []catalog.Role{{Name: "app"}, {Name: "reader"}, {Name: "mand"}},
 			mandatory: mandatory,
+			read:      true,
 			want:      []catalog.RoleMembership{{Role: "reader", Member: "app"}, {Role: "mand", Member: "PUBLIC"}},
 		},
-		{
-			name:       "a role named PUBLIC",
-			roles:      []catalog.Role{{Name: "app"}, {Name: "reader"}, {Name: "mand"}, {Name: "Public"}},
-			mandatory:  mandatory,
-			want:       held,
-			wantUnread: true,
-		},
-		{
-			name:  "a role named PUBLIC and no mandatory role",
-			roles: []catalog.Role{{Name: "app"}, {Name: "reader"}, {Name: "PUBLIC"}},
-			want:  held,
-		},
+		{name: "mandatory roles not read", read: false, want: held, wantUnread: true},
+		{name: "a role named PUBLIC", mandatory: mandatory, read: true, publicIsRole: true, want: held, wantUnread: true},
+		{name: "a role named PUBLIC and no mandatory role", read: true, publicIsRole: true, want: held},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, unread := withMandatory(test.roles, slices.Clone(held), test.mandatory)
+			schema := &catalog.Database{RoleMemberships: slices.Clone(held), PublicIsRole: test.publicIsRole}
 
-			c.Assert(got, qt.DeepEquals, test.want)
-			c.Assert(unread, qt.Equals, test.wantUnread)
+			mandatoryRoles{memberships: test.mandatory, read: test.read}.addTo(schema)
+
+			c.Assert(schema.RoleMemberships, qt.DeepEquals, test.want)
+			c.Assert(schema.EveryAccountHoldsUnread, qt.Equals, test.wantUnread)
 		})
 	}
 }

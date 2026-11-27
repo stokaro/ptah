@@ -235,18 +235,19 @@ func TestMySQLRoleHostIdentityE2E(t *testing.T) {
 // passes on were not read, and a reach measured without them says the member
 // reaches less than the server lets it: measured on MySQL 8.4.13, a session
 // with the first active reads the table the second holds SELECT on. The read
-// then leaves the reach unmeasured rather than short. The control is the same
-// graph without that membership, measured.
+// names the second as unread, so the reach of the roles that hold it is left
+// unmeasured rather than short, and the access of every other role is still
+// read. The control is the same graph without that membership.
 func TestMySQLRoleInheritedFromAnotherHostE2E(t *testing.T) {
 	tests := []struct {
 		name string
 		// grant is the membership between the two roles, which it spells
 		// {via} and {local}.
-		grant     []string
-		wantReach bool
+		grant      []string
+		wantUnread bool
 	}{
-		{name: "a role on another host is inherited", grant: []string{"GRANT {local} TO {via}"}, wantReach: false},
-		{name: "control: nothing is inherited from another host", grant: nil, wantReach: true},
+		{name: "a role on another host is inherited", grant: []string{"GRANT {local} TO {via}"}, wantUnread: true},
+		{name: "control: nothing is inherited from another host", grant: nil, wantUnread: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -278,7 +279,8 @@ func TestMySQLRoleInheritedFromAnotherHostE2E(t *testing.T) {
 			read, err := conn.Reader().ReadSchemaContext(c.Context())
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(read.WideAccess != nil, qt.Equals, test.wantReach)
+			c.Assert(read.WideAccess, qt.IsNotNil)
+			c.Assert(slices.Contains(read.UnreadRoles, "rloc"+suffix+"@localhost"), qt.Equals, test.wantUnread)
 		})
 	}
 }

@@ -1,7 +1,7 @@
 package mysqlgrants
 
 import (
-	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -55,7 +55,7 @@ func (o Options) RoleHost() string {
 // The name of an account on [Options.RoleHost] is the user alone on both engines, and
 // no two accounts there share a user, so only an account on another host can
 // read as the name of another account: a role whose user name is itself
-// `user@host`. [Names] refuses that read.
+// `user@host`. [Names] records that read as a collision.
 func (o Options) PrincipalName(account Account) string {
 	if account.Host == o.RoleHost() {
 		return account.User
@@ -64,10 +64,9 @@ func (o Options) PrincipalName(account Account) string {
 }
 
 // Names gives each account the name a statement naming that principal by its
-// name alone means, and refuses two accounts that would read as one: a role
-// named `app@localhost` and the login 'app'@'localhost' would share their
-// grants and memberships under one name. The zero value is ready to use on
-// MySQL.
+// name alone means, and records two accounts that read as one: a role named
+// `app@localhost` and the login 'app'@'localhost' would share their grants
+// and memberships under one name. The zero value is ready to use on MySQL.
 //
 // The name is [Options.PrincipalName], with one MariaDB refinement. There `GRANT r TO
 // app` grants the role app where one exists and the login 'app'@'%' where none
@@ -76,13 +75,15 @@ func (o Options) PrincipalName(account Account) string {
 // every role before any other account.
 type Names struct {
 	// MariaDB is [Options.MariaDB].
-	MariaDB bool
-	named   map[string]Account
+	MariaDB   bool
+	named     map[string]Account
+	colliding map[string][]Account
 }
 
-// Name returns the name of account, or an error where another account the
-// same Names has named reads the same.
-func (n *Names) Name(account Account) (string, error) {
+// Name returns the name of account. Where another account the same Names has
+// named reads the same, the name is recorded as one [Names.Collisions]
+// reports, and it names both accounts.
+func (n *Names) Name(account Account) string {
 	if n.named == nil {
 		n.named = make(map[string]Account)
 	}
@@ -90,16 +91,38 @@ func (n *Names) Name(account Account) (string, error) {
 	if held, seen := n.named[account.User]; n.MariaDB && account.Host == "%" && (!seen || held == account) {
 		name = account.User
 	}
-	if held, seen := n.named[name]; seen && held != account {
-		return "", fmt.Errorf("the accounts %s and %s both read as the principal %q, "+
-			"so their privileges and memberships cannot be told apart; rename one of them",
-			quoteAccount(held), quoteAccount(account), name)
+	held, seen := n.named[name]
+	if !seen {
+		n.named[name] = account
+		return name
 	}
-	n.named[name] = account
-	return name, nil
+	if held != account && !slices.Contains(n.colliding[name], account) {
+		if n.colliding == nil {
+			n.colliding = make(map[string][]Account)
+		}
+		if len(n.colliding[name]) == 0 {
+			n.colliding[name] = []Account{held}
+		}
+		n.colliding[name] = append(n.colliding[name], account)
+	}
+	return name
 }
 
-// quoteAccount spells an account as a statement names it.
-func quoteAccount(account Account) string {
-	return "'" + strings.ReplaceAll(account.User, "'", "''") + "'@'" + strings.ReplaceAll(account.Host, "'", "''") + "'"
+// Collision is a name two accounts or more read as, so their privileges and
+// memberships cannot be told apart.
+type Collision struct {
+	// Name is the principal name the accounts share.
+	Name string
+	// Accounts are the accounts, in the order they were named.
+	Accounts []Account
+}
+
+// Collisions returns each name more than one account read as, sorted by name.
+func (n *Names) Collisions() []Collision {
+	collisions := make([]Collision, 0, len(n.colliding))
+	for name, accounts := range n.colliding {
+		collisions = append(collisions, Collision{Name: name, Accounts: slices.Clone(accounts)})
+	}
+	slices.SortFunc(collisions, func(a, b Collision) int { return strings.Compare(a.Name, b.Name) })
+	return collisions
 }

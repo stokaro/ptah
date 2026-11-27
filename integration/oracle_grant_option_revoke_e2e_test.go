@@ -102,3 +102,29 @@ func TestSchemaApplyOracleKeepsAPrivilegeHeldWithoutTheGrantOptionE2E(t *testing
 	c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
 	c.Assert(settled.Stdout, qt.Contains, "Schema is synced")
 }
+
+// On Oracle a REVOKE on a table takes the grantee's own grant and nothing a
+// grant to PUBLIC gives it: measured on Oracle 23.26, a user holding SELECT
+// on t48, with SELECT on t48 granted to PUBLIC as well, reads t48 after
+// REVOKE SELECT ON t48 FROM the user. A schema that revokes it is refused
+// before any statement runs, naming the grant to PUBLIC, and the user still
+// holds its grant; the revoke run by hand leaves the user reading the table.
+func TestSchemaApplyOracleRefusesARevokeAGrantToPublicKeepsE2E(t *testing.T) {
+	c := qt.New(t)
+	account := newOracleRoutineAccount(c)
+	grantedT48(c, account, "GRANT SELECT ON t48 TO {user}")
+	_, err := account.owner.ExecContext(c.Context(), "GRANT SELECT ON t48 TO PUBLIC")
+	c.Assert(err, qt.IsNil)
+
+	applied := applyOracleSchemaFile(c, account, oracleGrantOptionTable+"REVOKE SELECT ON t48 FROM {user};\n", "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(applied.Stderr, qt.Contains, `PUBLIC holds SELECT ON t48, which gives role "`+account.user+
+		`" the privilege on table t48, so a revoke from "`+account.user+`" cannot take it: revoke SELECT ON t48 from PUBLIC instead`)
+	c.Assert(oracleTablePrivilegesOf(c, account.owner, account.user, account.name), qt.DeepEquals, []string{"SELECT NO"})
+	_, err = account.owner.ExecContext(c.Context(), strings.ReplaceAll("REVOKE SELECT ON t48 FROM {user}", "{user}", account.user))
+	c.Assert(err, qt.IsNil)
+	var rows int
+	c.Assert(account.member.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM "+account.name+".T48").Scan(&rows), qt.IsNil)
+	c.Assert(oracleTablePrivilegesOf(c, account.owner, account.user, account.name), qt.HasLen, 0)
+}

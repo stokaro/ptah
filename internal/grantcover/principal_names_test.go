@@ -25,7 +25,7 @@ func TestFind_KeepsPrincipalNames(t *testing.T) {
 			desired := &schemamodel.Database{Grants: []schemamodel.Grant{{Role: test.declared, OnSchema: "d2", Privileges: []string{"SELECT"}}}}
 			current := selecting(databaseGrant(test.held, "SELECT"))
 
-			covers, known := grantcover.Find(desired, current, test.revoked, []string{"SELECT"}, "t", listsOf("mariadb"))
+			covers, known := grantcover.Find(desired, current, test.revoked, []string{"SELECT"}, "t", grantcover.Target{AllPrivileges: listsOf("mariadb"), Memberships: plannedOn("mariadb", desired)})
 
 			c.Assert(known, qt.IsTrue)
 			c.Assert(covers, qt.DeepEquals, test.want)
@@ -38,7 +38,7 @@ func TestValidate_KeepsPrincipalNameInRefusal(t *testing.T) {
 	desired := &schemamodel.Database{RevokedGrants: []schemamodel.Grant{{Role: " r", OnTable: "t", Privileges: []string{"SELECT"}}}}
 	current := selecting(databaseGrant(" r", "SELECT"))
 
-	err := grantcover.Validate("mariadb", desired, current)
+	err := validate("mariadb", desired, current)
 
 	c.Assert(err, qt.ErrorMatches, `role " r" holds SELECT ON d2\.\*, .*revoke SELECT ON d2\.\* from " r" instead.*`)
 }

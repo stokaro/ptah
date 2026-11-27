@@ -1197,8 +1197,9 @@ Where a grant applies decides what it proves:
 - **An active role changes which row applies on MySQL.** With a role active, a name
   with no `%` or `_` matches byte for byte, so ``GRANT SELECT ON `qa\bc`.*`` reaches
   `qabc` only without one, and with `partial_revokes` on ``GRANT SELECT ON `X_Y`.*``
-  reaches `x_y` only with one. SHOW GRANTS does not say whether a granted role is
-  active, so while one is granted Ptah counts a row only where both lookups apply it.
+  reaches `x_y` only with one. Ptah asks the session's `CURRENT_ROLE()`, which is
+  `NONE` while no role is active, and applies the lookup that answer selects: a
+  login granted a role it has not made active reads `qabc` through that row.
   Measured on 8.4.13 and 26.10.0.
 - **`ALL PRIVILEGES` on the database** shows everything on MariaDB 11.4 and newer. On
   MySQL and on MariaDB 10.11 it lists every routine and shows the body only of the
@@ -1506,10 +1507,24 @@ even when it cannot log in, and the reader does not describe it as a role.
 Each end of a membership is named the way ``GRANT `r` TO `name` `` names it:
 the user alone for an account on host `%`, and `user@host` for any other host.
 On MariaDB that statement grants to a role of that name where one exists, so a
-login on `%` that shares a role's name reads as `name@%`. When a role holds a
-MySQL role on another host, the privileges that second role passes on were not
-read, and `ptah schema security` reports the reach rules skipped rather than
-measure the member short.
+login on `%` that shares a role's name reads as `name@%`.
+
+Some accounts a role can hold are not read as roles: a MySQL role on another
+host, and an account created as a login and granted as a role, such as
+`CREATE USER legacy ACCOUNT LOCK` followed by `GRANT legacy TO lr`. A session
+with `lr` active holds what `legacy` holds, measured on 26.10.0, and the read
+did not read it. `ptah schema security` then skips the reach rules for `lr` and
+for every role that holds `lr`, naming `legacy` and those roles, and measures
+the other roles.
+
+Two accounts can read as one name: the role `'nm@localhost'@'%'` and the login
+`'nm'@'localhost'` are both `nm@localhost`. The read leaves that name out, its
+grants and its role with it, and reads everything else, so `ptah db read`,
+`ptah schema security` and a plan that names other roles succeed. A schema that
+names it, as a role, a grantee, a revoke's role or a `member_of` entry, is
+refused before anything is compared, since a plan cannot say which account it
+changes. Rename one of the two accounts. A role that holds the name is skipped
+by the reach rules as above.
 
 On MariaDB, `PUBLIC` is the grantee every account holds, and a role granted to
 it is held by every account too. A grant to `PUBLIC` leaves a `PUBLIC` row in
@@ -1519,21 +1534,35 @@ reads that row as a role, since `CREATE ROLE PUBLIC` is refused with ERROR
 `PUBLIC` and no `CREATE ROLE` for it.
 
 On MySQL, a role named in `mandatory_roles` is granted to every account, and
-every account may make it active with `SET ROLE`. The read records it as held
-by `PUBLIC`, so `ptah schema security` counts its access for every account.
+every account may make it active with `SET ROLE`. The read takes the names from
+`@@GLOBAL.mandatory_roles` and records each role as held by `PUBLIC`, so
+`ptah schema security` counts its access for every account and every role.
 `ptah db read` prints the role and its grants, and no membership for it: the
 server refuses to grant a mandatory role to another role (ERROR 4027) or to
-revoke it (ERROR 3628). A MySQL role may be named `PUBLIC`; beside a mandatory
-role, the read records no such membership and the reach rules report
-themselves skipped.
+revoke it (ERROR 3628).
 
-The mandatory-role read also works when the connection sets
-`default_collation_for_utf8mb4=utf8mb4_general_ci`. It keeps user names distinct
-by case and preserves the host spelling in the server setting. Use the stored
-account's host spelling in `mandatory_roles`: MySQL can find `reader@localhost`
-as `reader@LOCALHOST` yet activate it without the stored account's privileges.
-A login named in the setting is also recorded as a mandatory account; an
-account that does not exist is not recorded.
+The read works when the connection sets
+`default_collation_for_utf8mb4=utf8mb4_general_ci`, and follows the
+account-list grammar of the server it reads: from MySQL 9.7 a comma or
+whitespace between double quotes is part of the name, and before it is not.
+Measured on 26.10.0 and 8.4.13, `"r,x"` makes the role `'r,x'@'%'` active on the
+first and no role on the second. User names stay distinct by case, a login
+named in the setting is recorded as a mandatory account too, and a name no
+account has is not recorded.
+
+Use the stored account's host spelling in `mandatory_roles`. A name counts only
+where its host matches the account's byte for byte: `` `mloc`@LOCALHOST `` makes
+a role active that holds nothing, not the privileges of `'mloc'@'localhost'`,
+and where two spellings differ only in case the server keeps the first, so the
+read leaves such a name out. Where the setting or an account in it cannot be
+read, or the server's version does not say which grammar it applies, the reach
+rules skip every role, since each may hold roles the read does not state.
+
+A MySQL role may be named `PUBLIC`. It is a role like any other there, held
+only by the accounts it is granted to, so a grant to it counts for those alone,
+and the reach rules and `PRV03` do not read it as every account. Beside a
+mandatory role, the read records no membership of `PUBLIC` in it, because the
+name is the role's, and the reach rules skip every role.
 
 Each role is read with the grants it holds itself, the ones `SHOW GRANTS FOR`
 lists under its name, and not with what it holds through the roles granted to
@@ -1671,12 +1700,19 @@ active that holds `SELECT ON *.*` still reads `d2`.
 The role also keeps what a role it is a member of holds, at any depth, and what
 `PUBLIC` or a role granted to `PUBLIC` holds, which on MySQL includes the roles
 in `mandatory_roles`. So the refusal counts those grants too, a grant on the
-table itself among them, and names the role that holds the grant. A membership
-the schema declares counts before the server holds it, and one the plan removes
-still counts. Measured on 8.4.13: with
-`parent` holding ``SELECT ON `gc%`.*`` and granted to `member`, `REVOKE SELECT
-ON gcdb.t1 FROM member` succeeds and a session with `member` active still
-reads `t1`.
+table itself among them, and names the role that holds the grant. On MySQL a
+role named `PUBLIC` passes its grants only to the roles it is granted to.
+Measured on 8.4.13: with `parent` holding ``SELECT ON `gc%`.*`` and granted to
+`member`, `REVOKE SELECT ON gcdb.t1 FROM member` succeeds and a session with
+`member` active still reads `t1`.
+
+The memberships that count are the ones the server holds once the plan has
+run. On MySQL, which plans memberships, a membership the schema declares counts
+before the server holds it, and one the plan removes counts for nothing: the
+plan revokes the privilege on the table first and the membership after it, and
+a session with the member active is then refused the table, measured on
+26.10.0. MariaDB plans no membership, so there every membership the server
+holds counts.
 
 [`ptah schema security`](../../schema/security/#measure-how-much-of-the-database-a-role-reaches)
 counts these grants toward a role's reach, and the finding names a pattern

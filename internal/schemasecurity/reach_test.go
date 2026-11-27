@@ -721,24 +721,135 @@ func TestReachFromCatalog_AddsPUBLICsDatabaseAccessToEveryRole(t *testing.T) {
 	})
 }
 
-// TestReachFromCatalog_PUBLICHoldsTheRolesGrantedToIt reads a MariaDB shape:
-// `GRANT pubheld TO PUBLIC` gives every account what pubheld reads. PUBLIC is
-// no role the read lists, and it is reported as reaching what pubheld
-// reaches, through pubheld. pubheld reaches no more than PUBLIC and is not
-// reported; other adds t4 to what it holds through PUBLIC.
+// TestReachFromCatalog_PUBLICHoldsTheRolesGrantedToIt reads a MariaDB shape,
+// `GRANT pubheld TO PUBLIC`, and MySQL's mandatory roles, which the read states
+// the same way: every account holds what pubheld reads. PUBLIC is no role the
+// read lists, and it is reported as reaching what pubheld reaches, through
+// pubheld. pubheld reaches no more than PUBLIC and is not reported; other adds
+// t4 to what it holds through PUBLIC. pubheld reads t1 to t3 through a grant
+// on each table, or through its grant on the database, which the read decides
+// for each subject; an account holding other reads them too, measured on
+// MySQL 8.4.13 with a mandatory role and on MariaDB 12.3.3 with a role granted
+// to PUBLIC.
 func TestReachFromCatalog_PUBLICHoldsTheRolesGrantedToIt(t *testing.T) {
+	tests := []struct {
+		name   string
+		grants []catalog.Grant
+		access []catalog.WideAccess
+	}{
+		{
+			name: "a grant on each table",
+			grants: []catalog.Grant{
+				{Role: "pubheld", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"},
+				{Role: "pubheld", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t2"},
+				{Role: "pubheld", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t3"},
+			},
+			access: make([]catalog.WideAccess, 0),
+		},
+		{
+			name: "a grant on the database",
+			access: []catalog.WideAccess{
+				{Role: "pubheld", Subject: "PUBLIC", Read: true, Schema: "app"},
+				{Role: "pubheld", Subject: "pubheld", Read: true, Schema: "app"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			live := readCatalog("t1", "t2", "t3")
+			live.Tables = append(live.Tables, catalog.Table{Schema: "other", Name: "t4"})
+			live.Roles = []catalog.Role{{Name: "other"}, {Name: "pubheld"}}
+			live.RoleMemberships = []catalog.RoleMembership{{Role: "pubheld", Member: "PUBLIC"}}
+			live.Grants = slices.Concat(test.grants, []catalog.Grant{{Role: "other", Privilege: "SELECT", ObjectType: "TABLE", Schema: "other", ObjectName: "t4"}})
+			live.WideAccess = test.access
+			live.SchemaGrantsInWideAccess = true
+
+			c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "app", 50, 80)), qt.DeepEquals, []string{
+				"roles/read-reach warning PUBLIC 3/4 over 50% through=[pubheld] sources=[]",
+				"roles/read-reach error other 4/4 over 80% through=[] sources=[]",
+			})
+		})
+	}
+}
+
+// TestReachFromCatalog_ARoleNamedPUBLICIsARole reads a MySQL role named
+// PUBLIC, which CREATE ROLE PUBLIC creates: a grant to it, and a role granted
+// to it, are its own, and no other role holds them. Measured on MySQL 26.10.0,
+// with big granted to the role PUBLIC and big reading t1 to t3, a login
+// holding other is refused t3.
+func TestReachFromCatalog_ARoleNamedPUBLICIsARole(t *testing.T) {
 	c := qt.New(t)
 	live := readCatalog("t1", "t2", "t3", "t4")
-	live.Roles = []catalog.Role{{Name: "other"}, {Name: "pubheld"}}
-	live.RoleMemberships = []catalog.RoleMembership{{Role: "pubheld", Member: "PUBLIC"}}
+	live.Roles = []catalog.Role{{Name: "PUBLIC"}, {Name: "big"}, {Name: "other"}}
+	live.RoleMemberships = []catalog.RoleMembership{{Role: "big", Member: "PUBLIC"}}
 	for _, table := range []string{"t1", "t2", "t3"} {
-		live.Grants = append(live.Grants, catalog.Grant{Role: "pubheld", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: table})
+		live.Grants = append(live.Grants, catalog.Grant{Role: "big", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: table})
 	}
-	live.Grants = append(live.Grants, catalog.Grant{Role: "other", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t4"})
+	live.Grants = append(live.Grants,
+		catalog.Grant{Role: "PUBLIC", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t4"},
+		catalog.Grant{Role: "other", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"},
+	)
+	live.WideAccess = []catalog.WideAccess{{Role: "big", Subject: "PUBLIC", Read: true, Schema: "app"}}
+	live.PublicIsRole = true
 
 	c.Assert(reachLines(schemasecurity.ReachFromCatalog(live, "app", 50, 80)), qt.DeepEquals, []string{
-		"roles/read-reach warning PUBLIC 3/4 over 50% through=[pubheld] sources=[]",
-		"roles/read-reach error other 4/4 over 80% through=[] sources=[]",
+		"roles/read-reach error PUBLIC 4/4 over 80% through=[big] sources=[]",
+		"roles/read-reach warning big 3/4 over 50% through=[] sources=[]",
+	})
+}
+
+// TestReachFromCatalog_LeavesOutTheRolesThatHoldAnUnreadRole measures every
+// role but the ones that can use a role whose privileges the read did not
+// read, directly or through another role, and names those in the skipped
+// rules: measured on MySQL 26.10.0, after CREATE USER legacy ACCOUNT LOCK and
+// GRANT legacy TO lr, a session with lr active holds what legacy holds.
+func TestReachFromCatalog_LeavesOutTheRolesThatHoldAnUnreadRole(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("t1", "t2")
+	live.Roles = []catalog.Role{{Name: "app"}, {Name: "lother"}, {Name: "lr"}}
+	live.RoleMemberships = []catalog.RoleMembership{{Role: "legacy", Member: "lr"}, {Role: "lr", Member: "app"}}
+	live.Grants = []catalog.Grant{
+		{Role: "lother", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"},
+		{Role: "lother", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t2"},
+	}
+	live.UnreadRoles = []string{"legacy"}
+	reach := schemasecurity.ReachFromCatalog(live, "app", 50, 80)
+
+	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
+
+	c.Assert(reachLines(reach), qt.DeepEquals, []string{"roles/read-reach error lother 2/2 over 80% through=[] sources=[]"})
+	const reason = "the read did not read the privileges of legacy, which app, lr can use, so their reach was not measured"
+	c.Assert(slices.DeleteFunc(report.SkippedRules, func(skipped schemasecurity.SkippedRule) bool {
+		return !strings.HasPrefix(skipped.Code, "roles/")
+	}), qt.DeepEquals, []schemasecurity.SkippedRule{
+		{Code: schemasecurity.ReadReachRule, Reason: reason},
+		{Code: schemasecurity.WriteReachRule, Reason: reason},
+	})
+}
+
+// TestReachFromCatalog_MeasuresNoRoleWhereEveryRoleHoldsAnUnreadRole skips
+// both rules, with their own reason, where every role holds roles whose
+// privileges the read does not state, such as MySQL mandatory roles it could
+// not read.
+func TestReachFromCatalog_MeasuresNoRoleWhereEveryRoleHoldsAnUnreadRole(t *testing.T) {
+	c := qt.New(t)
+	live := readCatalog("t1")
+	live.Roles = []catalog.Role{{Name: "reader"}}
+	live.Grants = []catalog.Grant{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"}}
+	live.EveryAccountHoldsUnread = true
+	reach := schemasecurity.ReachFromCatalog(live, "app", 50, 80)
+
+	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
+
+	c.Assert(reachLines(reach), qt.DeepEquals, make([]string, 0))
+	const reason = "every role holds roles whose privileges the read does not state, " +
+		"such as MySQL mandatory roles it could not read, so no role's reach was measured"
+	c.Assert(slices.DeleteFunc(report.SkippedRules, func(skipped schemasecurity.SkippedRule) bool {
+		return !strings.HasPrefix(skipped.Code, "roles/")
+	}), qt.DeepEquals, []schemasecurity.SkippedRule{
+		{Code: schemasecurity.ReadReachRule, Reason: reason},
+		{Code: schemasecurity.WriteReachRule, Reason: reason},
 	})
 }
 

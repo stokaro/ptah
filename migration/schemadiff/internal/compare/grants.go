@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/grantcover"
+	"ptah.run/internal/membershipplan"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
 )
@@ -154,6 +155,10 @@ type GrantOptions struct {
 	// kind of the target; see [ptah.run/core/platform/descriptor.AllPrivileges].
 	// The zero value takes the PostgreSQL lists.
 	AllPrivileges descriptor.AllPrivileges
+	// Memberships is what the plan does with role memberships, which decides
+	// the roles whose grants keep a privilege a revoke on a table names; see
+	// [ptah.run/internal/membershipplan.Read]. The zero value plans none.
+	Memberships membershipplan.Declared
 }
 
 // GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
@@ -235,7 +240,10 @@ func GrantsWithOptions(
 		}
 	}
 	revokeUnmatchedDeclarations(desired, database, databaseGrantMapForRemovals, lists,
-		createdGrants{tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target},
+		createdGrants{
+			tablesTakeOnlyTableGrants: options.TableRevokesTakeOnlyTableGrants, desired: desired, database: database, all: lists.target,
+			memberships: options.Memberships, semantics: target,
+		},
 		diff, semantics)
 	read.planDenies(desired, diff)
 	read.grantsDeniesTake(generatedGrantMap, databaseGrantMapForAdditions, diff)
@@ -1041,6 +1049,10 @@ type createdGrants struct {
 	// all is what ALL grants on each object kind of the target: a revoke of
 	// ALL on a table names what it grants on a table.
 	all descriptor.AllPrivileges
+	// memberships is [GrantOptions.Memberships].
+	memberships membershipplan.Declared
+	// semantics is how the server stores a name the declaration writes.
+	semantics identifier.Semantics
 }
 
 // needsRevoke reports whether a declared revoke on an object the plan creates
@@ -1059,7 +1071,9 @@ func (g createdGrants) needsRevoke(ref difftypes.GrantRef) bool {
 	if !g.tablesTakeOnlyTableGrants || ref.ObjectType != "TABLE" {
 		return true
 	}
-	covers, known := grantcover.Find(g.desired, g.database, ref.Role, []string{ref.Privilege}, ref.ObjectName, g.all)
+	covers, known := grantcover.Find(g.desired, g.database, ref.Role, []string{ref.Privilege}, ref.ObjectName, grantcover.Target{
+		AllPrivileges: g.all, Semantics: g.semantics, Memberships: g.memberships,
+	})
 	return !known || len(covers) > 0
 }
 

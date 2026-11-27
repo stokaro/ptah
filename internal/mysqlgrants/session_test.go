@@ -12,15 +12,18 @@ import (
 	"ptah.run/internal/mysqlgrants"
 )
 
-// session answers SHOW GRANTS with lines and SHOW VARIABLES with settings, as a
-// server does. Any other question is one [mysqlgrants.Read] has no reason to ask.
-func session(lines []string, settings map[string]string) dbtest.QueryHandler {
+// session answers SHOW GRANTS with lines, SHOW VARIABLES with settings and
+// CURRENT_ROLE() with current, as a server does. Any other question is one
+// [mysqlgrants.Read] has no reason to ask.
+func session(lines []string, settings map[string]string, current string) dbtest.QueryHandler {
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		answers := map[bool]dbtest.QueryResult{
-			true:  {Columns: []string{"Grants"}, Rows: valueRows(lines)},
-			false: {Columns: []string{"Variable_name", "Value"}, Rows: settingRows(settings)},
+		answers := map[string]dbtest.QueryResult{
+			"SHOW GRANTS":           {Columns: []string{"Grants"}, Rows: valueRows(lines)},
+			"SELECT CURRENT_ROLE()": {Columns: []string{"CURRENT_ROLE()"}, Rows: valueRows([]string{current})},
 		}
-		return answers[strings.TrimSpace(query) == "SHOW GRANTS"], nil
+		answer, known := answers[strings.TrimSpace(query)]
+		settingsAnswer := dbtest.QueryResult{Columns: []string{"Variable_name", "Value"}, Rows: settingRows(settings)}
+		return map[bool]dbtest.QueryResult{true: answer, false: settingsAnswer}[known], nil
 	}
 }
 
@@ -49,7 +52,9 @@ func TestRead_HappyPath(t *testing.T) {
 		lines    []string
 		settings map[string]string
 		// mariaDB is the server that prints a role's rows under the role's name.
-		mariaDB  bool
+		mariaDB bool
+		// current is what CURRENT_ROLE() answers.
+		current  string
 		database string
 		want     bool
 	}{
@@ -89,16 +94,28 @@ func TestRead_HappyPath(t *testing.T) {
 			want:     false,
 		},
 		{
-			// Measured on MySQL 8.4: with a role granted, the server used `f%`,
+			// Measured on MySQL 8.4: with a role active, the server used `f%`,
 			// which holds INSERT alone, and listed no trigger.
-			name: "MySQL does not rank wildcard rows while a role is granted",
+			name: "MySQL does not rank wildcard rows while a role is active",
 			lines: []string{
 				"GRANT INSERT ON `f%`.* TO `a`@`%`",
 				"GRANT TRIGGER ON `fx%`.* TO `a`@`%`",
 				"GRANT `r`@`%` TO `a`@`%`",
 			},
+			current:  "`r`@`%`",
 			database: "fx",
 			want:     false,
+		},
+		{
+			name: "MySQL ranks them while a granted role is not active",
+			lines: []string{
+				"GRANT INSERT ON `f%`.* TO `a`@`%`",
+				"GRANT TRIGGER ON `fx%`.* TO `a`@`%`",
+				"GRANT `r`@`%` TO `a`@`%`",
+			},
+			current:  "NONE",
+			database: "fx",
+			want:     true,
 		},
 		{
 			name: "MariaDB ranks them",
@@ -108,6 +125,7 @@ func TestRead_HappyPath(t *testing.T) {
 				"GRANT `r` TO `a`@`%`",
 			},
 			mariaDB:  true,
+			current:  "r",
 			database: "fx",
 			want:     true,
 		},
@@ -115,7 +133,7 @@ func TestRead_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(t, session(test.lines, test.settings))
+			db := dbtest.Open(t, session(test.lines, test.settings, test.current))
 
 			grants, err := mysqlgrants.Read(t.Context(), db.SQL, test.mariaDB)
 
@@ -136,11 +154,12 @@ func TestRead_FailurePath(t *testing.T) {
 	}{
 		{name: "what it holds", marker: "SHOW GRANTS", wantErr: `failed to read the connecting account's grants: refused`},
 		{name: "how grants apply", marker: "SHOW VARIABLES", wantErr: `failed to read the settings grants depend on: refused`},
+		{name: "which roles are active", marker: "CURRENT_ROLE", wantErr: `failed to read the session's active roles: refused`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			answer := session([]string{"GRANT ALL PRIVILEGES ON *.* TO `a`@`%`"}, nil)
+			answer := session([]string{"GRANT ALL PRIVILEGES ON *.* TO `a`@`%`"}, nil, "NONE")
 			db := dbtest.Open(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 				refused := map[bool]error{true: errors.New("refused"), false: nil}[strings.Contains(query, test.marker)]
 				result, _ := answer(query, args)

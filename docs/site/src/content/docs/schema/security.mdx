@@ -297,8 +297,10 @@ ptah schema security --db-url "$DATABASE_URL" --reach-error 75
 A role that reaches no more than `PUBLIC` does is not reported, because the
 `PUBLIC` finding already names that reach. On MariaDB a role may be granted to
 `PUBLIC`, and `PUBLIC` then reaches what that role reaches, and so does every
-other role. A role named in MySQL's `mandatory_roles` counts the same way,
-since the server grants it to every account.
+other role, through a grant on a table or on a whole database alike. A role
+named in MySQL's `mandatory_roles` counts the same way, since the server grants
+it to every account. A MySQL role named `PUBLIC` is a role like any other, held
+only by the roles and accounts it is granted to, and is measured as one.
 
 In `--format json`, `detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
 the reach passes through under `through`, and under `sources` the access a
@@ -355,8 +357,10 @@ across native commands.
   not the view is updatable.
 - On MySQL and MariaDB the rules measure roles, the principals the role read
   covers. A user account that holds broad grants directly is not measured, and
-  neither is a MySQL role on a host other than `%`. Where a measured role holds
-  such a role, the rules report themselves skipped.
+  neither is a MySQL role on a host other than `%`. Where a role holds such an
+  account, through `GRANT` of a login or of that role, or holds a name two
+  accounts share, the rules skip that role and every role that holds it, and
+  the skip names the account and the roles; the other roles are measured.
 - On MySQL a session's account and every role it has active share one lookup
   of the database-level rows, so a user's own row, or a second active role,
   can win over a role's row. The rules measure each role with only itself and
@@ -365,9 +369,9 @@ across native commands.
   from it. Under `SET ROLE ALL` its row on a database can win over another
   role's pattern, and the session reads less than that role alone: measured on
   MySQL 8.4.13 and 26.10.0, a session that activates only that role reads what
-  the pattern gives. Where a MySQL role is named `PUBLIC` beside a mandatory
-  role, the rules report themselves skipped, because the name reads as every
-  account.
+  the pattern gives. Where the read cannot read `mandatory_roles`, or a name
+  in it, or a MySQL role is named `PUBLIC` beside a mandatory role, every role
+  may hold roles the read does not state, and the rules skip every role.
 - Where Ptah cannot tell which of two rows the server applies, the finding
   counts every privilege of both, each under its own row, so it may show more
   than the server allows. That covers two MariaDB patterns with the same counts

@@ -79,7 +79,7 @@ func TestCompareWithDatabaseInfoRefusesARevokeAWiderGrantKeeps(t *testing.T) {
 		{
 			name:     "a system privilege",
 			dialect:  "oracle",
-			database: &catalog.Database{WideGrants: []catalog.WideGrant{{Role: "reader", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}}},
+			database: &catalog.Database{WideGrants: []catalog.WideGrant{{Role: "READER", Privilege: "SELECT", Grant: "SELECT ANY TABLE"}}},
 			want:     `(?s)role "reader" holds SELECT ANY TABLE, which covers table t2, so a revoke on the table cannot take it.*`,
 		},
 	}

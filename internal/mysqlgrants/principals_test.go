@@ -107,45 +107,56 @@ func TestNames_HappyPath(t *testing.T) {
 			names := &mysqlgrants.Names{MariaDB: test.mariaDB}
 			got := make([]string, 0, len(test.accounts))
 			for _, account := range test.accounts {
-				name, err := names.Name(account)
-				c.Assert(err, qt.IsNil)
-				got = append(got, name)
+				got = append(got, names.Name(account))
 			}
 			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(names.Collisions(), qt.HasLen, 0)
 		})
 	}
 }
 
-// TestNames_FailurePath refuses a role whose user name is the name a login on
-// another host reads as, since the two would share their grants.
-func TestNames_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	names := &mysqlgrants.Names{}
-	_, err := names.Name(mysqlgrants.Account{User: "app@localhost", Host: "%"})
-	c.Assert(err, qt.IsNil)
+// TestNames_Collisions records a role whose user name is the name a login on
+// another host reads as, since the two would share their grants, and a MariaDB
+// role named after a login that took the bare name: a caller names every role
+// first, and a role that arrives later would share the login's name. Both
+// accounts keep the name, and naming one again adds nothing.
+func TestNames_Collisions(t *testing.T) {
+	tests := []struct {
+		name     string
+		mariaDB  bool
+		accounts []mysqlgrants.Account
+		want     []string
+	}{
+		{
+			name:     "MySQL role named after a login on another host",
+			accounts: []mysqlgrants.Account{{User: "app@localhost", Host: "%"}, {User: "app", Host: "localhost"}, {User: "app", Host: "localhost"}},
+			want:     []string{"app@localhost", "app@localhost", "app@localhost"},
+		},
+		{
+			name:     "MariaDB login before a role of its name",
+			mariaDB:  true,
+			accounts: []mysqlgrants.Account{{User: "app", Host: "%"}, {User: "app"}},
+			want:     []string{"app", "app"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			names := &mysqlgrants.Names{MariaDB: test.mariaDB}
+			got := make([]string, 0, len(test.accounts))
+			for _, account := range test.accounts {
+				got = append(got, names.Name(account))
+			}
 
-	name, err := names.Name(mysqlgrants.Account{User: "app", Host: "localhost"})
+			collisions := names.Collisions()
 
-	c.Assert(err, qt.ErrorMatches, `the accounts 'app@localhost'@'%' and 'app'@'localhost' both read as the principal "app@localhost", .*`)
-	c.Assert(name, qt.Equals, "")
+			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(collisions, qt.DeepEquals, []mysqlgrants.Collision{{Name: test.want[0], Accounts: test.accounts[:2]}})
+		})
+	}
 }
 
 func TestRoleHost(t *testing.T) {
 	c := qt.New(t)
 	c.Assert([]string{mysqlgrants.Options{}.RoleHost(), mysqlgrants.Options{MariaDB: true}.RoleHost()}, qt.DeepEquals, []string{"%", ""})
-}
-
-// TestNames_FailurePathMariaDBLoginBeforeRole refuses a MariaDB role named
-// after a login that took the bare name: a caller names every role first, and
-// a role that arrives later would share the login's name.
-func TestNames_FailurePathMariaDBLoginBeforeRole(t *testing.T) {
-	c := qt.New(t)
-	names := &mysqlgrants.Names{MariaDB: true}
-	_, err := names.Name(mysqlgrants.Account{User: "app", Host: "%"})
-	c.Assert(err, qt.IsNil)
-
-	name, err := names.Name(mysqlgrants.Account{User: "app"})
-
-	c.Assert(err, qt.ErrorMatches, `the accounts 'app'@'%' and 'app'@'' both read as the principal "app", .*`)
-	c.Assert(name, qt.Equals, "")
 }

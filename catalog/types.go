@@ -119,6 +119,27 @@ type Database struct {
 	// depends on the member's other grants. The security analysis then reads
 	// that access from WideAccess and leaves the schema grants in Grants out.
 	SchemaGrantsInWideAccess bool `json:"-"`
+	// PublicIsRole reports a read in which PUBLIC names a role the read
+	// describes rather than every account: MySQL lets CREATE ROLE PUBLIC
+	// create one. A grant to PUBLIC, and a membership whose member is PUBLIC,
+	// are then that role's alone. Where it is false, PUBLIC is the grantee
+	// every account holds, and a membership whose member is PUBLIC is a role
+	// every account holds.
+	PublicIsRole bool `json:"-"`
+	// UnreadRoles are the principals whose privileges the read did not read
+	// and that a role it describes holds, or PUBLIC holds, through
+	// RoleMemberships: on MySQL and MariaDB a role on a host other than the
+	// one a role name alone means, an account created as a login and granted
+	// as a role, or a name two accounts read as. A role that holds one,
+	// directly, through a chain of memberships or through PUBLIC, holds
+	// privileges the read does not state. Sorted, and nil where there are none.
+	UnreadRoles []string `json:"-"`
+	// EveryAccountHoldsUnread reports a read that established that every
+	// account holds roles whose memberships it does not state: MySQL's
+	// mandatory_roles where the read could not read the setting or a name in
+	// it, or where a role named PUBLIC leaves no member to state them for.
+	// Every role then holds privileges the read does not state.
+	EveryAccountHoldsUnread bool `json:"-"`
 
 	// WideGrants are the table privileges a role holds on every table, or on
 	// every table of one schema, through a grant that names no table, such as
