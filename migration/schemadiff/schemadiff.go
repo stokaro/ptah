@@ -512,9 +512,10 @@ func validateDeclaredBeforeComparison(
 		return err
 	}
 	// So does a declared revoke on a table that a grant on the table's
-	// database, on every table or to PUBLIC keeps, where a REVOKE on a table
-	// takes only a grant on that table: the plan would find nothing under the
-	// table's name to take, or fail on a table it creates.
+	// database or on every table keeps, held by the grantee, by PUBLIC or by a
+	// role either holds, where a REVOKE on a table takes only a grant on that
+	// table: the plan would find nothing under the table's name to take, or
+	// fail on a table it creates.
 	if err := grantcover.Validate(info.Dialect, desired, database); err != nil {
 		return err
 	}

@@ -1580,6 +1580,16 @@ Ptah refuses a declared revoke on a table, existing or created, that such a
 grant keeps, and names the grant: revoke it where it was granted, or grant the
 privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
+The role also keeps what a role it is a member of holds, at any depth, and what
+`PUBLIC` or a role granted to `PUBLIC` holds, which on MySQL includes the roles
+in `mandatory_roles`. So the refusal counts those grants too, a grant on the
+table itself among them, and names the role that holds the grant. A membership
+the schema declares counts before the server holds it, and one the plan removes
+still counts. Measured on 8.4.13: with
+`parent` holding ``SELECT ON `gc%`.*`` and granted to `member`, `REVOKE SELECT
+ON gcdb.t1 FROM member` succeeds and a session with `member` active still
+reads `t1`.
+
 [`ptah schema security`](../../schema/security/#measure-how-much-of-the-database-a-role-reaches)
 counts these grants toward a role's reach, and the finding names a pattern
 grant. The server applies one database-level row of all those that reach the
