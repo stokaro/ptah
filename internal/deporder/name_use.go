@@ -47,14 +47,18 @@ func CodeNameUses(body, dialect string) []NameUse {
 	spans := dottedNameSpans(body, masks)
 	uses := make([]NameUse, 0, len(spans))
 	for _, span := range spans {
-		next := skipCodeSpace(body, masks, span.end)
-		uses = append(uses, NameUse{
-			Parts:    slices.Clone([]string(span.name)),
-			Call:     codeByteAt(body, masks, next, '(') || namesRoutine(body, masks, span.start),
-			Relation: codeByteAt(body, masks, next, '%') || standsForRelation(body, masks, span.start),
-		})
+		uses = append(uses, codeNameUse(body, masks, span))
 	}
 	return uses
+}
+
+func codeNameUse(body string, masks sqlMasks, span nameSpan) NameUse {
+	next := skipCodeSpace(body, masks, span.end)
+	return NameUse{
+		Parts:    slices.Clone([]string(span.name)),
+		Call:     codeByteAt(body, masks, next, '(') || namesRoutine(body, masks, span.start),
+		Relation: codeByteAt(body, masks, next, '%') || standsForRelation(body, masks, span.start),
+	}
 }
 
 // codeByteAt reports whether the code of body holds b at offset i, outside a

@@ -660,8 +660,10 @@ semicolon on every statement it sends.
 The down file `ptah migrations generate` writes for a changed routine creates
 it again with the body the database it was planned against held. When the up
 migration also drops a table the old body reads, the down file creates the
-routine before the table (stokaro/ptah#6721). The down migration succeeds and
-leaves the routine `INVALID`.
+table before the routine. Plans order routine creation after the tables and
+views its body reads, so those references resolve when Oracle compiles the
+routine. A routine that a table expression calls precedes that table, and a
+cycle between new objects is refused before SQL is returned.
 
 ## Revokes on a table
 

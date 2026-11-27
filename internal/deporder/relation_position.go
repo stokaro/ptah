@@ -55,6 +55,9 @@ type relationReader struct {
 	frames    []*relationFrame
 	relations []nameSpan
 	ctes      []*commonTable
+	// statements reads a routine's statements, where WITH may follow BEGIN
+	// and a semicolon ends a common table expression's scope.
+	statements bool
 	// castNext reports that the next parenthesis opens a CAST.
 	castNext bool
 }
@@ -136,6 +139,8 @@ func (r *relationReader) read() {
 				r.close(i)
 			case ',':
 				r.comma()
+			case ';':
+				r.finishStatement(i)
 			}
 		}
 		i = skipNonName(r.body, r.masks, i)
@@ -143,6 +148,16 @@ func (r *relationReader) read() {
 	for len(r.frames) > 0 {
 		r.pop(len(r.body))
 	}
+}
+
+func (r *relationReader) finishStatement(at int) {
+	if !r.statements || len(r.frames) != 1 {
+		return
+	}
+	for _, table := range r.top().declared {
+		table.scopeEnd = at
+	}
+	r.frames[0] = &relationFrame{}
 }
 
 // dottedNameAt reads the dotted name whose first part, part, starts at start
@@ -212,7 +227,7 @@ func (r *relationReader) name(span nameSpan) {
 func (r *relationReader) withClause(frame *relationFrame, span nameSpan, word string) bool {
 	switch frame.with {
 	case withNone:
-		if word != "with" || frame.started {
+		if word != "with" || frame.started && !r.statements {
 			return false
 		}
 		frame.started, frame.with = true, withName
