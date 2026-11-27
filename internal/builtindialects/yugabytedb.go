@@ -150,6 +150,7 @@ func yugabyteDB() descriptor.Dialect {
 			ExpressionProbes:   "pg-catalog",
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",
+			RoutineOverloads:   true,
 			QualifiedTypeNames: true,
 			// The kind GeneratedColumnDefault creates a column declared with
 			// none, so such a declaration compares equal to the column Ptah

@@ -342,7 +342,7 @@ func reverseSchemaDiffWithPrior(
 	// same absolute path, and an object it recreates held the same grants,
 	// partial revokes and privileges on routines.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
-	reversed.CurrentGrants = diff.CurrentGrants
+	reversed.CurrentGrants = routineGrantSnapshotsForRollback(diff, semantics)
 	reversed.CurrentPartialRevokes = diff.CurrentPartialRevokes
 	reversed.CurrentRoutinePrivileges = diff.CurrentRoutinePrivileges
 	// The same database's owners, as the forward change leaves them.

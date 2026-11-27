@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/offlinenames"
 	"ptah.run/internal/planner/notnullname"
 	"ptah.run/internal/planshape"
 	"ptah.run/internal/txrequire"
@@ -90,17 +91,40 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *d
 //     the dialect fails with an error satisfying errors.Is against
 //     ptaherr.ErrInvalidSchemaDiff, and a nil diff is refused the same way by
 //     every built-in planner rather than planned as an empty migration
+//   - on a dialect whose catalog compares names, such as SQL Server, a
+//     snapshot that neither leaves the names to that catalog nor carries
+//     names a connection resolved fails the same way: its rules say which
+//     names are one by a rule the server does not follow, and the checks
+//     below would trust them. A snapshot from
+//     schemadiff.ResolveIdentifierSemantics, or none, is planned
 //   - a dialect no planner is registered for fails with an error satisfying
 //     errors.Is against ptaherr.ErrUnsupportedDialect
 //   - a grant the comparison adds on a table, a view or a materialized view
 //     the plan removes fails with an error satisfying errors.Is against
 //     ptaherr.ErrUnsupportedFeature, whichever comes first in the plan
 //   - a diff that creates a schema, a table, a view, a materialized view, a
-//     sequence, a routine or a trigger and drops another of its kind whose
-//     name the dialect's identifier rules may read as the same name fails
-//     with an error satisfying errors.Is against ptaherr.ErrInvalidSchemaDiff:
-//     the drop would remove what the create made. Names in one schema whose
-//     own names have the same bytes are not such a pair
+//     sequence or a routine and drops another of its kind whose name the
+//     dialect's identifier rules may read as the same name fails with an
+//     error satisfying errors.Is against ptaherr.ErrInvalidSchemaDiff: the
+//     drop would remove what the create made. Names in one schema whose own
+//     names have the same bytes are not such a pair, except where the two
+//     are one object the plan would lose: two schemas so named on every
+//     dialect, and two routines of one kind so named on a dialect without
+//     routine overloading (descriptor.Comparison.RoutineOverloads). The
+//     comparison asks for neither, since a routine whose definition changes
+//     is a modification. On a dialect whose catalog compares names, such as
+//     SQL Server, a diff that carries no resolved snapshot has no rule that
+//     says two names are two, so every such pair whose spellings differ is
+//     refused
+//   - on a dialect that compares a role name under its catalog's rules, such
+//     as SQL Server, a diff that creates a role and drops another the rules
+//     may read as the same name fails the same way: the create would fail
+//     while the other role exists
+//   - a diff that creates an object of one kind and drops an object of
+//     another kind that the dialect keeps in the same namespace in a schema,
+//     under a name its rules may read as the same name, fails the same way:
+//     the create would run while the other object holds the name. A function
+//     and a procedure are two kinds here
 //   - a plan in which an owner operation shares a node with other work fails
 //     with an error satisfying errors.Is against [ErrInvalidPlan]: each owner
 //     operation is planned as a node of its own, so its verdict belongs to
@@ -134,6 +158,16 @@ func GenerateSchemaDiffASTWithOptions(
 			fmt.Errorf(
 				"%w: invalid identifier semantics snapshot",
 				ptaherr.ErrInvalidSchemaDiff,
+			),
+		)
+	}
+	if offlinenames.IgnoresCatalog(semantics, dialect) {
+		return nil, wrapPlanError(
+			dialect,
+			fmt.Errorf(
+				"%w: the identifier semantics compare table names by the %q rule, and %s compares names under "+
+					"the database collation; plan with the semantics a connection resolved, or with none",
+				ptaherr.ErrInvalidSchemaDiff, semantics.TableNames, dialect,
 			),
 		)
 	}

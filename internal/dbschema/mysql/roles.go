@@ -377,52 +377,6 @@ func withMandatory(roles []catalog.Role, memberships, mandatory []catalog.RoleMe
 	return append(memberships, mandatory...), false
 }
 
-// readMandatoryRoles reports each role MySQL's mandatory_roles names as held
-// by PUBLIC, every account's grantee, which is how MariaDB records a role
-// granted to every account.
-//
-// The server grants a mandatory role to every account, roles included, and
-// every account may make it active: measured on MySQL 8.4.13 and 26.10.0, a
-// login granted nothing reads a table the mandatory role reads after SET ROLE
-// of it, and on 26.10.0 without one, since it is active by default there. A
-// role holding it is refused (GRANT r TO a mandatory role is Error 4027, a
-// loop), and so is its revoke (Error 3628). Read as an ordinary role it is a
-// role with no members, and its access is no account's.
-//
-// information_schema.APPLICABLE_ROLES lists the mandatory roles that exist,
-// as the server parsed the setting, for any account that reads it. MariaDB
-// has no mandatory_roles and no IS_MANDATORY column.
-func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Names) ([]catalog.RoleMembership, error) {
-	if names.MariaDB {
-		return nil, nil
-	}
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT ROLE_NAME, ROLE_HOST
-		FROM information_schema.APPLICABLE_ROLES
-		WHERE IS_MANDATORY = 'YES'
-		ORDER BY ROLE_NAME, ROLE_HOST`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var memberships []catalog.RoleMembership
-	for rows.Next() {
-		var role mysqlgrants.Account
-		if err := rows.Scan(&role.User, &role.Host); err != nil {
-			return nil, err
-		}
-		name, err := names.Name(role)
-		if err != nil {
-			return nil, err
-		}
-		memberships = append(memberships, catalog.RoleMembership{Role: name, Member: publicGrantee})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return memberships, nil
-}
-
 // withoutPublic leaves MariaDB's PUBLIC out of the roles a read describes.
 // MariaDB keeps PUBLIC as a role row once something is granted to it, and the
 // row stays after the grant is revoked. It is the grantee every account

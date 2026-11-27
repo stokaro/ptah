@@ -198,7 +198,7 @@ func TestSchemaDiffFailsWhenTheSQLServerDevDatabaseOfTheProjectFileDoesNotAnswer
 
 			c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 			c.Assert(result.Stderr, qt.Contains, "two schema files planned for sqlserver are compared only under the names "+
-				"a connected server compares, so the dev database named in the project file must answer: connect to --dev-url: ")
+				"a connected server compares: connect to the dev database named in the project file: ")
 			c.Assert(result.Stdout, qt.Equals, "")
 		})
 	}

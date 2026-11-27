@@ -135,7 +135,8 @@ func TestBatchEnd(t *testing.T) {
 
 // TestStatementEnd writes the terminator and the batch end after a statement
 // a splitter returned. A T-SQL body that is not a BEGIN ... END block keeps
-// its last semicolon through the split, and takes no second one.
+// its last semicolon through the split, and so does a PL/SQL block; neither
+// takes a second one (stokaro/ptah#6755).
 func TestStatementEnd(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -151,6 +152,15 @@ func TestStatementEnd(t *testing.T) {
 		{name: "a SQL Server note", dialect: "sqlserver", statement: "-- NOTE: nothing to run"},
 		{name: "PostgreSQL", dialect: "postgres", statement: "DROP TABLE t", want: ";"},
 		{name: "a PostgreSQL note", dialect: "postgres", statement: "-- NOTE: nothing to run"},
+		{name: "an Oracle statement", dialect: "oracle", statement: "DROP FUNCTION f", want: ";"},
+		{
+			name: "an Oracle block that keeps its semicolon", dialect: "oracle",
+			statement: "CREATE OR REPLACE FUNCTION f RETURN NUMBER IS\nBEGIN\n  RETURN 1;\nEND;",
+		},
+		{
+			name: "an Oracle block with a comment after its end", dialect: "oracle",
+			statement: "CREATE OR REPLACE PROCEDURE p IS\nBEGIN\n  NULL;\nEND; -- done",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

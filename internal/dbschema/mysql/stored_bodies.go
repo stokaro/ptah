@@ -11,7 +11,6 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/internal/fanout"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/mysqlstored"
@@ -121,16 +120,12 @@ type storedBodyObject struct {
 // storedBodyRead finds the triggers and routines of schema the run keeps. The
 // selectors are asked about every table and view as well, since a trigger
 // leaves with its table and an include selector names the tables it keeps.
-// Each object is named in dbName. The read names functions and views so
-// already; a trigger or a table gets dbName here, the database [inDatabase]
-// gives it where the read describes the server. Where the connection selected
-// dbName, current is dbName too, and the selectors read an unqualified name in
-// it.
+// Each object is named in dbName: the read names none of them, and each gets
+// dbName here, the database [inDatabase] gives it where the read describes the
+// server. Where the connection selected dbName, current is dbName too, and the
+// selectors read an unqualified name in it.
 func (r *Reader) storedBodyRead(ctx context.Context, account sessionAccount, dbName, current string, schema *catalog.Database) storedBodyRead {
-	read := storedBodyRead{dialect: platform.MySQL}
-	if account.mariaDB {
-		read.dialect = platform.MariaDB
-	}
+	read := storedBodyRead{dialect: account.dialect()}
 	scope := readscope.Read{Dialect: read.dialect, Current: current}
 	if readscope.Needs(ctx, readscope.Triggers) {
 		for index := range schema.Triggers {
@@ -145,7 +140,7 @@ func (r *Reader) storedBodyRead(ctx context.Context, account sessionAccount, dbN
 		for index := range schema.Functions {
 			routine := &schema.Functions[index]
 			scope.Objects = append(scope.Objects, readscope.Object{
-				Kind: readscope.Routines, Schema: routine.Schema, Name: routine.Name,
+				Kind: readscope.Routines, Schema: cmp.Or(routine.Schema, dbName), Name: routine.Name,
 			})
 			read.bodies = append(read.bodies, storedBodyObject{kind: strings.ToUpper(routine.Kind), name: routine.Name, body: &routine.Body})
 		}
@@ -157,7 +152,7 @@ func (r *Reader) storedBodyRead(ctx context.Context, account sessionAccount, dbN
 		scope.Objects = append(scope.Objects, readscope.Object{Kind: readscope.Tables, Schema: cmp.Or(table.Schema, dbName), Name: table.Name})
 	}
 	for _, view := range schema.Views {
-		scope.Objects = append(scope.Objects, readscope.Object{Kind: readscope.Views, Schema: view.Schema, Name: view.Name})
+		scope.Objects = append(scope.Objects, readscope.Object{Kind: readscope.Views, Schema: cmp.Or(view.Schema, dbName), Name: view.Name})
 	}
 	kept := readscope.Keeps(ctx, scope)
 	bodies := read.bodies[:0]

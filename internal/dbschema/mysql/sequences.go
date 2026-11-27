@@ -90,7 +90,7 @@ func (r *Reader) sequenceNames(ctx context.Context, dbName string) ([]string, er
 // sets and treats an unset one as unmanaged, so a fully populated read against a
 // declaration that named nothing produces no change.
 func (r *Reader) readSequenceOptions(ctx context.Context, dbName, name string) (catalog.Sequence, error) {
-	sequence := catalog.Sequence{Name: name, Schema: dbName, DataType: "bigint"}
+	sequence := catalog.Sequence{Name: name, DataType: "bigint"}
 	var start, increment, minValue, maxValue, cache int64
 	var cycle bool
 

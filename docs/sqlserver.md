@@ -97,16 +97,36 @@ runtime, and returns an error when its inputs or a provider fail. A caller must
 handle that error before using the diff.
 
 An offline `CompareWithDialect(..., "sqlserver")` call cannot know the target
-collation. It confirms only exact-spelling identity. Two ASCII names that
-differ beyond ASCII case are assumed to be two names, which a collation with
-contractions breaks: `Hungarian_CI_AS` reads `ccs` as `cscs`, and an offline
-plan between them creates one routine and drops the other. Names that differ
-only in ASCII case, and a name that holds a non-ASCII character, are treated as
-potential conflicts, the latter with any other name of its kind in any schema,
-because a target collation may equate them by case, accent, locale, kana, or
-width. Planning rejects that ambiguity before emitting SQL. This can make
-dialect-only SQL Server planning stricter than live planning, and it is never
-safer: plan with a resolved snapshot.
+collation. It confirms only exact-spelling identity, and planning refuses
+before emitting SQL where it cannot tell two names apart:
+
+- Every plan that creates an object and drops another of its kind, unless the
+  two are spelled alike: in one schema, written the same way, with an
+  unqualified name in `dbo`. No offline rule says that two names are two under
+  every collation: `Hungarian_CI_AS` reads `ccs` as `cscs`, so a plan that
+  creates one routine and drops the other would leave neither. Two functions
+  or two procedures spelled alike are one routine, since SQL Server has no
+  routine overloading, so that pair is refused too, offline or not.
+- A plan that creates a role and drops another whose name may be the same.
+  The offline rules for a role are the ones for objects of two kinds, because
+  `CREATE ROLE` fails while the other role exists and nothing is lost. The
+  comparison never drops a role, so only a diff built by hand carries such a
+  pair; offline, a role declared in another case than the database holds it is
+  planned as `CREATE ROLE`, which a case-insensitive database refuses with
+  error 15023.
+- Two declarations whose names differ only in ASCII case, and a name that holds
+  a non-ASCII character beside another name of its kind that may be the same
+  name part by part, schema and object name. A target collation may equate
+  them by case, accent, locale, kana, or width.
+- Objects of two kinds that share a schema's namespace, tables, views,
+  functions, procedures and sequences, whose names may be one. Two ASCII names
+  that differ beyond case are two names here.
+- Identifier semantics that are neither the offline rules nor a snapshot a
+  connection resolved, because they say which names are one by a rule SQL
+  Server does not follow.
+
+This makes dialect-only SQL Server planning stricter than live planning, and it
+is never safer: plan with a resolved snapshot.
 
 A caller that compares two states neither of which is a live database, and
 holds a connection to a SQL Server whose collation the target shares, asks it

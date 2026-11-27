@@ -63,7 +63,7 @@ func TestOracleForeignKeyDeferralE2E(t *testing.T) {
 	defer cancel()
 	binary := filepath.Join(c.TempDir(), "ptah")
 	buildPtah(c, ctx, e2eRepoRoot(t), binary)
-	account, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
 	runAsAccount(c, ctx, conn, []string{
 		`CREATE TABLE parent (id NUMBER(10) PRIMARY KEY)`,
 		`CREATE TABLE child (id NUMBER(10) PRIMARY KEY, parent_id NUMBER(10), ` +
@@ -78,11 +78,10 @@ func TestOracleForeignKeyDeferralE2E(t *testing.T) {
 	inspected, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
 		"schema", "inspect", "--db-url", dbURL, "--format", "sql")
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	schema := strings.ToUpper(account)
 	c.Assert(inspected, qt.Contains,
-		"ADD CONSTRAINT FK_CHILD_PARENT FOREIGN KEY (PARENT_ID) REFERENCES "+schema+".PARENT (ID);")
+		"ADD CONSTRAINT FK_CHILD_PARENT FOREIGN KEY (PARENT_ID) REFERENCES PARENT (ID);")
 	c.Assert(inspected, qt.Contains,
-		"ADD CONSTRAINT FK_DCHILD_PARENT FOREIGN KEY (PARENT_ID) REFERENCES "+schema+".PARENT (ID) DEFERRABLE INITIALLY DEFERRED;")
+		"ADD CONSTRAINT FK_DCHILD_PARENT FOREIGN KEY (PARENT_ID) REFERENCES PARENT (ID) DEFERRABLE INITIALLY DEFERRED;")
 
 	compared, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
 		"schema", "compare", "--db-url", dbURL, "--schema-file", writeDeclaredSchema(c, inspected))

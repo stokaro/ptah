@@ -177,9 +177,9 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	if err != nil {
 		return AppliedResult{}, appliedError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}
-	// Where a schema is a database, the replay's views, routines and sequences
-	// carry the shadow database's name. They are the target's own objects, so
-	// they are compared under the target's database.
+	// Where a schema is a database, the replay's grants name the shadow
+	// database. They are the target's own grants, so they are compared under
+	// the target's database.
 	shadowSchema = atlasschema.RebindDatabase(shadowSchema, shadowConn.Info(), opts.TargetConn.Info())
 	replayed, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, shadowSchema, opts.TargetConn.Info().Dialect, opts.Runtime)
 	if err != nil {

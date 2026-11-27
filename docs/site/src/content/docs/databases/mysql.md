@@ -1256,9 +1256,62 @@ lists the columns and nothing else from the table above, on top of what
 [emptying a dev database](#dev-database-cleanup-privileges) takes. A view or routine
 that came back without a body is still refused, because it has another definer.
 
+A read through a URL that names one database names its views, routines,
+triggers and, on MariaDB, sequences without that database, as it names its
+tables. The server stores a view body with each relation of the view's own
+database qualified by that database, and the read takes the qualifier off; a
+relation of another database keeps its name. So the rollback
+`ptah migrations down --plan` derives from a shadow database, the checkpoint
+`ptah migrations checkpoint` writes from one, and the migration
+`ptah migrations generate --replay` writes from a dev database name neither
+database and run in the database they are applied to. An event is not among
+them: Ptah does not model [events](#events), so a derived rollback leaves one as
+it is and names it on standard error.
+
+```sql
+CREATE FUNCTION `f_double`(x int) RETURNS int DETERMINISTIC SQL SECURITY DEFINER RETURN x * 2
+CREATE SQL SECURITY DEFINER VIEW `v` AS
+select `t`.`id` AS `id`,`f_double`(`t`.`n`) AS `d` from `t`
+```
+
+MariaDB stores a column default that reads a sequence with the database, as
+``nextval(`app`.`s`)`` for `DEFAULT NEXTVAL(s)`, and the read takes the
+database off there too: the rollback creates the table drawing from the
+sequence of the database it runs in, and `ptah schema apply` of
+`DEFAULT NEXTVAL(s)` finds nothing to change on the next run. A default that
+reads another database's sequence keeps that database.
+
+A database on the target's server that has the shadow or the dev database's
+name is left alone. A read through a URL that names no database describes the
+whole server and names the database of each object, since there the name is
+what tells the objects of one database from another's.
+
+`ptah schema inspect` through a URL that names one database writes view bodies
+without that database too. A comparison takes the view's own database off the
+declared body and off the body it reads, with the same recognition of a
+qualifier, whether the URL names one database or none. So a declaration that
+names the view's own database, as an inspection of the whole server writes it,
+plans no change. On a server started with `lower_case_table_names` 1 or 2 the
+qualifier matches in any case, as the server matches it, so `APP.t` in a
+declared view of `app` is that view's own table. With
+`lower_case_table_names=0`, `APP` is another database. A body that names
+another database is another query.
+
 `schema diff` compares a migration directory's views with views in the target
 database even when the dev and target databases have different names. A view
 whose body is the same reports no change; a changed body still produces a plan.
+
+The server stores a join in a spelling of its own. MySQL stores
+`FROM t INNER JOIN u AS a ON a.id = t.id` as
+``from (`t` join `u` `a` on((`a`.`id` = `t`.`id`)))``, and MariaDB writes
+one pair of parentheses after `on`. A comparison reads the two spellings
+alike: the parentheses that open a `FROM` clause of joins, the parentheses
+around a whole `ON` condition, `AS` before a table alias, and `INNER`,
+`CROSS` and `OUTER` in a join keyword. A declared join of the same query
+plans nothing. The server also writes `t RIGHT JOIN u` as `u left join t`,
+`USING (id)` as an `ON` condition and `FROM t, u` as `from t join u`. A
+comparison does not read those, so a view declared with one of them is
+replaced on every apply.
 
 `migrations drift` and `migrations up --check-drift` replay the applied history in a
 shadow database and compare it with the target. A view, a routine, or on MariaDB a
@@ -1473,6 +1526,14 @@ server refuses to grant a mandatory role to another role (ERROR 4027) or to
 revoke it (ERROR 3628). A MySQL role may be named `PUBLIC`; beside a mandatory
 role, the read records no such membership and the reach rules report
 themselves skipped.
+
+The mandatory-role read also works when the connection sets
+`default_collation_for_utf8mb4=utf8mb4_general_ci`. It keeps user names distinct
+by case and preserves the host spelling in the server setting. Use the stored
+account's host spelling in `mandatory_roles`: MySQL can find `reader@localhost`
+as `reader@LOCALHOST` yet activate it without the stored account's privileges.
+A login named in the setting is also recorded as a mandatory account; an
+account that does not exist is not recorded.
 
 Each role is read with the grants it holds itself, the ones `SHOW GRANTS FOR`
 lists under its name, and not with what it holds through the roles granted to

@@ -159,9 +159,9 @@ func TestDBReadOracleQuotedNamesReplayE2E(t *testing.T) {
 
 	c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", read.Stdout, read.Stderr))
 	c.Assert(read.Stdout, qt.Contains, `CREATE ROLE "`+role+`";`)
-	c.Assert(read.Stdout, qt.Contains, "CREATE TABLE "+account.name+`."qt_q" (`)
-	c.Assert(read.Stdout, qt.Contains, "GRANT SELECT ON "+account.name+`."qt_q" TO "PUBLIC";`)
-	c.Assert(read.Stdout, qt.Contains, "GRANT SELECT ON "+account.name+`."qt_q" TO "`+role+`";`)
+	c.Assert(read.Stdout, qt.Contains, `CREATE TABLE "qt_q" (`)
+	c.Assert(read.Stdout, qt.Contains, `GRANT SELECT ON "qt_q" TO "PUBLIC";`)
+	c.Assert(read.Stdout, qt.Contains, `GRANT SELECT ON "qt_q" TO "`+role+`";`)
 	execOracle(c.Context(), c, account.admin, "DROP TABLE "+account.name+`."qt_q" PURGE`)
 	execOracle(c.Context(), c, account.admin, `DROP ROLE "`+role+`"`)
 	c.Assert(account.roles(c, role), qt.IsNil)

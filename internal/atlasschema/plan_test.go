@@ -384,7 +384,7 @@ func TestReadPlanFileValidatesContract(t *testing.T) {
 			name:     "rounding_of_a_column_no_statement_names",
 			contents: roundingPlan(`{"table":"prices","column":"id","held_type":"DECIMAL(8,3)","declared_type":"DECIMAL(8,1)"}`),
 			want: `invalid plan file .*: plan rounding 1 is not a change the plan records: ` +
-				`no statement of the plan names column "id" of table "prices"`,
+				`no statement of the plan changes the type of column "id" of table "prices"`,
 		},
 		{
 			name: "row_sets_without_rows_fingerprint",

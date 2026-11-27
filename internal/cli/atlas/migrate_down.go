@@ -301,7 +301,7 @@ func runAtlasMigrateDownFormat(
 	// rollback that has something to verify; see [devreach]. A docker:// URL
 	// is parsed and no container is started.
 	if plan.Noop() {
-		if _, err := devreach.Server(cmd.Context(), conn.Info().Dialect, "dev-url", opts.devURL, dbcli.DefaultConnectTimeout); err != nil {
+		if _, err := devreach.Server(cmd.Context(), conn.Info().Dialect, "--dev-url", opts.devURL, dbcli.DefaultConnectTimeout); err != nil {
 			return err
 		}
 	}

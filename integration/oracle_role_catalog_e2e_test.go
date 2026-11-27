@@ -157,9 +157,9 @@ func TestOracleRolesAndGrantsAreReadWithPrivilegeE2E(t *testing.T) {
 	c.Assert(described.Superuser, qt.IsFalse)
 
 	c.Assert(oracleGrantSummary(read.Grants, role), qt.DeepEquals, []string{
-		"TABLE " + account + ".RC_DOCS INSERT",
-		"TABLE " + account + ".RC_DOCS SELECT",
-		"TABLE " + account + ".RC_TITLES SELECT",
+		"TABLE RC_DOCS INSERT",
+		"TABLE RC_DOCS SELECT",
+		"TABLE RC_TITLES SELECT",
 	})
 
 	// The round trip. The declaration names the same role and the same four
@@ -360,7 +360,10 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
-	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, before, platform.Oracle, must.Must(builtin.New())))
+	// Compared through the connection, as an apply compares: the read names
+	// the account's table without the account, and the declaration names the
+	// grant's table with it, which only the connection's schema pairs.
+	diff := must.Must(schemadiff.CompareWithDatabase(t.Context(), conn, declared, before, nil, must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
@@ -387,7 +390,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleRoleNames(after.Roles), qt.Contains, role)
 
-	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), declared, after, platform.Oracle, must.Must(builtin.New())))
+	settled := must.Must(schemadiff.CompareWithDatabase(t.Context(), conn, declared, after, nil, must.Must(builtin.New())))
 	c.Assert(oracleRoleDiffSummary(settled), qt.DeepEquals, []string(nil))
 
 	// And the plan the settled comparison produces is empty, which is the

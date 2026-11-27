@@ -509,7 +509,7 @@ func resolveGeneratedExpressions(
 	if len(probes) == 0 {
 		// Nothing needs asking, and a --dev-url that was given is still
 		// opened, so one nothing answers on fails the run; see [devreach].
-		_, err := devreach.Server(ctx, info.Dialect, devURLFlag, opts.devURL, connectTimeout)
+		_, err := devreach.Server(ctx, info.Dialect, "--"+devURLFlag, opts.devURL, connectTimeout)
 		return nil, err
 	}
 	if strings.TrimSpace(opts.devURL) == "" {

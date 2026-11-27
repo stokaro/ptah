@@ -77,7 +77,7 @@ func TestSchemaApplyOracleRefusesToTakeOnlyAGrantOptionE2E(t *testing.T) {
 		"--auto-approve")
 
 	c.Assert(planned.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
-	c.Assert(planned.Stderr, qt.Contains, "oracle: cannot take the grant option on SELECT ON "+account.name+".T48 from \""+
+	c.Assert(planned.Stderr, qt.Contains, "oracle: cannot take the grant option on SELECT ON T48 from \""+
 		account.user+"\" and leave the privilege: Oracle has no statement for it")
 	c.Assert(declared.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", declared.Stdout, declared.Stderr))
 	c.Assert(declared.Stderr, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON TABLE t48 FROM "+account.user+

@@ -846,6 +846,7 @@ func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 		out = append(out, catalog.Function{
 			Facets:     function.Facets,
 			Name:       name,
+			Kind:       function.Kind,
 			Schema:     schema,
 			Parameters: function.Parameters,
 			Returns:    function.Returns,

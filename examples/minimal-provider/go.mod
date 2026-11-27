@@ -4,10 +4,10 @@ go 1.26.5
 
 require (
 	github.com/frankban/quicktest v1.14.6
-	google.golang.org/grpc v1.86.0-dev
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.1
-	ptah.run/provider-sdk v0.45.0
+	ptah.run/provider-sdk v0.45.1
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261118221215-c8830f628b3f // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect

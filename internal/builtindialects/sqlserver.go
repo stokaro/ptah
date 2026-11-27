@@ -213,6 +213,11 @@ END`,
 			GeneratedColumnTypesDerived: true,
 			// An index renamed only in case is rebuilt under the declared spelling.
 			RespelledIndexReplaced: true,
+			// sys.objects holds every one of these kinds in one namespace per
+			// schema. Measured on SQL Server 2022 and 2025: CREATE TABLE beside
+			// a view of that name fails with error 2714, and CREATE OR ALTER
+			// PROCEDURE beside one with error 2010.
+			SharedObjectNamespace: descriptor.ObjectNamespace{Tables: true, Views: true, Routines: true, Sequences: true},
 		},
 
 		// An enum column is NVARCHAR(255) with a CHECK over the bracketed

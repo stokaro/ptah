@@ -85,7 +85,7 @@ func (r *Reader) readRowPolicies(ctx context.Context, dbName string, held func(s
 		if row.table == "" {
 			read.unread = append(read.unread, schemaext.SubjectCoverage{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", "*", row.name),
 				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: fmt.Sprintf(
-					"the policy is written ON %s.*, for every table of the database, which Ptah does not model; the plan keeps the policy", dbName)}})
+					"the policy is written ON %s.*, for every table of the database, which Ptah does not model", dbName)}})
 			continue
 		}
 		ref := chschema.RowPolicyRef("", row.table, row.name)
@@ -195,9 +195,9 @@ func (r *Reader) readRelationEngines(ctx context.Context, dbName string) (map[st
 // as a table is not described.
 func unreadRelationReason(table, engine string) string {
 	if revisiontable.IsNative(table) {
-		return fmt.Sprintf("the policy is on %q, Ptah's own bookkeeping table, which the read leaves out; the plan keeps the policy", table)
+		return fmt.Sprintf("the policy is on %q, Ptah's own bookkeeping table, which the read leaves out", table)
 	}
-	return fmt.Sprintf("the policy is on %q (engine %s), which the read does not describe as a table; the plan keeps the policy", table, engine)
+	return fmt.Sprintf("the policy is on %q (engine %s), which the read does not describe as a table", table, engine)
 }
 
 // rowPolicyCoverage is what a read knows about row policies: every one on a

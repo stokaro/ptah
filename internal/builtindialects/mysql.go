@@ -214,6 +214,7 @@ func mysql() descriptor.Dialect {
 			RoutineNamesFold:               true,
 			RoutineTypeAliases:             "mysqlroutine",
 			ViewPredicatesAsIntegers:       true,
+			ViewJoinsParenthesized:         true,
 			ViewSQLSecurity:                true,
 			AutoIncrementFlag:              true,
 			// MySQL 26.10 stores the default (2 * 3 + 1) as ((2 * 3) + 1).

@@ -15,14 +15,23 @@ import (
 )
 
 // sequenceDefaultTables declares things with a column n whose default is
-// field's, and holds THINGS in schema APP with N defaulting to held.
-func sequenceDefaultTables(field schemamodel.Field, held string) (*schemamodel.Database, catalog.Table) {
+// field's, and holds THINGS in schema heldSchema of the account APP with N
+// defaulting to held.
+func sequenceDefaultTables(field schemamodel.Field, held, heldSchema string) (*schemamodel.Database, catalog.Table) {
 	desired := declaredTable("things")
 	field.StructName, field.Name, field.Type, field.Nullable = "things", "n", "NUMBER", true
 	desired.Fields = append(desired.Fields, field)
 	table := heldTable("THINGS", "N")
+	table.Schema = heldSchema
 	table.Columns[1].ColumnDefault = &held
 	return desired, table
+}
+
+// heldSequenceSchemas are the schemas a catalog may name the held table with:
+// none, as a read of the account names its own tables, and the account.
+var heldSequenceSchemas = []struct{ name, schema string }{
+	{name: "read of the account", schema: ""},
+	{name: "named with the account", schema: "APP"},
 }
 
 // changedDefaults names the columns whose default a comparison plans to
@@ -44,8 +53,10 @@ func changedDefaults(diff *difftypes.SchemaDiff) []string {
 // TestCompareWithDatabaseInfo_SequenceDefault_HappyPath compares a declared
 // Oracle default reading a sequence with the one Oracle stores for it, which
 // qualifies and quotes an unqualified reference and keeps a qualified one as
-// written. Each pair reads one sequence, so the comparison plans nothing.
-// Compared as text, every apply plans the default again.
+// written. Each pair reads one sequence, so the comparison plans nothing,
+// whether the catalog names the table with the account or not: an
+// unqualified reference resolves to the connection's account where the table
+// names none. Compared as text, every apply plans the default again.
 func TestCompareWithDatabaseInfo_SequenceDefault_HappyPath(t *testing.T) {
 	rows := []struct {
 		name, declared, held string
@@ -56,17 +67,19 @@ func TestCompareWithDatabaseInfo_SequenceDefault_HappyPath(t *testing.T) {
 		{name: "a quoted sequence", declared: `"Seq".NEXTVAL`, held: `"APP"."Seq"."NEXTVAL"`},
 		{name: "an operator", declared: "seq.NEXTVAL + 1", held: `"APP"."SEQ"."NEXTVAL"+1`},
 	}
-	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			c := qt.New(t)
-			desired, held := sequenceDefaultTables(schemamodel.Field{DefaultExpr: row.declared}, row.held)
+	for _, schema := range heldSequenceSchemas {
+		for _, row := range rows {
+			t.Run(schema.name+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
+				desired, held := sequenceDefaultTables(schemamodel.Field{DefaultExpr: row.declared}, row.held, schema.schema)
 
-			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{StoredNames: true, Tables: []catalog.Table{held}},
-				oracleRead(), nil, must.Must(builtin.New()))
+				diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{StoredNames: true, Tables: []catalog.Table{held}},
+					oracleRead(), nil, must.Must(builtin.New()))
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(changedDefaults(diff), qt.HasLen, 0)
-		})
+				c.Assert(err, qt.IsNil)
+				c.Assert(changedDefaults(diff), qt.HasLen, 0)
+			})
+		}
 	}
 }
 
@@ -85,17 +98,19 @@ func TestCompareWithDatabaseInfo_SequenceDefault_Changed(t *testing.T) {
 		{name: "a declared string", field: schemamodel.Field{Default: "seq.NEXTVAL", DefaultSet: true}, held: `"APP"."SEQ"."NEXTVAL"`},
 		{name: "a held string", field: schemamodel.Field{DefaultExpr: "seq.NEXTVAL"}, held: "'seq.NEXTVAL'"},
 	}
-	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			c := qt.New(t)
-			desired, held := sequenceDefaultTables(row.field, row.held)
+	for _, schema := range heldSequenceSchemas {
+		for _, row := range rows {
+			t.Run(schema.name+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
+				desired, held := sequenceDefaultTables(row.field, row.held, schema.schema)
 
-			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{StoredNames: true, Tables: []catalog.Table{held}},
-				oracleRead(), nil, must.Must(builtin.New()))
+				diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, &catalog.Database{StoredNames: true, Tables: []catalog.Table{held}},
+					oracleRead(), nil, must.Must(builtin.New()))
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(changedDefaults(diff), qt.DeepEquals, []string{"n"})
-		})
+				c.Assert(err, qt.IsNil)
+				c.Assert(changedDefaults(diff), qt.DeepEquals, []string{"n"})
+			})
+		}
 	}
 }
 
@@ -218,5 +233,50 @@ func TestCompareWithDatabaseInfo_SQLServerNextValueName_CaseSensitive(t *testing
 
 	diff := sqlServerCollatedSequenceDefault(c, semantics)
 
+	c.Assert(changedDefaults(diff), qt.DeepEquals, []string{"n"})
+}
+
+// TestCompareWithDialect_SequenceDefault_HappyPath compares a declared Oracle
+// default reading the account's own sequence with a read of the account,
+// which names the sequence without the account, with no connection to say
+// which account was read. Each pair reads one sequence, so the comparison
+// plans nothing.
+func TestCompareWithDialect_SequenceDefault_HappyPath(t *testing.T) {
+	rows := []struct {
+		name, declared, held string
+	}{
+		{name: "unqualified", declared: "seq.NEXTVAL", held: `"SEQ"."NEXTVAL"`},
+		{name: "CURRVAL", declared: "seq.CURRVAL", held: `"SEQ"."CURRVAL"`},
+		{name: "a quoted sequence", declared: `"Seq".NEXTVAL`, held: `"Seq"."NEXTVAL"`},
+		{name: "an operator", declared: "seq.NEXTVAL + 1", held: `"SEQ"."NEXTVAL"+1`},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, held := sequenceDefaultTables(schemamodel.Field{DefaultExpr: row.declared}, row.held, "")
+
+			diff, err := schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{StoredNames: true, Tables: []catalog.Table{held}},
+				"oracle", must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(changedDefaults(diff), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCompareWithDialect_SequenceDefaultNamingTheAccount compares, with no
+// connection, a default declared with the account's name against the default
+// a read of that account holds, which names no account. Nothing says the
+// account is APP, so the two read as two sequences and the comparison plans
+// the default; [schemadiff.CompareWithDatabaseInfo] knows the account and
+// pairs them.
+func TestCompareWithDialect_SequenceDefaultNamingTheAccount(t *testing.T) {
+	c := qt.New(t)
+	desired, held := sequenceDefaultTables(schemamodel.Field{DefaultExpr: "app.seq.NEXTVAL"}, `"SEQ"."NEXTVAL"`, "")
+
+	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, &catalog.Database{StoredNames: true, Tables: []catalog.Table{held}},
+		"oracle", must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
 	c.Assert(changedDefaults(diff), qt.DeepEquals, []string{"n"})
 }

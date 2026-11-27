@@ -149,6 +149,29 @@ func ViewBody(body, dialect, from, to string) string {
 	return rewritten
 }
 
+// RespellViewBody spells each database qualifier of a view body as respell
+// answers for the name it spells: a qualifier respell answers with another
+// name is written as that name, quoted for dialect, and one it answers
+// unchanged keeps its text. It recognizes a qualifier as [ViewBody] does, so an
+// alias, the table in front of a column and a name inside a string are left
+// alone, and only bare and dialect-quoted identifiers are rewritten.
+func RespellViewBody(body, dialect string, respell func(name string) string) string {
+	const head = "CREATE VIEW v AS "
+	statement := head + body
+	tokens := sqlreach.SignificantTokens(statement, sqlreach.DialectUsesBackslashEscapes(dialect), dialect)
+	for _, position := range slices.Backward(Positions(tokens)) {
+		token := tokens[position]
+		if token.Type != lexer.TokenIdentifier || token.Start < len(head) {
+			continue
+		}
+		name := Name(token)
+		if spelled := respell(name); spelled != name {
+			statement = statement[:token.Start] + sqlident.Quote(dialect, spelled) + statement[token.End:]
+		}
+	}
+	return strings.TrimPrefix(statement, head)
+}
+
 // LocalViewBody removes database from proven relation references in a stored
 // view body. It keeps two-part column expressions. An expression with three
 // or more parts starting with database is refused, even when an alias binds

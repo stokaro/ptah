@@ -25,14 +25,17 @@ func answeringSynonyms(rows [][]driver.Value) dbtest.QueryHandler {
 }
 
 // TestReader_ReadsSynonyms reads the schema's synonyms as the owner's objects,
-// with the target in owner.object form as Oracle records it, and records a
-// synonym through a database link as unrepresentable rather than as an
-// object: a declaration has no place for the link.
+// named without the account the read describes. A target the account owns is
+// written without the account too, and one another account owns as
+// owner.object, as Oracle records it. A synonym through a database link is
+// recorded as unrepresentable rather than as an object: a declaration has no
+// place for the link.
 func TestReader_ReadsSynonyms(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, answeringSynonyms([][]driver.Value{
 		{"ORDERS_ALIAS", "APP", "ORDERS", nil},
 		{"REMOTE_ALIAS", "SALES", "ORDERS", "SALES_LINK"},
+		{"SALES_ALIAS", "SALES", "ORDERS", nil},
 	}))
 
 	live, err := oracle.NewOracleReader(db.SQL, "app").ReadSchema()
@@ -40,9 +43,11 @@ func TestReader_ReadsSynonyms(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	objects, err := live.FeatureObjects.All()
 	c.Assert(err, qt.IsNil)
-	c.Assert(objects, qt.DeepEquals, []schemaext.Object{synonym.ObservedObject(synonym.ObservedSynonym{
-		Synonym: synonym.Synonym{Schema: "APP", Name: "ORDERS_ALIAS", Target: "APP.ORDERS"}})})
-	remote := synonym.Synonym{Schema: "APP", Name: "REMOTE_ALIAS"}.Ref()
+	c.Assert(objects, qt.DeepEquals, []schemaext.Object{
+		synonym.ObservedObject(synonym.ObservedSynonym{Synonym: synonym.Synonym{Name: "ORDERS_ALIAS", Target: "ORDERS"}}),
+		synonym.ObservedObject(synonym.ObservedSynonym{Synonym: synonym.Synonym{Name: "SALES_ALIAS", Target: "SALES.ORDERS"}}),
+	})
+	remote := synonym.Synonym{Name: "REMOTE_ALIAS"}.Ref()
 	c.Assert(live.FeatureCoverage.Lookup(synonym.Kind, remote).State, qt.Equals, schemaext.Unrepresentable)
-	c.Assert(live.FeatureCoverage.Lookup(synonym.Kind, synonym.Synonym{Schema: "APP", Name: "OTHER"}.Ref()).State, qt.Equals, schemaext.Complete)
+	c.Assert(live.FeatureCoverage.Lookup(synonym.Kind, synonym.Synonym{Name: "OTHER"}.Ref()).State, qt.Equals, schemaext.Complete)
 }

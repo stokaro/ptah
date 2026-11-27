@@ -446,7 +446,7 @@ func checkAtlasSchemaApplyDevURL(ctx context.Context, url, devURL string) error 
 	if err != nil {
 		dialect = ""
 	}
-	_, err = devreach.Server(ctx, dialect, "dev-url", devURL, dbcli.DefaultConnectTimeout)
+	_, err = devreach.Server(ctx, dialect, "--dev-url", devURL, dbcli.DefaultConnectTimeout)
 	return err
 }
 

@@ -112,6 +112,10 @@ type Parser struct {
 	// refuseModifyReferences and refuseMySQLColumnConstraint, read it here
 	// because the column parser is shared by all three statements.
 	modifyColumn bool
+	// columnTypesOnly limits the result to explicit type conversions, without
+	// interpreting omitted properties as a full column replacement. Only
+	// ReadColumnTypeChanges sets it; it exposes no AST to schema readers.
+	columnTypesOnly bool
 
 	// midStatement reports that the statement before the cursor ended with no
 	// semicolon, so the word at the cursor is not known to open a statement.
@@ -7598,7 +7602,7 @@ func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
 func (p *Parser) refuseModify() error {
 	modify := p.target.grammar.AlterTable.Modify
 	switch {
-	case p.dialect == "" || modify == descriptor.ModifyDefinition:
+	case p.dialect == "" || modify == descriptor.ModifyDefinition || p.columnTypesOnly && modify == descriptor.ModifyOther:
 		return nil
 	case modify == descriptor.ModifyOther:
 		return ptaherr.At(p.current.Start, fmt.Errorf(

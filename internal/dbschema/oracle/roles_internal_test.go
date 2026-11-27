@@ -104,19 +104,19 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 	c.Assert(schema.Grants, qt.DeepEquals, []catalog.Grant{
 		{
 			Role: "APP_READER", Privilege: "SELECT", ObjectType: "TABLE",
-			Schema: "APP", ObjectName: "DOCS", GrantedBy: "APP",
+			ObjectName: "DOCS", GrantedBy: "APP",
 		},
 		{
 			Role: "APP_READER", Privilege: "EXECUTE", ObjectType: "TABLE",
-			Schema: "APP", ObjectName: "TALLY", GrantedBy: "APP",
+			ObjectName: "TALLY", GrantedBy: "APP",
 		},
 		{
 			Role: "APP_READER", Privilege: "SELECT", ObjectType: "TABLE",
-			Schema: "APP", ObjectName: "TITLES", GrantedBy: "APP",
+			ObjectName: "TITLES", GrantedBy: "APP",
 		},
 		{
 			Role: "APP_READER", Privilege: "EXECUTE", ObjectType: "TABLE",
-			Schema: "APP", ObjectName: "TOUCH", GrantedBy: "APP",
+			ObjectName: "TOUCH", GrantedBy: "APP",
 		},
 	})
 	c.Assert(schema.WideGrants, qt.DeepEquals, []catalog.WideGrant{

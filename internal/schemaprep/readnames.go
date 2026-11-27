@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlname"
+	"ptah.run/internal/sqlqualifier"
 	"ptah.run/internal/tableref"
 )
 
@@ -22,6 +23,9 @@ type ReadNames struct {
 	Databases []string
 	// Relations are the tables, views and sequences the read found.
 	Relations []ReadRelation
+	// Dialect is the dialect a view body is read in, for its quoting. Empty
+	// leaves every body as written.
+	Dialect string
 }
 
 // ReadRelation is a table, a view or a sequence a read found. An empty
@@ -82,9 +86,16 @@ type ReadRelation struct {
 //
 // What is respelled: the databases the document declares; the database and
 // the name of a table, a sequence, an enum and a declared row; the qualified
-// names of functions, views and materialized views; and every reference
-// [placeReferences] lists. A body, an expression and a default keep what they
-// were written with, and so does the identity of a feature object.
+// names of functions, views and materialized views; every reference
+// [placeReferences] lists; and each database qualifier in the body of a view
+// and a materialized view. The server stores a view body with its own
+// database spelled as DATABASE() spells it, so without the last a body that
+// names `APP4.t` for a view of app4 reads as another query than the one the
+// server holds, and every plan replaces the view. A qualifier is respelled
+// only on a server known to fold names: where no connection read the setting,
+// a body keeps what it was written with and is not refused for it. Any other
+// part of a body, an expression and a default keep what they were written
+// with, and so does the identity of a feature object.
 func RespellReadNames(database *schemamodel.Database, read ReadNames, folding catalog.NameFolding) (*schemamodel.Database, error) {
 	if database == nil || folding == catalog.NameFoldingExact {
 		return database, nil
@@ -111,6 +122,7 @@ func RespellReadNames(database *schemamodel.Database, read ReadNames, folding ca
 // readRespeller respells the names of one document against one read.
 type readRespeller struct {
 	match     *nameMatch
+	dialect   string
 	session   string
 	databases []string
 	// found is the relations the read found, by the database they are in.
@@ -122,6 +134,7 @@ type readRespeller struct {
 func newReadRespeller(read ReadNames, folding catalog.NameFolding) *readRespeller {
 	r := &readRespeller{
 		match:     &nameMatch{unknown: folding != catalog.NameFoldingFolds},
+		dialect:   read.Dialect,
 		session:   read.Session,
 		databases: distinctNames(append([]string{read.Session}, read.Databases...)),
 		found:     make(map[string][]string),
@@ -264,6 +277,7 @@ func (r *readRespeller) declarations(database *schemamodel.Database) schemamodel
 	})
 	respelled.Views = mapSlice(database.Views, func(view schemamodel.View) schemamodel.View {
 		view.Name = r.relationIn("", view.Name)
+		view.Body = r.body(view.Body)
 		return view
 	})
 	respelled.MaterializedViews = mapSlice(database.MaterializedViews, func(view schemamodel.MaterializedView) schemamodel.MaterializedView {
@@ -271,6 +285,33 @@ func (r *readRespeller) declarations(database *schemamodel.Database) schemamodel
 		return view
 	})
 	return respelled
+}
+
+// body is a view body with each database qualifier the read found in another
+// case spelled as the read spells it, on a server known to fold names. A
+// qualifier that matches no database the read found, or more than one, keeps
+// what it was written with: a body is compared, never refused, for how it
+// spells a name.
+func (r *readRespeller) body(body string) string {
+	if r.match.unknown || r.dialect == "" {
+		return body
+	}
+	folds := mysqlname.NamesOf(true)
+	return sqlqualifier.RespellViewBody(body, r.dialect, func(name string) string {
+		if slices.Contains(r.databases, name) {
+			return name
+		}
+		var matches []string
+		for _, database := range r.databases {
+			if folds.Same(name, database) {
+				matches = append(matches, database)
+			}
+		}
+		if len(matches) != 1 {
+			return name
+		}
+		return matches[0]
+	})
 }
 
 // declaredRelations is the relations a reference may name: those the read

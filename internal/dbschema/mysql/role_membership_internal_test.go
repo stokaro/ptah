@@ -241,9 +241,10 @@ func TestWithoutPublic(t *testing.T) {
 	}
 }
 
-// TestReadMandatoryRoles reads each MySQL mandatory role as held by PUBLIC,
-// named as a membership names it, and asks MariaDB nothing: it has no
-// mandatory_roles.
+// TestReadMandatoryRoles reads the setting without APPLICABLE_ROLES, whose
+// internal joins fail under default_collation_for_utf8mb4=utf8mb4_general_ci.
+// Existence checks preserve the setting's identity and discard only accounts
+// the server does not hold. MariaDB has no mandatory_roles and is not queried.
 func TestReadMandatoryRoles(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -252,19 +253,14 @@ func TestReadMandatoryRoles(t *testing.T) {
 	}{
 		{name: "MySQL", want: []catalog.RoleMembership{
 			{Role: "mand", Member: "PUBLIC"},
-			{Role: "mloc@localhost", Member: "PUBLIC"},
+			{Role: "mloc@LOCALHOST", Member: "PUBLIC"},
 		}},
 		{name: "MariaDB", mariaDB: true, want: nil},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-				return dbtest.QueryResult{
-					Columns: []string{"ROLE_NAME", "ROLE_HOST"},
-					Rows:    [][]driver.Value{{"mand", "%"}, {"mloc", "localhost"}},
-				}, map[bool]error{false: fmt.Errorf("unexpected query: %s", query), true: nil}[strings.Contains(query, "IS_MANDATORY = 'YES'")]
-			})
+			db := dbtest.Open(t, mandatoryQuery("mand, 'mloc'@'LOCALHOST', missing, mand", "8.4.13"))
 
 			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{MariaDB: test.mariaDB})
 
@@ -272,6 +268,89 @@ func TestReadMandatoryRoles(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// mandatoryQuery models a session whose APPLICABLE_ROLES view fails and whose
+// grant tables can still identify the accounts in mandatory_roles.
+func mandatoryQuery(value, version string) dbtest.QueryHandler {
+	return func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "@@GLOBAL.mandatory_roles"):
+			return dbtest.QueryResult{
+				Columns: []string{"mandatory_roles", "version"},
+				Rows:    [][]driver.Value{{value, version}},
+			}, nil
+		case strings.Contains(query, "FROM mysql.user") && len(args) == 2:
+			host, found := map[mysqlgrants.Account]string{
+				{User: "mand", Host: "%"}:         "%",
+				{User: "mloc", Host: "LOCALHOST"}: "localhost",
+				{User: "a", Host: "%"}:            "%",
+				{User: "b@h", Host: "%"}:          "%",
+				{User: "a,b", Host: "h"}:          "h",
+				{User: "r", Host: "K"}:            "k",
+				{User: "r", Host: "k"}:            "k",
+				{User: "r", Host: "K"}:            "k",
+				{User: "R", Host: "k"}:            "k",
+			}[mysqlgrants.Account{User: fmt.Sprint(args[0].Value), Host: fmt.Sprint(args[1].Value)}]
+			result := dbtest.QueryResult{Columns: []string{"Host"}}
+			if found {
+				result.Rows = [][]driver.Value{{host}}
+			}
+			return result, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("Error 1267 (HY000): Illegal mix of collations in %s", query)
+		}
+	}
+}
+
+// TestReadMandatoryRolesGrammarAndDuplicates applies the server version's
+// list grammar, and deduplicates hosts in setting order without changing the
+// first account's spelling or merging differently cased user names.
+func TestReadMandatoryRolesGrammarAndDuplicates(t *testing.T) {
+	tests := []struct {
+		name, value, version string
+		want                 []catalog.RoleMembership
+	}{
+		{name: "empty setting", version: "26.10.0"},
+		{name: "before double quoted lists", value: `"a,b"@"h"`, version: "9.6.0", want: []catalog.RoleMembership{
+			{Role: "a", Member: "PUBLIC"}, {Role: "b@h", Member: "PUBLIC"},
+		}},
+		{name: "first double quoted lists", value: `"a,b"@"h"`, version: "9.7.0", want: []catalog.RoleMembership{
+			{Role: "a,b@h", Member: "PUBLIC"},
+		}},
+		{name: "current double quoted lists", value: `"a,b"@"h"`, version: "26.10.0", want: []catalog.RoleMembership{
+			{Role: "a,b@h", Member: "PUBLIC"},
+		}},
+		{name: "first host spelling", value: "r@K,r@k,r@K,R@k,r@K", version: "8.4.13", want: []catalog.RoleMembership{
+			{Role: "R@k", Member: "PUBLIC"}, {Role: "r@K", Member: "PUBLIC"}, {Role: "r@K", Member: "PUBLIC"},
+		}},
+		{name: "reversed host spelling", value: "r@k,r@K", version: "26.10.0", want: []catalog.RoleMembership{
+			{Role: "r@k", Member: "PUBLIC"},
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, mandatoryQuery(test.value, test.version))
+
+			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadMandatoryRolesUnknownVersion refuses to guess which account-list
+// grammar an unrecognized server applies.
+func TestReadMandatoryRolesUnknownVersion(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, mandatoryQuery("mand", "unknown"))
+
+	got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
+
+	c.Assert(err, qt.ErrorMatches, `cannot read mandatory roles for unrecognized MySQL version "unknown"`)
+	c.Assert(got, qt.IsNil)
 }
 
 // TestWithMandatory adds PUBLIC's memberships in the mandatory roles, and
