@@ -35,11 +35,14 @@ import (
 // WHILE with what it runs as one statement, so the statement controls
 // transaction state when any statement the server runs from it does, as
 // sqlserverbatch.Leaves walks them: `BEGIN INSERT ...; COMMIT; END` and
-// `IF @@TRANCOUNT > 0 COMMIT` are control. A procedure body is stored, not
-// run, so a COMMIT in it is not. Text whose statement boundaries the reader
-// cannot find is read by its first words, as on any other engine: the
-// migrator cuts such a batch at each semicolon, so each piece holds one
-// statement.
+// `IF @@TRANCOUNT > 0 COMMIT` are control. An EXEC of one string literal is
+// read as the statements the literal holds, so `EXEC(N'COMMIT')` and
+// `EXEC sp_executesql N'ROLLBACK'` are control; an EXEC of a variable, of a
+// concatenation or of a procedure runs text the server computes, which is not
+// read. A procedure body is stored, not run, so a COMMIT in it is not. Text
+// whose statement boundaries the reader cannot find is read by its first
+// words, as on any other engine: the migrator cuts such a batch at each
+// semicolon, so each piece holds one statement.
 func Controls(statement, dialect string) bool {
 	options := dialectlexer.Options(dialect)
 	services := builtin.Lookup(dialect)

@@ -217,6 +217,17 @@ YugabyteDB that kept a schema statement and undid the data ahead of it reads the
 same way, because no count describes what stayed; see
 [What a failed migration leaves](../../databases/distributed/#what-a-failed-migration-leaves).
 
+On SQL Server one statement of a migration can run several: a
+`BEGIN ... END` block, a `TRY` block with its `CATCH` block, an `EXEC` of a
+procedure, or two statements with no semicolon between them. Under
+`-- atlas:txmode none` the server commits each of them as it runs, so a
+migration that fails inside such a statement leaves the ones before the
+failure committed, and a rerun would repeat them. `ptah migrations up
+--allow-dirty` refuses to run that statement again, and the hint names it:
+finish what it left undone by hand, then run the
+`ptah migrations repair --resume-from` the hint names to run the rest, or
+record the migration with `--force` where the statement was the last one.
+
 Inspect the database, apply what is missing yourself, then
 `ptah migrations repair --version <version> --force` records the result. A rollback
 interrupted the same way is recorded with `--force` once you restore what it

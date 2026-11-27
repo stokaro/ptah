@@ -3341,6 +3341,9 @@ func (m *Migrator) applyUpMigrationObserved(
 	if err != nil {
 		return false, own.describeUnknownOutcome(err, migration, m.migrationStatementCount(migration.UpSQL))
 	}
+	if err := m.refusePartlyCommittedRerun(migration, txMode, own, plan); err != nil {
+		return false, err
+	}
 	if plan.resumeFrom <= 1 {
 		checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
 		if err != nil {

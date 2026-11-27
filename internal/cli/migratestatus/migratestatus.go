@@ -508,11 +508,12 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
 		emit.Printf("\n%s\n", dirtyhint.Recovery(dirtyhint.Revision{
-			Revision:        status.DirtyRevision,
-			Dialect:         conn.Info().Dialect,
-			OwnTransactions: mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
-			FileStatements:  dirtyhint.FileStatements(mig, *status.DirtyRevision),
-			Selection:       source.selection,
+			Revision:                   status.DirtyRevision,
+			Dialect:                    conn.Info().Dialect,
+			OwnTransactions:            mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
+			FileStatements:             dirtyhint.FileStatements(mig, *status.DirtyRevision),
+			FailedStatementRunsSeveral: mig.RevisionFailedStatementRunsSeveral(*status.DirtyRevision),
+			Selection:                  source.selection,
 		}))
 		return nil
 	}

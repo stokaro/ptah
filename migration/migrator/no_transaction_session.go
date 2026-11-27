@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/internal/sqlserverbatch"
 	"ptah.run/internal/txcontrol"
 )
@@ -241,25 +242,30 @@ func noTransactionResumeAction(statement string, grammar bodyGrammar) noTransact
 }
 
 // transactSQLResumeAction reads a T-SQL statement that runs others: a BEGIN
-// ... END block, a TRY block with its CATCH block, an IF or a WHILE, or
-// statements written with no semicolon between them. Its first word says
-// nothing about them, so it is durable when every statement the server runs
-// from it is (sqlserverbatch.Leaves), and refused otherwise: replaying it to
-// restore a SET would run its other statements a second time, and an IF may
-// take another branch on a second run. A variable lives only in its batch, so
-// DECLARE and SET of one leave no state. ok is false for a statement that runs
-// no other and for text whose statement boundaries the reader cannot find,
-// which are read by their words.
+// ... END block, a TRY block with its CATCH block, an IF or a WHILE, an EXEC
+// of a string literal, or statements written with no semicolon between them.
+// Its first word says nothing about them, so it is durable when every
+// statement the server runs from it is (sqlserverbatch.Leaves), and refused
+// otherwise: replaying it to restore a SET would run its other statements a
+// second time, and an IF may take another branch on a second run. A variable
+// lives only in its batch and a PRINT sets nothing, so DECLARE, SET of a
+// variable and PRINT leave no state (sqlserverbatch.ChangesNothing), on their
+// own as inside a block. ok is false for any other statement that runs no
+// other and for text whose statement boundaries the reader cannot find, which
+// are read by their words.
 func transactSQLResumeAction(statement string, grammar bodyGrammar) (action noTransactionPrefixAction, ok bool) {
 	if !sqlserverbatch.Reads(grammar.dialect) {
 		return noTransactionPrefixDurable, false
 	}
 	read, err := sqlserverbatch.Read(statement)
-	if err != nil || len(read) == 0 || len(read) == 1 && !runsOthers(read[0]) {
+	if err != nil || len(read) == 0 {
 		return noTransactionPrefixDurable, false
 	}
+	if len(read) == 1 && !runsOthers(read[0]) {
+		return noTransactionPrefixDurable, sqlserverbatch.ChangesNothing(statement)
+	}
 	for _, leaf := range sqlserverbatch.Leaves(read) {
-		if !setsBatchVariable(leaf, grammar.dialect) && wordsResumeAction(leaf, grammar) != noTransactionPrefixDurable {
+		if !sqlserverbatch.ChangesNothing(leaf) && wordsResumeAction(leaf, grammar) != noTransactionPrefixDurable {
 			return noTransactionPrefixReject, true
 		}
 	}
@@ -272,16 +278,122 @@ func runsOthers(statement sqlserverbatch.Statement) bool {
 	switch statement.Kind {
 	case sqlserverbatch.Block, sqlserverbatch.If, sqlserverbatch.While:
 		return true
+	case sqlserverbatch.Simple:
+		_, reads := sqlserverbatch.ExecText(statement.SQL)
+		return reads
 	default:
 		return false
 	}
 }
 
-// setsBatchVariable reports a T-SQL DECLARE or SET of a variable, whose value
-// ends with its batch.
-func setsBatchVariable(statement, dialect string) bool {
-	tokens := significantSQLTokens(statement, dialect)
-	return len(tokens) > 1 && matchesAnyKeyword(tokens[0], "DECLARE", "SET") && strings.HasPrefix(tokens[1].Value, "@")
+// failedStatementRunsSeveral reports whether statement, the 1-based statement
+// of body that a run with no transaction around it failed in, can have
+// committed part of its work first: on T-SQL a statement may run several
+// (sqlserverbatch.RunsSeveral), and the server commits each before the next
+// runs. Running such a statement again repeats what committed, as resuming
+// after it skips what did not, so neither is chosen for the operator. Text the
+// reader cannot read counts as such a statement, since what it runs is not
+// established. On every other dialect a statement is one, and runs whole or
+// not at all.
+func (m *Migrator) failedStatementRunsSeveral(body string, statement int) bool {
+	if !sqlserverbatch.Reads(m.connectionDialect()) {
+		return false
+	}
+	return statementRunsSeveral(splitSQLStatementsForConnection(m.noTransactionConnection(), body), statement)
+}
+
+// statementRunsSeveral is [Migrator.failedStatementRunsSeveral] for the
+// T-SQL statements of a body as the migrator sends them.
+func statementRunsSeveral(statements []string, statement int) bool {
+	if statement < 1 || statement > len(statements) {
+		return false
+	}
+	read, err := sqlserverbatch.Read(statements[statement-1])
+	return err != nil || sqlserverbatch.RunsSeveral(read)
+}
+
+// RevisionFailedStatementRunsSeveral reports whether the dirty revision
+// stopped in a statement that may have committed part of its work: the
+// statement after the ones it records applied, in a body no transaction
+// wraps, runs several statements on SQL Server, such as a BEGIN ... END block
+// or two statements with no semicolon between them. Some of them may have
+// committed before the one that failed, so `ptah migrations up --allow-dirty`
+// refuses to run the statement again, and a resume from it can repeat what
+// committed. It is false for a clean revision, for one whose statement
+// outcome is unknown ([MigrationRevision.StatementOutcomeUnknown]), for one
+// whose file is missing or now holds another statement count, and on every
+// dialect but SQL Server.
+func (m *Migrator) RevisionFailedStatementRunsSeveral(revision MigrationRevision) bool {
+	if !revision.Dirty || revision.Error == "" || revision.StatementOutcomeUnknown() || revision.Applied >= revision.Total {
+		return false
+	}
+	migration := m.migrationByVersion(revision.Version)
+	if migration == nil {
+		return false
+	}
+	direction := repairMigrationDirection(&revision)
+	mode, err := m.resolveRepairMigrationTxMode(migration, direction)
+	if err != nil || mode != MigrationTxModeNone {
+		return false
+	}
+	body := migrationSQLForDirection(migration, direction)
+	if m.migrationStatementCount(body) != revision.Total {
+		return false
+	}
+	return m.failedStatementRunsSeveral(body, revision.Applied+1)
+}
+
+// refusePartlyCommittedRerun refuses a retry that would run again the
+// statement a run with no transaction around it failed in, where that
+// statement may have committed part of its work
+// ([Migrator.failedStatementRunsSeveral]). It reads only the file and the
+// plan, and runs before the pre-migration checks and before the revision row
+// is touched, so a refusal leaves what the failed run recorded as it found it.
+// A body that opens its own transactions resumes after the transactions that
+// committed, and is not read here.
+func (m *Migrator) refusePartlyCommittedRerun(
+	migration *Migration,
+	txMode MigrationTxMode,
+	own ownTransactionRun,
+	plan upRetryPlan,
+) error {
+	if txMode != MigrationTxModeNone || !own.blocks.Empty() || !plan.reuseRevision || !plan.readError ||
+		!m.failedStatementRunsSeveral(migration.UpSQL, plan.resumeFrom) {
+		return nil
+	}
+	return &partlyCommittedResumeError{
+		version:   m.VersionLabel(migration.Version),
+		statement: plan.resumeFrom,
+		total:     m.migrationStatementCount(migration.UpSQL),
+		selection: m.recoverySelection(),
+	}
+}
+
+// partlyCommittedResumeError refuses to run again, on a retry, the statement a
+// run with no transaction around it failed in when that statement may have
+// committed part of its work ([Migrator.failedStatementRunsSeveral]).
+type partlyCommittedResumeError struct {
+	// version is the migration's version as the revision names it.
+	version string
+	// statement is the 1-based statement that failed, of total.
+	statement, total int
+	// selection makes the repair it names read this directory and table.
+	selection repaircommand.Selection
+}
+
+func (e *partlyCommittedResumeError) Error() string {
+	next := repaircommand.Reconciled(e.version, repaircommand.DefaultRunner, e.selection)
+	if e.statement < e.total {
+		next = repaircommand.Repair(
+			e.version, fmt.Sprintf(" --resume-from %d", e.statement+1), repaircommand.DefaultRunner, e.selection,
+		) + " to run the rest, or " + next + " once you have run them yourself"
+	}
+	return fmt.Sprintf(
+		"migration %s cannot resume automatically: statement %d runs several statements outside a transaction, "+
+			"and some of them may have committed before it failed, so running it again could repeat them; "+
+			"inspect the database and finish what statement %d left undone, then use %s",
+		e.version, e.statement, e.statement, next,
+	)
 }
 
 // wordsResumeAction is [noTransactionResumeAction] for a statement read by

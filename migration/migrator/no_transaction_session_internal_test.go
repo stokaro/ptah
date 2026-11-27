@@ -150,11 +150,86 @@ func TestNoTransactionResumeAction_ReadsWhatATransactSQLStatementRuns(t *testing
 		{name: "a session option alone", statement: "SET NOCOUNT ON", want: noTransactionPrefixReplay},
 		{name: "a procedure body", statement: "CREATE PROCEDURE dbo.p AS BEGIN SET NOCOUNT ON; SELECT 1; END", want: noTransactionPrefixDurable},
 		{name: "an unclosed block", statement: "BEGIN INSERT INTO dbo.t VALUES (1);", want: noTransactionPrefixReject},
+		{name: "a variable declared on its own", statement: "DECLARE @m nvarchar(10) = N'a'", want: noTransactionPrefixDurable},
+		{name: "a variable set on its own", statement: "SET @m = N'b'", want: noTransactionPrefixDurable},
+		{name: "a PRINT in a CATCH block", statement: "BEGIN TRY INSERT INTO dbo.t VALUES (1); END TRY BEGIN CATCH PRINT ERROR_MESSAGE(); END CATCH", want: noTransactionPrefixDurable},
+		{name: "an EXEC of a literal that inserts", statement: "EXEC(N'INSERT INTO dbo.t VALUES (1)')", want: noTransactionPrefixDurable},
+		{name: "an EXEC of a literal that sets a session option", statement: "EXEC sp_executesql N'SET NOCOUNT ON'", want: noTransactionPrefixReject},
+		{name: "an EXEC of a variable", statement: "EXEC(@sql)", want: noTransactionPrefixReject},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(noTransactionResumeAction(test.statement, grammarForDialect("sqlserver")), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestPartlyCommittedResumeError_NamesTheRepairThatFinishesTheRun pins the
+// refusal's commands: the resume after the failed statement where one is left,
+// and the forced record in both cases. The refusal is unexported, and the
+// e2e tests that reach it through `ptah migrations up --allow-dirty` match only
+// its first clause.
+func TestPartlyCommittedResumeError_NamesTheRepairThatFinishesTheRun(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement int
+		want      string
+	}{
+		{
+			name: "a statement before the last", statement: 2,
+			want: "migration 1 cannot resume automatically: statement 2 runs several statements outside a transaction, " +
+				"and some of them may have committed before it failed, so running it again could repeat them; " +
+				"inspect the database and finish what statement 2 left undone, then use " +
+				"'ptah migrations repair --version 1 --resume-from 3' to run the rest, or " +
+				"'ptah migrations repair --version 1 --force' once you have run them yourself",
+		},
+		{
+			name: "the last statement", statement: 3,
+			want: "migration 1 cannot resume automatically: statement 3 runs several statements outside a transaction, " +
+				"and some of them may have committed before it failed, so running it again could repeat them; " +
+				"inspect the database and finish what statement 3 left undone, then use " +
+				"'ptah migrations repair --version 1 --force'",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := &partlyCommittedResumeError{version: "1", statement: test.statement, total: 3}
+			c.Assert(err.Error(), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestStatementRunsSeveral reads the statement a run failed in. A plain
+// statement runs whole or not at all; a block, a TRY block and two statements
+// with no semicolon between them run several, and so does text the reader
+// cannot read. A statement number outside the body names none.
+func TestStatementRunsSeveral(t *testing.T) {
+	body := []string{
+		"CREATE TABLE dbo.log (msg nvarchar(10))",
+		"BEGIN INSERT INTO dbo.log VALUES (N'a'); INSERT INTO dbo.missing VALUES (1); END",
+		"INSERT INTO dbo.log VALUES (N'a') INSERT INTO dbo.missing VALUES (1)",
+		"BEGIN INSERT INTO dbo.log VALUES (N'a');",
+		"BEGIN DECLARE @m nvarchar(10) = N'a'; INSERT INTO dbo.log VALUES (@m); END",
+	}
+	tests := []struct {
+		name      string
+		statement int
+		want      bool
+	}{
+		{name: "a plain statement", statement: 1, want: false},
+		{name: "a block of two writes", statement: 2, want: true},
+		{name: "two writes with no semicolon between them", statement: 3, want: true},
+		{name: "an unclosed block", statement: 4, want: true},
+		{name: "a block with one write after a variable", statement: 5, want: false},
+		{name: "no statement before the first", statement: 0, want: false},
+		{name: "no statement after the last", statement: 6, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(statementRunsSeveral(body, test.statement), qt.Equals, test.want)
 		})
 	}
 }

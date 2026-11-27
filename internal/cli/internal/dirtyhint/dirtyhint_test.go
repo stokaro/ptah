@@ -384,3 +384,78 @@ func TestRecoveryReadsTheDownFileStatementCount(t *testing.T) {
 		})
 	}
 }
+
+// TestRecoveryReadsAStatementThatRunsSeveral names neither a run from the
+// failed statement nor a resume after it on its own when that statement runs
+// several statements outside a transaction: some of them may have committed,
+// so the operator finishes it first. A body that opens its own transactions
+// keeps its own hint, because nothing resumes it from a statement.
+func TestRecoveryReadsAStatementThatRunsSeveral(t *testing.T) {
+	tests := []struct {
+		name            string
+		direction       migrator.MigrationDirection
+		applied         int
+		ownTransactions bool
+		want            string
+	}{
+		{
+			name: "a statement before the last", direction: migrator.MigrationDirectionUp, applied: 1,
+			want: "This migration failed in statement 2 of 3, which runs several statements outside a transaction, " +
+				"so some of them may have committed. Inspect the database and finish what statement 2 left undone, " +
+				"then run 'ptah migrations repair --version 1 --resume-from 3' to run the rest, or " +
+				"'ptah migrations repair --version 1 --force' once you have run them yourself.",
+		},
+		{
+			name: "the first statement", direction: migrator.MigrationDirectionUp, applied: 0,
+			want: "This migration failed in statement 1 of 3, which runs several statements outside a transaction, " +
+				"so some of them may have committed. Inspect the database and finish what statement 1 left undone, " +
+				"then run 'ptah migrations repair --version 1 --resume-from 2' to run the rest, or " +
+				"'ptah migrations repair --version 1 --force' once you have run them yourself.",
+		},
+		{
+			name: "the last statement", direction: migrator.MigrationDirectionUp, applied: 2,
+			want: "This migration failed in statement 3 of 3, which runs several statements outside a transaction, " +
+				"so some of them may have committed. Inspect the database and finish what statement 3 left undone, " +
+				"then run 'ptah migrations repair --version 1 --force' to record the migration applied.",
+		},
+		{
+			name: "a down statement before the last", direction: migrator.MigrationDirectionDown, applied: 1,
+			want: "This rollback failed in down statement 2 of 3, which runs several statements outside a " +
+				"transaction, so some of them may have committed. Inspect the database and finish what statement 2 " +
+				"left undone, then run 'ptah migrations repair --version 1 --resume-from 3' to run the remaining " +
+				"down statements and remove the revision.",
+		},
+		{
+			name: "the last down statement", direction: migrator.MigrationDirectionDown, applied: 2,
+			want: "This rollback failed in down statement 3 of 3, which runs several statements outside a " +
+				"transaction, so some of them may have committed. Inspect the database and finish what statement 3 " +
+				"left undone, then run 'ptah migrations set --version <previous>' (version 0 where this is the oldest " +
+				"migration in the directory) to move the boundary back.",
+		},
+		{
+			name: "a body that opens its own transactions", direction: migrator.MigrationDirectionUp, applied: 1,
+			ownTransactions: true,
+			want: "This migration stopped after 1 of 3 statements, in transactions its file opens itself. Run " +
+				"'ptah migrations up --allow-dirty --runner golang-migrate' to resume after the transactions that " +
+				"committed, or run 'ptah migrations repair --version 1 --force --runner golang-migrate' once you " +
+				"have run the rest yourself.",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			revision := migrator.MigrationRevision{
+				Version: 1, Applied: test.applied, Total: 3, Direction: test.direction, Error: "mssql: Invalid object name",
+			}
+
+			got := dirtyhint.Recovery(dirtyhint.Revision{
+				Revision:                   &revision,
+				Dialect:                    "sqlserver",
+				OwnTransactions:            test.ownTransactions,
+				FailedStatementRunsSeveral: true,
+			})
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

@@ -554,6 +554,17 @@ func assessText(sql, target string, assessment StatementAssessment, known nodeKn
 		return assessRawSQL(sqlutil.StripCommentsForDialect(sql, target), assessment, known)
 	}
 	for _, piece := range sqlutil.SplitSQLStatementsForDialect(sql, target) {
+		// The renderer's batch that changes a default is an EXEC of text the
+		// rating reads by its parts, and the walk below would read that
+		// text's own statements instead.
+		if judged, ok := assessSQLServerDefaultBatch(
+			sqlutil.StripCommentsForDialect(piece, target),
+			StatementAssessment{Severity: Safe, Reason: safeReason},
+			known,
+		); ok {
+			raiseAssessment(&assessment, judged)
+			continue
+		}
 		statements, err := sqlserverbatch.Read(piece)
 		if err != nil {
 			raiseAssessment(&assessment, StatementAssessment{Severity: Destructive, Reason: unreadableReason(err)})
@@ -1171,21 +1182,91 @@ func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledg
 }
 
 // removesRowsReason returns why a statement that removes rows no condition
-// selects is destructive: a DELETE with no WHERE clause, and a MERGE with a
-// THEN DELETE arm. Each is read by the scanner's words, so a comment neither
-// hides the statement nor stands for its WHERE clause, and a WITH clause in
-// front of it is set aside.
+// selects is destructive: a DELETE with no WHERE clause of its own, and a
+// MERGE with a DELETE arm. Each is read by the scanner's words, so a comment
+// neither hides the statement nor stands for its WHERE clause, and a WITH
+// clause in front of it is set aside after its queries are read the same
+// way, since a query a WITH clause defines may itself be a DELETE.
 func removesRowsReason(statements []lintext.Statement) (string, bool) {
 	for _, statement := range statements {
-		words := afterWithClause(statement.Words)
-		switch {
-		case hasWordPrefix(words, "DELETE") && !slices.Contains(words, "WHERE"):
-			return deleteWithoutWhereReason, true
-		case hasWordPrefix(words, "MERGE") && hasWordSequence(words, "THEN", "DELETE"):
-			return mergeDeleteReason, true
+		if reason, found := removesRows(statement.Words); found {
+			return reason, true
 		}
 	}
 	return "", false
+}
+
+// removesRows is [removesRowsReason] for the words of one statement or of one
+// query a WITH clause defines. A WHERE counts only outside every parenthesis
+// and bracket: one inside a subquery selects that subquery's rows, and
+// [where] is a name.
+func removesRows(words []string) (string, bool) {
+	for _, query := range withQueries(words) {
+		if reason, found := removesRows(query); found {
+			return reason, true
+		}
+	}
+	words = afterWithClause(words)
+	switch {
+	case hasWordPrefix(words, "DELETE") && !hasTopLevelWord(words, "WHERE"):
+		return deleteWithoutWhereReason, true
+	case hasWordPrefix(words, "MERGE") && hasTopLevelWord(words, "DELETE"):
+		return mergeDeleteReason, true
+	}
+	return "", false
+}
+
+// hasTopLevelWord reports whether word is one of words outside every
+// parenthesis and every bracket.
+func hasTopLevelWord(words []string, word string) bool {
+	depth := 0
+	for _, w := range words {
+		switch w {
+		case "(", "[":
+			depth++
+		case ")", "]":
+			depth--
+		default:
+			if depth == 0 && w == word {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// withQueries returns the words of each query the WITH clause that words
+// start with defines: what stands in the parentheses after AS, or after AS
+// MATERIALIZED and AS NOT MATERIALIZED. Words that do not start with WITH
+// define none.
+func withQueries(words []string) [][]string {
+	if !hasWordPrefix(words, "WITH") {
+		return nil
+	}
+	var queries [][]string
+	depth, start := 0, -1
+	for i, word := range words {
+		switch word {
+		case "(":
+			if depth == 0 && i > 0 && (words[i-1] == "AS" || words[i-1] == "MATERIALIZED") {
+				start = i + 1
+			}
+			depth++
+		case ")":
+			depth--
+			if depth != 0 {
+				continue
+			}
+			if start >= 0 {
+				queries = append(queries, words[start:i])
+				start = -1
+			}
+			if i+1 < len(words) && words[i+1] != "," && words[i+1] != "AS" {
+				return queries
+			}
+		}
+	}
+	return queries
 }
 
 // afterWithClause returns the scanner's words of a statement without the WITH
@@ -1724,10 +1805,11 @@ const replaceTableReason = "CREATE OR REPLACE TABLE drops the existing table and
 // verdict instead, which only the plan knows.
 const deleteWithoutWhereReason = "DELETE without a WHERE clause removes every row it reaches, every row of its table in the plain form"
 
-// mergeDeleteReason is why a MERGE with a THEN DELETE arm is destructive: the
-// arm removes every target row it matches, and under WHEN NOT MATCHED BY
-// SOURCE every target row the source does not hold.
-const mergeDeleteReason = "MERGE with a THEN DELETE arm removes the target rows the arm matches, " +
+// mergeDeleteReason is why a MERGE with a DELETE arm is destructive: the arm,
+// THEN DELETE or the DELETE WHERE an Oracle UPDATE arm carries, removes every
+// target row it matches, and under WHEN NOT MATCHED BY SOURCE every target row
+// the source does not hold.
+const mergeDeleteReason = "MERGE with a DELETE arm removes the target rows the arm matches, " +
 	"every row the source does not hold under WHEN NOT MATCHED BY SOURCE"
 
 // destructivePrefixes are the statements whose leading words alone make them

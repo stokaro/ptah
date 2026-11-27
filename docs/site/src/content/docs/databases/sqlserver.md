@@ -804,17 +804,26 @@ END;
 The safety rating of `ptah schema plan` and `ptah schema apply` reads every
 statement written in a piece. `CREATE TABLE dbo.a (id int) TRUNCATE TABLE
 dbo.x` is rated by its `TRUNCATE`, an `IF` by the statements it runs, a
-`MERGE` with a `THEN DELETE` arm as destructive, and text whose statement
-boundaries Ptah cannot find is rated destructive. The rating does not read SQL
-held in a string, so a statement that `EXEC` or `sp_executesql` runs from one
-is not rated: `EXEC(N'DROP TABLE dbo.x')` rates safe.
+`MERGE` with a `DELETE` arm as destructive, and text whose statement
+boundaries Ptah cannot find is rated destructive.
+
+An `EXEC` of one string literal, `EXEC(N'...')` or `EXEC sp_executesql
+N'...'`, is read as the statements the literal holds, so
+`EXEC(N'DROP TABLE dbo.x')` is destructive. Text the server computes when it
+runs is not read: an `EXEC` of a variable, of a concatenation or of a
+procedure is rated by its own words, and `EXEC(@sql)` rates safe whatever
+`@sql` holds.
 
 The same reading decides which statements control a transaction. Ptah refuses
 a migration that commits or rolls back the transaction it manages, or opens one
-of its own, and a `COMMIT` inside a `BEGIN ... END` block or after an `IF` is
-refused as a `COMMIT` on its own is. A `COMMIT` in the body of a procedure is
-stored, not run, and is not refused. `ptah migrations lint` reports transaction
-control as `transaction/explicit-transaction`.
+of its own. A `COMMIT` inside a `BEGIN ... END` block, after an `IF` or in an
+`EXEC` of a literal such as `EXEC(N'COMMIT')` is refused as a `COMMIT` on its
+own is. Under `-- atlas:txmode none` the guarded form,
+`IF @@TRANCOUNT > 0 ROLLBACK`, is refused too, as a bare `ROLLBACK` is. A
+`COMMIT` in the body of a procedure or a trigger is stored, not run, and is not
+refused, and neither is one in text Ptah does not read, such as `EXEC(@sql)`.
+`ptah migrations lint` reports transaction control as
+`transaction/explicit-transaction`.
 
 `ptah migrations lint --dialect sqlserver` checks statements inside
 `BEGIN ... END`, `IF ... ELSE`, `WHILE`, and `TRY`/`CATCH` blocks, and the
@@ -834,6 +843,18 @@ Place a [suppression directive](../../versioned/lint/#suppress-a-single-statemen
 directly above the statement inside a block. A directive before an `IF` or
 `WHILE` condition applies only to that condition, and one before `BEGIN` is
 not inherited by the statements in the block.
+
+Under `-- atlas:txmode none` the server commits each statement as it runs,
+each statement of a block included. A migration that fails inside a statement
+that runs several, such as a block, an `EXEC` of a procedure or two
+statements with no semicolon between them, leaves the statements before the
+failure committed. `ptah migrations up --allow-dirty` and `ptah-compat migrate
+apply --allow-dirty` refuse to run that statement again, and
+`ptah migrations status` says to finish it by hand before resuming after it;
+see [Repair a dirty revision state](../../versioned/maintain-history/#repair-a-dirty-revision-state).
+A resume replays the session state of the statements before the failed one. A
+block of statements that write is durable, a `DECLARE`, a `SET` of a variable
+and a `PRINT` leave nothing, and a block that sets a session option is refused.
 
 ## Views that read other views
 

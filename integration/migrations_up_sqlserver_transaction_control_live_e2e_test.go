@@ -59,6 +59,18 @@ var sqlServerTransactionControlScripts = []struct {
 		refusal: "tx-mode file up statement 2 because it controls transaction state",
 	},
 	{
+		name: "a COMMIT an EXEC of a literal runs",
+		up: "CREATE TABLE dbo.log (msg nvarchar(100));\n" +
+			"INSERT INTO dbo.log VALUES (N'before-commit');\nEXEC(N'COMMIT');\n",
+		refusal: "tx-mode file up statement 3 because it controls transaction state",
+	},
+	{
+		name: "a ROLLBACK sp_executesql runs",
+		up: "CREATE TABLE dbo.log (msg nvarchar(100));\n" +
+			"EXEC sp_executesql N'ROLLBACK';\n",
+		refusal: "tx-mode file up statement 2 because it controls transaction state",
+	},
+	{
 		name: "a COMMIT inside a block of a file no transaction wraps",
 		up: "-- atlas:txmode none\nCREATE TABLE dbo.log (msg nvarchar(100));\n" +
 			"BEGIN\n  INSERT INTO dbo.log VALUES (N'before-commit');\n  COMMIT;\nEND;\n",
@@ -110,6 +122,83 @@ func TestCompatMigrateApplyRefusesSQLServerTransactionControlInsideAStatementLiv
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out, qt.Matches, `(?s).*migration 20260101000000 cannot run `+regexp.QuoteMeta(test.refusal)+`.*`)
 			c.Assert(sqlServerUserObjects(c, databaseURL), qt.HasLen, 0)
+		})
+	}
+}
+
+// sqlServerStoredTransactionControlScripts are migrations whose transaction
+// control sits in a body the server stores rather than runs: a procedure that
+// commits, a trigger that rolls back, and a procedure that rolls back to a
+// savepoint. Each applies, and objects is what the database then holds.
+var sqlServerStoredTransactionControlScripts = []struct {
+	name    string
+	up      string
+	objects []string
+}{
+	{
+		name: "a procedure that commits",
+		up: "CREATE TABLE dbo.log (msg nvarchar(100));\n" +
+			"CREATE PROCEDURE dbo.commit_work AS\nBEGIN\n  BEGIN TRAN;\n  INSERT INTO dbo.log VALUES (N'p');\n  COMMIT;\nEND\n",
+		objects: []string{"P commit_work", "U log"},
+	},
+	{
+		name: "a trigger that rolls back",
+		up: "CREATE TABLE dbo.log (msg nvarchar(100));\n" +
+			"CREATE TRIGGER dbo.log_guard ON dbo.log AFTER INSERT AS\nBEGIN\n" +
+			"  IF EXISTS (SELECT 1 FROM inserted WHERE msg = N'bad') ROLLBACK;\nEND\n",
+		objects: []string{"TR log_guard", "U log"},
+	},
+	{
+		name: "a procedure that rolls back to a savepoint",
+		up: "CREATE TABLE dbo.log (msg nvarchar(100));\n" +
+			"CREATE PROCEDURE dbo.savepoint_work AS\nBEGIN\n  SAVE TRANSACTION before_write;\n" +
+			"  INSERT INTO dbo.log VALUES (N's');\n  ROLLBACK TRANSACTION before_write;\nEND\n",
+		objects: []string{"P savepoint_work", "U log"},
+	},
+}
+
+// TestMigrationsUpAppliesSQLServerTransactionControlABodyStoresLiveE2E applies
+// each script through `ptah migrations up`: the control the server stores is
+// not refused, and the database holds the objects the script creates.
+func TestMigrationsUpAppliesSQLServerTransactionControlABodyStoresLiveE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	for _, test := range sqlServerStoredTransactionControlScripts {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			databaseURL, _ := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte(test.up), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte("SELECT 1;\n"), 0o600), qt.IsNil)
+
+			out, err := runPtahNativeWithError("migrations", "up", "--db-url", databaseURL, "--migrations-dir", dir)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(sqlServerUserObjects(c, databaseURL), qt.DeepEquals, test.objects)
+		})
+	}
+}
+
+// TestCompatMigrateApplyAppliesSQLServerTransactionControlABodyStoresLiveE2E
+// applies each script through `ptah-compat migrate apply`.
+func TestCompatMigrateApplyAppliesSQLServerTransactionControlABodyStoresLiveE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	for _, test := range sqlServerStoredTransactionControlScripts {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			databaseURL, _ := newSQLServerMigrationDatabase(c, ctx, dbURL, "")
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "20260101000000_init.sql"), []byte(test.up), 0o600), qt.IsNil)
+			out, err := runCompatVerb("migrate", "hash", "--dir", "file://"+filepath.ToSlash(dir))
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+
+			out, err = runCompatVerb("migrate", "apply", "--url", databaseURL, "--dir", "file://"+filepath.ToSlash(dir))
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(sqlServerUserObjects(c, databaseURL), qt.DeepEquals, test.objects)
 		})
 	}
 }
