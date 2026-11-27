@@ -161,6 +161,11 @@ type Baseline struct {
 	// owns through a writer that can drop the ones added since; see above.
 	// Nil everywhere else, and a reset then drops no role.
 	roles []string
+	// survivors are the names a realm reset leaves in place whoever created
+	// them, as the claim read them through a writer that can say, and
+	// survivorsRecorded reports that it did; see [Baseline.Survivors].
+	survivors         dbreset.Survivors
+	survivorsRecorded bool
 }
 
 // RolesAtClaim returns the roles the dev server held at the claim, sorted, on
@@ -227,6 +232,13 @@ type defaultPrivilegeReader interface {
 
 type schemaLister interface {
 	UserSchemas(context.Context) ([]string, error)
+}
+
+// survivorReader is a writer that reads the names its realm reset leaves in
+// place whoever created them, and says whether it could; see
+// [dbreset.Survivors].
+type survivorReader interface {
+	RealmResetSurvivors(context.Context) (dbreset.Survivors, bool, error)
 }
 
 type schemaStateReader interface {
@@ -316,6 +328,13 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	if err := baseline.recordSchemas(ctx, conn, writer); err != nil {
 		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 	}
+	if reader, ok := writer.(survivorReader); ok {
+		survivors, recorded, err := reader.RealmResetSurvivors(ctx)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+		}
+		baseline.survivors, baseline.survivorsRecorded = survivors, recorded
+	}
 	return baseline, nil
 }
 
@@ -357,6 +376,29 @@ func (b Baseline) Publications() replay.PublicationScope {
 		}
 	}
 	return scope
+}
+
+// Survivors names the extensions and schemas that outlive every reset of the
+// run, for [ReplayGuard.WithSurvivors]; see [replay.CleanupSurvivors].
+//
+// It records them only for a claim that judged the whole realm, through a
+// writer that read the names, and whose database has no starting point. Every
+// reset of such a claim, [Reset] and [DatabaseRealmKeeping] alike, is a realm
+// reset, which drops each extension and each schema the claim did not find,
+// wherever it is installed. [Reset] of a claim scoped to the one schema a URL
+// pinned leaves the schemas beside it, and refuses an extension it was not
+// asked to keep rather than drop it; a database with a starting point is
+// returned to it rather than emptied. Neither records any, and a comment on an
+// extension or a schema stays refused there.
+func (b Baseline) Survivors() replay.CleanupSurvivors {
+	if !b.realm || b.startingPoint != nil || !b.survivorsRecorded {
+		return replay.CleanupSurvivors{}
+	}
+	return replay.CleanupSurvivors{
+		Recorded:   true,
+		Extensions: slices.Clone(b.survivors.Extensions),
+		Schemas:    slices.Clone(b.survivors.Schemas),
+	}
 }
 
 // ReturnsSchemaState reports whether every reset of the run returns the schemas

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -28,6 +29,7 @@ import (
 	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
+	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
 
@@ -42,6 +44,82 @@ func CompareWithDatabase(
 	runtime DatabaseRuntime,
 ) (*difftypes.SchemaDiff, error) {
 	return completeComparison(CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, database, opts, runtime))
+}
+
+// IdentifierResolver is a connected server that says how it compares names:
+// its description, and the identifier rules it resolves for a set of names.
+// The DatabaseConnection type of ptah.run/dbschema implements it, and so does
+// every [Connection].
+type IdentifierResolver interface {
+	Info() catalog.ServerInfo
+	ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
+}
+
+// ResolveIdentifierSemantics asks resolver how its server compares every name
+// a comparison of desired with database meets, the names [CompareWithDatabase]
+// asks its own connection about, and returns the server's rules.
+//
+// It is for a caller that compares two states offline while it holds a
+// connection to a database of the target's engine, such as a dev database
+// both states are planned for. Passed as
+// [config.CompareOptions.IdentifierSemantics], the answer pairs names the way
+// that server does, and it covers every name the comparison checks. On SQL
+// Server that answer comes from the database collation, which no offline rule
+// knows.
+//
+// Either state nil, or a nil resolver, including an interface holding a nil
+// pointer, is refused with an error satisfying
+// errors.Is(err, ptaherr.ErrInvalidSchemaDiff). An error from the target
+// runtime or from the server is returned as it is. The dialect is the one
+// resolver's Info names.
+func ResolveIdentifierSemantics(
+	ctx context.Context,
+	resolver IdentifierResolver,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	runtime schemaext.TargetResolver,
+) (identifier.Semantics, error) {
+	if desired == nil || database == nil || noResolver(resolver) {
+		return identifier.Semantics{}, fmt.Errorf("%w: resolving identifiers requires a server and both schemas", ptaherr.ErrInvalidSchemaDiff)
+	}
+	if runtime == nil {
+		return identifier.Semantics{}, fmt.Errorf("%w: resolving identifiers requires a target runtime", ptaherr.ErrInvalidSchemaDiff)
+	}
+	target, err := runtime.ResolveTarget(resolver.Info().Dialect)
+	if err != nil {
+		return identifier.Semantics{}, err
+	}
+	return resolveComparisonIdentifiers(ctx, resolver, desired, database, target)
+}
+
+// noResolver reports whether resolver is nil or holds a nil pointer, such as
+// a nil *dbschema.DatabaseConnection, which has no Info to read.
+func noResolver(resolver IdentifierResolver) bool {
+	if resolver == nil {
+		return true
+	}
+	value := reflect.ValueOf(resolver)
+	return value.Kind() == reflect.Pointer && value.IsNil()
+}
+
+// resolveComparisonIdentifiers asks resolver about every name a comparison of
+// desired with database meets under target: the names the comparison keys,
+// and the names the target's facets carry.
+func resolveComparisonIdentifiers(
+	ctx context.Context,
+	resolver IdentifierResolver,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	target schemaext.TargetSelection,
+) (identifier.Semantics, error) {
+	info := resolver.Info()
+	names := collectIdentifierNames(desired, database, info.Schema, info.Dialect)
+	slots := append(desired.FacetSlots(), database.FacetSlots()...)
+	names, err := appendFacetIdentifierNames(names, slots, target)
+	if err != nil {
+		return identifier.Semantics{}, err
+	}
+	return resolver.ResolveIdentifierSemantics(ctx, names)
 }
 
 // CompareWithDatabaseReportingUndecidedAdditions performs the same
@@ -77,17 +155,11 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	names := collectIdentifierNames(desired, database, info.Schema, info.Dialect)
 	target, err := runtime.ResolveTarget(info.Dialect)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	slots := append(desired.FacetSlots(), database.FacetSlots()...)
-	names, err = appendFacetIdentifierNames(names, slots, target)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	semantics, err := conn.ResolveIdentifierSemantics(ctx, names)
+	semantics, err := resolveComparisonIdentifiers(ctx, conn, desired, database, target)
 	if err != nil {
 		return nil, Diagnostics{}, fmt.Errorf("compare schemas: %w", err)
 	}
@@ -1311,7 +1383,57 @@ func collectIdentifierNames(
 	names := []string{defaultSchema}
 	names = appendGeneratedIdentifierNames(names, desired)
 	names = appendDatabaseIdentifierNames(names, database)
+	names = appendDeclaredObjectNames(names, desired)
+	names = appendHeldObjectNames(names, database)
 	return appendSequenceReferenceNames(names, desired, database, dialect)
+}
+
+// appendDeclaredObjectNames adds the names of the views, materialized views,
+// routines, sequences and triggers desired declares, as
+// [identifiervalidation.ObjectNames] lists them.
+//
+// Each of them is keyed by the table rule, as a table is (see
+// [ptah.run/core/objectidentity.Builder.SchemaScopedParts]), so on a server
+// that compares names under its collation each one needs the server's answer
+// as a table name does. A name nobody asked about keeps its spelling. Then a
+// declared procedure MIXEDCASE and a held procedure MixedCase are two objects:
+// the plan creates the one and drops the other, and on a case-insensitive SQL
+// Server database the drop removes the procedure the create has just changed
+// (stokaro/ptah#6722).
+func appendDeclaredObjectNames(names []string, desired *schemamodel.Database) []string {
+	return append(names, identifiervalidation.ObjectNames(desired)...)
+}
+
+// appendHeldObjectNames is [appendDeclaredObjectNames] for the objects the
+// database holds. A reader blanks the schema of an object in the
+// connection's own schema, and a blank is no name to ask about.
+func appendHeldObjectNames(names []string, database *catalog.Database) []string {
+	if database == nil {
+		return names
+	}
+	named := func(values ...string) {
+		for _, value := range values {
+			if value != "" {
+				names = append(names, value)
+			}
+		}
+	}
+	for _, view := range database.Views {
+		named(view.Schema, view.Name)
+	}
+	for _, view := range database.MatViews {
+		named(view.Schema, view.Name)
+	}
+	for _, function := range database.Functions {
+		named(function.Schema, function.Name)
+	}
+	for _, sequence := range database.Sequences {
+		named(sequence.Schema, sequence.Name)
+	}
+	for _, trigger := range database.Triggers {
+		named(trigger.Schema, trigger.Table, trigger.Name)
+	}
+	return names
 }
 
 // appendSequenceReferenceNames adds the schema and sequence names the column

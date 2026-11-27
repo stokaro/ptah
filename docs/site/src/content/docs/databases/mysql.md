@@ -1550,6 +1550,15 @@ Ptah refuses a declared revoke on a table, existing or created, that such a
 grant keeps, and names the grant: revoke it where it was granted, or grant the
 privilege on each table that needs it. Measured on 8.4.13, 10.11.19 and 11.8.9.
 
+[`ptah schema security`](../../schema/security/#measure-how-much-of-the-database-a-role-reaches)
+counts these grants toward a role's reach, and the finding names a pattern
+grant. The server applies one database-level row of all those that reach the
+database, so the reach counts only that row: a role holding
+``SELECT ON `d%`.*`` and `INSERT ON d2.*` writes the tables of `d2` and reads
+none of them. The refusal above counts every row that reaches the table's
+database, a shadowed one included, because a shadowed pattern's privilege
+applies again once the row that shadows it is gone.
+
 A pattern matches a database name as the server's privilege check reads it,
 which is not how SQL `LIKE` reads it. `%` is any run of bytes and `_` is one
 byte, so `` `nx__d` `` reaches `nxéd`, where `é` is two bytes. A backslash takes
@@ -1568,10 +1577,10 @@ Case counts on a server with `lower_case_table_names=0` and does not on one
 that folds names, so a grant on `` `D%` `` reaches no table of `d1` there.
 MySQL with `partial_revokes` on reads `%` and `_` as the characters themselves,
 so a pattern grant reaches no other database, and Ptah reports none. Where
-several database rows match, the server applies one of them, and while a role
-is active the row MySQL picks does not follow from the rows. So Ptah reports
-every row that matches, and a revoke under a pattern that another row shadows
-is refused too. Measured on 8.4.13 and 11.8.9.
+several database rows match, the server applies one of them, but a shadowed
+pattern's privilege applies again once the row that shadows it is gone. So Ptah
+counts every row that matches, and refuses a revoke on a table such a pattern
+keeps. Measured on 8.4.13 and 11.8.9.
 
 A database grant the schema declares under `grants:` with `on_schema` keeps
 the privilege too, before the server holds it, because the plan grants it.
@@ -1694,6 +1703,40 @@ grants back what the database it was planned against holds, which is not
 always what the database it later runs on holds, and the grant option it
 checks is the planning account's, not the one of the account that later runs
 the migration.
+
+The down file `ptah migrations generate` writes for a body change replaces the
+routine back the same way. It drops the routine the up file created, creates it
+again with the body, the `SQL SECURITY` mode and the volatility the database it
+was planned against held, under the name the schema gives it, and grants the
+same rows of `mysql.procs_priv` again. Some of what the routine held does not
+come back:
+
+- The `CREATE` writes no `DEFINER`, so the account that runs the down file
+  becomes the routine's definer.
+- The routine's `COMMENT` is lost (stokaro/ptah#6686).
+- The down file writes no `sql_mode`, so the routine runs under the mode of
+  the session that runs the down file. A function created without a strict
+  mode returns 127 for a `TINYINT` value it cannot hold. Created again under
+  the server's strict default, the same body fails with error 1264.
+- The deterministic flag and the data-access characteristic come back as
+  Ptah's volatility writes them: a deterministic routine comes back
+  `DETERMINISTIC` with `CONTAINS SQL`, and one written `MODIFIES SQL DATA`
+  comes back `READS SQL DATA`.
+
+When the up migration also drops a table the old body reads, the down file
+creates the routine before it creates the table again (stokaro/ptah#6721).
+MySQL and MariaDB look up a body's tables when the routine runs, so the
+routine works once the table is back.
+
+A plan whose rollback finds no routine to restore is refused before anything
+is written. That happens when the read holds no routine of the name, the kind
+(function or procedure) and the argument list the change names:
+
+```text
+invalid schema diff: cannot plan the rollback of changing rt(): the database read holds no such routine to restore
+```
+
+Measured on MySQL 26.10.0 and MariaDB 12.3.3.
 
 A database name is matched exactly. On a server started with
 `lower_case_table_names=0`, the Linux default, `app` and `APP` are two

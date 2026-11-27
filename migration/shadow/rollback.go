@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/devcollation"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -108,6 +109,12 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	}
 	if sameDatabase {
 		return fmt.Errorf("rollback verification failed: shadow database must be distinct from target database")
+	}
+	// The rollback is planned under the target's collation and replayed on
+	// the shadow database. One that reads two names otherwise replays the
+	// directory into another state, so it is refused before it is claimed.
+	if err := devcollation.Refuse(ctx, opts.TargetConnection, shadowConn, "the shadow database"); err != nil {
+		return fmt.Errorf("rollback verification failed: %w", err)
 	}
 
 	lease, err := shadowdb.Claim(ctx, shadowConn, opts.Trust.guardTrust())

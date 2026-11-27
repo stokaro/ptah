@@ -682,6 +682,12 @@ func functionDefinitions(
 		// has to drop this routine addresses it by what the catalog holds, not
 		// by the spelling the comparison converges on (stokaro/ptah#3288).
 		CurrentSignature: dbFunction.DropIdentity(),
+		// The routine this declaration is paired with, as the read names it.
+		// A declaration that leaves the schema out is paired with a routine
+		// the read names in its schema, so the declaration's name finds
+		// nothing in the read, and without this the rollback of a body
+		// change restores nothing.
+		CurrentName: dbFunction.QualifiedName(),
 	}
 
 	// Defense-in-depth: canonicalize a local copy. The annotation parser at

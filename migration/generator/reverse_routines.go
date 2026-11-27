@@ -4,6 +4,7 @@ package generator
 // as well as its name, which is what a reversal has to carry.
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -93,13 +94,39 @@ func reverseFunctionDiffs(
 			// The replacement renders from the operand, so reversing the change
 			// map without reversing the operand would have the down direction
 			// re-apply the body it is undoing (stokaro/ptah#2315).
-			Desired: priorFunction(
-				current, prior, functionDiff.FunctionName, functionDiff.CurrentSignature,
-			),
+			Desired:          restoredFunction(functionDiff, current, prior),
 			CurrentSignature: forwardRoutineSignature(functionDiff),
+			// No CurrentName: the routine the rollback replaces is the one the
+			// up migration created, under the declaration's name.
 		}
 	}
 	return reversed
+}
+
+// restoredFunction is the routine the rollback of functionDiff creates again:
+// the one the pre-change database held, named as the forward change names
+// the routine it replaces.
+//
+// The definition is found under the name the read gave the routine
+// ([difftypes.FunctionDiff.CurrentName]), not the declaration's, because the
+// two differ wherever the declaration leaves the schema out: the MySQL family
+// reads every routine in its database, and the PostgreSQL family in its
+// schema. Looked up by the declaration's name the definition is not found,
+// and a rollback with no operand plans nothing for the routine, so the down
+// migration keeps the body the up migration wrote.
+//
+// The name it is created under is the forward change's. The rollback drops
+// and creates the routine the up migration left, which the up migration
+// named as the declaration does, and a down migration that named the schema
+// the read was taken from would name the dev database a migration is planned
+// on rather than the database it runs on.
+func restoredFunction(functionDiff difftypes.FunctionDiff, current *catalog.Database, prior *schemamodel.Database) schemamodel.Function {
+	name := cmp.Or(functionDiff.CurrentName, functionDiff.FunctionName)
+	restored := priorFunction(current, prior, name, functionDiff.Desired.Kind, functionDiff.CurrentSignature)
+	if restored.Name != "" {
+		restored.Name = functionDiff.FunctionName
+	}
+	return restored
 }
 
 // forwardRoutineSignature is the argument list that addresses the routine the
@@ -144,30 +171,43 @@ func sameDropIdentity(left, right *string) bool {
 func routineAdditionsFromRemovals(removals difftypes.FunctionChanges, current *catalog.Database, prior *schemamodel.Database) difftypes.FunctionChanges {
 	additions := slices.Clone(removals)
 	for i, removal := range additions {
-		if held := priorFunction(current, prior, removal.Name, removal.Signature); held.Name != "" {
+		if held := priorFunction(current, prior, removal.Name, removal.Kind, removal.Signature); held.Name != "" {
 			additions[i].Function = held
 		}
 	}
 	return additions
 }
 
-// refuseUnrestorableRoutines refuses a rollback that would create a removed
-// routine again without the declaration the pre-change database held: the
-// read holds no routine of that name and signature to restore it from. A
-// rollback built from the removal's own operand would create the routine
-// without its settings, properties and privileges, and say nothing about it.
+// refuseUnrestorableRoutines refuses a rollback that would create a removed or
+// changed routine again without the declaration the pre-change database held:
+// the read holds no routine of that name, kind and signature to restore it
+// from. A rollback built from the removal's own operand would create the
+// routine without its settings, properties and privileges, and a changed
+// routine with nothing to restore would keep the body the up migration wrote.
+// Neither says anything about it.
 func refuseUnrestorableRoutines(diff *difftypes.SchemaDiff, current *catalog.Database, prior *schemamodel.Database) error {
 	for _, removal := range append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...) {
-		if priorFunction(current, prior, removal.Name, removal.Signature).Name == "" {
-			signature := ""
-			if removal.Signature != nil {
-				signature = *removal.Signature
-			}
+		if priorFunction(current, prior, removal.Name, removal.Kind, removal.Signature).Name == "" {
 			return fmt.Errorf("%w: cannot plan the rollback of removing %s(%s): the database read holds no such routine to restore",
-				ptaherr.ErrInvalidSchemaDiff, removal.Name, signature)
+				ptaherr.ErrInvalidSchemaDiff, removal.Name, signatureText(removal.Signature))
+		}
+	}
+	for _, change := range diff.FunctionsModified {
+		if restoredFunction(change, current, prior).Name == "" {
+			return fmt.Errorf("%w: cannot plan the rollback of changing %s(%s): the database read holds no such routine to restore",
+				ptaherr.ErrInvalidSchemaDiff, change.FunctionName, signatureText(change.CurrentSignature))
 		}
 	}
 	return nil
+}
+
+// signatureText is the argument list a refusal names; a change that recorded
+// none names an empty list.
+func signatureText(signature *string) string {
+	if signature == nil {
+		return ""
+	}
+	return *signature
 }
 
 // routineGrantsFromRemovals is the privileges the rollback gives back to the
@@ -185,7 +225,7 @@ func routineGrantsFromRemovals(removals difftypes.FunctionChanges, current *cata
 		return nil, nil
 	}
 	for _, removal := range removals {
-		function, ok := heldFunction(current, removal.Name, removal.Signature)
+		function, ok := heldFunction(current, removal.Name, removal.Kind, removal.Signature)
 		if !ok {
 			continue
 		}
@@ -251,23 +291,44 @@ func grantOnRoutine(grant catalog.Grant, function catalog.Function, objectType s
 		strings.TrimSpace(grant.Arguments) == strings.TrimSpace(function.Signature())
 }
 
-// heldFunction is the routine the pre-change database held under name and
-// signature, as the read reported it.
-func heldFunction(current *catalog.Database, name string, signature *string) (catalog.Function, bool) {
+// heldFunction is the routine the pre-change database held under name, kind
+// and signature, as the read reported it.
+func heldFunction(current *catalog.Database, name, kind string, signature *string) (catalog.Function, bool) {
 	for _, function := range current.Functions {
-		if function.QualifiedName() == name && sameDropIdentity(function.DropIdentity(), signature) {
+		if heldAs(function, name, kind, signature) {
 			return function, true
 		}
 	}
 	return catalog.Function{}, false
 }
 
+// heldAs reports whether function, as the read reported it, is the routine
+// name, kind and signature address.
+//
+// The kind is compared because a name does not select a routine on the MySQL
+// family, where one database holds a function and a procedure of the same
+// name and neither carries an argument list that tells them apart. Matched by
+// name alone, the rollback of a change to the procedure restores the
+// function's definition in the procedure's place.
+func heldAs(function catalog.Function, name, kind string, signature *string) bool {
+	return function.QualifiedName() == name &&
+		sameRoutineKind(function.Kind, kind) &&
+		sameDropIdentity(function.DropIdentity(), signature)
+}
+
+// sameRoutineKind reports whether two routine kinds are one: a procedure, or
+// a function, which a kind left unset is. It is the separation the comparison
+// pairs routines on.
+func sameRoutineKind(left, right string) bool {
+	return schemamodel.Function{Kind: left}.IsProcedure() == schemamodel.Function{Kind: right}.IsProcedure()
+}
+
 // priorFunction is the function the pre-change database held, as a declaration
 // the planner can render.
 //
-// The name is compared exactly, which is the identity the comparison that
-// produced the change already used: it pairs a declared routine with a reported
-// one by the name the declaration carries.
+// The name is compared exactly, so it is the name the read reports: a removal
+// carries it, and a modification records it as
+// [difftypes.FunctionDiff.CurrentName].
 //
 // The signature is compared too, because a name does not select an overload.
 // Matching by name alone returned the first routine of that name, so rolling
@@ -280,12 +341,12 @@ func heldFunction(current *catalog.Database, name string, signature *string) (ca
 // read routine's position is the one converted from it. Where the two lists
 // differ in length, the declaration is found by the name, kind and argument
 // list it was converted with instead.
-func priorFunction(current *catalog.Database, prior *schemamodel.Database, name string, signature *string) schemamodel.Function {
+func priorFunction(current *catalog.Database, prior *schemamodel.Database, name, kind string, signature *string) schemamodel.Function {
 	if current == nil || prior == nil {
 		return schemamodel.Function{}
 	}
 	for i, function := range current.Functions {
-		if function.QualifiedName() != name || !sameDropIdentity(function.DropIdentity(), signature) {
+		if !heldAs(function, name, kind, signature) {
 			continue
 		}
 		if len(current.Functions) == len(prior.Functions) {

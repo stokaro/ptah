@@ -12,22 +12,22 @@
 // Privileges on one object are not simply added up. These rules were measured on
 // MySQL 8.4 and 26.10 and on MariaDB 11.8 and 12.3:
 //
-//   - A database-level row is a LIKE pattern, and the server uses the most
-//     specific row that matches rather than all of them. `GRANT TRIGGER ON
-//     `f%`.*` beside `GRANT SELECT ON `fx`.*` leaves an account with SELECT on
-//     fx and no TRIGGER. A name without a wildcard wins, then the row whose first
-//     wildcard comes later.
-//   - MariaDB applies that rule to the account and to each active role apart,
-//     and adds the results. MySQL prints a role's rows as the account's own, and
-//     with an active role the wildcard row it uses does not follow from
-//     specificity.
+//   - A database-level row is a LIKE pattern, and the server applies one row
+//     that matches rather than all of them. `GRANT TRIGGER ON `f%`.*` beside
+//     `GRANT SELECT ON `fx`.*` leaves an account with SELECT on fx and no
+//     TRIGGER. [Options.ApplyingRows] says which row that is.
+//   - MariaDB looks the account, the active role with the roles it inherits,
+//     and PUBLIC up apart, and adds the results; it prints each role's rows
+//     under the role's name. MySQL prints an active role's rows as the
+//     account's own, and looks them up together.
 //   - With partial_revokes on, MySQL compares a database name literally and
 //     prints a partial revoke as a REVOKE line.
 //
 // Where this package cannot tell which of several rows the server uses, it
 // credits only what all of them hold, and a line it cannot read grants nothing.
 // A privilege credited wrongly becomes an object a comparison reads as absent; a
-// privilege not credited becomes a refusal that names it.
+// privilege not credited becomes a refusal that names it. The security
+// analysis settles the same doubt the other way, as a warning must.
 package mysqlgrants
 
 import (
@@ -45,10 +45,13 @@ type Options struct {
 	// FoldCase reports lower_case_table_names other than 0: names compare
 	// without regard to case.
 	FoldCase bool
-	// MergedRoles reports a server that prints an active role's rows as the
-	// account's own, which is MySQL. While a role is granted, wildcard rows
-	// then rank equal, because SHOW GRANTS does not say which roles are active.
-	MergedRoles bool
+	// MariaDB reports a MariaDB server, which orders database-level rows its
+	// own way and prints a role's rows under the role's name. Otherwise the
+	// server is MySQL, which prints an active role's rows as the account's
+	// own: while a role is granted, SHOW GRANTS does not say whether it is
+	// active, so a row credits a privilege only where the account's lookup
+	// and the role lookup both apply one holding it.
+	MariaDB bool
 }
 
 // Privileges is a set of privileges on one object.
@@ -208,61 +211,95 @@ func (g Grants) OnTable(database, table string) Privileges {
 	return held
 }
 
-// databaseLevel applies the most specific matching row of each grantee and adds
-// the results. Rows that rank equal credit only what they all hold, because the
-// order the server tries them in is not one this package can see.
+// databaseLevel adds what each subject holds through the database-level row
+// the server applies to it, as [Options.ApplyingRows] decides. On MariaDB the
+// subjects are the account, the active role with the roles it inherits, and
+// PUBLIC; on MySQL every row printed is the account's. With a role granted on
+// MySQL, SHOW GRANTS does not say whether it is active, so the rows either
+// lookup applies are crossed together.
 func (g Grants) databaseLevel(database string) Privileges {
-	type best struct {
-		rank       int
-		privileges Privileges
-	}
-	byGrantee := make(map[string]best)
+	subjects := make(map[subject][]row)
 	for _, r := range g.rows {
-		if r.level != levelDatabase || r.revoke || !g.matches(r.database, database) {
-			continue
-		}
-		rank := g.rank(r.database)
-		current, seen := byGrantee[r.grantee]
-		switch {
-		case !seen || rank > current.rank:
-			byGrantee[r.grantee] = best{rank: rank, privileges: r.privileges}
-		case rank == current.rank:
-			byGrantee[r.grantee] = best{rank: rank, privileges: current.privileges.intersect(r.privileges)}
+		if r.level == levelDatabase && !r.revoke {
+			key := g.subjectOf(r.grantee)
+			subjects[key] = append(subjects[key], r)
 		}
 	}
 	held := Privileges{}
-	for _, row := range byGrantee {
-		held = held.union(row.privileges)
+	for _, rows := range subjects {
+		held = held.union(g.applied(database, rows))
 	}
 	return held
 }
 
-// literalRank outranks every wildcard position, as the server's own sort does.
-const literalRank = 128
-
-// rank orders matching rows. A name without a wildcard comes first, then the row
-// whose first wildcard comes later; the server caps the position at 127.
-func (g Grants) rank(pattern string) int {
-	if g.options.LiteralDatabaseNames {
-		return literalRank
+// applied is what one subject holds at the database level: what every row
+// that may apply holds, each name holding what all its rows hold.
+func (g Grants) applied(database string, rows []row) Privileges {
+	names := make([]string, len(rows))
+	for i, r := range rows {
+		names[i] = r.database
 	}
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
-		case '\\':
-			i++
-		case '%', '_':
-			if g.options.MergedRoles && g.roleGranted {
-				return 1
+	applying := g.options.ApplyingRows(AccountLookup, database, names)
+	if !g.options.MariaDB && g.roleGranted {
+		applying = distinct(append(applying, g.options.ApplyingRows(RoleLookup, database, names)...))
+	}
+	held := Privileges{}
+	for i, name := range applying {
+		byName := Privileges{}
+		for _, r := range rows {
+			if r.database == name {
+				byName = byName.union(r.privileges)
 			}
-			return min(i+1, literalRank-1)
 		}
+		if i == 0 {
+			held = byName
+			continue
+		}
+		held = held.intersect(byName)
 	}
-	return literalRank
+	return held
 }
 
-// matches reports whether a database-level row applies to name.
-func (g Grants) matches(pattern, name string) bool {
-	return g.options.MatchesDatabase(pattern, name)
+// subject is one lookup of the database-level rows.
+type subject uint8
+
+const (
+	subjectAccount subject = iota
+	subjectRole
+	subjectPublic
+)
+
+// subjectOf says which lookup a row printed for grantee belongs to. MySQL
+// looks every row it prints up together; MariaDB prints an account as
+// `user`@`host`, PUBLIC by that word and a role by its name alone.
+func (g Grants) subjectOf(grantee string) subject {
+	switch {
+	case !g.options.MariaDB:
+		return subjectAccount
+	case strings.EqualFold(grantee, "PUBLIC"):
+		return subjectPublic
+	case namesAnAccount(grantee):
+		return subjectAccount
+	default:
+		return subjectRole
+	}
+}
+
+// namesAnAccount reports whether a grantee holds an `@` outside its quotes,
+// which `user`@`host` does and a role name does not.
+func namesAnAccount(grantee string) bool {
+	var inside byte
+	for i := 0; i < len(grantee); i++ {
+		switch current := grantee[i]; {
+		case inside != 0 && current == inside:
+			inside = 0
+		case inside == 0 && isQuote(current):
+			inside = current
+		case inside == 0 && current == '@':
+			return true
+		}
+	}
+	return false
 }
 
 // MatchesDatabase reports whether a database-level grant row on pattern
@@ -274,12 +311,16 @@ func (g Grants) matches(pattern, name string) bool {
 // without regard to case where [Options.FoldCase] holds, and literally where
 // [Options.LiteralDatabaseNames] does.
 //
-// It is the one matcher for a database-level row. SQL LIKE does not agree with
-// the server: measured on MySQL 8.4.13 and MariaDB 11.8.9, LIKE's `_` matches
-// one character, so `nx__d` matches no database `nxéd` while the grant on it
-// reaches every table there, and on MySQL NO_BACKSLASH_ESCAPES takes LIKE's
-// escape away, so `ab\_c` matches no database `ab_c` while the grant reaches
-// it.
+// It is the one matcher for a database-level row. It says which rows match,
+// and [Options.ApplyingRows] says which of them the server applies. The revoke
+// refusal reads every row that matches as one that may apply, which fails
+// closed for a refusal, so the two policies stay apart.
+//
+// SQL LIKE does not agree with the server: measured on MySQL 8.4.13 and
+// MariaDB 11.8.9, LIKE's `_` matches one character, so `nx__d` matches no
+// database `nxéd` while the grant on it reaches every table there, and on
+// MySQL NO_BACKSLASH_ESCAPES takes LIKE's escape away, so `ab\_c` matches no
+// database `ab_c` while the grant reaches it.
 //
 // Measured on MySQL 8.4.13, a row a role holds with no `%` or `_` in it
 // compares byte for byte, backslashes included, where a user's own row, and

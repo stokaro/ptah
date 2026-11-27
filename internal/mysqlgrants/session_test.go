@@ -117,7 +117,7 @@ func TestRead_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			db := dbtest.Open(t, session(test.lines, test.settings))
 
-			grants, err := mysqlgrants.Read(t.Context(), db.SQL, !test.mariaDB)
+			grants, err := mysqlgrants.Read(t.Context(), db.SQL, test.mariaDB)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(grants.OnDatabase(test.database).Holds("TRIGGER"), qt.Equals, test.want)
@@ -147,7 +147,7 @@ func TestRead_FailurePath(t *testing.T) {
 				return result, refused
 			})
 
-			_, err := mysqlgrants.Read(t.Context(), db.SQL, true)
+			_, err := mysqlgrants.Read(t.Context(), db.SQL, false)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

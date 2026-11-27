@@ -237,12 +237,40 @@ of all of them. A role reaches a relation through:
   no further than the first link;
 - ownership, which on PostgreSQL carries every privilege on the relation, even
   one the owner revoked from itself, since it can grant that back;
-- a grant on the whole database, on MySQL and MariaDB;
+- a grant on the whole database, on MySQL and MariaDB, as the server applies
+  it, which the next paragraph describes;
 - access no grant on a relation states: superuser, membership in
-  `pg_read_all_data` or `pg_write_all_data`, or a privilege on every database
-  such as `GRANT SELECT ON *.*`. A member reaches what a superuser role reaches
+  `pg_read_all_data` or `pg_write_all_data`, a privilege on every database
+  such as `GRANT SELECT ON *.*`, or, on MySQL and MariaDB, a privilege on a
+  database name pattern that reaches the database, such as
+  ``GRANT SELECT ON `ab%`.*``. A member reaches what a superuser role reaches
   only if it can switch to that role, because PostgreSQL does not pass the
   superuser bit on through inheritance.
+
+On MySQL and MariaDB a grant on a database, `ON d.*`, is a row on a database
+name pattern: `%` and `_` are wildcards, `\_` and `\%` match the character
+itself, and case counts where `lower_case_table_names` is `0`, the way
+[the MySQL page](../../databases/mysql/#roles-and-grants) describes for a revoke
+under such a grant. A name such as `app_db` is a pattern too. Of all the rows
+that reach the database, the server applies one, so a role holding
+``SELECT ON `ab%`.*`` and `INSERT ON abc.*` writes the tables of `abc` and
+reads none of them. A role counts only the privileges of the row the server
+applies to a session with that role active, which holds the role's own rows
+and those of the roles it inherits:
+
+- the row on the database's exact name, where that name has no `%` or `_`;
+- otherwise, on MySQL, the pattern that sorts first byte for byte: `` `q_bc` ``
+  before `` `qa%` ``, `` `qa%` `` before `` `qab%` ``, and `` `app%` `` before
+  `app_db`;
+- otherwise, on MariaDB, the row that matches the fewest names: more literal
+  characters first, and `_` before `%`. MariaDB looks a role and `PUBLIC` up
+  apart and adds what each applies.
+
+A pattern that does not reach the database counts nothing, and so does every
+pattern on MySQL with `partial_revokes` on. Where Ptah cannot tell which row the
+server applies, the role counts every row that may apply, as the limits below
+say. The order was measured on MySQL 8.4.13 and 26.10.0 and on MariaDB 11.8.9
+and 12.3.3.
 
 `SELECT` is read access; `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` are write
 access. The write rule leaves materialized views out of its count, since no
@@ -267,10 +295,14 @@ A role that reaches no more than `PUBLIC` does is not reported, because the
 `PUBLIC` finding already names that reach. In `--format json`,
 `detail.reach` carries `reached`, `relations` and `threshold_percent`, the roles
 the reach passes through under `through`, and under `sources` the access a
-revoke on a relation does not narrow, such as `superuser held by ptah` or
-`ownership of 2 relations held by ptah`. An owner can grant itself back what a
+revoke on a relation does not narrow, such as `superuser held by ptah`,
+`ownership of 2 relations held by ptah` or, on MySQL and MariaDB,
+``SELECT ON `ab%`.* held by reporting``. Each rule names the sources of its own
+reach, so a role that reads everything through `pg_read_all_data` and writes
+through grants names no source for writing. An owner can grant itself back what a
 revoke takes, so the suggestion for such a role is to give the relations to an
-owner the application does not connect as.
+owner the application does not connect as. Where a source is a grant on a
+database name pattern, the suggestion asks to remove that grant as well.
 
 The rules run on PostgreSQL, MySQL and MariaDB, where the read covers that
 access. Elsewhere they report themselves skipped, because a reach measured
@@ -316,6 +348,28 @@ across native commands.
   not the view is updatable.
 - On MySQL and MariaDB the rules measure roles, the principals the role read
   covers. A user account that holds broad grants directly is not measured.
+- On MySQL a session's account and every role it has active share one lookup
+  of the database-level rows, so a user's own row, or a second active role,
+  can win over a role's row. The rules measure each role with only itself and
+  the roles it inherits active.
+- A role named in MySQL's `mandatory_roles` is granted to every account, and is
+  active in every session that runs `SET ROLE ALL` or logs in with
+  `activate_all_roles_on_login` on. The rules treat it as an ordinary role.
+  They do not report that it reads or writes for every account, and they do not
+  count that its rows, active beside another role under `SET ROLE ALL`, can
+  shadow that role's pattern.
+- Where Ptah cannot tell which of two rows the server applies, the finding
+  counts every privilege of both, each under its own row, so it may show more
+  than the server allows. That covers two MariaDB patterns with the same counts
+  of characters and wildcards, such as `` `%_bc` `` and `` `_%bc` ``, which the
+  server orders by an unstable sort, and, on a server with
+  `lower_case_table_names=2`, two MySQL rows whose order changes when the names
+  are folded. No server with `lower_case_table_names=2` was measured.
+- On MariaDB, a role granted a role that holds a grant on a database name
+  pattern is named in `detail.reach.sources` as holding that grant as well,
+  because MariaDB's privilege views list the grant under both roles. The
+  member reaches the same relations either way, and `REVOKE` of the grant from
+  the member fails, since it holds the grant only through the other role.
 - PostgreSQL's bootstrap superuser is read only when it is not named
   `postgres`: a role read leaves the name `postgres` out, so that role is not
   measured, while a superuser under any other name is. A role that can switch

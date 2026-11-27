@@ -15,11 +15,12 @@ import (
 // The baseline is DDL Ptah derives from the target, but deriving a statement
 // from the target does not confine its effects: a routine or a trigger body
 // can write outside the dev database when it runs, a comment on an extension
-// is not restored by the cleanup, and a role or a grant outlives it. So every
-// refusal of [NewDevReplayGuard] holds, and a server the run owns lifts the
-// same refusals it lifts for a replay. The two differ in a refusal's words and
-// in [BaselineGuard.WithSchemaStateReturned]. A YDB baseline holds no permission
-// on the database root at all; see the rehearsal's own omission of them.
+// the dev database held is not restored by the cleanup, and a role or a grant
+// outlives it. So every refusal of [NewDevReplayGuard] holds, and a server the
+// run owns lifts the same refusals it lifts for a replay. The two differ in a
+// refusal's words and in [BaselineGuard.WithSchemaStateReturned]. A YDB
+// baseline holds no permission on the database root at all; see the
+// rehearsal's own omission of them.
 type BaselineGuard struct {
 	replay *ReplayGuard
 }
@@ -68,6 +69,15 @@ func (g *BaselineGuard) WithSchemaStateReturned(returned bool) *BaselineGuard {
 // [ReplayGuard.WithPublications].
 func (g *BaselineGuard) WithPublications(publications func() replay.PublicationScope) *BaselineGuard {
 	return &BaselineGuard{replay: g.replay.WithPublications(publications)}
+}
+
+// WithSurvivors returns a copy of the guard for a dev database whose every
+// cleanup keeps the extensions and schemas survivors names and drops the
+// others; see [ReplayGuard.WithSurvivors]. A baseline that recreates a
+// target's extension then writes its comment too, where the dev database did
+// not hold the extension at the claim.
+func (g *BaselineGuard) WithSurvivors(survivors func() replay.CleanupSurvivors) *BaselineGuard {
+	return &BaselineGuard{replay: g.replay.WithSurvivors(survivors)}
 }
 
 // ValidateStatement refuses a baseline statement whose effects cannot be

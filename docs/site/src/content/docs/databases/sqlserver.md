@@ -295,14 +295,86 @@ that resolved snapshot through comparison, planning, checkpoint generation,
 and shadow verification (shadow execution is rejected when the shadow catalog
 resolves names differently).
 
-An offline, dialect-only comparison cannot know the target collation, so it
-confirms only exact-spelling identity. When it checks table, column, or index
-names for conflicts, it treats two ASCII names that differ after ASCII case
-folding as distinct, because no SQL Server collation makes them equal. Names that differ only in ASCII case, or
-that hold a non-ASCII character, may be one name under some collation, so
-planning rejects them as a possible conflict instead of guessing. This makes
-offline SQL Server planning intentionally stricter than live planning. Embedders choose between the live-aware and offline
-comparison APIs — see [Public Go API](../../extend/public-api/).
+The snapshot covers the names of schemas, tables, columns, indexes, views,
+sequences, functions, procedures and triggers, and a declared object pairs with
+the object the database holds when the server reads their names as one. On a
+case-insensitive database that holds the procedure `MixedCase`, a schema that
+declares `MIXEDCASE` with another body changes `MixedCase`. It does not create
+a second procedure and drop the first, which on that database would drop the
+procedure the plan has changed. Under a case-sensitive collation the two names are two
+procedures, and the plan creates `MIXEDCASE` beside `MixedCase`.
+
+The plan writes each name as the schema declares it, and no plan renames an
+object only to change the case of its name. A routine changes by `DROP` and
+`CREATE`, so the server then stores the declared spelling. A table, a view, a
+sequence and a trigger change in place, and the server keeps the spelling it
+already stores. Either way the next comparison reads both spellings as one name
+and plans nothing.
+
+Two declarations of one kind that the database may read as one name are
+refused, because only one of them could be compared: under a case-insensitive
+collation the views `MixedView` and `MIXEDVIEW` are one view. A plan that would
+create one object and drop another of its kind whose name the target may read
+as the same name is refused too, before any statement runs. Triggers are
+outside that check, because the plan drops the old trigger before it creates
+the new one, so the drop frees the name the create takes.
+
+`schema diff` of two schema files, in both binaries, asks the dev database how
+it compares the names the two files hold, and pairs them the way it answers.
+The dev URL may come from `--dev-url` or from the project file. Ptah opens it
+beside `--server-version` too, because a server version says what the plan may
+use, not how the database compares names. A dev database that does not answer
+fails the run. The tables `Größe` and `Zähler` are two tables. On a
+case-insensitive dev database the views `MixedView` and `MIXEDVIEW` are one
+view, and the plan changes it in place. Under `Hungarian_CI_AS` the functions
+`ccs` and `cscs` are one function, so the plan replaces it.
+
+The Go comparison APIs that take no connection compare names offline, by these
+rules:
+
+- Two ASCII names that differ beyond ASCII case are assumed to be two names.
+  Most collations agree. A collation with contractions, which reads a group of
+  letters as one letter, does not: under `Hungarian_CI_AS` and
+  `Hungarian_100_CI_AS`, `ccs` and `cscs` are one name, and so are `ddz` and
+  `dzdz`. `Maori_100_CI_AS` reads `a-b` as `ab`. On such a database an offline
+  plan from `ccs` to `cscs` creates one function and drops the other, which
+  leaves neither.
+- Two names that differ only in ASCII case are refused, because they are one
+  name under a case-insensitive collation.
+- A name that holds a non-ASCII character is refused beside any other name of
+  its kind in any schema. Two schema files that declare the views `Größe` and
+  `v2` are refused, and the refusal says that Ptah cannot tell whether the two
+  are one name under the database collation.
+
+Plan with a connection. An embedder gets the server's answer from
+`schemadiff.ResolveIdentifierSemantics`; see
+[Public Go API](../../extend/public-api/).
+
+A dev or shadow database must use the target's collation. A case-sensitive dev
+database would hold `MixedCase` and `MIXEDCASE` as two procedures where the
+target holds one, and a rehearsal there would prove nothing about the target.
+A command that runs a change on a dev or shadow database before the target
+asks both servers how they compare names that differ in case, in accent, in
+width and in kana, and refuses when the answers differ. The refusal names both
+collations and the clause to create the dev or shadow database with, such as
+`COLLATE SQL_Latin1_General_CP1_CI_AS`. Ptah does not provision a SQL Server
+database from a `docker://` URL, so you create it.
+
+Collations with different names that agree on the four sensitivities pass,
+such as `SQL_Latin1_General_CP1_CI_AS` and `Latin1_General_100_CI_AS`. They
+can still read some names differently: a collation of an older version gives
+no weight to some characters a newer one weighs, so the first reads `p`, `pȡ`
+and `p😀` as one name and the second reads them as three.
+
+The check runs in these commands:
+
+- `schema apply --dev-url`, in both binaries;
+- `ptah migrations down --shadow-db`, and `ptah-compat migrate down --dev-url`;
+- the other commands that verify on a shadow database.
+
+`ptah migrations generate --replay` and `ptah-compat migrate diff` hold no
+connection to the target, so they cannot compare, and the generated migration
+is planned under the dev database's collation.
 
 ## Filtered indexes
 
@@ -537,6 +609,14 @@ the reader reports every routine `VOLATILE`.
 A routine replaced for a new body is dropped first, and the plan grants back
 what each grantee held on it and denies again what was denied. Measured on SQL
 Server 2025.
+
+The down file `ptah migrations generate` writes for a changed routine creates
+it again with the body and the options the database it was planned against
+held. A plan creates a routine before the tables the same plan creates
+(stokaro/ptah#6721). A `SCHEMABINDING` routine whose body reads such a table
+fails with error 208, `Invalid object name`, and the migration rolls back.
+That holds for an up migration that creates both, and for the down file of a
+migration that changes the routine and drops a table its old body reads.
 
 ## Scripts and batches
 

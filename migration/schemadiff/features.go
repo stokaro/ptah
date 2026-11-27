@@ -605,6 +605,7 @@ func attachRoutineChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 			positions[key] = position
 			diff.FunctionsModified = append(diff.FunctionsModified, difftypes.FunctionDiff{
 				FunctionName: function.Name, Changes: make(map[string]string), Desired: function, CurrentSignature: routine.DropIdentity(),
+				CurrentName: routine.QualifiedName(),
 			})
 		}
 		diff.FunctionsModified[position].FeatureChanges = append(diff.FunctionsModified[position].FeatureChanges, change)

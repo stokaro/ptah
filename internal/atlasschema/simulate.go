@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/devclean"
+	"ptah.run/internal/devcollation"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/devseed"
@@ -299,6 +300,15 @@ func connectSimulationDev(
 		release()
 		return simulationDev{}, err
 	}
+	// The plan was made under the target's collation, and the rehearsal
+	// builds the target's state on the dev database and runs the plan there.
+	// A dev database that reads two names otherwise would rehearse another
+	// state, so it is refused before anything is reset.
+	if err := devcollation.Refuse(ctx, targetConn, devConn, "the --dev-url database"); err != nil {
+		dbschema.CloseAndWarn(devConn)
+		release()
+		return simulationDev{}, err
+	}
 	if serverDev {
 		dev, err := claimSimulationDevServer(ctx, devConn, strings.TrimSpace(resolved), targetInfo, protected)
 		if err != nil {
@@ -492,7 +502,8 @@ func rehearseStatementsOnDev(
 	if err != nil {
 		return err
 	}
-	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications)
+	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
+		WithSurvivors(baseline.Survivors)
 	if err := guardPlanRehearsal(statements, guard, devConn.Info()); err != nil {
 		return err
 	}
@@ -763,9 +774,11 @@ func recreateCurrentSchema(
 	if err != nil {
 		return nil, err
 	}
+	guard = guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications).
+		WithSurvivors(baseline.Survivors)
 	dev := baselineDev{
 		info:     devConn.Info(),
-		guard:    guard.WithSchemaStateReturned(baseline.ReturnsSchemaState()).WithPublications(baseline.Publications),
+		guard:    guard,
 		executor: devConn.Writer(),
 		read: func(ctx context.Context) (*catalog.Database, error) {
 			return reads.settled(readscope.Authored(ctx), devConn)
