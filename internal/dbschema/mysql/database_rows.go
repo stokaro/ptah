@@ -74,13 +74,14 @@ func (r *Reader) readDatabaseRows(ctx context.Context, mariaDB bool) (*databaseR
 }
 
 // databaseRowQuery projects one row per privilege a role holds through a
-// database-level grant row.
+// database-level grant row. It joins the complete account, as [grantQuery]
+// does, so a login that shares a role's user name on another host lends the
+// role none of its rows.
 func databaseRowQuery(rolePredicate string) string {
-	const granteeUser = `REPLACE(SUBSTRING_INDEX(sp.GRANTEE, '@', 1), '''', '')`
 	return `
-		SELECT ` + granteeUser + ` AS role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE
+		SELECT u.user AS role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE
 		FROM information_schema.SCHEMA_PRIVILEGES AS sp
-		JOIN mysql.user AS u ON u.user = ` + granteeUser + `
+		JOIN mysql.user AS u ON ` + granteeMatchesAccount("sp.GRANTEE") + `
 		WHERE ` + rolePredicate + `
 			  AND u.user NOT LIKE 'mysql.%'
 		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`

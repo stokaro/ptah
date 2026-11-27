@@ -353,21 +353,6 @@ func namesATablePrivilege(privilege string) bool {
 	return false
 }
 
-// patternGrantQuery projects one row per privilege a role holds through a grant
-// on a database other than the one the binds name, whose own rows
-// [grantQuery] reads. Which of the rows reach that database is decided in Go;
-// see [Reader.readPatternGrants].
-func patternGrantQuery(rolePredicate string) string {
-	return `
-		SELECT u.user AS role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE
-		FROM information_schema.SCHEMA_PRIVILEGES AS sp
-		JOIN mysql.user AS u ON ` + granteeMatchesAccount("sp.GRANTEE") + `
-		WHERE NOT ` + mysqlname.SameDatabase("sp.TABLE_SCHEMA", "?") + `
-			  AND ` + rolePredicate + `
-			  AND u.user NOT LIKE 'mysql.%'
-		ORDER BY role_name, sp.TABLE_SCHEMA, sp.PRIVILEGE_TYPE`
-}
-
 // granteeMatchesAccount matches a privilege view's account to mysql.user's
 // alias u. Both engines surround the raw user and host with single quotes;
 // they do not escape quotes or backslashes within either part. Comparing that
@@ -377,10 +362,6 @@ func patternGrantQuery(rolePredicate string) string {
 func granteeMatchesAccount(grantee string) string {
 	return "CAST(" + grantee + " AS BINARY) = CAST(CONCAT('''', u.user, '''@''', u.host, '''') AS BINARY)"
 }
-
-// patternGrantQueryPredicates is the number of predicates [patternGrantQuery]
-// binds the database name in, each twice.
-const patternGrantQueryPredicates = 1
 
 // globalTablePrivileges pairs each privilege column of mysql.user with the
 // privilege a GRANT on a table names the same way. Held globally, each covers

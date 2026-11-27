@@ -111,6 +111,14 @@ func TestMySQLFamilyGrantAccountIdentityE2E(t *testing.T) {
 // db read and schema security use the same account identity. A role holding
 // SELECT on one column reaches no whole relation; its same-named login's
 // database SELECT must not turn that into access to every relation.
+//
+// The control grants the role SELECT on the table, not on the database. The
+// fixture's database name holds "_", which a database-level grant reads as a
+// wildcard, so on MySQL that row ties with the role's ALTER pattern row and the
+// server applies the pattern: measured on MySQL 26.10, a member of a role
+// holding SELECT ON `mgi_dbx`.* and ALTER ON `mgi_d%`.* is refused SELECT on
+// mgi_dbx.items with Error 1142, in either grant order. A table grant names its
+// database literally.
 func TestMySQLFamilyGrantAccountIdentityCommandsE2E(t *testing.T) {
 	for _, engine := range roleInheritEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -130,7 +138,7 @@ func TestMySQLFamilyGrantAccountIdentityCommandsE2E(t *testing.T) {
 
 			_, err = run.server.admin.ExecContext(c.Context(),
 				// #nosec G202 -- Both names belong to this fixture and granteeIdentifier doubles embedded backticks.
-				"GRANT SELECT ON "+granteeIdentifier(run.database)+".* TO "+granteeIdentifier(run.role),
+				"GRANT SELECT ON "+granteeIdentifier(run.database)+".items TO "+granteeIdentifier(run.role),
 			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(reachFindingLines(c, run.target, run.suffix), qt.DeepEquals, []string{
