@@ -5553,7 +5553,15 @@ in place of a dialect's name:
   namespace in a schema, as an `ObjectNamespace`. A declaration that gives two
   of them names the server may read as one is refused, and so is a plan that
   creates an object of one kind and drops one of another under such a name.
-  SQL Server states tables, views, routines and sequences.
+  SQL Server states tables, views, routines and sequences. A synonym is in
+  that namespace on SQL Server too, and the checks do not read it, since a
+  feature owner holds it; a plan that names one like another object fails on
+  the server.
+- `Comparison.RoutineOverloads`: the server holds two routines of one kind and
+  one name apart by their argument types. PostgreSQL, CockroachDB and
+  YugabyteDB state it. Where it is false, a plan that creates a routine and
+  drops one of its kind spelled alike is refused, because the two are one
+  routine.
 - `Statements` and `TableOptions`: how the server reads the role and table
   statements a schema file writes. `Statements.DoBlocks` names the procedural
   language of a DO block that declares roles, one of `DoBlockLanguages`, such

@@ -14,7 +14,6 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -1392,23 +1391,21 @@ func collectIdentifierNames(
 }
 
 // appendRoleNames adds every role name desired and database hold -- roles,
-// the roles grants name and the roles of a membership -- on a dialect whose
-// offline rules leave every name to the catalog ([offlinenames.Unanswered])
-// and whose descriptor states no rule of its own for a role name
-// (descriptor.Names.Roles).
+// the roles grants name and the roles of a membership -- on a dialect that
+// compares a role name under its catalog's rules
+// ([offlinenames.RolesByCatalog]).
 //
 // A SQL Server role name is compared under the database collation, as a
 // table name is: measured on SQL Server 2025, CREATE ROLE [APP] beside the
 // role App fails with error 15023 under a case-insensitive collation and
 // succeeds under a case-sensitive one, and under Hungarian_CI_AS the roles
-// ccs and cscs are one role. Compared as written, a declared APP and a held
-// App were two roles, and the plan created the one that exists
-// (stokaro/ptah#6741). Another dialect states how it compares a role name,
-// and asking its server about one would only spend the probe its index names
-// need.
+// ccs and cscs are one role. Without these names the comparison keys a
+// declared APP and a held App apart, and the plan creates a role the
+// database already holds, which fails with error 15023 (stokaro/ptah#6741).
+// Another dialect states how it compares a role name, and asking its server
+// about one would only spend the probe its index names need.
 func appendRoleNames(names []string, desired *schemamodel.Database, database *catalog.Database, dialect string) []string {
-	described, _ := platform.Lookup(dialect)
-	if !offlinenames.Unanswered(identifier.ForDialect(dialect)) || described.Names.Roles != "" {
+	if !offlinenames.RolesByCatalog(dialect) {
 		return names
 	}
 	named := func(values ...string) {

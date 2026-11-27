@@ -43,23 +43,18 @@ func documentDiff(c *qt.C, devURL, from, to string) atlasschema.DiffOptions {
 // capabilities or not: without the server, nothing says how the names
 // compare (stokaro/ptah#6749).
 func TestDiff_SQLServerDevDatabaseMustAnswer_FailurePath(t *testing.T) {
-	const prefix = `two schema files planned for sqlserver are compared only under the names a connected server compares, so `
+	const prefix = `two schema files planned for sqlserver are compared only under the names a connected server compares: `
 	tests := []struct {
 		name          string
 		fromProject   bool
 		serverVersion string
 		want          string
 	}{
-		{name: "the --dev-url flag", want: prefix + `the --dev-url database must answer: connect to --dev-url: .*`},
-		{
-			name: "the project file", fromProject: true,
-			want: prefix + `the dev database named in the project file must answer: ` +
-				`connect to the dev database named in the project file: .*`,
-		},
+		{name: "the --dev-url flag", want: prefix + `connect to --dev-url: .*`},
+		{name: "the project file", fromProject: true, want: prefix + `connect to the dev database named in the project file: .*`},
 		{
 			name: "the project file beside a server version", fromProject: true, serverVersion: "17",
-			want: prefix + `the dev database named in the project file must answer: ` +
-				`connect to the dev database named in the project file: .*`,
+			want: prefix + `connect to the dev database named in the project file: .*`,
 		},
 	}
 	for _, test := range tests {
@@ -134,7 +129,7 @@ func TestDiff_SQLServerDevDatabaseNobodyConnectsTo_FailurePath(t *testing.T) {
 	report, err := atlasschema.Diff(ctx, opts)
 
 	c.Assert(err, qt.ErrorMatches, `two schema files planned for sqlserver are compared only under the names a connected server `+
-		`compares, so the --dev-url database must answer: Ptah connects to no database for this URL when it compares two schema files`)
+		`compares: Ptah connects to no database for --dev-url when it compares two schema files`)
 	c.Assert(report.Changes, qt.HasLen, 0)
 }
 

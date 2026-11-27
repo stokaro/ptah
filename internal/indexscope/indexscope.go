@@ -391,11 +391,11 @@ var unresolvedConflictKey = identifier.ComparisonCatalogUnknown.ConflictKey("")
 //
 // Two ASCII names that differ after ASCII case folding are kept apart. That is
 // an assumption most collations honor and a collation with contractions
-// breaks: Hungarian_CI_AS reads `ccs` as `cscs`, and Maori_100_CI_AS reads
-// `a-b` as `ab`. Two declarations kept apart wrongly are both created, and the
-// server refuses the second, so nothing is lost; a plan that creates one
-// object and drops another could lose both, and the planner refuses every
-// such pair offline rather than read it through this assumption
+// breaks: Hungarian_CI_AS reads `ccs` as `cscs`, and `ddz` as `dzdz`. Two
+// declarations kept apart wrongly are both created, and the server refuses
+// the second, so nothing is lost; a plan that creates one object and drops
+// another could lose both, and the planner refuses every such pair offline
+// rather than read it through this assumption
 // (stokaro/ptah#6746). Only a connection says which collation the target has,
 // so a command that compares two documents asks its dev server instead. A
 // name with a non-ASCII character still has no class: an accent-insensitive

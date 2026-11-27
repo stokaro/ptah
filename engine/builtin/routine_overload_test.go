@@ -70,10 +70,28 @@ func TestValidateSchema_ATargetWithoutOverloadsRefusesTwoArgumentLists(t *testin
 	}
 }
 
+// An unqualified routine is in the target's default schema, so on SQL Server
+// [f] and [dbo].[f] are one routine. Applied as Ptah writes them under
+// Latin1_General_100_CI_AS, the second CREATE OR ALTER FUNCTION replaces the
+// first, and the database ends with one dbo.f.
+func TestValidateSchema_AnUnqualifiedRoutineIsInTheDefaultSchema(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{Functions: []schemamodel.Function{
+		{Name: "f", Parameters: "@a int", Returns: "int", Language: "sql", Body: "BEGIN RETURN 1 END"},
+		{Name: "dbo.f", Parameters: "@a nvarchar(10)", Returns: "int", Language: "sql", Body: "BEGIN RETURN 2 END"},
+	}}
+
+	err := builtin.ValidateSchemaWithCapabilities(database, platform.SQLServer, capability.ForDialect(platform.SQLServer))
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*function "dbo.f" is declared twice, as f\(@a int\) and dbo.f\(@a nvarchar\(10\)\), `+
+		`and sqlserver has no routine overloading.*`)
+}
+
 // The controls. PostgreSQL hosts both overloads, a repeated declaration of one
 // overload is one routine, on MySQL a function and a procedure of one name
-// live in two namespaces, and on SQL Server two names that differ in case are
-// left to the database's collation.
+// live in two namespaces, on SQL Server two routines in two schemas are two,
+// and two names that differ in case are left to the database's collation.
 func TestValidateSchema_OverloadsATargetCanHold(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -94,6 +112,15 @@ func TestValidateSchema_OverloadsATargetCanHold(t *testing.T) {
 			database: &schemamodel.Database{Functions: []schemamodel.Function{
 				{Name: "f", Parameters: "a INT", Returns: "INT", Language: "sql", Body: "RETURN 1"},
 				{Name: "f", Kind: "procedure", Parameters: "a INT, b INT", Language: "sql", Body: "SELECT 1"},
+			}},
+		},
+		{
+			// Two routines in two schemas are two routines, and two schema
+			// spellings are left to the declaration check, which names both.
+			name: "two schemas on SQL Server", dialect: platform.SQLServer, caps: capability.ForDialect(platform.SQLServer),
+			database: &schemamodel.Database{Functions: []schemamodel.Function{
+				{Name: "f", Parameters: "@a INT", Returns: "INT", Language: "sql", Body: "BEGIN RETURN @a END"},
+				{Name: "sales.f", Parameters: "@a INT, @b INT", Returns: "INT", Language: "sql", Body: "BEGIN RETURN @a + @b END"},
 			}},
 		},
 		{

@@ -58,7 +58,34 @@ func ValidateTarget(
 	if err := validateSharedNamespace(desired, dialect, semantics); err != nil {
 		return err
 	}
+	if err := validateRoles(desired, dialect, semantics); err != nil {
+		return err
+	}
 	return indexscope.ValidateDeclared(dialect, semantics, difftypes.IndexDeclarationsOf(desired))
+}
+
+// validateRoles refuses two declared roles the target may read as one name,
+// where it compares a role name under its catalog's rules
+// ([offlinenames.RolesByCatalog]). The comparison pairs each declared role
+// with the role the database holds under those rules, so of two such
+// declarations it compares one and the plan creates the other: measured on
+// SQL Server 2025 under a case-insensitive collation, the roles App and APP
+// are one role, and CREATE ROLE [APP] beside App fails with error 15023.
+// Two roles spelled alike are one declaration.
+func validateRoles(desired *schemamodel.Database, dialect string, semantics identifier.Semantics) error {
+	if !offlinenames.RolesByCatalog(dialect) {
+		return nil
+	}
+	conflict := indexscope.ConflictSemantics(semantics)
+	roles := make([]spelledName, 0, len(desired.Roles))
+	for _, role := range desired.Roles {
+		key := conflict.TableConflictKey(role.Name)
+		roles = append(roles, spelledName{spelling: role.Name, namesake: Namesake{Key: key, NameKey: key}})
+	}
+	if pair, found := firstConflict(roles); found {
+		return conflictError("roles", pair, semantics)
+	}
+	return nil
 }
 
 // ObjectNames lists the names of the views, materialized views, routines,
@@ -341,10 +368,17 @@ func validateSharedNamespace(desired *schemamodel.Database, dialect string, sema
 }
 
 // sharedNamespaceError names two declared objects of two kinds that dialect
-// keeps in one namespace, which it may read as one name; see
-// [conflictError] for the offline wording.
+// keeps in one namespace, which it may read as one name, or which are one
+// name where they are spelled alike; see [conflictError] for the offline
+// wording.
 func sharedNamespaceError(previous, current kindedName, dialect string, rules identifier.Semantics) error {
 	pair := fmt.Sprintf("target %s %s and %s %s", previous.noun, previous.spelling, current.noun, current.spelling)
+	if previous.spelling == current.spelling {
+		return fmt.Errorf(
+			"%w: %s are one name, and %s keeps both kinds in one namespace in a schema",
+			ptaherr.ErrInvalidSchemaDiff, pair, dialect,
+		)
+	}
 	if offlinenames.Unanswered(rules) && (previous.namesake.Unresolved() || current.namesake.Unresolved()) {
 		return fmt.Errorf(
 			"%w: without a connection Ptah cannot tell whether %s are one name under the database collation, "+

@@ -518,6 +518,16 @@ compares the names two states hold, and its result goes to
 `CompareOptions.IdentifierSemantics`. Ptah does not emulate SQL Server collation
 rules locally.
 
+Planning refuses some pairs whatever the snapshot:
+
+- two routines of one kind spelled alike on a target without routine
+  overloading (`descriptor.Comparison.RoutineOverloads`), which are one
+  routine; the comparison plans a changed routine as a modification;
+- two schemas spelled alike on every target, which are one schema; the
+  comparison never asks to create a schema it holds;
+- for SQL Server, identifier semantics that are neither the offline rules nor
+  a resolved snapshot.
+
 When applying a reusable destructive-change policy to a known database target,
 use `diffpolicy.ApplyForDialect`. It preserves the drop/create pair required by
 schema-scoped engines PostgreSQL, YugabyteDB, and SQLite while keeping

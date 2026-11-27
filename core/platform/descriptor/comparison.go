@@ -141,6 +141,12 @@ type Comparison struct {
 	// RoutineNamesFold reports that the server folds the case of a routine
 	// name it is given, so two spellings that fold together name one routine.
 	RoutineNamesFold bool `json:"routine_names_fold,omitempty"`
+	// RoutineOverloads reports that the server holds two routines of one kind
+	// and one name apart by their argument types, as PostgreSQL does. Where it
+	// is false a name names one routine of each kind, so a plan that creates a
+	// routine and drops one of its kind spelled alike drops the routine it has
+	// just written, and the planner refuses it.
+	RoutineOverloads bool `json:"routine_overloads,omitempty"`
 	// SharedObjectNamespace states the kinds of object that share one
 	// namespace in a schema, so an object of one kind cannot take a name an
 	// object of another kind holds there. SQL Server keeps tables, views,
@@ -151,6 +157,12 @@ type Comparison struct {
 	// drops an object of another the server may read as the same name, since
 	// the create would run while the other object exists. The zero value
 	// states no such namespace.
+	//
+	// A SQL Server synonym is in sys.objects too: CREATE SYNONYM beside the
+	// view of its name fails with error 2714. A synonym is a feature owner's
+	// object, which these checks do not read, so a plan that names one like a
+	// table, a view, a routine or a sequence fails on the server, and nothing
+	// is lost.
 	SharedObjectNamespace ObjectNamespace `json:"shared_object_namespace,omitzero"`
 	// RoutineTypeAliases is the alias table a routine's parameter and return
 	// types are compared through: "mysqlroutine" (internal/mysqlroutine's

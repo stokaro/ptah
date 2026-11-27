@@ -88,13 +88,15 @@ func TestSchemaApplyRefusesASQLServerNamesakeOfAnotherKindE2E(t *testing.T) {
 		{
 			name: "a procedure in place of a function of one name", held: function, schema: procedure,
 			want: "the plan creates procedure dbo.x and drops function dbo.x, and sqlserver keeps both kinds " +
-				"in one namespace in a schema",
+				"in one namespace in a schema, where the two are one name, so the create would fail while the function " +
+				"exists; make the change in two migrations, the first dropping the function dbo.x and the second " +
+				"creating the procedure dbo.x",
 			kept: "x FN",
 		},
 		{
 			name: "a procedure beside a function of one name", held: function, schema: function + ";\nGO\n" + procedure,
-			want: "target function dbo.x and procedure dbo.x may have the same catalog identity, and sqlserver " +
-				"keeps both kinds in one namespace in a schema",
+			want: "target function dbo.x and procedure dbo.x are one name, and sqlserver keeps both kinds in one " +
+				"namespace in a schema",
 			kept: "x FN",
 		},
 	}
@@ -128,4 +130,45 @@ func TestSchemaApplyKeepsSQLServerNamesOfTwoKindsApartE2E(t *testing.T) {
 
 	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
 	c.Assert(sqlServerObjects(c, target), qt.Equals, "REPORT P,Report V")
+}
+
+// TestSchemaApplyRefusesTwoSQLServerRolesOfOneNameE2E declares the roles App
+// and APP on a case-insensitive database holding App. The comparison pairs one
+// of them with App and would plan CREATE ROLE for the other, which fails with
+// error 15023, so the declaration is refused before anything runs.
+func TestSchemaApplyRefusesTwoSQLServerRolesOfOneNameE2E(t *testing.T) {
+	c := qt.New(t)
+	target := sqlServerDatabaseHolding(c, "SQL_Latin1_General_CP1_CI_AS", "CREATE TABLE t1 (id INT NOT NULL)", "CREATE ROLE [App]")
+	schema := schemaFilePath(c, "schema.sql",
+		"CREATE TABLE t1 (id INT NOT NULL);\nGO\nCREATE ROLE [App];\nGO\nCREATE ROLE [APP];\nGO\n")
+
+	result := clirun.Run(c, clirun.Ptah, clirun.Options{},
+		"schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
+
+	c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+	c.Assert(result.Stderr, qt.Contains, "target roles App and APP may have the same catalog identity")
+	c.Assert(sqlServerRoles(c, target), qt.Equals, "App")
+}
+
+// TestSchemaApplyReplacesASQLServerFunctionByAProcedureInTwoMigrationsE2E
+// makes the change the refusal of a procedure in place of a function names:
+// the first apply drops the function dbo.x, and the second creates the
+// procedure dbo.x, which then holds the name.
+func TestSchemaApplyReplacesASQLServerFunctionByAProcedureInTwoMigrationsE2E(t *testing.T) {
+	c := qt.New(t)
+	target := sqlServerDatabaseHolding(c, "SQL_Latin1_General_CP1_CI_AS",
+		"CREATE TABLE t1 (id INT NOT NULL)", "CREATE FUNCTION [dbo].[x]() RETURNS int AS BEGIN RETURN 1 END")
+	first := schemaFilePath(c, "first.sql", "CREATE TABLE t1 (id INT NOT NULL);\nGO\n")
+	second := schemaFilePath(c, "second.sql",
+		"CREATE TABLE t1 (id INT NOT NULL);\nGO\nCREATE PROCEDURE [dbo].[x] AS BEGIN SELECT 1 END;\nGO\n")
+
+	dropped := clirun.Run(c, clirun.Ptah, clirun.Options{},
+		"schema", "apply", "--db-url", target, "--schema-file", first, "--auto-approve")
+	c.Assert(dropped.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", dropped.Stderr))
+	c.Assert(sqlServerObjects(c, target), qt.Equals, "t1 U")
+	created := clirun.Run(c, clirun.Ptah, clirun.Options{},
+		"schema", "apply", "--db-url", target, "--schema-file", second, "--auto-approve")
+
+	c.Assert(created.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", created.Stderr))
+	c.Assert(sqlServerObjects(c, target), qt.Equals, "t1 U,x P")
 }

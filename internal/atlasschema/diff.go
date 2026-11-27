@@ -522,11 +522,11 @@ func documentServer(
 	case documents && resolve != nil:
 		facts, err := devreach.ServerFacts(ctx, dialect, opts.devURLSource(), opts.DevURL, opts.ConnectTimeout, resolve)
 		if err != nil {
-			return devreach.Facts{}, devAnswersNamesError(opts, dialect, err)
+			return devreach.Facts{}, devAnswersNamesError(dialect, err)
 		}
 		if facts.IdentifierSemantics == nil {
-			return devreach.Facts{}, devAnswersNamesError(opts, dialect,
-				errors.New("Ptah connects to no database for this URL when it compares two schema files"))
+			return devreach.Facts{}, devAnswersNamesError(dialect, fmt.Errorf(
+				"Ptah connects to no database for %s when it compares two schema files", opts.devURLSource()))
 		}
 		if !asksDevServer {
 			facts.Capabilities = capability.Capabilities{}
@@ -562,15 +562,12 @@ func (opts DiffOptions) devURLSource() string {
 }
 
 // devAnswersNamesError says that two documents planned for dialect are
-// compared only under the names a connected dev server compares, and names
-// where the dev URL came from, as [DiffOptions.devURLSource] does.
-func devAnswersNamesError(opts DiffOptions, dialect string, err error) error {
-	source := "the --dev-url database"
-	if opts.SkipUnusedDevURL {
-		source = "the dev database named in the project file"
-	}
-	return fmt.Errorf("two schema files planned for %s are compared only under the names a connected server compares, "+
-		"so %s must answer: %w", dialect, source, err)
+// compared only under the names a connected dev server compares. err names
+// where the dev URL came from, as [DiffOptions.devURLSource] does, so this
+// clause does not name it again.
+func devAnswersNamesError(dialect string, err error) error {
+	return fmt.Errorf("two schema files planned for %s are compared only under the names a connected server compares: %w",
+		dialect, err)
 }
 
 // devServerVersion answers what the server behind devURL can do, its
@@ -1082,8 +1079,9 @@ func offlineDiffSemantics(to atlassource.State, resolved *identifier.Semantics) 
 // The --to database is read on a connection the diff has released by then,
 // and a SQL Server read records rules that cover none of its names, so it is
 // opened again to answer for both sides: a --from document's names are ones
-// the database does not hold. The plan a diff writes is for the database
-// --to names, and its collation is the one that pairs the names.
+// the database does not hold. The plan turns the --from state into the --to
+// one, and a schema file or a migration directory carries no collation, so
+// the --to database's collation is the one that pairs the names.
 func databaseIdentifiers(
 	ctx context.Context,
 	dialect string,

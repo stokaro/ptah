@@ -101,15 +101,29 @@ collation. It confirms only exact-spelling identity, and planning refuses
 before emitting SQL where it cannot tell two names apart:
 
 - Every plan that creates an object and drops another of its kind, unless the
-  two are spelled alike. No offline rule says that two names are two under
+  two are spelled alike: in one schema, written the same way, with an
+  unqualified name in `dbo`. No offline rule says that two names are two under
   every collation: `Hungarian_CI_AS` reads `ccs` as `cscs`, so a plan that
-  creates one routine and drops the other would leave neither.
+  creates one routine and drops the other would leave neither. Two functions
+  or two procedures spelled alike are one routine, since SQL Server has no
+  routine overloading, so that pair is refused too, offline or not.
+- A plan that creates a role and drops another whose name may be the same.
+  The offline rules for a role are the ones for objects of two kinds, because
+  `CREATE ROLE` fails while the other role exists and nothing is lost. The
+  comparison never drops a role, so only a diff built by hand carries such a
+  pair; offline, a role declared in another case than the database holds it is
+  planned as `CREATE ROLE`, which a case-insensitive database refuses with
+  error 15023.
 - Two declarations whose names differ only in ASCII case, and a name that holds
   a non-ASCII character beside another name of its kind that may be the same
   name part by part, schema and object name. A target collation may equate
   them by case, accent, locale, kana, or width.
 - Objects of two kinds that share a schema's namespace, tables, views,
-  functions, procedures and sequences, whose names may be one.
+  functions, procedures and sequences, whose names may be one. Two ASCII names
+  that differ beyond case are two names here.
+- Identifier semantics that are neither the offline rules nor a snapshot a
+  connection resolved, because they say which names are one by a rule SQL
+  Server does not follow.
 
 This makes dialect-only SQL Server planning stricter than live planning, and it
 is never safer: plan with a resolved snapshot.

@@ -48,7 +48,8 @@ func TestValidateDesiredSchema_SQLServerNamesakesOfTwoKinds_FailurePath(t *testi
 		{
 			name:    "a table spelled as a view",
 			desired: reportView(schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Report", Name: "Report"}}}),
-			want:    `target table dbo\.Report and view dbo\.Report may have the same catalog identity`,
+			want: `target table dbo\.Report and view dbo\.Report are one name, and sqlserver keeps both kinds in one ` +
+				`namespace in a schema`,
 		},
 		{
 			name: "a sequence spelled as a function",
@@ -56,7 +57,7 @@ func TestValidateDesiredSchema_SQLServerNamesakesOfTwoKinds_FailurePath(t *testi
 				Functions: []schemamodel.Function{{Name: "next_id", Returns: "int", Body: "BEGIN RETURN 1 END"}},
 				Sequences: []schemamodel.Sequence{{Schema: "dbo", Name: "next_id"}},
 			},
-			want: `target function dbo\.next_id and sequence dbo\.next_id may have the same catalog identity`,
+			want: `target function dbo\.next_id and sequence dbo\.next_id are one name`,
 		},
 		{
 			name: "a procedure spelled as a function",
@@ -64,8 +65,8 @@ func TestValidateDesiredSchema_SQLServerNamesakesOfTwoKinds_FailurePath(t *testi
 				{Name: "x", Returns: "int", Body: "BEGIN RETURN 1 END"},
 				{Name: "x", Kind: schemamodel.FunctionKindProcedure, Body: "BEGIN SELECT 1 END"},
 			}},
-			want: `target function dbo\.x and procedure dbo\.x may have the same catalog identity, and sqlserver keeps ` +
-				`both kinds in one namespace in a schema`,
+			want: `target function dbo\.x and procedure dbo\.x are one name, and sqlserver keeps both kinds in one ` +
+				`namespace in a schema`,
 		},
 		{
 			name:    "a non-ASCII procedure beside a view offline",
@@ -85,6 +86,29 @@ func TestValidateDesiredSchema_SQLServerNamesakesOfTwoKinds_FailurePath(t *testi
 			c.Assert(err, qt.ErrorMatches, `.*`+test.want+`.*`)
 		})
 	}
+}
+
+// TestValidateDesiredSchema_SQLServerRoutineInTheDefaultSchema_FailurePath
+// declares the function f and the function dbo.f with two argument lists.
+// An unqualified routine is in the default schema, so they are one routine,
+// and SQL Server has no overloading: applied under Latin1_General_100_CI_AS,
+// the second CREATE OR ALTER FUNCTION [f] replaces the first, and the
+// database ends with one dbo.f. Two routines of one kind are two overloads to
+// the declaration check, which leaves them to the renderer, so the refusal
+// names the overloading.
+func TestValidateDesiredSchema_SQLServerRoutineInTheDefaultSchema_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{
+		{Name: "f", Parameters: "@a int", Returns: "int", Language: "sql", Body: "BEGIN RETURN 1 END"},
+		{Name: "dbo.f", Parameters: "@a nvarchar(10)", Returns: "int", Language: "sql", Body: "BEGIN RETURN 2 END"},
+	}}
+
+	err := schemadiff.ValidateDesiredSchema(c.Context(), must.Must(builtin.New()), desired,
+		catalog.ServerInfo{Dialect: platform.SQLServer})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*function "dbo.f" is declared twice, as f\(@a int\) and dbo.f\(@a nvarchar\(10\)\), `+
+		`and sqlserver has no routine overloading.*`)
 }
 
 // TestCompareWithDatabase_SQLServerNamesakesOfTwoKinds_FailurePath declares
