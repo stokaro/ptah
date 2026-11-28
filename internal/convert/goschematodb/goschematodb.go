@@ -192,7 +192,7 @@ func describeDatabase(ctx context.Context, db *schemamodel.Database, prepared []
 
 	out := &catalog.Database{
 		Facets:      db.Facets,
-		Schemas:     toDBSchemas(db.Schemas),
+		Schemas:     SchemaEntries(db.Schemas),
 		Tables:      toDBTables(db.Tables, db.Fields, db.RLSEnabledTables, dialect, readBack),
 		Enums:       toDBEnums(db.Enums),
 		Indexes:     toDBIndexes(db.Indexes, tableByStruct, dialect, readBack),
@@ -230,7 +230,10 @@ func describeDatabase(ctx context.Context, db *schemamodel.Database, prepared []
 	return db, out, nil
 }
 
-func toDBSchemas(schemas []schemamodel.Schema) []catalog.Schema {
+// SchemaEntries converts declared schema entries to the catalog's, as a
+// converted database lists them: the name, comment, character set, collation
+// and facets each declaration carries.
+func SchemaEntries(schemas []schemamodel.Schema) []catalog.Schema {
 	out := make([]catalog.Schema, 0, len(schemas))
 	for _, schema := range schemas {
 		out = append(out, catalog.Schema{

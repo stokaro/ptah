@@ -1108,8 +1108,9 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // sql_mode. The schema is read at the plan's
 // [PlanFile.Schemas] when it records a selection, and otherwise at the
 // connection URL's scope together with the plan's [PlanFile.SchemasBeyondURL].
-// A drop of a database now holding an excluded object is refused even when
-// the filtered fingerprint is unchanged.
+// A drop of a database or a table now holding an object the plan's
+// selection leaves out is refused even when the filtered fingerprint is
+// unchanged.
 // A fingerprint mismatch returns *StalePlanError.
 func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile, runtime PlanTargetRuntime) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
@@ -1135,7 +1136,7 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 	if err != nil {
 		return err
 	}
-	if err := schemaremoval.RefuseStatements(plan.StatementSQL(), current.SchemaRemovalBlockers, conn.Info()); err != nil {
+	if err := schemaremoval.RefuseStatements(plan.StatementSQL(), current, conn.Info()); err != nil {
 		return err
 	}
 	fingerprint, err := planSourceFingerprint(ctx, current, conn.Info(), plan.Statements, runtime)

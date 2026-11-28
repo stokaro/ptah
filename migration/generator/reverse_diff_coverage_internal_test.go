@@ -97,6 +97,14 @@ func assertReverseCoverageField(
 		// them cannot change the plan.
 		return
 	}
+	if field.Name == "RemovalsBlocked" {
+		// The drops the forward comparison withheld, never a change: the
+		// generator refuses a diff that holds one before it plans either
+		// direction, so no down plan is built from one. The live
+		// integration/excludedschema tests hold the refusal of migrations
+		// generate, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "ConstraintsValidated" {
 		// A validation has no reverse statement, so the field is read and
 		// deliberately answered with nothing. Zeroing it cannot change the

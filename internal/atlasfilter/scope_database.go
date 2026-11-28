@@ -66,10 +66,12 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return nil, err
 	}
 	out.Schemas = s.keepDatabaseSchemas(db, out, slices.Concat(extensionSchemas, features.schemas))
-	protectSchemaContents(db, out, s.def)
-	if len(s.selectors) > 0 && len(kindsNotIncluded(s.selectors)) > 0 {
-		for _, schema := range out.Schemas {
-			blockSchemaRemoval(out, schema.Name, "objects omitted by --include")
+	protectSchemaContents(db, db, out, s.def, s.containerPatterns, catalog.SelectionNotIncluded)
+	if len(s.selectors) > 0 {
+		for _, kind := range kindsNotIncluded(s.selectors) {
+			for _, schema := range out.Schemas {
+				blockSchemaRemoval(out, schema.Name, catalog.SelectionBlocker{Object: string(kind), Cause: catalog.SelectionKindNotIncluded})
+			}
 		}
 	}
 	return out, nil

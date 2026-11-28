@@ -309,6 +309,14 @@
       "qualified": false
     },
     {
+      "category": "removals_blocked",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
       "category": "rls_enabled_tables_added",
       "severities": [
         "safe"

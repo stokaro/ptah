@@ -164,6 +164,7 @@ var inventoryKinds = []string{
 // notInventoryKinds are the category stems the inventory does not report,
 // each with the reason it is not a kind of object the inventory can count.
 var notInventoryKinds = map[string]string{
+	"removals_blocked":   "counts drops the comparison withheld, each of a database or a table the inventory counts under schemas or tables",
 	"unique_protections": "counts index removals a UNIQUE constraint enforces, each one of the indexes_removed already",
 	"rls_force":          "counts a table's FORCE ROW LEVEL SECURITY flag turning on or off, a setting of a table rather than an object",
 	"vector_dimension":   "counts column modifications, which columns_modified counts as well",

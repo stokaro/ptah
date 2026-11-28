@@ -89,6 +89,9 @@ var countedCategories = slices.Concat(kindCategories(), []countedCategory{
 	{name: "unique_protections_removed", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
 		return len(d.ConstraintBackedIndexRemovals)
 	}},
+	// A drop a selection blocked is one the desired schema asks for, and the
+	// plan cannot make it without removing what the selection keeps.
+	{name: "removals_blocked", severity: Destructive, count: func(d *difftypes.SchemaDiff) int { return len(d.RemovalsBlocked) }},
 	{name: "functions_modified", severity: Warning, count: func(d *difftypes.SchemaDiff) int { return len(d.FunctionsModified) }},
 	{name: "rls_policies_modified", severity: Warning, count: func(d *difftypes.SchemaDiff) int { return len(d.RLSPoliciesModified) }},
 	// NO FORCE counts as destructive for the reason a DISABLE does: afterwards

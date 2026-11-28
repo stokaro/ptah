@@ -44,6 +44,7 @@ import (
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlitevirtual"
@@ -892,6 +893,9 @@ func compareReplayedState(
 		ctx, replayConn, desired, replayed, compareOpts, selected,
 	)
 	if err != nil {
+		return replayedComparison{}, fmt.Errorf("compare dev database schema: %w", err)
+	}
+	if err := schemaremoval.RefuseBlocked(diff); err != nil {
 		return replayedComparison{}, fmt.Errorf("compare dev database schema: %w", err)
 	}
 	undecidednote.Report(

@@ -1987,14 +1987,31 @@ Write the pattern as the server spells the database. Where no connection says
 how the server compares names, as in a `schema diff` between two files, a
 selection whose two sides spell a database in two cases is refused.
 
-A database that holds an excluded object cannot be dropped. For example,
-`--exclude app.t` keeps `app.t` even when the desired schema declares no
-`app`: the comparison refuses the database drop and names the object it would
-remove. Keep `app` in the desired schema to remove its other tables, or exclude
-the whole database to leave all of it unchanged. This rule covers schema apply,
-schema diff and migration planning and generation in both binaries. A selector
-that leaves an entire object kind unread also blocks a database drop, because
-the read cannot establish that the database holds none of those objects.
+A database that holds an object the selection leaves out is not dropped. For
+example, `--exclude app.t` keeps `app.t` even when the desired schema declares
+no `app`, and `--include app.u` keeps the tables of `app` it does not select.
+The comparison does not plan the drop and reports it as blocked, with the
+object the drop would remove. The commands that plan or apply SQL refuse the
+run: `schema apply`, `schema plan`, `migrations plan` and `migrations generate`,
+and `schema apply` and `migrate diff` in `ptah-compat`. `schema drift` counts
+the blocked drop under `removals_blocked`, and `schema compare` and `schema
+diff` print a warning for it and leave it out of the SQL they print.
+
+The refusal names the ways out that work for its cause. Declare `app` in the
+desired schema to keep it and remove its other tables. After `--exclude`,
+exclude the whole database to leave all of it unchanged. After `--include`,
+select everything in it, as `--include 'app.*'` does, to drop it. A selector
+that leaves an entire object kind unread, such as
+`--exclude '*[type=function]'`, also blocks the drop of an undeclared database,
+even an empty one, because the read cannot establish that the database holds
+none of those objects. That refusal names the kind the read left out, and the
+way out is to declare the database, to exclude it as well, or to run without
+the selector. The community binary drops the database; see
+[A drop that would remove an excluded object](../../atlas/retained-divergences/#a-drop-that-would-remove-an-excluded-object).
+
+A database the desired schema records with `ptah:not-described schema`,
+unnamed or by name, is never dropped, whatever it holds.
+
 Applying a saved JSON plan checks this protection again. An excluded object
 created after planning still blocks a drop of its database, even when the
 filtered schema fingerprint is unchanged. Changes to excluded objects do not

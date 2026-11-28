@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -15,20 +17,54 @@ import (
 )
 
 // An excluded object must survive a plan that removes the database containing
-// it. Filtering its table alone cannot prevent DROP DATABASE from removing it.
-func TestCompareWithDatabaseInfo_RefusesToDropADatabaseWithExcludedObjects(t *testing.T) {
+// it. Filtering its table alone cannot prevent DROP DATABASE from removing it,
+// so the comparison does not plan the drop and reports it as blocked.
+func TestCompareWithDatabaseInfo_BlocksTheDropOfADatabaseWithExcludedObjects(t *testing.T) {
+	database := func(blocker catalog.SelectionBlocker) difftypes.BlockedRemoval {
+		blocker.Pattern = "app"
+		return difftypes.BlockedRemoval{Kind: difftypes.BlockedDatabase, Name: "app", BlockedBy: blocker}
+	}
+	excluded := func(object string) catalog.SelectionBlocker {
+		return catalog.SelectionBlocker{Object: object, Cause: catalog.SelectionExcluded}
+	}
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		for _, test := range []struct {
 			name    string
 			current catalog.Database
 			exclude string
-			want    string
+			want    []difftypes.BlockedRemoval
 		}{
-			{name: "table", current: catalog.Database{Tables: []catalog.Table{{Schema: "app", Name: "t"}}}, exclude: "app.t", want: "table app.t"},
-			{name: "column", current: catalog.Database{Tables: []catalog.Table{{Schema: "app", Name: "t", Columns: []catalog.Column{{Name: "id", DataType: "int"}}}}}, exclude: "app.t.id", want: "column app.t.id"},
-			{name: "view", current: catalog.Database{Views: []catalog.View{{Schema: "app", Name: "v"}}}, exclude: "app.v", want: "view app.v"},
-			{name: "routine", current: catalog.Database{Functions: []catalog.Function{{Schema: "app", Name: "f"}}}, exclude: "app.f", want: "function app.f"},
-			{name: "unread kind", exclude: "*[type=function]", want: "objects excluded by"},
+			{
+				name: "table", current: catalog.Database{Tables: []catalog.Table{{Schema: "app", Name: "t"}}}, exclude: "app.t",
+				want: []difftypes.BlockedRemoval{database(excluded("table app.t"))},
+			},
+			{
+				// The table is dropped on its own once the database is not, and
+				// that drop would take the column as well.
+				name:    "column",
+				current: catalog.Database{Tables: []catalog.Table{{Schema: "app", Name: "t", Columns: []catalog.Column{{Name: "id", DataType: "int"}}}}},
+				exclude: "app.t.id",
+				want: []difftypes.BlockedRemoval{
+					database(excluded("column app.t.id")),
+					{Kind: difftypes.BlockedTable, Name: "app.t", BlockedBy: catalog.SelectionBlocker{
+						Object: "column app.t.id", Cause: catalog.SelectionExcluded, Pattern: "app.t",
+					}},
+				},
+			},
+			{
+				name: "view", current: catalog.Database{Views: []catalog.View{{Schema: "app", Name: "v"}}}, exclude: "app.v",
+				want: []difftypes.BlockedRemoval{database(excluded("view app.v"))},
+			},
+			{
+				name: "routine", current: catalog.Database{Functions: []catalog.Function{{Schema: "app", Name: "f"}}}, exclude: "app.f",
+				want: []difftypes.BlockedRemoval{database(excluded("function app.f"))},
+			},
+			{
+				name: "unread kind", exclude: "*[type=function]",
+				want: []difftypes.BlockedRemoval{database(catalog.SelectionBlocker{
+					Object: "routines", Cause: catalog.SelectionKindExcluded, Selector: "*[type=function]",
+				})},
+			},
 		} {
 			t.Run(dialect+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -39,10 +75,14 @@ func TestCompareWithDatabaseInfo_RefusesToDropADatabaseWithExcludedObjects(t *te
 					Selections: runtime.Selections(), Dialect: dialect, RealmRelativePatterns: true, Exclude: []string{test.exclude},
 				})
 				c.Assert(err, qt.IsNil)
+
 				diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, filtered,
 					catalog.ServerInfo{Dialect: dialect, WholeServer: true}, nil, runtime)
-				c.Assert(err, qt.ErrorMatches, `(?s).*cannot drop database "app".*`+test.want+`.*outside the selection.*`)
-				c.Assert(diff, qt.IsNil)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(diff.SchemasRemoved, qt.HasLen, 0)
+				c.Assert(diff.RemovalsBlocked, qt.DeepEquals, test.want)
+				c.Assert(diff.HasChanges(), qt.IsTrue)
 			})
 		}
 	}
@@ -61,10 +101,16 @@ func TestCompareWithDatabaseInfo_KeepsExcludedDatabaseProtectionAcrossFilters(t 
 	scope.Exclude = []string{"app.u"}
 	filtered, err = atlasfilter.ScopeDatabase(filtered, scope)
 	c.Assert(err, qt.IsNil)
+
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &schemamodel.Database{}, filtered,
 		catalog.ServerInfo{Dialect: platform.MySQL, WholeServer: true}, nil, runtime)
-	c.Assert(err, qt.ErrorMatches, `(?s).*cannot drop database "app".*table app.t.*outside the selection.*`)
-	c.Assert(diff, qt.IsNil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.SchemasRemoved, qt.HasLen, 0)
+	c.Assert(diff.RemovalsBlocked, qt.DeepEquals, []difftypes.BlockedRemoval{{
+		Kind: difftypes.BlockedDatabase, Name: "app",
+		BlockedBy: catalog.SelectionBlocker{Object: "table app.t", Cause: catalog.SelectionExcluded, Pattern: "app"},
+	}})
 	c.Assert(current.Tables, qt.HasLen, 2)
 }
 
@@ -82,6 +128,99 @@ func TestCompareWithDatabaseInfo_ExcludedTableAllowsOtherTableRemoval(t *testing
 		catalog.ServerInfo{Dialect: platform.MySQL, WholeServer: true}, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.SchemasRemoved, qt.HasLen, 0)
+	c.Assert(diff.RemovalsBlocked, qt.HasLen, 0)
 	c.Assert(diff.TablesRemoved, qt.HasLen, 1)
 	c.Assert(diff.TablesRemoved[0].Name, qt.Equals, "app.u")
+}
+
+// A table the desired schema does not declare is still dropped with what it
+// holds, unless the selection excluded part of it: dropping u would then
+// remove the excluded child too, on every engine.
+func TestCompareWithDatabaseInfo_BlocksTheDropOfATableWithAnExcludedChild(t *testing.T) {
+	for _, test := range []struct {
+		dialect, schema, declaredIn, exclude, table, object, pattern string
+		databases                                                    []string
+		realm, wholeServer                                           bool
+	}{
+		{
+			dialect: platform.MySQL, schema: "app", declaredIn: "app", databases: []string{"app"}, realm: true, wholeServer: true,
+			exclude: "app.u.c", table: "app.u", object: "column app.u.c", pattern: "app.u",
+		},
+		{
+			dialect: platform.MariaDB, schema: "app", declaredIn: "app", databases: []string{"app"}, realm: true, wholeServer: true,
+			exclude: "app.u.ix", table: "app.u", object: "index app.u.ix", pattern: "app.u",
+		},
+		{dialect: platform.MySQL, exclude: "u.c", table: "u", object: "column u.c", pattern: "u"},
+		{dialect: platform.Postgres, schema: "public", exclude: "u.c", table: "public.u", object: "column public.u.c", pattern: "u"},
+		{dialect: platform.SQLServer, schema: "dbo", exclude: "u.ix", table: "dbo.u", object: "index dbo.u.ix", pattern: "u"},
+	} {
+		t.Run(test.dialect+"/"+test.exclude, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			current := &catalog.Database{
+				Tables: []catalog.Table{
+					{Schema: test.schema, Name: "t", Columns: []catalog.Column{{Name: "id", DataType: "int"}}},
+					{Schema: test.schema, Name: "u", Columns: []catalog.Column{{Name: "id", DataType: "int"}, {Name: "c", DataType: "int"}}},
+				},
+				Indexes: []catalog.Index{{Schema: test.schema, TableName: "u", Name: "ix", Columns: []string{"c"}}},
+			}
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Schema: test.declaredIn, Name: "t"}},
+				Fields: []schemamodel.Field{{StructName: "t", Name: "id", Type: "int"}},
+			}
+			for _, name := range test.databases {
+				current.Schemas = append(current.Schemas, catalog.Schema{Name: name})
+				desired.Schemas = append(desired.Schemas, schemamodel.Schema{Name: name})
+			}
+			filtered, err := atlasfilter.ScopeDatabase(current, atlasfilter.Scope{
+				Selections: runtime.Selections(), Dialect: test.dialect, RealmRelativePatterns: test.realm, Exclude: []string{test.exclude},
+				DefaultSchema: test.schema,
+			})
+			c.Assert(err, qt.IsNil)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, filtered,
+				catalog.ServerInfo{Dialect: test.dialect, Schema: test.schema, WholeServer: test.wholeServer}, nil, runtime)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+			c.Assert(diff.RemovalsBlocked, qt.DeepEquals, []difftypes.BlockedRemoval{{
+				Kind: difftypes.BlockedTable, Name: test.table,
+				BlockedBy: catalog.SelectionBlocker{Object: test.object, Cause: catalog.SelectionExcluded, Pattern: test.pattern},
+			}})
+		})
+	}
+}
+
+// A database the desired schema records as not described is left alone,
+// whatever it holds: the record says the desired schema does not know what
+// is there, so its absence asks for no drop.
+func TestCompareWithDatabaseInfo_LeavesANotDescribedDatabaseAlone(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		limited coverage.Set
+		removed []string
+	}{
+		{name: "every undeclared database", limited: coverage.Set{}.WithKind(coverage.Schema)},
+		{name: "the database by name", limited: coverage.Set{}.WithObject(coverage.Schema, "db"), removed: []string{"old"}},
+	} {
+		for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				runtime := must.Must(builtin.New())
+				current := &catalog.Database{
+					Schemas: []catalog.Schema{{Name: "app"}, {Name: "db"}, {Name: "old"}},
+					Tables:  []catalog.Table{{Schema: "db", Name: "t", Columns: []catalog.Column{{Name: "id", DataType: "int"}}}},
+				}
+				desired := &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "app"}}, NotDescribed: test.limited}
+
+				diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current,
+					catalog.ServerInfo{Dialect: dialect, WholeServer: true}, nil, runtime)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(diff.SchemasRemoved, qt.DeepEquals, test.removed)
+				c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+				c.Assert(diff.RemovalsBlocked, qt.HasLen, 0)
+			})
+		}
+	}
 }

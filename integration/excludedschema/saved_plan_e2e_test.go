@@ -4,6 +4,7 @@ package excludedschema_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,15 +26,15 @@ var savedPlanConsumers = []struct {
 
 // planBeforeExcludedTable writes a plan while its excluded table is absent.
 // A schema plan permits an unmatched exclusion with a warning.
-func planBeforeExcludedTable(c *qt.C, engine dbtarget.Engine, desired string) (*sql.DB, string, string, string) {
+func planBeforeExcludedTable(c *qt.C, engine dbtarget.Engine, desired string) (admin *sql.DB, database, server, plan string) {
 	c.Helper()
-	admin, database, server := excludedTableDatabase(c, engine)
+	admin, database, server = excludedTableDatabase(c, engine)
 	_, err := admin.ExecContext(c.Context(), "DROP TABLE `"+database+"`.t")
 	c.Assert(err, qt.IsNil)
 	root := c.TempDir()
 	source := filepath.Join(root, "desired.sql")
 	c.Assert(os.WriteFile(source, []byte(strings.ReplaceAll(desired, "<database>", database)), 0o600), qt.IsNil)
-	plan := filepath.Join(root, "reviewed.plan.json")
+	plan = filepath.Join(root, "reviewed.plan.json")
 	result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root},
 		"schema", "plan", "--db-url", server, "--schema-file", source, "--schemas", database,
 		"--exclude", database+".t", "--output", plan)
@@ -45,7 +46,7 @@ func createExcludedTableAfterPlanning(c *qt.C, admin *sql.DB, database string) {
 	c.Helper()
 	_, err := admin.ExecContext(c.Context(), "CREATE TABLE `"+database+"`.t (id INT NOT NULL PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
-	_, err = admin.ExecContext(c.Context(), "INSERT INTO `"+database+"`.t VALUES (42)")
+	_, err = admin.ExecContext(c.Context(), fmt.Sprintf("INSERT INTO `%s`.t VALUES (?)", database), 42)
 	c.Assert(err, qt.IsNil)
 }
 
@@ -102,6 +103,49 @@ func TestMySQLFamilySavedPlanAllowsUnrelatedExcludedTableE2E(t *testing.T) {
 					var note sql.NullInt64
 					c.Assert(admin.QueryRowContext(c.Context(), "SELECT note FROM `"+database+"`.u WHERE id = 1").Scan(&note), qt.IsNil)
 					c.Assert(note.Valid, qt.IsFalse)
+				})
+			}
+		})
+	}
+}
+
+// The filtered fingerprint cannot see a column added to an excluded pattern
+// after planning either. The saved table drop must be refused before the
+// table, or the value in the new column, is changed.
+func TestMySQLFamilySavedPlanRefusesATableDropThatRemovesANewExcludedColumnE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			for _, consumer := range savedPlanConsumers {
+				t.Run(consumer.name, func(t *testing.T) {
+					c := qt.New(t)
+					admin, database, server := excludedTableDatabase(c, engine.admin)
+					root := c.TempDir()
+					source := filepath.Join(root, "desired.sql")
+					c.Assert(os.WriteFile(source, []byte(strings.ReplaceAll(
+						"CREATE DATABASE `<database>`;\nCREATE TABLE `<database>`.t (id INT NOT NULL PRIMARY KEY);\n",
+						"<database>", database)), 0o600), qt.IsNil)
+					plan := filepath.Join(root, "reviewed.plan.json")
+					planned := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root},
+						"schema", "plan", "--db-url", server, "--schema-file", source, "--schemas", database,
+						"--exclude", database+".u.c", "--output", plan)
+					c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", planned.Stdout, planned.Stderr))
+					contents, err := os.ReadFile(plan)
+					c.Assert(err, qt.IsNil)
+					c.Assert(string(contents), qt.Contains, "DROP TABLE `"+database+"`.`u`")
+					_, err = admin.ExecContext(c.Context(), fmt.Sprintf("ALTER TABLE `%s`.u ADD COLUMN c INT", database))
+					c.Assert(err, qt.IsNil)
+					_, err = admin.ExecContext(c.Context(), fmt.Sprintf("UPDATE `%s`.u SET c = ?", database), 42)
+					c.Assert(err, qt.IsNil)
+
+					result := clirun.Run(c, consumer.target, clirun.Options{Dir: root},
+						"schema", "apply", consumer.urlFlag, server, "--plan", plan, "--auto-approve")
+
+					c.Assert(result.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
+					c.Assert(result.Stderr, qt.Contains, "cannot drop table")
+					c.Assert(result.Stderr, qt.Contains, "column "+database+".u.c")
+					var value int
+					c.Assert(admin.QueryRowContext(c.Context(), fmt.Sprintf("SELECT c FROM `%s`.u WHERE id = ?", database), 1).Scan(&value), qt.IsNil)
+					c.Assert(value, qt.Equals, 42)
 				})
 			}
 		})
