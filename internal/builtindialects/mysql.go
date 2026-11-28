@@ -322,6 +322,10 @@ func mysql() descriptor.Dialect {
 			Routines: descriptor.RoutineGrammar{
 				Body:                 descriptor.RoutineCompoundStatement,
 				TriggerStatementBody: true,
+				// MySQL 8.4 puts `CREATE TRIGGER q1.t ... ON u` in q1 and
+				// binds u there, and answers ERROR 1435 (HY000): Trigger in
+				// wrong schema to `ON q2.u`.
+				TriggerNameSchema: true,
 			},
 		},
 

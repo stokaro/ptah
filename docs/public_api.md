@@ -5900,9 +5900,16 @@ the parser assigns no language. PostgreSQL, CockroachDB and YugabyteDB state
 
 `Grammar.Routines.Trigger` states how CREATE TRIGGER is written.
 `descriptor.TriggerTransactSQL` is the T-SQL order, with the table before the
-timing; empty is the order the other engines share. `TriggerConditions` and
-`TriggerStatementBody` refine the shared order, so a registry refuses either
-beside a trigger grammar. SQL Server states `transact-sql`.
+timing; empty is the order the other engines share. `TriggerConditions`,
+`TriggerStatementBody` and `TriggerNameSchema` refine the shared order, so a
+registry refuses each beside a trigger grammar. SQL Server states
+`transact-sql`.
+
+`Grammar.Routines.TriggerNameSchema` reports that a trigger's name may carry a
+schema, which is also its table's schema. The parser reads a table named
+without a schema in that schema and refuses a table in another one. Without
+the field, a schema on a trigger's name is refused. MySQL, MariaDB and SQLite
+state it.
 
 
 ### Enum column flag

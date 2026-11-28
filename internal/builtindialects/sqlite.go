@@ -180,6 +180,10 @@ func sqlite() descriptor.Dialect {
 					"a syntax error at an operator outside them",
 			},
 			Forms: sqliteStatementForms(),
+			// SQLite 3.54 creates `CREATE TRIGGER aux.trg ... ON u` on aux.u
+			// and answers `trigger trg cannot reference objects in database
+			// aux` to `CREATE TRIGGER main.trg ... ON aux.u`.
+			Routines: descriptor.RoutineGrammar{TriggerNameSchema: true},
 		},
 
 		// Clean checks: what internal/migrateclean reads. Measured against

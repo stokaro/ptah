@@ -136,7 +136,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			AddIndex: true, RenameIndex: true, Modify: descriptor.ModifyDefinition, ChecksCapabilities: true,
 		},
 		Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true},
+		Routines: descriptor.RoutineGrammar{
+			Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true, TriggerNameSchema: true,
+		},
 	},
 	platform.MariaDB: {
 		Columns: descriptor.ColumnGrammar{
@@ -168,7 +170,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			AddIndex: true, RenameIndex: true, Modify: descriptor.ModifyDefinition, ChecksCapabilities: true, ColumnGuards: true,
 		},
 		Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true},
+		Routines: descriptor.RoutineGrammar{
+			Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true, TriggerNameSchema: true,
+		},
 	},
 	platform.ClickHouse: {
 		Columns: descriptor.ColumnGrammar{
@@ -188,8 +192,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 				LoneInitiallyRefusal: "SQLite takes it only after [NOT] DEFERRABLE",
 			},
 		},
-		Keys:    descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
-		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		Keys:     descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		Columns:  descriptor.ColumnGrammar{CurrentTimeKeywords: true},
+		Routines: descriptor.RoutineGrammar{TriggerNameSchema: true},
 	},
 	platform.SQLServer: {
 		Columns: descriptor.ColumnGrammar{

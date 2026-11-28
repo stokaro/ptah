@@ -96,6 +96,7 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			Body:                   descriptor.RoutineQuotedBody,
 			TriggerConditions:      true,
 			TriggerStatementBody:   true,
+			TriggerNameSchema:      true,
 			DefaultDoBlockLanguage: "plalpha",
 		},
 	}
@@ -447,6 +448,14 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a one-statement trigger body is stated, ` +
 				`and trigger grammar "transact-sql" reads its own body`,
+		},
+		{
+			name: "a schema on a trigger's name with a trigger grammar that reads its own name",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Routines = descriptor.RoutineGrammar{Trigger: descriptor.TriggerTransactSQL, TriggerNameSchema: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a schema on a trigger's name is stated, ` +
+				`and trigger grammar "transact-sql" reads its own name`,
 		},
 	}
 	for _, test := range tests {
