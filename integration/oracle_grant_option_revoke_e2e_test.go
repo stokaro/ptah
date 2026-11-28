@@ -107,8 +107,10 @@ func TestSchemaApplyOracleKeepsAPrivilegeHeldWithoutTheGrantOptionE2E(t *testing
 // grant to PUBLIC gives it: measured on Oracle 23.26, a user holding SELECT
 // on t48, with SELECT on t48 granted to PUBLIC as well, reads t48 after
 // REVOKE SELECT ON t48 FROM the user. A schema that revokes it is refused
-// before any statement runs, naming the grant to PUBLIC, and the user still
-// holds its grant; the revoke run by hand leaves the user reading the table.
+// before any statement runs, naming the grant to PUBLIC and the user as a
+// principal, since the read describes roles and the user is none of them; the
+// user still holds its grant, and the revoke run by hand leaves the user
+// reading the table.
 func TestSchemaApplyOracleRefusesARevokeAGrantToPublicKeepsE2E(t *testing.T) {
 	c := qt.New(t)
 	account := newOracleRoutineAccount(c)
@@ -119,7 +121,7 @@ func TestSchemaApplyOracleRefusesARevokeAGrantToPublicKeepsE2E(t *testing.T) {
 	applied := applyOracleSchemaFile(c, account, oracleGrantOptionTable+"REVOKE SELECT ON t48 FROM {user};\n", "--auto-approve")
 
 	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(applied.Stderr, qt.Contains, `PUBLIC holds SELECT ON t48, which gives role "`+account.user+
+	c.Assert(applied.Stderr, qt.Contains, `PUBLIC holds SELECT ON t48, which gives principal "`+account.user+
 		`" the privilege on table t48, so a revoke from "`+account.user+`" cannot take it: revoke SELECT ON t48 from PUBLIC instead`)
 	c.Assert(oracleTablePrivilegesOf(c, account.owner, account.user, account.name), qt.DeepEquals, []string{"SELECT NO"})
 	_, err = account.owner.ExecContext(c.Context(), strings.ReplaceAll("REVOKE SELECT ON t48 FROM {user}", "{user}", account.user))
