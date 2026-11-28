@@ -48,6 +48,13 @@ read as `dbo`'s:
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
 ```
 
+A dev database works in a schema by the same rule, and a rehearsal needs the
+dev database and the target in the same schema. A dev URL that logs in as `sa`
+works in `dbo`, so beside a target whose account works in `app` it is refused
+with `--dev-url schema scope "dbo" does not match --db-url schema scope "app"`.
+Add `schema=app` to the dev URL, or log in to the dev database as an account
+whose default schema is `app`.
+
 Ptah keeps its own tables in the schema the `schema` parameter names, or else
 in `dbo`, whatever the default schema of the connection's user is: the
 migration history with its log, tags and repeatable record, and the schema
@@ -348,7 +355,9 @@ declares without a schema is compared in the connection's schema (see
 [Connecting](#connecting)) and is replaced there. A URL whose
 `schema` parameter names a schema other than the user's default schema reads
 that schema, while the server still creates an unqualified name in the default
-schema, so leave the parameter out for such an account or qualify the names.
+schema, so leave the parameter out of the target URL for such an account, or
+qualify the names. A dev URL beside such a target names the schema the target
+works in (see [Connecting](#connecting)).
 
 A database side of `ptah schema diff` is read at that one schema. When the
 run names no `--schemas`, it says so on standard error, and names the schemas
@@ -505,6 +514,14 @@ and creates there the roles the target holds. The cleanup after the rehearsal
 drops each role the dev database did not hold when the run began, with its
 memberships, so no role outlives the run. A dev database that holds a role of
 its own is refused, because the cleanup cannot tell whose the role is.
+
+A `GRANT`, `DENY` or `REVOKE` runs on the dev database when every principal it
+names after `TO` or `FROM` is a role the run created. Dropping a role removes
+every permission granted or denied to it, so these leave nothing behind
+either. One that names `public`, `dbo`, `guest`, a fixed database role or the
+user the dev URL logs in as is refused, since that principal outlives the
+run. So is `AS` on a `GRANT` or a `DENY`: it makes another principal the
+grantor, and SQL Server cannot drop a role that has granted a permission.
 `ALTER ROLE`, an application role and a user stay refused on a dev database:
 each can reach a principal the run did not create.
 
