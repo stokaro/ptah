@@ -207,6 +207,7 @@ func TestUnreadRoles(t *testing.T) {
 		{
 			name:        "a role on another host a login on host % no role holds holds",
 			memberships: []catalog.RoleMembership{{Role: "rh@localhost", Member: "legacy"}},
+			want:        []string{"rh@localhost"},
 		},
 		{name: "a role on another host held by PUBLIC", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "PUBLIC"}}, want: []string{"reader@localhost"}},
 		{

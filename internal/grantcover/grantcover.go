@@ -512,8 +512,10 @@ func unreadHolderErrs(current *catalog.Database, revoke schemamodel.Grant, kind,
 		remedy := "end the membership that passes " + unread.Name + " on, or leave the revoke out"
 		switch {
 		case unread.Name == role:
-			subject = fmt.Sprintf("%s %q is a principal", kind, revoke.Role)
-			remedy = "leave the revoke out"
+			problems = append(problems, fmt.Errorf(
+				"the read did not read the privileges of %s %q in full: %s; so %s cannot be shown to take the privilege: leave the revoke out",
+				kind, revoke.Role, unread.Cause, what))
+			continue
 		case held.everyAccount && held.through == "", held.everyAccount && held.through == publicGrantee:
 			subject = "every account holds " + unread.Name + ","
 			remedy = "leave the revoke out"

@@ -1544,17 +1544,23 @@ is read as a role is, so `ptah schema security` measures `lr` through what
 The read reads none of the privileges of an account on another host, such as
 a MySQL role `reader@localhost` or the login `'legacy'@'localhost'`.
 
-Where a role holds an account on another host:
+Where a role or a login on `%` holds an account on another host:
 
-- `ptah db read` prints a note naming the account, the roles that hold it and
-  why its privileges are not read in full.
+- `ptah db read` prints a note naming the account, the roles and logins that
+  hold it and why its privileges are not read in full.
 - `ptah schema security` skips the reach rules for `lr` and for every role that
   holds `lr`, with the same reason, and measures the other roles.
 - A declared revoke on a table from `lr`, or from a role that holds `lr`, is
   refused, since the account may hold the privilege. Measured on 8.4.13 and
   26.10.0, the revoke otherwise succeeds and a member of `lr` still reads the
-  table. A membership the plan removes does not count. A revoke from a
-  principal the read does not read in full is refused the same way.
+  table. A membership the plan removes does not count. A revoke from a login
+  on `%` that holds such an account is refused the same way: measured on
+  26.10.0, the login `lgy` holding `'rh3'@'localhost'`, which holds
+  `SELECT ON *.*`, still reads `t1` after `REVOKE SELECT ON t1 FROM lgy`.
+- A revoke from the account itself, such as
+  ``REVOKE SELECT ON t1 FROM `rh2@localhost` ``, is refused too. The read does
+  not read the account's grants, so a plan finds nothing to revoke, and the
+  account keeps the privilege.
 - The refusal does not depend on what the account holds, because the read
   cannot tell. A role that holds an account on another host holding no
   privilege has its revoke refused too, though the revoke would take the

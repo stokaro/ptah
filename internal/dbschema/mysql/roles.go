@@ -411,9 +411,9 @@ func isPublicRole(role catalog.Role) bool {
 	return strings.EqualFold(role.Name, publicGrantee)
 }
 
-// unreadRoles is each principal a role schema describes holds, or PUBLIC
-// holds where it stands for every account, whose privileges the read did not
-// read: a role or a login on a host other than
+// unreadRoles is each principal a role schema describes holds, PUBLIC holds
+// where it stands for every account, or a login on host % holds, whose
+// privileges the read did not read: a role or a login on a host other than
 // [mysqlgrants.Options.RoleHost], which MySQL lets a statement grant as a
 // role, or a name two accounts read as. Measured on MySQL 26.10.0, after CREATE USER
 // 'legacy'@'localhost' ACCOUNT LOCK and GRANT 'legacy'@'localhost' TO a role,
@@ -425,7 +425,11 @@ func isPublicRole(role catalog.Role) bool {
 //
 // A login on host % for which login reports true is read as a role is
 // ([readGrantee]), so it is no such principal, and what it holds in turn
-// reaches the role that holds it: the walk goes on through it.
+// reaches the role that holds it: the walk goes on through it. The walk starts
+// at every such login that holds a principal too, held by a role or not: a
+// revoke from the login is checked against what it holds, and measured on
+// MySQL 26.10.0, the login 'lgy'@'%' holding 'rh3'@'localhost', which holds
+// SELECT ON *.*, still reads t1 after REVOKE SELECT ON t1 FROM lgy.
 func unreadRoles(schema *catalog.Database, login func(name string) bool) []string {
 	described := make(map[string]bool, len(schema.Roles)+1)
 	if !schema.PublicIsRole {
@@ -452,6 +456,12 @@ func unreadRoles(schema *catalog.Database, login func(name string) bool) []strin
 	if every := schema.EveryAccountHoldsUnread; every != nil {
 		for _, role := range every.Roles {
 			hold(role)
+		}
+	}
+	for _, membership := range schema.RoleMemberships {
+		if !reached[membership.Member] && login(membership.Member) {
+			reached[membership.Member] = true
+			queue = append(queue, membership.Member)
 		}
 	}
 	for len(queue) > 0 {

@@ -877,7 +877,7 @@ func TestValidate_FailurePathUnread(t *testing.T) {
 		{
 			name:   "the revoke's own principal",
 			unread: []catalog.UnreadRole{{Name: "r2", Cause: cause}},
-			want: `role "r2" is a principal whose privileges the read did not read in full: ` + cause +
+			want: `the read did not read the privileges of role "r2" in full: ` + cause +
 				`; so a revoke of SELECT on table t3 from "r2" cannot be shown to take the privilege: leave the revoke out`,
 		},
 		{
