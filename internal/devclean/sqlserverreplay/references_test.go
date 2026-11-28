@@ -15,7 +15,8 @@ import (
 	"ptah.run/internal/devclean/sqlserverreplay"
 )
 
-// databaseSession is a dev session in database. HAS_DBACCESS answers access
+// databaseSession is a dev session in database, as the database user user.
+// HAS_DBACCESS answers access
 // for a name access lists, an int64 or nil for NULL, and 1 for every other
 // name, so a database part the test does not list is one the session
 // reaches. A failure to read the database is err, and a failure to ask about
@@ -23,6 +24,7 @@ import (
 // "" for the read of the database.
 type databaseSession struct {
 	database  string
+	user      string
 	access    map[string]any
 	err       error
 	accessErr error
@@ -34,20 +36,22 @@ func (s databaseSession) QueryRowContext(_ context.Context, query string, args .
 	*s.asked = append(*s.asked, name)
 	answer, listed := s.access[name]
 	rows := map[bool]dataext.Row{
-		false: databaseRow{value: s.database, err: s.err},
+		false: databaseRow{values: []string{s.database, s.user}, err: s.err},
 		true:  accessRow{value: map[bool]any{true: answer, false: int64(1)}[listed], err: s.accessErr},
 	}
 	return rows[strings.Contains(query, "HAS_DBACCESS")]
 }
 
-// databaseRow is the row of DB_NAME().
+// databaseRow is the row of DB_NAME() and USER_NAME().
 type databaseRow struct {
-	value string
-	err   error
+	values []string
+	err    error
 }
 
 func (r databaseRow) Scan(dest ...any) error {
-	*dest[0].(*string) = r.value
+	for index, value := range r.values[:len(dest)] {
+		*dest[index].(*string) = value
+	}
 	return r.err
 }
 
@@ -111,7 +115,7 @@ func TestGuard_ValidateSession_FailurePath(t *testing.T) {
 	guard, err := sessionGuard(c).ValidateSession(c.Context(), databaseSession{err: lost, asked: new([]string)}, replay.Scope{})
 
 	c.Assert(err, qt.ErrorIs, lost)
-	c.Assert(err, qt.ErrorMatches, "read the database of the dev session: connection lost")
+	c.Assert(err, qt.ErrorMatches, "read the database and the user of the dev session: connection lost")
 	c.Assert(err, qt.Not(qt.ErrorIs), replay.ErrRefused)
 	c.Assert(guard, qt.IsNil)
 }

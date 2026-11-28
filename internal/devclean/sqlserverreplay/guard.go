@@ -2,6 +2,7 @@ package sqlserverreplay
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -30,8 +31,9 @@ import (
 // module the permissions of a certificate's user or login.
 //
 // It keeps every refusal that protects the run: USE and a temporary object,
-// which change or live in the replay's session; GRANT, DENY and REVOKE, and a
-// database principal, whose state stays in the dev database after the cleanup;
+// which change or live in the replay's session; GRANT, DENY and REVOKE but the
+// ones [guard.confinedPermissionChange] accepts, and a database principal,
+// whose state stays in the dev database after the cleanup;
 // a DDL trigger on the database and anything ON SERVER, which fire on the run's
 // own statements; every other DBCC, KILL, RECONFIGURE and SHUTDOWN,
 // which act on the server the run uses; an assembly, which loads code into the
@@ -65,7 +67,7 @@ func (g guard) validateReplayStatement(tokens []lexer.Token, scope replay.Scope)
 	if operation := sqlServerExternalOrServerOperation(tokens, scope); operation != "" {
 		return replay.Refuse(platform.SQLServer, operation)
 	}
-	if err := validateSQLServerStatementScope(tokens, first); err != nil {
+	if err := g.validateSQLServerStatementScope(tokens, first, scope.DatabaseRoles); err != nil {
 		return err
 	}
 	if err := validateSQLServerStatementTargets(tokens, first, scope); err != nil {
@@ -74,11 +76,12 @@ func (g guard) validateReplayStatement(tokens []lexer.Token, scope replay.Scope)
 	return validateSQLServerStoredObjects(tokens, first, scope)
 }
 
-// validateSQLServerStatementScope refuses a permission change and a statement
-// whose scope is the server or a DDL trigger on the database. Trust lifts none
-// of them; see [guard.validateReplayStatement].
-func validateSQLServerStatementScope(tokens []lexer.Token, first string) error {
-	if first == "GRANT" || first == "DENY" || first == "REVOKE" {
+// validateSQLServerStatementScope refuses a permission change the cleanup does
+// not undo ([guard.confinedPermissionChange]) and a statement whose scope is
+// the server or a DDL trigger on the database. Trust lifts none of them; see
+// [guard.validateReplayStatement].
+func (g guard) validateSQLServerStatementScope(tokens []lexer.Token, first string, roles replay.DatabaseRoleScope) error {
+	if (first == "GRANT" || first == "DENY" || first == "REVOKE") && !g.confinedPermissionChange(tokens, roles) {
 		return replay.Refuse(platform.SQLServer, "permission mutation")
 	}
 	if sqlServerHasGlobalScope(tokens) {
@@ -132,6 +135,107 @@ func validateSQLServerStoredObjects(tokens []lexer.Token, first string, scope re
 		return replay.Refuse(platform.SQLServer, operation)
 	}
 	return nil
+}
+
+// sqlServerFixedPrincipals are the database principals every SQL Server
+// database holds, which no cleanup drops: public, dbo, guest,
+// INFORMATION_SCHEMA and sys, and the fixed database roles.
+var sqlServerFixedPrincipals = []string{
+	"public", "dbo", "guest", "INFORMATION_SCHEMA", "sys",
+	"db_owner", "db_accessadmin", "db_securityadmin", "db_ddladmin", "db_backupoperator",
+	"db_datareader", "db_datawriter", "db_denydatareader", "db_denydatawriter",
+}
+
+// confinedPermissionChange reports a GRANT, DENY or REVOKE whose every grantee
+// is a database role the run created, on a dev database whose every cleanup
+// drops such a role ([replay.DatabaseRoleScope.Dropped]). Dropping a role
+// removes every permission granted or denied to it, on the database and its
+// schemas as well as on objects, so the change goes with the role. CASCADE
+// reaches only the permissions the role itself granted, which the run granted
+// too.
+//
+// A grantee is such a role when it is none of the principals that outlive the
+// run: a fixed principal ([sqlServerFixedPrincipals]) or a name beginning
+// with ##, a role the claim found, and the session's own user. The cleanup
+// that claims the dev database refuses one that holds any other user, and the
+// run creates no user or application role, since both stay refused, so a
+// name outside those is a role the run created or no principal at all. A guard
+// that read no session does not know the session's user, and refuses.
+//
+// AS on a GRANT or a DENY is refused: it records another principal as the
+// grantor, and a role that granted a permission cannot be dropped (measured
+// on SQL Server 2025, DROP ROLE answers Msg 15284), so the cleanup would fail.
+// On a REVOKE it names whose grant to the role is removed.
+func (g guard) confinedPermissionChange(tokens []lexer.Token, roles replay.DatabaseRoleScope) bool {
+	if !roles.Dropped || g.user == "" {
+		return false
+	}
+	grantees, ok := sqlServerGrantees(tokens)
+	if !ok {
+		return false
+	}
+	for _, name := range grantees {
+		outlives := name == "" || strings.HasPrefix(name, "##") || strings.EqualFold(name, g.user) ||
+			slices.ContainsFunc(sqlServerFixedPrincipals, func(fixed string) bool { return strings.EqualFold(fixed, name) }) ||
+			slices.ContainsFunc(roles.Kept, func(kept string) bool { return strings.EqualFold(kept, name) })
+		if outlives {
+			return false
+		}
+	}
+	return true
+}
+
+// sqlServerGrantees reads the principals a GRANT, DENY or REVOKE names after
+// TO, or after FROM on a REVOKE. ok is false for a
+// statement it cannot read that way: one with no grantee, a list that does not
+// alternate names and commas, and anything after the list but WITH GRANT
+// OPTION, CASCADE and, on a REVOKE, AS and one principal.
+func sqlServerGrantees(tokens []lexer.Token) (grantees []string, ok bool) {
+	revoke := tokens[0].MatchIdentifierValue("REVOKE")
+	index := sqlServerGranteeListStart(tokens, revoke)
+	if index == replay.MutationTargetNotFound {
+		return nil, false
+	}
+	for {
+		if index >= len(tokens) || tokens[index].Type != lexer.TokenIdentifier {
+			return nil, false
+		}
+		grantees = append(grantees, replay.NormalizedIdentifier(tokens[index]))
+		index++
+		if index >= len(tokens) || !tokens[index].MatchOperatorValue(",") {
+			break
+		}
+		index++
+	}
+	if sqlServerKeywordSequenceAt(tokens, index, "WITH", "GRANT", "OPTION") {
+		index += 3
+	}
+	if sqlServerKeywordSequenceAt(tokens, index, "CASCADE") {
+		index++
+	}
+	if revoke && sqlServerKeywordSequenceAt(tokens, index, "AS") && index+1 < len(tokens) &&
+		tokens[index+1].Type == lexer.TokenIdentifier {
+		index += 2
+	}
+	for ; index < len(tokens); index++ {
+		if tokens[index].Type != lexer.TokenSemicolon {
+			return nil, false
+		}
+	}
+	return grantees, true
+}
+
+// sqlServerGranteeListStart is the index of the first grantee of a GRANT, DENY
+// or REVOKE: the token after the first TO, or FROM where revoke. Both words
+// are reserved, so a column or a securable written without brackets cannot
+// take either name.
+func sqlServerGranteeListStart(tokens []lexer.Token, revoke bool) int {
+	for index, token := range tokens {
+		if token.MatchIdentifierValue("TO") || revoke && token.MatchIdentifierValue("FROM") {
+			return index + 1
+		}
+	}
+	return replay.MutationTargetNotFound
 }
 
 // sqlServerDatabaseRole decides a CREATE ROLE or DROP ROLE on a dev database
