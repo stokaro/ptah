@@ -2,11 +2,9 @@ package atlasfilter
 
 import (
 	"cmp"
-	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
-	"ptah.run/internal/readscope"
 )
 
 // protectSchemaContents records, for each schema and each kept table, one
@@ -14,10 +12,16 @@ import (
 // the reason it left. A parent database and a kept table are still compared,
 // but dropping either would also remove what the projection promises to leave
 // alone. A child whose table left with it is not recorded on its own: the
-// table speaks for it. patterns spells each container for the remedies.
-func protectSchemaContents(before, after *catalog.Database, defaultSchema string, patterns containerPatterns, cause catalog.SelectionCause) {
+// table speaks for it. A kept table is protected only by a child tablesRead
+// holds, the read as far as the table drop is concerned. patterns spells each
+// container for the remedies.
+func protectSchemaContents(before, tablesRead, after *catalog.Database, defaultSchema string, patterns containerPatterns, cause catalog.SelectionCause) {
 	kept := schemaContents(after, defaultSchema)
 	read := schemaContents(before, defaultSchema)
+	childrenRead := read
+	if tablesRead != before {
+		childrenRead = schemaContents(tablesRead, defaultSchema)
+	}
 	tables := keptTables(after, defaultSchema)
 	for key, object := range read {
 		if _, exists := kept[key]; exists {
@@ -31,7 +35,9 @@ func protectSchemaContents(before, after *catalog.Database, defaultSchema string
 		}
 		blocker := catalog.SelectionBlocker{Object: object.String(), Cause: cause}
 		if table, child := tables[parent]; child && !object.Parent.Empty() {
-			blockTableRemoval(after, table, patterns, blocker)
+			if _, read := childrenRead[key]; read {
+				blockTableRemoval(after, table, patterns, blocker)
+			}
 		}
 		blockSchemaRemoval(after, object.Schema.Source, blocker)
 	}
@@ -120,8 +126,13 @@ func wholeKindCause(cause catalog.SelectionCause) int {
 }
 
 // A whole-kind selector lets a reader omit that kind's catalog query. An
-// empty collection therefore cannot prove that dropping its database is safe,
-// nor, for a kind of table child such as a trigger, that dropping a table is.
+// empty collection therefore cannot prove that dropping its database is safe.
+//
+// It blocks no table drop. A trigger or a constraint cannot outlive its
+// table, and the run drops a table the desired schema leaves out; an account
+// that lacks the privilege to read a kind takes this selector so it can plan
+// at all. A child the read found and a pattern of another shape excludes
+// still blocks its table, through [protectSchemaContents].
 func (s *exclusionState) protectUnreadSchemaContents(database *catalog.Database) {
 	for _, pattern := range s.patterns {
 		kinds := pattern.wholeKinds()
@@ -132,23 +143,7 @@ func (s *exclusionState) protectUnreadSchemaContents(database *catalog.Database)
 		for _, schema := range database.Schemas {
 			blockSchemaRemoval(database, schema.Name, blocker)
 		}
-		child := slices.IndexFunc(kinds, tableChildKind)
-		if child < 0 {
-			continue
-		}
-		blocker.Object = string(kinds[child])
-		for _, table := range database.Tables {
-			blockTableRemoval(database, table, s.containerPatterns, blocker)
-		}
 	}
-}
-
-// tableChildKind reports whether kind is a family of objects that belong to a
-// table and go with it when the table is dropped.
-func tableChildKind(kind readscope.Kind) bool {
-	return slices.ContainsFunc(selectorKinds, func(candidate selectorKind) bool {
-		return candidate.child && slices.Contains(candidate.kinds, kind)
-	})
 }
 
 // schemaContents names objects by structured identity, including table parts

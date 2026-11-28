@@ -173,14 +173,6 @@ func TestRefusalError_NamesTheRemediesOfItsCause(t *testing.T) {
 				`declare the table in the desired schema to keep it, or select the whole table (--include db.u) to drop it`,
 		},
 		{
-			name: "kind an exclusion leaves unread in a table",
-			removal: difftypes.BlockedRemoval{Kind: difftypes.BlockedTable, Name: "db.t",
-				BlockedBy: catalog.SelectionBlocker{Object: "triggers", Cause: catalog.SelectionKindExcluded, Selector: "*[type=trigger]", Pattern: "db.t"}},
-			want: `cannot drop table "db.t": --exclude "*[type=trigger]" keeps triggers out of the read, so it is not known ` +
-				`whether the table holds any; declare the table in the desired schema to keep it, exclude the table ` +
-				`(--exclude db.t) to leave it alone, or run without that selector to drop it`,
-		},
-		{
 			name: "object the include leaves out",
 			removal: difftypes.BlockedRemoval{Kind: difftypes.BlockedDatabase, Name: "db",
 				BlockedBy: catalog.SelectionBlocker{Object: "table db.t", Cause: catalog.SelectionNotIncluded}},

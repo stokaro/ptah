@@ -66,7 +66,7 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return nil, err
 	}
 	out.Schemas = s.keepDatabaseSchemas(db, out, slices.Concat(extensionSchemas, features.schemas))
-	protectSchemaContents(db, out, s.def, s.containerPatterns, catalog.SelectionNotIncluded)
+	protectSchemaContents(db, db, out, s.def, s.containerPatterns, catalog.SelectionNotIncluded)
 	if len(s.selectors) > 0 {
 		for _, kind := range kindsNotIncluded(s.selectors) {
 			for _, schema := range out.Schemas {

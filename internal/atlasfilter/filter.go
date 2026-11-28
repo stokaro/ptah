@@ -129,67 +129,114 @@ func excludeDatabase(
 		return schema, unfilteredReport(filters), nil
 	}
 
+	state := newDatabaseExclusion(filters, patternScope, defaultSchema, words, target)
+	filtered, err := state.exclude(schema, target, bindings)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
+	tablesRead, err := wholeKindBaseline(filters, schema, filtered, patternScope, defaultSchema, words, target, bindings)
+	if err != nil {
+		return nil, ExcludeReport{}, err
+	}
+	protectSchemaContents(schema, tablesRead, filtered, defaultSchema, state.containerPatterns, catalog.SelectionExcluded)
+	state.protectUnreadSchemaContents(filtered)
+	return filtered, state.report(), nil
+}
+
+// newDatabaseExclusion is the state that applies filters to a database read
+// from target.
+func newDatabaseExclusion(filters []resourcePattern, patternScope, defaultSchema string, words vocabulary, target databaseTarget) *exclusionState {
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = target.dialect
 	state.containerPatterns = containerPatterns{scope: patternScope, defaultSchema: defaultSchema}
 	state.foldSelectors(unquotedFold(target.dialect))
+	return state
+}
+
+// wholeKindBaseline is schema with only the whole-kind patterns among filters
+// applied, which is the read a table drop is judged against. A reader may skip
+// the catalog query of a whole kind, so a child such a pattern takes out
+// blocks no table drop whether or not the reader listed it: the child goes
+// with the table the run drops. filtered is schema with every pattern applied.
+func wholeKindBaseline(
+	filters []resourcePattern,
+	schema, filtered *catalog.Database,
+	patternScope, defaultSchema string,
+	words vocabulary,
+	target databaseTarget,
+	bindings featureselect.Bindings,
+) (*catalog.Database, error) {
+	kinds := slices.DeleteFunc(slices.Clone(filters), func(pattern resourcePattern) bool {
+		return len(pattern.wholeKinds()) == 0
+	})
+	switch len(kinds) {
+	case 0:
+		return schema, nil
+	case len(filters):
+		return filtered, nil
+	}
+	return newDatabaseExclusion(kinds, patternScope, defaultSchema, words, target).exclude(schema, target, bindings)
+}
+
+// exclude returns a copy of schema without the objects the state's patterns
+// name, recording what it took out on the state.
+func (s *exclusionState) exclude(schema *catalog.Database, target databaseTarget, bindings featureselect.Bindings) (*catalog.Database, error) {
+	var err error
 	filtered := cloneDatabase(schema)
 	// Schemas go first: every filter below asks whether its object's schema
 	// left, and that answer has to exist before the first object is judged.
-	filtered.Schemas = state.filterSchemas(filtered.Schemas)
-	filtered.Tables = state.filterTables(filtered.Tables)
-	state.excludeObservedRowSecurity(filtered.Tables)
-	state.noteOwnedObjectSelectors(filtered.FeatureObjects)
+	filtered.Schemas = s.filterSchemas(filtered.Schemas)
+	filtered.Tables = s.filterTables(filtered.Tables)
+	s.excludeObservedRowSecurity(filtered.Tables)
+	s.noteOwnedObjectSelectors(filtered.FeatureObjects)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
-		return !state.tableExcluded(schema, table)
-	}, state.vocabulary.independentKinds()...)
+		return !s.tableExcluded(schema, table)
+	}, s.vocabulary.independentKinds()...)
 	if err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, err
 	}
-	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = s.filterOwnerFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, err
 	}
-	if filtered.FeatureObjects, err = state.clearOwnerFields(filtered.FeatureObjects); err != nil {
-		return nil, ExcludeReport{}, err
+	if filtered.FeatureObjects, err = s.clearOwnerFields(filtered.FeatureObjects); err != nil {
+		return nil, err
 	}
-	state.excludeColumnSequences(schema.Tables)
-	filtered.Enums = state.filterEnums(filtered.Enums)
-	filtered.Sequences = state.filterSequences(filtered.Sequences)
+	s.excludeColumnSequences(schema.Tables)
+	filtered.Enums = s.filterEnums(filtered.Enums)
+	filtered.Sequences = s.filterSequences(filtered.Sequences)
 	// Constraints go before indexes: an index leaves with the constraint it
 	// enforces, so the constraints that left have to be known first.
 	var removedConstraints []catalog.Constraint
-	filtered.Constraints, removedConstraints = state.filterConstraints(filtered.Constraints)
-	removedConstraints = append(removedConstraints, state.removedHiddenKeys(schema)...)
-	filtered.Indexes = state.filterIndexes(filtered.Indexes, removedConstraints, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
-	filtered.Indexes = state.withoutForeignKeyBackingIndexes(filtered.Indexes, schema, removedConstraints, target)
+	filtered.Constraints, removedConstraints = s.filterConstraints(filtered.Constraints)
+	removedConstraints = append(removedConstraints, s.removedHiddenKeys(schema)...)
+	filtered.Indexes = s.filterIndexes(filtered.Indexes, removedConstraints, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
+	filtered.Indexes = s.withoutForeignKeyBackingIndexes(filtered.Indexes, schema, removedConstraints, target)
 	clearRemovedKeyColumns(filtered.Tables, filtered.Constraints, removedConstraints)
-	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
+	filtered.FeatureObjects, filtered.FeatureCoverage, err = s.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
-		return nil, ExcludeReport{}, err
+		return nil, err
 	}
-	filtered.Functions = state.filterFunctions(filtered.Functions)
-	filtered.Views = state.filterViews(filtered.Views)
-	filtered.MatViews = state.filterMatViews(filtered.MatViews)
-	filtered.Triggers = state.filterTriggers(filtered.Triggers)
-	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
-	filtered.Roles = state.filterRoles(filtered.Roles)
-	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
-	filtered.WideAccess = state.filterWideAccess(filtered.WideAccess)
-	filtered.WideGrants = state.filterWideGrants(filtered.WideGrants)
-	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
-	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
-	state.noteReservedNames(filtered.ReservedNames)
-	state.noteUnreadTables(filtered.UnreadTables)
-	filtered.UnmodeledObjects = state.filterUnmodeledObjects(filtered.UnmodeledObjects)
-	state.noteRemovalBlockers(filtered.RemovalBlockers)
-	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
-	state.noteUnreadRoles(filtered.UnreadRoles)
-	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
+	filtered.Functions = s.filterFunctions(filtered.Functions)
+	filtered.Views = s.filterViews(filtered.Views)
+	filtered.MatViews = s.filterMatViews(filtered.MatViews)
+	filtered.Triggers = s.filterTriggers(filtered.Triggers)
+	filtered.RLSPolicies = s.filterRLSPolicies(filtered.RLSPolicies)
+	filtered.Roles = s.filterRoles(filtered.Roles)
+	filtered.RoleMemberships = s.filterRoleMemberships(filtered.RoleMemberships)
+	filtered.WideAccess = s.filterWideAccess(filtered.WideAccess)
+	filtered.WideGrants = s.filterWideGrants(filtered.WideGrants)
+	filtered.ObjectOwners = s.filterObjectOwners(filtered.ObjectOwners)
+	filtered.Grants = s.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
+	s.noteReservedNames(filtered.ReservedNames)
+	s.noteUnreadTables(filtered.UnreadTables)
+	filtered.UnmodeledObjects = s.filterUnmodeledObjects(filtered.UnmodeledObjects)
+	s.noteRemovalBlockers(filtered.RemovalBlockers)
+	s.noteRolesOutOfScope(filtered.RolesOutOfScope)
+	s.noteUnreadRoles(filtered.UnreadRoles)
+	s.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
-	protectSchemaContents(schema, filtered, defaultSchema, state.containerPatterns, catalog.SelectionExcluded)
-	state.protectUnreadSchemaContents(filtered)
-	return filtered, state.report(), nil
+	return filtered, nil
 }
 
 // outOfScopeParts returns the parts of the tables filtered keeps that read

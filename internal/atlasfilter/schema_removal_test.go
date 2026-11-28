@@ -111,39 +111,62 @@ func TestScopeDatabase_RecordsAnExcludedChildForItsTable(t *testing.T) {
 	}
 }
 
-// A whole-kind exclusion of a table child can leave that kind unread, so an
-// empty list cannot show that dropping any kept table is safe. One of a kind
-// that is not a table child, such as a function, protects only the schema.
-func TestScopeDatabase_RecordsAnUnreadKindForTheTablesThatCanHoldIt(t *testing.T) {
+// A whole-kind exclusion can leave that kind unread, so an empty list cannot
+// show that dropping the schema is safe. It blocks no table, even for a kind
+// of table child and even when the read listed the child: such a child goes
+// with the table the run drops, and a reader may skip the kind. A child that a
+// pattern of another shape excludes still blocks its table.
+func TestScopeDatabase_RecordsAWholeKindForTheSchemaOnly(t *testing.T) {
 	for _, test := range []struct {
-		name, exclude string
-		tables        map[string]catalog.SelectionBlocker
-		schema        catalog.SelectionBlocker
+		name    string
+		exclude []string
+		tables  map[string]catalog.SelectionBlocker
+		schema  catalog.SelectionBlocker
 	}{
 		{
-			name: "triggers", exclude: "*[type=trigger]",
-			tables: map[string]catalog.SelectionBlocker{
-				"app.t": {Object: "triggers", Cause: catalog.SelectionKindExcluded, Selector: "*[type=trigger]", Pattern: "app.t"},
-				"app.u": {Object: "trigger app.u.trg", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
-			},
+			name: "triggers", exclude: []string{"*[type=trigger]"},
 			// An object the read found is named ahead of a kind it left out.
 			schema: catalog.SelectionBlocker{Object: "trigger app.u.trg", Cause: catalog.SelectionExcluded, Pattern: "app"},
 		},
 		{
-			name: "functions", exclude: "*[type=function]",
+			name: "triggers beside a named column", exclude: []string{"*[type=trigger]", "app.u.c"},
+			tables: map[string]catalog.SelectionBlocker{
+				"app.u": {Object: "column app.u.c", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
+			},
+			schema: catalog.SelectionBlocker{Object: "column app.u.c", Cause: catalog.SelectionExcluded, Pattern: "app"},
+		},
+		{
+			name: "triggers beside a named trigger", exclude: []string{"*[type=trigger]", "app.u.trg"},
+			schema: catalog.SelectionBlocker{Object: "trigger app.u.trg", Cause: catalog.SelectionExcluded, Pattern: "app"},
+		},
+		{
+			name: "functions", exclude: []string{"*[type=function]"},
 			schema: catalog.SelectionBlocker{Object: "routines", Cause: catalog.SelectionKindExcluded, Selector: "*[type=function]", Pattern: "app"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			filtered, err := atlasfilter.ScopeDatabase(tableWithChildren(), atlasfilter.Scope{
-				Selections: ownerSelections(), Exclude: []string{test.exclude}, RealmRelativePatterns: true,
+				Selections: ownerSelections(), Exclude: test.exclude, RealmRelativePatterns: true,
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(filtered.TableRemovalBlockers, qt.DeepEquals, test.tables)
 			c.Assert(filtered.SchemaRemovalBlockers, qt.DeepEquals, map[string]catalog.SelectionBlocker{"app": test.schema})
 		})
 	}
+}
+
+// A kind every read lists, such as an index, is matched against what the read
+// found, so a whole-table pattern of that kind blocks the table that holds one.
+func TestScopeDatabase_RecordsAnIndexKindForItsTable(t *testing.T) {
+	c := qt.New(t)
+	filtered, err := atlasfilter.ScopeDatabase(tableWithChildren(), atlasfilter.Scope{
+		Selections: ownerSelections(), Exclude: []string{"*[type=index]"}, RealmRelativePatterns: true,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(filtered.TableRemovalBlockers, qt.DeepEquals, map[string]catalog.SelectionBlocker{
+		"app.u": {Object: "index app.u.ix", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
+	})
 }
 
 // A child an --include selection leaves out of a table it keeps is recorded
