@@ -672,7 +672,10 @@ func TestPostgreSQLBlockedTableDropIsReportedE2E(t *testing.T) {
 			c.Assert(result.Stdout, qt.Not(qt.Contains), "DROP")
 			c.Assert(result.Stdout, qt.Not(qt.Contains), "_removed")
 			c.Assert(rowValue(c, conn, "SELECT c FROM "+schema+".u WHERE id = 1"), qt.Equals, 42)
-			c.Assert(rowValue(c, conn, "SELECT COUNT(*) FROM pg_constraint WHERE conrelid = '"+schema+".u'::regclass"), qt.Equals, 3)
+			// PostgreSQL 18 records each NOT NULL as a constraint row too, so the
+			// count names the primary key, the foreign key and the check.
+			c.Assert(rowValue(c, conn,
+				"SELECT COUNT(*) FROM pg_constraint WHERE conrelid = '"+schema+".u'::regclass AND contype IN ('p', 'f', 'c')"), qt.Equals, 3)
 			c.Assert(rowValue(c, conn, "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = '"+schema+"' AND tablename = 'u'"), qt.Equals, 3)
 			c.Assert(rowValue(c, conn, "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = '"+schema+".u'::regclass AND NOT tgisinternal"), qt.Equals, 1)
 		})
