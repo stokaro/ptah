@@ -97,14 +97,26 @@ import (
 // make the change instead. Nothing is lost there, so the offline rules apply
 // as they stand: two ASCII names that differ beyond case are two names.
 //
-// Indexes and constraints belong to a table, and their replacements are
-// planned as a drop before the create; they are not checked here. Triggers
-// are not checked either. A trigger the plan adds is written as CREATE
-// TRIGGER, never as a statement that replaces one in place, so a namesake the
-// planner leaves in place makes the server refuse the create, and nothing is
-// lost. The MySQL-family planner, which plans SQL Server too, creates a
-// trigger after the drop of one whose name differs from it only in case, so
-// that plan runs.
+// Indexes and constraints belong to a table, and their replacements on it are
+// planned as a drop before the create; two constraints of one table are not
+// checked here. Two triggers are not checked either. A trigger the plan adds
+// is written as CREATE TRIGGER, never as a statement that replaces one in
+// place, so a namesake the planner leaves in place makes the server refuse
+// the create, and nothing is lost. The MySQL-family planner, which plans SQL
+// Server too, drops a trigger before it creates one, so a trigger whose name
+// differs from a dropped one's only in case, or that moves to another table
+// under its name, runs. A constraint or a trigger is checked against the
+// objects of other kinds where the namespace holds it, in the schema of its
+// table: measured on SQL Server 2025, a plan that adds the trigger dbo.AUDIT
+// and the unique constraint dbo.REPORT and drops the views dbo.Audit and
+// dbo.Report writes both creates first, and CREATE TRIGGER fails with error
+// 2714 (stokaro/ptah#6767). A constraint is checked against the constraints of
+// other tables there too, since the planner writes every constraint it adds
+// before the ones it drops: measured on SQL Server 2022, a plan that moves the
+// unique constraint uq from dbo.t1 to dbo.t2, or that replaces the table
+// dbo.t1 by dbo.t2 under its primary key name, fails on the create with error
+// 2714, and the move of a primary key, a check or a foreign key writes the
+// add first too.
 func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics identifier.Semantics, target string) error {
 	if diff == nil {
 		return nil
@@ -124,7 +136,7 @@ func refuseCreatedAndDroppedNamesakes(diff *difftypes.SchemaDiff, semantics iden
 			return err
 		}
 	}
-	return refuseNamesakesOfAnotherKind(kinds, target)
+	return refuseSharedNamespaceNamesakes(append(kinds, hostedNamesakeKinds(diff, semantics, described)...), target)
 }
 
 // refuseFoldableDatabaseNamesakes refuses a diff that creates a database and
@@ -210,12 +222,13 @@ func (r namesakeRules) refuseNamesakes(kind namesakeKind) error {
 	return nil
 }
 
-// refuseNamesakesOfAnotherKind refuses the first object the plan creates
-// whose name may be the name of an object of another kind it drops, where the
-// target keeps both kinds in one namespace; see
-// [refuseCreatedAndDroppedNamesakes]. The kind of an object is its noun, so
-// a function and a procedure are two kinds.
-func refuseNamesakesOfAnotherKind(kinds []namesakeKind, target string) error {
+// refuseSharedNamespaceNamesakes refuses the first object the plan creates
+// whose name may be the name of an object of another kind it drops, or of one
+// of its kind on another table where the plan drops that kind last, where the
+// target keeps both in one namespace; see [refuseCreatedAndDroppedNamesakes].
+// The kind of an object is its noun, so a function and a procedure are two
+// kinds.
+func refuseSharedNamespaceNamesakes(kinds []namesakeKind, target string) error {
 	for _, creating := range kinds {
 		for _, dropping := range kinds {
 			if !creating.shared || !dropping.shared {
@@ -223,8 +236,12 @@ func refuseNamesakesOfAnotherKind(kinds []namesakeKind, target string) error {
 			}
 			for _, created := range creating.created {
 				for _, removed := range dropping.dropped {
-					if created.noun != removed.noun && created.MayBe(removed.Namesake) {
-						return anotherKindError(created, removed, target)
+					apart := created.noun != removed.noun
+					if creating.droppedLast {
+						apart = identifiervalidation.Apart(created.noun, created.host, removed.noun, removed.host)
+					}
+					if apart && created.MayBe(removed.Namesake) {
+						return sharedNamespaceError(created, removed, target)
 					}
 				}
 			}
@@ -233,20 +250,21 @@ func refuseNamesakesOfAnotherKind(kinds []namesakeKind, target string) error {
 	return nil
 }
 
-// anotherKindError names a created object and a dropped one of another kind
-// that target keeps in one namespace, and the two migrations that make the
-// change. Two names spelled alike are one name; any other pair is one the
-// target may read as one.
-func anotherKindError(created, removed plannedName, target string) error {
+// sharedNamespaceError names a created object and a dropped one that target
+// keeps in one namespace, and the two migrations that make the change. Two
+// names spelled alike are one name; any other pair is one the target may read
+// as one.
+func sharedNamespaceError(created, removed plannedName, target string) error {
 	reading := "where it may read the two names as one"
 	if created.spelling == removed.spelling {
 		reading = "where the two are one name"
 	}
 	return fmt.Errorf(
-		"%w: the plan creates %s %s and drops %s %s, and %s keeps both kinds in one namespace in a schema, "+
+		"%w: the plan creates %s %s and drops %s %s, and %s, "+
 			"%s, so the create would fail while the %s exists; make the change in two migrations, "+
 			"the first dropping the %s %s and the second creating the %s %s",
-		ptaherr.ErrInvalidSchemaDiff, created.noun, created.name, removed.noun, removed.name, target,
+		ptaherr.ErrInvalidSchemaDiff, created.noun, created.name, removed.noun, removed.name,
+		identifiervalidation.NamespaceClause(created.noun, removed.noun, target),
 		reading, removed.noun, removed.noun, removed.name, created.noun, created.name,
 	)
 }
@@ -331,14 +349,15 @@ var (
 )
 
 // plannedName is one object a plan creates or drops: how a message names it,
-// how the target's rules compare its name, and its spelling with the schema
-// written out.
+// how the target's rules compare its name, its spelling with the schema
+// written out, and for a constraint or a trigger the table it belongs to.
 type plannedName struct {
 	identifiervalidation.Namesake
 
 	noun     string
 	name     string
 	spelling string
+	host     string
 }
 
 // namesakeKind is the objects of one kind a plan creates and drops, or its
@@ -346,15 +365,17 @@ type plannedName struct {
 // namespace the target's descriptor states
 // ([descriptor.Comparison.SharedObjectNamespace]), routines that the kind is
 // the routines, oneObject that two of its objects spelled alike are one
-// object whatever the target, and loss what a plan does to a pair of its
-// namesakes.
+// object whatever the target, droppedLast that the plan drops an object of
+// the kind on one table after it creates one on another, and loss what a plan
+// does to a pair of its namesakes.
 type namesakeKind struct {
-	shared    bool
-	routines  bool
-	oneObject bool
-	loss      loss
-	created   []plannedName
-	dropped   []plannedName
+	shared      bool
+	routines    bool
+	oneObject   bool
+	droppedLast bool
+	loss        loss
+	created     []plannedName
+	dropped     []plannedName
 }
 
 // namesakeKinds lists, for each kind of object a schema holds by name, and
@@ -362,7 +383,7 @@ type namesakeKind struct {
 // rules, the objects of it the diff creates and drops. Functions and
 // procedures are listed together, because a plan can replace a routine of one
 // kind by a routine of the other under one name; each keeps its noun, which
-// [refuseNamesakesOfAnotherKind] reads as its kind. A name is compared under
+// [refuseSharedNamespaceNamesakes] reads as its kind. A name is compared under
 // rules, read as [indexscope.ConflictSemantics] reads them, and spelled under
 // rules as they stand. A routine name is keyed by the routine rule of the
 // target's descriptor where it states one.
@@ -424,6 +445,40 @@ func namesakeKinds(diff *difftypes.SchemaDiff, rules identifier.Semantics, descr
 		schemaScoped("sequence", namespace.Sequences, diff.SequencesAdded.Names(), diff.SequencesRemoved.Names()),
 		routines,
 	}
+}
+
+// hostedNamesakeKinds lists the constraints and the triggers the diff creates
+// and drops, where the target's descriptor puts them in the namespace it
+// states ([descriptor.ObjectNamespace.Constraints] and
+// [descriptor.ObjectNamespace.Triggers]). Each is named in the schema of its
+// table. A constraint is judged against objects of other kinds and against
+// the constraints of other tables, and a trigger against objects of other
+// kinds alone ([refuseSharedNamespaceNamesakes]); see
+// [refuseCreatedAndDroppedNamesakes] for why.
+func hostedNamesakeKinds(diff *difftypes.SchemaDiff, rules identifier.Semantics, described descriptor.Dialect) []namesakeKind {
+	conflict := indexscope.ConflictSemantics(rules)
+	namespace := described.Comparison.SharedObjectNamespace
+	hosted := func(noun string, object identifiervalidation.Hosted) plannedName {
+		planned := schemaScopedName(noun, object.QualifiedName(rules.DefaultSchema), conflict, rules)
+		planned.host = qualifiedName(object.Table, rules.DefaultSchema)
+		planned.name += " on " + planned.host
+		return planned
+	}
+	constraints := namesakeKind{shared: namespace.Constraints, droppedLast: true, loss: lostObject}
+	for _, created := range identifiervalidation.CreatedConstraints(diff) {
+		constraints.created = append(constraints.created, hosted("constraint", created))
+	}
+	for _, removed := range diff.ConstraintsRemoved {
+		constraints.dropped = append(constraints.dropped, hosted("constraint", identifiervalidation.Hosted{Name: removed.Name, Table: removed.TableName}))
+	}
+	triggers := namesakeKind{shared: namespace.Triggers, loss: lostObject}
+	for _, added := range diff.TriggersAdded {
+		triggers.created = append(triggers.created, hosted("trigger", identifiervalidation.HostedTrigger(added.TriggerName, added.TableName)))
+	}
+	for _, removed := range diff.TriggersRemoved {
+		triggers.dropped = append(triggers.dropped, hosted("trigger", identifiervalidation.HostedTrigger(removed.TriggerName, removed.TableName)))
+	}
+	return []namesakeKind{constraints, triggers}
 }
 
 func routineNoun(routine difftypes.RoutineChange) string {

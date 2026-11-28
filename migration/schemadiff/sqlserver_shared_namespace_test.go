@@ -169,3 +169,354 @@ func TestValidateDesiredSchema_NamesakesOfTwoKinds_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// SQL Server keeps the constraints and the triggers of a table in that
+// namespace too, in the schema of the table. Measured on SQL Server 2025:
+// CREATE VIEW [dbo].[REPORT] beside the primary key Report of dbo.t1 fails with
+// error 2714, and so does CREATE TRIGGER [Audit] beside the procedure
+// dbo.AUDIT (stokaro/ptah#6767).
+
+// reportTable is the table dbo.t1, given as table, with a column n, beside
+// the given declarations.
+func reportTable(desired schemamodel.Database, table schemamodel.Table, n schemamodel.Field) schemamodel.Database {
+	table.StructName = "T1"
+	n.StructName, n.Name, n.Type = "T1", "n", "INT"
+	desired.Tables = append(desired.Tables, table)
+	desired.Fields = append(desired.Fields, n)
+	return desired
+}
+
+func TestValidateDesiredSchema_SQLServerConstraintsAndTriggersBesideOtherKinds_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		want    string
+	}{
+		{
+			name:    "a primary key named as a view",
+			desired: reportView(reportTable(schemamodel.Database{}, schemamodel.Table{Name: "t1", PrimaryKeyName: "REPORT"}, schemamodel.Field{})),
+			want: `target view dbo\.Report and constraint dbo\.REPORT on dbo\.t1 may have the same catalog identity, ` +
+				`and sqlserver keeps both kinds in one namespace in a schema`,
+		},
+		{
+			name: "a column check named as a procedure",
+			desired: new(reportTable(reportProcedure("Report"), schemamodel.Table{Name: "t1"},
+				schemamodel.Field{Check: "n > 0", CheckName: "REPORT"})),
+			want: `target procedure dbo\.Report and constraint dbo\.REPORT on dbo\.t1 may have the same catalog identity`,
+		},
+		{
+			name: "a column foreign key named as a table",
+			desired: new(reportTable(schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}}},
+				schemamodel.Table{Name: "t1"}, schemamodel.Field{Foreign: "parent(id)", ForeignKeyName: "parent"})),
+			want: `target table dbo\.parent and constraint dbo\.parent on dbo\.t1 are one name`,
+		},
+		{
+			name: "a table-level constraint named as a sequence in its table's schema",
+			desired: &schemamodel.Database{
+				Tables:      []schemamodel.Table{{StructName: "T1", Schema: "sales", Name: "t1"}},
+				Constraints: []schemamodel.Constraint{{StructName: "T1", Name: "next_id", Type: "UNIQUE", Columns: []string{"n"}}},
+				Sequences:   []schemamodel.Sequence{{Schema: "sales", Name: "next_id"}},
+			},
+			want: `target sequence sales\.next_id and constraint sales\.next_id on sales\.t1 are one name`,
+		},
+		{
+			name: "a trigger named as a procedure",
+			desired: &schemamodel.Database{
+				Functions: reportProcedure("AUDIT").Functions,
+				Triggers:  []schemamodel.Trigger{{Name: "Audit", Table: "t2", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END"}},
+			},
+			want: `target procedure dbo\.AUDIT and trigger dbo\.Audit on dbo\.t2 may have the same catalog identity`,
+		},
+		{
+			name: "a trigger whose name carries its schema",
+			desired: &schemamodel.Database{
+				Functions: reportProcedure("sales.Audit").Functions,
+				Triggers:  []schemamodel.Trigger{{Name: "sales.Audit", Table: "sales.t2", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END"}},
+			},
+			want: `target procedure sales\.Audit and trigger sales\.Audit on sales\.t2 are one name`,
+		},
+		{
+			name: "a trigger named as a constraint",
+			desired: new(reportTable(schemamodel.Database{
+				Triggers: []schemamodel.Trigger{{Name: "UQ_n", Table: "t1", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END"}},
+			}, schemamodel.Table{Name: "t1"}, schemamodel.Field{Check: "n > 0", CheckName: "UQ_n"})),
+			want: `target constraint dbo\.UQ_n on dbo\.t1 and trigger dbo\.UQ_n on dbo\.t1 are one name`,
+		},
+		{
+			name: "two primary keys of two tables named alike",
+			desired: &schemamodel.Database{Tables: []schemamodel.Table{
+				{StructName: "T1", Name: "t1", PrimaryKeyName: "pk"},
+				{StructName: "T2", Name: "t2", PrimaryKeyName: "pk"},
+			}},
+			want: `target constraint dbo\.pk on dbo\.t1 and constraint dbo\.pk on dbo\.t2 are one name, and sqlserver keeps ` +
+				`the constraints of every table in one namespace in a schema`,
+		},
+		{
+			name: "a check and a primary key of two tables in another case",
+			desired: new(reportTable(schemamodel.Database{Tables: []schemamodel.Table{{StructName: "T2", Name: "t2", PrimaryKeyName: "RULE"}}},
+				schemamodel.Table{Name: "t1"}, schemamodel.Field{Check: "n > 0", CheckName: "Rule"})),
+			want: `target constraint dbo\.RULE on dbo\.t2 and constraint dbo\.Rule on dbo\.t1 may have the same catalog identity`,
+		},
+		{
+			name: "two triggers of two tables named alike",
+			desired: &schemamodel.Database{Triggers: []schemamodel.Trigger{
+				{Name: "Audit", Table: "t1", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END"},
+				{Name: "Audit", Table: "t2", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END"},
+			}},
+			want: `target trigger dbo\.Audit on dbo\.t1 and trigger dbo\.Audit on dbo\.t2 are one name, and sqlserver keeps ` +
+				`the triggers of every table in one namespace in a schema`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := schemadiff.ValidateDesiredSchema(c.Context(), must.Must(builtin.New()), test.desired,
+				catalog.ServerInfo{Dialect: platform.SQLServer})
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `.*`+test.want+`.*`)
+		})
+	}
+}
+
+func TestValidateDesiredSchema_SQLServerConstraintsAndTriggersBesideOtherKinds_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		desired *schemamodel.Database
+	}{
+		{
+			// A constraint is in the schema of its table.
+			name:    "a primary key named as a view of another schema",
+			dialect: platform.SQLServer,
+			desired: reportView(reportTable(schemamodel.Database{}, schemamodel.Table{Schema: "sales", Name: "t1", PrimaryKeyName: "Report"}, schemamodel.Field{})),
+		},
+		{
+			// Ptah chose the name, and nobody named the key.
+			name:    "a derived foreign key name",
+			dialect: platform.SQLServer,
+			desired: reportView(reportTable(schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Parent", Name: "parent"}},
+				Fields: []schemamodel.Field{{StructName: "Parent", Name: "id", Type: "INT", Primary: true}},
+			}, schemamodel.Table{Name: "t1"}, schemamodel.Field{Foreign: "parent(id)", ForeignKeyName: "Report", ForeignKeyNameDerived: true})),
+		},
+		{
+			// MySQL keeps a constraint apart from views and routines.
+			name:    "a MySQL check named as a view",
+			dialect: platform.MySQL,
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1"}},
+				Fields: []schemamodel.Field{{StructName: "T1", Name: "n", Type: "INT", Check: "n > 0", CheckName: "report"}},
+				Views:  []schemamodel.View{{Name: "report", Body: "SELECT 1 AS a"}},
+			},
+		},
+		{
+			name:    "two primary keys named alike in two schemas",
+			dialect: platform.SQLServer,
+			desired: &schemamodel.Database{Tables: []schemamodel.Table{
+				{StructName: "T1", Name: "t1", PrimaryKeyName: "pk"},
+				{StructName: "T2", Schema: "sales", Name: "t2", PrimaryKeyName: "pk"},
+			}},
+		},
+		{
+			// PostgreSQL names a check in its table.
+			name:    "two PostgreSQL checks of two tables named alike",
+			dialect: platform.Postgres,
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1"}, {StructName: "T2", Name: "t2"}},
+				Fields: []schemamodel.Field{
+					{StructName: "T1", Name: "n", Type: "INTEGER", Check: "n > 0", CheckName: "positive"},
+					{StructName: "T2", Name: "n", Type: "INTEGER", Check: "n > 0", CheckName: "positive"},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := schemadiff.ValidateDesiredSchema(c.Context(), must.Must(builtin.New()), test.desired,
+				catalog.ServerInfo{Dialect: test.dialect})
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// heldReportKey is a database holding the table dbo.t1, whose primary key the
+// server named Report.
+func heldReportKey() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Name: "t1", Type: "TABLE", Columns: []catalog.Column{
+			{Name: "id", DataType: "int", IsNullable: "NO", IsPrimaryKey: true},
+		}}},
+		Constraints: []catalog.Constraint{{Name: "Report", TableName: "t1", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}}},
+	}
+}
+
+// unnamedReportKey declares dbo.t1 with an unnamed primary key, beside the
+// view dbo.REPORT.
+func unnamedReportKey() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T1", Name: "t1", PrimaryKey: []string{"id"}}},
+		Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "INT", Primary: true}},
+		Views:  []schemamodel.View{{Name: "REPORT", Body: "SELECT 1 AS a"}},
+	}
+}
+
+func TestCompareWithDatabase_SQLServerCreatesBesideAKeptConstraintOrTrigger_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		held    *catalog.Database
+		want    string
+	}{
+		{
+			name:    "a view beside the primary key an unnamed declaration keeps",
+			desired: unnamedReportKey(),
+			held:    heldReportKey(),
+			want: `the plan creates view dbo\.REPORT, and the database keeps constraint dbo\.Report on dbo\.t1, which it ` +
+				`may read as one name; sqlserver keeps both kinds in one namespace in a schema, so the create would fail ` +
+				`while the constraint exists; give the view another name, or rename or drop the constraint first`,
+		},
+		{
+			name: "a trigger beside the primary key an unnamed declaration keeps",
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1", PrimaryKey: []string{"id"}}},
+				Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "INT", Primary: true}},
+				Triggers: []schemamodel.Trigger{{
+					Name: "REPORT", Table: "t1", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END",
+				}},
+			},
+			held: heldReportKey(),
+			want: `the plan creates trigger dbo\.REPORT on dbo\.t1, and the database keeps constraint dbo\.Report on dbo\.t1, ` +
+				`which it may read as one name`,
+		},
+		{
+			name: "the primary key of a created table beside the key an unnamed declaration keeps",
+			desired: func() *schemamodel.Database {
+				desired := unnamedReportKey()
+				desired.Views = nil
+				desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "T2", Name: "t2", PrimaryKeyName: "REPORT"})
+				return desired
+			}(),
+			held: heldReportKey(),
+			want: `the plan creates constraint dbo\.REPORT on dbo\.t2, and the database keeps constraint dbo\.Report on dbo\.t1, ` +
+				`which it may read as one name; sqlserver keeps the constraints of every table in one namespace in a schema, ` +
+				`so the create would fail while the constraint exists; give the constraint another name, or rename or drop ` +
+				`the constraint first`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabase(c.Context(), caseInsensitiveDatabase, test.desired, test.held, nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, `.*`+test.want+`.*`)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
+// The controls: a case-sensitive database reads REPORT and Report as two
+// names, and a constraint or a trigger the plan drops, alone or with its
+// table, is the planner's to judge.
+func TestCompareWithDatabase_SQLServerCreatesBesideAKeptConstraintOrTrigger_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		connection collationConnection
+		desired    *schemamodel.Database
+		held       *catalog.Database
+		want       []string
+	}{
+		{
+			name:       "a case-sensitive database",
+			connection: caseSensitiveDatabase,
+			desired:    unnamedReportKey(),
+			held:       heldReportKey(),
+			want:       []string{"view added REPORT"},
+		},
+		{
+			// The server is asked about the declared name of the key, so
+			// the case-sensitive answer keeps it apart from the view.
+			name:       "a declared primary key on a case-sensitive database",
+			connection: caseSensitiveDatabase,
+			desired: func() *schemamodel.Database {
+				desired := unnamedReportKey()
+				desired.Tables[0].PrimaryKeyName = "Report"
+				return desired
+			}(),
+			held: heldReportKey(),
+			want: []string{"view added REPORT"},
+		},
+		{
+			name:       "a constraint the plan drops",
+			connection: caseInsensitiveDatabase,
+			desired:    unnamedReportKey(),
+			held: func() *catalog.Database {
+				held := heldReportKey()
+				held.Constraints[0].Name = "pk_t1"
+				held.Constraints = append(held.Constraints, catalog.Constraint{Name: "Report", TableName: "t1", Type: "UNIQUE", ColumnNames: []string{"id"}})
+				return held
+			}(),
+			want: []string{"view added REPORT"},
+		},
+		{
+			// The trigger of a table the plan drops is dropped by name, so the
+			// planner judges it beside the procedure.
+			name:       "a trigger the plan drops",
+			connection: caseInsensitiveDatabase,
+			desired:    &schemamodel.Database{Functions: reportProcedure("AUDIT").Functions},
+			held: &catalog.Database{
+				Tables:   []catalog.Table{{Name: "t2", Type: "TABLE", Columns: []catalog.Column{{Name: "id", DataType: "int", IsNullable: "NO"}}}},
+				Triggers: []catalog.Trigger{{Name: "Audit", Table: "t2", Timing: "AFTER", Event: "INSERT", Body: "BEGIN SET NOCOUNT ON; END"}},
+			},
+			want: []string{"routine added AUDIT", "table removed t2", "trigger removed Audit on t2"},
+		},
+		{
+			name:       "the constraint of a table the plan drops",
+			connection: caseInsensitiveDatabase,
+			desired:    &schemamodel.Database{Views: []schemamodel.View{{Name: "REPORT", Body: "SELECT 1 AS a"}}},
+			held:       heldReportKey(),
+			want:       []string{"table removed t1", "view added REPORT"},
+		},
+		{
+			// The server is asked about the declared name of a key the
+			// database does not hold too.
+			name:       "a declared primary key of a created table on a case-sensitive database",
+			connection: caseSensitiveDatabase,
+			desired: func() *schemamodel.Database {
+				desired := unnamedReportKey()
+				desired.Tables[0].PrimaryKeyName = "Report"
+				return desired
+			}(),
+			held: &catalog.Database{},
+			want: []string{"table added t1", "view added REPORT"},
+		},
+		{
+			name:       "the primary key of a created table on a case-sensitive database",
+			connection: caseSensitiveDatabase,
+			desired: func() *schemamodel.Database {
+				desired := unnamedReportKey()
+				desired.Views = nil
+				desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "T2", Name: "t2", PrimaryKeyName: "REPORT"})
+				return desired
+			}(),
+			held: heldReportKey(),
+			want: []string{"table added t2"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDatabase(c.Context(), test.connection, test.desired, test.held, nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(namedObjectChanges(diff), qt.DeepEquals, test.want)
+		})
+	}
+}

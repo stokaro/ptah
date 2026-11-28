@@ -372,18 +372,35 @@ name differs from it only in case, so the drop frees the name the create
 takes, and `CREATE TRIGGER` fails while another trigger holds the name. A
 column added to a table that holds a column of that name fails the same way.
 
-Tables, views, functions, procedures and sequences share one namespace in a
-schema: a procedure cannot take the name a view or a function holds there. A
-declaration that gives objects of two of these kinds names the database may
-read as one is refused and names both objects, such as the view `dbo.Report`
-and the procedure `dbo.REPORT` under a case-insensitive collation, or the
-function `dbo.x` and the procedure `dbo.x` under any collation.
+Tables, views, functions, procedures, sequences, constraints and triggers
+share one namespace in a schema: a procedure cannot take the name a view or a
+function holds there. A constraint and a trigger are in the schema of their
+table, so two tables of a schema cannot each have a constraint named `pk`, or
+a trigger named `Audit`. A declaration that gives two of these objects names
+the database may read as one is refused and names both objects, such as the
+view `dbo.Report` and the procedure `dbo.REPORT` under a case-insensitive
+collation, the function `dbo.x` and the procedure `dbo.x` under any
+collation, the view `dbo.REPORT` and the primary key `Report` of `dbo.t1`, or
+the primary keys `pk` of `dbo.t1` and `dbo.t2`. A constraint the declaration
+leaves unnamed takes a name the server makes up, and a foreign key name Ptah
+derives is not compared either.
+
+A constraint the database holds is compared too, because a declaration that
+leaves the constraint unnamed keeps the name the database holds it under. On a
+database whose table `dbo.t1` holds the primary key `Report`, a schema that
+declares the table with an unnamed primary key beside the view `dbo.REPORT`
+is refused before anything runs, and so is a new table `dbo.t2` whose primary
+key is named `Report`. Give the new object another name, or rename the
+constraint first.
 
 So is a plan that creates an object of one kind and drops an object of another
 kind under such a name, because the plan creates before it drops and the
-server would refuse the create with error 2010. Make the change in two
-migrations: the first drops the old object, and the second creates the new
-one. The plan is not reordered to drop first. The drop takes every privilege
+server would refuse the create with error 2010 or 2714. A constraint that
+moves to another table under its name is refused for the same reason, and so
+is a table replaced by another table under its primary key name. Make the
+change in two migrations: the first drops the old object, and the second
+creates the new one. A trigger that moves to another table under its name is
+applied, because the plan drops a trigger before it creates one. The plan is not reordered to drop first. The drop takes every privilege
 on the old object, and a rollback would have to create the old object while
 the new one holds the name.
 
