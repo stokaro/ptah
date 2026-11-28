@@ -2501,11 +2501,15 @@ well, so `ptah-compat` plans neither drop. `schema apply` and `migrate diff`
 refuse the run and name the object the drop would remove, with the ways out:
 declare the table or the database to keep it, or exclude the whole of it to
 leave it alone. `schema diff` prints the same text as a warning and leaves the
-drop out of the SQL it prints. A selector that leaves a whole kind out of the
-read, such as `*[type=function]`, blocks a database drop the same way, because
-the read cannot show that the database holds none. It blocks no table drop,
-even where the read lists the object: a trigger or a constraint goes with the
-table the run drops.
+drop, and every statement on a table it keeps, out of the SQL it prints.
+
+A selector that leaves a whole kind out of the read, such as `*[type=function]`,
+blocks a database drop the same way, because the read cannot show that the
+database holds none. A selector that takes every object of a kind blocks no
+table drop, at any scope, such as `*[type=trigger]`, `db.u.*[type=trigger]` or
+`*[type=index]`: a trigger, an index or a constraint goes with the table the
+run drops. A selector that names an object, or may take a column, still blocks
+the table that holds it.
 
 Measured on 2026-11-28 with the community binary v1.4.0 and
 `schema apply --dry-run` against a whole MySQL 8.4 server holding the databases

@@ -412,13 +412,21 @@ table the desired schema does not declare stays while it holds an excluded
 column, index, constraint or trigger, and a MySQL or MariaDB database stays
 while it holds an excluded object. `schema drift` counts each such drop under
 `removals_blocked`, and `schema compare` and `schema diff` print a warning that
-names the object and the ways out. `schema apply`, `schema plan`, `migrations
-plan` and `migrations generate` refuse the run with the same text, because a
-plan without the drop would not converge. A selector that leaves a whole kind
-out of the read, such as `*[type=trigger]` or `*[type=constraint]`, blocks no
-table drop, even where the read lists the object: a trigger or a constraint
-goes with the table the run drops, and an account that cannot read the kind
-takes that selector to plan at all.
+names the object and the ways out. The table stays as the database holds it,
+so no key, index, constraint or trigger of it reaches the SQL or the findings
+either. `schema apply`, `schema plan`, `migrations plan` and `migrations
+generate` refuse the run with the same text, because a plan without the drop
+would not converge.
+
+A selector that takes every object of a kind blocks no table drop, at any
+scope: `*[type=trigger]`, `db.*[type=trigger]`, `db.u.*[type=index]` and
+`*[type=constraint]` say the run does not manage that kind, and the trigger,
+index or constraint goes with the table the run drops. This holds whether or
+not the read lists the kind, and an account that cannot read a kind takes such
+a selector to plan at all. A selector that names objects, such as `db.u.trg`,
+`db.u.t*[type=trigger]` or `*.*.c`, still blocks the table that holds one. So
+does a selector that may take a column, such as `*[type=column]`, because a
+column holds the table's rows.
 
 | Flag | What it does | When it selects nothing |
 | --- | --- | --- |

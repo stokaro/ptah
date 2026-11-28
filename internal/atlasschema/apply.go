@@ -48,6 +48,7 @@ import (
 	"ptah.run/internal/roundingscan"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -1036,9 +1037,11 @@ func pairApplySchemas(
 	if current == nil || desired == nil || projectedCurrent == nil || projectedDesired == nil {
 		return
 	}
-	currentKept, desiredKept := catalogSchemaNames(projectedCurrent), modelSchemaNames(projectedDesired.Schemas)
+	// A desired schema declares a database through a table as well as
+	// through a schema block, as the comparison reads it.
+	currentKept, desiredKept := catalogSchemaNames(projectedCurrent), modelSchemaNames(schemaprep.ServerDatabases(projectedDesired))
 	projectedCurrent.Schemas = atlasfilter.PairSchemas(current.Schemas, projectedCurrent.Schemas, desiredKept, catalogSchemaName)
-	projectedDesired.Schemas = atlasfilter.PairSchemas(desired.Schemas, projectedDesired.Schemas, currentKept, modelSchemaName)
+	projectedDesired.Schemas = atlasfilter.PairSchemas(schemaprep.ServerDatabases(desired), projectedDesired.Schemas, currentKept, modelSchemaName)
 }
 
 func catalogSchemaName(schema catalog.Schema) string { return schema.Name }

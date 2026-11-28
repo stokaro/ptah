@@ -189,6 +189,9 @@ func compareReportingUndecidedAdditions(
 	// four surfaces resolve a desired state independently, and one of them
 	// built its compare options from a zero value (stokaro/ptah#1276).
 	cov := compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema)
+	// A table whose drop the selection blocks leaves the comparison with all
+	// its parts, before any comparator pairs them.
+	database = compare.WithoutBlockedTables(desired, database, diff, opts.Dialect, identifierSemantics, cov)
 
 	compareSchemaContainers(diff, desired, database, cov, opts, identifierSemantics, rules)
 

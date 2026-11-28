@@ -191,6 +191,111 @@ func TestCompareWithDatabaseInfo_BlocksTheDropOfATableWithAnExcludedChild(t *tes
 	}
 }
 
+// A table whose drop is blocked stays as the database holds it. Each part of
+// it leaves the comparison with it: a key, a foreign key, a check, an index, a
+// trigger, a policy, a grant and an owned sequence would each reach the diff as
+// a removal of its own and strip the table the drop leaves in place.
+func TestCompareWithDatabaseInfo_LeavesEveryPartOfABlockedTable(t *testing.T) {
+	for _, test := range []struct {
+		dialect, schema, exclude, table, pattern string
+		realm, wholeServer                       bool
+	}{
+		{dialect: platform.MySQL, schema: "app", exclude: "app.u.c", table: "app.u", pattern: "app.u", realm: true, wholeServer: true},
+		{dialect: platform.MariaDB, schema: "app", exclude: "app.u.c", table: "app.u", pattern: "app.u", realm: true, wholeServer: true},
+		{dialect: platform.MySQL, exclude: "u.c", table: "u", pattern: "u"},
+		{dialect: platform.Postgres, schema: "public", exclude: "u.c", table: "public.u", pattern: "u"},
+		{dialect: platform.SQLServer, schema: "dbo", exclude: "u.c", table: "dbo.u", pattern: "u"},
+	} {
+		t.Run(test.dialect+"/"+test.exclude, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			check := "d > 0"
+			current := &catalog.Database{
+				Tables: []catalog.Table{
+					{Schema: test.schema, Name: "t", Columns: []catalog.Column{{Name: "id", DataType: "int"}}},
+					{Schema: test.schema, Name: "u", Columns: []catalog.Column{
+						{Name: "id", DataType: "int"}, {Name: "c", DataType: "int"}, {Name: "d", DataType: "int"},
+					}},
+				},
+				Constraints: []catalog.Constraint{
+					{Schema: test.schema, TableName: "u", Name: "u_pk", Type: "PRIMARY KEY", ColumnNames: []string{"id"}},
+					{
+						Schema: test.schema, TableName: "u", Name: "u_d_fk", Type: "FOREIGN KEY", ColumnNames: []string{"d"},
+						ForeignSchema: test.schema, ForeignTable: new("t"), ForeignColumns: []string{"id"},
+					},
+					{Schema: test.schema, TableName: "u", Name: "u_d_ck", Type: "CHECK", CheckClause: &check},
+					{Schema: test.schema, TableName: "u", Name: "u_d_uq", Type: "UNIQUE", ColumnNames: []string{"d"}},
+				},
+				Indexes:     []catalog.Index{{Schema: test.schema, TableName: "u", Name: "ixd", Columns: []string{"d"}}},
+				Triggers:    []catalog.Trigger{{Schema: test.schema, Table: "u", Name: "trg", Timing: "BEFORE", Event: "INSERT"}},
+				RLSPolicies: []catalog.RLSPolicy{{Table: catalog.QualifyTableName(test.schema, "u"), Name: "p", PolicyFor: "SELECT"}},
+				Grants: []catalog.Grant{{
+					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: test.schema, ObjectName: "u",
+				}},
+				Sequences: []catalog.Sequence{{Schema: test.schema, Name: "u_id_seq", OwnedBy: "u.id"}},
+			}
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{Schema: test.schema, Name: "t", StructName: "t"}},
+				Fields: []schemamodel.Field{{StructName: "t", Name: "id", Type: "int"}},
+			}
+			if test.wholeServer {
+				current.Schemas = []catalog.Schema{{Name: test.schema}}
+				desired.Schemas = []schemamodel.Schema{{Name: test.schema}}
+			}
+			filtered, err := atlasfilter.ScopeDatabase(current, atlasfilter.Scope{
+				Selections: runtime.Selections(), Dialect: test.dialect, RealmRelativePatterns: test.realm, Exclude: []string{test.exclude},
+				DefaultSchema: test.schema,
+			})
+			c.Assert(err, qt.IsNil)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, filtered,
+				catalog.ServerInfo{Dialect: test.dialect, Schema: test.schema, WholeServer: test.wholeServer}, nil, runtime)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.RemovalsBlocked, qt.DeepEquals, []difftypes.BlockedRemoval{{
+				Kind: difftypes.BlockedTable, Name: test.table,
+				BlockedBy: catalog.SelectionBlocker{Object: "column " + test.table + ".c", Cause: catalog.SelectionExcluded, Pattern: test.pattern},
+			}})
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+			c.Assert(diff.IndexesRemoved, qt.HasLen, 0)
+			c.Assert(diff.TriggersRemoved, qt.HasLen, 0)
+			diff.RemovalsBlocked = nil
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
+		})
+	}
+}
+
+// A table in a database the desired schema records as not described is not a
+// drop the comparison plans, so a child the selection excludes blocks
+// nothing there and nothing is reported.
+func TestCompareWithDatabaseInfo_ReportsNoBlockedDropWhereCoveragePlansNone(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	current := &catalog.Database{
+		Schemas: []catalog.Schema{{Name: "app"}, {Name: "db"}},
+		Tables: []catalog.Table{{Schema: "db", Name: "u", Columns: []catalog.Column{
+			{Name: "id", DataType: "int"}, {Name: "c", DataType: "int"},
+		}}},
+	}
+	filtered, err := atlasfilter.ScopeDatabase(current, atlasfilter.Scope{
+		Selections: runtime.Selections(), Dialect: platform.MySQL, RealmRelativePatterns: true, Exclude: []string{"db.u.c"},
+	})
+	c.Assert(err, qt.IsNil)
+	desired := &schemamodel.Database{
+		Schemas:      []schemamodel.Schema{{Name: "app"}},
+		NotDescribed: coverage.Set{}.WithObject(coverage.Schema, "db"),
+	}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, filtered,
+		catalog.ServerInfo{Dialect: platform.MySQL, WholeServer: true}, nil, runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(filtered.TableRemovalBlockers, qt.HasLen, 1)
+	c.Assert(diff.RemovalsBlocked, qt.HasLen, 0)
+	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("%+v", diff))
+}
+
 // A database the desired schema records as not described is left alone,
 // whatever it holds: the record says the desired schema does not know what
 // is there, so its absence asks for no drop.

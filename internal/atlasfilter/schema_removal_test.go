@@ -156,17 +156,81 @@ func TestScopeDatabase_RecordsAWholeKindForTheSchemaOnly(t *testing.T) {
 	}
 }
 
-// A kind every read lists, such as an index, is matched against what the read
-// found, so a whole-table pattern of that kind blocks the table that holds one.
-func TestScopeDatabase_RecordsAnIndexKindForItsTable(t *testing.T) {
-	c := qt.New(t)
-	filtered, err := atlasfilter.ScopeDatabase(tableWithChildren(), atlasfilter.Scope{
-		Selections: ownerSelections(), Exclude: []string{"*[type=index]"}, RealmRelativePatterns: true,
-	})
-	c.Assert(err, qt.IsNil)
-	c.Assert(filtered.TableRemovalBlockers, qt.DeepEquals, map[string]catalog.SelectionBlocker{
-		"app.u": {Object: "index app.u.ix", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
-	})
+// tablesWithKeys holds the table t, keyed by id, and the table u, keyed by
+// id, with the column c, an index on c and a trigger.
+func tablesWithKeys() *catalog.Database {
+	database := tableWithChildren()
+	database.Constraints = []catalog.Constraint{
+		{Schema: "app", TableName: "t", Name: "t_pk", Type: "PRIMARY KEY", ColumnNames: []string{"id"}},
+		{Schema: "app", TableName: "u", Name: "PRIMARY", Type: "PRIMARY KEY", ColumnNames: []string{"id"}},
+	}
+	return database
+}
+
+// A selector that takes every object of a kind blocks no table drop, at any
+// scope; one that names objects, or may take a column, blocks the table that
+// holds them. A primary key answers to `[type=index]`, so an index kind would
+// otherwise block every keyed table.
+func TestScopeDatabase_BlocksATableDropBySelectorShape(t *testing.T) {
+	for _, test := range []struct {
+		exclude string
+		tables  map[string]catalog.SelectionBlocker
+	}{
+		{exclude: "*[type=trigger]"},
+		{exclude: "app.*[type=trigger]"},
+		{exclude: "app.u.*[type=trigger]"},
+		{exclude: "*[type=index]"},
+		{exclude: "app.*[type=index]"},
+		{exclude: "app.u.*[type=index]"},
+		{exclude: "*[type=constraint]"},
+		{exclude: "app.u.*[type=constraint]"},
+		{exclude: "*[type=index|trigger]"},
+		{
+			exclude: "app.u.t*[type=trigger]",
+			tables:  map[string]catalog.SelectionBlocker{"app.u": {Object: "trigger app.u.trg", Cause: catalog.SelectionExcluded, Pattern: "app.u"}},
+		},
+		{
+			exclude: "app.u.ix",
+			tables:  map[string]catalog.SelectionBlocker{"app.u": {Object: "index app.u.ix", Cause: catalog.SelectionExcluded, Pattern: "app.u"}},
+		},
+		{
+			exclude: "*.*.c",
+			tables:  map[string]catalog.SelectionBlocker{"app.u": {Object: "column app.u.c", Cause: catalog.SelectionExcluded, Pattern: "app.u"}},
+		},
+		{
+			exclude: "*[type=column]",
+			tables: map[string]catalog.SelectionBlocker{
+				"app.t": {Object: "column app.t.id", Cause: catalog.SelectionExcluded, Pattern: "app.t"},
+				"app.u": {Object: "column app.u.c", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
+			},
+		},
+		{
+			exclude: "*[type=index|column]",
+			tables: map[string]catalog.SelectionBlocker{
+				"app.t": {Object: "column app.t.id", Cause: catalog.SelectionExcluded, Pattern: "app.t"},
+				"app.u": {Object: "column app.u.c", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
+			},
+		},
+		{
+			exclude: "*.*.*",
+			tables: map[string]catalog.SelectionBlocker{
+				"app.t": {Object: "column app.t.id", Cause: catalog.SelectionExcluded, Pattern: "app.t"},
+				"app.u": {Object: "column app.u.c", Cause: catalog.SelectionExcluded, Pattern: "app.u"},
+			},
+		},
+	} {
+		t.Run(test.exclude, func(t *testing.T) {
+			c := qt.New(t)
+			filtered, err := atlasfilter.ScopeDatabase(tablesWithKeys(), atlasfilter.Scope{
+				Selections: ownerSelections(), Exclude: []string{test.exclude}, RealmRelativePatterns: true,
+			})
+			c.Assert(err, qt.IsNil)
+			c.Assert(filtered.TableRemovalBlockers, qt.DeepEquals, test.tables)
+			// The database is still kept: dropping it would take what the
+			// selector leaves out, whatever its shape.
+			c.Assert(filtered.SchemaRemovalBlockers, qt.HasLen, 1)
+		})
+	}
 }
 
 // A child an --include selection leaves out of a table it keeps is recorded

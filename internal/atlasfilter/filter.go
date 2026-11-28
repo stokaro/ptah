@@ -143,6 +143,27 @@ func excludeDatabase(
 	return filtered, state.report(), nil
 }
 
+// leavesKindOut reports whether this exclusion takes every object of the
+// kinds it types within its scope, rather than objects it names:
+// `*[type=trigger]`, `db.*[type=trigger]`, `db.u.*[type=index]` and
+// `*[type=constraint]` do, while `db.u.trg`, `db.u.t*[type=trigger]` and
+// `*.*.c` name objects. Such an exclusion says the run does not manage the
+// kind, so a child of it blocks no table drop, wherever the selector is
+// scoped and whether or not the read lists the kind.
+//
+// A pattern that may take a column does not count, typed or not: a column
+// holds the table's rows, which the drop would remove with it.
+func (p resourcePattern) leavesKindOut() bool {
+	if len(p.types) == 0 || len(p.fields) > 0 {
+		return false
+	}
+	if _, column := p.types["column"]; column {
+		return false
+	}
+	name := p.glob[strings.LastIndex(p.glob, ".")+1:]
+	return name != "" && strings.Trim(name, "*") == ""
+}
+
 // newDatabaseExclusion is the state that applies filters to a database read
 // from target.
 func newDatabaseExclusion(filters []resourcePattern, patternScope, defaultSchema string, words vocabulary, target databaseTarget) *exclusionState {
@@ -153,11 +174,11 @@ func newDatabaseExclusion(filters []resourcePattern, patternScope, defaultSchema
 	return state
 }
 
-// wholeKindBaseline is schema with only the whole-kind patterns among filters
-// applied, which is the read a table drop is judged against. A reader may skip
-// the catalog query of a whole kind, so a child such a pattern takes out
-// blocks no table drop whether or not the reader listed it: the child goes
-// with the table the run drops. filtered is schema with every pattern applied.
+// wholeKindBaseline is schema with only the kind patterns among filters
+// applied, which is the read a table drop is judged against; see
+// [resourcePattern.leavesKindOut]. A child such a pattern takes out blocks no
+// table drop whether or not the reader listed it: the child goes with the
+// table the run drops. filtered is schema with every pattern applied.
 func wholeKindBaseline(
 	filters []resourcePattern,
 	schema, filtered *catalog.Database,
@@ -167,7 +188,7 @@ func wholeKindBaseline(
 	bindings featureselect.Bindings,
 ) (*catalog.Database, error) {
 	kinds := slices.DeleteFunc(slices.Clone(filters), func(pattern resourcePattern) bool {
-		return len(pattern.wholeKinds()) == 0
+		return !pattern.leavesKindOut()
 	})
 	switch len(kinds) {
 	case 0:

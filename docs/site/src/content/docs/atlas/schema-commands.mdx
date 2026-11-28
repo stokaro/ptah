@@ -404,8 +404,9 @@ subtract it from every side of a comparison, so an excluded object is neither
 created nor dropped. Nor is the table that holds an excluded column, index,
 constraint or trigger, or the MySQL or MariaDB database that holds an excluded
 object: `schema apply` and `migrate diff` refuse a plan that would drop it and
-name the object, and `schema diff` prints a warning and leaves the drop out of
-the SQL. The community binary drops both; see
+name the object, and `schema diff` prints a warning and leaves the drop, and
+every statement on a table it keeps, out of the SQL. The community binary drops
+both; see
 [A drop that would remove an excluded object](../retained-divergences/#a-drop-that-would-remove-an-excluded-object).
 
 That rule covers every top-level object kind: tables, views, materialized
