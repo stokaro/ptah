@@ -6,6 +6,7 @@ are relative to the repository root. Read only the sections the task needs.
 ## Contents
 
 - [Building And Testing](#building-and-testing)
+- [Local runs and CI waits](#local-runs-and-ci-waits)
 - [Pull-request scoping](#pull-request-scoping)
 - [The version matrix](#the-version-matrix)
 - [Lint rules](#lint-rules)
@@ -37,6 +38,21 @@ make integration-test            # Docker Compose suite; binds fixed host ports
 A gate that enumerates files uses `git ls-files`, not a filesystem walk that
 can include parked checkouts. A generator must exit successfully, and a corpus
 check must enforce a meaningful floor. An empty or partial run cannot pass.
+
+### Local runs and CI waits
+
+- Locally, run the packages the change touches, the regression and its engine
+  test, and lint on the changed packages in both build-tag contours. The pull
+  request's CI runs the complete unit, lint, and integration contours; repeat
+  one locally only to diagnose a failure it reported.
+- Wait for a pull request's checks with one blocking command that returns when
+  they finish, started in the background: `gh pr checks <number> --watch` or
+  `gh run watch <run-id> --exit-status`. A loop of status reads spends a turn
+  on every reading and finishes no sooner.
+- Agents on one host share one `GOCACHE`. The Go build cache is safe for
+  concurrent use, and a private cache per agent multiplies disk use on a shared
+  machine without making a build faster. Run several `golangci-lint` processes
+  at once with `--allow-parallel-runners`.
 
 ### Pull-request scoping
 

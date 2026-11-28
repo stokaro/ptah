@@ -36,6 +36,24 @@ Raise a specific scope, access, or irreversible-action decision only when it
 actually prevents progress. Continue independent authorized work while a
 separate dependency is blocked.
 
+## Keep tool output small
+
+Every line a command prints stays in the session's context and is processed
+again on each later turn, so a large output keeps costing after the command
+ends.
+
+- Find before reading: `rg -l` or `git grep -l` names the files, then
+  `rg -n -m 5 PATTERN FILE` or `sed -n 'START,ENDp' FILE` shows the lines
+  around a hit. Do not print a whole large file or log to find one line.
+- Find a Go declaration and its references with the semantic tools in
+  [Go semantic navigation](go-semantic-tools.md) rather than a chain of text
+  searches. Keep text search for serialized names, SQL, and non-Go consumers.
+- Read a diff with `git diff --stat` first, then one path at a time.
+- Send a full test, lint, or CI log to a file. Print the failed test, its error,
+  and a short excerpt; read more of the file only when that is not enough.
+- A file or result already in the conversation does not need to be read again
+  unless it changed.
+
 ## Apply external skills selectively
 
 Superpowers offers reusable investigation, planning, and review techniques.

@@ -126,7 +126,9 @@ claim. Separate passes, failures, and checks not run. For a blocked check,
 give the concrete blocker and the existing CI job or companion repository
 that must supply the evidence. Name any unverified success condition.
 
-Inspect CI results for the current PR head. Use existing results and check
-again when the head changes or a pending job finishes; avoid repeated log
-downloads and tight polling. Do not describe an older head's pass, a skipped
-job, compilation, or lint as proof of behavior it did not exercise.
+Inspect CI results for the current PR head. Use existing results, and wait
+for pending jobs with one blocking watch
+([validation policy](../../references/validation.md#local-runs-and-ci-waits)),
+not a loop of status reads or repeated log downloads. Do not describe an older
+head's pass, a skipped job, compilation, or lint as proof of behavior it did
+not exercise.

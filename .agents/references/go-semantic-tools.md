@@ -61,10 +61,22 @@ table describes the process, not a configuration format shared by all clients.
 | Environment | The intended Go toolchain and the same workspace, target, and build flags as the analyzed build |
 
 Verify the connection using the client's server and tool listing. This detached
-server reads saved files. Save edits before querying it. An attached editor
-session can include unsaved buffers; record that distinction when results differ.
+server reads saved files, including files created or deleted after it started.
+Save edits before querying it. An attached editor session can include unsaved
+buffers; record that distinction when results differ.
 The server may load modules and populate caches. Do not run a separate
 whole-repository build merely to warm it up.
+
+A server started in the main checkout does not analyze the linked worktrees
+parked under it. Each worktree has its own `go.mod`, so it is a nested module
+outside that server's workspace. A query on a worktree file then answers from
+that file alone, for example one reference where the worktree has nine, and
+reports no error. Start the server from the root of the worktree being changed,
+one server per worktree. A client that starts its servers once, in the
+directory where the session began, serves every worktree agent from the wrong
+module; run `gopls mcp -listen=127.0.0.1:<port>` from the worktree root instead
+and connect to that. Before trusting a short or empty reference list, query a
+symbol whose callers you already know.
 
 `gopls mcp -instructions` prints the installed version's usage guidance. Read
 it when configuring or troubleshooting the integration; avoid injecting it into

@@ -25,6 +25,32 @@ description: Review a Ptah change or prepare its pull request or issue. Use for 
    [validation](../ptah-validation/SKILL.md) for required checks and current-head
    CI status. Treat a required failure or missing result as unresolved.
 
+## Check the request first
+
+Before the live review, read each issue the change closes and confirm the diff
+addresses every item it lists. Finish an item that is only partly fixed, or
+drop that issue's closing keyword. Then review on live servers.
+
+## Look for the defects that recur here
+
+These defects have reached review here repeatedly. Check the ones the change
+touches:
+
+- An object the selection keeps, or refuses to drop, keeps what it needs:
+  foreign-key targets, trigger functions, the types and domains its columns
+  use, and the sequences and functions its defaults and checks call.
+- Every name comparison follows the server's rule: letter case under
+  `lower_case_table_names`, the collation on SQL Server. All selectors of one
+  command follow the same rule.
+- An exemption does not admit the objects it was written to refuse.
+- What the comparison restores, the dev-database rehearsal restores too.
+- A presence check verifies the layout of what it found, not only its name,
+  so another tool's table with the same name is not taken for Ptah's.
+- A refusal of an unmatched selector applies to every command that drops data.
+- A fix that accepts a case also moves the test rows that pinned its refusal.
+- A claim that a reported command now succeeds comes from running that command.
+- Engines that answer differently each get a live test row.
+
 For a large or data-sensitive change, request an independent review when an
 agent is available. Give it the request, base and head revisions, raw diff,
 and applicable checks, with a bounded scope. Have it inspect production
