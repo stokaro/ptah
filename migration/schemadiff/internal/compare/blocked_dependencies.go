@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -85,92 +86,138 @@ func neededByKept(
 	semantics identifier.Semantics,
 	cov Coverage,
 ) keptNeeds {
-	needs := keptNeeds{
-		tables: map[tableIdentity]struct{}{}, functions: map[string]struct{}{}, types: map[string]struct{}{}, databases: HeldDatabases{},
+	walk := neededWalk{
+		database: database, declared: declared, dialect: dialect, semantics: semantics, cov: cov,
+		held:              make(map[tableIdentity]struct{}, len(kept)),
+		tables:            make(map[string]catalog.Table, len(database.Tables)),
+		declaredFunctions: declaredBareNames(semantics, schemamodelFunctionNames(desired)...),
+		declaredTypes:     declaredBareNames(semantics, schemamodelEnumNames(desired)...),
+		needs: keptNeeds{
+			tables:    make(map[tableIdentity]struct{}),
+			functions: make(map[string]struct{}),
+			types:     make(map[string]struct{}),
+			databases: make(HeldDatabases),
+		},
 	}
-	held := make(map[tableIdentity]struct{}, len(kept))
 	for _, table := range kept {
-		held[tableMapIdentity(table.table.Schema, table.table.Name, dialect, semantics)] = struct{}{}
+		walk.held[tableMapIdentity(table.table.Schema, table.table.Name, dialect, semantics)] = struct{}{}
 	}
-	tables := make(map[string]catalog.Table, len(database.Tables))
 	for _, table := range database.Tables {
-		tables[semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(table.Schema, table.Name))] = table
+		walk.tables[semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(table.Schema, table.Name))] = table
 	}
-	declaredFunctions := declaredBareNames(semantics, schemamodelFunctionNames(desired)...)
-	declaredTypes := declaredBareNames(semantics, schemamodelEnumNames(desired)...)
 	for queue := kept; len(queue) > 0; {
 		owner := queue[0]
-		queue = queue[1:]
-		in := func(schema, table string) bool {
-			return tableMapIdentity(schema, table, dialect, semantics) == tableMapIdentity(owner.table.Schema, owner.table.Name, dialect, semantics)
+		queue = append(queue[1:], walk.referencedTables(owner)...)
+		walk.triggerFunctions(owner)
+		walk.columnTypes(owner)
+	}
+	return walk.needs
+}
+
+// neededWalk is the state [neededByKept] carries from one kept table to the
+// next.
+type neededWalk struct {
+	database  *catalog.Database
+	declared  map[tableIdentity]struct{}
+	dialect   string
+	semantics identifier.Semantics
+	cov       Coverage
+	// held holds every table kept so far, so a table is added once.
+	held map[tableIdentity]struct{}
+	// tables are the tables database holds, by qualified identity key.
+	tables            map[string]catalog.Table
+	declaredFunctions map[string]bool
+	declaredTypes     map[string]bool
+	needs             keptNeeds
+}
+
+// owns reports whether schema.table names owner.
+func (w *neededWalk) owns(owner keptTable, schema, table string) bool {
+	return tableMapIdentity(schema, table, w.dialect, w.semantics) ==
+		tableMapIdentity(owner.table.Schema, owner.table.Name, w.dialect, w.semantics)
+}
+
+// referencedTables keeps each table a foreign key of owner references, in
+// scope or out of it, that the comparison would drop, and returns them, so
+// what they need is kept in turn.
+func (w *neededWalk) referencedTables(owner keptTable) []keptTable {
+	var added []keptTable
+	for _, constraint := range slices.Concat(w.database.Constraints, w.database.OutOfScope.Constraints) {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") || !w.owns(owner, constraint.Schema, constraint.TableName) {
+			continue
 		}
-		for _, constraint := range append(append([]catalog.Constraint{}, database.Constraints...), database.OutOfScope.Constraints...) {
-			if !strings.EqualFold(constraint.Type, "FOREIGN KEY") || !in(constraint.Schema, constraint.TableName) {
+		referenced, ok := w.tables[w.semantics.QualifiedTableIdentityKey(constraint.QualifiedForeignTableName())]
+		if !ok {
+			continue
+		}
+		identity := tableMapIdentity(referenced.Schema, referenced.Name, w.dialect, w.semantics)
+		_, isHeld := w.held[identity]
+		_, isDeclared := w.declared[identity]
+		removal := difftypes.TableRemoval{Name: removedTableName(referenced.Schema, referenced.Name, w.dialect)}
+		if isHeld || isDeclared || len(keepPlannedRemovals(w.cov, coverage.Schema, []difftypes.TableRemoval{removal}, tableRemovalSchemaOnly)) == 0 {
+			continue
+		}
+		w.held[identity] = struct{}{}
+		w.needs.tables[identity] = struct{}{}
+		w.needs.removals = append(w.needs.removals, difftypes.BlockedRemoval{
+			Kind: difftypes.BlockedTable, Name: removal.Name, BlockedBy: owner.blocker, NeededBy: owner.name,
+		})
+		needed := keptTable{table: referenced, name: removal.Name, blocker: owner.blocker}
+		w.needs.databases.hold(needed, owner.name)
+		added = append(added, needed)
+	}
+	return added
+}
+
+// triggerFunctions keeps each function a trigger of owner executes, in scope
+// or out of it, that desired does not name.
+func (w *neededWalk) triggerFunctions(owner keptTable) {
+	for _, trigger := range slices.Concat(w.database.Triggers, w.database.OutOfScope.Triggers) {
+		if trigger.ExecuteFunction == "" || !w.owns(owner, trigger.Schema, trigger.Table) {
+			continue
+		}
+		executed := w.semantics.QualifiedTableIdentityKey(trigger.ExecuteFunction)
+		for _, function := range w.database.Functions {
+			key := w.semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(function.Schema, function.Name))
+			if !takesNoInput(function) || key != executed || w.declaredFunctions[w.semantics.TableIdentityKey(function.Name)] {
 				continue
 			}
-			referenced, ok := tables[semantics.QualifiedTableIdentityKey(constraint.QualifiedForeignTableName())]
-			if !ok {
+			if _, done := w.needs.functions[key]; done {
 				continue
 			}
-			identity := tableMapIdentity(referenced.Schema, referenced.Name, dialect, semantics)
-			_, isHeld := held[identity]
-			_, isDeclared := declared[identity]
-			removal := difftypes.TableRemoval{Name: removedTableName(referenced.Schema, referenced.Name, dialect)}
-			if isHeld || isDeclared || len(keepPlannedRemovals(cov, coverage.Schema, []difftypes.TableRemoval{removal}, tableRemovalSchemaOnly)) == 0 {
-				continue
-			}
-			held[identity] = struct{}{}
-			needs.tables[identity] = struct{}{}
-			needs.removals = append(needs.removals, difftypes.BlockedRemoval{
-				Kind: difftypes.BlockedTable, Name: removal.Name, BlockedBy: owner.blocker, NeededBy: owner.name,
+			w.needs.functions[key] = struct{}{}
+			w.needs.removals = append(w.needs.removals, difftypes.BlockedRemoval{
+				Kind: difftypes.BlockedFunction, Name: catalog.QualifyTableName(function.Schema, function.Name),
+				BlockedBy: owner.blocker, NeededBy: owner.name,
 			})
-			needed := keptTable{table: referenced, name: removal.Name, blocker: owner.blocker}
-			needs.databases.hold(needed, owner.name)
-			queue = append(queue, needed)
-		}
-		for _, trigger := range append(append([]catalog.Trigger{}, database.Triggers...), database.OutOfScope.Triggers...) {
-			if trigger.ExecuteFunction == "" || !in(trigger.Schema, trigger.Table) {
-				continue
-			}
-			executed := semantics.QualifiedTableIdentityKey(trigger.ExecuteFunction)
-			for _, function := range database.Functions {
-				key := semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(function.Schema, function.Name))
-				if !takesNoInput(function) || key != executed || declaredFunctions[semantics.TableIdentityKey(function.Name)] {
-					continue
-				}
-				if _, done := needs.functions[key]; done {
-					continue
-				}
-				needs.functions[key] = struct{}{}
-				needs.removals = append(needs.removals, difftypes.BlockedRemoval{
-					Kind: difftypes.BlockedFunction, Name: catalog.QualifyTableName(function.Schema, function.Name),
-					BlockedBy: owner.blocker, NeededBy: owner.name,
-				})
-			}
-		}
-		for _, column := range owner.table.Columns {
-			typed := columnEnumName(column)
-			if typed == "" {
-				continue
-			}
-			for _, enum := range database.Enums {
-				schema, name := enumParts(enum.Schema, enum.Name)
-				key := semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(schema, name))
-				if key != semantics.QualifiedTableIdentityKey(typed) || declaredTypes[semantics.TableIdentityKey(name)] {
-					continue
-				}
-				if _, done := needs.types[key]; done {
-					continue
-				}
-				needs.types[key] = struct{}{}
-				needs.removals = append(needs.removals, difftypes.BlockedRemoval{
-					Kind: difftypes.BlockedType, Name: catalog.QualifyTableName(schema, name),
-					BlockedBy: owner.blocker, NeededBy: owner.name,
-				})
-			}
 		}
 	}
-	return needs
+}
+
+// columnTypes keeps each enum type a column of owner has that desired does
+// not name.
+func (w *neededWalk) columnTypes(owner keptTable) {
+	for _, column := range owner.table.Columns {
+		typed := columnEnumName(column)
+		if typed == "" {
+			continue
+		}
+		for _, enum := range w.database.Enums {
+			schema, name := enumParts(enum.Schema, enum.Name)
+			key := w.semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(schema, name))
+			if key != w.semantics.QualifiedTableIdentityKey(typed) || w.declaredTypes[w.semantics.TableIdentityKey(name)] {
+				continue
+			}
+			if _, done := w.needs.types[key]; done {
+				continue
+			}
+			w.needs.types[key] = struct{}{}
+			w.needs.removals = append(w.needs.removals, difftypes.BlockedRemoval{
+				Kind: difftypes.BlockedType, Name: catalog.QualifyTableName(schema, name),
+				BlockedBy: owner.blocker, NeededBy: owner.name,
+			})
+		}
+	}
 }
 
 // takesNoInput reports whether function may be the overload a trigger
