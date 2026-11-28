@@ -196,7 +196,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, sourceURLs...)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

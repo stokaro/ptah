@@ -197,7 +197,7 @@ type lineageDocument struct {
 // database at all, which is what made integration coverage of it structurally
 // impossible before (stokaro/ptah#1270, criterion 8).
 func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, opts.dbURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

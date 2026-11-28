@@ -49,6 +49,18 @@ func TestMigrationsMySQLFamilyKeepsPreexistingLoginGrantsE2E(t *testing.T) {
 			dir := c.TempDir()
 			options := clirun.Options{Dir: c.TempDir(), Timeout: 2 * time.Minute}
 
+			// Reading a login's grants does not make its privileges managed:
+			// a declaration that names no login leaves every grant in place.
+			objectsOnly := writeDeclaredSchemaFile(c, "objects.sql", "CREATE TABLE items (id INT PRIMARY KEY, value INT);\n")
+			unchanged := clirun.Run(c, clirun.Ptah, options, "schema", "apply", "--db-url", address,
+				"--schema-file", objectsOnly, "--dry-run")
+			c.Assert(unchanged.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", unchanged.Stdout, unchanged.Stderr))
+			c.Assert(unchanged.Stdout, qt.Contains, "Schema is synced, no changes to be made.")
+			c.Assert(unchanged.Stdout, qt.Not(qt.Contains), "REVOKE ")
+			c.Assert(unchanged.Stdout, qt.Not(qt.Contains), "GRANT ")
+			c.Assert(grantRows(c, scratch.admin, "SHOW GRANTS FOR "+account), qt.DeepEquals, held)
+			c.Assert(grantRows(c, scratch.admin, "SHOW GRANTS FOR "+other), qt.DeepEquals, otherHeld)
+
 			generated := clirun.Run(c, clirun.Ptah, options, "migrations", "generate", "--db-url", address,
 				"--schema-file", file, "--migrations-dir", dir, "--name", "login_access")
 
@@ -89,6 +101,7 @@ func TestSchemaApplyMariaDBLoginGrantDoesNotCoverASameNamedRoleE2E(t *testing.T)
 	})
 	_, err := run.scratch.admin.ExecContext(c.Context(), "CREATE USER "+account)
 	c.Assert(err, qt.IsNil)
+	// #nosec G202 -- identifiers cannot be bound; both names use fixed fixture prefixes and numeric timestamps, and the host is constant.
 	_, err = run.scratch.admin.ExecContext(c.Context(), "GRANT SELECT ON `"+run.database+"`.t1 TO "+account)
 	c.Assert(err, qt.IsNil)
 	held := grantRows(c, run.scratch.admin, "SHOW GRANTS FOR "+account)

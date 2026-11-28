@@ -119,7 +119,8 @@ func TestSchemasHelpOffersNoWholeServerWhereTheVerbRefusesOne(t *testing.T) {
 
 			flag := schemasFlagOf(c, root.NewRootCommand(), path...)
 
-			c.Assert(flag.Usage, qt.Not(qt.Contains), "MySQL")
+			c.Assert(flag.Usage, qt.Not(qt.Contains), "across every user database")
+			c.Assert(flag.Usage, qt.Contains, "a database accepts only that database's exact URL spelling")
 			c.Assert(flag.Usage, qt.Contains, "a URL pinning search_path is read at that schema")
 		})
 	}

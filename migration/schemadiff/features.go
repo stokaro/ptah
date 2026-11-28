@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/droppedviews"
 	"ptah.run/internal/routineidentity"
 	"ptah.run/internal/tableidentity"
+	"ptah.run/internal/viewcapture"
 	"ptah.run/migration/internal/identifiervalidation"
 )
 
@@ -495,10 +496,7 @@ func refuseLossyViewReplacements(diff *difftypes.SchemaDiff, desired *schemamode
 			continue
 		}
 		subject := declaredMaterializedViewSubject(view.ViewName, semantics)
-		for _, record := range current.FeatureCoverage.SubjectRecords() {
-			if record.Subject.Key() != subject.Key() || (record.Knowledge.State != schemaext.Unrepresentable && record.Knowledge.State != schemaext.Uninspected) {
-				continue
-			}
+		for _, record := range viewcapture.UnreadSettings(current.FeatureCoverage, subject) {
 			if _, declared, err := view.Desired.Facets.Get(record.Kind); err != nil || declared {
 				continue
 			}

@@ -1960,10 +1960,21 @@ name that matches another only without regard to case, rather than plan under
 either answer, and the error names both spellings. Compare against the
 database, or spell both names the same way.
 
-A selection runs after the names are matched. Every command that takes
-`--schemas`, `--include` or `--exclude`, in both binaries (`--schema` in
-`ptah-compat`), selects a database by the spelling the server holds. On a
-server that folds names, `--schemas Sales` and `--schemas sales` both select
+A native `--schemas` list must agree with a database the URL already names.
+For example, `mysql://localhost/m1 --schemas m1,m2` is refused before
+connecting, rather than reporting a successful run that reads only `m1`.
+Use `mysql://localhost/ --schemas m1,m2` with a whole-server command to read
+both databases, or keep only `m1` in the list for a single-database URL.
+This check also applies to `PTAH_SCHEMAS` and the project's effective schema
+list. The list must use the database's exact spelling in the URL, since the
+server's case-folding rule is not known before connecting. TCP, driver-DSN and
+`+unix` socket URLs follow the same rule. A list containing only the URL's
+database remains accepted.
+
+After that preflight, a selection runs after the names are matched. Commands
+that take `--schemas`, `--include` or `--exclude`, in both binaries (`--schema`
+in `ptah-compat`), select a database by the spelling the server holds. On a
+whole-server URL whose server folds names, `--schemas Sales` and `--schemas sales` both select
 the database `sales` and the file's `Sales`, so the plan keeps both sides
 of the database and changes only what the file and the database disagree on.
 

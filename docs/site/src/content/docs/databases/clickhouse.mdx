@@ -1347,6 +1347,21 @@ Ptah's storage, and for a `TO` view inserts would stop reaching the target
 table. HCL, YAML and Go annotations state no storage for a view, so an export to
 them carries none. Manage such a view's storage outside Ptah.
 
+Generating a migration that removes such a view is refused before either file
+is written. Its down file would have to recreate the view, and the captured
+definition cannot restore its engine, sorting key or target table. This check
+applies to `ptah migrations generate` and to `ptah-compat migrate diff` when
+the directory format writes a rollback, such as `golang-migrate`. They use
+the same plan for both directions. Keep the view in the desired schema, or
+write reviewed migration SQL that retains its complete storage definition.
+A view stored with Ptah's default storage can still be removed and recreated,
+even when another view's storage is not described.
+
+A one-way removal through `ptah schema apply` can still drop the view. The
+Atlas directory format also publishes only forward SQL. These operations
+discard the view's inner storage without generating a file that restores it.
+The check does not change migration SQL that was already written.
+
 ## Roles and grants
 
 Roles and grants complete the render, plan, apply, introspect, and diff cycle.

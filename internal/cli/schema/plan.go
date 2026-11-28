@@ -235,7 +235,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	}
 	// Resolved as `schema apply` resolves it; the plan file records the
 	// result.
-	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
+	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue(), opts.dbURL)
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}

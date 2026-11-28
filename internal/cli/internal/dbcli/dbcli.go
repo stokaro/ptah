@@ -59,6 +59,10 @@ const ConnectionDefaultSchemas = "read the connection default schema, and on YDB
 // grammar [ParseSchemas] reads.
 const SchemasQuoting = `Double-quote a name to keep the spaces around it or a comma in it, as in '" a",b'.`
 
+// SchemasURLLimit describes the preconnection selection check on a MySQL-family
+// URL that already names the one database the command can read.
+const SchemasURLLimit = "A MySQL or MariaDB URL naming a database accepts only that database's exact URL spelling. "
+
 // RegisterSchemasFlag registers a comma-separated schema allow-list flag for a
 // verb whose empty value leaves the read at the schema the connection landed
 // in.
@@ -66,7 +70,7 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, SchemasFlagName, "",
 		"Comma-separated database schemas to introspect: PostgreSQL-family and SQL Server schemas, "+
 			"or YDB directories relative to the database root. Empty uses the connection default schema, and on YDB every directory. "+
-			SchemasQuoting,
+			SchemasURLLimit+SchemasQuoting,
 	)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, ConnectionDefaultSchemas)
 }
@@ -152,7 +156,7 @@ func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 		"the databases of a MySQL or MariaDB URL that names none, or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
 		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory. "+
-		SchemasQuoting)
+		SchemasURLLimit+SchemasQuoting)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
 
@@ -170,7 +174,7 @@ func RegisterURLScopedDatabaseSchemasFlag(flags *pflag.FlagSet, target *string) 
 		"or YDB directories relative to the database root. "+
 		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
 		"and a YDB URL across every directory. "+
-		SchemasQuoting)
+		SchemasURLLimit+SchemasQuoting)
 	RefuseEmptySchemasEnv(flags, SchemasFlagName, urlDecidesSchemas)
 }
 

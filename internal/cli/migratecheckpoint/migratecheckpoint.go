@@ -186,7 +186,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, opts.shadowDB)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

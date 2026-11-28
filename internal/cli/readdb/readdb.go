@@ -74,7 +74,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, opts.dbURL)
 	if err != nil {
 		return err
 	}

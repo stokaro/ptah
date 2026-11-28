@@ -239,7 +239,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return fail(cmd, opts.format, err)
 	}
-	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemasRaw, projectCfg.SchemasValue())
+	schemas, err := dbcli.EffectiveSchemas(cmd, opts.schemasRaw, projectCfg.SchemasValue(), dbURL)
 	if err != nil {
 		return fail(cmd, opts.format, err)
 	}

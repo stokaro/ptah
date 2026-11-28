@@ -110,7 +110,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemas, dbcli.SchemasFlagName, "",
 		"Comma-separated database schemas to verify: PostgreSQL-family and SQL Server schemas, "+
 			"or YDB directories relative to the database root. Empty reads each connection's default schema "+
-			"with --shadow-db, and without it what ptah schema compare reads. "+dbcli.SchemasQuoting,
+			"with --shadow-db, and without it what ptah schema compare reads. "+dbcli.SchemasURLLimit+dbcli.SchemasQuoting,
 	)
 	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName,
 		"read each connection's default schema with --shadow-db, and without it what ptah schema compare reads")
@@ -124,7 +124,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	if err != nil {
 		return err
 	}
-	schemas, err := dbcli.ParseSchemas(opts.schemas)
+	schemas, err := dbcli.ParseSchemasForURLs(opts.schemas, opts.dbURL)
 	if err != nil {
 		return err
 	}

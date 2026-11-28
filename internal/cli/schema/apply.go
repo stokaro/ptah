@@ -534,14 +534,6 @@ func applySchema(
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
 	)
-	// Resolved as `schema compare` resolves it, so a project that names its
-	// schemas in ptah.yaml has the comparison it previews applied, rather than
-	// a read of every schema that drops the tables of the ones it left out.
-	opts.schemaList, err = dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue())
-	if err != nil {
-		return "", err
-	}
-
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return "", dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
@@ -557,6 +549,13 @@ func applySchema(
 	}
 	if strings.TrimSpace(opts.planPath) != "" {
 		return applySchemaPlanFile(cmd, opts, lockSession, run)
+	}
+	// Resolved as `schema compare` resolves it, so a project that names its
+	// schemas in ptah.yaml has the comparison it previews applied. A saved plan
+	// above uses its own recorded selection, never this project default.
+	opts.schemaList, err = dbcli.EffectiveSchemas(cmd, opts.schemas, projectCfg.SchemasValue(), opts.dbURL)
+	if err != nil {
+		return "", err
 	}
 	if len(opts.rootDirs) == 0 && len(opts.schemaFiles) == 0 && len(opts.toURLs) == 0 {
 		return "", fmt.Errorf(

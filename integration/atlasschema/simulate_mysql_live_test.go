@@ -74,6 +74,7 @@ table "sim_added" {
 
 	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
 		ToURLs:  []string{"file://" + desiredPath},
+		Exclude: []string{"*[type=grant]"},
 		TxMode:  migrator.MigrationTxModeNone,
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
@@ -98,7 +99,12 @@ table "sim_added" {
 		Statements: statements,
 	})
 
-	c.Assert(atlasschema.IsSimulationFailure(err), qt.IsTrue, qt.Commentf("error: %v", err))
+	var simulation *atlasschema.SimulationError
+	c.Assert(err, qt.ErrorAs, &simulation)
+	c.Assert(simulation.Stage, qt.Equals, "plan")
+	var databaseError *mysqldriver.MySQLError
+	c.Assert(err, qt.ErrorAs, &databaseError)
+	c.Assert(databaseError.Number, qt.Equals, uint16(1050))
 	// The property worth pinning: a failed apply leaves the target exactly as
 	// it was, down to every column and index information_schema reports.
 	c.Assert(mySQLSchemaSnapshot(c, targetConn, liveMySQLDatabaseName(c, targetURL)), qt.DeepEquals, before)
@@ -133,6 +139,7 @@ table "sim_added" {
 
 	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
 		ToURLs:  []string{"file://" + desiredPath},
+		Exclude: []string{"*[type=grant]"},
 		TxMode:  migrator.MigrationTxModeNone,
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
@@ -153,6 +160,76 @@ table "sim_added" {
 	c.Assert(mySQLTableNames(c, targetConn, targetName), qt.DeepEquals, []string{"sim_added"})
 	c.Assert(mySQLSchemaSnapshot(c, targetConn, targetName), qt.Contains,
 		"column|sim_added|email|2|varchar(255)|NO||<null>|")
+}
+
+// The table-scoping tests leave grants out explicitly. Without that selection,
+// a captured login grant belongs to the baseline, and a shared dev server must
+// refuse it: dropping the dev database would not remove the account's grant.
+func TestSimulateOnDev_MySQLRefusesCapturedLoginGrantsLive(t *testing.T) {
+	c := qt.New(t)
+	_, adminURL := liveMySQLURLsForSimulation(t)
+	targetURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_grant_target")
+	devURL := createLiveMySQLDatabase(c, adminURL, adminURL, "ptah1240_grant_dev")
+	targetConn := openLiveMySQL(c, targetURL)
+	targetName := liveMySQLDatabaseName(c, targetURL)
+	account := quoteMySQLString(fmt.Sprintf("p1240_%x", time.Now().UnixNano())) + "@'%'"
+	_, err := targetConn.ExecContext(c.Context(), "CREATE USER "+account)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, cleanupErr := targetConn.ExecContext(context.Background(), "DROP USER "+account)
+		c.Check(cleanupErr, qt.IsNil)
+	})
+	_, err = targetConn.ExecContext(c.Context(),
+		"GRANT SELECT ON "+sqlident.Quote(platform.MySQL, targetName)+".* TO "+account)
+	c.Assert(err, qt.IsNil)
+	c.Assert(atlasschema.ApplySQL(c.Context(), targetConn, migrator.MigrationTxModeNone,
+		"CREATE TABLE `sim_keep` (`id` int NOT NULL, `label` varchar(32) NOT NULL, PRIMARY KEY (`id`));"), qt.IsNil)
+	_, err = targetConn.ExecContext(c.Context(), "INSERT INTO sim_keep VALUES (1, 'kept')")
+	c.Assert(err, qt.IsNil)
+	before := mySQLSchemaSnapshot(c, targetConn, targetName)
+	grants := mySQLQueryLines(c, targetConn, "SHOW GRANTS FOR "+account)
+	desiredPath := writeMySQLDesiredHCL(c, targetName, `
+table "sim_keep" {
+  schema = schema.%[1]s
+  column "id" {
+    type = int
+  }
+  column "label" {
+    type = varchar(32)
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+
+table "sim_added" {
+  schema = schema.%[1]s
+  column "id" {
+    type = int
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`)
+	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
+		ToURLs:  []string{"file://" + desiredPath},
+		TxMode:  migrator.MigrationTxModeNone,
+		Runtime: must.Must(builtin.New())})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsTrue)
+
+	err = plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: devURL, TargetURL: targetURL})
+
+	var simulation *atlasschema.SimulationError
+	c.Assert(err, qt.ErrorAs, &simulation)
+	c.Assert(simulation.Stage, qt.Equals, "baseline")
+	c.Assert(err.Error(), qt.Contains, "rehearsal baseline refuses privilege or role mutation")
+	c.Assert(mySQLSchemaSnapshot(c, targetConn, targetName), qt.DeepEquals, before)
+	c.Assert(mySQLQueryLines(c, targetConn, "SELECT label FROM sim_keep WHERE id = 1"), qt.DeepEquals, []string{"kept"})
+	c.Assert(mySQLQueryLines(c, targetConn, "SHOW GRANTS FOR "+account), qt.DeepEquals, grants)
+	devConn := openLiveMySQL(c, devURL)
+	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, devURL)), qt.HasLen, 0)
 }
 
 func TestSimulateOnDev_MySQLRefusesAThirdDatabaseLive(t *testing.T) {
@@ -183,6 +260,7 @@ table "sim_added" {
 `)
 	plan, err := atlasschema.PrepareApply(c.Context(), targetConn, atlasschema.ApplyRuntimeOptions{
 		ToURLs:  []string{"file://" + desiredPath},
+		Exclude: []string{"*[type=grant]"},
 		TxMode:  migrator.MigrationTxModeNone,
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
@@ -245,14 +323,23 @@ func createRestrictedLiveMySQLDatabase(c *qt.C, adminURL, restrictedURL, prefix 
 	username, host := currentMySQLAccount(c, restrictedURL)
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(admin)
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
+	database := sqlident.Quote(platform.MySQL, liveMySQLDatabaseName(c, dbURL))
 	_, err = admin.ExecContext(context.Background(), fmt.Sprintf(
 		"GRANT ALL PRIVILEGES ON %s.* TO %s@%s",
-		sqlident.Quote(platform.MySQL, liveMySQLDatabaseName(c, dbURL)),
+		database,
 		quoteMySQLString(username),
 		quoteMySQLString(host),
 	))
 	c.Assert(err, qt.IsNil)
+	// DROP DATABASE leaves its privilege rows behind. Revoke only the grant
+	// this fixture wrote, before its earlier database cleanup runs.
+	c.Cleanup(func() {
+		_, cleanupErr := admin.ExecContext(context.Background(), fmt.Sprintf(
+			"REVOKE ALL PRIVILEGES ON %s.* FROM %s@%s", database, quoteMySQLString(username), quoteMySQLString(host),
+		))
+		c.Check(cleanupErr, qt.IsNil)
+	})
 	return dbURL
 }
 
@@ -342,9 +429,9 @@ WHERE TABLE_SCHEMA = ?
 ORDER BY TABLE_NAME`, database)
 }
 
-func mySQLQueryLines(c *qt.C, conn *dbschema.DatabaseConnection, query, database string) []string {
+func mySQLQueryLines(c *qt.C, conn *dbschema.DatabaseConnection, query string, args ...any) []string {
 	c.Helper()
-	rows, err := conn.QueryContext(context.Background(), query, database)
+	rows, err := conn.QueryContext(context.Background(), query, args...)
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
 

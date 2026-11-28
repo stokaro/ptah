@@ -411,7 +411,12 @@ difference is still reported.
 | --- | --- | --- |
 | `--exclude` | Subtracts from both sides | A warning on standard error, and nothing else changes |
 | `--include` | Keeps only what it selects on both sides | Refused with exit `2` |
-| `--schemas` | Limits the database read and selects both sides: an object outside the named schemas leaves both sides | No refusal |
+| `--schemas` | Limits the database read and selects both sides: an object outside the named schemas leaves both sides | An empty result alone is not refused |
+
+A MySQL or MariaDB URL that names one database accepts only that database's
+exact URL spelling in `--schemas`. A conflicting list is refused before
+connecting. To select several databases with a whole-server command, remove
+the database from the URL and name them in the list.
 
 Under `--include` or `--schemas`, a selected object that depends on an object the
 selection leaves out is refused with exit `2`, and the diagnostic names both. An

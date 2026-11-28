@@ -133,7 +133,7 @@ note in place of each check; it permits both rounding and time-zone loss.`,
 	flags.String(dbcli.SchemasFlagName, "",
 		"Comma-separated schemas to introspect where the engine has them, or YDB directories relative to the database root. "+
 			"Empty uses the project's schemas, else lets the URL decide: a URL pinning search_path is read at that schema, "+
-			"one pinning none across every schema, and a YDB URL across every directory. "+dbcli.SchemasQuoting,
+			"one pinning none across every schema, and a YDB URL across every directory. "+dbcli.SchemasURLLimit+dbcli.SchemasQuoting,
 	)
 	dbcli.RefuseEmptySchemasEnv(flags, dbcli.SchemasFlagName, "use the project's schemas, else let the URL decide")
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
@@ -740,7 +740,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	schemas, err := dbcli.EffectiveSchemas(cmd, schemasValue, projectCfg.SchemasValue())
+	schemas, err := dbcli.EffectiveSchemas(cmd, schemasValue, projectCfg.SchemasValue(), targetURL)
 	if err != nil {
 		return err
 	}
