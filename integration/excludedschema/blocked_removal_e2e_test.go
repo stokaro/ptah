@@ -345,6 +345,43 @@ func TestMySQLFamilyIncludeKeepsADeclaredDatabaseE2E(t *testing.T) {
 	}
 }
 
+// A diff under the same selection prints the drop of the selected table
+// alone, with no warning: the declared database is paired on both sides.
+func TestMySQLFamilyIncludeDiffKeepsADeclaredDatabaseE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			for _, test := range []struct {
+				name string
+				run  invocation
+			}{
+				{name: "native", run: invocation{target: clirun.Ptah, args: []string{
+					"schema", "diff", "--from", "<server>", "--to", "<sql>", "--schemas", "<database>", "--include", "<database>.u",
+				}}},
+				{name: "compat", run: invocation{target: clirun.Compat, args: []string{
+					"schema", "diff", "--from", "<server>", "--to", "<hcl>", "--dev-url", "<dev>", "--schema", "<database>", "--include", "<database>.u",
+				}}},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					c := qt.New(t)
+					_, database, server := excludedTableDatabase(c, engine.admin)
+					root := c.TempDir()
+					replacements := strings.NewReplacer("<server>", server, "<database>", database,
+						"<sql>", writeFile(c, root, "declared.sql", database, "CREATE DATABASE `<database>`;\n"),
+						"<hcl>", "file://"+filepath.ToSlash(writeFile(c, root, "declared.hcl", database, "schema \"<database>\" {}\n")),
+						"<dev>", dbtarget.URL(c, engine.dev))
+
+					result := runReplaced(c, root, replacements, test.run)
+
+					c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
+					c.Assert(result.Stdout, qt.Contains, "DROP TABLE `"+database+"`.`u`")
+					c.Assert(result.Stdout, qt.Not(qt.Contains), "DROP DATABASE")
+					c.Assert(result.Stderr, qt.Not(qt.Contains), "cannot drop")
+				})
+			}
+		})
+	}
+}
+
 // emptyDatabase is a database that holds nothing, on a server reached by the
 // URL it returns.
 func emptyDatabase(c *qt.C, engine dbtarget.Engine) (admin *sql.DB, database, server string) {
