@@ -34,12 +34,15 @@ var mysqlServerEngines = []struct {
 	{name: "MariaDB", admin: dbtarget.MariaDBAdmin, dev: dbtarget.MariaDBDevServer},
 }
 
-func excludedTableDatabase(c *qt.C, engine dbtarget.Engine) (*sql.DB, string, string) {
+// excludedTableDatabase is a database holding the tables t and u, each with
+// one row. It returns the administrative connection, the database and the URL
+// naming the whole server.
+func excludedTableDatabase(c *qt.C, engine dbtarget.Engine) (admin *sql.DB, database, server string) {
 	c.Helper()
 	admin, err := sql.Open("mysql", dbtarget.DriverDSN(c, engine))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
-	database := fmt.Sprintf("ptah_excluded_database_%d", time.Now().UnixNano())
+	database = fmt.Sprintf("ptah_excluded_database_%d", time.Now().UnixNano())
 	_, err = admin.ExecContext(c.Context(), "CREATE DATABASE `"+database+"`")
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -55,7 +58,7 @@ func excludedTableDatabase(c *qt.C, engine dbtarget.Engine) (*sql.DB, string, st
 		_, err := admin.ExecContext(c.Context(), fmt.Sprintf(statement, database))
 		c.Assert(err, qt.IsNil)
 	}
-	server, err := atlasurl.WithDatabaseName(dbtarget.URL(c, engine), "")
+	server, err = atlasurl.WithDatabaseName(dbtarget.URL(c, engine), "")
 	c.Assert(err, qt.IsNil)
 	return admin, database, server
 }

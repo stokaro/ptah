@@ -4,6 +4,7 @@ package excludedschema_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,15 +26,15 @@ var savedPlanConsumers = []struct {
 
 // planBeforeExcludedTable writes a plan while its excluded table is absent.
 // A schema plan permits an unmatched exclusion with a warning.
-func planBeforeExcludedTable(c *qt.C, engine dbtarget.Engine, desired string) (*sql.DB, string, string, string) {
+func planBeforeExcludedTable(c *qt.C, engine dbtarget.Engine, desired string) (admin *sql.DB, database, server, plan string) {
 	c.Helper()
-	admin, database, server := excludedTableDatabase(c, engine)
+	admin, database, server = excludedTableDatabase(c, engine)
 	_, err := admin.ExecContext(c.Context(), "DROP TABLE `"+database+"`.t")
 	c.Assert(err, qt.IsNil)
 	root := c.TempDir()
 	source := filepath.Join(root, "desired.sql")
 	c.Assert(os.WriteFile(source, []byte(strings.ReplaceAll(desired, "<database>", database)), 0o600), qt.IsNil)
-	plan := filepath.Join(root, "reviewed.plan.json")
+	plan = filepath.Join(root, "reviewed.plan.json")
 	result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root},
 		"schema", "plan", "--db-url", server, "--schema-file", source, "--schemas", database,
 		"--exclude", database+".t", "--output", plan)
@@ -45,7 +46,7 @@ func createExcludedTableAfterPlanning(c *qt.C, admin *sql.DB, database string) {
 	c.Helper()
 	_, err := admin.ExecContext(c.Context(), "CREATE TABLE `"+database+"`.t (id INT NOT NULL PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
-	_, err = admin.ExecContext(c.Context(), "INSERT INTO `"+database+"`.t VALUES (42)")
+	_, err = admin.ExecContext(c.Context(), fmt.Sprintf("INSERT INTO `%s`.t VALUES (?)", database), 42)
 	c.Assert(err, qt.IsNil)
 }
 
