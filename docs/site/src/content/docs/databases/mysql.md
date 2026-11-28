@@ -1516,11 +1516,14 @@ databases plans no `REVOKE` from a login whose grants the other database lacks.
 Each of the three prints a note on stderr that counts the grants to logins it
 leaves out and names the logins.
 
-A table revoke is still checked against a login's grants: a login's grant on
-that database keeps the privilege, and the revoke is refused. A login's global
-grant, such as `SELECT ON *.*`, and its grant on a database name pattern, such
-as ``SELECT ON `rv%`.*``, are not read. A revoke on a table from a login that
-holds one is planned, and the login keeps the privilege (stokaro/ptah#6831).
+A table revoke is still checked against a login's grants. The read reads a
+login on `%` the way it reads a role: its grants on the database, its global
+grants such as `SELECT ON *.*`, its grants on a database name pattern such as
+``SELECT ON `rv%`.*``, and its partial revokes. Where one of them keeps the
+privilege on the table, a revoke from the login, or from a role that holds the
+login, is refused and names that grant. Measured on 8.4.13 and 26.10.0 and
+MariaDB 11.8.9 and 12.3.3, the revoke otherwise takes only the grant on the
+table, and the login keeps reading it.
 
 The role reader applies the same rule to roles and memberships. A role is the
 account `CREATE ROLE` makes: on MySQL an account on host `%` that cannot log
@@ -1533,24 +1536,25 @@ the user alone for an account on host `%`, and `user@host` for any other host.
 On MariaDB that statement grants to a role of that name where one exists, so a
 login on `%` that shares a role's name reads as `name@%`.
 
-Some accounts a role can hold are not read as roles: a MySQL role on another
-host, and an account created as a login and granted as a role, such as
+MySQL lets a statement grant any account as a role, such as
 `CREATE USER legacy ACCOUNT LOCK` followed by `GRANT legacy TO lr`. A session
-with `lr` active holds what `legacy` holds, measured on 26.10.0. The read reads
-none of the privileges of an account on another host. Of a login on `%` it
-reads the grants on the databases it describes, and not the global privileges
-or the grants on database name patterns.
+with `lr` active holds what `legacy` holds, measured on 26.10.0. A login on `%`
+is read as a role is, so `ptah schema security` measures `lr` through what
+`legacy` holds, and a revoke from `lr` is checked against `legacy`'s grants.
+The read reads none of the privileges of an account on another host, such as
+a MySQL role `reader@localhost` or the login `'legacy'@'localhost'`.
 
-Where a role holds such an account:
+Where a role holds an account on another host:
 
 - `ptah db read` prints a note naming the account, the roles that hold it and
   why its privileges are not read in full.
 - `ptah schema security` skips the reach rules for `lr` and for every role that
   holds `lr`, with the same reason, and measures the other roles.
-- A declared revoke on a table from `lr`, from a role that holds `lr`, or from
-  `legacy` itself is refused, since the account may hold the privilege.
-  Measured on 8.4.13 and 26.10.0, the revoke otherwise succeeds and a member of
-  `lr` still reads the table. A membership the plan removes does not count.
+- A declared revoke on a table from `lr`, or from a role that holds `lr`, is
+  refused, since the account may hold the privilege. Measured on 8.4.13 and
+  26.10.0, the revoke otherwise succeeds and a member of `lr` still reads the
+  table. A membership the plan removes does not count. A revoke from a
+  principal the read does not read in full is refused the same way.
 - The refusal does not depend on what the account holds, because the read
   cannot tell. A role that holds an account on another host holding no
   privilege has its revoke refused too, though the revoke would take the

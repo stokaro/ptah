@@ -175,11 +175,13 @@ func TestReadRoleMemberships_Collision(t *testing.T) {
 
 // TestUnreadRoles finds each principal the read does not describe that a
 // described role holds, or PUBLIC holds where it stands for every account,
-// whose privileges the read then did not read: a MySQL role on another host,
-// or a login granted as a role, and each mandatory role a read names beside a
-// role named PUBLIC that it does not describe.
+// whose privileges the read then did not read: a MySQL role or a login on
+// another host, and each mandatory role a read names beside a role named
+// PUBLIC that it does not describe. A login on host % the read reads, legacy
+// here, is none of them, and the walk goes on through it.
 func TestUnreadRoles(t *testing.T) {
 	roles := []catalog.Role{{Name: "reader"}, {Name: "writer"}}
+	login := func(name string) bool { return name == "legacy" }
 	tests := []struct {
 		name         string
 		memberships  []catalog.RoleMembership
@@ -192,9 +194,19 @@ func TestUnreadRoles(t *testing.T) {
 		{
 			name: "a role on another host held by two described roles",
 			memberships: []catalog.RoleMembership{
-				{Role: "reader@localhost", Member: "writer"}, {Role: "legacy", Member: "reader"}, {Role: "reader@localhost", Member: "reader"},
+				{Role: "reader@localhost", Member: "writer"}, {Role: "old@localhost", Member: "reader"}, {Role: "reader@localhost", Member: "reader"},
 			},
-			want: []string{"legacy", "reader@localhost"},
+			want: []string{"old@localhost", "reader@localhost"},
+		},
+		{name: "a login on host % the read reads", memberships: []catalog.RoleMembership{{Role: "legacy", Member: "reader"}}},
+		{
+			name:        "a role on another host a login on host % holds",
+			memberships: []catalog.RoleMembership{{Role: "legacy", Member: "reader"}, {Role: "rh@localhost", Member: "legacy"}},
+			want:        []string{"rh@localhost"},
+		},
+		{
+			name:        "a role on another host a login on host % no role holds holds",
+			memberships: []catalog.RoleMembership{{Role: "rh@localhost", Member: "legacy"}},
 		},
 		{name: "a role on another host held by PUBLIC", memberships: []catalog.RoleMembership{{Role: "reader@localhost", Member: "PUBLIC"}}, want: []string{"reader@localhost"}},
 		{
@@ -208,6 +220,12 @@ func TestUnreadRoles(t *testing.T) {
 			every: &catalog.EveryAccountUnread{Roles: []string{"mand@localhost", "reader"}, Cause: "a role named PUBLIC hides them"},
 			want:  []string{"mand@localhost"},
 		},
+		{
+			name: "a role on another host a mandatory login holds", publicIsRole: true,
+			memberships: []catalog.RoleMembership{{Role: "rh@localhost", Member: "legacy"}},
+			every:       &catalog.EveryAccountUnread{Roles: []string{"legacy"}, Cause: "a role named PUBLIC hides them"},
+			want:        []string{"rh@localhost"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -216,7 +234,7 @@ func TestUnreadRoles(t *testing.T) {
 				Roles: roles, RoleMemberships: test.memberships, PublicIsRole: test.publicIsRole, EveryAccountHoldsUnread: test.every,
 			}
 
-			c.Assert(unreadRoles(schema), qt.DeepEquals, test.want)
+			c.Assert(unreadRoles(schema, login), qt.DeepEquals, test.want)
 		})
 	}
 }

@@ -47,7 +47,7 @@ func partiallyRevoked(next dbtest.QueryHandler) dbtest.QueryHandler {
 			Columns: []string{"role_name", "database_name", "name"},
 			Rows:    [][]driver.Value{{"pv2", "qpr", "SELECT"}, {"pvo", "qpo", "UPDATE"}, {"pvo", "qpr", "SELECT"}, {"pvo", "qpr", "UPDATE"}},
 		}},
-		{marker: "Insert_priv = 'Y', Update_priv = 'Y'", result: dbtest.QueryResult{
+		{marker: "Insert_priv = 'Y', u.Update_priv = 'Y'", result: dbtest.QueryResult{
 			Columns: append([]string{"user"}, columns...),
 			Rows: [][]driver.Value{
 				held("pv2", "Select_priv", "Insert_priv"), held("pvo", "Select_priv", "Update_priv"), held("pvu", "Select_priv"),
@@ -154,7 +154,7 @@ func rowInAnotherCase(next dbtest.QueryHandler) dbtest.QueryHandler {
 			Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"},
 			Rows:    [][]driver.Value{{"pwc", "X_Y", "SELECT"}, {"pwo", "x_y", "INSERT"}},
 		}},
-		{marker: "Insert_priv = 'Y', Update_priv = 'Y'", result: dbtest.QueryResult{Columns: []string{"user"}}},
+		{marker: "Insert_priv = 'Y', u.Update_priv = 'Y'", result: dbtest.QueryResult{Columns: []string{"user"}}},
 		{marker: "SELECT column_name", result: dbtest.QueryResult{Columns: []string{"column_name"}, Rows: [][]driver.Value{
 			{"Select_priv"}, {"Insert_priv"}, {"Update_priv"}, {"Delete_priv"}, {"Create_priv"}, {"Drop_priv"},
 			{"References_priv"}, {"Index_priv"}, {"Alter_priv"}, {"Create_view_priv"}, {"Show_view_priv"}, {"Trigger_priv"},

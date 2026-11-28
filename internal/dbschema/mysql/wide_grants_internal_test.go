@@ -24,9 +24,9 @@ import (
 	"ptah.run/internal/mysqlgrants"
 )
 
-// wideGrantMarkers name the queries readWideGrants runs, in order: the role
-// predicate, the columns of mysql.user, and the read of mysql.user.
-var wideGrantMarkers = []string{"SELECT COUNT(*)", "SELECT column_name", "FROM mysql.user"}
+// wideGrantMarkers name the queries readWideGrants runs, in order: the
+// columns of mysql.user, and the read of mysql.user.
+var wideGrantMarkers = []string{"SELECT column_name", "FROM mysql.user"}
 
 // mysqlUserColumns is information_schema's answer listing names as the columns
 // of mysql.user.
@@ -48,11 +48,7 @@ var mysqlBaseColumns = []string{
 // users, and recording each query it receives.
 func openWideGrantCatalog(c *qt.C, columns, users dbtest.QueryResult) (*Reader, *[]string) {
 	c.Helper()
-	answers := []dbtest.QueryResult{
-		{Columns: []string{"count"}, Rows: [][]driver.Value{{int64(0)}}},
-		columns,
-		users,
-	}
+	answers := []dbtest.QueryResult{columns, users}
 	var queries []string
 	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		queries = append(queries, query)
@@ -63,8 +59,9 @@ func openWideGrantCatalog(c *qt.C, columns, users dbtest.QueryResult) (*Reader, 
 }
 
 // TestReadWideGrants_ReadsEachPrivilegeHeldOnEveryDatabase reads one row per
-// privilege a role holds in mysql.user, and an empty list where none does.
-// Delete_history_priv is not asked for on a server without it.
+// privilege a role or a login on host % holds in mysql.user, and an empty
+// list where none does. Delete_history_priv is not asked for on a server
+// without it.
 func TestReadWideGrants_ReadsEachPrivilegeHeldOnEveryDatabase(t *testing.T) {
 	held := func(name string, selects, alters bool) []driver.Value {
 		values := []driver.Value{name}
@@ -95,12 +92,13 @@ func TestReadWideGrants_ReadsEachPrivilegeHeldOnEveryDatabase(t *testing.T) {
 			reader, queries := openWideGrantCatalog(c, mysqlUserColumns(mysqlBaseColumns...),
 				dbtest.QueryResult{Columns: append([]string{"user"}, mysqlBaseColumns...), Rows: test.users})
 
-			got, err := reader.readWideGrants(t.Context())
+			got, err := reader.readWideGrants(t.Context(), grantSource{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
-			c.Assert(*queries, qt.HasLen, 3)
-			c.Assert((*queries)[2], qt.Not(qt.Contains), "Delete_history_priv")
+			c.Assert(*queries, qt.HasLen, 2)
+			c.Assert((*queries)[1], qt.Not(qt.Contains), "Delete_history_priv")
+			c.Assert((*queries)[1], qt.Contains, "WHERE u.host = '%'")
 		})
 	}
 }
@@ -112,11 +110,11 @@ func TestReadWideGrants_PartOfMySQLUserIsNotKnown(t *testing.T) {
 	c := qt.New(t)
 	reader, queries := openWideGrantCatalog(c, mysqlUserColumns("Select_priv", "Insert_priv"), dbtest.QueryResult{})
 
-	got, err := reader.readWideGrants(t.Context())
+	got, err := reader.readWideGrants(t.Context(), grantSource{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.IsNil)
-	c.Assert(*queries, qt.HasLen, 2)
+	c.Assert(*queries, qt.HasLen, 1)
 }
 
 // openDatabaseRowCatalog is a catalog answering readDatabaseRows with
@@ -130,8 +128,6 @@ func openDatabaseRowCatalog(c *qt.C, partialRevokes string, rows [][]driver.Valu
 		switch {
 		case strings.Contains(query, "SHOW VARIABLES"):
 			return dbtest.QueryResult{Columns: []string{"Variable_name", "Value"}, Rows: [][]driver.Value{{"partial_revokes", partialRevokes}}}, nil
-		case strings.Contains(query, "SELECT COUNT(*)"):
-			return dbtest.QueryResult{Columns: []string{"count"}, Rows: [][]driver.Value{{int64(1)}}}, nil
 		default:
 			return dbtest.QueryResult{Columns: []string{"role_name", "TABLE_SCHEMA", "PRIVILEGE_TYPE"}, Rows: rows}, nil
 		}
@@ -153,7 +149,8 @@ func TestReadDatabaseRows_ReadsEachDatabase(t *testing.T) {
 		{Role: "rvc", Privilege: "SELECT", Grant: "SELECT ON `cs%`.*", Schema: "cs1"},
 		{Role: "rvc", Privilege: "SELECT", Grant: "SELECT ON `cs%`.*", Schema: "cs2"},
 	})
-	c.Assert(*queries, qt.HasLen, 3)
+	c.Assert(*queries, qt.HasLen, 2)
+	c.Assert((*queries)[1], qt.Contains, "WHERE u.host = '%'")
 }
 
 // TestReadDatabaseRows_PartialRevokesReadNamesLiterally reports no pattern
@@ -171,8 +168,9 @@ func TestReadDatabaseRows_PartialRevokesReadNamesLiterally(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows.patternGrants([]string{"cs1"}), qt.DeepEquals, make([]catalog.WideGrant, 0))
 	c.Assert(rows.databaseAccess([]string{"cs1"}, nil, nil), qt.DeepEquals, make([]catalog.WideAccess, 0))
-	c.Assert(*queries, qt.HasLen, 4)
-	c.Assert((*queries)[2], qt.Contains, "JSON_TABLE(u.User_attributes")
+	c.Assert(*queries, qt.HasLen, 3)
+	c.Assert((*queries)[1], qt.Contains, "JSON_TABLE(u.User_attributes")
+	c.Assert((*queries)[1], qt.Contains, "WHERE u.host = '%'")
 }
 
 // TestDatabaseRows_NotRead is nil for both lists where the read did not

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -133,9 +134,9 @@ func (r *Reader) rolePredicate(ctx context.Context) (string, error) {
 // database is not reported, because the description this reader produces is
 // of one database and a grant elsewhere is not part of it.
 func (r *Reader) readGrants(ctx context.Context, dbName string, source grantSource) ([]catalog.Grant, error) {
-	query, arms := grantQuery("u.host = '%'"), grantQueryArms
+	query, arms := grantQuery(readGrantee(source)), grantQueryArms
 	if source.tables {
-		query, arms = mariaDBGrantQuery(mariaDBDeclaredGrantee, source.databaseColumns), 1
+		query, arms = mariaDBGrantQuery(readGrantee(source), source.databaseColumns), 1
 	}
 	rows, err := r.db.QueryContext(ctx, query, nameBinds(dbName, arms)...)
 	if err != nil {
@@ -209,6 +210,22 @@ func markLoginGrants(grants []catalog.Grant, roles []catalog.Role, mariaDB bool)
 	return grants
 }
 
+// readGrantee is the accounts whose privileges the read reads, as a predicate
+// over mysql.user aliased u: the grantees a declaration names, every role and
+// every login on host %. The grants on a database, the global privileges, the
+// rows on database name patterns and the partial revokes are each read for
+// the same accounts, so a login a role holds passes on everything the read
+// knows of it. Measured on MySQL 8.4.13 and 26.10.0, after CREATE USER legacy
+// and GRANT SELECT ON *.* TO legacy, a session with a role that holds legacy
+// active reads every table, and after a REVOKE on one table from legacy,
+// legacy still reads it.
+func readGrantee(source grantSource) string {
+	if source.tables {
+		return mariaDBDeclaredGrantee
+	}
+	return "u.host = '%'"
+}
+
 // A MariaDB bare grantee names the role when one has that name, and otherwise
 // the login on host %. A login that shares a role's name must not contribute
 // its privileges to the role. Account names compare by bytes, including case.
@@ -216,15 +233,6 @@ const mariaDBDeclaredGrantee = `(u.is_role = 'Y' OR (u.host = '%' AND NOT EXISTS
 	SELECT 1 FROM mysql.user AS named_role
 	WHERE named_role.is_role = 'Y' AND CAST(named_role.user AS BINARY) = CAST(u.user AS BINARY)
 )))`
-
-// qualifyPredicate prefixes every column name in a role predicate, so the same
-// discriminator can be used in a join where mysql.user carries an alias.
-func qualifyPredicate(predicate, prefix string) string {
-	for _, column := range []string{"is_role", "account_locked", "password_expired", "authentication_string", "host"} {
-		predicate = strings.ReplaceAll(predicate, column, prefix+column)
-	}
-	return predicate
-}
 
 // MySQL server error numbers for a read the account is not permitted to make.
 //
@@ -339,7 +347,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	schema.RoleMemberships = memberships
 	mandatory.addTo(schema)
 
-	everywhere, err := r.readWideGrants(ctx)
+	everywhere, err := r.readWideGrants(ctx, source)
 	if err != nil {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read global privileges: %w", err)
@@ -364,7 +372,7 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	}
 	collisions := names.Collisions()
 	refuseCollisions(schema, collisions)
-	schema.UnreadRoles = unreadCauses(unreadRoles(schema), names, collisions)
+	schema.UnreadRoles = unreadCauses(unreadRoles(schema, readLogins(names, collisions)), names, collisions)
 	return nil
 }
 
@@ -404,16 +412,21 @@ func isPublicRole(role catalog.Role) bool {
 }
 
 // unreadRoles is each principal a role schema describes holds, or PUBLIC
-// holds where it stands for every account, that schema does not describe: a
-// role on a host other than [mysqlgrants.Options.RoleHost], a login MySQL lets
-// a statement grant as a role, or a name two accounts read as. Measured on
-// MySQL 26.10.0, after CREATE USER legacy ACCOUNT LOCK and GRANT legacy TO a
-// role, a session with the role active holds what legacy holds. Its privileges
+// holds where it stands for every account, whose privileges the read did not
+// read: a role or a login on a host other than
+// [mysqlgrants.Options.RoleHost], which MySQL lets a statement grant as a
+// role, or a name two accounts read as. Measured on MySQL 26.10.0, after CREATE USER
+// 'legacy'@'localhost' ACCOUNT LOCK and GRANT 'legacy'@'localhost' TO a role,
+// a session with the role active holds what legacy holds. Its privileges
 // reach the member, and the read did not read them, so a reach measured
 // without them would report the member narrower than the server makes it: the
 // security analysis says so for each role that holds one, and measures the
 // others.
-func unreadRoles(schema *catalog.Database) []string {
+//
+// A login on host % for which login reports true is read as a role is
+// ([readGrantee]), so it is no such principal, and what it holds in turn
+// reaches the role that holds it: the walk goes on through it.
+func unreadRoles(schema *catalog.Database, login func(name string) bool) []string {
 	described := make(map[string]bool, len(schema.Roles)+1)
 	if !schema.PublicIsRole {
 		described[publicGrantee] = true
@@ -421,18 +434,32 @@ func unreadRoles(schema *catalog.Database) []string {
 	for _, role := range schema.Roles {
 		described[role.Name] = true
 	}
+	queue := slices.Sorted(maps.Keys(described))
+	reached := maps.Clone(described)
 	var unread []string
-	for _, membership := range schema.RoleMemberships {
-		if described[membership.Member] && !described[membership.Role] {
-			unread = append(unread, membership.Role)
+	hold := func(name string) {
+		switch {
+		case reached[name]:
+		case login(name):
+			reached[name] = true
+			queue = append(queue, name)
+		default:
+			unread = append(unread, name)
 		}
 	}
 	// Every account holds the mandatory roles a read names beside a role
 	// named PUBLIC, through no membership it records.
 	if every := schema.EveryAccountHoldsUnread; every != nil {
 		for _, role := range every.Roles {
-			if !described[role] {
-				unread = append(unread, role)
+			hold(role)
+		}
+	}
+	for len(queue) > 0 {
+		member := queue[0]
+		queue = queue[1:]
+		for _, membership := range schema.RoleMemberships {
+			if membership.Member == member {
+				hold(membership.Role)
 			}
 		}
 	}
@@ -440,12 +467,23 @@ func unreadRoles(schema *catalog.Database) []string {
 	return slices.Compact(unread)
 }
 
+// readLogins reports whether a principal name is a login on host % whose
+// privileges the read reads ([readGrantee]): the account names gave the name
+// is on host %, and no other account reads as it. Only MySQL lets a
+// statement grant a login as a role, and there a login on host % reads as its
+// user alone.
+func readLogins(names *mysqlgrants.Names, collisions []mysqlgrants.Collision) func(name string) bool {
+	return func(name string) bool {
+		account, named := names.Account(name)
+		return named && account.Host == "%" &&
+			!slices.ContainsFunc(collisions, func(collision mysqlgrants.Collision) bool { return collision.Name == name })
+	}
+}
+
 // unreadCauses gives each principal of unread the cause the read did not
 // read its privileges, from the account names gave it: a name two accounts
-// read as, a login on host %, whose grants on the databases the read covers
-// are read and whose global privileges are not ([Reader.readWideGrants] reads
-// roles alone), or an account on another host, whose privileges the read does
-// not read at all.
+// read as, or an account on another host, whose privileges the read does not
+// read at all.
 func unreadCauses(unread []string, names *mysqlgrants.Names, collisions []mysqlgrants.Collision) []catalog.UnreadRole {
 	if len(unread) == 0 {
 		return nil
@@ -475,11 +513,6 @@ func unreadCause(name string, names *mysqlgrants.Names, shared []mysqlgrants.Acc
 	switch {
 	case !named:
 		return "the read found no account of this name"
-	case account.Host == "%":
-		// A role on host % is a role the read describes on MySQL, and a
-		// MariaDB role has no host, so this account is a login.
-		return "it is a login, and the read reads a login's grants on the databases it covers, " +
-			"not its global privileges or its grants on database name patterns"
 	default:
 		return "it is the account " + account.Grantee() + ", and the read reads the privileges of roles and of accounts on host % alone"
 	}
@@ -600,8 +633,9 @@ type globalTablePrivilege struct {
 	optional          bool
 }
 
-// readWideGrants reads the table privileges each role holds on every
-// database, the `GRANT SELECT ON *.*` kind, one row per privilege.
+// readWideGrants reads the table privileges each account [readGrantee] names
+// holds on every database, the `GRANT SELECT ON *.*` kind, one row per
+// privilege: every role, and every login on host %.
 //
 // The columns of mysql.user are read rather than
 // information_schema.USER_PRIVILEGES, which on MariaDB lists no role.
@@ -611,11 +645,7 @@ type globalTablePrivilege struct {
 // lacks, is left out where the server has none. Where any other column is
 // missing the account sees only part of mysql.user, and the read returns nil:
 // it does not establish the grants on every database.
-func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, error) {
-	predicate, err := r.rolePredicate(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (r *Reader) readWideGrants(ctx context.Context, source grantSource) ([]catalog.WideGrant, error) {
 	present, err := r.userColumns(ctx)
 	if err != nil {
 		return nil, err
@@ -635,7 +665,7 @@ func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, error
 			return nil, nil
 		}
 	}
-	rows, err := r.db.QueryContext(ctx, wideGrantQuery(predicate, columns))
+	rows, err := r.db.QueryContext(ctx, wideGrantQuery(readGrantee(source), columns))
 	if err != nil {
 		return nil, err
 	}
@@ -663,21 +693,22 @@ func (r *Reader) readWideGrants(ctx context.Context) ([]catalog.WideGrant, error
 	return everywhere, nil
 }
 
-// wideGrantQuery projects, for each role holding one of the columns, the role
-// and whether it holds each column, in order. The columns are names from
-// [globalTablePrivileges], never input.
-func wideGrantQuery(rolePredicate string, columns []string) string {
+// wideGrantQuery projects, for each account grantee names holding one of the
+// columns, its user and whether it holds each column, in order. grantee is a
+// predicate over mysql.user aliased u ([readGrantee]). The columns are names
+// from [globalTablePrivileges], never input.
+func wideGrantQuery(grantee string, columns []string) string {
 	held := make([]string, len(columns))
 	for index, column := range columns {
-		held[index] = column + " = 'Y'"
+		held[index] = "u." + column + " = 'Y'"
 	}
 	return `
-		SELECT user, ` + strings.Join(held, ", ") + `
-		FROM mysql.user
-		WHERE ` + rolePredicate + `
-			  AND user NOT LIKE 'mysql.%'
+		SELECT u.user, ` + strings.Join(held, ", ") + `
+		FROM mysql.user AS u
+		WHERE ` + grantee + `
+			  AND u.user NOT LIKE 'mysql.%'
 			  AND (` + strings.Join(held, " OR ") + `)
-		ORDER BY user`
+		ORDER BY u.user`
 }
 
 // userColumns is the set of the columns mysql.user has, in lower case.
