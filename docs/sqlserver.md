@@ -32,6 +32,13 @@ the user's default schema holds one, since reading the empty `dbo` would apply
 every migration again (`refuseStrandedConnectionHistory` in
 `migration/migrator`).
 
+The parameter does not move where the server creates a name written without a
+schema, which stays the user's default schema. Where the two differ, a
+comparison refuses a desired schema that writes a table, a view, a routine or
+a sequence without a schema, and a rehearsal refuses a dev URL whose user
+creates such a name in another schema than the target's
+(`catalog.ServerInfo.UnqualifiedSchema`).
+
 ## Supported Surface
 
 The current SQL Server implementation covers:

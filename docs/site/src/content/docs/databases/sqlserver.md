@@ -48,12 +48,23 @@ read as `dbo`'s:
 ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&schema=audit&encrypt=disable"
 ```
 
+The parameter does not change where the server creates a name written
+without a schema: that stays the default schema of the connection's user. A
+URL whose `schema` parameter names another schema reads that schema, so Ptah
+refuses a desired schema that writes a table, a view, a routine or a sequence
+without a schema through it, naming each name and both schemas. Qualify the
+names, or leave the parameter out for a user whose default schema is the one
+to read.
+
 A dev database works in a schema by the same rule, and a rehearsal needs the
-dev database and the target in the same schema. A dev URL that logs in as `sa`
-works in `dbo`, so beside a target whose account works in `app` it is refused
-with `--dev-url schema scope "dbo" does not match --db-url schema scope "app"`.
-Add `schema=app` to the dev URL, or log in to the dev database as an account
-whose default schema is `app`.
+dev database to read the target's schema and to create an unqualified name
+where the target does. A dev URL that logs in as `sa` works in `dbo`, so
+beside a target whose account works in `app` it is refused with
+`--dev-url schema scope "dbo" does not match --db-url schema scope "app"`.
+Adding `schema=app` to that dev URL makes it read `app`, while `sa` still
+creates unqualified names in `dbo`, so it is refused with
+`--dev-url default schema "dbo" does not match --db-url default schema "app"`.
+Log in to the dev database as a user whose default schema is `app`.
 
 Ptah keeps its own tables in the schema the `schema` parameter names, or else
 in `dbo`, whatever the default schema of the connection's user is: the
@@ -353,11 +364,9 @@ A routine is replaced in the schema the read found it in. The `DROP` and the
 `CREATE` both put the declared name in that schema. A routine the schema
 declares without a schema is compared in the connection's schema (see
 [Connecting](#connecting)) and is replaced there. A URL whose
-`schema` parameter names a schema other than the user's default schema reads
-that schema, while the server still creates an unqualified name in the default
-schema, so leave the parameter out of the target URL for such an account, or
-qualify the names. A dev URL beside such a target names the schema the target
-works in (see [Connecting](#connecting)).
+`schema` parameter names a schema other than the user's default schema is
+refused for a routine declared without a schema (see
+[Connecting](#connecting)).
 
 A database side of `ptah schema diff` is read at that one schema. When the
 run names no `--schemas`, it says so on standard error, and names the schemas

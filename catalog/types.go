@@ -1340,6 +1340,18 @@ type ServerInfo struct {
 	// default schema, and a history kept in one account's default schema reads
 	// as empty to the other, which then runs every migration again.
 	MetadataSchema string `json:"metadata_schema,omitempty"`
+	// UnqualifiedSchema is the schema the server creates a name written
+	// without a schema in, where that is not Schema, and empty where it is.
+	//
+	// On SQL Server, a URL's schema parameter selects Schema, the schema a
+	// connection reads and compares, while the server creates an unqualified
+	// name in the default schema of the connection's user, which no session
+	// setting changes. Where the parameter names another schema, a plan
+	// would create such a name in this one and the next run would compare
+	// it in Schema again, so a comparison refuses a declaration that writes
+	// a name without a schema, and a rehearsal refuses a dev database that
+	// would create such a name in another schema than the target does.
+	UnqualifiedSchema string `json:"unqualified_schema,omitempty"`
 
 	// WholeServer reports a connection to a whole MySQL or MariaDB server:
 	// one opened from a URL that names no database, which

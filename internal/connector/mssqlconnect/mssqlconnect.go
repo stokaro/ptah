@@ -63,6 +63,12 @@ func convertSQLServerURL(dbURL string) string {
 // is `app`, an unqualified CREATE FUNCTION f lands in app.f, and a comparison
 // that read only dbo would plan the function again on every run. A user with
 // no default schema is in `dbo`, as the server answers for it.
+//
+// The parameter does not move where the server creates such a name: no
+// session setting does on SQL Server. Where it names another schema than the
+// user's default one, as the server compares the two names, Describe records
+// the default one as [catalog.ServerInfo.UnqualifiedSchema], and a comparison
+// refuses a declaration that writes a name without a schema.
 func (Service) Describe(
 	ctx context.Context,
 	opened *connector.Pool,
@@ -90,23 +96,27 @@ SELECT
 	if err := db.QueryRowContext(ctx, catalogSemanticsQuery).Scan(&catalogCollation); err != nil {
 		return info, fmt.Errorf("failed to get SQL Server catalog identifier semantics: %w", err)
 	}
-	info.Schema = request.Parsed.Query().Get("schema")
+	named := request.Parsed.Query().Get("schema")
+	// SCHEMA_ID() is NULL for a user with no default schema, whose
+	// unqualified names the server creates in dbo.
+	var defaultSchema sql.NullString
+	var namedIsDefault bool
+	if err := db.QueryRowContext(ctx,
+		"SELECT SCHEMA_NAME(), CONVERT(bit, CASE WHEN SCHEMA_ID(@p1) = COALESCE(SCHEMA_ID(), 1) THEN 1 ELSE 0 END)",
+		named,
+	).Scan(&defaultSchema, &namedIsDefault); err != nil {
+		return info, fmt.Errorf("failed to get the SQL Server default schema: %w", err)
+	}
+	unqualified := cmp.Or(defaultSchema.String, "dbo")
+	info.Schema = cmp.Or(named, unqualified)
+	if named != "" && !namedIsDefault {
+		info.UnqualifiedSchema = unqualified
+	}
 	// Ptah's own tables stay where the URL, or else dbo, puts them. The
-	// account's default schema read below must not move them: a database
-	// migrated as sa keeps its history in dbo, and an account whose default
-	// schema is app would read an empty history in app and run every
-	// migration again.
-	info.MetadataSchema = cmp.Or(info.Schema, "dbo")
-	if info.Schema == "" {
-		var defaultSchema sql.NullString
-		if err := db.QueryRowContext(ctx, "SELECT SCHEMA_NAME()").Scan(&defaultSchema); err != nil {
-			return info, fmt.Errorf("failed to get the SQL Server default schema: %w", err)
-		}
-		info.Schema = defaultSchema.String
-	}
-	if info.Schema == "" {
-		info.Schema = "dbo"
-	}
+	// account's default schema must not move them: a database migrated as sa
+	// keeps its history in dbo, and an account whose default schema is app
+	// would read an empty history in app and run every migration again.
+	info.MetadataSchema = cmp.Or(named, "dbo")
 	info.IdentifierSemantics = identifier.ForSQLServerCatalog(catalogCollation)
 	info.IdentifierSemantics.DefaultSchema = info.Schema
 	return info, nil

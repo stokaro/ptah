@@ -70,6 +70,16 @@ func TestCheckSimulationSchemaScope_HappyPath(t *testing.T) {
 			dev:    realmInfo("?search_path=app", "app"),
 			target: realmInfo("?search_path=app", "app"),
 		},
+		{
+			name:   "SQL Server URLs reading one schema and creating unqualified names in it",
+			dev:    catalog.ServerInfo{Dialect: "sqlserver", Schema: "app"},
+			target: catalog.ServerInfo{Dialect: "sqlserver", Schema: "app"},
+		},
+		{
+			name:   "SQL Server URLs that both create unqualified names elsewhere",
+			dev:    catalog.ServerInfo{Dialect: "sqlserver", Schema: "app", UnqualifiedSchema: "dbo"},
+			target: catalog.ServerInfo{Dialect: "sqlserver", Schema: "app", UnqualifiedSchema: "dbo"},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -96,6 +106,18 @@ func TestCheckSimulationSchemaScope_FailurePath(t *testing.T) {
 			dev:    realmInfo("", "public"),
 			target: realmInfo("?search_path=rebase", "rebase"),
 			want:   `--dev-url schema scope "public" does not match --url schema scope "rebase"; point --dev-url at a dev database using the same schema`,
+		},
+		{
+			name:   "a SQL Server dev URL naming the target's schema for a user whose default schema is dbo",
+			dev:    catalog.ServerInfo{Dialect: "sqlserver", Schema: "app", UnqualifiedSchema: "dbo"},
+			target: catalog.ServerInfo{Dialect: "sqlserver", Schema: "app"},
+			want:   `--dev-url default schema "dbo" does not match --url default schema "app"; give --dev-url a user whose default schema is "app"`,
+		},
+		{
+			name:   "a SQL Server target URL naming the dev database's schema for another user",
+			dev:    catalog.ServerInfo{Dialect: "sqlserver", Schema: "app"},
+			target: catalog.ServerInfo{Dialect: "sqlserver", Schema: "app", UnqualifiedSchema: "dbo"},
+			want:   `--dev-url default schema "app" does not match --url default schema "dbo"; give --dev-url a user whose default schema is "dbo"`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
