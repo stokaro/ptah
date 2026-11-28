@@ -122,6 +122,41 @@ These categories count a setting or a part of an object rather than the object:
 | `unique_protections_removed` | destructive | Index removals that take a UNIQUE constraint's enforcement with them. Each is one of the `indexes_removed` as well. |
 | `vector_dimension_changed` | destructive | Column modifications that change a pgvector dimension, which the server refuses while a row holds a vector. Each is one of the `columns_modified` as well. |
 
+## Blocked drops
+
+A drop the comparison withholds, because the database or the table holds an
+object the selection leaves out, is listed under `removals_blocked`: in the
+`diff` of the `schema drift --format json` report, and in `changes` of the
+`schema diff --format json` document. The finding of the same name counts the
+entries. The statements carry nothing for such a drop, and no other entry names
+the table or any of its parts:
+
+```json
+"removals_blocked": [
+  {
+    "kind": "table",
+    "name": "u",
+    "blocked_by": {"object": "column app.u.c", "cause": "excluded", "pattern": "u"}
+  }
+]
+```
+
+`kind` is `table` or `database`, and `name` is spelled as the `DROP` would
+name it. `blocked_by.object` names what the drop would remove, as the warning
+does. `cause` says how the selection left it out:
+
+- `excluded`: an `--exclude` pattern names the object;
+- `not-included`: no `--include` pattern selects it;
+- `kind-excluded`: an `--exclude` pattern leaves the whole kind out of the
+  read, `object` names the kind, such as `triggers`, and `selector` quotes the
+  pattern;
+- `kind-not-included`: no `--include` pattern can select the kind, and `object`
+  names the kind.
+
+`pattern` names the database or the table as a selector on this run spells
+it, which is the spelling the remedies in the warning quote. `selector` and
+`pattern` are left out when empty.
+
 ## Feature owners, undecided objects and rows
 
 A change a feature owner compares, such as a PostgreSQL extension, policy or

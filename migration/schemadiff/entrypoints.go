@@ -251,7 +251,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	if err := ValidateDesiredSchema(ctx, runtime, desired, info); err != nil {
+	if err := ValidateDesiredSchema(ctx, runtime, withoutKeysIntoTablesOutOfScope(desired, database, info), info); err != nil {
 		return nil, Diagnostics{}, err
 	}
 	if err := ValidateRolePasswordComparison(desired, database, selected); err != nil {

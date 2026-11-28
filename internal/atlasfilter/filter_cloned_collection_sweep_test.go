@@ -233,6 +233,15 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// Not filtered: an earlier filter took the table out, and the
+			// database still holds it. It is still ASKED, for the reason
+			// UnreadTables is.
+			field: "TablesOutOfScope", present: "archived_orders", absent: "nosuch_archived_table",
+			seed: func(s *catalog.Database) {
+				s.TablesOutOfScope = append(s.TablesOutOfScope, "archived_orders")
+			},
+		},
+		{
 			// Filtered: a selector that names the object takes it out of the
 			// report, and is matched while it does.
 			field: "UnmodeledObjects", present: "nightly_cleanup", absent: "nosuch_event",

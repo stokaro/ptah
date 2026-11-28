@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlsystemdb"
+	"ptah.run/internal/schemaprep"
 )
 
 // ServerSchemas records on diff the databases a comparison of a whole MySQL or
@@ -55,7 +56,7 @@ func ServerSchemas(
 	for _, schema := range current {
 		held[semantics.TableIdentityKey(schema.Name)] = schema
 	}
-	declaredSchemas := serverDatabasesOf(desired)
+	declaredSchemas := schemaprep.ServerDatabases(desired)
 	declared := make(map[string]struct{}, len(declaredSchemas))
 	for _, schema := range declaredSchemas {
 		key := semantics.TableIdentityKey(schema.Name)
@@ -100,32 +101,6 @@ func SortRemovalsBlocked(diff *difftypes.SchemaDiff) {
 	slices.SortFunc(diff.RemovalsBlocked, func(a, b difftypes.BlockedRemoval) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Name, b.Name))
 	})
-}
-
-// serverDatabasesOf is the databases desired declares, in declaration order:
-// each schema block, then each database a table or a sequence names that no
-// block does, with no attribute of its own.
-func serverDatabasesOf(desired *schemamodel.Database) []schemamodel.Schema {
-	if desired == nil {
-		return nil
-	}
-	databases := slices.Clone(desired.Schemas)
-	named := func(name string) {
-		if strings.TrimSpace(name) == "" {
-			return
-		}
-		if slices.ContainsFunc(databases, func(schema schemamodel.Schema) bool { return schema.Name == name }) {
-			return
-		}
-		databases = append(databases, schemamodel.Schema{Name: name})
-	}
-	for _, table := range desired.Tables {
-		named(table.Schema)
-	}
-	for _, sequence := range desired.Sequences {
-		named(sequence.Schema)
-	}
-	return databases
 }
 
 // schemaAttributeChange answers the change from existing to declared, and

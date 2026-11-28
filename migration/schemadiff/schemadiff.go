@@ -161,6 +161,14 @@ func compareReportingUndecidedAdditions(
 	// takes the ones the database holds, before anything reads the
 	// declaration.
 	desired = compare.HeldMaterializedViewOptions(desired, database, identifierSemantics)
+	// A table whose drop the selection blocks leaves the comparison with all
+	// its parts before anything pairs them: the table preparation, the owned
+	// features and every comparator below see the database without it.
+	database = compare.WithoutBlockedTables(desired, database, diff, opts.Dialect, identifierSemantics,
+		compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema))
+	// A key the desired schema declares into a table an exclude selector left
+	// out is compared as the key the server holds, not added again.
+	database = compare.WithDeclaredKeysOutOfScope(desired, database, opts.Dialect, identifierSemantics)
 	// The feature comparison runs before the index comparison, and reads a
 	// renamed index under the name the plan gives it. The renames read the
 	// index kinds the tables' preparation states, as the index comparison does.
@@ -570,6 +578,10 @@ func validateDeclaredBeforeComparison(
 // key reads; measured on Oracle 23.26, the plan dropped T1 and the server
 // refused the drop with ORA-02449. Schema names compare as the dialect compares
 // them, so a key into `CRM.customers` is a key into a held crm on Oracle.
+//
+// A key into a table an exclude selector took out of the read is accepted
+// either way: the table stays on the server and the plan never drops it, so the
+// key is planned as declared (stokaro/ptah#6773).
 func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *catalog.Database, dialect, current string) error {
 	if database == nil {
 		return nil
@@ -587,6 +599,9 @@ func validateKeysIntoComparedSchemas(desired *schemamodel.Database, database *ca
 		held[foreignkeyscope.StoredSchemaKey(semantics, dialect, table.Schema)] = true
 	}
 	for _, reference := range foreignkeyscope.References(*desired) {
+		if foreignkeyscope.IntoTableOf(dialect, reference.Table, current, database.TablesOutOfScope) {
+			continue
+		}
 		into, declared := foreignkeyscope.IntoSchema(*desired, semantics, reference.Table, own)
 		if into && !declared {
 			return &ptaherr.RenderError{

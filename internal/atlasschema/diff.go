@@ -50,6 +50,7 @@ import (
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/schemaremoval"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemavalidate"
@@ -1780,7 +1781,7 @@ func pairDiffSchemas(fromState, toState atlassource.State, fromSide, toSide scop
 	if fromSide.database == nil || toSide.schema == nil {
 		return fromSide, toSide
 	}
-	fromKept, toKept := catalogSchemaNames(fromSide.database), modelSchemaNames(toSide.schema.Schemas)
+	fromKept, toKept := catalogSchemaNames(fromSide.database), modelSchemaNames(schemaprep.ServerDatabases(toSide.schema))
 	return restoreDiffSchemas(fromState, fromSide, toKept), restoreDiffSchemas(toState, toSide, fromKept)
 }
 
@@ -1789,7 +1790,7 @@ func pairDiffSchemas(fromState, toState atlassource.State, fromSide, toSide scop
 // with state.
 func restoreDiffSchemas(state atlassource.State, side scopedDiffState, other []string) scopedDiffState {
 	if side.schema != nil && state.Schema != nil {
-		if paired := atlasfilter.PairSchemas(state.Schema.Schemas, side.schema.Schemas, other, modelSchemaName); len(paired) != len(side.schema.Schemas) {
+		if paired := atlasfilter.PairSchemas(schemaprep.ServerDatabases(state.Schema), side.schema.Schemas, other, modelSchemaName); len(paired) != len(side.schema.Schemas) {
 			schema := *side.schema
 			schema.Schemas = paired
 			side.schema = &schema
@@ -1802,7 +1803,7 @@ func restoreDiffSchemas(state atlassource.State, side scopedDiffState, other []s
 		case held != nil:
 			all = held.Schemas
 		case state.Schema != nil:
-			all = goschematodb.SchemaEntries(state.Schema.Schemas)
+			all = goschematodb.SchemaEntries(schemaprep.ServerDatabases(state.Schema))
 		}
 		if paired := atlasfilter.PairSchemas(all, side.database.Schemas, other, catalogSchemaName); len(paired) != len(side.database.Schemas) {
 			database := *side.database

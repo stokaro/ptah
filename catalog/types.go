@@ -308,11 +308,22 @@ type Database struct {
 	// preserves these observations; they are never serialized.
 	TableRemovalBlockers map[string]SelectionBlocker `json:"-"`
 
+	// TablesOutOfScope names each table the read holds that an exclude
+	// selector took out of this description, as [QualifyTableName] spells the
+	// read's schema and table, in sorted order. A comparison never plans a
+	// change to such a table, so a foreign key the desired schema declares may
+	// reference one: the table stays, and the key is planned once. Filtering
+	// keeps the names an earlier filter recorded; they are never serialized.
+	TablesOutOfScope []string `json:"-"`
+
 	// OutOfScope holds what an exclude selector took out of this description
 	// that the database keeps beside the tables the description holds: the
 	// columns, indexes and constraints of those tables, and every trigger and
 	// view, as the read reported them. An object out of scope is kept as it
-	// is, and a comparison never reads one.
+	// is. A comparison reads one only to keep it: a foreign key out of scope
+	// for the table or columns it references, which the desired schema
+	// declares, is compared as the declared key, and the index a key stands on
+	// is not dropped from under it.
 	//
 	// A target that changes a table by writing a new one and copying the
 	// rows into it, as SQLite does, writes the new table from the

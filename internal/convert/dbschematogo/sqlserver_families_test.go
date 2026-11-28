@@ -121,4 +121,5 @@ var unconvertedFamilies = map[string]string{
 	"UnreadRoles":               "principals whose privileges the read did not read, which only the reach rules read",
 	"UnmodeledObjects":          "objects of a kind Ptah does not model, which no declaration can name",
 	"RemovalBlockers":           "objects outside the model that block a drop, which only a plan reads",
+	"TablesOutOfScope":          "the names of tables a selector took out of the read, which only a comparison reads",
 }

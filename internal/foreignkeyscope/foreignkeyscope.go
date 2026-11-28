@@ -120,6 +120,40 @@ func IntoSchema(database schemamodel.Database, semantics identifier.Semantics, r
 	return true, false
 }
 
+// IntoTableOf reports whether reference names one of tables, each named as a
+// read spells its schema and table in [ptah.run/catalog.QualifyTableName]. An
+// unqualified reference, and a table the read names with no schema, are in
+// current, the schema the connection resolves an unqualified name in. Names
+// compare as dialect compares them, so on Oracle `app.t1` names the stored
+// APP.T1.
+//
+// A comparison asks it with the tables an exclude selector took out of the
+// read: such a table stays on the server and out of the plan, so a key into it
+// neither names a table the description lacks nor one the plan drops.
+func IntoTableOf(dialect, reference, current string, tables []string) bool {
+	ref, ok := tableref.Parse(reference)
+	if !ok || len(tables) == 0 {
+		return false
+	}
+	semantics := identifier.ForDialect(dialect)
+	schema := StoredSchemaKey(semantics, dialect, current)
+	if ref.Qualified {
+		schema = SchemaKey(semantics, spelledSchema(semantics, reference, ref))
+	}
+	if schema == "" {
+		return false
+	}
+	name := SchemaKey(semantics, spelledTable(semantics, reference, ref))
+	for _, table := range tables {
+		held, parsed := tableref.Parse(table)
+		if parsed && StoredSchemaKey(semantics, dialect, cmp.Or(held.Schema, current)) == schema &&
+			StoredSchemaKey(semantics, dialect, held.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
 // spelledSchema is the schema part of reference as written: ref.Schema, with
 // its double quotes where semantics fold an unquoted name, so that a quoted
 // name the fold would change keeps apart from the unquoted one.

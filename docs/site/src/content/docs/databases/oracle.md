@@ -845,7 +845,8 @@ plan runs, with `ORA-00942`. A key that names the account Ptah connects as is
 a key into the description, in any spelling: `app.T1`, `APP.T1` and
 `"APP".T1` all name the declared `T1`. The declaration has to declare that
 table. A key into one it does not declare is refused before anything runs,
-because the plan would drop the table the key reads.
+because the plan would drop the table the key reads, unless `--exclude` leaves
+that table out of the run.
 
 A constraint that its author left unnamed has a name Oracle made, such as
 `SYS_C008719`, and that name differs in every account. A file that drops one

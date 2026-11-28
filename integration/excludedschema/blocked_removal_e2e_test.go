@@ -48,7 +48,9 @@ func writeFile(c *qt.C, root, name, database, contents string) string {
 }
 
 // childTableDatabase is a database holding t, with one row, and u, whose row
-// (1, 42) sits beside the column c, the index ix on it and the trigger trg.
+// (1, 42, 1) sits beside the column c, the index ix on it, the column d with
+// the index ixd, the foreign key u_d_fk to t and the check ck, and the trigger
+// trg.
 // It returns the administrative connection, the database, the URL naming the
 // whole server and the URL naming the database.
 func childTableDatabase(c *qt.C, engine dbtarget.Engine) (admin *sql.DB, database, server, single string) {
@@ -65,10 +67,11 @@ func childTableDatabase(c *qt.C, engine dbtarget.Engine) (admin *sql.DB, databas
 	})
 	for _, statement := range []string{
 		"CREATE TABLE `%s`.t (id INT NOT NULL PRIMARY KEY)",
-		"CREATE TABLE `%s`.u (id INT NOT NULL PRIMARY KEY, c INT, KEY ix (c))",
+		"CREATE TABLE `%[1]s`.u (id INT NOT NULL PRIMARY KEY, c INT, d INT, KEY ix (c), KEY ixd (d), " +
+			"CONSTRAINT u_d_fk FOREIGN KEY (d) REFERENCES `%[1]s`.t (id), CONSTRAINT ck CHECK (d > 0))",
 		"CREATE TRIGGER `%[1]s`.trg BEFORE INSERT ON `%[1]s`.u FOR EACH ROW SET NEW.c = NEW.c",
 		"INSERT INTO `%s`.t VALUES (1)",
-		"INSERT INTO `%s`.u VALUES (1, 42)",
+		"INSERT INTO `%s`.u VALUES (1, 42, 1)",
 	} {
 		_, err := admin.ExecContext(c.Context(), fmt.Sprintf(statement, database))
 		c.Assert(err, qt.IsNil)
@@ -80,17 +83,25 @@ func childTableDatabase(c *qt.C, engine dbtarget.Engine) (admin *sql.DB, databas
 	return admin, database, server, single
 }
 
-// assertChildTableKept reads u back: its row, its column value and its
-// trigger are all still there.
+// assertChildTableKept reads u back: its row, its column value, its trigger,
+// its three constraints and its three indexes are all still there.
 func assertChildTableKept(c *qt.C, admin *sql.DB, database string) {
 	c.Helper()
-	var value, triggers int
+	var value, triggers, constraints, indexes int
 	c.Assert(admin.QueryRowContext(c.Context(), "SELECT c FROM `"+database+"`.u WHERE id = 1").Scan(&value), qt.IsNil)
 	c.Assert(admin.QueryRowContext(c.Context(),
 		"SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? AND TRIGGER_NAME = 'trg'", database,
 	).Scan(&triggers), qt.IsNil)
+	c.Assert(admin.QueryRowContext(c.Context(),
+		"SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'u'", database,
+	).Scan(&constraints), qt.IsNil)
+	c.Assert(admin.QueryRowContext(c.Context(),
+		"SELECT COUNT(DISTINCT INDEX_NAME) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'u'", database,
+	).Scan(&indexes), qt.IsNil)
 	c.Assert(value, qt.Equals, 42)
 	c.Assert(triggers, qt.Equals, 1)
+	c.Assert(constraints, qt.Equals, 3)
+	c.Assert(indexes, qt.Equals, 3)
 }
 
 const (
@@ -180,7 +191,9 @@ func TestMySQLFamilyExcludedChildKeepsItsTableE2E(t *testing.T) {
 }
 
 // The commands that report a comparison report the blocked table drop with
-// their usual exit code and leave it out of the SQL they print.
+// their usual exit code. The table stays as the server holds it, so neither
+// it nor any of its parts reaches the SQL or the findings: no key, foreign key,
+// check, index or trigger of u is dropped.
 func TestMySQLFamilyBlockedTableDropIsReportedE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -217,7 +230,8 @@ func TestMySQLFamilyBlockedTableDropIsReportedE2E(t *testing.T) {
 					c.Assert(result.ExitCode, qt.Equals, test.exit, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
 					c.Assert(result.Stdout, qt.Contains, replacements.Replace(test.stdout))
 					c.Assert(result.Stderr, qt.Contains, replacements.Replace(test.stderr))
-					c.Assert(result.Stdout, qt.Not(qt.Contains), "DROP TABLE")
+					c.Assert(result.Stdout, qt.Not(qt.Contains), "DROP")
+					c.Assert(result.Stdout, qt.Not(qt.Contains), "_removed")
 					assertChildTableKept(c, admin, database)
 				})
 			}
@@ -239,8 +253,9 @@ func TestMySQLFamilyExcludedChildRemediesE2E(t *testing.T) {
 				{
 					// The trigger is excluded too, since the declaration does not
 					// describe it and the apply would otherwise drop it.
-					name:     "declare the table",
-					contents: childSingleSQL + "CREATE TABLE u (id INT NOT NULL PRIMARY KEY, c INT, KEY ix (c));\n",
+					name: "declare the table",
+					contents: childSingleSQL + "CREATE TABLE u (id INT NOT NULL PRIMARY KEY, c INT, d INT, KEY ix (c), KEY ixd (d), " +
+						"CONSTRAINT u_d_fk FOREIGN KEY (d) REFERENCES t (id), CONSTRAINT ck CHECK (d > 0));\n",
 					excludes: []string{"--exclude", "u.c", "--exclude", "u.trg"},
 				},
 			} {
@@ -306,7 +321,8 @@ func TestMySQLFamilyNotDescribedDatabaseIsKeptE2E(t *testing.T) {
 
 // With --include naming one table, declaring its database keeps the database
 // and the tables the selection leaves out, and drops only the selected table
-// the desired schema does not declare.
+// the desired schema does not declare. A table in the database declares it as
+// a schema block does.
 func TestMySQLFamilyIncludeKeepsADeclaredDatabaseE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -316,6 +332,9 @@ func TestMySQLFamilyIncludeKeepsADeclaredDatabaseE2E(t *testing.T) {
 			}{
 				{name: "native", run: invocation{target: clirun.Ptah, args: []string{
 					"schema", "apply", "--db-url", "<server>", "--schema-file", "<sql>", "--schemas", "<database>", "--include", "<database>.u", "--auto-approve",
+				}}},
+				{name: "native, declared through a table", run: invocation{target: clirun.Ptah, args: []string{
+					"schema", "apply", "--db-url", "<server>", "--schema-file", "<table-sql>", "--include", "<database>.u", "--auto-approve",
 				}}},
 				{name: "compat", run: invocation{target: clirun.Compat, args: []string{
 					"schema", "apply", "--url", "<server>", "--to", "<hcl>", "--schema", "<database>", "--include", "<database>.u", "--auto-approve",
@@ -327,6 +346,7 @@ func TestMySQLFamilyIncludeKeepsADeclaredDatabaseE2E(t *testing.T) {
 					root := c.TempDir()
 					replacements := strings.NewReplacer("<server>", server, "<database>", database,
 						"<sql>", writeFile(c, root, "declared.sql", database, "CREATE DATABASE `<database>`;\n"),
+						"<table-sql>", writeFile(c, root, "table.sql", database, throughTableSQL),
 						"<hcl>", "file://"+filepath.ToSlash(writeFile(c, root, "declared.hcl", database, "schema \"<database>\" {}\n")))
 
 					result := runReplaced(c, root, replacements, test.run)
@@ -357,6 +377,9 @@ func TestMySQLFamilyIncludeDiffKeepsADeclaredDatabaseE2E(t *testing.T) {
 				{name: "native", run: invocation{target: clirun.Ptah, args: []string{
 					"schema", "diff", "--from", "<server>", "--to", "<sql>", "--schemas", "<database>", "--include", "<database>.u",
 				}}},
+				{name: "native, declared through a table", run: invocation{target: clirun.Ptah, args: []string{
+					"schema", "diff", "--from", "<server>", "--to", "<table-sql>", "--include", "<database>.u",
+				}}},
 				{name: "compat", run: invocation{target: clirun.Compat, args: []string{
 					"schema", "diff", "--from", "<server>", "--to", "<hcl>", "--dev-url", "<dev>", "--schema", "<database>", "--include", "<database>.u",
 				}}},
@@ -367,6 +390,7 @@ func TestMySQLFamilyIncludeDiffKeepsADeclaredDatabaseE2E(t *testing.T) {
 					root := c.TempDir()
 					replacements := strings.NewReplacer("<server>", server, "<database>", database,
 						"<sql>", writeFile(c, root, "declared.sql", database, "CREATE DATABASE `<database>`;\n"),
+						"<table-sql>", writeFile(c, root, "table.sql", database, throughTableSQL),
 						"<hcl>", "file://"+filepath.ToSlash(writeFile(c, root, "declared.hcl", database, "schema \"<database>\" {}\n")),
 						"<dev>", dbtarget.URL(c, engine.dev))
 
@@ -378,6 +402,37 @@ func TestMySQLFamilyIncludeDiffKeepsADeclaredDatabaseE2E(t *testing.T) {
 					c.Assert(result.Stderr, qt.Not(qt.Contains), "cannot drop")
 				})
 			}
+		})
+	}
+}
+
+// throughTableSQL declares the database only through its table t, which
+// --include <database>.u leaves out.
+const throughTableSQL = "CREATE TABLE `<database>`.t (id INT NOT NULL PRIMARY KEY);\n"
+
+// A table the selection takes into a database the server holds, whose other
+// tables the selection leaves out, is created there; the database is not
+// created a second time.
+func TestMySQLFamilyIncludeCreatesATableInAHeldDatabaseE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			admin, database, server := excludedTableDatabase(c, engine.admin)
+			root := c.TempDir()
+			schema := writeFile(c, root, "added.sql", database, "CREATE TABLE `<database>`.w (id INT NOT NULL PRIMARY KEY);\n")
+
+			result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root},
+				"schema", "apply", "--db-url", server, "--schema-file", schema, "--include", database+".w", "--auto-approve")
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stdout, qt.Contains, "CREATE TABLE `"+database+"`.`w`")
+			c.Assert(result.Stdout, qt.Not(qt.Contains), "CREATE SCHEMA")
+			c.Assert(result.Stdout, qt.Not(qt.Contains), "CREATE DATABASE")
+			var tables int
+			c.Assert(admin.QueryRowContext(c.Context(),
+				"SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?", database,
+			).Scan(&tables), qt.IsNil)
+			c.Assert(tables, qt.Equals, 3)
 		})
 	}
 }
@@ -488,9 +543,11 @@ func TestMySQLFamilyUnreadKindRemediesE2E(t *testing.T) {
 	}
 }
 
-// postgresChildTable is a schema in the PostgreSQL test database holding t
-// and u, whose row (1, 42) sits beside the column c and the index ix. It
-// returns the connection and the schema.
+// postgresChildTable is a schema in the PostgreSQL test database holding t,
+// with one row, and u, whose row (1, 42, 1) sits beside the column c and the
+// index ix, the column d with the index ixd, a foreign key to t, a check and
+// the trigger trg. The trigger's function lives in public, outside the schema
+// a run reads. It returns the connection and the schema.
 func postgresChildTable(c *qt.C) (*dbschema.DatabaseConnection, string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbtarget.URL(c, dbtarget.PostgreSQL))
@@ -500,15 +557,21 @@ func postgresChildTable(c *qt.C) (*dbschema.DatabaseConnection, string) {
 	for _, statement := range []string{
 		"CREATE SCHEMA %s",
 		"CREATE TABLE %s.t (id int PRIMARY KEY)",
-		"CREATE TABLE %s.u (id int PRIMARY KEY, c int)",
+		"CREATE TABLE %[1]s.u (id int PRIMARY KEY, c int, d int REFERENCES %[1]s.t (id), CHECK (d > 0))",
 		"CREATE INDEX ix ON %s.u (c)",
-		"INSERT INTO %s.u VALUES (1, 42)",
+		"CREATE INDEX ixd ON %s.u (d)",
+		"CREATE FUNCTION public.%s_trg() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RETURN NEW; END$$",
+		"CREATE TRIGGER trg BEFORE INSERT ON %[1]s.u FOR EACH ROW EXECUTE FUNCTION public.%[1]s_trg()",
+		"INSERT INTO %s.t VALUES (1)",
+		"INSERT INTO %s.u VALUES (1, 42, 1)",
 	} {
 		_, err := conn.ExecContext(c.Context(), fmt.Sprintf(statement, schema))
 		c.Assert(err, qt.IsNil)
 	}
 	c.Cleanup(func() {
 		_, err := conn.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+		c.Check(err, qt.IsNil)
+		_, err = conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS public."+schema+"_trg()")
 		c.Check(err, qt.IsNil)
 	})
 	return conn, schema
@@ -571,6 +634,54 @@ func TestPostgreSQLExcludedChildRemedyE2E(t *testing.T) {
 	c.Assert(rowValue(c, conn, "SELECT c FROM "+schema+".u WHERE id = 1"), qt.Equals, 42)
 }
 
+// The commands that report a comparison report the blocked table drop on
+// PostgreSQL too, and print no statement and count no removal for u's key,
+// foreign key, check, indexes or trigger.
+func TestPostgreSQLBlockedTableDropIsReportedE2E(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		args           []string
+		exit           int
+		stdout, stderr string
+	}{
+		{
+			name: "drift", args: []string{"schema", "drift", "--db-url", "<db-url>", "--schema-file", "<sql>", "--schemas", "<database>", "--exclude", "<database>.u.c"},
+			exit: 1, stdout: "removals_blocked: 1 (destructive)",
+		},
+		{
+			name: "compare", args: []string{"schema", "compare", "--db-url", "<db-url>", "--schema-file", "<sql>", "--schemas", "<database>", "--exclude", "<database>.u.c"},
+			stdout: "removals_blocked (1): table <database>.u", stderr: `warning: cannot drop table "<database>.u"`,
+		},
+		{
+			name: "diff", args: []string{"schema", "diff", "--from", "<db-url>", "--to", "<sql>", "--schemas", "<database>", "--exclude", "<database>.u.c"},
+			stderr: `warning: cannot drop table "<database>.u"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, schema := postgresChildTable(c)
+			root := c.TempDir()
+			replacements := strings.NewReplacer("<db-url>", dbtarget.URL(c, dbtarget.PostgreSQL), "<database>", schema,
+				"<sql>", writeFile(c, root, "schema.sql", schema, "CREATE SCHEMA <database>;\nCREATE TABLE <database>.t (id int PRIMARY KEY);\n"))
+
+			result := runReplaced(c, root, replacements, invocation{target: clirun.Ptah, args: test.args})
+
+			c.Assert(result.ExitCode, qt.Equals, test.exit, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stdout, qt.Contains, replacements.Replace(test.stdout))
+			c.Assert(result.Stderr, qt.Contains, replacements.Replace(test.stderr))
+			c.Assert(result.Stdout, qt.Not(qt.Contains), "DROP")
+			c.Assert(result.Stdout, qt.Not(qt.Contains), "_removed")
+			c.Assert(rowValue(c, conn, "SELECT c FROM "+schema+".u WHERE id = 1"), qt.Equals, 42)
+			// PostgreSQL 18 records each NOT NULL as a constraint row too, so the
+			// count names the primary key, the foreign key and the check.
+			c.Assert(rowValue(c, conn,
+				"SELECT COUNT(*) FROM pg_constraint WHERE conrelid = '"+schema+".u'::regclass AND contype IN ('p', 'f', 'c')"), qt.Equals, 3)
+			c.Assert(rowValue(c, conn, "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = '"+schema+"' AND tablename = 'u'"), qt.Equals, 3)
+			c.Assert(rowValue(c, conn, "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = '"+schema+".u'::regclass AND NOT tgisinternal"), qt.Equals, 1)
+		})
+	}
+}
+
 // postgresChildHCL declares the schema and t, and not u.
 const postgresChildHCL = `schema "<database>" {}
 table "t" {
@@ -586,8 +697,9 @@ table "t" {
 `
 
 // sqlServerChildTable is a scratch SQL Server database whose dbo.u row
-// (1, 42) sits beside the column c and the index ix, beside dbo.t. It returns
-// a connection to it and the URL naming it.
+// (1, 42, 1) sits beside the column c and the index ix, the column d with the
+// index ixd, the foreign key u_d_fk to dbo.t, the check ck and the trigger
+// trg. It returns a connection to it and the URL naming it.
 func sqlServerChildTable(c *qt.C) (*dbschema.DatabaseConnection, string) {
 	c.Helper()
 	adminURL := dbtarget.URL(c, dbtarget.SQLServer)
@@ -608,9 +720,13 @@ func sqlServerChildTable(c *qt.C) (*dbschema.DatabaseConnection, string) {
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	for _, statement := range []string{
 		"CREATE TABLE dbo.t (id int NOT NULL PRIMARY KEY)",
-		"CREATE TABLE dbo.u (id int NOT NULL PRIMARY KEY, c int)",
+		"CREATE TABLE dbo.u (id int NOT NULL PRIMARY KEY, c int, d int, " +
+			"CONSTRAINT u_d_fk FOREIGN KEY (d) REFERENCES dbo.t (id), CONSTRAINT ck CHECK (d > 0))",
 		"CREATE INDEX ix ON dbo.u (c)",
-		"INSERT INTO dbo.u VALUES (1, 42)",
+		"CREATE INDEX ixd ON dbo.u (d)",
+		"CREATE TRIGGER dbo.trg ON dbo.u AFTER INSERT AS SET NOCOUNT ON",
+		"INSERT INTO dbo.t VALUES (1)",
+		"INSERT INTO dbo.u VALUES (1, 42, 1)",
 	} {
 		_, err := conn.ExecContext(c.Context(), statement)
 		c.Assert(err, qt.IsNil)
@@ -668,4 +784,49 @@ func TestSQLServerExcludedChildRemedyE2E(t *testing.T) {
 
 	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
 	c.Assert(rowValue(c, conn, "SELECT c FROM dbo.u WHERE id = 1"), qt.Equals, 42)
+}
+
+// The commands that report a comparison report the blocked table drop on SQL
+// Server too, and print no statement and count no removal for u's key,
+// foreign key, check, indexes or trigger.
+func TestSQLServerBlockedTableDropIsReportedE2E(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		args           []string
+		exit           int
+		stdout, stderr string
+	}{
+		{
+			name: "drift", args: []string{"schema", "drift", "--db-url", "<db-url>", "--schema-file", "<sql>", "--exclude", "u.c"},
+			exit: 1, stdout: "removals_blocked: 1 (destructive)",
+		},
+		{
+			name: "compare", args: []string{"schema", "compare", "--db-url", "<db-url>", "--schema-file", "<sql>", "--exclude", "u.c"},
+			stdout: "removals_blocked (1): table dbo.u", stderr: `warning: cannot drop table "dbo.u"`,
+		},
+		{
+			name: "diff", args: []string{"schema", "diff", "--from", "<db-url>", "--to", "<sql>", "--exclude", "u.c"},
+			stderr: `warning: cannot drop table "dbo.u"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, target := sqlServerChildTable(c)
+			root := c.TempDir()
+			replacements := strings.NewReplacer("<db-url>", target,
+				"<sql>", writeFile(c, root, "schema.sql", "", "CREATE TABLE t (id int NOT NULL PRIMARY KEY);\n"))
+
+			result := runReplaced(c, root, replacements, invocation{target: clirun.Ptah, args: test.args})
+
+			c.Assert(result.ExitCode, qt.Equals, test.exit, qt.Commentf("%s\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stdout, qt.Contains, test.stdout)
+			c.Assert(result.Stderr, qt.Contains, test.stderr)
+			c.Assert(result.Stdout, qt.Not(qt.Contains), "DROP")
+			c.Assert(result.Stdout, qt.Not(qt.Contains), "_removed")
+			c.Assert(rowValue(c, conn, "SELECT c FROM dbo.u WHERE id = 1"), qt.Equals, 42)
+			c.Assert(rowValue(c, conn,
+				"SELECT COUNT(*) FROM sys.objects WHERE parent_object_id = OBJECT_ID('dbo.u') AND type IN ('PK', 'F', 'C', 'TR')"), qt.Equals, 4)
+			c.Assert(rowValue(c, conn, "SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.u') AND name IS NOT NULL"), qt.Equals, 3)
+		})
+	}
 }

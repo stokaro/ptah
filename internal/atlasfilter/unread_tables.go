@@ -1,6 +1,9 @@
 package atlasfilter
 
-import "ptah.run/catalog"
+import (
+	"ptah.run/catalog"
+	"ptah.run/internal/tableref"
+)
 
 // An unread table is already outside the description, as reserved storage
 // is. An exclusion can name it, but cannot make the database lose it, so the
@@ -8,6 +11,17 @@ import "ptah.run/catalog"
 func (s *exclusionState) noteUnreadTables(tables []catalog.UnreadTable) {
 	for _, table := range tables {
 		s.matches("table", s.nameCandidates(table.Identity.Schema.Authored(), table.Identity.Name.Source)...)
+	}
+}
+
+// A table an earlier filter took out is outside the description as well, and
+// the database still holds it: an exclusion that names it again, as the second
+// pass of a positive selection does, is not reported as matching nothing.
+func (s *exclusionState) noteTablesOutOfScope(tables []string) {
+	for _, table := range tables {
+		if ref, ok := tableref.Parse(table); ok {
+			s.matches("table", s.nameCandidates(ref.Schema, ref.Name)...)
+		}
 	}
 }
 
