@@ -115,6 +115,11 @@ none or nothing was written.
   migration log.
 - A target an executable provider serves keeps none. The provider contract
   has no store for it yet.
+- A MySQL or MariaDB URL that names no database, a whole-server apply, keeps
+  none: its session selects no database for the table to live in. The run
+  says so once on stderr, and `apply_log` in `--json` names both entries as
+  `lost` with that reason. Apply through a URL that names a database to keep
+  the log.
 
 ## What this is not
 
