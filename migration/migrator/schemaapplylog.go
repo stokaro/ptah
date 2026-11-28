@@ -119,10 +119,12 @@ var errApplyLogWholeServer = errors.New("the schema apply log is not kept on a w
 	"which selects no database to keep it in; apply through a URL that names a database to keep it")
 
 // SchemaApplyLog writes one apply's entries to the schema apply log, the
-// table [revisiontable.ApplyLog] names, in the schema an unqualified name
-// resolves to on the connection (dbo on SQL Server). Over a connection to a
-// whole server it writes nothing: it says so once, through the logger, and
-// [SchemaApplyLog.Report] names each entry as lost, with the reason.
+// table [revisiontable.ApplyLog] names, in the schema the connection keeps the
+// migrator's tables in: the schema an unqualified name resolves to, except on
+// SQL Server, where it is the schema the URL names, else dbo. Over a
+// connection to a whole server it writes nothing: it says so once, through
+// the logger, and [SchemaApplyLog.Report] names each entry as lost, with the
+// reason.
 //
 // A failed write never fails the apply. It is reported by the logger and in
 // [SchemaApplyLog.Report], and the value the database refused is not shortened

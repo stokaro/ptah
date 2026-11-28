@@ -212,7 +212,8 @@ func RefuseEmptyHistoryEnv(flags *pflag.FlagSet, name, omitted string) {
 // flag. Its variable refuses an empty value; see [RefuseEmptyHistoryEnv].
 func RegisterMigrationsSchemaFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsSchemaFlagName, "",
-		"Schema for the migration tracking table. Empty uses the connection default schema, except that "+
+		"Schema for the migration tracking table. Empty uses the connection default schema, and on SQL Server "+
+			"the URL's schema parameter or else dbo, except that "+
 			"--revision-format atlas on a PostgreSQL-family URL with no search_path uses atlas_schema_revisions, as Atlas does.",
 	)
 	RefuseEmptyHistoryEnv(flags, MigrationsSchemaFlagName, OmittedMigrationsSchema)

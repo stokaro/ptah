@@ -70,7 +70,8 @@ type RevisionTable struct {
 	// compared without regard to case, such as "InnoDB". Empty means any.
 	RequiredEngine string `json:"required_engine,omitempty"`
 	// QualifiedByDefault makes the migrator always qualify its tables: by the
-	// configured schema, else the connection's schema, else DefaultSchema.
+	// configured schema, else the connection's metadata schema
+	// (catalog.ServerInfo.MetadataSchema) or its schema, else DefaultSchema.
 	// It then creates no schema named like DefaultSchema, which always
 	// exists.
 	QualifiedByDefault bool `json:"qualified_by_default,omitempty"`

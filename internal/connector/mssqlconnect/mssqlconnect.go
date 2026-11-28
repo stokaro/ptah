@@ -2,6 +2,7 @@
 package mssqlconnect
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
@@ -90,6 +91,12 @@ SELECT
 		return info, fmt.Errorf("failed to get SQL Server catalog identifier semantics: %w", err)
 	}
 	info.Schema = request.Parsed.Query().Get("schema")
+	// Ptah's own tables stay where the URL, or else dbo, puts them. The
+	// account's default schema read below must not move them: a database
+	// migrated as sa keeps its history in dbo, and an account whose default
+	// schema is app would read an empty history in app and run every
+	// migration again.
+	info.MetadataSchema = cmp.Or(info.Schema, "dbo")
 	if info.Schema == "" {
 		var defaultSchema sql.NullString
 		if err := db.QueryRowContext(ctx, "SELECT SCHEMA_NAME()").Scan(&defaultSchema); err != nil {

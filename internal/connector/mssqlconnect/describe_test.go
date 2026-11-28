@@ -36,17 +36,23 @@ func describeAnswers(defaultSchema driver.Value, schemaErr error) dbtest.QueryHa
 // in: the one the URL's schema parameter names, or else the default schema of
 // the connection's user, where the server creates a name written without a
 // schema. A user the server gives no default schema is in dbo.
+//
+// It pins the metadata schema beside it, where Ptah keeps its own tables: the
+// schema the URL names, or else dbo, whatever the user's default schema is.
+// A database migrated as sa keeps its history in dbo, and a user whose default
+// schema is app must read that history rather than an empty one in app.
 func TestDescribe_Schema_HappyPath(t *testing.T) {
 	tests := []struct {
 		name          string
 		url           string
 		defaultSchema driver.Value
 		want          string
+		wantMetadata  string
 	}{
-		{"the user's default schema", "sqlserver://app@db:1433?database=shop", "app", "app"},
-		{"dbo for a database owner", "sqlserver://sa@db:1433?database=shop", "dbo", "dbo"},
-		{"dbo where the server answers none", "sqlserver://sa@db:1433?database=shop", nil, "dbo"},
-		{"the schema the URL names", "sqlserver://app@db:1433?database=shop&schema=sales", "app", "sales"},
+		{"the user's default schema", "sqlserver://app@db:1433?database=shop", "app", "app", "dbo"},
+		{"dbo for a database owner", "sqlserver://sa@db:1433?database=shop", "dbo", "dbo", "dbo"},
+		{"dbo where the server answers none", "sqlserver://sa@db:1433?database=shop", nil, "dbo", "dbo"},
+		{"the schema the URL names", "sqlserver://app@db:1433?database=shop&schema=sales", "app", "sales", "sales"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -60,6 +66,7 @@ func TestDescribe_Schema_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(info.Schema, qt.Equals, test.want)
 			c.Assert(info.IdentifierSemantics.DefaultSchema, qt.Equals, test.want)
+			c.Assert(info.MetadataSchema, qt.Equals, test.wantMetadata)
 		})
 	}
 }
