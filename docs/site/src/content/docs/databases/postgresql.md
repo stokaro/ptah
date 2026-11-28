@@ -172,11 +172,15 @@ such as `REFERENCES crm.customers (id)` on a table of `public`. A read of
 and a schema file declaring the key compares equal to the database. The same
 holds on CockroachDB. The description does not hold `crm.customers`, so Ptah
 cannot check its columns or its key, and the server checks them when the
-statement runs. Where the read a command compares against covers `crm` too, as
+statement runs.
+
+Where the read a command compares against covers `crm` too, as
 `schema apply` reads a URL naming no schema, a desired schema that declares
 nothing of `crm` asks for its tables to be dropped. Ptah refuses a key into
-such a schema by name rather than plan the drop: scope the run with
-`search_path` or declare the referenced table.
+such a schema by name rather than plan the drop. Scope the run with
+`search_path`, declare the referenced table, or leave the table out with
+`--exclude`: the plan never drops a table the run excludes, and compares a key
+into it with the key the server holds.
 
 Foreign key columns may use different widths within PostgreSQL's integer
 family (`smallint`, `integer`, `bigint`), or different `varchar` lengths.

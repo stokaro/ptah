@@ -186,3 +186,49 @@ func TestReferencedSchemaKey_FailurePath(t *testing.T) {
 
 	c.Assert(got, qt.Equals, "")
 }
+
+// TestIntoTableOf_NamesATableOutOfScope finds the table a reference names
+// among the tables a read holds out of scope, with an unqualified name in the
+// connection's schema.
+func TestIntoTableOf_NamesATableOutOfScope(t *testing.T) {
+	tests := []struct {
+		name, dialect, reference, current string
+		tables                            []string
+	}{
+		{name: "unqualified, in the connection's schema", dialect: "mysql", reference: "t1", current: "app", tables: []string{"app.t1"}},
+		{name: "qualified", dialect: "mysql", reference: "app.t1", current: "app", tables: []string{"app.t1"}},
+		{name: "qualified, read with no schema", dialect: "mysql", reference: "app.t1", current: "app", tables: []string{"t1"}},
+		{name: "another schema the read holds", dialect: "postgres", reference: "crm.customers", current: "public", tables: []string{"crm.customers"}},
+		{name: "oracle folds an unquoted name", dialect: "oracle", reference: "app.t1", current: "APP", tables: []string{"APP.T1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(foreignkeyscope.IntoTableOf(test.dialect, test.reference, test.current, test.tables), qt.IsTrue)
+		})
+	}
+}
+
+// TestIntoTableOf_NamesNoTableOutOfScope leaves a reference to any other table
+// to the refusals, including an unqualified one on a connection that names no
+// schema, where the read cannot say which schema it is in.
+func TestIntoTableOf_NamesNoTableOutOfScope(t *testing.T) {
+	tests := []struct {
+		name, dialect, reference, current string
+		tables                            []string
+	}{
+		{name: "nothing out of scope", dialect: "mysql", reference: "t1", current: "app"},
+		{name: "another table", dialect: "mysql", reference: "t2", current: "app", tables: []string{"app.t1"}},
+		{name: "another schema", dialect: "mysql", reference: "crm.t1", current: "app", tables: []string{"app.t1"}},
+		{name: "unqualified on a whole server", dialect: "mysql", reference: "t1", tables: []string{"app.t1"}},
+		{name: "unqualified, where neither side names a schema", dialect: "mysql", reference: "t1", tables: []string{"t1"}},
+		{name: "mysql compares a table name exactly", dialect: "mysql", reference: "T1", current: "app", tables: []string{"app.t1"}},
+		{name: "oracle keeps a quoted name apart", dialect: "oracle", reference: `app."t1"`, current: "APP", tables: []string{"APP.T1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(foreignkeyscope.IntoTableOf(test.dialect, test.reference, test.current, test.tables), qt.IsFalse)
+		})
+	}
+}

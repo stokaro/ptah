@@ -48,7 +48,9 @@ SQL:
   command compares against covers `crm` too, as a URL naming no database does
   without `--schemas`, a desired schema that declares nothing of `crm` asks for
   its tables to be dropped; Ptah refuses a key into it by name rather than plan
-  the drop.
+  the drop. A table the run's `--exclude` leaves out is the exception to both
+  rules: the plan never drops it, so a key into it, qualified or not, is
+  planned once and then compared with the key the server holds.
 - A nonunique referenced key must be a complete leftmost BTREE prefix.
   FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
   qualify.

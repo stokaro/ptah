@@ -251,13 +251,34 @@ func (s *exclusionState) exclude(schema *catalog.Database, target databaseTarget
 	filtered.Grants = s.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
 	s.noteReservedNames(filtered.ReservedNames)
 	s.noteUnreadTables(filtered.UnreadTables)
+	s.noteTablesOutOfScope(filtered.TablesOutOfScope)
 	filtered.UnmodeledObjects = s.filterUnmodeledObjects(filtered.UnmodeledObjects)
 	s.noteRemovalBlockers(filtered.RemovalBlockers)
 	s.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	s.noteUnreadRoles(filtered.UnreadRoles)
 	s.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	filtered.OutOfScope = outOfScopeParts(schema, filtered)
+	filtered.TablesOutOfScope = tablesOutOfScope(schema, filtered)
 	return filtered, nil
+}
+
+// tablesOutOfScope names each table read holds that filtered does not, after
+// the names read already holds, as [catalog.QualifyTableName] spells the read,
+// sorted and without repeats. A filter keeps a table's spelling, so a table it
+// keeps is found by the read's own names.
+func tablesOutOfScope(read, filtered *catalog.Database) []string {
+	kept := make(map[partKey]bool, len(filtered.Tables))
+	for _, table := range filtered.Tables {
+		kept[partKey{schema: table.Schema, table: table.Name}] = true
+	}
+	names := slices.Clone(read.TablesOutOfScope)
+	for _, table := range read.Tables {
+		if !kept[partKey{schema: table.Schema, table: table.Name}] {
+			names = append(names, catalog.QualifyTableName(table.Schema, table.Name))
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // outOfScopeParts returns the parts of the tables filtered keeps that read
@@ -1358,9 +1379,13 @@ func (s *exclusionState) filterIndexes(
 }
 
 // withoutForeignKeyBackingIndexes returns indexes without the index the server
-// built for each foreign key in removed that a selector names, by the target's
+// built for each foreign key in removed that a selector names, or that left
+// because the table or columns it references are out of scope, by the target's
 // rule. schema is the whole read, so the rule sees every index that could back
-// the key, kept or not. The rule claims only the index the server built: an
+// the key, kept or not. A key into an excluded table stays on the server, and
+// the index it stands on stays with it: in scope alone, the index reads as one
+// the declaration leaves out, and every plan drops and rebuilds it under the
+// key's name. The rule claims only the index the server built: an
 // index the author declared stays, even where the key stands on it, because
 // the declaration owns it and a declaration that leaves it out asks for its
 // removal. The server refuses that removal while the key needs the index, and
@@ -1385,7 +1410,8 @@ func (s *exclusionState) withoutForeignKeyBackingIndexes(
 	type indexKey struct{ table, name string }
 	backing := make(map[indexKey]bool)
 	for _, constraint := range removed {
-		if indexbacking.KindOf(constraint.Type) != indexbacking.ForeignKey || !s.namesConstraint(constraint) {
+		if indexbacking.KindOf(constraint.Type) != indexbacking.ForeignKey ||
+			!s.namesConstraint(constraint) && !s.referencesLeftOut(constraint) {
 			continue
 		}
 		for _, index := range target.foreignKeyIndexes.BackingIndexes(schema, constraint, semantics) {
@@ -1398,6 +1424,13 @@ func (s *exclusionState) withoutForeignKeyBackingIndexes(
 	return keep(indexes, func(index catalog.Index) bool {
 		return !backing[indexKey{index.QualifiedTableName(), index.Name}]
 	})
+}
+
+// referencesLeftOut reports whether constraint references a table, or columns
+// of one, that a selector left out.
+func (s *exclusionState) referencesLeftOut(constraint catalog.Constraint) bool {
+	schema, table := foreignSchemaOrLocal(constraint), derefString(constraint.ForeignTable)
+	return s.tableExcluded(schema, table) || s.anyColumnExcluded(schema, table, constraint.ForeignColumnsOrDefault())
 }
 
 // namesConstraint reports whether a selector names constraint, including one
@@ -2563,8 +2596,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		PlanningContextObjects:  schema.PlanningContextObjects,
 		PlanningContextCoverage: schema.PlanningContextCoverage,
 		// What an earlier selector took out of a kept table stays out of
-		// scope; see [outOfScopeParts].
-		OutOfScope: schema.OutOfScope,
+		// scope; see [outOfScopeParts]. So does a table it took out whole.
+		OutOfScope:       schema.OutOfScope,
+		TablesOutOfScope: slices.Clone(schema.TablesOutOfScope),
 		// The grants a filter drops from WideGrants are an excluded role's,
 		// and the ones the read was refused stay unread.
 		WideGrantsPartial: schema.WideGrantsPartial,

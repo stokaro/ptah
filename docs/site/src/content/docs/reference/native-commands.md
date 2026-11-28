@@ -498,6 +498,14 @@ On MySQL and MariaDB, `--exclude 'kids.kids_parent_fk[type=foreign_key]'`
 also leaves out the index the server built for the foreign key, under the key's
 name or, for a key written without one, under its first column's.
 
+A foreign key into a table `--exclude` leaves out names a table the server
+keeps, so the desired schema may declare it without declaring the table:
+`--exclude parents` with `kids (parent_id) REFERENCES parents (id)`, qualified
+or not. The first apply adds the key, and the next compares it with the key the
+server holds and plans nothing. A key into an excluded table that the desired
+schema leaves out is not dropped, and on MySQL and MariaDB the index the server
+built for it stays with it.
+
 An index the author declared stays in the comparison even where the key stands
 on it, so a desired schema that leaves it out drops it. `DROP INDEX` alone
 answers `ERROR 1553` while the key needs the index, so the plan gives the key an
