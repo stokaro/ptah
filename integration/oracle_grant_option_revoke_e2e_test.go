@@ -128,3 +128,26 @@ func TestSchemaApplyOracleRefusesARevokeAGrantToPublicKeepsE2E(t *testing.T) {
 	c.Assert(account.member.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM "+account.name+".T48").Scan(&rows), qt.IsNil)
 	c.Assert(oracleTablePrivilegesOf(c, account.owner, account.user, account.name), qt.HasLen, 0)
 }
+
+// The control for the refusal above: a schema that revokes SELECT on t48 from
+// PUBLIC too leaves PUBLIC's grant nothing to keep, so the apply revokes both
+// and the user reads t48 no more. The schema names the table t48 and the read
+// names it T48, so the revoke from PUBLIC is found only under the name Oracle
+// stores.
+func TestSchemaApplyOracleRevokesFromTheUserAndFromPublicE2E(t *testing.T) {
+	c := qt.New(t)
+	account := newOracleRoutineAccount(c)
+	grantedT48(c, account, "GRANT SELECT ON t48 TO {user}")
+	_, err := account.owner.ExecContext(c.Context(), "GRANT SELECT ON t48 TO PUBLIC")
+	c.Assert(err, qt.IsNil)
+
+	applied := applyOracleSchemaFile(c, account,
+		oracleGrantOptionTable+"REVOKE SELECT ON t48 FROM {user};\nREVOKE SELECT ON t48 FROM PUBLIC;\n", "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(oracleTablePrivilegesOf(c, account.owner, account.user, account.name), qt.HasLen, 0)
+	c.Assert(oracleTablePrivilegesOf(c, account.owner, "PUBLIC", account.name), qt.HasLen, 0)
+	var rows int
+	err = account.member.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM "+account.name+".T48").Scan(&rows)
+	c.Assert(err, qt.ErrorMatches, `(?s).*ORA-00942.*`)
+}

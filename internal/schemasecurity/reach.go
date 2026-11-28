@@ -73,15 +73,16 @@ type Reach struct {
 	// every role, as [catalog.Database.PublicIsRole] says: a grant to it, and
 	// a membership of it, are then that role's alone.
 	PublicIsRole bool
-	// Unread are the roles whose privileges the read did not read, as
-	// [catalog.Database.UnreadRoles] says. The reach of a role that can use
-	// one is not measured, and the rules say which roles they left out.
-	Unread []string
+	// Unread are the roles whose privileges the read did not read, each with
+	// its cause, as [catalog.Database.UnreadRoles] says. The reach of a role
+	// that can use one is not measured, and the rules say which roles they
+	// left out and why.
+	Unread []catalog.UnreadRole
 	// EveryRoleHoldsUnread reports that every role holds roles whose
-	// privileges the read does not state, as
+	// privileges the read does not state, and why, as
 	// [catalog.Database.EveryAccountHoldsUnread] says. No role's reach is
-	// measured then.
-	EveryRoleHoldsUnread bool
+	// measured then. Nil where every role holds only what the read states.
+	EveryRoleHoldsUnread *catalog.EveryAccountUnread
 }
 
 // ReachRelation names a relation the same way whichever object reports it.
@@ -324,9 +325,13 @@ func schemaKey(schema, defaultSchema string) string {
 // and neither is any role where every role holds such roles
 // ([Reach.EveryRoleHoldsUnread]).
 func findBroadReach(reach *Reach) ([]Finding, []SkippedRule) {
-	if reach.EveryRoleHoldsUnread {
-		const reason = "every role holds roles whose privileges the read does not state, " +
-			"such as MySQL mandatory roles it could not read, so no role's reach was measured"
+	if unread := reach.EveryRoleHoldsUnread; unread != nil {
+		held := "roles"
+		if len(unread.Roles) > 0 {
+			held = "the roles " + strings.Join(unread.Roles, ", ")
+		}
+		reason := "every role holds " + held + " whose memberships the read does not state: " + unread.Cause +
+			"; so no role's reach was measured"
 		return nil, []SkippedRule{{Code: ReadReachRule, Reason: reason}, {Code: WriteReachRule, Reason: reason}}
 	}
 	index := indexRelations(reach.Relations)
@@ -352,7 +357,7 @@ func findBroadReach(reach *Reach) ([]Finding, []SkippedRule) {
 	}
 	public := reachedRelations(reach, index, publicOnly, superusers, readOnly)
 	findings := make([]Finding, 0)
-	unread := make(map[string][]string)
+	unread := make(map[catalog.UnreadRole][]string)
 	for _, subject := range subjects {
 		isPublic := everyRole && strings.EqualFold(subject, publicRole)
 		access := usableRoles(subject, reach.Memberships, everyRole)
@@ -360,7 +365,7 @@ func findBroadReach(reach *Reach) ([]Finding, []SkippedRule) {
 		if !isPublic {
 			maps.Copy(access.usable, publicOnly.usable)
 		}
-		if held := slices.IndexFunc(reach.Unread, func(role string) bool { return access.usable[role] }); held >= 0 {
+		if held := slices.IndexFunc(reach.Unread, func(role catalog.UnreadRole) bool { return access.usable[role.Name] }); held >= 0 {
 			unread[reach.Unread[held]] = append(unread[reach.Unread[held]], subject)
 			continue
 		}
@@ -430,12 +435,13 @@ func throughRoles(subject string, access roleAccess) []string {
 }
 
 // unreadSkips says, for each role whose privileges the read did not read,
-// which roles holding it the reach rules left unmeasured.
-func unreadSkips(unread map[string][]string) []SkippedRule {
+// why, and which roles holding it the reach rules left unmeasured.
+func unreadSkips(unread map[catalog.UnreadRole][]string) []SkippedRule {
 	skipped := make([]SkippedRule, 0, 2*len(unread))
-	for _, role := range slices.Sorted(maps.Keys(unread)) {
-		reason := "the read did not read the privileges of " + role + ", which " + strings.Join(unread[role], ", ") +
-			" can use, so their reach was not measured"
+	roles := slices.SortedFunc(maps.Keys(unread), func(a, b catalog.UnreadRole) int { return strings.Compare(a.Name, b.Name) })
+	for _, role := range roles {
+		reason := "the read did not read every privilege of " + role.Name + ", which " + strings.Join(unread[role], ", ") +
+			" can use: " + role.Cause + "; so their reach was not measured"
 		skipped = append(skipped, SkippedRule{Code: ReadReachRule, Reason: reason}, SkippedRule{Code: WriteReachRule, Reason: reason})
 	}
 	return skipped

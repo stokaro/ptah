@@ -280,7 +280,9 @@ func TestMySQLRoleInheritedFromAnotherHostE2E(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(read.WideAccess, qt.IsNotNil)
-			c.Assert(slices.Contains(read.UnreadRoles, "rloc"+suffix+"@localhost"), qt.Equals, test.wantUnread)
+			c.Assert(slices.ContainsFunc(read.UnreadRoles, func(role catalog.UnreadRole) bool {
+				return role.Name == "rloc"+suffix+"@localhost"
+			}), qt.Equals, test.wantUnread)
 		})
 	}
 }

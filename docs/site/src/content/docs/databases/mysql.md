@@ -1501,16 +1501,18 @@ name patterns.
 Database, table and column grants to a login on host `%` are read and compared
 too, without declaring or managing the login as a role. A generated migration
 adds only the privileges the login lacks, so its down file leaves preexisting
-grants and their grant option in place. A login's grant is removed only by a
-`REVOKE` the schema writes. No description declares a login, so `ptah db read`
-and `ptah migrations checkpoint` print no grant to one, and a comparison of two
-databases plans no `REVOKE` from a login whose grants the other database lacks.
-A table revoke is still checked against them: a login's grant on the database
-keeps the privilege, and the revoke is refused. On MariaDB a bare grantee names
-a role when that role exists and the login on `%` otherwise; the login's grants
+grants and their grant option in place. On MariaDB a bare grantee names a role
+when that role exists and the login on `%` otherwise; the login's grants
 never count as the role's.
 A grant declaration names a bare principal. Grants to accounts on other hosts
 remain separate and are not described under that bare name.
+
+A login's grant is removed only by a `REVOKE` the schema writes. No description
+declares a login, so `ptah db read` and `ptah migrations checkpoint` print no
+grant to one, and a comparison of two databases plans no `REVOKE` from a login
+whose grants the other database lacks. A table revoke is still checked against
+them: a login's grant on the database keeps the privilege, and the revoke is
+refused.
 
 The role reader applies the same rule to roles and memberships. A role is the
 account `CREATE ROLE` makes: on MySQL an account on host `%` that cannot log
@@ -1526,10 +1528,21 @@ login on `%` that shares a role's name reads as `name@%`.
 Some accounts a role can hold are not read as roles: a MySQL role on another
 host, and an account created as a login and granted as a role, such as
 `CREATE USER legacy ACCOUNT LOCK` followed by `GRANT legacy TO lr`. A session
-with `lr` active holds what `legacy` holds, measured on 26.10.0, and the read
-did not read it. `ptah schema security` then skips the reach rules for `lr` and
-for every role that holds `lr`, naming `legacy` and those roles, and measures
-the other roles.
+with `lr` active holds what `legacy` holds, measured on 26.10.0. The read reads
+none of the privileges of an account on another host. Of a login on `%` it
+reads the grants on the databases it describes, and not the global privileges
+or the grants on database name patterns.
+
+Where a role holds such an account:
+
+- `ptah db read` prints a note naming the account, the roles that hold it and
+  why its privileges are not read in full.
+- `ptah schema security` skips the reach rules for `lr` and for every role that
+  holds `lr`, with the same reason, and measures the other roles.
+- A declared revoke on a table from `lr`, or from a role that holds `lr`, is
+  refused, since the account may hold the privilege. Measured on 8.4.13 and
+  26.10.0, the revoke otherwise succeeds and a member of `lr` still reads the
+  table. A membership the plan removes does not count.
 
 Two accounts can read as one name: the role `'nm@localhost'@'%'` and the login
 `'nm'@'localhost'` are both `nm@localhost`. The read leaves that name out, its
@@ -1538,7 +1551,8 @@ grants and its role with it, and reads everything else, so `ptah db read`,
 names it, as a role, a grantee, a revoke's role or a `member_of` entry, is
 refused before anything is compared, since a plan cannot say which account it
 changes. Rename one of the two accounts. A role that holds the name is skipped
-by the reach rules as above.
+by the reach rules as above, `ptah db read` names it in a note, and a declared
+revoke on a table from such a role is refused.
 
 On MariaDB, `PUBLIC` is the grantee every account holds, and a role granted to
 it is held by every account too. A grant to `PUBLIC` leaves a `PUBLIC` row in
@@ -1569,14 +1583,20 @@ where its host matches the account's byte for byte: `` `mloc`@LOCALHOST `` makes
 a role active that holds nothing, not the privileges of `'mloc'@'localhost'`,
 and where two spellings differ only in case the server keeps the first, so the
 read leaves such a name out. Where the setting or an account in it cannot be
-read, or the server's version does not say which grammar it applies, the reach
-rules skip every role, since each may hold roles the read does not state.
+read, or the server's version does not say which grammar it applies, every
+role may hold roles the read does not state. The reach rules then skip every
+role, `ptah db read` prints a note with the cause, and every declared revoke on
+a table is refused.
 
 A MySQL role may be named `PUBLIC`. It is a role like any other there, held
 only by the accounts it is granted to, so a grant to it counts for those alone,
 and the reach rules and `PRV03` do not read it as every account. Beside a
 mandatory role, the read records no membership of `PUBLIC` in it, because the
-name is the role's, and the reach rules skip every role.
+name is the role's. A role named `PUBLIC` hides which roles every account
+holds, so the reach rules skip every role, `ptah db read` prints a note naming
+the mandatory roles, and every declared revoke on a table is refused. Measured
+on 8.4.13 and 26.10.0, such a revoke otherwise succeeds, and a session that
+runs `SET ROLE ALL` still reads the table through a mandatory role.
 
 Each role is read with the grants it holds itself, the ones `SHOW GRANTS FOR`
 lists under its name, and not with what it holds through the roles granted to

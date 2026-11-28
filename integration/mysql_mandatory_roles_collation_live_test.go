@@ -81,6 +81,9 @@ func TestMySQLMandatoryRoleHostIdentity(t *testing.T) {
 	}{
 		{name: "uppercase first and Unicode", hosts: []string{"K", "k", "K", "K"}},
 		{name: "lowercase first", hosts: []string{"k", "K"}, want: []string{"k"}},
+		// The Kelvin sign is three bytes, so MySQL keeps both spellings and
+		// activates the second: measured on 8.4.13 and 26.10.0.
+		{name: "a Unicode variant first", hosts: []string{"\u212a", "k"}, want: []string{"k"}},
 		{name: "padding and accents do not match", hosts: []string{"k ", "ḱ", "missing"}},
 	}
 	for _, test := range tests {

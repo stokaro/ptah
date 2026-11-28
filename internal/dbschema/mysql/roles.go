@@ -203,7 +203,8 @@ func markLoginGrants(grants []catalog.Grant, roles []catalog.Role, mariaDB bool)
 	}
 	for index := range grants {
 		grantee := grants[index].Role
-		grants[index].Login = !isRole[grantee] && !(mariaDB && grantee == publicGrantee)
+		everyAccount := mariaDB && grantee == publicGrantee
+		grants[index].Login = !isRole[grantee] && !everyAccount
 	}
 	return grants
 }
@@ -361,8 +362,9 @@ func (r *Reader) readRolesInto(ctx context.Context, account sessionAccount, sche
 	if err := r.readConnectedRole(ctx, schema, names); err != nil {
 		return err
 	}
-	refuseCollisions(schema, names.Collisions())
-	schema.UnreadRoles = unreadRoles(schema)
+	collisions := names.Collisions()
+	refuseCollisions(schema, collisions)
+	schema.UnreadRoles = unreadCauses(unreadRoles(schema), names, collisions)
 	return nil
 }
 
@@ -427,6 +429,51 @@ func unreadRoles(schema *catalog.Database) []string {
 	}
 	slices.Sort(unread)
 	return slices.Compact(unread)
+}
+
+// unreadCauses gives each principal of unread the cause the read did not
+// read its privileges, from the account names gave it: a name two accounts
+// read as, a login on host %, whose grants on the databases the read covers
+// are read and whose global privileges are not ([Reader.readWideGrants] reads
+// roles alone), or an account on another host, whose privileges the read does
+// not read at all.
+func unreadCauses(unread []string, names *mysqlgrants.Names, collisions []mysqlgrants.Collision) []catalog.UnreadRole {
+	if len(unread) == 0 {
+		return nil
+	}
+	shared := make(map[string][]mysqlgrants.Account, len(collisions))
+	for _, collision := range collisions {
+		shared[collision.Name] = collision.Accounts
+	}
+	roles := make([]catalog.UnreadRole, 0, len(unread))
+	for _, name := range unread {
+		roles = append(roles, catalog.UnreadRole{Name: name, Cause: unreadCause(name, names, shared[name])})
+	}
+	return roles
+}
+
+// unreadCause is [unreadCauses] for one principal.
+func unreadCause(name string, names *mysqlgrants.Names, shared []mysqlgrants.Account) string {
+	if len(shared) > 0 {
+		accounts := make([]string, 0, len(shared))
+		for _, account := range shared {
+			accounts = append(accounts, account.Grantee())
+		}
+		return "the accounts " + strings.Join(accounts, " and ") +
+			" read as this one name, so the read leaves its privileges out"
+	}
+	account, named := names.Account(name)
+	switch {
+	case !named:
+		return "the read found no account of this name"
+	case account.Host == "%":
+		// A role on host % is a role the read describes on MySQL, and a
+		// MariaDB role has no host, so this account is a login.
+		return "it is a login, and the read reads a login's grants on the databases it covers, " +
+			"not its global privileges or its grants on database name patterns"
+	default:
+		return "it is the account " + account.Grantee() + ", and the read reads the privileges of roles and of accounts on host % alone"
+	}
 }
 
 // publicGrantee is the grantee MariaDB names PUBLIC, whose privileges every

@@ -125,7 +125,7 @@ func publicFindingLines(c *qt.C, dbURL, suffix string) []string {
 	var report reachReport
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil, qt.Commentf("%s", stdout))
 	findings := slices.DeleteFunc(report.Findings, func(finding reachReportFinding) bool {
-		return finding.Subject.Name != "PUBLIC" && !strings.HasSuffix(finding.Subject.Name, suffix) ||
+		return !strings.EqualFold(finding.Subject.Name, "PUBLIC") && !strings.HasSuffix(finding.Subject.Name, suffix) ||
 			finding.Code != "ROL04" && !strings.HasPrefix(finding.Code, "roles/")
 	})
 	lines := make([]string, 0, len(findings))

@@ -395,7 +395,7 @@ func TestReadMandatoryRoles_HappyPath(t *testing.T) {
 			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{MariaDB: test.mariaDB})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got.read, qt.IsTrue)
+			c.Assert(got.unread, qt.IsNil)
 			c.Assert(got.memberships, qt.DeepEquals, test.want)
 		})
 	}
@@ -435,7 +435,7 @@ func TestReadMandatoryRoles_GrammarAndDuplicates(t *testing.T) {
 			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got.read, qt.IsTrue)
+			c.Assert(got.unread, qt.IsNil)
 			c.Assert(got.memberships, qt.DeepEquals, test.want)
 		})
 	}
@@ -444,13 +444,27 @@ func TestReadMandatoryRoles_GrammarAndDuplicates(t *testing.T) {
 // TestReadMandatoryRoles_Unread leaves the mandatory roles unread, rather than
 // failing the read, where the setting or an account in it cannot be read, or
 // the server's version does not say which account-list grammar it applies.
+// Each records its cause, and the roles the setting names where the read got
+// that far.
 func TestReadMandatoryRoles_Unread(t *testing.T) {
 	tests := []struct {
 		name, version, refused string
+		wantCause              string
+		wantRoles              []string
 	}{
-		{name: "the setting", version: "8.4.13", refused: "@@GLOBAL.mandatory_roles"},
-		{name: "an account", version: "8.4.13", refused: "FROM mysql.user"},
-		{name: "an unrecognized version", version: "unknown"},
+		{
+			name: "the setting", version: "8.4.13", refused: "@@GLOBAL.mandatory_roles",
+			wantCause: `the read could not read @@GLOBAL\.mandatory_roles: Error 1142 \(42000\): SELECT command denied`,
+		},
+		{
+			name: "an account", version: "8.4.13", refused: "FROM mysql.user",
+			wantCause: `the read could not look up the mandatory role 'mand'@'%' in mysql\.user: Error 1142 \(42000\): SELECT command denied`,
+			wantRoles: []string{"mand"},
+		},
+		{
+			name: "an unrecognized version", version: "unknown",
+			wantCause: `the server version "unknown" does not say which account-list grammar reads @@GLOBAL\.mandatory_roles = "mand"`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -460,8 +474,10 @@ func TestReadMandatoryRoles_Unread(t *testing.T) {
 			got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(t.Context(), &mysqlgrants.Names{})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got.read, qt.IsFalse)
 			c.Assert(got.memberships, qt.IsNil)
+			c.Assert(got.unread, qt.IsNotNil)
+			c.Assert(got.unread.Cause, qt.Matches, test.wantCause)
+			c.Assert(got.unread.Roles, qt.DeepEquals, test.wantRoles)
 		})
 	}
 }
@@ -477,7 +493,6 @@ func TestReadMandatoryRoles_FailurePath(t *testing.T) {
 	got, err := NewMySQLReader(db.SQL, "app").readMandatoryRoles(ctx, &mysqlgrants.Names{})
 
 	c.Assert(err, qt.ErrorIs, context.Canceled)
-	c.Assert(got.read, qt.IsFalse)
 	c.Assert(got.memberships, qt.IsNil)
 }
 
@@ -488,23 +503,26 @@ func TestReadMandatoryRoles_FailurePath(t *testing.T) {
 func TestMandatoryRoles_AddTo(t *testing.T) {
 	held := []catalog.RoleMembership{{Role: "reader", Member: "app"}}
 	mandatory := []catalog.RoleMembership{{Role: "mand", Member: "PUBLIC"}}
+	unread := &catalog.EveryAccountUnread{Cause: "the read could not read @@GLOBAL.mandatory_roles: denied"}
 	tests := []struct {
 		name         string
 		mandatory    []catalog.RoleMembership
-		read         bool
+		unread       *catalog.EveryAccountUnread
 		publicIsRole bool
 		want         []catalog.RoleMembership
-		wantUnread   bool
+		wantUnread   *catalog.EveryAccountUnread
 	}{
 		{
 			name:      "mandatory roles",
 			mandatory: mandatory,
-			read:      true,
 			want:      []catalog.RoleMembership{{Role: "reader", Member: "app"}, {Role: "mand", Member: "PUBLIC"}},
 		},
-		{name: "mandatory roles not read", read: false, want: held, wantUnread: true},
-		{name: "a role named PUBLIC", mandatory: mandatory, read: true, publicIsRole: true, want: held, wantUnread: true},
-		{name: "a role named PUBLIC and no mandatory role", read: true, publicIsRole: true, want: held},
+		{name: "mandatory roles not read", unread: unread, want: held, wantUnread: unread},
+		{
+			name: "a role named PUBLIC", mandatory: mandatory, publicIsRole: true, want: held,
+			wantUnread: &catalog.EveryAccountUnread{Roles: []string{"mand"}, Cause: publicRoleHidesMandatory},
+		},
+		{name: "a role named PUBLIC and no mandatory role", publicIsRole: true, want: held},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -512,10 +530,10 @@ func TestMandatoryRoles_AddTo(t *testing.T) {
 
 			schema := &catalog.Database{RoleMemberships: slices.Clone(held), PublicIsRole: test.publicIsRole}
 
-			mandatoryRoles{memberships: test.mandatory, read: test.read}.addTo(schema)
+			mandatoryRoles{memberships: test.mandatory, unread: test.unread}.addTo(schema)
 
 			c.Assert(schema.RoleMemberships, qt.DeepEquals, test.want)
-			c.Assert(schema.EveryAccountHoldsUnread, qt.Equals, test.wantUnread)
+			c.Assert(schema.EveryAccountHoldsUnread, qt.DeepEquals, test.wantUnread)
 		})
 	}
 }

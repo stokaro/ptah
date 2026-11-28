@@ -81,3 +81,28 @@ func TestCompareWithDatabaseInfoComparesBesideAnUnresolvedRole(t *testing.T) {
 		})
 	}
 }
+
+// TestCompareWithDatabaseInfoComparesARoleLeftOutForAnotherReason compares a
+// declaration that names a role the read left out for a reason other than an
+// unresolved name: the selection, or a kind the read does not inspect. The
+// refusal is for a name the read could not tell apart, and only that one.
+func TestCompareWithDatabaseInfoComparesARoleLeftOutForAnotherReason(t *testing.T) {
+	for _, reason := range []coverage.Reason{coverage.OutsideScope, coverage.NotInspected} {
+		t.Run(string(reason), func(t *testing.T) {
+			c := qt.New(t)
+			database := &catalog.Database{
+				NotDescribed: coverage.Set{}.With(coverage.Object{Kind: coverage.Role, Name: "nm@localhost", Reason: reason, Provenance: coverage.Observed}),
+			}
+			desired := &schemamodel.Database{
+				Grants: []schemamodel.Grant{{Role: "nm@localhost", Privileges: []string{"SELECT"}, OnSchema: "nmdb"}},
+			}
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				t.Context(), desired, database, catalog.ServerInfo{Dialect: "mysql"}, nil, must.Must(builtin.New()),
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff, qt.IsNotNil)
+		})
+	}
+}

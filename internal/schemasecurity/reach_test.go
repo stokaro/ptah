@@ -813,13 +813,14 @@ func TestReachFromCatalog_LeavesOutTheRolesThatHoldAnUnreadRole(t *testing.T) {
 		{Role: "lother", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"},
 		{Role: "lother", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t2"},
 	}
-	live.UnreadRoles = []string{"legacy"}
+	live.UnreadRoles = []catalog.UnreadRole{{Name: "legacy", Cause: "it is a login, and the read reads a login's grants on the databases it covers"}}
 	reach := schemasecurity.ReachFromCatalog(live, "app", 50, 80)
 
 	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
 
 	c.Assert(reachLines(reach), qt.DeepEquals, []string{"roles/read-reach error lother 2/2 over 80% through=[] sources=[]"})
-	const reason = "the read did not read the privileges of legacy, which app, lr can use, so their reach was not measured"
+	const reason = "the read did not read every privilege of legacy, which app, lr can use: " +
+		"it is a login, and the read reads a login's grants on the databases it covers; so their reach was not measured"
 	c.Assert(slices.DeleteFunc(report.SkippedRules, func(skipped schemasecurity.SkippedRule) bool {
 		return !strings.HasPrefix(skipped.Code, "roles/")
 	}), qt.DeepEquals, []schemasecurity.SkippedRule{
@@ -829,28 +830,49 @@ func TestReachFromCatalog_LeavesOutTheRolesThatHoldAnUnreadRole(t *testing.T) {
 }
 
 // TestReachFromCatalog_MeasuresNoRoleWhereEveryRoleHoldsAnUnreadRole skips
-// both rules, with their own reason, where every role holds roles whose
-// privileges the read does not state, such as MySQL mandatory roles it could
-// not read.
+// both rules, with the read's cause, where every role holds roles whose
+// privileges the read does not state: MySQL mandatory roles it could not read,
+// or mandatory roles it read beside a role named PUBLIC, which hides which
+// roles every account holds.
 func TestReachFromCatalog_MeasuresNoRoleWhereEveryRoleHoldsAnUnreadRole(t *testing.T) {
-	c := qt.New(t)
-	live := readCatalog("t1")
-	live.Roles = []catalog.Role{{Name: "reader"}}
-	live.Grants = []catalog.Grant{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"}}
-	live.EveryAccountHoldsUnread = true
-	reach := schemasecurity.ReachFromCatalog(live, "app", 50, 80)
+	tests := []struct {
+		name   string
+		unread catalog.EveryAccountUnread
+		want   string
+	}{
+		{
+			name:   "mandatory roles not read",
+			unread: catalog.EveryAccountUnread{Cause: "the read could not read @@GLOBAL.mandatory_roles: denied"},
+			want: "every role holds roles whose memberships the read does not state: " +
+				"the read could not read @@GLOBAL.mandatory_roles: denied; so no role's reach was measured",
+		},
+		{
+			name:   "a role named PUBLIC beside read mandatory roles",
+			unread: catalog.EveryAccountUnread{Roles: []string{"mand", "mand6"}, Cause: "a role named PUBLIC hides which roles every account holds"},
+			want: "every role holds the roles mand, mand6 whose memberships the read does not state: " +
+				"a role named PUBLIC hides which roles every account holds; so no role's reach was measured",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			live := readCatalog("t1")
+			live.Roles = []catalog.Role{{Name: "reader"}}
+			live.Grants = []catalog.Grant{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "app", ObjectName: "t1"}}
+			live.EveryAccountHoldsUnread = &test.unread
+			reach := schemasecurity.ReachFromCatalog(live, "app", 50, 80)
 
-	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
+			report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{Reach: reach})
 
-	c.Assert(reachLines(reach), qt.DeepEquals, make([]string, 0))
-	const reason = "every role holds roles whose privileges the read does not state, " +
-		"such as MySQL mandatory roles it could not read, so no role's reach was measured"
-	c.Assert(slices.DeleteFunc(report.SkippedRules, func(skipped schemasecurity.SkippedRule) bool {
-		return !strings.HasPrefix(skipped.Code, "roles/")
-	}), qt.DeepEquals, []schemasecurity.SkippedRule{
-		{Code: schemasecurity.ReadReachRule, Reason: reason},
-		{Code: schemasecurity.WriteReachRule, Reason: reason},
-	})
+			c.Assert(reachLines(reach), qt.DeepEquals, make([]string, 0))
+			c.Assert(slices.DeleteFunc(report.SkippedRules, func(skipped schemasecurity.SkippedRule) bool {
+				return !strings.HasPrefix(skipped.Code, "roles/")
+			}), qt.DeepEquals, []schemasecurity.SkippedRule{
+				{Code: schemasecurity.ReadReachRule, Reason: test.want},
+				{Code: schemasecurity.WriteReachRule, Reason: test.want},
+			})
+		})
+	}
 }
 
 // TestAnalyzeReach_PUBLICsAccessToEveryRelationIsReported holds a grant to

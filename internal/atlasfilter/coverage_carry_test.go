@@ -57,8 +57,8 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 				ConnectedRole:           "app",
 				ConnectedRoleSuperuser:  true,
 				PublicIsRole:            true,
-				UnreadRoles:             []string{"legacy"},
-				EveryAccountHoldsUnread: true,
+				UnreadRoles:             []catalog.UnreadRole{{Name: "legacy", Cause: "it is a login"}},
+				EveryAccountHoldsUnread: &catalog.EveryAccountUnread{Roles: []string{"mand"}, Cause: "the read could not read it"},
 				PlanningContextObjects:  contextObjects,
 				PlanningContextCoverage: context,
 				// No selection keeps the table, and the filter keeps the record.
@@ -78,8 +78,8 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 			c.Assert(got.ConnectedRole, qt.Equals, "app")
 			c.Assert(got.ConnectedRoleSuperuser, qt.IsTrue)
 			c.Assert(got.PublicIsRole, qt.IsTrue)
-			c.Assert(got.UnreadRoles, qt.DeepEquals, []string{"legacy"})
-			c.Assert(got.EveryAccountHoldsUnread, qt.IsTrue)
+			c.Assert(got.UnreadRoles, qt.DeepEquals, []catalog.UnreadRole{{Name: "legacy", Cause: "it is a login"}})
+			c.Assert(got.EveryAccountHoldsUnread, qt.DeepEquals, &catalog.EveryAccountUnread{Roles: []string{"mand"}, Cause: "the read could not read it"})
 			c.Assert(got.PlanningContextObjects.Equal(contextObjects), qt.IsTrue)
 			c.Assert(got.PlanningContextCoverage.Equal(context), qt.IsTrue)
 			c.Assert(got.UnreadTables, qt.DeepEquals, schema.UnreadTables)

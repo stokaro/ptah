@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 
 	"ptah.run/catalog"
@@ -17,10 +18,16 @@ type mandatoryRoles struct {
 	// memberships are PUBLIC's memberships in the roles the setting names,
 	// each role named as a membership names it.
 	memberships []catalog.RoleMembership
-	// read is false where the read could not establish which roles the
-	// setting names.
-	read bool
+	// unread says why the read could not establish which roles the setting
+	// names, and which names it found, and is nil where it could.
+	unread *catalog.EveryAccountUnread
 }
+
+// publicRoleHidesMandatory is the cause a read records where a MySQL role
+// named PUBLIC beside the mandatory roles leaves no grantee to state that
+// every account holds them.
+const publicRoleHidesMandatory = "a role named PUBLIC hides which roles every account holds, " +
+	"since each membership a read records for PUBLIC is that role's"
 
 // addTo adds the memberships of PUBLIC in the mandatory roles to schema's
 // memberships, and records in schema whether every account then holds roles
@@ -33,10 +40,15 @@ type mandatoryRoles struct {
 // are then left as they are.
 func (m mandatoryRoles) addTo(schema *catalog.Database) {
 	switch {
-	case !m.read:
-		schema.EveryAccountHoldsUnread = true
+	case m.unread != nil:
+		schema.EveryAccountHoldsUnread = m.unread
+	case schema.PublicIsRole && len(m.memberships) > 0:
+		roles := make([]string, 0, len(m.memberships))
+		for _, membership := range m.memberships {
+			roles = append(roles, membership.Role)
+		}
+		schema.EveryAccountHoldsUnread = &catalog.EveryAccountUnread{Roles: roles, Cause: publicRoleHidesMandatory}
 	case schema.PublicIsRole:
-		schema.EveryAccountHoldsUnread = len(m.memberships) > 0
 	default:
 		schema.RoleMemberships = append(schema.RoleMemberships, m.memberships...)
 	}
@@ -54,23 +66,29 @@ func (m mandatoryRoles) addTo(schema *catalog.Database) {
 // to double-quoted lists in MySQL 9.7.
 //
 // A setting, a version or an account the read cannot read leaves the
-// mandatory roles unread rather than failing the read, and the security
-// analysis then says it cannot measure a role's reach. A cancellation still
+// mandatory roles unread rather than failing the read, with the cause: the
+// security analysis then says it cannot measure a role's reach, `ptah db
+// read` prints a note, and a table revoke is refused. A cancellation still
 // fails it.
 func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Names) (mandatoryRoles, error) {
 	if names.MariaDB {
-		return mandatoryRoles{read: true}, nil
+		return mandatoryRoles{}, nil
 	}
 	var value, version string
 	if err := r.db.QueryRowContext(ctx, "SELECT @@GLOBAL.mandatory_roles, VERSION()").Scan(&value, &version); err != nil {
-		return mandatoryRoles{}, ctx.Err()
+		return mandatoryRoles{unread: &catalog.EveryAccountUnread{
+			Cause: fmt.Sprintf("the read could not read @@GLOBAL.mandatory_roles: %v", err),
+		}}, ctx.Err()
 	}
 	if value == "" {
-		return mandatoryRoles{read: true}, nil
+		return mandatoryRoles{}, nil
 	}
 	versionID := mysqlstored.VersionID(version)
 	if versionID == 0 {
-		return mandatoryRoles{}, nil
+		return mandatoryRoles{unread: &catalog.EveryAccountUnread{
+			Cause: fmt.Sprintf("the server version %q does not say which account-list grammar reads "+
+				"@@GLOBAL.mandatory_roles = %q", version, value),
+		}}, nil
 	}
 	// MySQL keeps the first occurrence with equal user bytes and equal host
 	// byte lengths whose hosts compare without case. The stored host supplies
@@ -81,13 +99,17 @@ func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Name
 	}
 	seen := make(map[accountKey]bool)
 	var memberships []catalog.RoleMembership
-	for _, role := range mysqlgrants.MandatoryAccounts(value, versionID >= 90700) {
+	accounts := mysqlgrants.MandatoryAccounts(value, versionID >= 90700)
+	for _, role := range accounts {
 		storedHost, err := r.mandatoryRoleHost(ctx, role)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
 		if err != nil {
-			return mandatoryRoles{}, ctx.Err()
+			return mandatoryRoles{unread: &catalog.EveryAccountUnread{
+				Roles: mandatoryNames(accounts),
+				Cause: fmt.Sprintf("the read could not look up the mandatory role %s in mysql.user: %v", role.Grantee(), err),
+			}}, ctx.Err()
 		}
 		key := accountKey{user: role.User, storedHost: storedHost, hostBytes: len(role.Host)}
 		if seen[key] {
@@ -109,7 +131,20 @@ func (r *Reader) readMandatoryRoles(ctx context.Context, names *mysqlgrants.Name
 		memberships = append(memberships, catalog.RoleMembership{Role: names.Name(role), Member: publicGrantee})
 	}
 	slices.SortFunc(memberships, func(a, b catalog.RoleMembership) int { return cmp.Compare(a.Role, b.Role) })
-	return mandatoryRoles{memberships: memberships, read: true}, nil
+	return mandatoryRoles{memberships: memberships}, nil
+}
+
+// mandatoryNames is each account the setting names, named as a membership
+// names it ([mysqlgrants.Options.PrincipalName]), sorted and without repeats.
+// The read stopped before it could tell which of them exist, so a name may be
+// one no account has.
+func mandatoryNames(accounts []mysqlgrants.Account) []string {
+	names := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		names = append(names, mysqlgrants.Options{}.PrincipalName(account))
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // mandatoryRoleHost finds the account as MySQL's mandatory-role cache does:
